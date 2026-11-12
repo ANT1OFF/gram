@@ -30,7 +30,13 @@ import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
 import { RELEASES } from "./install-script.ts";
-import { connectHost, HOST_SERVES, serveHost, type HostService } from "./protocol.ts";
+import {
+  connectHost,
+  HOST_FEATURES,
+  HOST_SERVES,
+  serveHost,
+  type HostService,
+} from "./protocol.ts";
 import { reposOn } from "./repos.ts";
 import {
   appLayout,
@@ -1165,6 +1171,7 @@ describe("host.update over the wire", () => {
           protocol: HOST_PROTOCOL_VERSION,
           hostId: LOCAL_HOST_ID,
           capabilities: HOST_SERVES,
+          features: HOST_FEATURES,
           platform: "linux",
           pid: 1,
         },

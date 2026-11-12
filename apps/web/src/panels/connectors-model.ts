@@ -271,6 +271,7 @@ export const copyTo = (
     const type = source.transport === "sse" ? "sse" : "http";
     return { kind: "direct", scope, config: { type, url: source.url } };
   }
+  const start = source.url === undefined ? startCommand(source) : undefined;
   return {
     kind: "form",
     draft:
@@ -278,7 +279,7 @@ export const copyTo = (
         ? {
             name: row.name,
             transport: "stdio",
-            command: source.command ?? "",
+            command: start?.command ?? "",
             args: (source.args ?? []).join("\n"),
           }
         : {
@@ -289,7 +290,31 @@ export const copyTo = (
           },
     note: source.carriesValues
       ? "Its credentials (header, environment or address values) stay with the agent that has them. Enter them again here."
-      : "Check the details, then add it.",
+      : start?.relative === true
+        ? "Its command is a path from the folder it starts in, which isn't known here. Enter the full path, or it won't start."
+        : "Check the details, then add it.",
+  };
+};
+
+/** A path from a folder (`./x`, `bin/x`), not one from the root or home, nor a bare name. */
+const isRelativePath = (command: string): boolean =>
+  command.includes("/") && !command.startsWith("/") && !command.startsWith("~");
+
+/**
+ * The command a copy should run. Claude Code starts a stdio server in the session's folder, so a
+ * command relative to the source's own `cwd` is made absolute from it; one with no absolute
+ * `cwd` to go by is flagged (`relative`), since copied as it is it would never start.
+ */
+export const startCommand = (
+  source: Pick<ConfiguredServer, "command" | "cwd">,
+): { readonly command: string; readonly relative: boolean } => {
+  const command = source.command ?? "";
+  if (!isRelativePath(command)) return { command, relative: false };
+  const cwd = source.cwd;
+  if (cwd === undefined || !cwd.startsWith("/")) return { command, relative: true };
+  return {
+    command: `${cwd.replace(/\/+$/, "")}/${command.replace(/^(\.\/)+/, "")}`,
+    relative: false,
   };
 };
 

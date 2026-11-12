@@ -13,7 +13,13 @@ import { makeAdmission } from "./admission.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
-import { connectHost, HOST_SERVES, type HostService, serveHost } from "./protocol.ts";
+import {
+  connectHost,
+  HOST_FEATURES,
+  HOST_SERVES,
+  type HostService,
+  serveHost,
+} from "./protocol.ts";
 import { reposOn } from "./repos.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { STOPPING, stopOn } from "./stop.ts";
@@ -329,6 +335,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
           protocol: HOST_PROTOCOL_VERSION,
           hostId: LOCAL_HOST_ID,
           capabilities: HOST_SERVES,
+          features: HOST_FEATURES,
           platform: process.platform,
           pid: 4242,
         },
@@ -374,6 +381,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
           protocol: HOST_PROTOCOL_VERSION,
           hostId: LOCAL_HOST_ID,
           capabilities: HOST_SERVES,
+          features: HOST_FEATURES,
           platform: process.platform,
           pid: 4242,
         },

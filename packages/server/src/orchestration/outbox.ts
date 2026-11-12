@@ -365,6 +365,7 @@ export const StoredHeldBrief = Schema.Struct({
     group: Schema.optionalKey(Schema.String),
     identities: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
     plan: Schema.optionalKey(Schema.Array(Schema.String)),
+    browser: Schema.optionalKey(Schema.Boolean),
     /** The routine whose run it is, which the worker carries once it starts. */
     routine: Schema.optionalKey(
       Schema.Struct({

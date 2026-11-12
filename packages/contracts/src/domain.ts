@@ -847,6 +847,13 @@ export const Thread = Schema.Struct({
   /** Folders beyond the checkout that the user granted the agent (`request_directory`). */
   additionalDirectories: Schema.optionalKey(Schema.Array(Schema.String)),
   /**
+   * The thread was given the user's browser: by its orchestrator at spawn (`spawn_worker`'s
+   * `browser`, where `workspaces.workerBrowser` allows) or by the user (`thread.setBrowser`). Its
+   * sessions get it only while its agent's consent allows (`browserUseAllowed`), and a Codex one
+   * only in the user's own `CODEX_HOME`. An orchestrator's follows `orchestratorBrowserOn` instead.
+   */
+  browser: Schema.optionalKey(Schema.Boolean),
+  /**
    * Worktrees in other repos that a worker was given for a change spanning them, on its feature's
    * branch. The thread's git state, checkpoints and diff follow `checkout` alone; these are held so
    * no other thread is opened on them and so closing the worker can release them.
@@ -896,6 +903,20 @@ export const Thread = Schema.Struct({
   lastViewedAt: Schema.optionalKey(Schema.Number),
 });
 export type Thread = typeof Thread.Type;
+
+/**
+ * Whether a thread's sessions get the user's browser, as the server opens them
+ * (`thread.browserStatus`): `off` when it wasn't lent it, `on`, `held` when a consent in Settings
+ * holds it back (`why`), and `unavailable` when this thread's session can't have it at all (`why`):
+ * a Codex thread in Gram's own Codex home, one on a gateway, one started from a profile.
+ */
+export const ThreadBrowserStatus = Schema.Struct({
+  state: Schema.Literals(["off", "on", "held", "unavailable"]),
+  why: Schema.optionalKey(Schema.String),
+  /** Why lending it would do nothing for this thread, lent or not; absent where it could. */
+  cannot: Schema.optionalKey(Schema.String),
+});
+export type ThreadBrowserStatus = typeof ThreadBrowserStatus.Type;
 
 /** The furthest ahead `thread.snooze` takes, in calendar days. */
 export const SNOOZE_AHEAD_MAX_DAYS = 90;

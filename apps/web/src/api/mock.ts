@@ -40,6 +40,7 @@ import type {
   MessageId,
   TaskId,
   Thread,
+  ThreadBrowserStatus,
   ThreadFeedEvent,
   ThreadHistoryPage,
   ThreadId,
@@ -55,6 +56,9 @@ import type {
   TurnUndoData,
 } from "@gram/contracts";
 import {
+  browserUseAllowed,
+  orchestratorBrowserOn,
+  workerBrowserOn,
   derivedTitle,
   effectiveCheckout,
   machineProjectRoot,
@@ -1788,6 +1792,50 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
 
   async markUnread(threadId: ThreadId, unread: boolean) {
     this.#update(this.#runtime(threadId), { unread });
+  }
+
+  async setBrowser(threadId: ThreadId, browser: boolean) {
+    const runtime = this.#runtime(threadId);
+    if (runtime.summary.thread.role !== undefined) {
+      throw new Error("An orchestrator's browser is the “Orchestrators use your browser” setting.");
+    }
+    const { browser: _was, ...rest } = runtime.summary.thread;
+    const thread = browser ? { ...rest, browser: true } : rest;
+    runtime.summary = { ...runtime.summary, thread };
+    this.#emit({ type: "thread.upsert", thread });
+    return thread;
+  }
+
+  /** The server's `browserStatus`, on the facts the mock keeps: no outward gate of its own. */
+  async threadBrowserStatus(threadId: ThreadId): Promise<ThreadBrowserStatus> {
+    const thread = this.#runtime(threadId).summary.thread;
+    const settings = await this.#settings.get();
+    // A cold fork resumes its source in the source's home (the mock keeps no anchors).
+    const home =
+      thread.codexHome ??
+      (thread.agentSessionId === undefined ? thread.forkedFrom?.codexHome : undefined);
+    const cannot =
+      thread.profile !== undefined
+        ? "A thread started from a profile keeps to its profile's tools."
+        : thread.model.profileId !== undefined
+          ? "This thread runs on a gateway."
+          : thread.model.agent === "codex" && home !== undefined && home !== "user"
+            ? "Codex computer use runs only in your own Codex setup, and this thread runs in Gram's own, where it started under an outward gate."
+            : undefined;
+    const lent =
+      thread.role === "orchestrator" ? orchestratorBrowserOn(settings) : thread.browser === true;
+    if (!lent || thread.role === "dream")
+      return cannot === undefined ? { state: "off" } : { state: "off", cannot };
+    if (cannot !== undefined) return { state: "unavailable", why: cannot, cannot };
+    if (!browserUseAllowed(settings, thread.model.agent))
+      return { state: "held", why: "It's off in Settings → Agents." };
+    if (
+      thread.role !== "orchestrator" &&
+      thread.spawnedBy !== undefined &&
+      !workerBrowserOn(settings)
+    )
+      return { state: "held", why: "Workers' browser is off in Settings → Workspaces." };
+    return { state: "on" };
   }
 
   /** Per thread, the timer that ends its snooze, as the server's wakes do. */

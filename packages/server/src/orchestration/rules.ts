@@ -9,6 +9,9 @@
 
 import { dreamSupportFor, type OutwardGate, type ToolAudience } from "@gram/agents";
 import {
+  browserUseAllowed,
+  orchestratorBrowserOn,
+  workerBrowserOn,
   USER_AWAY_AFTER_MINUTES,
   USER_HOLD_IDLE_MS,
   autonomyOf,
@@ -58,6 +61,7 @@ import {
   wakeConditionWhen,
   type Settings,
   type SpawnedBy,
+  type Thread,
   type ThreadId,
   type ThreadRole,
   type ThreadStatus,
@@ -2675,4 +2679,22 @@ export const userAwayMinutes = (
   if (inactiveSince === undefined) return undefined;
   const minutes = Math.floor((now - inactiveSince) / 60_000);
   return minutes >= USER_AWAY_AFTER_MINUTES ? minutes : undefined;
+};
+
+/**
+ * Whether a session of `thread` drives the user's browser. Each scope has its own consent, and
+ * its agent's consent (`browserUseAllowed`, one per agent) has to allow it as well: an
+ * orchestrator by `workspaces.orchestratorBrowser`, a worker given it at spawn or by the user
+ * while `workspaces.workerBrowser` stays on, a plain thread the user gave it. A dream never.
+ * Read again at every open, so turning a consent off takes it away from the next session.
+ */
+export const browserFor = (
+  thread: Pick<Thread, "role" | "spawnedBy" | "browser" | "model">,
+  audience: ToolAudience,
+  settings: Settings,
+): boolean => {
+  if (thread.role === "dream" || !browserUseAllowed(settings, thread.model.agent)) return false;
+  if (audience === "orchestrator") return orchestratorBrowserOn(settings);
+  if (thread.browser !== true) return false;
+  return thread.spawnedBy === undefined || workerBrowserOn(settings);
 };

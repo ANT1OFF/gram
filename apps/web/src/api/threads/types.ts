@@ -18,6 +18,7 @@ import type {
   SendResult,
   StartSessionResult,
   TaskId,
+  ThreadBrowserStatus,
   Thread,
   ThreadHistoryPage,
   ThreadId,
@@ -129,6 +130,13 @@ export interface ThreadsApi {
    * unread at that time, or sooner when it asks something or fails. Resolves to the thread.
    */
   snooze(threadId: ThreadId, until: number | null): Promise<Thread>;
+  /**
+   * Gives the thread your browser, or takes it back (`Thread.browser`); its session reopens once
+   * idle. Its agent's consent in Settings still decides whether a session gets it.
+   */
+  setBrowser(threadId: ThreadId, browser: boolean): Promise<Thread>;
+  /** Whether the thread's next session gets your browser, as the server opens it. */
+  threadBrowserStatus(threadId: ThreadId): Promise<ThreadBrowserStatus>;
   /**
    * Babysit mode on the thread's PR. Enabling binds the branch's PR if needed, turns on its review
    * monitor and resets the counters; the change arrives as `thread.upsert`.

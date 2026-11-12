@@ -130,6 +130,12 @@ export const ConfiguredServer = Schema.Struct({
   url: Schema.optionalKey(Schema.String),
   command: Schema.optionalKey(Schema.String),
   args: Schema.optionalKey(Schema.Array(Schema.String)),
+  /**
+   * The folder a stdio server starts in, where the agent's entry names one (Codex's `cwd`); a
+   * relative `command` is found from there. Claude Code's entries have none: its stdio servers
+   * start in the session's folder.
+   */
+  cwd: Schema.optionalKey(Schema.String),
   /** One of the agent's `MCP_TARGET_SCOPES`, or where else it came from (`claudeai`, `plugin`). */
   scope: Schema.String,
   /** Absent when the agent doesn't say, or the server has no sign-in. */

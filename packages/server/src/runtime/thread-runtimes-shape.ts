@@ -18,6 +18,7 @@ import type {
   GramUIMessage,
   SendResult,
   WorkerQuiet,
+  ThreadBrowserStatus,
   ThreadNotFound,
   RequestAnswer,
   RespondManyResult,
@@ -82,6 +83,8 @@ export interface CreateThreadInput {
   readonly profile?: NonNullable<Thread["profile"]>;
   /** Worktrees in other repos the thread holds beside `checkout` (`Thread.extraCheckouts`). */
   readonly extraCheckouts?: ReadonlyArray<Checkout>;
+  /** Given the user's browser at spawn (`Thread.browser`); its session policy still decides. */
+  readonly browser?: boolean;
   /**
    * Leaves a thread without `input` cold instead of opening its session now. An orchestrator's
    * session policy turns on a workspace slot it can only claim once the row exists, so its first
@@ -589,6 +592,11 @@ export interface ThreadRuntimesShape {
   setSessionPolicy(port: SessionPolicyPort): Effect.Effect<void>;
   /** Who the thread is to the app tools, by the session policy; `plain` for an unknown thread. */
   audienceOf(threadId: ThreadId): Effect.Effect<ToolAudience>;
+  /**
+   * Whether the thread's next session gets the user's browser, by its session policy now and what
+   * its session can carry (`browserStatus`).
+   */
+  browserStatusOf(threadId: ThreadId): Effect.Effect<ThreadBrowserStatus, ThreadNotFound>;
   /**
    * Sends one server-authored input per `(threadId, key)` as a turn of its own, as soon as the
    * thread can take it. It is held in memory and never

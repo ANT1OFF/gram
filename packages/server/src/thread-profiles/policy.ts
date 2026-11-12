@@ -42,7 +42,8 @@ export const withProfile = (
     connectorListed(policy.mcpDenylist ?? [], profile.server)
       ? undefined
       : profile.server;
-  const { mcpServer: _, ...rest } = policy;
+  // A profile's thread holds to its one server and its charter: never the user's browser.
+  const { mcpServer: _, browser: _browser, ...rest } = policy;
   return {
     ...rest,
     ...(instructions === "" ? {} : { instructions }),

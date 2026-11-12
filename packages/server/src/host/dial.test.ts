@@ -14,7 +14,7 @@ import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
 import { generateHostKey, hostIdOf, privateKeyFrom } from "./machine-keys.ts";
-import { HOST_SERVES, type HostService } from "./protocol.ts";
+import { HOST_FEATURES, HOST_SERVES, type HostService } from "./protocol.ts";
 import { reposOn } from "./repos.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
@@ -137,6 +137,7 @@ const servedHost = (hostId: string) =>
         protocol: HOST_PROTOCOL_VERSION,
         hostId: HostId.make(hostId),
         capabilities: HOST_SERVES,
+        features: HOST_FEATURES,
         platform: process.platform,
         pid: 1,
       },

@@ -30,6 +30,7 @@ import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { copyMarkdown } from "@/thread/message-actions";
 import { snoozePresets, snoozeTime, typedSnooze } from "@/thread/snooze-model";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
+import { useThreadBrowser } from "@/thread/browser-chip";
 import { JOIN_NEEDS_WORKTREE, useThreadActions } from "@/thread/use-thread-actions";
 import {
   checkoutInUse,
@@ -93,6 +94,7 @@ export function useScopeCommands(
   const summary = threadId === undefined ? undefined : byId[threadId];
   const thread = summary?.thread;
   const actions = useThreadActions(threadId ?? NO_THREAD);
+  const browser = useThreadBrowser(threadId);
   const wakes = useThreadWakes(threadId ?? NO_THREAD);
   const fork = useForkAvailability(threadId ?? NO_THREAD);
   const pushing = usePushBranch(threadId ?? NO_THREAD);
@@ -218,6 +220,20 @@ export function useScopeCommands(
                   },
                 },
               ]),
+        ...(actions.toggleBrowser === undefined
+          ? []
+          : [
+              {
+                id: `scope:browser:${id}`,
+                label: thread.browser === true ? "Take your browser back" : "Lend it your browser",
+                keywords: "chrome claude in chrome computer use web console click sign in",
+                // Where its session can't carry it, lending would promise what it never gets.
+                ...(thread.browser !== true && browser?.cannot !== undefined
+                  ? { unavailable: browser.cannot }
+                  : {}),
+                run: actions.toggleBrowser,
+              },
+            ]),
         ...(actions.toggleDone === undefined || actions.doneHeld
           ? []
           : [

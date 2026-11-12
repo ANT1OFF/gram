@@ -22,9 +22,11 @@ import {
   type UserInput,
   type WorkspaceId,
   aboveHigh,
+  browserUseAllowed,
   modelRefOf,
   rosterName,
   hostListing,
+  workerBrowserOn,
 } from "@gram/contracts";
 import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -769,6 +771,20 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               : state.charter.workerModels === undefined
                 ? bare
                 : chosen;
+          // The browser only where each consent it needs is on; otherwise it runs without.
+          const browserProblem =
+            input.browser !== true
+              ? undefined
+              : !workerBrowserOn(settings)
+                ? "The user hasn't let workers use their browser (Settings › Workspaces), so this worker runs without it."
+                : !browserUseAllowed(settings, model.agent)
+                  ? `${model.agent === "claude" ? "Claude in Chrome" : "Codex computer use"} is off in Settings › Agents, so this worker runs without the browser.`
+                  : model.agent === "codex" &&
+                      gateOfAutonomy(autonomyOf(state.charter)) !== undefined
+                    ? "Codex computer use isn't available under this workspace's outward gate, so this worker runs without the browser."
+                    : undefined;
+          if (browserProblem !== undefined) warnings.push(browserProblem);
+          const browser = input.browser === true && browserProblem === undefined;
 
           const finished = finishedWorkers(found.features);
           const siblings = found.workers.filter(
@@ -885,6 +901,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                       : { routine: { id: input.routine.id, name: input.routine.name } }),
                   },
                   extraCheckouts,
+                  ...(browser ? { browser: true } : {}),
                   additionalDirectories: [
                     ...extraCheckouts.map((extra) => extra.path),
                     ...readAlso,

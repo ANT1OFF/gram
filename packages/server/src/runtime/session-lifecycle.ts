@@ -536,6 +536,9 @@ export const makeSessionLifecycle = ({
             ...(policy.mcpNoneWithoutToolSearch === true ? { mcpNoneWithoutToolSearch: true } : {}),
             ...(policy.noBlockingAsk === true ? { noBlockingAsk: true } : {}),
             ...(policy.peerMessaging === true ? { peerMessaging: true } : {}),
+            // Always said, so the agent's own default (Claude in Chrome "Enabled by default", the
+            // ChatGPT app's computer use) never reaches a thread that wasn't given the browser.
+            browser: policy.browser === true && thread.role !== "dream",
             onConnectorsSeen: (seen) => {
               recordSeen(seenConnectors.record(seen));
             },

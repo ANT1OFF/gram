@@ -193,6 +193,23 @@ const otherAllowlists = async (
   return found;
 };
 
+/**
+ * Claude in Chrome for a session given the browser: `--chrome`, the only switch that turns it on
+ * for a session the SDK starts (CLI 2.1.322; there is no Agent SDK option of its own). Every other
+ * session gets `--no-chrome`, which outranks the CLI's "Enabled by default" and
+ * `CLAUDE_CODE_ENABLE_CFC`, so the user's own default never reaches a Gram thread unasked. A
+ * confined session never gets it, and neither does one on a gateway key: the extension takes only
+ * a claude.ai sign-in. Its server is Claude Code's own and `allowedMcpServers` doesn't filter it
+ * (verified with an allowlist naming another server), so the session's lists leave it alone.
+ */
+export const chromeArgs = (
+  o: Pick<OpenSessionOptions, "browser" | "confineWrites" | "dreamFilesOnly">,
+  onGateway: boolean,
+): Record<string, null> =>
+  o.browser === true && o.confineWrites !== true && o.dreamFilesOnly !== true && !onGateway
+    ? { chrome: null }
+    : { "no-chrome": null };
+
 /** The flag settings that hold a session to `o`'s MCP lists; empty when it names neither. */
 const mcpListSettings = (
   o: McpLists,
@@ -340,6 +357,35 @@ export const IRREVERSIBLE_GATE_REASON =
 export const CONNECTOR_GATE_REASON =
   "Gram asks before this thread calls a connector, whatever its permission mode and allow " +
   "rules say.";
+
+/** Why a Claude in Chrome action is asked about under the strictest outward gate. */
+export const BROWSER_GATE_REASON =
+  "Gram asks before this thread acts in your browser, where it is signed in as you, whatever " +
+  "its permission mode and allow rules say.";
+
+/** Claude in Chrome's MCP server, as its tools are named (`mcp__claude-in-chrome__<tool>`). */
+const CHROME_TOOL_PREFIX = "mcp__claude-in-chrome__";
+
+/** Claude in Chrome's tools that only read the browser (CLI 2.1.322); every other one acts. */
+const CHROME_READ_TOOLS: ReadonlySet<string> = new Set([
+  "find",
+  "get_page_text",
+  "list_connected_browsers",
+  "read_console_messages",
+  "read_network_requests",
+  "read_page",
+  "tabs_context_mcp",
+]);
+
+/**
+ * Whether `toolName` acts in the user's browser through Claude in Chrome: clicks, types,
+ * navigates, runs script, uploads, opens or closes tabs. The outward gate can't see what a click
+ * does (merging a pull request on github.com is one), so under `all` each of these asks. A tool
+ * added later counts as acting until it is listed as a read.
+ */
+export const actsInBrowser = (toolName: string): boolean =>
+  toolName.startsWith(CHROME_TOOL_PREFIX) &&
+  !CHROME_READ_TOOLS.has(toolName.slice(CHROME_TOOL_PREFIX.length));
 
 /** A `PreToolUse` hook's answer that sends the call to `canUseTool`, ahead of rules and mode. */
 const askFirst = (reason: string) => ({
@@ -817,6 +863,9 @@ export const makeClaudeHost = (
         if (gateAsksAbout(hookInput.tool_name, hookInput.tool_input)) {
           return askFirst(level === "all" ? OUTWARD_GATE_REASON : IRREVERSIBLE_GATE_REASON);
         }
+        if (level === "all" && actsInBrowser(hookInput.tool_name)) {
+          return askFirst(BROWSER_GATE_REASON);
+        }
         if (asksAboutConnector(hookInput.tool_name)) return askFirst(CONNECTOR_GATE_REASON);
         return {};
       };
@@ -939,6 +988,9 @@ export const makeClaudeHost = (
           child.stderr.setEncoding("utf8").on("data", (data: string) => options.stderr?.(data));
           return child;
         },
+        // Always said: a session that wasn't lent the browser, `browser` unsaid included, runs
+        // with `--no-chrome`, never the CLI's own default.
+        extraArgs: chromeArgs(o, gateway !== undefined),
         includePartialMessages: true,
         forwardSubagentText: true,
         canUseTool,

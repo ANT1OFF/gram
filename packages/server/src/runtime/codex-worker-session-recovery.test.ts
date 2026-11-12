@@ -265,7 +265,8 @@ describe.skipIf(process.platform === "win32")("ordinary worker saved-session rec
           siblingPid = pidFor(f, siblingSaved);
         const siblingServer = f.sessionServers.get(sibling.id)!,
           metadataServer = yield* servers.acquire(undefined, "user");
-        writeFileSync(join(f.root, "invented-hold-rpc"), "1");
+        // Only the metadata RPC: the resume reads its own config on another child meanwhile.
+        writeFileSync(join(f.root, "invented-hold-rpc"), "model/list");
         const metadata = yield* host.listModels().pipe(Effect.forkScoped);
         yield* waitFor(
           "metadata RPC held",

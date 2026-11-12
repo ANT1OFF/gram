@@ -103,6 +103,7 @@ const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): H
     mcpNoneWithoutToolSearch: o.mcpNoneWithoutToolSearch,
     noBlockingAsk: o.noBlockingAsk,
     peerMessaging: o.peerMessaging,
+    browser: o.browser,
   }) as HostSessionOpen;
 
 /**
@@ -345,7 +346,9 @@ export const agentHostThroughHost = (
     ...inServer,
     open: (options) =>
       Effect.suspend(() =>
-        gone() || !opensOnHost(kind, options)
+        // A host that can't hold the browser off (`browser-policy`) would run the CLI's own
+        // Chrome default, so the server's own adapter, which holds it off, opens the session.
+        gone() || !opensOnHost(kind, options) || host.browserPolicy !== true
           ? inServer.open(options)
           : openOnHost(host, kind, options).pipe(
               // The host went before the session opened: the server opens it instead.
@@ -506,7 +509,9 @@ export const agentHostOnMachine = (
                   message: `This session can't run on ${machineName} yet.`,
                 }),
               )
-            : Effect.suspend(() => {
+            : // A host there without `browser-policy` refuses the open itself
+              // (`HOST_BROWSER_POLICY_MISSING`), checked against whichever host is connected then.
+              Effect.suspend(() => {
                 const reaching = overTailnet(options);
                 return reaching === undefined
                   ? Effect.fail(

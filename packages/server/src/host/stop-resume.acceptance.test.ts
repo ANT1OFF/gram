@@ -52,7 +52,7 @@ import { gitOn } from "./git.ts";
 import { readHostConfig, writeJoined } from "./host-config.ts";
 import { generateHostKey, hostIdOf } from "./machine-keys.ts";
 import { memoryMachineStore } from "./paired-machines.ts";
-import { HOST_SERVES, type HostService, serveHost } from "./protocol.ts";
+import { HOST_FEATURES, HOST_SERVES, type HostService, serveHost } from "./protocol.ts";
 import { RemoteHosts } from "./remote-hosts.ts";
 import { reposOn } from "./repos.ts";
 import { sessionsOnHost } from "./sessions.ts";
@@ -147,6 +147,7 @@ const startHost = (volume: Volume) =>
           protocol: HOST_PROTOCOL_VERSION,
           hostId,
           capabilities: HOST_SERVES,
+          features: HOST_FEATURES,
           platform: "linux",
           pid,
         },

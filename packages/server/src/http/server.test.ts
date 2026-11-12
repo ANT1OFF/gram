@@ -602,6 +602,44 @@ layer(TestServer, { excludeTestServices: true })("server over a real socket", (i
         }).pipe(Effect.flip);
         expect(missing).toMatchObject({ _tag: "NotFound" });
 
+        // The user's own grant of the browser, recorded on the thread and taken back again.
+        expect(
+          yield* client["thread.setBrowser"]({ threadId: thread.id, browser: true }),
+        ).toMatchObject({ id: thread.id, browser: true });
+        // The status is the server's: lent, but Claude in Chrome's own consent is off.
+        expect(yield* client["thread.browserStatus"]({ threadId: thread.id })).toEqual({
+          state: "held",
+          why: "Claude in Chrome is off in Settings → Agents.",
+        });
+        expect(
+          yield* client["thread.setBrowser"]({ threadId: thread.id, browser: false }),
+        ).not.toHaveProperty("browser");
+        expect(yield* client["thread.browserStatus"]({ threadId: thread.id })).toEqual({
+          state: "off",
+        });
+
+        // A Codex session kept in Gram's own home can't carry it, so lending it is refused.
+        const owned = yield* client["thread.create"]({
+          projectRoot: webRoot,
+          checkout: { kind: "current" },
+          title: "gated codex",
+          model: { agent: "codex", model: "gpt-5-codex" },
+          resumeSessionId: "codex-session-in-gram-home",
+          codexHome: "owned",
+        });
+        expect(yield* client["thread.browserStatus"]({ threadId: owned.id })).toMatchObject({
+          state: "off",
+          cannot: expect.stringContaining("Gram's own"),
+        });
+        const refused = yield* client["thread.setBrowser"]({
+          threadId: owned.id,
+          browser: true,
+        }).pipe(Effect.flip);
+        expect(refused).toMatchObject({
+          _tag: "InvalidState",
+          message: expect.stringContaining("Gram's own"),
+        });
+
         const [snapshot] = yield* client["events.subscribe"]().pipe(
           Stream.take(1),
           Stream.runCollect,

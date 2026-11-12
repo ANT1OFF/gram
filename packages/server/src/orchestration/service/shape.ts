@@ -114,6 +114,11 @@ export interface SpawnWorkerInput {
   /** The brief's checklist, seeded as the worker's first plan; kept with a held brief. */
   readonly plan?: ReadonlyArray<string> | undefined;
   /**
+   * Give the worker the user's browser (`Thread.browser`), where `workspaces.workerBrowser` and
+   * its agent's consent allow when it spawns; otherwise it starts without, with a warning.
+   */
+  readonly browser?: boolean | undefined;
+  /**
    * The routine whose due run this is (`routines/routines.ts`), kept on the worker's `spawnedBy`;
    * set by the routines engine alone, never by the agent's tool.
    */

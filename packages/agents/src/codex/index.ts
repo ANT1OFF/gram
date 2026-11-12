@@ -16,6 +16,7 @@ export {
   CODEX_CAPABILITIES,
   CodexHost,
   CodexHostLayer,
+  codexHomeFor,
   gatedHomeIsOwned,
   autoAvailable,
   gateHoldsInMode,

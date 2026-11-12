@@ -156,6 +156,16 @@ export interface OpenSessionOptions {
    */
   readonly peerMessaging?: boolean;
   /**
+   * The user's browser, through the agent's own integration: Claude Code's Claude in Chrome
+   * (`--chrome`), Codex's computer use (its plugins' `cua_repl`, the ChatGPT app's `node_repl`).
+   * Only `true` turns it on. Claude holds anything else off (`--no-chrome`), absent included, so a
+   * CLI-wide default never reaches a Gram thread unasked, nor a host session from a control plane
+   * that didn't send it. Codex turns its plugins and servers off on `false`, and leaves the user's
+   * own config on absent (Codex sessions open in the server, whose runtime always says which). A
+   * host without either ignores it.
+   */
+  readonly browser?: boolean;
+  /**
    * Told each time the session reports its MCP servers, so a view with no session open can show
    * the last word. Called synchronously from the agent's message loop: it mustn't block or throw.
    * A host that doesn't report them ignores it.
