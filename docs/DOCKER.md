@@ -272,7 +272,7 @@ services:
 - A thread started from a [profile](THREAD_PROFILES.md#on-a-headless-control-plane) goes on the
   same machine, in a folder its host makes for it.
 - The models offered are the ones the default machine's Claude Code lists. The launch checks for
-  local tools don't run, and their answer says so (`headless: true`), so the web app shows no setup
+  local tools don't run, and their answer says so (`headless: true`, and no tool listed), so the web app shows no setup
   banner or title-bar chip for tools this container was never asked to have. Each machine's own
   tools and sign-in show in the Machine select and Settings → Machines.
 - Not on a machine yet, so not available headless: Codex sessions, sessions through a gateway

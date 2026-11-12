@@ -254,17 +254,21 @@ test("the right panel can be kept to threads in a repository", async ({ page }) 
 test("a headless server reports no setup problems of its own machine", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  // What a headless server answers: it looked for nothing, so no tool and no sign-in.
-  const answer = async (headless: boolean) => {
+  // What a headless server answers: it looked for nothing, so no tool and no sign-in. One from
+  // before `headless` lists no tool either; a server that looked lists each, found or not.
+  const answer = async (from: "headless" | "older" | "looked") => {
     await page.evaluate(
       ([key, value]) => sessionStorage.setItem(key!, value!),
       [
         "gram.mock.launchChecks",
         JSON.stringify({
-          tools: [],
+          tools:
+            from === "looked"
+              ? ["claude", "codex", "git", "gh"].map((tool) => ({ tool, found: false }))
+              : [],
           claudeSignIn: "unknown",
           ghSignedIn: false,
-          ...(headless ? { headless: true } : {}),
+          ...(from === "headless" ? { headless: true } : {}),
         }),
       ],
     );
@@ -274,7 +278,7 @@ test("a headless server reports no setup problems of its own machine", async ({ 
   const banner = page.getByTestId("launch-checks-banner");
   const chip = page.getByTestId("launch-issues-chip");
   await mounted(page, "/t/t-flaky");
-  await answer(true);
+  await answer("headless");
   // Neither the banner nor its title-bar chip, on a thread in a repository or on home.
   await expect(page.getByTestId("thread-view")).toBeVisible();
   await expect(banner).toHaveCount(0);
@@ -283,9 +287,13 @@ test("a headless server reports no setup problems of its own machine", async ({ 
   await expect(page.getByTestId("app-shell")).toBeVisible();
   await expect(banner).toHaveCount(0);
   await expect(chip).toHaveCount(0);
-  // The same empty answer from a server that did look is what's missing there.
   await page.goto("/t/t-flaky");
-  await answer(false);
+  await answer("older");
+  await expect(page.getByTestId("thread-view")).toBeVisible();
+  await expect(banner).toHaveCount(0);
+  await expect(chip).toHaveCount(0);
+  // A server that looked and found nothing: that is what's missing there.
+  await answer("looked");
   await expect(banner).toContainText("Neither Claude Code nor Codex is installed");
   expect(errors).toEqual([]);
 });
