@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.22.0](https://github.com/ANT1OFF/gram/compare/v1.21.0...v1.22.0) (2026-11-12)
+
+
+### Features
+
+* dismiss a document chip above the composer ([#468](https://github.com/ANT1OFF/gram/issues/468)) ([7931e39](https://github.com/ANT1OFF/gram/commit/7931e3964d8f38ca992d6bd7f83ac3b6dd7abd60))
+* lend a thread your own browser (Claude in Chrome, Codex computer use) ([#470](https://github.com/ANT1OFF/gram/issues/470)) ([e4ad41a](https://github.com/ANT1OFF/gram/commit/e4ad41ab1dac5df98024648525119466c7432f7d))
+* the Inbox is one dialog in every mode ([#467](https://github.com/ANT1OFF/gram/issues/467)) ([89e7ffa](https://github.com/ANT1OFF/gram/commit/89e7ffae17e69e7773efe78ee0d8c466e7d177f9))
+
+
+### Bug Fixes
+
+* await device restoration and worker wrap-ups in tests ([#457](https://github.com/ANT1OFF/gram/issues/457)) ([fbbe2a4](https://github.com/ANT1OFF/gram/commit/fbbe2a44482b31cb7fcda84947500c653875e710))
+
 ## [1.21.0](https://github.com/ANT1OFF/gram/compare/v1.20.0...v1.21.0) (2026-11-11)
 
 
