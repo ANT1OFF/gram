@@ -14,6 +14,7 @@ import {
   keepsOwner,
   mayReachThread,
   MOVE_CHANGES_OWNER,
+  sameOwner,
   NOT_YOUR_MACHINE,
   type OwnerOf,
 } from "../host/ownership.ts";
@@ -52,6 +53,20 @@ export const ownedRuntimes = (
           return yield* Effect.die(new InvalidState({ message: MOVE_CHANGES_OWNER, threadId }));
         return yield* runtimes.moveCheckout(threadId, checkout);
       }),
+    // The same floor under a move off a machine that is gone (an embedder's): whoever asks must
+    // reach the thread, and what `prepare` places it on must be of the same owner.
+    relocate: (threadId, plan) =>
+      Effect.andThen(
+        admitOrAbsent(threadId),
+        runtimes.relocate(threadId, {
+          ...plan,
+          prepare: Effect.flatMap(plan.prepare, (checkout) =>
+            sameOwner(ownerOf, plan.from, checkout)
+              ? Effect.succeed(checkout)
+              : Effect.die(new InvalidState({ message: MOVE_CHANGES_OWNER, threadId })),
+          ),
+        }),
+      ),
     interrupt: (threadId) => Effect.andThen(admitOrAbsent(threadId), runtimes.interrupt(threadId)),
     stopAtToolBoundary: (threadId) =>
       Effect.andThen(admitOrAbsent(threadId), runtimes.stopAtToolBoundary(threadId)),

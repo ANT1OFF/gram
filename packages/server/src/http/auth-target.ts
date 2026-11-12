@@ -22,6 +22,7 @@ const protectedPaths = [
   "/workspaces/import",
   // A thread started from a profile: the platform's own service or the local app only.
   "/threads/from-profile",
+  "/threads/move-to-machine",
 ] as const;
 const protectedRoutes = FindMyWay.make<string>();
 for (const path of protectedPaths) protectedRoutes.all(path, path);

@@ -7,6 +7,7 @@ import {
   GitError,
   type HostId,
   hostOf,
+  HostUnavailable,
   InvalidState,
   isLocalHost,
   LOCAL_HOST_ID,
@@ -25,6 +26,7 @@ import {
 } from "@gram/git";
 import { dirname } from "node:path";
 import * as Effect from "effect/Effect";
+import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
@@ -38,6 +40,10 @@ import type { WorkerHost, WorkerHostsShape } from "./worker-host.ts";
 
 /** How often an offline machine's watch looks for it again. */
 const REDIAL_CHECK = "5 seconds";
+/** How often a session waiting for its thread's machine looks whether the thread was moved. */
+const MOVE_LOOK = "500 millis";
+/** How many times a session about to open follows its thread to another machine. */
+const MOVE_FOLLOWS = 3;
 
 const commandOffline = (message: string) => new ProcSpawnError({ bin: "gram-host", message });
 const worktreeOffline = (message: string) =>
@@ -475,6 +481,44 @@ export const placedHost = (
       ),
   };
 
+  /**
+   * The host a session of `threadId` opens on, and the machine it is: the thread's machine, waited
+   * for as `forSession` waits for a stopped machine, unless the thread is moved off it meanwhile
+   * (`thread-profiles/start.ts`, `moveOne`). Whichever comes first, the thread's machine is read
+   * again, and a host that is no longer the thread's is never answered: the look starts over on
+   * the machine the thread is on now, a few times at most.
+   */
+  const sessionHost = (
+    threadId: ThreadId,
+    first: HostId,
+  ): Effect.Effect<{ readonly id: HostId; readonly host: WorkerHost }, HostUnavailable> =>
+    Effect.gen(function* () {
+      let id = first;
+      for (let looks = 0; looks < MOVE_FOLLOWS; looks++) {
+        const wait = hosts.forSession;
+        let host: WorkerHost | undefined;
+        if (id === LOCAL_HOST_ID) host = local;
+        else if (wait === undefined) host = yield* hosts.get(id);
+        else {
+          const movedOff = hostIdOfThread(threadId).pipe(
+            Effect.repeat({ schedule: Schedule.spaced(MOVE_LOOK), until: (now) => now !== id }),
+          );
+          const found = yield* Effect.raceFirst(
+            wait(id).pipe(Effect.map((ready) => ({ host: ready }) as const)),
+            movedOff.pipe(Effect.map((to) => ({ to }) as const)),
+          );
+          if ("host" in found) host = found.host;
+        }
+        const now = yield* hostIdOfThread(threadId);
+        if (host !== undefined && now === id) return { id, host };
+        id = now;
+      }
+      return yield* new HostUnavailable({
+        hostId: id,
+        message: "The thread kept moving between machines while its session opened.",
+      });
+    });
+
   /** One wrapper per agent, so the runtime always holds the same object for it. */
   const wrapped = new WeakMap<object, unknown>();
   const sessions = AgentHosts.of({
@@ -488,7 +532,7 @@ export const placedHost = (
             Effect.flatMap(hostIdOfThread(options.threadId), (id) =>
               id === LOCAL_HOST_ID
                 ? agent.open(options)
-                : (hosts.forSession ?? hosts.get)(id).pipe(
+                : sessionHost(options.threadId, id).pipe(
                     Effect.mapError(
                       (error) =>
                         new AgentUnavailable({
@@ -497,8 +541,27 @@ export const placedHost = (
                           message: error.message,
                         }),
                     ),
-                    Effect.flatMap((host) => host.sessions.get(kind)),
-                    Effect.flatMap((onMachine) => onMachine.open(options)),
+                    Effect.flatMap(({ id: on, host }) =>
+                      host.sessions.get(kind).pipe(
+                        Effect.flatMap((onMachine) => onMachine.open(options)),
+                        // Moved while it opened: the session goes with its scope, never kept on
+                        // a machine the thread has left.
+                        Effect.tap(() =>
+                          Effect.flatMap(hostIdOfThread(options.threadId), (now) =>
+                            now === on
+                              ? Effect.void
+                              : Effect.fail(
+                                  new AgentUnavailable({
+                                    agent: kind,
+                                    reason: "startup-failed",
+                                    message:
+                                      "The thread moved to another machine while its session opened.",
+                                  }),
+                                ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
             ),
         };

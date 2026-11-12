@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { ServerConfig } from "../config.ts";
+import { RemoteHosts } from "../host/remote-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { makeThreadCreator } from "../runtime/create-in-checkout.ts";
@@ -25,6 +26,7 @@ export const profileStarterHere = Effect.gen(function* () {
   const checkouts = yield* CheckoutService;
   const config = yield* ServerConfig;
   const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
+  const remote = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
   const proc = Option.getOrUndefined(yield* Effect.serviceOption(Proc));
   const creator = makeThreadCreator({ store, checkouts, runtimes });
   return makeProfileStarter({
@@ -32,6 +34,7 @@ export const profileStarterHere = Effect.gen(function* () {
     runtimes,
     dataDir: config.dataDir,
     hosts,
+    ...(remote === undefined ? {} : { machines: { get: (id) => remote.machines.get(id) } }),
     repositories:
       proc === undefined
         ? undefined

@@ -149,13 +149,10 @@ describe("an orchestration on a person's machine", () => {
           const store = yield* ThreadStore;
           const worker = yield* spawn(session, { feature: "mine", title: "Mine" });
           yield* completeTurn(session);
-          yield* store.updateThread(
-            worker.thread.id,
-            (thread) => {
-              const { workspaceId: _ws, spawnedBy: _by, ...rest } = thread;
-              return { ...rest, checkout: { ...thread.checkout, hostId: SHARED.id } };
-            },
-          );
+          yield* store.updateThread(worker.thread.id, (thread) => {
+            const { workspaceId: _ws, spawnedBy: _by, ...rest } = thread;
+            return { ...rest, checkout: { ...thread.checkout, hostId: SHARED.id } };
+          });
           for (const person of ["grace", undefined])
             expect(
               (yield* as(person)(

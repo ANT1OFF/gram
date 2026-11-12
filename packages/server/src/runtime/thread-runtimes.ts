@@ -17,6 +17,8 @@ import {
   type Thread,
   type ThreadNotFound,
   type ThreadSummary,
+  type ThreadStatus,
+  type Checkout,
   type WorktreeDirty,
 } from "@gram/contracts";
 import * as Cause from "effect/Cause";
@@ -94,6 +96,11 @@ import { makeSessionSwitch, makeSwitchMethods } from "./session-switch.ts";
 import { AGENT_NAMES, makeAgentSwitch } from "./agent-switch.ts";
 import { makeSessionLifecycle } from "./session-lifecycle.ts";
 import type { InputUndelivered } from "./undelivered.ts";
+
+/** Where a thread may be relocated from: at rest, or with a session only opening. */
+const RELOCATABLE: ReadonlySet<ThreadStatus> = new Set(["cold", "idle", "error", "starting"]);
+/** What a relocation hears when the thread was placed elsewhere since it was asked. */
+const MOVED_MEANWHILE = "the thread was placed elsewhere meanwhile";
 
 export {
   type CreateThreadInput,
@@ -1432,6 +1439,82 @@ const make = Effect.gen(function* () {
       );
     });
 
+  const relocate: ThreadRuntimesShape["relocate"] = (threadId, plan) =>
+    Effect.gen(function* () {
+      const rt = yield* getRuntime(threadId);
+      const busy = (message: string) => new InvalidState({ message, threadId, status: rt.status });
+      // Claimed under the lock: from here no send, delivery or turn starts on the thread, and no
+      // session opens, until the claim lets go (`rt.reserved`, as `whileAtRest` holds it).
+      yield* locked(
+        rt,
+        Effect.gen(function* () {
+          if (rt.closing) return yield* busy("the thread is closing");
+          if (rt.reserved) return yield* busy("the thread is being worked on");
+          if (plan.endWork !== true && (rt.turn !== undefined || !RELOCATABLE.has(rt.status)))
+            return yield* busy("the thread is at work");
+          if (rt.status === "ended") return yield* busy("the thread has ended");
+          if (!(yield* sameCheckout(threadId, plan.from))) return yield* busy(MOVED_MEANWHILE);
+          rt.reserved = true;
+        }),
+      );
+      const release = locked(
+        rt,
+        Effect.gen(function* () {
+          rt.reserved = false;
+          yield* pumpDeliveries(rt);
+          // What waited, the message a session was opening for included, goes where it is now.
+          yield* drainQueue(rt);
+        }),
+      );
+      return yield* Effect.gen(function* () {
+        // Whatever of it runs on the old placement stops: an idle session, or one still opening
+        // for a message, which goes back to the head of the queue, as an eviction leaves it; with
+        // `endWork`, a session at work too, its turn ended as interrupted.
+        yield* stopSession(rt, "evict");
+        // Gone for good: a turn left open with no session to end it (its machine took it) ends.
+        if (plan.endWork === true) {
+          yield* locked(
+            rt,
+            rt.turn !== undefined && rt.session === undefined
+              ? finishTurn(rt, "interrupted", "sessionExit")
+              : Effect.void,
+          );
+        }
+        const checkout = yield* plan.prepare;
+        return yield* locked(
+          rt,
+          Effect.gen(function* () {
+            // Nothing may have started there meanwhile, nor the thread been placed elsewhere.
+            if (
+              rt.session !== undefined ||
+              FiberMap.hasUnsafe(sessions, threadId) ||
+              rt.turn !== undefined ||
+              rt.launch !== undefined
+            )
+              return yield* busy("the thread started work on its old machine meanwhile");
+            if (!(yield* sameCheckout(threadId, plan.from))) return yield* busy(MOVED_MEANWHILE);
+            const thread = yield* store
+              .updateThread(threadId, ({ currentCheckout: _current, ...t }) => ({ ...t, checkout }))
+              .pipe(Effect.mapError(() => busy("the thread is gone")));
+            yield* publishUpsert(thread);
+            return thread;
+          }),
+        );
+      }).pipe(Effect.ensuring(release));
+    });
+
+  /** Whether the thread's stored checkout is still `from`: its folder and machine. */
+  const sameCheckout = (threadId: ThreadId, from: Checkout) =>
+    store.getThread(threadId).pipe(
+      Effect.map(
+        (thread) =>
+          thread.currentCheckout === undefined &&
+          thread.checkout.path === from.path &&
+          thread.checkout.hostId === from.hostId,
+      ),
+      Effect.orElseSucceed(() => false),
+    );
+
   /** A switch's settling (`finish`) started by the boot or an unarchive, for the runtime's life. */
   const switchSettles = yield* FiberSet.make<void>();
   const agentSwitch = makeAgentSwitch({
@@ -1481,6 +1564,7 @@ const make = Effect.gen(function* () {
   const service = ThreadRuntimes.of({
     ...switchMethods,
     restSession,
+    relocate,
     switchSession,
     switchAgent: agentSwitch.switchAgent,
     switchNotePlan: agentSwitch.switchNotePlan,

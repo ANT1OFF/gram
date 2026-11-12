@@ -267,6 +267,13 @@ const recording = () => {
     steer: note("steer"),
     respond: note("respond"),
     moveCheckout: note("moveCheckout"),
+    relocate: (threadId: ThreadId, plan: { readonly prepare: Effect.Effect<unknown, unknown> }) =>
+      Effect.flatMap(plan.prepare, () =>
+        Effect.sync(() => {
+          reached.push(`relocate:${threadId}`);
+          return undefined as never;
+        }),
+      ),
     respondMany: (answers: ReadonlyArray<{ threadId: ThreadId; requestId: string }>) =>
       Effect.sync(() =>
         answers.map((each) => {
@@ -340,5 +347,21 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
     );
     expect(refused._tag).toBe("ThreadNotFound");
     expect(reached).toEqual([`moveCheckout:${orchestrator}`, `moveCheckout:${sharedThread}`]);
+  });
+
+  // gram#477's move off a machine that is gone: the same floor as `moveCheckout`.
+  it("relocates a thread only onto a machine of the same owner, and only for its owner", async () => {
+    const { reached, owned } = recording();
+    const orchestrator = ThreadId.make("ada-orchestrator");
+    const from = onto("m-ada");
+    const plan = (hostId: string) => ({ from, prepare: Effect.succeed(onto(hostId)) });
+    await Effect.runPromise(owned.relocate(orchestrator, plan("m-ada")));
+    const changed = await Effect.runPromiseExit(owned.relocate(orchestrator, plan("m-shared")));
+    expect(String(changed)).toContain(MOVE_CHANGES_OWNER);
+    const refused = await Effect.runPromise(
+      as("grace")(owned.relocate(orchestrator, plan("m-ada"))).pipe(Effect.flip),
+    );
+    expect(refused._tag).toBe("ThreadNotFound");
+    expect(reached).toEqual([`relocate:${orchestrator}`]);
   });
 });

@@ -15,7 +15,9 @@ import {
   type AgentUnavailable,
   type HostId,
   LOCAL_HOST_ID,
+  type ProfileFile,
 } from "@gram/contracts";
+import { keepsOwner, sameOwner } from "../host/ownership.ts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
@@ -25,7 +27,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
 import { olderHost } from "../host/folders.ts";
-import type { HostThreadPlaces } from "../host/thread-places.ts";
+import { HOST_THREADS_DIR, type HostThreadPlaces } from "../host/thread-places.ts";
 import type { WorkerHostsShape } from "../host/worker-host.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
@@ -71,12 +73,46 @@ export interface ProfileStarted {
 /** What a caller hears where a thread's machine can't be reached from here (a test layer). */
 export const NOT_PLACED_HERE = "This server has no joined machines to place the thread on.";
 
+/** A thread moved, and whether this call moved it. */
+export interface ProfileMoved {
+  readonly thread: Thread;
+  readonly moved: boolean;
+}
+
+/** What a move hears for a thread that isn't one started from a profile into a folder of its own. */
+export const NOT_MOVABLE =
+  "Only a thread started from a profile that works in a folder of its own, on a joined machine, moves.";
+
+/** What a move hears for a machine started for someone else than the thread's. */
+export const NOT_THE_THREADS_OWNER =
+  "That machine was started for someone else than the thread is for, so the thread can't move to it.";
+
+/** What a move hears for a thread whose machine is no longer on record. */
+export const OWNER_UNKNOWN =
+  "The thread's machine is no longer on record, so who the thread is for can't be told. It doesn't move.";
+
+/** What a move hears for a thread at work. */
+export const THREAD_AT_WORK =
+  "The thread is at work, or has something open on its machine, so it doesn't move now.";
+
+/** What a move hears while the thread's machine is still there. */
+export const MACHINE_STILL_THERE =
+  "The thread's machine is online, so the thread stays on it. Move it once that machine is gone.";
+
 export interface ProfileStarterDeps {
   readonly store: Pick<
     ThreadStoreShape,
     "getSettings" | "listProfiles" | "ensureProject" | "getThread" | "listClosed"
   >;
-  readonly runtimes: Pick<ThreadRuntimesShape, "create" | "close">;
+  /** With `relocate` where threads can be moved (`moveOne`). */
+  readonly runtimes: Pick<ThreadRuntimesShape, "create" | "close"> &
+    Partial<Pick<ThreadRuntimesShape, "relocate">>;
+  /**
+   * The joined machines' records, for whom each was started (`owner`, `onDemand`, where the
+   * server records them): a thread moves only between machines started for the same person and
+   * the same purpose, or between machines started for nobody. Absent: nothing moves.
+   */
+  readonly machines?: { readonly get: (id: HostId) => object | undefined } | undefined;
   /** The server's data folder (`ServerConfig.dataDir`). */
   readonly dataDir: string;
   /** Clones and worktrees for a workplace of repositories; absent where there is no git. */
@@ -109,6 +145,7 @@ export const makeProfileStarter = ({
   dataDir,
   repositories,
   hosts,
+  machines,
 }: ProfileStarterDeps) => {
   /**
    * A joined machine's places for the thread, looked up at each use since a machine's host lasts
@@ -325,7 +362,163 @@ export const makeProfileStarter = ({
       );
     });
 
-  return { start, startOne };
+  /**
+   * Moves a thread started from a profile onto `to`, a joined machine online now, when the machine
+   * it is on has gone away: its own folder made again there, at the path it had, with `value`'s
+   * files, and the thread placed on it. Its next session opens there, and a session waiting for the
+   * old machine to come back opens there instead (`placed.ts`). Its conversation is the thread's
+   * transcript here; the agent's own session, kept on the old machine, is not carried.
+   *
+   * Refused, with nothing changed: with the hosted features off; for a thread that is closed, isn't
+   * one started from a profile, or works anywhere but a folder of its own on a joined machine (a
+   * thread in repositories has work only its machine holds); while its machine is online; for a
+   * `to` that isn't joined and online, or keeps thread folders at another path; and when `value`
+   * isn't the profile the thread keeps what it was given of. A thread on `to` already is answered
+   * as it is.
+   */
+  const moveOne = (
+    threadId: ThreadId,
+    to: HostId,
+    value?: unknown,
+    options: { readonly lost?: boolean } = {},
+  ): Effect.Effect<ProfileMoved, InvalidState> =>
+    Effect.gen(function* () {
+      if (!embeddingOn(yield* store.getSettings)) return yield* refuse(PROFILES_OFF);
+      if (!SUPPLIED_ID.test(threadId)) return yield* refuse("Not a thread id.");
+      if (to === LOCAL_HOST_ID) return yield* refuse(NAME_A_MACHINE);
+      return yield* starting.withLock(
+        threadId,
+        Effect.gen(function* () {
+          const found = yield* store.getThread(threadId).pipe(Effect.option);
+          if (Option.isNone(found)) {
+            const closed = (yield* store.listClosed).some((c) => c.thread.id === threadId);
+            return yield* refuse(closed ? "The thread with that id was closed." : NOT_MOVABLE);
+          }
+          const thread = found.value;
+          const { checkout } = thread;
+          const from = checkout.hostId;
+          if (thread.profile === undefined || !ownFolder(checkout, threadId) || from === undefined)
+            return yield* refuse(NOT_MOVABLE);
+          if (from === to) return { thread, moved: false };
+          if (
+            thread.currentCheckout !== undefined ||
+            (thread.extraCheckouts ?? []).length > 0 ||
+            (thread.additionalDirectories ?? []).length > 0
+          )
+            return yield* refuse(NOT_MOVABLE);
+          // Only off a machine that is gone: a thread is never taken from one that is at work.
+          const { relocate } = runtimes;
+          if (hosts === undefined || machines === undefined || relocate === undefined)
+            return yield* refuse(NOT_PLACED_HERE);
+          // Asked afresh each time it is run.
+          const away = Effect.suspend(() => hosts.get(from)).pipe(
+            Effect.as(false),
+            Effect.orElseSucceed(() => true),
+          );
+          if (!(yield* away)) return yield* refuse(MACHINE_STILL_THERE);
+          // Whose the thread is goes with the machine it is on (`host/ownership.ts`): it moves only
+          // to a machine of the same owner (`keepsOwner`), and of the same purpose, so neither it
+          // nor its orchestration changes hands. The runtimes hold to the owner as well.
+          const source = machines.get(from);
+          if (source === undefined) return yield* refuse(OWNER_UNKNOWN);
+          const target = machines.get(to);
+          const ownerOf = (id: HostId) =>
+            stringField((id === from ? source : id === to ? target : undefined) ?? {}, "owner");
+          if (
+            target === undefined ||
+            !keepsOwner(ownerOf, thread, { hostId: to }) ||
+            !sameOwner(ownerOf, checkout, { hostId: to }) ||
+            stringField(source, "onDemand") !== stringField(target, "onDemand")
+          )
+            return yield* refuse(NOT_THE_THREADS_OWNER);
+          let files: ReadonlyArray<ProfileFile> = [];
+          if (value !== undefined) {
+            const decoded = decodeThreadProfile(value);
+            if (!decoded.ok)
+              return yield* refuse(`That profile can't be applied. ${decoded.problems.join(" ")}`);
+            if (!sameValue(profileBindingOf(decoded.profile), thread.profile))
+              return yield* refuse("That isn't the profile the thread was started from.");
+            files = profileFilesOf(decoded.profile);
+          }
+          const places = yield* placesOn(to);
+          // Fenced in the runtime (`relocate`): from here until the thread is placed on `to`, no
+          // send, turn or session starts on it; any session of it stops, an idle one or one only
+          // opening for a message, which goes back to its queue; and the placement changes only if
+          // nothing started meanwhile. Once it lets go, the queue goes on, on the new machine.
+          let made = false;
+          const prepare = Effect.gen(function* () {
+            // A folder a failed move left there is this thread's and nobody else's: made anew.
+            yield* places.remove(threadId);
+            const { path } = yield* places.make(threadId, files);
+            made = true;
+            // The same path, so the thread's records hold.
+            if (path !== checkout.path)
+              return yield* refuse(
+                "That machine keeps thread folders at another path, so the thread can't move to it.",
+              );
+            // Asked again just before the thread moves: the old machine may have come back while
+            // the folder was made, and then the thread stays, and what was made goes.
+            if (!(yield* away)) return yield* refuse(MACHINE_STILL_THERE);
+            return { ...checkout, hostId: to };
+          });
+          const moved = yield* relocate(threadId, {
+            from: checkout,
+            prepare,
+            // Told the machine is gone for good: a turn it took with it ends, and the thread moves.
+            ...(options.lost === true ? { endWork: true } : {}),
+          }).pipe(
+            Effect.tapError(() => (made ? places.remove(threadId) : Effect.void)),
+            Effect.mapError((error) =>
+              error._tag === "ThreadNotFound"
+                ? refuse(NOT_MOVABLE)
+                : error.message === "the thread is at work"
+                  ? refuse(THREAD_AT_WORK)
+                  : error,
+            ),
+          );
+          yield* Effect.logInfo("a thread was moved to another machine").pipe(
+            Effect.annotateLogs({ threadId, from, to }),
+          );
+          return { thread: moved, moved: true };
+        }),
+      );
+    });
+
+  return { start, startOne, moveOne };
+};
+
+/** Whether `checkout` is a thread's own folder on a joined machine: `<clones>/.threads/<id>`. */
+const ownFolder = (checkout: Thread["checkout"], threadId: ThreadId): boolean => {
+  if (checkout.kind !== "main" || checkout.hostId === undefined) return false;
+  const parts = checkout.path.split(/[\\/]/);
+  return parts.at(-1) === threadId && parts.at(-2) === HOST_THREADS_DIR;
+};
+
+/** A record's string field, where it has one: a machine's `owner` or `onDemand`, say. */
+const stringField = (record: object, field: string): string | undefined => {
+  const value: unknown = Reflect.get(record, field);
+  return typeof value === "string" ? value : undefined;
+};
+
+/** Two decoded values, alike whatever order their keys were written in. */
+const sameValue = (a: unknown, b: unknown): boolean => {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((each, index) => sameValue(each, b[index]))
+    );
+  }
+  if (typeof a === "object" && a !== null && typeof b === "object" && b !== null) {
+    const left = Object.entries(a).filter(([, v]) => v !== undefined);
+    const right = new Map(Object.entries(b).filter(([, v]) => v !== undefined));
+    return (
+      left.length === right.size &&
+      left.every(([key, v]) => right.has(key) && sameValue(v, right.get(key)))
+    );
+  }
+  return a === b;
 };
 
 export type ProfileStarter = ReturnType<typeof makeProfileStarter>;

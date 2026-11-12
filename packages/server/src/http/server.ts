@@ -141,6 +141,7 @@ import { closedOnRevoke, REMOTE_MANAGEMENT_PATHS, remoteManagement } from "./rem
 import { RemoteControl } from "./remote-control.ts";
 import { WORKSPACE_TRANSFER_PATHS, WorkspaceTransferRoutes } from "../transfer/routes.ts";
 import {
+  PROFILE_MOVE_PATH,
   PROFILE_START_PATH,
   PROFILE_START_RECORD,
   ProfileStartRoutes,
@@ -191,6 +192,7 @@ export const SERVICE_PATHS: ReadonlySet<string> = new Set([
   ...HOST_STOP_PATHS,
   ...WORKSPACE_TRANSFER_PATHS,
   PROFILE_START_PATH,
+  PROFILE_MOVE_PATH,
 ]);
 
 /** What a service call's answer adds to its record: the thread a profile start made or found. */
@@ -198,9 +200,12 @@ const recordOf = (response: HttpServerResponse.HttpServerResponse): Record<strin
   const thread = response.headers[PROFILE_START_RECORD.thread];
   if (thread === undefined) return {};
   const host = response.headers[PROFILE_START_RECORD.host];
+  const moved = response.headers[PROFILE_START_RECORD.moved];
   return {
     threadId: thread,
-    created: response.headers[PROFILE_START_RECORD.created] === "true",
+    ...(moved === undefined
+      ? { created: response.headers[PROFILE_START_RECORD.created] === "true" }
+      : { moved: moved === "true" }),
     ...(host === undefined ? {} : { hostId: host }),
   };
 };
@@ -485,6 +490,7 @@ export const AuthMiddleware = HttpRouter.middleware(
             HOST_STOP_PATHS.has(target.path) ||
             WORKSPACE_TRANSFER_PATHS.has(target.path) ||
             target.path === PROFILE_START_PATH ||
+            target.path === PROFILE_MOVE_PATH ||
             HOST_PATHS.has(target.path) ||
             target.path === MCP_PATH ||
             target.path === HOST_MCP_PATH
