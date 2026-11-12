@@ -62,13 +62,12 @@ configured pass.
   row is two lines: what the item is about, wrapping before it is cut, then its workspace, its kind
   where the heading doesn't say it, its thread and age; its hover says the whole of it, and the
   whole question and its choices are in the pane. An approval's verbs take the keys its card in the
-  thread does: <kbd>1</kbd> Allow once, <kbd>2</kbd> Always allow this rule…, <kbd>3</kbd> Deny. The Inbox docks in the side
-  panel's column, beside the work, and <kbd>⏎</kbd> or Show thread puts the item's thread in the
-  main area next to it. In Focus, or a window too narrow for it beside the chat, it opens as a
-  dialog instead. The title bar's Inbox button, the sidebar's pill and <kbd>⌘⇧I</kbd> open it;
-  docked, <kbd>⌘⇧I</kbd> from the thread brings focus back to its list, <kbd>⌘L</kbd> goes to the
-  composer and <kbd>Esc</kbd> closes it. <kbd>⌘⇧U</kbd> steps through its items at the turn that
-  asked. Under each item the pane shows the asking thread's
+  thread does: <kbd>1</kbd> Allow once, <kbd>2</kbd> Always allow this rule…, <kbd>3</kbd> Deny. The Inbox opens
+  as a dialog over the work, the same in Quiet and out of it and at every window size, and
+  <kbd>⏎</kbd> or Open thread closes it and opens the item's thread at the turn that asked. The
+  title bar's Inbox button, the sidebar's pill and <kbd>⌘⇧I</kbd> open it where it was left;
+  <kbd>⌘⇧I</kbd> again or <kbd>Esc</kbd> closes it. <kbd>⌘⇧U</kbd> steps through its items at
+  the turn that asked. Under each item the pane shows the asking thread's
   last few turns and what its edits changed. An answer can be taken back for a few seconds from
   one receipt: the Inbox's foot while it is open, above the orchestrator's composer after. The
   thread that asks keeps its own card too.

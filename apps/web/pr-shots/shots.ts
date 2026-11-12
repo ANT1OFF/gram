@@ -3181,14 +3181,12 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "readme-inbox",
-    title: "README: the Inbox docked beside `storefront`'s orchestrator, on its one question",
+    title: "README: the Inbox over `storefront`'s orchestrator, on its one question",
     modes: ["dark"],
     open: async (page) => {
-      // Without the sidebar, which the hero shows, so the Inbox docks beside the chat.
       await openReadme(page, 1520, 900);
-      await page.getByRole("button", { name: "Hide sidebar" }).click();
       await page.keyboard.press("ControlOrMeta+Shift+I");
-      await page.locator('[data-testid="inbox"][data-docked]').waitFor();
+      await page.getByTestId("inbox").waitFor();
       await page.getByTestId("inbox-item").first().click();
       await page.mouse.move(1516, 896);
       await page.waitForTimeout(800);
@@ -3660,6 +3658,20 @@ export const SHOTS: readonly Shot[] = [
         await page.getByTestId("needs-you-see-all").click();
         await page.getByTestId("needs-you-panel").waitFor();
       }
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "inbox-wide",
+    title:
+      "The Inbox in a wide window, on an approval: a dialog over the work (before, docked in the side panel's column)",
+    open: async (page) => {
+      await openNeedsYouSeeded(page);
+      await page.setViewportSize({ width: 1728, height: 1000 });
+      await page.getByTestId("overview-needs-you").click();
+      await page.getByTestId("inbox").waitFor();
+      await page.getByTestId("inbox-item").filter({ hasText: "gh pr merge 91 --squash" }).click();
       await page.mouse.move(0, 0);
       await page.waitForTimeout(800);
     },

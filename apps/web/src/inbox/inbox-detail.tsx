@@ -388,14 +388,11 @@ const CONTROL = "button, a, input, textarea, select, label, [role='radio'], [rol
 export function InboxDetail({
   item,
   now,
-  docked = false,
   card = false,
   onOpenThread,
 }: {
   item: NeedsYouItem;
   now: number;
-  /** Docked beside the work: its thread shows in the main area, and the Inbox stays. */
-  docked?: boolean;
   card?: boolean;
   onOpenThread: (item: NeedsYouItem) => void;
 }) {
@@ -449,15 +446,11 @@ export function InboxDetail({
               data-testid="inbox-open-thread"
               disabled={item.threadId === undefined}
               title={
-                item.threadId === undefined
-                  ? "No thread to open"
-                  : docked
-                    ? `Show ${item.where} beside the Inbox (⏎)`
-                    : `Open ${item.where} at it (⏎)`
+                item.threadId === undefined ? "No thread to open" : `Open ${item.where} at it (⏎)`
               }
               onClick={() => onOpenThread(item)}
             >
-              {docked ? "Show thread" : card ? "Open" : "Open thread"}
+              {card ? "Open" : "Open thread"}
             </Button>
             <Hint
               label="Later (1 hour)"
