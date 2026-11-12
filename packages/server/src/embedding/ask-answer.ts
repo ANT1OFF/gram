@@ -19,6 +19,7 @@ import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import { actorEventsOf } from "../rpc/actor-guard.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import { ActingPerson } from "./person.ts";
+import { NOT_YOUR_MACHINE, RoutedFor } from "../host/ownership.ts";
 import {
   ANSWER_OVER_HTTP,
   ASK_ANSWER_MAX_BYTES,
@@ -81,8 +82,15 @@ export const answerAsk = (
       return refusal(400, "BadRequest", "expected {threadId, requestId, answer}");
     const { threadId, requestId, answer } = parsed.value;
     const proof: AnswerProof = { statement, method: request.method, path: request.url, body };
-    const failed = yield* deps.runtimes.respond(threadId, requestId, answer).pipe(
-      Effect.provideService(ActingPerson, actor.id),
+    const asActor = <A, E>(effect: Effect.Effect<A, E>) =>
+      effect.pipe(
+        Effect.provideService(ActingPerson, actor.id),
+        Effect.provideService(RoutedFor, { person: actor.id }),
+      );
+    // As the signed person: the runtimes refuse it, before the request is taken, on a machine
+    // they may not reach (`runtime/owned-runtimes.ts`). The statement says who answered, never
+    // that they may answer here.
+    const failed = yield* asActor(deps.runtimes.respond(threadId, requestId, answer)).pipe(
       Effect.provideService(AnswerProofRef, proof),
       Effect.as(undefined),
       Effect.catch((error) => Effect.succeed(error)),
@@ -100,6 +108,7 @@ export const answerAsk = (
       .pipe(Effect.catchCause((cause) => Effect.logError("an answer went unrecorded", cause)));
     if (failed === undefined) return json(200, {});
     if (failed === "defect") return refusal(500, "Failed", "the answer could not be taken");
-    if (failed instanceof InvalidState) return refusal(409, failed._tag, failed.message);
+    if (failed instanceof InvalidState)
+      return refusal(failed.message === NOT_YOUR_MACHINE ? 403 : 409, failed._tag, failed.message);
     return refusal(404, failed._tag, failed.message);
   });

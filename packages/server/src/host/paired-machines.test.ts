@@ -599,6 +599,31 @@ const provisioned = (machines: PairedMachines, name = "sandbox") => {
 };
 
 describe("provisioned hosts", () => {
+  it("keeps the person a host was started for, and refuses that key for anyone else", () => {
+    const { machines } = setup();
+    const key = generateHostKey();
+    const ada = { name: "ada-box", platform: "linux", publicKey: key.publicKey, owner: "ada" };
+    expect(machines.provision({ ...ada, onDemand: "personal" })).toMatchObject({
+      kind: "provisioned",
+      created: true,
+      machine: { owner: "ada", onDemand: "personal" },
+    });
+    expect(machines.provision({ ...ada, onDemand: "personal" })).toMatchObject({
+      created: false,
+    });
+    // The same key for another person, as another kind, or for nobody: refused.
+    for (const other of [
+      { ...ada, owner: "grace", onDemand: "personal" as const },
+      { ...ada, onDemand: "thread" as const },
+      { name: "ada-box", platform: "linux", publicKey: key.publicKey },
+    ])
+      expect(machines.provision(other)).toMatchObject({ kind: "refused", status: 409 });
+    expect(machineView(machines.list()[0]!, undefined)).toMatchObject({
+      owner: "ada",
+      onDemand: "personal",
+    });
+  });
+
   it("registers a key as confirmed, once, and never confirms a machine that joined with a link", () => {
     const { machines, joinOne } = setup();
     const { result, id, key } = provisioned(machines);

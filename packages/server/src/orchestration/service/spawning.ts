@@ -26,6 +26,7 @@ import {
   rosterName,
   hostListing,
 } from "@gram/contracts";
+import { OWNERS_DIFFER, sameOwner } from "../../host/ownership.ts";
 import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -154,6 +155,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     briefedByUser,
     joinedMachines,
     headless,
+    ownerOf,
   } = kit;
   /**
    * The joined machine `named` (its name, any case, or its id), for `spawn_worker`'s `machine`;
@@ -206,13 +208,24 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
    * headless Gram, running no work itself, replaces with its default machine. With none that can
    * take it there, the spawn is refused with why.
    */
-  const placedMachine = (tool: string, named: string | undefined) =>
+  const placedMachine = (tool: string, named: string | undefined, under: Thread) =>
     Effect.gen(function* () {
-      const hostId = named === undefined ? undefined : yield* machineNamed(tool, named);
-      if (hostId !== undefined || headless === undefined) return hostId;
-      return yield* headless.machine.pipe(
-        Effect.mapError((error) => toolError(tool, refusal("unknown_machine", error.message))),
-      );
+      const hostId =
+        named !== undefined || headless === undefined
+          ? named === undefined
+            ? undefined
+            : yield* machineNamed(tool, named)
+          : yield* headless.machine.pipe(
+              Effect.mapError((error) =>
+                toolError(tool, refusal("unknown_machine", error.message)),
+              ),
+            );
+      // A worker goes on a machine of its orchestrator's person's, or of no one's under no one's
+      // (`host/ownership.ts`): an orchestration never spans two people, so nothing that reaches
+      // its workers has to ask whose each one is.
+      if (!sameOwner(ownerOf, effectiveCheckout(under), { hostId }))
+        return yield* toolError(tool, refusal("not_admitted", OWNERS_DIFFER));
+      return hostId;
     });
   const admitMachineModel = (tool: string, hostId: HostId | undefined, chosen: ModelRef) =>
     Effect.gen(function* () {
@@ -257,9 +270,9 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
   // because a roster or machine may change while a card is awaiting its answer.
   const checkSpawnMachine: OrchestrationShape["checkSpawnMachine"] = (callerId, input) =>
     Effect.gen(function* () {
-      const hostId = yield* placedMachine("spawn_worker", input.machine);
-      if (hostId === undefined) return;
       const { thread, state } = yield* requireAuthority("spawn_worker", callerId);
+      const hostId = yield* placedMachine("spawn_worker", input.machine, thread);
+      if (hostId === undefined) return;
       // A tier resolves against what that machine lists, as the spawn itself will.
       const chosen = yield* workerModel(
         "spawn_worker",
@@ -657,7 +670,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           // else about a spawn is rationed.
           const settings = yield* store.getSettings;
           // Where it runs, first: a tier resolves against what that machine lists.
-          const hostId = yield* placedMachine(tool, input.machine);
+          const hostId = yield* placedMachine(tool, input.machine, caller);
           // Without a roster the one model is the orchestrator's own, which it runs on.
           const picked =
             byUser === undefined

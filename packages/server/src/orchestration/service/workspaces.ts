@@ -1,5 +1,6 @@
 // Workspaces: saving, naming and removing one, the workspace a
 // project opens into, and `open`, which gives a workspace its orchestrator thread.
+import { admitThread } from "../../host/ownership.ts";
 import {
   availableWorkspaceName,
   autonomyOf,
@@ -20,6 +21,7 @@ import {
 import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as FiberMap from "effect/FiberMap";
 import * as Schema from "effect/Schema";
 import { randomUUID } from "node:crypto";
@@ -84,6 +86,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
     reasons,
     taskStartupLock,
     workspaceStartupKeys,
+    ownerOf,
   } = kit;
   const { forgetReasons, openModel, endRecovery, deliveryFor, checkCharter, afterCharter } = deps;
 
@@ -129,6 +132,19 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
             ),
           ),
         ).pipe(Effect.map((folders) => folders.flat()));
+
+  /**
+   * Refused unless this call may reach the workspace's orchestrator (`host/ownership.ts`): an
+   * edit of a workspace changes its orchestrator's folders and session, and an orchestration has
+   * one owner. Asked before anything is written, whether by `workspace.save` or an agent's edit.
+   */
+  const admitHolder = (workspaceId: WorkspaceId | undefined) =>
+    Effect.gen(function* () {
+      if (workspaceId === undefined) return;
+      const state = yield* store.getWorkspace(workspaceId).pipe(Effect.option);
+      const holder = Option.isSome(state) ? state.value.workspace.orchestratorThreadId : undefined;
+      if (holder !== undefined) yield* admitThread(store.getThread, ownerOf, holder);
+    });
 
   const syncFolders = (holder: ThreadId, before: ReadonlyArray<ProjectId>, state: WorkspaceState) =>
     Effect.gen(function* () {
@@ -179,94 +195,98 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
     input: Parameters<OrchestrationShape["saveWorkspace"]>[0],
     namePolicy: "exact" | "available",
   ): ReturnType<OrchestrationShape["saveWorkspace"]> =>
-    spawnLock.withLocks(
-      input.id === undefined ? [] : [input.id],
-      registryLock.withPermits(1)(
-        Effect.gen(function* () {
-          const others = (yield* store.listWorkspaces).filter(
-            ({ workspace }) => workspace.id !== input.id,
-          );
-          // Automatic opens pick a free name under the same lock that reserves explicit names.
-          const name =
-            namePolicy === "available"
-              ? availableWorkspaceName(
-                  input.name,
-                  others.map(({ workspace }) => workspace.name),
-                )
-              : input.name.trim();
-          if (name === "") return yield* new InvalidState({ message: "A workspace needs a name." });
-          const duplicate = others.some(
-            ({ workspace }) => workspace.name.trim().toLowerCase() === name.toLowerCase(),
-          );
-          if (duplicate) {
-            return yield* new InvalidState({
-              message: "A workspace with that name already exists.",
-            });
-          }
-          const projectIds = [...new Set(input.projectIds)] as unknown as typeof input.projectIds;
-          if (!projectIds.includes(input.homeProjectId)) {
-            return yield* new InvalidState({
-              message: "The home project has to be one of the workspace's projects.",
-            });
-          }
-          // Every one of them a project Gram knows.
-          yield* projectsOf(projectIds);
-          const given = input.charter;
-          if (given !== undefined) {
-            if (input.id !== undefined) {
+    Effect.andThen(
+      admitHolder(input.id),
+      spawnLock.withLocks(
+        input.id === undefined ? [] : [input.id],
+        registryLock.withPermits(1)(
+          Effect.gen(function* () {
+            const others = (yield* store.listWorkspaces).filter(
+              ({ workspace }) => workspace.id !== input.id,
+            );
+            // Automatic opens pick a free name under the same lock that reserves explicit names.
+            const name =
+              namePolicy === "available"
+                ? availableWorkspaceName(
+                    input.name,
+                    others.map(({ workspace }) => workspace.name),
+                  )
+                : input.name.trim();
+            if (name === "")
+              return yield* new InvalidState({ message: "A workspace needs a name." });
+            const duplicate = others.some(
+              ({ workspace }) => workspace.name.trim().toLowerCase() === name.toLowerCase(),
+            );
+            if (duplicate) {
               return yield* new InvalidState({
-                message: "A saved workspace's charter changes through orchestrator.setCharter.",
+                message: "A workspace with that name already exists.",
               });
             }
-            yield* refuseConnectorEntries(given);
-            const own = slotAgent(given.orchestratorModel);
-            if (own !== undefined && !admittedForRole(own, "orchestrator")) {
+            const projectIds = [...new Set(input.projectIds)] as unknown as typeof input.projectIds;
+            if (!projectIds.includes(input.homeProjectId)) {
               return yield* new InvalidState({
-                message: `${kindName(own)} threads can't be orchestrators yet.`,
+                message: "The home project has to be one of the workspace's projects.",
               });
             }
-          }
-          if (input.id === undefined) {
-            const charter = given ?? subscriptionTaskCharter((yield* store.getSettings).agents);
-            const state: WorkspaceState = {
+            // Every one of them a project Gram knows.
+            yield* projectsOf(projectIds);
+            const given = input.charter;
+            if (given !== undefined) {
+              if (input.id !== undefined) {
+                return yield* new InvalidState({
+                  message: "A saved workspace's charter changes through orchestrator.setCharter.",
+                });
+              }
+              yield* refuseConnectorEntries(given);
+              const own = slotAgent(given.orchestratorModel);
+              if (own !== undefined && !admittedForRole(own, "orchestrator")) {
+                return yield* new InvalidState({
+                  message: `${kindName(own)} threads can't be orchestrators yet.`,
+                });
+              }
+            }
+            if (input.id === undefined) {
+              const charter = given ?? subscriptionTaskCharter((yield* store.getSettings).agents);
+              const state: WorkspaceState = {
+                workspace: {
+                  id: Schema.decodeSync(WorkspaceId)(randomUUID()),
+                  name,
+                  projectIds,
+                  homeProjectId: input.homeProjectId,
+                  createdAt: yield* Clock.currentTimeMillis,
+                },
+                charter,
+              };
+              yield* store.putWorkspace(state);
+              yield* workspacesChanged;
+              return state;
+            }
+            const before = yield* store.getWorkspace(input.id);
+            const holder = before.workspace.orchestratorThreadId;
+            const homeMoves = before.workspace.homeProjectId !== input.homeProjectId;
+            if (homeMoves && holder !== undefined && (yield* findThread(holder)) !== undefined) {
+              return yield* new InvalidState({
+                message:
+                  "The orchestrator works in the home project. Close it before choosing another home.",
+                threadId: holder,
+              });
+            }
+            const state = yield* store.updateWorkspace(input.id, (current) => ({
+              ...current,
               workspace: {
-                id: Schema.decodeSync(WorkspaceId)(randomUUID()),
+                ...current.workspace,
                 name,
                 projectIds,
                 homeProjectId: input.homeProjectId,
-                createdAt: yield* Clock.currentTimeMillis,
               },
-              charter,
-            };
-            yield* store.putWorkspace(state);
+            }));
             yield* workspacesChanged;
+            if (holder !== undefined) {
+              yield* followMembership(input.id, before.workspace.projectIds);
+            }
             return state;
-          }
-          const before = yield* store.getWorkspace(input.id);
-          const holder = before.workspace.orchestratorThreadId;
-          const homeMoves = before.workspace.homeProjectId !== input.homeProjectId;
-          if (homeMoves && holder !== undefined && (yield* findThread(holder)) !== undefined) {
-            return yield* new InvalidState({
-              message:
-                "The orchestrator works in the home project. Close it before choosing another home.",
-              threadId: holder,
-            });
-          }
-          const state = yield* store.updateWorkspace(input.id, (current) => ({
-            ...current,
-            workspace: {
-              ...current.workspace,
-              name,
-              projectIds,
-              homeProjectId: input.homeProjectId,
-            },
-          }));
-          yield* workspacesChanged;
-          if (holder !== undefined) {
-            yield* followMembership(input.id, before.workspace.projectIds);
-          }
-          return state;
-        }),
+          }),
+        ),
       ),
     );
 
@@ -276,6 +296,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
   const commitWorkspace: OrchestrationShape["commitWorkspace"] = (change) =>
     Effect.gen(function* () {
       const expected = change.expected;
+      yield* admitHolder(expected?.workspace.id);
       const id = expected?.workspace.id ?? Schema.decodeSync(WorkspaceId)(randomUUID());
       const write = Effect.gen(function* () {
         const name = change.name.trim();

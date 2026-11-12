@@ -1,5 +1,6 @@
 // One thread's live runtime state, and the small helpers every part of `ThreadRuntimes` reads it with.
 
+import type { StoredActor } from "../host/ownership.ts";
 import {
   type AgentUnavailable,
   type MessageId,
@@ -168,6 +169,11 @@ export interface Runtime {
   >;
   /** The key of each queued notice `sendNotice` may replace, since the server started. */
   readonly noticeKeys: Map<QueueItemId, string>;
+  /**
+   * Who each input was written for, by its id (`recordActor`): kept with it in the store, and
+   * every attempt to send it, after a restart too, runs as them (`host/ownership.ts`).
+   */
+  readonly actors: Map<QueueItemId, StoredActor>;
   turn: Turn | undefined;
   /** Messages still streaming (or finished this turn), by id; subagent transcripts can interleave. */
   readonly open: Map<MessageId, InFlight>;

@@ -264,6 +264,12 @@ export const StoredWorkerQuestion = Schema.Struct({
    * another workspace's); until then a retry or a restart sends it again.
    */
   deliveryOwed: Schema.optionalKey(Schema.Literal(true)),
+  /**
+   * Who the decision was made for, as the call that closed it was (`host/ownership.ts`): its owed
+   * notice goes to the worker as theirs, a retry included, never as the server's own work. Absent
+   * for a decision the server made, and in records written before this was kept.
+   */
+  closedFor: Schema.optionalKey(Schema.Struct({ person: Schema.optionalKey(Schema.String) })),
 });
 export type StoredWorkerQuestion = typeof StoredWorkerQuestion.Type;
 

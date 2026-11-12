@@ -419,6 +419,7 @@ export const makeSessionLifecycle = ({
                 });
                 // Gram's, not the user's word: a hold holds it, across a restart too.
                 rt.noticeKeys.set(id, MACHINE_RESTART_KEY);
+                rt.actors.set(id, "server");
                 yield* syncQueue(rt);
               }
               rt.machineRestart = { machine: restart.machine, continued: restart.continued };

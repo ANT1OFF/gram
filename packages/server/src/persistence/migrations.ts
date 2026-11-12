@@ -543,6 +543,16 @@ const actorEvents = Effect.gen(function* () {
     WHERE thread_id IS NOT NULL`;
 });
 
+/**
+ * Who each queued input was written for (`host/ownership.ts`): `"server"`, or `{ person? }` for a
+ * caller. A restart sends it as them, and only where they may still reach its thread. Null in
+ * rows from before, which are taken as a caller with no signed-in person.
+ */
+const queueActor = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE queue_items ADD COLUMN actor TEXT`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
@@ -552,6 +562,7 @@ export const migrations = {
   "0006_message_parts": messageParts,
   "0007_hosts": hosts,
   "0008_actor_events": actorEvents,
+  "0009_queue_actor": queueActor,
 };
 
 /**

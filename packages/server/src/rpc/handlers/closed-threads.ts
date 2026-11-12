@@ -1,5 +1,6 @@
 import {
   hostOf,
+  isLocalHost,
   InvalidState,
   NotFound,
   type Checkout,
@@ -12,6 +13,8 @@ import { samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { resolveFolder } from "../../fs/folders.ts";
+import { mayReachThread, NOT_YOUR_MACHINE } from "../../host/ownership.ts";
+import { WorkerHosts } from "../../host/worker-host.ts";
 import { Orchestration, type ReopenFields } from "../../orchestration/service.ts";
 import { type ClosedWorker, ThreadStore } from "../../persistence/thread-store.ts";
 import { heldCheckoutPaths, makeThreadCreator } from "../../runtime/create-in-checkout.ts";
@@ -35,6 +38,8 @@ export const makeClosedReopener = (
     // Absent in runtime-only test layers, where no thread is in a workspace.
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const creator = makeThreadCreator({ store, checkouts, runtimes });
+    // Who each machine was started for. Absent in runtime-only test layers.
+    const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
 
     const withProblems = (closed: ReadonlyArray<ClosedThread>) =>
       Effect.gen(function* () {
@@ -79,7 +84,9 @@ export const makeClosedReopener = (
           thread.profile === undefined || checkout.kind !== "main"
             ? undefined
             : (yield* store.listProjects).find((project) => project.id === thread.projectId)?.root;
-        if (folderMissing || shared !== undefined) {
+        // On a joined machine it comes back on that machine, as it was: never re-placed, so it
+        // keeps its owner (`host/ownership.ts`). Its folder there isn't this machine's to check.
+        if (folderMissing || shared !== undefined || !isLocalHost(checkout)) {
           const held = heldCheckoutPaths(yield* store.listThreads, hostOf(checkout));
           if (held.some((path) => samePath(path, checkout.path))) {
             return yield* new InvalidState({ message: "That checkout is already open elsewhere." });
@@ -155,6 +162,17 @@ export const makeClosedReopener = (
     /** A taken entry opened again; one whose session another thread shows is only named. */
     const reopenTaken = (entry: ClosedThread, workers: ReadonlyArray<ClosedWorker>) =>
       Effect.gen(function* () {
+        // Its stored record is the target: the one rule decides, before anything is made, so a
+        // refusal puts the entry back as it was (`host/ownership.ts`).
+        if (
+          hosts !== undefined &&
+          !(yield* mayReachThread(
+            () => Effect.succeed(entry.thread),
+            hosts.ownerOf,
+            entry.thread.id,
+          ))
+        )
+          return yield* new InvalidState({ message: NOT_YOUR_MACHINE, threadId: entry.thread.id });
         const [closed = entry] = yield* withProblems([entry]);
         if (closed.problem === "sessionOpen") return { closed } satisfies ReopenedClosedThread;
         const { thread } = closed;

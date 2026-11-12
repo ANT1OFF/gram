@@ -33,6 +33,11 @@ export interface EmbedConfigShape {
    * `GRAM_OBJECT_STORE_TOKEN`).
    */
   readonly objectStore?: OutsideService;
+  /**
+   * Where a person's machine is asked for, for a headless server whose deployment provisions hosts
+   * on demand (`GRAM_HOST_PROVIDER_URL`, `GRAM_HOST_PROVIDER_TOKEN`; see `on-demand.ts`).
+   */
+  readonly hostProvider?: OutsideService;
 }
 
 export const NO_EMBED: EmbedConfigShape = { repoEvents: "poll" };
@@ -82,7 +87,12 @@ const service = (
 };
 
 /** The variables that carry a secret, which nothing the server starts may inherit. */
-const SECRET_VARIABLES = ["GRAM_EMBED_TOKEN", "GRAM_SCHEDULER_TOKEN", "GRAM_OBJECT_STORE_TOKEN"];
+const SECRET_VARIABLES = [
+  "GRAM_EMBED_TOKEN",
+  "GRAM_SCHEDULER_TOKEN",
+  "GRAM_OBJECT_STORE_TOKEN",
+  "GRAM_HOST_PROVIDER_TOKEN",
+];
 
 /**
  * Takes the embedding secrets out of `env`, once they have been read from it. Agents, terminals and
@@ -103,6 +113,7 @@ export const embedFromEnv = (
   const inboundToken = tokenOf("GRAM_EMBED_TOKEN", env["GRAM_EMBED_TOKEN"]);
   const scheduler = service(env, "GRAM_SCHEDULER");
   const objectStore = service(env, "GRAM_OBJECT_STORE");
+  const hostProvider = service(env, "GRAM_HOST_PROVIDER");
   const events = env["GRAM_REPO_EVENTS"];
   if (events !== undefined && events !== "" && events !== "pushed" && events !== "poll") {
     throw new Error("GRAM_REPO_EVENTS must be `pushed` or `poll`");
@@ -114,10 +125,15 @@ export const embedFromEnv = (
   if (scheduler !== undefined && inboundToken === undefined) {
     throw new Error("GRAM_SCHEDULER_URL needs GRAM_EMBED_TOKEN, for the scheduler's calls back");
   }
+  // A provider reports how a start goes on `/embed/v1/hosts/progress`.
+  if (hostProvider !== undefined && inboundToken === undefined) {
+    throw new Error("GRAM_HOST_PROVIDER_URL needs GRAM_EMBED_TOKEN, for the provider's progress");
+  }
   if (
     inboundToken === undefined &&
     scheduler === undefined &&
     objectStore === undefined &&
+    hostProvider === undefined &&
     events !== "pushed"
   ) {
     return undefined;
@@ -127,5 +143,6 @@ export const embedFromEnv = (
     ...(inboundToken === undefined ? {} : { inboundToken }),
     ...(scheduler === undefined ? {} : { scheduler }),
     ...(objectStore === undefined ? {} : { objectStore }),
+    ...(hostProvider === undefined ? {} : { hostProvider }),
   };
 };

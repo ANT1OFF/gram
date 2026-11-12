@@ -15,6 +15,7 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { parseToolVersion } from "../launch-checks/checks.ts";
+import { NOT_YOUR_MACHINE } from "./ownership.ts";
 import type { Terminals } from "../terminal/terminals.ts";
 
 const BY_REASON: Partial<Record<AgentUnavailableReason, ClaudeSignIn>> = {
@@ -167,9 +168,13 @@ export const openSignInTerminal = (
   return Effect.gen(function* () {
     const host = yield* machine(hostId).pipe(
       Effect.mapError(
-        () =>
+        (error) =>
           new InvalidState({
-            message: "That machine isn't joined and online, so it can't sign in now.",
+            // Another person's machine says so (`ownership.ts`), whether or not it is online.
+            message:
+              (error as { readonly message?: unknown } | undefined)?.message === NOT_YOUR_MACHINE
+                ? NOT_YOUR_MACHINE
+                : "That machine isn't joined and online, so it can't sign in now.",
           }),
       ),
     );

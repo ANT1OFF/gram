@@ -1,6 +1,7 @@
 // What a thread is sent: the user's queue, kept in the store, and the system deliveries waiting
 // for the thread to be free, each sent as a turn or steered into the running one.
 
+import { storedActor } from "../host/ownership.ts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Cause from "effect/Cause";
@@ -38,7 +39,7 @@ import { randomUUID } from "node:crypto";
 import type { JoinQueued, JoinResult, ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 import { missingThreadFolder } from "../fs/folders.ts";
 import type { RuntimeObserver, NotifyObservers, Dispatch } from "./runtime-observer.ts";
-import type { ThreadStoreShape } from "../persistence/thread-store.ts";
+import type { StoredQueuedInput, ThreadStoreShape } from "../persistence/thread-store.ts";
 import type { EventHubShape } from "../events/event-hub.ts";
 import type { CheckoutServiceShape } from "./hooks.ts";
 import type { ThreadWaitsShape } from "../waits/service.ts";
@@ -118,20 +119,24 @@ export const makeMessageQueue = ({
   const persistQueue = (rt: Runtime) =>
     Effect.suspend(() => {
       // Each notice keeps its key in the store, so a restart can't take it for the user's word.
-      const queue = rt.queue.map((item): QueuedInput => {
+      const withActor = <I extends QueuedInput>(item: I): StoredQueuedInput => {
+        const actor = rt.actors.get(item.id);
+        return actor === undefined ? item : { ...item, actor };
+      };
+      const queue = rt.queue.map((item): StoredQueuedInput => {
         const noticeKey = rt.noticeKeys.get(item.id);
-        return noticeKey === undefined ? item : { ...item, noticeKey };
+        return withActor(noticeKey === undefined ? item : { ...item, noticeKey });
       });
-      const head = [rt.launch, rt.inFlight].flatMap((item): ReadonlyArray<QueuedInput> => {
+      const head = [rt.launch, rt.inFlight].flatMap((item): ReadonlyArray<StoredQueuedInput> => {
         if (item === undefined) return [];
         const noticeKey = rt.noticeKeys.get(item.id);
         return [
-          {
+          withActor({
             id: item.id,
             input: item.input,
             turnId: item.turnId,
             ...(noticeKey === undefined ? {} : { noticeKey }),
-          },
+          }),
         ];
       });
       return store.putQueue(rt.threadId, [...head, ...queue]);
@@ -262,7 +267,11 @@ export const makeMessageQueue = ({
       ).pipe(Effect.annotateLogs({ threadId: rt.threadId, turnId: turn.id }));
       yield* withdrawMessage(rt, messageId);
       if (rt.inFlight?.id === messageId) rt.inFlight = undefined;
-      rt.queue.unshift({ id: QueueItemId.make(messageId), input: sent });
+      const kept = QueueItemId.make(messageId);
+      rt.queue.unshift({ id: kept, input: sent });
+      // Kept to be sent again, so it keeps who sent it (`host/ownership.ts`): an input that came
+      // off the queue has its writer already; one sent straight to an idle session is this call's.
+      if (!rt.actors.has(kept)) rt.actors.set(kept, yield* storedActor);
       yield* finishTurn(rt, "interrupted", "sendFailed");
       yield* syncQueue(rt);
       yield* setStatus(rt, "error", `${lost.message} Your message waits at the top of the queue.`);
@@ -555,6 +564,7 @@ export const makeMessageQueue = ({
       const turnId = makeTurnId();
       const input = yield* withWaitNote(rt, typed, turnId);
       rt.launch = { id, input, turnId };
+      rt.actors.set(id, yield* storedActor);
       yield* persistQueue(rt);
       yield* publishMessage(rt, userMessage(input, id, turnId, createdAt), turnId);
     });
@@ -634,6 +644,8 @@ export const makeMessageQueue = ({
                 if (stale >= 0) {
                   const id = rt.queue[stale]!.id;
                   rt.queue[stale] = { id, input };
+                  // New text, new writer: it goes as who wrote it now, not as the one it replaced.
+                  rt.actors.set(id, yield* storedActor);
                   rt.queuedAt.set(id, { at: now, messages: 1 });
                   yield* syncQueue(rt);
                   return { queued: true, replaced: true };
@@ -657,11 +669,16 @@ export const makeMessageQueue = ({
                   input: join({ input: last.input, queuedAt, messages }, input, now),
                 };
                 rt.queuedAt.set(last.id, { at: queuedAt, messages: messages + 1 });
+                // Two writers in one input: if they differ, it is no one's in particular.
+                const joiner = yield* storedActor;
+                if (JSON.stringify(rt.actors.get(last.id)) !== JSON.stringify(joiner))
+                  rt.actors.set(last.id, {});
                 yield* syncQueue(rt);
                 return { queued: true, joined: { queuedAt } };
               }
               const id = makeQueueItemId();
               rt.queue.push({ id, input });
+              rt.actors.set(id, yield* storedActor);
               rt.queuedAt.set(id, { at: now, messages: 1 });
               if (noticeKey !== undefined) rt.noticeKeys.set(id, noticeKey);
               yield* syncQueue(rt);
@@ -1058,14 +1075,17 @@ export const makeQueueMethods = ({
   editQueued: (threadId, itemId, input) =>
     withQueue(threadId, (rt) =>
       queueIndex(rt, itemId).pipe(
-        Effect.map((index) => {
-          // Whoever wrote the item still did: an edited notice never becomes the user's words.
+        Effect.flatMap((index) => Effect.map(storedActor, (actor) => ({ index, actor }))),
+        Effect.map(({ index, actor }) => {
+          // Whoever wrote the item is still shown as having written it (an edited notice never
+          // becomes the user's words), but it goes as whoever edited it: the whole text is theirs.
           const { author: _, ...edited } = input;
           const author = rt.queue[index]!.input.author;
           rt.queue[index] = {
             id: itemId,
             input: author === undefined ? edited : { ...edited, author },
           };
+          rt.actors.set(itemId, actor);
           rt.noticeKeys.delete(itemId);
           // The edit is the whole text now: a join after it starts the numbering again.
           const known = rt.queuedAt.get(itemId);

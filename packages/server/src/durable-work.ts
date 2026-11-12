@@ -10,9 +10,14 @@
 //   have happened before the crash; it checks for that and reports the work done without redoing it.
 // - The intent is marked done only once `perform` says so. A failure or `undefined` leaves it saved
 //   for the next attempt.
+// - The intent is saved with who it is for (`recordActor` in `host/ownership.ts`, read back by
+//   `actor`), and every attempt, a retry after a restart included, runs as them: a person's work
+//   reaches only what they may (a machine started for someone else, never), and is never made the
+//   server's own because the retry has no caller of its own.
 
 import * as Effect from "effect/Effect";
 import { makeKeyedLock } from "./git/keyed-lock.ts";
+import { asRecorded, type RecordedActor } from "./host/ownership.ts";
 
 export interface DurableWork<K, I> {
   /**
@@ -37,6 +42,8 @@ export const makeDurableWork = <K, I, D>(options: {
   readonly read: (key: K) => Effect.Effect<I | undefined>;
   /** Whether `item` still owes its work. */
   readonly owed: (item: I) => boolean;
+  /** Who `item` is for, as it was saved with it (`recordActor`); absent for the server's own. */
+  readonly actor: (item: I, key: K) => Effect.Effect<RecordedActor | undefined>;
   /** The work: what came of it, or `undefined` to leave it owed for the next attempt. */
   readonly perform: (item: I, retry: boolean, key: K) => Effect.Effect<D | undefined>;
   /** Records the work done, returning the item as stored after. */
@@ -49,7 +56,8 @@ export const makeDurableWork = <K, I, D>(options: {
       Effect.gen(function* () {
         const current = yield* options.read(key);
         if (current === undefined || !options.owed(current)) return current;
-        const outcome = yield* options.perform(current, retry, key);
+        const actor = yield* options.actor(current, key);
+        const outcome = yield* asRecorded(actor)(options.perform(current, retry, key));
         return outcome === undefined ? current : yield* options.markDone(current, outcome, key);
       }),
     );

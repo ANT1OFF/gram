@@ -1,3 +1,4 @@
+import type { StoredActor } from "../host/ownership.ts";
 import { AutomaticDreamState, completionBaseline } from "./automatic-dream-state.ts";
 import {
   type PrWakeFired,
@@ -379,6 +380,17 @@ export interface HistoryRewind {
   readonly resumeAt: string | undefined;
 }
 
+/**
+ * A queued input as the store keeps it: with who it was written for (`host/ownership.ts`), which
+ * stays on the server; clients see the `QueuedInput` alone. Absent in rows written before.
+ */
+export type StoredQueuedInput = QueuedInput & { readonly actor?: StoredActor };
+
+const StoredActorJson = Schema.Union([
+  Schema.Literal("server"),
+  Schema.Struct({ person: Schema.optionalKey(Schema.String) }),
+]);
+
 export interface ThreadStoreShape {
   readonly messageReceipt: ReturnType<typeof makeMessageReceipts>;
   usageOverview(
@@ -446,9 +458,9 @@ export interface ThreadStoreShape {
   ): Effect.Effect<{ readonly thread: Thread; readonly changed: boolean }, ThreadNotFound>;
   getCompletedReason(id: ThreadId): Effect.Effect<CompletedReason | undefined>;
 
-  listQueue(threadId: ThreadId): Effect.Effect<ReadonlyArray<QueuedInput>>;
+  listQueue(threadId: ThreadId): Effect.Effect<ReadonlyArray<StoredQueuedInput>>;
   /** Replaces the thread's persisted queue, in order. */
-  putQueue(threadId: ThreadId, queue: ReadonlyArray<QueuedInput>): Effect.Effect<void>;
+  putQueue(threadId: ThreadId, queue: ReadonlyArray<StoredQueuedInput>): Effect.Effect<void>;
   /**
    * Deletes a thread with everything it owns, conversation included. An orchestrator's workspace
    * slot is emptied and its workers lose `spawnedBy` (they keep `workspaceId`); a worker's reports
@@ -1898,7 +1910,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               input: string;
               notice_key: string | null;
               turn_id: string | null;
-            }>`SELECT id, input, notice_key, turn_id FROM queue_items
+              actor: string | null;
+            }>`SELECT id, input, notice_key, turn_id, actor FROM queue_items
               WHERE thread_id = ${threadId} ORDER BY position`.pipe(
               Effect.flatMap((rows) =>
                 readableRows(
@@ -1907,12 +1920,18 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   rows,
                   (r) => `${threadId}/${r.id}`,
                   (r) =>
-                    mapDecoded(decodeStored(UserInput, r.input), (input): QueuedInput => ({
-                      id: r.id as QueueItemId,
-                      input,
-                      ...(r.notice_key === null ? {} : { noticeKey: r.notice_key }),
-                      ...(r.turn_id === null ? {} : { turnId: r.turn_id as TurnId }),
-                    })),
+                    mapDecoded(decodeStored(UserInput, r.input), (input): StoredQueuedInput => {
+                      // One that won't decode is no one's in particular, as an old row is.
+                      const actor =
+                        r.actor === null ? undefined : decodeStored(StoredActorJson, r.actor);
+                      return {
+                        id: r.id as QueueItemId,
+                        input,
+                        ...(r.notice_key === null ? {} : { noticeKey: r.notice_key }),
+                        ...(r.turn_id === null ? {} : { turnId: r.turn_id as TurnId }),
+                        ...(actor === undefined ? {} : { actor: actor.ok ? actor.value : {} }),
+                      };
+                    }),
                 ),
               ),
             ),
@@ -1929,9 +1948,10 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               }
               for (const [position, item] of queue.entries()) {
                 yield* sql`INSERT OR REPLACE INTO queue_items
-                  (thread_id, id, position, input, notice_key, turn_id)
+                  (thread_id, id, position, input, notice_key, turn_id, actor)
                   VALUES (${threadId}, ${item.id}, ${position}, ${toJson(UserInput, item.input)},
-                    ${item.noticeKey ?? null}, ${item.turnId ?? null})`;
+                    ${item.noticeKey ?? null}, ${item.turnId ?? null},
+                    ${item.actor === undefined ? null : toJson(StoredActorJson, item.actor)})`;
               }
             }),
           ),

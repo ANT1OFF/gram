@@ -91,6 +91,10 @@ with a browser's `Origin`.
    { "name": "sandbox-1", "publicKey": "…", "platform": "linux" }
    ```
 
+   A host started on demand for one person ([Hosts on demand](EMBEDDING.md#hosts-on-demand)) also
+   names them: `"owner": "<person>", "onDemand": "personal"` (or `"thread"`). Both or neither; the
+   same key registered again must name the same ones.
+
    It answers `{ "hostId", "fingerprint", "created", "origin" }`. Registering the same key again
    with the same name changes nothing and answers `created: false`. These are refused with `409`:
 

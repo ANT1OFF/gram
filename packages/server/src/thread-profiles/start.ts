@@ -17,6 +17,7 @@ import {
   LOCAL_HOST_ID,
   type ProfileFile,
 } from "@gram/contracts";
+import { keepsOwner, sameOwner } from "../host/ownership.ts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
@@ -415,14 +416,18 @@ export const makeProfileStarter = ({
             Effect.orElseSucceed(() => true),
           );
           if (!(yield* away)) return yield* refuse(MACHINE_STILL_THERE);
-          // Whose the thread is goes with the machine it is on: it moves only to a machine started
-          // for the same person and purpose, so its owner, and its lineage's, stay what they were.
+          // Whose the thread is goes with the machine it is on (`host/ownership.ts`): it moves only
+          // to a machine of the same owner (`keepsOwner`), and of the same purpose, so neither it
+          // nor its orchestration changes hands. The runtimes hold to the owner as well.
           const source = machines.get(from);
           if (source === undefined) return yield* refuse(OWNER_UNKNOWN);
           const target = machines.get(to);
+          const ownerOf = (id: HostId) =>
+            stringField((id === from ? source : id === to ? target : undefined) ?? {}, "owner");
           if (
             target === undefined ||
-            stringField(source, "owner") !== stringField(target, "owner") ||
+            !keepsOwner(ownerOf, thread, { hostId: to }) ||
+            !sameOwner(ownerOf, checkout, { hostId: to }) ||
             stringField(source, "onDemand") !== stringField(target, "onDemand")
           )
             return yield* refuse(NOT_THE_THREADS_OWNER);

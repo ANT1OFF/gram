@@ -55,6 +55,7 @@ describe("migration ordering gate", () => {
         [6, "message_parts"],
         [7, "hosts"],
         [8, "actor_events"],
+        [9, "queue_actor"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -230,6 +231,7 @@ describe("the baseline", () => {
         [6, "message_parts"],
         [7, "hosts"],
         [8, "actor_events"],
+        [9, "queue_actor"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -258,6 +260,7 @@ describe("the baseline", () => {
           "message_parts",
           "hosts",
           "actor_events",
+          "queue_actor",
         ]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
     }),
@@ -297,6 +300,7 @@ describe("the baseline", () => {
             [6, "message_parts"],
             [7, "hosts"],
             [8, "actor_events"],
+            [9, "queue_actor"],
           ]);
           // A closed thread has no live row, but must retain its permanent safety identity.
           if (reopen === 0) {
@@ -457,12 +461,13 @@ describe("the baseline", () => {
       for (let reopen = 0; reopen < 2; reopen++) {
         yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
-          expect((yield* applied).map((row) => row.name).slice(-5)).toEqual([
+          expect((yield* applied).map((row) => row.name).slice(-6)).toEqual([
             "merge_fences",
             "usage_limit_history",
             "message_parts",
             "hosts",
             "actor_events",
+            "queue_actor",
           ]);
           expect(yield* sql`SELECT key, data FROM usage_limits`).toEqual([
             { key: "codex//five_hour", data: '{"synthetic":true}' },

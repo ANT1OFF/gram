@@ -62,7 +62,7 @@ import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
 import { cloneIdentityOf } from "../host/repos.ts";
-import { type WorkerHost, WorkerHosts } from "../host/worker-host.ts";
+import { MachineOwnersForTests, type WorkerHost, WorkerHosts } from "../host/worker-host.ts";
 import { OrchestratorAppToolsLive } from "./tools.ts";
 import { PrDependenciesLive } from "../wakes/pr-dependencies.ts";
 import { ThreadWakesLive } from "../wakes/thread-wakes.ts";
@@ -182,6 +182,11 @@ export interface World {
    * shares a repository with, its `origin` URL and its branch; one it doesn't list has none of
    * them. `identifies: false` is a host from before it could say.
    */
+  /**
+   * Who each machine was started for, by its id, read at each call (`host/ownership.ts`): set it
+   * to place a thread on a machine someone owns.
+   */
+  owners?: Map<string, string> | undefined;
   joinedMachine?:
     | {
         readonly id: HostId;
@@ -611,7 +616,13 @@ export const serverLayer = (
     Layer.provideMerge(hubOf(world)),
     Layer.provideMerge(ThreadStore.layerSqlite(nodePath.join(world.dir, "gram.db"), store)),
     Layer.provideMerge(agents),
-    Layer.provideMerge(TurnHooks.layerNoop),
+    // Who `world.owners` says each machine was started for, beside the hooks: a pipe takes twenty.
+    Layer.provideMerge(
+      Layer.mergeAll(
+        TurnHooks.layerNoop,
+        Layer.succeed(MachineOwnersForTests)({ ownerOf: (id: HostId) => world.owners?.get(id) }),
+      ),
+    ),
     Layer.provideMerge(
       gitPlatformTest({
         proc: countedProc,

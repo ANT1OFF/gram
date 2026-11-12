@@ -50,6 +50,8 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { ActivityTracker } from "./activity.ts";
 import type { AgentHosts } from "./agent-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
+import { ownedRuntimes } from "./owned-runtimes.ts";
+import { asRecorded, fromStored, mayReachThread, type StoredActor } from "../host/ownership.ts";
 import { type CheckoutService, TurnHooks, type TurnHooksShape } from "./hooks.ts";
 import { accountOf, type EarlyReleases, type ReleaseWave } from "./limit-wait.ts";
 import { makeRateLimitGate } from "./rate-limits.ts";
@@ -175,6 +177,11 @@ interface InFlightSend {
 /** What the send of the input in flight came to. */
 interface Handover<E> {
   readonly started: Exit.Exit<void, E>;
+  /**
+   * Its writer may not reach the thread now (`host/ownership.ts`): nothing was sent, and it is
+   * dropped. Never sent as anyone else's, nor tried again.
+   */
+  readonly refused?: true;
 }
 
 /**
@@ -233,7 +240,8 @@ const make = Effect.gen(function* () {
   const waits = yield* ThreadWaits;
   const turnActivity = yield* TurnActivity;
   // Each thread's machine: its session and its checkout go to the machine it is placed on.
-  const { sessions: hosts, checkouts, git } = (yield* WorkerHosts).placed;
+  const workerHosts = yield* WorkerHosts;
+  const { sessions: hosts, checkouts, git } = workerHosts.placed;
   const config = yield* ServerConfig;
   const hooks = turnsHere(yield* TurnHooks, store);
   const sessions = yield* FiberMap.make<ThreadId>();
@@ -413,11 +421,28 @@ const make = Effect.gen(function* () {
           const thread = yield* store.getThread(threadId);
           // The last reported usage survives a restart, so the meter counts on from it.
           const usage = yield* store.lastTurnUsage(threadId);
-          // What the store keeps of each notice's key goes back into `noticeKeys`.
-          const stored = yield* store.listQueue(threadId);
+          // What the store keeps of each notice's key goes back into `noticeKeys`, and of who
+          // each input was for into `actors`. An input whose writer may no longer reach the
+          // thread (its machine is someone else's now) is dropped: kept work is done only as
+          // the one it was written for (`host/ownership.ts`), never as the server's own.
+          const listed = yield* store.listQueue(threadId);
+          const stored: Array<(typeof listed)[number]> = [];
+          for (const item of listed) {
+            const may = yield* asRecorded(fromStored(item.actor))(
+              mayReachThread(store.getThread, workerHosts.ownerOf, threadId),
+            );
+            if (may) stored.push(item);
+            else
+              yield* Effect.logWarning("a queued input not sent: its writer may not reach it").pipe(
+                Effect.annotateLogs({ threadId, itemId: item.id }),
+              );
+          }
+          if (stored.length !== listed.length) yield* store.putQueue(threadId, stored);
           const noticeKeys = new Map<QueueItemId, string>();
+          const actors = new Map<QueueItemId, StoredActor>();
           for (const item of stored) {
             if (item.noticeKey !== undefined) noticeKeys.set(item.id, item.noticeKey);
+            if (item.actor !== undefined) actors.set(item.id, item.actor);
           }
           const rt: Runtime = {
             threadId,
@@ -436,7 +461,7 @@ const make = Effect.gen(function* () {
             cost: makeCostLedger(usage?.costUsd),
             cwd: undefined,
             queue: stored.map((item) => {
-              const { noticeKey, ...queued } = item;
+              const { noticeKey, actor: _actor, ...queued } = item;
               // A notice queued without an author (a limit's "continue") is still Gram's, by its stored key.
               return noticeKey === undefined || queued.input.author !== undefined
                 ? queued
@@ -446,6 +471,7 @@ const make = Effect.gen(function* () {
             inFlight: undefined,
             queuedAt: new Map(),
             noticeKeys,
+            actors,
             turn: undefined,
             open: new Map(),
             remoteCalls: new Set(),
@@ -795,9 +821,23 @@ const make = Effect.gen(function* () {
     lockKey: (handed) => handed.rt.threadId,
     read: (handed) => Effect.sync(() => handed.rt.inFlight),
     owed: (item) => item.sent === undefined,
+    // As who the input was written for (`message-queue.ts` records it), whichever fiber sends it,
+    // the boot's drain included: never the target's owner, nor the server unless it wrote it.
+    actor: (item, { rt }) => Effect.succeed(fromStored(rt.actors.get(item.id))),
     perform: (item, _retry, { rt, published }) =>
       Effect.gen(function* () {
         if (rt.session === undefined) return undefined;
+        // Admitted again as its writer just before it goes, whatever has changed since it was
+        // queued: a live drain and the boot's alike (`host/ownership.ts`).
+        if (!(yield* mayReachThread(store.getThread, workerHosts.ownerOf, rt.threadId))) {
+          yield* Effect.logWarning("a queued input not sent: its writer may not reach it").pipe(
+            Effect.annotateLogs({ threadId: rt.threadId, itemId: item.id }),
+          );
+          // A launch was in the feed already; nothing of it is left to say it went.
+          if (published === true) yield* withdrawMessage(rt, item.id);
+          rt.actors.delete(item.id);
+          return { started: Exit.void, refused: true as const };
+        }
         const started = yield* Effect.exit(
           sendNow(rt, rt.session, item.input, {
             turnId: item.turnId,
@@ -850,13 +890,15 @@ const make = Effect.gen(function* () {
         rt.launch = undefined;
         rt.inFlight = { ...launched, turnId };
         yield* persistQueue(rt);
-        const { started } = yield* sendInFlight({
+        const { started, refused } = yield* sendInFlight({
           rt,
           // In a new turn, its row is published again, under that turn.
           published: turnId === launched.turnId,
         });
-        if (Exit.isSuccess(started)) return;
-        if (rt.turn !== undefined) yield* finishTurn(rt, "interrupted", "sendFailed");
+        if (refused !== true) {
+          if (Exit.isSuccess(started)) return;
+          if (rt.turn !== undefined) yield* finishTurn(rt, "interrupted", "sendFailed");
+        }
       }
       yield* setStatus(rt, "idle");
       if (rt.reopenOnIdle) {
@@ -899,7 +941,9 @@ const make = Effect.gen(function* () {
         yield* syncQueue(rt);
         yield* startIdleTimer(rt);
       } else if (next !== undefined && rt.session !== undefined && rt.inFlight !== undefined) {
-        const { started } = yield* sendInFlight({ rt });
+        const { started, refused } = yield* sendInFlight({ rt });
+        // Dropped: the queue goes on to what is next.
+        if (refused === true) return yield* becomeIdle(rt);
         if (Exit.isFailure(started)) return yield* Effect.failCause(started.cause);
       } else if (rt.session === undefined || !(yield* deliverNext(rt, rt.session))) {
         yield* startIdleTimer(rt);
@@ -1817,5 +1861,6 @@ const make = Effect.gen(function* () {
       ),
   });
   yield* waits.bindTranscript(service);
-  return service;
+  // What reaches the runtimes from outside them changes a thread only for its owners.
+  return ThreadRuntimes.of(ownedRuntimes(service, store.getThread, workerHosts.ownerOf));
 });
