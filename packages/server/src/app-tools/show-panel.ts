@@ -10,7 +10,7 @@ export const showPanelTool = (hub: EventHub["Service"]) =>
       name: "show_panel",
       class: "self",
       description:
-        "Open a panel for the user: `diff` at a file path, `pr`, `files` previewing a file, or `preview` with a localhost port or URL, opening the Preview tab beside the thread on that page (the user's own browser where the app can't), or with an absolute path to a Markdown or HTML file you wrote, such as a report, which it renders there. Loopback only: the user opens other web pages there themselves, and you open a public page with browser_navigate. An HTML file loads only what sits beside it. To read or drive a page, use the browser_* tools.",
+        "Open a panel for the user: `diff` at a file path, `pr`, `files` previewing a file, or `preview` with a localhost port or URL, opening the Preview tab beside the thread on that page (the user's own browser where the app can't), or with an absolute path to a Markdown or HTML file you wrote, such as a report, which it renders there. Loopback only; an HTML file loads only what sits beside it. To read or drive a page on a port, use the browser_* tools.",
     },
     input: Schema.Struct({ panel: PanelKind, target: Schema.optionalKey(Schema.String) }),
     handle: (threadId, { panel, target }) =>
