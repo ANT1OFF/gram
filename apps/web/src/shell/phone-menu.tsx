@@ -136,13 +136,13 @@ export function PhoneMenu() {
         </button>
       </div>
       <EmbedSwitcher placement="drawer" className="px-4 pb-2" />
-      {/* Clear of the foot: the last row scrolls up past the avatar and the pill. */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pt-1 pb-28 [scrollbar-width:none]">
+      {/* The list scrolls above the foot, never under it: no row sits behind the avatar or New. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pt-1 pb-3 [scrollbar-width:none]">
         <Places placement="main" />
       </div>
       <div
         data-testid="phone-menu-foot"
-        className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between bg-linear-to-t from-sidebar from-55% to-transparent px-5 pt-10 pb-[max(1.25rem,env(safe-area-inset-bottom))] [&>*]:pointer-events-auto"
+        className="flex shrink-0 items-center justify-between border-t border-edge bg-sidebar px-5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]"
       >
         <YouButton />
         <NewEntryMenu pill />
