@@ -120,6 +120,7 @@ export const NO_LAUNCH_CHECKS = (now: number): LaunchChecks => ({
   tools: [],
   claudeSignIn: "unknown",
   ghSignedIn: false,
+  headless: true,
 });
 
 /** `app.launchChecks`. Nothing runs until asked. */
