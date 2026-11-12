@@ -397,7 +397,7 @@ test("the embedding app can count what needs someone itself", async ({ page }) =
 });
 
 test("the sidebar can be drawn roomy, with the app's head and account", async ({ page }) => {
-  const errors = await mounted(page, "/govern/limits");
+  const errors = await mounted(page, "/govern/agents/a-1");
   await page.evaluate(() => {
     const w = window as unknown as Update & { fixtureSidebar: object };
     w.embed.update({ sidebar: w.fixtureSidebar });
@@ -415,28 +415,28 @@ test("the sidebar can be drawn roomy, with the app's head and account", async ({
   // Headings in small capitals, rows 40 px tall.
   const heading = sidebar.getByTestId("embed-navigation-heading").first();
   await expect(heading).toHaveCSS("text-transform", "uppercase");
-  const limits = sidebar.getByRole("link", { name: "Limits" });
+  const limits = sidebar.getByTestId("embed-navigation-main").getByRole("link", { name: /Runs/ });
   expect((await limits.boundingBox())?.height).toBe(40);
-  // The current row: a solid tile behind its icon, the glide on that tile, a bold label.
+  // The current row: a bold label on the glide, which fills the whole row as a hover does.
   await expect(limits).toHaveAttribute("aria-current", "page");
   await expect(limits).toHaveCSS("font-weight", "600");
-  const glide = page.getByTestId("embed-navigation").getByTestId("embed-navigation-glide");
-  await expect.poll(async () => (await glide.boundingBox())?.width).toBe(32);
-  // Search's shortcut as key caps.
+  const glide = page.getByTestId("embed-navigation-main").getByTestId("embed-navigation-glide");
+  const row = await limits.boundingBox();
+  await expect.poll(async () => (await glide.boundingBox())?.width).toBe(row?.width);
+  // Search's shortcut as key caps, above the list rather than in it: it stays as the list scrolls.
   await expect(sidebar.getByTestId("key-caps").locator("kbd")).toHaveCount(2);
-  // The foot, one block: the app's other places, History, Settings and the account, each a row.
+  expect(
+    await sidebar
+      .getByTestId("overview-search")
+      .evaluate((search) => search.closest(".overflow-y-auto") === null),
+  ).toBe(true);
+  // The foot: one row of icons, each named, and the account under it.
   const foot = sidebar.getByTestId("overview-roomy-foot");
-  await expect(foot.getByTestId("embed-navigation")).toBeVisible();
-  await expect(foot.getByTestId("overview-history")).toHaveText("History");
-  await expect(foot.getByTestId("overview-settings")).toHaveText("Settings");
+  const icons = foot.getByTestId("overview-roomy-foot-icons");
+  await expect(icons.getByRole("link", { name: /Limits/ })).toBeVisible();
+  await expect(icons.getByTestId("overview-history")).toHaveAccessibleName("History");
+  await expect(icons.getByTestId("overview-settings")).toHaveAccessibleName("Settings");
   await expect(foot.getByTestId("fixture-account")).toBeVisible();
-  // The current row keeps its icon under the pointer: the background's colour on the solid tile.
-  await limits.hover();
-  const colours = await limits.evaluate((row) => {
-    const tile = row.querySelector("[data-glide-tile]")!;
-    return [getComputedStyle(tile).color, getComputedStyle(document.body).backgroundColor];
-  });
-  expect(colours[0]).toBe(colours[1]);
   // Collapse is an icon at the head.
   await expect(foot.getByTestId("overview-compact")).toHaveCount(0);
   await sidebar.getByTestId("overview-compact").click();
@@ -446,9 +446,9 @@ test("the sidebar can be drawn roomy, with the app's head and account", async ({
   const overlay = page.getByTestId("hosted-rail-overlay");
   await expect(overlay.getByTestId("overview-sidebar")).toHaveAttribute("data-look", "roomy");
   await expect(overlay.getByTestId("overview-compact")).toHaveCount(0);
-  // The current place's tile is drawn there too, from the overlay's first frame.
+  // The current place's fill is drawn there too, from the overlay's first frame.
   await expect(
-    overlay.getByTestId("embed-navigation").getByTestId("embed-navigation-glide"),
+    overlay.getByTestId("embed-navigation-main").getByTestId("embed-navigation-glide"),
   ).toBeVisible();
   await expect(overlay.getByTestId("overview-pin")).toBeVisible();
   await overlay.getByTestId("overview-pin").click();
