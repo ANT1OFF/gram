@@ -1128,6 +1128,19 @@ same problems. Nothing is written into the project's own folder. Deleting a file
 edit: no overrides, or no scripts, then apply. Without a last good version, Gram applies what it
 could read, as before.
 
+## The agent guide
+
+Each time it starts, Gram writes `AGENTS.md` into its data folder: a guide for agents to read on
+demand, generated from the release that runs. It explains the roles and approval classes, lists
+the files above that an agent may read or edit (and the error files), every setting
+`settings_read` shows (and the user-only ones, with why), and every tool, with its class, its
+roles and its input fields. `settings_read` names the file's path in its result.
+
+The guide costs nothing until an agent reads it, unlike a tool's description, which every session
+pays for at its start. A test (`packages/server/src/guide/agent-guide.test.ts`) builds the whole
+server and fails when the guide misses a tool any role is bound with, or a setting. Edits to the
+file are replaced at the next start.
+
 ## Project scripts
 
 A project's common commands (build, test, lint, dev) can be saved as project scripts and run

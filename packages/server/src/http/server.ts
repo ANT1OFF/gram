@@ -975,7 +975,8 @@ export const ServerLayer: Layer.Layer<
   | McpTokens
   | ThreadRuntimes
   | ThreadStore
-  | EventHub,
+  | EventHub
+  | AppToolRegistry,
   unknown,
   AgentHosts | ServerConfig | GitPlatform | TurnHooks
 > = Layer.unwrap(
