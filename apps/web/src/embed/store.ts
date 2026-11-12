@@ -5,6 +5,7 @@ import { create } from "zustand";
 import type {
   ShellAttention,
   ShellContributions,
+  ShellDocument,
   ShellNavigationGroup,
   ShellNavigationPlacement,
   ShellNewEntry,
@@ -44,6 +45,8 @@ export interface EmbedShellState {
   readonly sidebar: ShellSidebar;
   /** The embedding app's cards under its own tools' calls. Set once, at mount. */
   readonly toolCards: readonly ShellToolCard[];
+  /** The browser tab's title; Gram's own while empty. */
+  readonly document: ShellDocument;
 }
 
 export const useEmbedShell = create<EmbedShellState>()(() => ({
@@ -59,6 +62,7 @@ export const useEmbedShell = create<EmbedShellState>()(() => ({
   home: undefined,
   sidebar: {},
   toolCards: [],
+  document: {},
 }));
 
 /** What the store holds before anything is added, and again after `unmount`. */
@@ -75,6 +79,7 @@ export const EMPTY_SHELL: EmbedShellState = {
   home: undefined,
   sidebar: {},
   toolCards: [],
+  document: {},
 };
 
 /** Whether the open sidebar is drawn in the embedding app's `roomy` look: never on Gram's own. */

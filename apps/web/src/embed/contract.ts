@@ -205,6 +205,26 @@ export interface ShellToolCard {
   readonly component: ComponentType<ShellToolCardProps>;
 }
 
+/** What the browser tab's title is made from. */
+export interface ShellDocumentPage {
+  /**
+   * The name of the page the window is on, as the title bar says it: an added page's, the home's,
+   * or the page of every thread's. Undefined on Gram's other pages, a thread's among them.
+   */
+  readonly name: string | undefined;
+  /** How many things need the person, by Gram's own count of its threads: 0 when nothing does. */
+  readonly needsYou: number;
+}
+
+/** The browser tab, as the embedding app names it. */
+export interface ShellDocument {
+  /**
+   * The tab's whole title, written again whenever the page or the count changes: "(1) Gram" when
+   * left out, as on Gram's own.
+   */
+  readonly title?: (page: ShellDocumentPage) => string;
+}
+
 /** What the embedding app adds to Gram's shell. Everything is optional. */
 export interface ShellContributions {
   /** Pages beside Gram's own. Read once, when the app mounts. */
@@ -241,6 +261,8 @@ export interface ShellContributions {
   readonly sidebar?: ShellSidebar;
   /** Cards of the embedding app's under its own tools' calls. Read once, when the app mounts. */
   readonly toolCards?: readonly ShellToolCard[];
+  /** The browser tab's title. Replaceable through `GramHandle.update`. */
+  readonly document?: ShellDocument;
 }
 
 /** The server one mount talks to. */
@@ -286,7 +308,8 @@ export interface GramHandle {
   readonly shell: "on" | "off";
   /**
    * Replaces what `next` names of the navigation groups, the switcher, the thread list, the
-   * right panel's pages, the attention count and the sidebar's look, and leaves what it doesn't name as it is: `update({ navigation })` changes counts and keeps the
+   * right panel's pages, the attention count, the sidebar's look and the tab's title, and leaves
+   * what it doesn't name as it is: `update({ navigation })` changes counts and keeps the
    * switcher. A key given as `undefined` takes that part away. Routes stay as mounted.
    */
   update(
@@ -300,6 +323,7 @@ export interface GramHandle {
       | "threadsPage"
       | "newEntry"
       | "sidebar"
+      | "document"
     >,
   ): void;
   /** Moves the window to a path under the app. */

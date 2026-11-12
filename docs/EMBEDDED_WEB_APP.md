@@ -75,7 +75,7 @@ hosted features on and sample threads in it. It needs no server at all, which ma
 build and test the pages around Gram.
 
 The answer is a handle: `shell` says `"on"` or `"off"` (whether the server took your additions),
-`update` replaces what it names of the navigation, the switcher, `threads`, `panel`, `threadsPage` and `newEntry` and keeps the rest
+`update` replaces what it names of the navigation, the switcher, `threads`, `panel`, `threadsPage`, `newEntry` and `document` and keeps the rest
 (`update({ navigation })` changes counts and keeps the switcher; a key given as `undefined` takes
 that part away), `navigate` moves the window to a path under the app, and `unmount` takes the app
 off the page.
@@ -133,6 +133,14 @@ palette, and words its button, which then starts a chat. `newEntry: { label: "Ne
 yours in place of Gram's menu of Task, Team and Chat: for an app where what a person mostly starts
 is something of its own. Gram's New form stays reachable from the threads page, the palette and its
 shortcuts. Change either through `update`.
+
+**The tab, in your name.** `document: { title: ({ name, needsYou }) => string }` writes the
+browser tab's whole title, in place of Gram's "(2) Gram". `name` is the page's name as the title bar
+says it (an added page's, the home's, the threads page's; undefined on Gram's other pages, a
+thread's among them) and `needsYou` is Gram's count of its threads that need the person. It is
+called again whenever either changes; one that throws leaves Gram's own title. Change it through
+`update({ document })`, say once your organisation's name is known. The favicon is your page's to
+bring, in its own `index.html`.
 
 **Your own tools, as your own things.** `toolCards: [{ tool: "mcp__*__create_order", component:
 OrderCard }]` draws a card of yours under a tool call's row once the call has answered: for a tool
