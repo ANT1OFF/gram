@@ -191,7 +191,11 @@ function YouButton() {
         )}
       </Drawer.Trigger>
       <Drawer.Portal>
-        <Drawer.Backdrop className="fixed inset-0 z-50 scrim opacity-[calc(1-var(--drawer-swipe-progress,0))] transition-opacity duration-(--dur-base) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 data-swiping:duration-0" />
+        <Drawer.Backdrop
+          // Over the menu, itself a dialog: a nested backdrop is left out unless forced.
+          forceRender
+          className="fixed inset-0 z-50 scrim opacity-[calc(1-var(--drawer-swipe-progress,0))] transition-opacity duration-(--dur-base) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 data-swiping:duration-0"
+        />
         <Drawer.Viewport className="fixed inset-0 z-50 flex items-end justify-center">
           <Drawer.Popup
             data-surface="overlay"
@@ -242,7 +246,7 @@ function YouButton() {
                     role="radiogroup"
                     aria-label="Theme"
                     data-testid="phone-menu-theme"
-                    className="flex shrink-0 gap-0.5 rounded-full bg-muted p-1"
+                    className="flex shrink-0 gap-0.5 rounded-full bg-sidebar-row-active p-1"
                   >
                     {MODE_PREFS.map((choice) => (
                       <button
