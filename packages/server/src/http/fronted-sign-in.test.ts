@@ -20,6 +20,7 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { HttpServer, RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
 import { NO_ACTOR_REFUSAL, VIEWER_REFUSAL } from "../rpc/actor-guard.ts";
 import { ANSWER_OVER_HTTP, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
+import { ON_DEMAND_START_PATH, ON_DEMAND_STATUS_PATH } from "../embedding/on-demand.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG, waitFor } from "../runtime/test-harness.ts";
@@ -60,7 +61,23 @@ const sinkPort = await new Promise<number>((resolve) => {
 /** Each server's own data folder, removed when the file's tests end. */
 const dataDirs: string[] = [];
 
-const server = (embedding: boolean, socketLifetimeMs?: number) => {
+/** A host provider: every start or stop the server asks of it, in order. */
+const provided: Array<{ path: string; body: Record<string, unknown> }> = [];
+const providerPort = await new Promise<number>((resolve) => {
+  const receiver = createServer((req, res) => {
+    let text = "";
+    req.on("data", (chunk: Buffer) => (text += chunk.toString("utf8")));
+    req.on("end", () => {
+      provided.push({ path: req.url ?? "", body: JSON.parse(text) as Record<string, unknown> });
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ hostKey: "personal:ws:user-ada" }));
+    });
+  });
+  receiver.unref();
+  receiver.listen(0, "127.0.0.1", () => resolve((receiver.address() as { port: number }).port));
+});
+
+const server = (embedding: boolean, socketLifetimeMs?: number, onDemand = false) => {
   const dataDir = mkdtempSync(join(tmpdir(), "gram-fronted-data-"));
   dataDirs.push(dataDir);
   return ServerLayer.pipe(
@@ -79,6 +96,15 @@ const server = (embedding: boolean, socketLifetimeMs?: number) => {
         },
         embedding,
         eventSink: { url: `http://127.0.0.1:${sinkPort}/events` },
+        ...(onDemand
+          ? {
+              embed: {
+                repoEvents: "poll" as const,
+                inboundToken: "i".repeat(40),
+                hostProvider: { url: `http://127.0.0.1:${providerPort}`, token: "p".repeat(40) },
+              },
+            }
+          : {}),
       }),
     ),
     Layer.orDie,
@@ -623,6 +649,62 @@ describe("sign-in through a fronting proxy", () => {
       }),
     );
   });
+
+  layer(server(true, undefined, true), { excludeTestServices: true })(
+    "with hosts provisioned on demand",
+    (it) => {
+      it.effect(
+        "asks the provider for a person's machine with the proxy's proof, and never for a viewer",
+        () =>
+          Effect.gen(function* () {
+            const { port } = yield* info;
+            provided.length = 0;
+            const body = JSON.stringify({ repositories: ["acme/web"] });
+            const adaStatement = proxy.statement(ada);
+            const started = yield* post(port, ON_DEMAND_START_PATH, body, {
+              [IDENTITY_HEADER]: adaStatement,
+            });
+            expect(started.status).toBe(202);
+            expect(provided).toEqual([
+              {
+                path: "/hosts/start",
+                body: {
+                  kind: "personal",
+                  owner: "user-ada",
+                  options: { repositories: ["acme/web"] },
+                  proof: {
+                    statement: adaStatement,
+                    method: "POST",
+                    path: ON_DEMAND_START_PATH,
+                    body,
+                  },
+                },
+              },
+            ]);
+            // Her status shows the start; Grace's shows nothing of hers.
+            const mine = yield* get(port, ON_DEMAND_STATUS_PATH, {
+              [IDENTITY_HEADER]: proxy.statement(ada),
+            });
+            expect(JSON.parse(mine.body)).toMatchObject({
+              available: true,
+              progress: { hostKey: "personal:ws:user-ada", phase: "starting" },
+            });
+            const hers = yield* get(port, ON_DEMAND_STATUS_PATH, {
+              [IDENTITY_HEADER]: proxy.statement(grace),
+            });
+            expect(JSON.parse(hers.body)).toEqual({ available: true });
+            // A viewer can't, and nobody unsigned can: the provider is asked nothing more.
+            expect(
+              (yield* post(port, ON_DEMAND_START_PATH, "{}", {
+                [IDENTITY_HEADER]: proxy.statement(vera),
+              })).status,
+            ).toBe(403);
+            expect((yield* post(port, ON_DEMAND_START_PATH, "{}")).status).toBe(401);
+            expect(provided).toHaveLength(1);
+          }),
+      );
+    },
+  );
 
   layer(server(false), { excludeTestServices: true })("with the hosted features off", (it) => {
     it.effect("takes the launch token as before, and no proxy's word", () =>

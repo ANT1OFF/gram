@@ -109,7 +109,12 @@ const headless = (
     hosts: {
       ...(options.headless === false
         ? {}
-        : { headless: { machine: options.machine ?? Effect.succeed(MACHINE) } }),
+        : {
+            headless: {
+              machine: options.machine ?? Effect.succeed(MACHINE),
+              ownerOf: () => undefined,
+            },
+          }),
       get: (id) =>
         id === MACHINE
           ? Effect.succeed(host)

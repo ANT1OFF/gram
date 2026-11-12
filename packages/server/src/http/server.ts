@@ -54,6 +54,12 @@ import { LOOPBACK_HOST, ServerConfig } from "../config.ts";
 import { Embedding } from "../embedding/embedding.ts";
 import { EmbedInbound, EMBED_PREFIX } from "../embedding/inbound.ts";
 import { RepoEventsInboundLive } from "../embedding/repo-events.ts";
+import {
+  OnDemand,
+  OnDemandLive,
+  ON_DEMAND_PATHS,
+  onDemandRequest,
+} from "../embedding/on-demand.ts";
 import { ObjectStoreLive } from "../embedding/object-store.ts";
 import { TimersLive } from "../embedding/timers.ts";
 import { SuppliedSettingsLive } from "../settings/supplied.ts";
@@ -234,6 +240,8 @@ export const AuthMiddleware = HttpRouter.middleware(
     const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
     // Absent in tests that serve the middleware alone.
     const embedInbound = Option.getOrUndefined(yield* Effect.serviceOption(EmbedInbound));
+    // Hosts provisioned on demand for one person each, when the deployment provides them.
+    const onDemand = Option.getOrUndefined(yield* Effect.serviceOption(OnDemand));
     /**
      * Whether provisioned hosts are on: one of the hosted features, read at each dial and each
      * registration so the switch holds at once.
@@ -437,6 +445,23 @@ export const AuthMiddleware = HttpRouter.middleware(
             );
             return secureResponse(answered);
           }
+          // A person's own machine, started on demand: what the proxy signed for the request is
+          // the provider's proof that this person asked.
+          if (
+            ON_DEMAND_PATHS.has(target.path) &&
+            onDemand !== undefined &&
+            remoteHosts !== undefined
+          )
+            return secureResponse(
+              yield* onDemandRequest(
+                onDemand,
+                () => remoteHosts.list(),
+                request,
+                target.path,
+                stated.actor,
+                request.headers[IDENTITY_HEADER] ?? "",
+              ),
+            );
           // An answer to a card, as its own request: what the proxy signed for it goes with it.
           if (target.path === ASK_ANSWER_PATH && runtimes !== undefined && store !== undefined)
             return secureResponse(
@@ -776,6 +801,7 @@ export const ServerCore = Layer.unwrap(
         DevServerAppToolsLive,
         ThreadAssistLive,
         RepoEventsInboundLive,
+        OnDemandLive,
         SuppliedSettingsLive,
       )
         // Above the merges, which it asks again when a dependency merges; a `pipe` takes twenty.

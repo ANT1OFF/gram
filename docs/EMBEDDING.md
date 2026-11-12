@@ -11,14 +11,16 @@ whatever its environment says.
 The seams are configured from the server's environment, never from settings, and a malformed
 value stops the server at start rather than half-configuring it.
 
-| Variable                  | What it sets                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------ |
-| `GRAM_EMBED_TOKEN`        | The bearer token the platform's services send on `/embed/v1/*`                 |
-| `GRAM_REPO_EVENTS`        | `pushed`: repository events arrive on `/embed/v1/repo-events`; needs the token |
-| `GRAM_SCHEDULER_URL`      | Where wakes, snoozes and routine runs are registered; needs the token          |
-| `GRAM_SCHEDULER_TOKEN`    | The bearer token sent to the scheduler                                         |
-| `GRAM_OBJECT_STORE_URL`   | Where attachments, docs and outputs are kept as well as on the disk            |
-| `GRAM_OBJECT_STORE_TOKEN` | The bearer token sent to the object store                                      |
+| Variable                   | What it sets                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------ |
+| `GRAM_EMBED_TOKEN`         | The bearer token the platform's services send on `/embed/v1/*`                 |
+| `GRAM_REPO_EVENTS`         | `pushed`: repository events arrive on `/embed/v1/repo-events`; needs the token |
+| `GRAM_SCHEDULER_URL`       | Where wakes, snoozes and routine runs are registered; needs the token          |
+| `GRAM_SCHEDULER_TOKEN`     | The bearer token sent to the scheduler                                         |
+| `GRAM_OBJECT_STORE_URL`    | Where attachments, docs and outputs are kept as well as on the disk            |
+| `GRAM_OBJECT_STORE_TOKEN`  | The bearer token sent to the object store                                      |
+| `GRAM_HOST_PROVIDER_URL`   | Where a person's machine is asked for, on a headless server; needs the token   |
+| `GRAM_HOST_PROVIDER_TOKEN` | The bearer token sent to the host provider                                     |
 
 Tokens are at least 32 characters with no whitespace. The server takes them out of its own
 environment once it has read them, so no agent, terminal or `git` process it starts inherits one.
@@ -171,6 +173,51 @@ Limits:
 - A send that fails is tried again at the next walk, and an output's at the next time it is recorded.
 - A delete the store didn't confirm is kept in `object-store.json` and asked again at each walk.
 - A file is sent only from where it was when it was checked: one whose folder has since become a link is left out, and the log says so.
+
+## Hosts on demand
+
+A headless server runs no work itself: a thread needs a machine. With `GRAM_HOST_PROVIDER_URL` set,
+the deployment can start one for the person who asks, and the server places that person's work on
+it and nobody else's.
+
+**A person asks.** A person signed in through the proxy sends a plain HTTP request, which the proxy
+signs and can bind to that one request (its method, path and the hash of its body):
+
+```http
+POST /machines/on-demand/start
+{ "repositories": ["acme/web", "acme/api"] }
+```
+
+A viewer is refused. A person whose machine is online is told so, and nothing is asked. Otherwise
+the server asks the provider, passing the proxy's statement on exactly as received, as the
+provider's proof that this person asked:
+
+```http
+POST <GRAM_HOST_PROVIDER_URL>/hosts/start
+Authorization: Bearer <GRAM_HOST_PROVIDER_TOKEN>
+
+{ "kind": "personal", "owner": "<person>", "options": { "repositories": [...] },
+  "proof": { "statement": "…", "method": "POST", "path": "/machines/on-demand/start", "body": "…" } }
+→ { "hostKey": "<the provider's name for this host>" }
+```
+
+`POST /machines/on-demand/stop` asks `<url>/hosts/stop` the same way, and
+`GET /machines/on-demand/status` answers the person with their own machine and the start's progress.
+Nothing else starts one: an agent, a skill or a repository's instructions have no path to these.
+
+**The provider registers the host** as any provisioned host ([Provisioned hosts](PROVISIONED_HOSTS.md)),
+naming the person in `owner` and `onDemand: "personal"`. From then on:
+
+- a thread that person starts with no machine named goes on their own machine while it is online;
+- a host started for one person is never anyone's default, and work that names it for anyone else
+  is refused;
+- a person with no machine of their own is told to start one, where before they were told to join
+  one.
+
+**The provider reports progress** while it starts the host, on `POST /embed/v1/hosts/progress`
+with `{ owner, hostKey, phase, step?, message? }`. `phase` is one of `starting`, `booting`,
+`joining`, `ready`, `stopping`, `stopped` or `failed`. Only a host key the server asked for, for that
+owner, is taken: anything else is `404`. Progress is kept in memory, for the person's status.
 
 ## Settings supplied from outside
 

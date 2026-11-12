@@ -195,7 +195,10 @@ describe("placedHost", () => {
       expect(placed.checkouts.place).toBeUndefined();
       expect(calls).toEqual([]);
 
-      const headless = setup({ value: true }, { machine: Effect.succeed(MACHINE) });
+      const headless = setup(
+        { value: true },
+        { machine: Effect.succeed(MACHINE), ownerOf: () => undefined },
+      );
       const request = yield* headless.placed.checkouts.place!({ kind: "current" });
       expect(request).toEqual({ kind: "current", hostId: MACHINE });
       yield* headless.placed.checkouts.prepare(request, [], LOCAL_PATH);

@@ -23,6 +23,7 @@ import { filesOn, type HostFiles } from "./files.ts";
 import type { HostFolders } from "./folders.ts";
 import { type HeadlessPlacement, headlessLocal, headlessPlacement } from "./headless.ts";
 import { LocalHostProcess } from "./local-process.ts";
+import { Embedding } from "../embedding/embedding.ts";
 import { RemoteHosts, type RemoteHostsShape } from "./remote-hosts.ts";
 import { type MachineParts, placedHost } from "./placed.ts";
 import { machineHosts } from "./remote-worker-host.ts";
@@ -330,9 +331,14 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
       // A headless Gram (`GRAM_HEADLESS=1`) keeps this machine for reading only, and places what
       // names no machine on a joined one.
       const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
+      const embedding = Option.getOrUndefined(yield* Effect.serviceOption(Embedding));
       const headless =
         config?.headless === true
-          ? headlessPlacement(Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts)))
+          ? headlessPlacement(
+              Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts)),
+              // With hosts provisioned on demand, a person with no machine is told to start one.
+              embedding?.config.hostProvider !== undefined,
+            )
           : undefined;
       const local: WorkerHost = {
         id: LOCAL_HOST_ID,
