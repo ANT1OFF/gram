@@ -457,9 +457,9 @@ export function OverviewSidebar({
                   <PanelLeftClose />
                 </Hint>
                 {/* The sidebar's own two, side by side and drawn apart: Hide folds it away, Compact
-            narrows it to tiles. Settings is at the foot, beside History. */}
+            narrows it to a strip. Settings is at the foot, beside History. */}
                 <Hint
-                  label="Compact sidebar: workspaces as tiles"
+                  label="Compact sidebar: a strip that opens on hover"
                   side="bottom"
                   render={
                     <Button
@@ -548,7 +548,7 @@ export const switchOverview = (mode: "open" | "compact") => {
   requestAnimationFrame(() =>
     document
       .querySelector<HTMLElement>(
-        mode === "compact" ? '[data-testid="overview-expand"]' : '[data-testid="overview-compact"]',
+        mode === "compact" ? '[data-testid="overview-hide"]' : '[data-testid="overview-compact"]',
       )
       ?.focus(),
   );

@@ -17,14 +17,11 @@ export const toggleOverviewSidebar = (): void => {
   handFocusOn();
 };
 
-/** What marks a compact tile's flyout, which is portalled out of the overview to the page's end. */
-export const OVERVIEW_FLYOUT = "data-overview-flyout";
-
-/** Whether an element is in the overview, open or compact, or in one of its tiles' flyouts. */
+/** Whether an element is in the overview: open, compact, or open over the page beside the strip. */
 export const inOverview = (element: Element | null | undefined): boolean =>
-  element?.closest(`[${OVERVIEW_ROOT}], [${OVERVIEW_FLYOUT}]`) != null;
+  element?.closest(`[${OVERVIEW_ROOT}]`) != null;
 
-/** Whether the focus is in the overview, open or compact, or in one of its tiles' flyouts. */
+/** Whether the focus is in the overview: open, compact, or open over the page beside the strip. */
 export const focusInOverview = (): boolean => inOverview(document.activeElement);
 
 /**

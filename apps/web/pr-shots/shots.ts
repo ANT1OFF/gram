@@ -1293,13 +1293,25 @@ const SNOOZE_SHOTS: readonly Shot[] = [
   {
     name: "sidebar-realistic-900",
     title:
-      "The realistic morning at 900 px, where the overview is its compact rail: a monogram per workspace, a glyph for the solo threads",
+      "The realistic morning at 900 px, where the overview is its compact strip: a monogram per workspace, a glyph for the solo threads",
     open: async (page) => {
       await openRealisticMorning(page);
       await page.setViewportSize({ width: 900, height: 900 });
       await page.getByTestId("overview-rail").waitFor();
       await page.mouse.move(700, 500);
       await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "sidebar-realistic-900-hover",
+    title:
+      "The same compact overview with the pointer resting on a workspace's tile in it, as a hand reaches for it",
+    open: async (page) => {
+      await openRealisticMorning(page);
+      await page.setViewportSize({ width: 900, height: 900 });
+      const tile = page.getByTestId("overview-rail").getByTestId("overview-tile").nth(1);
+      await tile.hover();
+      await page.waitForTimeout(800);
     },
   },
 ];

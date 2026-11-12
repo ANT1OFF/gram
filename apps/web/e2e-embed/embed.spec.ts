@@ -192,7 +192,7 @@ test("a group can lead the sidebar, above the threads, with counts", async ({ pa
   const railMain = page.getByTestId("embed-rail-navigation-main");
   const tile = railMain.getByRole("link", { name: "Build: Runs, 12" });
   await expect(tile.getByTestId("embed-navigation-dot")).toBeVisible();
-  expect(await top("embed-rail-navigation-main")).toBeLessThan(await top("hosted-rail-history"));
+  expect(await top("embed-rail-navigation-main")).toBeLessThan(await top("overview-rail-history"));
   expect(errors).toEqual([]);
 });
 
@@ -260,20 +260,20 @@ test("compact, the sidebar is a quiet strip that opens over the page on hover", 
   await expect(strip).toHaveAttribute("data-hosted", "");
   // What the open sidebar holds, in its order, and no workspace or thread tiles.
   await expect(strip.getByTestId("embed-switcher")).toBeVisible();
-  await expect(strip.getByTestId("hosted-rail-needs-you-dot")).toBeVisible();
-  await expect(strip.getByTestId("hosted-rail-search")).toBeVisible();
+  await expect(strip.getByTestId("overview-rail-needs-you-dot")).toBeVisible();
+  await expect(strip.getByTestId("overview-rail-search")).toBeVisible();
   await expect(strip.getByRole("link", { name: "Govern: Policies" })).toHaveAttribute(
     "aria-current",
     "page",
   );
-  await expect(strip.getByTestId("hosted-rail-history")).toBeVisible();
+  await expect(strip.getByTestId("overview-rail-history")).toBeVisible();
   await expect(page.getByTestId("overview-tile")).toHaveCount(0);
   // Once the column has finished narrowing.
   await expect.poll(async () => (await strip.boundingBox())?.width).toBe(60);
   const mainBox = await page.locator("main").boundingBox();
 
   // Resting on it opens the sidebar beside it, over the page: the page doesn't move.
-  const overlay = page.getByTestId("hosted-rail-overlay");
+  const overlay = page.getByTestId("overview-rail-overlay");
   await strip.hover({ position: { x: 20, y: 400 } });
   await expect(overlay).toBeVisible();
   await expect
@@ -305,7 +305,7 @@ test("compact, the sidebar is a quiet strip that opens over the page on hover", 
 
   // The keyboard opens it too, and its pin keeps the sidebar open.
   await page.mouse.move(900, 400);
-  await strip.getByTestId("hosted-rail-search").focus();
+  await strip.getByTestId("overview-rail-search").focus();
   await page.keyboard.press("Tab");
   await page.keyboard.press("Shift+Tab");
   await expect(overlay).toBeVisible();
@@ -410,25 +410,25 @@ test("the embedding app can count what needs someone itself", async ({ page }) =
 
   // The compact strip's tile follows the same count, and goes to the same place.
   await page.getByTestId("overview-compact").click();
-  const tile = page.getByTestId("hosted-rail-needs-you");
+  const tile = page.getByTestId("overview-rail-needs-you");
   await expect(tile).toHaveAccessibleName("5 to review");
-  await expect(page.getByTestId("hosted-rail-needs-you-dot")).toBeVisible();
+  await expect(page.getByTestId("overview-rail-needs-you-dot")).toBeVisible();
   await page.evaluate(() => {
     (window as unknown as Update).embed.update({ attention: { count: 0 } });
   });
-  await expect(page.getByTestId("hosted-rail-needs-you-dot")).toHaveCount(0);
+  await expect(page.getByTestId("overview-rail-needs-you-dot")).toHaveCount(0);
   await page.getByTestId("overview-rail").hover({ position: { x: 20, y: 400 } });
-  await expect(page.getByTestId("hosted-rail-overlay")).toBeVisible();
+  await expect(page.getByTestId("overview-rail-overlay")).toBeVisible();
   // At 0 the pill hides.
   await expect(
-    page.getByTestId("hosted-rail-overlay").getByTestId("overview-needs-you"),
+    page.getByTestId("overview-rail-overlay").getByTestId("overview-needs-you"),
   ).toHaveCount(0);
   // Taken away, Gram's own count is back.
   await page.evaluate(() => {
     (window as unknown as Update).embed.update({ attention: undefined });
   });
   await expect(
-    page.getByTestId("hosted-rail-overlay").getByTestId("overview-needs-you"),
+    page.getByTestId("overview-rail-overlay").getByTestId("overview-needs-you"),
   ).toContainText("need you");
   expect(errors).toEqual([]);
 });
@@ -480,7 +480,7 @@ test("the sidebar can be drawn roomy, with the app's head and account", async ({
   await expect(page.getByTestId("overview-rail")).toBeVisible();
   // Over the page from the strip it keeps the look, with no Collapse of its own.
   await page.getByTestId("overview-rail").hover({ position: { x: 20, y: 400 } });
-  const overlay = page.getByTestId("hosted-rail-overlay");
+  const overlay = page.getByTestId("overview-rail-overlay");
   await expect(overlay.getByTestId("overview-sidebar")).toHaveAttribute("data-look", "roomy");
   await expect(overlay.getByTestId("overview-compact")).toHaveCount(0);
   // The current place's fill is drawn there too, from the overlay's first frame.

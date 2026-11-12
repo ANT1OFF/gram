@@ -65,8 +65,8 @@ const tile = (page: Page, workspaceId: string) =>
   rail(page).locator(`[data-testid="overview-tile"][data-workspace-id="${workspaceId}"]`);
 const soloTile = (page: Page) =>
   rail(page).locator('[data-testid="overview-tile"][data-tile="solo"]');
-/** The open flyout: one closing still fades out beside it. */
-const flyout = (page: Page) => page.locator(`[data-testid="overview-flyout"][data-open]`);
+/** The open sidebar over the page beside the compact strip. */
+const overlay = (page: Page) => page.getByTestId("overview-rail-overlay");
 const worker = (page: Page, threadId: string) =>
   overview(page).locator(`[data-testid="overview-worker"][data-thread-id="${threadId}"]`);
 const workspaceRow = (page: Page, workspaceId: string) =>
@@ -961,7 +961,7 @@ test("Settings → General's Overview sidebar row picks the mode the window lays
   await expect(page.getByTestId("overview-show")).toBeFocused();
 });
 
-// Compact: the rail of tiles, automatic below 1280 px.
+// Compact: the quiet strip, automatic below 1280 px, which opens the sidebar over the page on hover.
 
 test("Automatic is open at 1440 px and compact at 1100 px, its tiles saying what the rows say", async ({
   page,
@@ -969,25 +969,20 @@ test("Automatic is open at 1440 px and compact at 1100 px, its tiles saying what
   const made = await start(page);
   await expect(overview(page)).toBeVisible();
   await expect(rail(page)).toHaveCount(0);
-  // What the open overview says: each workspace's line, its asks, Needs you and the solo threads.
+  // What the open overview says: each workspace's line, its asks and Needs you.
   const rows = overview(page).getByTestId("overview-workspace");
   const ids: string[] = [];
   const labels: string[] = [];
-  const asks: (string | null)[] = [];
+  const asks: boolean[] = [];
   for (const row of await rows.all()) {
     ids.push((await row.getAttribute("data-workspace-id"))!);
     labels.push((await row.locator("button").first().getAttribute("aria-label"))!);
-    const badge = row.getByTestId("overview-workspace-asks");
-    asks.push((await badge.count()) > 0 ? await badge.textContent() : null);
+    asks.push((await row.getByTestId("overview-workspace-asks").count()) > 0);
   }
-  expect(asks.some((each) => each !== null)).toBe(true);
+  expect(asks.some(Boolean)).toBe(true);
   // Read once t-flaky's opening turn has raised its approval, which Needs you counts too.
   await flakyAsked(page);
   const needs = await overview(page).getByTestId("overview-needs-you").getAttribute("data-count");
-  // As its title counts them: the rows draw only near the view.
-  const title = overview(page).getByTestId("overview-section-solo").getByRole("button").first();
-  const solo = Number((await title.getAttribute("aria-label"))?.match(/\d+$/)?.[0]);
-  expect(solo).toBeGreaterThan(0);
 
   await page.setViewportSize({ width: 1100, height: 900 });
   await expect(rail(page)).toBeVisible();
@@ -997,221 +992,100 @@ test("Automatic is open at 1440 px and compact at 1100 px, its tiles saying what
   expect(box.width).toBeGreaterThanOrEqual(56);
   expect(box.width).toBeLessThanOrEqual(60);
 
-  // A tile per workspace in the same order, each named as its row, its badge its ask count and
-  // its count the workers at work its line counts.
+  // A tile per workspace in the same order, each named as its row, a dot where it asks.
   const tiles = rail(page).locator('[data-testid="overview-tile"][data-workspace-id]');
   await expect(tiles).toHaveCount(ids.length);
   for (const [index, id] of ids.entries()) {
     const each = tiles.nth(index);
     await expect(each).toHaveAttribute("data-workspace-id", id);
     await expect(each).toHaveAttribute("aria-label", labels[index]!);
-    if (asks[index] === null) await expect(each.getByTestId("overview-tile-asks")).toHaveCount(0);
-    else await expect(each.getByTestId("overview-tile-asks")).toHaveText(asks[index]!);
-    const working = labels[index]!.match(/(\d+) working/)?.[1];
-    if (working === undefined) await expect(each.getByTestId("overview-tile-count")).toHaveCount(0);
-    else await expect(each.getByTestId("overview-tile-count")).toHaveText(working);
+    await expect(each.getByTestId("overview-tile-asks")).toHaveCount(asks[index] ? 1 : 0);
   }
-  // The current one is marked; the name's first two letters mark each.
+  // The current one is marked.
   await expect(tile(page, made.workspaceId)).toHaveAttribute("aria-current", "true");
   await expect(tile(page, made.asks.other.workspaceId)).not.toHaveAttribute("aria-current");
-  // Needs you as the open overview counts it, opening the Inbox; then the solo threads' tile.
+  // Needs you as the open overview counts it, a dot while anything waits, opening the Inbox.
   const pill = rail(page).getByTestId("overview-rail-needs-you");
   await expect(pill).toHaveAttribute("data-count", needs!);
-  await expect(pill).toHaveText(needs!);
-  await expect(soloTile(page).getByTestId("overview-tile-count")).toHaveText(String(solo));
+  await expect(pill.getByTestId("overview-rail-needs-you-dot")).toBeVisible();
+  await expect(soloTile(page)).toBeVisible();
   await pill.click();
   await expect(page.getByTestId("inbox")).toBeVisible();
   await expect(page.getByTestId("inbox-item")).not.toHaveCount(0);
 });
 
-test("a tile's flyout lists the current workspace's workers: a click opens one, ⌥-click peeks, ⌘-click keeps beside", async ({
+test("resting on the strip opens the sidebar over the page; a row in it opens, leaving closes it, its pin keeps it open", async ({
   page,
 }) => {
   const made = await start(page, { width: 1100 });
   await expect(rail(page)).toBeVisible();
-  const live = await liveFromCards(page, made.workspaceId);
-  await tile(page, made.workspaceId).hover();
-  await expect(flyout(page)).toBeVisible();
-  await expect(flyout(page)).toHaveAttribute("data-for", `workspace:${made.workspaceId}`);
-  // The open overview's rows, in its order: the cards' live workers, with no feature heading.
-  const rows = flyout(page).getByTestId("overview-worker");
-  const expected = live.flatMap((feature) => feature.workers);
-  await expect(rows).toHaveCount(expected.length);
-  for (const each of expected) {
-    const row = flyout(page).locator(`[data-thread-id="${each.id}"]`);
-    await expect(row.getByTestId("overview-worker-title")).toHaveText(each.title);
-  }
-  // Most urgent first, as the open overview has them.
-  const rank: Record<string, number> = { needs: 0, attention: 0, error: 0, working: 1, waiting: 2 };
-  const ranks = (
-    await flyout(page)
-      .getByTestId("overview-worker-dot")
-      .evaluateAll((dots) => dots.map((dot) => dot.getAttribute("data-tone") ?? ""))
-  ).map((tone) => rank[tone] ?? 3);
-  expect(ranks).toEqual(ranks.toSorted((a, b) => a - b));
-  // Its one heading is the workspace's: no feature's between it and the rows.
-  await expect(flyout(page).getByRole("heading")).toHaveCount(1);
+  const box = (await rail(page).boundingBox())!;
+  // Passing over it quickly opens nothing; resting does.
+  await tile(page, made.asks.other.workspaceId).hover();
+  await expect(overlay(page)).toBeVisible();
+  await expect(overlay(page).getByTestId("overview-sidebar")).toHaveAttribute("data-overlay", "");
+  // Beside the strip, over the page: the strip stays as it is.
+  const over = (await overlay(page).boundingBox())!;
+  expect(Math.abs(over.x - (box.x + box.width))).toBeLessThanOrEqual(1);
+  await expect(rail(page)).toBeVisible();
+  // The tiles' names keep away while the sidebar says them in full.
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
 
-  // A plain click opens its thread, as the open row does; watching holds nothing.
-  const before = await workerFacts(page, made, made.live);
-  expect(before.held).toBe(false);
-  const row = () => flyout(page).locator(`[data-thread-id="${made.live}"]`);
-  await row().click();
+  // A worker's row in it opens its thread, and going there closes it.
+  const row = overlay(page).locator(
+    `[data-testid="overview-worker"][data-thread-id="${made.live}"]`,
+  );
+  await row.hover();
+  await row.click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.live}$`));
-  await expect(page.getByTestId("peek-sheet")).toHaveCount(0);
-  await expect(flyout(page)).toHaveCount(0);
-  expect(await workerFacts(page, made, made.live)).toEqual(before);
+  await expect(overlay(page)).toHaveCount(0);
 
-  // Its tile goes back to the orchestrator; ⌥-click there peeks, staying where it was.
-  await page.mouse.move(600, 450);
-  await tile(page, made.workspaceId).click();
-  await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  await page.mouse.move(600, 450);
-  await tile(page, made.workspaceId).hover();
-  await expect(flyout(page)).toBeVisible();
-  await row().click({ modifiers: ["Alt"] });
-  const sheet = page.getByTestId("peek-sheet");
-  await expect(sheet).toBeVisible();
-  await expect(sheet).toHaveAttribute("data-kind", "worker");
-  await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  expect(await workerFacts(page, made, made.live)).toEqual(before);
+  // Leaving both closes it, after a moment.
+  await rail(page).hover({ position: { x: box.width / 2, y: box.height / 2 } });
+  await expect(overlay(page)).toBeVisible();
+  await page.mouse.move(800, 450);
+  await expect(overlay(page)).toHaveCount(0);
+
+  // Escape closes it too.
+  await rail(page).hover({ position: { x: box.width / 2, y: box.height / 2 } });
+  await expect(overlay(page)).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(sheet).toBeHidden();
-  // Back on the tile it came from.
-  await expect(tile(page, made.workspaceId)).toBeFocused();
-  expect(await workerFacts(page, made, made.live)).toEqual(before);
+  await expect(overlay(page)).toHaveCount(0);
 
-  // ⌘-click keeps it beside the chat.
-  await page.mouse.move(600, 450);
-  await tile(page, made.workspaceId).hover();
-  await expect(flyout(page)).toBeVisible();
-  await row().click({ modifiers: ["ControlOrMeta"] });
-  await expect(page.getByTestId("beside-dock")).toBeVisible();
-  await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  expect((await workerFacts(page, made, made.live)).held).toBe(false);
-  await expect(flyout(page)).toHaveCount(0);
-
-  // An asking worker's row opens its thread on what it asks.
-  await page.mouse.move(600, 450);
-  await tile(page, made.workspaceId).hover();
-  const asking = flyout(page).locator(`[data-thread-id="${made.asks.choosing}"]`);
-  await expect(asking).toHaveAttribute("data-asking", "true");
-  await asking.click();
-  await expect(page).toHaveURL(new RegExp(`/t/${made.asks.choosing}$`));
-  await expect(
-    page.locator("main").getByTestId("approval-card").or(page.getByTestId("question-card")),
-  ).toBeVisible();
+  // The solo threads' glyph opens it at once, and its pin keeps the sidebar open.
+  await page.mouse.move(800, 450);
+  await soloTile(page).click();
+  await expect(overlay(page)).toBeVisible();
+  await overlay(page).getByTestId("overview-pin").click();
+  await expect(overview(page)).toBeVisible();
+  await expect(rail(page)).toHaveCount(0);
+  await expect.poll(() => storedOverview(page)).toBe("open");
 });
 
-test("the keyboard opens a tile's flyout, → goes in, Esc closes it back on the tile; a click switches", async ({
+test("the keyboard opens the sidebar beside the strip, Esc closes it; a click on a tile switches", async ({
   page,
 }) => {
   const made = await start(page, { width: 1100 });
-  // From the rail's top, the arrows walk the tiles; a focused tile shows its flyout.
-  await rail(page).getByTestId("overview-expand").focus();
-  await page.keyboard.press("ArrowDown");
-  await expect(rail(page).getByTestId("overview-rail-needs-you")).toBeFocused();
-  await page.keyboard.press("ArrowDown");
-  const first = rail(page).locator('[data-testid="overview-tile"]').first();
-  await expect(first).toBeFocused();
-  await expect(flyout(page)).toBeVisible();
-  await expect(flyout(page)).toHaveAttribute(
-    "data-for",
-    `workspace:${await first.getAttribute("data-workspace-id")}`,
-  );
-  // Esc closes it, the focus staying on the tile.
-  await page.keyboard.press("Escape");
-  await expect(flyout(page)).toHaveCount(0);
-  await expect(first).toBeFocused();
-
-  // On the current workspace's tile, → goes to its first row, ↓ to the next; Esc comes back.
-  await tile(page, made.workspaceId).focus();
-  await page.keyboard.press("Escape");
-  await page.keyboard.press("ArrowRight");
-  await expect(flyout(page)).toBeVisible();
-  const rows = flyout(page).getByTestId("overview-worker");
-  await expect(rows.first()).toBeFocused();
-  await page.keyboard.press("ArrowDown");
-  await expect(rows.nth(1)).toBeFocused();
-  await page.keyboard.press("Escape");
-  await expect(flyout(page)).toHaveCount(0);
+  await composer(page).click();
+  // ⌘⌥S focuses the current tile quietly; tabbing on through the strip opens the sidebar beside it.
+  await page.keyboard.press("ControlOrMeta+Alt+s");
   await expect(tile(page, made.workspaceId)).toBeFocused();
-  // → goes in again, and ← closes it back on the tile.
-  await page.keyboard.press("ArrowRight");
-  await expect(rows.first()).toBeFocused();
-  await page.keyboard.press("ArrowLeft");
-  await expect(flyout(page)).toHaveCount(0);
-  await expect(tile(page, made.workspaceId)).toBeFocused();
-
-  // Another workspace's flyout: its line, as the open overview folds it.
-  const other = tile(page, made.asks.other.workspaceId);
-  await other.hover();
-  await expect(flyout(page)).toHaveAttribute(
-    "data-for",
-    `workspace:${made.asks.other.workspaceId}`,
-  );
-  await expect(flyout(page).getByTestId("overview-flyout-summary")).toContainText("1 ask");
-  // The solo threads' tile lists them; a row opens one. The pointer travels there as a hand moves
-  // it, in steps: the other flyout's two lines reach the solo tile's top edge, and a single jump
-  // onto it is the one move the card's hover can't tell from staying on its way into the flyout.
-  const solo = (await soloTile(page).boundingBox())!;
-  await page.mouse.move(solo.x + solo.width / 2, solo.y + solo.height / 2, { steps: 6 });
-  await expect(flyout(page)).toHaveAttribute("data-for", "solo");
-  const flaky = flyout(page).locator('[data-testid="overview-solo"][data-thread-id="t-flaky"]');
-  await expect(flaky).toContainText("Fix flaky");
+  await expect(overlay(page)).toHaveCount(0);
+  await page.keyboard.press("Tab");
+  await expect(overlay(page)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(overlay(page)).toHaveCount(0);
 
   // A click on a tile switches to its workspace, as its row does.
+  const other = tile(page, made.asks.other.workspaceId);
   await other.click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.asks.other.orchestratorThreadId}$`));
   await expect(other).toHaveAttribute("aria-current", "true");
   await expect(tile(page, made.workspaceId)).not.toHaveAttribute("aria-current");
-  // The click closed the flyout, and the switch doesn't open it again.
-  await expect(flyout(page)).toHaveCount(0);
-  await expect(composer(page)).toBeVisible();
-  await expect(other).toBeFocused();
-  await expect(flyout(page)).toHaveCount(0);
+  await expect(overlay(page)).toHaveCount(0);
 });
 
-test("activating a keyboard-focused workspace tile keeps its delayed flyout closed", async ({
-  page,
-}) => {
-  const made = await start(page, { width: 1100 });
-  await page.clock.install();
-  const other = tile(page, made.asks.other.workspaceId);
-  // Focus starts the preview delay; activating the tile before it expires chooses the workspace.
-  await other.focus();
-  await other.press("Enter");
-  await expect(page).toHaveURL(new RegExp(`/t/${made.asks.other.orchestratorThreadId}$`));
-  await page.clock.runFor(500);
-  await expect(other).toBeFocused();
-  await expect(flyout(page)).toHaveCount(0);
-  // Its explicit keyboard entry still opens the flyout after the pick.
-  await other.press("ArrowRight");
-  await expect(flyout(page)).toBeVisible();
-  await expect(flyout(page).getByTestId("overview-worker").first()).toBeFocused();
-});
-
-test("clicking a workspace tile keeps its delayed hover closed until a new hover", async ({
-  page,
-}) => {
-  const made = await start(page, { width: 1100 });
-  await page.clock.install();
-  const other = tile(page, made.asks.other.workspaceId);
-  await other.hover();
-  await other.click();
-  await expect(page).toHaveURL(new RegExp(`/t/${made.asks.other.orchestratorThreadId}$`));
-  await page.clock.runFor(500);
-  await expect(flyout(page)).toHaveCount(0);
-  await page.mouse.move(600, 450);
-  await other.hover();
-  await page.clock.runFor(500);
-  await expect(flyout(page)).toHaveAttribute(
-    "data-for",
-    `workspace:${made.asks.other.workspaceId}`,
-  );
-});
-
-test("the Compact and Expand buttons pick the mode; ⌘B hides compact and brings it back compact", async ({
+test("the Compact button and the pin pick the mode; ⌘B hides compact and brings it back compact", async ({
   page,
 }) => {
   await start(page);
@@ -1219,8 +1093,8 @@ test("the Compact and Expand buttons pick the mode; ⌘B hides compact and bring
   await expect(rail(page)).toBeVisible();
   await expect(overview(page)).toHaveCount(0);
   await expect.poll(() => storedOverview(page)).toBe("compact");
-  // The focus moves to the button that takes its place.
-  await expect(rail(page).getByTestId("overview-expand")).toBeFocused();
+  // The focus moves to the toggle that takes its place.
+  await expect(rail(page).getByTestId("overview-hide")).toBeFocused();
 
   // ⌘B hides it, and shows it compact again.
   await page.keyboard.press("ControlOrMeta+b");
@@ -1240,7 +1114,9 @@ test("the Compact and Expand buttons pick the mode; ⌘B hides compact and bring
   await expect(rail(page)).toBeVisible();
   await expect.poll(() => storedOverview(page)).toBe("compact");
 
-  await rail(page).getByTestId("overview-expand").click();
+  // The sidebar opened over the page keeps open by its pin.
+  await rail(page).getByTestId("overview-rail-search").hover();
+  await overlay(page).getByTestId("overview-pin").click();
   await expect(overview(page)).toBeVisible();
   await expect(rail(page)).toHaveCount(0);
   await expect.poll(() => storedOverview(page)).toBe("open");
@@ -1258,41 +1134,28 @@ test("⌘B hides an automatic compact overview, the focus going to the composer,
   ).focus();
   await page.keyboard.press("ControlOrMeta+b");
   await expect(rail(page)).toHaveCount(0);
+  await expect(overlay(page)).toHaveCount(0);
   await expect(composer(page)).toBeFocused();
   await expect.poll(() => storedOverview(page)).toBe("hidden");
   await page.keyboard.press("ControlOrMeta+b");
   await expect(rail(page)).toBeVisible();
   await expect.poll(() => storedOverview(page)).toBeUndefined();
 
-  // From a row in a tile's flyout too, though the flyout sits outside the rail on the page.
-  const current = rail(page).locator('[data-testid="overview-tile"][aria-current="true"]');
-  await current.focus();
-  await page.keyboard.press("ArrowRight");
-  await expect(flyout(page).getByTestId("overview-worker").first()).toBeFocused();
-  await page.keyboard.press("ControlOrMeta+b");
-  await expect(rail(page)).toHaveCount(0);
-  await expect(flyout(page)).toHaveCount(0);
-  await expect(composer(page)).toBeFocused();
-  await expect.poll(() => storedOverview(page)).toBe("hidden");
-  await page.keyboard.press("ControlOrMeta+b");
-  await expect(rail(page)).toBeVisible();
-  await expect.poll(() => storedOverview(page)).toBeUndefined();
-
-  // Settings sits in the rail, under its toggle, once; hidden, it goes to the title bar.
+  // Settings sits at the strip's foot, once; hidden, it goes to the title bar.
   await expect(page.getByTestId("top-left-nav")).toHaveCount(1);
   const nav = rail(page).getByTestId("top-left-nav");
   await expect(nav.getByRole("button", { name: "Usage", exact: true })).toHaveCount(0);
   await expect(nav.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
   expect((await nav.boundingBox())!.width).toBeLessThanOrEqual(60);
 
-  // The rail's Hide sidebar leads it, in the spot the title bar's Show sidebar then takes, which
+  // The strip's Hide sidebar leads it, in the spot the title bar's Show sidebar then takes, which
   // brings it back compact.
   const hide = rail(page).getByTestId("overview-hide");
   const show = page.getByTestId("shell-titlebar").getByTestId("overview-show");
   await expect(show).toHaveCount(0);
   const hideAt = (await hide.boundingBox())!;
-  const expandAt = (await rail(page).getByTestId("overview-expand").boundingBox())!;
-  expect(hideAt.y).toBeLessThan(expandAt.y);
+  const needsAt = (await rail(page).getByTestId("overview-rail-needs-you").boundingBox())!;
+  expect(hideAt.y).toBeLessThan(needsAt.y);
   await hide.click();
   await expect(rail(page)).toHaveCount(0);
   await expect(show).toBeVisible();
@@ -1308,6 +1171,7 @@ test("⌘B hides an automatic compact overview, the focus going to the composer,
   await expect(show).toHaveCount(0);
   await expect.poll(() => storedOverview(page)).toBeUndefined();
   // Wider again, automatic opens; the focus on the current tile goes to the current row.
+  const current = rail(page).locator('[data-testid="overview-tile"][aria-current="true"]');
   await current.focus();
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -1320,9 +1184,8 @@ test("⌘B hides an automatic compact overview, the focus going to the composer,
   await expect(current).toBeFocused();
   // Left by a click on plain text, the focus drops to the page and stays there.
   await page.keyboard.press("Escape");
-  await current.focus();
-  await page.keyboard.press("Escape");
-  await expect(current).toBeFocused();
+  await page.mouse.move(800, 450);
+  await expect(overlay(page)).toHaveCount(0);
   await page.getByTestId("shell-titlebar").click({ position: { x: 600, y: 10 } });
   const onPage = () => page.evaluate(() => document.activeElement === document.body);
   await expect.poll(onPage).toBe(true);
@@ -1336,7 +1199,7 @@ test("⌘B hides an automatic compact overview, the focus going to the composer,
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(overview(page)).toBeVisible();
   await expect(composer(page)).toBeFocused();
-  // ⌘⌥S focuses the current tile in the rail.
+  // ⌘⌥S focuses the current tile in the strip.
   await page.setViewportSize({ width: 1100, height: 900 });
   await composer(page).click();
   await page.keyboard.press("ControlOrMeta+Alt+s");
@@ -1345,22 +1208,20 @@ test("⌘B hides an automatic compact overview, the focus going to the composer,
   ).toBeFocused();
 });
 
-test("the ring round a working orchestrator's tile breathes at full motion only", async ({
+test("a working orchestrator's tile has a soft dot that pulses at full motion only", async ({
   page,
 }) => {
   await start(page, { width: 1100 });
-  const ring = rail(page).locator('[data-testid="overview-tile-ring"][data-working]').first();
-  await expect(ring).toBeVisible();
-  const animation = () => ring.evaluate((element) => getComputedStyle(element).animationName);
-  await expect.poll(animation).toBe("gram-ring-breathe");
+  const dot = rail(page).getByTestId("overview-tile-working").first();
+  await expect(dot).toBeVisible();
+  const animation = () => dot.evaluate((element) => getComputedStyle(element).animationName);
+  await expect.poll(animation).toBe("gram-working");
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.locator("html")).toHaveAttribute("data-motion", "reduced");
   await expect.poll(animation).toBe("none");
-  // The ring still shows, still.
-  expect(await ring.evaluate((element) => getComputedStyle(element).borderTopColor)).not.toBe(
-    "rgba(0, 0, 0, 0)",
-  );
+  // The dot still shows, still.
+  await expect(dot).toBeVisible();
 });
 
 test("a worker still running after its feature is delivered shows with its step and age", async ({
@@ -1533,18 +1394,21 @@ test("a worker's PRs show as chips under its row, with checks and the review bot
     .poll(() => page.evaluate(() => document.activeElement?.hasAttribute("data-overview-stop")))
     .toBe(true);
   await expect(chips.nth(0)).not.toBeFocused();
-  // In the compact rail's flyout the chips are there, their names carrying what a card would say.
+  // In the sidebar the compact strip opens over the page the chips are there too, and a chip's card
+  // opened from it keeps the sidebar open while the pointer is on the card.
   await page.setViewportSize({ width: 1100, height: 900 });
   const current = rail(page).locator('[data-testid="overview-tile"][aria-current="true"]');
   await current.hover();
-  const inFlyout = flyout(page).locator(
+  const inOverlay = overlay(page).locator(
     `[data-testid="overview-pr-chips"][data-thread-id="${made.live}"] [data-testid="overview-pr-chip"]`,
   );
-  await expect(inFlyout).toHaveCount(2);
-  await inFlyout.nth(0).hover();
+  await expect(inOverlay).toHaveCount(2);
+  await inOverlay.nth(0).hover();
+  const card = page.getByTestId("overview-pr-card");
+  await expect(card).toContainText("Retry the queue with backoff");
+  await card.hover();
   await page.waitForTimeout(500);
-  await expect(page.getByTestId("overview-pr-card")).toHaveCount(0);
-  await expect(flyout(page)).toBeVisible();
+  await expect(overlay(page)).toBeVisible();
 });
 
 test("an orchestrator folds its workers by its chevron or ← and →, keeps their signals on its line, and stays folded across a reload", async ({

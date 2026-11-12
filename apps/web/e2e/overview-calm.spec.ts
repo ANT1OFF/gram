@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // The overview's calm forms over the realistic morning: every workspace stays listed whatever its
-// state, At rest folds only the PRs and Done, every row is one 36 px line, and the compact rail
+// state, At rest folds only the PRs and Done, every row is one 36 px line, and the compact strip
 // tells its workspaces apart by a monogram of each name.
 
 const open = async (page: Page, width: number) => {
@@ -103,7 +103,7 @@ test("every row in the sidebar is one line of one height; a worker's edge keeps 
   const wait = rows.find((row) => row.tone === "waiting");
   expect(wait?.words).toMatch(/^#\d+$/);
 });
-test("the compact rail marks each workspace with a monogram of its name, the solo threads with a glyph", async ({
+test("the compact strip marks each workspace with a monogram of its name, the solo threads with a glyph", async ({
   page,
 }) => {
   await open(page, 900);
@@ -128,17 +128,15 @@ test("the compact rail marks each workspace with a monogram of its name, the sol
     rail.locator('[data-tile="solo"] svg'),
     "the solo threads' tile keeps its glyph",
   ).toHaveCount(1);
-  // A letter is never left to guess: focus (or a hover) says the whole name at once, in the
-  // flyout's head, and the working count stays on the tile.
-  await tiles.nth(1).focus();
-  await expect(page.getByTestId("overview-flyout").getByRole("heading")).toContainText(
-    "billing-api",
-    { timeout: 1_000 },
-  );
-  await expect(tiles.first().getByTestId("overview-tile-count")).toBeVisible();
-  // The rail's count is a neutral outline with only its number amber.
-  const pill = rail.getByTestId("overview-rail-needs-you");
-  await expect(pill).toHaveAttribute("data-asks", "true");
-  const fill = await pill.evaluate((element) => getComputedStyle(element).backgroundColor);
+  // A letter is never left to guess: resting on the strip opens the sidebar beside it, which
+  // says every name in full.
+  await tiles.nth(1).hover();
+  const overlay = page.getByTestId("overview-rail-overlay");
+  await expect(overlay.getByTestId("overview-workspace")).toHaveCount(4);
+  await expect(overlay.getByTestId("overview-workspace").nth(1)).toContainText("billing-api");
+  // Needs you is a quiet glyph with a dot while anything waits, not a filled pill.
+  const needs = rail.getByTestId("overview-rail-needs-you");
+  await expect(needs.getByTestId("overview-rail-needs-you-dot")).toBeVisible();
+  const fill = await needs.evaluate((element) => getComputedStyle(element).backgroundColor);
   expect(fill).toBe("rgba(0, 0, 0, 0)");
 });

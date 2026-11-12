@@ -148,18 +148,6 @@
   }
 }
 
-/* Ring breathe — the compact overview's ring round a tile while its orchestrator works: it fades
-   down and back, in place. Full only; Reduced and Off show a still ring. */
-[data-motion="full"] .gram-ring-breathe {
-  animation: gram-ring-breathe calc(var(--dur-slow) * 8) var(--ease-in-out) infinite;
-}
-
-@keyframes gram-ring-breathe {
-  50% {
-    opacity: 0.4;
-  }
-}
-
 /* Pulse once — PulseOnce's ring: invisible at rest, so Off (which stops every animation) shows
    nothing; it widens and fades a single time. Reduced fades without widening. */
 .gram-pulse-once {
