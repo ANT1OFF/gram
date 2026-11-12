@@ -180,6 +180,31 @@ export interface ShellNewEntry {
   readonly to: string;
 }
 
+/** What a tool call's card of the embedding app's is given. */
+export interface ShellToolCardProps {
+  /** The tool's name as the agent called it, such as `mcp__acme__create_order`. */
+  readonly name: string;
+  /** What the agent passed, as it parsed. */
+  readonly input: unknown;
+  /** What the tool answered. A tool that answers JSON as text is given the parsed value. */
+  readonly output: unknown;
+}
+
+/**
+ * A card of the embedding app's under a tool call's row in a thread, once the call has answered:
+ * for a tool of the app's own whose answer is one of its things (an order, a ticket, a document),
+ * shown as that thing with its own links and buttons. Gram's row stays above it, so what was
+ * called and with what can still be read. A card that has nothing to show returns null.
+ */
+export interface ShellToolCard {
+  /**
+   * The tools it is for: a name, or a pattern where `*` stands for any run of characters
+   * (`mcp__*__create_order`). The first card in the list that matches is used.
+   */
+  readonly tool: string;
+  readonly component: ComponentType<ShellToolCardProps>;
+}
+
 /** What the embedding app adds to Gram's shell. Everything is optional. */
 export interface ShellContributions {
   /** Pages beside Gram's own. Read once, when the app mounts. */
@@ -214,6 +239,8 @@ export interface ShellContributions {
   readonly newEntry?: ShellNewEntry;
   /** The open sidebar's look, its head and its account. Replaceable through `GramHandle.update`. */
   readonly sidebar?: ShellSidebar;
+  /** Cards of the embedding app's under its own tools' calls. Read once, when the app mounts. */
+  readonly toolCards?: readonly ShellToolCard[];
 }
 
 /** The server one mount talks to. */

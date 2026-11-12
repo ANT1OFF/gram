@@ -10,6 +10,8 @@ import {
   shellFor,
   shownCount,
   shownNavigation,
+  toolCardFor,
+  toolMatches,
 } from "./store";
 
 describe("what a mount takes of the embedding app's additions", () => {
@@ -112,5 +114,35 @@ describe("where the right panel is offered", () => {
     expect(panelOffered("code", home)).toBe(false);
     expect(panelOffered("code", chat)).toBe(false);
     expect(panelOffered("code", code)).toBe(true);
+  });
+});
+
+const First = () => null;
+const Second = () => null;
+
+describe("an embedding app's tool cards", () => {
+  it("matches a tool by its name, or by a pattern where * is any run of characters", () => {
+    expect(toolMatches("Bash", "Bash")).toBe(true);
+    expect(toolMatches("Bash", "BashOutput")).toBe(false);
+    expect(toolMatches("mcp__*__create_order", "mcp__acme__create_order")).toBe(true);
+    expect(toolMatches("mcp__*__create_order", "mcp__acme__create_orders")).toBe(false);
+    expect(toolMatches("*create_order", "create_order")).toBe(true);
+    expect(toolMatches("mcp__acme__*", "mcp__acme__refund")).toBe(true);
+    expect(toolMatches("mcp__acme__*", "mcp__other__refund")).toBe(false);
+    expect(toolMatches("a*b*c", "a-b-c")).toBe(true);
+    expect(toolMatches("a*b*c", "a-c-b")).toBe(false);
+    // The two ends may not share characters.
+    expect(toolMatches("ab*ba", "aba")).toBe(false);
+  });
+
+  it("uses the first card that matches, and none where none does", () => {
+    const cards = [
+      { tool: "mcp__acme__create_order", component: First },
+      { tool: "mcp__acme__*", component: Second },
+    ];
+    expect(toolCardFor(cards, "mcp__acme__create_order")).toBe(First);
+    expect(toolCardFor(cards, "mcp__acme__refund")).toBe(Second);
+    expect(toolCardFor(cards, "Bash")).toBeUndefined();
+    expect(toolCardFor([], "Bash")).toBeUndefined();
   });
 });

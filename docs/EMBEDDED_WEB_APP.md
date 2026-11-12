@@ -119,6 +119,13 @@ yours in place of Gram's menu of Task, Team and Chat: for an app where what a pe
 is something of its own. Gram's New form stays reachable from the threads page, the palette and its
 shortcuts. Change either through `update`.
 
+**Your own tools, as your own things.** `toolCards: [{ tool: "mcp__*__create_order", component:
+OrderCard }]` draws a card of yours under a tool call's row once the call has answered: for a tool
+whose answer is one of your things, shown with its own links and buttons. `tool` is a name or a
+pattern where `*` is any run of characters, and the first card that matches is used. The card is
+given the tool's `name`, its `input` and its `output` (JSON a tool sent as text arrives parsed),
+and returns null when it has nothing to show. Gram's row stays above it. Read once, at mount.
+
 **The compact sidebar.** Mounted on a server with hosted features on, the compact sidebar is a
 quiet strip of what the open one holds, in its order: your switcher, Needs you (a dot while
 anything waits), Search, your `main` groups' icons a gap apart, then at the foot your `foot`
