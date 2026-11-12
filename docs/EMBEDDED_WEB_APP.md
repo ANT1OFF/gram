@@ -214,6 +214,32 @@ transcript, cards and composer without the thread's own header, and fills the el
 in, so give that element a height. It is the same thread as on its own page (`/t/<id>`). Use it
 for a conversation beside what your page shows, such as a panel at the side.
 
+### A person's own machine
+
+Where the server's deployment starts machines on demand ([Hosts on demand](EMBEDDING.md#hosts-on-demand)),
+a person with none of their own running sees a start card under the New task and New chat composers,
+in place of the error that no machine has joined. Its button asks for one (`POST
+/machines/on-demand/start`, a plain request your proxy signs), with the repositories the person
+checks or types. While it comes up the card shows each step the deployment reports, and once the
+machine is online the card goes and the draft can be sent. Where the server starts none (the path
+answers 404), the card never shows, and a page mounted without hosted features never asks.
+
+Word it with `shell.machines`, read once at mount:
+
+```ts
+mountGram({
+  shell: {
+    machines: {
+      noun: "sandbox",
+      facts: ["Stops after 30 minutes without work", "Files kept 14 days", "About $0.07 an hour"],
+    },
+  },
+});
+```
+
+- `noun`: the word for one, lower case ("machine" when left out).
+- `facts`: up to five short lines the card lists, in your deployment's own terms.
+
 ## Pages that look like Gram's
 
 `@gram/web/kit` exports Gram's own controls: `Button`, `ButtonGroup`, `Badge`, `Alert`, `Switch`,

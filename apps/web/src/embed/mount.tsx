@@ -108,6 +108,7 @@ export const mountGram: MountGram = async (options) => {
       hosted,
       attention: shell.attention,
       threadsPage: shell.threadsPage ?? {},
+      machines: shell.machines ?? {},
       newEntry: shell.newEntry,
       toolCards: shell.toolCards ?? [],
       home: shell.home?.component,

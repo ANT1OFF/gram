@@ -24,6 +24,7 @@ import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-pref
 import { HarnessSupportDetails } from "@/agents/support-details";
 import { agentLabel } from "@/agents/agent-display";
 import { errorMessage } from "@/api/errors";
+import { needsMachine, StartMachineCard, useOnDemandMachine } from "./start-machine-card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -205,6 +206,14 @@ export function NewTaskDraft({
     staleTime: 30_000,
   });
   const orchestratorModel = selection.data?.orchestrator;
+  const onDemand = useOnDemandMachine();
+  const startMachine = needsMachine(onDemand.status);
+  const machineOnline = onDemand.status?.machine?.online === true;
+  // Once their machine is up, the check that failed for want of one is asked again.
+  const recheck = selection.refetch;
+  useEffect(() => {
+    if (machineOnline) void recheck();
+  }, [machineOnline, recheck]);
   const preflight = useHarnessPreflight(
     orchestratorModel,
     "orchestrator",
@@ -733,7 +742,9 @@ export function NewTaskDraft({
               }}
             />
           )}
-          {selection.isError && (
+          {/* Where the deployment starts machines on demand, the person's own, in place of the error. */}
+          {startMachine && <StartMachineCard />}
+          {selection.isError && !startMachine && (
             <p role="alert" className="text-meta text-destructive">
               {errorMessage(selection.error)}{" "}
               <Button

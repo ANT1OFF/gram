@@ -154,6 +154,20 @@ export type ShellPanel = "shown" | "code";
  * Gram's page of every thread (`/threads`), as the embedding app words it: an app whose threads
  * are conversations with its agents may call the page "Chat" and its button "New chat".
  */
+/**
+ * Machines the server's deployment starts on demand, one person's each (`GRAM_HOST_PROVIDER_URL`):
+ * what the app calls one where a person starts theirs.
+ */
+export interface ShellMachines {
+  /** The word for one, lower case: "machine" when left out, such as "sandbox". */
+  readonly noun?: string;
+  /**
+   * Short lines the start card lists about one, in the deployment's own terms: how long it waits
+   * before it stops, how long its files are kept, what it costs. None when left out.
+   */
+  readonly facts?: readonly string[];
+}
+
 export interface ShellThreadsPage {
   /**
    * The page's name: its heading, the title bar, a phone's header and the palette's command.
@@ -257,6 +271,8 @@ export interface ShellContributions {
   readonly threadsPage?: ShellThreadsPage;
   /** What New starts, in place of Gram's menu. Replaceable through `GramHandle.update`. */
   readonly newEntry?: ShellNewEntry;
+  /** How machines started on demand are worded. Read once, when the app mounts. */
+  readonly machines?: ShellMachines;
   /** The open sidebar's look, its head and its account. Replaceable through `GramHandle.update`. */
   readonly sidebar?: ShellSidebar;
   /** Cards of the embedding app's under its own tools' calls. Read once, when the app mounts. */
