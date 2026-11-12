@@ -235,6 +235,33 @@ test("a thread can sit inside a page of the embedding app's", async ({ page }) =
   expect(errors).toEqual([]);
 });
 
+test("a thread's working panels can sit inside a page of the embedding app's", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await mounted(page);
+  await page.evaluate(() => (window as unknown as Update).embed.navigate("/threads"));
+  const id = await page.getByTestId("threads-row").first().getAttribute("data-thread-id");
+  await page.evaluate(
+    (to) => (window as unknown as Update).embed.navigate(to),
+    `/govern/changes/${id}`,
+  );
+  // The four panels under their tabs, the diff first, beside the same thread.
+  const panel = page.getByTestId("shell-thread-panel");
+  await expect(panel.getByRole("tab")).toHaveText(["Diff", "Pull request", "Files", "Terminal"]);
+  await expect(panel.getByRole("tab", { name: "Diff" })).toHaveAttribute("aria-selected", "true");
+  await expect(panel.getByTestId("diff-panel")).toBeVisible();
+  await panel.getByRole("tab", { name: "Files" }).click();
+  await expect(panel.getByTestId("files-panel")).toBeVisible();
+  await expect(page.getByTestId("shell-thread").getByTestId("thread-view")).toBeVisible();
+  // A thread the server doesn't have says so in place of the panels.
+  await page.evaluate(
+    (to) => (window as unknown as Update).embed.navigate(to),
+    "/govern/changes/no-such-thread",
+  );
+  await expect(panel).toContainText("This thread no longer exists.");
+  expect(errors).toEqual([]);
+});
+
 test("the page of every thread and New take the embedding app's words", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

@@ -5,6 +5,7 @@ import {
   mountGram,
   ShellLink,
   ShellThread,
+  ShellThreadPanel,
   useShellLocation,
   type GramHandle,
   type ShellPageProps,
@@ -254,6 +255,21 @@ function Beside({ params }: ShellPageProps) {
   );
 }
 
+/** A page of the app's with a thread's working panels beside the thread. */
+function Changes({ params }: ShellPageProps) {
+  const threadId = params["threadId"] ?? "";
+  return (
+    <div className="flex h-full min-h-0">
+      <div className="flex w-96 min-w-0 flex-col border-r border-border">
+        <ShellThread threadId={threadId} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <ShellThreadPanel threadId={threadId} />
+      </div>
+    </div>
+  );
+}
+
 mountGram({
   element,
   server: new URLSearchParams(location.search).has("session-test")
@@ -274,6 +290,7 @@ mountGram({
       { path: "/govern/limits", title: "Limits", component: Limits },
       { path: "/govern/agents/$agentId", component: Agent },
       { path: "/govern/beside/$threadId", title: "Beside", component: Beside },
+      { path: "/govern/changes/$threadId", title: "Changes", component: Changes },
     ],
     home: { title: "Home", component: Home },
     navigation: [BUILD, GOVERN],
