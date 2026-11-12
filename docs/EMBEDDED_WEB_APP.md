@@ -121,9 +121,20 @@ caps. Its head is your `header` with Gram's New beside it, and its foot holds Hi
 your `account` and Collapse as labelled rows, in place of the head's Hide and Compact. `header`
 and `account` are components of yours (a brand mark and name; an avatar, a name and one line),
 given `placement: "sidebar"`; in the standard look the header is a row under the head's toggles
-and the account sits above History. The phone's drawer and the compact strip keep their own shape
-in either look; the strip's overlay takes the look without Collapse. Change it through
-`update({ sidebar })`.
+and the account sits above History. The compact strip keeps its own shape in either look; the
+strip's overlay takes the look without Collapse. Change it through `update({ sidebar })`.
+
+**On a phone.** In the standard look the phone's drawer is Gram's own. In the roomy look it is a
+plain menu: your `header` large at its head beside a round Search, your switcher under it, your
+`main` groups as large rows (52 px, 22 px icons, plain group headings, the first group's left out),
+and at its foot your `account` as a round avatar and one New pill, both floating over the list's
+end. The avatar opens a sheet from the bottom: your `account` as a full row, your `foot` groups,
+History, Settings and the theme. Both your `header` and `account` are given `placement: "drawer"`
+there (a name alone, large; the avatar's letter or picture alone, which Gram puts in a 52 px round
+button), and your switcher is given `placement: "drawer"` too (one quiet line). The phone's header
+is then a round menu button, the page's name centred (a thread's or the Board's state under it)
+and a round "…", on the page's own ground; the menu button carries a dot while any destination
+counts above 0, or `attention` does, and the Inbox button is left out while `attention` is set.
 
 **What needs someone.** `attention` (`{ count, label?, to?, onOpen? }`) puts your count in place
 of Gram's own Needs you: the sidebar's pill says `label` (or "N need you"), the compact strip's tile

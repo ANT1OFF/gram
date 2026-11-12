@@ -43,10 +43,10 @@ export function EmbedSwitcher({
   );
 }
 
-const usePathname = () => useRouterState({ select: (state) => state.location.pathname });
+export const usePathname = () => useRouterState({ select: (state) => state.location.pathname });
 
 /** The added pages take their path as a string: the router's typed `to` knows only Gram's own. */
-const linkTo = (to: string) => ({ to }) as unknown as { to: "/" };
+export const linkTo = (to: string) => ({ to }) as unknown as { to: "/" };
 
 /** A first letter, where a destination brought no icon. */
 function Monogram({ label, className }: { label: string; className?: string }) {
@@ -57,7 +57,7 @@ function Monogram({ label, className }: { label: string; className?: string }) {
   );
 }
 
-function ItemIcon({ item, className }: { item: ShellNavigationItem; className: string }) {
+export function ItemIcon({ item, className }: { item: ShellNavigationItem; className: string }) {
   const Icon = item.icon;
   return Icon === undefined ? (
     <Monogram label={item.label} className={className} />

@@ -11,7 +11,12 @@ export type ShellPlacement =
   /** The compact sidebar: a 32 px tile, an icon and no words. */
   | "rail"
   /** The title bar, while no sidebar shows: one short button. */
-  | "titlebar";
+  | "titlebar"
+  /**
+   * A phone's menu in the `roomy` look: the header as a large name at the menu's head, and the
+   * account as a round avatar alone (its 44 px button is Gram's, which opens the account sheet).
+   */
+  | "drawer";
 
 /** What every component the embedding app supplies is given. */
 export interface ShellSlotProps {
@@ -109,7 +114,12 @@ export interface ShellAttention {
  *   solid tile behind its icon and a bold label; search's shortcut as keycaps; and at the foot,
  *   History, Settings, the account and Collapse as labelled rows in place of the head's toggles.
  *
- * A phone's drawer and the compact strip keep their own shape in either.
+ * The compact strip keeps its own shape in either. A phone's drawer keeps Gram's in `standard`; in
+ * `roomy` it is a plain menu: the header large at its head (placement `drawer`) beside a round
+ * search, the switcher (placement `drawer`) under it, the `main` groups as large rows, and at its
+ * foot the account (placement `drawer`, a round avatar opening a sheet with the `foot` groups,
+ * History, Settings and the theme) and one New pill. The phone's header is then round buttons
+ * either side of the page's name, with the menu's button dotted while a destination counts above 0.
  */
 export type ShellSidebarLook = "standard" | "roomy";
 
