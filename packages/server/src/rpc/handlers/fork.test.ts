@@ -125,6 +125,109 @@ const forkSession = (threadId: ThreadId) =>
     );
   });
 
+/** A cold Codex conversation kept in Gram's own home, its messages anchored in its session. */
+const coldOwnedCodex = (repo: string) =>
+  Effect.gen(function* () {
+    const store = yield* ThreadStore;
+    const project = yield* store.ensureProject({ root: repo, name: "repo" });
+    const source: Thread = {
+      id: randomUUID() as ThreadId,
+      projectId: project.id,
+      title: "Gated source",
+      userNamed: true,
+      model: { agent: "codex", model: "gpt-5-codex" },
+      mode: "acceptEdits",
+      checkout: { kind: "main", path: repo, branch: "main" },
+      agentSessionId: "owned-session",
+      codexHome: "owned",
+      labels: [],
+      pinned: false,
+      parked: false,
+      unread: false,
+      createdAt: 0,
+      lastActivityAt: 0,
+    };
+    yield* store.insertThread(source);
+    for (const m of [
+      message("u1", "user", "one", ["u1"]),
+      message("a1", "assistant", "first", ["sdk-a1"]),
+    ])
+      yield* store.upsertMessage(source.id, m);
+    // Codex's own consent is on, so only where the session runs can hold the browser back.
+    yield* store.updateSettings((settings) => ({
+      ...settings,
+      agents: { ...settings.agents, codexComputerUse: true },
+    }));
+    return source;
+  });
+
+describe.skipIf(!hasGit)("a cold fork's browser", () => {
+  it.live("is not available where the fork resumes its source in Gram's own Codex home", () =>
+    Effect.gen(function* () {
+      const store = yield* ThreadStore;
+      const runtimes = yield* ThreadRuntimes;
+      const handlers = yield* threadHandlers;
+      const repo = yield* tempRepo;
+      const source = yield* coldOwnedCodex(repo);
+      const fork = yield* handlers["thread.fork"]({ threadId: source.id });
+      // Before its first open it has neither a home nor a session of its own.
+      expect(fork).not.toHaveProperty("codexHome");
+      expect(fork.agentSessionId).toBeUndefined();
+
+      expect(yield* handlers["thread.browserStatus"]({ threadId: fork.id })).toMatchObject({
+        state: "off",
+        cannot: expect.stringContaining("Gram's own"),
+      });
+      const refused = yield* handlers["thread.setBrowser"]({
+        threadId: fork.id,
+        browser: true,
+      }).pipe(Effect.flip);
+      expect(refused).toMatchObject({ _tag: "InvalidState" });
+      expect((yield* store.getThread(fork.id)).browser).toBeUndefined();
+
+      // What the status said is what the first open does: it forks the source in its home.
+      yield* runtimes.send(fork.id, { text: "two" });
+      const session = yield* forkSession(fork.id);
+      expect(session.options).toMatchObject({
+        resumeId: "owned-session",
+        fork: true,
+        codexHome: "owned",
+        browser: false,
+      });
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.live("can be lent where a fork with no anchor starts afresh in the user's own home", () =>
+    Effect.gen(function* () {
+      const store = yield* ThreadStore;
+      const runtimes = yield* ThreadRuntimes;
+      const handlers = yield* threadHandlers;
+      const repo = yield* tempRepo;
+      const source = yield* coldOwnedCodex(repo);
+      const fork = yield* handlers["thread.fork"]({ threadId: source.id });
+      // Its newest message is one the source session never held, so nothing anchors a fork of
+      // it: its first open starts a session of its own, not the source's home.
+      yield* store.upsertMessage(fork.id, message("n1", "assistant", "a note"));
+
+      expect(yield* handlers["thread.browserStatus"]({ threadId: fork.id })).toEqual({
+        state: "off",
+      });
+      expect(
+        yield* handlers["thread.setBrowser"]({ threadId: fork.id, browser: true }),
+      ).toMatchObject({ browser: true });
+      expect(yield* handlers["thread.browserStatus"]({ threadId: fork.id })).toEqual({
+        state: "on",
+      });
+
+      yield* runtimes.send(fork.id, { text: "two" });
+      const session = yield* forkSession(fork.id);
+      expect(session.options).not.toHaveProperty("resumeId");
+      expect(session.options).not.toHaveProperty("codexHome");
+      expect(session.options).toMatchObject({ browser: true });
+    }).pipe(Effect.provide(TestLayer)),
+  );
+});
+
 describe.skipIf(!hasGit)("thread.fork", () => {
   it.live("forks at the latest message into the source checkout and forks the session lazily", () =>
     Effect.gen(function* () {

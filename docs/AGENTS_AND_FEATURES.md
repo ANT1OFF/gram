@@ -1223,7 +1223,8 @@ with ⌘K reopens the session once it is idle. The pane header shows what the se
 thread's next session gets (`thread.browserStatus`): **Your browser** while it has it, struck
 through while a consent holds it back, and **Browser not available** where its session can't have
 it at all: a Codex thread in Gram's own Codex home, a thread on a gateway, or one started from a
-profile. There ⌘K's lend command is dimmed with the reason, and `thread.setBrowser` refuses it. A
+profile. The home is the one the thread's next session actually opens in, from the same resume
+plan: a fork that hasn't run yet resumes its source session in the source's home. There ⌘K's lend command is dimmed with the reason, and `thread.setBrowser` refuses it. A
 dream never gets it.
 
 **Claude.** A session given the browser starts with Claude Code's `--chrome`. There is no Agent SDK

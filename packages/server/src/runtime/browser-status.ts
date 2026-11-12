@@ -11,6 +11,7 @@ import {
   type ThreadBrowserStatus,
   workerBrowserOn,
 } from "@gram/contracts";
+import type { ResumeOptions } from "./history-plans.ts";
 import type { SessionPolicy } from "./session-policy.ts";
 
 /** What the thread's agent calls the browser it drives. */
@@ -19,15 +20,15 @@ const browserName = (thread: Pick<Thread, "model">) =>
 
 /**
  * Why this thread's session can't have the browser whatever is lent or allowed, or `undefined`.
- * A Codex thread has it only in the user's own `CODEX_HOME`: the one it recorded, else the one its
- * next open picks (`codexHomeFor`), so one that started under an outward gate stays in Gram's own
- * home after the gate is lifted.
+ * A Codex thread has it only in the user's own `CODEX_HOME`, found as the adapter finds it
+ * (`codexHomeFor`) from `resume`, the options its next open resumes or forks with
+ * (`makeResumePlans`): the home it recorded, an anchored fork's source home, else the one a new
+ * session picks. So one that started under an outward gate stays in Gram's own home after the
+ * gate is lifted, and so does a cold fork of such a session.
  */
 export const browserCannot = (
-  thread: Pick<
-    Thread,
-    "role" | "profile" | "model" | "codexHome" | "agentSessionId" | "agentSessionUnused"
-  >,
+  thread: Pick<Thread, "role" | "profile" | "model">,
+  resume: Pick<ResumeOptions, "codexHome" | "resumeId">,
   outwardGate: SessionPolicy["outwardGate"],
 ): string | undefined => {
   if (thread.role === "dream") return "A dream never has your browser.";
@@ -39,36 +40,28 @@ export const browserCannot = (
       : "Claude in Chrome needs a claude.ai sign-in, and this thread runs on a gateway.";
   }
   const home = codexHomeFor({
-    ...(thread.codexHome === undefined ? {} : { codexHome: thread.codexHome }),
-    ...(thread.agentSessionId === undefined || thread.agentSessionUnused === true
-      ? {}
-      : { resumeId: thread.agentSessionId }),
+    ...(resume.codexHome === undefined ? {} : { codexHome: resume.codexHome }),
+    ...(resume.resumeId === undefined ? {} : { resumeId: resume.resumeId }),
     model: thread.model,
     ...(outwardGate === undefined ? {} : { outwardGate }),
   });
   if (home === "user") return undefined;
   return home === "gateway"
     ? "Codex computer use runs only in your own Codex setup, and this thread runs on a gateway."
-    : "Codex computer use runs only in your own Codex setup, and this thread runs in Gram's own, where it started under an outward gate.";
+    : "Codex computer use runs only in your own Codex setup, and this thread's session runs in Gram's own, where it started under an outward gate.";
 };
 
-/** The thread's browser as its next session gets it, given its policy as the server reads it now. */
+/**
+ * The thread's browser as its next session gets it, given its policy as the server reads it now
+ * and `resume`, the options that session opens with.
+ */
 export const browserStatus = (
-  thread: Pick<
-    Thread,
-    | "role"
-    | "spawnedBy"
-    | "browser"
-    | "profile"
-    | "model"
-    | "codexHome"
-    | "agentSessionId"
-    | "agentSessionUnused"
-  >,
+  thread: Pick<Thread, "role" | "spawnedBy" | "browser" | "profile" | "model">,
   settings: Settings,
   policy: Pick<SessionPolicy, "browser" | "outwardGate">,
+  resume: Pick<ResumeOptions, "codexHome" | "resumeId">,
 ): ThreadBrowserStatus => {
-  const cannot = browserCannot(thread, policy.outwardGate);
+  const cannot = browserCannot(thread, resume, policy.outwardGate);
   const lent =
     thread.role === "orchestrator" ? orchestratorBrowserOn(settings) : thread.browser === true;
   if (!lent || thread.role === "dream")

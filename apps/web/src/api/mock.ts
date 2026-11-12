@@ -1810,14 +1810,16 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   async threadBrowserStatus(threadId: ThreadId): Promise<ThreadBrowserStatus> {
     const thread = this.#runtime(threadId).summary.thread;
     const settings = await this.#settings.get();
+    // A cold fork resumes its source in the source's home (the mock keeps no anchors).
+    const home =
+      thread.codexHome ??
+      (thread.agentSessionId === undefined ? thread.forkedFrom?.codexHome : undefined);
     const cannot =
       thread.profile !== undefined
         ? "A thread started from a profile keeps to its profile's tools."
         : thread.model.profileId !== undefined
           ? "This thread runs on a gateway."
-          : thread.model.agent === "codex" &&
-              thread.codexHome !== undefined &&
-              thread.codexHome !== "user"
+          : thread.model.agent === "codex" && home !== undefined && home !== "user"
             ? "Codex computer use runs only in your own Codex setup, and this thread runs in Gram's own, where it started under an outward gate."
             : undefined;
     const lent =
