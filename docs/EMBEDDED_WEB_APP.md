@@ -214,6 +214,13 @@ transcript, cards and composer without the thread's own header, and fills the el
 in, so give that element a height. It is the same thread as on its own page (`/t/<id>`). Use it
 for a conversation beside what your page shows, such as a panel at the side.
 
+`ShellThreadPanel` puts the same thread's working panels inside a page of yours: `<ShellThreadPanel
+threadId={id} />` draws its Diff, Pull request, Files and Terminal under a row of tabs, and fills
+the element you put it in. They are the right panel's own, so a comment on a line, a file opened or
+a command typed there is the thread's. Pass `tab` and `onTabChange` to pick the tab yourself, for a
+button of yours that opens it on the pull request; without `tab` it starts on the diff and keeps
+its own. Use it for a sheet or a pane that shows what a thread changed, beside the conversation.
+
 ### A person's own machine
 
 Where the server's deployment starts machines on demand ([Hosts on demand](EMBEDDING.md#hosts-on-demand)),

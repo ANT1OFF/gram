@@ -86,7 +86,7 @@ try {
 writeFileSync(
   join(outDir, "gram-web.d.ts"),
   [
-    'import type { MountGram, ShellLinkComponent, ShellThreadComponent, UseShellLocation } from "./types/embed/contract.js";',
+    'import type { MountGram, ShellLinkComponent, ShellThreadComponent, ShellThreadPanelComponent, UseShellLocation } from "./types/embed/contract.js";',
     "",
     'export type * from "./types/embed/contract.js";',
     "/** Mounts Gram's web app, whole, in `options.element`. */",
@@ -95,6 +95,8 @@ writeFileSync(
     "export declare const ShellLink: ShellLinkComponent;",
     "/** One thread inside a page of the embedding app's. */",
     "export declare const ShellThread: ShellThreadComponent;",
+    "/** One thread's diff, pull request, files and terminal inside a page of the embedding app's. */",
+    "export declare const ShellThreadPanel: ShellThreadPanelComponent;",
     "/** Where the window is under the app, and a way to move it. */",
     "export declare const useShellLocation: UseShellLocation;",
     "",

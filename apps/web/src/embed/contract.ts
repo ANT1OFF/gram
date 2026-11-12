@@ -365,6 +365,22 @@ export type ShellLinkComponent = ComponentType<{
  */
 export type ShellThreadComponent = ComponentType<{ threadId: string }>;
 
+/** The working panels of a thread that `ShellThreadPanel` shows. */
+export type ShellThreadPanelTab = "diff" | "pr" | "files" | "terminal";
+
+/**
+ * One thread's working panels inside a page of the embedding app's: its diff, its pull request,
+ * its files and its terminal, under a row of tabs, filling the element it is put in. They are the
+ * right panel's own, for the same thread as on its own page (`/t/<id>`), without the panel's other
+ * tabs. `tab` picks the one shown and `onTabChange` hears a change; without `tab` it keeps its own,
+ * starting on the diff. For a sheet or a pane of yours that shows what a thread changed.
+ */
+export type ShellThreadPanelComponent = ComponentType<{
+  threadId: string;
+  tab?: ShellThreadPanelTab;
+  onTabChange?: (tab: ShellThreadPanelTab) => void;
+}>;
+
 /** For a page or a switcher of the embedding app's: where the window is, and a way to move it. */
 export type UseShellLocation = () => {
   /** The path under the app, without `basePath`. */
