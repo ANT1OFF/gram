@@ -19,11 +19,12 @@ export function StatusHeader({
 }) {
   if (thread.role !== "orchestrator" || thread.workspaceId === undefined) return null;
   return (
-    // One quiet muted line with no rule under it. Hidden while empty (`empty:hidden`): with no
-    // absence to sum up, or once it is dismissed, there is no band over the chat at all.
+    // One quiet muted line with a hairline under it, so a message scrolled half out of view under
+    // it reads as behind the line and not as printed over it. Hidden while empty (`empty:hidden`):
+    // with no absence to sum up, or once it is dismissed, there is no band over the chat at all.
     <div
       data-testid="status-header"
-      className="flex min-w-0 shrink-0 items-center px-2 py-0.5 empty:hidden"
+      className="flex min-w-0 shrink-0 items-center border-b border-edge px-2 py-0.5 empty:hidden"
     >
       {digests !== undefined && (
         <SinceYouLeft key={`since-you-left:${thread.id}`} thread={thread} digests={digests} />
