@@ -19,6 +19,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { ServerConfig } from "../config.ts";
+import { Embedding } from "../embedding/embedding.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { callerPerson, NOT_YOUR_MACHINE, ownersOf } from "./ownership.ts";
@@ -160,33 +161,55 @@ const unavailable = (agent: AgentKind, message: string) =>
   new AgentUnavailable({ agent, reason: "startup-failed", message });
 
 /**
+ * The models a headless Gram offers `person`: what their own machine's Claude Code lists, where an
+ * embedder started one for them, else what the default machine's lists. A person's machine that
+ * has stopped is still theirs, so the list it last reported stands in for it until it is back
+ * (`remembered`); work sent then starts it again. Without either, the reason says what to do.
+ */
+export const modelsFor = (
+  machines: ReadonlyArray<PlaceableMachine>,
+  person: string | undefined,
+  onDemand: boolean,
+  remembered: Map<string, ReadonlyArray<AgentModel>>,
+): { readonly models: ReadonlyArray<AgentModel> } | { readonly error: string } => {
+  const picked = machineFor(machines, person, onDemand);
+  const machine = "error" in picked ? undefined : machines.find((each) => each.id === picked.id);
+  if (person !== undefined && machine?.owner === person && machine.models !== undefined) {
+    remembered.set(person, machine.models);
+    return { models: machine.models };
+  }
+  const last = person === undefined ? undefined : remembered.get(person);
+  if (last !== undefined) return { models: last };
+  if (machine?.models !== undefined) return { models: machine.models };
+  if ("error" in picked) return picked;
+  return {
+    error: `${machine?.name ?? picked.id} hasn't said which models its Claude Code offers yet.`,
+  };
+};
+
+/**
  * The agents of a headless Gram: no CLI is looked for or started here. Claude Code is offered as
- * the joined machines list it, and a session opens only where a thread is placed (`placedHost`), so
- * one asked for here (a thread of this machine, a helper, a memory update) is refused. Codex has
- * no session on a joined machine yet, so it isn't offered.
+ * the joined machines list it (`modelsFor`), and a session opens only where a thread is placed
+ * (`placedHost`), so one asked for here (a thread of this machine, a helper, a memory update) is
+ * refused. Codex has no session on a joined machine yet, so it isn't offered.
  */
 export const headlessAgentHosts = (
   remote: Pick<RemoteHostsShape, "list"> | undefined,
+  onDemand = false,
 ): AgentHosts["Service"] => {
+  // Each person's own machine's last list, kept while this server runs.
+  const remembered = new Map<string, ReadonlyArray<AgentModel>>();
   const claude: AgentHost = {
     kind: "claude",
     capabilities: CLAUDE_CAPABILITIES,
     open: () => Effect.fail(unavailable("claude", RUNS_NOTHING_HERE)),
-    // What the default machine's Claude Code lists, as its host last reported it.
     listModels: () =>
-      Effect.suspend(() => {
-        const machines: ReadonlyArray<PlaceableMachine> = remote?.list() ?? [];
-        const picked = defaultMachine(machines);
-        if ("error" in picked) return Effect.fail(unavailable("claude", picked.error));
-        const machine = machines.find((each) => each.id === picked.id);
-        return machine?.models === undefined
-          ? Effect.fail(
-              unavailable(
-                "claude",
-                `${machine?.name ?? picked.id} hasn't said which models its Claude Code offers yet.`,
-              ),
-            )
-          : Effect.succeed(machine.models);
+      Effect.gen(function* () {
+        const person = yield* callerPerson;
+        const listed = modelsFor(remote?.list() ?? [], person, onDemand, remembered);
+        return "error" in listed
+          ? yield* Effect.fail(unavailable("claude", listed.error))
+          : listed.models;
       }),
   };
   return AgentHosts.of({
@@ -214,7 +237,12 @@ export const agentHostsOrHeadless = <E, R>(
     Effect.gen(function* () {
       if ((yield* ServerConfig).headless !== true) return otherwise;
       const remote = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
-      return Layer.succeed(AgentHosts, headlessAgentHosts(remote));
+      const embedding = Option.getOrUndefined(yield* Effect.serviceOption(Embedding));
+      // With hosts provisioned on demand, a person with no machine is told to start one.
+      return Layer.succeed(
+        AgentHosts,
+        headlessAgentHosts(remote, embedding?.config.hostProvider !== undefined),
+      );
     }),
   );
 

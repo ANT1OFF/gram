@@ -61,6 +61,25 @@ export function useModelsSettled(
 }
 
 /**
+ * `models` as the embedding app offers them (`ShellModels.offered`): every one on Gram's own, or
+ * when the app's check throws. `undefined` stays undefined, so a list still loading still is.
+ */
+export const offeredModels = (
+  models: readonly AgentModel[] | undefined,
+  agent: AgentKind,
+  offered: ((agent: AgentKind, model: string) => boolean) | undefined,
+): readonly AgentModel[] | undefined => {
+  if (models === undefined || offered === undefined) return models;
+  return models.filter((model) => {
+    try {
+      return offered(agent, model.id);
+    } catch {
+      return true;
+    }
+  });
+};
+
+/**
  * A model's name as the composer's picker shows it: the agent's own display name for the id, else
  * the built-in Claude name, else the id itself ("opus" reads "Claude Opus" wherever it is named).
  */

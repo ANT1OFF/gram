@@ -249,6 +249,31 @@ mountGram({
 - `noun`: the word for one, lower case ("machine" when left out).
 - `facts`: up to five short lines the card lists, in your deployment's own terms.
 
+### The model list
+
+The prompt box lists the models each agent offers. Where your deployment allows only some of them,
+or a person's own accounts leave some unusable, narrow the list with `shell.models`, and say what
+to do when none is left. Replace it with `GramHandle.update({ models })` once you know more, such
+as after reading the person's accounts:
+
+```ts
+handle.update({
+  models: {
+    offered: (agent, model) => agent === "claude" && allowed(model),
+    none: {
+      text: "Connect a Claude account to pick a model.",
+      action: { label: "Model accounts", to: "/accounts" },
+    },
+  },
+});
+```
+
+- `offered`: whether a listed model is offered. Every one is when left out, and when it throws. A
+  model a thread already uses stays shown on that thread. It only narrows the list: your
+  deployment still refuses a model it does not allow.
+- `none`: the Model row's words when nothing is left to pick, with an optional link to one of your
+  pages. Where the list can't be read at all, it is shown beside Gram's own reason and Retry.
+
 ## Pages that look like Gram's
 
 `@gram/web/kit` exports Gram's own controls: `Button`, `ButtonGroup`, `Badge`, `Alert`, `Switch`,
