@@ -13,6 +13,8 @@ import type {
   ShellSidebar,
   ShellSlotProps,
   ShellThreadsPage,
+  ShellToolCard,
+  ShellToolCardProps,
 } from "./contract";
 
 /**
@@ -40,6 +42,8 @@ export interface EmbedShellState {
   readonly home: ComponentType<ShellPageProps> | undefined;
   /** The open sidebar's look, its head and its account. */
   readonly sidebar: ShellSidebar;
+  /** The embedding app's cards under its own tools' calls. Set once, at mount. */
+  readonly toolCards: readonly ShellToolCard[];
 }
 
 export const useEmbedShell = create<EmbedShellState>()(() => ({
@@ -54,6 +58,7 @@ export const useEmbedShell = create<EmbedShellState>()(() => ({
   newEntry: undefined,
   home: undefined,
   sidebar: {},
+  toolCards: [],
 }));
 
 /** What the store holds before anything is added, and again after `unmount`. */
@@ -69,6 +74,7 @@ export const EMPTY_SHELL: EmbedShellState = {
   newEntry: undefined,
   home: undefined,
   sidebar: {},
+  toolCards: [],
 };
 
 /** Whether the open sidebar is drawn in the embedding app's `roomy` look: never on Gram's own. */
@@ -85,6 +91,36 @@ export const panelOffered = (
   panel: ShellPanel,
   page: { readonly threadInView: boolean; readonly threadInRepo: boolean },
 ): boolean => panel === "shown" || (page.threadInView && page.threadInRepo);
+
+/** Whether `name` is one of the tools `pattern` is for: `*` stands for any run of characters. */
+export const toolMatches = (pattern: string, name: string): boolean => {
+  if (!pattern.includes("*")) return pattern === name;
+  const parts = pattern.split("*");
+  let at = 0;
+  for (const [index, part] of parts.entries()) {
+    if (index === 0) {
+      if (!name.startsWith(part)) return false;
+      at = part.length;
+    } else if (index === parts.length - 1) {
+      return name.length - part.length >= at && name.endsWith(part);
+    } else {
+      const found = name.indexOf(part, at);
+      if (found === -1) return false;
+      at = found + part.length;
+    }
+  }
+  return true;
+};
+
+/** The embedding app's card for a tool, the first that matches its name; none on Gram's own. */
+export const toolCardFor = (
+  cards: readonly ShellToolCard[],
+  name: string,
+): ComponentType<ShellToolCardProps> | undefined =>
+  cards.find((card) => toolMatches(card.tool, name))?.component;
+
+export const useHostToolCard = (name: string) =>
+  useEmbedShell((s) => toolCardFor(s.toolCards, name));
 
 /** The name of the page of every thread: "Threads", unless the embedding app gave another. */
 export const useThreadsTitle = () => useEmbedShell((s) => s.threadsPage.title ?? "Threads");

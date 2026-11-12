@@ -104,6 +104,7 @@ export const mountGram: MountGram = async (options) => {
       attention: shell.attention,
       threadsPage: shell.threadsPage ?? {},
       newEntry: shell.newEntry,
+      toolCards: shell.toolCards ?? [],
       home: shell.home?.component,
       sidebar: shell.sidebar ?? {},
       titles: Object.fromEntries([
