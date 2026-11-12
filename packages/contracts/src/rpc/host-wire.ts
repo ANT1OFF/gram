@@ -4,8 +4,8 @@ import * as RpcSchema from "effect/rpc/RpcSchema";
 
 /**
  * The host protocol as it crosses the wire, written down as data so one build's protocol can be
- * compared with another's. A release's copy is checked in beside this file (`host-released.json`),
- * and `hostWireBreaks` says what a later build changed that a host or control plane of that
+ * compared with another's. Each release's copy is checked in beside this file
+ * (`host-released/<release>.json`), and `hostWireBreaks` says what a later build changed that a host or control plane of that
  * release can't live with. See docs/MACHINES.md, "Machines on different releases".
  */
 

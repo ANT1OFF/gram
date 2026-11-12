@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
@@ -14,27 +14,42 @@ import { describeHostWire, type HostWire, hostWireBreaks, type WireBreak } from 
 
 /**
  * The compatibility rule for joined machines: between releases the host protocol only grows, so a
- * host or a control plane of the last release keeps working with this build. `host-released.json`
- * is the protocol as that release spoke it, and the first test fails on any change that release
- * can't live with. See docs/MACHINES.md, "Machines on different releases".
+ * host or a control plane of any release this build still talks to keeps working with it. A joined
+ * machine can be several releases behind (it updates when someone asks it to), and a deployment
+ * that runs Gram's host pins a release of its own. `host-released/<release>.json` is the protocol as
+ * each release spoke it, from 1.19.0, the first recorded, on; the first test fails on any change a
+ * release of `HOST_PROTOCOL_OLDEST` or later can't live with. See docs/MACHINES.md, "Machines on
+ * different releases".
  *
  * When it fails, change the protocol another way: add a call, an optional field or a feature a host
  * names in its hello, and leave what is there as it is. Where a released build is certain never to
  * meet the change (a value sent only to a peer that named a feature for it), list the break in
- * `ACCEPTED` with that reason. A change no released build can live with is a new
+ * `ACCEPTED`, under each release it breaks, with that reason. A change no released build can live with is a new
  * `HOST_PROTOCOL_VERSION`, decided on purpose.
  */
 
-const RELEASED = join(import.meta.dirname, "host-released.json");
+const RELEASED = join(import.meta.dirname, "host-released");
 const ROOT_PACKAGE = join(import.meta.dirname, "../../../../package.json");
 
-/** Breaks of the released protocol taken on purpose, each with why no released build meets it. */
-const ACCEPTED: ReadonlyArray<WireBreak & { readonly because: string }> = [];
+/**
+ * Breaks of a released protocol taken on purpose, by release, each with why no build of that
+ * release meets it.
+ */
+const ACCEPTED: Readonly<Record<string, ReadonlyArray<WireBreak & { readonly because: string }>>> =
+  {};
 
 interface Released extends HostWire {
   /** The Gram release whose protocol this is. */
   readonly release: string;
 }
+
+/** `[major, minor, patch]`. */
+const parts = (release: string): Array<number> => release.split(".").map(Number);
+const byRelease = (a: string, b: string) => {
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i]! - y[i]!;
+  return 0;
+};
 
 const current = (): HostWire =>
   describeHostWire(HostRpcs, {
@@ -61,41 +76,77 @@ const written = (release: string, wire: HostWire): string =>
     "",
   ].join("\n");
 
-const released = (): Released => JSON.parse(readFileSync(RELEASED, "utf8")) as Released;
+/** Every recorded release's protocol, oldest first. */
+const releases = (): Array<Released> =>
+  readdirSync(RELEASED)
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => JSON.parse(readFileSync(join(RELEASED, name), "utf8")) as Released)
+    .toSorted((a, b) => byRelease(a.release, b.release));
 
-// `bun run host-protocol:release`, on a release's own pull request: this build becomes the
-// released protocol. Empty `ACCEPTED` with it.
-if (process.env["GRAM_HOST_RELEASED"] === "write") {
-  const breaks = hostWireBreaks(released(), current());
-  if (breaks.length > ACCEPTED.length)
-    throw new Error("The protocol breaks the last release's; fix that before recording it.");
-  writeFileSync(RELEASED, written(version(), current()));
-}
+/** The releases this build's control plane still talks to, which it must keep working with. */
+const spoken = () => releases().filter((each) => each.protocol >= HOST_PROTOCOL_OLDEST);
 
 const told = (breaks: ReadonlyArray<WireBreak>) => breaks.map((b) => `${b.at}: ${b.what}`);
 
-describe("the host protocol as last released", () => {
-  it("is still spoken: nothing a released host or control plane relies on changed", () => {
-    const breaks = told(hostWireBreaks(released(), current()));
-    const accepted = told(ACCEPTED);
-    expect(breaks.filter((b) => !accepted.includes(b))).toEqual([]);
-    // An accepted break that is no longer one is taken off the list.
-    expect(accepted.filter((b) => !breaks.includes(b))).toEqual([]);
+// `bun run host-protocol:release`, on a release's own pull request: this build's protocol is
+// recorded as that release's, beside the earlier ones, which stay as they are.
+if (process.env["GRAM_HOST_RELEASED"] === "write") {
+  for (const each of spoken()) {
+    const breaks = hostWireBreaks(each, current());
+    if (breaks.length > (ACCEPTED[each.release]?.length ?? 0))
+      throw new Error(`The protocol breaks ${each.release}'s; fix that before recording it.`);
+  }
+  const file = join(RELEASED, `${version()}.json`);
+  if (!existsSync(file)) writeFileSync(file, written(version(), current()));
+}
+
+describe("the host protocol as released", () => {
+  it.each(spoken().map((each) => [each.release, each] as const))(
+    "is still spoken to %s: nothing its host or control plane relies on changed",
+    (release, each) => {
+      const breaks = told(hostWireBreaks(each, current()));
+      const accepted = told(ACCEPTED[release] ?? []);
+      expect(breaks.filter((b) => !accepted.includes(b))).toEqual([]);
+      // An accepted break that is no longer one is taken off the list.
+      expect(accepted.filter((b) => !breaks.includes(b))).toEqual([]);
+    },
+  );
+
+  it("names only releases it has a recorded protocol for in ACCEPTED", () => {
+    const recorded = releases().map((each) => each.release);
+    expect(Object.keys(ACCEPTED).filter((release) => !recorded.includes(release))).toEqual([]);
   });
 
-  it("is the protocol of this tree's release or the one before it", () => {
+  it("is recorded for every release from the first, ending at this tree's or the one before", () => {
     // `bun run host-protocol:release` on a release's pull request records what that release
-    // speaks. This holds it to at most one release behind, so a call or field a release added is
-    // soon held too.
-    const [major, minor] = version().split(".").map(Number);
-    const [wasMajor, wasMinor] = released().release.split(".").map(Number);
+    // speaks. This holds the newest to at most one release behind, so a call or field a release
+    // added is soon held too, and leaves no minor release out between the first and the newest.
+    const recorded = releases();
+    expect(recorded[0]?.release).toBe("1.19.0");
+    for (const each of recorded) expect(each.release).toMatch(/^\d+\.\d+\.\d+$/);
+    for (let i = 1; i < recorded.length; i++) {
+      const [wasMajor, wasMinor] = parts(recorded[i - 1]!.release);
+      const [major, minor] = parts(recorded[i]!.release);
+      const next = major === wasMajor ? minor! - wasMinor! : minor === 0 ? 1 : NaN;
+      expect(next, `${recorded[i - 1]!.release} to ${recorded[i]!.release}`).toBeLessThanOrEqual(1);
+      expect(next).toBeGreaterThanOrEqual(0);
+    }
+    const [major, minor] = parts(version());
+    const [wasMajor, wasMinor] = parts(recorded.at(-1)!.release);
     expect(wasMajor).toBe(major);
     expect(minor! - wasMinor!).toBeGreaterThanOrEqual(0);
     expect(minor! - wasMinor!).toBeLessThanOrEqual(1);
   });
 
-  it("is of a version this build's control plane still talks to", () => {
-    expect(released().protocol).toBeGreaterThanOrEqual(HOST_PROTOCOL_OLDEST);
+  it("keeps each release's file named after the release it records", () => {
+    for (const name of readdirSync(RELEASED)) {
+      const each = JSON.parse(readFileSync(join(RELEASED, name), "utf8")) as Released;
+      expect(name).toBe(`${each.release}.json`);
+    }
+  });
+
+  it("still talks to the newest recorded release", () => {
+    expect(releases().at(-1)!.protocol).toBeGreaterThanOrEqual(HOST_PROTOCOL_OLDEST);
     expect(HOST_PROTOCOL_OLDEST).toBeLessThanOrEqual(HOST_PROTOCOL_VERSION);
   });
 });

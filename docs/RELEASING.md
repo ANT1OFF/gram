@@ -39,13 +39,14 @@ entry. Merging that PR publishes nothing: `skip-github-release` is on, and no ta
 made.
 
 The metadata PR also records the host protocol the release speaks. On its branch, once the
-version fields read the new version, run `bun run host-protocol:release` and commit
-`packages/contracts/src/rpc/host-released.json`, emptying the `ACCEPTED` list in
-`host-compat.test.ts` if it has entries. That file is what later changes are held to, so a joined
-machine on this release keeps working with the next one (see
+version fields read the new version, run `bun run host-protocol:release` and commit the new
+`packages/contracts/src/rpc/host-released/<version>.json`. The earlier releases' files stay as
+they are. Every release's file from 1.19.0 on is what later changes are held to, so a joined
+machine on this release, or a deployment pinned to it, keeps working with every later one (see
 [machines on different releases](MACHINES.md#machines-on-different-releases)). The command
-refuses when the tree breaks the previous release's protocol, and the test fails once the copy
-is more than one minor release behind.
+refuses when the tree breaks any recorded release's protocol beyond its `ACCEPTED` entries in
+`host-compat.test.ts`, and the test fails once the newest file is more than one minor release
+behind, or when a minor release is missing between the first and the newest.
 
 After the release below is published, the publisher swaps the merged metadata PR's
 `autorelease: pending` label for `autorelease: tagged`, so the next run proposes the following

@@ -37,7 +37,7 @@ import { PositiveInt } from "./shared.ts";
  * field, a new feature a host names in its hello. So a control plane and a host on different
  * releases keep working together, each without what the other doesn't have yet, and updating one
  * doesn't make the other restart. `host-compat.test.ts` holds every change to that, against the
- * protocol as last released (`host-released.json`).
+ * protocol as each release since 1.19.0 spoke it (`host-released/<release>.json`).
  *
  * Bump it only for a break decided on purpose: a message either side already sends changing in a
  * way a released build can't read. A control plane then refuses a host outside
