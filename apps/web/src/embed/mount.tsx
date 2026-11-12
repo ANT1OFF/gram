@@ -1,4 +1,4 @@
-import { embeddingOn } from "@gram/contracts";
+import { embeddingOn, type ThreadId } from "@gram/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createRoute,
@@ -18,6 +18,7 @@ import type { Api } from "@/api/types";
 import { installKeyboard } from "@/keyboard/registry";
 import { setAppBasePath, appBasePath } from "@/lib/app-path";
 import { createAppRouter } from "@/router";
+import { ThreadView } from "@/thread/thread-view";
 import { routeTree } from "@/routeTree.gen";
 
 import type {
@@ -25,6 +26,7 @@ import type {
   MountGram,
   ShellContributions,
   ShellLinkComponent,
+  ShellThreadComponent,
   ShellRoute,
   UseShellLocation,
 } from "./contract";
@@ -162,6 +164,13 @@ export const ShellLink: ShellLinkComponent = ({ to, className, children }) => (
   <Link {...({ to } as unknown as { to: "/" })} {...(className === undefined ? {} : { className })}>
     {children}
   </Link>
+);
+
+/** A thread for the embedding app's pages: beside what the page shows, as a worker's is in a dock. */
+export const ShellThread: ShellThreadComponent = ({ threadId }) => (
+  <div className="flex h-full min-h-0 flex-col" data-testid="shell-thread">
+    <ThreadView key={threadId} threadId={threadId as ThreadId} focused beside={{ header: null }} />
+  </div>
 );
 
 /** Where the window is under the app, and a way to move it, for the embedding app's components. */

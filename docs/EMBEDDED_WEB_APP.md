@@ -186,6 +186,11 @@ Inside your pages and switcher, `ShellLink` is a link to a path under the app th
 the page again, and `useShellLocation()` gives the path the window is on (without `basePath`) and
 a `navigate`.
 
+`ShellThread` puts one thread inside a page of yours: `<ShellThread threadId={id} />` draws its
+transcript, cards and composer without the thread's own header, and fills the element you put it
+in, so give that element a height. It is the same thread as on its own page (`/t/<id>`). Use it
+for a conversation beside what your page shows, such as a panel at the side.
+
 ## Pages that look like Gram's
 
 `@gram/web/kit` exports Gram's own controls: `Button`, `ButtonGroup`, `Badge`, `Alert`, `Switch`,

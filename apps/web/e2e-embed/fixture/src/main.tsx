@@ -4,6 +4,7 @@
 import {
   mountGram,
   ShellLink,
+  ShellThread,
   useShellLocation,
   type GramHandle,
   type ShellPageProps,
@@ -239,6 +240,20 @@ const BUILD = {
   ],
 };
 
+/** A page of the app's with one of Gram's threads beside its own content. */
+function Beside({ params }: ShellPageProps) {
+  return (
+    <div className="flex h-full min-h-0">
+      <p className="flex-1 p-6" data-testid="beside-own">
+        The app's own page
+      </p>
+      <aside className="flex w-96 min-w-0 flex-col border-l border-border">
+        <ShellThread threadId={params["threadId"] ?? ""} />
+      </aside>
+    </div>
+  );
+}
+
 mountGram({
   element,
   server: "mock",
@@ -248,6 +263,7 @@ mountGram({
       { path: "/govern/policies", title: "Policies", component: Policies },
       { path: "/govern/limits", title: "Limits", component: Limits },
       { path: "/govern/agents/$agentId", component: Agent },
+      { path: "/govern/beside/$threadId", title: "Beside", component: Beside },
     ],
     home: { title: "Home", component: Home },
     navigation: [BUILD, GOVERN],
