@@ -38,6 +38,11 @@ export interface PickerOption<V extends string> {
    * opens "Continue in Codex": it is never the current value, and has no star.
    */
   opens?: boolean | undefined;
+  /**
+   * A newer model of its family is listed (`supersededModels`): the model picker folds it under
+   * Legacy models, and shows it with the rest while a search or a star finds it.
+   */
+  legacy?: boolean | undefined;
 }
 
 interface PickerProps<V extends string> {

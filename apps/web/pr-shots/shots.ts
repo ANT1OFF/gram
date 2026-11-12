@@ -2163,6 +2163,45 @@ const seedRecommendedOn = async (page: Page) => {
   });
 };
 
+/** An invented Claude account listing two generations of Opus and Fable beside the latest. */
+const VERSIONED_CLAUDE = [
+  ["default", "Default (recommended)", "Opus 5.5 · Best for everyday, complex tasks"],
+  ["opus", "Opus 5.5", "For complex work and everyday tasks"],
+  ["fable", "Fable 5.2", "For your toughest challenges"],
+  ["sonnet", "Sonnet 5.5", "Most efficient for simpler tasks"],
+  ["haiku", "Haiku 5.5", "Fastest for quick answers"],
+  ["claude-fable-5-1", "Fable 5.1", "Most capable for your hardest and longest tasks"],
+  ["claude-opus-5", "Opus 5", "Earlier Opus"],
+  ["claude-opus-4-6", "Opus 4.6", "Earlier Opus"],
+].map(([id, displayName, description]) => ({
+  id: id!,
+  displayName: displayName!,
+  description: description!,
+  supportsEffort: true,
+  efforts: ["low", "medium", "high", "xhigh"] as const,
+}));
+
+/** `t-deps`'s model picker over `VERSIONED_CLAUDE`, with its Legacy fold `opened` or not. */
+const openLegacyPicker = async (page: Page, opened: boolean) => {
+  await page.clock.install();
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.goto("/t/t-deps");
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  await page.evaluate(
+    (models) => window.gramMock!.seedClaudeAccountModels(models as never),
+    VERSIONED_CLAUDE,
+  );
+  // Past the list's staleness, so the picker asks again as it opens.
+  await page.clock.fastForward("05:01");
+  await page.getByTestId("composer-toolbar").getByTestId("composer-choices").click();
+  await page.getByRole("option", { name: "Fable 5.2" }).waitFor();
+  if (opened) {
+    await page.getByTestId("legacy-models").click();
+    await page.getByRole("option", { name: "Opus 4.6" }).waitFor();
+  }
+  await page.waitForTimeout(400);
+};
+
 const RECOMMENDED_CLAUDE = [
   ["opus", "Opus 5.5", "claude-opus-5-5"],
   ["sonnet", "Sonnet 5.5", "claude-sonnet-5-5"],
@@ -4378,6 +4417,17 @@ export const SHOTS: readonly Shot[] = [
       await page.getByRole("option").first().waitFor();
       await page.waitForTimeout(400);
     },
+  },
+  {
+    name: "model-picker-legacy",
+    title:
+      "A thread's model picker over a versioned Claude list: the latest of each family, older ones folded",
+    open: async (page) => openLegacyPicker(page, false),
+  },
+  {
+    name: "model-picker-legacy-open",
+    title: "The same picker with Legacy models opened",
+    open: async (page) => openLegacyPicker(page, true),
   },
   {
     name: "model-picker-new-thread",

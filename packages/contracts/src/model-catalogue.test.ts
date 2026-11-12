@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { canonicalModelId, closestName, listedRow, resolveModel } from "./model-catalogue.ts";
+import {
+  canonicalModelId,
+  closestName,
+  listedRow,
+  resolveModel,
+  supersededModels,
+} from "./model-catalogue.ts";
 import type { AgentModel } from "./models.ts";
 
 // Synthetic rows shaped like Claude Code's `supportedModels()`: aliases with and without the id
@@ -113,5 +119,63 @@ describe("closestName", () => {
 
   it("suggests nothing for a name far from every entry", () => {
     expect(closestName(candidates, "gpt-6.1-sol")).toBeUndefined();
+  });
+});
+
+const plain = (id: string, displayName: string, extra: Partial<AgentModel> = {}): AgentModel => ({
+  id,
+  displayName,
+  supportsEffort: false,
+  ...extra,
+});
+
+describe("supersededModels", () => {
+  it("keeps the newest of each family, by the version in its name", () => {
+    const claude = [
+      plain("default", "Default (recommended)", { resolvedId: "claude-opus-5-5" }),
+      plain("opus", "Opus 5.5", { resolvedId: "claude-opus-5-5" }),
+      plain("claude-opus-5", "Opus 5"),
+      plain("claude-opus-4-6", "Opus 4.6"),
+      plain("opus[1m]", "Opus 5.5 (1M context)"),
+      plain("claude-opus-5[1m]", "Opus 5 (1M context)"),
+      plain("fable", "Fable 5.2"),
+      plain("claude-fable-5-1", "Fable 5.1"),
+      plain("haiku", "Haiku 5.5"),
+    ];
+    expect([...supersededModels(claude)].toSorted()).toEqual([
+      "claude-fable-5-1",
+      "claude-opus-4-6",
+      "claude-opus-5",
+      "claude-opus-5[1m]",
+    ]);
+  });
+
+  it("reads Codex's names the same way, each line its own family", () => {
+    const codex = [
+      plain("gpt-6.1-sol", "GPT-6.1-Sol", { isDefault: true }),
+      plain("gpt-6-sol", "GPT-6-Sol"),
+      plain("gpt-6-luna", "GPT-6 Luna"),
+      plain("gpt-5.5", "GPT-5.5"),
+      plain("gpt-5.10", "GPT-5.10"),
+    ];
+    expect([...supersededModels(codex)].toSorted()).toEqual(["gpt-5.5", "gpt-6-sol"]);
+  });
+
+  it("names a family from the id an alias runs when its name has no version", () => {
+    const rows = [
+      plain("opus", "Opus", { resolvedId: "claude-opus-5-5" }),
+      plain("claude-opus-4-6", "Claude Opus 4.6"),
+    ];
+    expect([...supersededModels(rows)]).toEqual(["claude-opus-4-6"]);
+  });
+
+  it("never supersedes the CLI's default, a model the user added, or one with no version", () => {
+    const rows = [
+      plain("gpt-6.1-sol", "GPT-6.1-Sol"),
+      plain("gpt-6-sol", "GPT-6-Sol", { isDefault: true }),
+      plain("gpt-5-sol", "GPT-5-Sol", { description: "Added in Settings" }),
+      plain("mystery", "Mystery"),
+    ];
+    expect(supersededModels(rows).size).toBe(0);
   });
 });

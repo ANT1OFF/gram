@@ -257,7 +257,8 @@ export function ModelSelect({
   };
   const favourite = useIsFavourite(agent);
   if (status !== undefined) return status;
-  if (options.length > MODEL_SEARCH_THRESHOLD) {
+  // The plain select has no Legacy fold, so a list with superseded models searches too.
+  if (options.length > MODEL_SEARCH_THRESHOLD || options.some((option) => option.legacy)) {
     return (
       <ModelCombobox
         label="Model"
