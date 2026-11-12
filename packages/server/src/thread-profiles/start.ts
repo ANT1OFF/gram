@@ -82,6 +82,18 @@ export interface ProfileMoved {
 export const NOT_MOVABLE =
   "Only a thread started from a profile that works in a folder of its own, on a joined machine, moves.";
 
+/** What a move hears for a machine started for someone else than the thread's. */
+export const NOT_THE_THREADS_OWNER =
+  "That machine was started for someone else than the thread is for, so the thread can't move to it.";
+
+/** What a move hears for a thread whose machine is no longer on record. */
+export const OWNER_UNKNOWN =
+  "The thread's machine is no longer on record, so who the thread is for can't be told. It doesn't move.";
+
+/** What a move hears for a thread at work. */
+export const THREAD_AT_WORK =
+  "The thread is at work, or has something open on its machine, so it doesn't move now.";
+
 /** What a move hears while the thread's machine is still there. */
 export const MACHINE_STILL_THERE =
   "The thread's machine is online, so the thread stays on it. Move it once that machine is gone.";
@@ -91,9 +103,15 @@ export interface ProfileStarterDeps {
     ThreadStoreShape,
     "getSettings" | "listProfiles" | "ensureProject" | "getThread" | "listClosed"
   >;
-  /** With `moveCheckout` where threads can be moved (`moveOne`). */
+  /** With `moveCheckout`, `restSession` and `status` where threads can be moved (`moveOne`). */
   readonly runtimes: Pick<ThreadRuntimesShape, "create" | "close"> &
-    Partial<Pick<ThreadRuntimesShape, "moveCheckout">>;
+    Partial<Pick<ThreadRuntimesShape, "moveCheckout" | "restSession" | "status">>;
+  /**
+   * The joined machines' records, for whom each was started (`owner`, `onDemand`, where the
+   * server records them): a thread moves only between machines started for the same person and
+   * the same purpose, or between machines started for nobody. Absent: nothing moves.
+   */
+  readonly machines?: { readonly get: (id: HostId) => object | undefined } | undefined;
   /** The server's data folder (`ServerConfig.dataDir`). */
   readonly dataDir: string;
   /** Clones and worktrees for a workplace of repositories; absent where there is no git. */
@@ -126,6 +144,7 @@ export const makeProfileStarter = ({
   dataDir,
   repositories,
   hosts,
+  machines,
 }: ProfileStarterDeps) => {
   /**
    * A joined machine's places for the thread, looked up at each use since a machine's host lasts
@@ -386,11 +405,32 @@ export const makeProfileStarter = ({
           )
             return yield* refuse(NOT_MOVABLE);
           // Only off a machine that is gone: a thread is never taken from one that is at work.
-          if (hosts === undefined || runtimes.moveCheckout === undefined)
+          const { moveCheckout, restSession, status } = runtimes;
+          if (
+            hosts === undefined ||
+            machines === undefined ||
+            moveCheckout === undefined ||
+            restSession === undefined ||
+            status === undefined
+          )
             return yield* refuse(NOT_PLACED_HERE);
-          const there = yield* hosts.get(from).pipe(Effect.option);
-          if (Option.isSome(there)) return yield* refuse(MACHINE_STILL_THERE);
-
+          // Asked afresh each time it is run.
+          const away = Effect.suspend(() => hosts.get(from)).pipe(
+            Effect.as(false),
+            Effect.orElseSucceed(() => true),
+          );
+          if (!(yield* away)) return yield* refuse(MACHINE_STILL_THERE);
+          // Whose the thread is goes with the machine it is on: it moves only to a machine started
+          // for the same person and purpose, so its owner, and its lineage's, stay what they were.
+          const source = machines.get(from);
+          if (source === undefined) return yield* refuse(OWNER_UNKNOWN);
+          const target = machines.get(to);
+          if (
+            target === undefined ||
+            stringField(source, "owner") !== stringField(target, "owner") ||
+            stringField(source, "onDemand") !== stringField(target, "onDemand")
+          )
+            return yield* refuse(NOT_THE_THREADS_OWNER);
           let files: ReadonlyArray<ProfileFile> = [];
           if (value !== undefined) {
             const decoded = decodeThreadProfile(value);
@@ -401,6 +441,15 @@ export const makeProfileStarter = ({
             files = profileFilesOf(decoded.profile);
           }
           const places = yield* placesOn(to);
+          // Nothing of it may live on: an idle session is put to rest, so nothing follows it if the
+          // old machine dials in again. One at work stays. One only opening is the message that
+          // waits for the old machine, and it follows the move (`placed.ts`).
+          const rest = yield* restSession(threadId);
+          if (rest === "working") {
+            const now = yield* status(threadId).pipe(Effect.orElseSucceed(() => "ended" as const));
+            if (now !== "starting") return yield* refuse(THREAD_AT_WORK);
+          }
+
           // A folder a failed move left there is this thread's and nobody else's: made anew.
           yield* places.remove(threadId);
           const { path } = yield* places.make(threadId, files);
@@ -411,9 +460,15 @@ export const makeProfileStarter = ({
               "That machine keeps thread folders at another path, so the thread can't move to it.",
             );
           }
-          const moved = yield* runtimes
-            .moveCheckout(threadId, { ...checkout, hostId: to })
-            .pipe(Effect.mapError(() => refuse(NOT_MOVABLE)));
+          // Asked again just before the thread moves: the old machine may have come back while the
+          // folder was made, and then the thread stays, and what was made goes.
+          if (!(yield* away)) {
+            yield* places.remove(threadId);
+            return yield* refuse(MACHINE_STILL_THERE);
+          }
+          const moved = yield* moveCheckout(threadId, { ...checkout, hostId: to }).pipe(
+            Effect.mapError(() => refuse(NOT_MOVABLE)),
+          );
           yield* Effect.logInfo("a thread was moved to another machine").pipe(
             Effect.annotateLogs({ threadId, from, to }),
           );
@@ -430,6 +485,12 @@ const ownFolder = (checkout: Thread["checkout"], threadId: ThreadId): boolean =>
   if (checkout.kind !== "main" || checkout.hostId === undefined) return false;
   const parts = checkout.path.split(/[\\/]/);
   return parts.at(-1) === threadId && parts.at(-2) === HOST_THREADS_DIR;
+};
+
+/** A record's string field, where it has one: a machine's `owner` or `onDemand`, say. */
+const stringField = (record: object, field: string): string | undefined => {
+  const value: unknown = Reflect.get(record, field);
+  return typeof value === "string" ? value : undefined;
 };
 
 /** Two decoded values, alike whatever order their keys were written in. */

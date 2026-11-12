@@ -82,8 +82,19 @@ Content-Type: application/json
 - **What moves.** A thread started from a profile whose workplace is a folder of its own (`none`
   or `scratch`) on a joined machine. A thread in repositories has work only its machine holds,
   and stays.
-- **When it moves.** Only while its machine is away. A thread is never taken from a machine that
-  is online. `hostId` must be a joined machine, online now.
+- **When it moves.** Only while its machine is away: it is asked before anything is made, and
+  again just before the thread moves, so a machine that dials in meanwhile keeps its thread and
+  what was made for it on the target is removed. `hostId` must be a joined machine, online now.
+- **Whose it stays.** A thread is for the person its machine was started for. It moves only to a
+  machine started for the same person and the same purpose (`owner` and `onDemand` as the machine
+  records them), or from one machine started for nobody to another. Its owner and its lineage's
+  stay what they were. A thread whose machine is no longer on record doesn't move: who it is for
+  can't be told. Being the platform's service doesn't change this.
+- **Nothing left behind.** A session of the thread's that is idle is put to rest first, so nothing
+  follows it should the old machine dial in again. A thread at work doesn't move. A session that is
+  only opening, a message waiting for the old machine, follows the move. Whenever its wait ends,
+  the thread's machine is read again, and a session that opens on a machine the thread has left
+  meanwhile is closed rather than kept.
 - **The folder.** Made again on that machine at the path it had, with the profile's files when
   `profile` is given. The thread doesn't keep its files, so the profile is the way to give them.
   What the thread keeps of its profile (`profileBindingOf`) must be what `profile` gives, or

@@ -21,7 +21,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HostThreadPlaces } from "../host/thread-places.ts";
 import type { WorkerHost } from "../host/worker-host.ts";
-import { MACHINE_STILL_THERE, makeProfileStarter, NOT_MOVABLE } from "./start.ts";
+import {
+  MACHINE_STILL_THERE,
+  makeProfileStarter,
+  NOT_MOVABLE,
+  NOT_THE_THREADS_OWNER,
+  OWNER_UNKNOWN,
+  THREAD_AT_WORK,
+} from "./start.ts";
 
 const GONE = HostId.make("machine-gone");
 const NEXT = HostId.make("machine-next");
@@ -57,6 +64,13 @@ const setup = (
     readonly root?: string;
     readonly settings?: typeof ON;
     readonly closed?: boolean;
+    /** Each machine's record, as #475's on-demand hosts carry their owner. Absent: unowned. */
+    readonly records?: Readonly<Record<string, object | undefined>>;
+    /** What putting the thread's session to rest answers, and the thread's status then. */
+    readonly rest?: "rested" | "none" | "working";
+    readonly status?: "starting" | "running" | "idle";
+    /** Called as the folder is made on the target: a machine coming back, say. */
+    readonly whileMaking?: () => void;
   } = {},
 ) => {
   const dataDir = mkdtempSync(join(tmpdir(), "gram-profile-move-"));
@@ -72,6 +86,7 @@ const setup = (
       Effect.sync(() => {
         calls.push(`make ${threadId}`);
         made.push({ threadId, files });
+        options.whileMaking?.();
         return { path: folder(threadId, options.root) };
       }),
     lay: () => Effect.die("not laid"),
@@ -100,8 +115,20 @@ const setup = (
           stored = { ...stored!, checkout };
           return stored;
         }),
+      restSession: (threadId) =>
+        Effect.sync(() => {
+          calls.push(`rest ${threadId}`);
+          return options.rest ?? "none";
+        }),
+      status: () => Effect.succeed(options.status ?? "idle"),
     },
     dataDir,
+    machines: {
+      get: (id) =>
+        options.records !== undefined && id in options.records
+          ? options.records[id]
+          : { id, name: id },
+    },
     hosts: {
       get: (id) =>
         online.has(id)
@@ -111,6 +138,7 @@ const setup = (
   });
   return {
     starter,
+    online,
     calls,
     made,
     current: () => stored,
@@ -128,12 +156,12 @@ describe("moving a profile thread to another machine", () => {
       expect(thread.checkout).toEqual({ kind: "main", path: folder(ID), hostId: NEXT });
       expect(current()?.checkout.hostId).toBe(NEXT);
       // Anything a failed move left there goes first.
-      expect(calls).toEqual([`remove ${ID}`, `make ${ID}`, `move ${ID} ${NEXT}`]);
+      expect(calls).toEqual([`rest ${ID}`, `remove ${ID}`, `make ${ID}`, `move ${ID} ${NEXT}`]);
       expect(made[0]?.files).toEqual([{ path: "AGENTS.md", content: "# House rules\n" }]);
       // Asked again: it is there already, and nothing more is done.
       const again = yield* starter.moveOne(ID, NEXT, profile());
       expect(again.moved).toBe(false);
-      expect(calls).toHaveLength(3);
+      expect(calls).toHaveLength(4);
     }),
   );
 
@@ -185,7 +213,7 @@ describe("moving a profile thread to another machine", () => {
       yield* Effect.addFinalizer(() => Effect.sync(cleanup));
       const error = yield* starter.moveOne(ID, NEXT).pipe(Effect.flip);
       expect(error.message).toContain("another path");
-      expect(calls).toEqual([`remove ${ID}`, `make ${ID}`, `remove ${ID}`]);
+      expect(calls).toEqual([`rest ${ID}`, `remove ${ID}`, `make ${ID}`, `remove ${ID}`]);
       expect(current()?.checkout.hostId).toBe(GONE);
     }),
   );
@@ -240,5 +268,87 @@ describe("moving a profile thread to another machine", () => {
         NOT_MOVABLE,
       );
     }),
+  );
+});
+
+/** A machine's record as #475 keeps one started for a person. */
+const owned = (owner: string, onDemand = "thread") => ({ owner, onDemand });
+
+describe("moving a profile thread keeps whose it is (REVIEW-477 1)", () => {
+  it.effect("moves between machines started for the same person", () =>
+    Effect.gen(function* () {
+      const { starter, cleanup } = setup({
+        records: { [GONE]: owned("ada"), [NEXT]: owned("ada") },
+      });
+      yield* Effect.addFinalizer(() => Effect.sync(cleanup));
+      expect((yield* starter.moveOne(ID, NEXT)).moved).toBe(true);
+    }),
+  );
+
+  it.effect("never moves a thread onto another person's machine, or between owned and shared", () =>
+    Effect.gen(function* () {
+      for (const records of [
+        { [GONE]: owned("ada"), [NEXT]: owned("bob") },
+        { [GONE]: owned("ada"), [NEXT]: { id: NEXT } },
+        { [GONE]: { id: GONE }, [NEXT]: owned("bob") },
+        { [GONE]: owned("ada", "thread"), [NEXT]: owned("ada", "personal") },
+      ]) {
+        const { starter, calls, current, cleanup } = setup({ records });
+        yield* Effect.addFinalizer(() => Effect.sync(cleanup));
+        const error = yield* starter.moveOne(ID, NEXT).pipe(Effect.flip);
+        expect(error.message).toBe(NOT_THE_THREADS_OWNER);
+        expect(calls).toEqual([]);
+        expect(current()?.checkout.hostId).toBe(GONE);
+      }
+    }),
+  );
+
+  it.effect(
+    "refuses when the old machine's record is gone, as whose the thread is can't be told",
+    () =>
+      Effect.gen(function* () {
+        const { starter, calls, cleanup } = setup({ records: { [GONE]: undefined } });
+        yield* Effect.addFinalizer(() => Effect.sync(cleanup));
+        expect((yield* starter.moveOne(ID, NEXT).pipe(Effect.flip)).message).toBe(OWNER_UNKNOWN);
+        expect(calls).toEqual([]);
+      }),
+  );
+});
+
+describe("moving a profile thread leaves nothing of it on the old machine (REVIEW-477 2)", () => {
+  it.effect("stays when the old machine comes back while the new folder is made", () =>
+    Effect.gen(function* () {
+      let back: (() => void) | undefined;
+      const { starter, online, calls, current, cleanup } = setup({ whileMaking: () => back?.() });
+      back = () => online.add(GONE);
+      yield* Effect.addFinalizer(() => Effect.sync(cleanup));
+      const error = yield* starter.moveOne(ID, NEXT).pipe(Effect.flip);
+      expect(error.message).toBe(MACHINE_STILL_THERE);
+      // What was made for it there goes, and the thread is where it was.
+      expect(calls).toEqual([`rest ${ID}`, `remove ${ID}`, `make ${ID}`, `remove ${ID}`]);
+      expect(current()?.checkout.hostId).toBe(GONE);
+    }),
+  );
+
+  it.effect(
+    "refuses a thread at work, and moves one whose session it put to rest or that is only opening",
+    () =>
+      Effect.gen(function* () {
+        const working = setup({ rest: "working", status: "running" });
+        yield* Effect.addFinalizer(() => Effect.sync(working.cleanup));
+        expect((yield* working.starter.moveOne(ID, NEXT).pipe(Effect.flip)).message).toBe(
+          THREAD_AT_WORK,
+        );
+        expect(working.calls).toEqual([`rest ${ID}`]);
+        for (const ready of [
+          { rest: "rested" as const },
+          { rest: "working" as const, status: "starting" as const },
+        ]) {
+          const moving = setup(ready);
+          yield* Effect.addFinalizer(() => Effect.sync(moving.cleanup));
+          expect((yield* moving.starter.moveOne(ID, NEXT)).moved).toBe(true);
+          expect(moving.calls[0]).toBe(`rest ${ID}`);
+        }
+      }),
   );
 });
