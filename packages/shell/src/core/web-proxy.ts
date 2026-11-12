@@ -24,7 +24,13 @@ import type { Duplex } from "node:stream";
 
 import { performance } from "node:perf_hooks";
 
-import { hostZone, hostnameOf, proxyTargets, type WebLookup } from "./preview-rules.ts";
+import {
+  destinationKey,
+  hostZone,
+  hostnameOf,
+  proxyTargets,
+  type WebLookup,
+} from "./preview-rules.ts";
 
 /** Opens a TCP connection to an address the proxy checked. */
 export type WebDial = (address: string, port: number) => Socket;
@@ -34,10 +40,12 @@ export interface WebProxyOptions {
   readonly lookup?: WebLookup | undefined;
   readonly dial?: WebDial | undefined;
   /**
-   * Whether it reaches private networks: only a private network page's own session's proxy,
-   * where nothing but private pages runs. Fixed for its life, so there is nothing to borrow.
+   * The one private destination it reaches (`destinationKey`, `10.0.0.1:80`): a private network
+   * page's own session's proxy, opened there by the user. Any other private address or name,
+   * whatever asks for it (a frame, WebRTC, a preconnect), is refused. Fixed for its life; none for
+   * the shared session's proxy, which reaches no private network at all.
    */
-  readonly allowPrivate?: boolean | undefined;
+  readonly privateDestination?: string | undefined;
   /** Told of what the server itself can't do, such as accept a connection. */
   readonly onError?: ((error: Error) => void) | undefined;
 }
@@ -155,7 +163,7 @@ const forwardable = (headers: IncomingHttpHeaders): OutgoingHttpHeaders => {
 export async function startWebProxy(options: WebProxyOptions = {}): Promise<WebProxy> {
   const lookup = options.lookup ?? systemLookup;
   const dial = options.dial ?? dialDirect;
-  const allowPrivate = options.allowPrivate === true;
+  const privateDestination = options.privateDestination;
   const realm = `gram-web-${randomBytes(8).toString("hex")}`;
   const username = "gram";
   const password = randomBytes(24).toString("base64url");
@@ -170,9 +178,11 @@ export async function startWebProxy(options: WebProxyOptions = {}): Promise<WebP
   const challenge = `Basic realm="${realm}"`;
 
   /** Where a client may connect to `host:port`, looked up once and checked; `undefined` refuses. */
-  const targets = async (host: string) => {
+  const targets = async (host: string, port: number) => {
     const hostname = hostnameOf(host);
     if (hostname === undefined) return undefined;
+    const allowPrivate =
+      privateDestination !== undefined && destinationKey(hostname, port) === privateDestination;
     // A literal needs no lookup, nor a loopback or (here) unreachable private name; any other
     // name gets exactly one, bounded and failing closed.
     const named = hostZone(hostname);
@@ -207,7 +217,7 @@ export async function startWebProxy(options: WebProxyOptions = {}): Promise<WebP
     const aborted = new AbortController();
     client.once("close", () => aborted.abort());
     void (async () => {
-      const allowed = await targets(at[1]!);
+      const allowed = await targets(at[1]!, port);
       if (allowed === undefined) {
         client.end("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
         return;
@@ -252,7 +262,7 @@ export async function startWebProxy(options: WebProxyOptions = {}): Promise<WebP
     const aborted = new AbortController();
     res.once("close", () => aborted.abort());
     void (async () => {
-      const allowed = await targets(url.hostname);
+      const allowed = await targets(url.hostname, port);
       if (allowed === undefined) {
         res
           .writeHead(403, { "content-type": "text/plain; charset=utf-8" })

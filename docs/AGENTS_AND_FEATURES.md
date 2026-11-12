@@ -1191,9 +1191,11 @@ every permission, download, client certificate and external-app launch refused:
   reaches loopback (Gram's own server, your dev servers) or a private network, whatever asks: a
   link, form, redirect, script, frame, subresource, WebRTC or preconnect. A public name pointed at
   a private address is refused like the address. A page you open on your private network, by its
-  address or a private name (`nas.local`), gets its thread's own private web session, which runs
-  nothing but private pages: a public frame there doesn't load, and a link to the internet opens
-  in the shared session. A public name that resolves to a private address (split-horizon DNS)
+  address or a private name (`nas.local`), gets its own private web session for that thread and
+  that host and port, which reaches no other private place: not another address, port or name,
+  whatever asks, a frame, WebRTC or a preconnect included. Another private place takes typing it;
+  a link to one goes to your browser through the link question. A public frame there doesn't
+  load, and a link to the internet opens in the shared session. A public name that resolves to a private address (split-horizon DNS)
   opens nowhere in the pane. Each web session's connections go through a proxy of its own, which
   looks each name up once and connects only to the addresses it checked; it answers only its own
   credential, made at each launch, so no other program on your computer can use it. The system

@@ -27,6 +27,8 @@ const contentsAt = (prefix) =>
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 /** A synthetic private address; nothing is ever sent to it, the proxy's dial maps it home. */
 const LAN = "10.77.0.9";
+/** A second, which no page the user opened ever names. */
+const LAN2 = "10.77.0.10";
 
 /** A listener on loopback that records what reached it. */
 async function listener(respond) {
@@ -62,6 +64,13 @@ async function rtcListeners() {
     },
   };
 }
+
+/** A private page embedding `frame`, titling itself with what its child said. */
+const opaqueParent = (frame) => `<!doctype html><title>Opaque parent</title>${frame}<script>
+const said = {};
+addEventListener("message", (event) => Object.assign(said, event.data));
+setTimeout(() => (document.title = "opaque:" + JSON.stringify(said)), 6000);
+</script>`;
 
 /** A page that fetches each lookup case on Gram's port and titles itself with what reached. */
 const lookupsPage = (port) => `<!doctype html><title>Lookups</title><script>
@@ -152,7 +161,47 @@ async function main() {
     },
   ];
   // A page on the private network that the user opens themselves.
+  // What the second private address reaches, counted by connection, whatever the protocol.
+  const unused = { connections: 0 };
+  const unusedServer = createTcpServer((socket) => {
+    unused.connections += 1;
+    socket.destroy();
+  });
+  await new Promise((resolve) => unusedServer.listen(0, "127.0.0.1", resolve));
+  const unusedPort = unusedServer.address().port;
+  /** An opaque child's script: says it ran and its origin, tries a fetch and TURN/TCP. */
+  const opaqueChild = () =>
+    `<script>
+parent.postMessage({ ran: true, origin: self.origin }, "*");
+fetch("http://${LAN2}:${unusedPort}/opaque-fetch", { mode: "no-cors" }).then(
+  () => parent.postMessage({ fetch: "reached" }, "*"),
+  () => parent.postMessage({ fetch: "blocked" }, "*"),
+);
+(async () => {
+  const pc = new RTCPeerConnection({
+    iceServers: [{ urls: "turn:${LAN2}:${unusedPort}?transport=tcp", username: "x", credential: "x" }],
+  });
+  pc.createDataChannel("probe");
+  await pc.setLocalDescription(await pc.createOffer());
+})();
+</script>`;
   const lan = await listener((request, response) => {
+    if (request.url === "/opaque-data")
+      return response
+        .writeHead(200, { "content-type": "text/html" })
+        .end(
+          opaqueParent(
+            `<iframe sandbox="allow-scripts" src="data:text/html,${encodeURIComponent(opaqueChild())}"></iframe>`,
+          ),
+        );
+    if (request.url === "/opaque-srcdoc")
+      return response
+        .writeHead(200, { "content-type": "text/html" })
+        .end(
+          opaqueParent(
+            `<iframe sandbox="allow-scripts" srcdoc="${opaqueChild().replaceAll("&", "&amp;").replaceAll('"', "&quot;")}"></iframe>`,
+          ),
+        );
     if (request.url === "/with-frame")
       return response
         .writeHead(200, { "content-type": "text/html" })
@@ -338,7 +387,7 @@ const probe = (name, url, init = {}) =>
     dialWebAddress: (address, port) =>
       address === "93.184.216.34"
         ? connect({ host: "127.0.0.1", port: port === site.port ? port : 9 })
-        : connect({ host: address === LAN ? "127.0.0.1" : address, port }),
+        : connect({ host: address === LAN || address === LAN2 ? "127.0.0.1" : address, port }),
   });
   const T = "t-web";
   const state = () => invoke(Channels.previewStateGet, { threadId: T });
@@ -683,6 +732,37 @@ const probe = (name, url, init = {}) =>
     followedOut?.getURL(),
   );
 
+  // The fourth review's case: an opaque, sandboxed child of the user's private page (a data: URL,
+  // then srcdoc) runs, its fetch to a second private address is refused, and its TURN/TCP there
+  // reaches nothing either: the session's proxy reaches only the destination the user opened.
+  for (const kind of ["data", "srcdoc"]) {
+    const thread = `t-opaque-${kind}`;
+    const connectedBefore = unused.connections;
+    await invoke(Channels.previewOpenWeb, {
+      threadId: thread,
+      url: `http://${LAN}:${lan.port}/opaque-${kind}`,
+    });
+    let said = {};
+    for (const end = Date.now() + 20_000; Date.now() < end; await delay(100)) {
+      const title = (await invoke(Channels.previewStateGet, { threadId: thread }))?.title ?? "";
+      if (title.startsWith("opaque:")) {
+        said = JSON.parse(title.slice("opaque:".length));
+        break;
+      }
+    }
+    await delay(2000);
+    check(
+      `an opaque ${kind} child of a private page ran, with an opaque origin, and its fetch to another private address was refused`,
+      said.ran === true && said.origin === "null" && said.fetch === "blocked",
+      said,
+    );
+    check(
+      `that child's TURN/TCP to another private address reaches nothing`,
+      unused.connections === connectedBefore,
+      { before: connectedBefore, after: unused.connections },
+    );
+  }
+
   // Re-opening: the user's web page the shell closed for newer threads' opens again by its token,
   // at the shell's own record; a page an agent replaced never does.
   const evictAll = async (prefix) => {
@@ -778,6 +858,7 @@ const probe = (name, url, init = {}) =>
   rtc.close();
   proxyServer.close();
   lan.server.close();
+  unusedServer.close();
 
   process.stdout.write(`${JSON.stringify({ type: "fixture.result", results, failures })}\n`);
   for (const listening of [gram, dev, site]) listening.server.close();

@@ -203,6 +203,25 @@ export function webNetworkOf(url: string): WebNetwork {
   return parsed !== undefined && hostZone(parsed.hostname) === "private" ? "private" : "public";
 }
 
+/**
+ * The one place a connection goes, `host:port` as the URL parser spells the host (`10.0.0.1:80`,
+ * `[fd00::1]:443`, `nas.local:8080`), the same from a page's URL and from the proxy's connection.
+ */
+export function destinationKey(host: string, port: number): string | undefined {
+  const hostname = hostnameOf(host);
+  return hostname === undefined || !Number.isInteger(port) || port < 1 || port > 65_535
+    ? undefined
+    : `${hostname.toLowerCase()}:${port}`;
+}
+
+/** `url`'s destination (`destinationKey`), its scheme's default port when it names none. */
+export function destinationOf(url: string): string | undefined {
+  const parsed = parse(url);
+  if (parsed === undefined) return undefined;
+  const port = parsed.port === "" ? DEFAULT_PORT[parsed.protocol] : Number(parsed.port);
+  return port === undefined ? undefined : destinationKey(parsed.hostname, port);
+}
+
 export interface WebRequestDetails {
   readonly url: string;
   readonly mainFrame: boolean;
@@ -210,6 +229,11 @@ export interface WebRequestDetails {
   readonly subFrame?: boolean | undefined;
   /** The session the request is made in; the shared, public one when absent. */
   readonly network?: WebNetwork | undefined;
+  /**
+   * For a private network page's own session, the one private destination it reaches
+   * (`destinationOf` the page the user opened); no other private address or name, whoever asks.
+   */
+  readonly destination?: string | undefined;
   /** The origin of the page or frame that started it; absent for a load the app started. */
   readonly initiator?: string | undefined;
   /** For a main frame's redirect, the URL it was redirected from. */
@@ -221,7 +245,8 @@ export interface WebRequestDetails {
 /**
  * A web session's rule for one request. Never loopback, whoever asks: Gram's own server, the
  * user's dev servers and the agents' pages are the local session's. Never a private network in the
- * shared session; a private network page's own session loads no public page or frame. Within that,
+ * shared session; a private network page's own session loads no public page or frame, and reaches
+ * no private destination but the one the user opened. Within that,
  * anything a page starts, a link, a form, a redirect, a script, a subresource or a frame, reaches
  * its own zone or a more public one. A public name is looked up, so one pointed at a private or loopback address (DNS
  * rebinding) is refused like the address itself.
@@ -242,6 +267,12 @@ export function webRequest(request: WebRequestDetails): WebRequestVerdict {
   if ((request.network ?? "public") === "public") {
     if (target !== "public") return { kind: "block" };
   } else if (target === "public" && (request.mainFrame || request.subFrame === true)) {
+    return { kind: "block" };
+  } else if (
+    target === "private" &&
+    (request.destination === undefined || destinationOf(request.url) !== request.destination)
+  ) {
+    // The only private place it reaches is the one the user opened; another needs its own.
     return { kind: "block" };
   }
   // Where it came from: the page or frame that started it, and a redirect's previous hop. A main
@@ -300,8 +331,9 @@ export function hostnameOf(host: string): string | undefined {
  * to refuse it. The proxy resolves the name itself and connects to what this returns, so the
  * address checked is the address used. Never loopback. A public name answering any private or
  * loopback address (a rebound one) is refused whole, as is a name that answers nothing. A private
- * address or name only for `allowPrivate`, a private network page's own session; the shared
- * session's proxy never reaches one, whatever asks: a page, WebRTC, a preconnect.
+ * address or name only for `allowPrivate`: the one destination a private network page's own
+ * session was opened at. The shared session's proxy never reaches one, whatever asks: a page,
+ * WebRTC, a preconnect; a private session's reaches no other.
  */
 export function proxyTargets(
   host: string,

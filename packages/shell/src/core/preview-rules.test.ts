@@ -13,6 +13,8 @@ import {
   resolvedWithin,
   webNavigation,
   webNetworkOf,
+  destinationKey,
+  destinationOf,
   webRequest,
   windowRect,
   zoneOf,
@@ -225,19 +227,43 @@ describe("the web session's requests", () => {
   });
 
   it("runs only private pages in a private network page's own session", () => {
-    const own = { network: "private" as const };
-    expect(webRequest({ url: "http://192.168.1.1/", mainFrame: true, ...own })).toEqual({
+    const own = { network: "private" as const, destination: "10.0.0.1:80" };
+    expect(webRequest({ url: "http://10.0.0.1/", mainFrame: true, ...own })).toEqual({
       kind: "allow",
     });
-    // Its own network, and the internet's subresources, from a private page.
+    // Its own destination, and the internet's subresources, from a private page.
     expect(
       webRequest({
-        url: "http://10.0.0.2/x.css",
+        url: "http://10.0.0.1/x.css",
         mainFrame: false,
         initiator: "http://10.0.0.1",
         ...own,
       }),
     ).toEqual({ kind: "allow" });
+    expect(
+      webRequest({
+        url: "ws://10.0.0.1/live",
+        mainFrame: false,
+        initiator: "http://10.0.0.1",
+        ...own,
+      }),
+    ).toEqual({ kind: "allow" });
+    // No other private place, not even another port of the same host: that takes its own open.
+    for (const url of [
+      "http://10.0.0.2/x.css",
+      "http://10.0.0.1:8080/api",
+      "https://10.0.0.1/",
+      "http://nas.local/",
+    ]) {
+      expect(
+        webRequest({ url, mainFrame: false, initiator: "http://10.0.0.1", ...own }),
+        url,
+      ).toEqual({ kind: "block" });
+      expect(webRequest({ url, mainFrame: true, ...own }), url).toEqual({ kind: "block" });
+    }
+    expect(webRequest({ url: "http://10.0.0.1/", mainFrame: true, network: "private" })).toEqual({
+      kind: "block",
+    });
     expect(
       webRequest({
         url: "https://cdn.example.net/",
@@ -261,11 +287,22 @@ describe("the web session's requests", () => {
     ).toEqual({ kind: "block" });
     // An opaque frame there counts as public, so reaches no private address.
     expect(
-      webRequest({ url: "http://10.0.0.2/", mainFrame: false, initiator: "null", ...own }),
+      webRequest({ url: "http://10.0.0.1/", mainFrame: false, initiator: "null", ...own }),
     ).toEqual({ kind: "block" });
     expect(webRequest({ url: "http://127.0.0.1:4317/", mainFrame: true, ...own })).toEqual({
       kind: "block",
     });
+  });
+
+  it("names a destination the same from a page's URL and from a connection", () => {
+    expect(destinationOf("http://10.0.0.1/")).toBe("10.0.0.1:80");
+    expect(destinationOf("https://NAS.local/x")).toBe("nas.local:443");
+    expect(destinationOf("ws://10.0.0.1:8080/")).toBe("10.0.0.1:8080");
+    expect(destinationOf("http://[fd00::1]:3000/")).toBe("[fd00::1]:3000");
+    expect(destinationOf("http://0xa000001/")).toBe("10.0.0.1:80");
+    expect(destinationKey("fd00::1", 3000)).toBe("[fd00::1]:3000");
+    expect(destinationKey("10.0.0.1", 0)).toBeUndefined();
+    expect(destinationOf("file:///etc/hosts")).toBeUndefined();
   });
 
   it("puts a page in the session of the network its address names", () => {

@@ -70,10 +70,10 @@ describe("the web session's proxy", () => {
   });
 
   /** Names resolve as `lookup` says; the "public" address, and 10.77.0.9, dial the loopback target. */
-  const start = async (lookup: WebLookup, allowPrivate = false) => {
+  const start = async (lookup: WebLookup, privateDestination?: string) => {
     const proxy = await startWebProxy({
       lookup,
-      allowPrivate,
+      privateDestination,
       dial: (address, port) =>
         connect({
           host: address === "93.184.216.34" || address === "10.77.0.9" ? "127.0.0.1" : address,
@@ -130,7 +130,7 @@ describe("the web session's proxy", () => {
     const proxy = await start(async () => {
       lookups += 1;
       return ["93.184.216.34"];
-    }, true);
+    }, `127.0.0.1:${gram.port}`);
     for (const host of ["127.0.0.1", "localhost", "gram.localhost", "0.0.0.0", "[::1]"]) {
       expect((await tunnel(proxy, host, gram.port, credential(proxy))).status, host).toBe(403);
     }
@@ -146,9 +146,18 @@ describe("the web session's proxy", () => {
     const shared = await start(publicLookup);
     expect((await tunnel(shared, "10.77.0.9", lan.port, credential(shared))).status).toBe(403);
     expect(lan.reached).toEqual([]);
-    // A private network page's own.
-    const own = await start(publicLookup, true);
+    // A private network page's own, at the one destination the user opened.
+    const own = await start(publicLookup, `10.77.0.9:${lan.port}`);
     expect((await tunnel(own, "10.77.0.9", lan.port, credential(own))).status).toBe(200);
+    expect(lan.reached).toHaveLength(1);
+    // Nowhere else private, whatever asks: another address, another port, a private name.
+    for (const [host, port] of [
+      ["10.77.0.10", lan.port],
+      ["10.77.0.9", lan.port + 1],
+      ["nas.local", lan.port],
+    ] as const) {
+      expect((await tunnel(own, host, port, credential(own))).status, `${host}:${port}`).toBe(403);
+    }
     expect(lan.reached).toHaveLength(1);
     // Each has its own credential: one's doesn't open the other.
     expect((await tunnel(own, "10.77.0.9", lan.port, credential(shared))).status).toBe(407);

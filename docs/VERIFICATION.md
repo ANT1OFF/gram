@@ -270,8 +270,9 @@ agents', gets no Gram cookie, bridge or Node, and reaches nothing on loopback or
 by fetch, socket, script, redirect, rebound or failing lookup, or WebRTC STUN and TURN over TCP to
 loopback or a private address (with a control session showing the same probe does reach them),
 even with the user's private page open at that very address in another thread; that a private
-page loads in its thread's own session, where its public frame doesn't load and its link to the
-internet opens in the shared session; that the system proxy is never used, and the session's own
+page loads in its own session, where its public frame doesn't load, its link to the internet opens
+in the shared session, and an opaque sandboxed child (`data:` and `srcdoc`) that runs has its fetch
+and its TURN over TCP to a second private address refused; that the system proxy is never used, and the session's own
 answers no other process without its credential; that permissions and downloads are refused; that
 a local page's link, script or redirect (an agent's, as `show_panel` opens it) goes to the link
 question and never into the web session; that the loopback open channel refuses a web page and
