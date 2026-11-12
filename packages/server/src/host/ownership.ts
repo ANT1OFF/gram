@@ -211,3 +211,21 @@ export const asRecorded =
       Effect.provideService(RoutedFor, actor === undefined ? undefined : { person: actor.person }),
       Effect.provideService(ActingPerson, actor?.person),
     );
+
+/**
+ * A recorded actor as kept with work that has no other place for "the server's own": `"server"`
+ * for that, else the caller (`RecordedActor`). Work kept before actors were recorded has none,
+ * and is taken as a caller with no signed-in person (`fromStored`): it reaches no one's machine
+ * but the unowned, as before.
+ */
+export type StoredActor = RecordedActor | "server";
+
+/** `recordActor` as kept (`StoredActor`). */
+export const storedActor: Effect.Effect<StoredActor> = Effect.map(
+  recordActor,
+  (actor) => actor ?? "server",
+);
+
+/** The actor kept work is attempted as (`asRecorded`), from what was stored with it. */
+export const fromStored = (stored: StoredActor | undefined): RecordedActor | undefined =>
+  stored === "server" ? undefined : (stored ?? {});

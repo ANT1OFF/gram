@@ -804,6 +804,9 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
           ) {
             continue;
           }
+          // Linked again only on a machine of the reopened orchestrator's owner (`sameOwner`): an
+          // orchestration never spans two people, however it comes back.
+          if (!sameOwner(ownerOf, effectiveCheckout(worker), effectiveCheckout(made))) continue;
           // A plain thread meanwhile, its model may have moved where no worker is admitted.
           const spawnedBy = { threadId: made.id, feature };
           if (!(yield* admits({ ...worker, spawnedBy }))) continue;
@@ -840,7 +843,10 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       if (holder === undefined || holder.id !== spawnedBy.threadId) {
         return { thread: yield* create(inWorkspace), membership: "orchestratorGone" };
       }
-      if (!admitted) return { thread: yield* create(inWorkspace), membership: "notAdmitted" };
+      // Its orchestrator's again only on a machine of that owner's (`sameOwner`): asked of where
+      // it was, which it comes back to, before anything is made.
+      if (!admitted || !sameOwner(ownerOf, effectiveCheckout(stored), effectiveCheckout(holder)))
+        return { thread: yield* create(inWorkspace), membership: "notAdmitted" };
       const made = yield* create({ ...inWorkspace, spawnedBy });
       // Its orchestrator closed while the row was being made, and the close cut links only from
       // the rows there were: cut this one too, as that close would have.

@@ -222,11 +222,19 @@ naming the person in `owner` and `onDemand: "personal"`. From then on:
     session opening refuse another person's host. Deliveries to a session already open (a send,
     steer, notice, interrupt, answer, restart, fork, close) are refused for another person's
     thread, in any route: an RPC, `POST /asks/answer`, a workspace's task or an agent's tool. An
-    RPC that names a thread or a workspace is resolved to its owner first. Another member still
-    reads what the workspace shows; a call with no signed-in person reaches no one's host;
+    RPC that names a thread or a workspace is resolved to its owner first, and so is the target
+    of what names it otherwise: a closed thread reopened (its stored record), a workspace saved
+    or edited (its orchestrator). Changes to a thread's record or session outside a delivery (an
+    archive, directory grants, a reload, a queue edit) pass the same rule. A reopened thread
+    comes back on its own host, and links again only to threads of the same owner. Another
+    member still reads what the workspace shows; a call with no signed-in person reaches no
+    one's host;
   - **where work is kept for later.** Durable work records who it was written for, and every
-    attempt, a retry after a restart included, runs as them, never as the server's own. An owed
-    answer to a worker's question that its maker may no longer give is settled undelivered;
+    attempt, a retry after a restart included, runs as them, never as the server's own. A
+    thread's queued input keeps its writer beside it; after a restart, one whose writer may no
+    longer reach the thread is dropped, and one kept from before writers were recorded is taken
+    as no one's in particular. An owed answer to a worker's question that its maker may no longer
+    give is settled undelivered;
 - an agent's tool call is made for its own thread's host's owner. It is never read from the call's
   input, nor taken from whoever's request began the turn;
 - some orchestration features don't work on a person's host in this version, and are refused

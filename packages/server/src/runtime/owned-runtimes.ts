@@ -67,6 +67,23 @@ export const ownedRuntimes = (
           ),
         }),
       ),
+    // What changes a thread's record or its session outside a delivery (an archive, a park, a
+    // workspace's directory grants, a reload, a queue edit, a completion): the same rule, so a
+    // caller's own approved card never reaches another person's thread through them.
+    updateThread: (threadId, ...rest) =>
+      Effect.andThen(admitOrAbsent(threadId), runtimes.updateThread(threadId, ...rest)),
+    addDirectories: (threadId, ...rest) =>
+      Effect.andThen(admitOrAbsent(threadId), runtimes.addDirectories(threadId, ...rest)),
+    reloadSession: (threadId) =>
+      Effect.andThen(admitOrAbsent(threadId), runtimes.reloadSession(threadId)),
+    setCurrentCheckout: (threadId, ...rest) =>
+      Effect.andThen(admitOrAbsent(threadId), runtimes.setCurrentCheckout(threadId, ...rest)),
+    editQueued: (threadId, ...rest) =>
+      Effect.andThen(admitOrAbsent(threadId), runtimes.editQueued(threadId, ...rest)),
+    removeQueued: (threadId, ...rest) =>
+      Effect.andThen(admitOrAbsent(threadId), runtimes.removeQueued(threadId, ...rest)),
+    markCompleted: (threadId, ...rest) =>
+      Effect.andThen(admitOrAbsent(threadId), runtimes.markCompleted(threadId, ...rest)),
     interrupt: (threadId) => Effect.andThen(admitOrAbsent(threadId), runtimes.interrupt(threadId)),
     stopAtToolBoundary: (threadId) =>
       Effect.andThen(admitOrAbsent(threadId), runtimes.stopAtToolBoundary(threadId)),

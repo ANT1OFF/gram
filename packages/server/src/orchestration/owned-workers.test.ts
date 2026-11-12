@@ -15,6 +15,7 @@ import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
 import { NOT_YOUR_MACHINE, OWNERS_DIFFER, RoutedFor } from "../host/ownership.ts";
 import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
+import { closedThreadHandlers } from "../rpc/handlers/closed-threads.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import type { FakeSession } from "../runtime/fake-agent.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
@@ -314,6 +315,170 @@ describe("kept work for a person's machine", () => {
               (yield* ThreadRuntimes).sendNotice(saved.threadId, "ada", { text: "Ada's" }),
             ).pipe(Effect.flip)).message,
           ).toBe(NOT_YOUR_MACHINE);
+        }),
+      );
+    }),
+  );
+});
+
+/** A machine started for Grace, beside this one, which in these tests is no one's. */
+const GRACES = HostId.make("m-0123456789abcdef0grace01");
+const gracesThere = (world: World) => {
+  world.owners = new Map([[GRACES, "grace"]]);
+};
+
+describe("round v2's edges, through the same two choke points", () => {
+  // V2.1: the closed record is the target, resolved through `mayReachThread` before anything is
+  // made; and a reopened orchestrator links again only workers of its own owner (`sameOwner`).
+  it.effect(
+    "reopens a closed orchestrator only for its owner, linking only its owner's workers",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        gracesHere(world);
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            const runtimes = yield* ThreadRuntimes;
+            const { thread, session, workspaceId } = yield* openOrchestrator(world);
+            const kept = yield* spawn(session, { feature: "cart", title: "Cart API" });
+            const away = yield* spawn(session, { feature: "mail", title: "Mail" });
+            yield* completeTurn(session);
+            yield* as("grace")(runtimes.close(thread.id));
+            // One of its workers is on a machine no one owns now.
+            yield* store.updateThread(away.thread.id, (t) => ({
+              ...t,
+              checkout: { ...t.checkout, hostId: SHARED.id },
+            }));
+            const handlers = yield* closedThreadHandlers;
+            const refused = yield* as("ada")(handlers["threads.closed.reopen"]()).pipe(Effect.flip);
+            expect(refused.message).toBe(NOT_YOUR_MACHINE);
+            // Nothing was made, and the entry is back for its owner.
+            expect((yield* store.listClosed).some((c) => c.thread.id === thread.id)).toBe(true);
+            expect((yield* store.getWorkspace(workspaceId)).workspace.orchestratorThreadId).toBe(
+              undefined,
+            );
+            const back = yield* as("grace")(handlers["threads.closed.reopen"]());
+            expect(back?.membership).toBe("restored");
+            expect((yield* store.getThread(kept.thread.id)).spawnedBy?.threadId).toBe(thread.id);
+            expect((yield* store.getThread(away.thread.id)).spawnedBy).toBeUndefined();
+          }),
+        );
+      }),
+  );
+
+  // V2.2: an edit of a workspace resolves its orchestrator through `mayReachThread` first.
+  it.effect("saves a workspace only for its orchestrator's owner, changing nothing otherwise", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      gracesHere(world);
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const orchestration = yield* Orchestration;
+          const { thread, workspaceId } = yield* openOrchestrator(world);
+          const before = yield* store.getWorkspace(workspaceId);
+          const grantsBefore = (yield* store.getThread(thread.id)).additionalDirectories;
+          const edit = {
+            id: workspaceId,
+            name: "Renamed by Ada",
+            projectIds: before.workspace.projectIds,
+            homeProjectId: before.workspace.homeProjectId,
+          };
+          const refused = yield* as("ada")(orchestration.saveWorkspace(edit)).pipe(Effect.flip);
+          expect(refused.message).toBe(NOT_YOUR_MACHINE);
+          expect((yield* store.getWorkspace(workspaceId)).workspace.name).toBe(
+            before.workspace.name,
+          );
+          expect((yield* store.getThread(thread.id)).additionalDirectories).toEqual(grantsBefore);
+          const saved = yield* as("grace")(
+            orchestration.saveWorkspace({ ...edit, name: "Renamed by Grace" }),
+          );
+          expect(saved.workspace.name).toBe("Renamed by Grace");
+        }),
+      );
+    }),
+  );
+
+  // V2.3: an archive (any change to a thread's record) goes through the runtimes' boundary.
+  it.effect("archives another owner's thread for no agent, its own card notwithstanding", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      gracesThere(world);
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const { session } = yield* openOrchestrator(world);
+          const target = yield* spawn(session, { feature: "cart", title: "Cart API" });
+          yield* completeTurn(session);
+          // The target is Grace's; the orchestrator, here, is no one's.
+          yield* store.updateThread(target.thread.id, (t) => ({
+            ...t,
+            checkout: { ...t.checkout, hostId: GRACES },
+          }));
+          const refused = yield* session
+            .callTool("archive_thread", { threadId: target.thread.id, force: true })
+            .pipe(Effect.flip);
+          // Refused as a thread it can't find: the only answer a record's change has.
+          expect(refused).toBeDefined();
+          expect((yield* store.getThread(target.thread.id)).parked).not.toBe(true);
+          // Grace's own call changes it.
+          yield* as("grace")(
+            (yield* ThreadRuntimes).updateThread(target.thread.id, (t) => ({ ...t, parked: true })),
+          );
+          expect((yield* store.getThread(target.thread.id)).parked).toBe(true);
+        }),
+      );
+    }),
+  );
+
+  // V2.4: the queue's writer records who each input is for, and a restart sends it only as them.
+  it.effect("keeps who wrote each queued input, and sends none of another's after a restart", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const saved = yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          const { session } = yield* openOrchestrator(world);
+          // Its brief's turn still runs, so what is sent now waits in its queue.
+          const worker = yield* spawn(session, { feature: "cart", title: "Cart API" });
+          yield* as("ada")(runtimes.send(worker.thread.id, { text: "ADA_KEPT_INPUT" }));
+          yield* as("grace")(runtimes.send(worker.thread.id, { text: "GRACE_KEPT_INPUT" }));
+          const queued = yield* store.listQueue(worker.thread.id);
+          expect(queued.map((item) => [item.input.text, item.actor])).toEqual([
+            ["ADA_KEPT_INPUT", { person: "ada" }],
+            ["GRACE_KEPT_INPUT", { person: "grace" }],
+          ]);
+          // Clients never see who wrote it.
+          expect(
+            (yield* runtimes.summaryOf(worker.thread.id))?.queue.some((item) => "actor" in item),
+          ).toBe(false);
+          // Then the machine it is on is Grace's.
+          yield* store.updateThread(worker.thread.id, (t) => ({
+            ...t,
+            checkout: { ...t.checkout, hostId: GRACES },
+          }));
+          return worker.thread.id;
+        }),
+      );
+      gracesThere(world);
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          yield* (yield* ThreadRuntimes).status(saved).pipe(Effect.ignore);
+          const left = yield* waitReal(
+            "Ada's input dropped at the restart",
+            Effect.map(store.listQueue(saved), (queue) =>
+              queue.some((item) => item.input.text === "ADA_KEPT_INPUT") ? undefined : queue,
+            ),
+          );
+          expect(left.map((item) => item.input.text)).toEqual(["GRACE_KEPT_INPUT"]);
         }),
       );
     }),

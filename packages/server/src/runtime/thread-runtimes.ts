@@ -51,7 +51,7 @@ import { ActivityTracker } from "./activity.ts";
 import type { AgentHosts } from "./agent-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { ownedRuntimes } from "./owned-runtimes.ts";
-import { recordActor, threadOwner } from "../host/ownership.ts";
+import { asRecorded, fromStored, mayReachThread, type StoredActor } from "../host/ownership.ts";
 import { type CheckoutService, TurnHooks, type TurnHooksShape } from "./hooks.ts";
 import { accountOf, type EarlyReleases, type ReleaseWave } from "./limit-wait.ts";
 import { makeRateLimitGate } from "./rate-limits.ts";
@@ -416,11 +416,28 @@ const make = Effect.gen(function* () {
           const thread = yield* store.getThread(threadId);
           // The last reported usage survives a restart, so the meter counts on from it.
           const usage = yield* store.lastTurnUsage(threadId);
-          // What the store keeps of each notice's key goes back into `noticeKeys`.
-          const stored = yield* store.listQueue(threadId);
+          // What the store keeps of each notice's key goes back into `noticeKeys`, and of who
+          // each input was for into `actors`. An input whose writer may no longer reach the
+          // thread (its machine is someone else's now) is dropped: kept work is done only as
+          // the one it was written for (`host/ownership.ts`), never as the server's own.
+          const listed = yield* store.listQueue(threadId);
+          const stored: Array<(typeof listed)[number]> = [];
+          for (const item of listed) {
+            const may = yield* asRecorded(fromStored(item.actor))(
+              mayReachThread(store.getThread, workerHosts.ownerOf, threadId),
+            );
+            if (may) stored.push(item);
+            else
+              yield* Effect.logWarning("a queued input not sent: its writer may not reach it").pipe(
+                Effect.annotateLogs({ threadId, itemId: item.id }),
+              );
+          }
+          if (stored.length !== listed.length) yield* store.putQueue(threadId, stored);
           const noticeKeys = new Map<QueueItemId, string>();
+          const actors = new Map<QueueItemId, StoredActor>();
           for (const item of stored) {
             if (item.noticeKey !== undefined) noticeKeys.set(item.id, item.noticeKey);
+            if (item.actor !== undefined) actors.set(item.id, item.actor);
           }
           const rt: Runtime = {
             threadId,
@@ -439,7 +456,7 @@ const make = Effect.gen(function* () {
             cost: makeCostLedger(usage?.costUsd),
             cwd: undefined,
             queue: stored.map((item) => {
-              const { noticeKey, ...queued } = item;
+              const { noticeKey, actor: _actor, ...queued } = item;
               // A notice queued without an author (a limit's "continue") is still Gram's, by its stored key.
               return noticeKey === undefined || queued.input.author !== undefined
                 ? queued
@@ -449,6 +466,7 @@ const make = Effect.gen(function* () {
             inFlight: undefined,
             queuedAt: new Map(),
             noticeKeys,
+            actors,
             turn: undefined,
             open: new Map(),
             remoteCalls: new Set(),
@@ -798,17 +816,9 @@ const make = Effect.gen(function* () {
     lockKey: (handed) => handed.rt.threadId,
     read: (handed) => Effect.sync(() => handed.rt.inFlight),
     owed: (item) => item.sent === undefined,
-    // A thread's input goes to its own session as its machine's owner's: it was admitted for them
-    // when it was queued (`owned-runtimes.ts`), and a thread never changes owner. On no one's
-    // machine, as the call that sends it, the only one that attempts it (see above).
-    actor: (_item, { rt }) =>
-      store.getThread(rt.threadId).pipe(
-        Effect.map((thread) => threadOwner(workerHosts.ownerOf, thread)),
-        Effect.orElseSucceed(() => undefined),
-        Effect.flatMap((person) =>
-          person === undefined ? recordActor : Effect.succeed({ person }),
-        ),
-      ),
+    // As who the input was written for (`message-queue.ts` records it), whichever fiber sends it,
+    // the boot's drain included: never the target's owner, nor the server unless it wrote it.
+    actor: (item, { rt }) => Effect.succeed(fromStored(rt.actors.get(item.id))),
     perform: (item, _retry, { rt, published }) =>
       Effect.gen(function* () {
         if (rt.session === undefined) return undefined;
