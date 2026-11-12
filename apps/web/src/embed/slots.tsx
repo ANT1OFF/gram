@@ -75,27 +75,20 @@ const NAV_ROW =
 
 /**
  * A row in the `roomy` sidebar: taller, its label in the body's stronger weight and the foreground
- * colour, bold while it is where the window is. Its icon sits in a `RoomyTile`.
+ * colour, bold while it is where the window is, on the list's `Glide` as its fill. Its icon sits in
+ * a `RoomyTile`.
  */
 export const ROOMY_ROW =
   "group/row relative flex h-10 scroll-my-5 in-data-phone-drawer:h-11 min-w-0 items-center gap-3 rounded-(--radius-sm) pr-2 pl-1 text-left text-body-strong text-foreground outline-none transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-safe:active:scale-[0.98] aria-[current=page]:font-semibold aria-[current=page]:hover:bg-transparent aria-expanded:bg-sidebar-row-hover";
 
 /**
- * The square an icon of a `roomy` row sits in. While the row is where the window is, the tile is
- * solid foreground and the icon the background's colour: drawn by the tile itself (`solid`), or by
- * the list's `Glide`, which then moves from tile to tile (`data-glide-tile`).
+ * The square an icon of a `roomy` row sits in, which lines the labels up. The icon is quiet grey,
+ * the foreground's colour under the pointer and while the row is where the window is, and it grows
+ * a touch under the pointer.
  */
-export function RoomyTile({ solid = false, children }: { solid?: boolean; children: ReactNode }) {
+export function RoomyTile({ children }: { children: ReactNode }) {
   return (
-    <span
-      data-glide-tile=""
-      className={cn(
-        // Hover darkens the icon, but never on the current row: there it stays the background's
-        // colour, or it would vanish into its own tile. The icon grows a touch under the pointer.
-        "relative grid size-8 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground transition-colors duration-(--dur-fast) group-[:hover:not([aria-current=page])]/row:text-foreground group-aria-[current=page]/row:text-background *:size-4.5 *:transition-transform *:duration-(--dur-fast) *:ease-(--ease-out) motion-safe:group-hover/row:*:scale-110",
-        solid && "group-aria-[current=page]/row:bg-foreground",
-      )}
-    >
+    <span className="relative grid size-8 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground transition-colors duration-(--dur-fast) group-hover/row:text-foreground group-aria-[current=page]/row:text-foreground *:size-4.5 *:transition-transform *:duration-(--dur-fast) *:ease-(--ease-out) motion-safe:group-hover/row:*:scale-110">
       {children}
     </span>
   );
@@ -170,14 +163,7 @@ function Count({ count }: { count: number | undefined }) {
  * list, under Needs you and search, as places you work in; `foot` is below the threads and above
  * History, with the places you go to.
  */
-export function EmbedNavigation({
-  placement = "foot",
-  bare = false,
-}: {
-  placement?: ShellNavigationPlacement;
-  /** Drawn inside another block, which rules it off and pads it: no rule or padding of its own. */
-  bare?: boolean;
-}) {
+export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavigationPlacement }) {
   const groups = navigationAt(
     useEmbedShell((s) => s.navigation),
     placement,
@@ -210,11 +196,11 @@ export function EmbedNavigation({
         roomy ? "gap-0" : "gap-tight",
         // In the list it scrolls with the rest, a list's step from what follows; at the foot it
         // is a block of its own, ruled off from the list above.
-        !main && !bare && "border-t border-border px-inset py-tight",
+        !main && "border-t border-border px-inset py-tight",
       )}
     >
-      {/* Roomy: a solid tile behind the current row's icon, gliding from tile to tile. */}
-      <Glide {...(roomy ? { className: "bg-foreground", tile: true } : {})} />
+      {/* The current row's fill, the hover's shape and a step stronger, gliding from row to row. */}
+      <Glide />
       {groups.map((group) => (
         <section
           key={group.id}
@@ -276,6 +262,50 @@ const GLIDE_TILE = cn(
   RAIL_TILE,
   "aria-[current=page]:bg-transparent aria-[current=page]:hover:bg-transparent",
 );
+
+/**
+ * The foot's places as a row of icons, for the `roomy` sidebar's foot: each its name on hover and
+ * to a screen reader, filled while it is where the window is, a dot while its count is above 0.
+ */
+export function EmbedFootIcons() {
+  const groups = navigationAt(
+    useEmbedShell((s) => s.navigation),
+    "foot",
+  );
+  const pathname = usePathname();
+  return groups.flatMap((group) =>
+    group.items.map((item) => {
+      const count = shownCount(item.count);
+      const name = itemName(group, item.label);
+      const spoken = count === undefined ? name : `${name}, ${count}`;
+      return (
+        <Hint
+          key={item.id}
+          label={spoken}
+          side="top"
+          render={
+            <Link
+              {...linkTo(item.to)}
+              {...{ [OVERVIEW_STOP]: "" }}
+              data-testid="embed-navigation-item"
+              aria-label={spoken}
+              aria-current={navigationCurrent(pathname, item.to) ? "page" : undefined}
+              className={RAIL_TILE}
+            />
+          }
+        >
+          <ItemIcon item={item} className="size-4.5" />
+          {count !== undefined && (
+            <span
+              aria-hidden
+              className="absolute top-1 right-1 size-1.5 rounded-full bg-status-needs-mark"
+            />
+          )}
+        </Hint>
+      );
+    }),
+  );
+}
 
 /**
  * The same destinations in the compact sidebar: an icon each, its group and name on hover, and a

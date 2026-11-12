@@ -486,6 +486,12 @@ export function OverviewSidebar({
         <EmbedSidebarHeader className={cn("flex-none px-inset pb-tight", roomyLook && "pt-1")} />
       )}
       <EmbedSwitcher placement="sidebar" className="px-inset pb-tight" />
+      {/* Roomy: Search stays put under the switcher while the list scrolls. */}
+      {roomy && (
+        <div className="shrink-0 px-inset pb-tight">
+          <OverviewSearch roomy />
+        </div>
+      )}
       {/* The spacing scale's named steps: sections a list's step apart (12 px), as a list's
           headings are, so the column reads as one even list rather than blocks with gaps. */}
       <div
@@ -503,7 +509,7 @@ export function OverviewSidebar({
         {/* What needs you, and the way to find anything else, as one block at the top. */}
         <div className="flex flex-col gap-tight">
           <NeedsYou />
-          {!phone && <OverviewSearch roomy={roomy} />}
+          {!phone && !roomy && <OverviewSearch />}
         </div>
         {/* The places an app in front of Gram puts first, above the workspaces and threads. */}
         <EmbedNavigation placement="main" />

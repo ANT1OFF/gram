@@ -13,6 +13,7 @@ import {
   type RecentDone,
 } from "@/history/history-model";
 import { useHistoryStore } from "@/history/history-view";
+import { Hint } from "@/components/hint";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { openExternalUrl } from "@/api/open-external";
 import { PrMarkIcon } from "@/components/pr-marks";
@@ -53,7 +54,14 @@ import { StatusDot, type DotState } from "./status-dot";
 import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { useThreadsListed } from "@/embed/store";
-import { EmbedAccount, EmbedNavigation, KeyCaps, ROOMY_ROW, RoomyTile } from "@/embed/slots";
+import {
+  EmbedAccount,
+  EmbedFootIcons,
+  KeyCaps,
+  RAIL_TILE,
+  ROOMY_ROW,
+  RoomyTile,
+} from "@/embed/slots";
 import { useLaunchIssues } from "@/launch-checks/banner";
 
 // The overview sidebar's extras: At rest's Pull requests and Done, each gone with nothing in it, the
@@ -410,9 +418,9 @@ export function OverviewHistory({ showHistory = true }: { showHistory?: boolean 
 }
 
 /**
- * The `roomy` sidebar's foot, an app in front of Gram's look: the embedding app's other places,
- * History, Settings and its account, each a labelled row in one block, where the standard look has
- * History and an icon at the foot. Collapse is an icon at the sidebar's head.
+ * The `roomy` sidebar's foot, an app in front of Gram's look: one row of icons, the embedding
+ * app's other places, then History and Settings, each named on hover, and under it the app's
+ * account. Short, so the list above keeps the window's height.
  */
 export function RoomyFoot({ showHistory = true }: { showHistory?: boolean }) {
   const historyHint = useShortcutHint("history.open");
@@ -422,58 +430,61 @@ export function RoomyFoot({ showHistory = true }: { showHistory?: boolean }) {
   const inSettings = useRouterState({
     select: (state) => state.location.pathname.startsWith("/settings"),
   });
+  const settingsLabel =
+    setup.length === 0
+      ? "Settings"
+      : `Settings, ${setup.length === 1 ? "1 setup problem" : `${setup.length} setup problems`}`;
   return (
     <div
       data-testid="overview-roomy-foot"
-      className="flex shrink-0 flex-col gap-px border-t border-border px-inset py-tight"
+      className="flex shrink-0 flex-col gap-tight border-t border-border px-inset py-tight"
     >
-      {/* The embedding app's other places lead the foot, in its one block. */}
-      <EmbedNavigation bare />
-      {showHistory && (
-        <button
-          type="button"
-          data-testid="overview-history"
-          aria-haspopup="dialog"
-          aria-expanded={historyOpen}
-          aria-keyshortcuts={historyHint === "" ? undefined : historyHint}
-          title={withHint(
-            "Finished workers, done and archived threads, past CLI sessions",
-            historyHint,
-          )}
-          onClick={() => useHistoryStore.getState().show()}
-          className={ROOMY_ROW}
+      <div data-testid="overview-roomy-foot-icons" className="flex items-center gap-1 px-1">
+        <EmbedFootIcons />
+        {showHistory && (
+          <Hint
+            label={withHint("History", historyHint)}
+            side="top"
+            render={
+              <button
+                type="button"
+                data-testid="overview-history"
+                aria-label="History"
+                aria-haspopup="dialog"
+                aria-expanded={historyOpen}
+                aria-keyshortcuts={historyHint === "" ? undefined : historyHint}
+                onClick={() => useHistoryStore.getState().show()}
+                className={RAIL_TILE}
+              />
+            }
+          >
+            <History aria-hidden className="size-4.5" />
+          </Hint>
+        )}
+        <Hint
+          label={withHint(settingsLabel, settingsHint)}
+          side="top"
+          render={
+            <Link
+              to={setup.length === 0 ? "/settings" : "/settings/diagnostics"}
+              data-testid="overview-settings"
+              aria-label={settingsLabel}
+              aria-current={inSettings ? "page" : undefined}
+              className={RAIL_TILE}
+            />
+          }
         >
-          <RoomyTile solid>
-            <History aria-hidden />
-          </RoomyTile>
-          <span className="flex-1 truncate">History</span>
-        </button>
-      )}
-      <Link
-        to={setup.length === 0 ? "/settings" : "/settings/diagnostics"}
-        data-testid="overview-settings"
-        aria-current={inSettings ? "page" : undefined}
-        title={withHint("Settings", settingsHint)}
-        className={ROOMY_ROW}
-      >
-        <RoomyTile solid>
-          <Settings aria-hidden />
+          <Settings aria-hidden className="size-4.5" />
           {setup.length > 0 && (
             <span
               aria-hidden
               data-testid="top-left-settings-dot"
-              className="absolute top-1 right-1 size-1.5! rounded-full bg-foreground"
+              className="absolute top-1 right-1 size-1.5 rounded-full bg-foreground"
             />
           )}
-        </RoomyTile>
-        <span className="flex-1 truncate">Settings</span>
-        {setup.length > 0 && (
-          <span className="sr-only">
-            , {setup.length === 1 ? "1 setup problem" : `${setup.length} setup problems`}
-          </span>
-        )}
-      </Link>
-      <EmbedAccount className="py-1" />
+        </Hint>
+      </div>
+      <EmbedAccount />
     </div>
   );
 }
