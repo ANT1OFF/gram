@@ -3171,8 +3171,7 @@ export const SHOTS: readonly Shot[] = [
       await openReadme(page, 1120, 540);
       await page.getByRole("button", { name: "Hide sidebar" }).click();
       await openBoardView(page);
-      await page.getByTestId("board-layout-option").filter({ hasText: "Lanes" }).click();
-      // The merged workers too, so the lanes run from briefed to merged.
+      // The merged workers too, so the grid runs from briefed to merged.
       await page.getByTestId("rail-show-archived").click();
       await page.getByTestId("rail-worker").first().waitFor();
       await page.mouse.move(1116, 536);

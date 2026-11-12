@@ -361,12 +361,6 @@ test("narrow, the title truncates, a worker's actions fold into the bar's \"…\
   await expect(
     page.getByTestId("titlebar-menu-workspace").getByTestId("folded-tidy"),
   ).toBeVisible();
-  // Its Grid or Lanes is under View.
-  await stepBack(page, "titlebar-menu-workspace");
-  await page.getByTestId("menu-view").click();
-  await expect(
-    page.getByTestId("titlebar-menu-view").getByTestId("folded-board-layout"),
-  ).toBeVisible();
   await closeMenus(page);
   await page.keyboard.press("ControlOrMeta+Alt+1");
   await page.setViewportSize({ width: 640, height: 720 });

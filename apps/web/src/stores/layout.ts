@@ -746,28 +746,21 @@ export function sanitizeWorkspacesView(raw: unknown): Partial<WorkspacesView> {
     : {};
 }
 
-/** How the Board lays out its work: a compact row per task, or the station lanes. */
-export type BoardLayout = "grid" | "lanes";
-
-/** What each workspace's board leaves out, and how every board is laid out. */
+/** What each workspace's board leaves out. */
 export interface BoardFilters {
   /** Workspaces whose board shows archived workers; every other board hides them. */
   boardArchivedShown: readonly string[];
-  /** The user's choice for every board; the grid until they pick the lanes. */
-  boardLayout: BoardLayout;
 }
 
-/** Stored board filters; a field of the wrong type leaves its default in place. */
+/**
+ * Stored board filters; a field of the wrong type leaves its default in place. A `boardLayout` from
+ * when the Board also had lanes is left behind: the grid is its only layout.
+ */
 export function sanitizeBoardFilters(raw: unknown): Partial<BoardFilters> {
-  const record = (raw ?? {}) as Record<string, unknown>;
-  const shown = record["boardArchivedShown"];
-  const layout = record["boardLayout"];
-  return {
-    ...(Array.isArray(shown)
-      ? { boardArchivedShown: shown.filter((id) => typeof id === "string") }
-      : {}),
-    ...(layout === "grid" || layout === "lanes" ? { boardLayout: layout } : {}),
-  };
+  const shown = ((raw ?? {}) as Record<string, unknown>)["boardArchivedShown"];
+  return Array.isArray(shown)
+    ? { boardArchivedShown: shown.filter((id) => typeof id === "string") }
+    : {};
 }
 
 /** How the Diff panel shows a patch: one column, or old and new side by side. */
@@ -898,7 +891,6 @@ export interface LayoutState
   toggleWorkspaceNode(key: string, collapsed?: boolean): void;
   /** Shows or hides the archived workers on one workspace's board. */
   toggleBoardArchived(workspaceId: string): void;
-  setBoardLayout(layout: BoardLayout): void;
   setDiffLayout(layout: DiffLayout): void;
   toggleDiffTree(): void;
   toggleDiffWrap(): void;
@@ -1029,7 +1021,6 @@ export const useLayoutStore = create<LayoutState>()(
         overviewHidden: OVERVIEW_HIDDEN_BY_DEFAULT,
         doneGrouping: "date",
         boardArchivedShown: [],
-        boardLayout: "grid",
         diffLayout: "unified",
         diffTreeShown: true,
         // Lines wrap until the user says otherwise: a review beside the chat is rarely as wide as
@@ -1121,7 +1112,6 @@ export const useLayoutStore = create<LayoutState>()(
               ? s.boardArchivedShown.filter((id) => id !== workspaceId)
               : [...s.boardArchivedShown, workspaceId],
           })),
-        setBoardLayout: (boardLayout) => set({ boardLayout }),
         setDiffLayout: (diffLayout) => set({ diffLayout }),
         toggleDiffTree: () => set((s) => ({ diffTreeShown: !s.diffTreeShown })),
         toggleDiffWrap: () => set((s) => ({ diffWrap: !s.diffWrap })),
@@ -1445,7 +1435,6 @@ export const useLayoutStore = create<LayoutState>()(
         openPrsCollapsedRepos,
         workspacesCollapsedNodes,
         boardArchivedShown,
-        boardLayout,
         diffLayout,
         diffTreeShown,
         diffWrap,
@@ -1473,7 +1462,6 @@ export const useLayoutStore = create<LayoutState>()(
         openPrsCollapsedRepos,
         workspacesCollapsedNodes,
         boardArchivedShown,
-        boardLayout,
         diffLayout,
         diffTreeShown,
         diffWrap,
