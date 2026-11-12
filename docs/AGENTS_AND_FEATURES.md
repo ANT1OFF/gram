@@ -1108,6 +1108,26 @@ across independent server layers or Gram processes.
 Source: [thread ownership](../packages/agents/src/codex/thread-ownership.ts).
 See [verification](VERIFICATION.md#protocol-native-and-live-checks) for synthetic and live lifecycle checks.
 
+## A broken configuration file
+
+Two files are made to be edited by hand, by you or by an agent you ask:
+`keybindings.json` in Gram's data folder (Settings → Keyboard writes it too) and a project's
+`.gram/scripts.json`. A broken edit never breaks what they configure. Whenever a version reads
+cleanly, Gram keeps a copy of it as the last good one. When a later edit doesn't read cleanly,
+whether it is invalid JSON, the wrong shape or one bad key chord, that edit is ignored as a whole,
+the last good version stays in use (across restarts too), and Gram writes why:
+
+| File                 | Last good copy                                                      | Why it isn't used                                          |
+| -------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `keybindings.json`   | `keybindings.last-good.json` beside it                              | `keybindings.json.error` beside it                         |
+| `.gram/scripts.json` | `project-scripts/<project id>.last-good.json` in Gram's data folder | `project-scripts/<project id>.error` in Gram's data folder |
+
+The error file names the broken file, lists each problem and says which version is in use. It is
+deleted once the file reads cleanly again. Settings → Keyboard and the scripts editor show the
+same problems. Nothing is written into the project's own folder. Deleting a file isn't a broken
+edit: no overrides, or no scripts, then apply. Without a last good version, Gram applies what it
+could read, as before.
+
 ## Project scripts
 
 A project's common commands (build, test, lint, dev) can be saved as project scripts and run

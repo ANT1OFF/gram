@@ -6,11 +6,17 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import { ServerConfig } from "../../config.ts";
 import { AppToolRegistry } from "../../app-tools/registry.ts";
 import { readTerminalTool } from "../../app-tools/terminal-tools.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
-import { resolveScriptRun, ScriptsError } from "../../scripts/project-scripts.ts";
+import {
+  projectScriptsDir,
+  resolveScriptRun,
+  ScriptsError,
+} from "../../scripts/project-scripts.ts";
 import { checkShell } from "../../terminal/shell-check.ts";
 import { openSignInTerminal } from "../../host/claude-sign-in.ts";
 import { logDefects, type Handlers } from "./common.ts";
@@ -21,6 +27,7 @@ const terminalHandlers = Effect.gen(function* () {
   // This machine's terminals; a thread on another machine will reach that machine's instead.
   const workerHosts = yield* WorkerHosts;
   const { terminals } = workerHosts.placed;
+  const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
 
   // The agent tool that reads a terminal registers with the handlers, as it always has.
   yield* (yield* AppToolRegistry).register([readTerminalTool(terminals)]);
@@ -33,7 +40,15 @@ const terminalHandlers = Effect.gen(function* () {
       if (project === undefined)
         return yield* new NotFound({ entity: "project", id: thread.projectId });
       return yield* Effect.tryPromise({
-        try: () => resolveScriptRun(project.root, effectiveCheckout(thread).path, name),
+        try: () =>
+          resolveScriptRun(
+            project.root,
+            effectiveCheckout(thread).path,
+            name,
+            config === undefined
+              ? undefined
+              : { dir: projectScriptsDir(config.dataDir), projectId: project.id },
+          ),
         catch: (error) =>
           new InvalidState({
             message: error instanceof ScriptsError ? error.message : `Can't run ${name}.`,
