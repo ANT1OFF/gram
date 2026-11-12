@@ -258,6 +258,20 @@ on Linux/macOS; Windows executable/shim behavior needs separate native checks.
 bun run test packages/agents/src/subscription-protocol.test.ts
 ```
 
+### Preview web session
+
+`apps/desktop/scripts/verify-web-preview.mjs` runs the installed pinned Electron in an owned
+temporary profile with the real preview module and no outside network: synthetic site names are
+mapped to its own loopback listeners, and the web session's lookup is told a public or a rebound
+answer. It checks that a remote page loads in a session apart from the app's and the agents', gets
+no Gram cookie, bridge or Node, reaches nothing on loopback or a private network by fetch, socket,
+script or redirect (a rebound name included), that permissions and downloads are refused, and that
+an agent never gets the user's web page. It proves the session rules, not a real site's behaviour.
+
+```sh
+node apps/desktop/scripts/verify-web-preview.mjs /tmp/new-evidence-directory
+```
+
 ### Live subscription probes
 
 With explicit authorization, each selected adapter makes two tiny turns through the

@@ -59,7 +59,7 @@ import {
 } from "@gram/shell/modules/agent-browser";
 import { installConnection } from "@gram/shell/modules/connection";
 import { installFonts } from "@gram/shell/modules/fonts";
-import { installPreview, type PreviewHost } from "@gram/shell/modules/preview";
+import { installPreview, PREVIEW_PARTITIONS, type PreviewHost } from "@gram/shell/modules/preview";
 import {
   createSpeechHost,
   electronFetch,
@@ -839,7 +839,7 @@ async function runApp() {
     }),
     views: { contentsFor: (threadId, create) => preview?.contentsFor(threadId, create) },
     log,
-    resolveHost: (host) => session.fromPartition("gram-preview").resolveHost(host),
+    resolveHost: (host) => session.fromPartition(PREVIEW_PARTITIONS.local).resolveHost(host),
     driverChanged: (threadId) => preview?.changed(threadId),
     decodeFrame,
   });

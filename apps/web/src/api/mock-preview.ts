@@ -1,5 +1,6 @@
 import {
   loopbackUrl,
+  webUrl,
   type DesktopPreview,
   type BrowserInspection,
   type BrowserRegion,
@@ -37,7 +38,7 @@ export class MockPreview implements DesktopPreview {
   }
 
   async open(threadId: string, url: string): Promise<boolean> {
-    const target = loopbackUrl(url);
+    const target = loopbackUrl(url) ?? webUrl(url);
     if (target === undefined) return false;
     this.opened.push(`${threadId} ${target}`);
     let page = this.#pages.get(threadId);

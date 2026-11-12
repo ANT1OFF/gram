@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  addressZone,
+  hostZone,
   loopbackPortOf,
   parsePreviewBounds,
   previewNavigation,
   previewRequest,
   previewsToClose,
   previewThreadOf,
+  webNavigation,
+  webRequest,
   windowRect,
+  zoneOf,
 } from "./preview-rules.ts";
 
 describe("the preview's navigations", () => {
@@ -18,13 +23,17 @@ describe("the preview's navigations", () => {
     expect(previewNavigation("about:blank")).toBe("load");
   });
 
-  it("sends a web page elsewhere to the user's browser", () => {
-    expect(previewNavigation("https://github.com/EXAMPLE")).toBe("external");
-    expect(previewNavigation("http://organization.example.invalid/")).toBe("external");
-    expect(previewNavigation("http://localhost.evil.example:3000/")).toBe("external");
-    expect(previewNavigation("http://127.0.0.2:3000/")).toBe("external");
-    // A user name before the host is a look-alike; the link question names the real host.
-    expect(previewNavigation("http://localhost:3000@evil.example/")).toBe("external");
+  it("opens a web page elsewhere in the thread's web session", () => {
+    expect(previewNavigation("https://github.com/EXAMPLE")).toBe("web");
+    expect(previewNavigation("http://organization.example.invalid/")).toBe("web");
+    expect(previewNavigation("http://localhost.evil.example:3000/")).toBe("web");
+    // Not a loopback host the local session loads; the web session refuses it as loopback.
+    expect(previewNavigation("http://127.0.0.2:3000/")).toBe("web");
+  });
+
+  it("refuses a user name before the host, a look-alike, on loopback or not", () => {
+    expect(previewNavigation("http://localhost:3000@evil.example/")).toBe("refuse");
+    expect(previewNavigation("https://evil.example@github.com/")).toBe("refuse");
   });
 
   it("refuses every other scheme", () => {
@@ -42,7 +51,7 @@ describe("the preview's navigations", () => {
 
   it("checks a redirect as it checks any other navigation", () => {
     // `will-redirect` hands each hop's target to the same rule.
-    expect(previewNavigation("https://login.microsoftonline.com/")).toBe("external");
+    expect(previewNavigation("https://login.microsoftonline.com/")).toBe("web");
     expect(previewNavigation("http://localhost:3000/callback")).toBe("load");
   });
 });
@@ -70,6 +79,175 @@ describe("the preview's requests", () => {
     expect(loopbackPortOf("ws://[::1]:9229/")).toBe(9229);
     expect(loopbackPortOf("http://user@localhost:3000/")).toBeUndefined();
     expect(loopbackPortOf("http://organization.example.invalid:3000/")).toBeUndefined();
+  });
+});
+
+describe("the web session's zones", () => {
+  it("knows this computer by every spelling of it", () => {
+    for (const host of [
+      "localhost",
+      "LOCALHOST.",
+      "app.localhost",
+      "127.0.0.1",
+      "127.8.9.10",
+      "0.0.0.0",
+      "[::1]",
+      "[::]",
+      "[::ffff:7f00:1]",
+    ]) {
+      expect(hostZone(host), host).toBe("loopback");
+    }
+    expect(addressZone("127.0.0.1")).toBe("loopback");
+    expect(addressZone("::1")).toBe("loopback");
+    expect(addressZone("::ffff:127.0.0.1")).toBe("loopback");
+  });
+
+  it("knows a private network by its addresses and its names", () => {
+    for (const host of [
+      "10.1.2.3",
+      "192.168.1.1",
+      "172.16.0.9",
+      "169.254.169.254",
+      "100.64.0.1",
+      "[fd00::1]",
+      "[fe80::1]",
+      "[::ffff:a00:1]",
+      "intranet",
+      "nas.local",
+      "wiki.corp",
+      "printer.home.arpa",
+    ]) {
+      expect(hostZone(host), host).toBe("private");
+    }
+    expect(addressZone("192.168.0.4")).toBe("private");
+    expect(addressZone("fc00::2")).toBe("private");
+  });
+
+  it("knows the internet by everything else", () => {
+    expect(hostZone("example.com")).toBe("public");
+    expect(hostZone("login.microsoftonline.com")).toBe("public");
+    expect(hostZone("203.0.113.9")).toBe("public");
+    expect(hostZone("[2606:4700::1111]")).toBe("public");
+    expect(addressZone("93.184.216.34")).toBe("public");
+    expect(addressZone("2606:4700::1111")).toBe("public");
+  });
+
+  it("counts an opaque or unreadable origin as public", () => {
+    expect(zoneOf("null")).toBe("public");
+    expect(zoneOf(undefined)).toBe("public");
+    expect(zoneOf("data:text/html,x")).toBe("public");
+    expect(zoneOf("http://192.168.1.1")).toBe("private");
+    expect(zoneOf("https://example.com")).toBe("public");
+  });
+});
+
+describe("the web session's navigations", () => {
+  it("loads any http(s) page off loopback, and sends loopback to the link question", () => {
+    expect(webNavigation("https://example.com/")).toBe("load");
+    expect(webNavigation("http://192.168.1.1/")).toBe("load");
+    expect(webNavigation("about:blank")).toBe("load");
+    expect(webNavigation("http://localhost:3000/")).toBe("local");
+    expect(webNavigation("http://127.0.0.2/")).toBe("local");
+    expect(webNavigation("http://app.localhost/")).toBe("local");
+  });
+
+  it("refuses every other scheme, and a user name before the host", () => {
+    for (const url of [
+      "file:///etc/passwd",
+      "javascript:alert(1)",
+      "data:text/html,<p>hi",
+      "chrome://settings",
+      "devtools://devtools/bundled/inspector.html",
+      "zoommtg://zoom.us/join",
+      "https://evil.example@example.com/",
+      "not a url",
+    ]) {
+      expect(webNavigation(url), url).toBe("refuse");
+    }
+  });
+});
+
+describe("the web session's requests", () => {
+  const page = "https://example.com/";
+
+  it("looks up a public name before the page loads it, so a rebound name is caught", () => {
+    expect(webRequest({ url: page, mainFrame: true })).toEqual({
+      kind: "resolve",
+      host: "example.com",
+      bound: "private",
+    });
+    expect(
+      webRequest({ url: "https://cdn.example.net/a.js", mainFrame: false, initiator: page }),
+    ).toEqual({ kind: "resolve", host: "cdn.example.net", bound: "public" });
+    expect(
+      webRequest({ url: "wss://live.example.net/", mainFrame: false, initiator: page }),
+    ).toEqual({ kind: "resolve", host: "live.example.net", bound: "public" });
+    expect(webRequest({ url: "https://203.0.113.9/", mainFrame: false, initiator: page })).toEqual({
+      kind: "allow",
+    });
+  });
+
+  it("never reaches this computer, whoever asks", () => {
+    for (const url of [
+      "http://127.0.0.1:4317/api/threads",
+      "http://localhost:5173/",
+      "ws://localhost:4317/ws",
+      "http://[::1]:4317/",
+      "http://0.0.0.0:4317/",
+      "http://gram.localhost/",
+      "http://2130706433/",
+    ]) {
+      expect(webRequest({ url, mainFrame: true }), url).toEqual({ kind: "block" });
+      expect(webRequest({ url, mainFrame: false, initiator: page }), url).toEqual({
+        kind: "block",
+      });
+    }
+  });
+
+  it("lets the user open a private network's page, but never a public page send one there", () => {
+    expect(webRequest({ url: "http://192.168.1.1/", mainFrame: true })).toEqual({ kind: "allow" });
+    for (const request of [
+      { url: "http://192.168.1.1/", mainFrame: true, initiator: "https://example.com" },
+      { url: "http://192.168.1.1/", mainFrame: true, before: "https://example.com/go" },
+      { url: "http://nas.local/", mainFrame: false, initiator: "https://example.com" },
+      { url: "http://169.254.169.254/latest/", mainFrame: false, initiator: "null" },
+      { url: "http://10.0.0.1/", mainFrame: false, page: "https://example.com/" },
+      { url: "http://10.0.0.1/", mainFrame: false },
+    ]) {
+      expect(webRequest(request), JSON.stringify(request)).toEqual({ kind: "block" });
+    }
+    // A private page loads its own network, and the internet.
+    expect(
+      webRequest({ url: "http://10.0.0.2/x.css", mainFrame: false, initiator: "http://10.0.0.1" }),
+    ).toEqual({ kind: "allow" });
+    expect(
+      webRequest({
+        url: "https://cdn.example.net/",
+        mainFrame: false,
+        initiator: "http://10.0.0.1",
+      }),
+    ).toEqual({ kind: "resolve", host: "cdn.example.net", bound: "private" });
+  });
+
+  it("refuses other schemes, a top-level data page and a user name", () => {
+    for (const url of [
+      "file:///etc/passwd",
+      "chrome://settings",
+      "devtools://devtools/",
+      "chrome-extension://abc/x.js",
+      "ftp://example.com/",
+      "data:text/html,<script>1</script>",
+      "ws://example.com/",
+      "https://user:pw@example.com/",
+    ]) {
+      expect(webRequest({ url, mainFrame: true }), url).toEqual({ kind: "block" });
+    }
+    expect(
+      webRequest({ url: "data:image/png;base64,AA", mainFrame: false, initiator: page }),
+    ).toEqual({ kind: "allow" });
+    expect(webRequest({ url: "file:///etc/passwd", mainFrame: false, initiator: page })).toEqual({
+      kind: "block",
+    });
   });
 });
 

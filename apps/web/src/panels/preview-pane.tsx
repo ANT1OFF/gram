@@ -69,8 +69,8 @@ const load = (bridge: DesktopPreview, threadId: string, id: number, url: string)
 };
 
 /**
- * The Preview tab: the thread's local app, drawn by the shell over the placeholder below the address
- * strip. The page is the shell's, one per thread and not this document's, so it is hidden while a
+ * The Preview tab: the thread's local app, or any web page the user opens, drawn by the shell over
+ * the placeholder below the address strip. The page is the shell's, one per thread and not this document's, so it is hidden while a
  * popup overlaps it and a message takes its place when it can't load.
  */
 export function PreviewPane({ threadId }: { threadId: ThreadId }) {
@@ -260,7 +260,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
           <input
             data-testid="preview-address"
             aria-label="Preview address"
-            placeholder="localhost:3000 or a file path"
+            placeholder="localhost:3000, a web address or a file path"
             spellCheck={false}
             title={current?.title || undefined}
             value={draft ?? shownUrl}
@@ -315,8 +315,8 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
       />
       {refused && (
         <p role="alert" className="border-b border-border px-3 py-1.5 text-meta text-destructive">
-          Only an address on localhost opens here, such as localhost:3000, or the full path of a
-          Markdown or HTML file.
+          Only a web address opens here, such as localhost:3000 or example.com, or the full path of
+          a Markdown or HTML file.
         </p>
       )}
       {inspecting && !inspectionAvailable && (
@@ -369,9 +369,9 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
         ) : page === undefined ? (
           <div data-testid="preview-empty" className="flex flex-col items-center gap-2">
             <PanelMessage icon={Globe}>
-              Your app shows here: start its dev server, then pick its port, or type a localhost
-              address above. Markdown and HTML files the agent writes open here too. Other sites
-              open in your browser.
+              Your app shows here: start its dev server, then pick its port, or type any address
+              above. Markdown and HTML files the agent writes open here too. Sites you open here are
+              yours alone: agents never read or drive them.
             </PanelMessage>
             <div className="flex flex-wrap justify-center gap-1">
               {(ports ?? []).map((port) => (

@@ -440,8 +440,13 @@ describe("panel requests", () => {
 
     s().openPreview(B, "http://localhost:3000");
     expect(s().previewPages[B]!.url).toBe("http://localhost:3000/");
-    s().openPreview(B, "http://intranet.example/");
-    expect(s().previewPages[B]!.url).toBe("http://localhost:3000/");
+    // The user opens any web page; no other scheme.
+    s().openPreview(B, "https://organization.example.invalid/docs");
+    expect(s().previewPages[B]!.url).toBe("https://organization.example.invalid/docs");
+    for (const refused of ["file:///etc/passwd", "javascript:alert(1)", "data:text/html,x"]) {
+      s().openPreview(B, refused);
+      expect(s().previewPages[B]!.url).toBe("https://organization.example.invalid/docs");
+    }
   });
 
   it("takes on a page another window opened, but never over this window's own", () => {

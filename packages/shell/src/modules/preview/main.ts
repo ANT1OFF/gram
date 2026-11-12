@@ -1,22 +1,29 @@
 // The preview module's main half: each thread's Preview tab page, one `WebContentsView` per thread,
 // drawn over the tab's placeholder in whichever window shows it and kept loaded, in no window, while
 // none does, for the `MAX_PREVIEWS` most recently used threads. It is the only web content the
-// shell shows that isn't the app's own, so it gets nothing of the app's: a session of its own kept in
-// memory, no preload, no permission, no download, no client certificate, and no request off loopback
-// (`core/preview-rules.ts`). A link off loopback goes to the shell's link question instead, and so
-// does every new window.
+// shell shows that isn't the app's own, so it gets nothing of the app's: sessions of its own kept in
+// memory, no preload, no permission, no download, no client certificate (`core/preview-rules.ts`).
+// A thread's page is in one of two. The local session holds loopback pages and agents' pages, and
+// loads nothing off loopback but what the agent browser allows an agent's page. The web session
+// holds the pages the user opens anywhere else: no agent ever drives or reads it, so what the user
+// signs in to there stays theirs, and it never reaches loopback or a network more private than the
+// page. A page moves between them by being made again in the other: a link off loopback opens in
+// the web session, an agent taking the pane starts a page in the local one. A new window goes to
+// the shell's link question.
 
 import {
   app,
   BrowserWindow,
   session,
   WebContentsView,
+  type ResolvedHost,
   type Session,
   type WebContents,
 } from "electron";
 
 import {
   loopbackUrl,
+  webUrl,
   type BrowserInspection,
   type BrowserRegion,
   type BrowserViewportPreset,
@@ -27,26 +34,51 @@ import {
 import { Channels } from "../../channels.ts";
 import type { ShellLog } from "../../core/log.ts";
 import {
+  addressZone,
   MAX_PREVIEWS,
   parsePreviewBounds,
   previewNavigation,
   previewRequest,
   previewsToClose,
   previewThreadOf,
+  webNavigation,
+  webRequest,
   windowRect,
+  withinZone,
+  type NetworkZone,
 } from "../../core/preview-rules.ts";
 import { parsePaneCommand } from "../../core/browse-rules.ts";
 import type { ShellIpc } from "../ipc.ts";
 import { focusedAppWindow } from "../../electron/decision-windows.ts";
 
-/** No `persist:` prefix, so its cookies and storage live in memory and are gone at quit. */
-const PARTITION = "gram-preview";
+/**
+ * No `persist:` prefix, so their cookies and storage live in memory and are gone at quit. The local
+ * one is also where the agent browser resolves hosts.
+ */
+export const PREVIEW_PARTITIONS = { local: "gram-preview", web: "gram-preview-web" } as const;
+
+/** Which session a thread's page is in: loopback and agents' pages, or the user's web pages. */
+export type PreviewKind = keyof typeof PREVIEW_PARTITIONS;
+
+/** How many main-frame requests' latest hops are kept, for the redirect that follows each. */
+const HOPS_KEPT = 64;
 
 /** The size an agent's page lays out at until a window shows it, a laptop's usual pane. */
 const AGENT_PAGE_BOUNDS = { x: 0, y: 0, width: 1280, height: 800 } as const;
 
 /** Chromium's code for a load that was superseded or stopped, which isn't a failure to show. */
 const ERR_ABORTED = -3;
+
+/** What both sessions share: no permission, device, download or spell checking. */
+function harden(ses: Session): void {
+  // Camera, microphone, location, notifications, the clipboard, and `openExternal`, which is how
+  // Electron asks before a page launches another app by its scheme (`zoommtg:`, `vscode:`).
+  ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  ses.setPermissionCheckHandler(() => false);
+  ses.setDevicePermissionHandler(() => false);
+  ses.setSpellCheckerEnabled(false);
+  ses.on("will-download", (event) => event.preventDefault());
+}
 
 /** What the preview needs from the app that installs it. */
 export interface PreviewOptions {
@@ -55,6 +87,11 @@ export interface PreviewOptions {
   readonly log: ShellLog;
   /** Agents' pages (`modules/agent-browser`), asked before an agent's page goes anywhere. */
   readonly agent?: PreviewAgent | undefined;
+  /**
+   * Looks a host up for the web session's rebinding check; the web session's own resolver when
+   * absent, which is the one its connections use. For a fixture that maps names to itself.
+   */
+  readonly resolveWebHost?: ((host: string) => Promise<ResolvedHost>) | undefined;
 }
 
 /**
@@ -98,7 +135,10 @@ export interface PreviewAgent {
 
 interface Preview {
   readonly threadId: string;
+  readonly kind: PreviewKind;
   readonly view: WebContentsView;
+  /** Where in `window` it was last drawn, so a page made again in the other session takes its place. */
+  rect: { x: number; y: number; width: number; height: number } | undefined;
   /** The window whose Preview tab shows the page; `undefined` while none does. */
   window: BrowserWindow | undefined;
   /** The app pages that asked about this thread's page, told each time it changes. */
@@ -108,9 +148,15 @@ interface Preview {
 
 /** What main can reach of the previews, for tools that act on a page from the main process. */
 export interface PreviewHost {
-  /** `threadId`'s page, while it has one: loaded, shown in a window or not. */
+  /**
+   * `threadId`'s page in the local session, while it has one: loaded, shown in a window or not.
+   * A web page the user opened is never handed out.
+   */
   contentsOf(threadId: string): WebContents | undefined;
-  /** As `contentsOf`, making the page, blank and out of sight, when `create` and there is none. */
+  /**
+   * As `contentsOf`, making the page, blank and out of sight, when `create` and there is none. A
+   * web page the user opened there is closed for it, unread.
+   */
   contentsFor(threadId: string, create: boolean): WebContents | undefined;
   /** Tells the windows watching `threadId`'s page that it changed, as its driver does. */
   changed(threadId: string): void;
@@ -121,7 +167,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
   /** Each thread's preview, least recently used first. */
   const previews = new Map<string, Preview>();
   const previewContents = new WeakSet<WebContents>();
-  let previewSession: Session | undefined;
+  const sessions = new Map<PreviewKind, Session>();
 
   // Electron picks the first certificate in the store when nobody answers, which on a managed
   // laptop can be the device's own, the one that signs in to internal sites.
@@ -131,14 +177,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     callback();
   });
 
-  const sessionOf = (): Session => {
-    if (previewSession !== undefined) return previewSession;
-    const ses = session.fromPartition(PARTITION);
-    ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-    ses.setPermissionCheckHandler(() => false);
-    ses.setDevicePermissionHandler(() => false);
-    ses.setSpellCheckerEnabled(false);
-    ses.on("will-download", (event) => event.preventDefault());
+  const localSession = (ses: Session) => {
     ses.webRequest.onBeforeRequest((details, callback) => {
       const asked =
         details.webContents === undefined
@@ -162,7 +201,58 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       }
       callback(previewRequest(details.url) === "allow" ? {} : { cancel: true });
     });
-    previewSession = ses;
+  };
+
+  const webSession = (ses: Session) => {
+    const resolve = options.resolveWebHost ?? ((host: string) => ses.resolveHost(host));
+    /** Each main-frame request's latest URL, by id, so its next redirect knows where it came from. */
+    const hops = new Map<number, string>();
+    /**
+     * Whether every address `host` resolves to is within `bound`, asked again for every request,
+     * through the resolver and cache the connection then uses. A failed lookup resolves nothing,
+     * so the request fails on its own.
+     */
+    const within = (host: string, bound: NetworkZone): Promise<boolean> =>
+      resolve(host).then(
+        (resolved) =>
+          resolved.endpoints.every((endpoint) => withinZone(addressZone(endpoint.address), bound)),
+        () => true,
+      );
+    ses.webRequest.onBeforeRequest((details, callback) => {
+      const mainFrame = details.resourceType === "mainFrame";
+      const before = mainFrame ? hops.get(details.id) : undefined;
+      if (mainFrame) {
+        hops.delete(details.id);
+        hops.set(details.id, details.url);
+        if (hops.size > HOPS_KEPT) hops.delete(hops.keys().next().value!);
+      }
+      const page = details.webContents?.isDestroyed() === false ? details.webContents.getURL() : "";
+      const verdict = webRequest({
+        url: details.url,
+        mainFrame,
+        initiator: details.initiatorOrigin,
+        before,
+        ...(page === "" ? {} : { page }),
+      });
+      if (verdict.kind !== "resolve") {
+        callback(verdict.kind === "allow" ? {} : { cancel: true });
+        return;
+      }
+      void within(verdict.host, verdict.bound).then(
+        (ok) => callback(ok ? {} : { cancel: true }),
+        () => callback({ cancel: true }),
+      );
+    });
+  };
+
+  const sessionOf = (kind: PreviewKind): Session => {
+    const known = sessions.get(kind);
+    if (known !== undefined) return known;
+    const ses = session.fromPartition(PREVIEW_PARTITIONS[kind]);
+    harden(ses);
+    if (kind === "local") localSession(ses);
+    else webSession(ses);
+    sessions.set(kind, ses);
     return ses;
   };
 
@@ -171,10 +261,12 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     if (contents.isDestroyed()) return null;
     const url = contents.getURL();
     if (url === "") return null;
-    const driver = options.agent?.driverOf(preview.threadId);
-    const browserInspection = options.agent?.inspectionOf(preview.threadId);
-    const action = options.agent?.actionOf?.(preview.threadId);
-    const recording = options.agent?.recordingOf?.(preview.threadId) === true;
+    // No agent drives or reads a web page the user opened.
+    const agent = preview.kind === "local" ? options.agent : undefined;
+    const driver = agent?.driverOf(preview.threadId);
+    const browserInspection = agent?.inspectionOf(preview.threadId);
+    const action = agent?.actionOf?.(preview.threadId);
+    const recording = agent?.recordingOf?.(preview.threadId) === true;
     return {
       url,
       title: contents.getTitle(),
@@ -241,10 +333,10 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     window.once("closed", () => leave(window));
   };
 
-  const create = (threadId: string): Preview => {
+  const create = (threadId: string, kind: PreviewKind): Preview => {
     const view = new WebContentsView({
       webPreferences: {
-        session: sessionOf(),
+        session: sessionOf(kind),
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -257,7 +349,9 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     view.setVisible(false);
     const preview: Preview = {
       threadId,
+      kind,
       view,
+      rect: undefined,
       window: undefined,
       watchers: new Set(),
       error: undefined,
@@ -277,7 +371,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       toLinkGate(url);
       return { action: "deny" };
     });
-    const steer = (event: { preventDefault(): void }, url: string) => {
+    const steerLocal = (event: { preventDefault(): void }, url: string) => {
       const agentSays = options.agent?.navigation(contents, url);
       if (agentSays === "load") return;
       if (agentSays === "block") {
@@ -287,13 +381,36 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       const decision = previewNavigation(url);
       if (decision === "load") return;
       event.preventDefault();
-      if (decision === "external") toLinkGate(url);
+      if (decision !== "web") return;
+      // The user, on an agent's page, off where it was allowed: the page stays the agent's, and
+      // the link goes to the user's browser.
+      if (options.agent?.driverOf(threadId) !== undefined) {
+        toLinkGate(url);
+        return;
+      }
+      // The local session never loads it, so the page is made again in the web session: after
+      // this event, since that closes the page raising it.
+      setImmediate(() => {
+        if (previews.get(threadId) === preview) void openIn(preview, "web", url);
+      });
+    };
+    const steerWeb = (event: { preventDefault(): void }, url: string, redirect: boolean) => {
+      const decision = webNavigation(url);
+      if (decision === "load") return;
+      event.preventDefault();
+      // A site sending the pane to this computer's own addresses: the user decides, in their
+      // browser. A redirect there, which nobody clicked, just stops.
+      if (decision === "local" && !redirect) toLinkGate(url);
+    };
+    const steer = (event: { preventDefault(): void }, url: string, redirect: boolean) => {
+      if (kind === "local") steerLocal(event, url);
+      else steerWeb(event, url, redirect);
     };
     contents.on("will-navigate", (event) => {
-      if (event.isMainFrame) steer(event, event.url);
+      if (event.isMainFrame) steer(event, event.url, false);
     });
     contents.on("will-redirect", (event) => {
-      if (event.isMainFrame) steer(event, event.url);
+      if (event.isMainFrame) steer(event, event.url, true);
     });
     contents.on("did-start-navigation", (event) => {
       if (event.isMainFrame && !event.isSameDocument) preview.error = undefined;
@@ -309,13 +426,15 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       send();
     });
     // Clicking or typing in an agent's page takes it over; moving the mouse over it doesn't.
-    contents.on("before-input-event", (_event, input) => {
-      if (input.type === "keyDown") options.agent?.userInput(contents);
-    });
-    contents.on("before-mouse-event", (_event, mouse) => {
-      if (mouse.type === "mouseDown" || mouse.type === "mouseWheel")
-        options.agent?.userInput(contents);
-    });
+    if (kind === "local") {
+      contents.on("before-input-event", (_event, input) => {
+        if (input.type === "keyDown") options.agent?.userInput(contents);
+      });
+      contents.on("before-mouse-event", (_event, mouse) => {
+        if (mouse.type === "mouseDown" || mouse.type === "mouseWheel")
+          options.agent?.userInput(contents);
+      });
+    }
     contents.on("did-start-loading", send);
     contents.on("did-stop-loading", send);
     contents.on("did-navigate", send);
@@ -332,6 +451,34 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     return preview;
   };
 
+  /**
+   * `old`'s thread's page made again in `kind`'s session, in its place: in the same window at the
+   * same size, told to the same windows. Nothing of the old page comes along, its history neither.
+   */
+  const replace = (old: Preview, kind: PreviewKind): Preview => {
+    const { window, rect, watchers } = old;
+    close(old);
+    const next = create(old.threadId, kind);
+    for (const watcher of watchers) next.watchers.add(watcher);
+    touch(next);
+    if (window !== undefined && !window.isDestroyed() && rect !== undefined) {
+      attach(next, window);
+      next.rect = rect;
+      next.view.setBounds(rect);
+      next.view.setVisible(true);
+    }
+    return next;
+  };
+
+  /** Loads `url` in the thread's page, made in `kind`'s session first if it is in the other. */
+  const openIn = async (preview: Preview, kind: PreviewKind, url: string) => {
+    const target = preview.kind === kind ? preview : replace(preview, kind);
+    target.error = undefined;
+    // A page that won't load rejects here and reports itself through `did-fail-load`.
+    await target.view.webContents.loadURL(url).catch(() => {});
+    report(target);
+  };
+
   /** The preview `input` names, telling `sender` about it from now on. */
   const previewFor = (input: unknown, sender: WebContents): Preview | undefined => {
     const threadId = previewThreadOf(input);
@@ -343,14 +490,15 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
   ipc.handle(Channels.previewOpen, async (input, event) => {
     const threadId = previewThreadOf(input);
     const raw: unknown = threadId === undefined ? undefined : Reflect.get(input as object, "url");
-    const url = typeof raw === "string" ? loopbackUrl(raw) : undefined;
+    const local = typeof raw === "string" ? loopbackUrl(raw) : undefined;
+    const web = typeof raw === "string" && local === undefined ? webUrl(raw) : undefined;
+    const url = local ?? web;
     if (threadId === undefined || url === undefined) return false;
-    const preview = previews.get(threadId) ?? create(threadId);
+    const kind: PreviewKind = local === undefined ? "web" : "local";
+    const preview = previews.get(threadId) ?? create(threadId, kind);
     touch(preview);
     preview.watchers.add(event.sender);
-    preview.error = undefined;
-    // A page that won't load rejects here and reports itself through `did-fail-load`.
-    await preview.view.webContents.loadURL(url).catch(() => {});
+    await openIn(preview, kind, url);
     return true;
   });
   ipc.on(Channels.previewBounds, (event, input) => {
@@ -367,7 +515,8 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     }
     touch(preview);
     attach(preview, window);
-    preview.view.setBounds(windowRect(bounds, event.sender.getZoomFactor()));
+    preview.rect = windowRect(bounds, event.sender.getZoomFactor());
+    preview.view.setBounds(preview.rect);
     preview.view.setVisible(true);
   });
   ipc.on(Channels.previewBack, (event, input) => {
@@ -405,7 +554,8 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
       op: "screenshot",
       ...(typeof target === "object" && target !== null ? target : {}),
     });
-    if (preview === undefined || command?.op !== "screenshot") return unavailable;
+    if (preview === undefined || preview.kind !== "local" || command?.op !== "screenshot")
+      return unavailable;
     return (
       options.agent?.inspect(preview.threadId, {
         ...(command.ref === undefined ? {} : { ref: command.ref }),
@@ -418,7 +568,12 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     const preset =
       typeof input === "object" && input !== null ? Reflect.get(input, "preset") : undefined;
     const command = parsePaneCommand({ op: "viewport", preset });
-    if (preview === undefined || command?.op !== "viewport" || command.preset === undefined)
+    if (
+      preview === undefined ||
+      preview.kind !== "local" ||
+      command?.op !== "viewport" ||
+      command.preset === undefined
+    )
       return unavailable;
     return options.agent?.viewport(preview.threadId, command.preset) ?? unavailable;
   });
@@ -428,7 +583,8 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
   });
 
   const contentsOf = (threadId: string) => {
-    const contents = previews.get(threadId)?.view.webContents;
+    const preview = previews.get(threadId);
+    const contents = preview?.kind === "local" ? preview.view.webContents : undefined;
     return contents === undefined || contents.isDestroyed() ? undefined : contents;
   };
   return {
@@ -436,10 +592,12 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     contentsFor: (threadId, make) => {
       const existing = contentsOf(threadId);
       if (existing !== undefined || !make) return existing;
-      const preview = create(threadId);
+      // A web page the user opened is never the agent's: it closes, unread, for a page of its own.
+      const old = previews.get(threadId);
+      const preview = old === undefined ? create(threadId, "local") : replace(old, "local");
       touch(preview);
       // A page no window has shown yet has no size, and lays out, hit-tests and captures nothing.
-      preview.view.setBounds(AGENT_PAGE_BOUNDS);
+      if (preview.window === undefined) preview.view.setBounds(AGENT_PAGE_BOUNDS);
       return preview.view.webContents;
     },
     changed: (threadId) => {

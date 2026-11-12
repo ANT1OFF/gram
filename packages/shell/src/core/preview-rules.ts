@@ -1,8 +1,18 @@
-// What the Preview tab's page may load (`modules/preview/main.ts` applies it): loopback, and nothing
-// else. A page it loads is untrusted, so every request it makes is checked here, its subresources and
-// redirects too, and a link off loopback leaves for the user's browser through the link question.
+// What the Preview tab's pages may load (`modules/preview/main.ts` applies it). A thread's page lives
+// in one of two sessions. The local one holds loopback pages, and agents' pages: it loads loopback
+// and nothing else (`previewRequest`), and the agent browser's own rules decide for an agent's page
+// off it. The web one holds the pages the user opens anywhere else, and no agent ever drives or
+// reads it: any http(s) page loads there, but never a loopback address, and a page never reaches a
+// network more private than its own (`webRequest`), so a site can't use the pane to reach Gram's own
+// server, a dev server or the office network. A page it loads is untrusted, so every request it
+// makes is checked, its subresources and redirects too.
 
-import { LOOPBACK_HOSTS, type PreviewBounds } from "@gram/contracts/link-trust";
+import {
+  LOOPBACK_HOSTS,
+  isPrivateAddress,
+  refusedHost,
+  type PreviewBounds,
+} from "@gram/contracts/link-trust";
 
 import { isThreadIdArg } from "./rules.ts";
 
@@ -10,9 +20,9 @@ import { isThreadIdArg } from "./rules.ts";
 export type PreviewNavigation =
   /** A page on this computer's loopback (`localhost`, `127.0.0.1`, `[::1]`), loaded as written. */
   | "load"
-  /** A web page elsewhere: it opens in the user's browser, after the link question. */
-  | "external"
-  /** Anything else (`file:`, `javascript:`, `chrome:`): nothing opens. */
+  /** A web page elsewhere: it opens in the thread's web session (`webNavigation`). */
+  | "web"
+  /** Anything else (`file:`, `javascript:`, `data:`, `chrome:`, `devtools:`): nothing opens. */
   | "refuse";
 
 /** What happens to one request the preview's page makes, a navigation or a subresource. */
@@ -54,18 +64,182 @@ export function previewNavigation(url: string): PreviewNavigation {
   if (parsed.href === "about:blank") return "load";
   if (!WEB.has(parsed.protocol)) return "refuse";
   if (loopbackPortOf(url) !== undefined) return "load";
-  // A user name before the host, on loopback or not, is how a look-alike hides: the link question
-  // names the host it really goes to.
-  return "external";
+  // A user name before the host, on loopback or not, is how a look-alike hides: the web session
+  // refuses it, and the address strip never takes one.
+  if (parsed.username !== "" || parsed.password !== "") return "refuse";
+  return "web";
 }
 
-/** Whether the preview's session lets one request through, as its `webRequest` sees it. */
+/** Whether the local session lets one request through, as its `webRequest` sees it. */
 export function previewRequest(url: string): PreviewRequest {
   const parsed = parse(url);
   if (parsed === undefined) return "block";
   if (LOCAL.has(parsed.protocol)) return "allow";
   if (!WEB.has(parsed.protocol) && !SOCKETS.has(parsed.protocol)) return "block";
   return loopbackPortOf(url) === undefined ? "block" : "allow";
+}
+
+// ---------------------------------------------------------------------------------------------
+// The web session
+
+/**
+ * How private the network an address is on: this computer, a private network (the office, home,
+ * a VPN), or the internet. A request may reach its own page's zone or a more public one only.
+ */
+export type NetworkZone = "public" | "private" | "loopback";
+
+const RANK: Readonly<Record<NetworkZone, number>> = {
+  public: 0,
+  private: 1,
+  loopback: 2,
+};
+
+/** The more public of two zones. */
+export const morePublic = (a: NetworkZone, b: NetworkZone): NetworkZone =>
+  RANK[a] <= RANK[b] ? a : b;
+
+/** Whether a request to `target` stays within `bound`, the most private zone it may reach. */
+export const withinZone = (target: NetworkZone, bound: NetworkZone): boolean =>
+  RANK[target] <= RANK[bound];
+
+const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+
+/** An IPv4 address's zone; `0.0.0.0` reaches this computer on macOS and Linux. */
+const ipv4Zone = (address: string): NetworkZone | undefined => {
+  const match = IPV4.exec(address);
+  if (match === null) return undefined;
+  const first = Number(match[1]);
+  if (first === 127 || first === 0) return "loopback";
+  return isPrivateAddress(address) ? "private" : "public";
+};
+
+/** An IPv6 address's zone, unbracketed, as DNS or the URL parser spells it. */
+const ipv6Zone = (raw: string): NetworkZone => {
+  const address = raw.toLowerCase();
+  if (address === "::1" || address === "::") return "loopback";
+  const mapped = /^::ffff:(.+)$/.exec(address)?.[1];
+  if (mapped !== undefined) {
+    const dotted = ipv4Zone(mapped);
+    if (dotted !== undefined) return dotted;
+    // The parser writes a mapped address in hex (`::ffff:7f00:1`).
+    const hex = /^([\da-f]{1,4}):([\da-f]{1,4})$/.exec(mapped);
+    if (hex === null) return "private";
+    const high = Number.parseInt(hex[1]!, 16);
+    const low = Number.parseInt(hex[2]!, 16);
+    return ipv4Zone(`${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`) ?? "private";
+  }
+  return isPrivateAddress(address) ? "private" : "public";
+};
+
+/** The zone of an address a name resolved to, as DNS gives it. */
+export function addressZone(address: string): NetworkZone {
+  return ipv4Zone(address) ?? (address.includes(":") ? ipv6Zone(address) : "private");
+}
+
+/**
+ * The zone of a URL's host by its name alone, as the URL parser spells it: loopback for
+ * `localhost`, any name under it and the loopback addresses; private for a private address and a
+ * name only a private network resolves (`intranet`, `nas.local`, `wiki.corp`); else public, until
+ * its name resolves (`addressZone`).
+ */
+export function hostZone(rawHost: string): NetworkZone {
+  const host = (rawHost.endsWith(".") ? rawHost.slice(0, -1) : rawHost).toLowerCase();
+  if (LOOPBACK_HOSTS.has(host) || host === "localhost" || host.endsWith(".localhost"))
+    return "loopback";
+  if (host.startsWith("[") && host.endsWith("]")) return ipv6Zone(host.slice(1, -1));
+  const v4 = ipv4Zone(host);
+  if (v4 !== undefined) return v4;
+  return refusedHost(host) === "private" ? "private" : "public";
+}
+
+/** Whether a host is an address already, which needs no lookup. */
+const isAddress = (host: string) => IPV4.test(host) || host.startsWith("[");
+
+/**
+ * The zone a page or a request's initiator is in, from its URL or origin: an opaque origin
+ * (`null`, a sandboxed frame or a `data:` page) or anything unreadable could be from anywhere, so
+ * it counts as public.
+ */
+export function zoneOf(urlOrOrigin: string | undefined): NetworkZone {
+  if (urlOrOrigin === undefined || urlOrOrigin === "null") return "public";
+  const parsed = parse(urlOrOrigin);
+  if (parsed === undefined || !(WEB.has(parsed.protocol) || SOCKETS.has(parsed.protocol)))
+    return "public";
+  return hostZone(parsed.hostname);
+}
+
+/** What the web session does with one request. */
+export type WebRequestVerdict =
+  | { readonly kind: "allow" }
+  | { readonly kind: "block" }
+  /** Allowed if every address `host` resolves to is within `bound`. */
+  | {
+      readonly kind: "resolve";
+      readonly host: string;
+      readonly bound: NetworkZone;
+    };
+
+/** One request a page in the web session makes, with what the session knows of where it's from. */
+export interface WebRequestDetails {
+  readonly url: string;
+  readonly mainFrame: boolean;
+  /** The origin of the page or frame that started it; absent for a load the app started. */
+  readonly initiator?: string | undefined;
+  /** For a main frame's redirect, the URL it was redirected from. */
+  readonly before?: string | undefined;
+  /** The page's main frame's URL now, for a subresource with no initiator. */
+  readonly page?: string | undefined;
+}
+
+/**
+ * The web session's rule for one request. Never loopback, whoever asks: Gram's own server, the
+ * user's dev servers and the agents' pages are the local session's. A page the user loaded
+ * themselves, by the address strip, history or reload, may be on a private network as well as the
+ * internet. Anything a page starts, a link, a form, a redirect, a script, a subresource or a frame,
+ * reaches its own zone or a more public one, so a site can never send the pane into the office
+ * network. A public name is looked up, so one pointed at a private or loopback address (DNS
+ * rebinding) is refused like the address itself.
+ */
+export function webRequest(request: WebRequestDetails): WebRequestVerdict {
+  const parsed = parse(request.url);
+  if (parsed === undefined) return { kind: "block" };
+  if (LOCAL.has(parsed.protocol)) return request.mainFrame ? { kind: "block" } : { kind: "allow" };
+  if (!WEB.has(parsed.protocol) && !(SOCKETS.has(parsed.protocol) && !request.mainFrame))
+    return { kind: "block" };
+  if (parsed.username !== "" || parsed.password !== "") return { kind: "block" };
+  const host = parsed.hostname;
+  const target = hostZone(host);
+  if (target === "loopback") return { kind: "block" };
+  // Where it came from: the page or frame that started it, and a redirect's previous hop. A main
+  // frame from neither is the user's own load; a subresource from neither counts as public.
+  const sources = (
+    request.mainFrame ? [request.initiator, request.before] : [request.initiator ?? request.page]
+  ).filter((source) => source !== undefined);
+  const bound =
+    sources.length === 0 && request.mainFrame
+      ? "private"
+      : sources.map(zoneOf).reduce(morePublic, sources.length === 0 ? "public" : "private");
+  if (!withinZone(target, bound)) return { kind: "block" };
+  if (isAddress(host)) return { kind: "allow" };
+  return { kind: "resolve", host, bound };
+}
+
+/** Where a navigation of a page in the web session goes. */
+export type WebNavigation =
+  /** Any http(s) page off loopback, its requests still held to `webRequest`. */
+  | "load"
+  /** A loopback page, which the web session never loads: it goes to the link question. */
+  | "local"
+  | "refuse";
+
+/** Where a main-frame navigation of a page in the web session goes: a click, `location =`. */
+export function webNavigation(url: string): WebNavigation {
+  const parsed = parse(url);
+  if (parsed === undefined) return "refuse";
+  if (parsed.href === "about:blank") return "load";
+  if (!WEB.has(parsed.protocol)) return "refuse";
+  if (parsed.username !== "" || parsed.password !== "") return "refuse";
+  return hostZone(parsed.hostname) === "loopback" ? "local" : "load";
 }
 
 /** How many threads' previews stay loaded at once; using a fifth closes the least recent. */

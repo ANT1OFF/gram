@@ -1175,6 +1175,26 @@ Source: [storage](../packages/server/src/git/storage.ts),
 
 ## Browser, notifications and dictation
 
+The Preview tab opens your app's dev server, a Markdown or HTML file, or any web page you type
+(`example.com` opens as https) or follow a link to. `file:`, `javascript:`, `data:`, `chrome:`,
+`devtools:` and other schemes never open, and a new window goes to your browser through the link
+question. Each thread's page lives in one of two sessions of Gram's own, kept in memory, sharing
+nothing with the app's session, its launch cookie or your browser, sandboxed and without Node, with
+every permission, download, client certificate and external-app launch refused:
+
+- **Local**: loopback pages and every page an agent drives. It loads nothing off loopback but what
+  an agent was allowed (below).
+- **Web**: the pages you open anywhere else. No agent ever reads or drives one; when an agent
+  starts browsing in that thread, your page there closes for a fresh one of its own, so what you
+  sign in to on the web stays yours. A web page never reaches loopback (Gram's own server, your dev
+  servers), and nothing it starts (a link, form, redirect, script, frame or subresource) reaches a
+  network more private than its own: a site can't reach your office or home network, and a public
+  name pointed at a private address is refused like the address. You can still open a page on
+  your private network yourself by typing its address.
+
+Agents can't open a web page in your Preview tab with `show_panel`, which stays on loopback; they
+browse with the tools below, under their own approvals.
+
 Browser Preview/support observations are passive; inspection and capture use
 explicit app tools. Access, host/action approval and document freshness checks
 remain authoritative at dispatch and delivery. Missing metadata is unavailable;

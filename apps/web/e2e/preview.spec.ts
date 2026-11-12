@@ -41,7 +41,9 @@ async function openThread(page: Page, threadId: string) {
 const view = (page: Page, threadId: string) =>
   page.locator(`[data-testid="mock-preview-view"][data-thread="${threadId}"]`);
 
-test("a port chip opens the thread's app in the Preview tab, loopback only", async ({ page }) => {
+test("a port chip opens the thread's app in the Preview tab, and the user any web page", async ({
+  page,
+}) => {
   await openThread(page, "t-deps");
   await page.evaluate((p) => window.gramMock!.simulatePorts("t-deps" as never, [p]), port);
 
@@ -85,14 +87,37 @@ test("a port chip opens the thread's app in the Preview tab, loopback only", asy
   ).toHaveText("The other page");
   await expect(page.getByTestId("preview-address")).toHaveValue(`http://127.0.0.1:${port}/other`);
 
-  // An address off loopback doesn't open here.
+  // A scheme that isn't the web's doesn't open here.
   const address = page.getByTestId("preview-address");
-  await address.fill("https://organization.example.invalid/");
-  await address.press("Enter");
-  await expect(page.getByRole("alert")).toHaveText(
-    "Only an address on localhost opens here, such as localhost:3000, or the full path of a Markdown or HTML file.",
+  for (const refused of ["file:///etc/passwd", "javascript:alert(1)", "chrome://settings"]) {
+    await address.fill(refused);
+    await address.press("Enter");
+    await expect(page.getByRole("alert")).toHaveText(
+      "Only a web address opens here, such as localhost:3000 or example.com, or the full path of a Markdown or HTML file.",
+    );
+    await expect(address).toHaveValue(`http://127.0.0.1:${port}/other`);
+  }
+
+  // Nor does the agent's show_panel on a page off loopback: only the user opens one.
+  await page.evaluate(() =>
+    window.gramMock!.simulateShowPanel("t-deps" as never, "preview", "https://site.example/"),
   );
-  await expect(page.getByTestId("preview-address")).toHaveValue(`http://127.0.0.1:${port}/other`);
+  await expect(address).toHaveValue(`http://127.0.0.1:${port}/other`);
+
+  // A web page the user types opens here, https unless it says otherwise.
+  await page.route("https://site.example/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<title>Site</title><h1>A page on the web</h1>",
+    }),
+  );
+  await address.fill("site.example/docs");
+  await address.press("Enter");
+  await expect(address).toHaveValue("https://site.example/docs");
+  await expect(
+    page.frameLocator('[data-thread="t-deps"]').getByRole("heading", { level: 1 }),
+  ).toHaveText("A page on the web");
+  await expect(page.getByRole("alert")).toBeHidden();
 
   // A loopback address typed without its scheme opens, as the placeholder shows it.
   await address.fill(`localhost:${port}`);

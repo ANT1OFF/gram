@@ -6,6 +6,7 @@ import {
   previewFileFragment,
   previewFileKind,
   previewFileTarget,
+  webUrl,
   type GridPreset,
   type OverviewOptionalSection,
   type OverviewSidebar,
@@ -975,8 +976,8 @@ export interface LayoutState
     options?: { previewPane?: boolean },
   ): void;
   /**
-   * Loads `url` in `threadId`'s Preview tab and shows the tab; ignored unless `url` is a loopback
-   * URL. `thread` says the thread is about to be in view, as for `revealPanel`.
+   * Loads `url` in `threadId`'s Preview tab and shows the tab, for the user: ignored unless `url` is
+   * an http(s) URL (`webUrl`). `thread` says the thread is about to be in view, as for `revealPanel`.
    */
   openPreview(threadId: ThreadId, url: string, options?: { thread?: boolean }): void;
   /**
@@ -1358,7 +1359,8 @@ export const useLayoutStore = create<LayoutState>()(
           }),
         dismissPreview: () => set({ previewSuggestion: undefined }),
         openPreview: (threadId, raw, options) => {
-          const url = loopbackUrl(raw);
+          // The user's own: any web page. What an agent asks for (`requestPanel`) stays on loopback.
+          const url = loopbackUrl(raw) ?? webUrl(raw);
           if (url === undefined) return;
           set((s) => ({
             previewPages: { ...s.previewPages, [threadId]: { id: ++requestSeq, url } },
