@@ -28,6 +28,7 @@ import {
   type PendingReason,
   type RefusalCode,
 } from "../rules.ts";
+import { admitThread } from "../../host/ownership.ts";
 import { workersOf, toolError, type OrchestrationKit } from "./kit.ts";
 import {
   type StageInput,
@@ -104,8 +105,22 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
     cardsLock,
     outboxLock,
     requireAuthority,
+    ownerOf,
   } = kit;
   const { wake, armAlarms, armLimitResume } = deps;
+
+  /**
+   * Refused unless this call's person may change every worker of `feature` (`host/ownership.ts`):
+   * a feature's pause, archive, rename, stage or group reaches each of them, and one of them can
+   * be another person's while the workspace's orchestrator is no one's. Asked before any change.
+   */
+  const admitFeature = (state: WorkspaceState, feature: string | undefined) =>
+    Effect.gen(function* () {
+      if (feature === undefined) return;
+      for (const worker of workersOf(yield* store.listThreads, state))
+        if (worker.spawnedBy?.feature === feature)
+          yield* admitThread(store.getThread, ownerOf, worker.id);
+    });
 
   // ---------------------------------------------------------------------------------------
   // Stages and groups
@@ -256,6 +271,10 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
 
   const setStage: OrchestrationShape["setStage"] = (workspaceId, input) =>
     Effect.gen(function* () {
+      yield* admitFeature(
+        yield* store.getWorkspace(workspaceId),
+        input.feature === undefined ? undefined : featureSlug(input.feature),
+      );
       const done = yield* applyStage(workspaceId, input, "user");
       if ("code" in done) return yield* new InvalidState({ message: done.reason });
       yield* noteForNextDigest(
@@ -269,6 +288,7 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
 
   const setGroup: OrchestrationShape["setGroup"] = (workspaceId, input) =>
     Effect.gen(function* () {
+      yield* admitFeature(yield* store.getWorkspace(workspaceId), featureSlug(input.feature));
       const done = yield* applyGroup(workspaceId, input);
       if ("code" in done) return yield* new InvalidState({ message: done.reason });
       if (done.moved) {
@@ -289,6 +309,7 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
       if (feature === undefined) {
         return yield* new InvalidState({ message: `"${raw}" isn't a usable feature name.` });
       }
+      yield* admitFeature(state, feature);
       const workers = workersOf(yield* store.listThreads, state).filter(
         (worker) => worker.spawnedBy?.feature === feature && !worker.parked,
       );
@@ -339,6 +360,7 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
       if (feature === undefined) {
         return yield* new InvalidState({ message: `"${raw}" isn't a usable feature name.` });
       }
+      yield* admitFeature(state, feature);
       const held = (yield* readOutbox(workspaceId)).heldBriefs ?? [];
       if (
         paused &&
@@ -418,6 +440,7 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
       if (from === undefined) {
         return yield* new InvalidState({ message: `"${raw}" isn't a usable feature name.` });
       }
+      yield* admitFeature(state, from);
       const to = featureSlug(rawTo);
       if (to === undefined) {
         return yield* new InvalidState({

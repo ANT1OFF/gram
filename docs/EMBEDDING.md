@@ -225,8 +225,18 @@ naming the person in `owner` and `onDemand: "personal"`. From then on:
   task for its workspace (named by the workspace or by one of its projects), a charter or pause
   of that workspace, or a join. Joining hands a thread its orchestrator's lineage, so whoever
   asks must be both the thread's owner and the orchestrator's, even for a thread on no one's
-  machine. The check is made where these reach the agent, so no other route gets past it; the
-  server's own notices to a thread are not refused;
+  machine. The check is made where these reach the agent, so no other route gets past it. That
+  includes a notice, an interrupt or a system delivery made in someone's call. The server's own
+  notices, with no caller, are not refused;
+- what acts on a workspace's workers is checked against each worker it reaches, not only the
+  orchestrator: an answer to or dismissal of a worker's question, before it is written, and a
+  feature's pause, archive, rename, stage or group, before anything changes. A worker on a
+  person's machine is theirs even under an orchestrator on no one's;
+- work kept to be done later records who it was for. An owed answer to a worker's question is
+  delivered as the person who gave it (`closedFor`), a retry after a restart included. If they
+  may no longer change the worker, it is settled undelivered and never sent as the server's own;
+- a thread moved onto another machine keeps its owner: the machine it goes to was started for
+  the same person as the one it is on, or neither was for anyone (`keepsOwner`);
 - a person with no machine of their own is told to start one, where before they were told to join
   one.
 

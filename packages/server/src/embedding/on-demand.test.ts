@@ -3,7 +3,13 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { defineAppTool } from "../app-tools/definition.ts";
 import { bindAppTools } from "../app-tools/registry.ts";
-import { callerPerson, forThread, lineageOwner, RoutedFor } from "../host/ownership.ts";
+import {
+  callerPerson,
+  forThread,
+  lineageOwner,
+  MOVE_CHANGES_OWNER,
+  RoutedFor,
+} from "../host/ownership.ts";
 import { ownedRuntimes } from "../runtime/owned-runtimes.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import { describe, expect, it } from "vitest";
@@ -265,6 +271,7 @@ const recording = () => {
     send: note("send"),
     steer: note("steer"),
     respond: note("respond"),
+    moveCheckout: note("moveCheckout"),
     respondMany: (answers: ReadonlyArray<{ threadId: ThreadId; requestId: string }>) =>
       Effect.sync(() =>
         answers.map((each) => {
@@ -282,6 +289,9 @@ const as =
 const adaWorker = ThreadId.make("ada-worker");
 const sharedThread = ThreadId.make("shared-orchestrator");
 const answer = { kind: "approval", decision: "allow", scope: "once" } as never;
+
+/** A checkout on `hostId`, for a move. */
+const onto = (hostId: string) => ({ kind: "main", path: "/w/x", hostId }) as never;
 
 describe("hosts provisioned on demand: what reaches a person's threads", () => {
   // An already running session needs no machine looked up: the delivery itself is checked.
@@ -314,5 +324,26 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
     await Effect.runPromise(owned.steer(adaWorker, { text: "the server's" }));
     await Effect.runPromise(as("grace")(owned.send(sharedThread, { text: "anyone's" })));
     expect(reached).toEqual([`send:${adaWorker}`, `steer:${adaWorker}`, `send:${sharedThread}`]);
+  });
+
+  // A thread moved onto another machine (an embedder's, when its own is gone) stays its owner's.
+  it("moves a thread only onto a machine started for the same person", async () => {
+    const { reached, owned } = recording();
+    const orchestrator = ThreadId.make("ada-orchestrator");
+    await Effect.runPromise(owned.moveCheckout(orchestrator, onto("m-ada")));
+    await Effect.runPromise(owned.moveCheckout(sharedThread, onto("m-shared")));
+    for (const [threadId, hostId] of [
+      [orchestrator, "m-shared"],
+      [sharedThread, "m-ada"],
+    ] as const) {
+      const exit = await Effect.runPromiseExit(owned.moveCheckout(threadId, onto(hostId)));
+      expect(String(exit)).toContain(MOVE_CHANGES_OWNER);
+    }
+    // And never for someone else, wherever to.
+    const refused = await Effect.runPromise(
+      as("grace")(owned.moveCheckout(orchestrator, onto("m-ada"))).pipe(Effect.flip),
+    );
+    expect(refused._tag).toBe("ThreadNotFound");
+    expect(reached).toEqual([`moveCheckout:${orchestrator}`, `moveCheckout:${sharedThread}`]);
   });
 });

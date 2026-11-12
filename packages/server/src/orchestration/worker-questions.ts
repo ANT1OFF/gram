@@ -13,7 +13,13 @@ import type { OutboxState, StoredWorkerQuestion } from "./outbox.ts";
 
 /** The record as surfaces see it, without what only the outbox needs. */
 export const publicQuestion = (stored: StoredWorkerQuestion): WorkerQuestion => {
-  const { copyOwed: _, cardMessageId: _card, deliveryOwed: _owed, ...question } = stored;
+  const {
+    copyOwed: _,
+    cardMessageId: _card,
+    deliveryOwed: _owed,
+    closedFor: _for,
+    ...question
+  } = stored;
   return question;
 };
 

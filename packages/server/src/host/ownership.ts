@@ -189,3 +189,19 @@ export const admitThread = (
   Effect.flatMap(mayReachThread(getThread, ownerOf, threadId), (ok) =>
     ok ? Effect.void : Effect.fail(new InvalidState({ message: NOT_YOUR_MACHINE, threadId })),
   );
+
+/** What a move that would hand a thread to another owner, or to none, is told. */
+export const MOVE_CHANGES_OWNER =
+  "A thread moves only onto a machine started for the same person as the one it is on.";
+
+/**
+ * Whether moving `thread` into `checkout` keeps whose it is: the machine it goes to was started
+ * for the same person as the one it works on now, or neither was for anyone. A route that moves a
+ * thread onto another machine (an embedder's, when its own is gone) asks this first, to refuse
+ * with a reason; the runtimes hold to it as well (`runtime/owned-runtimes.ts`).
+ */
+export const keepsOwner = (
+  ownerOf: OwnerOf,
+  thread: Pick<Thread, "checkout" | "currentCheckout">,
+  checkout: { readonly hostId?: HostId | undefined },
+): boolean => ownerOf(hostOf(effectiveCheckout(thread))) === ownerOf(hostOf(checkout));

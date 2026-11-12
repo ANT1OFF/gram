@@ -413,6 +413,9 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
       // A test that provides joined machines (`RemoteHosts`) places threads on them, as the server.
       const machines = yield* joinedMachines;
       const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
+      const owners = Option.getOrUndefined(
+        yield* Effect.serviceOption(MachineOwnersForTests),
+      )?.ownerOf;
       return WorkerHosts.fromHosts(
         {
           id: LOCAL_HOST_ID,
@@ -433,8 +436,17 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
         machines?.any,
         undefined,
         machines?.forSession,
-        machines?.ownerOf,
+        owners ?? machines?.ownerOf,
       );
     }),
   );
 }
+
+/**
+ * Who each machine was started for, in `layerLocalForTests`, where no joined machine records it: a
+ * test that places a thread on a machine someone owns (`ownership.ts`) says so here.
+ */
+export class MachineOwnersForTests extends Context.Service<
+  MachineOwnersForTests,
+  { readonly ownerOf: OwnerOf }
+>()("@gram/server/MachineOwnersForTests") {}

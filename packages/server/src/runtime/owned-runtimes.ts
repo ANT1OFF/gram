@@ -1,12 +1,22 @@
 // The runtimes as everything outside them reaches them: what a person (or an agent, for its
 // lineage's person) does to a thread, the thread's owners must be (`host/ownership.ts`). Checked
 // here, at what delivers to the agent, so no route around the RPC guard (a workspace's task, an
-// answer over HTTP, a tool) reaches another person's thread. The runtimes' own work, and a notice
-// the server sends, carry no caller and pass.
+// answer over HTTP, a tool) reaches another person's thread. A notice or a system delivery is
+// checked as well, against whoever's call it is made in: the server's own (no caller) passes, a
+// person's or an agent's must be the thread's owners'. Work kept to be done later records who it
+// was for and runs as them (a worker question's `closedFor`), so a retry can't make it the
+// server's.
 
-import type { Thread, ThreadId } from "@gram/contracts";
+import { InvalidState, type Thread, type ThreadId, ThreadNotFound } from "@gram/contracts";
 import * as Effect from "effect/Effect";
-import { admitThread, mayReachThread, NOT_YOUR_MACHINE, type OwnerOf } from "../host/ownership.ts";
+import {
+  admitThread,
+  keepsOwner,
+  mayReachThread,
+  MOVE_CHANGES_OWNER,
+  NOT_YOUR_MACHINE,
+  type OwnerOf,
+} from "../host/ownership.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 
 export const ownedRuntimes = (
@@ -15,6 +25,11 @@ export const ownedRuntimes = (
   ownerOf: OwnerOf,
 ): ThreadRuntimesShape => {
   const admit = (threadId: ThreadId) => admitThread(getThread, ownerOf, threadId);
+  /** For what can only say a thread isn't there: another person's is not, to this caller. */
+  const admitOrAbsent = (threadId: ThreadId) =>
+    Effect.flatMap(mayReachThread(getThread, ownerOf, threadId), (ok) =>
+      ok ? Effect.void : Effect.fail(new ThreadNotFound({ threadId })),
+    );
   return {
     ...runtimes,
     send: (threadId, ...rest) => Effect.andThen(admit(threadId), runtimes.send(threadId, ...rest)),
@@ -22,6 +37,24 @@ export const ownedRuntimes = (
       Effect.andThen(admit(threadId), runtimes.sendOrJoin(threadId, ...rest)),
     steer: (threadId, ...rest) =>
       Effect.andThen(admit(threadId), runtimes.steer(threadId, ...rest)),
+    sendNotice: (threadId, ...rest) =>
+      Effect.andThen(admit(threadId), runtimes.sendNotice(threadId, ...rest)),
+    requestSystemDelivery: (threadId, ...rest) =>
+      Effect.andThen(admitOrAbsent(threadId), runtimes.requestSystemDelivery(threadId, ...rest)),
+    // A thread keeps whose it is wherever it goes: onto a machine of the same person's, or of no
+    // one's from no one's. A route that moves one checks first and refuses with a reason; this is
+    // the floor under every route, so a move that would change the owner never happens.
+    moveCheckout: (threadId, checkout) =>
+      Effect.gen(function* () {
+        yield* admitOrAbsent(threadId);
+        const thread = yield* getThread(threadId).pipe(Effect.orElseSucceed(() => undefined));
+        if (thread !== undefined && !keepsOwner(ownerOf, thread, checkout))
+          return yield* Effect.die(new InvalidState({ message: MOVE_CHANGES_OWNER, threadId }));
+        return yield* runtimes.moveCheckout(threadId, checkout);
+      }),
+    interrupt: (threadId) => Effect.andThen(admitOrAbsent(threadId), runtimes.interrupt(threadId)),
+    stopAtToolBoundary: (threadId) =>
+      Effect.andThen(admitOrAbsent(threadId), runtimes.stopAtToolBoundary(threadId)),
     // Before the request is taken: an answer refused here leaves it open for its owner.
     respond: (threadId, ...rest) =>
       Effect.andThen(admit(threadId), runtimes.respond(threadId, ...rest)),

@@ -44,6 +44,7 @@ import {
 import { refusal, userHoldReason, type PendingReason } from "../rules.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import { toolError, pausedFeatureOf, clipped, type OrchestrationKit } from "./kit.ts";
+import { admitThread, currentCaller, mayReachThread, RoutedFor } from "../../host/ownership.ts";
 
 /** A worker's own words for a question, trimmed and scrubbed like everything a worker writes. */
 const questionWords = (text: string): string => redactText(text.trim());
@@ -75,6 +76,24 @@ export interface WorkerQuestionsDeps {
   ) => Effect.Effect<void>;
 }
 
+/** `moved` as made for `closedFor`, when it moved and was made for a caller. */
+const withClosedFor = (
+  moved: StoredWorkerQuestion | QuestionRefusal,
+  closedFor: StoredWorkerQuestion["closedFor"],
+) => (isRefusal(moved) || closedFor === undefined ? moved : { ...moved, closedFor });
+
+/**
+ * Work on a question's notice as the person its decision was made for (`closedFor`), whichever
+ * fiber runs it: a retry after a restart has no caller of its own and must not become the
+ * server's word. A decision the server made runs as it is.
+ */
+const asClosedFor =
+  (question: StoredWorkerQuestion) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+    question.closedFor === undefined
+      ? effect
+      : Effect.provideService(effect, RoutedFor, { person: question.closedFor.person });
+
 /** The worker-question tools and the timers and deliveries behind them. */
 export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestionsDeps) => {
   const {
@@ -90,8 +109,26 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
     updateMemo,
     updateOutbox,
     listeningWorkspace,
+    ownerOf,
   } = kit;
   const { recordReport, wake } = deps;
+
+  /**
+   * Refused unless this call's person may change the worker that asked (`host/ownership.ts`):
+   * asked before a decision is written, so nothing of another person's is kept to send later.
+   */
+  const admitAsker = (question: StoredWorkerQuestion | undefined) =>
+    question === undefined ? Effect.void : admitThread(store.getThread, ownerOf, question.threadId);
+  /** Who a decision made now is for (`closedFor`): this call's caller, where it has one. */
+  const decidedFor: Effect.Effect<StoredWorkerQuestion["closedFor"]> = Effect.map(
+    currentCaller,
+    (caller) =>
+      caller === undefined
+        ? undefined
+        : caller.person === undefined
+          ? {}
+          : { person: caller.person },
+  );
 
   const answerWorker: OrchestrationShape["answerWorker"] = (callerId, input) =>
     Effect.gen(function* () {
@@ -325,15 +362,17 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
    * into a running turn, queued behind it otherwise. Never counted as the user typing.
    */
   const deliverToWorker = (question: StoredWorkerQuestion, text: string) =>
-    runtimes
-      // Steered, as every notice is: the answer can change what the worker does now, and a steer
-      // cancels nothing, so it lands after the tool call under way.
-      .sendNotice(question.threadId, `question:${question.id}`, { text })
-      .pipe(
-        Effect.map((sent): QuestionDelivery =>
-          sent.steered ? "steered" : sent.queued ? "queued" : "sent",
+    asClosedFor(question)(
+      runtimes
+        // Steered, as every notice is: the answer can change what the worker does now, and a steer
+        // cancels nothing, so it lands after the tool call under way.
+        .sendNotice(question.threadId, `question:${question.id}`, { text })
+        .pipe(
+          Effect.map((sent): QuestionDelivery =>
+            sent.steered ? "steered" : sent.queued ? "queued" : "sent",
+          ),
         ),
-      );
+    );
 
   /** The owed notice settled: how it reached the worker, or `undefined` when it couldn't. */
   const settleDelivery = (
@@ -368,6 +407,14 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       Effect.gen(function* () {
         const worker = yield* findThread(current.threadId);
         if (worker === undefined || worker.parked || worker.workspaceId !== workspaceId) {
+          return { delivered: undefined };
+        }
+        // Made for someone who may not change this worker (now, or ever): settled undelivered,
+        // never sent as the server's own.
+        if (!(yield* asClosedFor(current)(mayReachThread(store.getThread, ownerOf, worker.id)))) {
+          yield* Effect.logWarning("a worker question's notice not delivered: not theirs").pipe(
+            Effect.annotateLogs({ workspaceId, questionId: current.id }),
+          );
           return { delivered: undefined };
         }
         const text = closedQuestionText(current);
@@ -577,12 +624,18 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
           );
         }
       }
+      // An orchestrator answers for its lineage's person: not a worker that is someone else's.
+      yield* admitAsker(found).pipe(Effect.mapError((e) => toolError(tool, e.message)));
       const answer = clipped(redactText(input.answer.trim()), WORKER_QUESTION_ANSWER_MAX);
       const at = yield* Clock.currentTimeMillis;
+      const closedFor = yield* decidedFor;
       let before: StoredWorkerQuestion | undefined;
       const claimed = yield* moveQuestion(workspaceId, input.questionId, (question) => {
         before = question;
-        return answeredByOrchestrator(question, answer, redactText(source), at);
+        return withClosedFor(
+          answeredByOrchestrator(question, answer, redactText(source), at),
+          closedFor,
+        );
       });
       if (isRefusal(claimed)) return yield* toolError(tool, refusal(claimed.code, claimed.refused));
       const delivered = yield* deliverToWorker(
@@ -618,6 +671,9 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
   ) =>
     Effect.gen(function* () {
       yield* store.getWorkspace(workspaceId);
+      // The worker that asked, whoever's workspace it is in: before the decision is written.
+      yield* admitAsker(findStoredQuestion(yield* readOutbox(workspaceId), questionId));
+      const closedFor = yield* decidedFor;
       const at = yield* Clock.currentTimeMillis;
       const scrubbed =
         "answer" in close
@@ -630,7 +686,7 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       const claimed = yield* moveQuestion(workspaceId, questionId, (question) => {
         // Retries and concurrent user replies preserve the first committed decision.
         if (!isOpenQuestion(question) && question.closedBy === "user") return question;
-        const moved = closedByUser(question, scrubbed, at);
+        const moved = withClosedFor(closedByUser(question, scrubbed, at), closedFor);
         newlyClosed = !isRefusal(moved);
         return moved;
       });
