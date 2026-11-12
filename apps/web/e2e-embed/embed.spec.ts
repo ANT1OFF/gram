@@ -270,7 +270,11 @@ test("the page of every thread and New take the embedding app's words", async ({
   await expect(page.getByTestId("new-entry").first()).toHaveAttribute("aria-haspopup", "menu");
   await page.evaluate(() => {
     (window as unknown as Update).embed.update({
-      threadsPage: { title: "Chat", newLabel: "New chat" },
+      threadsPage: {
+        title: "Chat",
+        newLabel: "New chat",
+        kinds: { solo: "One agent", orchestrator: "Team lead", worker: "Team member" },
+      },
       newEntry: { label: "New policy", to: "/govern/policies" },
     });
   });
@@ -284,6 +288,10 @@ test("the page of every thread and New take the embedding app's words", async ({
   await page.evaluate(() => (window as unknown as Update).embed.navigate("/threads"));
   await expect(page.getByTestId("threads-page").getByRole("heading")).toHaveText("Chat");
   await expect(page.getByTestId("threads-new")).toHaveText("New chat");
+  // A thread's kind is in the app's words too.
+  const rows = page.getByTestId("threads-page");
+  await expect(rows).toContainText("One agent");
+  await expect(rows).not.toContainText("Solo");
   await page.getByTestId("threads-new").click();
   await expect(page).toHaveURL(/\/new$/);
   // Taken away again, Gram's own words return.

@@ -70,4 +70,19 @@ describe("startedByOf", () => {
       startedByOf(summary("w", 1, { spawnedBy: { threadId: "x", feature: "f" } }), new Map()),
     ).toBe("Worker");
   });
+
+  it("takes an embedding app's words for a thread's kind", () => {
+    const kinds = { orchestrator: "Team lead", worker: "Team member", solo: "One agent" };
+    const worker = summary("w", 1, { spawnedBy: { threadId: "x", feature: "f" } });
+    expect(startedByOf(worker, new Map(), kinds)).toBe("Team member");
+    expect(startedByOf(worker, new Map([["x", "Billing"]]), kinds)).toBe("Team member of Billing");
+    expect(
+      threadListings({
+        summaries: [summary("a", 1)],
+        workspaceNames: new Map(),
+        needsYou: () => false,
+        kinds,
+      })[0]?.place,
+    ).toBe("One agent");
+  });
 });

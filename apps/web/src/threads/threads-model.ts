@@ -15,12 +15,21 @@ export interface ThreadListing {
   readonly needsYou: boolean;
 }
 
+/** The words for a thread's kind, each Gram's own when left out (an embedding app may give its own). */
+export interface ThreadKindWords {
+  readonly solo?: string | undefined;
+  readonly orchestrator?: string | undefined;
+  readonly worker?: string | undefined;
+}
+
 export interface ThreadsSources {
   readonly summaries: Iterable<ThreadSummary>;
   /** Each workspace's name, by its id. */
   readonly workspaceNames: ReadonlyMap<string, string>;
   /** Which threads need you, as the Inbox counts them. */
   readonly needsYou: (summary: ThreadSummary) => boolean;
+  /** How a thread's kind is worded. */
+  readonly kinds?: ThreadKindWords | undefined;
 }
 
 const titleOf = (summary: ThreadSummary): string =>
@@ -32,14 +41,16 @@ const titleOf = (summary: ThreadSummary): string =>
 export const startedByOf = (
   summary: ThreadSummary,
   titles: ReadonlyMap<string, string>,
+  kinds: ThreadKindWords = {},
 ): string | undefined => {
   const { thread } = summary;
-  if (thread.role === "orchestrator") return "Orchestrator";
+  if (thread.role === "orchestrator") return kinds.orchestrator ?? "Orchestrator";
   const by = thread.spawnedBy;
   if (by === undefined) return undefined;
   if (by.routine !== undefined) return `Routine: ${by.routine.name}`;
   const parent = titles.get(by.threadId);
-  return parent === undefined ? "Worker" : `Worker of ${parent}`;
+  const worker = kinds.worker ?? "Worker";
+  return parent === undefined ? worker : `${worker} of ${parent}`;
 };
 
 /**
@@ -59,9 +70,9 @@ export const threadListings = (sources: ThreadsSources, query = ""): ThreadListi
         title: titles.get(summary.thread.id) ?? titleOf(summary),
         place:
           workspaceId === undefined
-            ? "Solo"
+            ? (sources.kinds?.solo ?? "Solo")
             : (sources.workspaceNames.get(workspaceId) ?? "Workspace"),
-        startedBy: startedByOf(summary, titles),
+        startedBy: startedByOf(summary, titles, sources.kinds),
         needsYou: sources.needsYou(summary),
       };
     })

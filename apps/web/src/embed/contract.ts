@@ -179,6 +179,21 @@ export interface ShellThreadsPage {
    * left out it is Gram's "New task", which opens the form on the choice used last.
    */
   readonly newLabel?: string;
+  /**
+   * The words under each row for what kind of thread it is, for an app whose people do not speak
+   * of orchestrators and workers. Each is Gram's own word when left out.
+   */
+  readonly kinds?: ShellThreadKinds;
+}
+
+/** The page of every thread's words for a thread's kind. */
+export interface ShellThreadKinds {
+  /** A thread in no workspace: "Solo" when left out. */
+  readonly solo?: string;
+  /** A workspace's orchestrator: "Orchestrator" when left out. */
+  readonly orchestrator?: string;
+  /** A thread an orchestrator started, alone or before "of <its orchestrator>": "Worker". */
+  readonly worker?: string;
 }
 
 /**
