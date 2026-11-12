@@ -26,7 +26,7 @@ import { makeRepo, removeDir } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { HttpServer, RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
 import { NO_ACTOR_REFUSAL, VIEWER_REFUSAL } from "../rpc/actor-guard.ts";
-import { NOT_YOUR_MACHINE, RoutedFor } from "../host/ownership.ts";
+import { NOT_YOUR_MACHINE, OWNERS_DIFFER, RoutedFor } from "../host/ownership.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { ANSWER_OVER_HTTP, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
@@ -844,12 +844,13 @@ describe("sign-in through a fronting proxy", () => {
             },
             charter: DEFAULT_CHARTER,
           });
-          // Her worker, on no one's machine: hers by its lineage.
+          // Her worker, on her machine too: an orchestration has one owner (`host/ownership.ts`).
           const worker = yield* opened(lineageFolder(dirs), graceClient);
           yield* store.updateThread(worker.id, (thread) => ({
             ...thread,
             workspaceId,
             spawnedBy: { threadId: orchestrator.id, feature: "hers" },
+            checkout: { ...thread.checkout, hostId },
           }));
           // Ada's own thread, on no one's machine, in a repository of hers: a thread that can join.
           const own = yield* opened(makeRepo(lineageFolder(dirs)), adaClient, "ada-work");
@@ -881,11 +882,12 @@ describe("sign-in through a fronting proxy", () => {
               name,
               expect.stringContaining(NOT_YOUR_MACHINE),
             ]);
-          // A join an agent of Ada's thread asks for, where no RPC is: no one's caller.
+          // A join an agent of Ada's thread asks for, where no RPC is: a thread on no one's machine
+          // never joins a person's orchestration, whoever asks.
           const joined = yield* orchestration
             .joinWorkspace(own.id, workspaceId, { feature: "ada", addRepos: true })
             .pipe(Effect.provideService(RoutedFor, { person: undefined }), Effect.flip);
-          expect(joined.message).toContain(NOT_YOUR_MACHINE);
+          expect(joined.message).toContain(OWNERS_DIFFER);
           expect((yield* store.getThread(own.id)).spawnedBy).toBeUndefined();
           // Nothing of Ada's reached the orchestrator.
           expect((yield* store.listMessages(orchestrator.id)).length).toBe(before);

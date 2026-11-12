@@ -6,7 +6,6 @@ import {
   isLocalHost,
   checkoutRequestHost,
   type HostId,
-  hostOf,
   LOCAL_HOST_ID,
   machineOfProject,
   machineProjectRoot,
@@ -55,7 +54,6 @@ import { closeAtRest } from "../../runtime/close-at-rest.ts";
 import { TerminalGate } from "../../terminal/gate.ts";
 import { makeThreadCreator } from "../../runtime/create-in-checkout.ts";
 import { CheckoutService } from "../../runtime/hooks.ts";
-import { admitHost } from "../../host/ownership.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
 import { isLocalApp } from "../../http/local-app.ts";
 import { profileStarter } from "../../thread-profiles/service.ts";
@@ -565,10 +563,6 @@ export const threadHandlers = Effect.gen(function* () {
           );
           if (elsewhere !== undefined) return yield* elsewhere;
         }
-        // A fork in its source's checkout reaches no machine yet, and its first send would: on a
-        // machine started for one person, only they fork there (`host/ownership.ts`).
-        if (checkout === undefined && hosts !== undefined)
-          yield* admitHost(hosts.ownerOf, hostOf(plan.source.checkout));
         const prepared =
           checkout === undefined
             ? plan.source.checkout

@@ -1,7 +1,20 @@
-// Machines started for one person (`embedding/on-demand.ts`): who may reach one. Placement
-// (`headless.ts`) is one way onto a machine; a terminal, a fork, a session, a file read and a git
-// call are others, so the rule lives here and every route asks it: `WorkerHosts.get` for anything
-// that reaches the machine, `admitHost` for what records a thread there without reaching it.
+// Machines started for one person (`embedding/on-demand.ts`): who may reach one.
+//
+// Ownership is the machine's alone. A thread is its machine's owner's; nothing is inherited from
+// an orchestrator or a spawner. One rule, `mayReach`, decides, and it is asked at the few places
+// every path to a machine passes:
+//
+// 1. Where a host or a session is resolved: `WorkerHosts.get` and the session lookup
+//    (`ownedMachines`), which every terminal, file, git call and session opening goes through,
+//    and the runtimes' deliveries to a session already open (`runtime/owned-runtimes.ts`).
+// 2. Where work is kept to be done later: `durable-work.ts` records who it is for when it is
+//    written (`recordActor`) and runs every attempt, a retry included, as them (`asRecorded`).
+//
+// The calls are told who they are made for (`RoutedFor`): every RPC as its signed-in person, and
+// every agent tool call as its own thread's machine's owner (`asThreadOwner`). Threads in one
+// orchestration have one owner: a link between them (a spawn, a join, a move) is made only
+// between machines of the same person's, or of no one's (`sameOwner`), so a workspace's
+// orchestrator and its workers never span two people.
 
 import {
   effectiveCheckout,
@@ -19,11 +32,15 @@ import { ActingPerson } from "../embedding/person.ts";
 /** What a person is told who reaches for a machine started for someone else. */
 export const NOT_YOUR_MACHINE = "That machine was started for someone else.";
 
+/** What a link between threads on two people's machines (or one person's and no one's) is told. */
+export const OWNERS_DIFFER =
+  "Threads that work together run on machines of the same person's, or of no one's.";
+
 /**
  * Who a call that may reach a machine is made for: set around every RPC (`rpc/actor-guard.ts`),
- * as the signed-in person, or nobody without fronted sign-in; and around every agent's tool call
- * (`app-tools/registry.ts`), as the person its thread's lineage is for (`lineageOwner`). Absent
- * for the server's own work on a thread already placed (a session it reopens, a watch it keeps).
+ * as the signed-in person, or nobody without fronted sign-in; around every agent's tool call
+ * (`app-tools/registry.ts`), as its thread's machine's owner; and around every attempt at kept
+ * work, as who it was written for. Absent only for the server's own work.
  */
 export interface Caller {
   readonly person: string | undefined;
@@ -66,8 +83,8 @@ export const ownersOf =
     machines?.list().find((machine) => machine.id === hostId)?.owner;
 
 /**
- * Whether this fiber's caller may reach `hostId`: a machine nobody owns, the server's own work, or
- * its owner's call. Anyone else's, and an RPC with no signed-in person, may not.
+ * The rule. Whether this fiber's caller may reach `hostId`: a machine nobody owns, the server's
+ * own work, or its owner's call. Anyone else's, and a call with no signed-in person, may not.
  */
 export const mayReach = (ownerOf: OwnerOf, hostId: HostId): Effect.Effect<boolean> => {
   const owner = ownerOf(hostId);
@@ -75,62 +92,15 @@ export const mayReach = (ownerOf: OwnerOf, hostId: HostId): Effect.Effect<boolea
   return Effect.map(currentCaller, (caller) => caller === undefined || caller.person === owner);
 };
 
-/** Refused, with why, unless this fiber's caller may reach `hostId` (`mayReach`). */
-export const admitHost = (ownerOf: OwnerOf, hostId: HostId): Effect.Effect<void, InvalidState> =>
-  Effect.flatMap(mayReach(ownerOf, hostId), (ok) =>
-    ok ? Effect.void : Effect.fail(new InvalidState({ message: NOT_YOUR_MACHINE })),
-  );
-
 /**
  * `reach` (a machine's host by id), refused for a machine this fiber's caller may not reach: the
- * one door every route to a joined machine goes through (`WorkerHosts.get`).
+ * door every route to a joined machine goes through (`WorkerHosts.get`, the session lookup).
  */
 export const ownedMachines =
   <H>(ownerOf: OwnerOf, reach: (id: HostId) => Effect.Effect<H, HostUnavailable>) =>
   (id: HostId): Effect.Effect<H, HostUnavailable> =>
     Effect.flatMap(mayReach(ownerOf, id), (ok) =>
       ok ? reach(id) : Effect.fail(new HostUnavailable({ hostId: id, message: NOT_YOUR_MACHINE })),
-    );
-
-/** How far up a lineage is followed: further than any orchestration nests. */
-const LINEAGE_DEPTH = 32;
-
-/**
- * The person a thread's work is for, from what the server itself recorded: the owner of the machine
- * it works on, else its spawner's, up its lineage. Never from what an agent says. `undefined` for a
- * thread on no one's machine, all the way up, and for one that isn't stored.
- */
-export const lineageOwner = (
-  getThread: (threadId: ThreadId) => Effect.Effect<Thread, unknown>,
-  ownerOf: OwnerOf,
-  threadId: ThreadId,
-): Effect.Effect<string | undefined> =>
-  Effect.gen(function* () {
-    const seen = new Set<ThreadId>();
-    let at: ThreadId | undefined = threadId;
-    while (at !== undefined && !seen.has(at) && seen.size < LINEAGE_DEPTH) {
-      seen.add(at);
-      const thread: Thread | undefined = yield* getThread(at).pipe(
-        Effect.orElseSucceed(() => undefined),
-      );
-      if (thread === undefined) return undefined;
-      const owner = ownerOf(hostOf(effectiveCheckout(thread)));
-      if (owner !== undefined) return owner;
-      at = thread.spawnedBy?.threadId;
-    }
-    return undefined;
-  });
-
-/** `effect` as a call made for `threadId`'s lineage (`lineageOwner`), whoever's fiber runs it. */
-export const forThread =
-  (
-    getThread: (threadId: ThreadId) => Effect.Effect<Thread, unknown>,
-    ownerOf: OwnerOf,
-    threadId: ThreadId,
-  ) =>
-  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-    Effect.flatMap(lineageOwner(getThread, ownerOf, threadId), (person) =>
-      Effect.provideService(effect, RoutedFor, { person }),
     );
 
 /** Every checkout a thread works in: its own, the one it follows now, and its other repos'. */
@@ -140,33 +110,15 @@ const checkoutsOf = (thread: Thread) => [
   ...(thread.extraCheckouts ?? []),
 ];
 
-/**
- * Whose a thread is, as anything that changes it must ask: the person its work runs for
- * (`lineageOwner`, so a worker on a shared machine under someone's orchestrator is theirs), and
- * the owner of every machine it holds a checkout on. Empty for a thread no one's, or not stored.
- */
-export const ownersOfThread = (
-  getThread: (threadId: ThreadId) => Effect.Effect<Thread, unknown>,
+/** Whose a thread is: its machine's owner, where it is on a machine started for someone. */
+export const threadOwner = (
   ownerOf: OwnerOf,
-  threadId: ThreadId,
-): Effect.Effect<ReadonlyArray<string>> =>
-  Effect.gen(function* () {
-    const thread = yield* getThread(threadId).pipe(Effect.orElseSucceed(() => undefined));
-    if (thread === undefined) return [];
-    const owners = new Set<string>();
-    const lineage = yield* lineageOwner(getThread, ownerOf, threadId);
-    if (lineage !== undefined) owners.add(lineage);
-    for (const checkout of checkoutsOf(thread)) {
-      const owner = ownerOf(hostOf(checkout));
-      if (owner !== undefined) owners.add(owner);
-    }
-    return [...owners];
-  });
+  thread: Pick<Thread, "checkout" | "currentCheckout">,
+) => ownerOf(hostOf(effectiveCheckout(thread)));
 
 /**
- * Whether this fiber's caller may change `threadId` (send it, answer it, steer, restart or fork
- * it, put it under an orchestrator): the server's own work may, and a caller every one of its
- * owners is (`ownersOfThread`). A thread no one's is anyone's in its workspace.
+ * The rule for a thread: whether this fiber's caller may reach every machine it works on
+ * (`mayReach`). A thread that isn't stored has no machine, and is left to its caller's not-found.
  */
 export const mayReachThread = (
   getThread: (threadId: ThreadId) => Effect.Effect<Thread, unknown>,
@@ -174,13 +126,16 @@ export const mayReachThread = (
   threadId: ThreadId,
 ): Effect.Effect<boolean> =>
   Effect.gen(function* () {
-    const caller = yield* currentCaller;
-    if (caller === undefined) return true;
-    const owners = yield* ownersOfThread(getThread, ownerOf, threadId);
-    return owners.every((owner) => owner === caller.person);
+    // The server's own work reaches everything, and reads nothing to say so.
+    if ((yield* currentCaller) === undefined) return true;
+    const thread = yield* getThread(threadId).pipe(Effect.orElseSucceed(() => undefined));
+    if (thread === undefined) return true;
+    for (const checkout of checkoutsOf(thread))
+      if (!(yield* mayReach(ownerOf, hostOf(checkout)))) return false;
+    return true;
   });
 
-/** Refused, with why, unless this fiber's caller may change `threadId` (`mayReachThread`). */
+/** Refused, with why, unless this fiber's caller may reach `threadId` (`mayReachThread`). */
 export const admitThread = (
   getThread: (threadId: ThreadId) => Effect.Effect<Thread, unknown>,
   ownerOf: OwnerOf,
@@ -190,18 +145,69 @@ export const admitThread = (
     ok ? Effect.void : Effect.fail(new InvalidState({ message: NOT_YOUR_MACHINE, threadId })),
   );
 
+/**
+ * `effect` as a call made for `threadId`'s machine's owner, whoever's fiber runs it: an agent's
+ * tool call, and kept work done for a thread. Never from what an agent says; no one's for a
+ * thread on no one's machine, or not stored.
+ */
+export const asThreadOwner =
+  (
+    getThread: (threadId: ThreadId) => Effect.Effect<Thread, unknown>,
+    ownerOf: OwnerOf,
+    threadId: ThreadId,
+  ) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+    Effect.flatMap(getThread(threadId).pipe(Effect.orElseSucceed(() => undefined)), (thread) =>
+      Effect.provideService(effect, RoutedFor, {
+        person: thread === undefined ? undefined : threadOwner(ownerOf, thread),
+      }),
+    );
+
+/**
+ * Whether two places are of one owner: machines of the same person's, or both of no one's. The
+ * one test for a link between threads (a worker under its orchestrator, a join, a move), so an
+ * orchestration never spans two people and a thread never changes owner.
+ */
+export const sameOwner = (
+  ownerOf: OwnerOf,
+  a: { readonly hostId?: HostId | undefined },
+  b: { readonly hostId?: HostId | undefined },
+): boolean => ownerOf(hostOf(a)) === ownerOf(hostOf(b));
+
 /** What a move that would hand a thread to another owner, or to none, is told. */
 export const MOVE_CHANGES_OWNER =
   "A thread moves only onto a machine started for the same person as the one it is on.";
 
-/**
- * Whether moving `thread` into `checkout` keeps whose it is: the machine it goes to was started
- * for the same person as the one it works on now, or neither was for anyone. A route that moves a
- * thread onto another machine (an embedder's, when its own is gone) asks this first, to refuse
- * with a reason; the runtimes hold to it as well (`runtime/owned-runtimes.ts`).
- */
+/** Whether moving `thread` into `checkout` keeps whose it is (`sameOwner`). */
 export const keepsOwner = (
   ownerOf: OwnerOf,
   thread: Pick<Thread, "checkout" | "currentCheckout">,
   checkout: { readonly hostId?: HostId | undefined },
-): boolean => ownerOf(hostOf(effectiveCheckout(thread))) === ownerOf(hostOf(checkout));
+): boolean => sameOwner(ownerOf, effectiveCheckout(thread), checkout);
+
+/**
+ * Who kept work is for, as it is stored with it: the caller it was written in. `{}` is a caller
+ * with no signed-in person, which reaches no one's machine. Absent: the server's own work.
+ */
+export interface RecordedActor {
+  readonly person?: string;
+}
+
+/** Who work written now is for (`RecordedActor`): this fiber's caller, absent for the server. */
+export const recordActor: Effect.Effect<RecordedActor | undefined> = Effect.map(
+  currentCaller,
+  (caller) =>
+    caller === undefined ? undefined : caller.person === undefined ? {} : { person: caller.person },
+);
+
+/**
+ * `effect` as the call kept work was written in (`recordActor`), whichever fiber attempts it: a
+ * person's work as theirs, the server's as the server's, never as whoever's call a retry is in.
+ */
+export const asRecorded =
+  (actor: RecordedActor | undefined) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+    effect.pipe(
+      Effect.provideService(RoutedFor, actor === undefined ? undefined : { person: actor.person }),
+      Effect.provideService(ActingPerson, actor?.person),
+    );

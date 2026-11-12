@@ -30,7 +30,7 @@ import {
 } from "./definition.ts";
 import { inputLengthProblem } from "./input.ts";
 import { DecisionHook } from "../embedding/decision-hook.ts";
-import { lineageOwner, RoutedFor } from "../host/ownership.ts";
+import { RoutedFor, threadOwner } from "../host/ownership.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { makeActionGuard, type ActionGuard } from "../embedding/guard.ts";
 import { dreamFileTools } from "./dream-tools.ts";
@@ -184,7 +184,7 @@ export const bindAppTools = (
   /** The decision hook's guard, asked about a tool that names a `decision`; absent asks nothing. */
   guard?: ActionGuard,
   /**
-   * The person the thread's work is for, from its lineage (`host/ownership.ts`): each call runs
+   * The person the thread's work is for: its machine's owner (`host/ownership.ts`). Each call runs
    * as theirs, so it reaches their machine and no one else's. Absent: no one's.
    */
   lineage?: (threadId: ThreadId) => Effect.Effect<string | undefined>,
@@ -556,10 +556,13 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
       const waits = yield* ThreadWaits;
       const checkouts = yield* CheckoutService;
       const sentFromMachines = yield* sentFromMachinesHere;
-      // Who each tool call is for: its thread's lineage, on the machines' record of who owns which.
+      // Who each tool call is for: its own thread's machine's owner (`host/ownership.ts`).
       const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
       const lineage = (threadId: ThreadId) =>
-        lineageOwner(store.getThread, hosts?.ownerOf ?? (() => undefined), threadId);
+        store.getThread(threadId).pipe(
+          Effect.map((thread) => threadOwner(hosts?.ownerOf ?? (() => undefined), thread)),
+          Effect.orElseSucceed(() => undefined),
+        );
 
       const setTitle = defineAppTool({
         descriptor: {

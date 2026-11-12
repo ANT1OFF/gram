@@ -1,7 +1,7 @@
 import type { ThreadId, WorkspaceId } from "@gram/contracts";
 import { ANSWER_OVER_HTTP } from "../embedding/answer-proof.ts";
 import { ActingPerson } from "../embedding/person.ts";
-import { NOT_YOUR_MACHINE, ownersOf, ownersOfThread, RoutedFor } from "../host/ownership.ts";
+import { mayReachThread, NOT_YOUR_MACHINE, ownersOf, RoutedFor } from "../host/ownership.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -311,9 +311,9 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
       const machines = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts))?.machines;
       const ownerOf = ownersOf(machines);
       /**
-       * Whether a thread the call acts on is someone else's than `person`'s: by the machines it
-       * works on and by its lineage (`host/ownership.ts`), so a worker under another person's
-       * orchestrator is theirs too. The threads it names, and each named workspace's orchestrator.
+       * Whether a thread the call acts on is on a machine `person` may not reach: the threads it
+       * names, and each named workspace's orchestrator, which its workers share an owner with
+       * (`host/ownership.ts`). The one rule, `mayReachThread`, as the caller.
        */
       const onAnothersMachine = (person: string | undefined, payload: unknown) =>
         Effect.gen(function* () {
@@ -327,12 +327,10 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
               state._tag === "Some" ? state.value.workspace.orchestratorThreadId : undefined;
             if (holder !== undefined) threads.push(holder);
           }
-          for (const threadId of threads) {
-            const owners = yield* ownersOfThread(store.getThread, ownerOf, threadId);
-            if (owners.some((owner) => owner !== person)) return true;
-          }
+          for (const threadId of threads)
+            if (!(yield* mayReachThread(store.getThread, ownerOf, threadId))) return true;
           return false;
-        });
+        }).pipe(Effect.provideService(RoutedFor, { person }));
       return ActorGuard.of((call, { rpc, payload, headers }) =>
         Effect.gen(function* () {
           // A machine started for one person is reached only for them, whatever the route

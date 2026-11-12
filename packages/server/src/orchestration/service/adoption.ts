@@ -3,7 +3,6 @@
 // worker, and reopening a stored thread, with the admission check its role must pass.
 import {
   effectiveCheckout,
-  hostOf,
   InvalidState,
   type Checkout,
   type ModelRef,
@@ -55,7 +54,7 @@ import {
   type OrchestrationKit,
   underKeysOf,
 } from "./kit.ts";
-import { lineageOwner, mayReach, mayReachThread, NOT_YOUR_MACHINE } from "../../host/ownership.ts";
+import { OWNERS_DIFFER, sameOwner } from "../../host/ownership.ts";
 import { type JoinInput, type AdoptPin, type OrchestrationShape } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Projects } from "./projects.ts";
@@ -312,21 +311,15 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
         project = owner;
         relocate = found;
       }
-      // Joining hands the thread its orchestrator's lineage, and so that person's machines
-      // (`host/ownership.ts`): a change of who it works for. Whoever asks must be the thread's
-      // owners' and the orchestrator's, even for a thread on no one's machine, and one moved out
-      // of another lineage. A thread on a machine started for one person joins only theirs.
+      // A thread joins an orchestrator only on machines of the same person's, or of no one's
+      // (`host/ownership.ts`): an orchestration never spans two people. Who may ask is the thread's
+      // and the orchestrator's own (the RPC guard, the tool's caller), so that is all there is.
       if (
-        !(yield* mayReachThread(store.getThread, ownerOf, thread.id)) ||
-        !(yield* mayReachThread(store.getThread, ownerOf, holderId))
+        ![effectiveCheckout(thread), checkout].every((at) =>
+          sameOwner(ownerOf, at, effectiveCheckout(holder)),
+        )
       )
-        return yield* Effect.fail(NOT_YOUR_MACHINE);
-      const holderFor = yield* lineageOwner(store.getThread, ownerOf, holderId);
-      for (const at of [effectiveCheckout(thread), checkout]) {
-        const owner = ownerOf(hostOf(at));
-        if (owner !== undefined && (!(yield* mayReach(ownerOf, hostOf(at))) || holderFor !== owner))
-          return yield* Effect.fail(NOT_YOUR_MACHINE);
-      }
+        return yield* Effect.fail(OWNERS_DIFFER);
       const refused = joinRefusal({
         thread: { ...thread, checkout },
         holder: holderId,

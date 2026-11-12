@@ -49,6 +49,7 @@ import { ActivityTracker } from "./activity.ts";
 import type { AgentHosts } from "./agent-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { ownedRuntimes } from "./owned-runtimes.ts";
+import { recordActor, threadOwner } from "../host/ownership.ts";
 import { type CheckoutService, TurnHooks, type TurnHooksShape } from "./hooks.ts";
 import { accountOf, type EarlyReleases, type ReleaseWave } from "./limit-wait.ts";
 import { makeRateLimitGate } from "./rate-limits.ts";
@@ -790,6 +791,17 @@ const make = Effect.gen(function* () {
     lockKey: (handed) => handed.rt.threadId,
     read: (handed) => Effect.sync(() => handed.rt.inFlight),
     owed: (item) => item.sent === undefined,
+    // A thread's input goes to its own session as its machine's owner's: it was admitted for them
+    // when it was queued (`owned-runtimes.ts`), and a thread never changes owner. On no one's
+    // machine, as the call that sends it, the only one that attempts it (see above).
+    actor: (_item, { rt }) =>
+      store.getThread(rt.threadId).pipe(
+        Effect.map((thread) => threadOwner(workerHosts.ownerOf, thread)),
+        Effect.orElseSucceed(() => undefined),
+        Effect.flatMap((person) =>
+          person === undefined ? recordActor : Effect.succeed({ person }),
+        ),
+      ),
     perform: (item, _retry, { rt, published }) =>
       Effect.gen(function* () {
         if (rt.session === undefined) return undefined;

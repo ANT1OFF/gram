@@ -211,32 +211,27 @@ naming the person in `owner` and `onDemand: "personal"`. From then on:
 - a thread that person starts with no machine named goes on their own machine while it is online;
 - a host started for one person is never anyone's default, and work that names it for anyone else
   is refused;
-- every other way onto it is that person's alone too: a terminal there (its Sign in shell
-  included), keystrokes into one, a session, a file or git read, a fork in a thread's checkout
-  there, and any change to a thread on it (a send, a restart, a close). Another member still reads
-  what the workspace shows of such a thread; a call with no signed-in person reaches none of it;
-- an agent's tool call is made for the person its thread's lineage is for: the owner of the host
-  the thread is on, else its spawner's, up the chain. It is never read from the call's input, nor
-  taken from whoever's request began the turn. So an orchestrator on a person's host spawns its
-  workers there, and a thread on no one's host can't place work on anyone's;
-- a thread is the person's whose host it works on, or whose lineage it is under: a worker on a
-  shared machine under that person's orchestrator is theirs too. Only they change it, by any
-  route: a send or steer, an answer to its card or question (`POST /asks/answer` included), a
-  task for its workspace (named by the workspace or by one of its projects), a charter or pause
-  of that workspace, or a join. Joining hands a thread its orchestrator's lineage, so whoever
-  asks must be both the thread's owner and the orchestrator's, even for a thread on no one's
-  machine. The check is made where these reach the agent, so no other route gets past it. That
-  includes a notice, an interrupt or a system delivery made in someone's call. The server's own
-  notices, with no caller, are not refused;
-- what acts on a workspace's workers is checked against each worker it reaches, not only the
-  orchestrator: an answer to or dismissal of a worker's question, before it is written, and a
-  feature's pause, archive, rename, stage or group, before anything changes. A worker on a
-  person's machine is theirs even under an orchestrator on no one's;
-- work kept to be done later records who it was for. An owed answer to a worker's question is
-  delivered as the person who gave it (`closedFor`), a retry after a restart included. If they
-  may no longer change the worker, it is settled undelivered and never sent as the server's own;
-- a thread moved onto another machine keeps its owner: the machine it goes to was started for
-  the same person as the one it is on, or neither was for anyone (`keepsOwner`);
+- a thread is its host's owner's, and nothing else makes it anyone's. Threads that work together
+  are one person's: a worker is spawned only on a host of its orchestrator's owner (or on no
+  one's under no one's), a thread joins an orchestrator only on such a host, and a thread moves
+  only onto a host of the same owner. So a workspace's orchestrator and its workers never span
+  two people;
+- ownership is checked at two places that every path passes:
+  - **where a host or session is reached.** Machine lookup (every terminal, by thread or by
+    terminal id, a kept one included; its Sign in shell; keystrokes; files; git; folders) and
+    session opening refuse another person's host. Deliveries to a session already open (a send,
+    steer, notice, interrupt, answer, restart, fork, close) are refused for another person's
+    thread, in any route: an RPC, `POST /asks/answer`, a workspace's task or an agent's tool. An
+    RPC that names a thread or a workspace is resolved to its owner first. Another member still
+    reads what the workspace shows; a call with no signed-in person reaches no one's host;
+  - **where work is kept for later.** Durable work records who it was written for, and every
+    attempt, a retry after a restart included, runs as them, never as the server's own. An owed
+    answer to a worker's question that its maker may no longer give is settled undelivered;
+- an agent's tool call is made for its own thread's host's owner. It is never read from the call's
+  input, nor taken from whoever's request began the turn;
+- some orchestration features don't work on a person's host in this version, and are refused
+  there: feature stages and groups, and holding a low-priority spawn until a usage limit resets
+  (the spawn starts or asks, as a normal one does);
 - a person with no machine of their own is told to start one, where before they were told to join
   one.
 

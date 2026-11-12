@@ -3,13 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { defineAppTool } from "../app-tools/definition.ts";
 import { bindAppTools } from "../app-tools/registry.ts";
-import {
-  callerPerson,
-  forThread,
-  lineageOwner,
-  MOVE_CHANGES_OWNER,
-  RoutedFor,
-} from "../host/ownership.ts";
+import { asThreadOwner, callerPerson, MOVE_CHANGES_OWNER, RoutedFor } from "../host/ownership.ts";
 import { ownedRuntimes } from "../runtime/owned-runtimes.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import { describe, expect, it } from "vitest";
@@ -99,12 +93,12 @@ const stored = (threadId: string, hostId: string | undefined, spawnedBy?: string
       ? {}
       : { spawnedBy: { threadId: ThreadId.make(spawnedBy), feature: "f" } }),
   }) as unknown as Thread;
+// An orchestration has one owner (`host/ownership.ts`): Ada's worker is on her machine too.
 const threads = [
   stored("ada-orchestrator", "m-ada"),
-  stored("ada-worker", "m-shared", "ada-orchestrator"),
+  stored("ada-worker", "m-ada", "ada-orchestrator"),
   stored("shared-orchestrator", "m-shared"),
-  stored("loop-a", undefined, "loop-b"),
-  stored("loop-b", undefined, "loop-a"),
+  stored("shared-worker", undefined, "ada-orchestrator"),
 ];
 const getThread = (threadId: ThreadId) => {
   const found = threads.find((thread) => thread.id === threadId);
@@ -117,8 +111,8 @@ const outcome = <A>(effect: Effect.Effect<A, { readonly message: string }>) =>
     effect.pipe(Effect.match({ onFailure: (error) => error.message, onSuccess: (a) => a })),
   );
 const ownerAt = (threadId: string) =>
-  Effect.runPromise(lineageOwner(getThread, ownerOf, ThreadId.make(threadId)));
-const asThread = (threadId: string) => forThread(getThread, ownerOf, ThreadId.make(threadId));
+  Effect.runPromise(asThreadOwner(getThread, ownerOf, ThreadId.make(threadId))(callerPerson));
+const asThread = (threadId: string) => asThreadOwner(getThread, ownerOf, ThreadId.make(threadId));
 const inGracesRpc = <A, E>(effect: Effect.Effect<A, E>) =>
   effect.pipe(
     Effect.provideService(ActingPerson, "grace"),
@@ -126,11 +120,12 @@ const inGracesRpc = <A, E>(effect: Effect.Effect<A, E>) =>
   );
 
 describe("hosts provisioned on demand: a background worker's person", () => {
-  it("is the owner of the machine its thread is on, else its spawner's, and never made up", async () => {
+  it("is the owner of the machine its own thread is on, inherited from no one", async () => {
     expect(await ownerAt("ada-orchestrator")).toBe("ada");
     expect(await ownerAt("ada-worker")).toBe("ada");
     expect(await ownerAt("shared-orchestrator")).toBeUndefined();
-    expect(await ownerAt("loop-a")).toBeUndefined();
+    // Spawned by Ada's orchestrator, but on no one's machine: no one's.
+    expect(await ownerAt("shared-worker")).toBeUndefined();
     expect(await ownerAt("not-stored")).toBeUndefined();
   });
 
@@ -155,14 +150,14 @@ describe("hosts provisioned on demand: a background worker's person", () => {
     expect(await outcome(asThread("ada-worker")(both.machine))).toBe("m-ada");
   });
 
-  it("runs an agent's tool call as its thread's lineage, not the RPC that began the turn", async () => {
+  it("runs an agent's tool call as its thread's owner, not the RPC that began the turn", async () => {
     const tool = defineAppTool({
       descriptor: { name: "whose", class: "self", description: "Who this call is for." },
       input: Schema.Struct({ owner: Schema.optionalKey(Schema.String) }),
       handle: () => callerPerson,
     });
     const [bound] = bindAppTools([tool], ThreadId.make("ada-worker"), undefined, undefined, (t) =>
-      lineageOwner(getThread, ownerOf, t),
+      asThreadOwner(getThread, ownerOf, t)(callerPerson),
     );
     // What the input says of an owner is never read.
     expect(await Effect.runPromise(inGracesRpc(bound!.run({ owner: "grace" })))).toBe("ada");
@@ -295,7 +290,7 @@ const onto = (hostId: string) => ({ kind: "main", path: "/w/x", hostId }) as nev
 
 describe("hosts provisioned on demand: what reaches a person's threads", () => {
   // An already running session needs no machine looked up: the delivery itself is checked.
-  it("refuses another person's send, steer and answer to a thread under someone's machine", async () => {
+  it("refuses another person's send, steer and answer to a thread on someone's machine", async () => {
     const { reached, owned } = recording();
     for (const call of [
       owned.send(adaWorker, { text: "Grace's" }) as Effect.Effect<unknown, { message: string }>,

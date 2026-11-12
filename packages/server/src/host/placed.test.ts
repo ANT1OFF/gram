@@ -359,7 +359,8 @@ describe("placedHost", () => {
 /** `MACHINE` started for Grace, behind the door `WorkerHosts.get` keeps (`ownedMachines`). */
 const graces = () => {
   const calls: Array<string> = [];
-  const machine = recordingHost(MACHINE, calls);
+  // KEPT: a terminal it kept through a restart of this Gram, which Gram finds again by its id.
+  const machine = recordingHost(MACHINE, calls, [KEPT]);
   const ownerOf = (id: HostId) => (id === MACHINE ? "grace" : undefined);
   const get = ownedMachines(ownerOf, (id: HostId) =>
     id === MACHINE
@@ -454,6 +455,25 @@ describe("a machine started for one person, on every route to it", () => {
         `${MACHINE}:terminal.input:${MACHINE}-t1`,
         `${MACHINE}:open:t-remote`,
       ]);
+    }),
+  );
+
+  // Round 5's route: a terminal's id alone, with no thread named. Every terminal call resolves
+  // its machine through the one door (`ownedMachines`), a terminal found again after a restart
+  // included, so the id gets no one onto Grace's machine.
+  it.effect("routes a terminal by its id alone through the owner's door, a kept one included", () =>
+    Effect.gen(function* () {
+      const { calls, placed } = graces();
+      for (const call of [
+        placed.terminals.input(KEPT, "synthetic command\r"),
+        placed.terminals.resize(KEPT, 80, 24),
+        placed.terminals.close(KEPT),
+      ])
+        yield* as("ada")(call).pipe(Effect.ignore);
+      expect(calls.filter((call) => call.startsWith(`${MACHINE}:`))).toEqual([]);
+      // Grace's own reach it.
+      yield* as("grace")(placed.terminals.input(KEPT, "ls\r"));
+      expect(calls).toContain(`${MACHINE}:terminal.input:${KEPT}`);
     }),
   );
 });
