@@ -99,6 +99,7 @@ import { agentHostsOrHeadless, withHeadlessCheck } from "../host/headless.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
+import { compressedStatic } from "./compressed-static.ts";
 import { markLocalApp, unmarkLocalApp } from "./local-app.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
 import {
@@ -107,6 +108,7 @@ import {
   HttpRouter,
   HttpServer,
   HttpServerRequest,
+  HttpServerRespondable,
   HttpServerResponse,
   HttpStaticServer,
   type Rpc,
@@ -722,9 +724,21 @@ const StaticRoutes = Layer.unwrap(
           "/*",
           HttpServerResponse.text("Gram server: no web root configured", { status: 404 }),
         )
-      : HttpStaticServer.layer({ root: webRoot, index: "index.html", spa: true }).pipe(
-          Layer.provide(GuardedHttpPlatform),
-        );
+      : Layer.effectDiscard(
+          Effect.gen(function* () {
+            const router = yield* HttpRouter.HttpRouter;
+            const files = yield* HttpStaticServer.make({
+              root: webRoot,
+              index: "index.html",
+              spa: true,
+            });
+            yield* router.add(
+              "GET",
+              "/*",
+              compressedStatic(webRoot)(files).pipe(Effect.catch(HttpServerRespondable.toResponse)),
+            );
+          }),
+        ).pipe(Layer.provide(GuardedHttpPlatform));
   }),
 );
 
