@@ -1,5 +1,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 
+import type { GramServer } from "@/embed/contract";
+
 import { socketUrl } from "./server-base";
 import type { Api } from "./types";
 
@@ -23,6 +25,7 @@ export function useApi(): Api {
  */
 export async function createApi(
   kind: "mock" | "rpc" = import.meta.env.VITE_API === "mock" ? "mock" : "rpc",
+  session?: GramServer["session"],
 ): Promise<Api> {
   if (kind === "mock") {
     const { createMockApi } = await import("./mock");
@@ -32,5 +35,5 @@ export async function createApi(
     return mock;
   }
   const { createRpcApi } = await import("./rpc");
-  return createRpcApi(socketUrl(location));
+  return createRpcApi(socketUrl(location), session);
 }

@@ -256,7 +256,17 @@ function Beside({ params }: ShellPageProps) {
 
 mountGram({
   element,
-  server: "mock",
+  server: new URLSearchParams(location.search).has("session-test")
+    ? {
+        base: "/cell/",
+        session: {
+          refresh: async () => (await fetch("/renew", { method: "POST" })).ok,
+          expired: () => {
+            document.body.textContent = "Sign in to the host app";
+          },
+        },
+      }
+    : "mock",
   ...(pathUnder === undefined ? {} : { basePath: pathUnder }),
   shell: {
     routes: [
