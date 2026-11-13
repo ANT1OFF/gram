@@ -1,6 +1,7 @@
 import type { ThreadId, ThreadSummary, WorkspaceId } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
 import {
+  AppWindow,
   Bell,
   ChevronDown,
   Eye,
@@ -75,6 +76,7 @@ const TABS: PanelTab[] = [
   { value: "terminal", label: "Terminal", icon: SquareTerminal, primary: true },
   { value: "preview", label: "Preview", icon: Globe },
   { value: "docs", label: "Docs", icon: FileText },
+  { value: "pages", label: "Pages", icon: AppWindow },
   { value: "connectors", label: "Connectors", icon: Plug },
   { value: "reviews", label: "Reviews", icon: Eye },
   { value: "notifications", label: "Notifications", icon: Bell },

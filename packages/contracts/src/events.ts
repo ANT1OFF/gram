@@ -208,6 +208,8 @@ export const ServerEvent = Schema.Union([
   Schema.Struct({ type: Schema.Literal("outputs.changed"), workspaceId: WorkspaceId }),
   /** A doc of the workspace was published, updated or edited (`docs.ts`); clients refetch `docs.*`. */
   Schema.Struct({ type: Schema.Literal("docs.changed"), workspaceId: WorkspaceId }),
+  /** A page of the workspace was pinned, offered, shown or unpinned (`pages.ts`); refetch `pages.*`. */
+  Schema.Struct({ type: Schema.Literal("pages.changed"), workspaceId: WorkspaceId }),
 ]);
 export type ServerEvent = typeof ServerEvent.Type;
 

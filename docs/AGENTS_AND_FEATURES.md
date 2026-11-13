@@ -1267,6 +1267,36 @@ the Preview header and transcript show. `preview_start`, `preview_list`,
 `.gram/launch.json` (or `.claude/launch.json`): each start names the exact command
 on a card first, takes the next free port, and stops with its thread.
 
+### Pinned pages
+
+An HTML page an agent drafts in its folder and shows in the Preview tab (`show_panel`) can be
+kept: **Pin** in the Preview tab's strip copies the page's folder into Gram's state on this
+computer (`<data dir>/pages/<workspace>/`), as Docs are kept, and opens it in the **Pages** tab.
+Only you pin, show a newer version or unpin; no agent tool does. Nothing done in the worktree
+afterwards changes what you pinned. A pinned page is a bundle: its folder, with a `manifest.json`
+at its root naming the entry file and the data the page declares it reads, which is none for now.
+A folder of more than 400 files or 32 MB, deeper than 8 folders, or whose own `manifest.json`
+names another entry or declares a read isn't pinned. Dotfiles, credential files and links are left
+out. Only a page in the thread's own folders, on this computer, in a workspace, can be pinned.
+
+An agent offers a new version with `offer_page_version`, which copies its file's folder the same
+way. The page keeps showing your version, with "Newer version from … · Show it" under its header,
+until you press Show it. A later offer replaces one you haven't shown.
+
+Gram's header above the page names it and the thread that made it; the page draws nothing of the
+app's. It runs in a session of its own, `gram-pages`, kept in memory and hardened like the
+preview's, which no agent reaches: the browser tools and `show_panel` refuse its address, and the
+Preview tab's local session never loads it. Its page listener, apart from the preview's, serves
+each pinned version under a token of its own, and the session loads that page's own files from it
+and nothing else: no other page's, no other origin, no network, socket, WebRTC or preconnect, no
+app IPC or bridge. The page runs sandboxed at an opaque origin, with no cookies, storage,
+popups, forms, dialogs or downloads, and can't navigate off its own files. Both the listener and
+the session put that policy on every response, so neither alone keeps the page in. The page's
+frames run one preload first, which exposes nothing: Chromium lets a page with your click copy to
+the clipboard whatever the session allows, so it refuses the page's copy, cut and paste commands
+and keeps the page's handlers from seeing or changing what you copy. Your own copy of selected
+text still works, and copies what the page's markup holds there.
+
 ### Your own browser: Claude in Chrome and Codex computer use
 
 The Preview pane is Gram's own browser. A thread can also be given **your** browser, with your

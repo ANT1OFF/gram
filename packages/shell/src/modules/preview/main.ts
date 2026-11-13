@@ -90,8 +90,11 @@ const AGENT_PAGE_BOUNDS = { x: 0, y: 0, width: 1280, height: 800 } as const;
 /** Chromium's code for a load that was superseded or stopped, which isn't a failure to show. */
 const ERR_ABORTED = -3;
 
-/** What both sessions share: no permission, device, download or spell checking. */
-function harden(ses: Session): void {
+/**
+ * What every session of untrusted pages shares, the preview's and pinned pages' (`modules/pages`):
+ * no permission, device, download or spell checking.
+ */
+export function harden(ses: Session): void {
   // Camera, microphone, location, notifications, the clipboard, and `openExternal`, which is how
   // Electron asks before a page launches another app by its scheme (`zoommtg:`, `vscode:`).
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));

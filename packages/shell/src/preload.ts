@@ -71,6 +71,8 @@ export { agentBrowsePreload } from "./modules/agent-browser/preload.ts";
 export { connectionPreload } from "./modules/connection/preload.ts";
 export { hostedDevicePreload } from "./modules/device/preload.ts";
 export { fontsPreload } from "./modules/fonts/preload.ts";
+export { installPageGuard } from "./modules/pages/guard.ts";
+export { pagesPreload } from "./modules/pages/preload.ts";
 export { previewPreload } from "./modules/preview/preload.ts";
 export { speechPreload } from "./modules/speech/preload.ts";
 export { trayPreload } from "./modules/tray/preload.ts";

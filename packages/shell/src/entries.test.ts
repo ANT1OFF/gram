@@ -59,6 +59,7 @@ describe("the package's entries and dependencies", () => {
       expect.arrayContaining([
         "modules/connection/preload.ts",
         "modules/fonts/preload.ts",
+        "modules/pages/preload.ts",
         "modules/preview/preload.ts",
         "modules/speech/preload.ts",
         "modules/speech/relay.ts",
@@ -87,6 +88,7 @@ describe("the package's entries and dependencies", () => {
       "./modules/fonts",
       "./modules/ipc",
       "./modules/key-vault",
+      "./modules/pages",
       "./modules/preview",
       "./modules/speech",
       "./modules/tray",

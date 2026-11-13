@@ -1,4 +1,10 @@
-import { AppToolError, PanelKind, previewFileTarget, previewUrl } from "@gram/contracts";
+import {
+  AppToolError,
+  isPinnedPageUrl,
+  PanelKind,
+  previewFileTarget,
+  previewUrl,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type { EventHub } from "../events/event-hub.ts";
@@ -19,6 +25,13 @@ export const showPanelTool = (hub: EventHub["Service"]) =>
           panel === "preview" && target !== undefined
             ? (previewUrl(target) ?? previewFileTarget(target))
             : target;
+        // A pinned page is the user's, in a session no agent reaches: never the Preview tab's.
+        if (panel === "preview" && resolved !== undefined && isPinnedPageUrl(resolved)) {
+          return yield* new AppToolError({
+            tool: "show_panel",
+            message: "That is a page the user pinned, which only the user opens, in its Pages tab",
+          });
+        }
         if (panel === "preview" && resolved === undefined) {
           return yield* new AppToolError({
             tool: "show_panel",

@@ -27,6 +27,7 @@ import type { BranchesApi } from "./branches/types";
 import type { ComposerApi } from "./composer/types";
 import type { ConnectorsApi } from "./connectors/types";
 import type { DocsApi } from "./docs/types";
+import type { PagesApi } from "./pages/types";
 import type { DreamsApi } from "./dreams/types";
 import type { FilesApi } from "./files/types";
 import type { KeybindingsApi } from "./keybindings/types";
@@ -246,6 +247,7 @@ export interface Api
     KeybindingsApi,
     LabelsApi,
     OrchestrationApi,
+    PagesApi,
     PrPeopleApi,
     ProfilesApi,
     ProjectsApi,

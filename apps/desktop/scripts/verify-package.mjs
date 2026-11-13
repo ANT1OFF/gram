@@ -81,6 +81,8 @@ const ASAR_ENTRIES = [
   // The terminal emulator the server replays scrollback through; read from beside the bundle.
   "out/server/ghostty-vt.wasm",
   "out/preload/index.js",
+  // Pinned pages' clipboard guard, their only preload.
+  "out/page-guard/page-guard.js",
   "out/speech/speech.js",
 ];
 

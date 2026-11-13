@@ -33,6 +33,10 @@
       "types": "./src/modules/device/main.ts",
       "default": "./src/modules/device/main.ts"
     },
+    "./modules/pages": {
+      "types": "./src/modules/pages/main.ts",
+      "default": "./src/modules/pages/main.ts"
+    },
     "./modules/fonts": {
       "types": "./src/modules/fonts/main.ts",
       "default": "./src/modules/fonts/main.ts"
