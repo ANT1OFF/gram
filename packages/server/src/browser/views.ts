@@ -18,21 +18,26 @@ import type { PaneViewPort } from "./pane-port.ts";
 export type ViewEvent = BrowserViewEvent;
 type PageEvent = Extract<ViewEvent, { type: "page" }>;
 
+const URL_MAX = 8_192;
+const TITLE_MAX = 300;
+
 /** The host's page as the wire carries it, field by field: the host renders pages agents wrote. */
 const pageOf = (raw: unknown): BrowserViewPage | null => {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
   if (typeof r["url"] !== "string" || typeof r["title"] !== "string") return null;
+  // A page chooses its own address and title, and each is sent to every watcher again and again.
+  if (r["url"].length > URL_MAX) return null;
   const action = r["action"] as { summary?: unknown; at?: unknown } | undefined;
   return {
     url: r["url"],
-    title: r["title"],
+    title: r["title"].slice(0, TITLE_MAX),
     loading: r["loading"] === true,
     canGoBack: r["canGoBack"] === true,
     canGoForward: r["canGoForward"] === true,
     ...(r["driver"] === "agent" || r["driver"] === "user" ? { driver: r["driver"] } : {}),
     ...(typeof action?.summary === "string" && typeof action.at === "number"
-      ? { action: { summary: action.summary, at: action.at } }
+      ? { action: { summary: action.summary.slice(0, TITLE_MAX), at: action.at } }
       : {}),
     ...(r["recording"] === true ? { recording: true } : {}),
   };
@@ -57,6 +62,8 @@ interface Watched {
   readonly listeners: Set<(event: ViewEvent) => void>;
   page: PageEvent;
   frame: Extract<ViewEvent, { type: "frame" }> | undefined;
+  /** Whether the host has said anything of this thread's page since the watch began. */
+  heard: boolean;
   renew: ReturnType<typeof setInterval>;
 }
 
@@ -75,6 +82,7 @@ export const createBrowserViews = (
     if (message === undefined) return;
     const watched = threads.get(message.threadId);
     if (watched === undefined) return;
+    watched.heard = true;
     if (message.type === "pane.view.page") {
       const page = pageOf(message.page);
       const status = page === null ? statusOf(message.status) : undefined;
@@ -89,6 +97,7 @@ export const createBrowserViews = (
   });
   port.onStopped(() => {
     for (const watched of threads.values()) {
+      watched.heard = false;
       watched.page = NO_PAGE;
       watched.frame = undefined;
       tell(watched, NO_PAGE);
@@ -98,20 +107,25 @@ export const createBrowserViews = (
     watch: (threadId, listener) => {
       let watched = threads.get(threadId);
       if (watched === undefined) {
-        const ask = () => port.post({ type: "pane.view.watch", threadId });
+        const ask = (fresh = false) =>
+          port.post({ type: "pane.view.watch", threadId, ...(fresh ? { fresh } : {}) });
         const made: Watched = {
           listeners: new Set(),
           page: NO_PAGE,
           frame: undefined,
+          heard: false,
           renew: setInterval(() => {
-            ask();
+            // Fresh until the host has answered once: it may not have been running to hear.
+            ask(!made.heard);
             // Said again, since a slow watcher's oldest events are dropped for its newest.
             tell(made, made.page);
           }, renewMs),
         };
         watched = made;
         threads.set(threadId, made);
-        ask();
+        // Nothing is known of the page here yet, though the host may still be sending it from a
+        // watch that ended a moment ago: it is asked to say it all again.
+        ask(true);
       }
       const entry = watched;
       entry.listeners.add(listener);

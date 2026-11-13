@@ -30,6 +30,7 @@ const fakePage = () => {
     canGoBack: () => true,
     goForward: () => void did.push("forward"),
     canGoForward: () => false,
+    letGo: () => void did.push("letGo"),
   };
   const panes = {
     driverOf: () => driver,
@@ -83,7 +84,15 @@ const start = (has = true) => {
   });
   const watch = () => views.message({ type: "pane.view.watch", threadId: "t" });
   const pages = () => sent.flatMap((each) => (each.type === "pane.view.page" ? [each.page] : []));
-  return { fake, sent, views, watch, pages, appear: () => (present = true) };
+  return {
+    fake,
+    sent,
+    views,
+    watch,
+    pages,
+    appear: () => (present = true),
+    vanish: () => (present = false),
+  };
 };
 
 describe("createViews", () => {
@@ -168,6 +177,8 @@ describe("createViews", () => {
     expect(fake.driver()).toBe("user");
     views.message({ type: "pane.view.control", threadId: "t", op: "handBack" });
     expect(fake.driver()).toBe("agent");
+    // Nothing of the person's stays held down in a page that is the agent's again.
+    expect(fake.did.at(-1)).toBe("letGo");
   });
 
   it("puts one batch into the page after another, however slow the page is", async () => {
@@ -222,6 +233,39 @@ describe("createViews", () => {
     await vi.advanceTimersByTimeAsync(500);
     expect(fake.watched()).toBe(false);
     expect(fake.driver()).toBe("agent");
+  });
+
+  it("says the page and sends a frame again to a server that has nothing of it yet", async () => {
+    const { fake, sent, watch, views, pages } = start();
+    watch();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(pages()).toHaveLength(1);
+    // Asked again as ever: nothing changed, so nothing is said.
+    watch();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(pages()).toHaveLength(1);
+    views.message({ type: "pane.view.watch", threadId: "t", fresh: true });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(pages()).toHaveLength(2);
+    // The frames were started again, which is what makes a still page send one.
+    fake.paint("/9j/b");
+    expect(sent.at(-1)).toMatchObject({ type: "pane.view.frame", jpeg: "/9j/b" });
+  });
+
+  it("drops the rest of a batch when its page goes while an input is on its way in", async () => {
+    const { fake, views, watch, vanish } = start();
+    watch();
+    await vi.advanceTimersByTimeAsync(200);
+    const plain = fake.page.input;
+    fake.page.input = async (input) => {
+      await plain(input);
+      vanish();
+      // The watch finds the page gone before the next input.
+      await vi.advanceTimersByTimeAsync(200);
+    };
+    views.message({ type: "pane.view.input", threadId: "t", inputs: [press, press, press] });
+    await vi.advanceTimersByTimeAsync(600);
+    expect(fake.inputs).toEqual([press]);
   });
 
   it("says a message about a view is its own, even one it refuses", () => {

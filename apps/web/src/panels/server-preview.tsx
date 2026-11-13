@@ -6,6 +6,7 @@
 import {
   VIEW_IDLE_MS,
   VIEW_INPUT_BATCH,
+  viewInput,
   type BrowserViewEvent,
   type BrowserViewInput,
   type BrowserViewPage,
@@ -116,8 +117,14 @@ const modifiersOf = (event: {
 const BUTTONS = ["left", "middle", "right"] as const;
 
 /** What a key types, when it types anything: a held Control or Command makes it a shortcut. */
-export const typedBy = (event: { key: string; ctrlKey: boolean; metaKey: boolean }) => {
-  if (event.ctrlKey || event.metaKey) return undefined;
+export const typedBy = (event: {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey?: boolean;
+}) => {
+  // Control with Alt is AltGr, which types characters of its own on many keyboards.
+  if (event.metaKey || (event.ctrlKey && event.altKey !== true)) return undefined;
   if (event.key === "Enter") return "\r";
   return Array.from(event.key).length === 1 ? event.key : undefined;
 };
@@ -188,6 +195,7 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
   const { page, status, connected, drawn, frames } = view;
   const image = useRef<HTMLImageElement>(null);
   const stage = useRef<HTMLDivElement>(null);
+  const leave = useRef<HTMLInputElement>(null);
   const send = useMemo(() => inputSender(api, threadId), [api, threadId]);
   const yours = page?.driver === "user";
   const live = page !== null && drawn;
@@ -208,8 +216,11 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
     return frames.listen(draw);
   }, [frames, live]);
 
-  /** A point of the window in the page's own CSS pixels; `undefined` outside the drawn page. */
-  const pointOf = (event: { clientX: number; clientY: number }) => {
+  /**
+   * A point of the window in the page's own CSS pixels; `undefined` outside the drawn page, unless
+   * `nearest` asks for the point of the page closest to it.
+   */
+  const pointOf = (event: { clientX: number; clientY: number }, nearest = false) => {
     const element = image.current;
     const frame = frames.current;
     if (element === null || frame === undefined) return undefined;
@@ -217,8 +228,38 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
     if (rect.width === 0 || rect.height === 0) return undefined;
     const x = ((event.clientX - rect.left) * frame.width) / rect.width;
     const y = ((event.clientY - rect.top) * frame.height) / rect.height;
+    if (nearest)
+      return {
+        x: Math.min(frame.width, Math.max(0, x)),
+        y: Math.min(frame.height, Math.max(0, y)),
+      };
     return x < 0 || y < 0 || x > frame.width || y > frame.height ? undefined : { x, y };
   };
+
+  /** The button held down in the page, which is let go wherever the pointer is by then. */
+  const pressed = useRef<(typeof BUTTONS)[number]>(undefined);
+  useEffect(() => {
+    if (!live) return;
+    const up = (event: MouseEvent) => {
+      const button = pressed.current;
+      const at = pointOf(event, true);
+      if (button === undefined || at === undefined) return;
+      pressed.current = undefined;
+      send({
+        type: "pointer",
+        action: "up",
+        ...at,
+        button,
+        buttons: event.buttons & 31,
+        clickCount: Math.min(3, Math.max(1, event.detail)),
+        modifiers: modifiersOf(event),
+      });
+    };
+    window.addEventListener("mouseup", up);
+    return () => window.removeEventListener("mouseup", up);
+    // `pointOf` reads refs only.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, send]);
 
   // A wheel listener React adds can't stop the tab from scrolling too; this one can.
   useEffect(() => {
@@ -243,12 +284,16 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [live, send]);
 
-  const pointer = (event: React.MouseEvent, action: "move" | "down" | "up") => {
-    const at = pointOf(event);
+  const pointer = (event: React.MouseEvent, action: "move" | "down") => {
+    // A drag goes on past the page's edge, at the nearest point of it.
+    const at = pointOf(event, action === "move" && pressed.current !== undefined);
     if (at === undefined) return;
     // The agent's page takes no pointer passing over it; the server would drop it too.
     if (action === "move" && !yours) return;
-    if (action === "down") stage.current?.focus();
+    if (action === "down") {
+      stage.current?.focus();
+      pressed.current = BUTTONS[event.button];
+    }
     event.preventDefault();
     send({
       type: "pointer",
@@ -262,11 +307,21 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
   };
 
   const key = (event: React.KeyboardEvent, action: "down" | "up") => {
-    // Command is the app's and the browser's: its shortcuts stay theirs.
-    if (!live || event.metaKey || event.key === "Meta") return;
+    if (!live) return;
+    // The way out for someone without a pointer: every other key is the page's while it has the
+    // focus, Tab and Escape among them.
+    if (event.key === "Escape" && event.shiftKey) {
+      event.preventDefault();
+      if (action === "down") leave.current?.focus();
+      return;
+    }
+    // Only what the page may get is taken from the app: Command's shortcuts, the function keys
+    // and any other shortcut stay the app's and the browser's.
+    const input = keyInput(event.nativeEvent, action);
+    if (event.metaKey || event.key === "Meta" || viewInput(input) === undefined) return;
     event.preventDefault();
     event.stopPropagation();
-    send(keyInput(event.nativeEvent, action));
+    send(input);
   };
 
   const control = (op: "back" | "forward" | "reload" | "handBack") =>
@@ -305,6 +360,7 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
           <RotateCw ref={page?.loading === true ? spin : undefined} />
         </ToolButton>
         <input
+          ref={leave}
           data-testid="preview-address"
           aria-label="Preview address"
           placeholder="The agent's page on the server"
@@ -332,7 +388,8 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
           data-testid="server-preview-yours"
           className="border-b border-border px-3 py-1 text-meta text-muted-foreground"
         >
-          You have control. It returns to the agent after {IDLE_SECONDS} s without input.
+          You have control. It returns to the agent after {IDLE_SECONDS} s without input. Shift+Esc
+          leaves the page.
         </p>
       )}
       <p className="flex items-center gap-1.5 border-b border-border px-3 py-1 text-meta text-muted-foreground">
@@ -347,7 +404,6 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
         role={live ? "application" : undefined}
         aria-label={live ? `The agent's page: ${page.title || page.url}` : undefined}
         onMouseDown={(event) => pointer(event, "down")}
-        onMouseUp={(event) => pointer(event, "up")}
         onMouseMove={(event) => pointer(event, "move")}
         onContextMenu={(event) => {
           if (live) event.preventDefault();

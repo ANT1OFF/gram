@@ -41,8 +41,14 @@ describe("createBrowserViews", () => {
     const views = createBrowserViews(host.port, 1_000);
     const first = views.watch("t", () => {});
     const second = views.watch("t", () => {});
-    expect(host.posted).toEqual([{ type: "pane.view.watch", threadId: "t" }]);
-    vi.advanceTimersByTime(2_000);
+    // The first ask says the server has nothing of the page yet, and so does each one after it
+    // until the host has answered: it may not have been running to hear.
+    expect(host.posted).toEqual([{ type: "pane.view.watch", threadId: "t", fresh: true }]);
+    vi.advanceTimersByTime(1_000);
+    expect(host.posted.at(-1)).toEqual({ type: "pane.view.watch", threadId: "t", fresh: true });
+    host.say({ type: "pane.view.page", threadId: "t", page: null });
+    vi.advanceTimersByTime(1_000);
+    expect(host.posted.at(-1)).toEqual({ type: "pane.view.watch", threadId: "t" });
     expect(host.posted).toHaveLength(3);
     first();
     vi.advanceTimersByTime(1_000);
@@ -101,6 +107,37 @@ describe("createBrowserViews", () => {
     views.watch("t", (event) => seen.push(event));
     host.say({ type: "pane.view.page", threadId: "t", page: PAGE });
     host.stop();
+    expect(seen.at(-1)).toEqual({ type: "page", page: null });
+  });
+
+  it("asks afresh when someone comes back after the last watcher left", () => {
+    const host = fakePort();
+    const views = createBrowserViews(host.port, 1_000);
+    const end = views.watch("t", () => {});
+    host.say({ type: "pane.view.page", threadId: "t", page: PAGE });
+    end();
+    const seen: Array<ViewEvent> = [];
+    views.watch("t", (event) => seen.push(event));
+    // The host may still be sending the page from the watch that just ended, and says nothing
+    // of what hasn't changed: it is asked for all of it again.
+    expect(host.posted.at(-1)).toEqual({ type: "pane.view.watch", threadId: "t", fresh: true });
+    host.say({ type: "pane.view.page", threadId: "t", page: PAGE });
+    expect(seen.at(-1)).toEqual({ type: "page", page: PAGE });
+  });
+
+  it("cuts a long title and refuses an address past any real one", () => {
+    const host = fakePort();
+    const views = createBrowserViews(host.port);
+    const seen: Array<ViewEvent> = [];
+    views.watch("t", (event) => seen.push(event));
+    host.say({
+      type: "pane.view.page",
+      threadId: "t",
+      page: { ...PAGE, title: "t".repeat(5_000) },
+    });
+    const last = seen.at(-1);
+    expect(last?.type === "page" && last.page?.title.length).toBe(300);
+    host.say({ type: "pane.view.page", threadId: "t", page: { ...PAGE, url: "u".repeat(50_000) } });
     expect(seen.at(-1)).toEqual({ type: "page", page: null });
   });
 

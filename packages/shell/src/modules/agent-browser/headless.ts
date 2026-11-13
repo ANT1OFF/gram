@@ -427,13 +427,18 @@ const holdNewTargets = (connection: CdpConnection): Promise<Held> => {
     const attached = params as {
       sessionId: string;
       waitingForDebugger?: boolean;
-      targetInfo: { targetId: string; type: string; browserContextId?: string };
+      targetInfo: { targetId: string; type: string; url?: string; browserContextId?: string };
     };
     // Only what the browser attached by itself is held; a session this file asked for isn't.
     if (attached.waitingForDebugger !== true) return;
     const context = attached.targetInfo.browserContextId ?? "";
-    if (!held.contexts.has(context)) return release(attached.sessionId);
     const target = { sessionId: attached.sessionId, targetId: attached.targetInfo.targetId };
+    // A window of the browser's own (a new window, its developer tools, a settings page), which
+    // only a browser shortcut opens: no command drives it and no thread owns it, so it closes.
+    const own = /^(devtools|chrome|chrome-untrusted):/.test(attached.targetInfo.url ?? "");
+    if (own || (!held.contexts.has(context) && attached.targetInfo.type === "page"))
+      return doom(target);
+    if (!held.contexts.has(context)) return release(attached.sessionId);
     if (attached.targetInfo.type === "page") {
       if (held.contexts.get(context) !== undefined) return settle(context, target);
       // Its own page isn't named yet: this may be it, so it waits for `createTarget`'s answer.
@@ -477,6 +482,8 @@ export interface HeadlessPage {
   canGoBack(): boolean;
   goForward(): void;
   canGoForward(): boolean;
+  /** Releases what the person still holds in the page: a mouse button, keys, the focus. */
+  letGo(): void;
 }
 
 /** The longest edge of a frame, in pixels: a larger page is sent scaled down. */
@@ -526,6 +533,10 @@ export const inputCommand = (input: ViewInput): { method: string; params: object
   };
 };
 
+/** Whether the history entry is one to go to: not the blank page every page starts on. */
+const real = (entry: { url?: string } | undefined): boolean =>
+  entry !== undefined && entry.url !== "about:blank";
+
 /** Ends each page: its target, and the browser context that held its cookies and storage. */
 const closers = new WeakMap<PaneContents, () => void>();
 
@@ -569,10 +580,25 @@ const openIn = async (
   let attaching: Promise<string> | undefined;
 
   const ownSend = (method: string, params?: object) => connection.send(method, params, own);
+  const readHistory = () =>
+    ownSend("Page.getNavigationHistory").then((value) => {
+      history = value as typeof history;
+      return history;
+    });
   const refreshHistory = () => {
-    void ownSend("Page.getNavigationHistory")
-      .then((value) => {
-        history = value as typeof history;
+    void readHistory().catch(() => {});
+  };
+  /**
+   * Goes one entry back or forward in the history as it is now, read afresh: the copy kept for
+   * `canGoBack` is read after each load, and a navigation since may not be in it yet.
+   */
+  const step = (by: -1 | 1) => {
+    if (destroyed) return;
+    void readHistory()
+      .then(({ entries, currentIndex }) => {
+        const entry = entries[currentIndex + by];
+        if (real(entry)) return ownSend("Page.navigateToHistoryEntry", { entryId: entry!.id });
+        return undefined;
       })
       .catch(() => {});
   };
@@ -630,12 +656,8 @@ const openIn = async (
       }
     },
     navigationHistory: {
-      canGoBack: () => history.currentIndex > 0,
-      goBack: () => {
-        const entry = history.entries[history.currentIndex - 1];
-        if (entry !== undefined)
-          void ownSend("Page.navigateToHistoryEntry", { entryId: entry.id }).catch(() => {});
-      },
+      canGoBack: () => real(history.entries[history.currentIndex - 1]),
+      goBack: () => step(-1),
     },
     debugger: {
       attach: () => {
@@ -685,6 +707,8 @@ const openIn = async (
   let onFrame: ((frame: HeadlessFrame) => void) | undefined;
   let lastFrameAt = 0;
   let focused = false;
+  const heldKeys = new Map<number, object>();
+  let heldButton: { x: number; y: number; button: string; clickCount: number } | undefined;
   watched.set(contents, {
     screencast: (listener) => {
       onFrame = listener;
@@ -709,6 +733,24 @@ const openIn = async (
         await ownSend("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
       }
       const { method, params } = inputCommand(input);
+      // What is held is remembered, so it can be let go when the page goes back to its agent.
+      if (input.type === "key") {
+        if (input.action === "up") heldKeys.delete(input.keyCode);
+        else if (heldKeys.size < 16 || heldKeys.has(input.keyCode)) {
+          const { key, code, keyCode } = input;
+          heldKeys.set(keyCode, {
+            key,
+            code,
+            windowsVirtualKeyCode: keyCode,
+            nativeVirtualKeyCode: keyCode,
+          });
+        }
+      } else if (input.type === "pointer" && input.action !== "move") {
+        const { x, y, button } = input;
+        heldButton = input.action === "down" ? { x, y, button, clickCount: 1 } : undefined;
+      } else if (input.type === "pointer" && heldButton !== undefined) {
+        heldButton = { ...heldButton, x: input.x, y: input.y };
+      }
       await Promise.race([ownSend(method, params), gone]).catch(() => {});
       // What the input did may have retitled the page, which no event says.
       if (input.type !== "pointer" || input.action === "up") await refreshTitle();
@@ -716,14 +758,28 @@ const openIn = async (
     reload: () => {
       if (!destroyed) void ownSend("Page.reload").catch(() => {});
     },
-    goForward: () => {
-      const entry = history.entries[history.currentIndex + 1];
-      if (entry !== undefined && !destroyed)
-        void ownSend("Page.navigateToHistoryEntry", { entryId: entry.id }).catch(() => {});
-    },
-    canGoBack: () =>
-      history.currentIndex > 0 && history.entries[history.currentIndex - 1]?.url !== "about:blank",
+    goForward: () => step(1),
+    canGoBack: () => real(history.entries[history.currentIndex - 1]),
     canGoForward: () => history.currentIndex < history.entries.length - 1,
+    letGo: () => {
+      if (destroyed) return;
+      const keys = Array.from(heldKeys.values());
+      heldKeys.clear();
+      for (const key of keys)
+        void ownSend("Input.dispatchKeyEvent", { ...key, type: "keyUp" }).catch(() => {});
+      if (heldButton !== undefined) {
+        void ownSend("Input.dispatchMouseEvent", {
+          ...heldButton,
+          type: "mouseReleased",
+          buttons: 0,
+        }).catch(() => {});
+        heldButton = undefined;
+      }
+      if (focused) {
+        focused = false;
+        void ownSend("Emulation.setFocusEmulationEnabled", { enabled: false }).catch(() => {});
+      }
+    },
   });
 
   /** `stay` stops a navigation the page itself started and keeps the document it is on. */
@@ -894,6 +950,9 @@ const openIn = async (
       }
       case "Page.frameStoppedLoading": {
         if ((params as { frameId: string }).frameId !== mainFrameId) return;
+        // The history as the load left it: asked for when the navigation commits, the browser
+        // answers that no page is attached yet.
+        refreshHistory();
         // The title first, so whoever waits on the load reads the page's own.
         void refreshTitle().then(() => {
           loading = false;

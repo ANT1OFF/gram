@@ -19,6 +19,17 @@ const down = {
   modifiers: 0,
 };
 
+const keyDown = (init: Record<string, unknown>) =>
+  viewInput({
+    type: "key",
+    action: "down",
+    key: "a",
+    code: "KeyA",
+    keyCode: 65,
+    modifiers: 0,
+    ...init,
+  });
+
 describe("viewInput", () => {
   it("keeps a pointer, a wheel and a key, and nothing else of them", () => {
     expect(viewInput({ ...down, extra: "dropped" })).toEqual(down);
@@ -77,6 +88,88 @@ describe("viewInput", () => {
       expect(viewInput(bad)).toBeUndefined();
   });
 
+  it("lets Control and Command go with editing keys only, never a browser's own shortcut", () => {
+    // Select all, undo, redo, a word back, deleting a word.
+    expect(keyDown({ modifiers: 2 })).toMatchObject({ key: "a", modifiers: 2 });
+    expect(keyDown({ modifiers: 4, key: "z", code: "KeyZ", keyCode: 90 })).toBeDefined();
+    expect(keyDown({ modifiers: 10, key: "Z", code: "KeyZ", keyCode: 90 })).toBeDefined();
+    expect(
+      keyDown({ modifiers: 2, key: "ArrowLeft", code: "ArrowLeft", keyCode: 37 }),
+    ).toBeDefined();
+    expect(
+      keyDown({ modifiers: 2, key: "Backspace", code: "Backspace", keyCode: 8 }),
+    ).toBeDefined();
+    // A new window, an incognito one, closing the page, the developer tools, clearing data.
+    for (const [name, code, keyCode, modifiers] of [
+      ["n", "KeyN", 78, 2],
+      ["N", "KeyN", 78, 10],
+      ["w", "KeyW", 87, 2],
+      ["t", "KeyT", 84, 2],
+      ["I", "KeyI", 73, 10],
+      ["J", "KeyJ", 74, 10],
+      ["Delete", "Delete", 46, 10],
+      ["r", "KeyR", 82, 2],
+      ["l", "KeyL", 76, 4],
+      // The one clipboard of the server's browser is every thread's.
+      ["c", "KeyC", 67, 2],
+      ["v", "KeyV", 86, 2],
+      ["x", "KeyX", 88, 4],
+    ] as const)
+      expect(keyDown({ key: name, code, keyCode, modifiers })).toBeUndefined();
+    // A shortcut's key code under an editing key's name is still the shortcut.
+    expect(keyDown({ key: "a", code: "KeyA", keyCode: 78, modifiers: 2 })).toBeUndefined();
+    expect(keyDown({ key: "n", code: "KeyN", keyCode: 65, modifiers: 2 })).toBeUndefined();
+    // And an editing key's code names itself, whatever was sent.
+    expect(keyDown({ key: "a", code: "KeyN", keyCode: 65, modifiers: 2 })).toMatchObject({
+      code: "KeyA",
+    });
+    // A shortcut types nothing.
+    expect(keyDown({ modifiers: 2, text: "a" })).not.toHaveProperty("text");
+  });
+
+  it("sends no function key, no browser key, and Alt only with a character", () => {
+    expect(keyDown({ key: "F12", code: "F12", keyCode: 123 })).toBeUndefined();
+    expect(keyDown({ key: "F5", code: "F5", keyCode: 116 })).toBeUndefined();
+    expect(keyDown({ key: "a", code: "KeyA", keyCode: 123 })).toBeUndefined();
+    expect(keyDown({ key: "BrowserBack", code: "BrowserBack", keyCode: 166 })).toBeUndefined();
+    expect(
+      keyDown({ key: "ArrowLeft", code: "ArrowLeft", keyCode: 37, modifiers: 1 }),
+    ).toBeUndefined();
+    expect(keyDown({ key: "F4", code: "F4", keyCode: 115, modifiers: 1 })).toBeUndefined();
+    expect(keyDown({ key: "Home", code: "Home", keyCode: 36, modifiers: 1 })).toBeUndefined();
+    // AltGr (Control and Alt) and Option type a character, which goes as that character alone.
+    expect(keyDown({ key: "@", code: "KeyQ", keyCode: 81, text: "@", modifiers: 3 })).toMatchObject(
+      {
+        text: "@",
+        modifiers: 0,
+      },
+    );
+    expect(keyDown({ key: "É", code: "KeyE", keyCode: 69, text: "É", modifiers: 9 })).toMatchObject(
+      {
+        text: "É",
+        modifiers: 8,
+      },
+    );
+    // A control character is no text.
+    expect(keyDown({ text: "\u000e" })).not.toHaveProperty("text");
+    // Plain keys go as they are.
+    expect(keyDown({ key: "Tab", code: "Tab", keyCode: 9 })).toBeDefined();
+    expect(keyDown({ key: "Escape", code: "Escape", keyCode: 27 })).toBeDefined();
+    expect(keyDown({ key: "Enter", code: "Enter", keyCode: 13, text: "\r" })).toMatchObject({
+      text: "\r",
+    });
+  });
+
+  it("sends no copy, cut or paste, by any of their keys", () => {
+    expect(keyDown({ modifiers: 2, key: "c", code: "KeyC", keyCode: 67 })).toBeUndefined();
+    expect(keyDown({ modifiers: 2, key: "x", code: "KeyX", keyCode: 88 })).toBeUndefined();
+    expect(keyDown({ modifiers: 4, key: "v", code: "KeyV", keyCode: 86 })).toBeUndefined();
+    expect(keyDown({ modifiers: 8, key: "Insert", code: "Insert", keyCode: 45 })).toBeUndefined();
+    expect(keyDown({ modifiers: 2, key: "Insert", code: "Insert", keyCode: 45 })).toBeUndefined();
+    expect(keyDown({ modifiers: 8, key: "Delete", code: "Delete", keyCode: 46 })).toBeUndefined();
+    expect(keyDown({ key: "Delete", code: "Delete", keyCode: 46 })).toBeDefined();
+  });
+
   it("takes the page over with a press, a key going down or a scroll, and nothing else", () => {
     const key = { type: "key", key: "a", code: "KeyA", keyCode: 65, modifiers: 0 } as const;
     expect(viewInputTakes(viewInput(down)!)).toBe(true);
@@ -95,6 +188,11 @@ describe("viewServerMessage", () => {
     expect(viewServerMessage({ type: "pane.view.watch", threadId: "t" })).toEqual({
       type: "pane.view.watch",
       threadId: "t",
+    });
+    expect(viewServerMessage({ type: "pane.view.watch", threadId: "t", fresh: true })).toEqual({
+      type: "pane.view.watch",
+      threadId: "t",
+      fresh: true,
     });
     expect(viewServerMessage({ type: "pane.view.control", threadId: "t", op: "reload" })).toEqual({
       type: "pane.view.control",

@@ -85,6 +85,11 @@ const BUTTONS: ReadonlySet<string> = new Set(["none", "left", "middle", "right"]
 export interface ViewWatchMessage {
   readonly type: "pane.view.watch";
   readonly threadId: string;
+  /**
+   * The server has nothing of the page yet (its first watcher just came): the host says what the
+   * page is and sends a frame again, even where it is still sending them from an earlier watch.
+   */
+  readonly fresh?: boolean | undefined;
 }
 
 export interface ViewInputMessage {
@@ -134,6 +139,77 @@ const FRAME_MAX = 8_000_000;
 /** The farthest a point may be from the page's corner, and the most one wheel event scrolls. */
 const FAR = 100_000;
 
+const ALT = 1;
+const CONTROL = 2;
+const META = 4;
+const SHIFT = 8;
+
+/**
+ * The keys that go with Control or Command: editing a field and moving in it, by the key code
+ * the browser reads a shortcut from, each with the names it may carry. Nothing else does, since a
+ * browser has shortcuts of its own (a new window, its developer tools, closing the page) that no
+ * check on a page's requests covers. Copy, cut and paste are left out too: every thread's page
+ * shares the one clipboard of the server's browser.
+ */
+const CHORD_KEYS: ReadonlyMap<number, { readonly keys: readonly string[]; readonly code: string }> =
+  new Map([
+    [65, { keys: ["a"], code: "KeyA" }],
+    [89, { keys: ["y"], code: "KeyY" }],
+    [90, { keys: ["z"], code: "KeyZ" }],
+    [8, { keys: ["backspace"], code: "Backspace" }],
+    [46, { keys: ["delete"], code: "Delete" }],
+    [35, { keys: ["end"], code: "End" }],
+    [36, { keys: ["home"], code: "Home" }],
+    [37, { keys: ["arrowleft"], code: "ArrowLeft" }],
+    [38, { keys: ["arrowup"], code: "ArrowUp" }],
+    [39, { keys: ["arrowright"], code: "ArrowRight" }],
+    [40, { keys: ["arrowdown"], code: "ArrowDown" }],
+  ]);
+
+/** With Shift as well, only undoing a redo and selecting while moving: not deleting. */
+const SHIFT_CHORD_KEYS: ReadonlySet<number> = new Set([90, 35, 36, 37, 38, 39, 40]);
+
+/** Whether `text` is one character a key types: nothing a browser takes for a control key. */
+const printable = (text: string | undefined): text is string =>
+  text !== undefined &&
+  Array.from(text).length === 1 &&
+  (text === "\r" || text >= " ") &&
+  text !== "\u007f";
+
+/**
+ * A key as the page may get it, or `undefined` for one it may not: a function key, a browser or
+ * media key, and any shortcut outside `CHORD_KEYS`. A key that types a character while Alt is
+ * held (AltGr, or Option on a Mac) is that character, without the modifiers.
+ */
+const allowedKey = (
+  key: string,
+  code: string,
+  keyCode: number,
+  text: string | undefined,
+  modifiers: number,
+): { code: string; text: string | undefined; modifiers: number } | undefined => {
+  // F1 to F24, and the browser's own keys (back, refresh, search) with the media keys.
+  if ((keyCode >= 112 && keyCode <= 135) || (keyCode >= 166 && keyCode <= 183)) return undefined;
+  if (/^(F\d+|Browser\w*|Launch\w*|Media\w*)$/.test(key) || /^(F\d+|Browser\w*)$/.test(code))
+    return undefined;
+  const typed = printable(text) ? text : undefined;
+  if ((modifiers & ALT) !== 0) {
+    // Alt with an arrow or F4 is the browser's; Alt with a character is only that character.
+    return typed === undefined || (modifiers & META) !== 0
+      ? undefined
+      : { code, text: typed, modifiers: modifiers & SHIFT };
+  }
+  // Shift with Insert pastes and with Delete cuts, from a clipboard every thread's page shares.
+  if ((modifiers & SHIFT) !== 0 && (keyCode === 45 || keyCode === 46)) return undefined;
+  if (/^(insert|delete)$/i.test(key) && (modifiers & SHIFT) !== 0) return undefined;
+  if ((modifiers & (CONTROL | META)) === 0) return { code, text: typed, modifiers };
+  const chord = CHORD_KEYS.get(keyCode);
+  if (chord === undefined || !chord.keys.includes(key.toLowerCase())) return undefined;
+  if ((modifiers & SHIFT) !== 0 && !SHIFT_CHORD_KEYS.has(keyCode)) return undefined;
+  // The code is the key code's own, so the two can't name different keys.
+  return { code: chord.code, text: undefined, modifiers };
+};
+
 /** `raw` as one input, or `undefined` when it isn't one: nothing unchecked reaches the browser. */
 export function viewInput(raw: unknown): ViewInput | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
@@ -145,14 +221,16 @@ export function viewInput(raw: unknown): ViewInput | undefined {
     if (action !== "down" && action !== "up") return undefined;
     if (!short(key, 32) || !short(code, 32) || !whole(keyCode, 0, 255)) return undefined;
     if (text !== undefined && !short(text, 8)) return undefined;
+    const allowed = allowedKey(key, code, keyCode, text, modifiers);
+    if (allowed === undefined) return undefined;
     return {
       type: "key",
       action,
       key,
-      code,
+      code: allowed.code,
       keyCode,
-      modifiers,
-      ...(text === undefined || text === "" ? {} : { text }),
+      modifiers: allowed.modifiers,
+      ...(allowed.text === undefined ? {} : { text: allowed.text }),
       ...(repeat === true ? { repeat } : {}),
     };
   }
@@ -187,10 +265,17 @@ export const viewInputTakes = (input: ViewInput): boolean =>
 /** A message from the server about a thread's view, checked; `undefined` for anything else. */
 export function viewServerMessage(raw: unknown): ViewServerMessage | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
-  const m = raw as { type?: unknown; threadId?: unknown; inputs?: unknown; op?: unknown };
+  const m = raw as {
+    type?: unknown;
+    threadId?: unknown;
+    inputs?: unknown;
+    op?: unknown;
+    fresh?: unknown;
+  };
   if (!short(m.threadId, 200) || m.threadId === "") return undefined;
   const { threadId } = m;
-  if (m.type === "pane.view.watch") return { type: m.type, threadId };
+  if (m.type === "pane.view.watch")
+    return { type: m.type, threadId, ...(m.fresh === true ? { fresh: true } : {}) };
   if (m.type === "pane.view.control")
     return typeof m.op === "string" && VIEW_CONTROLS.has(m.op)
       ? { type: m.type, threadId, op: m.op as ViewControl }

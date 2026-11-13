@@ -1441,7 +1441,16 @@ over, as in the desktop app: your input goes to the page, and the agent's next i
 until it has the page again. It gets the page back when you press **Hand back**, when you have sent
 nothing for 20 seconds, or when you close the tab. Back, forward and reload in the strip are yours
 too. The address is shown, not typed: the tab shows the page the agent opened, and opens none of
-its own. Pasting from your clipboard, file uploads and sound don't cross.
+its own. File uploads and sound don't cross.
+
+Keys reach the page as you type them, with two limits. The browser's own shortcuts are never sent:
+the function keys, anything with Alt that types no character, and Ctrl or Cmd with any key but the
+editing ones (select all, undo, redo, moving and deleting by a word or a line), so nothing you
+press opens a window, the developer tools or a print dialog on the server; a window of the
+browser's own that opens all the same is closed at once. And copy, cut and paste aren't sent: the
+server's browser has one clipboard that every thread's page shares, and yours stays on your
+machine. Shift+Esc puts the keyboard back in the strip, so the page never traps it; a mouse button
+or a key still held when the page goes back to the agent is let go first.
 
 The frames are JPEGs of the page as it repaints, twelve a second at most, sent only while someone
 watches (`browserView.subscribe`); input goes back as `browserView.input`, which the browser host

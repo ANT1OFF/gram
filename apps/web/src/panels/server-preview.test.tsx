@@ -161,6 +161,26 @@ describe("ServerPreview", () => {
     ]);
   });
 
+  it("lets a held button go wherever the pointer is by then, at the page's nearest point", async () => {
+    const server = fakeServer();
+    mount(server);
+    await say(server, { type: "page", page: { ...PAGE, driver: "user" } }, FRAME);
+    const stage = place();
+    fireEvent.mouseDown(stage, { clientX: 300, clientY: 200, button: 0, buttons: 1, detail: 1 });
+    // Released outside the tab's page altogether.
+    fireEvent.mouseUp(document.body, {
+      clientX: 900,
+      clientY: 10,
+      button: 0,
+      buttons: 0,
+      detail: 1,
+    });
+    // A release with nothing held is no one's.
+    fireEvent.mouseUp(document.body, { clientX: 300, clientY: 200, button: 0, buttons: 0 });
+    await waitFor(() => expect(server.inputs).toHaveLength(2));
+    expect(server.inputs[1]).toMatchObject({ type: "pointer", action: "up", x: 800, y: 0 });
+  });
+
   it("says the page is yours, sends your pointer and keys, and hands back", async () => {
     const server = fakeServer();
     mount(server);
@@ -174,8 +194,16 @@ describe("ServerPreview", () => {
     fireEvent.mouseMove(stage, { clientX: 100, clientY: 50 });
     fireEvent.keyDown(stage, { key: "a", code: "KeyA", keyCode: 65 });
     fireEvent.keyUp(stage, { key: "a", code: "KeyA", keyCode: 65 });
-    // Command stays the app's.
+    // Command stays the app's, and so does a shortcut the page may not get.
     fireEvent.keyDown(stage, { key: "k", code: "KeyK", keyCode: 75, metaKey: true });
+    expect(fireEvent.keyDown(stage, { key: "n", code: "KeyN", keyCode: 78, ctrlKey: true })).toBe(
+      true,
+    );
+    expect(fireEvent.keyDown(stage, { key: "F12", code: "F12", keyCode: 123 })).toBe(true);
+    // Shift+Escape is the way out of the page for the keyboard.
+    stage.focus();
+    fireEvent.keyDown(stage, { key: "Escape", code: "Escape", keyCode: 27, shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByTestId("preview-address"));
     await waitFor(() => expect(server.inputs).toHaveLength(3));
     expect(server.inputs.map((input) => input.type)).toEqual(["pointer", "key", "key"]);
     expect(server.inputs[1]).toEqual({
@@ -225,6 +253,8 @@ describe("keyInput", () => {
     expect(typedBy(key({ key: "Enter" }))).toBe("\r");
     expect(typedBy(key({ key: "ArrowLeft" }))).toBeUndefined();
     expect(typedBy(key({ ctrlKey: true }))).toBeUndefined();
+    // Control with Alt is AltGr.
+    expect(typedBy(key({ ctrlKey: true, altKey: true, key: "@" }))).toBe("@");
     expect(typedBy(key({ key: "😀" }))).toBe("😀");
   });
 

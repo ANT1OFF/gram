@@ -377,11 +377,25 @@ describe("openHeadlessPage, what it closes", () => {
     attach("auto-popup", "popup-1", "page", "context-1");
     attach("auto-worker", "worker-1", "service_worker", "context-1");
     attach("auto-ui", "ui-1", "browser_ui", "context-1");
+    // A window of the browser's own, which only a browser shortcut opens.
     attach("auto-other", "other", "page", "browser-own");
+    browser.emit("Target.attachedToTarget", {
+      sessionId: "auto-tools",
+      waitingForDebugger: true,
+      targetInfo: {
+        targetId: "tools",
+        type: "other",
+        url: "devtools://devtools/bundled/devtools_app.html",
+        browserContextId: "context-1",
+      },
+    });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(browser.sent.filter((entry) => entry.method === "Target.closeTarget")).toEqual([
-      { method: "Target.closeTarget", params: { targetId: "popup-1" } },
-    ]);
+    expect(
+      browser.sent
+        .filter((entry) => entry.method === "Target.closeTarget")
+        .map((entry) => (entry.params as { targetId: string }).targetId)
+        .toSorted(),
+    ).toEqual(["other", "popup-1", "tools"]);
     // Everything is let go, the popup too: held, it would hold the page that opened it.
     const resumed = browser.sent
       .filter((entry) => entry.method === "Runtime.runIfWaitingForDebugger")
@@ -390,6 +404,7 @@ describe("openHeadlessPage, what it closes", () => {
       "auto-other",
       "auto-own",
       "auto-popup",
+      "auto-tools",
       "auto-ui",
       "auto-worker",
     ]);
@@ -667,6 +682,42 @@ describe.skipIf(executable === undefined || executable === "")("headless panes i
       await until(() => pages().at(-1)?.page?.driver === "user");
       view({ type: "pane.view.control", threadId: "owned", op: "handBack" });
       await until(() => pages().at(-1)?.page?.driver === "agent");
+    } finally {
+      clearInterval(watch);
+      await close();
+    }
+  }, 60_000);
+
+  it("goes back and forward through the pages as they are now, for a person watching", async () => {
+    const seen: Array<ViewHostMessage> = [];
+    const { panes, view, close } = headlessPanes({
+      executable: executable!,
+      sandbox: false,
+      send: (message) => seen.push(message),
+    });
+    const page = () =>
+      seen.flatMap((message) => (message.type === "pane.view.page" ? [message] : [])).at(-1)?.page;
+    const watch = setInterval(() => view({ type: "pane.view.watch", threadId: "owned" }), 500);
+    try {
+      const command = (input: PaneCommand) =>
+        panes.serve({ threadId: "owned", limits: { actOnLoopbackOnly: false }, command: input });
+      view({ type: "pane.view.watch", threadId: "owned" });
+      expect(await command({ op: "navigate", url: `${origin}/` })).toMatchObject({ ok: true });
+      expect(await command({ op: "navigate", url: `${origin}/two` })).toMatchObject({ ok: true });
+      await until(() => page()?.url === `${origin}/two` && page()?.canGoBack === true);
+      expect(page()?.canGoForward).toBe(false);
+
+      view({ type: "pane.view.control", threadId: "owned", op: "back" });
+      await until(() => page()?.url === `${origin}/` && page()?.canGoForward === true);
+      // The blank page every page starts on is nowhere to go back to.
+      expect(page()).toMatchObject({ canGoBack: false, driver: "user" });
+      view({ type: "pane.view.control", threadId: "owned", op: "back" });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(page()?.url).toBe(`${origin}/`);
+
+      view({ type: "pane.view.control", threadId: "owned", op: "forward" });
+      await until(() => page()?.url === `${origin}/two` && page()?.canGoBack === true);
+      expect(page()?.canGoForward).toBe(false);
     } finally {
       clearInterval(watch);
       await close();

@@ -80,10 +80,17 @@ export const createViews = (options: ViewsOptions): Views => {
     };
   };
 
+  /** The page is its agent's again, with nothing of the person's still held down in it. */
+  const giveBack = (threadId: string) => {
+    const contents = watches.get(threadId)?.contents;
+    if (contents !== undefined && !contents.isDestroyed()) options.watch(contents)?.letGo();
+    panes.handBack(threadId);
+  };
+
   const release = (threadId: string) => {
     clearTimeout(idle.get(threadId));
     idle.delete(threadId);
-    panes.handBack(threadId);
+    giveBack(threadId);
   };
 
   const detach = (watch: Watch) => {
@@ -135,9 +142,9 @@ export const createViews = (options: ViewsOptions): Views => {
         continue;
       }
       // Nobody is watching any more: the frames stop, and a page a person held is the agent's.
+      if (idle.has(threadId)) release(threadId);
       detach(watch);
       watches.delete(threadId);
-      if (idle.has(threadId)) release(threadId);
     }
     if (watches.size === 0) {
       clearInterval(poll);
@@ -145,10 +152,17 @@ export const createViews = (options: ViewsOptions): Views => {
     }
   };
 
-  const watchThread = (threadId: string) => {
+  const watchThread = (threadId: string, fresh: boolean) => {
     const known = watches.get(threadId);
     if (known !== undefined) {
       known.expires = Date.now() + leaseMs;
+      if (fresh) {
+        // Whoever asks has nothing yet: the page is said again, and its frames start again, since
+        // a page that isn't repainting sends none by itself.
+        detach(known);
+        known.sent = undefined;
+        void refresh(threadId);
+      }
       return;
     }
     watches.set(threadId, {
@@ -169,7 +183,7 @@ export const createViews = (options: ViewsOptions): Views => {
       threadId,
       setTimeout(() => {
         idle.delete(threadId);
-        panes.handBack(threadId);
+        giveBack(threadId);
         void refresh(threadId);
       }, idleMs),
     );
@@ -180,8 +194,11 @@ export const createViews = (options: ViewsOptions): Views => {
     const watch = watches.get(threadId);
     const contents = watch?.contents;
     const page = contents === undefined ? undefined : options.watch(contents);
-    if (contents === undefined || page === undefined || contents.isDestroyed()) return;
+    if (contents === undefined || page === undefined) return;
     for (const each of inputs) {
+      // The page may have gone, or the watch lapsed, while the last input was on its way in:
+      // what is left of the batch was meant for that page, and is no one's now.
+      if (watches.get(threadId)?.contents !== contents || contents.isDestroyed()) return;
       if (viewInputTakes(each)) acted(threadId);
       // A pointer passing over the agent's page, or a release with no press, isn't the person's
       // to send: nothing reaches the page until they have it.
@@ -201,7 +218,7 @@ export const createViews = (options: ViewsOptions): Views => {
           (raw as { type: string }).type.startsWith("pane.view.")
         );
       const { threadId } = message;
-      if (message.type === "pane.view.watch") watchThread(threadId);
+      if (message.type === "pane.view.watch") watchThread(threadId, message.fresh === true);
       else if (message.type === "pane.view.input") {
         // One batch after another: a release never overtakes its press.
         const after = (typing.get(threadId) ?? Promise.resolve())
