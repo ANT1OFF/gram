@@ -50,19 +50,21 @@ export type MessageResponseProps = Omit<StreamdownProps, "rehypePlugins"> & {
 
 /**
  * Markdown, rendered once streamdown has loaded (see `markdown-loader.ts`). Until then the text
- * holds its place unseen, so nothing flashes as plain text; a failed load shows it plain.
+ * holds its place unseen, so nothing flashes as plain text; a failed load shows it plain, and so
+ * does a slow link while the renderer is on its way.
  */
 export const MessageResponse = memo(
   (props: MessageResponseProps) => {
-    const { module, failed } = useMarkdown();
+    const { module, failed, plain } = useMarkdown();
+    const shown = failed === true || plain === true;
     if (module) return <module.Markdown {...props} />;
     return (
       <div
         data-testid="markdown-pending"
-        aria-busy={failed ? undefined : true}
+        aria-busy={shown ? undefined : true}
         className={cn(
           "size-full whitespace-pre-wrap break-words",
-          !failed && "invisible",
+          !shown && "invisible",
           props.className,
         )}
       >
