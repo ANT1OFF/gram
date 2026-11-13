@@ -41,7 +41,9 @@ async function openThread(page: Page, threadId: string) {
 const view = (page: Page, threadId: string) =>
   page.locator(`[data-testid="mock-preview-view"][data-thread="${threadId}"]`);
 
-test("a port chip opens the thread's app in the Preview tab, loopback only", async ({ page }) => {
+test("a port chip opens the thread's app in the Preview tab, and the user any web page", async ({
+  page,
+}) => {
   await openThread(page, "t-deps");
   await page.evaluate((p) => window.gramMock!.simulatePorts("t-deps" as never, [p]), port);
 
@@ -85,14 +87,41 @@ test("a port chip opens the thread's app in the Preview tab, loopback only", asy
   ).toHaveText("The other page");
   await expect(page.getByTestId("preview-address")).toHaveValue(`http://127.0.0.1:${port}/other`);
 
-  // An address off loopback doesn't open here.
+  // A scheme that isn't the web's doesn't open here.
   const address = page.getByTestId("preview-address");
-  await address.fill("https://organization.example.invalid/");
-  await address.press("Enter");
-  await expect(page.getByRole("alert")).toHaveText(
-    "Only an address on localhost opens here, such as localhost:3000, or the full path of a Markdown or HTML file.",
+  for (const refused of ["file:///etc/passwd", "javascript:alert(1)", "chrome://settings"]) {
+    await address.fill(refused);
+    await address.press("Enter");
+    await expect(page.getByRole("alert")).toHaveText(
+      "Only a web address opens here, such as localhost:3000 or example.com, or the full path of a Markdown or HTML file.",
+    );
+    await expect(address).toHaveValue(`http://127.0.0.1:${port}/other`);
+  }
+
+  // Nor does the agent's show_panel on a page off loopback: only the user opens one.
+  await page.evaluate(() =>
+    window.gramMock!.simulateShowPanel("t-deps" as never, "preview", "https://site.example/"),
   );
-  await expect(page.getByTestId("preview-address")).toHaveValue(`http://127.0.0.1:${port}/other`);
+  await expect(address).toHaveValue(`http://127.0.0.1:${port}/other`);
+
+  // A web page the user types opens here, https unless it says otherwise.
+  await page.route("https://site.example/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<title>Site</title><h1>A page on the web</h1>",
+    }),
+  );
+  await address.fill("site.example/docs");
+  await address.press("Enter");
+  await expect(address).toHaveValue("https://site.example/docs");
+  await expect(
+    page.frameLocator('[data-thread="t-deps"]').getByRole("heading", { level: 1 }),
+  ).toHaveText("A page on the web");
+  await expect(page.getByRole("alert")).toBeHidden();
+  // In the session with the user's sign-ins: the one request that asks for it.
+  expect(await page.evaluate(() => window.gramMock!.shell.preview.openedWeb.slice())).toEqual([
+    "t-deps https://site.example/docs",
+  ]);
 
   // A loopback address typed without its scheme opens, as the placeholder shows it.
   await address.fill(`localhost:${port}`);
@@ -101,6 +130,115 @@ test("a port chip opens the thread's app in the Preview tab, loopback only", asy
   await expect(
     page.frameLocator('[data-thread="t-deps"]').getByRole("heading", { level: 1 }),
   ).toHaveText("Hello from the local app");
+});
+
+test("a page an agent drove off loopback is never re-opened in the user's web session", async ({
+  page,
+}) => {
+  await page.route("https://agent-chosen.example/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<h1>Agent-chosen page</h1>" }),
+  );
+  await openThread(page, "t-deps");
+  await page.evaluate((p) => window.gramMock!.simulatePorts("t-deps" as never, [p]), port);
+  await page.getByTestId(`port-chip-${port}`).first().click();
+  await expect(view(page, "t-deps")).toBeVisible();
+
+  // The thread's agent drives the page to a public host it was allowed, unseen by this record.
+  await page.evaluate(() =>
+    window.gramMock!.shell.preview.moved("t-deps" as never, "https://agent-chosen.example/act"),
+  );
+  await expect(page.getByTestId("preview-address")).toHaveValue("https://agent-chosen.example/act");
+
+  // The shell closes the page for newer threads', and the user comes back to the thread.
+  await page.evaluate(() => window.gramMock!.shell.preview.evict("t-deps" as never));
+  await threadRow(page, "t-flaky").click();
+  await threadRow(page, "t-deps").click();
+
+  // It isn't re-opened anywhere: on loopback the shell refuses it, and nothing asks the web
+  // session for it.
+  await expect(page.getByTestId("preview-error")).toContainText("can't be opened here");
+  const asked = await page.evaluate(() => ({
+    web: window.gramMock!.shell.preview.openedWeb.slice(),
+    local: window.gramMock!.shell.preview.opened.slice(),
+  }));
+  expect(asked.web).toEqual([]);
+  expect(asked.local).toEqual([`t-deps http://localhost:${port}/`]);
+});
+
+test("the user's web page re-opens by the shell's token after it was closed for newer threads'", async ({
+  page,
+}) => {
+  await page.route("https://site.example/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<h1>A page on the web</h1>" }),
+  );
+  await openThread(page, "t-deps");
+  await page.evaluate((p) => window.gramMock!.simulatePorts("t-deps" as never, [p]), port);
+  await page.getByTestId(`port-chip-${port}`).first().click();
+  await expect(view(page, "t-deps")).toBeVisible();
+  const address = page.getByTestId("preview-address");
+  await address.fill("site.example/docs");
+  await address.press("Enter");
+  await expect(
+    page.frameLocator('[data-thread="t-deps"]').getByRole("heading", { level: 1 }),
+  ).toHaveText("A page on the web");
+
+  await page.evaluate(() => window.gramMock!.shell.preview.evict("t-deps" as never));
+  await threadRow(page, "t-flaky").click();
+  await threadRow(page, "t-deps").click();
+
+  await expect(
+    page.frameLocator('[data-thread="t-deps"]').getByRole("heading", { level: 1 }),
+  ).toHaveText("A page on the web");
+  const asked = await page.evaluate(() => ({
+    web: window.gramMock!.shell.preview.openedWeb.slice(),
+    reopened: window.gramMock!.shell.preview.reopened.slice(),
+  }));
+  // Typed once; re-opened by its token, not typed again.
+  expect(asked.web).toEqual(["t-deps https://site.example/docs"]);
+  expect(asked.reopened).toEqual([expect.stringMatching(/^t-deps mock-web-view-\d+ opened$/)]);
+});
+
+test("a web page an agent replaced is never re-opened in the user's web session", async ({
+  page,
+}) => {
+  await page.route("https://site.example/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<h1>A page on the web</h1>" }),
+  );
+  await page.route("https://agent-chosen.example/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<h1>Agent-chosen page</h1>" }),
+  );
+  await openThread(page, "t-deps");
+  await page.evaluate((p) => window.gramMock!.simulatePorts("t-deps" as never, [p]), port);
+  await page.getByTestId(`port-chip-${port}`).first().click();
+  await expect(view(page, "t-deps")).toBeVisible();
+  const address = page.getByTestId("preview-address");
+  await address.fill("site.example/docs");
+  await address.press("Enter");
+  await expect(address).toHaveValue("https://site.example/docs");
+
+  // Away from the thread, its agent takes the pane: the shell closes the user's web page for a
+  // local one of the agent's, which it drives to a host of its choosing.
+  await threadRow(page, "t-flaky").click();
+  await page.evaluate(() =>
+    window.gramMock!.shell.preview.agentTakes(
+      "t-deps" as never,
+      "https://agent-chosen.example/act",
+    ),
+  );
+  // Back on the thread, the shell reports the agent's page; then it is closed for newer threads'.
+  await threadRow(page, "t-deps").click();
+  await expect(address).toHaveValue("https://agent-chosen.example/act");
+  await page.evaluate(() => window.gramMock!.shell.preview.evict("t-deps" as never));
+  await threadRow(page, "t-flaky").click();
+  await threadRow(page, "t-deps").click();
+
+  await expect(page.getByTestId("preview-error")).toContainText("can't be opened here");
+  const asked = await page.evaluate(() => ({
+    web: window.gramMock!.shell.preview.openedWeb.slice(),
+    reopened: window.gramMock!.shell.preview.reopened.slice(),
+  }));
+  expect(asked.web).toEqual(["t-deps https://site.example/docs"]);
+  expect(asked.reopened.every((entry) => entry.endsWith(" refused"))).toBe(true);
 });
 
 test("each thread keeps its own page, loaded while another thread shows", async ({ page }) => {

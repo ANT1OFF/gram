@@ -6,6 +6,7 @@ import {
   previewFileFragment,
   previewFileKind,
   previewFileTarget,
+  webUrl,
   type GridPreset,
   type OverviewOptionalSection,
   type OverviewSidebar,
@@ -833,6 +834,17 @@ interface PreviewPage {
   url: string;
   /** The thread's agent opened it in the pane (`browser_navigate`): shown as it is, never loaded. */
   driven?: boolean;
+  /**
+   * The user just typed a web address for it (`openWebPreview`): its first load asks the shell for
+   * a web page, once. The first report of the shell's page replaces it.
+   */
+  typed?: boolean;
+  /**
+   * The shell's token for the user's web page shown now (`PreviewState.webView`), as the shell last
+   * reported it; absent once anything else, an agent's page above all, took its place. Re-opening
+   * names it, and the shell alone decides whether it still may.
+   */
+  webView?: string | undefined;
   /** A Markdown or HTML file the tab shows instead of a page on a port, by its path. */
   file?: string | undefined;
   /**
@@ -980,6 +992,11 @@ export interface LayoutState
    */
   openPreview(threadId: ThreadId, url: string, options?: { thread?: boolean }): void;
   /**
+   * Loads `url`, a web page off loopback (`webUrl`), in `threadId`'s Preview tab, in the session
+   * with the user's sign-ins: only for what the user typed in the address strip.
+   */
+  openWebPreview(threadId: ThreadId, url: string): void;
+  /**
    * Shows `path`, a Markdown or HTML file, in `threadId`'s Preview tab where `previewPane` says
    * there is one, and in the Files panel's preview otherwise. An HTML page may be named with a
    * `#fragment` (a mock's board), and `theme` asks a mock page for one of its themes.
@@ -995,7 +1012,12 @@ export interface LayoutState
    * Takes on a page the shell already holds for `threadId`, opened in another window, as this
    * window's without loading it again; the new request's id, or `undefined` when there was one.
    */
-  adoptPreviewPage(threadId: ThreadId, url: string, driven?: boolean): number | undefined;
+  adoptPreviewPage(
+    threadId: ThreadId,
+    url: string,
+    driven?: boolean,
+    webView?: string,
+  ): number | undefined;
   /** Clears the tab's target if it is still request `id`. */
   consumePanelTarget(tab: TargetedTab, id: number): void;
   dismissPreview(): void;
@@ -1367,13 +1389,26 @@ export const useLayoutStore = create<LayoutState>()(
           }));
           get().revealPanel("preview", options);
         },
-        adoptPreviewPage: (threadId, url, driven) => {
+        openWebPreview: (threadId, raw) => {
+          const url = loopbackUrl(raw) === undefined ? webUrl(raw) : undefined;
+          if (url === undefined) return;
+          set((s) => ({
+            previewPages: { ...s.previewPages, [threadId]: { id: ++requestSeq, url, typed: true } },
+          }));
+          get().revealPanel("preview");
+        },
+        adoptPreviewPage: (threadId, url, driven, webView) => {
           if (get().previewPages[threadId] !== undefined) return undefined;
           const id = ++requestSeq;
           set((s) => ({
             previewPages: {
               ...s.previewPages,
-              [threadId]: { id, url, ...(driven === true ? { driven } : {}) },
+              [threadId]: {
+                id,
+                url,
+                ...(driven === true ? { driven } : {}),
+                ...(webView === undefined ? {} : { webView }),
+              },
             },
           }));
           return id;
@@ -1403,8 +1438,22 @@ export const useLayoutStore = create<LayoutState>()(
         notePreviewPage: (threadId, page) =>
           set((s) => {
             const current = s.previewPages[threadId];
-            if (current?.id !== page.id || current.url === page.url) return {};
-            return { previewPages: { ...s.previewPages, [threadId]: page } };
+            if (current?.id !== page.id) return {};
+            // The shell's report is the whole truth of the page: where it is, and whose. A token
+            // the shell no longer reports, after an agent's page took the view's place, is gone.
+            if (
+              current.url === page.url &&
+              current.webView === page.webView &&
+              current.typed !== true
+            )
+              return {};
+            const { typed: _typed, webView: _webView, ...rest } = current;
+            const next: PreviewPage = {
+              ...rest,
+              url: page.url,
+              ...(page.webView === undefined ? {} : { webView: page.webView }),
+            };
+            return { previewPages: { ...s.previewPages, [threadId]: next } };
           }),
       };
     },

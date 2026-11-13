@@ -76,6 +76,8 @@ export const Channels = {
   microphoneSettings: "gram:microphone-settings",
   connectionState: "gram:connection-state",
   previewOpen: "gram:preview-open",
+  previewOpenWeb: "gram:preview-open-web",
+  previewReopenWeb: "gram:preview-reopen-web",
   previewBounds: "gram:preview-bounds",
   previewBack: "gram:preview-back",
   previewForward: "gram:preview-forward",

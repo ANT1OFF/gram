@@ -1209,6 +1209,38 @@ Source: [storage](../packages/server/src/git/storage.ts),
 
 ## Browser, notifications and dictation
 
+The Preview tab opens your app's dev server, a Markdown or HTML file, or any web page you type
+(`example.com` opens as https), and follows links within a web page. `file:`, `javascript:`,
+`data:`, `chrome:`, `devtools:` and other schemes never open. A new window, and a local page's link,
+script or redirect off loopback, go to your browser through the link question: only the address
+strip opens a web page in the pane, so an agent's local page can't send it into your sign-ins. Each thread's page lives in one of two sessions of Gram's own, kept in memory, sharing
+nothing with the app's session, its launch cookie or your browser, sandboxed and without Node, with
+every permission, download, client certificate and external-app launch refused:
+
+- **Local**: loopback pages and every page an agent drives. It loads nothing off loopback but what
+  an agent was allowed (below).
+- **Web**: the pages you open anywhere else. No agent ever reads or drives one; when an agent
+  starts browsing in that thread, your page there closes for a fresh one of its own, so what you
+  sign in to on the web stays yours. Pages on the internet share one web session, which never
+  reaches loopback (Gram's own server, your dev servers) or a private network, whatever asks: a
+  link, form, redirect, script, frame, subresource, WebRTC or preconnect. A public name pointed at
+  a private address is refused like the address. A page you open on your private network, by its
+  address or a private name (`nas.local`), gets its own private web session for that thread and
+  that host and port, which reaches no other private place: not another address, port or name,
+  whatever asks, a frame, WebRTC or a preconnect included. Another private place takes typing it;
+  a link to one goes to your browser through the link question. A public frame there doesn't
+  load, and a link to the internet opens in the shared session. A public name that resolves to a private address (split-horizon DNS)
+  opens nowhere in the pane. Each web session's connections go through a proxy of its own, which
+  looks each name up once and connects only to the addresses it checked; it answers only its own
+  credential, made at each launch, so no other program on your computer can use it. The system
+  proxy isn't used, so on a network that requires one, web pages don't load in the pane. WebRTC
+  there uses no UDP, and its TCP goes through that proxy too. When the pane closed your web page
+  for newer threads', it re-opens it by the shell's own token for that page and at the address the
+  shell recorded; once anything else opened in the thread, such as an agent's page, it doesn't.
+
+Agents can't open a web page in your Preview tab with `show_panel`, which stays on loopback; they
+browse with the tools below, under their own approvals.
+
 Browser Preview/support observations are passive; inspection and capture use
 explicit app tools. Access, host/action approval and document freshness checks
 remain authoritative at dispatch and delivery. Missing metadata is unavailable;

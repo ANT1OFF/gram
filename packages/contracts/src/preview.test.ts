@@ -7,6 +7,7 @@ import {
   previewFileKind,
   previewFileTarget,
   previewUrl,
+  webUrl,
 } from "./preview.ts";
 
 describe("the preview rule", () => {
@@ -28,18 +29,57 @@ describe("the preview rule", () => {
     expect(previewUrl("0")).toBeUndefined();
   });
 
-  it("takes a typed loopback address without its scheme, and nothing more", () => {
+  it("takes a typed loopback address without its scheme", () => {
     expect(previewAddress("localhost:3000")).toBe("http://localhost:3000/");
     expect(previewAddress(" 127.0.0.1:5173/app?x=1 ")).toBe("http://127.0.0.1:5173/app?x=1");
     expect(previewAddress("[::1]:8080")).toBe("http://[::1]:8080/");
     expect(previewAddress("3000")).toBe("http://127.0.0.1:3000/");
     expect(previewAddress("https://localhost:8443/")).toBe("https://localhost:8443/");
-    expect(previewAddress("organization.example.invalid")).toBeUndefined();
     expect(previewAddress("localhost:3000@evil.example")).toBeUndefined();
     expect(previewAddress("javascript:alert(1)")).toBeUndefined();
     expect(previewAddress("file:///etc/passwd")).toBeUndefined();
     // The strict rule the bridge keeps to still wants a scheme.
     expect(previewUrl("localhost:3000")).toBeUndefined();
+  });
+
+  it("takes a typed web address on any host, https unless it says or is an IPv4 address", () => {
+    expect(previewAddress("organization.example.invalid")).toBe(
+      "https://organization.example.invalid/",
+    );
+    expect(previewAddress("example.com/docs?q=1")).toBe("https://example.com/docs?q=1");
+    expect(previewAddress("http://example.com:8080/")).toBe("http://example.com:8080/");
+    expect(previewAddress("https://example.com/")).toBe("https://example.com/");
+    expect(previewAddress("192.168.1.1")).toBe("http://192.168.1.1/");
+    expect(previewAddress("10.0.0.2:8080/admin")).toBe("http://10.0.0.2:8080/admin");
+    // A word, a relative file name or a phrase isn't an address.
+    expect(previewAddress("intranet")).toBeUndefined();
+    expect(previewAddress("README.md")).toBeUndefined();
+    expect(previewAddress("docs/a.md")).toBeUndefined();
+    expect(previewAddress("how do I")).toBeUndefined();
+    expect(previewAddress("user@example.com")).toBeUndefined();
+    expect(previewAddress("https://user:pw@example.com/")).toBeUndefined();
+  });
+
+  it("opens any http(s) page for the user, and no other scheme", () => {
+    expect(webUrl("https://example.com/a#b")).toBe("https://example.com/a#b");
+    expect(webUrl(" http://203.0.113.9:8080 ")).toBe("http://203.0.113.9:8080/");
+    expect(webUrl("http://localhost:3000/")).toBe("http://localhost:3000/");
+    for (const refused of [
+      "file:///etc/passwd",
+      "javascript:alert(1)",
+      "data:text/html,<script>alert(1)</script>",
+      "blob:https://example.com/0f0e",
+      "chrome://settings",
+      "devtools://devtools/bundled/inspector.html",
+      "about:blank",
+      "view-source:https://example.com/",
+      "ftp://example.com/",
+      "mailto:a@example.com",
+      "https://evil.example@example.com/",
+      "not a url",
+    ]) {
+      expect(webUrl(refused), refused).toBeUndefined();
+    }
   });
 
   it("refuses a user name before the host, which a look-alike would hide behind", () => {
