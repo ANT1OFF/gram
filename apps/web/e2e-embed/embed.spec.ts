@@ -32,6 +32,14 @@ test("the whole app mounts from the built package, with its styles and theme", a
   expect(errors).toEqual([]);
 });
 
+test("a thread the page gave the in-memory server opens at its own id", async ({ page }) => {
+  const errors = await mounted(page);
+  await page.goto("/t/page-notes");
+  await expect(page.getByText("What did the nightly sweep close?")).toBeVisible();
+  await expect(page.getByText("Three stale issues, all older than ninety days.")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("the sidebar lists the added group, and its page opens inside Gram's shell", async ({
   page,
 }) => {

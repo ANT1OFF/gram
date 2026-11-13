@@ -413,6 +413,17 @@ export interface GramServer {
   };
 }
 
+/**
+ * A thread the in-memory server starts with, beside its own: a conversation of the embedding
+ * app's, for previews and tests of the pages around the app, at an id the app chooses.
+ */
+export interface MockThread {
+  readonly id: string;
+  readonly title: string;
+  /** Its conversation so far, as plain text, oldest first. */
+  readonly messages?: readonly { readonly role: "user" | "assistant"; readonly text: string }[];
+}
+
 export interface MountOptions {
   /** The element the app fills. It takes the whole window: one mount to a page. */
   readonly element: HTMLElement;
@@ -421,6 +432,8 @@ export interface MountOptions {
    * no server at all: for building and testing the pages around it.
    */
   readonly server?: GramServer | "mock";
+  /** With `server: "mock"`: threads it starts with, beside its own. Ignored with a real server. */
+  readonly mockThreads?: readonly MockThread[];
   /**
    * The path the app's own routes sit under, when the page isn't served from the origin's root:
    * `/w/acme` puts a thread at `/w/acme/t/<id>`.

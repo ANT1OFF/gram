@@ -88,7 +88,11 @@ export const mountGram: MountGram = async (options) => {
       mock ? "mock" : "rpc",
       typeof options.server === "object" ? options.server.session : undefined,
     );
-    if (mock) await withHostedMock(api);
+    if (mock) {
+      await withHostedMock(api);
+      // Before the router is built, so a page that opens on one of them finds it.
+      for (const thread of options.mockThreads ?? []) window.gramMock?.simulateThread(thread);
+    }
     // One answer, before the router is built: a page added to a server that has the features off
     // would otherwise exist and lead nowhere.
     const settings = await api.getSettings();

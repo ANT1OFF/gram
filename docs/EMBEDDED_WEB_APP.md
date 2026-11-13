@@ -74,6 +74,11 @@ others.
 hosted features on and sample threads in it. It needs no server at all, which makes it the way to
 build and test the pages around Gram.
 
+`mockThreads` gives that server threads of your own beside its own, each at an id you choose with a
+title and a plain-text conversation so far: `{ id, title, messages: [{ role, text }] }`. A page of
+yours that shows one of your threads then has something to show in a preview. It is ignored with a
+real server.
+
 The answer is a handle: `shell` says `"on"` or `"off"` (whether the server took your additions),
 `update` replaces what it names of the navigation, the switcher, `threads`, `panel`, `threadsPage`, `newEntry` and `document` and keeps the rest
 (`update({ navigation })` changes counts and keeps the switcher; a key given as `undefined` takes
