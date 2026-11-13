@@ -46,3 +46,20 @@ anything local on a move.
 - `[Your name]`: the person's name as the server gives it.
 - "Ask for access" opens an address the server supplies; none is defined yet.
 - Copy settings and memory, and Bring back, are named and not drawn.
+
+## Built so far
+
+Board 3, the move, is built as `MoveWorkspaceDialog` (`apps/web/src/orchestration/move-workspace.tsx`),
+opened from a workspace's menu as "Move to a server…". It is offered only in the desktop app, with
+the hosted features on and a server signed in to, and only where the shell has the calls that move
+one (`hostedDevice.move` in `packages/contracts/src/desktop-bridge.ts`): `check`, `start`, `cancel`
+and `onProgress`. The sheet draws what those calls answer and decides nothing itself.
+
+Still to come, each a change of its own:
+
+- The shell's side of `hostedDevice.move`, and the address on a hosted server that takes a bundle.
+  Until then no shell offers the calls, so the menu item does not show.
+- "Archived here as Moved to …": a workspace has no archived state yet, so the sheet says it is
+  kept here, paused, which is what an export does today.
+- The counts of messages and routines under Goes, "Ask for access", Copy settings and memory, and
+  Bring back.

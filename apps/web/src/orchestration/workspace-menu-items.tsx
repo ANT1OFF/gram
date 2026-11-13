@@ -1,6 +1,6 @@
 import type { WorkspaceState } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
-import { CirclePause, CirclePlay, Palette, Settings2, Trash2 } from "lucide-react";
+import { CirclePause, CirclePlay, CloudUpload, Palette, Settings2, Trash2 } from "lucide-react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
@@ -16,6 +16,7 @@ import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { DANGER, MoreContextMenuItem, SEPARATOR } from "@/thread/thread-action-items";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
+import { useMoveTargets } from "./move-workspace";
 import { setWorkspacePaused } from "./pause-workspace";
 import {
   accentStyle,
@@ -82,6 +83,8 @@ export function WorkspaceMenuItems({ state }: { state: WorkspaceState }) {
   const queryClient = useQueryClient();
   const { workspace, paused } = state;
   const pause = paused === undefined;
+  // Only where the desktop app can move one and a server is signed in to: never in a browser.
+  const movable = useMoveTargets().targets.length > 0;
   const setPaused = () =>
     void setWorkspacePaused(api, queryClient, workspace, pause).catch((error: unknown) =>
       useThreadDialogs
@@ -106,6 +109,17 @@ export function WorkspaceMenuItems({ state }: { state: WorkspaceState }) {
         )}
         {pause ? "Pause workspace" : "Resume workspace"}
       </ContextMenuItem>
+      {movable && (
+        <ContextMenuItem
+          data-testid="menu-workspace-move"
+          onClick={() =>
+            useThreadDialogs.getState().open({ kind: "moveWorkspace", workspaceId: workspace.id })
+          }
+        >
+          <CloudUpload aria-hidden className="size-icon-row" />
+          Move to a server…
+        </ContextMenuItem>
+      )}
       <ContextMenuItem
         data-testid="menu-workspace-remove"
         className={DANGER}

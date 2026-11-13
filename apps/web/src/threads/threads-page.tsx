@@ -2,6 +2,7 @@ import type { ThreadSummary } from "@gram/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { MessagesSquare, Search } from "lucide-react";
 import { useMemo, useState } from "react";
+import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 
 import { EmptyState } from "@/components/empty-state";
@@ -32,6 +33,15 @@ import {
   type ThreadListing,
   type ThreadsFilter,
 } from "./threads-model";
+import { WorkspacesList } from "./workspaces-view";
+
+/**
+ * Which list the page shows where an embedding app turned the workspaces' list on: kept while the
+ * window lives, so coming back from a thread finds the list that led to it.
+ */
+const useThreadsView = create<{ view: "workspaces" | "threads" }>()(() => ({
+  view: "workspaces",
+}));
 
 /** Rows drawn at most: a search finds the rest. */
 const SHOWN = 300;
@@ -56,6 +66,10 @@ export function ThreadsPage() {
   const kinds = useEmbedShell((s) => s.threadsPage.kinds);
   const elsewhere = useEmbedShell((s) => s.threadsPage.elsewhere);
   const places = useEmbedShell((s) => s.threadsPage.places);
+  // The same app may have the page open on its workspaces, with the threads one click away.
+  const workspaceWords = useEmbedShell((s) => s.threadsPage.workspaces);
+  const view = useThreadsView((s) => s.view);
+  const onWorkspaces = workspaceWords !== undefined && view === "workspaces";
   const listings = useMemo(() => {
     const workspaceNames = new Map(
       workspaces.map((state) => [state.workspace.id as string, state.workspace.name]),
@@ -96,6 +110,13 @@ export function ThreadsPage() {
   const Heading = phone || barTitled ? "h2" : "h1";
   // With no thread at all there is nothing to count or to search: the page says what goes here.
   const none = listings.length === 0 && query.trim() === "";
+  const outside = useMemo(() => {
+    const solo = listings.filter((listing) => listing.summary.thread.workspaceId === undefined);
+    return {
+      total: solo.length,
+      running: solo.filter((listing) => inThreadsFilter(listing, "running")).length,
+    };
+  }, [listings]);
   return (
     <section
       data-testid="threads-page"
@@ -110,7 +131,35 @@ export function ThreadsPage() {
           >
             {title}
           </Heading>
-          {!none && (
+          {workspaceWords !== undefined && (
+            <div
+              role="radiogroup"
+              aria-label="List"
+              data-testid="threads-view"
+              className="flex items-center rounded-lg border border-border p-0.5"
+            >
+              {(
+                [
+                  ["workspaces", workspaceWords.plural, workspaces.length],
+                  ["threads", "Threads", listings.length],
+                ] as const
+              ).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={view === value}
+                  data-view={value}
+                  onClick={() => useThreadsView.setState({ view: value })}
+                  className="flex h-6 items-center gap-1.5 rounded-md px-2.5 text-meta text-muted-foreground outline-none transition-colors duration-(--dur-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-checked:bg-secondary aria-checked:text-foreground phone:h-9"
+                >
+                  {label}
+                  <span className="tabular-nums opacity-70">{count}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {!none && workspaceWords === undefined && (
             <span className="text-meta text-muted-foreground tabular-nums">
               {/* Without the title beside it, the count says what it counts. */}
               {phone
@@ -118,9 +167,20 @@ export function ThreadsPage() {
                 : listings.length}
             </span>
           )}
+          {workspaceWords !== undefined && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="ms-auto"
+              data-testid="threads-new-workspace"
+              onClick={() => void navigate(newEntryRoute("workspace"))}
+            >
+              New {workspaceWords.noun.toLowerCase()}
+            </Button>
+          )}
           <Button
             size="sm"
-            className="ms-auto"
+            className={cn(workspaceWords === undefined && "ms-auto")}
             data-testid="threads-new"
             // Worded by the embedding app, it starts a chat; Gram's own opens the choice used last.
             onClick={() => void navigate(newEntryRoute(newLabel === undefined ? entry : "oneOff"))}
@@ -128,69 +188,81 @@ export function ThreadsPage() {
             {newLabel ?? "New task"}
           </Button>
         </header>
-        {!none && (
-          <label className="relative flex items-center">
-            <Search
-              aria-hidden
-              className="pointer-events-none absolute left-2.5 size-icon-row text-muted-foreground"
-            />
-            <input
-              type="search"
-              data-testid="threads-search"
-              aria-label="Search threads"
-              placeholder="Search threads"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="h-9 w-full rounded-lg border border-input bg-transparent pr-2.5 pl-8 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            />
-          </label>
-        )}
-        {listings.length > 0 && (
-          <div
-            role="radiogroup"
-            aria-label="Show"
-            data-testid="threads-filter"
-            className="flex flex-wrap items-center gap-1.5"
-          >
-            {THREADS_FILTERS.map(({ value, label }) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={picked === value}
-                disabled={counts[value] === 0}
-                data-filter={value}
-                onClick={() => setFilter(value)}
-                className="flex h-7 items-center gap-1.5 rounded-full border border-border px-3 text-meta text-muted-foreground outline-none transition-colors duration-(--dur-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 aria-checked:border-transparent aria-checked:bg-secondary aria-checked:text-foreground phone:h-9"
-              >
-                {label}
-                <span className="tabular-nums opacity-70">{counts[value]}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        {shown.length === 0 ? (
-          <EmptyState
-            testId="threads-empty"
-            icon={MessagesSquare}
-            title={query.trim() === "" ? "No threads yet" : "No thread matches"}
-            line={
-              query.trim() === ""
-                ? "Start a task and it is listed here, with every worker an orchestrator hands work to."
-                : "Try other words: a title, a workspace, or what started it."
-            }
+        {onWorkspaces ? (
+          <WorkspacesList
+            workspaces={workspaces}
+            words={workspaceWords}
+            outside={outside}
+            solo={kinds?.solo}
+            onShowThreads={() => useThreadsView.setState({ view: "threads" })}
           />
         ) : (
-          <ul data-testid="threads-list" className="flex flex-col gap-px">
-            {shown.map((listing) => (
-              <ThreadRow key={listing.summary.thread.id} listing={listing} groups={groups} />
-            ))}
-          </ul>
-        )}
-        {kept.length > shown.length && (
-          <p className="text-center text-meta text-muted-foreground">
-            {kept.length - shown.length} more; search to find them.
-          </p>
+          <>
+            {!none && (
+              <label className="relative flex items-center">
+                <Search
+                  aria-hidden
+                  className="pointer-events-none absolute left-2.5 size-icon-row text-muted-foreground"
+                />
+                <input
+                  type="search"
+                  data-testid="threads-search"
+                  aria-label="Search threads"
+                  placeholder="Search threads"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="h-9 w-full rounded-lg border border-input bg-transparent pr-2.5 pl-8 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                />
+              </label>
+            )}
+            {listings.length > 0 && (
+              <div
+                role="radiogroup"
+                aria-label="Show"
+                data-testid="threads-filter"
+                className="flex flex-wrap items-center gap-1.5"
+              >
+                {THREADS_FILTERS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={picked === value}
+                    disabled={counts[value] === 0}
+                    data-filter={value}
+                    onClick={() => setFilter(value)}
+                    className="flex h-7 items-center gap-1.5 rounded-full border border-border px-3 text-meta text-muted-foreground outline-none transition-colors duration-(--dur-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 aria-checked:border-transparent aria-checked:bg-secondary aria-checked:text-foreground phone:h-9"
+                  >
+                    {label}
+                    <span className="tabular-nums opacity-70">{counts[value]}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {shown.length === 0 ? (
+              <EmptyState
+                testId="threads-empty"
+                icon={MessagesSquare}
+                title={query.trim() === "" ? "No threads yet" : "No thread matches"}
+                line={
+                  query.trim() === ""
+                    ? "Start a task and it is listed here, with every worker an orchestrator hands work to."
+                    : "Try other words: a title, a workspace, or what started it."
+                }
+              />
+            ) : (
+              <ul data-testid="threads-list" className="flex flex-col gap-px">
+                {shown.map((listing) => (
+                  <ThreadRow key={listing.summary.thread.id} listing={listing} groups={groups} />
+                ))}
+              </ul>
+            )}
+            {kept.length > shown.length && (
+              <p className="text-center text-meta text-muted-foreground">
+                {kept.length - shown.length} more; search to find them.
+              </p>
+            )}
+          </>
         )}
       </div>
     </section>

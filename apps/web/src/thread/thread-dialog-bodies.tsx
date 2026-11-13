@@ -1,3 +1,4 @@
+import { MoveWorkspaceDialog } from "@/orchestration/move-workspace";
 import { RemoveWorkspaceDialog } from "@/orchestration/remove-workspace";
 import { AddRepoDialog } from "@/orchestration/workspace-repos";
 import { ProjectScriptsDialog } from "@/scripts/project-scripts-dialog";
@@ -70,6 +71,9 @@ export function ThreadDialogBody({
       )}
       {dialog.kind === "removeWorkspace" && (
         <RemoveWorkspaceDialog workspaceId={dialog.workspaceId} onClose={dismiss} />
+      )}
+      {dialog.kind === "moveWorkspace" && (
+        <MoveWorkspaceDialog workspaceId={dialog.workspaceId} onClose={dismiss} />
       )}
       {dialog.kind === "projectScripts" && (
         <ProjectScriptsDialog projectId={dialog.projectId} onClose={dismiss} />

@@ -379,6 +379,43 @@ export interface HostedDeviceActivity {
 
 export type HostedDeviceDone = { readonly ok: true } | { readonly ok: false; readonly why: string };
 
+/**
+ * What a hosted server says of a workspace before it is moved there: which of its repositories
+ * the server reaches, and the most autonomy the organisation allows where that is less than the
+ * workspace has. Asked with the person's sign-in; nothing is sent or changed by asking.
+ */
+export type HostedMoveCheck =
+  | {
+      readonly ok: true;
+      readonly repositories: ReadonlyArray<{
+        /** As the server names it: `owner/name`. */
+        readonly name: string;
+        readonly reached: boolean;
+      }>;
+      readonly autonomyCeiling?: "supervised" | "publish" | "full";
+    }
+  | { readonly ok: false; readonly why: string };
+
+/** Where a move is: workers stopping here, the bundle going up, the server setting it up. */
+export interface HostedMoveProgress {
+  readonly stage: "stopping" | "sending" | "settingUp";
+  /** While sending: how much of the bundle the server has. */
+  readonly sentBytes?: number;
+  readonly totalBytes?: number;
+}
+
+/** How a move ended. `left` is what did not come, in the words the server's orchestrator was told. */
+export type HostedMoveDone =
+  | {
+      readonly ok: true;
+      /** Milliseconds since the epoch. */
+      readonly movedAt: number;
+      /** The workspace's address on the server, for the browser. */
+      readonly url?: string;
+      readonly left: readonly string[];
+    }
+  | { readonly ok: false; readonly cancelled?: boolean; readonly why: string };
+
 export interface DesktopBridge extends DesktopWindows {
   readonly platform: "darwin" | "win32" | "linux" | (string & {});
   /** Absolute filesystem path of a dropped/selected `File`. */
@@ -477,6 +514,18 @@ export interface DesktopBridge extends DesktopWindows {
     startAfresh(): Promise<HostedDeviceDone>;
     /** The local record, read again on each call. */
     activity(): Promise<HostedDeviceActivity | null>;
+    /**
+     * Moving a workspace of this machine to a server signed in to, where the shell can: `check`
+     * asks the server what it would take, `start` stops the workspace's workers, sends its bundle
+     * and answers once the server has set it up, and `cancel` stops a move under way. Nothing here
+     * is deleted by a move, and nothing changes here until the server has it all.
+     */
+    readonly move?: {
+      check(origin: string, workspace: string, workspaceId: string): Promise<HostedMoveCheck>;
+      start(origin: string, workspace: string, workspaceId: string): Promise<HostedMoveDone>;
+      cancel(): Promise<void>;
+      onProgress(callback: (progress: HostedMoveProgress) => void): () => void;
+    };
     onChange(callback: () => void): () => void;
   };
   /**

@@ -24,7 +24,10 @@ export interface ShellSlotProps {
 }
 
 /** An icon for a destination: any component that draws at the size its `className` sets. */
-export type ShellIcon = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+export type ShellIcon = ComponentType<{
+  className?: string;
+  "aria-hidden"?: boolean;
+}>;
 
 /** A page of the embedding app's, shown in the conversation's place with Gram's shell around it. */
 export interface ShellRoute {
@@ -292,6 +295,23 @@ export interface ShellThreadsPage {
    * own. `views`, the default, is Gram's workspace switcher and Chat · Board.
    */
   readonly bar?: "views" | "path";
+  /**
+   * Given, the page opens on a list of the workspaces in place of every thread, in the embedding
+   * app's word for one: each workspace's repositories, what waits on you, what runs, its open pull
+   * requests and its autonomy, with a task for it, its Board, its settings and its pause beside
+   * them. The threads are one click away, on a switch in the page's head that counts both, and the
+   * head gains a button that starts a workspace. For an app whose people start from a workspace.
+   * Left out, the page lists the threads alone, as Gram's own does.
+   */
+  readonly workspaces?: ShellThreadsWorkspaces;
+}
+
+/** The list of workspaces on the page of every thread, in the embedding app's word for one. */
+export interface ShellThreadsWorkspaces {
+  /** One workspace: "Project". It words the button that starts one and the empty list. */
+  readonly noun: string;
+  /** More than one: "Projects". The list's name on the page's switch. */
+  readonly plural: string;
 }
 
 /** One of the New form's Who does it choices, in the embedding app's words. */
@@ -461,7 +481,10 @@ export interface MockThread {
   readonly id: string;
   readonly title: string;
   /** Its conversation so far, as plain text, oldest first. */
-  readonly messages?: readonly { readonly role: "user" | "assistant"; readonly text: string }[];
+  readonly messages?: readonly {
+    readonly role: "user" | "assistant";
+    readonly text: string;
+  }[];
   /**
    * Makes it a worker of the named workspace's orchestrator, started with `brief` for `feature`,
    * when the mock has that workspace. `askedBy` is the id of another of these threads whose message

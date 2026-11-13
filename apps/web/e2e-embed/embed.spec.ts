@@ -122,7 +122,10 @@ test("the switcher is the embedding app's, in the sidebar and then in the title 
 });
 
 type Update = {
-  embed: { update: (next: object) => void; navigate: (to: string) => Promise<void> };
+  embed: {
+    update: (next: object) => void;
+    navigate: (to: string) => Promise<void>;
+  };
 };
 
 test("the navigation and the switcher can be replaced after mounting", async ({ page }) => {
@@ -151,7 +154,9 @@ test("the navigation and the switcher can be replaced after mounting", async ({ 
 
   // Named as undefined, it is taken away.
   await page.evaluate(() => {
-    (window as unknown as Update).embed.update({ workspaceSwitcher: undefined });
+    (window as unknown as Update).embed.update({
+      workspaceSwitcher: undefined,
+    });
   });
   await expect(page.getByTestId("embed-switcher")).toHaveCount(0);
   await expect(navigation.getByRole("heading", { name: "Build" })).toBeVisible();
@@ -285,7 +290,11 @@ test("the page of every thread and New take the embedding app's words", async ({
       threadsPage: {
         title: "Chat",
         newLabel: "New chat",
-        kinds: { solo: "One agent", orchestrator: "Team lead", worker: "Team member" },
+        kinds: {
+          solo: "One agent",
+          orchestrator: "Team lead",
+          worker: "Team member",
+        },
       },
       newEntry: { label: "New policy", to: "/govern/policies" },
     });
@@ -359,12 +368,94 @@ test("the page of every thread and New take the embedding app's words", async ({
   await expect(page).toHaveURL(/\/threads$/);
   // Taken away again, Gram's own words return.
   await page.evaluate(() => {
-    (window as unknown as Update).embed.update({ threadsPage: undefined, newEntry: undefined });
+    (window as unknown as Update).embed.update({
+      threadsPage: undefined,
+      newEntry: undefined,
+    });
     void (window as unknown as Update).embed.navigate("/threads");
   });
   await expect(page.getByTestId("threads-page").getByRole("heading")).toHaveText("Threads");
   await expect(page.getByTestId("threads-new")).toHaveText("New task");
   await expect(page.getByTestId("new-entry").first()).toHaveAttribute("aria-haspopup", "menu");
+  expect(errors).toEqual([]);
+});
+
+test("the page of every thread can open on the workspaces, in the app's word for one", async ({
+  page,
+}) => {
+  const errors = await mounted(page);
+  await page.evaluate(() => {
+    const embed = (window as unknown as Update).embed;
+    embed.update({
+      threadsPage: {
+        title: "Coding",
+        kinds: { solo: "Standalone agent" },
+        workspaces: { noun: "Project", plural: "Projects" },
+      },
+    });
+    void embed.navigate("/threads");
+  });
+  // The page opens on the list of workspaces, named as the app names them, with both counted.
+  const view = page.getByTestId("threads-view");
+  await expect(view.getByRole("radio", { name: /^Projects \d+/ })).toBeChecked();
+  await expect(view.getByRole("radio", { name: /^Threads \d+/ })).not.toBeChecked();
+  await expect(page.getByTestId("threads-new-workspace")).toHaveText("New project");
+  await expect(page.getByTestId("threads-new")).toHaveText("New task");
+  await expect(page.getByTestId("threads-search")).toHaveCount(0);
+  // With no workspace yet the list says what one is, and starts one or a thread in none.
+  const empty = page.getByTestId("workspaces-empty");
+  await expect(empty).toContainText("No project yet");
+  await expect(empty).toContainText("A project is an orchestrator and its workers");
+  await expect(page.getByTestId("workspaces-empty-new")).toHaveText("New project");
+  await expect(page.getByTestId("workspaces-empty-solo")).toHaveText("Start a standalone agent");
+  await expect(page.getByTestId("workspaces-outside")).toHaveCount(0);
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        gramMock: { simulateOrchestration: () => Promise<unknown> };
+      }
+    ).gramMock.simulateOrchestration(),
+  );
+  // The threads in no workspace are counted under the list, a click from where they are listed.
+  await expect(page.getByTestId("workspaces-outside")).toContainText(
+    /\d+ threads outside a project/,
+  );
+  // A workspace's row: its name, what runs or that nothing does, its autonomy and its actions.
+  const row = page.getByTestId("workspaces-row").first();
+  await expect(row.getByTestId("workspaces-row-open")).not.toBeEmpty();
+  await expect(row.getByTestId("workspaces-row-facts")).toContainText(/running|Paused/);
+  await expect(row.getByTestId("workspaces-row-autonomy")).toBeVisible();
+  await expect(row.getByTestId("workspaces-row-board")).toBeVisible();
+  await expect(row.getByTestId("workspaces-row-settings")).toBeVisible();
+  // Pausing it turns its task into Resume, and resuming brings the task back.
+  const id = await row.getAttribute("data-workspace-id");
+  const same = page.locator(`[data-testid="workspaces-row"][data-workspace-id="${id}"]`);
+  await same.getByTestId("workspaces-row-pause").click();
+  await expect(same).toHaveAttribute("data-paused", "true");
+  await expect(same.getByTestId("workspaces-row-facts")).toContainText("Paused");
+  await expect(same.getByTestId("workspaces-row-new")).toHaveCount(0);
+  await same.getByTestId("workspaces-row-resume").click();
+  await expect(same).not.toHaveAttribute("data-paused", "true");
+  // The threads are one click away, and the list comes back as it was left.
+  await view.getByRole("radio", { name: /^Threads/ }).click();
+  await expect(page.getByTestId("threads-search")).toBeVisible();
+  await expect(page.getByTestId("workspaces-row")).toHaveCount(0);
+  await view.getByRole("radio", { name: /^Projects/ }).click();
+  // A task for one workspace starts on it.
+  await same.getByTestId("workspaces-row-new").click();
+  await expect(page).toHaveURL(new RegExp(`/new-task\\?.*workspace=${id}`));
+  // New project opens the form that starts one.
+  await page.evaluate(() => (window as unknown as Update).embed.navigate("/threads"));
+  await page.getByTestId("threads-new-workspace").click();
+  await expect(page).toHaveURL(/\/new-workspace$/);
+  // Left out again, the page lists the threads alone.
+  await page.evaluate(() => {
+    const embed = (window as unknown as Update).embed;
+    embed.update({ threadsPage: undefined });
+    void embed.navigate("/threads");
+  });
+  await expect(page.getByTestId("threads-view")).toHaveCount(0);
+  await expect(page.getByTestId("threads-new-workspace")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -443,7 +534,10 @@ test("a headless server reports no setup problems of its own machine", async ({ 
         JSON.stringify({
           tools:
             from === "looked"
-              ? ["claude", "codex", "git", "gh"].map((tool) => ({ tool, found: false }))
+              ? ["claude", "codex", "git", "gh"].map((tool) => ({
+                  tool,
+                  found: false,
+                }))
               : [],
           claudeSignIn: "unknown",
           ghSignedIn: false,
@@ -738,7 +832,12 @@ test("a collapsible group starts closed, keeps its place in view, and stays as i
           collapsible: true,
           collapsed: true,
           items: [
-            { id: "agents", label: "Agents", to: "/govern/agents/a-1", count: 2 },
+            {
+              id: "agents",
+              label: "Agents",
+              to: "/govern/agents/a-1",
+              count: 2,
+            },
             { id: "policies", label: "Policies", to: "/govern/policies" },
           ],
         },
@@ -930,7 +1029,11 @@ test("an added page is a page of settings, from the kit's pieces", async ({ page
 
 test.describe("on a phone", () => {
   // A phone is a narrow window with a touch screen as its pointer.
-  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  test.use({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
 
   test("the header names the added page and the group it is listed in", async ({ page }) => {
     const errors = await mounted(page, "/govern/limits");
