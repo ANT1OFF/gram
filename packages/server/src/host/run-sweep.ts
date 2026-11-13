@@ -98,8 +98,11 @@ export const procScan = (
   return { ok: true, carriers };
 };
 
-const PLAIN = /^\s*(\d+)\s+(\d+)\s+(\w{3} \w{3}\s+\d+ \d\d:\d\d:\d\d \d{4}) (.*)$/;
-const WITH_ENV = /^\s*(\d+) (.*)$/;
+// Each column ends where the next begins, whatever padding `ps` puts between them: its own
+// right-aligned pid and uid, and the blanks after `lstart`, which macOS pads to a fixed width.
+// The command is everything from its first non-blank on, in both listings alike.
+const PLAIN = /^\s*(\d+)\s+(\d+)\s+(\w{3} \w{3}\s+\d+ \d\d:\d\d:\d\d \d{4})\s+(\S.*)$/;
+const WITH_ENV = /^\s*(\d+)\s+(\S.*)$/;
 
 /**
  * This user's processes carrying one of `tokens`, from two `ps` listings (macOS): `plain` with each

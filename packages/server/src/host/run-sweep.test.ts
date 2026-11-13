@@ -76,6 +76,27 @@ describe("the scan of a kept-running host's processes", () => {
     });
   });
 
+  it("reads native ps output, its padded columns included (macOS)", () => {
+    // As macOS prints it: right-aligned pid and uid, and lstart padded with blanks before the
+    // command. The review's reproduction: one blank was taken, so every process read as changed.
+    const plain = [
+      `  101   ${ME} Thu Nov 13 01:02:03 2026     /bin/zsh -l`,
+      `98765   ${ME} Wed Nov  5 23:59:01 2026     /usr/bin/sleep 999`,
+    ].join("\n");
+    const withEnv = [
+      `  101 /bin/zsh -l HOME=/Users/x ${RUN_TOKEN_ENV}=${TOKEN}`,
+      `98765 /usr/bin/sleep 999 TERM=xterm`,
+    ].join("\n");
+    expect(psScan([TOKEN], plain, withEnv, ME, 1)).toEqual({
+      ok: true,
+      carriers: [{ pid: 101, start: "Thu Nov 13 01:02:03 2026" }],
+    });
+    // Still a failure when the two listings disagree about a process.
+    expect(
+      psScan([TOKEN], plain, `  101 /bin/bash -c x A=1\n98765 /usr/bin/sleep 999`, ME, 1).ok,
+    ).toBe(false);
+  });
+
   it("calls a listing it can't read whole a failure, not an empty result (macOS)", () => {
     expect(psScan([TOKEN], "", "", ME, 1).ok).toBe(false);
     expect(psScan([TOKEN], "garbage line", "", ME, 1).ok).toBe(false);

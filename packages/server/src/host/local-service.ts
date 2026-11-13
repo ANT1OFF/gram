@@ -5,10 +5,9 @@
 // terminals across connections, and ends on its own once no app is connected and nothing of a
 // thread runs there, so it never lingers. It listens on nothing else.
 
-import { chmodSync, lstatSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket as NetSocket } from "node:net";
 import { dirname } from "node:path";
-import { userInfo } from "node:os";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -18,7 +17,7 @@ import * as Schedule from "effect/Schedule";
 import * as FiberSet from "effect/FiberSet";
 import type * as Scope from "effect/Scope";
 import { DAY_MS } from "../zone-time.ts";
-import { admitApp, macFramed, readLocalSecret } from "./local-handshake.ts";
+import { admitApp, assertPrivate, macFramed, readLocalSecret } from "./local-handshake.ts";
 import { type HostService, serveHost } from "./protocol.ts";
 import type { HostBusy } from "@gram/contracts";
 
@@ -49,12 +48,7 @@ export const runningNow = (busy: {
 export const privateSocketFolder = (socketPath: string): void => {
   const folder = dirname(socketPath);
   mkdirSync(folder, { recursive: true, mode: 0o700 });
-  const info = lstatSync(folder);
-  if (!info.isDirectory() || info.isSymbolicLink())
-    throw new Error(`${folder} isn't a plain folder.`);
-  if (process.platform !== "win32" && info.uid !== userInfo().uid)
-    throw new Error(`${folder} belongs to another user.`);
-  chmodSync(folder, 0o700);
+  assertPrivate(folder, 0o700);
 };
 
 /** Whether a host already answers on `socketPath`. */
@@ -95,7 +89,10 @@ export const serveLocal = <R>(
   options: LocalServiceOptions,
 ): Effect.Effect<void, Error, R | Scope.Scope> =>
   Effect.gen(function* () {
+    // Refused, not fixed up: a folder or secret anyone else could read or swap isn't trusted.
     privateSocketFolder(socketPath);
+    assertPrivate(dirname(options.secretFile), 0o700);
+    assertPrivate(options.secretFile, 0o600);
     if (yield* Effect.promise(() => answering(socketPath)))
       return yield* Effect.fail(
         new Error(`Another host already serves ${socketPath}; this one stops.`),

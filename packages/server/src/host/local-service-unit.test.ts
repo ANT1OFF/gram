@@ -1,16 +1,19 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   renameSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import { afterEach } from "vitest";
 import { KEPT_TERMINALS_ENV } from "../terminal/kept.ts";
 import {
@@ -27,6 +30,7 @@ import {
   keptHostInstances,
   keptHostRegistry,
   readRunTokens,
+  lifecycle,
 } from "./local-service-unit.ts";
 import type { Run } from "./service.ts";
 import { RUN_TOKEN_ENV } from "./run-sweep.ts";
@@ -361,6 +365,19 @@ describe("the kept-running host's service", () => {
       // The review's reproduction: the data folder is moved away while its host waits on an
       // approval, and another Gram starts.
       const movedToken = readFileSync(moved.runFile, "utf8").trim();
+      // An entry from before generations were kept (one `runToken`), for a folder also gone.
+      const legacy = localServicePaths(join(root, "legacy"), "linux", env, root);
+      writeFileSync(
+        legacy.registryFile,
+        JSON.stringify({
+          id: legacy.id,
+          platform: "linux",
+          dataDir: join(root, "legacy"),
+          name: legacy.name,
+          serviceFile: legacy.serviceFile,
+          runToken: "f".repeat(32),
+        }),
+      );
       renameSync(join(root, "moved"), join(root, "elsewhere"));
       const calls: Array<string> = [];
       const swept: Array<string> = [];
@@ -372,11 +389,15 @@ describe("the kept-running host's service", () => {
       const outcome = yield* sweepAbandoned("linux", inactive, env, root, (tokens) =>
         Effect.sync(() => void swept.push(...tokens)),
       );
-      expect(outcome).toEqual({ stopped: [moved.name], failed: [] });
+      expect({ ...outcome, stopped: outcome.stopped.toSorted() }).toEqual({
+        stopped: [moved.name, legacy.name].toSorted(),
+        failed: [],
+      });
       expect(calls).toContain(`systemctl --user stop ${moved.name}`);
       expect(calls.some((call) => call.includes(kept.name))).toBe(false);
       // Its run token came from the registry, its own file having moved with the folder.
-      expect(swept).toEqual([movedToken]);
+      // The review's reproduction: the old entry was dropped, its run never swept.
+      expect(swept.toSorted()).toEqual([movedToken, "f".repeat(32)].toSorted());
       expect(keptHostInstances(registry).map((i) => i.name)).toEqual([kept.name]);
       // One that won't stop stays in the registry, for the next start to try again.
       rmSync(kept.secretFile);
@@ -470,5 +491,73 @@ describe("the kept-running host's service", () => {
         yield* stopLocalService("linux", paths, runner, true, noSweep, [], () => "");
         yield* stopLocalService("linux", paths, runner, true, noSweep, [], () => undefined);
       }),
+  );
+
+  it.effect("refuses a start rather than let an unverified generation go", () =>
+    Effect.gen(function* () {
+      const paths = fresh("linux");
+      const spec = {
+        dataDir: "/data",
+        platform: "linux" as const,
+        paths,
+        program: ["/x"],
+        env: {},
+      };
+      // Running, so a start never sweeps: every generation stays unverified.
+      for (let i = 0; i < 64; i++) yield* startLocalService(spec, systemd(true, true), unverified);
+      const all = readRunTokens(paths);
+      expect(all).toHaveLength(64);
+      const refused = yield* startLocalService(spec, systemd(true, true), unverified).pipe(
+        Effect.flip,
+      );
+      expect(refused.message).toContain("Stop it in Settings");
+      // The review's reproduction: the 65th start evicted the oldest. Every one is still there.
+      expect(readRunTokens(paths)).toEqual(all);
+    }),
+  );
+
+  it.live("keeps its lock while the owner lives, however long, and frees only its own", () =>
+    Effect.gen(function* () {
+      const paths = fresh("linux");
+      const lock = join(dirname(paths.registryFile), `${paths.id}.lock`);
+      const holding = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      // An owner that stays active past the old two-minute threshold (its folder made long ago).
+      const first = yield* lifecycle(
+        paths,
+        Effect.promise(() => {
+          holding.resolve();
+          return release.promise;
+        }),
+      ).pipe(Effect.forkScoped);
+      yield* Effect.promise(() => holding.promise);
+      const old = new Date(Date.now() - 10 * 60_000);
+      utimesSync(lock, old, old);
+      const second = yield* lifecycle(paths, Effect.void, { waitMs: 400 }).pipe(Effect.flip);
+      expect(second.message).toContain("under way");
+      release.resolve();
+      yield* Fiber.join(first);
+      expect(existsSync(lock)).toBe(false);
+      // An owner that is gone (no process with its pid and start time) is taken over.
+      mkdirSync(lock);
+      writeFileSync(
+        join(lock, "owner.json"),
+        JSON.stringify({ pid: 999999, start: "x", nonce: "n" }),
+      );
+      yield* lifecycle(paths, Effect.void, { waitMs: 400 });
+      expect(existsSync(lock)).toBe(false);
+      // A late release never removes the lock a successor holds.
+      yield* lifecycle(
+        paths,
+        Effect.sync(() =>
+          writeFileSync(
+            join(lock, "owner.json"),
+            JSON.stringify({ pid: process.pid, start: "s", nonce: "successor" }),
+          ),
+        ),
+      );
+      expect(existsSync(lock)).toBe(true);
+      rmSync(lock, { recursive: true });
+    }),
   );
 });

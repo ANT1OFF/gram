@@ -8,7 +8,7 @@
 // and never displaces the app that is.
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { Socket } from "node:net";
 import { Duplex } from "node:stream";
 import { dirname } from "node:path";
@@ -27,29 +27,53 @@ const same = (a: string, b: string) =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 /**
- * The install's secret in `file`, made now (32 random bytes, hex) when there is none. Readable by
- * this user alone, in a folder only they can open.
+ * Throws unless `path` is this user's own, not a link, and gives no one else more than `mode`
+ * allows (0700 for a folder, 0600 for a file). Nothing is loosened or fixed up: a secret or
+ * socket folder someone else could have read or swapped is refused, not trusted.
+ */
+export const assertPrivate = (path: string, mode: 0o700 | 0o600): void => {
+  const info = lstatSync(path);
+  if (info.isSymbolicLink()) throw new Error(`${path} is a link, so Gram won't use it.`);
+  if (mode === 0o700 ? !info.isDirectory() : !info.isFile())
+    throw new Error(`${path} isn't a plain ${mode === 0o700 ? "folder" : "file"}.`);
+  const uid = process.getuid?.();
+  if (uid !== undefined && info.uid !== uid) throw new Error(`${path} belongs to another user.`);
+  if ((info.mode & 0o777 & ~mode) !== 0)
+    throw new Error(
+      `${path} is open to others (mode ${(info.mode & 0o777).toString(8)}); make it ${mode.toString(8)} or remove it.`,
+    );
+};
+
+/**
+ * The install's secret in `file`, made now (32 random bytes, hex) when there is none. The file
+ * (0600) and its folder (0700) must be this user's alone: one looser than that, or another's, is
+ * refused rather than trusted.
  */
 export const ensureLocalSecret = (file: string): string => {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  assertPrivate(dirname(file), 0o700);
+  let kept: string | undefined;
   try {
-    const kept = readFileSync(file, "utf8").trim();
-    if (HEX.test(kept)) {
-      chmodSync(file, 0o600);
-      return kept;
-    }
+    kept = readFileSync(file, "utf8").trim();
   } catch {
     // None yet.
+  }
+  if (kept !== undefined) {
+    assertPrivate(file, 0o600);
+    if (HEX.test(kept)) return kept;
   }
   const made = randomBytes(32).toString("hex");
   writeFileSync(file, `${made}\n`, { mode: 0o600 });
   chmodSync(file, 0o600);
+  assertPrivate(file, 0o600);
   return made;
 };
 
 /** The secret in `file`, or undefined when it is missing or isn't one. */
 export const readLocalSecret = (file: string): string | undefined => {
   try {
+    assertPrivate(dirname(file), 0o700);
+    assertPrivate(file, 0o600);
     const kept = readFileSync(file, "utf8").trim();
     return HEX.test(kept) ? kept : undefined;
   } catch {

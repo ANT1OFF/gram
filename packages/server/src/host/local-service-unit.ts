@@ -17,7 +17,6 @@ import {
   readFileSync,
   renameSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { createConnection, type Socket as NetSocket } from "node:net";
@@ -368,7 +367,15 @@ export const startLocalService = (
       }
       // A token of this start, which everything it starts inherits, so a stop finds it all.
       const token = randomBytes(16).toString("hex");
-      outstanding = [...outstanding, token].slice(-RUNS_KEPT);
+      // An unverified generation is never let go to make room: past the bound the start is
+      // refused, and a Stop (which cleans every outstanding run up, verified) makes room again.
+      if (outstanding.length >= RUNS_KEPT)
+        return yield* Effect.fail(
+          new Error(
+            `${outstanding.length} earlier runs of the service aren't verified ended. Stop it in Settings to clean them up, then start it again.`,
+          ),
+        );
+      outstanding = [...outstanding, token];
       writeRunTokens(paths, outstanding);
       // Found again whatever happens to the data folder: moved, removed, or another Gram's.
       recordInstance(paths, spec.dataDir, platform, outstanding);
@@ -543,35 +550,103 @@ const verifyCgroupEmpty = (
 /** How many runs' tokens are kept at most while their cleanup isn't verified. */
 const RUNS_KEPT = 64;
 
+/** A process's start time, which a pid reused by another process doesn't share. */
+export const processStart = (pid: number): string | undefined => {
+  try {
+    if (process.platform === "linux") {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19];
+    }
+    process.kill(pid, 0);
+    // Elsewhere, a live pid alone: no process start time short of `ps`, which a lock can't wait on.
+    return "alive";
+  } catch {
+    return undefined;
+  }
+};
+
+interface LockOwner {
+  readonly pid: number;
+  readonly start: string;
+  readonly nonce: string;
+}
+
+const lockOwner = (lock: string): LockOwner | undefined => {
+  try {
+    const owner = JSON.parse(readFileSync(join(lock, "owner.json"), "utf8")) as LockOwner;
+    return typeof owner.pid === "number" && typeof owner.nonce === "string" ? owner : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 /**
- * Runs `effect` holding the instance's lifecycle lock (a folder made beside its files), so two
- * starts or stops never interleave, here or in another Gram. A lock older than two minutes was
- * left by a process that died holding it, and is taken over.
+ * Runs `effect` holding the instance's lifecycle lock, so two starts or stops never interleave, in
+ * this Gram or another. The lock is a folder made atomically, with its owner (pid, the process's
+ * start time and a nonce) inside. It is taken over only when that owner is verifiably gone: no
+ * process with that pid and start time. A live owner keeps it however long it holds it. Releasing
+ * removes the lock only while it is still the one this holder made, by its nonce, so a late
+ * release never removes a successor's.
  */
-const lifecycle = <A, E, R>(paths: LocalServicePaths, effect: Effect.Effect<A, E, R>) => {
+export const lifecycle = <A, E, R>(
+  paths: LocalServicePaths,
+  effect: Effect.Effect<A, E, R>,
+  options: {
+    readonly waitMs?: number;
+    readonly started?: (pid: number) => string | undefined;
+  } = {},
+) => {
   const lock = join(dirname(paths.registryFile), `${paths.id}.lock`);
+  const started = options.started ?? processStart;
+  const nonce = randomBytes(16).toString("hex");
   return Effect.acquireUseRelease(
     Effect.gen(function* () {
       mkdirSync(dirname(lock), { recursive: true, mode: 0o700 });
-      for (let i = 0; ; i++) {
+      const until = Date.now() + (options.waitMs ?? 15_000);
+      while (true) {
         try {
           mkdirSync(lock, { mode: 0o700 });
+          const owner: LockOwner = {
+            pid: process.pid,
+            start: started(process.pid) ?? "unknown",
+            nonce,
+          };
+          writeFileSync(join(lock, "owner.json"), JSON.stringify(owner), { mode: 0o600 });
           return;
         } catch {
-          try {
-            if (Date.now() - statSync(lock).mtimeMs > 120_000) rmSync(lock, { recursive: true });
-          } catch {
-            // Let go meanwhile.
+          const owner = lockOwner(lock);
+          // Made but its owner not yet written: a holder between its two steps, alive.
+          const dead = owner !== undefined && started(owner.pid) !== owner.start;
+          if (dead) {
+            // Moved aside first, atomically, so two takers never both remove it.
+            const aside = `${lock}.gone-${randomBytes(4).toString("hex")}`;
+            try {
+              renameSync(lock, aside);
+              if (lockOwner(aside)?.nonce === owner.nonce) rmSync(aside, { recursive: true });
+              else renameSync(aside, lock);
+            } catch {
+              // Taken over by another meanwhile.
+            }
+            continue;
           }
-          if (i >= 150) return yield* Effect.die(new Error(`${lock} is held`));
+          if (Date.now() >= until)
+            return yield* Effect.fail(
+              new Error(
+                "Another start or stop of the kept-running host is under way; try again in a moment.",
+              ),
+            );
           yield* Effect.sleep("100 millis");
         }
       }
     }),
     () => effect,
-    () => Effect.sync(() => rmSync(lock, { recursive: true, force: true })),
+    () =>
+      Effect.sync(() => {
+        if (lockOwner(lock)?.nonce === nonce) rmSync(lock, { recursive: true, force: true });
+      }),
   );
 };
+
 export interface KeptHostInstance {
   readonly id: string;
   readonly platform: LocalServicePlatform;
@@ -617,14 +692,24 @@ export const keptHostInstances = (registry: string): ReadonlyArray<KeptHostInsta
   for (const name of names) {
     if (!name.endsWith(".json")) continue;
     try {
-      const entry = JSON.parse(readFileSync(join(registry, name), "utf8")) as KeptHostInstance;
+      const raw = JSON.parse(readFileSync(join(registry, name), "utf8")) as KeptHostInstance & {
+        readonly runToken?: unknown;
+      };
+      // An entry from before generations were kept names its one token as `runToken`.
+      const runTokens = Array.isArray(raw.runTokens)
+        ? raw.runTokens.filter((token): token is string => typeof token === "string")
+        : typeof raw.runToken === "string"
+          ? [raw.runToken]
+          : undefined;
       if (
-        typeof entry.dataDir === "string" &&
-        typeof entry.name === "string" &&
-        Array.isArray(entry.runTokens) &&
-        `${entry.id}.json` === name
-      )
-        found.push(entry);
+        typeof raw.dataDir === "string" &&
+        typeof raw.name === "string" &&
+        runTokens !== undefined &&
+        `${raw.id}.json` === name
+      ) {
+        const { runToken: _old, ...rest } = raw;
+        found.push({ ...rest, runTokens });
+      }
     } catch {
       // Unreadable: left for a person to look at, never acted on.
     }

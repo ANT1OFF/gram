@@ -1,10 +1,10 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { createConnection, createServer, type Socket } from "node:net";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { macFramed } from "./local-handshake.ts";
+import { assertPrivate, ensureLocalSecret, macFramed, readLocalSecret } from "./local-handshake.ts";
 
 const dirs: Array<string> = [];
 afterEach(() => {
@@ -96,4 +96,36 @@ describe("frames after the handshake", () => {
     expect(read).toEqual(["approve\n"]);
     a.destroy();
   });
+});
+
+describe("the install's secret and its folder", () => {
+  it.skipIf(process.getuid?.() === 0)(
+    "are refused when open to others, never loosened or fixed up",
+    () => {
+      const root = mkdtempSync(join(tmpdir(), "gram-secret-"));
+      dirs.push(root);
+      const folder = join(root, "local-host");
+      const file = join(folder, "secret");
+      const made = ensureLocalSecret(file);
+      expect(statSync(folder).mode & 0o777).toBe(0o700);
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+      expect(ensureLocalSecret(file)).toBe(made);
+      // The review's reproduction: a secret others can read.
+      chmodSync(file, 0o644);
+      expect(() => ensureLocalSecret(file)).toThrow(/open to others/);
+      expect(readLocalSecret(file)).toBeUndefined();
+      chmodSync(file, 0o600);
+      // A folder others can open.
+      chmodSync(folder, 0o755);
+      expect(() => ensureLocalSecret(file)).toThrow(/open to others/);
+      expect(() => assertPrivate(folder, 0o700)).toThrow();
+      chmodSync(folder, 0o700);
+      expect(readLocalSecret(file)).toBe(made);
+      // A link in its place.
+      rmSync(file);
+      symlinkSync(join(root, "elsewhere"), file);
+      writeFileSync(join(root, "elsewhere"), `${"e".repeat(64)}\n`, { mode: 0o600 });
+      expect(() => ensureLocalSecret(file)).toThrow(/link/);
+    },
+  );
 });

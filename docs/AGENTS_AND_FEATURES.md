@@ -1237,7 +1237,13 @@ can't add, alter, replay or reflect a frame: the connection closes on the first 
 verify, and an unproven connection never displaces the connected app. The host does **not**
 defend against code running as you. Such code can read the secret, as it can already read the
 CLIs' logins and the rest of Gram's data, and same-user programs are inside Gram's trust boundary.
-The service is told the secret file's name, never the secret. Its environment file carries only `PATH`,
+Frames are authenticated, not encrypted: what crosses the socket (an MCP bearer token, say) is
+readable to whatever can reach the socket. Only code running as you can, through a 0700 folder, and
+that code is trusted, so encryption would add nothing. Gram refuses to start the host, or to use its
+secret, when the socket's folder or the secret's is looser than 0700, the secret looser than 0600,
+either belongs to another user, or either is a link. It never loosens or repairs them silently. The
+service is told the secret file's name, never the secret. Starts and stops of one host are
+serialized by a lock that is taken over only once its owner process is verifiably gone. Its environment file carries only `PATH`,
 locale and XDG folder names, `CLAUDE_CONFIG_DIR` and Gram's own settings for it, never a token, key
 or proxy address. Claude Code finds your sign-in where it keeps it, as it does from a terminal. Gram
 keeps a record of the sessions it left running (`local-host/sessions.json`, readable by you only).
