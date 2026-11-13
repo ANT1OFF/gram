@@ -56,7 +56,7 @@ const line = () => screen.getByTestId("phone-title-line");
 
 afterEach(() => {
   cleanup();
-  useEmbedShell.setState({ navigation: [], titles: {} });
+  useEmbedShell.setState({ navigation: [], titles: {}, threadsPage: {} });
   Object.assign(at, {
     pathname: "/",
     threadId: undefined,
@@ -85,6 +85,20 @@ describe("PhoneTitle", () => {
     render(<PhoneTitle />);
     expect(line().textContent).toBe("Solo · Needs approval");
     expect(line().dataset.asks).toBe("true");
+  });
+
+  it("puts a thread an app shows in a place of its own under that place, and no kind of thread", () => {
+    Object.assign(at, { pathname: "/chat/a", threadId: "a", solo: true });
+    useEmbedShell.setState({
+      threadsPage: { places: [{ name: "Chat", path: "/chat/$threadId", ids: ["a"] }] },
+    });
+    thread("a", "idle");
+    render(<PhoneTitle />);
+    expect(line().textContent).toBe("Chat");
+    cleanup();
+    thread("a", "running");
+    render(<PhoneTitle />);
+    expect(line().textContent).toBe("Chat · Running");
   });
 
   it("names a worker's heading as the wide header does", () => {
