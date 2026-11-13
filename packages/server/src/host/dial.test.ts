@@ -9,7 +9,7 @@ import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
-import { dialForever } from "./dial.ts";
+import { dialForever, dialOnce } from "./dial.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
@@ -194,6 +194,33 @@ describe("dialForever over a link that went quiet", () => {
       yield* Effect.sleep("1500 millis");
       expect(main.dials()).toBe(1);
       yield* Fiber.interrupt(fiber);
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+});
+
+describe("dialOnce", () => {
+  // Its log said only "not connected; dialling again", so a machine that kept dropping its
+  // connection gave no clue why on its own side.
+  it.live("comes back with why the dial ended, for the host's log", () =>
+    Effect.gen(function* () {
+      const { service } = counted();
+      expect(yield* dialOnce(refused(), service)).toMatch(/^An error occurred during Open/);
+
+      const main = yield* mainGram(undefined);
+      const key = generateHostKey();
+      const hostId = hostIdOf(key.publicKey);
+      const why = yield* dialOnce(
+        {
+          origin: `http://127.0.0.1:${main.port}`,
+          hostId,
+          key: privateKeyFrom(key.privateKeyPem),
+          url: `ws://127.0.0.1:${main.port}/host/connect`,
+        },
+        servedHost(hostId),
+        Effect.void,
+        300,
+      );
+      expect(why).toMatch(/^nothing from the main Gram for \d+ seconds$/);
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 });

@@ -203,7 +203,11 @@ can still reuse a different repository origin or silently choose a default base.
 It starts at login, restarts when it stops, and dials the main Gram again whenever the connection
 ends, waiting longer each time up to 30 seconds. A connection the main Gram has sent nothing on for
 20 seconds counts as ended too: the main Gram pings every 5 seconds, so a link that broke without
-a word (its tailnet went down, a sleep) is dialled again rather than waited on. On Linux it runs only while you're logged in
+a word (its tailnet went down, a sleep) is dialled again rather than waited on. The main Gram
+gives the host the same 20 seconds to answer, so a machine that stalls for a few seconds under
+load (swapping, its disk saturated) stays connected; one that stays silent longer shows offline at
+once, as its connection lost, and dials again by itself. Each "not connected; dialling again" line
+in its log says why the last dial ended. On Linux it runs only while you're logged in
 unless you allow it to linger: `loginctl enable-linger "$USER"`. The macOS log is `host.log` in
 the host's folder; on Linux use `journalctl --user -u gram-host`. A `gram-host run` in a terminal
 of its own, which `gram-host leave` doesn't stop, stops dialling within seconds of the leave, and
