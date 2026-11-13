@@ -1,4 +1,4 @@
-import { useSoloWord } from "@/embed/store";
+import { useNewForm, useSoloWord } from "@/embed/store";
 import { MessageSquare, Network, User, type LucideIcon } from "lucide-react";
 import { useId, type ReactNode } from "react";
 
@@ -177,6 +177,22 @@ export function NewFormHeader({
   const slab = useId();
   const labelId = useId();
   const soloWord = useSoloWord();
+  const newForm = useNewForm();
+  // An embedding app narrows the choices and gives them its words; a choice it left out that is
+  // the one in use stays, so the form never shows nothing picked.
+  const choices = WHO_CHOICES.filter(
+    (choice) => choice.value !== "worker" || newForm?.task !== "hidden" || who === "worker",
+  ).map((choice) => {
+    if (choice.value === "me") {
+      const label = newForm?.solo?.label ?? soloWord;
+      if (label === undefined) return choice;
+      return { ...choice, label, line: newForm?.solo?.line ?? "You and one agent in a folder." };
+    }
+    const words = choice.value === "orchestrator" ? newForm?.team : undefined;
+    return words === undefined
+      ? choice
+      : { ...choice, label: words.label, line: words.line ?? choice.line };
+  });
   const whereId = useId();
   // A phone's title bar names the page already, as its one top heading: not said twice.
   const phone = usePhone();
@@ -224,18 +240,16 @@ export function NewFormHeader({
         <div
           role="radiogroup"
           aria-labelledby={labelId}
-          className={cn(SEGMENT_TRACK, "grid grid-cols-1 sm:grid-cols-3")}
+          className={cn(
+            SEGMENT_TRACK,
+            "grid grid-cols-1",
+            choices.length === 2 ? "sm:grid-cols-2" : "sm:grid-cols-3",
+          )}
         >
-          {WHO_CHOICES.map((choice) => (
+          {choices.map((choice) => (
             <Choice
               key={choice.value}
-              // An embedding app that has a Chat of its own names this choice with its word for a
-              // thread in no workspace, so "Chat" means one thing there.
-              choice={
-                choice.value === "me" && soloWord !== undefined
-                  ? { ...choice, label: soloWord, line: "You and one agent in a folder." }
-                  : choice
-              }
+              choice={choice}
               checked={choice.value === who}
               slab={slab}
               disabled={disabled}

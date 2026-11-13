@@ -68,6 +68,7 @@ import { TaskAuthorityLine } from "@/new-thread/authority-line";
 import { AutonomyChoice } from "@/new-thread/autonomy-choice";
 import { ControlDetails } from "@/new-thread/control-details";
 import { useWorkspaceMergeApproval } from "@/new-thread/merge-approval";
+import { useNewForm } from "@/embed/store";
 import { NewFormHeader, WHO_ENTRY, WhereFact, WhereStop, type Who } from "@/new-thread/who-does-it";
 import { WorkspaceAutonomy } from "@/new-thread/workspace-autonomy";
 import { readCameFrom, type CameFrom } from "@/shell/came-from";
@@ -139,7 +140,10 @@ export function NewTaskDraft({
   const rememberedWorkers = useTaskDraftStore((s) => s.workers);
   const sendKey = useServerSettings((s) => (s.settings ? sendKeyOf(s.settings) : undefined));
 
-  const way: TaskWay = initialWay ?? "plan";
+  // An embedding app that leaves the one-worker choice out has the form on the orchestrator's,
+  // whichever shortcut or link opened it.
+  const newForm = useNewForm();
+  const way: TaskWay = newForm?.task === "hidden" ? "plan" : (initialWay ?? "plan");
   // A pick in the "in" chip holds until a shortcut or the palette names another workspace.
   // Switching who does it keeps the workspace in the route, and so the pick.
   const [picked, setPicked] = useRoutePick<TaskTarget>(initialWorkspace ?? "", pendingTaskTarget);
@@ -434,7 +438,7 @@ export function NewTaskDraft({
     way === "plan"
       ? makesOne
         ? "Start workspace and send"
-        : "Send to team"
+        : (newForm?.team?.start ?? "Send to team")
       : makesOne
         ? "Start workspace and task"
         : "Start task";
