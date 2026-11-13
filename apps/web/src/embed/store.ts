@@ -139,6 +139,12 @@ export const useHostToolCard = (name: string) =>
 
 /** The name of the page of every thread: "Threads", unless the embedding app gave another. */
 export const useThreadsTitle = () => useEmbedShell((s) => s.threadsPage.title ?? "Threads");
+/**
+ * The embedding app's word for a thread in no workspace, wherever one is named: the page of every
+ * thread, the New form's choice and a thread's header. Undefined on Gram's own, which says Solo
+ * and, in the New form, Chat.
+ */
+export const useSoloWord = () => useEmbedShell((s) => s.threadsPage.kinds?.solo);
 
 /** Whether the sidebar lists Gram's own workspaces and threads: always, on Gram's own. */
 export const useThreadsListed = () => useEmbedShell((s) => s.threads === "shown");

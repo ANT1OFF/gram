@@ -3,7 +3,7 @@ import { useParams, useRouterState } from "@tanstack/react-router";
 import { useMemo } from "react";
 
 import { useEmbedPageGroup, useEmbedPageTitle } from "@/embed/slots";
-import { useEmbedShell } from "@/embed/store";
+import { useEmbedShell, useSoloWord } from "@/embed/store";
 import { cn } from "@/lib/utils";
 import { askKeysByThread } from "@/orchestration/ask-model";
 import { useWorkspaceAsks } from "@/orchestration/ask-stack";
@@ -74,6 +74,7 @@ export function usePhonePlace(): PhonePlace {
   const embedTitle = useEmbedPageTitle();
   const embedGroup = useEmbedPageGroup();
   const hosted = useEmbedShell((s) => s.hosted);
+  const soloWord = useSoloWord();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const board = useViewStore((s) => s.view === "board");
   const workspace = useViewWorkspace();
@@ -94,7 +95,7 @@ export function usePhonePlace(): PhonePlace {
   const { working } = useWorkerTally(workspaceId ?? NO_WORKSPACE, ledger, asking);
   const waitings = useWorkerWaitings(ledger, asking);
   // Mounted by an app in front of Gram, its pages name where you are: Gram's own name says nothing.
-  const place = solo ? "Solo" : (workspace?.workspace.name ?? (hosted ? "" : "Gram"));
+  const place = solo ? (soloWord ?? "Solo") : (workspace?.workspace.name ?? (hosted ? "" : "Gram"));
   if (board && workspace !== undefined) {
     return { title: workspace.workspace.name, line: "Board", asks: false, live: true };
   }

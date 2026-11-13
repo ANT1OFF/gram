@@ -132,7 +132,9 @@ out. `shown`, the default, offers it everywhere, as Gram on its own does. Change
 the page of every thread (`/threads`) in its heading, the title bar, a phone's header and the
 palette, and words its button, which then starts a chat. `threadsPage.kinds` gives your words for
 what kind of thread a row is (`{ solo: "One agent", orchestrator: "Team lead", worker: "Team
-member" }`), for people who do not speak of orchestrators and workers. `newEntry: { label: "New agent", to:
+member" }`), for people who do not speak of orchestrators and workers. Your word for `solo` also
+names that choice in the New form, in place of "Chat", and a solo thread's header, so an app with a
+Chat of its own has one word for a thread run by one agent. `newEntry: { label: "New agent", to:
 "/agents" }` makes New, in the sidebar's head and a phone menu's foot, one plain button to a page of
 yours in place of Gram's menu of Task, Team and Chat: for an app where what a person mostly starts
 is something of its own. Gram's New form stays reachable from the threads page, the palette and its

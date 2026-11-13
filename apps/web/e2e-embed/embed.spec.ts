@@ -298,6 +298,9 @@ test("the page of every thread and New take the embedding app's words", async ({
   await expect(rows).not.toContainText("Solo");
   await page.getByTestId("threads-new").click();
   await expect(page).toHaveURL(/\/new$/);
+  // The New form's choice for one agent carries the app's word, not "Chat".
+  await expect(page.getByRole("radio", { name: /^One agent/ })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /^Chat/ })).toHaveCount(0);
   // Taken away again, Gram's own words return.
   await page.evaluate(() => {
     (window as unknown as Update).embed.update({ threadsPage: undefined, newEntry: undefined });

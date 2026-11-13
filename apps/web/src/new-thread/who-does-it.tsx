@@ -1,3 +1,4 @@
+import { useSoloWord } from "@/embed/store";
 import { MessageSquare, Network, User, type LucideIcon } from "lucide-react";
 import { useId, type ReactNode } from "react";
 
@@ -172,6 +173,7 @@ export function NewFormHeader({
 }) {
   const slab = useId();
   const labelId = useId();
+  const soloWord = useSoloWord();
   const whereId = useId();
   // A phone's title bar names the page already, as its one top heading: not said twice.
   const phone = usePhone();
@@ -224,7 +226,13 @@ export function NewFormHeader({
           {WHO_CHOICES.map((choice) => (
             <Choice
               key={choice.value}
-              choice={choice}
+              // An embedding app that has a Chat of its own names this choice with its word for a
+              // thread in no workspace, so "Chat" means one thing there.
+              choice={
+                choice.value === "me" && soloWord !== undefined
+                  ? { ...choice, label: soloWord, line: "You and one agent in a folder." }
+                  : choice
+              }
               checked={choice.value === who}
               slab={slab}
               disabled={disabled}
