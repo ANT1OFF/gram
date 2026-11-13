@@ -400,6 +400,8 @@ export const USER_ONLY_SETTINGS: ReadonlyArray<UserOnlyKey> = [
     reason: "it lets Codex threads drive your browsers and Mac apps",
     read: (w) => w.settings.agents.codexComputerUse === true,
   },
+  { key: "agents.browserSites", reason: "it widens the sites agents may act on in your browser" },
+  { key: "agents.browserApps", reason: "it widens the Mac apps agents may act on" },
   {
     key: "agents.codexChrome",
     reason: "it lets Codex threads drive your own Chrome, signed in as you",

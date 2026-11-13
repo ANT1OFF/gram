@@ -3801,6 +3801,18 @@ describe("browserGrant", () => {
     ).toEqual({ browser: true, browserSurfaces: { chrome: true, inApp: true, apps: false } });
     expect(browserGrant({ ...codex, browser: false }, "plain", on)).toEqual({});
   });
+
+  it("carries the sites and apps the user limits the browser to", () => {
+    const limited = {
+      ...on,
+      agents: { ...on.agents, browserSites: [" GitHub.com ", "github.com"], browserApps: [] },
+    };
+    expect(browserGrant(codex, "plain", limited)).toEqual({
+      browser: true,
+      browserScope: { sites: ["github.com"] },
+    });
+    expect(browserGrant({ ...codex, browser: false }, "plain", limited)).toEqual({});
+  });
 });
 
 describe("browserFor", () => {

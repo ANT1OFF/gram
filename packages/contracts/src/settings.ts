@@ -216,6 +216,32 @@ export const RecommendedSetup = Schema.Struct({
 });
 export type RecommendedSetup = typeof RecommendedSetup.Type;
 
+/**
+ * Why `entry` can't be a site a lent browser is limited to: a host alone (`github.com`,
+ * `localhost:3000`), matched exactly, so neither a path nor a wildcard means anything.
+ */
+export const browserSiteProblem = (entry: string): string | undefined => {
+  const trimmed = entry.trim();
+  if (trimmed === "") return "Name a site.";
+  return /^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::\d{1,5})?$/i.test(trimmed)
+    ? undefined
+    : "Give the site's host alone, such as github.com: no https://, path or wildcard.";
+};
+/** Why `entry` can't be a Mac app a lent desktop is limited to: a bundle id (`com.apple.Safari`). */
+export const browserAppProblem = (entry: string): string | undefined => {
+  const trimmed = entry.trim();
+  if (trimmed === "") return "Name an app by its bundle id.";
+  return /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(trimmed) && trimmed.length <= 155
+    ? undefined
+    : "Give the app's bundle id, such as com.apple.Safari.";
+};
+const BrowserSite = Schema.String.check(
+  Schema.makeFilter((entry: string) => browserSiteProblem(entry) ?? true),
+);
+const BrowserApp = Schema.String.check(
+  Schema.makeFilter((entry: string) => browserAppProblem(entry) ?? true),
+);
+
 export const AgentSettings = Schema.Struct({
   /** Absent: off, as every install before it; a new install's welcome turns it on. */
   recommendedSetup: Schema.optionalKey(RecommendedSetup),
@@ -267,6 +293,13 @@ export const AgentSettings = Schema.Struct({
   codexChrome: Schema.optionalKey(Schema.Boolean),
   codexInAppBrowser: Schema.optionalKey(Schema.Boolean),
   codexMacApps: Schema.optionalKey(Schema.Boolean),
+  /**
+   * The only sites, and the only Mac apps, a thread given the browser may act on, each a host
+   * (`browserSiteProblem`) or a bundle id (`browserAppProblem`). Read through `browserScope`; with
+   * none listed there is no limit beyond the agent's own.
+   */
+  browserSites: Schema.optionalKey(Schema.Array(BrowserSite)),
+  browserApps: Schema.optionalKey(Schema.Array(BrowserApp)),
   /**
    * The worker model roster a new workspace's charter starts with; absent or empty starts it with
    * none, so its workers run on the orchestrator's model.
@@ -741,6 +774,32 @@ export const codexSurfaces = (settings: Pick<Settings, "agents">): CodexSurfaces
   inApp: settings.agents.codexInAppBrowser !== false,
   apps: settings.agents.codexMacApps !== false,
 });
+/**
+ * What a session opened with the browser is limited to: the only sites (hosts, lower case) and
+ * the only Mac apps (bundle ids) it may act on. A list left out is not limited.
+ */
+export const BrowserScope = Schema.Struct({
+  sites: Schema.optionalKey(Schema.Array(Schema.String)),
+  apps: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+export type BrowserScope = typeof BrowserScope.Type;
+const scopeEntries = (
+  entries: ReadonlyArray<string> | undefined,
+  lower: boolean,
+): Array<string> => [
+  ...new Set(
+    (entries ?? [])
+      .map((entry) => (lower ? entry.trim().toLowerCase() : entry.trim()))
+      .filter((entry) => entry !== ""),
+  ),
+];
+/** The user's limits on a lent browser; absent when they list neither sites nor apps. */
+export const browserScope = (settings: Pick<Settings, "agents">): BrowserScope | undefined => {
+  const sites = scopeEntries(settings.agents.browserSites, true);
+  const apps = scopeEntries(settings.agents.browserApps, false);
+  if (sites.length === 0 && apps.length === 0) return undefined;
+  return { ...(sites.length === 0 ? {} : { sites }), ...(apps.length === 0 ? {} : { apps }) };
+};
 /** Whether orchestrators get the browser, where their agent's consent allows; off unless turned on. */
 export const orchestratorBrowserOn = (settings: Settings): boolean =>
   settings.workspaces?.orchestratorBrowser === true;
@@ -1055,6 +1114,9 @@ export const SettingsPatch = Schema.Struct({
       codexChrome: Schema.optionalKey(Schema.Boolean),
       codexInAppBrowser: Schema.optionalKey(Schema.Boolean),
       codexMacApps: Schema.optionalKey(Schema.Boolean),
+      /** Each replaces its whole list. */
+      browserSites: Schema.optionalKey(Schema.Array(BrowserSite)),
+      browserApps: Schema.optionalKey(Schema.Array(BrowserApp)),
       /** Replaces the whole list. */
       workerModels: clearable(Schema.Array(WorkerModel)),
     }),

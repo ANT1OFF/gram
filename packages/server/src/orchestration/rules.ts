@@ -9,6 +9,8 @@
 
 import { dreamSupportFor, type OutwardGate, type ToolAudience } from "@gram/agents";
 import {
+  browserScope,
+  type BrowserScope,
   browserUseAllowed,
   codexSurfaces,
   type CodexSurfaces,
@@ -2815,18 +2817,25 @@ export const browserFor = (
 };
 
 /**
- * `browserFor` as the session policy's fields: `browser`, and for a Codex thread the surfaces of
- * computer use the user kept (`codexSurfaces`), left out while they are all kept.
+ * `browserFor` as the session policy's fields: `browser`, the sites and apps the user limits it
+ * to (`browserScope`), and for a Codex thread the surfaces of computer use the user kept
+ * (`codexSurfaces`), left out while they are all kept.
  */
 export const browserGrant = (
   thread: Pick<Thread, "role" | "spawnedBy" | "browser" | "model">,
   audience: ToolAudience,
   settings: Settings,
-): { readonly browser?: true; readonly browserSurfaces?: CodexSurfaces } => {
+): {
+  readonly browser?: true;
+  readonly browserSurfaces?: CodexSurfaces;
+  readonly browserScope?: BrowserScope;
+} => {
   if (!browserFor(thread, audience, settings)) return {};
-  if (thread.model.agent !== "codex") return { browser: true };
+  const scope = browserScope(settings);
+  const limited = scope === undefined ? {} : { browserScope: scope };
+  if (thread.model.agent !== "codex") return { browser: true, ...limited };
   const surfaces = codexSurfaces(settings);
   return surfaces.chrome && surfaces.inApp && surfaces.apps
-    ? { browser: true }
-    : { browser: true, browserSurfaces: surfaces };
+    ? { browser: true, ...limited }
+    : { browser: true, browserSurfaces: surfaces, ...limited };
 };
