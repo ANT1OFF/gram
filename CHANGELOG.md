@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.23.0](https://github.com/ANT1OFF/gram/compare/v1.22.0...v1.23.0) (2026-11-13)
+
+
+### Features
+
+* a broken keybindings.json or scripts.json keeps the last good version ([#483](https://github.com/ANT1OFF/gram/issues/483)) ([06c2e87](https://github.com/ANT1OFF/gram/commit/06c2e879b9835ac73ab6cbe1186a63384cbc1af9))
+* bring a thread's terminal back after a restart, under its old screen ([#482](https://github.com/ANT1OFF/gram/issues/482)) ([ecea3e0](https://github.com/ANT1OFF/gram/commit/ecea3e03b9e5736032df9e3260f7dd8993a89ef0))
+* fold superseded models under Legacy models in the model picker ([#490](https://github.com/ANT1OFF/gram/issues/490)) ([f591f02](https://github.com/ANT1OFF/gram/commit/f591f02a678cb410537b78c7a4103ad10876e169))
+* keep agents running after Gram quits (opt-in), and take them up again on reopen ([#492](https://github.com/ANT1OFF/gram/issues/492)) ([a354251](https://github.com/ANT1OFF/gram/commit/a354251642d099e1054fb3bd466aa4ae7413c558))
+* pin a page an agent drafted, in a session of its own ([#503](https://github.com/ANT1OFF/gram/issues/503)) ([9a72c01](https://github.com/ANT1OFF/gram/commit/9a72c0113ab23913828303ed8dd9cda807a2fc75))
+* show MCP permission prompts as approval cards in Codex and Claude threads ([#515](https://github.com/ANT1OFF/gram/issues/515)) ([6bcb814](https://github.com/ANT1OFF/gram/commit/6bcb8149ba65f7875238645a68bbbd0e4885f3e0))
+* show which machine a thread runs on, wherever it is listed ([#497](https://github.com/ANT1OFF/gram/issues/497)) ([71da823](https://github.com/ANT1OFF/gram/commit/71da823353d74a1c4d69fcf02109c51ea32a4548))
+* the built-in browser opens any web page ([#481](https://github.com/ANT1OFF/gram/issues/481)) ([6627dc8](https://github.com/ANT1OFF/gram/commit/6627dc8f80067ae154c3061e40e98306d6bf4c71))
+* write an agent guide (AGENTS.md) into Gram's data folder at every start ([#486](https://github.com/ANT1OFF/gram/issues/486)) ([14a73bc](https://github.com/ANT1OFF/gram/commit/14a73bc11428753020576b88052c641ed3c7190b))
+
+
+### Bug Fixes
+
+* name worker models through the agent's model catalogue ([#484](https://github.com/ANT1OFF/gram/issues/484)) ([f9c897b](https://github.com/ANT1OFF/gram/commit/f9c897b8bf380130fcbac421a1a0ded40179ffe7))
+* tune role prompts and two tool descriptions from a prompt audit ([#485](https://github.com/ANT1OFF/gram/issues/485)) ([1c4ca40](https://github.com/ANT1OFF/gram/commit/1c4ca408903dbfb4430bf3832063993549745272))
+
+
+### Performance Improvements
+
+* a headline benchmark, and compressed files and socket for phones and slow links ([#495](https://github.com/ANT1OFF/gram/issues/495)) ([d2d3ce2](https://github.com/ANT1OFF/gram/commit/d2d3ce2eb400f588588d6824bb76a39cdcc1524e))
+* faster reconnect and slow-link launch, packages in a file that survives updates ([#498](https://github.com/ANT1OFF/gram/issues/498)) ([33921cb](https://github.com/ANT1OFF/gram/commit/33921cb254ad560cab04e0668cbae50c732e50dd))
+* **git:** ask origin for the base branch it has first ([#507](https://github.com/ANT1OFF/gram/issues/507)) ([f1ad392](https://github.com/ANT1OFF/gram/commit/f1ad392f93d1aab7659dcbc2fda7a34a7da17d02))
+* redial when the network returns; streaming, scrolling, approvals, worker start and outages in the benchmark; route budgets ([#504](https://github.com/ANT1OFF/gram/issues/504)) ([d562732](https://github.com/ANT1OFF/gram/commit/d5627320bda5ed8ddad27cfc94896ede7f44d9b6))
+* **web:** load a Settings page's sections with the page, not with the page list ([#513](https://github.com/ANT1OFF/gram/issues/513)) ([8f34973](https://github.com/ANT1OFF/gram/commit/8f34973b54d7991bc6b7ba39812466fed1e2e859))
+
 ## [1.22.0](https://github.com/ANT1OFF/gram/compare/v1.21.0...v1.22.0) (2026-11-12)
 
 
