@@ -865,6 +865,8 @@ export const makeClaudeHost = (
         o.browser === true && o.browserScope?.sites !== undefined && o.browserScope.sites.length > 0
           ? o.browserScope.sites
           : undefined;
+      // Each browser action asks, whatever the gate (`browserAsk`).
+      const browserAsks = o.browser === true && o.browserAsk === true;
       const gateCalls: HookCallbackMatcher["hooks"][number] = async (hookInput, toolUseId) => {
         if (hookInput.hook_event_name !== "PreToolUse") return {};
         // Before every other answer: a closed gate refuses even Gram's own tools.
@@ -901,7 +903,7 @@ export const makeClaudeHost = (
         if (gateAsksAbout(hookInput.tool_name, hookInput.tool_input)) {
           return askFirst(level === "all" ? OUTWARD_GATE_REASON : IRREVERSIBLE_GATE_REASON);
         }
-        if (level === "all" && actsInBrowser(hookInput.tool_name)) {
+        if ((level === "all" || browserAsks) && actsInBrowser(hookInput.tool_name)) {
           return askFirst(BROWSER_GATE_REASON);
         }
         if (asksAboutConnector(hookInput.tool_name)) return askFirst(CONNECTOR_GATE_REASON);
@@ -910,6 +912,7 @@ export const makeClaudeHost = (
       const gated =
         level !== undefined ||
         limitedSites !== undefined ||
+        browserAsks ||
         appServer !== undefined ||
         o.dreamFilesOnly === true ||
         o.gateConnectors === true;
@@ -973,7 +976,7 @@ export const makeClaudeHost = (
         new Promise<ElicitationResult>((resolve) => {
           if (signal.aborted || closed || o.dreamFilesOnly === true)
             return resolve(ELICITATION_DECLINED);
-          const promptGated = level === "all";
+          const promptGated = level === "all" || browserAsks;
           if (!promptGated && granted.has(elicitationKey(prompt)))
             return resolve(elicitationGranted(prompt));
           const request = elicitationCard(prompt, requestId, promptGated);
@@ -1672,7 +1675,11 @@ export const makeClaudeHost = (
           Effect.gen(function* () {
             const asked = prompts.get(requestId);
             if (asked !== undefined) {
-              const { result, remember } = elicitationResult(asked.prompt, answer, level === "all");
+              const { result, remember } = elicitationResult(
+                asked.prompt,
+                answer,
+                level === "all" || browserAsks,
+              );
               asked.settle(result, remember);
               return;
             }

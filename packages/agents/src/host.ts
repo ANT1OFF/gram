@@ -197,6 +197,12 @@ export interface OpenSessionOptions {
    */
   readonly browserScope?: BrowserScope;
   /**
+   * With `browser`, every action in it asks the user first, whatever the outward gate: Claude
+   * asks before each Claude in Chrome call that acts, and a computer-use prompt (Codex's or the
+   * extension's) offers only a one-time yes. A host without it ignores it.
+   */
+  readonly browserAsk?: boolean;
+  /**
    * Told each time the session reports its MCP servers, so a view with no session open can show
    * the last word. Called synchronously from the agent's message loop: it mustn't block or throw.
    * A host that doesn't report them ignores it.

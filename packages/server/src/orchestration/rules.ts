@@ -2830,10 +2830,14 @@ export const browserGrant = (
   readonly browser?: true;
   readonly browserSurfaces?: CodexSurfaces;
   readonly browserScope?: BrowserScope;
+  readonly browserAsk?: true;
 } => {
   if (!browserFor(thread, audience, settings)) return {};
   const scope = browserScope(settings, charter);
-  const limited = scope === undefined ? {} : { browserScope: scope };
+  const limited = {
+    ...(scope === undefined ? {} : { browserScope: scope }),
+    ...(settings.agents.browserAskEachAction === true ? { browserAsk: true as const } : {}),
+  };
   if (thread.model.agent !== "codex") return { browser: true, ...limited };
   const surfaces = codexSurfaces(settings);
   return surfaces.chrome && surfaces.inApp && surfaces.apps

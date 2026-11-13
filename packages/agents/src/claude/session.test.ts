@@ -2625,10 +2625,14 @@ const preToolUse = (q: FakeQuery) => {
 };
 
 /** The `PreToolUse` gate of a session given the browser under `outwardGate`. */
-const browserHookFor = (outwardGate: "all" | "irreversible") =>
+const browserHookFor = (outwardGate: "all" | "irreversible" | undefined, browserAsk = false) =>
   Effect.gen(function* () {
     const h = harness();
-    yield* openSession({ outwardGate, browser: true }).pipe(Effect.provide(h.layer));
+    yield* openSession({
+      ...(outwardGate === undefined ? {} : { outwardGate }),
+      browser: true,
+      ...(browserAsk ? { browserAsk: true } : {}),
+    }).pipe(Effect.provide(h.layer));
     const pre = query(h).options.hooks!.PreToolUse![0]!.hooks[0]!;
     return (tool_name: string) =>
       Effect.promise((): Promise<HookJSONOutput> =>
@@ -2780,6 +2784,14 @@ describe("app tools bridge", () => {
       // The publish gate can't tell a click that merges from one that doesn't; the mode decides.
       const publish = yield* browserHookFor("irreversible");
       expect(yield* publish("mcp__claude-in-chrome__computer")).toEqual({});
+      // Lent to ask each time, it asks under any gate or none.
+      for (const gate of ["irreversible", undefined] as const) {
+        const asks = yield* browserHookFor(gate, true);
+        expect(yield* asks("mcp__claude-in-chrome__computer")).toMatchObject({
+          hookSpecificOutput: { permissionDecision: "ask" },
+        });
+        expect(yield* asks("mcp__claude-in-chrome__read_page")).toEqual({});
+      }
     }).pipe(Effect.scoped),
   );
 

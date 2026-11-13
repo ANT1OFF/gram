@@ -118,6 +118,7 @@ const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): H
     peerMessaging: o.peerMessaging,
     browser: o.browser,
     browserSurfaces: o.browserSurfaces === undefined ? undefined : { ...o.browserSurfaces },
+    browserAsk: o.browserAsk,
     browserScope:
       o.browserScope === undefined
         ? undefined

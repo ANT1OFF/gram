@@ -301,6 +301,11 @@ export const AgentSettings = Schema.Struct({
   browserSites: Schema.optionalKey(Schema.Array(BrowserSite)),
   browserApps: Schema.optionalKey(Schema.Array(BrowserApp)),
   /**
+   * A thread given the browser asks before each action in it, whatever its workspace's gate:
+   * `OpenSessionOptions.browserAsk`. Absent, it asks only under the strictest gate.
+   */
+  browserAskEachAction: Schema.optionalKey(Schema.Boolean),
+  /**
    * The worker model roster a new workspace's charter starts with; absent or empty starts it with
    * none, so its workers run on the orchestrator's model.
    */
@@ -1137,6 +1142,7 @@ export const SettingsPatch = Schema.Struct({
       /** Each replaces its whole list. */
       browserSites: Schema.optionalKey(Schema.Array(BrowserSite)),
       browserApps: Schema.optionalKey(Schema.Array(BrowserApp)),
+      browserAskEachAction: Schema.optionalKey(Schema.Boolean),
       /** Replaces the whole list. */
       workerModels: clearable(Schema.Array(WorkerModel)),
     }),
