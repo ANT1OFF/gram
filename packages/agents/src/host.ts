@@ -45,6 +45,14 @@ export interface BrowserSurfaces {
   readonly apps: boolean;
 }
 
+/** What a session opened with the browser is limited to (`OpenSessionOptions.browserScope`). */
+export interface BrowserScope {
+  /** The only sites it may act on, each a host in lower case (`github.com`, `localhost:3000`). */
+  readonly sites?: ReadonlyArray<string>;
+  /** The only desktop apps it may act on, each a macOS bundle id. */
+  readonly apps?: ReadonlyArray<string>;
+}
+
 export interface OpenSessionOptions {
   readonly threadId: ThreadId;
   readonly cwd: string;
@@ -182,6 +190,12 @@ export interface OpenSessionOptions {
    * host without separate surfaces ignores it.
    */
   readonly browserSurfaces?: BrowserSurfaces;
+  /**
+   * With `browser`, the only sites and desktop apps the session may act on; a list left out is
+   * not limited. Codex holds both through its own access policy (`browser_use`, `computer_use`).
+   * Claude refuses to open an address on another site, and has no desktop apps to limit.
+   */
+  readonly browserScope?: BrowserScope;
   /**
    * Told each time the session reports its MCP servers, so a view with no session open can show
    * the last word. Called synchronously from the agent's message loop: it mustn't block or throw.

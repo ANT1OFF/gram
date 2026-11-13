@@ -1,4 +1,5 @@
 import {
+  type BrowserScope,
   type BrowserSurfaces,
   type ToolAudience,
   type OutwardGate,
@@ -53,6 +54,8 @@ export interface SessionPolicy {
   readonly browser?: boolean | undefined;
   /** With `browser`, the surfaces it keeps (`OpenSessionOptions.browserSurfaces`); absent, all. */
   readonly browserSurfaces?: BrowserSurfaces | undefined;
+  /** With `browser`, what it is limited to (`OpenSessionOptions.browserScope`); absent, no limit. */
+  readonly browserScope?: BrowserScope | undefined;
 }
 
 /**

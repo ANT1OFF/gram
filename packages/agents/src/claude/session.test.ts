@@ -2783,6 +2783,57 @@ describe("app tools bridge", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("refuses an address outside the sites the browser is limited to", () =>
+    Effect.gen(function* () {
+      const h = harness();
+      yield* openSession({ browser: true, browserScope: { sites: ["github.com"] } }).pipe(
+        Effect.provide(h.layer),
+      );
+      const pre = query(h).options.hooks!.PreToolUse![0]!.hooks[0]!;
+      const call = (tool_name: string, tool_input: unknown, id: string) =>
+        Effect.promise((): Promise<HookJSONOutput> =>
+          pre(
+            {
+              hook_event_name: "PreToolUse",
+              session_id: "s",
+              transcript_path: "/t",
+              cwd: "/repo",
+              tool_name,
+              tool_input,
+              tool_use_id: id,
+            } as HookInput,
+            id,
+            { signal: signal() },
+          ),
+        );
+      const refused = yield* call(
+        "mcp__claude-in-chrome__navigate",
+        { url: "https://example.com/x", tabId: 1 },
+        "toolu_1",
+      );
+      expect(refused).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+      expect(
+        yield* call(
+          "mcp__claude-in-chrome__navigate",
+          { url: "https://github.com/pulls", tabId: 1 },
+          "toolu_2",
+        ),
+      ).toEqual({});
+      expect(
+        yield* call("mcp__claude-in-chrome__computer", { action: "left_click" }, "toolu_3"),
+      ).toEqual({});
+      // Another server's `url` isn't the browser's.
+      expect(yield* call("mcp__docs__fetch", { url: "https://example.com" }, "toolu_4")).toEqual(
+        {},
+      );
+
+      // Without a list, a session given the browser has no such hook to run.
+      const open = harness();
+      yield* openSession({ browser: true }).pipe(Effect.provide(open.layer));
+      expect(query(open).options.hooks?.PreToolUse).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("refuses peer messages in every session and lets only an allowed one send", () =>
     Effect.gen(function* () {
       // As `buildChildEnv` prepares it: Claude Code's cross-session messaging off.

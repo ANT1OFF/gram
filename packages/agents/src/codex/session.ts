@@ -44,6 +44,7 @@ import {
   type AgentSession,
   type ConnectorStatus,
   type ListModelsOptions,
+  type BrowserScope,
   type BrowserSurfaces,
   type OpenSessionOptions,
   type OutwardGate,
@@ -564,6 +565,50 @@ export const surfacesOff = (
 });
 
 /**
+ * Codex's own access policy for a thread whose browser is limited
+ * (`OpenSessionOptions.browserScope`): every site but the listed ones denied
+ * (`browser_use.origins`, each host as its `https://` origin, a local one as `http://` too), and
+ * every Mac app but the listed bundle ids (`computer_use.macos.bundle_ids`). Not verified live.
+ */
+export const scopeConfig = (
+  scope: BrowserScope,
+): {
+  readonly browser_use?: {
+    readonly default_origin_policy: { readonly access: "deny" };
+    readonly origins: Record<string, { access: "allow" }>;
+  };
+  readonly computer_use?: {
+    readonly default_app_access: "deny";
+    readonly macos: { readonly bundle_ids: Record<string, "allow"> };
+  };
+} => ({
+  ...(scope.sites === undefined || scope.sites.length === 0
+    ? {}
+    : {
+        browser_use: {
+          default_origin_policy: { access: "deny" },
+          origins: Object.fromEntries(
+            scope.sites
+              .flatMap((site) =>
+                /^(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(site)
+                  ? [`https://${site}`, `http://${site}`]
+                  : [`https://${site}`],
+              )
+              .map((origin) => [origin, { access: "allow" }]),
+          ),
+        },
+      }),
+  ...(scope.apps === undefined || scope.apps.length === 0
+    ? {}
+    : {
+        computer_use: {
+          default_app_access: "deny",
+          macos: { bundle_ids: Object.fromEntries(scope.apps.map((id) => [id, "allow"])) },
+        },
+      }),
+});
+
+/**
  * The servers a confined thread still has running that aren't Gram's own, by name: a
  * plugin's, or anything else `confinedConfig` couldn't name beforehand.
  */
@@ -917,13 +962,9 @@ export const makeCodexHost = (
         confined === undefined &&
         o.browser !== undefined &&
         !(o.browser && home === "user" && !noSurface);
+      const lent = confined === undefined && !browserOff && o.browser === true;
       const narrowedSurfaces =
-        confined === undefined &&
-        !browserOff &&
-        o.browser === true &&
-        o.browserSurfaces !== undefined
-          ? surfacesOff(o.browserSurfaces)
-          : undefined;
+        lent && o.browserSurfaces !== undefined ? surfacesOff(o.browserSurfaces) : undefined;
       // Confinement already switches every server off; otherwise the workspace's lists might, and
       // a thread without the browser turns computer use's servers off by name.
       const narrowedRead =
@@ -1008,6 +1049,8 @@ export const makeCodexHost = (
         ...(narrowedSurfaces === undefined || Object.keys(narrowedSurfaces.plugins).length === 0
           ? {}
           : { plugins: narrowedSurfaces.plugins }),
+        // A surface turned off denies the whole of it, whatever the lists allow.
+        ...(lent && o.browserScope !== undefined ? scopeConfig(o.browserScope) : {}),
         ...narrowedSurfaces?.config,
         ...(confined === undefined ? {} : { apps: confined.apps, features: confined.features }),
         ...(roots.length === 0 ? {} : { sandbox_workspace_write: { writable_roots: [...roots] } }),

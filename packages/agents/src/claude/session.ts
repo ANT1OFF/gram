@@ -58,6 +58,7 @@ import {
   stopChildForSwitch,
 } from "../child-process.ts";
 import type { AgentHost, AgentSession, ConnectorStatus, OpenSessionOptions } from "../host.ts";
+import { offSiteAddress } from "../browser-scope.ts";
 import { narrowsMcp, reportedLists, type McpLists } from "../mcp-lists.ts";
 import { gateAsks, gateLevel } from "../outward.ts";
 import { PAUSE_STOP_TEXT } from "../pause.ts";
@@ -451,6 +452,15 @@ const reachesPeer = (toolName: string, toolInput: unknown, switchFailed: boolean
 };
 
 /** A `PreToolUse` hook's answer for a call that would reach another session past Gram. */
+/** A `PreToolUse` hook's refusal of an address outside the sites the browser is limited to. */
+const offSiteDenied = (address: string, sites: ReadonlyArray<string>) => ({
+  hookSpecificOutput: {
+    hookEventName: "PreToolUse" as const,
+    permissionDecision: "deny" as const,
+    permissionDecisionReason: `The user limits this browser to ${sites.join(", ")}, and ${address} is not on that list. Ask them to add the site in Settings if the task needs it.`,
+  },
+});
+
 const PEER_DENIED = {
   hookSpecificOutput: {
     hookEventName: "PreToolUse" as const,
@@ -850,6 +860,11 @@ export const makeClaudeHost = (
       const peerSwitchSet =
         (env as Record<string, string | undefined>)[PEER_MESSAGING_SWITCH] === "0";
       let peerSwitchFailed = false;
+      // The sites a session given the browser may open (`browserScope.sites`); absent, any.
+      const limitedSites =
+        o.browser === true && o.browserScope?.sites !== undefined && o.browserScope.sites.length > 0
+          ? o.browserScope.sites
+          : undefined;
       const gateCalls: HookCallbackMatcher["hooks"][number] = async (hookInput, toolUseId) => {
         if (hookInput.hook_event_name !== "PreToolUse") return {};
         // Before every other answer: a closed gate refuses even Gram's own tools.
@@ -876,6 +891,13 @@ export const makeClaudeHost = (
             },
           };
         }
+        if (limitedSites !== undefined && hookInput.tool_name.startsWith(CHROME_TOOL_PREFIX)) {
+          const address = offSiteAddress(hookInput.tool_input, limitedSites);
+          if (address !== undefined) {
+            toolGate.finished(toolUseId ?? hookInput.tool_use_id);
+            return offSiteDenied(address, limitedSites);
+          }
+        }
         if (gateAsksAbout(hookInput.tool_name, hookInput.tool_input)) {
           return askFirst(level === "all" ? OUTWARD_GATE_REASON : IRREVERSIBLE_GATE_REASON);
         }
@@ -887,6 +909,7 @@ export const makeClaudeHost = (
       };
       const gated =
         level !== undefined ||
+        limitedSites !== undefined ||
         appServer !== undefined ||
         o.dreamFilesOnly === true ||
         o.gateConnectors === true;

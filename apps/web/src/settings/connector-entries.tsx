@@ -29,6 +29,9 @@ export function ConnectorEntries({
   suggestions = [],
   disabled = false,
   testId,
+  problemOf = connectorEntryProblem,
+  placeholder = "name or https://…",
+  emptyReason = "Type a connector first.",
 }: {
   /** The input's id, for the label of the field around it. */
   id: string;
@@ -38,6 +41,11 @@ export function ConnectorEntries({
   suggestions?: readonly ConnectorSuggestion[];
   disabled?: boolean;
   testId?: string;
+  /** Why a typed entry can't be added; a connector's rule unless the list holds something else. */
+  problemOf?: (entry: string) => string | undefined;
+  placeholder?: string;
+  /** Why Add is disabled while nothing is typed. */
+  emptyReason?: string;
 }) {
   const listId = useId();
   const [draft, setDraft] = useState("");
@@ -61,7 +69,7 @@ export function ConnectorEntries({
   };
 
   const add = () => {
-    const problem = connectorEntryProblem(entry);
+    const problem = problemOf(entry);
     if (problem !== undefined) {
       setError(problem);
       return;
@@ -103,7 +111,7 @@ export function ConnectorEntries({
           id={id}
           className={`${inputCls} font-mono`}
           value={draft}
-          placeholder="name or https://…"
+          placeholder={placeholder}
           spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
@@ -129,11 +137,7 @@ export function ConnectorEntries({
             ))}
           </datalist>
         )}
-        <WhyDisabled
-          reason={
-            entry === "" ? "Type a connector first." : saving ? "Saving the list…" : undefined
-          }
-        >
+        <WhyDisabled reason={entry === "" ? emptyReason : saving ? "Saving the list…" : undefined}>
           <Button variant="outline" disabled={entry === "" || busy} onClick={add}>
             Add
           </Button>

@@ -1512,6 +1512,16 @@ Without Mac apps it also sets Codex's own `computer_use.default_app_access` to d
 neither browser, `browser_use.default_origin_policy` to deny. One runtime (`cua_repl`) serves all
 three, so with one browser kept, turning the other off takes away its skills and not the runtime.
 
+**Sites and apps.** Two lists in the same group limit what a lent browser may act on: **Allowed
+sites** (`agents.browserSites`, each a host such as `github.com`, matched exactly) and **Allowed
+Mac apps** (`agents.browserApps`, each a bundle id such as `com.apple.Safari`). Empty means no
+limit. For a Codex thread, Gram sets Codex's own policy in the thread's config: every site denied
+but the listed ones (`browser_use.default_origin_policy` and `browser_use.origins`), and every app
+but the listed ones (`computer_use.default_app_access` and `computer_use.macos.bundle_ids`). A
+Claude thread is refused when a Claude in Chrome call opens an address on another site. A link it
+clicks on a listed site can still lead elsewhere, so the extension's own site permissions remain
+the backstop there. Claude in Chrome reaches no Mac apps.
+
 **Permission prompts.** When a computer-use or other MCP server asks a yes-or-no question
 before it acts ("Allow ChatGPT to use Safari?"), the thread shows it as an approval card. A Codex
 thread's card offers this session or always only where the server offers them. A Claude thread's

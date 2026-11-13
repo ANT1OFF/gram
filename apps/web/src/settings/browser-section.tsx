@@ -1,16 +1,19 @@
 import {
+  browserAppProblem,
+  browserSiteProblem,
   browserUseAllowed,
   codexSurfaces,
   type AgentKind,
   type CodexSurfaces,
   type SettingsPatch,
 } from "@gram/contracts";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { errorMessage } from "@/api/errors";
 import { useServerSettings } from "@/settings-sync/store";
 
-import { Toggle } from "./fields";
+import { ConnectorEntries } from "./connector-entries";
+import { Field, Toggle } from "./fields";
 import { SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 
@@ -74,6 +77,8 @@ export function YourBrowserSection() {
   const settings = useServerSettings((s) => s.settings);
   const save = useSaveSettings();
   const [failed, setFailed] = useState<{ agent: AgentKind | Surface; message: string }>();
+  const sitesId = useId();
+  const appsId = useId();
   if (!settings) return null;
 
   const toggle = (agent: AgentKind) => {
@@ -163,6 +168,54 @@ export function YourBrowserSection() {
       {SURFACES.map(({ surface, ...row }) => (
         <Toggle key={surface} {...row} {...surfaceToggle(surface)} />
       ))}
+      <Field
+        label="Allowed sites"
+        description="Limit a lent browser to these sites. Empty means any."
+        learnMore={
+          <p>
+            List a site by its host alone (github.com, localhost:3000). Each is matched exactly, so
+            add a subdomain as its own entry. Codex is held to the list by its own site policy.
+            Claude is refused when it opens an address on another site; a link it clicks on a listed
+            site can still lead elsewhere, and the extension&apos;s own site permissions still
+            apply. A change applies from a thread&apos;s next session.
+          </p>
+        }
+        keywords={["sites", "domains", "allowlist", "origins", "browser"]}
+        htmlFor={sitesId}
+      >
+        <ConnectorEntries
+          id={sitesId}
+          entries={settings.agents.browserSites ?? []}
+          onChange={(browserSites) => save({ agents: { browserSites } })}
+          problemOf={browserSiteProblem}
+          placeholder="github.com"
+          emptyReason="Type a site first."
+          testId="browser-sites"
+        />
+      </Field>
+      <Field
+        label="Allowed Mac apps"
+        description="Limit Codex to these Mac apps. Empty means any."
+        learnMore={
+          <p>
+            List an app by its bundle id (com.apple.Safari). Only Codex computer use reaches Mac
+            apps, and it is held to the list by its own app policy. A change applies from a
+            thread&apos;s next session.
+          </p>
+        }
+        keywords={["apps", "mac", "bundle id", "allowlist", "codex", "desktop"]}
+        htmlFor={appsId}
+      >
+        <ConnectorEntries
+          id={appsId}
+          entries={settings.agents.browserApps ?? []}
+          onChange={(browserApps) => save({ agents: { browserApps } })}
+          problemOf={browserAppProblem}
+          placeholder="com.apple.Safari"
+          emptyReason="Type a bundle id first."
+          testId="browser-apps"
+        />
+      </Field>
     </SettingsGroup>
   );
 }

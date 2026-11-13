@@ -552,6 +552,7 @@ export const makeSessionLifecycle = ({
             ...(policy.browserSurfaces === undefined
               ? {}
               : { browserSurfaces: policy.browserSurfaces }),
+            ...(policy.browserScope === undefined ? {} : { browserScope: policy.browserScope }),
             onConnectorsSeen: (seen) => {
               recordSeen(seenConnectors.record(seen));
             },

@@ -11,7 +11,7 @@ import {
   ModeRefused,
   NotFound,
 } from "../errors.ts";
-import { CodexSurfaces } from "../settings.ts";
+import { BrowserScope, CodexSurfaces } from "../settings.ts";
 import { FsFilesResult, FsResolveResult } from "../fs-files.ts";
 import { FsSearchResult } from "../fs-search.ts";
 import {
@@ -506,6 +506,11 @@ export const HostSessionOpen = Schema.Struct({
    * built before it drops the field and keeps them all.
    */
   browserSurfaces: Schema.optionalKey(CodexSurfaces),
+  /**
+   * The only sites and Mac apps a session with `browser` may act on
+   * (`OpenSessionOptions.browserScope`). A host built before it drops the field and doesn't limit.
+   */
+  browserScope: Schema.optionalKey(BrowserScope),
 });
 export type HostSessionOpen = typeof HostSessionOpen.Type;
 
