@@ -13,7 +13,7 @@
 import { AppToolError, type GramUIMessage, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { fileURLToPath } from "node:url";
-import type { ThreadStoreShape } from "../persistence/thread-store.ts";
+import { findUserMessages, type ThreadStoreShape } from "../persistence/thread-store.ts";
 
 /** How many of the user's latest messages one call may attach. */
 export const USER_MESSAGES_MAX = 5;
@@ -98,7 +98,7 @@ export const withBriefFooter = (brief: string, footer: string | undefined): stri
  * longer together than `USER_WORDS_MAX`.
  */
 export const attachUserWords = (
-  store: Pick<ThreadStoreShape, "getThread" | "listUserMessages">,
+  store: Pick<ThreadStoreShape, "getThread" | "userMessagePage">,
   tool: string,
   caller: ThreadId,
   text: string,
@@ -116,7 +116,15 @@ export const attachUserWords = (
           "`userMessages` attaches the user's messages from an orchestrator's conversation; this thread isn't one. Quote what the recipient needs in `text`.",
       });
     }
-    const words = userMessagesOf(yield* store.listUserMessages(caller)).slice(-count);
+    // The newest of the user's own, read back only as far as they go: most of an orchestrator's
+    // user-role messages are Gram's digests.
+    const words = userMessagesOf(
+      yield* findUserMessages(store, caller, {
+        from: "newest",
+        count,
+        keep: (message) => userMessagesOf([message]).length > 0,
+      }),
+    ).slice(-count);
     if (words.length === 0) {
       return yield* new AppToolError({
         tool,

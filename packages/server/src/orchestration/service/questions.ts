@@ -376,7 +376,8 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         const recorded =
           retry &&
           !queued &&
-          (yield* store.listUserMessages(worker.id)).some((message) =>
+          // Only the user messages whose stored form holds the text are read and decoded.
+          (yield* store.messagesWith(worker.id, [text], "user")).some((message) =>
             message.parts.some((part) => part.type === "text" && part.text === text),
           );
         const delivered: QuestionDelivery | undefined = queued

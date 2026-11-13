@@ -32,7 +32,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqlClient } from "../platform/unstable.ts";
 import { decodeMended } from "./stored.ts";
-import { ThreadStore } from "./thread-store.ts";
+import { findUserMessages, ThreadStore } from "./thread-store.ts";
 
 const TABLES = [
   "labels",
@@ -315,7 +315,9 @@ describe("ThreadStore", () => {
         expect(messages.map((m) => m.id)).toEqual(["u1", "a1"]);
         expect(messages[1]?.parts).toEqual([{ type: "text", text: "yo" }]);
         yield* store.upsertMessage(id, { ...user, id: "u2" } as never);
-        expect((yield* store.listUserMessages(id)).map((m) => m.id)).toEqual(["u1", "u2"]);
+        expect(
+          (yield* findUserMessages(store, id, { from: "oldest", count: 10 })).map((m) => m.id),
+        ).toEqual(["u1", "u2"]);
 
         // The text parts of the messages holding a needle, a backslash path matched as stored.
         yield* store.upsertMessage(id, {

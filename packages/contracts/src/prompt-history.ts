@@ -21,7 +21,7 @@ export const PromptHistory = Schema.Struct({
 export type PromptHistory = typeof PromptHistory.Type;
 
 /** The text a user message typed; attachments and data parts don't count. */
-const typedText = (message: GramUIMessage): string =>
+export const promptText = (message: GramUIMessage): string =>
   message.role !== "user"
     ? ""
     : message.parts
@@ -42,7 +42,7 @@ export function promptsFromMessages(
   const prompts: string[] = [];
   for (const messages of transcripts) {
     for (let i = messages.length - 1; i >= 0; i--) {
-      const text = typedText(messages[i]!);
+      const text = promptText(messages[i]!);
       if (text === "" || seen.has(text)) continue;
       seen.add(text);
       prompts.push(text);

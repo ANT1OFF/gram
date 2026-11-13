@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { SqlClient } from "../platform/unstable.ts";
 import { sqliteProbe } from "../perf/sqlite-probe.ts";
-import { ThreadStore } from "./thread-store.ts";
+import { findUserMessages, ThreadStore } from "./thread-store.ts";
 
 const withStore = <A, E>(effect: Effect.Effect<A, E, ThreadStore | SqlClient.SqlClient>) =>
   effect.pipe(Effect.provide(ThreadStore.layerSqlite(":memory:").pipe(Layer.orDie)));
@@ -79,6 +79,122 @@ describe("messagesSince", () => {
           expect(yield* store.messagesSince(id, 990, 10, "missing")).toBeUndefined();
         }),
       ),
+    ),
+  );
+});
+
+// 1,000 user messages (every tenth the user's own) among 1,000 replies, one turn per pair.
+const seed = (id: ThreadId) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`WITH RECURSIVE n(x) AS (
+        SELECT 0 UNION ALL SELECT x + 1 FROM n WHERE x < 1999
+      ) INSERT INTO messages (thread_id, id, seq, role, turn_id, message, rev)
+      SELECT ${id}, 'm-' || x, x + 1, CASE WHEN x % 2 = 0 THEN 'user' ELSE 'assistant' END,
+        't-' || (x / 2),
+        json_object('id', 'm-' || x, 'role', CASE WHEN x % 2 = 0 THEN 'user' ELSE 'assistant' END,
+          'parts', json_array(json_object('type', 'text', 'text', 'text ' || x)),
+          'metadata', json_object('turnId', 't-' || (x / 2),
+            'author', CASE WHEN x % 20 = 0 THEN 'user' ELSE 'server' END)), x + 1 FROM n`;
+    yield* sql`ANALYZE`;
+  });
+const ids = (messages: ReadonlyArray<{ readonly id: string }>) => messages.map((m) => m.id);
+const own = (m: { readonly metadata?: { readonly author?: string } }) =>
+  m.metadata?.author === "user";
+
+describe("findUserMessages", () => {
+  it.effect("reads from either end only as far as the messages it keeps", () =>
+    withStore(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const sql = yield* SqlClient.SqlClient;
+          const id = yield* addThread("long", "long history");
+          yield* seed(id);
+          const probe = yield* Effect.acquireRelease(Effect.sync(sqliteProbe), (p) =>
+            Effect.sync(p.restore),
+          );
+          probe.start();
+          expect(ids(yield* findUserMessages(store, id, { from: "newest", count: 1 }))).toEqual([
+            "m-1998",
+          ]);
+          const newestOnly = probe.stop().calls;
+          expect(newestOnly).toHaveLength(1);
+          expect(newestOnly[0]!.bindings).toContain(16);
+          expect(ids(yield* findUserMessages(store, id, { from: "oldest", count: 2 }))).toEqual([
+            "m-0",
+            "m-2",
+          ]);
+          // The user's own, oldest first: 100 of them, ten user rows apart, across growing pages.
+          expect(
+            ids(yield* findUserMessages(store, id, { from: "newest", count: 3, keep: own })),
+          ).toEqual(["m-1940", "m-1960", "m-1980"]);
+          expect(
+            yield* findUserMessages(store, id, { from: "newest", count: 1000, keep: own }),
+          ).toHaveLength(100);
+          // `until` leaves the message it stops at and every one past it.
+          expect(
+            ids(
+              yield* findUserMessages(store, id, {
+                from: "newest",
+                count: Number.POSITIVE_INFINITY,
+                until: (m) => m.id === "m-1990",
+              }),
+            ),
+          ).toEqual(["m-1992", "m-1994", "m-1996", "m-1998"]);
+          // A page that doesn't decode is passed by, not read again.
+          yield* sql`UPDATE messages SET message = 'not json'
+            WHERE thread_id = ${id} AND role = 'user' AND seq > 1900`;
+          expect(ids(yield* findUserMessages(store, id, { from: "newest", count: 1 }))).toEqual([
+            "m-1898",
+          ]);
+          // Each page walks the partial index of user rows, never the replies or a sort.
+          for (const query of [
+            `SELECT id, seq, message FROM messages WHERE thread_id = ? AND role = 'user' ORDER BY seq DESC LIMIT 5`,
+            `SELECT id, seq, message FROM messages WHERE thread_id = ? AND role = 'user' AND seq < 900 ORDER BY seq DESC LIMIT 5`,
+            `SELECT id, seq, message FROM messages WHERE thread_id = ? AND role = 'user' AND seq > 900 ORDER BY seq LIMIT 5`,
+          ]) {
+            const plan = yield* sql.unsafe<{ detail: string }>(`EXPLAIN QUERY PLAN ${query}`, [id]);
+            expect(plan.map((row) => row.detail).join(" | ")).toMatch(
+              /^SEARCH messages USING INDEX messages_thread_user \(thread_id=\?( AND seq[<>]\?)?\)$/,
+            );
+          }
+        }),
+      ),
+    ),
+  );
+
+  it.effect("finds a text Gram sent among the user rows only", () =>
+    withStore(
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const id = yield* addThread("sent", "sent");
+        yield* seed(id);
+        expect((yield* store.messagesWith(id, ["text 1001"], "user")).map((m) => m.id)).toEqual([]);
+        expect((yield* store.messagesWith(id, ["text 1001"])).map((m) => m.id)).toEqual(["m-1001"]);
+        expect((yield* store.messagesWith(id, ["text 1000"], "user")).map((m) => m.id)).toEqual([
+          "m-1000",
+        ]);
+        // A notice's exact text, its quotes and line breaks matched as stored; a reply quoting it
+        // is not a user message.
+        const notice = 'The user answered "WQ1":\n> use 410 [key:abc]';
+        yield* store.upsertMessage(id, {
+          id: "notice",
+          role: "user",
+          parts: [{ type: "text", text: notice }],
+        } as never);
+        yield* store.upsertMessage(id, {
+          id: "quoted",
+          role: "assistant",
+          parts: [{ type: "text", text: `Got it: ${notice}` }],
+        } as never);
+        expect((yield* store.messagesWith(id, [notice], "user")).map((m) => m.id)).toEqual([
+          "notice",
+        ]);
+        expect((yield* store.messagesWith(id, ["[key:abc]"], "user")).map((m) => m.id)).toEqual([
+          "notice",
+        ]);
+      }),
     ),
   );
 });

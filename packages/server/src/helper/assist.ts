@@ -23,7 +23,7 @@ import * as Stream from "effect/Stream";
 import { EventHub } from "../events/event-hub.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { ThreadVisibility } from "../git/visibility.ts";
-import { ThreadStore } from "../persistence/thread-store.ts";
+import { findUserMessages, ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadPlans } from "../plans/service.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { ThreadWaits } from "../waits/service.ts";
@@ -131,7 +131,7 @@ export const ThreadAssistLive = Layer.effect(
         }),
       recentMessages: (threadId, turns) =>
         Effect.map(store.recentMessages(threadId, turns), (page) => page.messages),
-      userMessages: (threadId) => store.listUserMessages(threadId),
+      userMessages: (threadId, query) => findUserMessages(store, threadId, query),
       git: (thread) => publisher.stateForThread(thread),
       prContext: (thread, git) => prContextsFor(prContextDeps, thread, git),
       plan: promptPlan,
@@ -198,7 +198,7 @@ export const ThreadAssistLive = Layer.effect(
           const last = turns.at(-1);
           return last === undefined ? undefined : { id: last.id, reason: last.reason };
         }),
-      userMessages: (threadId) => store.listUserMessages(threadId),
+      userMessages: (threadId, query) => findUserMessages(store, threadId, query),
       recentMessages: (threadId, turns) =>
         Effect.map(store.recentMessages(threadId, turns), (page) => page.messages),
       plan: promptPlan,
@@ -218,7 +218,7 @@ export const ThreadAssistLive = Layer.effect(
     const askReplies = makeAskReplies({
       schedule: scheduler.schedule,
       listRequests: (threadId) => store.listRequests(threadId),
-      userMessages: (threadId) => store.listUserMessages(threadId),
+      userMessages: (threadId, query) => findUserMessages(store, threadId, query),
       recentMessages: (threadId, turns) =>
         Effect.map(store.recentMessages(threadId, turns), (page) => page.messages),
     });

@@ -1,6 +1,7 @@
 import type { GramUIMessage, PendingRequest, Question, RequestId, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 
+import type { UserMessageQuery } from "../persistence/thread-store.ts";
 import { MAX_REPLIES, validReplies } from "./replies.ts";
 import { basisHash, type HelperScheduler } from "./scheduler.ts";
 import { SuggestOutput } from "./suggest.ts";
@@ -79,7 +80,11 @@ export interface AskRepliesDeps {
   readonly schedule: HelperScheduler["Service"]["schedule"];
   /** The thread's pending requests. */
   readonly listRequests: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<PendingRequest>>;
-  readonly userMessages: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<GramUIMessage>>;
+  /** The thread's user messages `query` asks for (`findUserMessages`), oldest first. */
+  readonly userMessages: (
+    threadId: ThreadId,
+    query: UserMessageQuery,
+  ) => Effect.Effect<ReadonlyArray<GramUIMessage>>;
   /** The last turn's messages, the agent's reply among them. */
   readonly recentMessages: (
     threadId: ThreadId,
@@ -107,7 +112,14 @@ export const makeAskReplies = (deps: AskRepliesDeps): AskReplies => ({
       if (question === undefined) return [];
       const material = yield* Effect.cached(
         Effect.gen(function* () {
-          const users = (yield* deps.userMessages(threadId)).map(textOf).filter((t) => t !== "");
+          // The newest that say something: the style samples, the last of them the latest.
+          const users = (yield* deps.userMessages(threadId, {
+            from: "newest",
+            count: STYLE_SAMPLES,
+            keep: (message) => textOf(message) !== "",
+          }))
+            .map(textOf)
+            .filter((t) => t !== "");
           const recent = yield* deps.recentMessages(threadId, 1);
           return {
             style: users.slice(-STYLE_SAMPLES),

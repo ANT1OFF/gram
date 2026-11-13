@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { ThreadNotFound, type GramUIMessage, type Thread, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { pathToFileURL } from "node:url";
+import type { UserMessagePage, UserMessagesRead } from "../persistence/thread-store.ts";
 import {
   attachUserWords,
   BRIEF_FOOTER_LINE,
@@ -101,7 +102,24 @@ describe("attachUserWords", () => {
       id === caller
         ? Effect.succeed({ id, role } as unknown as Thread)
         : Effect.fail(new ThreadNotFound({ threadId: id })),
-    listUserMessages: () => Effect.succeed(messages.filter((each) => each.role === "user")),
+    // The store's pages over the user messages, their places as seqs.
+    userMessagePage: (_: ThreadId, page: UserMessagePage) =>
+      Effect.sync((): UserMessagesRead => {
+        const rows = messages.flatMap((each, i) =>
+          each.role === "user" ? [{ seq: i + 1, message: each }] : [],
+        );
+        const ordered = page.from === "newest" ? rows.toReversed() : rows;
+        const past = ordered.filter(
+          (row) =>
+            page.after === undefined ||
+            (page.from === "newest" ? row.seq < page.after : row.seq > page.after),
+        );
+        const taken = past.slice(0, page.limit);
+        return {
+          messages: taken,
+          next: taken.length < page.limit ? undefined : taken.at(-1)!.seq,
+        };
+      }),
   });
 
   it.effect("attaches the latest ones the orchestrator asked for", () =>

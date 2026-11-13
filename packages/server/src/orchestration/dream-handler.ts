@@ -216,7 +216,8 @@ export const dreamHandlers = Effect.gen(function* () {
                 item.input.text.includes(tag),
               );
               if (queued === true) return true;
-              return (yield* store.listUserMessages(orchestrator)).some((message) =>
+              // Only the user messages whose stored form holds the tag are read and decoded.
+              return (yield* store.messagesWith(orchestrator, [tag], "user")).some((message) =>
                 message.parts.some((part) => part.type === "text" && part.text.includes(tag)),
               );
             }),
