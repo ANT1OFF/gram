@@ -292,6 +292,17 @@ test("the page of every thread and New take the embedding app's words", async ({
   await page.evaluate(() => (window as unknown as Update).embed.navigate("/threads"));
   await expect(page.getByTestId("threads-page").getByRole("heading")).toHaveText("Chat");
   await expect(page.getByTestId("threads-new")).toHaveText("New chat");
+  // The list narrows to what needs someone or what is at work, each with its count.
+  const filter = page.getByTestId("threads-filter");
+  await expect(filter.getByRole("radio", { name: /^All/ })).toBeChecked();
+  const all = await page.getByTestId("threads-row").count();
+  const running = filter.getByRole("radio", { name: /^Running/ });
+  if (await running.isEnabled()) {
+    await running.click();
+    await expect(running).toBeChecked();
+    expect(await page.getByTestId("threads-row").count()).toBeLessThan(all);
+    await filter.getByRole("radio", { name: /^All/ }).click();
+  }
   // A thread's kind is in the app's words too.
   const rows = page.getByTestId("threads-page");
   await expect(rows).toContainText("One agent");

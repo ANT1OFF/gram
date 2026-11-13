@@ -23,7 +23,14 @@ import { useOpenThread } from "@/shell/thread-switcher";
 import { threadStatusOf } from "@/sidebar/status";
 import { useThreadsStore } from "@/stores/threads";
 
-import { threadListings, type ThreadListing } from "./threads-model";
+import {
+  inThreadsFilter,
+  THREADS_FILTERS,
+  threadListings,
+  threadsFilterCounts,
+  type ThreadListing,
+  type ThreadsFilter,
+} from "./threads-model";
 
 /** Rows drawn at most: a search finds the rest. */
 const SHOWN = 300;
@@ -37,6 +44,7 @@ const SHOWN = 300;
 export function ThreadsPage() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<ThreadsFilter>("all");
   const summaries = useThreadsStore(useShallow((s) => Object.values(s.byId)));
   const workspaces = useWorkspaces();
   const groups = useDerivedAsks((s) => s.needsYou.groups);
@@ -66,7 +74,15 @@ export function ThreadsPage() {
       query,
     );
   }, [summaries, workspaces, groups, query, kinds]);
-  const shown = listings.slice(0, SHOWN);
+  const counts = useMemo(() => threadsFilterCounts(listings), [listings]);
+  // A filter whose last thread left it would show an empty list with nothing to say why: every
+  // thread again.
+  const picked = counts[filter] === 0 ? "all" : filter;
+  const kept = useMemo(
+    () => listings.filter((listing) => inThreadsFilter(listing, picked)),
+    [listings, picked],
+  );
+  const shown = kept.slice(0, SHOWN);
 
   // Where the title bar names the page (a phone's, or an embedding app's) that is the page's top
   // heading: this one is the next level down, and on a phone it is not drawn a second time.
@@ -118,6 +134,30 @@ export function ThreadsPage() {
             className="h-9 w-full rounded-lg border border-input bg-transparent pr-2.5 pl-8 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </label>
+        {listings.length > 0 && (
+          <div
+            role="radiogroup"
+            aria-label="Show"
+            data-testid="threads-filter"
+            className="flex flex-wrap items-center gap-1.5"
+          >
+            {THREADS_FILTERS.map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={picked === value}
+                disabled={counts[value] === 0}
+                data-filter={value}
+                onClick={() => setFilter(value)}
+                className="flex h-7 items-center gap-1.5 rounded-full border border-border px-3 text-meta text-muted-foreground outline-none transition-colors duration-(--dur-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 aria-checked:border-transparent aria-checked:bg-secondary aria-checked:text-foreground phone:h-9"
+              >
+                {label}
+                <span className="tabular-nums opacity-70">{counts[value]}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {shown.length === 0 ? (
           <EmptyState
             testId="threads-empty"
@@ -136,9 +176,9 @@ export function ThreadsPage() {
             ))}
           </ul>
         )}
-        {listings.length > shown.length && (
+        {kept.length > shown.length && (
           <p className="text-center text-meta text-muted-foreground">
-            {listings.length - shown.length} more; search to find them.
+            {kept.length - shown.length} more; search to find them.
           </p>
         )}
       </div>
