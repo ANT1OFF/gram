@@ -3814,6 +3814,12 @@ describe("browserGrant", () => {
     expect(browserGrant({ ...codex, browser: false }, "plain", limited)).toEqual({});
   });
 
+  it("asks before each action where the user said so", () => {
+    expect(
+      browserGrant(codex, "plain", { ...on, agents: { ...on.agents, browserAskEachAction: true } }),
+    ).toEqual({ browser: true, browserAsk: true });
+  });
+
   it("takes a workspace's own list in place of the user-wide one", () => {
     const limited = {
       ...on,

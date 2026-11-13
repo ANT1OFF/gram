@@ -511,6 +511,8 @@ export const HostSessionOpen = Schema.Struct({
    * (`OpenSessionOptions.browserScope`). A host built before it drops the field and doesn't limit.
    */
   browserScope: Schema.optionalKey(BrowserScope),
+  /** Each action in the browser asks first (`OpenSessionOptions.browserAsk`). */
+  browserAsk: Schema.optionalKey(Schema.Boolean),
 });
 export type HostSessionOpen = typeof HostSessionOpen.Type;
 

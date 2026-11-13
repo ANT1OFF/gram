@@ -56,6 +56,8 @@ export interface SessionPolicy {
   readonly browserSurfaces?: BrowserSurfaces | undefined;
   /** With `browser`, what it is limited to (`OpenSessionOptions.browserScope`); absent, no limit. */
   readonly browserScope?: BrowserScope | undefined;
+  /** With `browser`, each action asks first (`OpenSessionOptions.browserAsk`). */
+  readonly browserAsk?: boolean | undefined;
 }
 
 /**

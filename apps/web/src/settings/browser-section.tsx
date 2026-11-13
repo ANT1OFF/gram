@@ -76,7 +76,7 @@ const SURFACES: ReadonlyArray<{
 export function YourBrowserSection() {
   const settings = useServerSettings((s) => s.settings);
   const save = useSaveSettings();
-  const [failed, setFailed] = useState<{ agent: AgentKind | Surface; message: string }>();
+  const [failed, setFailed] = useState<{ agent: AgentKind | Surface | "ask"; message: string }>();
   const sitesId = useId();
   const appsId = useId();
   if (!settings) return null;
@@ -164,6 +164,33 @@ export function YourBrowserSection() {
         }
         keywords={["codex", "cua", "computer use", "node_repl"]}
         {...toggle("codex")}
+      />
+      <Toggle
+        label="Ask before each action"
+        description="A thread with your browser asks before every click, page or app it opens."
+        learnMore={
+          <p>
+            Claude asks before each Claude in Chrome action that does something; reading a page
+            doesn&apos;t ask. Codex&apos;s and the extensions&apos; own permission prompts then
+            offer only a one-time yes. Without this, a thread asks before each action only under a
+            workspace that asks before anything leaves the machine. A change applies from a
+            thread&apos;s next session.
+          </p>
+        }
+        keywords={["ask", "approve", "confirm", "each action", "browser", "computer use"]}
+        checked={settings.agents.browserAskEachAction === true}
+        onChange={(next) => {
+          setFailed(undefined);
+          save({ agents: { browserAskEachAction: next } }).catch((e: unknown) =>
+            setFailed({ agent: "ask", message: errorMessage(e) }),
+          );
+        }}
+        onReset={
+          settings.agents.browserAskEachAction === true
+            ? () => void save({ agents: { browserAskEachAction: false } })
+            : undefined
+        }
+        error={failed?.agent === "ask" ? failed.message : undefined}
       />
       {SURFACES.map(({ surface, ...row }) => (
         <Toggle key={surface} {...row} {...surfaceToggle(surface)} />

@@ -1528,6 +1528,12 @@ takes the place of the user-wide one, sites and apps each on their own; left emp
 list applies. Only the user edits them: no agent can change either through `settings_propose` or
 `workspace_update`.
 
+**Ask before each action.** With **Ask before each action** on (`agents.browserAskEachAction`),
+a thread given the browser asks first whatever its workspace's gate. A Claude thread asks before
+each Claude in Chrome call that acts (reads such as `read_page` don't ask), as it already does
+under a workspace that asks before anything leaves the machine. For Codex, and for the extension's
+own prompts on Claude, a permission prompt card then offers only a one-time yes.
+
 **Permission prompts.** When a computer-use or other MCP server asks a yes-or-no question
 before it acts ("Allow ChatGPT to use Safari?"), the thread shows it as an approval card. A Codex
 thread's card offers this session or always only where the server offers them. A Claude thread's

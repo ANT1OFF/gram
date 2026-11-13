@@ -963,6 +963,8 @@ export const makeCodexHost = (
         o.browser !== undefined &&
         !(o.browser && home === "user" && !noSurface);
       const lent = confined === undefined && !browserOff && o.browser === true;
+      // With the browser lent to ask each time, a computer-use prompt offers no lasting "yes".
+      const promptsOnce = lent && o.browserAsk === true;
       const narrowedSurfaces =
         lent && o.browserSurfaces !== undefined ? surfacesOff(o.browserSurfaces) : undefined;
       // Confinement already switches every server off; otherwise the workspace's lists might, and
@@ -1199,7 +1201,7 @@ export const makeCodexHost = (
           );
           return;
         }
-        const card = toPendingRequest(request, mapper.changes, level ?? false);
+        const card = toPendingRequest(request, mapper.changes, level ?? false, promptsOnce);
         if (card === undefined) {
           emit({
             type: "notice",
@@ -1528,16 +1530,18 @@ export const makeCodexHost = (
           Effect.suspend(() => {
             const request = pending.get(requestId);
             if (request === undefined) return Effect.void;
-            return rpc.respond(request.id, responseFor(request, answer, level ?? false)).pipe(
-              Effect.catchDefect(() =>
-                Effect.fail(
-                  new AnswerUndelivered({
-                    message: "Codex did not receive the answer. Try again.",
-                  }),
+            return rpc
+              .respond(request.id, responseFor(request, answer, level ?? false, promptsOnce))
+              .pipe(
+                Effect.catchDefect(() =>
+                  Effect.fail(
+                    new AnswerUndelivered({
+                      message: "Codex did not receive the answer. Try again.",
+                    }),
+                  ),
                 ),
-              ),
-              Effect.tap(() => Effect.sync(() => pending.delete(requestId))),
-            );
+                Effect.tap(() => Effect.sync(() => pending.delete(requestId))),
+              );
           }),
         setMode: (next) =>
           Effect.sync(() => {

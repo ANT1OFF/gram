@@ -405,6 +405,10 @@ export const USER_ONLY_SETTINGS: ReadonlyArray<UserOnlyKey> = [
     reason: "it widens the sites agents may act on in your browser",
   },
   { key: "workspace.browserApps", reason: "it widens the Mac apps agents may act on" },
+  {
+    key: "agents.browserAskEachAction",
+    reason: "it decides whether agents ask before acting in your browser",
+  },
   { key: "agents.browserSites", reason: "it widens the sites agents may act on in your browser" },
   { key: "agents.browserApps", reason: "it widens the Mac apps agents may act on" },
   {
