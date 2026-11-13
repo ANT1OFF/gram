@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { DEFAULT_SETTINGS, type Settings, type ThreadId } from "@gram/contracts";
 
-import { browserStatus } from "./browser-status.ts";
+import { browserNotReady, browserStatus } from "./browser-status.ts";
 
 const allOn: Settings = {
   ...DEFAULT_SETTINGS,
@@ -95,5 +95,46 @@ describe("browserStatus", () => {
     expect(
       browserStatus({ ...claude, ...worker }, allOn, { ...granted, outwardGate: "all" }, {}),
     ).toEqual({ state: "on" });
+  });
+});
+
+describe("browserNotReady", () => {
+  it("says nothing while a browser server is connected or still starting", () => {
+    expect(
+      browserNotReady("claude", [{ name: "claude-in-chrome", status: "connected" }]),
+    ).toBeUndefined();
+    expect(
+      browserNotReady("codex", [
+        { name: "node_repl", status: "failed" },
+        { name: "cua_repl", status: "pending" },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("names what a Claude session's extension lacks, and stays quiet when it lists none", () => {
+    expect(
+      browserNotReady("claude", [
+        { name: "claude-in-chrome", status: "failed", error: "no browser connected" },
+      ]),
+    ).toBe(
+      "Claude in Chrome isn't connected (no browser connected). Check that Chrome is open with the Claude extension installed and signed in.",
+    );
+    expect(browserNotReady("claude", [{ name: "claude-in-chrome", status: "needs-auth" }])).toMatch(
+      /sign in to claude\.ai/,
+    );
+    // Claude Code may not list its built-in server, so its absence says nothing.
+    expect(browserNotReady("claude", [{ name: "github", status: "connected" }])).toBeUndefined();
+  });
+
+  it("says a Codex session without the plugin's servers has no computer use", () => {
+    expect(browserNotReady("codex", [{ name: "github", status: "connected" }])).toMatch(
+      /Install computer use from the ChatGPT app/,
+    );
+    expect(browserNotReady("codex", [{ name: "cua_repl", status: "failed" }])).toBe(
+      "Codex computer use isn't running (cua_repl: failed). Check that the ChatGPT app is open.",
+    );
+    expect(browserNotReady("codex", [{ name: "node_repl", status: "disabled" }])).toMatch(
+      /turned off in this session \(node_repl\)/,
+    );
   });
 });

@@ -915,6 +915,12 @@ export const ThreadBrowserStatus = Schema.Struct({
   why: Schema.optionalKey(Schema.String),
   /** Why lending it would do nothing for this thread, lent or not; absent where it could. */
   cannot: Schema.optionalKey(Schema.String),
+  /**
+   * With `on`: what the thread's running session, opened with the browser, still lacks to use it,
+   * as its own MCP servers report (the extension isn't connected, the plugins aren't installed).
+   * Absent when it has it, and when no such session runs to ask.
+   */
+  notReady: Schema.optionalKey(Schema.String),
 });
 export type ThreadBrowserStatus = typeof ThreadBrowserStatus.Type;
 

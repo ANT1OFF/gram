@@ -47,6 +47,9 @@ export function useThreadBrowser(threadId: ThreadId | undefined): ThreadBrowserS
     queryFn: () => api.threadBrowserStatus(threadId!),
     enabled: threadId !== undefined && thread !== undefined,
     staleTime: 0,
+    // Whether a lent browser is ready is the running session's to say, and changes without
+    // anything here changing: the extension connects, the session reopens.
+    refetchInterval: (query) => (query.state.data?.state === "on" ? 30_000 : false),
   });
   return data;
 }
@@ -60,6 +63,8 @@ export const browserChipText = (
   const name = browserName(thread);
   switch (status.state) {
     case "on":
+      if (status.notReady !== undefined)
+        return { label: "Your browser isn't ready", hint: `Lent your browser. ${status.notReady}` };
       return {
         label: "Your browser",
         hint: `It can use your browser through ${name}, signed in as you. A change applies from its next session.`,
@@ -96,9 +101,11 @@ export function BrowserChip({ threadId, className }: { threadId: ThreadId; class
         <span
           data-testid="pane-browser"
           data-state={status.state}
+          data-ready={status.state === "on" && status.notReady === undefined}
           className={cn(
             "inline-flex shrink-0 items-center gap-1 text-meta text-muted-foreground",
             status.state !== "on" && "line-through",
+            status.state === "on" && status.notReady !== undefined && "text-warning",
             className,
           )}
         />
