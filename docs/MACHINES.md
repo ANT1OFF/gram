@@ -242,8 +242,8 @@ works without what the other doesn't have yet:
 What may not happen between releases: a call or a field going away, a field becoming required, a
 value changing its type or the values it takes. A test holds every change to that
 (`packages/contracts/src/rpc/host-compat.test.ts`), comparing the protocol with a checked-in copy
-of it as last released (`host-released.json`), in both directions, since either side may be the
-older one. A change that really can't keep a released build working is a new protocol version,
+of it as each release since 1.19.0 spoke it (`host-released/<release>.json`), in both directions,
+since either side may be the older one, and a machine may be several releases behind. A change that really can't keep a released build working is a new protocol version,
 decided on purpose; Gram then says which versions it still talks to, and only a host outside them
 shows **Needs update**.
 
