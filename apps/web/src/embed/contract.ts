@@ -223,6 +223,15 @@ export interface ShellModels {
   };
 }
 
+/** A place of the embedding app's own, and the threads that open in it. */
+export interface ShellThreadPlace {
+  /** What the place is called: "Chat". */
+  readonly name: string;
+  /** Where a thread opens in it, under the app, with `$threadId` for the thread's id. */
+  readonly path: string;
+  readonly ids: readonly string[];
+}
+
 export interface ShellThreadsPage {
   /**
    * The page's name: its heading, the title bar, a phone's header and the palette's command.
@@ -245,6 +254,12 @@ export interface ShellThreadsPage {
    * Each still opens at its address. Every thread is listed when left out.
    */
   readonly elsewhere?: readonly string[];
+  /**
+   * Places of the embedding app's own that some threads open in: "Chat" at `/chat/$threadId`, for
+   * its assistant's conversations. A message such a thread sent to another says the place beside
+   * its sender, and opens the sender there in place of its page here.
+   */
+  readonly places?: readonly ShellThreadPlace[];
   /**
    * The New form's Who does it, narrowed and worded by an app whose people choose between fewer
    * ways to start. Gram's three choices in its own words when left out.

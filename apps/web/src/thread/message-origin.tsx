@@ -1,3 +1,4 @@
+import { useEmbedShell } from "@/embed/store";
 import type { MessageOrigin } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, MessagesSquare } from "lucide-react";
@@ -53,7 +54,11 @@ export function MessageOriginLabel({ origin }: { origin: MessageOrigin }) {
   const sender = useThreadsStore((s) => s.byId[origin.threadId]?.thread);
   const ready = useThreadsStore((s) => s.ready);
   const gone = ready && sender === undefined;
-  const role = senderRole(origin, sender?.spawnedBy !== undefined);
+  // A sender the embedding app shows in a place of its own is named by that place, and opens there.
+  const place = useEmbedShell((s) =>
+    s.threadsPage.places?.find((each) => each.ids.includes(origin.threadId)),
+  );
+  const role = place?.name ?? senderRole(origin, sender?.spawnedBy !== undefined);
   // Absent only on a message sent before every send carried its mode, when the default queued.
   const delivery = DELIVERY[origin.mode ?? "queue"];
   const body = (
@@ -86,6 +91,19 @@ export function MessageOriginLabel({ origin }: { origin: MessageOrigin }) {
       <p data-testid="message-origin" title="Thread not found" className={row}>
         {body}
       </p>
+    );
+  }
+  if (place !== undefined) {
+    const to = place.path.replace("$threadId", encodeURIComponent(origin.threadId));
+    return (
+      <Link
+        {...({ to } as unknown as { to: "/" })}
+        data-testid="message-origin"
+        data-place={place.name}
+        className={`group/origin ${row} rounded-sm hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&:hover>span.truncate]:underline`}
+      >
+        {body}
+      </Link>
     );
   }
   return (

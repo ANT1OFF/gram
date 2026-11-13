@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { useEmbedShell } from "@/embed/store";
 import { useRevealStore } from "@/stores/reveal";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -18,9 +19,9 @@ vi.mock("@tanstack/react-router", () => ({
   }: {
     children?: ReactNode;
     to: string;
-    params: { threadId: string };
+    params?: { threadId: string };
   }) => (
-    <a href={to.replace("$threadId", params.threadId)} {...rest}>
+    <a href={to.replace("$threadId", params?.threadId ?? "")} {...rest}>
       {children}
     </a>
   ),
@@ -29,6 +30,7 @@ vi.mock("@tanstack/react-router", () => ({
 afterEach(() => {
   cleanup();
   useThreadsStore.setState({ ready: false, byId: {} });
+  useEmbedShell.setState({ threadsPage: {} });
 });
 
 const SENDER = "t-planner" as ThreadId;
@@ -53,6 +55,17 @@ describe("MessageOriginLabel", () => {
     expect(row.tagName).toBe("A");
     expect(row.getAttribute("href")).toBe("/t/t-planner");
     expect(row.textContent).toBe("Received from Auth middleware split· queued");
+  });
+
+  it("names the embedding app's place the sender opens in, and links there", () => {
+    withSender({ title: "Why the retry test is flaky" });
+    useEmbedShell.setState({
+      threadsPage: { places: [{ name: "Chat", path: "/chat/$threadId", ids: [SENDER] }] },
+    });
+    render(<MessageOriginLabel origin={origin} />);
+    const row = screen.getByTestId("message-origin");
+    expect(row.getAttribute("href")).toBe("/chat/t-planner");
+    expect(row.textContent).toBe("Received from Why the retry test is flaky· Chat· queued");
   });
 
   it("names an orchestrator, a worker and a steer", () => {
