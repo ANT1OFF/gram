@@ -132,7 +132,7 @@ export function UpdatePill({ size = "sm" }: { size?: "xs" | "sm" }) {
           className={cn(
             "relative text-muted-foreground [-webkit-app-region:no-drag]",
             labelled && "px-1.5 tabular-nums",
-            view.kind === "ready" && "text-primary hover:text-primary",
+            view.kind === "ready" && "text-link hover:text-link",
             (view.kind === "error" || view.kind === "notApplied") &&
               "text-foreground hover:text-foreground",
             view.action === "none" && "cursor-default hover:bg-transparent",

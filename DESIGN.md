@@ -153,7 +153,10 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   (`text-meta`), never smaller. `text-caption` is only for what is never read for meaning: a key
   cap, a count badge, a footer's key legend. A third, quieter level (a hint, a step's evidence, a
   pending line) is `text-subtle` (`fg-subtle`), which holds the text floor like `fg-muted`; never
-  fade muted text with opacity (`text-muted-foreground/70`), which the drift check flags. A title wraps
+  fade muted text with opacity (`text-muted-foreground/70`), which the drift check flags. A
+  disabled control's words are the one level under the floor, `text-disabled` (`fg-disabled`):
+  subtle text on a button read as a live quiet one. Words in the accent's hue (a link, a current
+  step's name) are `text-link` (`accent-text`); `text-primary` is a mark's colour, for glyphs. A title wraps
   to two lines before it is cut short at its end, and its hover says the whole of it; a sidebar
   row's title keeps to one line, so its rows stay even. Metadata a heading or the whole list already says is left out: no repo on each
   row when every row has the same one, no workspace under its own heading.

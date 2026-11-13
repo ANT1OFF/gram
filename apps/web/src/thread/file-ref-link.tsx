@@ -103,7 +103,7 @@ const LINK = "cursor-pointer rounded-sm underline-offset-2 hover:underline";
 const KIND_CLASS: Record<string, string> = {
   code: "decoration-muted-foreground",
   text: "font-mono text-code decoration-muted-foreground",
-  link: "wrap-anywhere font-medium text-primary underline",
+  link: "wrap-anywhere font-medium text-link underline",
 };
 
 /** A path elsewhere on the machine before it's known to be a file: only its font, as a code span. */
