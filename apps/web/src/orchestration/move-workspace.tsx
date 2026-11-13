@@ -1,21 +1,19 @@
 import {
   autonomyOf,
-  embeddingOn,
-  type HostedDeviceView,
   type HostedMoveCheck,
   type HostedMoveDone,
   type HostedMoveProgress,
   type WorkspaceId,
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CircleDashed, LoaderCircle } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, CircleDashed } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
 import { Meter } from "@/components/ui/meter";
 import { cn } from "@/lib/utils";
-import { useServerSettings } from "@/settings-sync/store";
+import { Spinner } from "@/motion";
 import { useThreadsStore } from "@/stores/threads";
 import { Dialog, DialogShell } from "@/thread/dialog-shell";
 
@@ -24,47 +22,17 @@ import {
   goesLines,
   movedLine,
   moveSteps,
-  moveTargets,
   repositoryLine,
   runningNote,
   sentShare,
   sentText,
   STAYS_LINES,
-  targetKey,
-  type MoveTarget,
 } from "./move-workspace-model";
+import { targetKey, useMoveTargets } from "./move-targets";
 import { workingWorkerThreads } from "./tree-model";
 import { useWorkspaces } from "./use-orchestration";
 
-type Bridge = NonNullable<NonNullable<Window["gram"]>["hostedDevice"]>;
-type Mover = NonNullable<Bridge["move"]>;
-
 const machine = () => (window.gram?.platform === "darwin" ? "this Mac" : "this computer");
-
-/**
- * Where a workspace of this machine can move, and the shell's calls that move it: none unless the
- * hosted features are on, the desktop app can move one, and a server is signed in to.
- */
-export function useMoveTargets(): {
-  readonly targets: readonly MoveTarget[];
-  readonly mover: Mover | undefined;
-} {
-  const hosted = useServerSettings((s) => s.settings !== undefined && embeddingOn(s.settings));
-  const bridge = typeof window === "undefined" ? undefined : window.gram?.hostedDevice;
-  const mover = hosted ? bridge?.move : undefined;
-  const [view, setView] = useState<HostedDeviceView | null>();
-  const read = useCallback(() => {
-    if (bridge === undefined || mover === undefined) return;
-    void bridge.state().then(setView, () => setView(null));
-  }, [bridge, mover]);
-  useEffect(() => {
-    if (bridge === undefined || mover === undefined) return undefined;
-    read();
-    return bridge.onChange(read);
-  }, [bridge, mover, read]);
-  const targets = useMemo(() => (mover === undefined ? [] : moveTargets(view)), [mover, view]);
-  return { targets, mover };
-}
 
 const ignore = () => {};
 
@@ -211,7 +179,7 @@ export function MoveWorkspaceDialog({
               {step.state === "done" ? (
                 <Check aria-hidden className="size-icon-row text-success" />
               ) : step.state === "now" ? (
-                <LoaderCircle aria-hidden className="size-icon-row animate-spin" />
+                <Spinner aria-hidden className="size-icon-row" />
               ) : (
                 <CircleDashed aria-hidden className="size-icon-row" />
               )}
