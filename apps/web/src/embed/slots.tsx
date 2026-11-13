@@ -88,8 +88,10 @@ export function ItemIcon({ item, className }: { item: ShellNavigationItem; class
  * A navigation row: its fill and colour ease in on hover, and it gives a little when pressed, under
  * the Motion setting. The current row's fill is the list's `Glide`, which moves between rows.
  */
+// The current page's glyph takes the accent, the colour of the current place; its words and fill
+// stay as they were, so the place never rests on colour alone.
 const NAV_ROW =
-  "relative flex h-8 min-w-0 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-muted-foreground outline-none transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.98] aria-[current=page]:text-foreground aria-[current=page]:hover:bg-transparent in-data-phone-drawer:h-11 in-data-phone-drawer:gap-2.5 in-data-phone-drawer:px-2";
+  "relative flex h-8 min-w-0 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-muted-foreground outline-none transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.98] aria-[current=page]:text-foreground aria-[current=page]:[&_svg]:text-primary aria-[current=page]:hover:bg-transparent in-data-phone-drawer:h-11 in-data-phone-drawer:gap-2.5 in-data-phone-drawer:px-2";
 
 /**
  * A row in the `roomy` sidebar: taller, its label in the body's stronger weight and the foreground
@@ -106,7 +108,7 @@ export const ROOMY_ROW =
  */
 export function RoomyTile({ children }: { children: ReactNode }) {
   return (
-    <span className="relative grid size-8 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground transition-colors duration-(--dur-fast) group-hover/row:text-foreground group-aria-[current=page]/row:text-foreground *:size-4.5 *:transition-transform *:duration-(--dur-fast) *:ease-(--ease-out) motion-safe:group-hover/row:*:scale-110">
+    <span className="relative grid size-8 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground transition-colors duration-(--dur-fast) group-hover/row:text-foreground group-aria-[current=page]/row:text-primary *:size-4.5 *:transition-transform *:duration-(--dur-fast) *:ease-(--ease-out) motion-safe:group-hover/row:*:scale-110">
       {children}
     </span>
   );
@@ -270,7 +272,7 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
 
 /** A compact tile: the open row's height, filled while it is where the window is. */
 export const RAIL_TILE =
-  "relative grid size-8 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground outline-none transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.98] aria-[current=page]:bg-sidebar-row-active aria-[current=page]:text-foreground aria-expanded:text-foreground";
+  "relative grid size-8 shrink-0 place-items-center rounded-(--radius-sm) text-muted-foreground outline-none transition-[background-color,color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.98] aria-[current=page]:bg-sidebar-row-active aria-[current=page]:text-foreground aria-[current=page]:[&_svg]:text-primary aria-expanded:text-foreground";
 
 /** A rail tile in a list whose current fill is its `Glide`. */
 const GLIDE_TILE = cn(
