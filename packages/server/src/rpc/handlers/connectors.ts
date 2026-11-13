@@ -1007,15 +1007,24 @@ export const localAppConnectorWrites = <
   },
 >(
   handlers: H,
-): H => ({
+): Omit<H, "connectors.add" | "connectors.remove"> & {
+  readonly "connectors.add": (
+    request: AddConnectorPayload,
+    call?: CallHeaders,
+  ) => ReturnType<H["connectors.add"]> | Effect.Effect<never, InvalidState>;
+  readonly "connectors.remove": (
+    request: RemoveConnectorPayload,
+    call?: CallHeaders,
+  ) => ReturnType<H["connectors.remove"]> | Effect.Effect<never, InvalidState>;
+} => ({
   ...handlers,
   "connectors.add": (request: AddConnectorPayload, call?: CallHeaders) =>
     isLocalApp(call?.headers)
-      ? handlers["connectors.add"](request)
+      ? (handlers["connectors.add"](request) as ReturnType<H["connectors.add"]>)
       : Effect.fail(new InvalidState({ message: CONNECTOR_WRITES_LOCAL_ONLY })),
   "connectors.remove": (request: RemoveConnectorPayload, call?: CallHeaders) =>
     isLocalApp(call?.headers)
-      ? handlers["connectors.remove"](request)
+      ? (handlers["connectors.remove"](request) as ReturnType<H["connectors.remove"]>)
       : Effect.fail(new InvalidState({ message: CONNECTOR_WRITES_LOCAL_ONLY })),
 });
 
