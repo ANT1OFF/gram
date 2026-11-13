@@ -1,4 +1,6 @@
-import { PRESET_PALETTES, type Palette } from "@gram/themes";
+import { DEFAULT_PALETTE_ID, PRESET_PALETTES, type Palette } from "@gram/themes";
+
+import { hostPalettes, type HostTheme } from "@/theme/host-theme";
 
 /** One card in the Appearance palette picker: a light/dark pair, or a palette of one mode. */
 export interface PaletteChoice {
@@ -64,11 +66,18 @@ function choiceOf(palette: Palette, palettes: readonly Palette[], name = palette
 export function paletteChoices(
   activeId: string,
   customPalettes: readonly Palette[],
+  host?: HostTheme,
 ): PaletteChoice[] {
   const palettes = [...PRESET_PALETTES, ...customPalettes];
+  const hosted = hostPalettes(host);
   const featured = FEATURED_PALETTES.flatMap(({ id, name }) => {
     const palette = byId(palettes, id);
-    return palette ? [choiceOf(palette, palettes, name)] : [];
+    if (!palette) return [];
+    const choice = choiceOf(palette, palettes, name);
+    // The default card shows the host's palette, which it stands for, under the host's name.
+    if (id !== DEFAULT_PALETTE_ID || !hosted.length) return [choice];
+    const shown = choiceOf(hosted.find((p) => p.mode === "dark") ?? hosted[0]!, hosted);
+    return [{ ...choice, name: host?.name ?? choice.name, swatch: shown.swatch }];
   });
   const covered = new Set(featured.flatMap((c) => c.ids));
   const active = byId(PRESET_PALETTES, activeId);

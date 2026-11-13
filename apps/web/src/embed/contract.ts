@@ -498,6 +498,44 @@ export interface MockThread {
   };
 }
 
+/** A palette's ten seed colours, as Gram's own palettes define them (hex). */
+export interface ThemeSeeds {
+  readonly bg: string;
+  readonly surface: string;
+  readonly text: string;
+  readonly muted: string;
+  readonly accent: string;
+  readonly accent2: string;
+  readonly red: string;
+  readonly green: string;
+  readonly yellow: string;
+  readonly cyan: string;
+}
+
+/** The app's look, given to `mountGram` by the page that mounts it (`MountOptions.theme`). */
+export interface HostTheme {
+  /** The name the palette goes by in Settings, in place of "Neutral". */
+  readonly name?: string;
+  /** Seeds for each mode. Either may be left out; with both, they pair. */
+  readonly palettes?: { readonly dark?: ThemeSeeds; readonly light?: ThemeSeeds };
+  /**
+   * Colours set over what the seeds derive, per mode, by the theme's names without `--`
+   * (`accent`, `on-accent`, `accent-text`, `status-needs`, …): an accent apart from the links, say.
+   */
+  readonly colors?: {
+    readonly dark?: Readonly<Record<string, string>>;
+    readonly light?: Readonly<Record<string, string>>;
+  };
+  /** Font stacks for text, code and display. */
+  readonly fonts?: { readonly ui?: string; readonly mono?: string; readonly display?: string };
+  /** Corner radii in pixels, by the theme's step names. */
+  readonly radii?: Partial<Record<"2xs" | "xs" | "sm" | "md" | "lg" | "xl", number>>;
+  /** `"none"`: raised cards and menus are drawn by their edge, with no shadow. */
+  readonly shadows?: "none";
+  /** Colours for charts in order, per mode, as `--chart-1` onwards. */
+  readonly chart?: { readonly dark?: readonly string[]; readonly light?: readonly string[] };
+}
+
 export interface MountOptions {
   /** The element the app fills. It takes the whole window: one mount to a page. */
   readonly element: HTMLElement;
@@ -514,6 +552,12 @@ export interface MountOptions {
    */
   readonly basePath?: string;
   readonly shell?: ShellContributions;
+  /**
+   * The app's look in this page: a palette for each mode that takes the place of Gram's default
+   * one, colours set over it, fonts, radii, shadows and chart colours (`--chart-1` onwards). A
+   * person's own palette and fonts, picked in Settings, still win. Left out, the look is Gram's.
+   */
+  readonly theme?: HostTheme;
 }
 
 export interface GramHandle {
