@@ -129,6 +129,23 @@ export function TitlebarPathViews({ solo }: { solo: boolean }) {
       >
         Board
       </Button>
+      {/* What the orchestrator knows: a place of the workspace, named as the other two are. */}
+      <Button
+        variant="ghost"
+        size="xs"
+        aria-current={!board && pathname.endsWith("/memory") ? "page" : undefined}
+        data-testid="titlebar-path-memory"
+        className={PLACE}
+        onClick={() => {
+          useViewStore.getState().setView("chat");
+          void navigate({
+            to: "/w/$workspaceId/memory",
+            params: { workspaceId: workspace.workspace.id },
+          });
+        }}
+      >
+        Memory
+      </Button>
     </div>
   );
 }

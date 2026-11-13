@@ -12,6 +12,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { focusOtherWindow } from "@/desktop/open-thread";
 import { useSaveSettings } from "@/settings/use-save-settings";
 import { useServerSettings } from "@/settings-sync/store";
+import { useEmbedShell } from "@/embed/store";
 import { FOLD_ALL, useTitlebarSlot } from "@/shell/titlebar-slot";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -232,6 +233,8 @@ export function OrchestratorChips({
   const { state, workspaceId } = useOrchestratorWorkspace(thread);
   const handoff = useHandoff(state);
   const openBoard = useOpenBoard();
+  // The bar is a path where an embedding app asked for one (`threadsPage.bar`).
+  const pathBar = useEmbedShell((s) => s.threadsPage.bar === "path");
   if (workspaceId === undefined) return null;
   return (
     <>
@@ -265,29 +268,35 @@ export function OrchestratorChips({
       )}
       {/* Memory is the orchestrator's own, so it stays a glyph beside its title in the title bar
           too, there one of the bar's icon buttons (its size, stroke, muted colour and hover fill);
-          the bar's "…" lists it as well, in words. */}
-      <Hint
-        label="Memory"
-        side="bottom"
-        render={
-          <Link
-            to="/w/$workspaceId/memory"
-            params={{ workspaceId }}
-            aria-label="Memory"
-            data-testid="orchestrator-memory"
-            className={
-              inTitlebar
-                ? // Drawn as the bar's icon buttons are. `cn` merges the variants' classes as
-                  // `Button` does: cva alone keeps the base's 16 px glyph rule beside `icon-sm`'s
-                  // 18 px one, and the base's wins.
-                  cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-muted-foreground")
-                : HEADER_LINK
-            }
-          />
-        }
-      >
-        <Brain aria-hidden className={inTitlebar ? undefined : "size-icon-row"} />
-      </Hint>
+          the bar's "…" lists it as well, in words. Where the bar is a path, Memory is named
+          beside the workspace's other places instead, so no glyph stands alone after the path. */}
+      {!(inTitlebar && pathBar) && (
+        <Hint
+          label="Memory"
+          side="bottom"
+          render={
+            <Link
+              to="/w/$workspaceId/memory"
+              params={{ workspaceId }}
+              aria-label="Memory"
+              data-testid="orchestrator-memory"
+              className={
+                inTitlebar
+                  ? // Drawn as the bar's icon buttons are. `cn` merges the variants' classes as
+                    // `Button` does: cva alone keeps the base's 16 px glyph rule beside `icon-sm`'s
+                    // 18 px one, and the base's wins.
+                    cn(
+                      buttonVariants({ variant: "ghost", size: "icon-sm" }),
+                      "text-muted-foreground",
+                    )
+                  : HEADER_LINK
+              }
+            />
+          }
+        >
+          <Brain aria-hidden className={inTitlebar ? undefined : "size-icon-row"} />
+        </Hint>
+      )}
       {/* In the title bar, the workspace's settings are the bar's "…". */}
       {!inTitlebar && (
         <>
