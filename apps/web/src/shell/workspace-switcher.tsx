@@ -1,3 +1,4 @@
+import { useSoloWord } from "@/embed/store";
 import type { ThreadId, ThreadSummary, Workspace } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -116,6 +117,7 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
   const workspaces = useWorkspaces();
   // A solo thread in view is in no workspace, whichever one the Board would show.
   const inSolo = useViewSolo();
+  const soloWord = useSoloWord();
   const viewed = useViewWorkspace();
   const current = inSolo ? undefined : viewed;
   const byId = useThreadsStore((s) => s.byId);
@@ -149,7 +151,7 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
     useLayoutStore.getState().openThread(threadId);
     void navigate({ to: "/t/$threadId", params: { threadId } });
   };
-  const name = inSolo ? "Solo" : (current?.workspace.name ?? "Threads");
+  const name = inSolo ? (soloWord ?? "Solo") : (current?.workspace.name ?? "Threads");
   // Its keys, as far as there are workspaces to take them: "⌘1–⌘3".
   const keyed = Math.min(workspaces.length, WORKSPACE_KEYS.length);
   const firstKey = shortcutHint("workspace.switch1", overrides);

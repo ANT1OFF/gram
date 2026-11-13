@@ -243,7 +243,11 @@ export interface ShellThreadsPage {
 
 /** The page of every thread's words for a thread's kind. */
 export interface ShellThreadKinds {
-  /** A thread in no workspace: "Solo" when left out. */
+  /**
+   * A thread in no workspace: "Solo" when left out. Given, it also names that choice in the New
+   * form (Gram's "Chat") and a solo thread's header, so an app with a Chat of its own has one word
+   * for it.
+   */
   readonly solo?: string;
   /** A workspace's orchestrator: "Orchestrator" when left out. */
   readonly orchestrator?: string;
