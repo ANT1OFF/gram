@@ -194,11 +194,7 @@
       .wf-track {
         position: relative;
         height: 100%;
-        background-image: linear-gradient(
-          to right,
-          var(--border-subtle) 1px,
-          transparent 1px
-        );
+        background-image: linear-gradient(to right, var(--border-subtle) 1px, transparent 1px);
         background-size: calc(100% * 60 / 190) 100%;
       }
       .wf-track i {
@@ -421,11 +417,7 @@
       .ln-track {
         position: relative;
         height: 100%;
-        background-image: linear-gradient(
-          to right,
-          var(--border-subtle) 1px,
-          transparent 1px
-        );
+        background-image: linear-gradient(to right, var(--border-subtle) 1px, transparent 1px);
         background-size: calc(100% * 60 / 190) 100%;
       }
       .ln-track button {
@@ -437,8 +429,7 @@
         border: 0;
         border-radius: 4px;
         background: color-mix(in oklab, var(--k) 22%, var(--surface-2));
-        box-shadow: inset 0 0 0 1px
-          color-mix(in oklab, var(--k) 55%, var(--surface-2));
+        box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--k) 55%, var(--surface-2));
         color: var(--fg);
         font: inherit;
         font-size: var(--text-xs);
@@ -489,9 +480,8 @@
   <body class="mock">
     <main class="mock-canvas">
       <p class="mock-note">
-        One run of an agent, with a worker under it, a failed test and a wait
-        for approval, drawn three ways. Pick the structure by name; colour and
-        spacing come after.
+        One run of an agent, with a worker under it, a failed test and a wait for approval, drawn
+        three ways. Pick the structure by name; colour and spacing come after.
       </p>
 
       <section class="board" data-name="A Waterfall" data-size="1240x700">
@@ -501,13 +491,9 @@
               <span class="rt-title">Fix the flaky retry test</span>
               <div class="rt-tabs" role="tablist">
                 <button type="button" role="tab">Conversation</button>
-                <button type="button" role="tab" aria-selected="true">
-                  Trace
-                </button>
+                <button type="button" role="tab" aria-selected="true">Trace</button>
               </div>
-              <button class="rt-turn" type="button">
-                Turn 3 · 14:02 <i data-icon="down"></i>
-              </button>
+              <button class="rt-turn" type="button">Turn 3 · 14:02 <i data-icon="down"></i></button>
             </div>
             <div class="rt-sum" data-fill="sum"></div>
             <div class="rt-body">
@@ -527,19 +513,16 @@
             <div class="rt-body">
               <div class="st-chat">
                 <div class="st-user">
-                  The retry test fails about one run in five. Find out why and
-                  fix it.
+                  The retry test fails about one run in five. Find out why and fix it.
                 </div>
                 <div class="st-fold">
-                  <i data-icon="right"></i> Worked for 3m 10s · 9 tool calls · 1
-                  worker
+                  <i data-icon="right"></i> Worked for 3m 10s · 9 tool calls · 1 worker
                 </div>
                 <p style="margin: 0; max-width: 560px">
                   The test raced the timer:
-                  <span class="mono">retry()</span> read the delay before the
-                  fake clock advanced, so the second attempt sometimes ran with
-                  no backoff. I moved the read inside the attempt and pushed the
-                  fix. All 14 tests pass.
+                  <span class="mono">retry()</span> read the delay before the fake clock advanced,
+                  so the second attempt sometimes ran with no backoff. I moved the read inside the
+                  attempt and pushed the fix. All 14 tests pass.
                 </p>
               </div>
               <aside class="st-panel">
@@ -548,12 +531,8 @@
                   <button type="button" role="tab">PR</button>
                   <button type="button" role="tab">Files</button>
                   <button type="button" role="tab">Terminal</button>
-                  <button type="button" role="tab" aria-selected="true">
-                    Trace
-                  </button>
-                  <button class="rt-turn" type="button">
-                    Turn 3 <i data-icon="down"></i>
-                  </button>
+                  <button type="button" role="tab" aria-selected="true">Trace</button>
+                  <button class="rt-turn" type="button">Turn 3 <i data-icon="down"></i></button>
                 </div>
                 <div class="rt-sum" data-fill="sum-short"></div>
                 <div class="st-list" data-fill="steps"></div>
@@ -570,13 +549,9 @@
               <span class="rt-title">Fix the flaky retry test</span>
               <div class="rt-tabs" role="tablist">
                 <button type="button" role="tab">Conversation</button>
-                <button type="button" role="tab" aria-selected="true">
-                  Trace
-                </button>
+                <button type="button" role="tab" aria-selected="true">Trace</button>
               </div>
-              <button class="rt-turn" type="button">
-                Turn 3 · 14:02 <i data-icon="down"></i>
-              </button>
+              <button class="rt-turn" type="button">Turn 3 · 14:02 <i data-icon="down"></i></button>
             </div>
             <div class="rt-body">
               <div class="ln">
@@ -661,18 +636,14 @@
         failed: "xcircle",
       };
       const took = (n) =>
-        n < 60
-          ? `${n}s`
-          : `${Math.floor(n / 60)}m ${String(n % 60).padStart(2, "0")}s`;
-      const at = (n) =>
-        `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
+        n < 60 ? `${n}s` : `${Math.floor(n / 60)}m ${String(n % 60).padStart(2, "0")}s`;
+      const at = (n) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
       const pct = (n) => `${(n / TOTAL) * 100}%`;
       const key = (k, text) =>
         `<span class="rt-key" data-k="${k}"><i class="rt-sw"></i>${text}</span>`;
       const split = `<span class="rt-split"><i data-k="model" style="flex:38"></i><i data-k="tool" style="flex:107"></i><i data-k="wait" style="flex:45"></i></span>`;
       const fill = (name, html) => {
-        for (const el of document.querySelectorAll(`[data-fill="${name}"]`))
-          el.innerHTML = html;
+        for (const el of document.querySelectorAll(`[data-fill="${name}"]`)) el.innerHTML = html;
       };
 
       fill(
@@ -724,10 +695,7 @@
           ["54.3k", "Tokens"],
           ["$0.84", "Cost"],
         ]
-          .map(
-            ([value, name]) =>
-              `<div class="ln-tile"><b>${value}</b><span>${name}</span></div>`,
-          )
+          .map(([value, name]) => `<div class="ln-tile"><b>${value}</b><span>${name}</span></div>`)
           .join(""),
       );
       const lane = (name, sub, steps) =>

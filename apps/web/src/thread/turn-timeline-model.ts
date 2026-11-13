@@ -37,7 +37,7 @@ export interface TurnTimeline {
   readonly ticks: readonly { readonly at: number; readonly label: string }[];
 }
 
-const TONE: Readonly<Record<ToolPhase, StepTone>> = {
+export const TONE: Readonly<Record<ToolPhase, StepTone>> = {
   pending: "running",
   running: "running",
   awaiting: "running",
@@ -47,7 +47,7 @@ const TONE: Readonly<Record<ToolPhase, StepTone>> = {
   cancelled: "stopped",
 };
 
-const phaseOf = (part: AnyToolPart): ToolPhase =>
+export const phaseOf = (part: AnyToolPart): ToolPhase =>
   toolPhase(
     part.state,
     part.state === "output-error" ? part.errorText : undefined,
@@ -55,7 +55,7 @@ const phaseOf = (part: AnyToolPart): ToolPhase =>
   );
 
 /** What a call did, in its settled words: "Ran tests", "Read retry.ts". */
-const labelOf = (part: AnyToolPart, phase: ToolPhase): string => {
+export const labelOf = (part: AnyToolPart, phase: ToolPhase): string => {
   const name = toolLabel(toolNameOf(part), phase, part.title).label;
   const detail = toolDetail(part);
   if (detail === undefined) return name;
@@ -69,7 +69,7 @@ const labelOf = (part: AnyToolPart, phase: ToolPhase): string => {
 export const tookLabel = (ms: number): string => (ms < 1_000 ? "<1s" : formatElapsed(ms));
 
 /** Merged length of `spans`, so calls that overlap count once. */
-const covered = (spans: readonly (readonly [number, number])[]): number => {
+export const covered = (spans: readonly (readonly [number, number])[]): number => {
   const sorted = spans.toSorted((a, b) => a[0] - b[0]);
   let total = 0;
   let from = -Infinity;
@@ -136,7 +136,10 @@ export function turnTimeline(
     end,
     steps,
     toolShare: Math.round((covered(spans) / span) * 100),
-    ticks: [0, 0.5, 1].map((at) => ({ at: at * 100, label: tookLabel(at * span) })),
+    ticks: [0, 0.5, 1].map((at) => ({
+      at: at * 100,
+      label: tookLabel(at * span),
+    })),
   };
 }
 

@@ -4,11 +4,13 @@ import { ChartNoAxesGantt } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Hint } from "@/components/hint";
+import { Button } from "@/components/ui/button";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { feedMessages } from "@/stores/feeds";
 
 import type { TurnSummary } from "./tool-group-model";
+import { useTraceViewStore } from "./trace-view-store";
 import { turnReplies, turnTimeline, type StepTone, type TurnTimeline } from "./turn-timeline-model";
 
 const BAR: Readonly<Record<StepTone, string>> = {
@@ -56,6 +58,19 @@ export function TurnTimelineButton({
             className="w-[min(36rem,calc(100vw-2rem))] origin-(--transform-origin) rounded-md border border-edge bg-popover p-3 text-meta text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             {open && <TimelineBody threadId={threadId} turn={turn} summary={summary} />}
+            <div className="mt-2 flex justify-end">
+              <Button
+                variant="outline"
+                size="xs"
+                data-testid="turn-timeline-trace"
+                onClick={() => {
+                  setOpen(false);
+                  useTraceViewStore.getState().show(threadId, turn);
+                }}
+              >
+                Open trace
+              </Button>
+            </div>
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
