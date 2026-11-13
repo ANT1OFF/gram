@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import { AppToolRegistry, defineAppTool } from "../app-tools/registry.ts";
 import { ServerConfig } from "../config.ts";
 import { EventHub } from "../events/event-hub.ts";
@@ -74,6 +75,33 @@ describe("fake agent echo replies", () => {
         replies(thread.id).pipe(Effect.map((r) => r.length === 2 && r)),
       );
       expect(twice[1]!.parts).toMatchObject([{ type: "text", text: "echo: again" }]);
+    }).pipe(Effect.provide(EchoLayer)),
+  );
+
+  it.effect("streams a /stream{N} reply of N words in small deltas", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const thread = yield* runtimes.create({
+        projectRoot: "/work/repo",
+        checkout: { kind: "main", path: "/work/repo" },
+        input: { text: "/stream{120}" },
+      });
+      // 31 deltas, 20 ms apart on the test clock.
+      yield* waitFor(
+        "running",
+        runtimes.status(thread.id).pipe(Effect.map((s) => s === "running")),
+      );
+      for (let i = 0; i < 40; i++) yield* TestClock.adjust("20 millis");
+      yield* waitFor("idle", runtimes.status(thread.id).pipe(Effect.map((s) => s === "idle")));
+      const [reply] = yield* replies(thread.id);
+      const part = reply!.parts[0] as { type: "text"; text: string; state: string };
+      expect(part.state).toBe("done");
+      expect(part.text.endsWith("stream done.")).toBe(true);
+      const words = part.text.replace("stream done.", "").match(/[a-z]+/g) ?? [];
+      // 120 words of prose, plus the `ts` and `const` that open the one code block.
+      expect(words.filter((w) => w !== "ts" && w !== "const")).toHaveLength(120);
+      // Every fence that opens is closed.
+      expect((part.text.match(/```/g) ?? []).length % 2).toBe(0);
     }).pipe(Effect.provide(EchoLayer)),
   );
 

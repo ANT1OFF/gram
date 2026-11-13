@@ -24,6 +24,11 @@ export interface SlowLink {
   set(profile: LinkProfile): void;
   /** Bytes carried towards the browser since the last call, as they were on the wire. */
   takeBytesDown(): number;
+  /**
+   * The link goes away or comes back. Away, every open connection is cut and a new one is cut as
+   * soon as it arrives, as a browser sees a network that changed under it.
+   */
+  outage(away: boolean): void;
   close(): Promise<void>;
 }
 
@@ -140,6 +145,11 @@ export async function startSlowLink(target: () => string): Promise<SlowLink> {
     client.on("close", drop);
   });
 
+  let away = false;
+  server.on("connection", (socket) => {
+    if (away) socket.destroy();
+  });
+
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
   return {
@@ -151,6 +161,12 @@ export async function startSlowLink(target: () => string): Promise<SlowLink> {
       const out = down.carried;
       down.carried = 0;
       return out;
+    },
+    outage: (next) => {
+      away = next;
+      if (!away) return;
+      for (const socket of sockets) socket.destroy();
+      server.closeAllConnections();
     },
     close: () =>
       new Promise((resolve) => {
