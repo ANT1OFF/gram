@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useShortcut } from "@/keyboard/registry";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
@@ -185,7 +185,13 @@ function SettingsLayout() {
                   onOpen={() => setQuery("")}
                   searching
                 >
-                  {Search && <Search />}
+                  {Search && (
+                    // The page's settings arrive on the first search. Until they do, the marker
+                    // keeps "No settings match" from showing over an answer still loading.
+                    <Suspense fallback={<span hidden data-settings-loading />}>
+                      <Search />
+                    </Suspense>
+                  )}
                 </PageSection>
               );
             })}

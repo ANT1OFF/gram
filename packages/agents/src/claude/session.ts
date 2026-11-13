@@ -1,8 +1,11 @@
 import { claudeSubscriptionLimits } from "./limits.ts";
 import type {
   CanUseTool,
+  ElicitationRequest,
+  ElicitationResult,
   EffortLevel,
   HookCallbackMatcher,
+  OnElicitation,
   Options,
   PermissionResult,
   Query,
@@ -96,6 +99,13 @@ import { identityFromInitialization, makeMapper, type TaskOutputRead } from "./m
 import { addTokens } from "./usage.ts";
 import { toAgentModel, userModelSwitch } from "./models.ts";
 import { outwardBashKind, resolveRequest, toPendingRequest } from "./permissions.ts";
+import {
+  ELICITATION_DECLINED,
+  elicitationCard,
+  elicitationGranted,
+  elicitationKey,
+  elicitationResult,
+} from "./elicitation.ts";
 import { ClaudeSdk } from "./sdk.ts";
 import {
   savedSessionCost,
@@ -335,6 +345,12 @@ interface Pending {
   readonly request: PendingRequest;
   readonly input: Record<string, unknown>;
   readonly settle: (result: PermissionResult) => void;
+}
+
+/** An MCP server's permission prompt waiting on its card. */
+interface PendingPrompt {
+  readonly prompt: ElicitationRequest;
+  readonly settle: (result: ElicitationResult, remember: boolean) => void;
 }
 
 const describeError = (error: unknown): string => {
@@ -923,6 +939,43 @@ export const makeClaudeHost = (
           });
         });
 
+      const prompts = new Map<RequestId, PendingPrompt>();
+      /** Prompts granted for the session, by `elicitationKey`. */
+      const granted = new Set<string>();
+      /**
+       * An MCP server asks before it acts, as a computer-use server does for each app. A yes or
+       * no is a card; anything else is declined with a notice, as the SDK does with no handler.
+       */
+      const onElicitation: OnElicitation = (prompt, { signal, requestId }) =>
+        new Promise<ElicitationResult>((resolve) => {
+          if (signal.aborted || closed || o.dreamFilesOnly === true)
+            return resolve(ELICITATION_DECLINED);
+          const promptGated = level === "all";
+          if (!promptGated && granted.has(elicitationKey(prompt)))
+            return resolve(elicitationGranted(prompt));
+          const request = elicitationCard(prompt, requestId, promptGated);
+          if (request === undefined) {
+            emit({
+              type: "notice",
+              level: "warning",
+              message: `${prompt.serverName} asked for input Gram can't give yet; declined.`,
+            });
+            return resolve(ELICITATION_DECLINED);
+          }
+          const settle = (result: ElicitationResult, remember: boolean) => {
+            if (!prompts.delete(request.id)) return;
+            signal.removeEventListener("abort", onAbort);
+            if (remember) granted.add(elicitationKey(prompt));
+            emit({ type: "requestResolved", requestId: request.id });
+            resolve(result);
+          };
+          const onAbort = () => settle({ action: "cancel" }, false);
+          signal.addEventListener("abort", onAbort, { once: true });
+          prompts.set(request.id, { prompt, settle });
+          emit({ type: "request", request });
+          emit({ type: "status", status: "awaitingApproval" });
+        });
+
       // Our own id for new sessions and forks, so identity is known before the first turn.
       const agentSessionId =
         o.resumeId !== undefined && o.fork !== true ? o.resumeId : (o.sessionId ?? newId());
@@ -994,6 +1047,7 @@ export const makeClaudeHost = (
         includePartialMessages: true,
         forwardSubagentText: true,
         canUseTool,
+        onElicitation,
         hooks: {
           // The tool gate (`closeToolGate`) rides on the same hook, so it is there only where that is.
           ...(gated
@@ -1106,6 +1160,7 @@ export const makeClaudeHost = (
             for (const p of pending.values()) {
               p.settle({ behavior: "deny", message: "The session was closed." });
             }
+            for (const p of prompts.values()) p.settle(ELICITATION_DECLINED, false);
             input.end();
             yield* stopCli(query);
             query.close();
@@ -1592,6 +1647,12 @@ export const makeClaudeHost = (
         ),
         respond: (requestId, answer) =>
           Effect.gen(function* () {
+            const asked = prompts.get(requestId);
+            if (asked !== undefined) {
+              const { result, remember } = elicitationResult(asked.prompt, answer, level === "all");
+              asked.settle(result, remember);
+              return;
+            }
             const p = pending.get(requestId);
             if (p === undefined) return;
             const resolution = resolveRequest(p.request, p.input, answer, config.settingSources);

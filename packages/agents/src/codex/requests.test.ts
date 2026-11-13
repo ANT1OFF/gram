@@ -205,3 +205,138 @@ describe("toPendingRequest and responseFor", () => {
     ).toEqual({ answers: { scope: { answers: ["Tests only (Recommended)"] } } });
   });
 });
+
+const prompt = (params: Record<string, unknown>): ServerRequest =>
+  ({
+    id: 7,
+    method: "mcpServer/elicitation/request",
+    params: { threadId: "t1", turnId: "turn1", serverName: "cua_repl", ...params },
+  }) as unknown as ServerRequest;
+const allow = (scope: "once" | "session" | "always") =>
+  ({ kind: "approval", decision: "allow", scope }) as const;
+
+describe("an MCP server's permission prompt", () => {
+  const deny = { kind: "approval", decision: "deny", scope: "once" } as const;
+  const declined = { action: "decline", content: null, _meta: null };
+
+  const appAccess = prompt({
+    mode: "form",
+    message: "Allow ChatGPT to use Safari?",
+    _meta: { persist: ["session", "always"] },
+    requestedSchema: { type: "object", properties: {} },
+  });
+
+  it("is an approval card naming the app, with the lifetimes the server offers", () => {
+    expect(toPendingRequest(appAccess, () => undefined)).toEqual({
+      kind: "approval",
+      id: "codex-7",
+      toolName: "mcp__cua_repl__elicitation",
+      displayName: "Safari",
+      input: { server: "cua_repl", app: "Safari" },
+      description: "Allow ChatGPT to use Safari?",
+      suggestions: [],
+      scopes: ["once", "session", "always"],
+    });
+  });
+
+  it("answers with the MCP action, and says how long a yes lasts", () => {
+    expect(responseFor(appAccess, allow("once"))).toEqual({
+      action: "accept",
+      content: {},
+      _meta: null,
+    });
+    expect(responseFor(appAccess, allow("session"))).toEqual({
+      action: "accept",
+      content: {},
+      _meta: { persist: "session" },
+    });
+    expect(responseFor(appAccess, allow("always"))).toEqual({
+      action: "accept",
+      content: {},
+      _meta: { persist: "always" },
+    });
+    expect(responseFor(appAccess, deny)).toEqual(declined);
+  });
+
+  it("offers only the one use where the server names no lifetime, and under a gate", () => {
+    const bare = prompt({
+      mode: "form",
+      message: "Allow this?",
+      _meta: null,
+      requestedSchema: { type: "object", properties: {} },
+    });
+    expect(toPendingRequest(bare, () => undefined)).toMatchObject({
+      displayName: "cua_repl",
+      input: { server: "cua_repl" },
+      scopes: ["once"],
+    });
+    expect(toPendingRequest(appAccess, () => undefined, "all")).toMatchObject({ scopes: ["once"] });
+    // A longer grant the card didn't offer is the one use, never more.
+    expect(responseFor(bare, allow("always"))).toEqual({
+      action: "accept",
+      content: {},
+      _meta: null,
+    });
+    expect(responseFor(appAccess, allow("session"), "all")).toEqual({
+      action: "accept",
+      content: {},
+      _meta: null,
+    });
+  });
+
+  it("fills a form that only asks how long the grant lasts", () => {
+    const choice = prompt({
+      mode: "openai/form",
+      message: "Allow ChatGPT to use Notes?",
+      _meta: { app_name: "Notes" },
+      requestedSchema: {
+        type: "object",
+        properties: {
+          approval: { type: "string", enum: ["allow_once", "allow_for_session"] },
+          remember: { type: "boolean", title: "Always allow" },
+        },
+        required: ["approval"],
+      },
+    });
+    expect(toPendingRequest(choice, () => undefined)).toMatchObject({
+      displayName: "Notes",
+      // Its choice has no word for always, so the checkbox alone can't be answered.
+      scopes: ["once", "session"],
+    });
+    expect(responseFor(choice, allow("once"))).toEqual({
+      action: "accept",
+      content: { approval: "allow_once", remember: false },
+      _meta: null,
+    });
+    expect(responseFor(choice, allow("session"))).toEqual({
+      action: "accept",
+      content: { approval: "allow_for_session", remember: false },
+      _meta: { persist: "session" },
+    });
+  });
+
+  it("declines a prompt a yes or no can't answer, in the MCP shape", () => {
+    const form = prompt({
+      mode: "form",
+      message: "Which account?",
+      _meta: null,
+      requestedSchema: {
+        type: "object",
+        properties: { account: { type: "string" } },
+        required: ["account"],
+      },
+    });
+    const link = prompt({
+      mode: "url",
+      message: "Sign in",
+      _meta: null,
+      url: "https://example.com/login",
+      elicitationId: "e1",
+    });
+    for (const request of [form, link]) {
+      expect(toPendingRequest(request, () => undefined)).toBeUndefined();
+      expect(responseFor(request, deny)).toEqual(declined);
+      expect(responseFor(request, allow("once"))).toEqual(declined);
+    }
+  });
+});
