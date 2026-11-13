@@ -673,7 +673,8 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
         descriptor: {
           name: "mark_completed",
           class: "self",
-          description: "Flag the work as done and ready for review.",
+          description:
+            "Mark this thread's work as done: the thread shows as completed and the user gets a `done` notification, with `summary` as its body. It tells the user only; a worker tells its orchestrator with `report` (`done`).",
         },
         input: Schema.Struct({ summary: Schema.optionalKey(Schema.String) }),
         handle: (threadId, { summary }) =>
@@ -707,7 +708,8 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
         descriptor: {
           name: "notify_user",
           class: "self",
-          description: "Raise a notification for the user with a short message.",
+          description:
+            "Raise a desktop notification for the user from this thread: `title` is the line they see, `body` an optional detail, and `kind` how it is marked (`needsInput`, `done`, `error`, default `info`). It returns at once and carries no answer back; a question goes to your question tool.",
         },
         input: Schema.Struct({
           title: Schema.NonEmptyString,
