@@ -3,6 +3,7 @@ import { MoonStar, Network, Workflow, type LucideIcon } from "lucide-react";
 
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
+import { accentStyle, useWorkspaceAccent } from "@/orchestration/workspace-accent";
 import { useThreadsStore } from "@/stores/threads";
 
 import {
@@ -95,11 +96,15 @@ export function RoleGlyph({
   testId,
   spoken = false,
 }: {
-  thread: Pick<Thread, "role" | "spawnedBy">;
+  thread: Pick<Thread, "role" | "spawnedBy"> & Partial<Pick<Thread, "workspaceId">>;
   testId: string;
   spoken?: boolean;
 }) {
   const info = useThreadRole(thread);
+  // An orchestrator's glyph takes the colour the user gave its workspace, over the accent.
+  const accent = useWorkspaceAccent(
+    thread.role === "orchestrator" ? thread.workspaceId : undefined,
+  );
   if (info === undefined) return null;
   if (spoken) {
     return (
@@ -118,7 +123,12 @@ export function RoleGlyph({
           data-testid={testId}
           // Muted as the chrome's other glyphs are, but for the orchestrator's, which takes its
           // accent.
-          className={cn("flex shrink-0 text-muted-foreground", ROLE_TONE[info.role.kind])}
+          className={cn(
+            "flex shrink-0 text-muted-foreground",
+            ROLE_TONE[info.role.kind],
+            accent !== undefined && "gram-accent-text",
+          )}
+          style={accentStyle(accent)}
         />
       }
     >

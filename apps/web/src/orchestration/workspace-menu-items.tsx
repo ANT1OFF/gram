@@ -1,18 +1,80 @@
 import type { WorkspaceState } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
-import { CirclePause, CirclePlay, Settings2, Trash2 } from "lucide-react";
+import { CirclePause, CirclePlay, Palette, Settings2, Trash2 } from "lucide-react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
-import { ContextMenuItem } from "@/components/ui/context-menu";
+import {
+  ContextMenuItem,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+} from "@/components/ui/context-menu";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { DANGER, MoreContextMenuItem, SEPARATOR } from "@/thread/thread-action-items";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
 import { setWorkspacePaused } from "./pause-workspace";
+import {
+  accentStyle,
+  useWorkspaceAccent,
+  useWorkspaceAccents,
+  WORKSPACE_ACCENTS,
+  type WorkspaceAccentId,
+} from "./workspace-accent";
+
+const NONE = "none";
 
 /**
- * A workspace line's context menu: its settings (its name among them), pause or resume, and remove,
+ * The workspace's colour, the user's own mark on it: one of a few hues, or none. One submenu, so
+ * the menu stays short.
+ */
+function ColourMenuItems({ workspaceId }: { workspaceId: WorkspaceState["workspace"]["id"] }) {
+  const accent = useWorkspaceAccent(workspaceId);
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger data-testid="menu-workspace-colour">
+        <Palette aria-hidden className="size-icon-row" />
+        Colour
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent>
+        <ContextMenuRadioGroup
+          value={accent ?? NONE}
+          onValueChange={(value: string) =>
+            useWorkspaceAccents
+              .getState()
+              .setAccent(workspaceId, value === NONE ? undefined : (value as WorkspaceAccentId))
+          }
+        >
+          <ContextMenuRadioItem value={NONE} closeOnClick data-testid="menu-workspace-colour-none">
+            <span aria-hidden className="size-2.5 rounded-full border border-border" />
+            None
+          </ContextMenuRadioItem>
+          {WORKSPACE_ACCENTS.map((each) => (
+            <ContextMenuRadioItem
+              key={each.id}
+              value={each.id}
+              closeOnClick
+              data-testid={`menu-workspace-colour-${each.id}`}
+            >
+              <span
+                aria-hidden
+                className="gram-accent-swatch size-2.5 rounded-full"
+                style={accentStyle(each.id)}
+              />
+              {each.label}
+            </ContextMenuRadioItem>
+          ))}
+        </ContextMenuRadioGroup>
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  );
+}
+
+/**
+ * A workspace line's context menu: its settings (its name among them), its colour, pause or resume, and remove,
  * which asks first and says what goes and what stays. More… is the palette on the workspace.
  */
 export function WorkspaceMenuItems({ state }: { state: WorkspaceState }) {
@@ -35,6 +97,7 @@ export function WorkspaceMenuItems({ state }: { state: WorkspaceState }) {
         <Settings2 aria-hidden className="size-icon-row" />
         Workspace settings
       </ContextMenuItem>
+      <ColourMenuItems workspaceId={workspace.id} />
       <ContextMenuItem data-testid="menu-workspace-pause" onClick={setPaused}>
         {pause ? (
           <CirclePause aria-hidden className="size-icon-row" />
