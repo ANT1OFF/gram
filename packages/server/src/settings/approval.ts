@@ -22,8 +22,8 @@ import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 
 export const fail = (tool: string, message: string) => new AppToolError({ tool, message });
 
-/** What a card is called in what the agent is told: "settings" or "workspace". */
-export type ProposalNoun = "settings" | "workspace";
+/** What a card is called in what the agent is told: "settings", "workspace" or "MCP server". */
+export type ProposalNoun = "settings" | "workspace" | "MCP server";
 
 /**
  * Raises the card in `caller`'s thread and waits for the user, for `ttl` at most. Its only scope is

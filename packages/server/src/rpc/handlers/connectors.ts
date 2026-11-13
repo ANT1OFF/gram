@@ -33,9 +33,11 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FiberMap from "effect/FiberMap";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { samePath } from "@gram/git";
@@ -928,9 +930,22 @@ export const connectorHandlers = Effect.gen(function* () {
   } satisfies Partial<Handlers>;
 });
 
+/**
+ * The one set of `connectors.*` handlers a server has: the RPCs serve it, and `mcp_server_propose`
+ * writes through it, so an approved proposal takes Settings → Connectors' own path, its reloads
+ * and the forgetting of its last read included.
+ */
+export class ConnectorConfigs extends Context.Service<
+  ConnectorConfigs,
+  Effect.Success<typeof connectorHandlers>
+>()("@gram/server/ConnectorConfigs") {
+  static readonly layer = Layer.effect(ConnectorConfigs, connectorHandlers);
+}
+
 /** The `connectors.*` group's handler layer. */
 export const ConnectorHandlersLive = ConnectorRpcs.toLayer(
-  Effect.map(connectorHandlers, (handlers) =>
-    ConnectorRpcs.of(logDefects(ConnectorRpcs, handlers)),
-  ),
+  Effect.gen(function* () {
+    const handlers = yield* ConnectorConfigs;
+    return ConnectorRpcs.of(logDefects(ConnectorRpcs, handlers));
+  }),
 );
