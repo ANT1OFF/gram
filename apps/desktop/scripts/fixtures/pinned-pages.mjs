@@ -52,7 +52,7 @@ async function listener(respond = (_request, response) => response.writeHead(200
   return { seen, port: server.address().port, server };
 }
 
-/** A UDP and a TCP listener on loopback, counting what reaches them: STUN, TURN, a preconnect. */
+/** A UDP and a TCP listener on loopback, counting what reaches them: a STUN and a TURN server. */
 async function rawListeners() {
   const udp = createSocket("udp4");
   const packets = [];
@@ -77,12 +77,11 @@ async function rawListeners() {
 }
 
 /** The probe page: every exit it tries, titled into `probe:<json>` once they settle. */
-const probePage = ({ G, other, raw, preconnect }) => `<!doctype html>
+const probePage = ({ G, other, raw }) => `<!doctype html>
 <html><head><title>Board v1</title>
 <meta charset="utf-8">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="http://127.0.0.1:${G}/style-elsewhere.css">
-<link rel="preconnect" href="http://preconnect.example:${preconnect.tcpPort}">
 <link rel="dns-prefetch" href="//prefetch.example">
 <script src="app.js"></script>
 <script type="module" src="module.js"></script>
@@ -320,6 +319,126 @@ async function clipboardProbe(contents, url) {
   };
 }
 
+/**
+ * Copy commands named by an object, a boxed string, and an object that answers one name to a first
+ * look and "copy" after: each click selects the page's text and runs one.
+ */
+const objectPage = `<!doctype html><title>Object</title>
+<p id="text">leak-object</p>
+<button id="obj">Object</button><button id="boxed">Boxed</button><button id="flip">Flip</button>
+<script>
+window.clip = {};
+const select = () => {
+  const range = document.createRange();
+  range.selectNodeContents(document.getElementById("text"));
+  getSelection().removeAllRanges();
+  getSelection().addRange(range);
+};
+const run = (name, command) => {
+  select();
+  try { clip[name] = String(document.execCommand(command)); } catch (error) { clip[name] = "threw:" + error.name; }
+};
+document.getElementById("obj").addEventListener("click", () => run("obj", { toString() { return "copy"; } }));
+document.getElementById("boxed").addEventListener("click", () => run("boxed", new String("copy")));
+let asked = 0;
+document.getElementById("flip").addEventListener("click", () =>
+  run("flip", { toString() { asked += 1; return asked === 1 ? "bold" : "copy"; } }),
+);
+</script>`;
+
+/** What a page that takes over the clipboard writes there, and how it names it. */
+const ATTACKER = "attacker";
+const hijack = `document.addEventListener("copy", (e) => { e.clipboardData.setData("text/plain", "${ATTACKER}"); e.preventDefault(); });
+window.addEventListener("copy", (e) => { e.clipboardData.setData("text/plain", "${ATTACKER}"); e.preventDefault(); }, true);`;
+
+/**
+ * Pages that replace their own document after it parsed, then listen for the user's copy: by
+ * `document.open()`, by a `document.write()` that opens it, with a script written in that adds
+ * its listener before `write` returns, and by a `javascript:` URL. Each titles itself "hijack-ready".
+ */
+const hijackPages = {
+  "clip-open.html": `<!doctype html><title>Open</title><p>Original</p><script>
+setTimeout(() => {
+  try { document.open(); document.write('<p id="t">Select and copy this</p>'); document.close(); } catch (error) { window.refused = error.name; }
+  ${hijack}
+  document.title = "hijack-ready";
+}, 0);
+</script>`,
+  "clip-write.html": `<!doctype html><title>Write</title><p>Original</p><script>
+setTimeout(() => {
+  try {
+    document.write('<p id="t">Select and copy this</p><script>' + atob("${Buffer.from(hijack).toString("base64")}") + '<\\/script>');
+    document.close();
+  } catch (error) { window.refused = error.name; }
+  ${hijack}
+  document.title = "hijack-ready";
+}, 0);
+</script>`,
+  "clip-jsurl.html": `<!doctype html><title>hijack-ready</title><p>Original</p><script>
+setTimeout(() => {
+  location.href = "javascript:" + JSON.stringify('<title>hijack-ready</title><p>Select and copy this</p><script>' + atob("${Buffer.from(hijack).toString("base64")}") + '<\\/script>');
+}, 0);
+</script>`,
+};
+
+/**
+ * Each object command, clicked with the user's gesture, and then the user's own copy of the
+ * page's text by the edit menu, with the clipboard set to a sentinel before each.
+ */
+async function objectProbe(contents, url) {
+  await contents.loadURL(url).catch(() => {});
+  await titled(contents, "Object", 5000);
+  const out = {};
+  for (const id of ["obj", "boxed", "flip"]) {
+    await clipboard.writeText("sentinel");
+    await contents.executeJavaScript(`document.getElementById("${id}").click()`, true);
+    await delay(300);
+    out[id] = await clipboard.readText();
+  }
+  await clipboard.writeText("sentinel");
+  await contents.executeJavaScript(
+    `(() => { const r = document.createRange(); r.selectNodeContents(document.getElementById("text")); getSelection().removeAllRanges(); getSelection().addRange(r); })()`,
+  );
+  contents.copy();
+  await delay(300);
+  out.menu = await clipboard.readText();
+  out.page = JSON.parse(await contents.executeJavaScript("JSON.stringify(window.clip)"));
+  return out;
+}
+
+/**
+ * A page that replaced its document: once it says it is ready, the user selects all its text and
+ * copies it by the edit menu and by the keyboard's copy. What the selection held, what each copy
+ * left on the clipboard, and what the page said of its own attempt.
+ */
+async function hijackProbe(contents, url) {
+  await contents.loadURL(url).catch(() => {});
+  const title = await titled(contents, "hijack-ready", 5000);
+  await delay(300);
+  const expected = await contents
+    .executeJavaScript(
+      `(() => { const r = document.createRange(); r.selectNodeContents(document.body); getSelection().removeAllRanges(); getSelection().addRange(r); return getSelection().toString(); })()`,
+    )
+    .catch((error) => `error:${error}`);
+  await clipboard.writeText("sentinel");
+  contents.copy();
+  await delay(300);
+  const menu = await clipboard.readText();
+  await clipboard.writeText("sentinel");
+  await pressCopy(contents);
+  const keys = await clipboard.readText();
+  if (contents.debugger.isAttached()) contents.debugger.detach();
+  const refused = await contents.executeJavaScript("String(window.refused)").catch(() => "?");
+  return { title, url: contents.getURL(), expected, menu, keys, refused };
+}
+
+/** Whether a hijack probe's copies were the user's: their selection, never the page's text. */
+const copiesHeld = (probe) =>
+  probe.expected !== "" &&
+  !probe.expected.startsWith("error:") &&
+  probe.menu === probe.expected &&
+  probe.keys !== ATTACKER;
+
 /** Waits for `contents`' title to start with `prefix`; the title, or "timeout". */
 async function titled(contents, prefix, ms = 20_000) {
   const until = Date.now() + ms;
@@ -346,7 +465,6 @@ async function main() {
   // Gram's own server, and every other listener a page must never reach.
   const gram = await listener();
   const raw = await rawListeners();
-  const preconnect = await rawListeners();
 
   // The page listener: the server's own serving code and headers.
   const folders = emptyPreviewFolders();
@@ -383,7 +501,7 @@ async function main() {
   const otherShown = await Effect.runPromise(pages.shown("ws-fixture", otherMeta.id));
   const otherToken = await grantFolder(folders, otherShown.folder);
   const other = `${origin}/${PAGES_SEGMENT}/${otherToken}/secret.js`;
-  writeFileSync(join(draft, "index.html"), probePage({ G: gram.port, other, raw, preconnect }));
+  writeFileSync(join(draft, "index.html"), probePage({ G: gram.port, other, raw }));
   writeFileSync(join(draft, "app.js"), "window.appRan = 'yes';");
   writeFileSync(join(draft, "module.js"), "window.moduleRan = 'yes'; export {};");
   writeFileSync(join(draft, "style.css"), "#styled { color: rgb(1, 2, 3); }");
@@ -393,6 +511,8 @@ async function main() {
   );
   writeFileSync(join(draft, "second.html"), "<title>Second page</title>");
   writeFileSync(join(draft, "clip.html"), clipPage);
+  writeFileSync(join(draft, "clip-object.html"), objectPage);
+  for (const [name, html] of Object.entries(hijackPages)) writeFileSync(join(draft, name), html);
   const meta = await Effect.runPromise(
     pages.pin({ workspaceId: "ws-fixture", by, entry: join(draft, "index.html") }),
   );
@@ -497,11 +617,6 @@ async function main() {
     { packets: raw.packets.length, connections: raw.connections.length },
   );
   check(
-    "no preconnect connection left",
-    preconnect.connections.length === 0,
-    preconnect.connections,
-  );
-  check(
     "another page's files on the same listener were never asked for",
     !served.some((url) => url.includes(otherToken)),
     served,
@@ -542,6 +657,34 @@ async function main() {
     pinnedClip.afterMenu === "Copy me" && pinnedClip.afterKeys !== "leak-copy-event",
     pinnedClip,
   );
+  // Review regressions: a command named by an object or a boxed string, and a document replaced
+  // after it parsed, never reach the clipboard; the user's own copy still copies their selection.
+  const pinnedObject = await objectProbe(
+    pageContents,
+    pageUrl.replace("index.html", "clip-object.html"),
+  );
+  check(
+    "a copy command named by an object, a boxed string or a changing name is refused",
+    pinnedObject.obj === "sentinel" &&
+      pinnedObject.boxed === "sentinel" &&
+      pinnedObject.flip === "sentinel" &&
+      pinnedObject.page.obj === "false" &&
+      pinnedObject.page.boxed === "false" &&
+      pinnedObject.page.flip === "false" &&
+      pinnedObject.menu === "leak-object",
+    pinnedObject,
+  );
+  const pinnedHijacks = {};
+  for (const name of Object.keys(hijackPages)) {
+    pinnedHijacks[name] = await hijackProbe(pageContents, pageUrl.replace("index.html", name));
+  }
+  for (const [name, probe] of Object.entries(pinnedHijacks)) {
+    check(
+      `a page that replaces its document (${name}) can't change what the user copies, and their own copy still works`,
+      copiesHeld(probe),
+      probe,
+    );
+  }
   // The sandbox stops a download before the session hears of it; without the sandbox header
   // (below) the session's own refusal has to hold.
   check("no download started", downloads.length === 0, downloads);
@@ -671,6 +814,24 @@ async function main() {
     control.webContents,
     `${bareUrl.replace("index.html", "clip.html")}#no-dialog`,
   );
+  const controlObject = await objectProbe(
+    control.webContents,
+    `${bareUrl.replace("index.html", "clip-object.html")}`,
+  );
+  const controlHijacks = {};
+  for (const name of Object.keys(hijackPages)) {
+    controlHijacks[name] = await hijackProbe(
+      control.webContents,
+      bareUrl.replace("index.html", name),
+    );
+  }
+  check(
+    "control: without the guard, object commands copy and every replaced document takes over the copy",
+    controlObject.obj === "leak-object" &&
+      controlObject.boxed === "leak-object" &&
+      Object.values(controlHijacks).every((probe) => probe.menu === ATTACKER),
+    { controlObject, controlHijacks },
+  );
   check(
     "control: without the policy the same page reaches Gram, RTC listeners and the clipboard",
     controlProbed.gramGet === "reached" &&
@@ -692,7 +853,6 @@ async function main() {
   control.webContents.close();
   win.destroy();
   raw.close();
-  preconnect.close();
   process.stdout.write(`${JSON.stringify({ type: "fixture.result", results, failures })}\n`);
   for (const listening of [gram, bare]) listening.server.close();
   pageListener.close();

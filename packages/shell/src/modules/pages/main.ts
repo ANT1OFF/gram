@@ -83,7 +83,7 @@ interface PageView {
 export interface PagesOptions {
   readonly log: ShellLog;
   /**
-   * The built page guard preload (`guard.ts`), which every frame of a pinned page runs first and
+   * The built page guard preload (`guard.ts`), which each frame of a pinned page it reaches runs first and
    * which exposes nothing. Without it no page opens.
    */
   readonly guardPreload: string | undefined;
@@ -203,7 +203,8 @@ export function installPages(ipc: ShellIpc, options: PagesOptions): PagesHost {
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
-        // The guard, in every frame, about:blank children included; sandboxed, so no Node.
+        // The guard, in each frame the preload reaches; sandboxed, so no Node. A child the page
+        // makes itself gets none, and is out of the page's reach by the sandbox's opaque origins.
         ...(options.guardPreload === undefined ? {} : { preload: options.guardPreload }),
         nodeIntegrationInSubFrames: true,
         webviewTag: false,

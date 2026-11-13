@@ -1288,14 +1288,17 @@ app's. It runs in a session of its own, `gram-pages`, kept in memory and hardene
 preview's, which no agent reaches: the browser tools and `show_panel` refuse its address, and the
 Preview tab's local session never loads it. Its page listener, apart from the preview's, serves
 each pinned version under a token of its own, and the session loads that page's own files from it
-and nothing else: no other page's, no other origin, no network, socket, WebRTC or preconnect, no
+and nothing else: no other page's, no other origin, no network, socket or WebRTC, no
 app IPC or bridge. The page runs sandboxed at an opaque origin, with no cookies, storage,
 popups, forms, dialogs or downloads, and can't navigate off its own files. Both the listener and
 the session put that policy on every response, so neither alone keeps the page in. The page's
 frames run one preload first, which exposes nothing: Chromium lets a page with your click copy to
 the clipboard whatever the session allows, so it refuses the page's copy, cut and paste commands
-and keeps the page's handlers from seeing or changing what you copy. Your own copy of selected
-text still works, and copies what the page's markup holds there.
+and keeps the page's handlers from seeing or changing what you copy. So that nothing gets ahead
+of it, a pinned page can't replace its own document: `document.open`, `document.write` and
+`document.writeln` throw. A frame the page makes itself gets no preload, but the sandbox keeps the
+page from scripting it. Your own copy of selected text still works, and copies what the page's
+markup holds there.
 
 ### Your own browser: Claude in Chrome and Codex computer use
 
