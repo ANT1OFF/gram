@@ -3,18 +3,19 @@ import type { CSSProperties } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-// A colour the user gives a workspace, to tell its orchestrator from the others at a glance: on its
-// name in the sidebar, the guide beside its workers and its orchestrator's glyph. It says whose a
-// thing is, never a status: it paints names and guides, and leaves every status dot its own colour.
+// A colour the user gives a workspace, to tell its orchestrator from the others at a glance: a bar
+// beside its line in the sidebar, the guide beside its workers and its orchestrator's glyph. It
+// says whose a thing is, never a status, so no hue here is near the amber, red, green or blue a
+// status takes, and it never tints a name, a row's ground or a status dot.
 
 /** The colours on offer, by name, each a hue (oklch degrees) the theme sets light and dark. */
 export const WORKSPACE_ACCENTS = [
-  { id: "violet", label: "Violet", hue: 295 },
-  { id: "pink", label: "Pink", hue: 345 },
-  { id: "orange", label: "Orange", hue: 50 },
-  { id: "lime", label: "Lime", hue: 125 },
-  { id: "teal", label: "Teal", hue: 190 },
-  { id: "sky", label: "Sky", hue: 235 },
+  { id: "violet", label: "Violet", hue: 300 },
+  { id: "magenta", label: "Magenta", hue: 330 },
+  { id: "pink", label: "Pink", hue: 355 },
+  { id: "lime", label: "Lime", hue: 118 },
+  { id: "teal", label: "Teal", hue: 185 },
+  { id: "cyan", label: "Cyan", hue: 215 },
 ] as const;
 
 export type WorkspaceAccentId = (typeof WORKSPACE_ACCENTS)[number]["id"];

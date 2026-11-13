@@ -26,6 +26,6 @@ describe("a workspace's colour", () => {
 
   it("styles nothing without a colour", () => {
     expect(accentStyle(undefined)).toBeUndefined();
-    expect(accentStyle("violet")).toEqual({ "--accent-hue": 295 });
+    expect(accentStyle("violet")).toEqual({ "--accent-hue": 300 });
   });
 });

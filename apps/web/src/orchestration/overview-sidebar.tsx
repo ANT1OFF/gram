@@ -744,7 +744,7 @@ function WorkspaceRow({
   const hover = waiting === undefined ? summary : `${summary}\nOrchestrator: ${waiting.hint}`;
   const line = orchestratorLine(word, { working, asks });
   const name = state.workspace.name;
-  // The colour the user gave it, on its name and beside its workers.
+  // The colour the user gave it: a bar beside its line, carried on by its workers' guide.
   const accent = useWorkspaceAccent(id);
   // Nothing under it, not even its orchestrator at work: one line, its name and the word every
   // surface says of a thread at rest (`STATUS_WORDS`), so the palette and this row agree.
@@ -780,7 +780,10 @@ function WorkspaceRow({
               className={cn(
                 "flex min-w-0 items-center gap-0.5 rounded-(--radius-sm)",
                 here && "bg-sidebar-row-active",
+                accent !== undefined && "gram-accent-row",
               )}
+              data-accent={accent}
+              style={accentStyle(accent)}
             />
           }
         >
@@ -806,13 +809,7 @@ function WorkspaceRow({
               data-working={line.pulse || undefined}
               className={cn(DOT, "rounded-full", line.dot, line.pulse && "gram-working")}
             />
-            <span
-              data-accent={accent}
-              className={cn("truncate font-medium", accent !== undefined && "gram-accent-text")}
-              style={accentStyle(accent)}
-            >
-              {name}
-            </span>
+            <span className="truncate font-medium">{name}</span>
             {/* At its edge, as a worker's row: what its orchestrator waits on, else idle, its pause,
                 or its workers in short words, then its share of Needs you. Its hover says all. */}
             <span className={ROW_TRAIL}>
