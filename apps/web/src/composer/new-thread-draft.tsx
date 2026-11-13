@@ -1,3 +1,4 @@
+import { usePhone } from "@/lib/use-phone";
 import { useNewForm, useSoloWord } from "@/embed/store";
 import {
   DEFAULT_SETTINGS,
@@ -170,6 +171,7 @@ export function NewThreadDraft() {
 }
 
 function ConfiguredNewThreadDraft() {
+  const phone = usePhone();
   const startMachine = needsMachine(useOnDemandMachine().status);
   const api = useApi();
   const navigate = useNavigate();
@@ -603,7 +605,10 @@ function ConfiguredNewThreadDraft() {
                       placeholder={
                         dictation.active
                           ? ""
-                          : "Describe the task. Type @ to mention a file, or paste or drop files to attach them. Or leave it empty to start the agent now and write to it in the thread."
+                          : phone
+                            ? // A phone has no files to drop, and four lines of grey before one is typed.
+                              "Describe the task, or leave it empty and write to the agent in the thread."
+                            : "Describe the task. Type @ to mention a file, or paste or drop files to attach them. Or leave it empty to start the agent now and write to it in the thread."
                       }
                       value={prompt}
                       onFocus={(event) => {
