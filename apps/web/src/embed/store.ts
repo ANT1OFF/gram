@@ -7,6 +7,7 @@ import type {
   ShellContributions,
   ShellDocument,
   ShellNavigationGroup,
+  ShellNavigationItem,
   ShellNavigationPlacement,
   ShellNewEntry,
   ShellPageProps,
@@ -178,6 +179,19 @@ export const routeProblem = (path: string, taken: ReadonlySet<string>): string |
 /** Whether the window at `pathname` is at `to` or on a page under it. */
 export const navigationCurrent = (pathname: string, to: string): boolean =>
   pathname === to || (to !== "/" && pathname.startsWith(`${to}/`));
+
+/**
+ * The destination the window is at, among `items`: the one whose `to` it is at or under, or else
+ * the first that lists where it is in `alsoAt`. Its `to`, or undefined at none.
+ */
+export const currentDestination = (
+  pathname: string,
+  items: readonly Pick<ShellNavigationItem, "to" | "alsoAt">[],
+): string | undefined =>
+  (
+    items.find((item) => navigationCurrent(pathname, item.to)) ??
+    items.find((item) => item.alsoAt?.some((path) => navigationCurrent(pathname, path)))
+  )?.to;
 
 /** The groups worth showing: each with a destination, ids told apart, empty ones left out. */
 export const shownNavigation = (

@@ -3,8 +3,8 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { History, Search, Settings } from "lucide-react";
 import { createElement, useEffect, useRef, useState } from "react";
 
-import { EmbedSwitcher, ItemIcon, linkTo, usePathname } from "@/embed/slots";
-import { navigationAt, navigationCurrent, shownCount, useEmbedShell } from "@/embed/store";
+import { EmbedSwitcher, ItemIcon, linkTo, useCurrentDestination } from "@/embed/slots";
+import { navigationAt, shownCount, useEmbedShell } from "@/embed/store";
 import { useHistoryStore } from "@/history/history-view";
 import { useLaunchIssues } from "@/launch-checks/banner";
 import { cn } from "@/lib/utils";
@@ -37,11 +37,8 @@ function Places({ placement }: { placement: "main" | "foot" }) {
     useEmbedShell((s) => s.navigation),
     placement,
   );
-  const pathname = usePathname();
   const list = useRef<HTMLElement>(null);
-  const at = groups
-    .flatMap((group) => group.items)
-    .find((item) => navigationCurrent(pathname, item.to))?.to;
+  const at = useCurrentDestination();
   // The current row in view when the menu opens: on a short phone it may be below the fold.
   useEffect(() => {
     if (at === undefined) return;
@@ -72,7 +69,7 @@ function Places({ placement }: { placement: "main" | "foot" }) {
           )}
           <ul className="flex flex-col gap-px px-2.5">
             {group.items.map((item) => {
-              const current = navigationCurrent(pathname, item.to);
+              const current = item.to === at;
               const count = shownCount(item.count);
               return (
                 <li key={item.id}>

@@ -1,5 +1,5 @@
 import { Link, useMatches, useParams, useRouterState } from "@tanstack/react-router";
-import { createElement, useEffect, useRef, type ReactNode } from "react";
+import { createElement, useEffect, useMemo, useRef, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
@@ -10,8 +10,8 @@ import { useStripOpen } from "./strip-open";
 import type { ShellNavigationItem, ShellNavigationPlacement, ShellPlacement } from "./contract";
 import {
   itemName,
+  currentDestination,
   navigationAt,
-  navigationCurrent,
   shownCount,
   shownNavigation,
   useEmbedShell,
@@ -45,6 +45,23 @@ export function EmbedSwitcher({
 }
 
 export const usePathname = () => useRouterState({ select: (state) => state.location.pathname });
+
+/**
+ * The `to` of the navigation row the window is at, among every group's: the row to mark current,
+ * in the sidebar, the compact sidebar and a phone's menu alike.
+ */
+export function useCurrentDestination(): string | undefined {
+  const groups = useEmbedShell((s) => s.navigation);
+  const pathname = usePathname();
+  return useMemo(
+    () =>
+      currentDestination(
+        pathname,
+        shownNavigation(groups).flatMap((group) => group.items),
+      ),
+    [groups, pathname],
+  );
+}
 
 /** The added pages take their path as a string: the router's typed `to` knows only Gram's own. */
 export const linkTo = (to: string) => ({ to }) as unknown as { to: "/" };
@@ -169,14 +186,11 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
     useEmbedShell((s) => s.navigation),
     placement,
   );
-  const pathname = usePathname();
   const roomy = useRoomySidebar();
   // The row the window is on is brought into view when the window gets there, and when the list
   // first shows: in a short window it may be below the fold.
   const list = useRef<HTMLElement>(null);
-  const at = groups
-    .flatMap((group) => group.items)
-    .find((item) => navigationCurrent(pathname, item.to))?.to;
+  const at = useCurrentDestination();
   useEffect(() => {
     if (at === undefined) return;
     list.current
@@ -224,7 +238,7 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
             ))}
           <ul className="flex flex-col gap-px">
             {group.items.map((item) => {
-              const current = navigationCurrent(pathname, item.to);
+              const current = item.to === at;
               return (
                 <li key={item.id}>
                   <Link
@@ -273,7 +287,7 @@ export function EmbedFootIcons() {
     useEmbedShell((s) => s.navigation),
     "foot",
   );
-  const pathname = usePathname();
+  const at = useCurrentDestination();
   return groups.flatMap((group) =>
     group.items.map((item) => {
       const count = shownCount(item.count);
@@ -290,7 +304,7 @@ export function EmbedFootIcons() {
               {...{ [OVERVIEW_STOP]: "" }}
               data-testid="embed-navigation-item"
               aria-label={spoken}
-              aria-current={navigationCurrent(pathname, item.to) ? "page" : undefined}
+              aria-current={item.to === at ? "page" : undefined}
               className={RAIL_TILE}
             />
           }
@@ -325,7 +339,7 @@ export function EmbedRailNavigation({
     useEmbedShell((s) => s.navigation),
     placement,
   );
-  const pathname = usePathname();
+  const at = useCurrentDestination();
   const stripOpen = useStripOpen();
   if (groups.length === 0) return null;
   const main = placement === "main";
@@ -347,7 +361,7 @@ export function EmbedRailNavigation({
           className={cn("flex flex-col items-center", quiet ? "gap-px" : "gap-1")}
         >
           {group.items.map((item) => {
-            const current = navigationCurrent(pathname, item.to);
+            const current = item.to === at;
             const count = shownCount(item.count);
             const name = itemName(group, item.label);
             const spoken = count === undefined ? name : `${name}, ${count}`;
@@ -408,10 +422,10 @@ export function useEmbedPageTitle(): string | undefined {
  */
 export function useEmbedPageGroup(): string | undefined {
   const groups = useEmbedShell((s) => s.navigation);
-  const pathname = usePathname();
-  return shownNavigation(groups).find((group) =>
-    group.items.some((item) => navigationCurrent(pathname, item.to)),
-  )?.label;
+  const at = useCurrentDestination();
+  return at === undefined
+    ? undefined
+    : shownNavigation(groups).find((group) => group.items.some((item) => item.to === at))?.label;
 }
 
 /** An added page's name in the title bar, where Gram's own pages name the workspace. */

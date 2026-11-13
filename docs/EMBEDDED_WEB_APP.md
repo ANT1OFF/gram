@@ -112,7 +112,9 @@ workspaces and threads, or `foot` (the default), at the foot of the sidebar abov
 are listed the same way in the phone's drawer, as icons in the compact sidebar (a destination
 without an `icon` shows its first letter; `main` groups above the workspaces' tiles), and in the
 command palette under the group's name. A destination's `to` may be one of your pages or one of
-Gram's, and it is marked while the window is at it or under it. A destination's `count` (above 0)
+Gram's, and it is marked while the window is at it or under it. A destination may list other paths it is
+also marked at in `alsoAt` (a row to `/threads` naming `/t` and `/new` stays marked inside a thread
+and on New task); a row whose own `to` matches comes first. A destination's `count` (above 0)
 is drawn at the row's end, and as a dot on its compact tile.
 
 **Gram's threads.** `threads: "hidden"` leaves the workspaces and threads out of the sidebar, the

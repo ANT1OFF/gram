@@ -66,6 +66,12 @@ export interface ShellNavigationItem {
    * tile, a dot. Left out or 0, nothing is drawn. Change it through `GramHandle.update`.
    */
   readonly count?: number;
+  /**
+   * Other paths at which the row is the current one, each with the pages under it: a row to the
+   * page of every thread may name `/t` and `/new`, so it stays marked in a thread and on New task.
+   * A row whose own `to` matches wins over one that only lists the path here.
+   */
+  readonly alsoAt?: readonly string[];
 }
 
 /**
