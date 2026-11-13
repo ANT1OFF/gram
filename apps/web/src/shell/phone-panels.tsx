@@ -6,6 +6,7 @@ import { openThreadPanel } from "@/components/git-badges";
 import { cn } from "@/lib/utils";
 import { ROUND } from "@/shell/phone-menu";
 import { usePhonePlace } from "@/shell/phone-title";
+import { useWorkspacePlaces } from "@/shell/titlebar-path";
 import { useLayoutStore, type RightPanelTab } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -116,5 +117,40 @@ export function PhonePanelHeader({ tab, centred }: { tab: string; centred: boole
       {/* The title stays centred between the button and its width again. */}
       {centred && <span aria-hidden className="size-11 shrink-0" />}
     </header>
+  );
+}
+
+/**
+ * Under the title of a workspace's place on a phone (its orchestrator's thread, its Board, its
+ * Memory): the three, one tap each, the one open selected. A phone has no bar beside the path to
+ * hold them, and the Board was otherwise a menu away.
+ */
+export function PhoneWorkspaceRow() {
+  const places = useWorkspacePlaces(false);
+  if (places === undefined || !places.some((place) => place.current)) return null;
+  return (
+    <nav
+      aria-label="Workspace"
+      data-testid="phone-workspace-row"
+      className="mx-3 mb-1 flex shrink-0 gap-0.5 rounded-xl bg-muted p-0.5"
+    >
+      {places.map((place) => (
+        <button
+          key={place.key}
+          type="button"
+          aria-current={place.current ? "page" : undefined}
+          data-testid={`phone-workspace-${place.key}`}
+          className={cn(
+            SEGMENT,
+            place.current
+              ? "bg-background font-semibold text-foreground shadow-raised"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+          onClick={place.current ? undefined : place.go}
+        >
+          {place.label}
+        </button>
+      ))}
+    </nav>
   );
 }

@@ -35,7 +35,7 @@ function FinishedToggle({ workspaceId, count }: { workspaceId: string; count: nu
       side="bottom"
       render={
         <Button
-          size="icon-xs"
+          size="xs"
           variant="ghost"
           data-testid="rail-show-archived"
           aria-pressed={shown}
@@ -46,6 +46,11 @@ function FinishedToggle({ workspaceId, count }: { workspaceId: string; count: nu
       }
     >
       <Archive aria-hidden />
+      {/* Named where the bar has room, as the action it is: an archive box alone read as nothing,
+          and a count beside it repeated Done's. */}
+      <span aria-hidden className="@max-2xl/titlebar:hidden">
+        {shown ? "Hide finished" : "Show finished"}
+      </span>
     </Hint>
   );
 }
