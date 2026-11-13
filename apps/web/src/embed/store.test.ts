@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   itemName,
   navigationAt,
+  currentDestination,
   navigationCurrent,
   panelOffered,
   routeProblem,
@@ -64,6 +65,16 @@ describe("navigation groups", () => {
     expect(navigationCurrent("/govern/policies/p1", "/govern/policies")).toBe(true);
     expect(navigationCurrent("/govern/policies-old", "/govern/policies")).toBe(false);
     expect(navigationCurrent("/usage", "/")).toBe(false);
+  });
+
+  it("marks the row whose own path matches before one that only lists the path", () => {
+    const threads = { to: "/threads", alsoAt: ["/t", "/new"] };
+    const start = { to: "/new" };
+    expect(currentDestination("/t/th_1", [threads, start])).toBe("/threads");
+    expect(currentDestination("/new", [threads, start])).toBe("/new");
+    expect(currentDestination("/new", [threads])).toBe("/threads");
+    expect(currentDestination("/threads", [threads, start])).toBe("/threads");
+    expect(currentDestination("/usage", [threads, start])).toBeUndefined();
   });
 
   it("leave out empty and repeated groups, and destinations that are no path", () => {
