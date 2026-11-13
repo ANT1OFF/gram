@@ -8,6 +8,7 @@ import { useApi } from "@/api/context";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
+import { usePhone } from "@/lib/use-phone";
 import { buttonVariants } from "@/components/ui/button";
 import { focusOtherWindow } from "@/desktop/open-thread";
 import { useSaveSettings } from "@/settings/use-save-settings";
@@ -74,14 +75,19 @@ function TakeOverLine() {
       console.error("save takeOverHintSeen", error),
     );
   }, [shown, save]);
+  const phone = usePhone();
   if (!shown) return null;
   return (
     <p
       data-testid="worker-banner-take-over"
-      className="flex min-w-0 items-center gap-2 border-b border-edge px-3 py-1 text-meta text-muted-foreground"
+      className={cn(
+        "flex min-w-0 gap-2 border-b border-edge px-3 text-meta text-muted-foreground",
+        phone ? "items-start py-1.5" : "items-center py-1",
+      )}
     >
-      <HandGrab aria-hidden className="size-icon-row shrink-0" />
-      <span className="min-w-0 truncate" title={WORKER_TAKE_OVER_LINE}>
+      <HandGrab aria-hidden className={cn("size-icon-row shrink-0", phone && "mt-0.5")} />
+      {/* A phone has no hover to read a cut line on: there it wraps and says all of it. */}
+      <span className={cn("min-w-0", !phone && "truncate")} title={WORKER_TAKE_OVER_LINE}>
         {WORKER_TAKE_OVER_LINE}
       </span>
     </p>

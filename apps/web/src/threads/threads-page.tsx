@@ -167,7 +167,9 @@ export function ThreadsPage() {
                 : listings.length}
             </span>
           )}
-          {workspaceWords !== undefined && (
+          {/* A phone's row holds the two lists and one button: on the list of threads that is the
+              thread's, and making a workspace is on the workspaces' own list, a tap away. */}
+          {workspaceWords !== undefined && (onWorkspaces || !phone) && (
             <Button
               size="sm"
               variant="outline"
@@ -180,7 +182,7 @@ export function ThreadsPage() {
           )}
           <Button
             size="sm"
-            className={cn(workspaceWords === undefined && "ms-auto")}
+            className={cn((workspaceWords === undefined || (phone && !onWorkspaces)) && "ms-auto")}
             data-testid="threads-new"
             // Worded by the embedding app, it starts a chat; Gram's own opens the choice used last.
             onClick={() => void navigate(newEntryRoute(newLabel === undefined ? entry : "oneOff"))}
