@@ -135,18 +135,20 @@ export function AskedByLink({ askedBy }: { askedBy: AskedBy }) {
       sent from <span className="font-medium text-foreground">{name}</span>
     </>
   );
-  const quiet = "shrink-0 text-meta text-muted-foreground";
+  // No dot before it: on a line of its own a leading dot hangs, and beside the toggle the cut-off
+  // words already part them. Under the toggle it lines up with the words, past the avatar.
+  const tone = "shrink-0 text-meta text-muted-foreground";
+  const quiet = `${tone} max-sm:pl-6.5`;
   if (place === undefined && ready && asker === undefined) {
     return (
       <span data-testid="message-asked-by" title="Thread not found" className={quiet}>
-        · {words}
+        {words}
       </span>
     );
   }
-  const link = `${quiet} rounded-sm underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring`;
+  const link = `${tone} rounded-sm underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring`;
   return (
     <span className={quiet}>
-      ·{" "}
       {place === undefined ? (
         <Link
           to="/t/$threadId"
@@ -267,14 +269,15 @@ function OrchestratorMessage({
       data-folded={open ? undefined : ""}
       className="flex w-full max-w-full min-w-0 flex-col gap-1"
     >
-      <div className="flex w-full min-w-0 items-center gap-1.5">
+      {/* Too narrow for both (a phone), the asker takes a line of its own under the toggle. */}
+      <div className="flex w-full min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
         <button
           type="button"
           aria-expanded={open}
           aria-controls={body}
           data-testid="orchestrator-message-toggle"
           onClick={() => toggle(messageId)}
-          className="group/brief flex min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="group/brief flex min-w-0 shrink grow basis-72 items-center gap-1.5 rounded-sm text-left text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           <SenderAvatar agent={sender?.model.agent} />
           <span className="shrink-0 font-medium text-foreground">Message from orchestrator</span>
