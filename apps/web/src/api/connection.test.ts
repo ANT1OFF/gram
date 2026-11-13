@@ -69,9 +69,9 @@ describe("backoffDelay", () => {
 });
 
 describe("transportRetryDelay", () => {
-  it("retries quickly three times, then backs off to a 5 s cap", () => {
+  it("redials at once, retries quickly twice, then backs off to a 5 s cap", () => {
     expect(Array.from({ length: 10 }, (_, i) => transportRetryDelay(i + 1))).toEqual([
-      500, 500, 500, 1000, 2000, 4000, 5000, 5000, 5000, 5000,
+      50, 500, 500, 1000, 2000, 4000, 5000, 5000, 5000, 5000,
     ]);
     let elapsed = 0;
     let dials = 1;
@@ -445,7 +445,7 @@ describe("RPC transport recovery", () => {
         expect(server.sockets).toHaveLength(previous + 1);
       };
       server.stall();
-      for (const delay of [500, 500, 500, 1000, 2000, 4000, 5000, 5000, 5000]) {
+      for (const delay of [50, 500, 500, 1000, 2000, 4000, 5000, 5000, 5000]) {
         await refuse(delay);
       }
       expect(server.connection.get().status).toBe("reconnecting");
@@ -458,7 +458,7 @@ describe("RPC transport recovery", () => {
       await vi.advanceTimersByTimeAsync(1);
       expect(server.connection.get().status).toBe("open");
       // A new failure after both feeds answered starts a fresh quick retry wave.
-      await refuse(500);
+      await refuse(50);
       expect(server.connection.get().status).toBe("open");
       // Both feeds drop on each of the eight closes.
       expect(server.drops()).toEqual(Array(16).fill("SocketCloseError"));

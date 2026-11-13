@@ -9,9 +9,14 @@ import type * as Socket from "effect/socket/Socket";
 
 import type { ConnectionControl } from "./connection";
 
-/** Three quick retries for a brief stall, then doubling to 5 s for a sustained outage. */
+/**
+ * The first redial is at once: a socket that drops on a phone changing networks or waking is
+ * usually back by then, and half a second of waiting was most of a reconnect on a good link. Then
+ * two quick retries for a brief stall, doubling to 5 s for a sustained outage.
+ */
 export const transportRetryDelay = (attempt: number): number =>
-  Math.min(5000, 500 * 2 ** Math.max(0, attempt - 3));
+  attempt <= 1 ? FIRST_REDIAL_MS : Math.min(5000, 500 * 2 ** Math.max(0, attempt - 3));
+const FIRST_REDIAL_MS = 50;
 
 /** The window's RPC transport, waking failed feeds as soon as a socket reconnects. */
 export const rpcProtocolLayer = (

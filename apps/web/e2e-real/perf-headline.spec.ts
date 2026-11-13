@@ -547,7 +547,12 @@ test(`send to a ${thousands(SEND_ITEMS)}-item thread`, async () => {
   const seen: number[] = [];
   const composer = page.getByRole("combobox", { name: "Message" });
   for (let i = 0; i < REPEATS; i++) {
+    // The turn before has ended and the composer has let go of its text: a fill that lands while
+    // either is still settling is kept as a draft and the keypress sends nothing.
+    await expect(composer).toHaveText("");
+    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
     await composer.fill(`page send ${i}`);
+    await expect(composer).toHaveText(`page send ${i}`);
     const start = performance.now();
     await composer.press("ControlOrMeta+Enter");
     await expect(transcript(page).getByText(`echo: page send ${i}`)).toBeVisible({
@@ -616,7 +621,7 @@ test(`launch on a phone with ${SIDEBAR_THREADS + 4} threads`, async () => {
       files: files.length,
       largest: files
         .toSorted((a, b) => b[1] - a[1])
-        .slice(0, 4)
+        .slice(0, Number(process.env.GRAM_PERF_FILES ?? 4))
         .map(([name, size]) => `${name} ${Math.round(size / 1024)} KB`)
         .join(", "),
       largestSocket: phone.wire.takeLargest(),
@@ -639,19 +644,52 @@ test(`launch on a phone with ${SIDEBAR_THREADS + 4} threads`, async () => {
   );
 });
 
+const fileList = (list: Array<[string, number]>) =>
+  list.map(([name, size]) => `${name} ${Math.round(size / 1024)} KB`).join(", ");
+
 test("launch on a phone over slow 3G", async () => {
   // One sample: with nothing cached, the app's own files are most of a minute or more.
   const phone = await newPage(PHONE);
+  const session = await phone.page.context().newCDPSession(phone.page);
+  await session.send("Network.enable");
+  const urls = new Map<string, string>();
+  const files: Array<[string, number]> = [];
+  session.on("Network.requestWillBeSent", (event) => {
+    urls.set(event.requestId, event.request.url);
+  });
+  session.on("Network.loadingFinished", (event) => {
+    const name = (urls.get(event.requestId) ?? "?").split("/").at(-1)!.split("?")[0]!;
+    files.push([name.replace(/-[\w-]{8}(\.\w+)$/, "$1") || "/", event.encodedDataLength]);
+  });
   link.set(SLOW_3G);
+  link.takeBytesDown();
   const start = performance.now();
   await openThroughLink(phone.page, `/t/${smallThread}`);
   await expect(transcript(phone.page).getByText("echo: start Short thread")).toBeVisible({
     timeout: 500_000,
   });
   await painted(phone.page);
-  record("phone-launch-slow", "Launch on a phone over slow 3G, nothing cached", "ms", [
-    performance.now() - start,
-  ]);
+  const before = files.length;
+  record(
+    "phone-launch-slow",
+    "Launch on a phone over slow 3G, nothing cached",
+    "ms",
+    [performance.now() - start],
+    // In the order they finished: what the first sight of the thread waited behind.
+    { filesBefore: before, arrivedBefore: fileList(files) },
+  );
+  // What the launch goes on to fetch unasked, until the link has been quiet for five seconds.
+  let bytes = link.takeBytesDown();
+  for (let quiet = 0; quiet < 5;) {
+    await phone.page.waitForTimeout(1_000);
+    const more = link.takeBytesDown();
+    bytes += more;
+    quiet = more > 2_000 ? 0 : quiet + 1;
+  }
+  record("phone-launch-slow-bytes", "Data a phone's launch uses over slow 3G", "bytes", [bytes], {
+    files: files.length,
+    arrivedAfter: fileList(files.slice(before)),
+  });
   link.set(UNLIMITED);
   await phone.page.close();
 });

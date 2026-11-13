@@ -6,6 +6,8 @@ import { preloadRightPanel } from "@/components/right-panel";
 import { lazyParts } from "@/lib/lazy-part";
 import { preloadWorkspaceSheet } from "@/settings/workspace-sheet";
 
+import { thisLinkIsConstrained } from "./constrained-link";
+
 const ignore = () => {};
 
 /**
@@ -15,6 +17,10 @@ const ignore = () => {};
  * Settings that has to fetch its code when ⌘, is pressed opens a beat late. Then the dialogs,
  * sheets and views made with `lazyPart`, one per idle moment, so none of them adds a long task to
  * the window's first seconds.
+ *
+ * Over a slow or metered link only the markdown is fetched: the rest is a hundred files and a third
+ * of the launch's bytes, and there they hold up the transcript and the feed the person is waiting
+ * for. Each part still loads when it is first opened.
  */
 export function usePreloadAfterPaint() {
   const router = useRouter();
@@ -40,6 +46,7 @@ export function usePreloadAfterPaint() {
     };
     const frame = requestAnimationFrame(() => {
       loadMarkdown().catch(ignore);
+      if (thisLinkIsConstrained()) return;
       whenIdle(() => {
         preloadRightPanel().catch(ignore);
         preloadWorkspaceSheet().catch(ignore);

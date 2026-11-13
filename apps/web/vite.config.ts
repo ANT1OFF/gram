@@ -132,7 +132,14 @@ export default defineConfig({
           // hundred small files took longer than the bytes in them. What loads later stays in
           // chunks of its own, reusing this one's modules. `main.tsx` is bundled in it too, so it
           // starts without a top-level `await` (see there).
-          groups: [{ name: "initial", tags: ["$initial"] }],
+          //
+          // The packages among them go in a file of their own, ahead of the app's code. They are
+          // half of the first download and change with a dependency bump, not with a release, so
+          // a browser that has them keeps them across updates and fetches only the app's half.
+          groups: [
+            { name: "vendor", tags: ["$initial"], test: /[\\/]node_modules[\\/]/, priority: 2 },
+            { name: "initial", tags: ["$initial"], priority: 1 },
+          ],
         },
       },
     },
