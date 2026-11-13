@@ -24,6 +24,7 @@ import {
 } from "@/shell/titlebar-slot";
 import { SettingsTitle } from "@/shell/settings-title";
 import { EmbedPageTitle, EmbedSwitcher, useEmbedPageTitle } from "@/embed/slots";
+import { TitlebarPath, TitlebarPathViews, usePathBar } from "@/shell/titlebar-path";
 import { TopLeftNav } from "@/shell/top-left-nav";
 import { UsageMeter } from "@/shell/usage-meter";
 import { WorkspaceSwitcher } from "@/shell/workspace-switcher";
@@ -96,6 +97,7 @@ export function ShellTitlebar({
   const embedTitle = useEmbedPageTitle();
   const roomy = useRoomySidebar();
   const host = useHostAttention();
+  const pathBar = usePathBar();
 
   // A phone's one bar: the drawer's menu, where you are, Needs you and "…" with the rest in words.
   // The thread's header and Board's controls still mount in the slot, out of sight: what they
@@ -221,7 +223,11 @@ export function ShellTitlebar({
           {/* A page an app in front of Gram added says its own name here; it is in no workspace
               and has no views to switch between. */}
           {embedTitle !== undefined && <EmbedPageTitle key={embedTitle} title={embedTitle} />}
-          {embedTitle === undefined && (
+          {/* An app whose own pages say where they are as a path has the bar start as one. */}
+          {embedTitle === undefined && pathBar && (
+            <TitlebarPath solo={soloBar} narrow={carried && folded} />
+          )}
+          {embedTitle === undefined && !pathBar && (
             <WorkspaceSwitcher
               className={cn(
                 "shrink-0 [-webkit-app-region:no-drag]",
@@ -231,7 +237,7 @@ export function ShellTitlebar({
             />
           )}
           {/* Chat · Board are the workspace's views: a solo thread in Chat is no part of it. */}
-          {embedTitle === undefined && !soloBar && (
+          {embedTitle === undefined && !soloBar && !pathBar && (
             <>
               <ViewSwitcher className="shrink-0 [-webkit-app-region:no-drag]" />
               <FakeAgentBadge className="[-webkit-app-region:no-drag]" />
@@ -246,6 +252,7 @@ export function ShellTitlebar({
           />
         </div>
       )}
+      {embedTitle === undefined && pathBar && !settings && <TitlebarPathViews solo={soloBar} />}
       {carried && !settings && (
         <span
           aria-hidden

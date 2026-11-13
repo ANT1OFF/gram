@@ -244,6 +244,14 @@ export interface ShellThreadsPage {
    * ways to start. Gram's three choices in its own words when left out.
    */
   readonly newForm?: ShellNewForm;
+  /**
+   * How the title bar starts on a thread, a Board and the New form. `path` draws a path from this
+   * page (its `title`, a link back to it), then the workspace, still its switcher, then the
+   * thread; a workspace's orchestrator and Board are two buttons beside it, and the New form names
+   * itself. For an app whose own pages say where they are that way, and that has a Chat of its
+   * own. `views`, the default, is Gram's workspace switcher and Chat · Board.
+   */
+  readonly bar?: "views" | "path";
 }
 
 /** One of the New form's Who does it choices, in the embedding app's words. */
