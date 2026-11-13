@@ -203,7 +203,7 @@ function WorkspaceItem({
       data-asks={asks}
       className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border px-3.5 py-3"
     >
-      <div className="flex min-w-0 flex-1 basis-64 flex-col gap-1">
+      <div className="flex min-w-[min(100%,16rem)] flex-1 basis-64 flex-col gap-1">
         <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
