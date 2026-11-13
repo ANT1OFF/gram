@@ -232,7 +232,11 @@ request, not the docs.
 
 `apps/web/e2e-real/perf-headline.spec.ts` is the short list to compare before and after a change:
 opening and paging a 41,000-item thread, sending to a 75,000-item one, a phone's first launch in
-bytes and over slow 3G (with the data it uses and the files the first sight of the thread waited for), a phone's reconnect and a terminal attach over slow 3G. It writes JSON, and
+bytes and over slow 3G (with the data it uses and the files the first sight of the thread waited for), a phone's reconnect and a terminal attach over slow 3G. It also times a reply's first words
+and the frames while a long reply streams (the echo agent's `/stream{N}`), frames and memory while
+scrolling the long thread, an approval reaching Needs you and its answer reaching the agent, a
+coding worker's start to its first output, and how soon a phone is back in touch after the network
+drops and returns. It writes JSON, and
 `tools/perf/headline-chart.mjs` turns two runs into a table and a chart:
 
 ```sh
@@ -247,6 +251,13 @@ node ../../tools/perf/headline-chart.mjs /tmp/before.json /tmp/after.json --out 
 Run both sides on the same idle machine. `GRAM_PERF_SCALE=0.02` is a quick functional run of the
 spec itself, not evidence. Each scenario's `detail` names the largest files and socket answers, which
 is where to look first when a number is high.
+
+The web build fails when the first paint, a lazily loaded chunk or a route's own load grows past
+its budget in `apps/web/bundle-budgets.json`; `GRAM_BUNDLE_REPORT=1 bunx vite build` prints every
+route's size. Raise a budget in the pull request that means the growth.
+
+`tools/perf/ci-flake-rate.mjs` reads GitHub's listing of the trunk's check runs and says how many
+went red, which on a trunk of reviewed commits is mostly tests that fail some of the time.
 
 ## Protocol, native and live checks
 

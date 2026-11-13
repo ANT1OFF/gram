@@ -18,10 +18,50 @@ export const transportRetryDelay = (attempt: number): number =>
   attempt <= 1 ? FIRST_REDIAL_MS : Math.min(5000, 500 * 2 ** Math.max(0, attempt - 3));
 const FIRST_REDIAL_MS = 50;
 
-/** The window's RPC transport, waking failed feeds as soon as a socket reconnects. */
+/**
+ * Calls `back` when the window says the network or the person is back: the browser's `online`, or
+ * the page shown again as a phone wakes or a tab comes forward. Returns what stops listening.
+ */
+export type WakeSource = (back: () => void) => () => void;
+export const backInTouch: WakeSource = (back) => {
+  if (typeof window === "undefined") return () => {};
+  const shown = () => {
+    if (document.visibilityState === "visible") back();
+  };
+  window.addEventListener("online", back);
+  document.addEventListener("visibilitychange", shown);
+  return () => {
+    window.removeEventListener("online", back);
+    document.removeEventListener("visibilitychange", shown);
+  };
+};
+
+/** Waits `ms`, or until `wake` says the window is back, whichever is first; true when woken. */
+const redialWait = (ms: number, wake: WakeSource) =>
+  Effect.callback<boolean>((resume) => {
+    let stop: (() => void) | undefined;
+    const end = () => {
+      clearTimeout(timer);
+      stop?.();
+    };
+    const done = (woken: boolean) => {
+      end();
+      resume(Effect.succeed(woken));
+    };
+    const timer = setTimeout(() => done(false), ms);
+    stop = wake(() => done(true));
+    return Effect.sync(end);
+  });
+
+/**
+ * The window's RPC transport, waking failed feeds as soon as a socket reconnects. A redial's wait
+ * ends early on `wake`: after a long outage the backoff is 5 s, and the network coming back is the
+ * moment to dial, not up to 5 s later.
+ */
 export const rpcProtocolLayer = (
   socket: Layer.Layer<Socket.Socket>,
   connection: ConnectionControl,
+  wake: WakeSource = backInTouch,
 ) =>
   Layer.effect(RpcClient.Protocol)(
     Effect.gen(function* () {
@@ -37,9 +77,14 @@ export const rpcProtocolLayer = (
       return yield* RpcClient.makeProtocolSocket({
         retryPolicy: Schedule.fromStep(
           Effect.succeed(() =>
-            Effect.sync(() => {
+            // All but the last millisecond of the wait is here and not in the schedule's own
+            // delay, so `wake` can end it; the schedule sleeps the rest, or nothing once woken.
+            Effect.suspend(() => {
               const delay = transportRetryDelay(++attempt);
-              return [delay, Duration.millis(delay)] as [number, Duration.Duration];
+              return Effect.map(
+                redialWait(delay - 1, wake),
+                (woken) => [delay, Duration.millis(woken ? 0 : 1)] as [number, Duration.Duration],
+              );
             }),
           ),
         ),

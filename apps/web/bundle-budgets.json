@@ -1,0 +1,17 @@
+{
+  "firstPaintKb": 2200,
+  "lazyChunkKb": 1000,
+  "routeKb": {
+    "default": 140,
+    "t/$threadId": 900,
+    "settings": 640,
+    "settings.general": 620,
+    "settings.agents": 620,
+    "settings.about": 620,
+    "new": 380,
+    "w/$workspaceId.memory": 320,
+    "settings.workspaces_.$workspaceId": 310,
+    "index": 220,
+    "new-task": 190
+  }
+}

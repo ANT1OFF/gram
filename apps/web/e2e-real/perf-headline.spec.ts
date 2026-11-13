@@ -575,6 +575,205 @@ test(`send to a ${thousands(SEND_ITEMS)}-item thread`, async () => {
   );
 });
 
+/** The value `p` in every hundred samples do not exceed. */
+const percentile = (values: readonly number[], p: number) => {
+  const sorted = values.toSorted((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)] ?? 0;
+};
+
+interface Frames {
+  /** Milliseconds between one frame and the next, for every frame since `watchFrames`. */
+  readonly gaps: number[];
+  /** Tasks that held the main thread for over 50 ms, by how long. */
+  readonly longTasks: number[];
+}
+/** Starts recording the page's frames and long tasks; `takeFrames` returns and clears them. */
+const watchFrames = (on: Page) =>
+  on.evaluate(() => {
+    const w = window as unknown as { gramPerfFrames?: Frames };
+    if (w.gramPerfFrames !== undefined) return;
+    const frames: Frames = { gaps: [], longTasks: [] };
+    w.gramPerfFrames = frames;
+    let last = performance.now();
+    const tick = (now: number) => {
+      frames.gaps.push(now - last);
+      last = now;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) frames.longTasks.push(entry.duration);
+    }).observe({ type: "longtask" });
+  });
+const takeFrames = (on: Page) =>
+  on.evaluate(() => {
+    const frames = (window as unknown as { gramPerfFrames: Frames }).gramPerfFrames;
+    return { gaps: frames.gaps.splice(0), longTasks: frames.longTasks.splice(0) };
+  });
+/** A frame is late when it took over two frames' time at 60 a second. */
+const LATE_FRAME_MS = 34;
+const mean = (values: readonly number[]) =>
+  values.reduce((sum, each) => sum + each, 0) / Math.max(1, values.length);
+const frameDetail = (frames: Frames) => ({
+  frames: frames.gaps.length,
+  p95FrameMs: round(percentile(frames.gaps, 95)),
+  lateFrames: frames.gaps.filter((gap) => gap > LATE_FRAME_MS).length,
+  worstFrameMs: round(Math.max(0, ...frames.gaps)),
+  longTaskMs: round(frames.longTasks.reduce((sum, each) => sum + each, 0)),
+});
+
+/** The heap in use after a collection, and the DOM nodes alive. */
+const memoryOf = async (on: Page) => {
+  const cdp = await on.context().newCDPSession(on);
+  try {
+    await cdp.send("Performance.enable");
+    await cdp.send("HeapProfiler.collectGarbage");
+    const heap = await cdp.send("Runtime.getHeapUsage");
+    const { metrics } = await cdp.send("Performance.getMetrics");
+    return {
+      heapBytes: heap.usedSize,
+      nodes: metrics.find((metric) => metric.name === "Nodes")?.value ?? 0,
+    };
+  } finally {
+    await cdp.detach();
+  }
+};
+
+const STREAM_WORDS = 2_000;
+test(`stream a ${thousands(STREAM_WORDS)}-word reply`, async () => {
+  await timeOpen(page, smallThread, "echo: start Short thread");
+  await watchFrames(page);
+  const composer = page.getByRole("combobox", { name: "Message" });
+  const streaming = transcript(page).locator('[data-streaming="true"]');
+  const first: number[] = [];
+  const average: number[] = [];
+  const all: Frames = { gaps: [], longTasks: [] };
+  let wallMs = 0;
+  for (let i = 0; i < Math.min(REPEATS, 3); i++) {
+    await expect(composer).toHaveText("");
+    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
+    await composer.fill(`/stream{${STREAM_WORDS}} ${i}`);
+    await expect(composer).toHaveText(`/stream{${STREAM_WORDS}} ${i}`);
+    const start = performance.now();
+    await composer.press("ControlOrMeta+Enter");
+    // The reply's first words, in the message that is still arriving.
+    await expect(streaming.getByText(/thread worker review/).first()).toBeVisible({
+      timeout: 60_000,
+    });
+    first.push(performance.now() - start);
+    await takeFrames(page);
+    const from = performance.now();
+    await expect(transcript(page).getByText("stream done.")).toHaveCount(i + 1, {
+      timeout: 120_000,
+    });
+    wallMs = performance.now() - from;
+    const frames = await takeFrames(page);
+    average.push(mean(frames.gaps));
+    all.gaps.push(...frames.gaps);
+    all.longTasks.push(...frames.longTasks);
+    await expect(streaming).toHaveCount(0);
+  }
+  record("stream-first-token", "Send until the reply's first words show", "ms", first);
+  // The average, since frames come in whole multiples of 16.7 ms and a percentile of them jumps
+  // between two values from one run to the next. 16.7 ms is every frame on time.
+  record(
+    "stream-frame",
+    `Average frame while a ${thousands(STREAM_WORDS)}-word reply streams`,
+    "ms",
+    average,
+    {
+      ...frameDetail(all),
+      // The fake agent takes 10 s to say it: longer on screen means the page fell behind.
+      streamSeconds: round(wallMs / 1000),
+    },
+  );
+});
+
+test(`scroll a ${thousands(OPEN_ITEMS)}-item thread`, async () => {
+  await timeOpen(page, smallThread, "echo: start Short thread");
+  const small = await memoryOf(page);
+  await timeOpen(page, openThread, replyOf(openTurns - 1));
+  await watchFrames(page);
+  await takeFrames(page);
+  // A steady drag of the scrollbar: a third of a screen every frame, up for four seconds and back
+  // down, through whatever earlier turns the thread loads on the way.
+  const travelled = await page.evaluate(async () => {
+    const root = document.querySelector('[data-testid="transcript"]')!;
+    const target = [root, ...root.querySelectorAll("*")]
+      .concat(root.parentElement === null ? [] : [root.parentElement])
+      .find(
+        (element) =>
+          /auto|scroll/.test(getComputedStyle(element).overflowY) &&
+          element.scrollHeight > element.clientHeight + 10,
+      );
+    if (target === undefined) throw new Error("the transcript has nothing that scrolls");
+    const step = Math.round(target.clientHeight / 3);
+    let moved = 0;
+    for (const direction of [-1, 1]) {
+      for (let i = 0; i < 240; i++) {
+        const before = target.scrollTop;
+        target.scrollTop = before + direction * step;
+        await new Promise<void>((done) => requestAnimationFrame(() => done()));
+        moved += Math.abs(target.scrollTop - before);
+      }
+    }
+    return moved;
+  });
+  const frames = await takeFrames(page);
+  const large = await memoryOf(page);
+  record(
+    "thread-scroll-frame",
+    `Average frame while scrolling a ${thousands(OPEN_ITEMS)}-item thread`,
+    "ms",
+    [mean(frames.gaps)],
+    { ...frameDetail(frames), scrolledPixels: Math.round(travelled) },
+  );
+  record(
+    "thread-memory",
+    `Memory a ${thousands(OPEN_ITEMS)}-item thread holds after scrolling it`,
+    "bytes",
+    [large.heapBytes],
+    {
+      domNodes: large.nodes,
+      shortThreadMegabytes: round(small.heapBytes / 1024 / 1024),
+      shortThreadDomNodes: small.nodes,
+    },
+  );
+});
+
+test("an approval reaches Needs you, and its answer the agent", async () => {
+  // The person is looking at something else: the request has to reach them in the sidebar.
+  await timeOpen(page, smallThread, "echo: start Short thread");
+  const needsYou = page.getByTestId("overview-needs-you");
+  const raised: number[] = [];
+  const answered: number[] = [];
+  for (let i = 0; i < REPEATS; i++) {
+    await expect(needsYou).not.toContainText("1");
+    const start = performance.now();
+    await rpc.request("thread.send", {
+      threadId: sendThread,
+      input: { text: `/approve ${i}` },
+      clientMessageId: crypto.randomUUID(),
+    });
+    await expect(needsYou).toContainText("1", { timeout: 30_000 });
+    raised.push(performance.now() - start);
+
+    await timeOpen(page, sendThread, `/approve ${i}`);
+    const card = page.getByTestId("approval-card");
+    const allow = card.getByRole("button", { name: /^Allow/ }).first();
+    await expect(allow).toBeVisible();
+    const from = performance.now();
+    await allow.click();
+    await expect(transcript(page).getByText(`echo: /approve ${i}`)).toBeVisible({
+      timeout: 30_000,
+    });
+    answered.push(performance.now() - from);
+    await timeOpen(page, smallThread, "echo: start Short thread");
+  }
+  record("approval-raised", "An approval request until it shows under Needs you", "ms", raised);
+  record("approval-answered", "Allow an approval until the agent's reply", "ms", answered);
+});
+
 test(`launch on a phone with ${SIDEBAR_THREADS + 4} threads`, async () => {
   const samples: number[] = [];
   const details: Array<{
@@ -751,6 +950,74 @@ test("reconnect on a phone over slow 3G", async () => {
   await phone.page.close();
 });
 
+const OUTAGES_MS = [500, 2_000, 5_000, 12_000, 500, 2_000, 5_000, 12_000];
+test("come back after the network drops", async () => {
+  const phone = await newPage(PHONE);
+  await openThroughLink(phone.page, `/t/${openThread}`);
+  await expect(
+    transcript(phone.page)
+      .getByText(replyOf(openTurns - 1))
+      .last(),
+  ).toBeVisible({ timeout: 120_000 });
+  await phone.page.waitForTimeout(1_000);
+  // How long after the network is back the page is in touch again; a page that isn't within
+  // 30 s counts as not having come back.
+  const GIVE_UP_MS = 30_000;
+  /**
+   * `told`: the device itself lost the network, so the browser says `offline` and then `online`,
+   * as a phone does leaving and finding a signal. Otherwise only the way to the server is gone,
+   * as behind a router that lost its uplink, and the page has nothing to go by but its retries.
+   */
+  const measure = async (told: boolean) => {
+    const waits: number[] = [];
+    let back = 0;
+    for (const outage of OUTAGES_MS) {
+      link.outage(true);
+      if (told) await phone.page.context().setOffline(true);
+      await phone.page.waitForTimeout(outage);
+      const caughtUp = Promise.all([phone.wire.caughtUp(), phone.wire.threadList()]).then(
+        () => true,
+      );
+      const start = performance.now();
+      link.outage(false);
+      if (told) await phone.page.context().setOffline(false);
+      const made = await Promise.race([
+        caughtUp,
+        new Promise<false>((done) => setTimeout(() => done(false), GIVE_UP_MS)),
+      ]);
+      if (made) {
+        back++;
+        waits.push(performance.now() - start);
+      } else waits.push(GIVE_UP_MS);
+      await phone.page.waitForTimeout(1_500);
+    }
+    return { waits, back };
+  };
+  const detail = (run: { waits: number[]; back: number }) => ({
+    cameBack: `${run.back} of ${OUTAGES_MS.length}`,
+    worstMs: round(Math.max(...run.waits)),
+    outagesMs: OUTAGES_MS.join(", "),
+  });
+  const untold = await measure(false);
+  record(
+    "outage-recovery",
+    "Back in touch after the way to the server returns",
+    "ms",
+    untold.waits,
+    detail(untold),
+  );
+  const told = await measure(true);
+  record(
+    "outage-recovery-online",
+    "Back in touch after the device's network returns",
+    "ms",
+    told.waits,
+    detail(told),
+  );
+  expect(untold.back + told.back, "every outage is recovered from").toBe(OUTAGES_MS.length * 2);
+  await phone.page.close();
+});
+
 test("attach a terminal over slow 3G", async () => {
   // Its own page, through the link.
   const linked = await newPage({ viewport: { width: 1440, height: 900 } });
@@ -806,4 +1073,39 @@ test("attach a terminal over slow 3G", async () => {
     },
   );
   await linked.page.close();
+});
+
+// Last: it makes a workspace, and the launch scenarios above measure a window without one.
+test("start a coding worker", async () => {
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
+  const on = fresh.page;
+  on.setDefaultTimeout(30_000);
+  await h.open(on, "/new-task");
+  await on.getByLabel("What needs doing").fill("Plan the perf notes");
+  await on.getByRole("button", { name: /Start workspace and send/ }).click();
+  await expect(on.getByTestId("pane-role")).toHaveText("Orchestrator", { timeout: 60_000 });
+  await expect(transcript(on).getByText("echo: Plan the perf notes")).toBeVisible({
+    timeout: 60_000,
+  });
+  const samples: number[] = [];
+  const server: number[] = [];
+  for (let i = 0; i < Math.min(REPEATS, 3); i++) {
+    const text = `Write perf note ${i}`;
+    // The New form on Task: one worker in its own worktree, through to a pull request.
+    await on.goto(`${h.origin_url()}/new-task?way=direct`);
+    await expect(on.getByRole("button", { name: /Start task/ })).toBeVisible();
+    await on.getByLabel("What needs doing").fill(text);
+    const answered = fresh.wire.answered("workspace.startTask");
+    const start = performance.now();
+    await on.getByRole("button", { name: /Start task/ }).click();
+    void answered.then(() => server.push(performance.now() - start));
+    // Its worktree is made, its session started, and its first words are on screen.
+    await expect(transcript(on).getByText(`echo: ${text}`)).toBeVisible({ timeout: 120_000 });
+    samples.push(performance.now() - start);
+  }
+  record("worker-start", "Start a coding worker until its first output", "ms", samples, {
+    // The server's share: the worktree, the branch and the worker's thread.
+    startTaskAnsweredMs: round(median(server)),
+  });
+  await on.close();
 });
