@@ -52,6 +52,7 @@ import {
   sectionsOf,
   TIDY_UP_MESSAGE,
   DISCOVER_MESSAGE,
+  boardRequestOf,
   tidyUpBlocked,
   workerCount,
   workerRepoNames,
@@ -515,6 +516,13 @@ describe("board columns", () => {
     ]) {
       expect(DISCOVER_MESSAGE).toContain(part);
     }
+  });
+
+  it("know a menu request by its exact words, and leave what the user typed alone", () => {
+    expect(boardRequestOf(DISCOVER_MESSAGE)?.label).toBe("Discover workspace");
+    expect(boardRequestOf(`${TIDY_UP_MESSAGE}\n`)?.kind).toBe("tidyUp");
+    expect(boardRequestOf(`${DISCOVER_MESSAGE} And fix CI.`)).toBeUndefined();
+    expect(boardRequestOf("Please discover this workspace now.")).toBeUndefined();
   });
 
   it("deal features into group bands ahead of the ungrouped, in the ledger's order", () => {

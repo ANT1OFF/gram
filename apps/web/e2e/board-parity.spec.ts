@@ -67,7 +67,7 @@ test("the header tidies up, pauses and resumes, and shows archived work on askin
     .getByTestId("view-switcher")
     .getByRole("radio", { name: /^Chat\b/ })
     .click();
-  await expect(page.getByText(/^Please tidy up this workspace now/)).toHaveCount(1);
+  await expect(page.locator('[data-testid="board-request"][data-kind="tidyUp"]')).toHaveCount(1);
   await pickBoard(page);
 
   // Pause says so in a line, and Resume takes it away. Work is mid-turn, so it asks first.

@@ -116,5 +116,5 @@ test("Tidy up in the title bar asks the orchestrator, as the board's does", asyn
     }
   }).toPass({ timeout: 6_000 * slowdown });
   // The same message the board sends, once: an ordinary message of the user's in the thread.
-  await expect(page.getByText(/^Please tidy up this workspace now/)).toHaveCount(1);
+  await expect(page.locator('[data-testid="board-request"][data-kind="tidyUp"]')).toHaveCount(1);
 });

@@ -16,6 +16,7 @@ import {
   type MessageResponseProps,
 } from "@/components/ai-elements/message";
 import { DocCard } from "@/docs/doc-card";
+import { boardRequestOf } from "@/orchestration/board-model";
 import { useOrchestratorStreamContext } from "@/orchestration/stream-context";
 import { checkoutRelative } from "@/panels/files/files-store";
 import { formatMessageTime } from "@/lib/time";
@@ -26,6 +27,7 @@ import { useThreadsStore } from "@/stores/threads";
 import { useTurnFolds } from "@/stores/turn-folds";
 
 import { AgentErrorCard } from "./agent-error-card";
+import { BoardRequestBubble } from "./board-request-bubble";
 import { BabysitReportCard } from "./babysit-report-card";
 import { CompactionMarker, IdleCompactRequest } from "./compaction-marker";
 import { SessionRestartMarker } from "./session-restart-marker";
@@ -307,6 +309,8 @@ export const MessageBlock = memo(function MessageBlock({
     // (`float-actions`), in room kept at its start so the row never cuts them off; narrower or on
     // touch they are the row under the bubble. A notice's card keeps them in a row under it.
     const besideBubble = floating && !notice && !humanReview && !digest;
+    const boardRequest =
+      notice || humanReview || digest ? undefined : boardRequestOf(messageText(message));
     const bubble = (
       // Around the bubble or card alone, not the row's width beside it or the actions.
       <div
@@ -326,6 +330,10 @@ export const MessageBlock = memo(function MessageBlock({
             text={messageText(message)}
             createdAt={message.metadata?.createdAt}
           />
+        ) : boardRequest ? (
+          <BoardRequestBubble request={boardRequest} text={messageText(message)}>
+            {attached}
+          </BoardRequestBubble>
         ) : (
           <MessageContent className="whitespace-pre-wrap">
             {messageText(message)}

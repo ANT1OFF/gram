@@ -1,6 +1,7 @@
 import type { FeatureCard, GramUIMessage, WorkspaceId } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
+import { DISCOVER_MESSAGE } from "./board-model";
 import { BRIEFING_STALE_MS, briefingOf, excerptOf } from "./briefing-model";
 
 const SENT = 1_000_000;
@@ -104,5 +105,15 @@ describe("excerptOf", () => {
   it("keeps four words", () => {
     expect(excerptOf("  Add   mail triggers ")).toBe("Add mail triggers");
     expect(excerptOf("one two three four five")).toBe("one two three four…");
+  });
+
+  it("names a menu request by its name in the menu, not its first words", () => {
+    const briefing = briefingOf({
+      messages: [user(DISCOVER_MESSAGE)],
+      cards: [],
+      status: "running",
+      now: SENT,
+    });
+    expect(briefing?.excerpt).toBe("Discover workspace");
   });
 });
