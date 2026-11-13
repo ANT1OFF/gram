@@ -32,6 +32,9 @@ import { useNotificationHistory, unreadNotifications } from "@/stores/notificati
 import { PreviewSuggestionNotice } from "@/panels/preview-suggestion";
 import { useReviewRequests } from "@/reviews/review-requests";
 import { useFeature } from "@/settings/use-diagnostics";
+import { useRoomySidebar } from "@/embed/store";
+import { usePhone } from "@/lib/use-phone";
+import { PhonePanelHeader } from "@/shell/phone-panels";
 import { useToastDock } from "@/shell/toast-dock";
 import {
   fitShell,
@@ -200,6 +203,11 @@ export function RightPanel() {
   const labelFit = useTabLabelFit(tabList, tab);
   const aside = useRef<HTMLElement>(null);
   useKeepReadingPlace(aside);
+  // Over the chat on a phone, the panel has a header of its own: its name, its thread, and Back.
+  const phone = usePhone();
+  const over = useLayoutStore((s) => fitShell(s).panel === "over");
+  const roomy = useRoomySidebar();
+  const phoneHeader = phone && over && routeThreadId !== undefined;
   useEffect(() => {
     // The bell may select a tab beyond the narrow strip's edge without focusing that tab.
     tabList.current
@@ -252,7 +260,11 @@ export function RightPanel() {
       data-surface="chrome"
       className="flex min-h-0 flex-1 flex-col border-l border-border bg-panel"
     >
-      <div className="h-(--titlebar-height) shrink-0 [-webkit-app-region:drag]" />
+      {phoneHeader ? (
+        <PhonePanelHeader tab={tab} centred={roomy} />
+      ) : (
+        <div className="h-(--titlebar-height) shrink-0 [-webkit-app-region:drag]" />
+      )}
       <PreviewSuggestionNotice threadId={threadId} />
       <Tabs
         value={tab}
@@ -324,7 +336,8 @@ export function RightPanel() {
           {reviewAction ? (
             <ReviewFocusAction focused={focused} words={labelFit.action} />
           ) : (
-            <ExpandToggle />
+            // The phone header's Back is the way out there.
+            !phoneHeader && <ExpandToggle />
           )}
         </div>
         <Suspense fallback={null}>
