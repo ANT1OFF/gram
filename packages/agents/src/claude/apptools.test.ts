@@ -1,4 +1,4 @@
-import { SettingsProposeInput } from "@gram/contracts";
+import { McpServerProposeInput, SettingsProposeInput } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 import { toZodObject } from "./apptools.ts";
 
@@ -17,5 +17,19 @@ describe("toZodObject", () => {
     };
     expect(zod.parse(input)).toEqual(input);
     expect(() => zod.parse({ changes: [{ op: "drop", key: "x" }] })).toThrow();
+  });
+
+  it("serves mcp_server_propose's server, either transport, to Claude", () => {
+    const zod = toZodObject(McpServerProposeInput as never);
+    for (const server of [
+      { type: "stdio", command: "npx", args: ["-y", "x"], env: { MODE: "a" } },
+      { type: "http", url: "https://mcp.example.invalid/x", headers: { "X-Tenant": "docs" } },
+    ]) {
+      const input = { name: "x", server, targets: ["claude", "codex"], reason: "asked" };
+      expect(zod.parse(input)).toEqual(input);
+    }
+    expect(() =>
+      zod.parse({ name: "x", server: { type: "ws" }, targets: [], reason: "" }),
+    ).toThrow();
   });
 });

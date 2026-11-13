@@ -11,13 +11,16 @@ import { gitPlatformTest } from "../../git/platform.ts";
 import { removeDir } from "../../git/test-repo.ts";
 import { LaunchToken, serverPort, ServerLayer } from "../../http/server.ts";
 import { HttpServer, RpcClient, RpcSerialization, Socket } from "../../platform/unstable.ts";
-import { FakeAgentAdapter } from "../../runtime/fake-agent.ts";
+import { LOCAL_APP_HEADER } from "../../http/local-app.ts";
+import { FakeAgentAdapter, FakeAgentControl } from "../../runtime/fake-agent.ts";
 import { TurnHooks } from "../../runtime/hooks.ts";
 import { TEST_CONFIG, waitFor } from "../../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
+import { CONNECTOR_WRITES_LOCAL_ONLY } from "./connectors.ts";
 
 const TestServer = ServerLayer.pipe(
-  Layer.provide(FakeAgentAdapter),
+  // Merged, so a test reads what the fake agents were asked to write.
+  Layer.provideMerge(FakeAgentAdapter),
   Layer.provide(TurnHooks.layerNoop),
   Layer.provide(gitPlatformTest()),
   Layer.provide(ServerConfig.layer(TEST_CONFIG)),
@@ -114,6 +117,31 @@ describe("connectors RPCs", () => {
           name: "github",
           enabled: false,
         });
+      }).pipe(Effect.scoped),
+    );
+
+    it.effect("add a server from the local app's socket, never with a forged local-app mark", () =>
+      Effect.gen(function* () {
+        const client = yield* makeClient;
+        const fake = yield* FakeAgentControl;
+        const config = { type: "http" as const, url: "https://mcp.example.invalid/socket" };
+        // A forged mark in the caller's own message replaces the transport's, and is refused.
+        const forged = yield* client["connectors.add"](
+          { scope: "user", name: "socket-forged", config, targets: ["codex"] },
+          { headers: { [LOCAL_APP_HEADER]: "0".repeat(64) } },
+        ).pipe(Effect.flip);
+        expect(forged.message).toBe(CONNECTOR_WRITES_LOCAL_ONLY);
+        expect(fake.mcpConfigCalls).not.toContain("codex:add:user:socket-forged");
+        // The local app's own connection, marked by the transport, adds it.
+        expect(
+          yield* client["connectors.add"]({
+            scope: "user",
+            name: "socket-local",
+            config,
+            targets: ["codex"],
+          }),
+        ).toEqual({ name: "socket-local", session: "noSession" });
+        expect(fake.mcpConfigCalls).toContain("codex:add:user:socket-local");
       }).pipe(Effect.scoped),
     );
   });
