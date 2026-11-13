@@ -19,7 +19,7 @@ import {
   whenReconnected,
 } from "./connection";
 import { iterate } from "./rpc-client";
-import { rpcProtocolLayer, transportRetryDelay } from "./rpc-protocol";
+import { rpcProtocolLayer, transportRetryDelay, type WakeSource } from "./rpc-protocol";
 
 async function waitFor(predicate: () => boolean, label: string) {
   for (let i = 0; i < 500; i++) {
@@ -269,7 +269,7 @@ class StallSocket implements Socket.WebSocketLike {
   }
 }
 
-async function stalledServer(feeds = 1) {
+async function stalledServer(feeds = 1, wake?: WakeSource) {
   let answering = true;
   const sockets: StallSocket[] = [];
   const connection = createConnectionMonitor();
@@ -286,7 +286,7 @@ async function stalledServer(feeds = 1) {
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   const scope = await Effect.runPromise(Scope.make());
   const context = await Effect.runPromise(
-    Layer.buildWithScope(rpcProtocolLayer(socket, connection), scope),
+    Layer.buildWithScope(rpcProtocolLayer(socket, connection, wake), scope),
   );
   const client = await Effect.runPromise(
     RpcClient.make(Events).pipe(
@@ -426,6 +426,40 @@ describe("RPC transport recovery", () => {
       expect(server.connection.get().status).toBe("open");
       // Both feeds drop on each of the ten closes and on each of the four refused handshakes.
       expect(server.drops()).toEqual(Array(28).fill("SocketCloseError"));
+    } finally {
+      await server.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("redials at once when the window says it is back, without waiting out the backoff", async () => {
+    vi.useFakeTimers();
+    let back: (() => void) | undefined;
+    const wake: WakeSource = (listener) => {
+      back = listener;
+      return () => {
+        back = undefined;
+      };
+    };
+    const server = await stalledServer(1, wake);
+    try {
+      server.stall();
+      for (const delay of [50, 500, 500, 1000, 2000, 4000]) {
+        server.sockets.at(-1)!.close(1006);
+        await vi.advanceTimersByTimeAsync(delay);
+      }
+      // Refused again: the next dial is 5 s away.
+      server.sockets.at(-1)!.close(1006);
+      const dialled = server.sockets.length;
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(server.sockets).toHaveLength(dialled);
+      server.resume();
+      back!();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(server.sockets).toHaveLength(dialled + 1);
+      expect(server.connection.get().status).toBe("open");
+      // Nothing is left listening once the wait is over.
+      expect(back).toBeUndefined();
     } finally {
       await server.close();
       vi.useRealTimers();

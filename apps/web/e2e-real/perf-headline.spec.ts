@@ -612,8 +612,11 @@ const takeFrames = (on: Page) =>
   });
 /** A frame is late when it took over two frames' time at 60 a second. */
 const LATE_FRAME_MS = 34;
+const mean = (values: readonly number[]) =>
+  values.reduce((sum, each) => sum + each, 0) / Math.max(1, values.length);
 const frameDetail = (frames: Frames) => ({
   frames: frames.gaps.length,
+  p95FrameMs: round(percentile(frames.gaps, 95)),
   lateFrames: frames.gaps.filter((gap) => gap > LATE_FRAME_MS).length,
   worstFrameMs: round(Math.max(0, ...frames.gaps)),
   longTaskMs: round(frames.longTasks.reduce((sum, each) => sum + each, 0)),
@@ -643,7 +646,7 @@ test(`stream a ${thousands(STREAM_WORDS)}-word reply`, async () => {
   const composer = page.getByRole("combobox", { name: "Message" });
   const streaming = transcript(page).locator('[data-streaming="true"]');
   const first: number[] = [];
-  const p95: number[] = [];
+  const average: number[] = [];
   const all: Frames = { gaps: [], longTasks: [] };
   let wallMs = 0;
   for (let i = 0; i < Math.min(REPEATS, 3); i++) {
@@ -665,17 +668,19 @@ test(`stream a ${thousands(STREAM_WORDS)}-word reply`, async () => {
     });
     wallMs = performance.now() - from;
     const frames = await takeFrames(page);
-    p95.push(percentile(frames.gaps, 95));
+    average.push(mean(frames.gaps));
     all.gaps.push(...frames.gaps);
     all.longTasks.push(...frames.longTasks);
     await expect(streaming).toHaveCount(0);
   }
   record("stream-first-token", "Send until the reply's first words show", "ms", first);
+  // The average, since frames come in whole multiples of 16.7 ms and a percentile of them jumps
+  // between two values from one run to the next. 16.7 ms is every frame on time.
   record(
-    "stream-frame-p95",
-    `Frame time at the 95th percentile while a ${thousands(STREAM_WORDS)}-word reply streams`,
+    "stream-frame",
+    `Average frame while a ${thousands(STREAM_WORDS)}-word reply streams`,
     "ms",
-    p95,
+    average,
     {
       ...frameDetail(all),
       // The fake agent takes 10 s to say it: longer on screen means the page fell behind.
@@ -693,23 +698,22 @@ test(`scroll a ${thousands(OPEN_ITEMS)}-item thread`, async () => {
   // A steady drag of the scrollbar: a third of a screen every frame, up for four seconds and back
   // down, through whatever earlier turns the thread loads on the way.
   const travelled = await page.evaluate(async () => {
-    const scrolls = (element: Element) =>
-      /auto|scroll/.test(getComputedStyle(element).overflowY) &&
-      element.scrollHeight > element.clientHeight + 10;
     const root = document.querySelector('[data-testid="transcript"]')!;
-    let scroller: Element | null = root;
-    while (scroller !== null && !scrolls(scroller)) scroller = scroller.parentElement;
-    scroller ??= [...root.querySelectorAll("*")].find(scrolls) ?? null;
-    if (scroller === null) throw new Error("the transcript has nothing that scrolls");
-    const target = scroller;
-    const frame = () => new Promise<void>((done) => requestAnimationFrame(() => done()));
+    const target = [root, ...root.querySelectorAll("*")]
+      .concat(root.parentElement === null ? [] : [root.parentElement])
+      .find(
+        (element) =>
+          /auto|scroll/.test(getComputedStyle(element).overflowY) &&
+          element.scrollHeight > element.clientHeight + 10,
+      );
+    if (target === undefined) throw new Error("the transcript has nothing that scrolls");
     const step = Math.round(target.clientHeight / 3);
     let moved = 0;
     for (const direction of [-1, 1]) {
       for (let i = 0; i < 240; i++) {
         const before = target.scrollTop;
         target.scrollTop = before + direction * step;
-        await frame();
+        await new Promise<void>((done) => requestAnimationFrame(() => done()));
         moved += Math.abs(target.scrollTop - before);
       }
     }
@@ -718,10 +722,10 @@ test(`scroll a ${thousands(OPEN_ITEMS)}-item thread`, async () => {
   const frames = await takeFrames(page);
   const large = await memoryOf(page);
   record(
-    "thread-scroll-frame-p95",
-    `Frame time at the 95th percentile, scrolling a ${thousands(OPEN_ITEMS)}-item thread`,
+    "thread-scroll-frame",
+    `Average frame while scrolling a ${thousands(OPEN_ITEMS)}-item thread`,
     "ms",
-    [percentile(frames.gaps, 95)],
+    [mean(frames.gaps)],
     { ...frameDetail(frames), scrolledPixels: Math.round(travelled) },
   );
   record(
@@ -768,34 +772,6 @@ test("an approval reaches Needs you, and its answer the agent", async () => {
   }
   record("approval-raised", "An approval request until it shows under Needs you", "ms", raised);
   record("approval-answered", "Allow an approval until the agent's reply", "ms", answered);
-});
-
-test("start a coding worker", async () => {
-  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
-  const on = fresh.page;
-  on.setDefaultTimeout(30_000);
-  await h.open(on, "/new-task");
-  await on.getByLabel("What needs doing").fill("Plan the perf notes");
-  await on.getByRole("button", { name: /Start workspace and send/ }).click();
-  await expect(on.getByTestId("pane-role")).toHaveText("Orchestrator", { timeout: 60_000 });
-  await expect(transcript(on).getByText("echo: Plan the perf notes")).toBeVisible({
-    timeout: 60_000,
-  });
-  const samples: number[] = [];
-  for (let i = 0; i < Math.min(REPEATS, 3); i++) {
-    const text = `Write perf note ${i}`;
-    // The New form on Task: one worker in its own worktree, through to a pull request.
-    await on.goto(`${h.origin_url()}/new-task?way=direct`);
-    await expect(on.getByRole("radio", { name: /^Task/ })).toBeChecked();
-    await on.getByLabel("What needs doing").fill(text);
-    const start = performance.now();
-    await on.getByRole("button", { name: /Start task/ }).click();
-    // Its worktree is made, its session started, and its first words are on screen.
-    await expect(transcript(on).getByText(`echo: ${text}`)).toBeVisible({ timeout: 120_000 });
-    samples.push(performance.now() - start);
-  }
-  record("worker-start", "Start a coding worker until its first output", "ms", samples);
-  await on.close();
 });
 
 test(`launch on a phone with ${SIDEBAR_THREADS + 4} threads`, async () => {
@@ -987,30 +963,58 @@ test("come back after the network drops", async () => {
   // How long after the network is back the page is in touch again; a page that isn't within
   // 30 s counts as not having come back.
   const GIVE_UP_MS = 30_000;
-  const waits: number[] = [];
-  let back = 0;
-  for (const outage of OUTAGES_MS) {
-    link.outage(true);
-    await phone.page.waitForTimeout(outage);
-    const caughtUp = Promise.all([phone.wire.caughtUp(), phone.wire.threadList()]).then(() => true);
-    const start = performance.now();
-    link.outage(false);
-    const made = await Promise.race([
-      caughtUp,
-      new Promise<false>((done) => setTimeout(() => done(false), GIVE_UP_MS)),
-    ]);
-    if (made) {
-      back++;
-      waits.push(performance.now() - start);
-    } else waits.push(GIVE_UP_MS);
-    await phone.page.waitForTimeout(1_500);
-  }
-  record("outage-recovery", "Back in touch after the network returns", "ms", waits, {
-    cameBack: `${back} of ${OUTAGES_MS.length}`,
-    worstMs: round(Math.max(...waits)),
+  /**
+   * `told`: the device itself lost the network, so the browser says `offline` and then `online`,
+   * as a phone does leaving and finding a signal. Otherwise only the way to the server is gone,
+   * as behind a router that lost its uplink, and the page has nothing to go by but its retries.
+   */
+  const measure = async (told: boolean) => {
+    const waits: number[] = [];
+    let back = 0;
+    for (const outage of OUTAGES_MS) {
+      link.outage(true);
+      if (told) await phone.page.context().setOffline(true);
+      await phone.page.waitForTimeout(outage);
+      const caughtUp = Promise.all([phone.wire.caughtUp(), phone.wire.threadList()]).then(
+        () => true,
+      );
+      const start = performance.now();
+      link.outage(false);
+      if (told) await phone.page.context().setOffline(false);
+      const made = await Promise.race([
+        caughtUp,
+        new Promise<false>((done) => setTimeout(() => done(false), GIVE_UP_MS)),
+      ]);
+      if (made) {
+        back++;
+        waits.push(performance.now() - start);
+      } else waits.push(GIVE_UP_MS);
+      await phone.page.waitForTimeout(1_500);
+    }
+    return { waits, back };
+  };
+  const detail = (run: { waits: number[]; back: number }) => ({
+    cameBack: `${run.back} of ${OUTAGES_MS.length}`,
+    worstMs: round(Math.max(...run.waits)),
     outagesMs: OUTAGES_MS.join(", "),
   });
-  expect(back, "every outage is recovered from").toBe(OUTAGES_MS.length);
+  const untold = await measure(false);
+  record(
+    "outage-recovery",
+    "Back in touch after the way to the server returns",
+    "ms",
+    untold.waits,
+    detail(untold),
+  );
+  const told = await measure(true);
+  record(
+    "outage-recovery-online",
+    "Back in touch after the device's network returns",
+    "ms",
+    told.waits,
+    detail(told),
+  );
+  expect(untold.back + told.back, "every outage is recovered from").toBe(OUTAGES_MS.length * 2);
   await phone.page.close();
 });
 
@@ -1069,4 +1073,39 @@ test("attach a terminal over slow 3G", async () => {
     },
   );
   await linked.page.close();
+});
+
+// Last: it makes a workspace, and the launch scenarios above measure a window without one.
+test("start a coding worker", async () => {
+  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
+  const on = fresh.page;
+  on.setDefaultTimeout(30_000);
+  await h.open(on, "/new-task");
+  await on.getByLabel("What needs doing").fill("Plan the perf notes");
+  await on.getByRole("button", { name: /Start workspace and send/ }).click();
+  await expect(on.getByTestId("pane-role")).toHaveText("Orchestrator", { timeout: 60_000 });
+  await expect(transcript(on).getByText("echo: Plan the perf notes")).toBeVisible({
+    timeout: 60_000,
+  });
+  const samples: number[] = [];
+  const server: number[] = [];
+  for (let i = 0; i < Math.min(REPEATS, 3); i++) {
+    const text = `Write perf note ${i}`;
+    // The New form on Task: one worker in its own worktree, through to a pull request.
+    await on.goto(`${h.origin_url()}/new-task?way=direct`);
+    await expect(on.getByRole("button", { name: /Start task/ })).toBeVisible();
+    await on.getByLabel("What needs doing").fill(text);
+    const answered = fresh.wire.answered("workspace.startTask");
+    const start = performance.now();
+    await on.getByRole("button", { name: /Start task/ }).click();
+    void answered.then(() => server.push(performance.now() - start));
+    // Its worktree is made, its session started, and its first words are on screen.
+    await expect(transcript(on).getByText(`echo: ${text}`)).toBeVisible({ timeout: 120_000 });
+    samples.push(performance.now() - start);
+  }
+  record("worker-start", "Start a coding worker until its first output", "ms", samples, {
+    // The server's share: the worktree, the branch and the worker's thread.
+    startTaskAnsweredMs: round(median(server)),
+  });
+  await on.close();
 });
