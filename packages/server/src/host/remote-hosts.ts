@@ -242,6 +242,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
        * and connections are held to it alone and don't follow access over Tailscale.
        */
       readonly provisionedOrigin?: string | undefined;
+      /** How often its connections ping their hosts; `HOST_PING_EVERY_MS` unless a test says. */
+      readonly pingEveryMs?: number;
     } = {},
   ) =>
     Effect.gen(function* () {
@@ -351,11 +353,24 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           let entry: Online | undefined;
           const ended = yield* Deferred.make<never, HostUnavailable>();
           let hello: HostHello | undefined;
-          const end = (message: string) =>
+          let over = false;
+          const end = (message: string) => {
+            over = true;
             Deferred.doneUnsafe(
               ended,
               Exit.fail(new HostUnavailable({ hostId: machine.id, message })),
             );
+          };
+          /**
+           * Its connection went while online (its socket closed, its stream broke, or it stopped
+           * answering pings): noted as lost once, however it was found. One replaced or removed
+           * has left `online` first, so isn't.
+           */
+          const lose = (message: string) => {
+            if (!over && entry !== undefined && online.get(machine.id) === entry)
+              machines.note(machine.id, { kind: "lost", at: now() });
+            end(message);
+          };
           // Ended while it says hello when the machine is removed or access is turned off or moved.
           const endPending = () => end("The machine was removed, or access to it moved.");
           const saying = pending.get(machine.id) ?? new Set<() => void>();
@@ -374,16 +389,15 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             const opened = yield* connectHost(
               watchedSocket(
                 socket,
-                Effect.sync(() => {
-                  // Only a connection that was online is lost; one replaced or removed isn't.
-                  if (entry !== undefined && online.get(machine.id) === entry)
-                    machines.note(machine.id, { kind: "lost", at: now() });
-                  end("The machine's connection closed.");
-                }),
+                Effect.sync(() => lose("The machine's connection closed.")),
               ),
               {
                 hostId: machine.id,
                 gone: Deferred.await(ended),
+                // A host that stopped answering, or whose stream broke, goes offline now: left
+                // online it looked connected while every call to it failed, until it dialled again.
+                onEnded: (reason) => Effect.sync(() => lose(reason)),
+                ...(options.pingEveryMs === undefined ? {} : { pingEveryMs: options.pingEveryMs }),
                 onHello: (said) => {
                   hello = said;
                 },
