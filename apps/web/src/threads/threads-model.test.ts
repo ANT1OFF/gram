@@ -39,6 +39,32 @@ describe("threadListings", () => {
     expect(listed[0]?.needsYou).toBe(true);
   });
 
+  it("says which thread asked a worker's orchestrator for it, by its place where it has one", () => {
+    const asked = { threadId: "c", title: "Why exports fail" };
+    const listed = threadListings({
+      ...sources([
+        summary("o", 3, { role: "orchestrator", workspaceId: "w1", title: "api" }),
+        summary("w", 2, {
+          workspaceId: "w1",
+          spawnedBy: { threadId: "o", feature: "x", askedBy: asked },
+        }),
+        summary("c", 1),
+      ]),
+      elsewhere: new Set(["c"]),
+      placeOf: (id: string) => (id === "c" ? "Chat" : undefined),
+    });
+    const worker = listed.find((listing) => listing.summary.thread.id === "w");
+    expect(worker?.sentFrom).toBe("Chat");
+    expect(whereOf(worker!)).toBe("Worker of api · sent from Chat");
+    // With no place, the asker's title, as it is now or as it was.
+    expect(
+      threadListings(
+        sources([summary("w", 2, { spawnedBy: { threadId: "o", feature: "x", askedBy: asked } })]),
+        "exports",
+      )[0]?.sentFrom,
+    ).toBe("Why exports fail");
+  });
+
   it("leaves out the threads an app in front lists in a place of its own", () => {
     const listed = threadListings({
       ...sources([summary("a", 1), summary("b", 3), summary("c", 2)], []),

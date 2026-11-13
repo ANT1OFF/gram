@@ -255,6 +255,40 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
       ),
   );
 
+  it.effect("a worker started on another thread's ask says which thread asked for it", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const { session, thread } = yield* openOrchestrator(world);
+        const asker = { threadId: "t-asker" as ThreadId, title: "Why exports fail" };
+        yield* runtimes.send(thread.id, {
+          text: "Fix the export, please.",
+          origin: { ...asker, depth: 1, mode: "queue" },
+        });
+        yield* waitSent(thread.id, 2);
+        const made = yield* spawn(session, {
+          feature: "export-fix",
+          title: "Fix the export",
+          brief: "Fix it.",
+        });
+        expect(made.thread.spawnedBy?.askedBy).toEqual(asker);
+        expect(made.session.sent[0]?.origin?.askedBy).toEqual(asker);
+        yield* completeTurn(session);
+
+        // The user's own words since are what the next worker answers, not the old ask.
+        yield* runtimes.send(thread.id, { text: "Now the docs.", author: "user" });
+        yield* waitSent(thread.id, 3);
+        const next = yield* spawn(session, {
+          feature: "docs",
+          title: "Docs",
+          brief: "Write them.",
+        });
+        expect(next.thread.spawnedBy).not.toHaveProperty("askedBy");
+        expect(next.session.sent[0]?.origin).not.toHaveProperty("askedBy");
+      }),
+    ),
+  );
+
   it.effect("a spawn a crash cut off after its worktree makes the worker there on retry", () =>
     inServer((world) =>
       Effect.gen(function* () {

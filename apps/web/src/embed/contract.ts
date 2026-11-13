@@ -443,6 +443,17 @@ export interface MockThread {
   readonly title: string;
   /** Its conversation so far, as plain text, oldest first. */
   readonly messages?: readonly { readonly role: "user" | "assistant"; readonly text: string }[];
+  /**
+   * Makes it a worker of the named workspace's orchestrator, started with `brief` for `feature`,
+   * when the mock has that workspace. `askedBy` is the id of another of these threads whose message
+   * the orchestrator was answering, which the worker and its row then name.
+   */
+  readonly worker?: {
+    readonly workspace: string;
+    readonly feature: string;
+    readonly brief: string;
+    readonly askedBy?: string;
+  };
 }
 
 export interface MountOptions {
