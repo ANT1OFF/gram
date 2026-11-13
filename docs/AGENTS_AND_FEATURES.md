@@ -1483,7 +1483,11 @@ doesn't. There, the permission mode and the extension's own site permissions dec
 thread's config, along with each computer-use server your config has. Your other plugins and
 servers are left as they are. It works only in threads that run in your own `CODEX_HOME`: threads
 under an outward gate run in Gram's own Codex setup, where plugins are off. Codex computer use
-also needs the ChatGPT app.
+also needs the ChatGPT app. When a computer-use or other MCP server asks a yes-or-no question
+before it acts ("Allow ChatGPT to use Safari?"), a Codex thread shows it as an approval card,
+with this session or always only where the server offers them, and once only under an outward
+gate. A prompt that needs more than a yes or no (a form's own fields, a link, a verification) is
+still declined with a notice.
 
 **A broken `computer-use` server.** An old copy of Codex's standalone computer-use client in
 Claude Code's config has a relative command (`./Codex Computer Use.app/…`). Claude Code starts

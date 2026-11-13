@@ -6,6 +6,7 @@ import {
 } from "@gram/contracts";
 import type { OutwardGate } from "../host.ts";
 import { gateAsks, gateLevel, outwardKind, type OutwardKind } from "../outward.ts";
+import { elicitationResponse, elicitationScopes, elicitationSubject } from "./elicitation.ts";
 import type { ServerRequest } from "./protocol/ServerRequest.ts";
 import type { CommandExecutionApprovalDecision } from "./protocol/v2/CommandExecutionApprovalDecision.ts";
 import type { FileUpdateChange } from "./protocol/v2/FileUpdateChange.ts";
@@ -178,6 +179,25 @@ export const toPendingRequest = (
         })),
       };
     }
+    case "mcpServer/elicitation/request": {
+      // A server's permission prompt, as computer use raises before it touches an app or a site.
+      // One that isn't a plain yes or no has no scopes, and is declined like any unknown request.
+      const p = request.params;
+      const scopes = elicitationScopes(p, level !== undefined);
+      if (scopes.length === 0) return undefined;
+      const subject = elicitationSubject(p);
+      const message = "message" in p ? p.message.trim() : "";
+      return {
+        kind: "approval",
+        id,
+        toolName: `mcp__${p.serverName}__elicitation`,
+        displayName: subject ?? p.serverName,
+        input: { server: p.serverName, ...(subject === undefined ? {} : { app: subject }) },
+        ...(message === "" ? {} : { description: message }),
+        suggestions: [],
+        scopes,
+      };
+    }
     default:
       return undefined;
   }
@@ -246,6 +266,8 @@ export const responseFor = (
         ),
       };
     }
+    case "mcpServer/elicitation/request":
+      return elicitationResponse(request.params, allow, scope, gated);
     default:
       return { decision: "cancel" };
   }
