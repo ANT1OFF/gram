@@ -23,6 +23,7 @@ import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import type * as Scope from "effect/Scope";
 
+import type { UserMessageQuery } from "../persistence/thread-store.ts";
 import { fenceConversation } from "./material.ts";
 import { prPromptBlock } from "./pr-context.ts";
 import { REPLY_RULES, validReplies } from "./replies.ts";
@@ -134,6 +135,9 @@ export const validRecap = (raw: ThreadRecap, material: RecapMaterial): ThreadRec
   };
 };
 
+/** Whether a user message's text can open the recap: one that says something, and no command. */
+const openingText = (text: string) => text !== "" && !text.startsWith("/");
+
 const textOf = (message: GramUIMessage | undefined): string =>
   (message?.parts ?? [])
     .flatMap((part) => (part.type === "text" ? [part.text] : []))
@@ -154,7 +158,11 @@ export interface RecapDeps {
     threadId: ThreadId,
     turns: number,
   ) => Effect.Effect<ReadonlyArray<GramUIMessage>>;
-  readonly userMessages: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<GramUIMessage>>;
+  /** The thread's user messages `query` asks for (`findUserMessages`), oldest first. */
+  readonly userMessages: (
+    threadId: ThreadId,
+    query: UserMessageQuery,
+  ) => Effect.Effect<ReadonlyArray<GramUIMessage>>;
   readonly git: (thread: Thread) => Effect.Effect<GitState | undefined>;
   /** `prContextsFor` over the thread and its git state. */
   readonly prContext: (
@@ -235,16 +243,30 @@ export const makeRecaps = (deps: RecapDeps): Recaps => {
       // Read only when the scheduler runs the job or its answer needs checking, and then once.
       const material = yield* Effect.cached(
         Effect.gen(function* () {
-          const users = (yield* deps.userMessages(threadId)).map(textOf).filter((t) => t !== "");
+          // The opening is the oldest that isn't a command; the latest, the newest that says anything.
+          const opening = (yield* deps.userMessages(threadId, {
+            from: "oldest",
+            count: 1,
+            keep: (message) => openingText(textOf(message)),
+          }))
+            .map(textOf)
+            .find(openingText);
+          const latest = (yield* deps.userMessages(threadId, {
+            from: "newest",
+            count: 1,
+            keep: (message) => textOf(message) !== "",
+          }))
+            .map(textOf)
+            .findLast((t) => t !== "");
           const recent = yield* deps.recentMessages(threadId, RECAP_TURNS);
           return {
-            opening: users.find((text) => !text.startsWith("/")),
+            opening,
             plan,
             facts,
             pr,
             prs,
             conversation: fenceConversation(recent, { maxChars: CONVERSATION_MAX_CHARS }),
-            lastUserMessage: users.at(-1),
+            lastUserMessage: latest,
           } satisfies RecapMaterial;
         }),
       );

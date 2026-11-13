@@ -24,7 +24,7 @@ import { sendFingerprint } from "../orchestration/outbox.ts";
 import { featureSlug } from "../orchestration/rules.ts";
 import { Orchestration, type SentMessage } from "../orchestration/service.ts";
 import { attachUserWords, USER_MESSAGES_MAX } from "../orchestration/user-words.ts";
-import { ThreadStore } from "../persistence/thread-store.ts";
+import { findUserMessages, ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { CheckoutService } from "../runtime/hooks.ts";
 import { selectableModels } from "../runtime/model-efforts.ts";
@@ -347,14 +347,18 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         if (ownWorkerOnly && !delegated) {
           return yield* new AppToolError({ tool, message: "It is no longer your worker." });
         }
-        const callerUser = yield* store.listUserMessages(caller);
+        // The guard reads only each side's latest user message.
+        const callerUser = yield* findUserMessages(store, caller, { from: "newest", count: 1 });
         const callerOrigin = callerUser.length === 0 ? undefined : originOf(callerUser.at(-1)!);
         let depth = 1;
         let counted: ReadonlyArray<number> | undefined;
         if (delegated) {
           yield* orchestration.checkSend(caller, target.thread.id);
         } else {
-          const targetUser = yield* store.listUserMessages(target.thread.id);
+          const targetUser = yield* findUserMessages(store, target.thread.id, {
+            from: "newest",
+            count: 1,
+          });
           const verdict = checkSend({
             caller,
             target: target.thread.id,

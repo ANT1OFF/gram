@@ -543,6 +543,16 @@ const actorEvents = Effect.gen(function* () {
     WHERE thread_id IS NOT NULL`;
 });
 
+/**
+ * The user-role rows of a thread in seq order, without the replies between them: what
+ * `userMessagePage` and a role-filtered `messagesWith` walk. A worker's few prompts sit among
+ * thousands of replies, and an orchestrator's newest prompt is found without reading its history.
+ */
+const userMessages = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE INDEX messages_thread_user ON messages(thread_id, seq) WHERE role = 'user'`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
@@ -552,6 +562,7 @@ export const migrations = {
   "0006_message_parts": messageParts,
   "0007_hosts": hosts,
   "0008_actor_events": actorEvents,
+  "0009_user_messages": userMessages,
 };
 
 /**

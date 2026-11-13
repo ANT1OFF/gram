@@ -13,6 +13,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import type { UserMessageQuery } from "../persistence/thread-store.ts";
 import { prPromptBlock } from "./pr-context.ts";
 import { REPLY_RULES, validReplies } from "./replies.ts";
 import { basisHash, type HelperLane, type HelperScheduler } from "./scheduler.ts";
@@ -93,7 +94,11 @@ export interface SuggestDeps {
   ) => Effect.Effect<
     { readonly id: TurnId; readonly reason: TurnEndReason | undefined } | undefined
   >;
-  readonly userMessages: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<GramUIMessage>>;
+  /** The thread's user messages `query` asks for (`findUserMessages`), oldest first. */
+  readonly userMessages: (
+    threadId: ThreadId,
+    query: UserMessageQuery,
+  ) => Effect.Effect<ReadonlyArray<GramUIMessage>>;
   /** The last turn's messages, the reply among them. */
   readonly recentMessages: (
     threadId: ThreadId,
@@ -163,7 +168,14 @@ export const makeSuggestions = (deps: SuggestDeps): Suggestions => {
       const prs = yield* deps.prContext(threadId);
       const material = yield* Effect.cached(
         Effect.gen(function* () {
-          const users = (yield* deps.userMessages(threadId)).map(textOf).filter((t) => t !== "");
+          // The newest that say something: the style samples, the last of them the latest.
+          const users = (yield* deps.userMessages(threadId, {
+            from: "newest",
+            count: STYLE_SAMPLES,
+            keep: (message) => textOf(message) !== "",
+          }))
+            .map(textOf)
+            .filter((t) => t !== "");
           const recent = yield* deps.recentMessages(threadId, 1);
           const reply = textOf(recent.findLast((message) => message.role === "assistant"));
           return {
