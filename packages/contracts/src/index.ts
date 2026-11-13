@@ -71,6 +71,7 @@ export * from "./rpc.ts";
 export * from "./app-windows.ts";
 export * from "./checkout-use.ts";
 export * from "./hosts.ts";
+export * from "./machines.ts";
 export * from "./device.ts";
 export * from "./diagnostics.ts";
 export * from "./runtime-features.ts";

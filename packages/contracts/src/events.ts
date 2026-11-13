@@ -14,6 +14,7 @@ import {
 } from "./domain.ts";
 import { GitState } from "./git.ts";
 import { MessageId, RequestId, ThreadId, TurnId, WorkspaceId } from "./ids.ts";
+import { MachineState } from "./machines.ts";
 import { ThreadPortsEvent, ThreadTerminalProcessesEvent } from "./ports.ts";
 import { ReviewRound } from "./review.ts";
 import { ThreadPlan } from "./thread-plan.ts";
@@ -174,6 +175,15 @@ export const ServerEvent = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("usageLimits.snapshot"),
     limits: Schema.Array(LimitRecord),
+  }),
+  /**
+   * The confirmed machines threads can run on, each with whether it is dialled in now: sent first
+   * to each client that connects, then whenever one joins, leaves, connects or drops. A thread on
+   * another machine names it from this (`Checkout.hostId`), so nothing polls for it.
+   */
+  Schema.Struct({
+    type: Schema.Literal("machines.snapshot"),
+    machines: Schema.Array(MachineState),
   }),
   Schema.Struct({ type: Schema.Literal("ui.showPanel"), ...ShowPanelFields }),
   /** `keybindings.json` changed on disk (or through `keybindings.set`). */
