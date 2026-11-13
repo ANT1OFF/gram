@@ -106,6 +106,14 @@ describe("checkMcpServerProposal", () => {
     );
   });
 
+  it("checks a long run of repeated flag text in linear time", () => {
+    // Just under the length limit, which stops anything longer before the flag check.
+    const flag = `-${"token".repeat(190)}!`;
+    const started = performance.now();
+    expect(errorsOf(stdio({ args: [flag, "x"] }))).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it("refuses a command found relative to each session's folder", () => {
     expect(errorsOf(stdio({ command: "./server.sh" }))[0]).toContain("relative path");
     expect(errorsOf(stdio({ command: "bin/server" }))[0]).toContain("relative path");

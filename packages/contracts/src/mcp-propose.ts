@@ -180,8 +180,12 @@ export const secretValue = (value: string): boolean => {
   return false;
 };
 
-/** A flag that names a credential, as `--token` or `--api-key=…`. */
-const SECRET_FLAG = /^--?[\w-]*(?:token|secret|password|passphrase|api[-_]?key|credential)[\w-]*$/i;
+/**
+ * A flag that names a credential, as `--token` or `--api-key=…`. Two linear tests rather than one
+ * pattern with a word around the name, which backtracks on a long run of repeats.
+ */
+const secretFlag = (flag: string): boolean =>
+  /^--?[\w-]+$/.test(flag) && /token|secret|password|passphrase|api[-_]?key|credential/i.test(flag);
 
 /**
  * Env vars that change which program runs or what it loads, so the command line on the card would
@@ -290,7 +294,7 @@ const checkArgs = (args: ReadonlyArray<string>, errors: Array<string>) => {
         : [arg, false];
     if (HIDDEN.test(arg) || arg.length > MCP_PROPOSAL_LIMITS.value) {
       errors.push(`${label} has hidden characters or is too long.`);
-    } else if (SECRET_FLAG.test(flag) && (attached || i + 1 < args.length)) {
+    } else if (secretFlag(flag) && (attached || i + 1 < args.length)) {
       errors.push(`${label} (${flag}) passes a credential. ${REFUSE_SECRET}`);
     } else if (secretValue(arg)) {
       errors.push(`${label} looks like a credential. ${REFUSE_SECRET}`);
