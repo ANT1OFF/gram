@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { formatRelative, formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
+import { useEmbedPageTitle } from "@/embed/slots";
 import { useEmbedShell, useThreadsTitle } from "@/embed/store";
+import { usePhone } from "@/lib/use-phone";
 import { newEntryOf } from "@/orchestration/new-entry-menu";
 import { newEntryRoute } from "@/orchestration/new-entry";
 import { threadNeed } from "@/orchestration/needs-you-items";
@@ -66,6 +68,11 @@ export function ThreadsPage() {
   }, [summaries, workspaces, groups, query, kinds]);
   const shown = listings.slice(0, SHOWN);
 
+  // Where the title bar names the page (a phone's, or an embedding app's) that is the page's top
+  // heading: this one is the next level down, and on a phone it is not drawn a second time.
+  const phone = usePhone();
+  const barTitled = useEmbedPageTitle() !== undefined;
+  const Heading = phone || barTitled ? "h2" : "h1";
   return (
     <section
       data-testid="threads-page"
@@ -74,10 +81,18 @@ export function ThreadsPage() {
     >
       <div className="mx-auto flex max-w-4xl flex-col gap-4 px-5 py-6 @3xl:px-8 @3xl:py-7">
         <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <h1 id="threads-title" className="font-heading text-heading">
+          <Heading
+            id="threads-title"
+            className={cn("font-heading text-heading", phone && "sr-only")}
+          >
             {title}
-          </h1>
-          <span className="text-meta text-muted-foreground tabular-nums">{listings.length}</span>
+          </Heading>
+          <span className="text-meta text-muted-foreground tabular-nums">
+            {/* Without the title beside it, the count says what it counts. */}
+            {phone
+              ? `${listings.length} ${listings.length === 1 ? "thread" : "threads"}`
+              : listings.length}
+          </span>
           <Button
             size="sm"
             className="ms-auto"
