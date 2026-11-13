@@ -171,6 +171,41 @@ stylesheet sets on `<html>`, so your pages follow the person's palette, mode and
 Leave Tailwind's base styles out, as above: the page's are Gram's. Follow
 [the design notes](../DESIGN.md) for which name goes where.
 
+## Keeping embedders in step
+
+An app that mounts Gram ships the commit of Gram it was built against. It gets a change to one of
+Gram's screens only when it moves to a newer commit, and what it wrote around those screens (the
+options it mounts with, its own pages on the kit, the tests that click through Gram's screens)
+is kept by hand on its side. So what such an app can see or name is a surface to change with care:
+
+- the mount options and the handle ([contract.ts](../apps/web/src/embed/contract.ts)), the kit's
+  exports and their props, and the names in `theme.css`;
+- Gram's own paths, and the `data-testid`s and labels of the screens an embedder's page links to
+  or its tests drive: a thread, the page of every thread, the New form, the Board, a workspace's
+  menu and settings, the sidebar and its compact strip;
+- the words Gram's screens use for a kind of thread and the ways to start one.
+
+When a change touches that surface:
+
+- **Add where you can.** A new option is optional and off by default, and a kit control keeps its
+  props. A renamed theme name keeps the old one beside it until embedders have moved.
+- **Say what was removed, renamed or re-worded.** The pull request's description has a line
+  headed "Embedders": what an embedding app must change when it takes this commit (an option to
+  drop, a selector, a word), or "nothing". It is what the person moving an embedder forward reads.
+- **One word set.** Gram's own words are the default on every screen. An embedder with other
+  words gives them through the mount options; if a screen says something no option covers, add
+  the option and do not special-case an app. A new kind of thread, or a new way to start one,
+  gets its wording option in the same change.
+- **Colour, type and space stay in the theme.** An embedder's pages take them from the theme's
+  names only, so a look meant for both goes into the theme and `theme.css`, not into one screen.
+- **Look at it embedded.** `e2e:embed` checks the mounted app still works; for a change of looks,
+  the before and after screenshots include the screen mounted in an embedding app's shell
+  (`server: "mock"` with a `shell`), where the sidebar, the title bar and the words differ.
+
+Embedding work lands on the `integration/embedding` branch, which takes `main` by merge. A UI
+change merged to `main` reaches embedders only after that merge, so merge `main` in soon after
+one lands, and carry its "Embedders" line into the merge's description.
+
 ## Limits today
 
 - Layout, drafts and theme are kept in the browser's storage for the origin, not per server. Two
