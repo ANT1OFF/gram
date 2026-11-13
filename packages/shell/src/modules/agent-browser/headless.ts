@@ -516,10 +516,7 @@ const openIn = async (
       .catch(() => {});
 
   /** Rejects when the page ends, so a command its renderer never answers ends with it. */
-  let endGone: (error: Error) => void = () => {};
-  const gone = new Promise<never>((_resolve, reject) => {
-    endGone = reject;
-  });
+  const { promise: gone, reject: endGone } = Promise.withResolvers<never>();
   gone.catch(() => {});
   const destroy = () => {
     if (destroyed) return;
