@@ -114,7 +114,7 @@ function useModelsAcross(
 function NoModels({ none }: { none: NonNullable<EmbedShellState["models"]["none"]> }) {
   return (
     <>
-      <span>{none.text}</span>
+      <span className="min-w-0 whitespace-normal">{none.text}</span>
       {none.action !== undefined && (
         <Link
           // A path under the app: one of its pages, as the navigation's are.
@@ -185,7 +185,7 @@ function useModelListing(
     ) : empty ? (
       <div
         role="status"
-        className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground"
+        className="flex min-w-0 flex-wrap items-center gap-2 text-meta text-muted-foreground"
       >
         <NoModels none={none} />
       </div>

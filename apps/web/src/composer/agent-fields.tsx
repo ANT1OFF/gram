@@ -186,7 +186,9 @@ function PromptBoxChoices({
   return (
     <>
       {!needsKey && model.status !== undefined && (
-        <div className="flex shrink-0 items-center">{model.status}</div>
+        // It may be a sentence (an embedding app's words for nothing to pick): in a narrow prompt
+        // box it wraps within the box's width and is not cut at its edge.
+        <div className="flex max-w-full min-w-0 items-center">{model.status}</div>
       )}
       {sections.length > 0 && (
         <ComposerChoices

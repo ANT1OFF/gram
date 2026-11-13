@@ -5,6 +5,7 @@ import { ChoiceCheck } from "@/components/choice-check";
 import { Hint } from "@/components/hint";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { CHOICE_CARD } from "@/lib/selection";
+import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { SegmentSlab } from "@/motion";
 import type { NewEntry } from "@/orchestration/new-entry";
@@ -172,7 +173,9 @@ export function NewFormHeader({
   const slab = useId();
   const labelId = useId();
   const whereId = useId();
-  const title = (
+  // A phone's title bar names the page already, as its one top heading: not said twice.
+  const phone = usePhone();
+  const title = phone ? null : (
     <header>
       <h1 className="font-heading text-title">New task</h1>
     </header>
