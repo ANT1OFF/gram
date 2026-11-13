@@ -22,9 +22,11 @@ import { EXPLAIN } from "@/lib/explain";
 import { seeTerm } from "@/lib/first-use";
 import { agoText } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
+import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { Expand, ExpandPresence, NumberTicker, PresenceItem, PresenceList, Swap } from "@/motion";
 import { PanelMessage } from "@/panels/panel-message";
+import { usePathBar, useWorkspacePlaces } from "@/shell/titlebar-path";
 import { useThreadsStore } from "@/stores/threads";
 import { formatBytes } from "@/thread/orchestration-model";
 
@@ -643,6 +645,12 @@ export function MemoryView({
   const api = useApi();
   const { workspaces, settled, error } = useWorkspacesQuery();
   const state = workspaces.find((candidate) => candidate.workspace.id === workspaceId);
+  // Whether the window already names Memory right above: the bar's path with the workspace's
+  // places beside it, or a phone's row of them.
+  const pathBar = usePathBar();
+  const phone = usePhone();
+  const placed = useWorkspacePlaces(false)?.some((place) => place.current) === true;
+  const named = pathBar || (phone && placed);
   const files = useQuery({
     queryKey: ["memory", workspaceId, "files"],
     queryFn: () => api.listMemory(workspaceId),
@@ -707,8 +715,15 @@ export function MemoryView({
       )}
     >
       {/* Its title alone: the way to the chat and the Board is the title bar's Chat · Board,
-          right above it, which two buttons here only repeated. */}
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-3">
+          right above it, which two buttons here only repeated. Where the bar is a path with the
+          workspace's places beside it, or a phone has their row, Memory is already named and
+          selected right above: the title is kept for a screen reader only. */}
+      <header
+        className={cn(
+          "flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-3",
+          named && "sr-only",
+        )}
+      >
         <h1 className="flex min-w-0 items-center gap-2 text-title">
           <BookOpenText aria-hidden className="size-icon-row shrink-0 text-primary" />
           <span className="truncate">Memory · {state.workspace.name}</span>
