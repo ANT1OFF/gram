@@ -868,11 +868,7 @@ describe("side panels", () => {
     expect(sanitizeBoardFilters(undefined)).toEqual({});
   });
 
-  it("keeps the board's layout, the grid until lanes are picked", () => {
-    expect(useLayoutStore.getInitialState().boardLayout).toBe("grid");
-    s().setBoardLayout("lanes");
-    expect(s().boardLayout).toBe("lanes");
-    expect(sanitizeBoardFilters({ boardLayout: "lanes" })).toEqual({ boardLayout: "lanes" });
-    expect(sanitizeBoardFilters({ boardLayout: "table" })).toEqual({});
+  it("drops a stored board layout: every board is the grid", () => {
+    expect(sanitizeBoardFilters({ boardLayout: "lanes" })).toEqual({});
   });
 });

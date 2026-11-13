@@ -10,7 +10,6 @@ import {
   ChevronRightIcon,
   CirclePause,
   CirclePlay,
-  Columns3,
   Ellipsis,
   Focus,
   History,
@@ -20,7 +19,6 @@ import {
   Network,
   PanelsTopLeft,
   Play,
-  Rows3,
   Settings,
   Settings2,
   Telescope,
@@ -46,7 +44,7 @@ import { useWorkspacePause } from "@/orchestration/workspace-pause-button";
 import { RunScriptMenuItems } from "@/scripts/run-script-menu";
 import { useProjectScripts } from "@/scripts/use-project-scripts";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
-import { GRID_PRESETS, PRESET_LABELS, useLayoutStore, type BoardLayout } from "@/stores/layout";
+import { GRID_PRESETS, PRESET_LABELS, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { pauseClock } from "@/thread/orchestration-model";
 import { AllActivityItem, useThreadMenu } from "@/thread/thread-menu";
@@ -412,18 +410,13 @@ function WorkspaceSubmenu({ state, opening }: { state: WorkspaceState; opening: 
 /**
  * The window's own, in a submenu: the carried thread's Contents and, on an orchestrator's
  * chat, Show all activity, then Quiet, focus mode, History, then
- * Board's layout when folded and the grid's layout, each picked with a check.
+ * the grid's layout, picked with a check.
  */
 function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
-  const state = useViewWorkspace();
   const preset = useLayoutStore((s) => s.grid.preset);
   // A touch screen shows one pane at a time, so it offers no layouts.
   const touch = useTouch();
   const focusMode = useLayoutStore((s) => s.focusMode);
-  const fold = useTitlebarSlot((s) => s.fold);
-  // The Board's Grid or Lanes, folded out of its header with the lesser buttons.
-  const board = useViewStore((s) => s.view === "board") && state !== undefined && fold > 0;
-  const boardLayout = useLayoutStore((s) => s.boardLayout);
   return (
     <Submenu
       label="View"
@@ -465,30 +458,6 @@ function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
         History
         <Keys id="history.open" />
       </Menu.Item>
-      {board && (
-        <>
-          {SEPARATOR}
-          <Menu.RadioGroup
-            data-testid="folded-board-layout"
-            value={boardLayout}
-            onValueChange={(next: BoardLayout) => useLayoutStore.getState().setBoardLayout(next)}
-          >
-            <Menu.GroupLabel className={MENU_LABEL}>Board</Menu.GroupLabel>
-            {(
-              [
-                ["grid", "Grid", Rows3],
-                ["lanes", "Lanes", Columns3],
-              ] as const
-            ).map(([value, label, Icon]) => (
-              <Menu.RadioItem key={value} value={value} closeOnClick className={MENU_ITEM}>
-                <Icon aria-hidden />
-                {label}
-                <Check />
-              </Menu.RadioItem>
-            ))}
-          </Menu.RadioGroup>
-        </>
-      )}
       {!touch && SEPARATOR}
       {!touch && (
         <Menu.RadioGroup
