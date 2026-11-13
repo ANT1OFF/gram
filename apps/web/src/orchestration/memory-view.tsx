@@ -82,8 +82,8 @@ function Questions({ state }: { state: WorkspaceState }) {
       <p className={LEAD}>
         {open.length === 0 ? (
           <>
-            None. The orchestrator asks with <code>ask_user</code>, keeps its questions in{" "}
-            {QUESTIONS_FILE}, and open ones show here.
+            No open questions. When the orchestrator needs a decision from you, it asks here and
+            keeps the question in {QUESTIONS_FILE}.
           </>
         ) : (
           <>
