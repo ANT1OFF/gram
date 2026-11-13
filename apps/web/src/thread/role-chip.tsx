@@ -12,6 +12,17 @@ import {
   type ThreadRoleInfo,
 } from "./orchestration-model";
 
+/**
+ * The orchestrator's accent (`orchestrator`, the palette's second accent), on its glyph wherever a
+ * thread, a card or a choice is one: it says who leads, as a provider's colour says whose a mark
+ * is. A worker and a memory update stay in the colour around them.
+ */
+export const ROLE_TONE: Record<ThreadRoleInfo["kind"], string> = {
+  orchestrator: "text-orchestrator",
+  worker: "",
+  dream: "",
+};
+
 export const ROLE_ICON: Record<ThreadRoleInfo["kind"], LucideIcon> = {
   orchestrator: Network,
   worker: Workflow,
@@ -68,7 +79,7 @@ export function RoleChip({
         className,
       )}
     >
-      <Icon aria-hidden className="size-icon-row shrink-0" />
+      <Icon aria-hidden className={cn("size-icon-row shrink-0", ROLE_TONE[info.role.kind])} />
       <span className="truncate">{info.label}</span>
     </span>
   );
@@ -105,9 +116,9 @@ export function RoleGlyph({
       render={
         <span
           data-testid={testId}
-          // Muted for every role, as the chrome's other glyphs are: the accent is the current
-          // place and the primary action, not a role.
-          className="flex shrink-0 text-muted-foreground"
+          // Muted as the chrome's other glyphs are, but for the orchestrator's, which takes its
+          // accent.
+          className={cn("flex shrink-0 text-muted-foreground", ROLE_TONE[info.role.kind])}
         />
       }
     >

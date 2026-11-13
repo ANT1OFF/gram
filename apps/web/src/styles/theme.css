@@ -135,6 +135,11 @@
   --color-status-working: var(--status-working);
   --color-status-idle: var(--status-idle);
   --color-merged: var(--merged);
+  /* Whose it is, not a status: a provider's brand colour on its mark, and the second accent on an
+     orchestrator's glyph. */
+  --color-provider-anthropic: var(--provider-anthropic);
+  --color-provider-openai: var(--provider-openai);
+  --color-orchestrator: var(--highlight);
   --color-diff-add: var(--diff-add-bg);
   --color-diff-del: var(--diff-del-bg);
   --color-diff-add-foreground: var(--diff-add-fg);

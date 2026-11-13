@@ -296,7 +296,8 @@ handle.update({
 `Tabs`, `Select`, `Collapsible`, `Tooltip`, `Hint`, `Input` (with `invalid`), `InputGroup` (a
 field with a `prefix` or `suffix` such as a unit), `Meter` (a share from 0 to 1, amber from 90%
 and red when spent, or the `tone` you give it), `Popover` (hung from a `trigger` button, as the
-title bar's are) and the class joiner `cn`. For a page of settings it has the pieces Settings is
+title bar's are), `AgentIcon` (an agent's mark in its provider's brand colour) and the class
+joiner `cn`. For a page of settings it has the pieces Settings is
 built from: `Page` (the column with the page's title, a line on what it is for and its actions),
 `SettingsGroup` (a titled card), `SettingRow` (a setting's name and description with its control
 at the right, and an `error` under it), `Field` (a label over its control), `OptionGroup` (a

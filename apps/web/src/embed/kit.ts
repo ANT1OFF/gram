@@ -3,6 +3,9 @@
 // same build as the app, so a tooltip here is under the app's tooltip provider and a button here
 // is the button Gram draws. Each one added is a promise to keep its props: add what an embedding
 // app's pages have needed, not everything there is. See docs/EMBEDDED_WEB_APP.md.
+import type { ReactElement } from "react";
+
+import { AgentIcon as AppAgentIcon } from "@/agents/agent-display";
 import { cn as appCn } from "@/lib/utils";
 
 export { Hint } from "@/components/hint";
@@ -31,6 +34,16 @@ export { SettingsGroup } from "@/settings/settings-group";
 export { TitlebarPopover as Popover } from "@/shell/titlebar-popover";
 
 export { Page } from "./page";
+
+/**
+ * An agent's mark ("claude", "codex") in its provider's brand colour, for a page that lists model
+ * accounts or agents. `labelled` where it stands alone, so it is the name to a screen reader.
+ */
+export const AgentIcon: (props: {
+  agent: string;
+  className?: string;
+  labelled?: boolean;
+}) => ReactElement = AppAgentIcon;
 
 /** A class or a falsy value that is left out. */
 export type ClassInput = string | false | null | undefined | readonly ClassInput[];

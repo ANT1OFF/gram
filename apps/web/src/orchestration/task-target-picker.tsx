@@ -83,7 +83,7 @@ export function TaskTargetPicker({
                     className={ITEM}
                     onClick={() => onPick({ kind: "workspace", workspaceId: each.id })}
                   >
-                    <Network aria-hidden className="size-icon-row shrink-0 text-primary" />
+                    <Network aria-hidden className="size-icon-row shrink-0 text-orchestrator" />
                     <span className="min-w-0 flex-1 truncate">{each.name}</span>
                     <span className="shrink-0 text-meta text-muted-foreground">
                       {plural(each.projectIds.length, "repo")}

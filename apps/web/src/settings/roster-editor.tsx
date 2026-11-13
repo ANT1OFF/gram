@@ -637,10 +637,7 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
                       <div className="flex items-start gap-2">
                         <span className="flex min-h-7 min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-reading">
                           <SlotGlyph slot={modelSlotOf(stored)} />
-                          <AgentIcon
-                            agent={model.agent}
-                            className="size-icon-row shrink-0 text-muted-foreground"
-                          />
+                          <AgentIcon agent={model.agent} className="size-icon-row shrink-0" />
                           <span className="shrink-0">{agentLabel(model.agent)}</span>
                           <span className="min-w-0 font-mono text-meta break-all">
                             {model.model}
