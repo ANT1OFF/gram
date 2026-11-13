@@ -11,6 +11,8 @@ export interface ThreadListing {
   readonly place: string;
   /** What started it, where that is known: an orchestrator, a routine. */
   readonly startedBy: string | undefined;
+  /** The thread that asked its orchestrator for it, by its place's name or its title. */
+  readonly sentFrom?: string | undefined;
   /** It asks you something, or the Inbox lists it: such threads come first. */
   readonly needsYou: boolean;
 }
@@ -32,6 +34,8 @@ export interface ThreadsSources {
   readonly kinds?: ThreadKindWords | undefined;
   /** Threads the page leaves out, by id: ones an app in front of Gram lists in a place of its own. */
   readonly elsewhere?: ReadonlySet<string> | undefined;
+  /** The name of the place an app in front of Gram shows a thread in, by the thread's id. */
+  readonly placeOf?: ((threadId: string) => string | undefined) | undefined;
 }
 
 const titleOf = (summary: ThreadSummary): string =>
@@ -55,6 +59,17 @@ export const startedByOf = (
   return parent === undefined ? worker : `${worker} of ${parent}`;
 };
 
+/** The thread that asked a worker's orchestrator for it: its place's name, else its title. */
+export const sentFromOf = (
+  summary: ThreadSummary,
+  titles: ReadonlyMap<string, string>,
+  placeOf?: (threadId: string) => string | undefined,
+): string | undefined => {
+  const asked = summary.thread.spawnedBy?.askedBy;
+  if (asked === undefined) return undefined;
+  return placeOf?.(asked.threadId) ?? titles.get(asked.threadId) ?? asked.title;
+};
+
 /**
  * Where a row says its thread is: its place, then what started it. A starter that already names the
  * place ("Worker of api" in api), or an orchestrator titled as its workspace, says it once.
@@ -63,12 +78,16 @@ export const whereOf = ({
   title,
   place,
   startedBy,
-}: Pick<ThreadListing, "title" | "place" | "startedBy">): string =>
-  startedBy === undefined
-    ? place
-    : startedBy.endsWith(` of ${place}`) || title === place
-      ? startedBy
-      : `${place} · ${startedBy}`;
+  sentFrom,
+}: Pick<ThreadListing, "title" | "place" | "startedBy" | "sentFrom">): string => {
+  const where =
+    startedBy === undefined
+      ? place
+      : startedBy.endsWith(` of ${place}`) || title === place
+        ? startedBy
+        : `${place} · ${startedBy}`;
+  return sentFrom === undefined ? where : `${where} · sent from ${sentFrom}`;
+};
 
 /**
  * Every thread there is, archived ones aside (History has those): those that need you first, then
@@ -92,14 +111,15 @@ export const threadListings = (sources: ThreadsSources, query = ""): ThreadListi
             ? (sources.kinds?.solo ?? "Solo")
             : (sources.workspaceNames.get(workspaceId) ?? "Workspace"),
         startedBy: startedByOf(summary, titles, sources.kinds),
+        sentFrom: sentFromOf(summary, titles, sources.placeOf),
         needsYou: sources.needsYou(summary),
       };
     })
     .filter(
       (listing) =>
         wanted === "" ||
-        [listing.title, listing.place, listing.startedBy ?? ""].some((words) =>
-          words.toLowerCase().includes(wanted),
+        [listing.title, listing.place, listing.startedBy ?? "", listing.sentFrom ?? ""].some(
+          (words) => words.toLowerCase().includes(wanted),
         ),
     )
     .toSorted(

@@ -55,6 +55,7 @@ export function ThreadsPage() {
   const newLabel = useEmbedShell((s) => s.threadsPage.newLabel);
   const kinds = useEmbedShell((s) => s.threadsPage.kinds);
   const elsewhere = useEmbedShell((s) => s.threadsPage.elsewhere);
+  const places = useEmbedShell((s) => s.threadsPage.places);
   const listings = useMemo(() => {
     const workspaceNames = new Map(
       workspaces.map((state) => [state.workspace.id as string, state.workspace.name]),
@@ -73,10 +74,11 @@ export function ThreadsPage() {
           summary.pendingRequests.length > 0,
         kinds,
         elsewhere: elsewhere === undefined ? undefined : new Set(elsewhere),
+        placeOf: (threadId) => places?.find((place) => place.ids.includes(threadId))?.name,
       },
       query,
     );
-  }, [summaries, workspaces, groups, query, kinds, elsewhere]);
+  }, [summaries, workspaces, groups, query, kinds, elsewhere, places]);
   const counts = useMemo(() => threadsFilterCounts(listings), [listings]);
   // A filter whose last thread left it would show an empty list with nothing to say why: every
   // thread again.
@@ -204,11 +206,11 @@ function ThreadRow({
 }) {
   const openThread = useOpenThread();
   const now = useNow(true, undefined, 60_000);
-  const { summary, title, place, startedBy } = listing;
+  const { summary, title, place, startedBy, sentFrom } = listing;
   const { thread } = summary;
   const detail = useThreadsStore((s) => s.statusDetail[thread.id]);
   const display = soloDisplay(threadStatusOf(summary, detail), threadNeed(groups, thread.id));
-  const where = whereOf({ title, place, startedBy });
+  const where = whereOf({ title, place, startedBy, sentFrom });
   return (
     <li>
       <button

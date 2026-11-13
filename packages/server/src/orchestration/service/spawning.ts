@@ -40,6 +40,7 @@ import { limitQueuedNote } from "../../runtime/limit-wait.ts";
 import { finishedWorkers } from "../ledger.ts";
 import { LOCAL_MACHINE_NAMES, namesThisMachine } from "../../host/paired-machines.ts";
 import { type RouteOffer } from "../limit-pause.ts";
+import { askedByOf } from "../asked-by.ts";
 import { withBriefFooter } from "../user-words.ts";
 import { emptyWorkerMemo, withNotes, workerThreadId, type WorkerMemo } from "../outbox.ts";
 import {
@@ -444,9 +445,20 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               ? undefined
               : ((yield* readOutbox(workspaceId)).requests[input.clientRequestId] ??
                 workerThreadId(workspaceId, input.clientRequestId));
+          // Only the orchestrator's own spawn answers an ask; the user's and a routine's are theirs.
+          const askedBy =
+            byUser === undefined && input.routine === undefined
+              ? askedByOf(yield* store.listUserMessages(caller.id))
+              : undefined;
           const brief: UserInput = {
             text: input.brief,
-            origin: { threadId: caller.id, title: caller.title, depth: 1, role: "orchestrator" },
+            origin: {
+              threadId: caller.id,
+              title: caller.title,
+              depth: 1,
+              role: "orchestrator",
+              ...(askedBy === undefined ? {} : { askedBy }),
+            },
           };
           const existing = requestedId === undefined ? undefined : yield* findThread(requestedId);
           if (existing !== undefined) {
@@ -911,6 +923,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                     ...(input.routine === undefined
                       ? {}
                       : { routine: { id: input.routine.id, name: input.routine.name } }),
+                    ...(askedBy === undefined ? {} : { askedBy }),
                   },
                   extraCheckouts,
                   ...(browser ? { browser: true } : {}),

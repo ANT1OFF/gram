@@ -21,6 +21,13 @@ export const ThreadRole = Schema.Literals(["orchestrator", "dream"]);
 export type ThreadRole = typeof ThreadRole.Type;
 
 /** Where a message came from when another thread sent it (`send_message`). */
+/**
+ * A thread outside a workspace whose message its orchestrator was answering when it started a
+ * worker: the thread that asked for the work, by id and its title then.
+ */
+export const AskedBy = Schema.Struct({ threadId: ThreadId, title: Schema.String });
+export type AskedBy = typeof AskedBy.Type;
+
 export const MessageOrigin = Schema.Struct({
   threadId: ThreadId,
   /** The sender's title when it sent the message. */
@@ -38,6 +45,8 @@ export const MessageOrigin = Schema.Struct({
    * it, when the default queued.
    */
   mode: Schema.optionalKey(Schema.Literals(["queue", "steer", "interrupt"])),
+  /** On an orchestrator's brief to a worker: the thread outside the workspace that asked for it. */
+  askedBy: Schema.optionalKey(AskedBy),
 });
 export type MessageOrigin = typeof MessageOrigin.Type;
 
@@ -48,6 +57,8 @@ export const SpawnedBy = Schema.Struct({
   feature: Schema.String,
   /** The routine whose run started it, by id and its name then; absent for any other worker. */
   routine: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
+  /** The thread outside the workspace whose message the orchestrator was answering as it started it. */
+  askedBy: Schema.optionalKey(AskedBy),
 });
 export type SpawnedBy = typeof SpawnedBy.Type;
 

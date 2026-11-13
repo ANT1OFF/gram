@@ -1469,31 +1469,80 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   /**
    * Dev, e2e and embedding hook: a thread at a chosen id, with a plain-text conversation so far.
    * It sits idle in the first project's own checkout; one already there by that id is left as is.
+   * With `worker`, once the mock's starting scenario is in, it is instead a worker of the named
+   * workspace's orchestrator in a worktree of its own, its brief first, and the thread that asked
+   * for it named on both; a workspace the mock doesn't have leaves it a thread of its own.
    */
-  simulateThread(seed: {
+  async simulateThread(seed: {
     readonly id: string;
     readonly title: string;
     readonly messages?: readonly { readonly role: "user" | "assistant"; readonly text: string }[];
-  }) {
+    readonly worker?: {
+      readonly workspace: string;
+      readonly feature: string;
+      readonly brief: string;
+      readonly askedBy?: string;
+    };
+  }): Promise<void> {
     const id = seed.id as ThreadId;
     if (this.#threads.has(id)) return;
     const project = this.#projects[0];
     if (project === undefined) return;
+    if (seed.worker !== undefined) await this.#starting;
+    if (this.#threads.has(id)) return;
+    const state =
+      seed.worker === undefined
+        ? undefined
+        : this.#orchestration.peek().find((each) => each.workspace.name === seed.worker!.workspace);
+    const orchestratorId = state?.workspace.orchestratorThreadId;
+    const orchestrator =
+      orchestratorId === undefined ? undefined : this.#threads.get(orchestratorId)?.summary.thread;
+    const asker =
+      seed.worker?.askedBy === undefined
+        ? undefined
+        : this.#threads.get(seed.worker.askedBy as ThreadId)?.summary.thread;
+    const askedBy = asker === undefined ? undefined : { threadId: asker.id, title: asker.title };
+    const home =
+      state === undefined
+        ? project
+        : (this.#projects.find((each) => each.id === state.workspace.homeProjectId) ?? project);
     const at = Date.now();
+    const worker =
+      seed.worker !== undefined && state !== undefined && orchestrator !== undefined
+        ? { ...seed.worker, orchestrator }
+        : undefined;
     const thread: Thread = {
       id,
-      projectId: project.id,
+      projectId: home.id,
       title: seed.title,
       userNamed: true,
       model: { agent: "claude", model: "opus" },
       mode: "default",
-      checkout: { kind: "main", path: project.root, branch: "main", base: "main" },
+      checkout:
+        worker === undefined
+          ? { kind: "main", path: home.root, branch: "main", base: "main" }
+          : {
+              kind: "worktree",
+              path: `${home.root}/.worktrees/${worker.feature}`,
+              branch: `feat/${worker.feature}`,
+              base: "main",
+            },
       labels: [],
       pinned: false,
       parked: false,
       unread: false,
       createdAt: at,
       lastActivityAt: at,
+      ...(worker === undefined
+        ? {}
+        : {
+            workspaceId: state!.workspace.id,
+            spawnedBy: {
+              threadId: worker.orchestrator.id,
+              feature: worker.feature,
+              ...(askedBy === undefined ? {} : { askedBy }),
+            },
+          }),
     };
     const runtime = this.#add({
       thread,
@@ -1502,18 +1551,48 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       queue: [],
       capabilities: MOCK_CAPABILITIES,
     });
+    const brief: readonly GramUIMessage[] =
+      worker === undefined
+        ? []
+        : [
+            {
+              id: `${seed.id}-brief`,
+              role: "user",
+              metadata: { createdAt: at },
+              parts: [
+                {
+                  type: "data-thread-origin",
+                  data: {
+                    threadId: worker.orchestrator.id,
+                    title: worker.orchestrator.title,
+                    depth: 1,
+                    role: "orchestrator",
+                    mode: "queue",
+                    ...(askedBy === undefined ? {} : { askedBy }),
+                  },
+                },
+                { type: "text", text: worker.brief },
+              ],
+            },
+          ];
     runtime.fold.apply({
       type: "messages",
-      messages: (seed.messages ?? []).map((message, index): GramUIMessage => ({
-        id: `${seed.id}-m${index}`,
-        role: message.role,
-        metadata: { createdAt: at },
-        parts: [{ type: "text", text: message.text }],
-      })),
+      messages: [
+        ...brief,
+        ...(seed.messages ?? []).map((message, index): GramUIMessage => ({
+          id: `${seed.id}-m${index}`,
+          role: message.role,
+          metadata: { createdAt: at },
+          parts: [{ type: "text", text: message.text }],
+        })),
+      ],
     });
     runtime.fold.apply({ type: "caughtUp", rev: this.#rev });
     this.#emit({ type: "thread.upsert", thread });
     this.#emit({ type: "thread.status", threadId: id, status: "idle" });
+    if (state !== undefined && worker !== undefined) {
+      this.#emit({ type: "orchestration.changed", workspaceId: state.workspace.id });
+    }
   }
 
   /** `simulateMessage` (`mock-thread-sims.ts`). */

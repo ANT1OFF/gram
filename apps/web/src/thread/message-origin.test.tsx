@@ -137,6 +137,31 @@ describe("ThreadMessage from the orchestrator", () => {
     expect(toggle.textContent).toBe("Message from orchestrator· steer");
   });
 
+  it("says which thread asked for the worker, as the place it opens in, beside the folded line", () => {
+    withSender({ title: "Orchestrator · Gram" });
+    useEmbedShell.setState({
+      threadsPage: { places: [{ name: "Chat", path: "/chat/$threadId", ids: ["t-chat"] }] },
+    });
+    render(
+      <ThreadMessage
+        origin={{
+          ...origin,
+          role: "orchestrator",
+          askedBy: { threadId: "t-chat" as ThreadId, title: "Why exports fail" },
+        }}
+        messageId="m-asked"
+        text={brief}
+      >
+        {brief}
+      </ThreadMessage>,
+    );
+    const asked = screen.getByTestId("message-asked-by");
+    expect(asked.getAttribute("href")).toBe("/chat/t-chat");
+    expect(asked.textContent).toBe("sent from Chat");
+    // Outside the toggle, so following it doesn't open the brief.
+    expect(screen.getByTestId("orchestrator-message-toggle").contains(asked)).toBe(false);
+  });
+
   it("stays open across a remount, as rows do on scroll, and folds again on a second click", () => {
     withSender({ title: "Orchestrator · Gram" });
     fromOrchestrator("m-kept");
