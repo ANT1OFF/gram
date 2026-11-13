@@ -9,7 +9,8 @@ opens no port of its own.
 
 A machine can join, be confirmed and stay connected; Settings → Machines lists it. A one-off
 chat can run in a folder there, its home by default, and a new thread in a new worktree can be
-placed on it; its session, checkout, git state and terminals then run there. The Workers tab tags each worker that runs on another machine. Gram's own
+placed on it; its session, checkout, git state and terminals then run there. A thread that runs
+on another machine says which wherever it is listed ([where a thread runs](#where-a-thread-runs)). Gram's own
 [local check](#its-local-checks) of its pull request runs there too. Its Files panel, file
 previews and attachments work on that machine ([its files](#its-files-and-attachments)); its turn
 checkpoints, PR badge and port chips don't reach that machine yet.
@@ -49,6 +50,30 @@ menu marks a machine that is offline or whose Claude Code isn't signed in.
   name is refused, with the joined machines listed. The orchestrator itself always runs on this
   machine, and a worker always runs in a new worktree: only you pick a folder on a joined machine,
   one chat at a time.
+
+### Where a thread runs
+
+A thread on this machine carries no mark. One on another machine names it wherever the thread is
+listed: its row in the sidebar, its header, the Workers tab, the Board, a feature's card in the
+orchestrator's chat and the Inbox.
+
+- **The mark** is a server glyph and the machine's name in muted words. Where a row's edge already
+  has words of its own ("asks you", "checks"), the glyph stands alone and the name is on the row's
+  hover.
+- **A machine nothing reaches** takes the struck glyph and says "offline", or "needs update" for a
+  host this Gram can't talk to, in the text colour. It shows without a hover, and at once: the
+  server sends every window the machines' states when one connects or drops, so nothing polls.
+- **The hover** says the machine, whether it is a joined machine or a provisioned host, and its
+  state ("online for 2 hours"); offline, also why and the fix, in the words Settings → Machines
+  uses ([when a machine is offline](#when-a-machine-is-offline)).
+- A thread whose machine was removed says "not joined".
+- An orchestrator reads the same on `list_workers`: a worker's row has `machine`, its name and
+  `online`, when it runs on another machine.
+
+Every client is sent this much of a confirmed machine, a paired phone included: its name, whether a
+person joined it or a control plane registered it, whether it is dialled in, and why not. The rest
+of what Settings → Machines lists (fingerprint, sign-in, tools, SSH target, updates) stays the local
+app's.
 
 ### Which folders a chat may use there
 
@@ -211,7 +236,8 @@ keeps each machine's last reason since it started, in memory only:
 
 Only a clock its own key signed is taken as its clock. A bad signature can come from anyone on
 your tailnet who knows the machine's id, so it is only ever shown. Nothing from a dial (its
-signature, nonce or key) reaches the page, and the listing stays local-app only.
+signature, nonce or key) reaches the page, and the listing stays local-app only; a thread's mark
+gets a machine's name and these reasons on every client ([where a thread runs](#where-a-thread-runs)).
 
 ## Updating a machine
 
@@ -643,4 +669,6 @@ PATH your terminal has (Homebrew, `~/.local/bin`).
 
 The listing (`POST /machines/list`), join link, confirm, remove, update and sign-in check
 endpoints answer only the local app, never a paired phone or a joined machine, with the same Origin
-rules as phone access settings.
+rules as phone access settings. What a thread's mark needs of a confirmed machine (its name, how it
+got in, whether it is dialled in and why not) goes to every client on the event stream instead
+([where a thread runs](#where-a-thread-runs)); no key, fingerprint, address or sign-in goes with it.

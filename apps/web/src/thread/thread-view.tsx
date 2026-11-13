@@ -504,9 +504,10 @@ export function ThreadView({
               inTitlebar && "before:-mr-2 before:h-6 before:w-0 before:content-['']",
             )}
           >
+            {/* First, so a machine that is offline is the last chip to give way. */}
+            <MachineChip thread={thread} className={hideSm} />
             <WorkerNowChip thread={thread} prOnStrip={prOnStrip} />
             <OrchestratorChips thread={thread} inTitlebar={inTitlebar} />
-            <MachineChip thread={thread} className={hideSm} />
             {thread.forkedFrom && (
               <ForkedFrom from={thread.forkedFrom} title={sourceTitle} hideClass={hideMd} />
             )}

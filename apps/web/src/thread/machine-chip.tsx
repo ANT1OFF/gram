@@ -11,9 +11,12 @@ import { threadHost } from "./machine-mark";
 import { useMachineMark } from "./machine-marker";
 
 /**
- * Where a thread on another machine runs, in the pane header: the machine's name, that it is
- * offline when it is, and its folder there (`~` for its home), with the whole path and the
+ * Where a thread on another machine runs, in the pane header: the machine's name, and that it is
+ * offline when it is, then its folder there (`~` for its home), with the whole path and the
  * machine's state on hover. Nothing for a thread on this machine.
+ *
+ * Two chips rather than one: short of room the header drops whole chips, and the folder is the one
+ * to go, so the machine and its state stay as long as any chip does.
  */
 export function MachineChip({ thread, className }: { thread: Thread; className?: string }) {
   const hostId = threadHost(thread);
@@ -40,30 +43,52 @@ function PlacedChip({
   const where = `Runs on ${name} in ${path}`;
   // The hover's first line names the folder too; the rest is the machine's state, as every marker.
   const [, ...state] = mark.hint.split("\n");
+  const label = [where, ...state].join("\n");
   const Glyph = mark.state === undefined ? Server : ServerOff;
   return (
-    <Hint
-      label={[where, ...state].join("\n")}
-      side="bottom"
-      render={
-        <span
-          data-testid="pane-machine"
-          data-machine-state={mark.state ?? "online"}
-          aria-label={mark.state === undefined ? where : `${where}, ${mark.state}`}
-          className={cn(
-            "flex max-w-56 min-w-0 shrink-0 items-center gap-1 text-meta text-muted-foreground",
-            className,
-          )}
-        />
-      }
-    >
-      <Glyph
-        aria-hidden
-        className={cn("size-icon-chip shrink-0", mark.state !== undefined && "text-foreground")}
-      />
-      <span className={cn("truncate", mark.state !== undefined && "text-foreground")}>{name}</span>
-      {mark.state !== undefined && <span className="shrink-0 text-foreground">{mark.state}</span>}
-      <span className="min-w-0 truncate font-mono">{folder}</span>
-    </Hint>
+    <>
+      <Hint
+        label={label}
+        side="bottom"
+        render={
+          <span
+            data-testid="pane-machine"
+            data-machine-state={mark.state ?? "online"}
+            aria-label={mark.state === undefined ? where : `${where}, ${mark.state}`}
+            className={cn(
+              // Never wider than the chips' room, so it stays on their one line rather than
+              // wrap out of sight with the chips that don't fit.
+              "flex max-w-full min-w-0 items-center gap-1 text-meta",
+              mark.state === undefined ? "text-muted-foreground" : "text-foreground",
+              className,
+            )}
+          />
+        }
+      >
+        <Glyph aria-hidden className="size-icon-chip shrink-0" />
+        {/* Short of room its state's word goes whole, wrapped out of sight, before its name is
+            cut: the struck glyph still says it, and the hover says why. */}
+        <span className="flex h-lh min-w-0 flex-wrap gap-x-1 overflow-hidden">
+          <span className="max-w-full min-w-0 truncate">{name}</span>
+          {mark.state !== undefined && <span className="shrink-0">{mark.state}</span>}
+        </span>
+      </Hint>
+      <Hint
+        label={label}
+        side="bottom"
+        render={
+          <span
+            data-testid="pane-machine-folder"
+            aria-hidden
+            className={cn(
+              "max-w-48 min-w-0 shrink-0 truncate font-mono text-meta text-muted-foreground",
+              className,
+            )}
+          />
+        }
+      >
+        {folder}
+      </Hint>
+    </>
   );
 }
