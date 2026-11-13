@@ -175,9 +175,14 @@ export const ShellLink: ShellLinkComponent = ({ to, className, children }) => (
 );
 
 /** A thread for the embedding app's pages: beside what the page shows, as a worker's is in a dock. */
-export const ShellThread: ShellThreadComponent = ({ threadId }) => (
+export const ShellThread: ShellThreadComponent = ({ threadId, placeholder }) => (
   <div className="flex h-full min-h-0 flex-col" data-testid="shell-thread">
-    <ThreadView key={threadId} threadId={threadId as ThreadId} focused beside={{ header: null }} />
+    <ThreadView
+      key={threadId}
+      threadId={threadId as ThreadId}
+      focused
+      beside={{ header: null, ...(placeholder === undefined ? {} : { placeholder }) }}
+    />
   </div>
 );
 

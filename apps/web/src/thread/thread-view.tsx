@@ -121,9 +121,10 @@ export function ThreadView({
   focused: boolean;
   /**
    * Shown in the right panel's Thread tab beside the chat: `header` in place of the thread's own,
-   * and a composer that says it steers the thread. What it sends is the same as typing in the view.
+   * and a composer that says it steers the thread (or `placeholder`, the words of an app that shows
+   * it). What it sends is the same as typing in the view.
    */
-  beside?: { header: ReactNode } | undefined;
+  beside?: { header: ReactNode; placeholder?: string } | undefined;
   /** Pane controls at the end of the header. */
   actions?: ReactNode;
   /** Runs on a double-click on the header outside its controls; the grid maximizes or restores. */
@@ -744,7 +745,9 @@ export function ThreadView({
           <ThreadComposer
             thread={thread}
             focused={focused}
-            {...(beside === undefined ? {} : { placeholder: "Steer this thread…" })}
+            {...(beside === undefined
+              ? {}
+              : { placeholder: beside.placeholder ?? "Steer this thread…" })}
           />
         </TurnCompleteSheen>
       </div>

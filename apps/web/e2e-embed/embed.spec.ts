@@ -246,6 +246,10 @@ test("a thread's working panels can sit inside a page of the embedding app's", a
     `/govern/changes/${id}`,
   );
   // The four panels under their tabs, the diff first, beside the same thread.
+  // The app's own words in the thread's empty prompt box.
+  await expect(
+    page.getByTestId("shell-thread").getByPlaceholder("Message this worker…"),
+  ).toBeVisible();
   const panel = page.getByTestId("shell-thread-panel");
   await expect(panel.getByRole("tab")).toHaveText(["Diff", "Pull request", "Files", "Terminal"]);
   await expect(panel.getByRole("tab", { name: "Diff" })).toHaveAttribute("aria-selected", "true");
