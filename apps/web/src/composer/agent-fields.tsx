@@ -306,7 +306,7 @@ export function AgentFields({
           <SelectContent>
             {agentItems.map((o) => (
               <SelectItem key={o.value} value={o.value}>
-                <AgentIcon agent={o.value} className="size-icon-row text-muted-foreground" />
+                <AgentIcon agent={o.value} className="size-icon-row" />
                 {o.label}
               </SelectItem>
             ))}
@@ -330,10 +330,7 @@ export function AgentFields({
         </Hint>
       ) : (
         <span className="flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-reading">
-          <AgentIcon
-            agent={agents[0] ?? value.agent}
-            className="size-icon-row text-muted-foreground"
-          />
+          <AgentIcon agent={agents[0] ?? value.agent} className="size-icon-row" />
           {agentLabel(agents[0] ?? value.agent)}
         </span>
       )}

@@ -102,10 +102,7 @@ function ThreadList({ threads }: { threads: UsageBreakdown["threads"] }) {
                 data-thread-id={thread.threadId}
               >
                 <div className="flex min-w-0 items-center gap-2 pt-1.5 text-body">
-                  <AgentIcon
-                    agent={agent}
-                    className="size-icon-row shrink-0 text-muted-foreground"
-                  />
+                  <AgentIcon agent={agent} className="size-icon-row shrink-0" />
                   {thread.title === null ? (
                     <span className="truncate text-muted-foreground">Deleted thread</span>
                   ) : (

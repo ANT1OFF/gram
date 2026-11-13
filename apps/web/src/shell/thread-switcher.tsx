@@ -179,11 +179,7 @@ export function ThreadSwitcher() {
             >
               <display.icon aria-hidden className={cn("size-icon-row shrink-0", display.tone)} />
               <span className="min-w-0 flex-1 truncate">{summary.thread.title}</span>
-              <AgentIcon
-                agent={summary.thread.model.agent}
-                labelled
-                className="size-icon-row text-muted-foreground"
-              />
+              <AgentIcon agent={summary.thread.model.agent} labelled className="size-icon-row" />
             </li>
           );
         })}

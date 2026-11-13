@@ -5,6 +5,8 @@
 // app's pages have needed, not everything there is. See docs/EMBEDDED_WEB_APP.md.
 import { cn as appCn } from "@/lib/utils";
 
+// An agent's mark in its provider's brand colour, for a page that lists model accounts or agents.
+export { AgentIcon } from "@/agents/agent-display";
 export { Hint } from "@/components/hint";
 export { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 export { Badge } from "@/components/ui/badge";

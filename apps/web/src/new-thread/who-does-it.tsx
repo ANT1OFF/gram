@@ -37,6 +37,8 @@ export const WHO_CHOICES: readonly {
   readonly spoken?: string;
   readonly line: string;
   readonly icon: LucideIcon;
+  /** Its glyph's colour, where the choice has one: the orchestrator's accent on Team. */
+  readonly tone?: string;
   readonly shortcut: string;
 }[] = [
   {
@@ -51,6 +53,7 @@ export const WHO_CHOICES: readonly {
     label: "Team",
     line: "An orchestrator splits it up, runs workers and sees their pull requests merged.",
     icon: Network,
+    tone: "text-orchestrator",
     shortcut: "thread.new",
   },
   {
@@ -99,7 +102,7 @@ function Choice({
     >
       {checked && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
       <span className="relative flex w-full items-center gap-1.5 text-reading font-medium">
-        <Icon aria-hidden className="size-icon-row shrink-0" />
+        <Icon aria-hidden className={cn("size-icon-row shrink-0", choice.tone)} />
         {choice.label}
         <ChoiceCheck checked={checked} className="ml-auto" />
       </span>
