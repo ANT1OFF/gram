@@ -172,14 +172,16 @@ describe("a collapsible navigation group", () => {
 
   it("folds only when asked and when it has a heading to fold under", () => {
     expect(foldable(govern)).toBe(true);
-    expect(foldable({ ...govern, collapsible: undefined })).toBe(false);
-    expect(foldable({ ...govern, label: undefined })).toBe(false);
+    expect(foldable({ id: "govern", label: "Govern", items })).toBe(false);
+    expect(foldable({ id: "govern", collapsible: true, items })).toBe(false);
     expect(foldable({ ...govern, label: "  " })).toBe(false);
   });
 
   it("starts as the embedding app says, then as the person left it", () => {
     expect(groupOpen(govern, undefined)).toBe(false);
-    expect(groupOpen({ ...govern, collapsed: undefined }, undefined)).toBe(true);
+    expect(groupOpen({ id: "govern", label: "Govern", collapsible: true, items }, undefined)).toBe(
+      true,
+    );
     expect(groupOpen(govern, true)).toBe(true);
     expect(groupOpen({ ...govern, collapsed: false }, false)).toBe(false);
     // A group that does not fold is always open, whatever was kept for its id.
@@ -189,7 +191,7 @@ describe("a collapsible navigation group", () => {
   it("closed, keeps the row the window is at and counts what it hides", () => {
     expect(shownRows(govern, true, "/access")).toEqual(items);
     expect(shownRows(govern, false, undefined)).toEqual([]);
-    expect(shownRows(govern, false, "/access").map((item) => item.id)).toEqual(["access"]);
+    expect(shownRows(govern, false, "/access").map((row) => row.id)).toEqual(["access"]);
     expect(hiddenCount(govern, false, undefined)).toBe(3);
     expect(hiddenCount(govern, false, "/access")).toBe(2);
     expect(hiddenCount(govern, false, "/connections")).toBe(1);
