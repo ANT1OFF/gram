@@ -18,7 +18,7 @@ import * as Schedule from "effect/Schedule";
 import * as FiberSet from "effect/FiberSet";
 import type * as Scope from "effect/Scope";
 import { DAY_MS } from "../zone-time.ts";
-import { admitApp, readLocalSecret } from "./local-handshake.ts";
+import { admitApp, macFramed, readLocalSecret } from "./local-handshake.ts";
 import { type HostService, serveHost } from "./protocol.ts";
 import type { HostBusy } from "@gram/contracts";
 
@@ -112,7 +112,8 @@ export const serveLocal = <R>(
     let aloneSince: number | undefined = Date.now();
     const scope = yield* Effect.scope;
 
-    const serve = (socket: NetSocket) =>
+    const run = yield* FiberSet.makeRuntime();
+    const serve = (socket: NetSocket, key: Buffer) =>
       Effect.gen(function* () {
         const previous = current;
         if (previous !== undefined) {
@@ -122,7 +123,17 @@ export const serveLocal = <R>(
         }
         aloneSince = undefined;
         options.connected?.(true);
-        const fiber = yield* NodeSocket.fromDuplex(Effect.succeed(socket)).pipe(
+        // Every frame after the handshake carries this connection's MAC: a process that relayed
+        // the handshake can't add one of its own.
+        const framed = macFramed(socket, key, "host");
+        framed.on("error", (error) =>
+          run(
+            Effect.logWarning(
+              "gram-host local: closed a connection on a frame it can't trust",
+            ).pipe(Effect.annotateLogs({ reason: error.message })),
+          ),
+        );
+        const fiber = yield* NodeSocket.fromDuplex(Effect.succeed(framed)).pipe(
           Effect.flatMap((wrapped) => serveHost(wrapped, host)),
           Effect.scoped,
           Effect.ensuring(
@@ -139,15 +150,14 @@ export const serveLocal = <R>(
         current = { socket, fiber };
       });
 
-    const run = yield* FiberSet.makeRuntime();
     yield* Effect.acquireRelease(
       Effect.callback<Server, Error>((resume) => {
         const listening = createServer({ allowHalfOpen: true }, (socket) => {
           run(
             Effect.promise(() => admitApp(socket, readLocalSecret(options.secretFile))).pipe(
-              Effect.flatMap((admitted) =>
-                admitted
-                  ? serve(socket)
+              Effect.flatMap((key) =>
+                key !== undefined
+                  ? serve(socket, key)
                   : Effect.logWarning(
                       "gram-host local: refused a connection that didn't prove it is this install's app",
                     ).pipe(Effect.andThen(Effect.sync(() => socket.destroy()))),

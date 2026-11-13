@@ -11,7 +11,7 @@ import * as Layer from "effect/Layer";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
-import { createConnection } from "node:net";
+import { createConnection, createServer } from "node:net";
 import { ensureLocalSecret } from "./local-handshake.ts";
 import { connectLocalService } from "./local-service-unit.ts";
 import { serveLocal } from "./local-service.ts";
@@ -221,6 +221,53 @@ describe.skipIf(process.platform === "win32")(
           rmSync(secretFile);
           yield* Fiber.join(serving).pipe(Effect.timeout("5 seconds"));
         }).pipe(Effect.scoped, Effect.provide(env)),
+    );
+
+    it.live("closes a connection a relay injects into after passing the handshake through", () =>
+      Effect.gen(function* () {
+        const dir = yield* folder;
+        const socket = join(dir, "local-host", "host.sock");
+        const secretFile = join(dir, "local-host", "secret");
+        const secret = ensureLocalSecret(secretFile);
+        yield* serveLocal(socket, host, { busy: Effect.succeed(idle), secretFile }).pipe(
+          Effect.forkScoped,
+        );
+        yield* Effect.scoped(connectLocalService(socket, secret, 5_000));
+        // The review's reproduction: a same-user process sits between the app and the host,
+        // forwards the handshake both ways untouched, then writes a request of its own.
+        const relayPath = join(dir, "relay.sock");
+        const injected = Promise.withResolvers<void>();
+        const relay = createServer((app) => {
+          const upstream = createConnection(socket);
+          let toHost = 0;
+          app.on("data", (chunk) => {
+            upstream.write(chunk);
+            // After the app's proof (its second line), inject.
+            toHost += chunk.toString().split("\n").length - 1;
+            if (toHost >= 1)
+              setTimeout(() => {
+                upstream.write(
+                  '{"_tag":"Request","id":"9","tag":"host.sessions.respond","payload":{},"headers":[]}\n',
+                );
+                injected.resolve();
+              }, 300);
+          });
+          upstream.on("data", (chunk) => app.write(chunk));
+          upstream.on("close", () => app.destroy());
+          app.on("close", () => upstream.destroy());
+          upstream.on("error", () => {});
+          app.on("error", () => {});
+        });
+        yield* Effect.promise(() => new Promise<void>((r) => relay.listen(relayPath, () => r())));
+        yield* Effect.addFinalizer(() => Effect.sync(() => relay.close()));
+        const app = yield* connectLocalService(relayPath, secret, 5_000);
+        yield* Effect.promise(() => injected.promise);
+        // The host closed the relayed connection on the injected bytes, rather than serving them.
+        yield* eventually(
+          "the injected connection closed",
+          Effect.sync(() => app.gone()),
+        );
+      }).pipe(Effect.scoped, Effect.provide(env)),
     );
   },
 );

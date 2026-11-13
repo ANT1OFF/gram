@@ -1199,12 +1199,23 @@ While it is on:
 - **It never lingers.** It isn't started at login, only by Gram. With no Gram connected and nothing
   running, it ends after 10 minutes. If a session holds something Gram hasn't seen yet, such as a
   reply finished while Gram was closed, it waits for Gram to open, for up to 3 days. Stopping it
-  ends everything it started. Each start of the service gives it a random run token in its
-  environment, which every agent, shell and tool under it inherits. A stop ends the service, then
-  every process of yours that still carries the token, even a background job a shell left in a
-  session of its own (launchd doesn't end those; on Linux systemd's control group does as well).
-  Stop reports success only when the service manager says the service has stopped and nothing
-  carrying the token is left. Otherwise Settings shows why.
+  ends what it started, as far as each platform can hold it:
+  - **Linux:** the systemd unit's control group holds everything the service started, whatever a
+    process does to its environment, session or parent. Stop is verified on that group: it succeeds
+    only when systemd says the unit is inactive and its group is gone or empty.
+  - **Every platform:** each start gives the service a random run token in its environment, which
+    its agents, shells and tools inherit. Each start's token is kept, in Gram's data folder and in
+    the registry below, until a stop or a later start (with the service not running) has ended that
+    run's processes and verified it. A start that fails keeps them too. Stop then ends every
+    process of yours carrying an outstanding token. It matches by your effective user and by the
+    token as an entry of the process's environment, never by text in a command line, and checks
+    each process's start time again right before each signal. A process list it can't read in full,
+    on any pass including the one after SIGKILL, fails Stop and keeps the records, and Settings
+    says to try again. Starts and stops of one instance are serialized by a lock.
+  - **macOS:** launchd ends the job's process group. The token sweep then ends what left it while
+    keeping the token. Not guaranteed: a process that both clears its environment (`env -i`) and
+    leaves the job's process group (`setsid`), or whose environment `ps` can't read, can outlive a
+    Stop. macOS offers no equivalent of a control group to hold it.
 - **Releases may differ.** A Gram that finds an earlier release's host still running uses it, since
   between releases the host protocol only grows (see
   [machines on different releases](MACHINES.md#machines-on-different-releases)). When nothing of a
@@ -1213,13 +1224,20 @@ While it is on:
 Codex sessions, sessions through a gateway profile and memory updates still run inside Gram and
 stop when it quits. The host listens on a Unix socket in Gram's data folder
 (`local-host/host.sock`, or a private folder under `$XDG_RUNTIME_DIR` when that path is too long),
-in a folder only your user can open, and on nothing else. Any process of your user could still
-connect to that socket. So before any of the host protocol, the app and the host each prove they
-hold this install's secret (`local-host/secret`, 32 random bytes, readable by you only), with an
-HMAC over a nonce the other side chose. The secret itself never crosses the socket. A connection
-that can't prove it is closed unserved, and never displaces the app that is connected, so
-approvals and permission modes are answered only by Gram. The service is told the secret file's
-name, never the secret. Its environment file carries only `PATH`,
+in a folder only your user can open, and on nothing else.
+
+**What it defends, and what it doesn't.** The host is protected against other users of the
+machine and against anything unauthenticated or on the network: the socket's folder is yours
+alone (0700), and the install's secret (`local-host/secret`, 32 random bytes, 0600) is readable by
+you only. Before any of the host protocol, the app and the host each prove they hold that secret
+with an HMAC over a nonce the other side chose. The secret never crosses the socket. Every frame
+after that carries a MAC under a key derived from the secret and both nonces, over its direction
+and its number in sequence. So a process that relays the handshake without holding the secret
+can't add, alter, replay or reflect a frame: the connection closes on the first one that doesn't
+verify, and an unproven connection never displaces the connected app. The host does **not**
+defend against code running as you. Such code can read the secret, as it can already read the
+CLIs' logins and the rest of Gram's data, and same-user programs are inside Gram's trust boundary.
+The service is told the secret file's name, never the secret. Its environment file carries only `PATH`,
 locale and XDG folder names, `CLAUDE_CONFIG_DIR` and Gram's own settings for it, never a token, key
 or proxy address. Claude Code finds your sign-in where it keeps it, as it does from a terminal. Gram
 keeps a record of the sessions it left running (`local-host/sessions.json`, readable by you only).

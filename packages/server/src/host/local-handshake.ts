@@ -10,6 +10,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { Socket } from "node:net";
+import { Duplex } from "node:stream";
 import { dirname } from "node:path";
 
 /** How long either side waits for the other's line before it closes the connection. */
@@ -109,20 +110,21 @@ export const admitApp = async (
   socket: Socket,
   secret: string | undefined,
   timeoutMs = HANDSHAKE_TIMEOUT_MS,
-): Promise<boolean> => {
-  if (secret === undefined) return false;
+): Promise<Buffer | undefined> => {
+  if (secret === undefined) return undefined;
   const nonce = randomBytes(32).toString("hex");
   send(socket, { gramLocalHost: 1, nonce });
   try {
     const answer = await readLine(socket, timeoutMs);
     const given = answer["proof"];
     const theirs = answer["nonce"];
-    if (typeof given !== "string" || typeof theirs !== "string" || !HEX.test(theirs)) return false;
-    if (!same(given, proof(secret, "app", nonce))) return false;
+    if (typeof given !== "string" || typeof theirs !== "string" || !HEX.test(theirs))
+      return undefined;
+    if (!same(given, proof(secret, "app", nonce))) return undefined;
     send(socket, { proof: proof(secret, "host", theirs) });
-    return true;
+    return connectionKey(secret, nonce, theirs);
   } catch {
-    return false;
+    return undefined;
   }
 };
 
@@ -134,7 +136,7 @@ export const proveToHost = async (
   socket: Socket,
   secret: string,
   timeoutMs = HANDSHAKE_TIMEOUT_MS,
-): Promise<void> => {
+): Promise<Buffer> => {
   const hello = await readLine(socket, timeoutMs);
   const theirs = hello["nonce"];
   if (hello["gramLocalHost"] !== 1 || typeof theirs !== "string" || !HEX.test(theirs))
@@ -145,4 +147,81 @@ export const proveToHost = async (
   const given = back["proof"];
   if (typeof given !== "string" || !same(given, proof(secret, "host", nonce)))
     throw new Error("The kept-running host didn't prove it holds this install's secret.");
+  return connectionKey(secret, theirs, nonce);
+};
+
+/**
+ * The key of one connection: from the secret and both sides' nonces, so it is new each time and
+ * known only to the two that proved themselves. Every frame after the handshake carries a MAC
+ * under it (`macFramed`), so a process relaying the handshake can't add one of its own.
+ */
+const connectionKey = (secret: string, hostNonce: string, appNonce: string): Buffer =>
+  createHmac("sha256", secret).update(`gram-local-host:conn:${hostNonce}:${appNonce}`).digest();
+
+/** The most bytes one frame may carry. */
+const FRAME_MAX = 32 * 1024 * 1024;
+const MAC_BYTES = 32;
+
+const frameMac = (key: Buffer, from: "app" | "host", seq: bigint, payload: Buffer) => {
+  const header = Buffer.alloc(8);
+  header.writeBigUInt64BE(seq);
+  return createHmac("sha256", key).update(from).update(header).update(payload).digest();
+};
+
+/**
+ * `raw` after a handshake, as a stream whose every chunk crosses as a frame: its length, a MAC over
+ * who sent it, its number in that direction and its bytes, then the bytes. A frame whose MAC
+ * doesn't hold (forged, altered, replayed, reordered, or sent back the other way) closes the
+ * connection before any of it is read.
+ */
+export const macFramed = (raw: Socket, key: Buffer, role: "app" | "host"): Duplex => {
+  const theirs = role === "app" ? "host" : "app";
+  let sent = 0n;
+  let received = 0n;
+  let buffered = Buffer.alloc(0);
+  const framed: Duplex = new Duplex({
+    read() {
+      raw.resume();
+    },
+    write(chunk: Buffer, _encoding, callback) {
+      const payload = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      const head = Buffer.alloc(4);
+      head.writeUInt32BE(payload.length);
+      raw.write(Buffer.concat([head, frameMac(key, role, sent++, payload), payload]), callback);
+    },
+    final(callback) {
+      raw.end();
+      callback();
+    },
+    destroy(error, callback) {
+      raw.destroy();
+      callback(error);
+    },
+  });
+  raw.on("data", (chunk: Buffer) => {
+    buffered = Buffer.concat([buffered, chunk]);
+    while (buffered.length >= 4 + MAC_BYTES) {
+      const length = buffered.readUInt32BE(0);
+      if (length > FRAME_MAX) {
+        framed.destroy(new Error("a frame too large"));
+        return;
+      }
+      if (buffered.length < 4 + MAC_BYTES + length) break;
+      const mac = buffered.subarray(4, 4 + MAC_BYTES);
+      const payload = Buffer.from(buffered.subarray(4 + MAC_BYTES, 4 + MAC_BYTES + length));
+      buffered = buffered.subarray(4 + MAC_BYTES + length);
+      if (!timingSafeEqual(mac, frameMac(key, theirs, received, payload))) {
+        framed.destroy(new Error("a frame that doesn't carry this connection's MAC"));
+        return;
+      }
+      received += 1n;
+      if (!framed.push(payload)) raw.pause();
+    }
+  });
+  raw.on("end", () => framed.push(null));
+  raw.on("close", () => {
+    if (!framed.destroyed) framed.destroy();
+  });
+  raw.on("error", (error) => framed.destroy(error));
+  return framed;
 };

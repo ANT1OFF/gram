@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { afterEach } from "vitest";
@@ -26,6 +26,7 @@ import {
   systemdEnvFile,
   keptHostInstances,
   keptHostRegistry,
+  readRunTokens,
 } from "./local-service-unit.ts";
 import type { Run } from "./service.ts";
 import { RUN_TOKEN_ENV } from "./run-sweep.ts";
@@ -39,7 +40,21 @@ const answering =
       calls.push([file, ...args].join(" "));
       return answers(file, args);
     });
-const noSweep = () => Effect.succeed({ left: [] as ReadonlyArray<number> });
+const noSweep = () => Effect.void;
+
+/** systemd answering a start (refused unless `startOk`) and whether the unit is active. */
+const systemd = (startOk: boolean, active: boolean) =>
+  answering((_f, args) =>
+    args[1] === "is-active"
+      ? active
+        ? { code: 0, output: "active" }
+        : { code: 3, output: "inactive" }
+      : args[1] === "start" && !startOk
+        ? { code: 1, output: "Failed to start" }
+        : { code: 0, output: "" },
+  );
+/** A sweep that couldn't verify anything. */
+const unverified = () => Effect.fail(new Error("a scan failed"));
 
 describe("the kept-running host's service", () => {
   it("is named for its data folder, so a release and a checkout never share one", () => {
@@ -205,15 +220,13 @@ describe("the kept-running host's service", () => {
       calls.length = 0;
       const swept: Array<string> = [];
       yield* stopLocalService("linux", paths, runner, true, (t) =>
-        Effect.sync(() => {
-          swept.push(t);
-          return { left: [] };
-        }),
+        Effect.sync(() => void swept.push(...t)),
       );
       expect(swept).toEqual([token]);
       expect(calls).toEqual([
         `systemctl --user stop ${paths.name}`,
         `systemctl --user is-active ${paths.name}`,
+        `systemctl --user show -p ControlGroup --value ${paths.name}`,
         "systemctl --user daemon-reload",
       ]);
       expect(() => statSync(paths.runFile)).toThrow();
@@ -261,7 +274,7 @@ describe("the kept-running host's service", () => {
         args[1] === "is-active" ? { code: 3, output: "inactive" } : { code: 0, output: "" },
       );
       const left = yield* stopLocalService("linux", paths, stopped, true, () =>
-        Effect.succeed({ left: [4242] }),
+        Effect.fail(new Error("1 process it started couldn't be ended (4242).")),
       ).pipe(Effect.flip);
       expect(left.message).toContain("4242");
       // None of these took: the service's files stay, for a stop that does.
@@ -351,16 +364,13 @@ describe("the kept-running host's service", () => {
       renameSync(join(root, "moved"), join(root, "elsewhere"));
       const calls: Array<string> = [];
       const swept: Array<string> = [];
-      const systemd = answering(
+      const inactive = answering(
         (_f, args) =>
           args[1] === "is-active" ? { code: 3, output: "inactive" } : { code: 0, output: "" },
         calls,
       );
-      const outcome = yield* sweepAbandoned("linux", systemd, env, root, (token) =>
-        Effect.sync(() => {
-          swept.push(token);
-          return { left: [] };
-        }),
+      const outcome = yield* sweepAbandoned("linux", inactive, env, root, (tokens) =>
+        Effect.sync(() => void swept.push(...tokens)),
       );
       expect(outcome).toEqual({ stopped: [moved.name], failed: [] });
       expect(calls).toContain(`systemctl --user stop ${moved.name}`);
@@ -382,5 +392,83 @@ describe("the kept-running host's service", () => {
       expect(stuck.failed.map((f) => f.name)).toEqual([kept.name]);
       expect(keptHostInstances(registry).map((i) => i.name)).toEqual([kept.name]);
     }),
+  );
+
+  it.effect("keeps an earlier run's token until its processes are verified ended", () =>
+    Effect.gen(function* () {
+      const paths = fresh("linux");
+      const spec = {
+        dataDir: "/data",
+        platform: "linux" as const,
+        paths,
+        program: ["/x", "local"],
+        env: { PATH: "/usr/bin" },
+      };
+
+      yield* startLocalService(spec, systemd(true, false), noSweep);
+      const [first] = readRunTokens(paths);
+      // The review's reproduction: the first run's host idled out, its descendants may live on,
+      // and a new start fails after it took its token. Their cleanup can't be verified here.
+      const failedStart = yield* startLocalService(spec, systemd(false, false), unverified).pipe(
+        Effect.flip,
+      );
+      expect(failedStart.message).toContain("systemctl --user start");
+      const both = readRunTokens(paths);
+      expect(both).toHaveLength(2);
+      expect(both[0]).toBe(first);
+      // The registry has them too, for a cleanup after the data folder moves.
+      const registered = keptHostInstances(dirname(paths.registryFile));
+      expect(registered[0]?.runTokens).toEqual(both);
+      // A start while the service runs never sweeps: its token is the live host's.
+      const swept: Array<string> = [];
+      yield* startLocalService(spec, systemd(true, true), (t) =>
+        Effect.sync(() => void swept.push(...t)),
+      );
+      expect(swept).toEqual([]);
+      expect(readRunTokens(paths)).toHaveLength(3);
+      // A stop that verifies them lets every one go.
+      const all = readRunTokens(paths);
+      swept.length = 0;
+      const stopped = systemd(true, false);
+      yield* stopLocalService("linux", paths, stopped, false, (t) =>
+        Effect.sync(() => void swept.push(...t)),
+      );
+      expect(swept).toEqual(all);
+      expect(readRunTokens(paths)).toEqual([]);
+    }),
+  );
+
+  it.effect(
+    "fails Stop while its control group still holds a process, whatever its environment",
+    () =>
+      Effect.gen(function* () {
+        const paths = fresh("linux");
+        // The review's reproduction: an `env -i`, `setsid` descendant carries no token, so no token
+        // sweep finds it; systemd's control group still holds it.
+        const runner = answering((_f, args) =>
+          args[1] === "is-active"
+            ? { code: 3, output: "inactive" }
+            : args[1] === "show"
+              ? {
+                  code: 0,
+                  output: "/user.slice/user-1000.slice/user@1000.service/app.slice/x.service",
+                }
+              : { code: 0, output: "" },
+        );
+        const left = yield* stopLocalService(
+          "linux",
+          paths,
+          runner,
+          true,
+          noSweep,
+          [],
+          () => "4321\n",
+        ).pipe(Effect.flip);
+        expect(left.message).toContain("control group");
+        expect(left.message).toContain("4321");
+        // An empty group, or none left, is a verified stop.
+        yield* stopLocalService("linux", paths, runner, true, noSweep, [], () => "");
+        yield* stopLocalService("linux", paths, runner, true, noSweep, [], () => undefined);
+      }),
   );
 });

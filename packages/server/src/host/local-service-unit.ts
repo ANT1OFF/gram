@@ -17,6 +17,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { createConnection, type Socket as NetSocket } from "node:net";
@@ -32,8 +33,8 @@ import * as Exit from "effect/Exit";
 import type * as Scope from "effect/Scope";
 import { KEPT_TERMINALS_ENV } from "../terminal/kept.ts";
 import { hostEntry } from "./child.ts";
-import { proveToHost } from "./local-handshake.ts";
-import { RUN_TOKEN_ENV, sweepRun } from "./run-sweep.ts";
+import { macFramed, proveToHost } from "./local-handshake.ts";
+import { RUN_TOKEN_ENV, sweepRun, systemScanner } from "./run-sweep.ts";
 import { connectHost, type HostConnection } from "./protocol.ts";
 import type { Run, ServiceRunner } from "./service.ts";
 
@@ -336,46 +337,70 @@ export interface LocalServiceSpec {
   readonly env: Readonly<Record<string, string>>;
 }
 
-/** Writes the service's files, replacing what an earlier release wrote, and starts it. */
-export const startLocalService = (spec: LocalServiceSpec, runner: ServiceRunner = run) =>
-  Effect.gen(function* () {
-    const { paths, platform } = spec;
-    mkdirSync(paths.folder, { recursive: true, mode: 0o700 });
-    writeFileSync(paths.launcher, LAUNCHER, { mode: 0o600 });
-    mkdirSync(dirname(paths.serviceFile), { recursive: true });
-    // A token of this start, which everything it starts inherits, so a stop finds it all.
-    const token = randomBytes(16).toString("hex");
-    writeFileSync(paths.runFile, `${token}\n`, { mode: 0o600 });
-    // Found again whatever happens to the data folder: moved, removed, or another Gram's.
-    recordInstance(paths, spec.dataDir, platform, token);
-    const env = { ...spec.env, [RUN_TOKEN_ENV]: token };
-    if (platform === "linux") {
-      writeFileSync(paths.envFile, systemdEnvFile(env), { mode: 0o600 });
-      writeFileSync(paths.serviceFile, localSystemdUnit(paths, spec.program, spec.dataDir), {
-        mode: 0o644,
+/** Ends the processes carrying any of `tokens`; fails on anything short of verified. */
+export type Sweep = (tokens: ReadonlyArray<string>) => Effect.Effect<unknown, Error>;
+
+/**
+ * Writes the service's files, replacing what an earlier release wrote, and starts it. Each start's
+ * run token is added to the outstanding ones, never put in place of them: an earlier run's
+ * processes are cleaned up, verified, before its token is let go, here (when the service isn't
+ * running, so they can only be leftovers) or by a stop. A start that fails after that keeps them.
+ */
+export const startLocalService = (
+  spec: LocalServiceSpec,
+  runner: ServiceRunner = run,
+  sweep: Sweep = (tokens) => sweepRun(tokens, systemScanner(spec.platform, spec.paths.name)),
+) =>
+  lifecycle(
+    spec.paths,
+    Effect.gen(function* () {
+      const { paths, platform } = spec;
+      mkdirSync(paths.folder, { recursive: true, mode: 0o700 });
+      writeFileSync(paths.launcher, LAUNCHER, { mode: 0o600 });
+      mkdirSync(dirname(paths.serviceFile), { recursive: true });
+      let outstanding = readRunTokens(paths);
+      if (outstanding.length > 0) {
+        const state = yield* serviceState(platform, paths, runner);
+        if (state === "stopped" || state === "absent") {
+          const cleaned = yield* sweep(outstanding).pipe(Effect.exit);
+          if (Exit.isSuccess(cleaned)) outstanding = [];
+        }
+      }
+      // A token of this start, which everything it starts inherits, so a stop finds it all.
+      const token = randomBytes(16).toString("hex");
+      outstanding = [...outstanding, token].slice(-RUNS_KEPT);
+      writeRunTokens(paths, outstanding);
+      // Found again whatever happens to the data folder: moved, removed, or another Gram's.
+      recordInstance(paths, spec.dataDir, platform, outstanding);
+      const env = { ...spec.env, [RUN_TOKEN_ENV]: token };
+      if (platform === "linux") {
+        writeFileSync(paths.envFile, systemdEnvFile(env), { mode: 0o600 });
+        writeFileSync(paths.serviceFile, localSystemdUnit(paths, spec.program, spec.dataDir), {
+          mode: 0o644,
+        });
+        yield* runner("systemctl", ["--user", "daemon-reload"]).pipe(
+          Effect.flatMap(must("systemctl --user daemon-reload")),
+        );
+        yield* runner("systemctl", ["--user", "start", paths.name]).pipe(
+          Effect.flatMap(must("systemctl --user start")),
+        );
+        return;
+      }
+      // Its environment is in the property list, so the file is this user's alone.
+      writeFileSync(paths.serviceFile, localLaunchdPlist(paths, spec.program, env), {
+        mode: 0o600,
       });
-      yield* runner("systemctl", ["--user", "daemon-reload"]).pipe(
-        Effect.flatMap(must("systemctl --user daemon-reload")),
+      // launchd keeps the definition it loaded, whatever the file says now: a job left loaded from
+      // an earlier start (another release, an older environment) would run as it was. It is booted
+      // out first, and only once launchd no longer has it is the new definition loaded.
+      yield* runner("launchctl", ["bootout", `${domain()}/${paths.name}`]);
+      yield* untilLaunchdForgets(paths, runner);
+      yield* bootstrapRetrying(paths, runner);
+      yield* runner("launchctl", ["kickstart", `${domain()}/${paths.name}`]).pipe(
+        Effect.flatMap(must("launchctl kickstart")),
       );
-      yield* runner("systemctl", ["--user", "start", paths.name]).pipe(
-        Effect.flatMap(must("systemctl --user start")),
-      );
-      return;
-    }
-    // Its environment is in the property list, so the file is this user's alone.
-    writeFileSync(paths.serviceFile, localLaunchdPlist(paths, spec.program, env), {
-      mode: 0o600,
-    });
-    // launchd keeps the definition it loaded, whatever the file says now: a job left loaded from
-    // an earlier start (another release, an older environment) would run as it was. It is booted
-    // out first, and only once launchd no longer has it is the new definition loaded.
-    yield* runner("launchctl", ["bootout", `${domain()}/${paths.name}`]);
-    yield* untilLaunchdForgets(paths, runner);
-    yield* bootstrapRetrying(paths, runner);
-    yield* runner("launchctl", ["kickstart", `${domain()}/${paths.name}`]).pipe(
-      Effect.flatMap(must("launchctl kickstart")),
-    );
-  });
+    }),
+  );
 
 /** Waits, up to ten seconds, until launchd has no job by the service's label. */
 const untilLaunchdForgets = (paths: LocalServicePaths, runner: ServiceRunner) =>
@@ -431,45 +456,122 @@ export const stopLocalService = (
   paths: LocalServicePaths,
   runner: ServiceRunner = run,
   forget = true,
-  sweep: (token: string) => Effect.Effect<{ readonly left: ReadonlyArray<number> }> = (token) =>
-    sweepRun(token, platform),
-  /** The run token, when its file in the data folder may be gone (`sweepAbandoned`). */
-  knownToken?: string,
+  sweep: Sweep = (tokens) => sweepRun(tokens, systemScanner(platform, paths.name)),
+  /** Run tokens the registry knows, when the data folder's own file may be gone. */
+  knownTokens: ReadonlyArray<string> = [],
+  cgroupProcs: (cgroup: string) => string | undefined = readCgroupProcs,
+) =>
+  lifecycle(
+    paths,
+    Effect.gen(function* () {
+      const stop =
+        platform === "linux"
+          ? yield* runner("systemctl", ["--user", "stop", paths.name])
+          : yield* runner("launchctl", ["bootout", `${domain()}/${paths.name}`]);
+      const state = yield* serviceState(platform, paths, runner);
+      if (state === "running" || state === "unknown")
+        return yield* Effect.fail(
+          new Error(
+            state === "running"
+              ? `The service is still running after the stop (${stop.code}: ${stop.output.slice(0, 300)}).`
+              : `The service manager can't say the service stopped (${stop.code}: ${stop.output.slice(0, 300)}); it may still be running.`,
+          ),
+        );
+      // On Linux the unit's control group holds everything it started, whatever it did to its
+      // environment, session or parent; systemd stopped all of it, and its group must now be empty.
+      if (platform === "linux") yield* verifyCgroupEmpty(paths, runner, cgroupProcs);
+      // What got away from the service's own stop where nothing holds it (on macOS, a pty shell's
+      // session): every outstanding run's processes, by token, each ending verified. A failure
+      // keeps the tokens and the records for another try.
+      const tokens = [...new Set([...readRunTokens(paths), ...knownTokens])];
+      if (tokens.length > 0) yield* sweep(tokens);
+      writeRunTokens(paths, []);
+      if (forget) {
+        rmSync(paths.serviceFile, { force: true });
+        forgetFiles(paths);
+        // Only now, the stop confirmed: until then the instance stays findable.
+        rmSync(paths.registryFile, { force: true });
+        if (platform === "linux") yield* runner("systemctl", ["--user", "daemon-reload"]);
+      }
+    }),
+  );
+
+/** The processes in a cgroup (v2), or undefined when it no longer exists. */
+const readCgroupProcs = (cgroup: string): string | undefined => {
+  try {
+    return readFileSync(join("/sys/fs/cgroup", cgroup, "cgroup.procs"), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+};
+
+/** Fails unless systemd says the unit has no control group left, or the group is empty. */
+const verifyCgroupEmpty = (
+  paths: LocalServicePaths,
+  runner: ServiceRunner,
+  cgroupProcs: (cgroup: string) => string | undefined,
 ) =>
   Effect.gen(function* () {
-    const stop =
-      platform === "linux"
-        ? yield* runner("systemctl", ["--user", "stop", paths.name])
-        : yield* runner("launchctl", ["bootout", `${domain()}/${paths.name}`]);
-    // What got away from the service's own stop: a pseudo-terminal's shell has a session of its
-    // own, which launchd doesn't end, and what it put in the background can outlive it.
-    const token = readRunToken(paths) ?? knownToken;
-    const swept = token === undefined ? { left: [] } : yield* sweep(token);
-    const state = yield* serviceState(platform, paths, runner);
-    if (state === "running" || state === "unknown")
+    const shown = yield* runner("systemctl", [
+      "--user",
+      "show",
+      "-p",
+      "ControlGroup",
+      "--value",
+      paths.name,
+    ]);
+    if (shown.code !== 0)
+      return yield* Effect.fail(
+        new Error(`systemd can't say what is left of the service (${shown.code}); try Stop again.`),
+      );
+    const cgroup = shown.output.trim();
+    if (cgroup === "") return;
+    const procs = yield* Effect.try({
+      try: () => cgroupProcs(cgroup),
+      catch: (error) => new Error(`Couldn't read the service's control group: ${String(error)}`),
+    });
+    const left = (procs ?? "").split("\n").filter((line) => line.trim() !== "");
+    if (left.length > 0)
       return yield* Effect.fail(
         new Error(
-          state === "running"
-            ? `The service is still running after the stop (${stop.code}: ${stop.output.slice(0, 300)}).`
-            : `The service manager can't say the service stopped (${stop.code}: ${stop.output.slice(0, 300)}); it may still be running.`,
+          `${left.length} ${left.length === 1 ? "process is" : "processes are"} still in the service's control group (${left.join(", ")}).`,
         ),
       );
-    if (swept.left.length > 0)
-      return yield* Effect.fail(
-        new Error(
-          `${swept.left.length} ${swept.left.length === 1 ? "process" : "processes"} it started couldn't be ended (${swept.left.join(", ")}).`,
-        ),
-      );
-    if (forget) {
-      rmSync(paths.serviceFile, { force: true });
-      forgetFiles(paths);
-      // Only now, the stop confirmed: until then the instance stays findable.
-      rmSync(paths.registryFile, { force: true });
-      if (platform === "linux") yield* runner("systemctl", ["--user", "daemon-reload"]);
-    }
   });
 
-/** One kept-running host as the user's registry has it. */
+/** How many runs' tokens are kept at most while their cleanup isn't verified. */
+const RUNS_KEPT = 64;
+
+/**
+ * Runs `effect` holding the instance's lifecycle lock (a folder made beside its files), so two
+ * starts or stops never interleave, here or in another Gram. A lock older than two minutes was
+ * left by a process that died holding it, and is taken over.
+ */
+const lifecycle = <A, E, R>(paths: LocalServicePaths, effect: Effect.Effect<A, E, R>) => {
+  const lock = join(dirname(paths.registryFile), `${paths.id}.lock`);
+  return Effect.acquireUseRelease(
+    Effect.gen(function* () {
+      mkdirSync(dirname(lock), { recursive: true, mode: 0o700 });
+      for (let i = 0; ; i++) {
+        try {
+          mkdirSync(lock, { mode: 0o700 });
+          return;
+        } catch {
+          try {
+            if (Date.now() - statSync(lock).mtimeMs > 120_000) rmSync(lock, { recursive: true });
+          } catch {
+            // Let go meanwhile.
+          }
+          if (i >= 150) return yield* Effect.die(new Error(`${lock} is held`));
+          yield* Effect.sleep("100 millis");
+        }
+      }
+    }),
+    () => effect,
+    () => Effect.sync(() => rmSync(lock, { recursive: true, force: true })),
+  );
+};
 export interface KeptHostInstance {
   readonly id: string;
   readonly platform: LocalServicePlatform;
@@ -477,8 +579,8 @@ export interface KeptHostInstance {
   readonly dataDir: string;
   readonly name: string;
   readonly serviceFile: string;
-  /** Its last start's run token, which a stop ends every process of. */
-  readonly runToken: string;
+  /** Its runs' tokens whose processes aren't yet verified ended, which a stop ends. */
+  readonly runTokens: ReadonlyArray<string>;
   readonly startedAt: string;
 }
 
@@ -486,7 +588,7 @@ const recordInstance = (
   paths: LocalServicePaths,
   dataDir: string,
   platform: LocalServicePlatform,
-  runToken: string,
+  runTokens: ReadonlyArray<string>,
 ) => {
   mkdirSync(dirname(paths.registryFile), { recursive: true, mode: 0o700 });
   const entry: KeptHostInstance = {
@@ -495,7 +597,7 @@ const recordInstance = (
     dataDir,
     name: paths.name,
     serviceFile: paths.serviceFile,
-    runToken,
+    runTokens,
     startedAt: new Date().toISOString(),
   };
   const temporary = `${paths.registryFile}.tmp`;
@@ -519,7 +621,7 @@ export const keptHostInstances = (registry: string): ReadonlyArray<KeptHostInsta
       if (
         typeof entry.dataDir === "string" &&
         typeof entry.name === "string" &&
-        typeof entry.runToken === "string" &&
+        Array.isArray(entry.runTokens) &&
         `${entry.id}.json` === name
       )
         found.push(entry);
@@ -547,7 +649,7 @@ export const sweepAbandoned = (
   runner: ServiceRunner = run,
   env: NodeJS.ProcessEnv = process.env,
   home = homedir(),
-  sweep?: (token: string) => Effect.Effect<{ readonly left: ReadonlyArray<number> }>,
+  sweep?: Sweep,
 ) =>
   Effect.gen(function* () {
     const stopped: Array<string> = [];
@@ -561,7 +663,7 @@ export const sweepAbandoned = (
         runner,
         true,
         sweep,
-        instance.runToken,
+        instance.runTokens,
       ).pipe(Effect.exit);
       if (Exit.isSuccess(outcome)) stopped.push(instance.name);
       else {
@@ -614,14 +716,23 @@ export const localServiceRunning = (
   runner: ServiceRunner = run,
 ) => Effect.map(serviceState(platform, paths, runner), (state) => state === "running");
 
-/** The run token the service's last start was given, if one was. */
-const readRunToken = (paths: LocalServicePaths): string | undefined => {
+/** The tokens of the service's runs whose processes aren't yet verified ended. */
+export const readRunTokens = (paths: LocalServicePaths): ReadonlyArray<string> => {
   try {
-    const token = readFileSync(paths.runFile, "utf8").trim();
-    return token === "" ? undefined : token;
+    return readFileSync(paths.runFile, "utf8")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
   } catch {
-    return undefined;
+    return [];
   }
+};
+
+const writeRunTokens = (paths: LocalServicePaths, tokens: ReadonlyArray<string>) => {
+  mkdirSync(dirname(paths.runFile), { recursive: true, mode: 0o700 });
+  const temporary = `${paths.runFile}.tmp`;
+  writeFileSync(temporary, tokens.map((token) => `${token}\n`).join(""), { mode: 0o600 });
+  renameSync(temporary, paths.runFile);
 };
 
 /** One connection to the socket, or the reason there is none. */
@@ -674,7 +785,7 @@ export const connectLocalService = (
       (socket) => Effect.sync(() => socket.destroy()),
     );
     // Before any of the protocol: each side proves it holds the install's secret.
-    yield* Effect.tryPromise({
+    const key = yield* Effect.tryPromise({
       try: () => proveToHost(raw, secret),
       catch: (error) =>
         new HostUnavailable({
@@ -692,6 +803,9 @@ export const connectLocalService = (
       ),
     );
     raw.on("error", () => {});
-    const socket = yield* NodeSocket.fromDuplex(Effect.succeed(raw));
+    // Every frame after the handshake carries this connection's MAC, both ways.
+    const framed = macFramed(raw, key, "app");
+    framed.on("error", () => framed.destroy());
+    const socket = yield* NodeSocket.fromDuplex(Effect.succeed(framed));
     return yield* connectHost(socket, { hostId: LOCAL_HOST_ID, gone: Deferred.await(ended) });
   });
