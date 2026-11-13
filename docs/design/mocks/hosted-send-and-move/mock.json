@@ -1,10 +1,10 @@
 {
   "title": "Send work to a hosted workspace, and move a workspace there",
   "slug": "hosted-send-and-move",
-  "status": "draft",
+  "status": "approved",
   "template": "flow",
   "current": 1,
-  "approved": null,
+  "approved": 1,
   "versions": [
     {
       "n": 1,
