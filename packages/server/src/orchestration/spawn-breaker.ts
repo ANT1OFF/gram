@@ -23,7 +23,12 @@ import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { HELD_RETRY_MS, heldWords } from "./limit-pause.ts";
 import type { OutboxState, StoredHeldBrief, StoredSpawnBreaker } from "./outbox.ts";
-import { admittedForRole, featureSlug, type RosterUnavailable } from "./rules.ts";
+import {
+  admittedForRole,
+  featureSlug,
+  type RosterCatalogue,
+  type RosterUnavailable,
+} from "./rules.ts";
 import type { Authority, HeldSpawn, SpawnWorkerInput } from "./service/shape.ts";
 
 /** Long enough to absorb a burst and allow a login/network repair, without hourly lockouts. */
@@ -70,6 +75,7 @@ export const makeBreakerState = () => {
 type Here = {
   readonly roster: ReadonlyArray<RosterModel>;
   readonly unavailable: RosterUnavailable;
+  readonly catalogue?: RosterCatalogue | undefined;
 };
 interface Dependencies {
   readonly store: ThreadStore["Service"];

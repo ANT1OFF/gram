@@ -7,6 +7,7 @@ import {
 } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
+import { effortSection, modelSection } from "./choice-sections";
 import { useModelFavourites } from "./model-favourites";
 import {
   accountModelWarning,
@@ -22,6 +23,7 @@ import {
   NOT_LISTED_BY_ACCOUNT,
   NOT_LISTED_BY_CODEX,
   NOT_LISTED_BY_GATEWAY,
+  pickerModelId,
   unlistedWarning,
 } from "./models";
 
@@ -106,9 +108,13 @@ describe("Claude account model warnings", () => {
       label: "claude-mythos-5-1",
       description: NOT_LISTED_BY_ACCOUNT,
     });
+    // The id an alias runs is that alias's row, not a row of its own.
     expect(
-      modelOptions(account, "claude-opus-5-5", undefined, NOT_LISTED_BY_ACCOUNT).at(-1),
-    ).toEqual({ value: "claude-opus-5-5", label: "claude-opus-5-5" });
+      modelOptions(account, "claude-opus-5-5", undefined, NOT_LISTED_BY_ACCOUNT).map(
+        (o) => o.value,
+      ),
+    ).toEqual(["default", "opus", "claude-fable-5-1[1m]"]);
+    expect(pickerModelId(account, "claude-opus-5-5")).toBe("opus");
   });
 
   it("never offers Mythos from the built-in fallback, and keeps gateway wording apart", () => {
@@ -260,5 +266,79 @@ describe("modelDisplayName", () => {
     expect(modelDisplayName(undefined, "claude", "opus")).toBe("Claude Opus");
     // An id nothing names stays as it is.
     expect(modelDisplayName(listed, "codex", "synthetic-codex")).toBe("synthetic-codex");
+  });
+});
+
+describe("a thread stored on a raw model id", () => {
+  // Synthetic Claude Code rows: `fable` reports no resolved id, so its name says what it runs.
+  const claude: AgentModel[] = [
+    {
+      id: "default",
+      displayName: "Default (recommended)",
+      supportsEffort: true,
+      efforts: ["low", "medium", "high"],
+      resolvedId: "claude-opus-5-5",
+      isDefault: true,
+    },
+    {
+      id: "opus",
+      displayName: "Opus 5.5",
+      supportsEffort: true,
+      efforts: ["low", "medium", "high"],
+      resolvedId: "claude-opus-5-5",
+    },
+    {
+      id: "fable",
+      displayName: "Fable 5.2",
+      description: "For your toughest challenges",
+      supportsEffort: true,
+      efforts: ["low", "medium", "high", "xhigh"],
+    },
+  ];
+  /** The model and effort sections as the composer builds them for a thread on `stored`. */
+  const sectionsFor = (stored: string) => {
+    const picked = pickerModelId(claude, stored);
+    const options = modelOptions(claude, picked, undefined, NOT_LISTED_BY_ACCOUNT, "Claude Code");
+    return {
+      options,
+      model: modelSection({ value: picked, options, onChange: () => {} }),
+      effort: effortSection({
+        efforts: effortOptions(claude, picked),
+        value: undefined,
+        onChange: () => {},
+      }),
+    };
+  };
+
+  it("shows its catalogue entry, checked, with that entry's efforts", () => {
+    const { options, model, effort } = sectionsFor("claude-fable-5-2");
+    expect(model.value).toBe("fable");
+    expect(model.named).toBe("Fable 5.2");
+    // No second row for the raw id: the catalogue's entry stands for it.
+    expect(options.map((o) => o.value)).toEqual(["default", "opus", "fable"]);
+    expect(effort.unavailable).toBeUndefined();
+    expect(effort.options?.map((o) => o.value)).toEqual([
+      "default",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+    expect(modelDisplayName(claude, "claude", "claude-fable-5-2")).toBe("Fable 5.2");
+    expect(accountModelWarning(claude, "claude-fable-5-2")).toBeUndefined();
+  });
+
+  it("shows an alias's pinned id as the alias, not the CLI's floating default", () => {
+    expect(sectionsFor("claude-opus-5-5").model.named).toBe("Opus 5.5");
+  });
+
+  it("keeps an id the catalogue doesn't run as its own row, as before", () => {
+    const { options, model, effort } = sectionsFor("claude-fable-5-1");
+    expect(model.value).toBe("claude-fable-5-1");
+    expect(options.at(-1)).toMatchObject({
+      value: "claude-fable-5-1",
+      description: NOT_LISTED_BY_ACCOUNT,
+    });
+    expect(effort.unavailable).toBeDefined();
   });
 });

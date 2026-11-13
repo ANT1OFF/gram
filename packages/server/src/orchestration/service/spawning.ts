@@ -4,6 +4,7 @@
 
 import type { makeSpawnBreaker } from "../spawn-breaker.ts";
 import {
+  listedRow,
   AppToolError,
   autonomyOf,
   briefFooterOf,
@@ -736,9 +737,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               : placedModels !== undefined
                 ? (hostListing(placedModels, chosen.model)?.efforts ?? [])
                 : yield* selectableModels(store, hosts, chosen.agent, chosen.profileId).pipe(
-                    Effect.map(
-                      (models) => models.find((m) => m.id === chosen.model)?.efforts ?? [],
-                    ),
+                    Effect.map((models) => listedRow(models, chosen.model)?.efforts ?? []),
                     Effect.orElseSucceed((): ReadonlyArray<ReasoningVariant> => []),
                   );
           const warnings: Array<string> = [];

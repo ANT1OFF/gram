@@ -3,6 +3,7 @@
 // on the target with no memory of the old one, marks the transcript and lets the queue go.
 
 import {
+  listedRow,
   aboveHigh,
   type AgentUnavailable,
   effectiveCheckout,
@@ -110,9 +111,7 @@ export const checkSwitchTarget = (
     const models = yield* selectableModels(store, hosts, target.agent, undefined).pipe(
       Effect.mapError((e) => new InvalidState({ message: e.message })),
     );
-    const selected = models.find(
-      (model) => model.id === target.model || model.resolvedId === target.model,
-    );
+    const selected = listedRow(models, target.model);
     if (selected === undefined)
       return yield* new InvalidState({
         message: `The installed ${name} CLI does not list ${target.model}. Select a listed model, or add that exact custom ID in Settings → Agents first. No model was substituted.`,

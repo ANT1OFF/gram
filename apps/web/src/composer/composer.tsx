@@ -94,6 +94,7 @@ import {
   effortOptions,
   gatewayModelWarning,
   modelOptions,
+  pickerModelId,
   unlistedWarning,
   useModels,
   useModelsSettled,
@@ -931,14 +932,16 @@ export function Composer({
     [threadId],
   );
   const provider = useProviderLabel(model?.agent ?? "claude", model?.profileId);
+  // A thread stored on a pinned id or a name shows as the catalogue row it runs, check and efforts.
+  const pickedModel = pickerModelId(models, model?.model);
   const modelChoices = modelOptions(
     models,
-    model?.model ?? summary?.identity?.model,
+    pickedModel ?? summary?.identity?.model,
     model && model.agent !== "claude" ? [] : undefined,
     unlistedWarning(model?.agent ?? "claude", model?.profileId),
     provider,
   );
-  const efforts = effortOptions(models, model?.model);
+  const efforts = effortOptions(models, pickedModel);
   // The model's own default heads the list, so the current effort always has its check.
   const effortChoices = efforts.length > 0 ? [DEFAULT_EFFORT_OPTION, ...efforts] : [];
   const modelWarning =
@@ -1112,7 +1115,7 @@ export function Composer({
   // section, saying why.
   const choices: ChoiceSection[] = [
     modelSection({
-      value: model?.model,
+      value: pickedModel,
       options: otherChoices.length === 0 ? modelChoices : [...modelChoices, ...otherChoices],
       onChange: onModel,
       warning: modelWarning,

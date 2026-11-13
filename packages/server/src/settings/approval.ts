@@ -1,10 +1,19 @@
 // What changes by chat share (docs/design/settings-by-chat.md): the user's card, raised by the
 // tool's own handler on every call, and the check of the models a change names.
 
-import { AppToolError, type ModelRef, type ThreadId } from "@gram/contracts";
+import {
+  AppToolError,
+  AgentKind,
+  canonicalModelId,
+  listedRow,
+  type ModelRef,
+  type SettingsChange,
+  type ThreadId,
+} from "@gram/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { AgentHosts } from "../runtime/agent-hosts.ts";
 import { selectableModels } from "../runtime/model-efforts.ts";
@@ -106,9 +115,7 @@ export const checkModels = (
         );
         continue;
       }
-      const found = listed.choices.find(
-        (option) => option.id === model.model || option.resolvedId === model.model,
-      );
+      const found = listedRow(listed.choices, model.model);
       if (found === undefined) {
         return yield* fail(
           tool,
@@ -130,4 +137,65 @@ export const checkModels = (
       }
     }
     return notes;
+  });
+
+/** The list keys whose items are worker models, which `canonicalRosterChanges` names as stored. */
+const ROSTER_KEYS: ReadonlySet<string> = new Set(["workspace.workerModels", "agents.workerModels"]);
+
+/**
+ * `changes` with each worker model they add or set named as the picker would store it
+ * (`canonicalModelId`): `claude:fable` or `claude:Fable 5.2` as the catalogue's `fable`, and a
+ * pinned id such as `claude-fable-5-2` kept pinned, so it doesn't move when the alias does. Only
+ * entries on the agent's own login, whose catalogue is its own list; a gateway entry, one that
+ * follows a tier, or one whose agent can't list its models just now is left as named, and
+ * `checkModels` says what it finds of it.
+ */
+export const canonicalRosterChanges = (
+  store: Pick<ThreadStore["Service"], "listProfiles" | "getSettings">,
+  hosts: AgentHosts["Service"] | undefined,
+  changes: ReadonlyArray<SettingsChange>,
+) =>
+  Effect.gen(function* () {
+    if (hosts === undefined) return changes;
+    const lists = new Map<string, ReadonlyArray<{ id: string; displayName: string }> | undefined>();
+    const canonical = (item: unknown) =>
+      Effect.gen(function* () {
+        if (typeof item !== "object" || item === null || Array.isArray(item)) return item;
+        const record = item as Record<string, unknown>;
+        const { agent, model } = record;
+        if (
+          typeof agent !== "string" ||
+          typeof model !== "string" ||
+          record["profileId"] !== undefined ||
+          record["tier"] !== undefined ||
+          !Schema.is(AgentKind)(agent)
+        ) {
+          return item;
+        }
+        if (!lists.has(agent)) {
+          lists.set(
+            agent,
+            yield* selectableModels(store, hosts, agent, undefined).pipe(
+              Effect.orElseSucceed(() => undefined),
+            ),
+          );
+        }
+        const id = canonicalModelId(lists.get(agent), model);
+        return id === undefined || id === model ? item : { ...record, model: id };
+      });
+    const out: Array<SettingsChange> = [];
+    for (const change of changes) {
+      if (!ROSTER_KEYS.has(change.key)) {
+        out.push(change);
+      } else if (change.op === "add" || change.op === "update") {
+        out.push({ ...change, item: (yield* canonical(change.item)) as Record<string, unknown> });
+      } else if (change.op === "set" && Array.isArray(change.value)) {
+        const value: Array<unknown> = [];
+        for (const each of change.value) value.push(yield* canonical(each));
+        out.push({ ...change, value });
+      } else {
+        out.push(change);
+      }
+    }
+    return out;
   });

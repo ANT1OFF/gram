@@ -71,6 +71,9 @@ import {
   interfaceHash,
   markRepeatedInterfaces,
   matchWorkerModel,
+  closestWorkerModel,
+  rosterNames,
+  type RosterCatalogue,
   mcpListsFor,
   quietWorkers,
   rosterLine,
@@ -2951,6 +2954,88 @@ describe("worker models", () => {
       /this harness can't run as a worker/,
     );
     expect(workerModelUnavailable({ model: opus, ...context })).toBeUndefined();
+  });
+
+  describe("through the agent's model catalogue", () => {
+    // Synthetic Claude Code rows: an alias that reports what it runs, and one whose name says it.
+    const catalogue: RosterCatalogue = new Map([
+      [
+        "claude",
+        [
+          { id: "opus", displayName: "Opus 5.5", resolvedId: "claude-opus-5-5" },
+          { id: "fable", displayName: "Fable 5.2" },
+          { id: "haiku", displayName: "Haiku 5.5", resolvedId: "claude-haiku-5-5" },
+        ],
+      ],
+    ]);
+    const pinnedFable: ModelRef = { agent: "claude", model: "claude-fable-5-2" };
+    const haiku: ModelRef = { agent: "claude", model: "haiku" };
+    const sol = { agent: "codex", model: "gpt-6.1-sol" } as ModelRef;
+    const roster = [opus, haiku, sol, pinnedFable];
+
+    it.each(["claude:fable", "fable", "claude:Fable 5.2", "fable 5.2", "claude:claude-fable-5-2"])(
+      "names a pinned entry by %s while the alias runs it",
+      (named) => {
+        expect(matchWorkerModel(roster, named, opus, new Map(), catalogue)).toEqual(
+          pinnedMatch(pinnedFable),
+        );
+      },
+    );
+
+    it("names an alias entry by the pinned id it runs, or its display name", () => {
+      expect(
+        matchWorkerModel(roster, "claude:claude-haiku-5-5", opus, new Map(), catalogue),
+      ).toEqual(pinnedMatch(haiku));
+      expect(matchWorkerModel(roster, "Opus 5.5", opus, new Map(), catalogue)).toEqual(
+        pinnedMatch(opus),
+      );
+    });
+
+    it("stops matching a pinned entry once the alias moves on", () => {
+      const moved: RosterCatalogue = new Map([
+        ["claude", [{ id: "fable", displayName: "Fable 5.3" }]],
+      ]);
+      expect(matchWorkerModel(roster, "claude:fable", opus, new Map(), moved)).toEqual({
+        ok: false,
+        why: "unknown",
+      });
+    });
+
+    it("keeps an exact name first, and without a catalogue matches as before", () => {
+      const both = [pinnedFable, { agent: "claude", model: "fable" } as ModelRef];
+      expect(matchWorkerModel(both, "claude:fable", opus, new Map(), catalogue)).toEqual(
+        pinnedMatch(both[1]!),
+      );
+      expect(matchWorkerModel(roster, "claude:fable", opus)).toEqual({ ok: false, why: "unknown" });
+      // Another agent's prefix never reaches into Claude's catalogue.
+      expect(matchWorkerModel(roster, "codex:fable", opus, new Map(), catalogue)).toEqual({
+        ok: false,
+        why: "unknown",
+      });
+    });
+
+    it("lists entries with the picker's names, and suggests the one meant", () => {
+      expect(rosterNames(roster, catalogue)).toBe(
+        "claude:opus (Opus 5.5), claude:haiku (Haiku 5.5), codex:gpt-6.1-sol, claude:claude-fable-5-2 (Fable 5.2)",
+      );
+      expect(rosterNames(roster)).toBe(
+        "claude:opus, claude:haiku, codex:gpt-6.1-sol, claude:claude-fable-5-2",
+      );
+      expect(closestWorkerModel(roster, "claude:fabel", catalogue)).toBe("claude:claude-fable-5-2");
+      expect(closestWorkerModel(roster, "codex:gpt-6-sol", catalogue)).toBe("codex:gpt-6.1-sol");
+      expect(closestWorkerModel(roster, "mistral-large", catalogue)).toBeUndefined();
+    });
+
+    it("gives list_workers and the roster lines the picker's names", () => {
+      const entries = rosterOf(roster, new Map(), catalogue);
+      expect(entries.map((entry) => entry.displayName)).toEqual([
+        "Opus 5.5",
+        "Haiku 5.5",
+        undefined,
+        "Fable 5.2",
+      ]);
+      expect(rosterLine(entries[3]!)).toBe("claude:claude-fable-5-2 (Fable 5.2)");
+    });
   });
 
   it("refuses a bare id two entries share, and one outside the list", () => {
