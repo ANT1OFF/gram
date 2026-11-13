@@ -1466,6 +1466,56 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     return simulateBackgroundOutput(this.#scenes, threadId, output);
   }
 
+  /**
+   * Dev, e2e and embedding hook: a thread at a chosen id, with a plain-text conversation so far.
+   * It sits idle in the first project's own checkout; one already there by that id is left as is.
+   */
+  simulateThread(seed: {
+    readonly id: string;
+    readonly title: string;
+    readonly messages?: readonly { readonly role: "user" | "assistant"; readonly text: string }[];
+  }) {
+    const id = seed.id as ThreadId;
+    if (this.#threads.has(id)) return;
+    const project = this.#projects[0];
+    if (project === undefined) return;
+    const at = Date.now();
+    const thread: Thread = {
+      id,
+      projectId: project.id,
+      title: seed.title,
+      userNamed: true,
+      model: { agent: "claude", model: "opus" },
+      mode: "default",
+      checkout: { kind: "main", path: project.root, branch: "main", base: "main" },
+      labels: [],
+      pinned: false,
+      parked: false,
+      unread: false,
+      createdAt: at,
+      lastActivityAt: at,
+    };
+    const runtime = this.#add({
+      thread,
+      status: "idle",
+      pendingRequests: [],
+      queue: [],
+      capabilities: MOCK_CAPABILITIES,
+    });
+    runtime.fold.apply({
+      type: "messages",
+      messages: (seed.messages ?? []).map((message, index): GramUIMessage => ({
+        id: `${seed.id}-m${index}`,
+        role: message.role,
+        metadata: { createdAt: at },
+        parts: [{ type: "text", text: message.text }],
+      })),
+    });
+    runtime.fold.apply({ type: "caughtUp", rev: this.#rev });
+    this.#emit({ type: "thread.upsert", thread });
+    this.#emit({ type: "thread.status", threadId: id, status: "idle" });
+  }
+
   /** `simulateMessage` (`mock-thread-sims.ts`). */
   simulateMessage(threadId: ThreadId, message: GramUIMessage) {
     return simulateMessage(this.#scenes, threadId, message);

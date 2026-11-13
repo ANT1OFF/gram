@@ -272,6 +272,17 @@ function Changes({ params }: ShellPageProps) {
 
 mountGram({
   element,
+  // A conversation of the page's own, at an id the page chose.
+  mockThreads: [
+    {
+      id: "page-notes",
+      title: "Notes from the page",
+      messages: [
+        { role: "user", text: "What did the nightly sweep close?" },
+        { role: "assistant", text: "Three stale issues, all older than ninety days." },
+      ],
+    },
+  ],
   server: new URLSearchParams(location.search).has("session-test")
     ? {
         base: "/cell/",

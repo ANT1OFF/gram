@@ -74,6 +74,11 @@ others.
 hosted features on and sample threads in it. It needs no server at all, which makes it the way to
 build and test the pages around Gram.
 
+`mockThreads` gives that server threads of your own beside its own, each at an id you choose with a
+title and a plain-text conversation so far: `{ id, title, messages: [{ role, text }] }`. A page of
+yours that shows one of your threads then has something to show in a preview. It is ignored with a
+real server.
+
 The answer is a handle: `shell` says `"on"` or `"off"` (whether the server took your additions),
 `update` replaces what it names of the navigation, the switcher, `threads`, `panel`, `threadsPage`, `newEntry` and `document` and keeps the rest
 (`update({ navigation })` changes counts and keeps the switcher; a key given as `undefined` takes
@@ -137,6 +142,8 @@ names that choice in the New form, in place of "Chat", and a solo thread's heade
 Chat of its own has one word for a thread run by one agent. `threadsPage.newForm` narrows and words
 the New form's Who does it: `task: "hidden"` leaves out the choice of one worker straight away, and
 `team` and `solo` each take a `label`, a `line` under it and the button's `start` words.
+`threadsPage.elsewhere` is a list of thread ids the page leaves out: threads your app lists in a
+place of its own, such as its own assistant's conversations. Each still opens at its address.
 `threadsPage.bar: "path"` starts the title bar of a thread, a Board and the New form as a path from
 the page of every thread, with a workspace's orchestrator and Board as two buttons beside it, in
 place of the workspace switcher and Chat · Board. `newEntry: { label: "New agent", to:
