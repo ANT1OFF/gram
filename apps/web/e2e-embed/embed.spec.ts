@@ -724,6 +724,99 @@ test("the sidebar can be drawn roomy, with the app's head and account", async ({
   expect(errors).toEqual([]);
 });
 
+test("a collapsible group starts closed, keeps its place in view, and stays as it was left", async ({
+  page,
+}) => {
+  const errors = await mounted(page);
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      navigation: [
+        {
+          id: "manage",
+          label: "Manage",
+          placement: "main",
+          collapsible: true,
+          collapsed: true,
+          items: [
+            { id: "agents", label: "Agents", to: "/govern/agents/a-1", count: 2 },
+            { id: "policies", label: "Policies", to: "/govern/policies" },
+          ],
+        },
+      ],
+    });
+  });
+  const main = page.getByTestId("embed-navigation-main");
+  const toggle = main.getByTestId("embed-navigation-toggle");
+  // Closed: the heading is a button, says it is closed, and counts what it hides.
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(main.getByRole("heading", { name: /Manage/ })).toBeVisible();
+  await expect(main.getByTestId("embed-navigation-item")).toHaveCount(0);
+  await expect(toggle.getByTestId("embed-navigation-hidden-count")).toHaveText("2");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(main.getByTestId("embed-navigation-item")).toHaveCount(2);
+  await expect(toggle.getByTestId("embed-navigation-hidden-count")).toHaveCount(0);
+  // Closed again, the row the window is at stays, and the count leaves its own out.
+  await main.getByRole("link", { name: /Policies/ }).click();
+  await toggle.click();
+  await expect(main.getByTestId("embed-navigation-item")).toHaveCount(1);
+  await expect(main.getByRole("link", { name: /Policies/ })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  // The person's choice outlives a reload; the compact strip lists every row either way.
+  await toggle.click();
+  await page.reload();
+  await expect(page.getByTestId("app-shell")).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      navigation: [
+        {
+          id: "manage",
+          label: "Manage",
+          placement: "main",
+          collapsible: true,
+          collapsed: true,
+          items: [{ id: "agents", label: "Agents", to: "/govern/agents/a-1" }],
+        },
+      ],
+    });
+  });
+  await expect(main.getByTestId("embed-navigation-toggle")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(errors).toEqual([]);
+});
+
+test("with the peek off, a resting pointer leaves the strip alone and its Expand tile opens it", async ({
+  page,
+}) => {
+  const errors = await mounted(page);
+  await page.evaluate(() => {
+    const own = window as unknown as Update & { fixtureSidebar: object };
+    own.embed.update({ sidebar: { ...own.fixtureSidebar, peek: false } });
+  });
+  await page.getByTestId("overview-sidebar").getByTestId("overview-compact").click();
+  const rail = page.getByTestId("overview-rail");
+  await expect(rail).toBeVisible();
+  await rail.hover({ position: { x: 20, y: 400 } });
+  // Longer than the strip waits before it opens under a resting pointer.
+  await page.waitForTimeout(800);
+  await expect(page.getByTestId("overview-rail-overlay")).toHaveCount(0);
+  await rail.getByTestId("overview-expand").click();
+  await expect(rail).toHaveCount(0);
+  await expect(page.getByTestId("overview-sidebar")).toBeVisible();
+  // With the peek on (the default), the strip has no Expand tile.
+  await page.evaluate(() => {
+    const own = window as unknown as Update & { fixtureSidebar: object };
+    own.embed.update({ sidebar: own.fixtureSidebar });
+  });
+  await page.getByTestId("overview-sidebar").getByTestId("overview-compact").click();
+  await expect(page.getByTestId("overview-rail").getByTestId("overview-expand")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 test("an address with no page says so in the shell, with the way home", async ({ page }) => {
   const errors = await mounted(page, "/govern/nowhere");
   const notFound = page.getByTestId("not-found");

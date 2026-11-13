@@ -227,6 +227,42 @@ export const navigationAt = (
 ): readonly ShellNavigationGroup[] =>
   shownNavigation(groups).filter((group) => (group.placement ?? "foot") === placement);
 
+/** Whether a group's heading opens and closes its rows: asked for, and with a heading to do it. */
+export const foldable = (group: ShellNavigationGroup): boolean =>
+  group.collapsible === true && group.label !== undefined && group.label.trim() !== "";
+
+/**
+ * Whether a group's rows are open: always, unless it folds; then as the person last left it, or
+ * as the embedding app starts it.
+ */
+export const groupOpen = (group: ShellNavigationGroup, kept: boolean | undefined): boolean =>
+  !foldable(group) || (kept ?? group.collapsed !== true);
+
+/**
+ * The rows a group shows: all of them while open; closed, only the row the window is at, so the
+ * place stays in sight.
+ */
+export const shownRows = (
+  group: ShellNavigationGroup,
+  open: boolean,
+  at: string | undefined,
+): readonly ShellNavigationItem[] =>
+  open ? group.items : group.items.filter((item) => item.to === at);
+
+/** What a closed group's heading counts: the sum of its hidden rows' counts, or nothing. */
+export const hiddenCount = (
+  group: ShellNavigationGroup,
+  open: boolean,
+  at: string | undefined,
+): number | undefined =>
+  open
+    ? undefined
+    : shownCount(
+        group.items
+          .filter((item) => item.to !== at)
+          .reduce((sum, item) => sum + (shownCount(item.count) ?? 0), 0),
+      );
+
 /** A row's count as drawn: a whole number above 0, or nothing. */
 export const shownCount = (count: number | undefined): number | undefined =>
   count !== undefined && Number.isFinite(count) && count >= 1 ? Math.floor(count) : undefined;

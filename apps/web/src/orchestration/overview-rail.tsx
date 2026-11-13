@@ -5,7 +5,7 @@ import {
   type WorkspaceState,
 } from "@gram/contracts";
 import { useRouterState } from "@tanstack/react-router";
-import { History, Inbox, MessageSquare, PanelLeftClose, Search } from "lucide-react";
+import { History, Inbox, MessageSquare, PanelLeft, PanelLeftClose, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -109,10 +109,14 @@ function Tile({
  * work) and the solo threads' glyph, with History and Settings at its foot. Mounted by an app in
  * front of Gram, it has that app's switcher and places instead of the workspaces. Resting the
  * pointer on it, or moving focus into it, slides the open sidebar over the page beside it; leaving
- * both, Escape, or going somewhere closes it, and its header's pin keeps it open.
+ * both, Escape, or going somewhere closes it, and its header's pin keeps it open. An embedding app
+ * that turns the peek off (`sidebar.peek: false`) gets an Expand sidebar tile at the strip's head
+ * instead, and a resting pointer opens nothing.
  */
 export function OverviewRail() {
   const hosted = useEmbedShell((s) => s.hosted);
+  // An embedding app may turn the peek off: the strip then opens only from its Expand tile.
+  const peek = useEmbedShell((s) => s.sidebar.peek !== false);
   const threadsListed = useThreadsListed();
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -198,7 +202,7 @@ export function OverviewRail() {
         data-open={open || undefined}
         {...{ [OVERVIEW_ROOT]: "compact" }}
         onPointerEnter={() => {
-          if (!open) later(true, OPEN_AFTER_MS);
+          if (!open && peek) later(true, OPEN_AFTER_MS);
         }}
         // A click on a tile goes somewhere itself: the sidebar a resting pointer was about to open
         // would only cover where it went.
@@ -216,7 +220,7 @@ export function OverviewRail() {
         )}
       >
         {hosted ? (
-          <HostedHead />
+          <HostedHead expand={!peek} />
         ) : (
           <>
             <TitleRow />
@@ -298,13 +302,24 @@ function OwnHead() {
 }
 
 /** The embedding app's switcher, Needs you while anything waits, and Search. */
-function HostedHead() {
+function HostedHead({ expand }: { expand: boolean }) {
   const own = useNeedsYouPill();
   // The embedding app's own count of what needs someone, where it gives one.
   const host = useHostAttention();
   const count = host?.count ?? own.count;
   return (
     <div className="flex shrink-0 flex-col items-center gap-px">
+      {/* With the peek off, the way back to the open sidebar, at the strip's head. */}
+      {expand && (
+        <Tile
+          label="Expand sidebar"
+          testId="overview-expand"
+          className="mb-1"
+          onClick={() => switchOverview("open")}
+        >
+          <PanelLeft aria-hidden className="size-icon-row" />
+        </Tile>
+      )}
       <EmbedSwitcher placement="rail" className="mb-2" />
       {/* An embedding app with nothing waiting has no tile: its own row for it is in its places. */}
       {(host === undefined || count > 0) && (

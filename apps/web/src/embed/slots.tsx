@@ -1,5 +1,6 @@
 import { Link, useMatches, useParams, useRouterState } from "@tanstack/react-router";
-import { createElement, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
+import { createElement, useEffect, useId, useMemo, useRef, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
@@ -7,13 +8,21 @@ import { OVERVIEW_STOP } from "@/shell/focus-regions";
 
 import { Glide } from "./glide";
 import { useStripOpen } from "./strip-open";
-import type { ShellNavigationItem, ShellNavigationPlacement, ShellPlacement } from "./contract";
+import type {
+  ShellNavigationGroup,
+  ShellNavigationItem,
+  ShellNavigationPlacement,
+  ShellPlacement,
+} from "./contract";
+import { useGroupFold } from "./folded";
 import {
   itemName,
   currentDestination,
+  hiddenCount,
   navigationAt,
   shownCount,
   shownNavigation,
+  shownRows,
   useEmbedShell,
   useRoomySidebar,
   useThreadsTitle,
@@ -219,54 +228,106 @@ export function EmbedNavigation({ placement = "foot" }: { placement?: ShellNavig
       {/* The current row's fill, the hover's shape and a step stronger, gliding from row to row. */}
       <Glide />
       {groups.map((group) => (
-        <section
-          key={group.id}
-          {...(group.label === undefined ? {} : { "aria-label": group.label })}
-          data-testid="embed-navigation-group"
-        >
-          {group.label !== undefined &&
-            (roomy ? (
-              // Small capitals, letter-spaced, with air above: a quiet label for what follows.
-              <h2
-                data-testid="embed-navigation-heading"
-                className="flex h-5 items-end px-2 pt-3 pb-1 text-caption font-medium tracking-[0.08em] text-muted-foreground uppercase box-content"
-              >
-                {group.label}
-              </h2>
-            ) : (
-              <h2 className="flex h-6 items-center px-1.5 text-meta text-muted-foreground">
-                {group.label}
-              </h2>
-            ))}
-          <ul className="flex flex-col gap-px">
-            {group.items.map((item) => {
-              const current = item.to === at;
-              return (
-                <li key={item.id}>
-                  <Link
-                    {...linkTo(item.to)}
-                    {...{ [OVERVIEW_STOP]: "" }}
-                    data-testid="embed-navigation-item"
-                    aria-current={current ? "page" : undefined}
-                    className={roomy ? ROOMY_ROW : NAV_ROW}
-                  >
-                    {roomy ? (
-                      <RoomyTile>
-                        <ItemIcon item={item} className="shrink-0" />
-                      </RoomyTile>
-                    ) : (
-                      <ItemIcon item={item} className="size-icon-row shrink-0" />
-                    )}
-                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                    <Count count={item.count} />
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+        <EmbedGroup key={group.id} group={group} roomy={roomy} at={at} />
       ))}
     </nav>
+  );
+}
+
+/**
+ * One navigation group in the open sidebar: its heading, when it has one, and its rows. A
+ * collapsible group's heading is a button that opens and closes it; closed, it keeps the row the
+ * window is at, and the heading counts what it hides.
+ */
+function EmbedGroup({
+  group,
+  roomy,
+  at,
+}: {
+  group: ShellNavigationGroup;
+  roomy: boolean;
+  at: string | undefined;
+}) {
+  const fold = useGroupFold(group);
+  const rows = useId();
+  const items = shownRows(group, fold.open, at);
+  const hidden = hiddenCount(group, fold.open, at);
+  const heading = roomy
+    ? // Small capitals, letter-spaced, with air above: a quiet label for what follows.
+      "flex h-5 items-end px-2 pt-3 pb-1 text-caption font-medium tracking-[0.08em] text-muted-foreground uppercase box-content"
+    : "flex h-6 items-center px-1.5 text-meta text-muted-foreground";
+  return (
+    <section
+      {...(group.label === undefined ? {} : { "aria-label": group.label })}
+      data-testid="embed-navigation-group"
+      data-open={fold.foldable ? String(fold.open) : undefined}
+    >
+      {group.label !== undefined &&
+        (fold.foldable ? (
+          <h2 data-testid="embed-navigation-heading" className={roomy ? "pt-3" : undefined}>
+            <button
+              type="button"
+              {...{ [OVERVIEW_STOP]: "" }}
+              data-testid="embed-navigation-toggle"
+              aria-expanded={fold.open}
+              aria-controls={rows}
+              onClick={fold.toggle}
+              className={cn(
+                heading,
+                roomy && "pt-0",
+                "w-full gap-1 rounded-(--radius-sm) text-left outline-none transition-colors duration-(--dur-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+              )}
+            >
+              <span className="min-w-0 flex-1 truncate">{group.label}</span>
+              {hidden !== undefined && (
+                <span
+                  data-testid="embed-navigation-hidden-count"
+                  className="shrink-0 tracking-normal normal-case tabular-nums"
+                >
+                  {hidden}
+                </span>
+              )}
+              <ChevronDown
+                aria-hidden
+                className={cn(
+                  "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
+                  !fold.open && "-rotate-90",
+                )}
+              />
+            </button>
+          </h2>
+        ) : (
+          <h2 {...(roomy ? { "data-testid": "embed-navigation-heading" } : {})} className={heading}>
+            {group.label}
+          </h2>
+        ))}
+      <ul id={rows} className="flex flex-col gap-px">
+        {items.map((item) => {
+          const current = item.to === at;
+          return (
+            <li key={item.id}>
+              <Link
+                {...linkTo(item.to)}
+                {...{ [OVERVIEW_STOP]: "" }}
+                data-testid="embed-navigation-item"
+                aria-current={current ? "page" : undefined}
+                className={roomy ? ROOMY_ROW : NAV_ROW}
+              >
+                {roomy ? (
+                  <RoomyTile>
+                    <ItemIcon item={item} className="shrink-0" />
+                  </RoomyTile>
+                ) : (
+                  <ItemIcon item={item} className="size-icon-row shrink-0" />
+                )}
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                <Count count={item.count} />
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
