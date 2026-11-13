@@ -384,6 +384,25 @@ describe.skipIf(!hasGit)("local git state", () => {
     }).pipe(provide),
   );
 
+  it.live("reads the commit and branch of a born, a detached and an unborn HEAD", () =>
+    Effect.gen(function* () {
+      const repo = makeRepo(tmp());
+      const oid = run(repo, "rev-parse", "HEAD").trim();
+      const born = yield* localGitState(repo);
+      expect(born.head).toBe(oid);
+      expect(born.branch).toBe(run(repo, "rev-parse", "--abbrev-ref", "HEAD").trim());
+      run(repo, "checkout", "-q", "--detach", "HEAD");
+      const detached = yield* localGitState(repo);
+      expect(detached.head).toBe(oid);
+      expect(detached.branch).toBeUndefined();
+      run(repo, "checkout", "-q", "--orphan", "empty");
+      const unborn = yield* localGitState(repo);
+      expect(unborn.repo).toBe(true);
+      expect(unborn.head).toBe("");
+      expect(unborn.branch).toBeUndefined();
+    }).pipe(provide),
+  );
+
   it.live("says whether a remote-tracking ref holds HEAD", () =>
     Effect.gen(function* () {
       const repo = makeRepo(tmp());

@@ -34,20 +34,24 @@ export const isLinkedWorktree = (gitDir: string): boolean =>
  */
 export const localGitState = (cwd: string): Effect.Effect<GitState, ProcError, Proc> =>
   Effect.gen(function* () {
-    // `--abbrev-ref HEAD` prints "HEAD" and exits non-zero on a detached/unborn HEAD, but it is last,
-    // so the earlier lines are positionally stable.
+    // One spawn for the checkout, its git dir, the commit and the branch. An unborn HEAD stops at
+    // the commit (git echoes "HEAD" and exits non-zero) and a detached one prints "HEAD" for the
+    // branch, so the commit is whichever third line is an object id and the branch follows it.
     const info = yield* git(cwd, [
       "rev-parse",
       "--show-toplevel",
       "--absolute-git-dir",
+      "HEAD",
       "--abbrev-ref",
       "HEAD",
     ]);
-    const [topLine, gitDirLine, branchLine] = info.stdout.split("\n").map((line) => line.trim());
+    const [topLine, gitDirLine, oidLine, branchLine] = info.stdout
+      .split("\n")
+      .map((line) => line.trim());
     if (!topLine) return notARepoState;
     const top = topLine;
-    const head = yield* git(top, ["rev-parse", "HEAD"]);
-    const headOid = head.status === 0 ? head.stdout.trim() : "";
+    const born = oidLine !== undefined && /^[0-9a-f]{40,64}$/.test(oidLine);
+    const headOid = born ? oidLine : "";
     const status = (yield* git(top, ["-c", "core.quotepath=false", "status", "--porcelain"]))
       .stdout;
     // Staging another hunk of an already-staged file leaves the porcelain and the working tree as
@@ -59,7 +63,7 @@ export const localGitState = (cwd: string): Effect.Effect<GitState, ProcError, P
       ? (yield* git(top, ["diff", "--cached", "--raw", "--no-abbrev", "--no-renames"])).stdout
       : "";
     const branch =
-      branchLine === undefined || branchLine === "" || branchLine === "HEAD"
+      !born || branchLine === undefined || branchLine === "" || branchLine === "HEAD"
         ? undefined
         : branchLine;
     return {

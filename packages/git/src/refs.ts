@@ -15,7 +15,8 @@ export const DEFAULT_BASES = ["master", "main"] as const;
 
 /**
  * The repo's default remote-tracking branch. `fetch: true` refreshes `origin/master` then
- * `origin/main` (network tier) and deliberately ignores `origin/HEAD`; `fetch: false` prefers
+ * `origin/main` (network tier; main first where no `origin/master` is known here) and
+ * deliberately ignores `origin/HEAD`; `fetch: false` prefers
  * `origin/HEAD`, so a develop-default repo isn't measured against a lingering master. Both fall back
  * to whichever of master/main exists locally.
  */
@@ -25,7 +26,14 @@ export const baseRef = (
 ): Effect.Effect<string | undefined, never, Proc> =>
   Effect.gen(function* () {
     if (fetch) {
-      for (const branch of DEFAULT_BASES) {
+      // The preference stays master, then main. A repository that has never seen `origin/master`
+      // almost never grew one since, and asking the remote for a branch it does not have costs a
+      // whole connection to it before the fetch that works, so there main is asked for first.
+      const [first, ...rest] = DEFAULT_BASES;
+      const order = (yield* branchExists(cwd, `origin/${first}`))
+        ? DEFAULT_BASES
+        : [...rest, first];
+      for (const branch of order) {
         // A new worktree fetches its base with nobody at the keyboard: an orchestrator spawns
         // workers unattended, and with expired credentials Git for Windows would otherwise raise
         // the credential manager's window and hold the fetch until the network tier kills it.
