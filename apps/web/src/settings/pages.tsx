@@ -11,10 +11,7 @@ import {
   Sun,
   type LucideIcon,
 } from "lucide-react";
-import type { ComponentType } from "react";
-
-import { AgentChecks } from "@/launch-checks/tool-checks";
-import { useServerSettings } from "@/settings-sync/store";
+import { lazy, type ComponentType } from "react";
 
 import {
   AiHelpersSummary,
@@ -23,11 +20,6 @@ import {
   RoutinesSummary,
   TerminalSummary,
 } from "./subpages";
-import { AiHelpersSection } from "./ai-helpers-section";
-import { AgentsSection } from "./agents-section";
-import { YourBrowserSection } from "./browser-section";
-import { AppearanceSearch } from "./appearance-section";
-import { CustomModelsSection } from "./custom-models-section";
 import {
   AGENTS_DEFAULTS,
   AI_HELPERS_DEFAULTS,
@@ -37,25 +29,8 @@ import {
   TERMINAL_DEFAULTS,
   type DefaultSetting,
 } from "./defaults";
-import { DiagnosticsSection, InstallInfo } from "./diagnostics-section";
-import { EditorSection } from "./editor-section";
-import { GENERAL_ANCHORS, GENERAL_SECTIONS, type SettingsAnchor } from "./general-anchors";
-import { GeneralSection } from "./general-section";
-import { HelpSection } from "./help-section";
-import { KeyboardSection } from "./keyboard-section";
-import { NotificationsSection } from "./notifications-section";
+import { GENERAL_SECTIONS, type SettingsAnchor } from "./general-anchors";
 import { PhoneAccessSummary } from "./phone-access-page";
-import { ReviewBotsSection } from "./review-bots-section";
-import { SearchScope } from "./search-scope";
-import { SettingsGroup } from "./settings-group";
-import { TerminalSection } from "./terminal-section";
-import { AgentBrowseSection } from "./agent-browse-section";
-import { TrustedLinksSection } from "./trusted-links-section";
-import { UpdatesSection } from "./updates-section";
-import { useFeature } from "./use-diagnostics";
-import { VoiceInputSection } from "./voice-input-section";
-import { useSaveSettings } from "./use-save-settings";
-import { WorkspacesSettings } from "./workspace-settings";
 
 /** One Settings tab: its own route, its heading and what Settings search finds it by. */
 export interface SettingsPage {
@@ -173,135 +148,48 @@ export type SettingsPath =
   | "/settings/help";
 
 /**
- * Search words for the parts of a page that aren't built from `Field`s, which bring their own label
- * and description. Words the heading already has don't need repeating.
+ * A page's settings as Settings search shows them, fetched when a search first needs them: the page
+ * list is loaded by the nav and by every Settings route, and held every section before.
  */
-const EDITOR_KEYWORDS = ["vs code", "vscode", "cursor", "zed", "command", "path", "line"];
-const CUSTOM_MODEL_KEYWORDS = ["model id", "reasoning effort"];
-const TRUSTED_LINK_KEYWORDS = ["link", "domain", "host", "url", "browser", "open external"];
-const AGENT_BROWSE_KEYWORDS = ["browse", "browser", "preview", "host", "site", "domain", "agent"];
-
-/**
- * Settings → General: new-thread defaults, layout, the editor files open in, trusted links and the
- * hosts agents may browse.
- */
-export function GeneralPage() {
-  const agentBrowsing = useFeature("agentBrowsingPublic", { settled: true });
-  return (
-    <>
-      <SearchScope label="General">
-        <GeneralSection />
-      </SearchScope>
-      <SettingsGroup
-        label="Open in editor"
-        anchor={GENERAL_ANCHORS.editor}
-        description="The editor Open in editor launches: a preset, or your own command."
-        keywords={EDITOR_KEYWORDS}
-      >
-        <EditorSection />
-      </SettingsGroup>
-      <SettingsGroup
-        label="Trusted links"
-        anchor={GENERAL_ANCHORS.links}
-        card={false}
-        description="Links to these hosts open in your browser without asking."
-        learnMore={
-          <p>
-            Tick &ldquo;Always open links to…&rdquo; in the link dialog to add one. Only https links
-            on the usual port skip the question; anything else, or a link with a user name before
-            the host, still asks.
-          </p>
-        }
-        keywords={TRUSTED_LINK_KEYWORDS}
-      >
-        <TrustedLinksSection />
-      </SettingsGroup>
-      {agentBrowsing && (
-        <SettingsGroup
-          label="Agent may browse"
-          card={false}
-          description="Public sites agents may open in the Preview pane without asking."
-          learnMore={
-            <p>
-              Trusted links count too. &ldquo;Always for this host&rdquo; on an agent&rsquo;s
-              request adds one. Submitting a form still asks every time; private-network and sign-in
-              pages are restricted.
-            </p>
-          }
-          keywords={AGENT_BROWSE_KEYWORDS}
-        >
-          <AgentBrowseSection />
-        </SettingsGroup>
-      )}
-    </>
-  );
-}
-
-/** Settings → Agents: each agent's status, new-thread defaults, custom models. */
-export function AgentsPage() {
-  return (
-    <>
-      <AgentChecks />
-      <AgentsSection />
-      <YourBrowserSection />
-      <SettingsGroup
-        label="Custom models"
-        card={false}
-        description={
-          <>
-            Models an agent doesn&apos;t list itself, such as{" "}
-            <code className="font-mono">opus[1m]</code>. Pickers offer them after its own.
-          </>
-        }
-        learnMore={
-          <p>
-            The id is sent to the agent as written. Context size and cost are whatever the agent
-            reports once the thread runs.
-          </p>
-        }
-        keywords={CUSTOM_MODEL_KEYWORDS}
-      >
-        <CustomModelsSection />
-      </SettingsGroup>
-    </>
-  );
-}
-
-/** Settings → About → Updates, wired to the persisted channel, opt-ins and version pin. */
-export function UpdatesPage() {
-  const updates = useServerSettings((s) => s.settings?.updates);
-  const channel = updates?.channel;
-  const pinnedVersion = useServerSettings((s) => s.settings?.updates.pinnedVersion);
-  const saveSettings = useSaveSettings();
-  return (
-    <UpdatesSection
-      channel={channel}
-      automaticChecks={updates?.automaticChecks === true}
-      onPreferencesChange={(patch) => saveSettings({ updates: patch })}
-      pinnedVersion={pinnedVersion}
-      onPinChange={(pin) => saveSettings({ updates: { pinnedVersion: pin } })}
-    />
-  );
-}
-
-const UPDATE_KEYWORDS = ["version", "release", "upgrade", "pin", "channel", "download", "restart"];
-
-/** Settings → About: which version this is, and its updates. */
-export function AboutPage() {
-  return (
-    <>
-      <InstallInfo />
-      <SettingsGroup
-        label="Updates"
-        card={false}
-        description="Check for new releases, download them and restart into them."
-        keywords={UPDATE_KEYWORDS}
-      >
-        <UpdatesPage />
-      </SettingsGroup>
-    </>
-  );
-}
+const GeneralSearch = lazy(async () => ({
+  default: (await import("./general-page")).GeneralPage,
+}));
+const AgentsSearch = lazy(async () => ({
+  default: (await import("./agents-page")).AgentsPage,
+}));
+const AboutSearch = lazy(async () => ({
+  default: (await import("./about-page")).AboutPage,
+}));
+const AiHelpersSearch = lazy(async () => ({
+  default: (await import("./ai-helpers-section")).AiHelpersSection,
+}));
+const WorkspacesSearch = lazy(async () => ({
+  default: (await import("./workspace-settings")).WorkspacesSettings,
+}));
+const ReviewBotsSearch = lazy(async () => ({
+  default: (await import("./review-bots-section")).ReviewBotsSection,
+}));
+const AppearanceSearch = lazy(async () => ({
+  default: (await import("./appearance-section")).AppearanceSearch,
+}));
+const TerminalSearch = lazy(async () => ({
+  default: (await import("./terminal-section")).TerminalSection,
+}));
+const NotificationsSearch = lazy(async () => ({
+  default: (await import("./notifications-section")).NotificationsSection,
+}));
+const KeyboardSearch = lazy(async () => ({
+  default: (await import("./keyboard-section")).KeyboardSection,
+}));
+const VoiceInputSearch = lazy(async () => ({
+  default: (await import("./voice-input-section")).VoiceInputSection,
+}));
+const DiagnosticsSearch = lazy(async () => ({
+  default: (await import("./diagnostics-section")).DiagnosticsSection,
+}));
+const HelpSearch = lazy(async () => ({
+  default: (await import("./help-section")).HelpSection,
+}));
 
 /** Every tab, in nav order, which is also the order Settings search lists them in. */
 export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
@@ -312,7 +200,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     group: "general",
     description: "Launch, branches, the composer, running work, your editor and links.",
     keywords: ["preferences", "startup", "folders"],
-    search: GeneralPage,
+    search: GeneralSearch,
     defaults: Object.values(GENERAL_DEFAULTS),
   },
   {
@@ -322,7 +210,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     group: "agents",
     description: "Whether each agent is ready, what a new thread runs on, models the pickers add.",
     keywords: ["agents", "models", "claude", "codex", "cli"],
-    search: AgentsPage,
+    search: AgentsSearch,
     defaults: Object.values(AGENTS_DEFAULTS),
   },
   {
@@ -345,7 +233,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
       // "advanced": where this and the other pages it held lived, so the old way there finds them.
       "advanced",
     ],
-    search: AiHelpersSection,
+    search: AiHelpersSearch,
     summary: AiHelpersSummary,
     defaults: Object.values(AI_HELPERS_DEFAULTS),
   },
@@ -429,7 +317,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
       "merge",
       "repositories",
     ],
-    search: WorkspacesSettings,
+    search: WorkspacesSearch,
   },
   {
     id: "routines",
@@ -469,7 +357,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
       "code review",
       "advanced",
     ],
-    search: ReviewBotsSection,
+    search: ReviewBotsSearch,
     summary: ReviewBotsSummary,
   },
   {
@@ -552,7 +440,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     group: "appearance",
     description: "The shell the Terminal tab starts.",
     keywords: ["shell", "powershell", "pwsh", "cmd", "git bash", "console", "advanced"],
-    search: TerminalSection,
+    search: TerminalSearch,
     summary: TerminalSummary,
     defaults: Object.values(TERMINAL_DEFAULTS),
     windowsOnly: true,
@@ -564,7 +452,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     group: "notifications",
     description: "When Gram interrupts you, how, and which review requests it lists.",
     keywords: ["alerts", "sounds", "interruptions", "quiet", "do not disturb"],
-    search: NotificationsSection,
+    search: NotificationsSearch,
     defaults: Object.values(NOTIFICATIONS_DEFAULTS),
   },
   {
@@ -583,7 +471,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
       "keybindings.json",
       "advanced",
     ],
-    search: KeyboardSection,
+    search: KeyboardSearch,
   },
   {
     id: "voice-input",
@@ -606,7 +494,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
       // Where its switch lived until 1.5, so the old way there still finds it.
       "experimental",
     ],
-    search: VoiceInputSection,
+    search: VoiceInputSearch,
   },
   {
     id: "about",
@@ -615,7 +503,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     group: "about",
     description: "Which version this is, and its updates.",
     keywords: ["updates", "version", "release", "upgrade", "pin", "advanced"],
-    search: AboutPage,
+    search: AboutSearch,
   },
   {
     id: "diagnostics",
@@ -634,7 +522,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
       "hosted",
       "hosting",
     ],
-    search: DiagnosticsSection,
+    search: DiagnosticsSearch,
     defaults: Object.values(DIAGNOSTICS_DEFAULTS),
   },
   {
@@ -653,7 +541,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
       "third-party notices",
       "advanced",
     ],
-    search: HelpSection,
+    search: HelpSearch,
   },
 ];
 
