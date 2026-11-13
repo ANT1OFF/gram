@@ -617,9 +617,7 @@ test("a new workspace is one sheet, and what it should work on is briefed into a
   await page.evaluate(() => window.gramMock!.release("orchestrator-turn"));
 
   // Discover, queued behind the first message, is its next turn.
-  await expect(
-    page.getByText("Please discover this workspace now.", { exact: false }),
-  ).toBeVisible();
+  await expect(page.locator('[data-testid="board-request"][data-kind="discover"]')).toBeVisible();
   await page.evaluate(() => window.gramMock!.release("orchestrator-turn"));
   await expect(briefing).toHaveCount(0);
 
@@ -1502,7 +1500,7 @@ test("Tidy up asks the orchestrator to put its board in order, from the Board or
 
   // It is an ordinary message of the user's in the orchestrator's thread.
   await pickChat(page);
-  await expect(page.getByText(/^Please tidy up this workspace now/)).toHaveCount(1);
+  await expect(page.locator('[data-testid="board-request"][data-kind="tidyUp"]')).toHaveCount(1);
 
   await page.keyboard.press("ControlOrMeta+k");
   await palette.getByRole("combobox").fill(">tidy");

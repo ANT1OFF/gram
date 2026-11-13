@@ -3,6 +3,8 @@ import type { FeatureCard, GramUIMessage, ThreadStatus } from "@gram/contracts";
 import { inTurn } from "@/thread/orchestration-model";
 import { isToolPart, toolNameOf } from "@/thread/parts";
 
+import { boardRequestOf } from "./board-model";
+
 // The path from a message to the orchestrator to a feature card, made visible: a "briefing"
 // placeholder from the moment it is sent until the card it led to arrives. The orchestrator still
 // decides whether to brief anyone; when it only answers, the placeholder goes. Pure, so it is
@@ -101,7 +103,8 @@ export function briefingOf(input: {
   }
   return {
     messageId: sent.id,
-    excerpt: excerptOf(textOf(sent)),
+    // A request from the menu goes by its name there, not by the first words of its instructions.
+    excerpt: boardRequestOf(textOf(sent))?.label ?? excerptOf(textOf(sent)),
     phase: spawn === undefined ? "reading" : "briefing",
   };
 }

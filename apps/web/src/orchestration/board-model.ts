@@ -242,6 +242,35 @@ export const DISCOVER_MESSAGE =
   "whatever the autonomy, and then a worker only for each task I pick. If it found nothing worth " +
   "doing, say so in a line instead.";
 
+/** A request the workspace's menu sends for the user: its name there, and what it asks in a line. */
+export interface BoardRequest {
+  readonly kind: "discover" | "tidyUp";
+  readonly label: string;
+  readonly line: string;
+}
+
+/**
+ * The menu request a user message is, when its text is one word for word: the thread then shows its
+ * name and a line instead of the instructions written for the orchestrator. A message the user
+ * typed or edited is theirs and stays as it reads.
+ */
+export const boardRequestOf = (text: string): BoardRequest | undefined => {
+  const sent = text.trim();
+  if (sent === DISCOVER_MESSAGE)
+    return {
+      kind: "discover",
+      label: "Discover workspace",
+      line: "Survey the repos, remember what they are, and ask which starter tasks to start.",
+    };
+  if (sent === TIDY_UP_MESSAGE)
+    return {
+      kind: "tidyUp",
+      label: "Tidy up",
+      line: "Archive what's done, fix groups, stages and plans, and say what changed.",
+    };
+  return undefined;
+};
+
 /** What Discover's toast says once it went: queued behind a turn, or taken at once. */
 export const DISCOVER_QUEUED = "It starts once its current turn ends.";
 export const DISCOVER_SENT = "It asks which starter tasks to start once the survey is done.";

@@ -35,17 +35,19 @@ describe("ArtifactCard", () => {
       {},
     );
 
-    expect(screen.getByTestId("artifact-card").textContent).toContain("Artifact on claude.ai · v2");
-    fireEvent.click(screen.getByRole("button", { name: "Show Checkout mock" }));
+    expect(screen.getByTestId("artifact-card").textContent).toContain(
+      "Published to claude.ai · v2",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Preview Checkout mock" }));
     expect(shown).toHaveBeenCalledWith(T, "/tmp/scratch/checkout.html", {
       previewPane: expect.any(Boolean),
     });
-    expect(screen.getByRole("link", { name: "Open" }).getAttribute("href")).toBe(URL);
+    expect(screen.getByRole("link", { name: "Open on claude.ai" }).getAttribute("href")).toBe(URL);
   });
 
-  it("offers only Open when there is no file to show", () => {
+  it("offers only Open on claude.ai when there is no file to show", () => {
     renderWithApi(<ArtifactCard threadId={T} artifact={{ url: URL }} />, {});
-    expect(screen.queryByRole("button", { name: /^Show/ })).toBeNull();
-    expect(screen.getByRole("link", { name: "Open" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Preview/ })).toBeNull();
+    expect(screen.getByRole("link", { name: "Open on claude.ai" })).toBeTruthy();
   });
 });
