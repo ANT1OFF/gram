@@ -19,7 +19,7 @@ import {
   whenReconnected,
 } from "./connection";
 import { iterate } from "./rpc-client";
-import { rpcProtocolLayer, transportRetryDelay } from "./rpc-protocol";
+import { rpcProtocolLayer, transportRetryDelay, type WakeSource } from "./rpc-protocol";
 
 async function waitFor(predicate: () => boolean, label: string) {
   for (let i = 0; i < 500; i++) {
@@ -69,9 +69,9 @@ describe("backoffDelay", () => {
 });
 
 describe("transportRetryDelay", () => {
-  it("retries quickly three times, then backs off to a 5 s cap", () => {
+  it("redials at once, retries quickly twice, then backs off to a 5 s cap", () => {
     expect(Array.from({ length: 10 }, (_, i) => transportRetryDelay(i + 1))).toEqual([
-      500, 500, 500, 1000, 2000, 4000, 5000, 5000, 5000, 5000,
+      50, 500, 500, 1000, 2000, 4000, 5000, 5000, 5000, 5000,
     ]);
     let elapsed = 0;
     let dials = 1;
@@ -292,7 +292,7 @@ class FakePage extends EventTarget {
   }
 }
 
-async function stalledServer(feeds = 1, page?: FakePage) {
+async function stalledServer(feeds = 1, page?: FakePage, wake?: WakeSource) {
   let answering = true;
   const sockets: StallSocket[] = [];
   const connection = createConnectionMonitor();
@@ -309,7 +309,7 @@ async function stalledServer(feeds = 1, page?: FakePage) {
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   const scope = await Effect.runPromise(Scope.make());
   const context = await Effect.runPromise(
-    Layer.buildWithScope(rpcProtocolLayer(socket, connection, page), scope),
+    Layer.buildWithScope(rpcProtocolLayer(socket, connection, wake, page), scope),
   );
   const client = await Effect.runPromise(
     RpcClient.make(Events).pipe(
@@ -518,6 +518,40 @@ describe("RPC transport recovery", () => {
     }
   });
 
+  it("redials at once when the window says it is back, without waiting out the backoff", async () => {
+    vi.useFakeTimers();
+    let back: (() => void) | undefined;
+    const wake: WakeSource = (listener) => {
+      back = listener;
+      return () => {
+        back = undefined;
+      };
+    };
+    const server = await stalledServer(1, undefined, wake);
+    try {
+      server.stall();
+      for (const delay of [50, 500, 500, 1000, 2000, 4000]) {
+        server.sockets.at(-1)!.close(1006);
+        await vi.advanceTimersByTimeAsync(delay);
+      }
+      // Refused again: the next dial is 5 s away.
+      server.sockets.at(-1)!.close(1006);
+      const dialled = server.sockets.length;
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(server.sockets).toHaveLength(dialled);
+      server.resume();
+      back!();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(server.sockets).toHaveLength(dialled + 1);
+      expect(server.connection.get().status).toBe("open");
+      // Nothing is left listening once the wait is over.
+      expect(back).toBeUndefined();
+    } finally {
+      await server.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("caps retries during a long refusal and resets only after feeds are healthy", async () => {
     vi.useFakeTimers();
     const server = await stalledServer(2);
@@ -531,7 +565,7 @@ describe("RPC transport recovery", () => {
         expect(server.sockets).toHaveLength(previous + 1);
       };
       server.stall();
-      for (const delay of [500, 500, 500, 1000, 2000, 4000, 5000, 5000, 5000]) {
+      for (const delay of [50, 500, 500, 1000, 2000, 4000, 5000, 5000, 5000]) {
         await refuse(delay);
       }
       expect(server.connection.get().status).toBe("reconnecting");
@@ -544,7 +578,7 @@ describe("RPC transport recovery", () => {
       await vi.advanceTimersByTimeAsync(1);
       expect(server.connection.get().status).toBe("open");
       // A new failure after both feeds answered starts a fresh quick retry wave.
-      await refuse(500);
+      await refuse(50);
       expect(server.connection.get().status).toBe("open");
       // Both feeds drop on each of the eight closes.
       expect(server.drops()).toEqual(Array(16).fill("SocketCloseError"));

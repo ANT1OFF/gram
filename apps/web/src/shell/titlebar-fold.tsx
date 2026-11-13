@@ -409,8 +409,8 @@ function WorkspaceSubmenu({ state, opening }: { state: WorkspaceState; opening: 
 
 /**
  * The window's own, in a submenu: the carried thread's Contents and, on an orchestrator's
- * chat, Show all activity, then Quiet, focus mode, History, then
- * the grid's layout, picked with a check.
+ * chat, Show all activity, then Quiet, focus mode, History, then the grid's layout, picked with a
+ * check.
  */
 function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
   const preset = useLayoutStore((s) => s.grid.preset);

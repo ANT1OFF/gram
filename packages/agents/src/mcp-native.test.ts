@@ -92,6 +92,16 @@ describe("one MCP server config, in each agent's own shape", () => {
       carriesValues: true,
       disabled: true,
     });
+    // A stdio table's own folder comes with it: a relative command is found from there.
+    expect(
+      describeCodexEntry({ command: "./Tool.app/Contents/MacOS/tool", args: ["mcp"], cwd: "." }),
+    ).toEqual({
+      transport: "stdio",
+      command: "./Tool.app/Contents/MacOS/tool",
+      args: ["mcp"],
+      cwd: ".",
+      carriesValues: false,
+    });
     expect(
       describeCodexEntry({ url: "https://x.example/mcp", bearer_token_env_var: null }),
     ).toMatchObject({

@@ -276,6 +276,30 @@ describe("ServerEvent", () => {
           },
         ],
       },
+      {
+        type: "machines.snapshot",
+        machines: [
+          { id: "m-0123456789abcdef01234567", name: "atlas", kind: "joined", onlineSince: 1 },
+          {
+            id: "m-89abcdef0123456701234567",
+            name: "studio",
+            kind: "joined",
+            offline: { kind: "lost", at: 1_789_990_000_000 },
+          },
+          {
+            id: "m-456789abcdef012301234567",
+            name: "sandbox-1",
+            kind: "provisioned",
+            offline: {
+              kind: "mismatch",
+              at: 2,
+              protocol: 1,
+              release: "1.13.0",
+              missing: ["files"],
+            },
+          },
+        ],
+      },
       { type: "ui.showPanel", threadId: "t1", panel: "diff", target: "src/a.ts" },
       {
         type: "ui.showPanel",
@@ -311,6 +335,7 @@ describe("ServerEvent", () => {
       { type: "routines.changed", workspaceId: "w1" },
       { type: "outputs.changed", workspaceId: "w1" },
       { type: "docs.changed", workspaceId: "w1" },
+      { type: "pages.changed", workspaceId: "w1" },
       { type: "thread.suggestions", threadId: "t1", turnId: "turn-1", replies: ["Push it"] },
       { type: "thread.suggestions", threadId: "t1", turnId: "turn-1", replies: [], stale: true },
     ];

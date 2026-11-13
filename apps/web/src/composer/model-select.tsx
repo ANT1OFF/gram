@@ -25,6 +25,7 @@ import {
   modelOptions,
   offeredModels,
   offeredReplacement,
+  pickerModelId,
   unlistedWarning,
   useModelsQuery,
   useProviderLabel,
@@ -150,10 +151,12 @@ function useModelListing(
     listed !== undefined &&
     value !== "" &&
     !listed.some((model) => model.id === value || model.resolvedId === value);
+  // A value stored on a pinned id or a name shows as the catalogue row it runs.
+  const shown = pickerModelId(listed, value) ?? value;
   // CLI aliases are a fallback only for local Claude, never for a gateway or another account.
   const options = modelOptions(
     listed,
-    !keep && notOffered ? undefined : value,
+    !keep && notOffered ? undefined : shown,
     agent === "claude" && profileId === undefined ? undefined : [],
     unlistedWarning(agent, profileId),
     provider,
@@ -190,7 +193,7 @@ function useModelListing(
         <NoModels none={none} />
       </div>
     ) : undefined;
-  return { options, refresh, status, empty, replacement };
+  return { options, refresh, status, empty, replacement, shown };
 }
 
 /**
@@ -225,12 +228,14 @@ export function useModelSection({
   onOpen: () => void;
   onClose: () => void;
 } {
-  const { options, refresh, status, empty, replacement } = useModelListing(
-    agent,
-    profileId,
-    value,
-    keep,
-  );
+  const {
+    options,
+    refresh,
+    status,
+    empty,
+    replacement,
+    shown: picked,
+  } = useModelListing(agent, profileId, value, keep);
   // A draft never keeps, nor starts on, a model the embedding app does not offer. Once for each
   // model it moves off, whatever the caller's `onChange` is this render.
   const moveTo = useEffectEvent((model: string) => onChange(model));
@@ -259,7 +264,7 @@ export function useModelSection({
   if (!across)
     return {
       section: modelSection({
-        value,
+        value: picked,
         options,
         onChange,
         search: {
@@ -272,11 +277,11 @@ export function useModelSection({
       onOpen,
       onClose,
     };
-  const shown = modelSection({ value, options, onChange });
+  const shown = modelSection({ value: picked, options, onChange });
   return {
     section: {
       ...modelSection({
-        value: pickKey(agent, profileId, value),
+        value: pickKey(agent, profileId, picked),
         options: acrossOptions,
         onChange: (next) => {
           const pick = parsePick(next);
@@ -319,7 +324,7 @@ export function ModelSelect({
   onChange: (model: string) => void;
 }) {
   // Settings: a saved model is shown as it is, offered or not.
-  const { options, refresh, status } = useModelListing(agent, profileId, value, true);
+  const { options, refresh, status, shown } = useModelListing(agent, profileId, value, true);
   const [open, setOpenState] = useState(false);
   const setOpen = (next: boolean) => {
     if (next) refresh();
@@ -327,11 +332,12 @@ export function ModelSelect({
   };
   const favourite = useIsFavourite(agent);
   if (status !== undefined) return status;
-  if (options.length > MODEL_SEARCH_THRESHOLD) {
+  // The plain select has no Legacy fold, so a list with superseded models searches too.
+  if (options.length > MODEL_SEARCH_THRESHOLD || options.some((option) => option.legacy)) {
     return (
       <ModelCombobox
         label="Model"
-        value={value}
+        value={shown}
         options={options}
         onChange={onChange}
         open={open}
@@ -349,7 +355,7 @@ export function ModelSelect({
   }
   return (
     <Select
-      value={value}
+      value={shown}
       items={options}
       open={open}
       onOpenChange={setOpen}

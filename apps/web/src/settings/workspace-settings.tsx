@@ -2,6 +2,7 @@ import {
   DEFAULT_SETTINGS,
   autonomyOf,
   continueAfterRestart,
+  orchestratorBrowserOn,
   orchestratorConnectors,
   orchestratorPeerMessaging,
   type Project,
@@ -10,6 +11,7 @@ import {
   type WorkspaceState,
   isPinned,
   tierText,
+  workerBrowserOn,
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -243,6 +245,13 @@ function Defaults({ settings }: { settings: Settings }) {
   const save = useSaveSettings();
   const [continueError, setContinueError] = useState<string>();
   const [peerError, setPeerError] = useState<string>();
+  const [browserError, setBrowserError] = useState<{ key: string; message: string }>();
+  const saveBrowser = (key: "orchestratorBrowser" | "workerBrowser", next: boolean) => {
+    setBrowserError(undefined);
+    save({ workspaces: { [key]: next } }).catch((e: unknown) =>
+      setBrowserError({ key, message: errorMessage(e) }),
+    );
+  };
   return (
     <SettingsGroup
       label="Defaults"
@@ -320,6 +329,41 @@ function Defaults({ settings }: { settings: Settings }) {
             setPeerError(errorMessage(e)),
           );
         }}
+      />
+      <Toggle
+        label="Orchestrators use your browser"
+        description="An orchestrator's session gets your browser, signed in as you."
+        keywords={["browser", "chrome", "computer use", "orchestrator"]}
+        checked={orchestratorBrowserOn(settings)}
+        onReset={
+          orchestratorBrowserOn(settings)
+            ? () => saveBrowser("orchestratorBrowser", false)
+            : undefined
+        }
+        error={browserError?.key === "orchestratorBrowser" ? browserError.message : undefined}
+        learnMore={
+          <p>
+            Only for the agents you turned on under Settings → Agents → Your browser. A change
+            applies from an orchestrator&apos;s next session.
+          </p>
+        }
+        onChange={(next) => saveBrowser("orchestratorBrowser", next)}
+      />
+      <Toggle
+        label="Give workers your browser"
+        description="An orchestrator may give a worker your browser when it spawns it."
+        keywords={["browser", "chrome", "computer use", "worker", "spawn"]}
+        checked={workerBrowserOn(settings)}
+        onReset={workerBrowserOn(settings) ? () => saveBrowser("workerBrowser", false) : undefined}
+        error={browserError?.key === "workerBrowser" ? browserError.message : undefined}
+        learnMore={
+          <p>
+            Only a worker its orchestrator asked for it, and only for the agents you turned on under
+            Settings → Agents → Your browser. Turning this off takes it from those workers&apos;
+            next sessions.
+          </p>
+        }
+        onChange={(next) => saveBrowser("workerBrowser", next)}
       />
       <StartingRosterRow settings={settings} />
     </SettingsGroup>

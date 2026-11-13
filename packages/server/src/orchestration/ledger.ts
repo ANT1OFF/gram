@@ -892,6 +892,7 @@ export type CompactWorkerRow = Pick<WorkerLedgerEntry, "threadId" | "title" | "s
       | "quiet"
       | "compacting"
       | "waitingOnAutomation"
+      | "machine"
     >
   > & {
     readonly lastReport?: Pick<WorkerReport, "state" | "at" | "summary" | "evidence"> & {
@@ -917,6 +918,7 @@ export const compactWorkerRow = (worker: WorkerLedgerEntry): CompactWorkerRow =>
     ...(worker.quiet === undefined ? {} : { quiet: worker.quiet }),
     ...(worker.waitingOnAutomation === true ? { waitingOnAutomation: true as const } : {}),
     project: worker.project,
+    ...(worker.machine === undefined ? {} : { machine: worker.machine }),
     ...(worker.branch === undefined ? {} : { branch: worker.branch }),
     ...(worker.pr === undefined ? {} : { pr: worker.pr }),
     ...(worker.morePrs === undefined || worker.morePrs.length === 0

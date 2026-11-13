@@ -17,6 +17,7 @@ import {
   BROWSER_VIEWPORT_MIN,
   BROWSER_VIEWPORTS,
   effectiveCheckout,
+  isPinnedPageUrl,
   isPreviewFilesUrl,
   originOf,
   paneKeyRefusal,
@@ -58,6 +59,7 @@ import { outwardGateFor } from "../orchestration/rules.ts";
 import { ThreadStore, type ThreadStoreShape } from "../persistence/thread-store.ts";
 import { ThreadRuntimes, type ThreadRuntimesShape } from "../runtime/thread-runtimes.ts";
 import { PreviewFiles } from "../preview/files.ts";
+import { PageFiles } from "../pages/page-files.ts";
 import { EvidencePathError, writeEvidence } from "./evidence.ts";
 import { PanePort, type PanePortShape } from "./pane-port.ts";
 import { WorkspaceOutputs, type WorkspaceOutputsShape } from "../outputs/workspace-outputs.ts";
@@ -339,6 +341,7 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
         // Match the preview path as well as its origin, so a rewritten local address stays private.
         const own =
           isPreviewFilesUrl(url.trim()) ||
+          isPinnedPageUrl(url.trim()) ||
           (origin !== undefined && (yield* deps.appOrigins).includes(origin));
         if (own) {
           return yield* new AppToolError({
@@ -1054,13 +1057,17 @@ export const BrowserAppToolsLive = Layer.effectDiscard(
     const registry = yield* AppToolRegistry;
     // Absent in tool-only test layers, which serve no previewed files.
     const previewFiles = Option.getOrUndefined(yield* Effect.serviceOption(PreviewFiles));
+    // Pinned pages' listener too: no agent reads or drives a page the user pinned.
+    const pageFiles = Option.getOrUndefined(yield* Effect.serviceOption(PageFiles));
     yield* registry.register(
       browserTools({
         pane: yield* PanePort,
         hub: yield* EventHub,
         store: yield* ThreadStore,
         runtimes: yield* ThreadRuntimes,
-        appOrigins: Effect.succeed(previewFiles === undefined ? [] : [previewFiles.origin]),
+        appOrigins: Effect.succeed(
+          [previewFiles?.origin, pageFiles?.origin].filter((origin) => origin !== undefined),
+        ),
         outputs: Option.getOrUndefined(yield* Effect.serviceOption(WorkspaceOutputs)),
       }),
     );

@@ -9,6 +9,7 @@ import { DreamRpcs } from "./rpc/dreams.ts";
 import { FileRpcs } from "./rpc/files.ts";
 import { GitRpcs } from "./rpc/git.ts";
 import { OrchestrationRpcs } from "./rpc/orchestration.ts";
+import { PageRpcs } from "./rpc/pages.ts";
 import { ProjectRpcs } from "./rpc/projects.ts";
 import { SettingsRpcs } from "./rpc/settings.ts";
 import { TerminalRpcs } from "./rpc/terminal.ts";
@@ -29,6 +30,7 @@ export const GramRpcGroups: readonly [
   typeof FileRpcs,
   typeof GitRpcs,
   typeof OrchestrationRpcs,
+  typeof PageRpcs,
   typeof ProjectRpcs,
   typeof SettingsRpcs,
   typeof TerminalRpcs,
@@ -42,6 +44,7 @@ export const GramRpcGroups: readonly [
   FileRpcs,
   GitRpcs,
   OrchestrationRpcs,
+  PageRpcs,
   ProjectRpcs,
   SettingsRpcs,
   TerminalRpcs,
@@ -63,6 +66,7 @@ export * from "./rpc/git.ts";
 export * from "./rpc/host.ts";
 export * from "./rpc/device.ts";
 export * from "./rpc/orchestration.ts";
+export * from "./rpc/pages.ts";
 export * from "./rpc/projects.ts";
 export * from "./rpc/settings.ts";
 export * from "./rpc/terminal.ts";

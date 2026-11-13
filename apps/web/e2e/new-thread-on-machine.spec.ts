@@ -19,12 +19,24 @@ const joinMachine = (page: Page) =>
     route.fulfill({ json: { machines: [MACHINE] }, headers: { "cache-control": "no-store" } }),
   );
 
+/** The machine as the server's event stream sends it to every window, which a thread's header reads. */
+const machineOnline = (page: Page) =>
+  page.evaluate(
+    (machine) =>
+      window.gramMock!.setMachines([
+        { id: machine.id as never, name: machine.name, kind: "joined", onlineSince: 2 },
+      ]),
+    MACHINE,
+  );
+
 test("a one-off chat starts in a joined machine's home, and its header says where", async ({
   page,
 }) => {
   await joinMachine(page);
   await page.goto("/new");
   const form = page.getByRole("form", { name: "New thread" });
+  await expect(form).toBeVisible();
+  await machineOnline(page);
   const where = form.getByTestId("new-where");
 
   await where.getByTestId("where-machine").click();
@@ -41,7 +53,7 @@ test("a one-off chat starts in a joined machine's home, and its header says wher
   await expect(page).toHaveURL(/\/t\/t-/);
   const chip = page.getByTestId("pane-machine");
   await expect(chip).toContainText("build box");
-  await expect(chip).toContainText("~");
+  await expect(page.getByTestId("pane-machine-folder")).toHaveText("~");
   await expect(chip).toHaveAttribute("aria-label", "Runs on build box in /home/dev");
 });
 

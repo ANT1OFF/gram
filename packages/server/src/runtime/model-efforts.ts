@@ -14,6 +14,8 @@ import type { AgentHosts } from "./agent-hosts.ts";
 /** A model a thread can run on, with the reasoning efforts it takes; none when it has no setting. */
 export interface ModelEfforts {
   readonly id: string;
+  /** The name the picker shows it by, which `resolveModel` also takes. */
+  readonly displayName: string;
   readonly resolvedId?: string;
   readonly speeds: ReadonlyArray<SpeedMode>;
   readonly efforts: ReadonlyArray<ReasoningVariant>;
@@ -35,6 +37,7 @@ export const selectableModels = (
     // A model added in Settings carries no effort list, which the picker reads as every effort.
     return withCustomModels(listed, customModelsOf(settings, agent)).map((m) => ({
       id: m.id,
+      displayName: m.displayName,
       ...(m.resolvedId === undefined ? {} : { resolvedId: m.resolvedId }),
       speeds: m.speeds ?? [],
       efforts: m.supportsEffort ? (m.efforts ?? ReasoningVariant.literals) : [],

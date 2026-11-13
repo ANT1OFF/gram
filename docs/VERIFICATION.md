@@ -230,6 +230,35 @@ unless the opt-in variable named in each spec's header is set, and write their r
 temporary file. Their numbers belong to the machine and load they ran on; put them in the pull
 request, not the docs.
 
+`apps/web/e2e-real/perf-headline.spec.ts` is the short list to compare before and after a change:
+opening and paging a 41,000-item thread, sending to a 75,000-item one, a phone's first launch in
+bytes and over slow 3G (with the data it uses and the files the first sight of the thread waited for), a phone's reconnect and a terminal attach over slow 3G. It also times a reply's first words
+and the frames while a long reply streams (the echo agent's `/stream{N}`), frames and memory while
+scrolling the long thread, an approval reaching Needs you and its answer reaching the agent, a
+coding worker's start to its first output, and how soon a phone is back in touch after the network
+drops and returns. It writes JSON, and
+`tools/perf/headline-chart.mjs` turns two runs into a table and a chart:
+
+```sh
+cd apps/web
+GRAM_PERF_HEADLINE=1 GRAM_PERF_OUT=/tmp/before.json \
+  bunx playwright test --config e2e-real/playwright.config.ts perf-headline --trace off   # on main
+GRAM_PERF_HEADLINE=1 GRAM_PERF_OUT=/tmp/after.json \
+  bunx playwright test --config e2e-real/playwright.config.ts perf-headline --trace off   # on the branch
+node ../../tools/perf/headline-chart.mjs /tmp/before.json /tmp/after.json --out /tmp/perf.svg
+```
+
+Run both sides on the same idle machine. `GRAM_PERF_SCALE=0.02` is a quick functional run of the
+spec itself, not evidence. Each scenario's `detail` names the largest files and socket answers, which
+is where to look first when a number is high.
+
+The web build fails when the first paint, a lazily loaded chunk or a route's own load grows past
+its budget in `apps/web/bundle-budgets.json`; `GRAM_BUNDLE_REPORT=1 bunx vite build` prints every
+route's size. Raise a budget in the pull request that means the growth.
+
+`tools/perf/ci-flake-rate.mjs` reads GitHub's listing of the trunk's check runs and says how many
+went red, which on a trunk of reviewed commits is mostly tests that fail some of the time.
+
 ## Protocol, native and live checks
 
 Synthetic child-CLI tests exercise actual Claude/Codex adapters, approval/cancel,
@@ -256,6 +285,61 @@ on Linux/macOS; Windows executable/shim behavior needs separate native checks.
 
 ```sh
 bun run test packages/agents/src/subscription-protocol.test.ts
+```
+
+### Preview web session
+
+`apps/desktop/scripts/verify-web-preview.mjs` runs the installed pinned Electron in an owned
+temporary profile with the real preview module and no outside network. The web session's lookup
+answers for synthetic names (public, rebound, alternating, failing, empty), its proxy's dial
+connects the public answer to the fixture's own listener, Chromium's resolver maps every name to
+loopback and an owned HTTP proxy stands as the system's, so a connection around the session's
+proxy would be seen. It checks that a remote page loads in a session apart from the app's and the
+agents', gets no Gram cookie, bridge or Node, and reaches nothing on loopback or a private network
+by fetch, socket, script, redirect, rebound or failing lookup, or WebRTC STUN and TURN over TCP to
+loopback or a private address (with a control session showing the same probe does reach them),
+even with the user's private page open at that very address in another thread; that a private
+page loads in its own session, where its public frame doesn't load, its link to the internet opens
+in the shared session, and an opaque sandboxed child (`data:` and `srcdoc`) that runs has its fetch
+and its TURN over TCP to a second private address refused; that the system proxy is never used, and the session's own
+answers no other process without its credential; that permissions and downloads are refused; that
+a local page's link, script or redirect (an agent's, as `show_panel` opens it) goes to the link
+question and never into the web session; that the loopback open channel refuses a web page and
+the web one loopback; that the user's web page closed for newer threads' re-opens once by its
+token, at the shell's record, while one an agent's page replaced never does; and that an agent
+never gets the user's web page. It proves
+the session rules, not a real site's behaviour. A `<link rel=preconnect>` doesn't fire in this
+fixture, even without the proxy, so it isn't checked natively; the proxy's unit tests cover the
+rule it would meet.
+
+```sh
+node apps/desktop/scripts/verify-web-preview.mjs /tmp/new-evidence-directory
+```
+
+### Pinned pages session
+
+`apps/desktop/scripts/verify-pinned-pages.mjs` runs the installed pinned Electron in an owned
+temporary profile with no outside network. It pins a synthetic worktree's page with the server's
+own pages store, serves it with the server's own listener code, and opens it through the shell's
+pages module in the real `gram-pages` session, with the page guard preload built as the app builds
+it. It checks that the pinned copy loads, not the worktree's later edit; that the shell opens only
+the announced listener origin; that the page runs at an opaque origin and loads its own files,
+module script included; that no fetch, socket, beacon, event stream, WebRTC STUN or TURN, popup,
+form, dialog, storage, cookie, download, bridge or app IPC gets out, to Gram's server, a name,
+another pinned page or the internet; that it can't navigate away; that script copies (named by a
+string, an object, a boxed string or a name that changes), the copy event and the async clipboard
+leave the clipboard as it was while the user's own copy still works; that a page that replaces its
+document after parsing (`document.open`, a `document.write` that opens it, a `javascript:` URL)
+can't change what the user copies; that the Preview tab's local session refuses its URL; and that
+with the listener's headers gone the session alone still holds. A control session without the
+policy or the guard shows each probe reaches what it looks for. A `<link rel=preconnect>` fires in
+no session of this Electron, a control's included, so it isn't checked natively. The keyboard's
+copy leaves the clipboard alone even in the control here, so the edit menu's Copy is the user's
+copy the checks rely on. On Linux it needs a display (`DISPLAY`), which is all of the environment
+it passes on.
+
+```sh
+node apps/desktop/scripts/verify-pinned-pages.mjs /tmp/new-evidence-directory
 ```
 
 ### Live subscription probes

@@ -26,6 +26,10 @@ Codex CLIs on their own subscriptions. [README](README.md) introduces it,
 - Use 24-hour times in product UI and documentation.
 - For a UI change whose look is open, follow [DESIGN.md](DESIGN.md) and the
   [mock-first playbook](docs/orchestration/playbooks/mock-first.md); most tasks skip the mock.
+- Gram's web app is also mounted inside other apps, which ship a pinned commit of it. When a
+  change removes, renames or re-words something they can see (a screen, a mount option, a kit
+  control, a theme name, a `data-testid`), follow
+  [keeping embedders in step](docs/EMBEDDED_WEB_APP.md#keeping-embedders-in-step).
 - Never push directly to `main`, including force pushes. Push a feature branch and open a PR
   with a conventional title (`feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `chore:`). Put
   commands, results and known limits in the PR description.

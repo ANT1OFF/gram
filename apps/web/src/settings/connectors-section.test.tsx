@@ -12,6 +12,7 @@ import {
   ELSEWHERE_SIGN_IN_HINT,
   freshServersOf,
   isRemovable,
+  startCommand,
   withSignIns,
 } from "@/panels/connectors-model";
 import { renderWithApi } from "@/panels/test-utils";
@@ -137,6 +138,22 @@ describe("connectorMatrix and friends", () => {
   it("copies a plain remote server as it stands, and sends the rest through the form", () => {
     const rows = [...connectorMatrix(AGENTS, "").inUse, ...connectorMatrix(AGENTS, "").signedOut];
     const row = (name: string) => rows.find((r) => r.name === name)!;
+
+    // A relative command is only found from its own folder: made whole from an absolute one, and
+    // flagged where there's none to go by, rather than copied into an entry that never starts.
+    expect(
+      startCommand({ command: "./Tool.app/Contents/MacOS/tool", cwd: "/Users/someone/.tool" }),
+    ).toEqual({ command: "/Users/someone/.tool/Tool.app/Contents/MacOS/tool", relative: false });
+    expect(startCommand({ command: "./Tool.app/Contents/MacOS/tool", cwd: "." })).toEqual({
+      command: "./Tool.app/Contents/MacOS/tool",
+      relative: true,
+    });
+    expect(startCommand({ command: "bin/tool" })).toMatchObject({ relative: true });
+    expect(startCommand({ command: "npx" })).toEqual({ command: "npx", relative: false });
+    expect(startCommand({ command: "/usr/bin/tool", cwd: "/x" })).toEqual({
+      command: "/usr/bin/tool",
+      relative: false,
+    });
 
     expect(copyTo(row("example"), "claude", false)).toEqual({
       kind: "direct",

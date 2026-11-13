@@ -33,9 +33,12 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * with the duplicate `title` line cut first; measured then at 61,747. Held on 2026-11-10 for the
  * recommended model tiers' line (the effort ladder and the cross-vendor review): the worker-model
  * line lost its example list to make room, since each `tier:` entry carries its own note.
+ * The orchestrator's raised on 2026-11-12, on purpose, for `spawn_worker`'s `browser` (a worker
+ * lent the user's own browser): one clause, with why a spawn went without it left to the result's
+ * `warning`; measured then at 61,871.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 61_800,
+  orchestrator: 61_900,
   worker: 36_900,
   plain: 23_550,
 };

@@ -16,8 +16,8 @@ import { RAIL_TONES } from "@/orchestration/rail-tones";
 import { StatusDot } from "@/orchestration/status-dot";
 import { useThreadsStore } from "@/stores/threads";
 
-// The Board on a phone: a card per task rather than the grid's columns, which a
-// 390 px window clips. Each card says its dot, title and state, its stage bar, then what it is
+// The Board on a phone: a card per task rather than the grid's columns, which a 390 px window
+// clips. Each card says its dot, title and state, its stage bar, then what it is
 // doing or waits on (its station where it has no more to say) and its PR; a card that needs you
 // or failed says why instead of the bar. Its agent is named only where the Board's workers run
 // different ones, as the sidebar marks it. Now, Waiting and Done stand in for the desktop's lines

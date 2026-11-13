@@ -13,6 +13,7 @@ import {
   type ThreadNotFound,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -20,6 +21,7 @@ import { spawn, type IPty } from "node-pty";
 
 import { resolveFolder } from "../fs/folders.ts";
 import { BATCH_WINDOW_MS, coalesce } from "./batch.ts";
+import { keptScreen, type KeptTerminals } from "./kept.ts";
 import { SCROLLBACK_LIMIT, Scrollback } from "./scrollback.ts";
 import { scriptShellArgs } from "../scripts/project-scripts.ts";
 import { resolveShell, shellCommand, signalName, terminalEnv } from "./shell.ts";
@@ -62,6 +64,13 @@ export interface TerminalsDeps {
   readonly held?: (threadId: ThreadId) => boolean;
   readonly scrollbackLimit?: number;
   readonly batchWindowMs?: number;
+  /**
+   * Where a thread's open terminals are kept while they run, so the next start of this host shows
+   * each one's last screen above a fresh shell in its folder. Absent, nothing is kept.
+   */
+  readonly kept?: KeptTerminals;
+  /** How long after output a terminal's tail is kept; one write covers what came meanwhile. */
+  readonly keepDelayMs?: number;
 }
 
 /**
@@ -110,6 +119,10 @@ type ExitEvent = Extract<TerminalEvent, { type: "exit" }>;
 interface Terminal {
   readonly info: Omit<TerminalInfo, "alive">;
   readonly pty: IPty;
+  /** The PATH its shell started with. */
+  readonly path: string;
+  /** A keep of its tail waiting to be written. */
+  keepTimer: ReturnType<typeof setTimeout> | undefined;
   readonly scrollback: Scrollback;
   readonly listeners: Set<(event: TerminalEvent) => void>;
   exit: ExitEvent | undefined;
@@ -118,6 +131,9 @@ interface Terminal {
 
 /** How long a hung-up shell gets to exit before SIGKILL, and then to be reaped. */
 const REAP_TIMEOUT_MS = 3_000;
+
+/** How long after output a terminal's tail is kept, by default. */
+const KEEP_DELAY_MS = 1_000;
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -142,6 +158,47 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
     const terminals = new Map<TerminalId, Terminal>();
     const limit = deps.scrollbackLimit ?? SCROLLBACK_LIMIT;
     const batchWindow = deps.batchWindowMs ?? BATCH_WINDOW_MS;
+    const keepDelay = deps.keepDelayMs ?? KEEP_DELAY_MS;
+    /** Set as the scope closes: what runs now is kept for the next start, not forgotten. */
+    let shuttingDown = false;
+
+    /** Writes `terminal`'s tail now, while a thread's shell still runs in it. */
+    const keep = (terminal: Terminal) => {
+      clearTimeout(terminal.keepTimer);
+      terminal.keepTimer = undefined;
+      const threadId = terminal.info.threadId;
+      if (deps.kept === undefined || threadId === undefined || terminal.exit !== undefined) return;
+      try {
+        deps.kept.write({
+          terminalId: terminal.info.terminalId,
+          threadId,
+          cwd: terminal.info.cwd,
+          shell: terminal.info.shell,
+          path: terminal.path,
+          cols: terminal.pty.cols,
+          rows: terminal.pty.rows,
+          tail: terminal.scrollback.toReplay(),
+          cut: terminal.scrollback.cut,
+        });
+      } catch {
+        // A full or read-only disk: the terminal works on, and only its tail goes unkept.
+      }
+    };
+    const keepSoon = (terminal: Terminal) => {
+      if (deps.kept === undefined || terminal.keepTimer !== undefined || shuttingDown) return;
+      terminal.keepTimer = setTimeout(() => keep(terminal), keepDelay);
+    };
+    /** Drops what was kept of a terminal that ended or was closed: it doesn't come back. */
+    const forget = (terminal: Terminal) => {
+      clearTimeout(terminal.keepTimer);
+      terminal.keepTimer = undefined;
+      if (deps.kept === undefined || shuttingDown) return;
+      try {
+        deps.kept.remove(terminal.info.terminalId);
+      } catch {
+        // Gone already.
+      }
+    };
 
     const find = (terminalId: TerminalId): Effect.Effect<Terminal, NotFound> =>
       Effect.suspend(() => {
@@ -168,7 +225,15 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
         return yield* resolveFolder(folder);
       });
 
-    const open: Terminals["open"] = (request, settings) =>
+    /**
+     * Opens a terminal; with `restore`, under a kept terminal's id with its old screen above the
+     * new shell.
+     */
+    const spawnTerminal = (
+      request: OpenTerminal,
+      settings: OpenSettings | undefined,
+      restore?: { readonly terminalId: TerminalId; readonly seed: string },
+    ) =>
       Effect.gen(function* () {
         const cwd = yield* cwdFor(request);
         const shell = shellCommand(
@@ -179,11 +244,8 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
         );
         const resolved = resolveShell(shell.file, process.platform, process.env["PATH"] ?? "");
         if (!resolved.found) return yield* new InvalidState({ message: resolved.message });
-        const env = terminalEnv(
-          process.env,
-          settings === undefined ? yield* deps.path : settings.path,
-          process.platform,
-        );
+        const pathValue = settings === undefined ? yield* deps.path : settings.path;
+        const env = terminalEnv(process.env, pathValue, process.platform);
         const args =
           request.command === undefined
             ? shell.args
@@ -208,7 +270,7 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
             new InvalidState({ message: `Can't start ${shell.file}: ${message(error)}` }),
         });
 
-        const terminalId = randomUUID() as TerminalId;
+        const terminalId = restore?.terminalId ?? (randomUUID() as TerminalId);
         const exited = Promise.withResolvers<void>();
         const terminal: Terminal = {
           info: {
@@ -219,17 +281,21 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
             ...(request.script === undefined ? {} : { script: request.script }),
           },
           pty,
+          path: pathValue,
+          keepTimer: undefined,
           scrollback: new Scrollback(limit),
           listeners: new Set(),
           exit: undefined,
           exited: exited.promise,
         };
+        if (restore !== undefined) terminal.scrollback.append(restore.seed);
         // The line a script runs, dimmed, so its output reads under the command that made it.
         if (request.command !== undefined)
           terminal.scrollback.append(`\x1b[2m$ ${request.command}\x1b[0m\r\n`);
         pty.onData((data) => {
           terminal.scrollback.append(data);
           for (const listener of terminal.listeners) listener({ type: "data", data });
+          keepSoon(terminal);
         });
         pty.onExit(({ exitCode, signal }) => {
           const name = signalName(signal);
@@ -239,11 +305,14 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
             ...(name === undefined ? {} : { signal: name }),
           };
           for (const listener of terminal.listeners) listener(terminal.exit);
+          // Its program ended while the host ran: nothing was lost, so nothing comes back.
+          forget(terminal);
           deps.roots?.remove(pty.pid);
           exited.resolve();
         });
         terminals.set(terminalId, terminal);
         if (request.threadId !== undefined) deps.roots?.add(request.threadId, pty.pid, terminalId);
+        keepSoon(terminal);
         return {
           terminalId,
           cwd,
@@ -251,6 +320,8 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
           ...(request.script === undefined ? {} : { script: request.script }),
         };
       });
+
+    const open: Terminals["open"] = (request, settings) => spawnTerminal(request, settings);
 
     const waitForExit = (terminal: Terminal) =>
       Effect.race(
@@ -272,6 +343,7 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
         Effect.flatMap((terminal) =>
           Effect.suspend(() => {
             terminals.delete(terminalId);
+            forget(terminal);
             return reap(terminal);
           }),
         ),
@@ -357,7 +429,45 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
       Stream.runForEach((threadId) => closeAll((t) => t.info.threadId === threadId)),
       Effect.forkScoped,
     );
-    yield* Effect.addFinalizer(() => closeAll(() => true));
+    yield* Effect.addFinalizer(() =>
+      Effect.suspend(() => {
+        // Kept as they stand before their shells are hung up, which the next start shows again.
+        for (const terminal of terminals.values()) keep(terminal);
+        shuttingDown = true;
+        return closeAll(() => true);
+      }),
+    );
+
+    // What the last run of this host kept: each thread's terminal that was open when it ended comes
+    // back under its id, in its folder, with a fresh shell below its old screen. The command it
+    // ran is never run again. One whose thread or folder is gone stays gone.
+    if (deps.kept !== undefined) {
+      for (const kept of deps.kept.takeAll()) {
+        const restored = yield* Effect.gen(function* () {
+          yield* deps.threadFolder(kept.threadId);
+          const seed = yield* Effect.promise(() => keptScreen(kept));
+          return yield* spawnTerminal(
+            {
+              threadId: kept.threadId,
+              cwd: kept.cwd,
+              cols: kept.cols,
+              rows: kept.rows,
+              shell: kept.shell,
+            },
+            { path: kept.path },
+            { terminalId: kept.terminalId, seed },
+          );
+        }).pipe(Effect.exit);
+        if (Exit.isFailure(restored)) {
+          yield* Effect.logInfo("terminals: a kept terminal didn't come back").pipe(
+            Effect.annotateLogs({ terminalId: kept.terminalId }),
+          );
+          continue;
+        }
+        const terminal = terminals.get(kept.terminalId);
+        if (terminal !== undefined) keep(terminal);
+      }
+    }
 
     return {
       open,

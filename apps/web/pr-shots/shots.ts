@@ -1405,6 +1405,20 @@ const NAVIGATION_SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("overview-sidebar").locator(":scope > div").first(),
   },
   {
+    name: "settings-run-after-quit",
+    title:
+      "Settings → General → Running work with Run agents after quit on: where it runs, and Stop now",
+    open: async (page) => {
+      await page.goto("/settings/general");
+      const row = page.getByRole("switch", { name: /Run agents after quit/ });
+      await row.scrollIntoViewIfNeeded();
+      await row.click();
+      await page.getByTestId("kept-host-status").waitFor();
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.locator("#general-running"),
+  },
+  {
     name: "settings-back-named",
     title: "Settings opened from the Gram orchestrator, Back hovered",
     modes: ["dark"],
@@ -2087,6 +2101,75 @@ const openMachineOffline = async (page: Page, offline: Record<string, unknown>) 
   await page.waitForTimeout(400);
 };
 
+/**
+ * The board workspace with three synthetic machines as the server sends them (atlas online, studio
+ * offline, sandbox-1 a provisioned host), a worker placed on each and a solo thread on atlas; the
+ * rest run on this machine and carry no marker.
+ */
+const openMachineMarkers = async (page: Page) => {
+  const made = await openBoardSidebar(page);
+  await page.evaluate((ids) => {
+    const mock = window.gramMock!;
+    const atlas = "m-0123456789abcdef01234567";
+    const studio = "m-89abcdef0123456701234567";
+    const sandbox = "m-456789abcdef012301234567";
+    const now = Date.now();
+    mock.setMachines([
+      { id: atlas, name: "atlas", kind: "joined", onlineSince: now - 2 * 3_600_000 },
+      { id: studio, name: "studio", kind: "joined", offline: { kind: "lost", at: now - 420_000 } },
+      { id: sandbox, name: "sandbox-1", kind: "provisioned", onlineSince: now - 720_000 },
+    ] as never);
+    mock.placeOnMachine(ids.working, atlas);
+    mock.placeOnMachine(ids.waiting[0], atlas);
+    mock.placeOnMachine(ids.inReview, studio);
+    mock.placeOnMachine(ids.ungrouped, sandbox);
+    mock.placeOnMachine("t-flaky" as never, atlas);
+  }, made);
+  await threadRow(page, made.working).getByTestId("overview-worker-machine").waitFor();
+  return made;
+};
+
+const MACHINE_MARKER_SHOTS: readonly Shot[] = [
+  {
+    name: "machine-marker-sidebar",
+    title:
+      "The sidebar with workers on other machines: the machine's glyph and name at a row's edge, the glyph alone beside the row's own words, offline said in words, nothing for a thread on this machine",
+    open: async (page) => {
+      const made = await openMachineMarkers(page);
+      await threadRow(page, made.working).hover();
+      await page.getByTestId("overview-worker-card-machine").waitFor();
+      await page.waitForTimeout(500);
+    },
+  },
+  {
+    name: "machine-marker-board",
+    title:
+      "The Board and the Workers tab: each worker on another machine names it under its task and after its status, an offline one with the struck glyph",
+    open: async (page) => {
+      await openMachineMarkers(page);
+      await openPanelTab(page.getByTestId("right-panel"), "Workers");
+      await page.getByTestId("workers-panel-machine").first().waitFor();
+      await openBoardView(page);
+      await page.getByTestId("rail-machine").first().waitFor();
+      await page.mouse.move(700, 980);
+      await page.waitForTimeout(500);
+    },
+  },
+  {
+    name: "machine-marker-header",
+    title:
+      "A worker on an offline machine, opened: its header keeps the struck glyph and the machine's name in a crowded title bar, and the hover says where it runs, that it is offline, why and the fix",
+    open: async (page) => {
+      const made = await openMachineMarkers(page);
+      await threadRow(page, made.inReview).click();
+      await page.waitForURL(new RegExp(`/t/${made.inReview}$`));
+      await page.getByTestId("pane-machine").first().hover();
+      await page.locator('[data-slot="tooltip-content"][data-open]').waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+];
+
 const MACHINE_SHOTS: readonly Shot[] = [
   {
     name: "machines-tailscale-stopped",
@@ -2173,6 +2256,45 @@ const seedRecommendedOn = async (page: Page) => {
   await seedMockSettings(page, {
     agents: { recommendedSetup: { enabled: true, seen: "2026.11" } },
   });
+};
+
+/** An invented Claude account listing two generations of Opus and Fable beside the latest. */
+const VERSIONED_CLAUDE = [
+  ["default", "Default (recommended)", "Opus 5.5 · Best for everyday, complex tasks"],
+  ["opus", "Opus 5.5", "For complex work and everyday tasks"],
+  ["fable", "Fable 5.2", "For your toughest challenges"],
+  ["sonnet", "Sonnet 5.5", "Most efficient for simpler tasks"],
+  ["haiku", "Haiku 5.5", "Fastest for quick answers"],
+  ["claude-fable-5-1", "Fable 5.1", "Most capable for your hardest and longest tasks"],
+  ["claude-opus-5", "Opus 5", "Earlier Opus"],
+  ["claude-opus-4-6", "Opus 4.6", "Earlier Opus"],
+].map(([id, displayName, description]) => ({
+  id: id!,
+  displayName: displayName!,
+  description: description!,
+  supportsEffort: true,
+  efforts: ["low", "medium", "high", "xhigh"] as const,
+}));
+
+/** `t-deps`'s model picker over `VERSIONED_CLAUDE`, with its Legacy fold `opened` or not. */
+const openLegacyPicker = async (page: Page, opened: boolean) => {
+  await page.clock.install();
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.goto("/t/t-deps");
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  await page.evaluate(
+    (models) => window.gramMock!.seedClaudeAccountModels(models as never),
+    VERSIONED_CLAUDE,
+  );
+  // Past the list's staleness, so the picker asks again as it opens.
+  await page.clock.fastForward("05:01");
+  await page.getByTestId("composer-toolbar").getByTestId("composer-choices").click();
+  await page.getByRole("option", { name: "Fable 5.2" }).waitFor();
+  if (opened) {
+    await page.getByTestId("legacy-models").click();
+    await page.getByRole("option", { name: "Opus 4.6" }).waitFor();
+  }
+  await page.waitForTimeout(400);
 };
 
 const RECOMMENDED_CLAUDE = [
@@ -2425,6 +2547,7 @@ export const SHOTS: readonly Shot[] = [
   ...ORCHESTRATOR_CONTINUE_IN_SHOTS,
   ...CONTINUE_IN_SHOTS,
   ...MACHINE_SHOTS,
+  ...MACHINE_MARKER_SHOTS,
   ...PHONE_ACCESS_SHOTS,
   ...EVENT_ROUTINE_SHOTS,
   ...ROUTINES_POLISH_SHOTS,
@@ -3179,28 +3302,26 @@ export const SHOTS: readonly Shot[] = [
     title: "README: `storefront` on the Board",
     modes: ["dark"],
     open: async (page) => {
-      // Narrow and without the sidebar, which the hero shows, so the rows read at README width.
-      await openReadme(page, 1120, 540);
+      // Narrow and without the sidebar, which the hero shows, so the rows read at README width;
+      // tall enough for the grid's every row.
+      await openReadme(page, 1120, 580);
       await page.getByRole("button", { name: "Hide sidebar" }).click();
       await openBoardView(page);
-      await page.getByTestId("board-layout-option").filter({ hasText: "Lanes" }).click();
-      // The merged workers too, so the lanes run from briefed to merged.
+      // The merged workers too, so the grid runs from briefed to merged.
       await page.getByTestId("rail-show-archived").click();
       await page.getByTestId("rail-worker").first().waitFor();
-      await page.mouse.move(1116, 536);
+      await page.mouse.move(1116, 576);
       await page.waitForTimeout(800);
     },
   },
   {
     name: "readme-inbox",
-    title: "README: the Inbox docked beside `storefront`'s orchestrator, on its one question",
+    title: "README: the Inbox over `storefront`'s orchestrator, on its one question",
     modes: ["dark"],
     open: async (page) => {
-      // Without the sidebar, which the hero shows, so the Inbox docks beside the chat.
       await openReadme(page, 1520, 900);
-      await page.getByRole("button", { name: "Hide sidebar" }).click();
       await page.keyboard.press("ControlOrMeta+Shift+I");
-      await page.locator('[data-testid="inbox"][data-docked]').waitFor();
+      await page.getByTestId("inbox").waitFor();
       await page.getByTestId("inbox-item").first().click();
       await page.mouse.move(1516, 896);
       await page.waitForTimeout(800);
@@ -3672,6 +3793,20 @@ export const SHOTS: readonly Shot[] = [
         await page.getByTestId("needs-you-see-all").click();
         await page.getByTestId("needs-you-panel").waitFor();
       }
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "inbox-wide",
+    title:
+      "The Inbox in a wide window, on an approval: a dialog over the work (before, docked in the side panel's column)",
+    open: async (page) => {
+      await openNeedsYouSeeded(page);
+      await page.setViewportSize({ width: 1728, height: 1000 });
+      await page.getByTestId("overview-needs-you").click();
+      await page.getByTestId("inbox").waitFor();
+      await page.getByTestId("inbox-item").filter({ hasText: "gh pr merge 91 --squash" }).click();
       await page.mouse.move(0, 0);
       await page.waitForTimeout(800);
     },
@@ -4378,6 +4513,17 @@ export const SHOTS: readonly Shot[] = [
       await page.getByRole("option").first().waitFor();
       await page.waitForTimeout(400);
     },
+  },
+  {
+    name: "model-picker-legacy",
+    title:
+      "A thread's model picker over a versioned Claude list: the latest of each family, older ones folded",
+    open: async (page) => openLegacyPicker(page, false),
+  },
+  {
+    name: "model-picker-legacy-open",
+    title: "The same picker with Legacy models opened",
+    open: async (page) => openLegacyPicker(page, true),
   },
   {
     name: "model-picker-new-thread",

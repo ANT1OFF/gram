@@ -145,8 +145,11 @@ function icns(master) {
   return Buffer.concat([head, ...entries]);
 }
 
-function ico(images) {
-  const sizes = SIZES.filter((size) => size <= 256);
+/** A browser tab draws its icon at 64 px at most; the page links the 256 px PNG beside it. */
+const FAVICON_LARGEST = 64;
+
+function ico(images, largest = 256) {
+  const sizes = SIZES.filter((size) => size <= largest);
   const header = Buffer.alloc(6 + 16 * sizes.length);
   header.writeUInt16LE(1, 2);
   header.writeUInt16LE(sizes.length, 4);
@@ -247,7 +250,9 @@ async function generate(BrowserWindow, nativeImage) {
   fs.mkdirSync(path.join(BUILD, "icons"));
   for (const size of LINUX_SIZES)
     fs.writeFileSync(path.join(BUILD, "icons", `${size}x${size}.png`), images.get(size).toPNG());
-  fs.writeFileSync(path.join(WEB, "favicon.ico"), ico(images));
+  // Every launch from a browser fetches this, and it does not compress: the two largest sizes
+  // were four fifths of it.
+  fs.writeFileSync(path.join(WEB, "favicon.ico"), ico(images, FAVICON_LARGEST));
   fs.writeFileSync(path.join(WEB, "gram-icon.png"), images.get(256).toPNG());
   // Every icon, for Settings to show and for the shell to put in the Dock or taskbar.
   fs.mkdirSync(path.join(WEB, "app-icons"), { recursive: true });

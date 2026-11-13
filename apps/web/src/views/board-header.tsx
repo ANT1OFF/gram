@@ -16,10 +16,10 @@ import { pauseClock, pauseLeavesRunning, pauseText } from "@/thread/orchestratio
 
 import { useViewStore } from "./view-store";
 
-// The Board's header: what waits on you (a link into the Inbox) and Show finished;
-// the rows below say who works. It is the window's title bar's, one bar not two: the switcher there names the workspace, and Tidy up
-// and Pause or Resume are the bar's own. A pause says so in a line under it, in the shared pause
-// words.
+// The Board's header: what waits on you (a link into the Inbox) and Show finished; the rows below
+// say who works. It is the window's title bar's, one bar not two: the switcher there names the
+// workspace, and Tidy up and Pause or Resume are the bar's own. A pause says so in a line under it,
+// in the shared pause words.
 
 /**
  * Show finished, while the Board leaves any worker out: archived ones, and the lines whose work is

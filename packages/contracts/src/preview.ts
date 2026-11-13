@@ -5,9 +5,10 @@ import type {
 } from "./browser-inspection.ts";
 import type { PaneResult } from "./agent-browse.ts";
 
-// What the Preview tab may show: a page on loopback, and nothing else. The server's `show_panel`,
-// the shell's preview view and the web app all read this one rule, so none of them can be talked
-// into a host another would refuse. Schema-free, for the shell's main process.
+// What the Preview tab may show. The user opens any web page there; what an agent or the server
+// asks it to open (`show_panel`, a suggestion) stays on loopback. The server, the shell's preview
+// view and the web app all read these rules, so none of them can be talked into a page another
+// would refuse. Schema-free, for the shell's main process.
 
 /** The hosts a preview may load, as the WHATWG URL parser spells them. */
 export const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -28,6 +29,23 @@ export function loopbackUrl(raw: string): string | undefined {
   return LOOPBACK_HOSTS.has(url.hostname) ? url.href : undefined;
 }
 
+/**
+ * `raw` normalized, when it is an http(s) URL on any host with no user name or password: what the
+ * user may open in the Preview tab. `file:`, `javascript:`, `data:`, `chrome:`, `devtools:` and every
+ * other scheme are `undefined`, as is a user name before the host, which is how a look-alike hides.
+ */
+export function webUrl(raw: string): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+  if (url.username !== "" || url.password !== "" || url.hostname === "") return undefined;
+  return url.href;
+}
+
 /** A preview target as a loopback URL: a port (`3000`, `:3000`) or an http(s) localhost URL. */
 export function previewUrl(target: string): string | undefined {
   const trimmed = target.trim();
@@ -39,15 +57,28 @@ export function previewUrl(target: string): string | undefined {
   return loopbackUrl(trimmed);
 }
 
+/** An IPv4 address, whose sites are on a local network more often than not, and served as http. */
+const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
+
 /**
- * What the Preview tab's address strip opens for what a person typed: as `previewUrl`, and a
- * loopback address without its scheme (`localhost:3000/app`) as http. Only for typing: the bridge
- * and the page's own requests keep to `previewUrl`'s absolute URLs.
+ * What the Preview tab's address strip opens for what a person typed: a port, or an http(s) URL on
+ * any host (`webUrl`). Without its scheme, a loopback or IPv4 address (`localhost:3000/app`) is http
+ * and any other name with a dot in it (`example.com/docs`) https. A bare word, or a relative file
+ * name (`README.md`), isn't an address. Only for typing: the bridge keeps to absolute URLs.
  */
 export function previewAddress(input: string): string | undefined {
   const trimmed = input.trim();
-  const whole = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) || /^:?\d+$/.test(trimmed);
-  return previewUrl(whole ? trimmed : `http://${trimmed}`);
+  if (/^:?\d+$/.test(trimmed)) return previewUrl(trimmed);
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)) return webUrl(trimmed);
+  if (/\s/.test(trimmed)) return undefined;
+  const local = loopbackUrl(`http://${trimmed}`);
+  if (local !== undefined) return local;
+  const url = webUrl(`https://${trimmed}`);
+  if (url === undefined) return undefined;
+  const { hostname, pathname } = new URL(url);
+  if (!hostname.includes(".") || (pathname === "/" && previewFileKind(trimmed) !== undefined))
+    return undefined;
+  return IPV4.test(hostname) ? webUrl(`http://${trimmed}`) : url;
 }
 
 /** What the Preview tab shows a file as, by its extension; `undefined` for one it doesn't show. */
@@ -123,8 +154,8 @@ export function isPreviewFilesUrl(raw: string): boolean {
 /** The page in a window's Preview tab, as the shell reports it. */
 export interface PreviewState {
   /**
-   * The page's address: a loopback URL, or a public page the thread's agent was allowed to
-   * open.
+   * The page's address: a loopback URL, a web page the user opened, or a public page the thread's
+   * agent was allowed to open.
    */
   readonly url: string;
   readonly title: string;
@@ -144,6 +175,13 @@ export interface PreviewState {
   readonly action?: { readonly summary: string; readonly at: number } | undefined;
   /** The agent is recording the page as an animated GIF. */
   readonly recording?: boolean | undefined;
+  /**
+   * The page is a web page the user opened from the address strip (`openWeb`), in a session with
+   * their sign-ins: this is the shell's token for that very view, for its life only. Absent for any
+   * other page, an agent's above all. `reopenWeb` names it to re-open the page after the shell
+   * closed it for newer threads'.
+   */
+  readonly webView?: string | undefined;
 }
 
 /** Where the Preview tab's page shows, in the window page's CSS pixels. */
@@ -157,13 +195,26 @@ export interface PreviewBounds {
 /**
  * `window.gram.preview`: one page per thread, drawn by the shell over the Preview tab of
  * whichever window shows it, and kept loaded, out of sight, while none does, for the most recently
- * used few threads. Its session is its own, kept in memory, sharing nothing with the app or the
- * user's browser. It loads loopback pages only; any other link it is asked to follow goes to the
- * user's browser through the shell's link question.
+ * used few threads. Its sessions are its own, kept in memory, sharing nothing with the app or the
+ * user's browser: loopback pages and agents' pages in one, the web pages the user opens in another
+ * that no agent ever drives or reads. A new window goes to the user's browser through the shell's
+ * link question.
  */
 export interface DesktopPreview {
   /** Loads `url`, a loopback URL, in `threadId`'s preview; false when refused or it can't open. */
   open(threadId: string, url: string): Promise<boolean>;
+  /**
+   * Loads `url`, an http(s) page off loopback (`webUrl`), in `threadId`'s preview, in a session
+   * with the user's sign-ins. Only for what the user typed in the address strip, once; false when
+   * refused or it can't open. Absent from shells older than web pages.
+   */
+  openWeb?(threadId: string, url: string): Promise<boolean>;
+  /**
+   * Re-opens `threadId`'s web page that the shell closed for newer threads', by its `webView`
+   * token, at the address the shell recorded; false when that token isn't the thread's closed web
+   * page, or anything else opened in the thread since, such as an agent's page.
+   */
+  reopenWeb?(threadId: string, token: string): Promise<boolean>;
   /**
    * Shows `threadId`'s page at `bounds` in this window, moving it from any other window that showed
    * it; `null` takes it out of this window, keeping it loaded.

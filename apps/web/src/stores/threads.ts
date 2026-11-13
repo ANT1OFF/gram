@@ -21,6 +21,7 @@ import { limitPercent, resetText, windowWord } from "@/usage/limit-format";
 
 import { useNotificationHistory } from "./notifications";
 import { useLapsedDismissals } from "./lapsed-connectors";
+import { useMachines } from "./machines";
 import { useSuggestionsStore } from "./suggestions";
 import { useThreadHistory } from "./thread-history";
 import { useUsageLimits } from "./usage-limits";
@@ -350,6 +351,9 @@ export const createThreadsSlice = (
       case "usageLimits.snapshot":
         useUsageLimits.getState().replace(event.limits);
         return;
+      case "machines.snapshot":
+        useMachines.getState().replace(event.machines);
+        return;
       case "ui.showPanel":
         set(() => ({ showPanel: event }));
         return;
@@ -389,6 +393,7 @@ export const createThreadsSlice = (
       case "routines.changed":
       case "outputs.changed":
       case "docs.changed":
+      case "pages.changed":
         // Only query caches hold these, and `useServerEvents` invalidates them; it also pulls the
         // settings again on `settings.changed`.
         return;

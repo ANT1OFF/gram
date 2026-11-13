@@ -391,6 +391,26 @@ export const USER_ONLY_SETTINGS: ReadonlyArray<UserOnlyKey> = [
     read: (w) => w.settings.workspaces?.orchestratorPeerMessaging === true,
   },
   {
+    key: "agents.claudeInChrome",
+    reason: "it lets Claude threads drive your own Chrome, signed in as you",
+    read: (w) => w.settings.agents.claudeInChrome === true,
+  },
+  {
+    key: "agents.codexComputerUse",
+    reason: "it lets Codex threads drive your browsers and Mac apps",
+    read: (w) => w.settings.agents.codexComputerUse === true,
+  },
+  {
+    key: "workspaces.orchestratorBrowser",
+    reason: "it gives orchestrators your browser",
+    read: (w) => w.settings.workspaces?.orchestratorBrowser === true,
+  },
+  {
+    key: "workspaces.workerBrowser",
+    reason: "it lets an orchestrator give workers your browser",
+    read: (w) => w.settings.workspaces?.workerBrowser === true,
+  },
+  {
     key: "workspace.projectIds",
     reason: "it is the repos a workspace can reach",
     via: "workspace_update",

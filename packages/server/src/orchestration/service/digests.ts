@@ -61,6 +61,7 @@ import {
   wakeWorthy,
   coalesceReasons,
   type PendingReason,
+  type RosterCatalogue,
   type RosterUnavailable,
   type WakeEvent,
   userAwayMinutes,
@@ -105,7 +106,11 @@ const charterLines = (
   charter: OrchestratorCharter,
   mode: Thread["mode"],
   /** The charter's roster as it runs here (`rosterHere`). */
-  here: { readonly roster: ReadonlyArray<RosterModel>; readonly unavailable: RosterUnavailable },
+  here: {
+    readonly roster: ReadonlyArray<RosterModel>;
+    readonly unavailable: RosterUnavailable;
+    readonly catalogue?: RosterCatalogue | undefined;
+  },
 ): ReadonlyArray<string> => [
   `at most ${charter.maxConcurrentWorkers} workers at once; one more asks the user`,
   ...(charter.pauseAtLimitPct === undefined
@@ -127,6 +132,7 @@ const charterLines = (
         `workers start in ${mode} mode, on one of these worker models (agent:model, then what the user wants it used for):`,
         here.roster,
         here.unavailable,
+        here.catalogue,
       ),
 ];
 

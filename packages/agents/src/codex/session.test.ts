@@ -30,6 +30,8 @@ import { CodexServers, type CodexListener } from "./servers.ts";
 import {
   CodexHost,
   CodexHostLayer,
+  COMPUTER_USE_PLUGINS,
+  computerUseOff,
   confinedConfig,
   leftOutConfig,
   gatedHomeIsOwned,
@@ -1688,6 +1690,67 @@ describe("CodexHost confined sessions", () => {
       yield* openSession({ permissionMode: "acceptEdits" }).pipe(Effect.provide(plain.layer));
       expect(plain.calls.map(([method]) => method)).toEqual(["thread/start", "skills/list"]);
     }),
+  );
+
+  it("switches off computer use's plugins, and only the computer-use servers the config has", () => {
+    const off = computerUseOff({
+      config: {
+        mcp_servers: {
+          node_repl: {
+            command: "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl",
+          },
+          sky: { command: "/x/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient" },
+          docs: { url: "https://docs.example/mcp" },
+        },
+      },
+    } as never);
+    expect(off.plugins).toEqual(
+      Object.fromEntries(COMPUTER_USE_PLUGINS.map((id) => [id, { enabled: false }])),
+    );
+    // A table for a server the config lacks would fail Codex's whole config.
+    expect(off.servers).toEqual({ node_repl: { enabled: false }, sky: { enabled: false } });
+    expect(computerUseOff(undefined).servers).toEqual({});
+  });
+
+  it.effect("keeps computer use off for a thread not given the browser, and leaves it given", () =>
+    Effect.gen(function* () {
+      const config = {
+        mcp_servers: {
+          node_repl: {
+            command: "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl",
+          },
+          docs: { url: "https://docs.example/mcp" },
+        },
+      };
+      const startOf = (h: ReturnType<typeof harness>) =>
+        h.calls.find(([method]) => method === "thread/start")?.[1] as {
+          config?: { mcp_servers?: Record<string, unknown>; plugins?: Record<string, unknown> };
+        };
+
+      const off = harness({ config });
+      yield* openSession({ browser: false }).pipe(Effect.provide(off.layer));
+      expect(startOf(off).config?.plugins).toEqual(
+        Object.fromEntries(COMPUTER_USE_PLUGINS.map((id) => [id, { enabled: false }])),
+      );
+      expect(startOf(off).config?.mcp_servers).toEqual({ node_repl: { enabled: false } });
+
+      const on = harness({ config });
+      yield* openSession({ browser: true }).pipe(Effect.provide(on.layer));
+      expect(startOf(on).config ?? {}).not.toHaveProperty("plugins");
+      expect(on.calls.some(([method]) => method === "config/read")).toBe(false);
+
+      // Unsaid, the user's own config stands and nothing extra is read.
+      const unsaid = harness({ config });
+      yield* openSession({}).pipe(Effect.provide(unsaid.layer));
+      expect(unsaid.calls.some(([method]) => method === "config/read")).toBe(false);
+
+      // Gram's own gated home runs without plugins, so the browser can't be had there.
+      const gated = harness({ config, nativeGateReady: true });
+      yield* openSession({ browser: true, outwardGate: "all" }).pipe(Effect.provide(gated.layer));
+      expect(startOf(gated).config?.plugins).toEqual(
+        Object.fromEntries(COMPUTER_USE_PLUGINS.map((id) => [id, { enabled: false }])),
+      );
+    }).pipe(Effect.scoped),
   );
 
   it.effect("keeps a confined dream's app tools reachable, even when the config names them", () =>

@@ -16,6 +16,26 @@ import { UsageOverview, UsageOverviewQuery } from "../usage-overview.ts";
 import { LimitHistoryQuery, UsageLimitHistory } from "../usage-limit-history.ts";
 
 /**
+ * This machine's host kept running after Gram quits (`agents.keepRunningAfterQuit`), as it stands
+ * this run.
+ */
+export const KeptHostStatus = Schema.Struct({
+  /** Whether this machine can keep it: macOS or Linux, and a Gram that runs work here. */
+  available: Schema.Boolean,
+  /** The setting, which takes effect when Gram next starts. */
+  on: Schema.Boolean,
+  /** Whether this run's host is that service, which outlives Gram. */
+  running: Schema.Boolean,
+  /** The service's name: its systemd user unit, or its launchd label. */
+  service: Schema.optionalKey(Schema.String),
+  /** Agent sessions it holds for this Gram's threads, which go on after a quit. */
+  sessions: Schema.Int,
+  /** Why it was asked for and couldn't be had this run. */
+  problem: Schema.optionalKey(Schema.String),
+});
+export type KeptHostStatus = typeof KeptHostStatus.Type;
+
+/**
  * The app itself: its event feed, windows, usage, diagnostics and launch checks, and filing issues.
  */
 export const AppRpcs = RpcGroup.make(
@@ -54,6 +74,12 @@ export const AppRpcs = RpcGroup.make(
     success: DiagnosticsReport,
     error: errors(),
   }),
+  Rpc.make("app.keptHost", { success: KeptHostStatus, error: errors() }),
+  /**
+   * Stops the host kept running after Gram quits, now: every agent session and shell in it ends.
+   * The setting stays as it is. `InvalidState` where there is none to stop.
+   */
+  Rpc.make("app.keptHostStop", { error: errors(InvalidState) }),
   /** Opens the logs folder in the OS file manager; `InvalidState` when it can't be opened. */
   Rpc.make("app.openLogsFolder", { error: errors(InvalidState) }),
   Rpc.make("app.openExternal", { payload: OpenExternalPayload, error: errors(InvalidState) }),

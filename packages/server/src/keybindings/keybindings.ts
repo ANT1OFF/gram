@@ -2,9 +2,44 @@ import { statSync, watch } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { KeybindingOverrides, KeybindingsState } from "@gram/contracts";
+import { type LastGoodFiles, type Read, settleLastGood } from "../settings/last-good.ts";
 
 export const KEYBINDINGS_FILE = "keybindings.json";
 export const KEYBINDINGS_SCHEMA_FILE = "keybindings.schema.json";
+/** The last version of `keybindings.json` that read cleanly, which a broken edit leaves in use. */
+export const KEYBINDINGS_LAST_GOOD_FILE = "keybindings.last-good.json";
+/** Why `keybindings.json` as it stands isn't used; there only while it is broken. */
+export const KEYBINDINGS_ERROR_FILE = "keybindings.json.error";
+
+const lastGoodFiles = (dataDir: string): LastGoodFiles => ({
+  source: join(dataDir, KEYBINDINGS_FILE),
+  kept: join(dataDir, KEYBINDINGS_LAST_GOOD_FILE),
+  error: join(dataDir, KEYBINDINGS_ERROR_FILE),
+});
+
+const bindingsCodec = {
+  encode: (bindings: KeybindingOverrides) => JSON.stringify(bindings),
+  decode: (text: string): KeybindingOverrides | undefined => {
+    const parsed = parseKeybindings(`{"bindings":${text}}`);
+    return parsed.problems.length === 0 ? parsed.bindings : undefined;
+  },
+};
+
+/**
+ * The overrides to apply for `text`, the file as read (`undefined` when it couldn't be): a version
+ * with any problem is broken as a whole, and the last good one stays in use.
+ */
+const settleKeybindings = (dataDir: string, text: string | undefined, readProblem?: string) => {
+  const parsed =
+    text === undefined
+      ? { bindings: {}, problems: [readProblem ?? "keybindings.json couldn't be read"] }
+      : parseKeybindings(text);
+  const read: Read<KeybindingOverrides> =
+    parsed.problems.length === 0
+      ? { ok: true, value: parsed.bindings }
+      : { ok: false, problems: parsed.problems, fallback: parsed.bindings };
+  return settleLastGood(lastGoodFiles(dataDir), read, bindingsCodec);
+};
 
 /** The chords the web registry understands: `mod`, `alt` and `shift`, then one key. */
 const KEYS_PATTERN = "^((mod|ctrl|alt|shift)\\+)*[^+\\s]+$";
@@ -74,23 +109,29 @@ const writeSchema = async (dataDir: string) => {
   );
 };
 
-/** Reads `keybindings.json` from `dataDir`; a missing file means no overrides. Never rejects. */
+/**
+ * Reads `keybindings.json` from `dataDir`; a missing file means no overrides. A version that doesn't
+ * read cleanly leaves the last good one in use, with why in `keybindings.json.error` beside it.
+ * Never rejects.
+ */
 export async function readKeybindings(dataDir: string): Promise<KeybindingsState> {
   const path = join(dataDir, KEYBINDINGS_FILE);
   const problems: string[] = [];
   await writeSchema(dataDir).catch((error: unknown) =>
     problems.push(`Couldn't write ${KEYBINDINGS_SCHEMA_FILE}: ${message(error)}`),
   );
-  let text = "";
+  let text: string | undefined = "";
+  let readProblem: string | undefined;
   try {
     text = await readFile(path, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      problems.push(`Couldn't read keybindings.json: ${message(error)}`);
+      text = undefined;
+      readProblem = `Couldn't read keybindings.json: ${message(error)}`;
     }
   }
-  const parsed = parseKeybindings(text);
-  return { path, bindings: parsed.bindings, problems: [...problems, ...parsed.problems] };
+  const settled = await settleKeybindings(dataDir, text, readProblem);
+  return { path, bindings: settled.value, problems: [...problems, ...settled.problems] };
 }
 
 /** Replaces the overrides, rewriting the file with its `$schema` reference. */
@@ -102,7 +143,8 @@ export async function writeKeybindings(
   const path = join(dataDir, KEYBINDINGS_FILE);
   const text = formatKeybindingsFile(bindings);
   await writeFile(path, text);
-  return { path, ...parseKeybindings(text) };
+  const settled = await settleKeybindings(dataDir, text);
+  return { path, bindings: settled.value, problems: [...settled.problems] };
 }
 
 /**

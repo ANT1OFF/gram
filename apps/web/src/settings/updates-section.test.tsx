@@ -8,7 +8,7 @@ import { ApiProvider } from "@/api/context";
 import type { Api } from "@/api/types";
 import { useUpdateStore } from "@/updates/store";
 
-import { UpdatesPage } from "./pages";
+import { UpdatesPage } from "./about-page";
 import { UpdatesSection } from "./updates-section";
 
 const CHECK: UpdateCheck = {

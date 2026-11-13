@@ -10,6 +10,8 @@ import {
   autonomyOf,
   NotFound,
   customModelsOf,
+  withCustomModels,
+  type CatalogueRow,
   isLocalHost,
   requiredChecksOf,
   type AgentKind,
@@ -38,13 +40,13 @@ import {
   hostCandidates,
   hostListing,
   rosterModelHere,
-  rosterName,
 } from "@gram/contracts";
 import { Proc, samePathKey, samePath, basename, tryRepoRoots } from "@gram/git";
 import * as Clock from "effect/Clock";
 import type * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FiberMap from "effect/FiberMap";
 import * as FiberSet from "effect/FiberSet";
 import * as Option from "effect/Option";
@@ -65,7 +67,6 @@ import { ThreadStore } from "../../persistence/thread-store.ts";
 import { AgentHosts } from "../../runtime/agent-hosts.ts";
 import { makeThreadCreator } from "../../runtime/create-in-checkout.ts";
 import { CheckoutService } from "../../runtime/hooks.ts";
-import { selectableModels } from "../../runtime/model-efforts.ts";
 import { availableHere } from "../../runtime/model-slots.ts";
 import { UsageLimitPoller } from "../../usage/limit-poller.ts";
 import { UsageLimitReadings } from "../../usage/limit-readings.ts";
@@ -110,9 +111,12 @@ import {
   type PrWakeFired,
   type PendingReason,
   type PrMark,
+  type RosterCatalogue,
   type RosterUnavailable,
   userHoldLapsesAt,
   matchWorkerModel,
+  closestWorkerModel,
+  rosterNames,
 } from "../rules.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import { RemoteHosts } from "../../host/remote-hosts.ts";
@@ -257,14 +261,21 @@ export const workerModel = (
     /** The charter's roster as it runs here (`rosterHere`), in its order; absent with none. */
     readonly roster: ReadonlyArray<RosterModel>;
     readonly unavailable: RosterUnavailable;
+    /** Its agents' model catalogues, which name a model by alias, pinned id or display name. */
+    readonly catalogue?: RosterCatalogue | undefined;
   },
 ) =>
   Effect.gen(function* () {
     const allowed = here?.roster ?? ownWorkerModel(caller);
     const unavailable = here?.unavailable ?? new Map<number, string>();
-    const match = matchWorkerModel(allowed, named, caller.model, unavailable);
+    const catalogue = here?.catalogue;
+    const match = matchWorkerModel(allowed, named, caller.model, unavailable, catalogue);
     if (!match.ok) {
-      const labels = allowed.map(rosterName).join(", ");
+      const labels = rosterNames(allowed, catalogue);
+      const closest =
+        named === undefined || match.why !== "unknown"
+          ? undefined
+          : closestWorkerModel(allowed, named, catalogue);
       return yield* toolError(
         tool,
         refusal(
@@ -273,7 +284,7 @@ export const workerModel = (
             ? `${named} names more than one of the charter's worker models. Say which by its name: agent:model, or tier:<tier> for one that follows a tier. Allowed: ${labels}.`
             : match.why === "unavailable"
               ? `The selected worker model cannot run here, so no worker is spawned. ${match.reasons}. Tell the user.`
-              : `The charter doesn't allow workers on ${named ?? "that model"}. Allowed: ${labels}.`,
+              : `The charter doesn't allow workers on ${named ?? "that model"}.${closest === undefined ? "" : ` Did you mean ${closest}?`} Allowed: ${labels}.`,
         ),
       );
     }
@@ -331,6 +342,9 @@ export type Signal =
   /** A read found the workspace's outbox unreadable; `quarantineOutbox` sets it aside. */
   | { readonly type: "outboxUnreadable"; readonly workspaceId: WorkspaceId }
   | { readonly type: "boot" };
+
+/** How long a roster read waits for Claude Code to list its models before naming by id alone. */
+const CATALOGUE_WAIT = "3 seconds";
 
 const NO_AUTHORITY =
   "This thread is not its workspace's orchestrator, so this tool does nothing here.";
@@ -580,6 +594,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   /** Present where an event sink is configured: told the feature cards as they change. */
   const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
   const creator = makeThreadCreator({ store, checkouts, runtimes });
+  /** Model listings a roster read stopped waiting for, left to finish and fill their cache. */
+  const catalogueListings = yield* FiberSet.make();
 
   /**
    * The roster as it runs here: local entries stay on their own CLI, while explicit gateway
@@ -599,6 +615,32 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       const profiles = yield* store.listProfiles;
       const settings = yield* store.getSettings;
       const own = new Map<AgentKind, ReadonlyArray<string> | undefined>();
+      const catalogue = new Map<AgentKind, ReadonlyArray<CatalogueRow>>();
+      /**
+       * `agent`'s own catalogue, as its picker lists it, once per call. Codex's is what an entry's
+       * availability is read from, as before; Claude's only names models (aliases, pinned ids,
+       * display names), so a slow listing gives up on that rather than hold a spawn or a digest.
+       */
+      const catalogueOf = (agent: AgentKind) =>
+        Effect.gen(function* () {
+          if (own.has(agent)) return own.get(agent);
+          const listing = (yield* hosts.get(agent)).listModels().pipe(Effect.option);
+          // Claude's listing runs on detached, so a wait given up on still fills its cache.
+          const found =
+            agent === "codex"
+              ? yield* listing
+              : yield* Fiber.join(yield* FiberSet.run(catalogueListings, listing)).pipe(
+                  Effect.timeout(CATALOGUE_WAIT),
+                  Effect.orElseSucceed(() => Option.none()),
+                );
+          const listed = Option.isNone(found)
+            ? undefined
+            : withCustomModels(found.value, customModelsOf(settings, agent));
+          if (listed !== undefined) catalogue.set(agent, listed);
+          const ids = listed?.map((each) => each.id);
+          own.set(agent, ids);
+          return ids;
+        }).pipe(Effect.orElseSucceed(() => undefined));
       const roster: Array<RosterModel> = [];
       const unavailable = new Map<number, string>();
       const following = allowed.some((entry) => "tier" in entry);
@@ -634,16 +676,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           );
           continue;
         }
-        const gatewayKind = entry.agent === "codex";
-        if (gatewayKind && entry.profileId === undefined && !own.has(entry.agent)) {
-          own.set(
-            entry.agent,
-            yield* selectableModels(store, hosts, entry.agent, undefined).pipe(
-              Effect.map((models) => models.map((each) => each.id)),
-              Effect.orElseSucceed(() => undefined),
-            ),
-          );
-        }
+        if (entry.profileId === undefined) yield* catalogueOf(entry.agent);
         const context = {
           profiles,
           ownModels: own.get(entry.agent),
@@ -681,7 +714,11 @@ export const makeOrchestrationKit = Effect.gen(function* () {
             : undefined);
         if (why !== undefined) unavailable.set(index, why);
       }
-      return { roster, unavailable: unavailable as RosterUnavailable };
+      return {
+        roster,
+        unavailable: unavailable as RosterUnavailable,
+        catalogue: catalogue as RosterCatalogue,
+      };
     });
 
   /** The roster `caller` picks workers from, as it runs here: the charter's, else its own model. */
@@ -690,6 +727,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       ? Effect.succeed({
           roster: ownWorkerModel(caller),
           unavailable: new Map<number, string>() as RosterUnavailable,
+          catalogue: new Map() as RosterCatalogue,
         })
       : rosterHere(charter.workerModels, charter);
 

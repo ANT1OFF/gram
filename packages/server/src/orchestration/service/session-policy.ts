@@ -13,6 +13,7 @@ import { dreamRolePromptFor } from "../dream-prompt.ts";
 import { plainPrompt, rolePrompt, workerPrompt } from "../prompt.ts";
 import {
   admittedForRole,
+  browserFor,
   modeAfterDowngrade,
   outwardGateFor,
   mcpListsFor,
@@ -39,6 +40,7 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
           audience: "plain",
           outwardGate: undefined,
           ...confined,
+          ...(browserFor(thread, "plain", settings) ? { browser: true } : {}),
           ...(instructions === undefined ? {} : { instructions }),
         };
       }
@@ -65,6 +67,7 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
           // Only where the user lets it, and only outward: the agent's own peer messaging would
           // reach a session past Gram's routing, so workers and plain threads never have it.
           ...(orchestratorPeerMessaging(settings) ? { peerMessaging: true } : {}),
+          ...(browserFor(thread, audience, settings) ? { browser: true } : {}),
           ...mcpListsFor({
             audience,
             orchestrated:
@@ -97,6 +100,7 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
         return {
           audience,
           outwardGate,
+          ...(browserFor(thread, audience, settings) ? { browser: true } : {}),
           ...mcpListsFor({ audience, orchestrated: undefined, charter: state?.charter }),
           instructions: workerPrompt({
             feature: thread.spawnedBy.feature,

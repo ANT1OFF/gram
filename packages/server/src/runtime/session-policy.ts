@@ -5,6 +5,8 @@ import * as Effect from "effect/Effect";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import { withProfile } from "../thread-profiles/policy.ts";
 import type { SystemDelivery } from "./system-delivery.ts";
+import { browserStatus } from "./browser-status.ts";
+import { makeResumePlans } from "./history-plans.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 
 /** What a thread's role adds to every agent session it opens. */
@@ -39,6 +41,11 @@ export interface SessionPolicy {
   readonly noBlockingAsk?: boolean | undefined;
   /** Send to the user's sessions outside Gram (`OpenSessionOptions.peerMessaging`). */
   readonly peerMessaging?: boolean | undefined;
+  /**
+   * Drive the user's browser (`OpenSessionOptions.browser`): the thread was given it, or is an
+   * orchestrator where `workspaces.orchestratorBrowser` is on, and its agent's consent allows.
+   */
+  readonly browser?: boolean | undefined;
 }
 
 /**
@@ -80,6 +87,7 @@ export interface SessionPolicyDeps {
  * installed every thread is plain.
  */
 export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
+  const { resumeOptions } = makeResumePlans({ store });
   let sessionPolicy: SessionPolicyPort | undefined;
   /** Policy failure keeps strict gates, guided native approvals, and every Dream's bounded bridge. */
   const policyFor = (thread: Thread): Effect.Effect<SessionPolicy> =>
@@ -141,21 +149,30 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
       ? Effect.succeed(undefined)
       : sessionPolicy.switchHandoff(thread);
 
-  const methods: Pick<ThreadRuntimesShape, "setSessionPolicy" | "audienceOf"> = {
-    setSessionPolicy: (port) =>
-      Effect.sync(() => {
-        sessionPolicy = port;
-      }),
-    audienceOf: (threadId) =>
-      store.getThread(threadId).pipe(
-        Effect.flatMap((thread) =>
-          thread.role === "dream"
-            ? Effect.succeed("dream" as const)
-            : Effect.map(policyFor(thread), (policy) => policy.audience),
+  const methods: Pick<ThreadRuntimesShape, "setSessionPolicy" | "audienceOf" | "browserStatusOf"> =
+    {
+      setSessionPolicy: (port) =>
+        Effect.sync(() => {
+          sessionPolicy = port;
+        }),
+      audienceOf: (threadId) =>
+        store.getThread(threadId).pipe(
+          Effect.flatMap((thread) =>
+            thread.role === "dream"
+              ? Effect.succeed("dream" as const)
+              : Effect.map(policyFor(thread), (policy) => policy.audience),
+          ),
+          Effect.orElseSucceed((): ToolAudience => "plain"),
         ),
-        Effect.orElseSucceed((): ToolAudience => "plain"),
-      ),
-  };
+      browserStatusOf: (threadId) =>
+        Effect.gen(function* () {
+          const thread = yield* store.getThread(threadId);
+          const settings = yield* store.getSettings;
+          // The options the next open resumes or forks with, as `openSession` reads them.
+          const resume = yield* resumeOptions(thread, undefined);
+          return browserStatus(thread, settings, yield* policyFor(thread), resume);
+        }),
+    };
 
   return { policyFor, opening, modeAfterSwitch, switchHandoff, methods };
 };

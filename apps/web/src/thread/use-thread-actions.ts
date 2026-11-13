@@ -76,6 +76,18 @@ export function useThreadActions(threadId: ThreadId) {
             attempt(at === undefined ? "unsnooze the thread" : "snooze the thread", async () => {
               await api.snooze(threadId, at ?? null);
             }),
+    /**
+     * Gives the thread your browser or takes it back; its session reopens once idle. An
+     * orchestrator's is a setting, and a dream never has it, so `undefined` for both.
+     */
+    toggleBrowser:
+      thread === undefined || thread.role !== undefined
+        ? undefined
+        : () =>
+            attempt(
+              thread.browser === true ? "take your browser back" : "give the thread your browser",
+              async () => void (await api.setBrowser(threadId, thread.browser !== true)),
+            ),
     /** Asks for a date and a 24-hour time to snooze it until. */
     snoozeCustom: () => open({ kind: "snooze", threadId }),
     togglePark: () => {

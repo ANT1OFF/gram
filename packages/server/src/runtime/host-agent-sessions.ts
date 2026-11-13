@@ -3,6 +3,8 @@ import type { AgentConnectors, AgentHost, AgentSession, OpenSessionOptions } fro
 import {
   type AgentEvent,
   type AgentKind,
+  type HostSessionOpened,
+  type ThreadId,
   AgentUnavailable,
   AnswerUndelivered,
   HostFailed,
@@ -11,11 +13,14 @@ import {
   type UserInput,
 } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import { LocalHostProcess } from "../host/local-process.ts";
+import * as Option from "effect/Option";
+import { KeptSessions } from "./kept-sessions.ts";
 import { REATTACH_WITHIN_MS } from "../host/following-sessions.ts";
 import { HOST_MCP_PATH } from "../host/machine-keys.ts";
 import { type AttachmentsOnMachine, carryAttachments } from "../host/carry-attachments.ts";
@@ -28,6 +33,14 @@ export const HOST_STOPPED_ENDED: AgentEvent = {
   type: "ended",
   reason: "This machine's host stopped, and the agent with it.",
 };
+
+/**
+ * How a taken-up session's app tools are pointed at this Gram: again every second for up to ten
+ * minutes; its MCP endpoint answers once the server is up.
+ */
+const RETARGET_RETRY = Schedule.spaced("1 second").pipe(
+  Schedule.upTo({ duration: Duration.minutes(10) }),
+);
 
 /** How often the events a session's consumer has received are confirmed to its host. */
 const ACK_EVERY = "250 millis";
@@ -103,6 +116,7 @@ const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): H
     mcpNoneWithoutToolSearch: o.mcpNoneWithoutToolSearch,
     noBlockingAsk: o.noBlockingAsk,
     peerMessaging: o.peerMessaging,
+    browser: o.browser,
   }) as HostSessionOpen;
 
 /**
@@ -120,6 +134,36 @@ const logFailed = (call: string) => (error: HostFailed) =>
   );
 
 /**
+ * A session of this machine's host kept running after Gram quits, as the app records it, so the
+ * Gram that opens next can follow it on from where this one left it.
+ */
+export interface KeptSession {
+  readonly threadId: ThreadId;
+  readonly handle: string;
+  readonly opened: HostSessionOpened;
+  /**
+   * The host's last event this Gram handled with the agent at rest (between turns): what it has
+   * confirmed. The next Gram replays everything after it, the open turn whole.
+   */
+  readonly confirmed: number;
+}
+
+/** How a session in a kept-running host tells the app's record of it how it stands. */
+export interface KeepHooks {
+  readonly record: (kept: KeptSession) => void;
+  readonly forget: (threadId: ThreadId, handle: string) => void;
+  /** True once the app is quitting: its sessions are left running, not closed. */
+  readonly detaching: () => boolean;
+}
+
+/** The statuses of an agent between turns. */
+const AT_REST: ReadonlySet<string> = new Set(["idle", "error", "starting"]);
+
+/** Whether `event` leaves the agent between turns, or mid-turn. */
+const turnStateAfter = (event: AgentEvent, inTurn: boolean): boolean =>
+  event.type === "turnEnd" ? false : event.type === "status" ? !AT_REST.has(event.status) : inTurn;
+
+/**
  * A session opened in the host process, as the runtime holds it. Its events come numbered, and the
  * ones received are confirmed to the host, which keeps the rest for a stream that picks up again
  * (as a reconnecting host's will). A host that goes ends the session with an `ended` event, which
@@ -135,22 +179,77 @@ const openOnHost = (
   machine?: string,
   /** The input as the host's machine reads it; this machine's own host reads it as it is. */
   carry: (input: UserInput) => Effect.Effect<UserInput> = Effect.succeed,
+  /**
+   * This machine's host kept running after Gram quits: the record to keep, and with `attach`, the
+   * session a Gram before this one left running, followed on instead of opening one.
+   */
+  keep?: { readonly hooks: KeepHooks; readonly attach?: KeptSession },
 ) =>
   Effect.gen(function* () {
-    const handle = randomUUID();
-    // Added first, so a session whose open was given up on is closed on the host too.
-    yield* Effect.addFinalizer(() => host.close(handle));
-    const opened = yield* host.open(openRequest(handle, agent, o)).pipe(
-      Effect.catchTag("HostFailed", (error) =>
-        Effect.fail(
-          new AgentUnavailable({
-            agent,
-            reason: "startup-failed",
-            message: error.message,
-          }),
-        ),
-      ),
+    const attach = keep?.attach;
+    const handle = attach?.handle ?? randomUUID();
+    const threadId = o.threadId;
+    // Added first, so a session whose open was given up on is closed on the host too. A Gram that
+    // quits with the host kept running leaves it running there, for the next one.
+    yield* Effect.addFinalizer(() =>
+      keep?.hooks.detaching() === true
+        ? Effect.void
+        : host.close(handle).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                if (threadId !== undefined) keep?.hooks.forget(threadId, handle);
+              }),
+            ),
+          ),
     );
+    const opened =
+      attach?.opened ??
+      (yield* host.open(openRequest(handle, agent, o)).pipe(
+        Effect.catchTag("HostFailed", (error) =>
+          Effect.fail(
+            new AgentUnavailable({
+              agent,
+              reason: "startup-failed",
+              message: error.message,
+            }),
+          ),
+        ),
+      ));
+    // Its app tools still point at the Gram that opened it, whose address and token are gone. At
+    // a Gram's start the session is taken up before that Gram serves its MCP endpoint, so pointing
+    // them here is tried again until it takes, for as long as the session lasts, rather than once.
+    const mcp = o.mcp;
+    if (attach !== undefined && mcp !== undefined) {
+      const retarget = host.retarget;
+      if (retarget === undefined) {
+        yield* Effect.logWarning(
+          "kept host: its host can't point a session's app tools here; they fail until it reopens",
+        );
+      } else {
+        yield* retarget(handle, mcp).pipe(
+          Effect.tapError((error) =>
+            Effect.logDebug("kept host: a session's app tools aren't pointed here yet").pipe(
+              Effect.annotateLogs({ reason: error.message }),
+            ),
+          ),
+          Effect.retry(RETARGET_RETRY),
+          Effect.tap(() => Effect.logInfo("kept host: a session's app tools point here")),
+          Effect.catch((error) =>
+            Effect.logWarning("kept host: a session's app tools couldn't be pointed here").pipe(
+              Effect.annotateLogs({ reason: error.message }),
+            ),
+          ),
+          Effect.forkScoped,
+        );
+      }
+    }
+    /** What a kept session confirmed: the host's last event handled with the agent at rest. */
+    let confirmed = attach?.confirmed ?? 0;
+    const remember = () => {
+      if (keep !== undefined && threadId !== undefined)
+        keep.hooks.record({ threadId, handle, opened, confirmed });
+    };
+    remember();
     const onSeen = o.onConnectorsSeen;
     if (onSeen !== undefined) {
       yield* host.connectorsSeen(handle).pipe(
@@ -168,11 +267,18 @@ const openOnHost = (
           Effect.andThen(Effect.fail(new HostFailed({ message: "The session ended." }))),
         ),
       );
-    let received = 0;
-    let acked = 0;
+    let received = attach?.confirmed ?? 0;
+    let acked = received;
+    /** How many events this side has read, and those read with the agent at rest, in order. */
+    let read = 0;
+    let inTurn = attach !== undefined;
+    const atRest: Array<{ readonly local: number; readonly host: number }> = [];
+    // A kept session confirms only what was handled with the agent at rest, so the host keeps the
+    // open turn whole for a Gram that opens after this one; any other confirms what arrived.
     yield* Effect.suspend(() => {
-      if (received <= acked) return Effect.void;
-      acked = received;
+      const upTo = keep === undefined ? received : confirmed;
+      if (upTo <= acked) return Effect.void;
+      acked = upTo;
       return host.ack(handle, acked);
     }).pipe(Effect.repeat(Schedule.spaced(ACK_EVERY)), Effect.forkScoped);
 
@@ -184,6 +290,11 @@ const openOnHost = (
       host.events(handle, received).pipe(
         Stream.map((next) => {
           received = next.seq;
+          read += 1;
+          if (keep !== undefined) {
+            inTurn = turnStateAfter(next.event, inTurn);
+            if (!inTurn) atRest.push({ local: read, host: next.seq });
+          }
           return next.event;
         }),
         Stream.catch((error) =>
@@ -240,6 +351,19 @@ const openOnHost = (
 
     const session: AgentSession = {
       events,
+      ...(attach === undefined ? {} : { reattached: true }),
+      ...(keep === undefined
+        ? {}
+        : {
+            handled: (count: number) => {
+              let moved = false;
+              while (atRest[0] !== undefined && atRest[0].local <= count) {
+                confirmed = atRest.shift()!.host;
+                moved = true;
+              }
+              if (moved) remember();
+            },
+          }),
       // Each under an id of its own, so the host takes it once however often it is asked.
       send: (input, sendOptions) =>
         carry(input).pipe(
@@ -336,6 +460,11 @@ export const agentHostThroughHost = (
   host: HostSessionsConnection,
   gone: () => boolean,
   inServer: AgentHost,
+  /** This machine's host kept running after Gram quits: its record, and what it kept. */
+  keep?: {
+    readonly hooks: KeepHooks;
+    readonly take: (threadId: ThreadId) => KeptSession | undefined;
+  },
 ): AgentHost => {
   const kind = inServer.kind;
   const invalidateRuntime = inServer.invalidateRuntime;
@@ -345,9 +474,26 @@ export const agentHostThroughHost = (
     ...inServer,
     open: (options) =>
       Effect.suspend(() =>
-        gone() || !opensOnHost(kind, options)
+        // A host that can't hold the browser off (`browser-policy`) would run the CLI's own
+        // Chrome default, so the server's own adapter, which holds it off, opens the session.
+        gone() || !opensOnHost(kind, options) || host.browserPolicy !== true
           ? inServer.open(options)
-          : openOnHost(host, kind, options).pipe(
+          : openOnHost(
+              host,
+              kind,
+              options,
+              undefined,
+              undefined,
+              keep === undefined
+                ? undefined
+                : (() => {
+                    const attach =
+                      options.threadId === undefined ? undefined : keep.take(options.threadId);
+                    return attach === undefined
+                      ? { hooks: keep.hooks }
+                      : { hooks: keep.hooks, attach };
+                  })(),
+            ).pipe(
               // The host went before the session opened: the server opens it instead.
               Effect.catch((error) => (gone() ? inServer.open(options) : Effect.fail(error))),
             ),
@@ -394,6 +540,9 @@ export const AgentHostsThroughHost: Layer.Layer<AgentHosts, never, AgentHosts | 
       const inner = yield* AgentHosts;
       const connection = (yield* LocalHostProcess).connection;
       if (connection === undefined) return inner;
+      // Absent in layers without it; off unless the host is the one kept running after Gram quits.
+      const kept = Option.getOrUndefined(yield* Effect.serviceOption(KeptSessions));
+      const keep = kept?.on === true ? { hooks: kept.hooks, take: kept.take } : undefined;
       // One wrapper per agent, so the runtime always holds the same object for it.
       const wrapped = new WeakMap<AgentHost, AgentHost>();
       return AgentHosts.of({
@@ -402,7 +551,7 @@ export const AgentHostsThroughHost: Layer.Layer<AgentHosts, never, AgentHosts | 
             if (kind !== "claude") return agent;
             const known = wrapped.get(agent);
             if (known !== undefined) return known;
-            const through = agentHostThroughHost(connection.sessions, connection.gone, agent);
+            const through = agentHostThroughHost(connection.sessions, connection.gone, agent, keep);
             wrapped.set(agent, through);
             return through;
           }),
@@ -506,7 +655,9 @@ export const agentHostOnMachine = (
                   message: `This session can't run on ${machineName} yet.`,
                 }),
               )
-            : Effect.suspend(() => {
+            : // A host there without `browser-policy` refuses the open itself
+              // (`HOST_BROWSER_POLICY_MISSING`), checked against whichever host is connected then.
+              Effect.suspend(() => {
                 const reaching = overTailnet(options);
                 return reaching === undefined
                   ? Effect.fail(

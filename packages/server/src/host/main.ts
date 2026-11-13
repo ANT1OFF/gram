@@ -34,7 +34,10 @@ import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { claudeSignInOf, hostStatusOf } from "./claude-sign-in.ts";
 import { sessionsOnHost } from "./sessions.ts";
-import { terminalsOnHost } from "./terminals.ts";
+import { terminalsOnHostKeeping } from "./terminals.ts";
+import { KEPT_TERMINALS_ENV, keptTerminalsIn } from "../terminal/kept.ts";
+import { serveLocal } from "./local-service.ts";
+import { LOCAL_SECRET_ENV } from "./local-service-unit.ts";
 import { stopOn } from "./stop.ts";
 import {
   HOST_FEATURES,
@@ -116,15 +119,28 @@ const hostService = (
   hostId: HostId,
   claude?: HostClaudeToken,
   update?: (busy: BusyOf, admission: Admission) => HostUpdater | undefined,
+  /** Where its threads' open terminals are kept for its next start; absent, none are. */
+  keptTerminals?: string,
+  /** This machine's host kept running after the app quit: its sessions' timing, and its busy. */
+  local?: {
+    readonly graceFrom: () => number | undefined;
+    readonly busy: (busy: BusyOf) => void;
+  },
 ): Effect.Effect<HostService, never, Scope.Scope | Proc | Worktrees | AgentHosts> =>
   Effect.gen(function* () {
     const proc = yield* Proc;
     const agents = yield* AgentHosts;
-    const terminals = yield* terminalsOnHost;
+    const terminals = yield* terminalsOnHostKeeping(
+      keptTerminals === undefined ? undefined : keptTerminalsIn(keptTerminals),
+    );
     const folders = foldersOn(proc);
     // A joined machine's sessions open only in a folder its gate lets through; this machine's own
     // host runs this machine's threads wherever the user opened them, as the server did.
-    const opened = yield* sessionsOnHost(agents.get);
+    const opened = yield* sessionsOnHost(
+      agents.get,
+      undefined,
+      local === undefined ? {} : { graceFrom: local.graceFrom },
+    );
     const sessions = hostId === LOCAL_HOST_ID ? opened : gatedSessions(opened, folders.gate);
     let clones = 0;
     const checks = yield* checksOn(proc, join(hostHome(), "checks"));
@@ -156,6 +172,7 @@ const hostService = (
         checks: checks.running?.() ?? 0,
       };
     });
+    local?.busy(busy);
     const admission = makeAdmission();
     const updater = update?.(busy, admission);
     const stop = stopOn({
@@ -224,8 +241,56 @@ const child = Effect.gen(function* () {
   const socket = yield* NodeSocket.fromDuplex(
     Effect.sync(() => new NetSocket({ fd: HOST_STREAM_FD, readable: true, writable: true })),
   );
-  yield* serveHost(socket, yield* hostService(LOCAL_HOST_ID));
+  const kept = process.env[KEPT_TERMINALS_ENV];
+  yield* serveHost(
+    socket,
+    yield* hostService(
+      LOCAL_HOST_ID,
+      undefined,
+      undefined,
+      kept === undefined || kept === "" ? undefined : kept,
+    ),
+  );
 }).pipe(Effect.scoped, Effect.provide(hostLayer()));
+
+/**
+ * This machine's host kept running after the app quits (`gram-host local --socket <path>`), as a
+ * service the app starts. It serves the app on a socket in Gram's data folder, keeps its sessions
+ * while no app is connected (approvals wait for it), and ends once none has been for a while with
+ * nothing running.
+ */
+const local = (socketPath: string) =>
+  Effect.gen(function* () {
+    /** When an app last connected; `undefined` while none is. */
+    let connectedAt: number | undefined;
+    let busyOf: BusyOf = Effect.succeed({ turns: 0, terminals: 0, clones: 0, checks: 0 });
+    const kept = process.env[KEPT_TERMINALS_ENV];
+    const secretFile = process.env[LOCAL_SECRET_ENV];
+    if (secretFile === undefined || secretFile === "")
+      return yield* Effect.fail(new Error("No secret file was named; nothing will be served."));
+    yield* serveLocal(
+      socketPath,
+      hostService(
+        LOCAL_HOST_ID,
+        undefined,
+        undefined,
+        kept === undefined || kept === "" ? undefined : kept,
+        {
+          graceFrom: () => connectedAt,
+          busy: (busy) => {
+            busyOf = busy;
+          },
+        },
+      ),
+      {
+        busy: Effect.suspend(() => busyOf),
+        secretFile,
+        connected: (yes) => {
+          connectedAt = yes ? Date.now() : undefined;
+        },
+      },
+    );
+  }).pipe(Effect.scoped, Effect.provide(hostLayer()));
 
 const args = process.argv.slice(2);
 /**
@@ -247,20 +312,30 @@ const keyAuth =
       return false;
     }
   })();
+const socketArg = args[0] === "local" && args[1] === "--socket" ? args[2] : undefined;
 NodeRuntime.runMain(
   args.length === 0
     ? child
-    : runCli(args, {
-        service: (hostId, home, provisioned) =>
-          hostService(
-            hostId,
-            claudeTokenIn(joinedHome),
-            // A provisioned host is replaced by whatever started it, never updated in place.
-            provisioned
-              ? undefined
-              : (busy, admission) => selfUpdater(RELEASE, home, busy, admission),
+    : socketArg !== undefined
+      ? local(socketArg).pipe(
+          Effect.catch((error) =>
+            Effect.logError("gram-host local: couldn't serve").pipe(
+              Effect.annotateLogs({ reason: error.message }),
+            ),
           ),
-        layer: hostLayer(() => readClaudeToken(joinedHome), keyAuth),
-        release: RELEASE,
-      }),
+        )
+      : runCli(args, {
+          service: (hostId, home, provisioned) =>
+            hostService(
+              hostId,
+              claudeTokenIn(joinedHome),
+              // A provisioned host is replaced by whatever started it, never updated in place.
+              provisioned
+                ? undefined
+                : (busy, admission) => selfUpdater(RELEASE, home, busy, admission),
+              join(home, "kept-terminals", hostId),
+            ),
+          layer: hostLayer(() => readClaudeToken(joinedHome), keyAuth),
+          release: RELEASE,
+        }),
 );

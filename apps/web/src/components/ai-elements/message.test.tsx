@@ -18,6 +18,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.doUnmock("./markdown");
+  vi.doUnmock("@/shell/constrained-link");
 });
 
 describe("MessageResponse while streamdown loads", () => {
@@ -56,5 +57,20 @@ describe("MessageResponse while streamdown loads", () => {
     await vi.waitFor(() => expect(pending.className).not.toContain("invisible"));
     expect(pending.getAttribute("aria-busy")).toBeNull();
     expect(pending.textContent).toBe(TEXT);
+  });
+
+  it("shows the text plain over a slow link while streamdown loads, then as markdown", async () => {
+    vi.doMock("@/shell/constrained-link", () => ({ thisLinkIsConstrained: () => true }));
+    const { MessageResponse } = await freshModules();
+    const { container } = render(<MessageResponse mode="static">{TEXT}</MessageResponse>);
+
+    const pending = screen.getByTestId("markdown-pending");
+    expect(pending.className).not.toContain("invisible");
+    expect(pending.getAttribute("aria-busy")).toBeNull();
+    expect(pending.textContent).toBe(TEXT);
+
+    await screen.findByText("bold");
+    expect(screen.queryByTestId("markdown-pending")).toBeNull();
+    expect(container.textContent).not.toContain("**");
   });
 });

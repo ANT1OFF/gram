@@ -412,6 +412,9 @@ const fakeHosts = (
       return machines.remove(id);
     },
     keepOrigin: () => {},
+    states: () => [],
+    watch: () => () => {},
+    accessFrom: () => {},
     provisionedOrigin: undefined,
     closeProvisioned: () => {},
   };

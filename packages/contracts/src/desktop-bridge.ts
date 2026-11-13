@@ -1,6 +1,7 @@
 import type { DesktopWindows } from "./app-windows.ts";
 import type { DeviceRefusalReason } from "./device.ts";
 import type { DesktopPreview } from "./preview.ts";
+import type { DesktopPages } from "./page-url.ts";
 import type { UpdateChannel } from "./settings.ts";
 import type { DesktopSpeech } from "./speech-bridge.ts";
 import type { TrayAction, TrayMenu } from "./tray-menu.ts";
@@ -555,6 +556,8 @@ export interface DesktopBridge extends DesktopWindows {
   readonly speech?: DesktopSpeech;
   /** The Preview tab's page, loopback only; absent from shells that predate it. */
   readonly preview?: DesktopPreview;
+  /** Pinned pages, in the `gram-pages` session; absent from shells that predate them. */
+  readonly pages?: DesktopPages;
   readonly updates: {
     check(channel: UpdateChannel): Promise<UpdateCheck>;
     /** Installs what `intent` names. Windows only; elsewhere resolves with an error. */

@@ -115,6 +115,9 @@ const hostsOver = (
   checkSignIn: () => Promise.resolve(undefined),
   remove: (id) => machines.remove(id),
   keepOrigin: () => {},
+  states: () => [],
+  watch: () => () => {},
+  accessFrom: () => {},
   provisionedOrigin: undefined,
   closeProvisioned: () => {},
 });

@@ -8,6 +8,7 @@ import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { ThreadMachineMarker } from "@/thread/machine-marker";
 import { holdAnswer, type SendAction } from "@/orchestration/ask-answer";
 import {
   answerKey,
@@ -388,14 +389,11 @@ const CONTROL = "button, a, input, textarea, select, label, [role='radio'], [rol
 export function InboxDetail({
   item,
   now,
-  docked = false,
   card = false,
   onOpenThread,
 }: {
   item: NeedsYouItem;
   now: number;
-  /** Docked beside the work: its thread shows in the main area, and the Inbox stays. */
-  docked?: boolean;
   card?: boolean;
   onOpenThread: (item: NeedsYouItem) => void;
 }) {
@@ -439,6 +437,15 @@ export function InboxDetail({
             {[where, item.at === undefined ? undefined : formatRelative(item.at, now)]
               .filter((part) => part !== undefined && part !== "")
               .join(" · ")}
+            {/* The other machine its thread runs on, if any, after where it is from. */}
+            {item.threadId !== undefined && (
+              <ThreadMachineMarker
+                threadId={item.threadId}
+                testId="inbox-detail-machine"
+                side="bottom"
+                className="ml-1.5 inline-flex align-bottom not-italic"
+              />
+            )}
           </p>
         </div>
         {!card && (
@@ -449,15 +456,11 @@ export function InboxDetail({
               data-testid="inbox-open-thread"
               disabled={item.threadId === undefined}
               title={
-                item.threadId === undefined
-                  ? "No thread to open"
-                  : docked
-                    ? `Show ${item.where} beside the Inbox (⏎)`
-                    : `Open ${item.where} at it (⏎)`
+                item.threadId === undefined ? "No thread to open" : `Open ${item.where} at it (⏎)`
               }
               onClick={() => onOpenThread(item)}
             >
-              {docked ? "Show thread" : card ? "Open" : "Open thread"}
+              {card ? "Open" : "Open thread"}
             </Button>
             <Hint
               label="Later (1 hour)"

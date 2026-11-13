@@ -651,9 +651,13 @@ export interface ThreadStoreShape {
   exportHistory(threadId: ThreadId): Effect.Effect<MovedHistory>;
   /**
    * Ends every turn still open as `interrupted` at `endedAt` (or its start, if later) and returns
-   * them. Only for boot, when no agent process is left to own one.
+   * them. Only for boot, when no agent process is left to own one, but those of the threads in
+   * `except`, whose agent a host kept running after Gram quit still runs.
    */
-  closeOpenTurns(endedAt: number): Effect.Effect<ReadonlyArray<TurnRecord>>;
+  closeOpenTurns(
+    endedAt: number,
+    except?: ReadonlySet<ThreadId>,
+  ): Effect.Effect<ReadonlyArray<TurnRecord>>;
   /** The usage of the latest ended turn that reported any; `undefined` without one. */
   lastTurnUsage(threadId: ThreadId): Effect.Effect<UsageSummary | undefined>;
   /**
@@ -2647,7 +2651,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               return { messages, turns };
             }),
           ),
-        closeOpenTurns: (endedAt) =>
+        closeOpenTurns: (endedAt, except) =>
           run(
             // A clock set back since the turn started mustn't end it before it began.
             sql<{
@@ -2658,6 +2662,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             }>`UPDATE turns
               SET ended_at = MAX(started_at, ${endedAt}), reason = 'interrupted'
               WHERE ended_at IS NULL
+                AND thread_id NOT IN (SELECT value FROM json_each(${JSON.stringify([...(except ?? [])])}))
               RETURNING id, thread_id, started_at, ended_at`.pipe(
               Effect.map((rows) =>
                 rows.map((r): TurnRecord => ({

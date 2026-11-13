@@ -63,6 +63,7 @@ import type { RuntimeObserver } from "./runtime-observer.ts";
 import { makeSessionPolicy } from "./session-policy.ts";
 import type { ResumeHold, QueueHold, TurnHold } from "./turn-holds.ts";
 import { makeSessionRestarts, makeRestartMethods } from "./session-restarts.ts";
+import { KeptSessions } from "./kept-sessions.ts";
 import { notInFlight } from "./user-input.ts";
 import { makeResumePlans, makeHistoryMethods } from "./history-plans.ts";
 import {
@@ -376,10 +377,14 @@ const make = Effect.gen(function* () {
         )
       : Effect.succeed(Option.none());
 
+  // Absent in layers without it: nothing outlives the server then.
+  const kept = Option.getOrUndefined(yield* Effect.serviceOption(KeptSessions)) ?? KeptSessions.off;
   // Pending requests and open turns belong to agent processes, which didn't survive the previous
-  // server run. A turn left open would count as running forever and never report its cost.
+  // server run. A turn left open would count as running forever and never report its cost. Those
+  // of a host kept running after Gram quit did: their turns stay open for their runtimes to take up
+  // below, and their sessions raise their requests again as they replay the turn.
   yield* store.clearRequests();
-  const cutOff = yield* store.closeOpenTurns(yield* Clock.currentTimeMillis);
+  const cutOff = yield* store.closeOpenTurns(yield* Clock.currentTimeMillis, kept.survivors);
   // A send whose session a restart cut off before it opened is still queued, and goes from there.
   const withdrawn = yield* store.deleteQueuedMessages();
   if (withdrawn > 0) {
@@ -1591,6 +1596,41 @@ const make = Effect.gen(function* () {
     { discard: true },
   );
 
+  // Each thread whose session the host kept running after the last Gram quit is taken up again:
+  // its open turn, under its own id, and its session followed on from where the last Gram's
+  // handling ended, which replays the turn. Once the app tools are set (`setAppTools`), and not
+  // before: taken up earlier, a session would be followed with no MCP endpoint, its tools left
+  // pointing at the Gram that quit.
+  const takeUpKept = Effect.forEach(
+    [...kept.survivors],
+    (threadId) =>
+      Effect.gen(function* () {
+        const rt = yield* getRuntime(threadId);
+        const thread = yield* store.getThread(threadId);
+        yield* locked(
+          rt,
+          Effect.gen(function* () {
+            const open = yield* store.lastTurn(threadId);
+            if (open !== undefined && open.endedAt === undefined)
+              yield* openTurn(rt, open.id, { startedAt: open.startedAt });
+            yield* openSession(rt, thread);
+          }),
+        );
+        yield* Effect.logInfo("took up a session kept running after Gram quit").pipe(
+          Effect.annotateLogs({ threadId }),
+        );
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("couldn't take up a session kept running after Gram quit").pipe(
+            Effect.annotateLogs({ threadId, cause: Cause.pretty(cause) }),
+            Effect.andThen(kept.discard(threadId)),
+          ),
+        ),
+      ),
+    { discard: true },
+  );
+  let takenUp = false;
+
   const service = ThreadRuntimes.of({
     ...switchMethods,
     restSession,
@@ -1828,6 +1868,8 @@ const make = Effect.gen(function* () {
     }),
     shutdown: Effect.suspend(() => {
       shuttingDown = true;
+      // A host kept running after Gram quits keeps its sessions for the next Gram.
+      if (kept.on) kept.detach();
       return FiberMap.clear(sessions).pipe(
         Effect.andThen(
           Effect.suspend(() =>
@@ -1850,8 +1892,11 @@ const make = Effect.gen(function* () {
     }),
     ...historyMethods,
     setAppTools: (port) =>
-      Effect.sync(() => {
+      Effect.suspend(() => {
         appTools = port;
+        if (takenUp) return Effect.void;
+        takenUp = true;
+        return takeUpKept;
       }),
     ...policyMethods,
     observe: (observer) =>
@@ -1861,6 +1906,16 @@ const make = Effect.gen(function* () {
       ),
   });
   yield* waits.bindTranscript(service);
+  // However this server ends (main's orderly shutdown, a signal, its layers closing), a host kept
+  // running after Gram quits keeps its sessions for the next Gram. Added last, so it runs before
+  // the sessions' own teardown, which then leaves each open turn as a shutdown does.
+  yield* Effect.addFinalizer(() =>
+    Effect.sync(() => {
+      if (!kept.on) return;
+      shuttingDown = true;
+      kept.detach();
+    }),
+  );
   // What reaches the runtimes from outside them changes a thread only for its owners.
   return ThreadRuntimes.of(ownedRuntimes(service, store.getThread, workerHosts.ownerOf));
 });

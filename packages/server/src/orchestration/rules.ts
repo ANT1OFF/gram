@@ -9,6 +9,9 @@
 
 import { dreamSupportFor, type OutwardGate, type ToolAudience } from "@gram/agents";
 import {
+  browserUseAllowed,
+  orchestratorBrowserOn,
+  workerBrowserOn,
   USER_AWAY_AFTER_MINUTES,
   USER_HOLD_IDLE_MS,
   autonomyOf,
@@ -16,6 +19,10 @@ import {
   narrowAllowlist,
   FEATURE_PLAN_MAX_STAGES,
   modelRefOf,
+  listedRow,
+  resolveModel,
+  closestName,
+  type CatalogueRow,
   FEATURE_STAGE_MAX,
   FEATURE_STAGE_NOTE_MAX,
   DIGEST_WAITING_LISTED,
@@ -58,6 +65,7 @@ import {
   wakeConditionWhen,
   type Settings,
   type SpawnedBy,
+  type Thread,
   type ThreadId,
   type ThreadRole,
   type ThreadStatus,
@@ -380,6 +388,75 @@ export type WorkerModelMatch =
 /** Why each of a roster's entries can't be spawned on here, by index; an entry left out can. */
 export type RosterUnavailable = ReadonlyMap<number, string>;
 
+/**
+ * Each agent's own model catalogue here (`models.list` with the user's custom models), for the
+ * roster's entries on no gateway profile; an agent that couldn't list its models is left out.
+ */
+export type RosterCatalogue = ReadonlyMap<AgentKind, ReadonlyArray<CatalogueRow>>;
+
+/** The catalogue row a pinned entry on no gateway profile runs, if its agent's catalogue has one. */
+const catalogueRowOf = (
+  entry: Pick<ModelRef, "agent" | "model" | "profileId">,
+  catalogue: RosterCatalogue | undefined,
+): CatalogueRow | undefined =>
+  entry.profileId === undefined ? listedRow(catalogue?.get(entry.agent), entry.model) : undefined;
+
+const plain = (text: string) => text.toLowerCase().replace(/\s+/g, "");
+
+/**
+ * The name the picker shows for an entry's model ("Fable 5.2"), when its catalogue has a row for
+ * it whose name says more than the id does.
+ */
+export const workerModelDisplayName = (
+  entry: Pick<ModelRef, "agent" | "model" | "profileId">,
+  catalogue: RosterCatalogue | undefined,
+): string | undefined => {
+  const name = catalogueRowOf(entry, catalogue)?.displayName.trim();
+  return name === undefined || name === "" || plain(name) === plain(entry.model) ? undefined : name;
+};
+
+/**
+ * Roster entries as a refusal lists them, each with the name the picker shows its model by:
+ * `claude:claude-fable-5-2 (Fable 5.2), claude:opus (Opus 5.5)`.
+ */
+export const rosterNames = (
+  allowed: ReadonlyArray<RosterModel>,
+  catalogue?: RosterCatalogue,
+): string =>
+  allowed
+    .map((each) => {
+      const shown = workerModelDisplayName(each, catalogue);
+      return `${rosterName(each)}${shown === undefined ? "" : ` (${shown})`}`;
+    })
+    .join(", ");
+
+/**
+ * The roster entry `named` most likely meant, for a refusal's "did you mean": by its name, its
+ * model id, or the name the picker shows it by, with or without an `agent:` in front.
+ */
+export const closestWorkerModel = (
+  allowed: ReadonlyArray<RosterModel>,
+  named: string,
+  catalogue?: RosterCatalogue,
+): string | undefined => {
+  const prefixed = /^(claude|codex):(.*)$/i.exec(named.trim());
+  const agent = prefixed?.[1]?.toLowerCase();
+  // By the model part alone: a shared `claude:` would make every Claude entry look near.
+  const candidates = allowed
+    .filter((each) => agent === undefined || each.agent === agent)
+    .map((each) => {
+      const row = catalogueRowOf(each, catalogue);
+      return {
+        value: rosterName(each),
+        words:
+          each.tier !== undefined
+            ? [rosterName(each)]
+            : [each.model, ...(row === undefined ? [] : [row.id, row.displayName])],
+      };
+    });
+  return closestName(candidates, prefixed?.[2] ?? named);
+};
+
 /** The entry a worker gets when the orchestrator names none, if the user marked one. */
 const defaultWorkerModel = (allowed: ReadonlyArray<RosterModel>): RosterModel | undefined =>
   allowed.find((each) => each.default === true);
@@ -391,10 +468,36 @@ export const fallbackOf = (
 ): RosterModel | undefined => workerFallback(allowed, own);
 
 /**
+ * The entries `wanted` names through their agent's catalogue (`resolveModel`): `claude:fable`,
+ * `claude:Fable 5.2` or a bare `fable` name the entry stored as `claude-fable-5-2` while the
+ * catalogue says `fable` runs that id, and an entry stored as `fable` by its pinned id likewise.
+ * Only entries on no gateway profile, whose catalogue is the agent's own.
+ */
+const byCatalogue = (
+  allowed: ReadonlyArray<RosterModel>,
+  wanted: string,
+  catalogue: RosterCatalogue | undefined,
+): ReadonlyArray<RosterModel> => {
+  if (catalogue === undefined) return [];
+  const prefixed = /^([a-z]+):(.+)$/i.exec(wanted);
+  const agent = prefixed?.[1]?.toLowerCase();
+  const scoped = agent !== undefined && catalogue.has(agent as AgentKind);
+  const asked = scoped ? prefixed![2]! : wanted;
+  return allowed.filter((each) => {
+    if (scoped && each.agent !== agent) return false;
+    const row = catalogueRowOf(each, catalogue);
+    if (row === undefined) return false;
+    const found = resolveModel(catalogue.get(each.agent), asked);
+    return found.ok && found.row.id === row.id;
+  });
+};
+
+/**
  * `spawn_worker.model` against the models a charter allows. A bare id is tried first, since a
  * model id may itself hold a colon, and must then name one entry only; otherwise an entry's name
  * (`rosterName`: `agent:model`, or `tier:<tier>` for one that follows a tier), else `agent:model`
- * of what an entry runs on here. Several entries that run on the very same model and effort are
+ * of what an entry runs on here, else what the agent's model catalogue (`catalogue`) says is the
+ * same model: an alias, a pinned id or the picker's name for it (`byCatalogue`). Several entries that run on the very same model and effort are
  * one choice; ones that differ are ambiguous. With nothing named it is the entry the user marked the default,
  * else the one matching the orchestrator's own model, else the first. An entry that is unavailable
  * here (`unavailable`) is stood in for by that same choice among the available ones, so a roster
@@ -406,6 +509,7 @@ export const matchWorkerModel = (
   named: string | undefined,
   own: Pick<ModelRef, "agent" | "model">,
   unavailable: RosterUnavailable = new Map(),
+  catalogue?: RosterCatalogue,
 ): WorkerModelMatch => {
   let picked: RosterModel | undefined;
   if (named === undefined) {
@@ -414,12 +518,15 @@ export const matchWorkerModel = (
     const wanted = named.trim();
     const bare = allowed.filter((each) => each.model === wanted);
     const byName = allowed.filter((each) => rosterName(each) === wanted.toLowerCase());
+    const byLabel = allowed.filter((each) => workerModelLabel(each) === wanted);
     const found =
       bare.length > 0
         ? bare
         : byName.length > 0
           ? byName
-          : allowed.filter((each) => workerModelLabel(each) === wanted);
+          : byLabel.length > 0
+            ? byLabel
+            : byCatalogue(allowed, wanted, catalogue);
     const first = found[0];
     if (
       first !== undefined &&
@@ -537,6 +644,8 @@ export const workerModelUnavailable = (
 export interface RosterEntry {
   /** How to name it to `spawn_worker` (`rosterName`). */
   readonly model: string;
+  /** The name the model picker shows its model by ("Fable 5.2"), when it says more than the id. */
+  readonly displayName?: string | undefined;
   /** For one that follows a tier, what it runs on here: `codex:gpt-6.1-sol · medium`. */
   readonly runsOn?: string | undefined;
   readonly useFor?: string | undefined;
@@ -552,13 +661,17 @@ export interface RosterEntry {
 export const rosterOf = (
   allowed: ReadonlyArray<RosterModel>,
   unavailable: RosterUnavailable = new Map(),
+  catalogue?: RosterCatalogue,
 ): ReadonlyArray<RosterEntry> => {
   const fallback = defaultWorkerModel(allowed);
   return allowed.map((each, index) => {
     const note = each.useFor?.replace(/\s+/g, " ").trim() ?? "";
     const why = unavailable.get(index);
+    // One that follows a tier is named by its tier, and `runsOn` says its model.
+    const shown = each.tier === undefined ? workerModelDisplayName(each, catalogue) : undefined;
     return {
       model: rosterName(each),
+      ...(shown === undefined ? {} : { displayName: shown }),
       ...(each.tier === undefined
         ? {}
         : {
@@ -579,7 +692,7 @@ export const rosterOf = (
  * follows a tier `tier:scoped → codex:gpt-6.1-sol · medium (default): …`.
  */
 export const rosterLine = (entry: RosterEntry): string =>
-  `${entry.model}${entry.runsOn === undefined ? "" : ` → ${entry.runsOn}`}${entry.default === true ? " (default)" : ""}${
+  `${entry.model}${entry.displayName === undefined ? "" : ` (${entry.displayName})`}${entry.runsOn === undefined ? "" : ` → ${entry.runsOn}`}${entry.default === true ? " (default)" : ""}${
     entry.useFor === undefined ? "" : `: ${entry.useFor}`
   }${entry.unavailable === undefined ? "" : ` [unavailable: ${entry.unavailable}]`}`;
 
@@ -588,8 +701,12 @@ export const rosterText = (
   lead: string,
   allowed: ReadonlyArray<RosterModel>,
   unavailable: RosterUnavailable = new Map(),
+  catalogue?: RosterCatalogue,
 ): string =>
-  [lead, ...rosterOf(allowed, unavailable).map((entry) => `  - ${rosterLine(entry)}`)].join("\n");
+  [
+    lead,
+    ...rosterOf(allowed, unavailable, catalogue).map((entry) => `  - ${rosterLine(entry)}`),
+  ].join("\n");
 
 /** An agent kind as prose names it. */
 export const kindName = (kind: AgentKind): string =>
@@ -2675,4 +2792,22 @@ export const userAwayMinutes = (
   if (inactiveSince === undefined) return undefined;
   const minutes = Math.floor((now - inactiveSince) / 60_000);
   return minutes >= USER_AWAY_AFTER_MINUTES ? minutes : undefined;
+};
+
+/**
+ * Whether a session of `thread` drives the user's browser. Each scope has its own consent, and
+ * its agent's consent (`browserUseAllowed`, one per agent) has to allow it as well: an
+ * orchestrator by `workspaces.orchestratorBrowser`, a worker given it at spawn or by the user
+ * while `workspaces.workerBrowser` stays on, a plain thread the user gave it. A dream never.
+ * Read again at every open, so turning a consent off takes it away from the next session.
+ */
+export const browserFor = (
+  thread: Pick<Thread, "role" | "spawnedBy" | "browser" | "model">,
+  audience: ToolAudience,
+  settings: Settings,
+): boolean => {
+  if (thread.role === "dream" || !browserUseAllowed(settings, thread.model.agent)) return false;
+  if (audience === "orchestrator") return orchestratorBrowserOn(settings);
+  if (thread.browser !== true) return false;
+  return thread.spawnedBy === undefined || workerBrowserOn(settings);
 };

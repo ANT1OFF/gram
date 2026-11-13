@@ -15,6 +15,8 @@ const STALE_QUERIES: {
   "reviewRequests.changed": [["reviewRequests"]],
   "openPrs.changed": [["openPrs"]],
   "threadWakes.changed": [["threadWakes"]],
+  // A machine joined, left, connected or dropped: Settings → Machines and the picker read it again.
+  "machines.snapshot": [["machines.status"]],
   // A repo the orchestrator was allowed to add may be a project nobody had opened, so no list has it.
   "workspaces.changed": [["workspaces"], ["projects"], ["automaticDreamStatus"]],
   // The user's own memory edits and answers come as this one. Ledgers are `invalidateLedgers`'.
@@ -34,6 +36,7 @@ const STALE_QUERIES: {
   "routines.changed": ({ workspaceId }) => [["routines", workspaceId]],
   // A doc was published, updated or saved: its list and every open doc read again.
   "docs.changed": ({ workspaceId }) => [["docs", workspaceId]],
+  "pages.changed": ({ workspaceId }) => [["pages", workspaceId]],
   // An adoption or a restore replaces memory wholesale, so both go stale together.
   "dreams.changed": ({ workspaceId }) => [
     ["dreams", workspaceId],

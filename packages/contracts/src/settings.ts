@@ -125,6 +125,7 @@ export const PanelTab = Schema.Literals([
   "needsYou",
   "workers",
   "docs",
+  "pages",
 ]);
 export type PanelTab = typeof PanelTab.Type;
 
@@ -220,6 +221,12 @@ export const AgentSettings = Schema.Struct({
   recommendedSetup: Schema.optionalKey(RecommendedSetup),
   /** Keep the system awake during open turns. Absent means on; the display may still sleep. */
   keepAwake: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Runs this machine's host as a service of the user's that outlives the app, so agents keep
+   * working after Gram quits and Gram picks them up when it opens again. Off unless turned on;
+   * read through `keepRunningAfterQuitOn`. Takes effect when Gram next starts.
+   */
+  keepRunningAfterQuit: Schema.optionalKey(Schema.Boolean),
   /** A new chat's model: pinned, or following a tier. Absent follows the CLI's own default. */
   defaultModel: Schema.optionalKey(ModelSlot),
   /** Absent until a model is added; read through `customModelsOf`. */
@@ -239,6 +246,18 @@ export const AgentSettings = Schema.Struct({
    * changes through Gram. Absent means on; read through `restartOnMcpChangeOn`.
    */
   restartOnMcpChange: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Claude threads given the browser get Claude in Chrome: Claude Code's `--chrome`, which drives
+   * the user's own Chrome with its sign-ins through the Claude extension. Read through
+   * `browserUseAllowed`; absent, no Claude thread gets it, whatever it was given.
+   */
+  claudeInChrome: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Codex threads given the browser keep Codex computer use: the computer-use plugin's `cua_repl`
+   * server, which drives the user's browsers and Mac apps. Read through `browserUseAllowed`;
+   * absent, no Codex thread gets it.
+   */
+  codexComputerUse: Schema.optionalKey(Schema.Boolean),
   /**
    * The worker model roster a new workspace's charter starts with; absent or empty starts it with
    * none, so its workers run on the orchestrator's model.
@@ -522,6 +541,16 @@ export const WorkspaceSettings = Schema.Struct({
    */
   orchestratorPeerMessaging: Schema.optionalKey(Schema.Boolean),
   /**
+   * An orchestrator's sessions get the user's browser, where its agent's own consent allows
+   * (`browserUseAllowed`). Read through `orchestratorBrowserOn`; absent, they don't.
+   */
+  orchestratorBrowser: Schema.optionalKey(Schema.Boolean),
+  /**
+   * An orchestrator may give a worker the user's browser (`spawn_worker`'s `browser`), where the
+   * worker's agent's own consent allows. Read through `workerBrowserOn`; absent, it can't.
+   */
+  workerBrowser: Schema.optionalKey(Schema.Boolean),
+  /**
    * How many of Gram's own local checks run at once on this machine; the rest wait their turn.
    * Read through `localCheckConcurrencyOf`; absent, it follows the machine's cores.
    */
@@ -662,6 +691,10 @@ export type Settings = typeof Settings.Type;
 /** System sleep prevention during agent turns, on by default. */
 export const keepAwakeOn = (settings: Settings): boolean => settings.agents.keepAwake !== false;
 
+/** Whether this machine's host keeps running after Gram quits; off unless turned on. */
+export const keepRunningAfterQuitOn = (settings: Pick<Settings, "agents">): boolean =>
+  settings.agents.keepRunningAfterQuit === true;
+
 /**
  * The only MCP servers a Claude orchestrator keeps beside Gram's own, trimmed and without
  * blanks; empty when the user lists none, which leaves it the default (`mcpListsFor`).
@@ -673,6 +706,22 @@ export const orchestratorConnectors = (settings: Settings): ReadonlyArray<string
 /** Whether a Claude orchestrator may message the user's sessions outside Gram; off unless turned on. */
 export const orchestratorPeerMessaging = (settings: Settings): boolean =>
   settings.workspaces?.orchestratorPeerMessaging === true;
+
+/**
+ * Whether `agent`'s threads may drive the user's browser at all: the per-agent consent in
+ * Settings, off unless turned on. A thread still has to be given it (`Thread.browser`, or an
+ * orchestrator's `orchestratorBrowserOn`).
+ */
+export const browserUseAllowed = (settings: Pick<Settings, "agents">, agent: AgentKind): boolean =>
+  agent === "claude"
+    ? settings.agents.claudeInChrome === true
+    : settings.agents.codexComputerUse === true;
+/** Whether orchestrators get the browser, where their agent's consent allows; off unless turned on. */
+export const orchestratorBrowserOn = (settings: Settings): boolean =>
+  settings.workspaces?.orchestratorBrowser === true;
+/** Whether an orchestrator may give workers the browser; off unless turned on. */
+export const workerBrowserOn = (settings: Settings): boolean =>
+  settings.workspaces?.workerBrowser === true;
 
 /** The daily helper budget when the user set none. */
 export const DEFAULT_HELPER_DAILY_BUDGET_USD = 2;
@@ -974,7 +1023,10 @@ export const SettingsPatch = Schema.Struct({
       idleEvictMinutes: Schema.optionalKey(AgentSettings.fields.idleEvictMinutes),
       followWorktreeMoves: Schema.optionalKey(AgentSettings.fields.followWorktreeMoves),
       keepAwake: clearable(Schema.Boolean),
+      keepRunningAfterQuit: clearable(Schema.Boolean),
       restartOnMcpChange: Schema.optionalKey(Schema.Boolean),
+      claudeInChrome: Schema.optionalKey(Schema.Boolean),
+      codexComputerUse: Schema.optionalKey(Schema.Boolean),
       /** Replaces the whole list. */
       workerModels: clearable(Schema.Array(WorkerModel)),
     }),

@@ -100,6 +100,7 @@ export const serverEventKey = (event: ServerEvent): string | undefined => {
     case "memory.changed":
     case "outputs.changed":
     case "docs.changed":
+    case "pages.changed":
       return `${event.type}:${event.workspaceId}`;
     default:
       return undefined;

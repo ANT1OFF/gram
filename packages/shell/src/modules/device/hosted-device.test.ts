@@ -42,6 +42,7 @@ const setUp = async (
   store = new Map<string, string>(),
 ) => {
   const confirmed: Array<string> = [];
+  const changes = new Set<() => void>();
   const present = { now: true, listeners: new Set<() => void>() };
   const device = await makeHostedDevice({
     dataDir,
@@ -73,9 +74,25 @@ const setUp = async (
       return Effect.never;
     },
     ...more,
+    changed: () => {
+      more.changed?.();
+      for (const changed of changes) changed();
+    },
   });
   devices.push(device);
-  return { device, store, confirmed, present };
+  // Restore lists workspaces in the background. Wait for its state notification, rather than
+  // guessing how many timer ticks the token exchange, keychain and HTTP request will take.
+  const waitFor = (done: () => boolean) =>
+    new Promise<void>((resolve) => {
+      const changed = () => {
+        if (!done()) return;
+        changes.delete(changed);
+        resolve();
+      };
+      changes.add(changed);
+      changed();
+    });
+  return { device, store, confirmed, present, waitFor };
 };
 
 beforeEach(async () => {
@@ -170,8 +187,32 @@ describe("this machine as a personal device", () => {
     await first.device.close();
 
     // Started again with the same keychain: offered to resume, never on by itself.
-    const again = await setUp({}, first.store);
-    await waitFor(() => (again.device.state().servers[0]?.workspaces.length ?? 0) > 0);
+    const { promise: listing, resolve: asked } = Promise.withResolvers<void>();
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    const again = await setUp(
+      {
+        fetch: async (url, init) => {
+          if (url.endsWith("/api/workspaces")) {
+            asked();
+            await held;
+          }
+          return fetch(url, init);
+        },
+      },
+      first.store,
+    );
+    try {
+      await listing;
+      expect(again.device.state().servers[0]?.workspaces).toEqual([]);
+      expect(await again.device.resume(origin, "w1")).toMatchObject({ ok: false });
+      const restored = again.waitFor(
+        () => (again.device.state().servers[0]?.workspaces.length ?? 0) > 0,
+      );
+      release();
+      await restored;
+    } finally {
+      release();
+    }
     expect(again.device.state().servers[0]?.workspaces[0]).toMatchObject({
       lending: "resume",
       folders: [{ label: "app", path: project }],
@@ -196,7 +237,7 @@ describe("this machine as a personal device", () => {
     await fs.rename(project, `${project}-old`);
     await fs.mkdir(project);
     const again = await setUp({}, first.store);
-    await waitFor(() => (again.device.state().servers[0]?.workspaces.length ?? 0) > 0);
+    await again.waitFor(() => (again.device.state().servers[0]?.workspaces.length ?? 0) > 0);
     expect(await again.device.resume(origin, "w1")).toMatchObject({ ok: false });
     expect(again.device.state().servers[0]?.workspaces[0]?.lending).toBe("resume");
   });
@@ -359,7 +400,7 @@ describe("this machine as a personal device", () => {
       expect(await second.device.refresh(origin)).toEqual({ ok: true });
       const restored = () =>
         second.device.state().servers.find((server) => server.origin === origin);
-      await waitFor(() => (restored()?.workspaces.length ?? 0) > 0);
+      await second.waitFor(() => (restored()?.workspaces.length ?? 0) > 0);
       expect(restored()).toMatchObject({ signedIn: true, paused: true });
       expect(restored()?.workspaces[0]?.lending).toBe("resume");
     } finally {
@@ -428,7 +469,7 @@ describe("this machine as a personal device", () => {
     fake.state.workspacesStatus = 500;
     dials.length = 0;
     const again = await setUp({}, first.store);
-    await waitFor(() => again.device.state().servers[0]?.problem !== undefined);
+    await again.waitFor(() => again.device.state().servers[0]?.problem !== undefined);
     expect(await again.device.resume(origin, "w1")).toMatchObject({ ok: false });
     await settle();
     expect(dials).toEqual([]);
@@ -445,7 +486,7 @@ describe("this machine as a personal device", () => {
     await fs.rm(project, { recursive: true });
     await fs.mkdir(project);
     const again = await setUp({}, first.store);
-    await waitFor(() => (again.device.state().servers[0]?.workspaces.length ?? 0) > 0);
+    await again.waitFor(() => (again.device.state().servers[0]?.workspaces.length ?? 0) > 0);
     expect(await again.device.resume(origin, "w1")).toMatchObject({ ok: false });
   });
 
@@ -706,7 +747,7 @@ describe("this machine as a personal device", () => {
     });
     await first.device.close();
     const again = await setUp({}, first.store);
-    await waitFor(() => (again.device.state().servers[0]?.workspaces.length ?? 0) > 0);
+    await again.waitFor(() => (again.device.state().servers[0]?.workspaces.length ?? 0) > 0);
     const lent = again.device.state().servers[0]?.workspaces[0];
     const ids = lent?.folders.map((folder) => folder.id) ?? [];
     expect(
@@ -779,10 +820,6 @@ const offlineUnless =
   };
 
 const settle = () => new Promise((later) => setTimeout(later, 30));
-
-const waitFor = async (done: () => boolean) => {
-  for (let i = 0; i < 500 && !done(); i += 1) await new Promise((later) => setTimeout(later, 2));
-};
 
 const line = (what: string): DeviceLogEntry => ({
   time: clock,

@@ -14,8 +14,12 @@ const background = new Map();
 const turns = new Map();
 const approvals = new Map();
 const heldReplies = [];
+// The file holds every metadata RPC; one naming methods (one per line) holds only those.
 const holdReply = (method, reply) => {
-  if (!fs.existsSync(path.join(home, "invented-hold-rpc"))) { reply(); return; }
+  const hold = path.join(home, "invented-hold-rpc");
+  if (!fs.existsSync(hold)) { reply(); return; }
+  const named = fs.readFileSync(hold, "utf8").split("\n").map((line) => line.trim()).filter((line) => line.includes("/"));
+  if (named.length > 0 && !named.includes(method)) { reply(); return; }
   heldReplies.push(reply); log({ heldRpc: method });
 };
 let n = 0;

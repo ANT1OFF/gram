@@ -796,7 +796,7 @@ export const OrchestrationLive = Layer.effect(
               state.charter.workerModels === undefined
                 ? Effect.succeed(undefined)
                 : rosterHere(state.charter.workerModels, state.charter).pipe(
-                    Effect.map((here) => rosterOf(here.roster, here.unavailable)),
+                    Effect.map((here) => rosterOf(here.roster, here.unavailable, here.catalogue)),
                   ),
             ),
           ),

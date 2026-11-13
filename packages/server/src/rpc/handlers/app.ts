@@ -5,6 +5,8 @@ import * as Option from "effect/Option";
 import { ServerConfig } from "../../config.ts";
 import { EventHub } from "../../events/event-hub.ts";
 import { GitStatePublisher } from "../../git/publisher.ts";
+import { publishMachineStates } from "../../host/machine-events.ts";
+import { RemoteHosts } from "../../host/remote-hosts.ts";
 import { logFileName } from "../../logging/daily-file.ts";
 import { ServerLog, type ServerLogShape } from "../../logging/service.ts";
 import { openExternal } from "../../ports/open-external.ts";
@@ -77,6 +79,9 @@ export const appHandlers = Effect.gen(function* () {
   const publisher = yield* Effect.serviceOption(GitStatePublisher);
   // Absent in runtime-only test layers, which keep no limit readings.
   const limits = yield* Effect.serviceOption(UsageLimitReadings);
+  // Absent where no machine can join: every thread is then this machine's.
+  const machines = yield* Effect.serviceOption(RemoteHosts);
+  if (Option.isSome(machines)) yield* publishMachineStates(hub, machines.value);
 
   const withPorts = (summary: ThreadSummary): ThreadSummary => {
     const listening = ports.portsOf(summary.thread.id);
@@ -121,9 +126,14 @@ export const appHandlers = Effect.gen(function* () {
             type: "threads.snapshot",
             threads: threads.map(withPorts),
           };
+          const events: Array<ServerEvent> = [snapshot];
+          // The machines its threads run on, so a row names one before any of them changes.
+          if (Option.isSome(machines))
+            events.push({ type: "machines.snapshot", machines: machines.value.states() });
           // The limit readings the server kept, so the meter shows them before any agent reports.
-          if (Option.isNone(limits)) return snapshot;
-          return [snapshot, { type: "usageLimits.snapshot", limits: yield* limits.value.current }];
+          if (Option.isSome(limits))
+            events.push({ type: "usageLimits.snapshot", limits: yield* limits.value.current });
+          return events;
         }),
       ),
   } satisfies Partial<Handlers>;

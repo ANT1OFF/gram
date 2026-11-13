@@ -1,6 +1,6 @@
 import { Combobox } from "@base-ui/react/combobox";
-import { CheckIcon, ChevronDownIcon, Search, Star } from "lucide-react";
-import { useRef, type ReactNode, type RefObject } from "react";
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, Search, Star } from "lucide-react";
+import { useCallback, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { Hint } from "@/components/hint";
 import { keyLabel } from "@/keyboard/registry";
@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { PulseOnce, Swap } from "@/motion";
 
 import { aboveComposer } from "./above-composer";
-import { matchesModel, modelGroups, type ModelGroup } from "./models";
+import { LEGACY_GROUP, legacyCount, matchesModel, modelGroups, type ModelGroup } from "./models";
 import type { PickerOption } from "./picker";
 import { labelSize, usePickConfirm, ValueWords, type LabelSize } from "./picker-trigger";
 import { compactModelName } from "./options";
@@ -25,12 +25,71 @@ export interface GroupHead {
 }
 export type GroupHeads = Readonly<Record<string, GroupHead>>;
 
+/**
+ * The fold of superseded models (`PickerOption.legacy`): shut until opened or a search runs, which
+ * finds them as it finds the rest. Starred ones stay with the favourites, and the model in use with
+ * its own section, so neither ever hides.
+ */
+function useLegacyFold(options: readonly Option[], favourite: (value: string) => boolean) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const searching = query.trim() !== "";
+  return {
+    groups: modelGroups(options, favourite, open || searching),
+    fold: {
+      count: legacyCount(options, favourite),
+      open,
+      searching,
+      onToggle: () => setOpen((was) => !was),
+    },
+    onQuery: setQuery,
+    close: () => setOpen(false),
+  };
+}
+
+type LegacyFold = ReturnType<typeof useLegacyFold>["fold"];
+
+/**
+ * Legacy models' fold: a chevron, its name and its count, as the overview's folds are. Opened, it
+ * heads the section it opened and brings it into view, since it opens past the list's end.
+ */
+function LegacyFoldButton({ fold }: { fold: LegacyFold }) {
+  // Once, as the opened heading mounts: on every render it would undo the user's own scrolling.
+  const reveal = useCallback(
+    (node: HTMLButtonElement | null) => {
+      if (fold.open) node?.scrollIntoView?.({ block: "start" });
+    },
+    [fold.open],
+  );
+  return (
+    <button
+      type="button"
+      aria-expanded={fold.open}
+      data-testid="legacy-models"
+      ref={reveal}
+      // The search box keeps focus, so typing and the arrow keys carry on.
+      onPointerDown={(event) => event.preventDefault()}
+      onClick={fold.onToggle}
+      className="flex w-full items-center gap-2 border-t border-border px-3 py-2 text-left text-caption font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground"
+    >
+      {fold.open ? (
+        <ChevronDownIcon aria-hidden className="size-icon-chip shrink-0" />
+      ) : (
+        <ChevronRightIcon aria-hidden className="size-icon-chip shrink-0" />
+      )}
+      <span className="flex-1">Legacy models</span>
+      <span className="tabular-nums">{fold.count}</span>
+    </button>
+  );
+}
+
 const ROW =
   "group/row flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[highlighted]:row-cursor";
 
 /**
  * The model picker: a search box over the models, favourites first, then a section per agent or
- * gateway (and Custom), each row with its agent's mark, its description and a star. The trigger is
+ * gateway (and Custom), each row with its agent's mark, its description and a star, and superseded
+ * models folded under Legacy models (`useLegacyFold`). The trigger is
  * the toolbar's ghost control, like every other picker, or a form's select for `field`. Typing
  * filters by name and provider, ↑↓ move, <kbd>↵</kbd> picks, <kbd>⇧↵</kbd> stars the highlighted
  * model and <kbd>Esc</kbd> closes; without `onToggleFavourite` there are no stars.
@@ -77,9 +136,14 @@ export function ModelCombobox({
 }) {
   const highlighted = useRef<Option | undefined>(undefined);
   const trigger = useRef<HTMLButtonElement>(null);
-  const groups = modelGroups(options, favourite);
+  const legacy = useLegacyFold(options, favourite);
+  const groups = legacy.groups;
   // A single unnamed section needs no heading; an agent's or a gateway's name always says whose.
-  const headed = groups.length > 1 || options.some((option) => option.group !== undefined);
+  // With a Legacy fold the list's own section is named too, so it doesn't gain a heading on opening.
+  const headed =
+    groups.length > 1 ||
+    legacy.fold.count > 0 ||
+    options.some((option) => option.group !== undefined);
   const selected = options.find((option) => option.value === value);
   const confirm = usePickConfirm(value);
   const shown = selected?.label ?? label;
@@ -133,7 +197,11 @@ export function ModelCombobox({
         onChange(next.value);
       }}
       open={open}
-      onOpenChange={(next) => onOpenChange(next)}
+      onOpenChange={(next) => {
+        if (!next) legacy.close();
+        onOpenChange(next);
+      }}
+      onInputValueChange={legacy.onQuery}
       autoHighlight
       itemToStringLabel={(option) => option.label}
       isItemEqualToValue={(a, b) => a.value === b.value}
@@ -175,6 +243,7 @@ export function ModelCombobox({
               favourite={favourite}
               onToggleFavourite={onToggleFavourite}
               highlighted={highlighted}
+              legacy={legacy.fold}
             />
           </Combobox.Popup>
         </Combobox.Positioner>
@@ -196,6 +265,7 @@ function ModelSearchBody({
   highlighted,
   heads,
   firstGroup,
+  legacy,
 }: {
   headed: boolean;
   rowIcon: ReactNode;
@@ -205,6 +275,7 @@ function ModelSearchBody({
   heads?: GroupHeads | undefined;
   /** The list's first group, whose heading has no hairline above it. */
   firstGroup?: string | undefined;
+  legacy: LegacyFold;
 }) {
   return (
     <>
@@ -232,7 +303,11 @@ function ModelSearchBody({
         {(group: ModelGroup) => (
           <Combobox.Group key={group.label} items={group.items as Option[]}>
             {headed &&
-              (heads?.[group.label] === undefined ? (
+              (group.label === LEGACY_GROUP && !legacy.searching ? (
+                <Combobox.GroupLabel className="mt-1">
+                  <LegacyFoldButton fold={legacy} />
+                </Combobox.GroupLabel>
+              ) : heads?.[group.label] === undefined ? (
                 <Combobox.GroupLabel className="px-2 pt-2 pb-1 text-caption font-medium text-muted-foreground">
                   {group.label}
                 </Combobox.GroupLabel>
@@ -332,6 +407,9 @@ function ModelSearchBody({
           </Combobox.Group>
         )}
       </Combobox.List>
+      {/* Shut, the fold closes the list; open, it heads its section in the list instead. A search
+          lists the superseded models it finds, so the fold has nothing to open then. */}
+      {legacy.count > 0 && !legacy.searching && !legacy.open && <LegacyFoldButton fold={legacy} />}
     </>
   );
 }
@@ -360,8 +438,13 @@ export function ModelSearch({
   heads?: GroupHeads | undefined;
 }) {
   const highlighted = useRef<Option | undefined>(undefined);
-  const groups = modelGroups(options, favourite);
-  const headed = groups.length > 1 || options.some((option) => option.group !== undefined);
+  const legacy = useLegacyFold(options, favourite);
+  const groups = legacy.groups;
+  // With a Legacy fold the list's own section is named too, so it doesn't gain a heading on opening.
+  const headed =
+    groups.length > 1 ||
+    legacy.fold.count > 0 ||
+    options.some((option) => option.group !== undefined);
   const selected = options.find((option) => option.value === value);
   return (
     <Combobox.Root<Option>
@@ -372,6 +455,7 @@ export function ModelSearch({
       onValueChange={(next) => {
         if (next) onChange(next.value);
       }}
+      onInputValueChange={legacy.onQuery}
       autoHighlight
       itemToStringLabel={(option) => option.label}
       isItemEqualToValue={(a, b) => a.value === b.value}
@@ -389,6 +473,7 @@ export function ModelSearch({
           highlighted={highlighted}
           heads={heads}
           firstGroup={groups[0]?.label}
+          legacy={legacy.fold}
         />
       </div>
     </Combobox.Root>

@@ -112,7 +112,9 @@ test("a line carries the helper's sentence on its feature, and goes without one"
   await expect(line(page, "registry-paging").getByTestId("rail-summary")).toHaveCount(0);
 });
 
-test("the Board is a grid, its cells side by side", async ({ page }) => {
+test("the Board is a grid, its cells side by side, with no other layout to pick", async ({
+  page,
+}) => {
   const made = await start(page);
   const scroller = board(page).getByTestId("rail-scroller");
   await expect(scroller).toHaveAttribute("data-layout", "grid");
@@ -135,7 +137,7 @@ test("the Board is a grid, its cells side by side", async ({ page }) => {
   const stage = docs.getByTestId("grid-stage").first();
   expect(Math.abs(nowY - nameY)).toBeLessThan(12);
   expect(Math.abs(stageY - nameY)).toBeLessThan(12);
-  // The Stage cell names the station the worker stands on, as its feature card has it.
+  // The Stage cell names the station the worker stands on.
   await expect(stage).toHaveAttribute(
     "data-station",
     (await docs.getByTestId("rail-worker").first().getAttribute("data-station"))!,
@@ -161,6 +163,6 @@ test("the Board is a grid, its cells side by side", async ({ page }) => {
     );
   expect(repeats).toEqual([]);
 
-  // The grid is the Board's one layout: nothing offers another.
+  // The grid is the only layout: the header offers no other.
   await expect(page.getByTestId("board-layout")).toHaveCount(0);
 });

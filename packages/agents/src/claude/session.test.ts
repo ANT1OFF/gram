@@ -50,6 +50,9 @@ import { AsyncPushQueue } from "./input-queue.ts";
 import { ClaudeSdk, type ClaudeSdkShape } from "./sdk.ts";
 import {
   BLOCKING_ASK_TOOL,
+  BROWSER_GATE_REASON,
+  actsInBrowser,
+  chromeArgs,
   claudeSettingsDir,
   widenedEntries,
   CONFINED_DISALLOWED,
@@ -1669,6 +1672,103 @@ describe("AgentSession", () => {
     }),
   );
 
+  it.effect("shows an MCP server's permission prompt as a card and keeps a session grant", () =>
+    Effect.gen(function* () {
+      const h = harness();
+      const session = yield* openSession().pipe(Effect.provide(h.layer));
+      yield* take(session, 2);
+      const onElicitation = query(h).options.onElicitation!;
+      const prompt = {
+        serverName: "computer-use",
+        message: "Allow Claude to use Notes?",
+        mode: "form" as const,
+        requestedSchema: { type: "object", properties: {} },
+      };
+      const asked = onElicitation(prompt, { signal: signal(), requestId: "elicit-1" });
+      expect(yield* take(session, 2)).toEqual([
+        {
+          type: "request",
+          request: {
+            kind: "approval",
+            id: "elicit-1",
+            toolName: "mcp__computer-use__elicitation",
+            displayName: "Notes",
+            input: { server: "computer-use", app: "Notes" },
+            description: "Allow Claude to use Notes?",
+            suggestions: [],
+            scopes: ["once", "session"],
+          },
+        },
+        { type: "status", status: "awaitingApproval" },
+      ]);
+      yield* session.respond(RequestId.make("elicit-1"), {
+        kind: "approval",
+        decision: "allow",
+        scope: "session",
+      });
+      expect(yield* Effect.promise(() => asked)).toEqual({ action: "accept", content: {} });
+      expect(yield* take(session, 1)).toEqual([{ type: "requestResolved", requestId: "elicit-1" }]);
+      // The same server asking the same thing again is answered without a card.
+      expect(
+        yield* Effect.promise(() =>
+          onElicitation(prompt, { signal: signal(), requestId: "elicit-2" }),
+        ),
+      ).toEqual({ action: "accept", content: {} });
+      // A prompt that needs more than a yes or no is declined, with a notice.
+      expect(
+        yield* Effect.promise(() =>
+          onElicitation(
+            {
+              serverName: "computer-use",
+              message: "Sign in",
+              mode: "url",
+              url: "https://example.com",
+            },
+            { signal: signal(), requestId: "elicit-3" },
+          ),
+        ),
+      ).toEqual({ action: "decline" });
+      expect(yield* take(session, 1)).toEqual([
+        {
+          type: "notice",
+          level: "warning",
+          message: "computer-use asked for input Gram can't give yet; declined.",
+        },
+      ]);
+    }),
+  );
+
+  it.effect(
+    "offers an MCP permission prompt once only under a gate that asks about everything",
+    () =>
+      Effect.gen(function* () {
+        const h = harness();
+        const session = yield* openSession({ outwardGate: "all" }).pipe(Effect.provide(h.layer));
+        yield* take(session, 2);
+        const onElicitation = query(h).options.onElicitation!;
+        const prompt = { serverName: "computer-use", message: "Allow Claude to use Notes?" };
+        const ask = (requestId: string) => onElicitation(prompt, { signal: signal(), requestId });
+        const first = ask("elicit-1");
+        expect(yield* take(session, 2)).toMatchObject([{ request: { scopes: ["once"] } }, {}]);
+        // A longer grant than the card offered is the one use: the next prompt asks again.
+        yield* session.respond(RequestId.make("elicit-1"), {
+          kind: "approval",
+          decision: "allow",
+          scope: "session",
+        });
+        expect(yield* Effect.promise(() => first)).toEqual({ action: "accept", content: {} });
+        yield* take(session, 1);
+        const second = ask("elicit-2");
+        expect(yield* take(session, 2)).toMatchObject([{ request: { id: "elicit-2" } }, {}]);
+        yield* session.respond(RequestId.make("elicit-2"), {
+          kind: "approval",
+          decision: "deny",
+          scope: "once",
+        });
+        expect(yield* Effect.promise(() => second)).toEqual({ action: "decline" });
+      }),
+  );
+
   it.effect("round-trips an approval; always adds session copies without local settings", () =>
     Effect.gen(function* () {
       const h = harness({ config: { settingSources: [] } });
@@ -2524,6 +2624,30 @@ const preToolUse = (q: FakeQuery) => {
     );
 };
 
+/** The `PreToolUse` gate of a session given the browser under `outwardGate`. */
+const browserHookFor = (outwardGate: "all" | "irreversible") =>
+  Effect.gen(function* () {
+    const h = harness();
+    yield* openSession({ outwardGate, browser: true }).pipe(Effect.provide(h.layer));
+    const pre = query(h).options.hooks!.PreToolUse![0]!.hooks[0]!;
+    return (tool_name: string) =>
+      Effect.promise((): Promise<HookJSONOutput> =>
+        pre(
+          {
+            hook_event_name: "PreToolUse",
+            session_id: "s",
+            transcript_path: "/t",
+            cwd: "/repo",
+            tool_name,
+            tool_input: {},
+            tool_use_id: "toolu_b",
+          } as HookInput,
+          "toolu_b",
+          { signal: signal() },
+        ),
+      );
+  });
+
 describe("app tools bridge", () => {
   it.effect("keeps wrap_up for the main agent: a subagent's call is denied, others pass", () =>
     Effect.gen(function* () {
@@ -2595,6 +2719,67 @@ describe("app tools bridge", () => {
       const plain = harness();
       yield* openSession({ permissionMode: "acceptEdits" }).pipe(Effect.provide(plain.layer));
       expect(query(plain).options).not.toHaveProperty("disallowedTools");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("turns Claude in Chrome on only for a session given the browser", () =>
+    Effect.gen(function* () {
+      // Unsaid is off too: an older control plane's host request, or any caller that forgets.
+      const unsaid = harness();
+      yield* openSession({}).pipe(Effect.provide(unsaid.layer));
+      expect(query(unsaid).options.extraArgs).toEqual({ "no-chrome": null });
+
+      const plain = harness();
+      yield* openSession({ browser: false }).pipe(Effect.provide(plain.layer));
+      // Off by the flag, so the CLI's own "Enabled by default" never reaches a Gram thread.
+      expect(query(plain).options.extraArgs).toEqual({ "no-chrome": null });
+
+      const given = harness();
+      yield* openSession({ browser: true }).pipe(Effect.provide(given.layer));
+      expect(query(given).options.extraArgs).toEqual({ chrome: null });
+
+      const confined = harness();
+      yield* openSession({ browser: true, confineWrites: true }).pipe(
+        Effect.provide(confined.layer),
+      );
+      expect(query(confined).options.extraArgs).toEqual({ "no-chrome": null });
+    }).pipe(Effect.scoped),
+  );
+
+  it("never gives Claude in Chrome to a gateway or dream session", () => {
+    expect(chromeArgs({ browser: true }, false)).toEqual({ chrome: null });
+    expect(chromeArgs({ browser: true }, true)).toEqual({ "no-chrome": null });
+    expect(chromeArgs({ browser: true, dreamFilesOnly: true }, false)).toEqual({
+      "no-chrome": null,
+    });
+    expect(chromeArgs({}, false)).toEqual({ "no-chrome": null });
+  });
+
+  it("counts every Claude in Chrome tool but the reads as acting", () => {
+    expect(actsInBrowser("mcp__claude-in-chrome__computer")).toBe(true);
+    expect(actsInBrowser("mcp__claude-in-chrome__navigate")).toBe(true);
+    expect(actsInBrowser("mcp__claude-in-chrome__javascript_tool")).toBe(true);
+    // One the CLI adds later acts until it is listed as a read.
+    expect(actsInBrowser("mcp__claude-in-chrome__something_new")).toBe(true);
+    expect(actsInBrowser("mcp__claude-in-chrome__get_page_text")).toBe(false);
+    expect(actsInBrowser("mcp__claude-in-chrome__tabs_context_mcp")).toBe(false);
+    expect(actsInBrowser("mcp__other__computer")).toBe(false);
+  });
+
+  it.effect("asks before each browser action under the strictest gate only", () =>
+    Effect.gen(function* () {
+      const strict = yield* browserHookFor("all");
+      expect(yield* strict("mcp__claude-in-chrome__computer")).toEqual({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "ask",
+          permissionDecisionReason: BROWSER_GATE_REASON,
+        },
+      });
+      expect(yield* strict("mcp__claude-in-chrome__read_page")).toEqual({});
+      // The publish gate can't tell a click that merges from one that doesn't; the mode decides.
+      const publish = yield* browserHookFor("irreversible");
+      expect(yield* publish("mcp__claude-in-chrome__computer")).toEqual({});
     }).pipe(Effect.scoped),
   );
 

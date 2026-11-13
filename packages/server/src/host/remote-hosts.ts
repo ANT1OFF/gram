@@ -1,6 +1,12 @@
 import { existsSync, lstatSync } from "node:fs";
 import { join } from "node:path";
-import { type HostHello, HostUnavailable, type HostId, type HostStatus } from "@gram/contracts";
+import {
+  type HostHello,
+  HostUnavailable,
+  type HostId,
+  type HostStatus,
+  type MachineState,
+} from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -153,6 +159,23 @@ export interface RemoteHostsShape {
    */
   readonly list: (tailscale?: DialAccess) => ReadonlyArray<ReturnType<typeof machineView>>;
   /**
+   * The confirmed machines as a thread that runs on one shows it: its name, how it got in and
+   * whether it is dialled in, with why not. What every client is sent, so far less than `list`.
+   */
+  readonly states: () => ReadonlyArray<MachineState>;
+  /**
+   * Calls `listener` after `states` may have changed: a machine joined, was confirmed or removed,
+   * connected or dropped, or a dial of one was refused. Returns the unwatch.
+   */
+  readonly watch: (listener: () => void) => () => void;
+  /**
+   * Where `states` reads whether access over Tailscale is switched off, so an offline machine says
+   * that rather than that it never dialled; until it is given, access counts as on unless it was
+   * last kept off. Only the switch is read: why Tailscale is down here changes with no word to
+   * this registry, so `states` leaves it to Settings → Machines, which asks each time.
+   */
+  readonly accessFrom: (read: () => DialAccess) => void;
+  /**
    * Pins a dial from `machine` that the route let through over `origin`, before its upgrade
    * starts: turning access off or moving it, or removing the machine, after this drops the dial.
    */
@@ -222,8 +245,20 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
     } = {},
   ) =>
     Effect.gen(function* () {
-      const machines = createPairedMachines(store, now, nonces);
+      /** Told when `states` may have changed; one that throws doesn't stop the others. */
+      const watchers = new Set<() => void>();
+      const changed = () => {
+        for (const watcher of watchers) {
+          try {
+            watcher();
+          } catch {
+            // A watcher's failure is its own.
+          }
+        }
+      };
+      const machines = createPairedMachines(store, now, nonces, changed);
       const online = new Map<HostId, Online>();
+      let readAccess: (() => DialAccess) | undefined;
       const stops = makeStopMarks(now);
       const root = yield* Effect.scope;
       // The server's own logger and the rest, for a check started outside an effect.
@@ -268,6 +303,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         const live = online.get(id);
         online.delete(id);
         live?.close();
+        if (live !== undefined) changed();
       };
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
@@ -328,7 +364,10 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           // request was interrupted), its entry and scope go with it.
           const cleanUp = Effect.suspend(() => {
             pending.get(machine.id)?.delete(endPending);
-            if (entry !== undefined && online.get(machine.id) === entry) online.delete(machine.id);
+            if (entry !== undefined && online.get(machine.id) === entry) {
+              online.delete(machine.id);
+              changed();
+            }
             return Scope.close(scope, Exit.void);
           });
           return yield* Effect.gen(function* () {
@@ -398,6 +437,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             online.set(machine.id, live);
             stops.back(machine.id);
             machines.note(machine.id, undefined);
+            changed();
             yield* Effect.logInfo("machines: a joined machine is online").pipe(
               Effect.annotateLogs({ hostId: machine.id, platform: opened.value.hello.platform }),
             );
@@ -478,6 +518,40 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           }),
         origin: (id) => online.get(id)?.origin,
         list: (tailscale) => machines.list().map((machine) => view(machine, tailscale)),
+        states: () =>
+          machines
+            .list()
+            .filter((machine) => machine.confirmedAt !== undefined)
+            .map((machine): MachineState => {
+              const live = online.get(machine.id);
+              const { offline } = machineView(
+                machine,
+                live === undefined ? undefined : { since: live.since },
+                {
+                  problem: machines.problemOf(machine.id),
+                  tailscale: (readAccess === undefined ? kept === null : readAccess() === "off")
+                    ? "off"
+                    : "on",
+                },
+              );
+              return {
+                id: machine.id,
+                name: machine.name,
+                kind: isProvisioned(machine) ? "provisioned" : "joined",
+                ...(live === undefined ? {} : { onlineSince: live.since }),
+                ...(offline === undefined ? {} : { offline }),
+              };
+            }),
+        watch: (listener) => {
+          watchers.add(listener);
+          return () => {
+            watchers.delete(listener);
+          };
+        },
+        accessFrom: (read) => {
+          readAccess = read;
+          changed();
+        },
         provisionedOrigin: options.provisionedOrigin,
         closeProvisioned: () => {
           for (const machine of machines.list()) {
@@ -521,6 +595,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             bump(machine.id);
             close(machine.id);
           }
+          // Access turned off, on or moved: an offline machine's reason follows it.
+          changed();
         },
       });
     });

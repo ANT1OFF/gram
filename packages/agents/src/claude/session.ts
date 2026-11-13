@@ -1,8 +1,11 @@
 import { claudeSubscriptionLimits } from "./limits.ts";
 import type {
   CanUseTool,
+  ElicitationRequest,
+  ElicitationResult,
   EffortLevel,
   HookCallbackMatcher,
+  OnElicitation,
   Options,
   PermissionResult,
   Query,
@@ -96,6 +99,13 @@ import { identityFromInitialization, makeMapper, type TaskOutputRead } from "./m
 import { addTokens } from "./usage.ts";
 import { toAgentModel, userModelSwitch } from "./models.ts";
 import { outwardBashKind, resolveRequest, toPendingRequest } from "./permissions.ts";
+import {
+  ELICITATION_DECLINED,
+  elicitationCard,
+  elicitationGranted,
+  elicitationKey,
+  elicitationResult,
+} from "./elicitation.ts";
 import { ClaudeSdk } from "./sdk.ts";
 import {
   savedSessionCost,
@@ -192,6 +202,23 @@ const otherAllowlists = async (
   }
   return found;
 };
+
+/**
+ * Claude in Chrome for a session given the browser: `--chrome`, the only switch that turns it on
+ * for a session the SDK starts (CLI 2.1.322; there is no Agent SDK option of its own). Every other
+ * session gets `--no-chrome`, which outranks the CLI's "Enabled by default" and
+ * `CLAUDE_CODE_ENABLE_CFC`, so the user's own default never reaches a Gram thread unasked. A
+ * confined session never gets it, and neither does one on a gateway key: the extension takes only
+ * a claude.ai sign-in. Its server is Claude Code's own and `allowedMcpServers` doesn't filter it
+ * (verified with an allowlist naming another server), so the session's lists leave it alone.
+ */
+export const chromeArgs = (
+  o: Pick<OpenSessionOptions, "browser" | "confineWrites" | "dreamFilesOnly">,
+  onGateway: boolean,
+): Record<string, null> =>
+  o.browser === true && o.confineWrites !== true && o.dreamFilesOnly !== true && !onGateway
+    ? { chrome: null }
+    : { "no-chrome": null };
 
 /** The flag settings that hold a session to `o`'s MCP lists; empty when it names neither. */
 const mcpListSettings = (
@@ -320,6 +347,12 @@ interface Pending {
   readonly settle: (result: PermissionResult) => void;
 }
 
+/** An MCP server's permission prompt waiting on its card. */
+interface PendingPrompt {
+  readonly prompt: ElicitationRequest;
+  readonly settle: (result: ElicitationResult, remember: boolean) => void;
+}
+
 const describeError = (error: unknown): string => {
   if (!(error instanceof Error)) return String(error);
   return error.cause instanceof Error ? error.cause.message : error.message;
@@ -340,6 +373,35 @@ export const IRREVERSIBLE_GATE_REASON =
 export const CONNECTOR_GATE_REASON =
   "Gram asks before this thread calls a connector, whatever its permission mode and allow " +
   "rules say.";
+
+/** Why a Claude in Chrome action is asked about under the strictest outward gate. */
+export const BROWSER_GATE_REASON =
+  "Gram asks before this thread acts in your browser, where it is signed in as you, whatever " +
+  "its permission mode and allow rules say.";
+
+/** Claude in Chrome's MCP server, as its tools are named (`mcp__claude-in-chrome__<tool>`). */
+const CHROME_TOOL_PREFIX = "mcp__claude-in-chrome__";
+
+/** Claude in Chrome's tools that only read the browser (CLI 2.1.322); every other one acts. */
+const CHROME_READ_TOOLS: ReadonlySet<string> = new Set([
+  "find",
+  "get_page_text",
+  "list_connected_browsers",
+  "read_console_messages",
+  "read_network_requests",
+  "read_page",
+  "tabs_context_mcp",
+]);
+
+/**
+ * Whether `toolName` acts in the user's browser through Claude in Chrome: clicks, types,
+ * navigates, runs script, uploads, opens or closes tabs. The outward gate can't see what a click
+ * does (merging a pull request on github.com is one), so under `all` each of these asks. A tool
+ * added later counts as acting until it is listed as a read.
+ */
+export const actsInBrowser = (toolName: string): boolean =>
+  toolName.startsWith(CHROME_TOOL_PREFIX) &&
+  !CHROME_READ_TOOLS.has(toolName.slice(CHROME_TOOL_PREFIX.length));
 
 /** A `PreToolUse` hook's answer that sends the call to `canUseTool`, ahead of rules and mode. */
 const askFirst = (reason: string) => ({
@@ -817,6 +879,9 @@ export const makeClaudeHost = (
         if (gateAsksAbout(hookInput.tool_name, hookInput.tool_input)) {
           return askFirst(level === "all" ? OUTWARD_GATE_REASON : IRREVERSIBLE_GATE_REASON);
         }
+        if (level === "all" && actsInBrowser(hookInput.tool_name)) {
+          return askFirst(BROWSER_GATE_REASON);
+        }
         if (asksAboutConnector(hookInput.tool_name)) return askFirst(CONNECTOR_GATE_REASON);
         return {};
       };
@@ -872,6 +937,43 @@ export const makeClaudeHost = (
             type: "status",
             status: request.kind === "approval" ? "awaitingApproval" : "awaitingInput",
           });
+        });
+
+      const prompts = new Map<RequestId, PendingPrompt>();
+      /** Prompts granted for the session, by `elicitationKey`. */
+      const granted = new Set<string>();
+      /**
+       * An MCP server asks before it acts, as a computer-use server does for each app. A yes or
+       * no is a card; anything else is declined with a notice, as the SDK does with no handler.
+       */
+      const onElicitation: OnElicitation = (prompt, { signal, requestId }) =>
+        new Promise<ElicitationResult>((resolve) => {
+          if (signal.aborted || closed || o.dreamFilesOnly === true)
+            return resolve(ELICITATION_DECLINED);
+          const promptGated = level === "all";
+          if (!promptGated && granted.has(elicitationKey(prompt)))
+            return resolve(elicitationGranted(prompt));
+          const request = elicitationCard(prompt, requestId, promptGated);
+          if (request === undefined) {
+            emit({
+              type: "notice",
+              level: "warning",
+              message: `${prompt.serverName} asked for input Gram can't give yet; declined.`,
+            });
+            return resolve(ELICITATION_DECLINED);
+          }
+          const settle = (result: ElicitationResult, remember: boolean) => {
+            if (!prompts.delete(request.id)) return;
+            signal.removeEventListener("abort", onAbort);
+            if (remember) granted.add(elicitationKey(prompt));
+            emit({ type: "requestResolved", requestId: request.id });
+            resolve(result);
+          };
+          const onAbort = () => settle({ action: "cancel" }, false);
+          signal.addEventListener("abort", onAbort, { once: true });
+          prompts.set(request.id, { prompt, settle });
+          emit({ type: "request", request });
+          emit({ type: "status", status: "awaitingApproval" });
         });
 
       // Our own id for new sessions and forks, so identity is known before the first turn.
@@ -939,9 +1041,13 @@ export const makeClaudeHost = (
           child.stderr.setEncoding("utf8").on("data", (data: string) => options.stderr?.(data));
           return child;
         },
+        // Always said: a session that wasn't lent the browser, `browser` unsaid included, runs
+        // with `--no-chrome`, never the CLI's own default.
+        extraArgs: chromeArgs(o, gateway !== undefined),
         includePartialMessages: true,
         forwardSubagentText: true,
         canUseTool,
+        onElicitation,
         hooks: {
           // The tool gate (`closeToolGate`) rides on the same hook, so it is there only where that is.
           ...(gated
@@ -1054,6 +1160,7 @@ export const makeClaudeHost = (
             for (const p of pending.values()) {
               p.settle({ behavior: "deny", message: "The session was closed." });
             }
+            for (const p of prompts.values()) p.settle(ELICITATION_DECLINED, false);
             input.end();
             yield* stopCli(query);
             query.close();
@@ -1540,6 +1647,12 @@ export const makeClaudeHost = (
         ),
         respond: (requestId, answer) =>
           Effect.gen(function* () {
+            const asked = prompts.get(requestId);
+            if (asked !== undefined) {
+              const { result, remember } = elicitationResult(asked.prompt, answer, level === "all");
+              asked.settle(result, remember);
+              return;
+            }
             const p = pending.get(requestId);
             if (p === undefined) return;
             const resolution = resolveRequest(p.request, p.input, answer, config.settingSources);

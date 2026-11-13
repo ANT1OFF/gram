@@ -51,6 +51,7 @@ import {
 } from "./runtime/shutdown.ts";
 import { makeFakeAgentAdapter, makeFakeMcpCli, type FakeMcpServers } from "./runtime/fake-agent.ts";
 import { plainTail } from "./terminal/plain-text.ts";
+import { writeServerAgentGuide } from "./guide/agent-guide.ts";
 import { usageHistoryRootsLayer } from "./usage/history-roots.ts";
 
 /** Present when Electron runs the server as a `utilityProcess`. */
@@ -241,6 +242,8 @@ const program = Effect.gen(function* () {
     },
     "server started",
   );
+  // Every tool is registered once the server is up: the guide lists them as this release has them.
+  yield* writeServerAgentGuide(config);
   // The emulator's WASM is read out of the package at runtime, so a packaging mistake that loses it
   // would otherwise show only when an agent first reads a terminal. A smoke run dies here instead.
   if (process.env["GRAM_SMOKE"] === "1") {

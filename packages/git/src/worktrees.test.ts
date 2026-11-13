@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { readPermissionRules, settingsPath } from "./claude-settings.ts";
 import { ProcLive } from "./proc.ts";
+import { originBaseRef } from "./refs.ts";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-utils.ts";
 import { copyWorktreeIncludes } from "./worktree-include.ts";
 import {
@@ -546,6 +547,25 @@ describe.skipIf(!hasGit)("worktrees", () => {
         expect(created.checkout.base).toMatch(/main$/);
         // With no upstream, publishing pushes `-u origin feat/x` instead of refusing origin/main.
         expect(() => run(repo, "rev-parse", "--abbrev-ref", "feat/x@{upstream}")).toThrow();
+      }).pipe(provide),
+    );
+
+    it.live("asks origin for master first only where origin/master is known here", () =>
+      Effect.gen(function* () {
+        const root = tmp();
+        const origin = nodePath.join(root, "origin.git");
+        run(root, "init", "-q", "--bare", "-b", "main", origin);
+        const repo = makeRepo(root);
+        run(repo, "remote", "add", "origin", origin);
+        run(repo, "push", "-q", "origin", "main");
+        run(repo, "fetch", "-q", "origin");
+        // The remote grows a master this checkout has never fetched: main is asked for first.
+        run(repo, "push", "-q", "origin", "main:master");
+        run(repo, "update-ref", "-d", "refs/remotes/origin/master");
+        expect(yield* originBaseRef(repo)).toBe("origin/main");
+        // Once origin/master is known here it is preferred, as before.
+        run(repo, "fetch", "-q", "origin");
+        expect(yield* originBaseRef(repo)).toBe("origin/master");
       }).pipe(provide),
     );
 

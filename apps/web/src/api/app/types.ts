@@ -4,6 +4,7 @@ import type {
   DiagnosticsReport,
   FiledIssue,
   IssueDraft,
+  KeptHostStatus,
   LaunchChecks,
   ThreadId,
   WindowPlacements,
@@ -44,6 +45,10 @@ export interface AppApi {
   diagnostics(): Promise<Diagnostics>;
   /** The "Copy diagnostics" text with secrets removed; `logLines` per log file, 200 by default. */
   diagnosticsReport(logLines?: number): Promise<DiagnosticsReport>;
+  /** This machine's host kept running after Gram quits, as it stands this run. */
+  keptHost(): Promise<KeptHostStatus>;
+  /** Stops that host now, ending every session and shell in it. */
+  keptHostStop(): Promise<void>;
   /** Shows the logs folder in the OS file manager. Rejects with `InvalidState` when it can't. */
   openLogsFolder(): Promise<void>;
   /** Whether `claude`, `git` and `gh` are installed and signed in; cached unless `refresh`. */

@@ -23,6 +23,7 @@ import {
   type Turn,
 } from "./runtime-state.ts";
 import {
+  listedRow,
   type AgentEvent,
   type ApprovalRequest,
   type PendingRequest,
@@ -846,7 +847,7 @@ export const makeAgentEvents = ({
             current.model.agent,
             current.model.profileId,
           ).pipe(
-            Effect.map((models) => models.find((m) => m.id === event.model)),
+            Effect.map((models) => listedRow(models, event.model)),
             Effect.orElseSucceed(() => undefined),
           );
           const efforts = capabilities?.efforts ?? [];

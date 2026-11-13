@@ -25,13 +25,16 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { join } from "node:path";
 import { defineAppTool } from "../app-tools/definition.ts";
+import { ServerConfig } from "../config.ts";
+import { AGENT_GUIDE_FILE } from "../guide/agent-guide.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { CHARTER_MOVED, Orchestration } from "../orchestration/service.ts";
 import { ThreadStore, type SettingsAuditEntry } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { askUser, checkModels, fail } from "./approval.ts";
+import { askUser, canonicalRosterChanges, checkModels, fail } from "./approval.ts";
 import { suppliedPathAmong, suppliedRefusal } from "./supplied.ts";
 import { makeSettingsWriter } from "./writer.ts";
 
@@ -64,6 +67,8 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
       const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
       const hosts = Option.getOrUndefined(yield* Effect.serviceOption(AgentHosts));
       const ttl = Duration.fromInputUnsafe(options.proposalTtl ?? SETTINGS_PROPOSAL_TTL_MS);
+      // Absent in layers without a data folder, which write no guide.
+      const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
 
       /**
        * The workspace in scope for `caller`: its own (an orchestrator's, a worker's, or the one a
@@ -221,6 +226,10 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 role === "worker"
                   ? WORKER_REFUSAL
                   : "Propose changes with settings_propose; the user approves each proposal on a card in this thread before anything changes.",
+              // Read on demand: every tool, setting and hand-edited file, for this release.
+              ...(config === undefined
+                ? {}
+                : { agentGuide: join(config.dataDir, AGENT_GUIDE_FILE) }),
             };
           }),
       });
@@ -247,7 +256,11 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
             }
             const state = yield* workspaceInScope(tool, caller, role, workspaceId);
             const project = yield* projectInScope(tool, caller, state, projectId);
-            const proposed = yield* plan(tool, yield* worldOf(state, project), changes);
+            const proposed = yield* plan(
+              tool,
+              yield* worldOf(state, project),
+              yield* canonicalRosterChanges(store, hosts, changes),
+            );
             if (proposed.scope === "workspace" && orchestration === undefined) {
               return yield* fail(tool, "Workspaces can't be changed here.");
             }

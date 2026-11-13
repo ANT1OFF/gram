@@ -115,6 +115,15 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     threads") is on its hover, never a dotted underline there. Marks centre on one column and
     titles start on one edge, the pill, Search, section titles and History included. The
     overview's sections sit a list's step (12 px) apart.
+  - **A thread on another machine says which, and one on this machine says nothing.** The mark
+    (`MachineMarker`) is the server glyph and the machine's name in muted meta words, at a sidebar
+    row's edge before its other words, after a Workers row's status, under a Board task and first
+    among a thread header's chips; never a chip or a pill. Beside words a row's edge already has
+    ("asks you", "checks") it is the glyph alone, the name on the row's hover. A machine nothing
+    reaches takes the struck glyph and the word ("offline", "needs update") in the text colour,
+    never a status colour: the glyph's shape says it, and a turn it failed has its own red dot. Its
+    hover says the machine, joined machine or provisioned host, its state, and why and the fix
+    when it is offline, as Settings → Machines words them.
   - The compact rail (60 px, under 1280 px) gives each workspace a tile with its monogram, one
     letter of its name ("billing-api" is "B"), two only where workspaces share a first letter
     ("BA", `monograms`), in the tile's own text colour, never a coloured avatar, with its count
@@ -188,7 +197,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     `ShieldQuestion`, a plan `ListChecks`, effort the gauge, usage and limits
     `ChartNoAxesCombined`, Board `Columns3`, the orchestrator `Network`, a worker `Workflow`,
     Memory updates `MoonStar`, Focus `Moon`, Terminal `SquareTerminal`, History `History`, a wait
-    `Hourglass`. A row a chevron already folds needs no second glyph (an orchestrator's update is
+    `Hourglass`, another machine `Server` and one nothing reaches `ServerOff`. A row a chevron already folds needs no second glyph (an orchestrator's update is
     its chevron and time, and no rule: the transcript's 12 px block step sets it apart).
   - A control that acts on a choice names it: a sound's preview is one "Preview Chime" button
     beside the choice, never a row of bare play glyphs.
@@ -260,9 +269,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     orchestrator", and with a draft the line beside Send says "Sending takes over from the
     orchestrator". Beside Send the context meter is its bar alone in a 32 px target, never a ring;
     the pointer opens its popover, headed "Context 36%", which says what it measures.
-- **The Inbox docks beside the chat only where the chat keeps its reading column** (760 px) beside
-  it; in a narrower window (under about 1,600 px with the overview open) it opens over the work as
-  a dialog, the same list and keys, rather than squeeze the chat to a strip.
+- **The Inbox is one dialog over the work**, the same list and keys in Quiet and out of it and at
+  every window size. It never takes the side panel's column: the chat and the panel stay as they
+  were under it, and opening an item's thread closes it.
 - **One worker list:** the right panel's Workers tab, by state, each row its dot, title, age and
   one status line without the state its heading says. ⌘J, Workers in the title bar's "…", the
   palette and the status strip's count open it with the keys on its rows; ⌘J again puts the panel

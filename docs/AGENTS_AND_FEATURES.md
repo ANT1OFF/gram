@@ -62,13 +62,12 @@ configured pass.
   row is two lines: what the item is about, wrapping before it is cut, then its workspace, its kind
   where the heading doesn't say it, its thread and age; its hover says the whole of it, and the
   whole question and its choices are in the pane. An approval's verbs take the keys its card in the
-  thread does: <kbd>1</kbd> Allow once, <kbd>2</kbd> Always allow this rule…, <kbd>3</kbd> Deny. The Inbox docks in the side
-  panel's column, beside the work, and <kbd>⏎</kbd> or Show thread puts the item's thread in the
-  main area next to it. In Focus, or a window too narrow for it beside the chat, it opens as a
-  dialog instead. The title bar's Inbox button, the sidebar's pill and <kbd>⌘⇧I</kbd> open it;
-  docked, <kbd>⌘⇧I</kbd> from the thread brings focus back to its list, <kbd>⌘L</kbd> goes to the
-  composer and <kbd>Esc</kbd> closes it. <kbd>⌘⇧U</kbd> steps through its items at the turn that
-  asked. Under each item the pane shows the asking thread's
+  thread does: <kbd>1</kbd> Allow once, <kbd>2</kbd> Always allow this rule…, <kbd>3</kbd> Deny. The Inbox opens
+  as a dialog over the work, the same in Quiet and out of it and at every window size, and
+  <kbd>⏎</kbd> or Open thread closes it and opens the item's thread at the turn that asked. The
+  title bar's Inbox button, the sidebar's pill and <kbd>⌘⇧I</kbd> open it where it was left;
+  <kbd>⌘⇧I</kbd> again or <kbd>Esc</kbd> closes it. <kbd>⌘⇧U</kbd> steps through its items at
+  the turn that asked. Under each item the pane shows the asking thread's
   last few turns and what its edits changed. An answer can be taken back for a few seconds from
   one receipt: the Inbox's foot while it is open, above the orchestrator's composer after. The
   thread that asks keeps its own card too.
@@ -1109,6 +1108,39 @@ across independent server layers or Gram processes.
 Source: [thread ownership](../packages/agents/src/codex/thread-ownership.ts).
 See [verification](VERIFICATION.md#protocol-native-and-live-checks) for synthetic and live lifecycle checks.
 
+## A broken configuration file
+
+Two files are made to be edited by hand, by you or by an agent you ask:
+`keybindings.json` in Gram's data folder (Settings → Keyboard writes it too) and a project's
+`.gram/scripts.json`. A broken edit never breaks what they configure. Whenever a version reads
+cleanly, Gram keeps a copy of it as the last good one. When a later edit doesn't read cleanly,
+whether it is invalid JSON, the wrong shape or one bad key chord, that edit is ignored as a whole,
+the last good version stays in use (across restarts too), and Gram writes why:
+
+| File                 | Last good copy                                                      | Why it isn't used                                          |
+| -------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `keybindings.json`   | `keybindings.last-good.json` beside it                              | `keybindings.json.error` beside it                         |
+| `.gram/scripts.json` | `project-scripts/<project id>.last-good.json` in Gram's data folder | `project-scripts/<project id>.error` in Gram's data folder |
+
+The error file names the broken file, lists each problem and says which version is in use. It is
+deleted once the file reads cleanly again. Settings → Keyboard and the scripts editor show the
+same problems. Nothing is written into the project's own folder. Deleting a file isn't a broken
+edit: no overrides, or no scripts, then apply. Without a last good version, Gram applies what it
+could read, as before.
+
+## The agent guide
+
+Each time it starts, Gram writes `AGENTS.md` into its data folder: a guide for agents to read on
+demand, generated from the release that runs. It explains the roles and approval classes, lists
+the files above that an agent may read or edit (and the error files), every setting
+`settings_read` shows (and the user-only ones, with why), and every tool, with its class, its
+roles and its input fields. `settings_read` names the file's path in its result.
+
+The guide costs nothing until an agent reads it, unlike a tool's description, which every session
+pays for at its start. A test (`packages/server/src/guide/agent-guide.test.ts`) builds the whole
+server and fails when the guide misses a tool any role is bound with, or a setting. Edits to the
+file are replaced at the next start.
+
 ## Project scripts
 
 A project's common commands (build, test, lint, dev) can be saved as project scripts and run
@@ -1147,6 +1179,133 @@ Definitions are read from the project's own folder each time, not from the threa
 an agent editing its worktree's copy changes nothing. No agent tool runs a script: only the
 user's click or key does.
 
+## Agents after Gram quits
+
+Off by default. **Settings → General → Running work → Run agents after quit** runs this machine's
+host as a service of your user that outlives the app, the way a [joined machine's](MACHINES.md#the-background-service)
+`gram-host` already runs. It takes effect when Gram next starts.
+
+| Platform | Service                                                                        |
+| -------- | ------------------------------------------------------------------------------ |
+| Linux    | systemd user unit `~/.config/systemd/user/gram-local-host-<id>.service`        |
+| macOS    | launchd agent `~/Library/LaunchAgents/io.github.ant1off.gram.local.<id>.plist` |
+
+`<id>` comes from Gram's data folder, so a release and a checkout of Gram on one machine never
+share one. Windows has no such service, and the setting isn't offered there.
+
+While it is on:
+
+- **Quitting Gram leaves its Claude sessions running.** A turn goes on to its end, and a terminal's
+  shell keeps running. An approval, a question or a plan the agent asks for while Gram is closed
+  waits for you, as on a joined machine. Gram's own tools (`gram` MCP) answer only while Gram is
+  open: a call made while it is closed fails, and the agent sees why.
+- **Opening Gram picks them up.** Each thread whose session is still there gets its turn back, under
+  the same id. What the agent did while Gram was closed is replayed into the transcript, the reply
+  in progress whole, and a request it is waiting on shows again. Nothing is opened afresh and
+  nothing is run twice. The session's tools are pointed at the new Gram.
+- **Quitting with agents still in it shows one notice:** "2 agents keep running. Open Gram to see
+  them."
+- **Settings says where it runs** ("Running as `gram-local-host-….service`, with 2 agent sessions
+  that go on if Gram quits"), and **Stop now** ends it at once, after asking when sessions are in
+  it. Turning the setting off stops it, and what is in it, when Gram next starts, and removes its
+  files.
+- **It never lingers.** It isn't started at login, only by Gram. With no Gram connected and nothing
+  running, it ends after 10 minutes. If a session holds something Gram hasn't seen yet, such as a
+  reply finished while Gram was closed, it waits for Gram to open, for up to 3 days. Stopping it
+  ends what it started, as far as each platform can hold it:
+  - **Linux:** the systemd unit's control group holds everything the service started, whatever a
+    process does to its environment, session or parent. Stop is verified on that group: it succeeds
+    only when systemd says the unit is inactive and its group is gone or empty.
+  - **Every platform:** each start gives the service a random run token in its environment, which
+    its agents, shells and tools inherit. Each start's token is kept, in Gram's data folder and in
+    the registry below, until a stop or a later start (with the service not running) has ended that
+    run's processes and verified it. A start that fails keeps them too. Stop then ends every
+    process of yours carrying an outstanding token. It matches by your effective user and by the
+    token as an entry of the process's environment, never by text in a command line, and checks
+    each process's start time again right before each signal. A process list it can't read in full,
+    on any pass including the one after SIGKILL, fails Stop and keeps the records, and Settings
+    says to try again. Starts and stops of one instance are serialized by a lock.
+  - **macOS:** launchd ends the job's process group. The token sweep then ends what left it while
+    keeping the token. Not guaranteed: a process that both clears its environment (`env -i`) and
+    leaves the job's process group (`setsid`), or whose environment `ps` can't read, can outlive a
+    Stop. macOS offers no equivalent of a control group to hold it.
+- **Releases may differ.** A Gram that finds an earlier release's host still running uses it, since
+  between releases the host protocol only grows (see
+  [machines on different releases](MACHINES.md#machines-on-different-releases)). When nothing of a
+  thread is in it, Gram restarts it on its own release.
+
+Codex sessions, sessions through a gateway profile and memory updates still run inside Gram and
+stop when it quits. The host listens on a Unix socket in Gram's data folder
+(`local-host/host.sock`, or a private folder under `$XDG_RUNTIME_DIR` when that path is too long),
+in a folder only your user can open, and on nothing else.
+
+**What it defends, and what it doesn't.** The host is protected against other users of the
+machine and against anything unauthenticated or on the network: the socket's folder is yours
+alone (0700), and the install's secret (`local-host/secret`, 32 random bytes, 0600) is readable by
+you only. Before any of the host protocol, the app and the host each prove they hold that secret
+with an HMAC over a nonce the other side chose. The secret never crosses the socket. Every frame
+after that carries a MAC under a key derived from the secret and both nonces, over its direction
+and its number in sequence. So a process that relays the handshake without holding the secret
+can't add, alter, replay or reflect a frame: the connection closes on the first one that doesn't
+verify, and an unproven connection never displaces the connected app. The host does **not**
+defend against code running as you. Such code can read the secret, as it can already read the
+CLIs' logins and the rest of Gram's data, and same-user programs are inside Gram's trust boundary.
+Frames are authenticated, not encrypted: what crosses the socket (an MCP bearer token, say) is
+readable to whatever can reach the socket. Only code running as you can, through a 0700 folder, and
+that code is trusted, so encryption would add nothing. Gram refuses to start the host, or to use its
+secret, when the socket's folder or the secret's is looser than 0700, the secret looser than 0600,
+either belongs to another user, or either is a link. It never loosens or repairs them silently. The
+service is told the secret file's name, never the secret. Starts and stops of one host are
+serialized by a lock that is taken over only once its owner process is verifiably gone. Its environment file carries only `PATH`,
+locale and XDG folder names, `CLAUDE_CONFIG_DIR` and Gram's own settings for it, never a token, key
+or proxy address. Claude Code finds your sign-in where it keeps it, as it does from a terminal. Gram
+keeps a record of the sessions it left running (`local-host/sessions.json`, readable by you only).
+
+On macOS, Gram starts the agent through `launchctl` rather than as its own child: a process the app
+spawns stays in the app's coalition, which macOS can end with the app. launchd goes on running the
+definition it loaded, whatever the file says now. So Gram boots any job left by an earlier start
+out first, and loads the rewritten one once launchd no longer has it.
+
+On macOS the definition sits in Gram's data folder, not `~/Library/LaunchAgents`, and has no
+`KeepAlive`, so launchd never loads or starts it at login: only Gram does.
+
+Gram also keeps a registry of these services outside any data folder (`~/.local/state/gram/kept-hosts`
+on Linux, `~/Library/Application Support/Gram/kept-hosts` on macOS), one file per data folder,
+naming the service and its run token. A data folder that is moved or removed can't be reached by
+any Gram again. Its service ends on its own 10 minutes after its secret disappears, whatever it is
+running, and the next Gram to start, whichever data folder it uses, stops it (verified) and only
+then removes its registry entry. A service whose data folder is still there is never touched by
+another Gram, so a closed Gram's waiting approvals stay waiting.
+
+To stop one by hand, find it in the registry (each file names its data folder), then:
+
+```sh
+# Linux
+systemctl --user stop gram-local-host-<id>.service
+# macOS
+launchctl bootout gui/$(id -u)/io.github.ant1off.gram.local.<id>
+```
+
+Then end anything still carrying its run token (`GRAM_LOCAL_HOST_RUN=<token>` from the registry
+file) and delete the registry file.
+
+A session taken up on reopen has its Gram tools pointed at the new Gram. That is tried again every
+second until the new Gram's MCP endpoint answers, which is a moment after it starts.
+
+## Terminals after a restart
+
+A thread's terminal that was still open when Gram quit, crashed, or lost the machine it ran on
+comes back on the next start, in the same tab, folder and shell. It shows its last screen as plain
+text (a full-screen program's last frame included) above a dim line, `── the program above ended;
+this is a new shell ──`, and a fresh shell below it. The command that ran is never run again, so
+a script's tab comes back as a plain shell.
+
+What comes back is the terminal's kept tail: up to 256 KB of output, of which the last 1,000 lines
+are shown. Gram keeps it in its data folder (`kept-terminals`, readable by your user only) while
+the terminal is open, a second after new output, and deletes it when the terminal closes, its
+program ends, or its thread closes. A terminal whose thread or folder is gone stays gone, and so
+does one opened outside a thread. A joined machine keeps its own in its host folder.
+
 ## Worktree storage and cleanup
 
 Settings → Storage lists every known repo's linked worktrees in five groups: in
@@ -1176,6 +1335,38 @@ Source: [storage](../packages/server/src/git/storage.ts),
 
 ## Browser, notifications and dictation
 
+The Preview tab opens your app's dev server, a Markdown or HTML file, or any web page you type
+(`example.com` opens as https), and follows links within a web page. `file:`, `javascript:`,
+`data:`, `chrome:`, `devtools:` and other schemes never open. A new window, and a local page's link,
+script or redirect off loopback, go to your browser through the link question: only the address
+strip opens a web page in the pane, so an agent's local page can't send it into your sign-ins. Each thread's page lives in one of two sessions of Gram's own, kept in memory, sharing
+nothing with the app's session, its launch cookie or your browser, sandboxed and without Node, with
+every permission, download, client certificate and external-app launch refused:
+
+- **Local**: loopback pages and every page an agent drives. It loads nothing off loopback but what
+  an agent was allowed (below).
+- **Web**: the pages you open anywhere else. No agent ever reads or drives one; when an agent
+  starts browsing in that thread, your page there closes for a fresh one of its own, so what you
+  sign in to on the web stays yours. Pages on the internet share one web session, which never
+  reaches loopback (Gram's own server, your dev servers) or a private network, whatever asks: a
+  link, form, redirect, script, frame, subresource, WebRTC or preconnect. A public name pointed at
+  a private address is refused like the address. A page you open on your private network, by its
+  address or a private name (`nas.local`), gets its own private web session for that thread and
+  that host and port, which reaches no other private place: not another address, port or name,
+  whatever asks, a frame, WebRTC or a preconnect included. Another private place takes typing it;
+  a link to one goes to your browser through the link question. A public frame there doesn't
+  load, and a link to the internet opens in the shared session. A public name that resolves to a private address (split-horizon DNS)
+  opens nowhere in the pane. Each web session's connections go through a proxy of its own, which
+  looks each name up once and connects only to the addresses it checked; it answers only its own
+  credential, made at each launch, so no other program on your computer can use it. The system
+  proxy isn't used, so on a network that requires one, web pages don't load in the pane. WebRTC
+  there uses no UDP, and its TCP goes through that proxy too. When the pane closed your web page
+  for newer threads', it re-opens it by the shell's own token for that page and at the address the
+  shell recorded; once anything else opened in the thread, such as an agent's page, it doesn't.
+
+Agents can't open a web page in your Preview tab with `show_panel`, which stays on loopback; they
+browse with the tools below, under their own approvals.
+
 Browser Preview/support observations are passive; inspection and capture use
 explicit app tools. Access, host/action approval and document freshness checks
 remain authoritative at dispatch and delivery. Missing metadata is unavailable;
@@ -1201,6 +1392,114 @@ the Preview header and transcript show. `preview_start`, `preview_list`,
 `preview_stop` and `preview_logs` run a project's dev servers by name from
 `.gram/launch.json` (or `.claude/launch.json`): each start names the exact command
 on a card first, takes the next free port, and stops with its thread.
+
+### Pinned pages
+
+An HTML page an agent drafts in its folder and shows in the Preview tab (`show_panel`) can be
+kept. A page meant to be pinned builds its content with DOM APIs, never `document.write` or
+`document.open`, which throw once it is pinned (below). **Pin** in the Preview tab's strip keeps
+one: it copies the page's folder into Gram's state on this computer
+(`<data dir>/pages/<workspace>/`), as Docs are kept, and opens it in the **Pages** tab,
+which the panel shows while the workspace has a pinned page.
+Only you pin, show a newer version or unpin; no agent tool does. Nothing done in the worktree
+afterwards changes what you pinned. A pinned page is a bundle: its folder, with a `manifest.json`
+at its root naming the entry file and the data the page declares it reads, which is none for now.
+A folder of more than 400 files or 32 MB, deeper than 8 folders, or whose own `manifest.json`
+names another entry or declares a read isn't pinned. Dotfiles, credential files and links are left
+out. Only a page in the thread's own folders, on this computer, in a workspace, can be pinned.
+
+An agent offers a new version with `offer_page_version`, which copies its file's folder the same
+way. The page keeps showing your version, with "Newer version from … · Show it" under its header,
+until you press Show it. A later offer replaces one you haven't shown.
+
+Gram's header above the page names it and the thread that made it; the page draws nothing of the
+app's. It runs in a session of its own, `gram-pages`, kept in memory and hardened like the
+preview's, which no agent reaches: the browser tools and `show_panel` refuse its address, and the
+Preview tab's local session never loads it. Its page listener, apart from the preview's, serves
+each pinned version under a token of its own, and the session loads that page's own files from it
+and nothing else: no other page's, no other origin, no network, socket or WebRTC, no
+app IPC or bridge. The page runs sandboxed at an opaque origin, with no cookies, storage,
+popups, forms, dialogs or downloads, and can't navigate off its own files. Both the listener and
+the session put that policy on every response, so neither alone keeps the page in. The page's
+frames run one preload first, which exposes nothing. Chromium lets a page with your click write
+the clipboard whatever the session allows, so the guard promises this much: the page can't write
+the clipboard by script (its copy, cut and paste commands are refused, whatever names them), and
+can't see or change the clipboard's data when you copy, cut or paste. Its handlers don't hear the
+`beforecopy`, `beforecut` and `beforepaste` events or the copy shortcut's keydown (Ctrl or Cmd+C,
+Ctrl+Insert), so it can't move your selection just as you copy. It doesn't promise that what you
+see is what you copy: a selection that spans text the page hid (styled away or off screen) copies
+that text too, as in any browser, and the page can still move the selection at other moments.
+Nor does it cover the cut shortcut (Ctrl or Cmd+X, Shift+Delete), whose keydown the page still
+hears, or dragging text out of the page, whose `dragstart` handler can set what is dragged.
+So that nothing gets ahead of the guard, a pinned page can't replace its own document:
+`document.open`, `document.write` and `document.writeln` throw, so agents build pages with DOM
+APIs (`offer_page_version` says so). A `srcdoc` child the page makes runs the guard too. A child
+it makes by script at `about:blank` gets no preload; the sandbox's opaque origin is what keeps the
+page from scripting it.
+
+### Your own browser: Claude in Chrome and Codex computer use
+
+The Preview pane is Gram's own browser. A thread can also be given **your** browser, with your
+sign-ins, for work only a web console can do (an OAuth app's settings, a cloud project, a
+tailnet's admin page). Every consent is off by default, and each one is separate:
+
+- **Per agent**, under Settings → Agents → Your browser: **Claude in Chrome** for Claude threads,
+  **Codex computer use** for Codex threads (`agents.claudeInChrome`, `agents.codexComputerUse`).
+- **Per scope**: a plain thread gets it only when you give it with ⌘K on the thread (**Lend it your
+  browser**, `thread.setBrowser`). Under Settings → Workspaces, **Orchestrators use
+  your browser** (`workspaces.orchestratorBrowser`) gives it to orchestrators, and **Give workers
+  your browser** (`workspaces.workerBrowser`) lets an orchestrator pass `browser: true` to
+  `spawn_worker`. A spawn that asks without those consents starts without it, and its result says
+  why.
+
+These are user-only settings: no agent can turn one on through `settings_propose`. Gram reads them
+again at each session open, so a change applies from a thread's next session. Giving or taking it
+with ⌘K reopens the session once it is idle. The pane header shows what the server says the
+thread's next session gets (`thread.browserStatus`): **Your browser** while it has it, struck
+through while a consent holds it back, and **Browser not available** where its session can't have
+it at all: a Codex thread in Gram's own Codex home, a thread on a gateway, or one started from a
+profile. The home is the one the thread's next session actually opens in, from the same resume
+plan: a fork that hasn't run yet resumes its source session in the source's home. There ⌘K's lend command is dimmed with the reason, and `thread.setBrowser` refuses it. A
+dream never gets it.
+
+**Claude.** A session given the browser starts with Claude Code's `--chrome`. There is no Agent SDK
+option for it, so Gram passes the flag through `extraArgs`. Every other Gram session starts with
+`--no-chrome`, so Claude Code's own "Enabled by default" setting or `CLAUDE_CODE_ENABLE_CFC` never
+reaches a thread you didn't give it. A session that doesn't say is held off too. A session runs
+in this machine's or a joined machine's gram-host only where that host names the `browser-policy`
+feature: an older host would drop the denial and run the CLI's own default. This machine's older
+host leaves its sessions to the server, and a joined machine's older host is refused until Gram is
+updated there. It needs the Claude extension installed and connected in
+Chrome, and a claude.ai sign-in: a thread on a gateway or an API key doesn't get it. Its tools are
+`mcp__claude-in-chrome__*`. Under a workspace whose outward gate asks about everything
+(supervised), Gram asks before each action in the browser (click, type, navigate, run script,
+upload, open or close a tab). The read-only tools don't ask: page text, find, console, network,
+tabs. Under the publish gate, Gram can't tell a click that merges a pull request from one that
+doesn't. There, the permission mode and the extension's own site permissions decide.
+
+**Codex.** Computer use comes from the plugins the ChatGPT app installs in your own Codex setup
+(`unified-computer-use@openai-bundled` serves `cua_repl`), plus the `node_repl` server it writes to
+`~/.codex/config.toml`. Without the consent and the grant, Gram turns those plugins off in the
+thread's config, along with each computer-use server your config has. Your other plugins and
+servers are left as they are. It works only in threads that run in your own `CODEX_HOME`: threads
+under an outward gate run in Gram's own Codex setup, where plugins are off. Codex computer use
+also needs the ChatGPT app.
+
+**Permission prompts.** When a computer-use or other MCP server asks a yes-or-no question
+before it acts ("Allow ChatGPT to use Safari?"), the thread shows it as an approval card. A Codex
+thread's card offers this session or always only where the server offers them. A Claude thread's
+offers this session, which Gram remembers for that session by server and message, since Claude
+Code passes on no grant of its own. Under an outward gate that asks about everything, either
+card is for the one use. A prompt that needs more than a yes or no (a form's own fields, a link,
+a verification) is declined with a notice.
+
+**A broken `computer-use` server.** An old copy of Codex's standalone computer-use client in
+Claude Code's config has a relative command (`./Codex Computer Use.app/…`). Claude Code starts
+every stdio server in the session's folder, so that command fails with ENOENT in every Claude
+session. Even started by its full path, the standalone client times out at bootstrap without the
+Codex app's service, so remove it (`claude mcp remove <name> -s user`); Claude threads use Claude in
+Chrome. Settings → Connectors' copy to another agent now makes a command relative to an absolute
+`cwd` absolute, and asks for the full path when there's no absolute `cwd` to go by.
 
 Notifications retain sanitized history and quiet startup diagnostics; saved
 notifications omit sensitive runtime details. Dictation is off until turned on in Settings → Voice

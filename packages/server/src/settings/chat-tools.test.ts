@@ -264,6 +264,37 @@ describe("settings_propose", () => {
       }),
     ),
   );
+  it.effect("stores a worker model named by the picker's name as the catalogue's id", () =>
+    inSettings((world) =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const { thread, workspaceId } = yield* openOrchestrator(world);
+        const asked = yield* call(thread.id, "orchestrator", "settings_propose", {
+          changes: [
+            {
+              op: "add",
+              key: "workspace.workerModels",
+              item: { agent: "claude", model: "fake haiku (ECHO)", useFor: "docs" },
+            },
+          ],
+        }).pipe(Effect.forkScoped);
+        const card = yield* cardIn(thread.id);
+        expect(card.input).toMatchObject({
+          rows: expect.arrayContaining([
+            expect.objectContaining({
+              label: "Worker model claude:fake-haiku",
+              after: "claude:fake-haiku — docs",
+            }),
+          ]),
+        });
+        yield* answer(thread.id, card, "allow");
+        expect(yield* Fiber.join(asked)).toMatchObject({ applied: true });
+        expect((yield* store.getWorkspace(workspaceId)).charter.workerModels).toEqual([
+          { agent: "claude", model: "fake-haiku", useFor: "docs" },
+        ]);
+      }),
+    ),
+  );
   it.effect("applies an approved workspace change through setCharter, and audits it", () =>
     inSettings((world) =>
       Effect.gen(function* () {

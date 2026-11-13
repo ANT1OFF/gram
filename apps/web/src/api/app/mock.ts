@@ -66,6 +66,20 @@ export function createAppMock(world: MockWorld): AppApi & AppMockControls {
       };
     },
     openLogsFolder: async () => {},
+    // As a machine that turned it on at its last start: running while the setting is on.
+    keptHost: async () => {
+      const on = (await world.settings()).agents.keepRunningAfterQuit === true;
+      return on
+        ? {
+            available: true,
+            on,
+            running: true,
+            service: "gram-local-host-3f2a9c1d0e.service",
+            sessions: 2,
+          }
+        : { available: true, on, running: false, sessions: 0 };
+    },
+    keptHostStop: async () => {},
     launchChecks: async () => mockLaunchChecks(),
     previewIssue,
     fileIssue: async (draft) => {

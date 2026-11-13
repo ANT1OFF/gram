@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import babel from "@rolldown/plugin-babel";
@@ -50,14 +51,28 @@ const e2eTokenEndpoint = (token: string): Plugin => {
 
 /**
  * What an entry imports statically loads before the first paint, so it keeps a budget of its own:
- * the entry and every chunk it pulls in, about 1,930 kB minified for the main entry, which
- * `build.rolldownOptions` keeps in one file. Dialogs, sheets and views the first screen doesn't
- * show load after it (`lazyPart`), each chunk of those within `LAZY_CHUNK_BUDGET_KB`: above Shiki's
- * largest language grammars (emacs-lisp and cpp, about 790 kB each) and the ghostty-web terminal
- * (about 640 kB), each loaded only when a code block or terminal needs it.
+ * the entry and every chunk it pulls in, which `build.rolldownOptions` keeps in two files.
+ * Dialogs, sheets and views the first screen doesn't show load after it (`lazyPart`), each chunk
+ * of those within the lazy chunk's budget: above Shiki's largest language grammars (emacs-lisp and
+ * cpp, about 790 kB each) and the ghostty-web terminal (about 640 kB), each loaded only when a
+ * code block or terminal needs it.
+ *
+ * Each route keeps a budget too: what opening it loads beyond the first paint, which is its own
+ * chunk and every chunk that one imports statically. The budgets are in `bundle-budgets.json`,
+ * in kB of minified code. A build over any of them fails, so a route that grew says so in the
+ * pull request that grew it; raise the number there when the growth is meant.
+ * `GRAM_BUNDLE_REPORT=1` prints every route's size.
  */
-const INITIAL_BUDGET_KB = 2050;
-const LAZY_CHUNK_BUDGET_KB = 1000;
+interface BundleBudgets {
+  readonly firstPaintKb: number;
+  readonly lazyChunkKb: number;
+  /** By route file under `src/routes`, without `.tsx`; `default` is for a route not named. */
+  readonly routeKb: Readonly<Record<string, number>>;
+}
+const budgets = JSON.parse(
+  readFileSync(new URL("./bundle-budgets.json", import.meta.url), "utf8"),
+) as BundleBudgets;
+const ROUTE_MODULE = /[\\/]src[\\/]routes[\\/](.+)\.tsx\?tsr-split=component/;
 const entryBudget: Plugin = {
   name: "gram-entry-budget",
   apply: "build",
@@ -67,35 +82,67 @@ const entryBudget: Plugin = {
         each.type === "chunk" ? [[each.fileName, each]] : [],
       ),
     );
+    const kbOf = (files: Iterable<string>) => {
+      let bytes = 0;
+      for (const fileName of files) bytes += Buffer.byteLength(chunks.get(fileName)?.code ?? "");
+      return bytes / 1000;
+    };
+    /** `from` and every chunk it imports statically, leaving out what `loaded` already has. */
+    const closure = (from: string, loaded: ReadonlySet<string>) => {
+      const seen = new Set<string>();
+      const visit = (fileName: string) => {
+        if (seen.has(fileName) || loaded.has(fileName)) return;
+        seen.add(fileName);
+        for (const imported of chunks.get(fileName)?.imports ?? []) visit(imported);
+      };
+      visit(from);
+      return seen;
+    };
+    const over: string[] = [];
     const initial = new Set<string>();
     for (const entry of chunks.values()) {
       if (!entry.isEntry) continue;
-      const start = initial.size;
-      const visit = (fileName: string) => {
-        if (initial.has(fileName)) return;
-        initial.add(fileName);
-        for (const imported of chunks.get(fileName)?.imports ?? []) visit(imported);
-      };
-      visit(entry.fileName);
-      const files = [...initial].slice(start);
-      const kb =
-        files.reduce((sum, fileName) => {
-          const chunk = chunks.get(fileName);
-          return sum + (chunk === undefined ? 0 : Buffer.byteLength(chunk.code));
-        }, 0) / 1000;
-      if (kb > INITIAL_BUDGET_KB)
-        this.warn(
-          `entry ${entry.fileName} loads ${kb.toFixed(0)} kB before first paint (${files.length} files), over its ${INITIAL_BUDGET_KB} kB budget`,
+      const files = closure(entry.fileName, initial);
+      for (const fileName of files) initial.add(fileName);
+      const kb = kbOf(files);
+      if (kb > budgets.firstPaintKb)
+        over.push(
+          `entry ${entry.fileName} loads ${kb.toFixed(0)} kB before first paint (${files.size} files), over its ${budgets.firstPaintKb} kB budget`,
         );
     }
     for (const chunk of chunks.values()) {
       if (initial.has(chunk.fileName)) continue;
       const kb = Buffer.byteLength(chunk.code) / 1000;
-      if (kb > LAZY_CHUNK_BUDGET_KB)
-        this.warn(
-          `lazily loaded chunk ${chunk.fileName} is ${kb.toFixed(0)} kB, over its ${LAZY_CHUNK_BUDGET_KB} kB budget`,
+      if (kb > budgets.lazyChunkKb)
+        over.push(
+          `lazily loaded chunk ${chunk.fileName} is ${kb.toFixed(0)} kB, over its ${budgets.lazyChunkKb} kB budget`,
         );
     }
+    const routes = new Map<string, number>();
+    for (const chunk of chunks.values()) {
+      for (const id of chunk.moduleIds) {
+        const route = ROUTE_MODULE.exec(id)?.[1]?.replaceAll("\\", "/");
+        if (route === undefined) continue;
+        routes.set(route, kbOf(closure(chunk.fileName, initial)));
+      }
+    }
+    for (const [route, kb] of [...routes].toSorted((a, b) => b[1] - a[1])) {
+      const budget = budgets.routeKb[route] ?? budgets.routeKb["default"]!;
+      if (process.env["GRAM_BUNDLE_REPORT"] === "1")
+        this.info(`route ${route}: ${kb.toFixed(0)} kB of ${budget} kB`);
+      if (kb > budget)
+        over.push(
+          `route ${route} loads ${kb.toFixed(0)} kB beyond the first paint, over its ${budget} kB budget`,
+        );
+    }
+    for (const route of Object.keys(budgets.routeKb)) {
+      if (route !== "default" && !routes.has(route))
+        over.push(`bundle-budgets.json names the route ${route}, which the build does not have`);
+    }
+    if (over.length > 0)
+      this.error(
+        `${over.join("\n")}\nBudgets are in apps/web/bundle-budgets.json; raise one there when the growth is meant.`,
+      );
   },
 };
 
@@ -119,7 +166,7 @@ export default defineConfig({
   build: {
     // Vite's one limit for every chunk, set to the first paint's: `entryBudget` above holds that
     // load and each lazily loaded chunk to budgets of their own.
-    chunkSizeWarningLimit: INITIAL_BUDGET_KB,
+    chunkSizeWarningLimit: budgets.firstPaintKb,
     // The React Compiler's Babel pass is most of every build by design; the timing notice it
     // triggers on each build says nothing new.
     rolldownOptions: {
@@ -132,7 +179,14 @@ export default defineConfig({
           // hundred small files took longer than the bytes in them. What loads later stays in
           // chunks of its own, reusing this one's modules. `main.tsx` is bundled in it too, so it
           // starts without a top-level `await` (see there).
-          groups: [{ name: "initial", tags: ["$initial"] }],
+          //
+          // The packages among them go in a file of their own, ahead of the app's code. They are
+          // half of the first download and change with a dependency bump, not with a release, so
+          // a browser that has them keeps them across updates and fetches only the app's half.
+          groups: [
+            { name: "vendor", tags: ["$initial"], test: /[\\/]node_modules[\\/]/, priority: 2 },
+            { name: "initial", tags: ["$initial"], priority: 1 },
+          ],
         },
       },
     },

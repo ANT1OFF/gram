@@ -156,6 +156,16 @@ export interface OpenSessionOptions {
    */
   readonly peerMessaging?: boolean;
   /**
+   * The user's browser, through the agent's own integration: Claude Code's Claude in Chrome
+   * (`--chrome`), Codex's computer use (its plugins' `cua_repl`, the ChatGPT app's `node_repl`).
+   * Only `true` turns it on. Claude holds anything else off (`--no-chrome`), absent included, so a
+   * CLI-wide default never reaches a Gram thread unasked, nor a host session from a control plane
+   * that didn't send it. Codex turns its plugins and servers off on `false`, and leaves the user's
+   * own config on absent (Codex sessions open in the server, whose runtime always says which). A
+   * host without either ignores it.
+   */
+  readonly browser?: boolean;
+  /**
    * Told each time the session reports its MCP servers, so a view with no session open can show
    * the last word. Called synchronously from the agent's message loop: it mustn't block or throw.
    * A host that doesn't report them ignores it.
@@ -351,6 +361,17 @@ export interface AgentSession {
   /** Opaque shared-child identity, used only to coordinate config restarts among its holders. */
   readonly configOwner?: object;
   readonly events: Stream.Stream<AgentEvent>;
+  /**
+   * Told how many of `events` the runtime has handled so far, in their order. A session kept by a
+   * host that outlives the app confirms its host's events by it, so a Gram opened again replays
+   * what the last one hadn't handled. Absent, nothing needs telling.
+   */
+  readonly handled?: (count: number) => void;
+  /**
+   * A session a Gram before this one left running, which this one follows on rather than opened:
+   * no `identity` comes first, and its events pick up where the last Gram's handling ended.
+   */
+  readonly reattached?: boolean;
   /** Starts a turn. The runtime owns the queue and only calls this while idle. */
   send(input: UserInput, options?: SendOptions): Effect.Effect<void>;
   /**

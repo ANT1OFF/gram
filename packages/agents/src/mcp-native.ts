@@ -99,8 +99,10 @@ export const describeCodexEntry = (entry: unknown): ServerDescription | undefine
   if (!isRecord(entry)) return undefined;
   const command = text(entry["command"]);
   if (command !== undefined) {
+    const cwd = text(entry["cwd"]);
     return {
       ...local(command, strings(entry["args"]), holdsValues(entry["env"])),
+      ...(cwd === undefined ? {} : { cwd }),
       ...switchedOff(entry),
     };
   }

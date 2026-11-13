@@ -1,3 +1,5 @@
+import { join } from "node:path";
+import { KeptSessions } from "../runtime/kept-sessions.ts";
 import { answerAsk, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
 import { DecisionHook } from "../embedding/decision-hook.ts";
 import { EventSink } from "../embedding/event-sink.ts";
@@ -28,6 +30,7 @@ import { PrAppToolsLive } from "../app-tools/pr-tools.ts";
 import { ReadAppToolsLive } from "../app-tools/read-tools.ts";
 import { WrapUpAppToolsLive } from "../app-tools/wrap-up-tool.ts";
 import { DocAppToolsLive } from "../app-tools/doc-tools.ts";
+import { PageAppToolsLive } from "../app-tools/page-tools.ts";
 import { Docs } from "../docs/docs.ts";
 import { ReviewRequestAppToolsLive } from "../app-tools/review-request-tools.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
@@ -100,10 +103,13 @@ import {
   type Actor,
 } from "./fronted-identity.ts";
 import { PreviewFiles } from "../preview/files.ts";
+import { PageFiles } from "../pages/page-files.ts";
+import { Pages } from "../pages/pages.ts";
 import { agentHostsOrHeadless, withHeadlessCheck } from "../host/headless.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
+import { compressedStatic } from "./compressed-static.ts";
 import { markLocalApp, unmarkLocalApp } from "./local-app.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
 import {
@@ -112,6 +118,7 @@ import {
   HttpRouter,
   HttpServer,
   HttpServerRequest,
+  HttpServerRespondable,
   HttpServerResponse,
   HttpStaticServer,
   type Rpc,
@@ -242,6 +249,8 @@ export const AuthMiddleware = HttpRouter.middleware(
     // Access opened, closed or moved, by the switch or by recovery: joined machines' connections
     // and dials follow it, so none outlives the address it came in on.
     if (remoteHosts !== undefined) control.watch((origin) => remoteHosts.keepOrigin(origin));
+    // Why an offline machine can't dial in, as a thread that runs on it says on its marker.
+    remoteHosts?.accessFrom(control.dialAccess);
     const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
     // Absent in tests that serve the middleware alone.
     const embedInbound = Option.getOrUndefined(yield* Effect.serviceOption(EmbedInbound));
@@ -755,9 +764,21 @@ const StaticRoutes = Layer.unwrap(
           "/*",
           HttpServerResponse.text("Gram server: no web root configured", { status: 404 }),
         )
-      : HttpStaticServer.layer({ root: webRoot, index: "index.html", spa: true }).pipe(
-          Layer.provide(GuardedHttpPlatform),
-        );
+      : Layer.effectDiscard(
+          Effect.gen(function* () {
+            const router = yield* HttpRouter.HttpRouter;
+            const files = yield* HttpStaticServer.make({
+              root: webRoot,
+              index: "index.html",
+              spa: true,
+            });
+            yield* router.add(
+              "GET",
+              "/*",
+              compressedStatic(webRoot)(files).pipe(Effect.catch(HttpServerRespondable.toResponse)),
+            );
+          }),
+        ).pipe(Layer.provide(GuardedHttpPlatform));
   }),
 );
 
@@ -787,6 +808,12 @@ export const ServerCore = Layer.unwrap(
     const config = yield* ServerConfig;
     const databaseFile = config.databaseFile ?? (yield* serverDatabaseFile(config.dataDir));
     if (databaseFile !== ":memory:") mkdirSync(config.dataDir, { recursive: true });
+    // A thread's open terminals, kept for the next start, which shows each one's last screen above
+    // a fresh shell. Not for a database in memory (tests), which keeps nothing past its run.
+    const keptTerminals =
+      databaseFile === ":memory:" || config.headless === true
+        ? undefined
+        : join(config.dataDir, "kept-terminals");
     // The git app tools read the publisher and babysit observes it; the publisher and port chips
     // depend on the runtimes; the runtimes depend on checkouts. Orchestration sits under the app
     // tools because the cross-thread ones ask it whether a call is delegated, and over the launch
@@ -799,6 +826,7 @@ export const ServerCore = Layer.unwrap(
         ReadAppToolsLive,
         WrapUpAppToolsLive,
         DocAppToolsLive,
+        PageAppToolsLive,
         ReviewRequestAppToolsLive,
         OrchestrationAppToolsLive,
         OrchestratorAppToolsLive,
@@ -878,9 +906,10 @@ export const ServerCore = Layer.unwrap(
           Layer.provideMerge(ThreadPorts.layer),
           // The outputs service observes the runtimes for files their threads produce; the browser
           // tools record evidence there too.
-          // The docs a workspace's threads publish (`publish_doc`), kept in Gram's state.
+          // The docs a workspace's threads publish (`publish_doc`), and the pages its user pins,
+          // kept in Gram's state.
           Layer.provideMerge(
-            Layer.mergeAll(AppToolRegistry.layer, WorkspaceOutputs.layer, Docs.layer),
+            Layer.mergeAll(AppToolRegistry.layer, WorkspaceOutputs.layer, Docs.layer, Pages.layer),
           ),
           // The runtimes read the limit readings, which a limit wait falls back on for its reset.
           Layer.provideMerge(
@@ -901,16 +930,28 @@ export const ServerCore = Layer.unwrap(
                 Layer.mergeAll(
                   GitCheckoutLive.pipe(Layer.provide(LocalHostProcess.worktrees)),
                   ClaudeAiSeenLive,
-                  HostTerminals.layer,
+                  HostTerminals.layerKeeping(keptTerminals),
                   // A headless server has no agents of its own, whatever it was given.
                   agentHostsOrHeadless(AgentHostsThroughHost),
                 ),
+              ),
+              // What a host kept running after Gram quits still runs from the last Gram, and the
+              // record of what this one runs there.
+              Layer.provideMerge(
+                keptTerminals === undefined
+                  ? Layer.succeed(KeptSessions, KeptSessions.off)
+                  : KeptSessions.layer(config.dataDir),
               ),
               // Nor a host process: nothing of a thread's runs on this machine.
               Layer.provideMerge(
                 config.headless === true
                   ? LocalHostProcess.layerWith({ hostProcess: false })
-                  : LocalHostProcess.layer,
+                  : LocalHostProcess.layerKeeping(
+                      keptTerminals,
+                      keptTerminals === undefined
+                        ? undefined
+                        : { dataDir: config.dataDir, release: config.appVersion },
+                    ),
               ),
             ),
           ),
@@ -926,6 +967,7 @@ export const ServerCore = Layer.unwrap(
                   EventHub.layer,
                   TerminalGate.layer,
                   PreviewFiles.layer,
+                  PageFiles.layer,
                   AppActivityLive,
                   ProcessRoots.layer,
                   // The inbound paths and timers of an embedding deployment, inert while the
@@ -957,6 +999,14 @@ export const ServerCore = Layer.unwrap(
 // Pinned ws implements closeTimeout; its bundled @types/ws has not declared it yet.
 const websocketOptions: NodeHttpServer.Options["websocket"] & { readonly closeTimeout: number } = {
   closeTimeout: 1_000,
+  // The feed is JSON that repeats itself: a sidebar of threads, a terminal's scrollback and a
+  // page of history all shrink to a fraction, which is seconds on a phone's connection. Small
+  // frames (a keystroke, a streamed delta) go as they are; level 3 keeps the server's share of a
+  // large answer to a few milliseconds.
+  perMessageDeflate: {
+    threshold: 1024,
+    zlibDeflateOptions: { level: 3 },
+  },
 };
 
 /** Requests can arrive between removal of the scoped handler and the listener's final close. */
@@ -981,7 +1031,8 @@ export const ServerLayer: Layer.Layer<
   | McpTokens
   | ThreadRuntimes
   | ThreadStore
-  | EventHub,
+  | EventHub
+  | AppToolRegistry,
   unknown,
   AgentHosts | ServerConfig | GitPlatform | TurnHooks
 > = Layer.unwrap(

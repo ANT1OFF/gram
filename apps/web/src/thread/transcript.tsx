@@ -232,9 +232,11 @@ export function Transcript({
   // The virtualizer is a mutable instance; the compiler must not memoize around it.
   "use no memo";
   // Rows wait for the markdown renderer as they wait for the messages, so none is laid out as
-  // plain text first and measured again. A failed load shows them plain rather than never.
+  // plain text first and measured again. A failed load shows them plain rather than never, and a
+  // slow link shows them plain until the renderer arrives: there the wait is seconds.
   const markdown = useMarkdown();
-  const markdownPending = markdown.module === undefined && markdown.failed === undefined;
+  const markdownPending =
+    markdown.module === undefined && markdown.failed === undefined && markdown.plain === undefined;
   const loading = loadingMessages || markdownPending;
   const messages = markdownPending ? NO_MESSAGES : loadedMessages;
   const scrollRef = useRef<HTMLDivElement>(null);

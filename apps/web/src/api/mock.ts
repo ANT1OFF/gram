@@ -37,9 +37,11 @@ import type {
   ReviewRequest,
   GramUIMessage,
   GramUIMessageChunk,
+  MachineState,
   MessageId,
   TaskId,
   Thread,
+  ThreadBrowserStatus,
   ThreadFeedEvent,
   ThreadHistoryPage,
   ThreadId,
@@ -55,8 +57,12 @@ import type {
   TurnUndoData,
 } from "@gram/contracts";
 import {
+  browserUseAllowed,
+  orchestratorBrowserOn,
+  workerBrowserOn,
   derivedTitle,
   effectiveCheckout,
+  HostId,
   machineProjectRoot,
   mcpTargetOf,
   normalizeThreadPrs,
@@ -120,6 +126,7 @@ import { createSpeechMock } from "./speech/mock";
 import { createDreamsMock } from "./dreams/mock";
 import { createFilesMock } from "./files/mock";
 import { createDocsMock } from "./docs/mock";
+import { createPagesMock } from "./pages/mock";
 import { createLabelsMock } from "./labels/mock";
 import { createKeybindingsMock } from "./keybindings/mock";
 import { createTerminalMock } from "./terminal/mock";
@@ -206,6 +213,7 @@ import {
   mockProject,
   resolveMockFolder,
 } from "./mock-fs";
+import { MockPages } from "./mock-pages";
 import { MockPreview } from "./mock-preview";
 import { mockToolClock, mockToolTime } from "./mock-tool-times";
 import {
@@ -1080,6 +1088,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       type: "threads.snapshot",
       threads: [...this.#threads.values()].map((r) => r.summary),
     });
+    channel.push({ type: "machines.snapshot", machines: this.#machines });
     channel.push(this.#limits.snapshot());
     this.#events.add(channel);
     return channel;
@@ -1788,6 +1797,50 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
 
   async markUnread(threadId: ThreadId, unread: boolean) {
     this.#update(this.#runtime(threadId), { unread });
+  }
+
+  async setBrowser(threadId: ThreadId, browser: boolean) {
+    const runtime = this.#runtime(threadId);
+    if (runtime.summary.thread.role !== undefined) {
+      throw new Error("An orchestrator's browser is the “Orchestrators use your browser” setting.");
+    }
+    const { browser: _was, ...rest } = runtime.summary.thread;
+    const thread = browser ? { ...rest, browser: true } : rest;
+    runtime.summary = { ...runtime.summary, thread };
+    this.#emit({ type: "thread.upsert", thread });
+    return thread;
+  }
+
+  /** The server's `browserStatus`, on the facts the mock keeps: no outward gate of its own. */
+  async threadBrowserStatus(threadId: ThreadId): Promise<ThreadBrowserStatus> {
+    const thread = this.#runtime(threadId).summary.thread;
+    const settings = await this.#settings.get();
+    // A cold fork resumes its source in the source's home (the mock keeps no anchors).
+    const home =
+      thread.codexHome ??
+      (thread.agentSessionId === undefined ? thread.forkedFrom?.codexHome : undefined);
+    const cannot =
+      thread.profile !== undefined
+        ? "A thread started from a profile keeps to its profile's tools."
+        : thread.model.profileId !== undefined
+          ? "This thread runs on a gateway."
+          : thread.model.agent === "codex" && home !== undefined && home !== "user"
+            ? "Codex computer use runs only in your own Codex setup, and this thread runs in Gram's own, where it started under an outward gate."
+            : undefined;
+    const lent =
+      thread.role === "orchestrator" ? orchestratorBrowserOn(settings) : thread.browser === true;
+    if (!lent || thread.role === "dream")
+      return cannot === undefined ? { state: "off" } : { state: "off", cannot };
+    if (cannot !== undefined) return { state: "unavailable", why: cannot, cannot };
+    if (!browserUseAllowed(settings, thread.model.agent))
+      return { state: "held", why: "It's off in Settings → Agents." };
+    if (
+      thread.role !== "orchestrator" &&
+      thread.spawnedBy !== undefined &&
+      !workerBrowserOn(settings)
+    )
+      return { state: "held", why: "Workers' browser is off in Settings → Workspaces." };
+    return { state: "on" };
   }
 
   /** Per thread, the timer that ends its snooze, as the server's wakes do. */
@@ -2531,6 +2584,26 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     return { ...thread, boundPr };
   }
 
+  /** The other machines and their states, as the server sends them; none until `setMachines`. */
+  #machines: ReadonlyArray<MachineState> = [];
+
+  /** Dev and e2e hook: the confirmed machines and whether each is dialled in, sent to every window. */
+  setMachines(machines: ReadonlyArray<MachineState>) {
+    this.#machines = machines;
+    this.#emit({ type: "machines.snapshot", machines });
+  }
+
+  /** Dev and e2e hook: puts the thread's checkout on the machine `hostId`, as one placed there has it. */
+  placeOnMachine(threadId: ThreadId, hostId: string) {
+    const runtime = this.#runtime(threadId);
+    const thread: Thread = {
+      ...runtime.summary.thread,
+      checkout: { ...runtime.summary.thread.checkout, hostId: HostId.make(hostId) },
+    };
+    runtime.summary = { ...runtime.summary, thread };
+    this.#emit({ type: "thread.upsert", thread });
+  }
+
   /** `simulateMissingFolder` (`mock-scenarios.ts`). */
   simulateMissingFolder(
     threadId: ThreadId,
@@ -2697,6 +2770,7 @@ export function createMockApi(options: MockApiOptions = {}) {
     ...createBranchesMock(world),
     ...createConnectorsMock(world),
     ...createDocsMock(world),
+    ...createPagesMock(world),
     ...createFilesMock(world),
     ...createKeybindingsMock(world),
     ...createLabelsMock(world),
@@ -2706,6 +2780,7 @@ export function createMockApi(options: MockApiOptions = {}) {
     shell: {
       ...agentBrowse.shell,
       preview: new MockPreview(),
+      pages: new MockPages(),
     },
     agentBrowseHosts: agentBrowse.agentBrowseHosts,
     simulateBrowseApproval: agentBrowse.simulateBrowseApproval,

@@ -1,6 +1,6 @@
 {
   "name": "@gram/desktop",
-  "version": "1.20.0",
+  "version": "1.22.0",
   "private": true,
   "description": "Gram desktop shell",
   "homepage": "https://github.com/ANT1OFF/gram",
@@ -8,8 +8,8 @@
   "author": "Gram contributors",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "install-electron && GRAM_READABLE_BUNDLES=1 electron-vite build -c electron.vite.server.config.ts && GRAM_READABLE_BUNDLES=1 electron-vite build -c electron.vite.speech.config.ts && node scripts/dev.mjs",
-    "build": "electron-vite build && electron-vite build -c electron.vite.server.config.ts && electron-vite build -c electron.vite.speech.config.ts && node ../../tools/notices/generate.mjs",
+    "dev": "install-electron && GRAM_READABLE_BUNDLES=1 electron-vite build -c electron.vite.server.config.ts && GRAM_READABLE_BUNDLES=1 electron-vite build -c electron.vite.speech.config.ts && GRAM_READABLE_BUNDLES=1 electron-vite build -c electron.vite.page-guard.config.ts && node scripts/dev.mjs",
+    "build": "electron-vite build && electron-vite build -c electron.vite.server.config.ts && electron-vite build -c electron.vite.speech.config.ts && electron-vite build -c electron.vite.page-guard.config.ts && node ../../tools/notices/generate.mjs",
     "dist": "bun run --filter @gram/web build && bun run build && electron-builder --publish never",
     "dist:dir": "bun run --filter @gram/web build && bun run build && electron-builder --dir --publish never",
     "dist:linux": "bun run --filter @gram/web build && bun run build && node scripts/rebuild-node-pty.mjs && electron-builder --linux --x64 --publish never",

@@ -32,6 +32,7 @@ import { terminalRpc } from "./terminal/rpc";
 import { threadsRpc } from "./threads/rpc";
 import { waitsRpc } from "./waits/rpc";
 import { docsRpc } from "./docs/rpc";
+import { pagesRpc } from "./pages/rpc";
 import { worktreesRpc } from "./worktrees/rpc";
 import { createConnectionMonitor, withSessionProbe } from "./connection";
 import { type RpcContext } from "./rpc-client";
@@ -90,6 +91,7 @@ export async function createRpcApi(url: string, session?: GramServer["session"])
     ...keybindingsRpc(domain),
     ...labelsRpc(domain),
     ...orchestrationRpc(domain),
+    ...pagesRpc(domain),
     ...prPeopleRpc(domain),
     ...profilesRpc(domain),
     ...projectsRpc(domain),

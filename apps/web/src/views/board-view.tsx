@@ -1,4 +1,4 @@
-import { type ThreadId, type WorkspaceId, type WorkspaceState } from "@gram/contracts";
+import type { ThreadId, WorkspaceId, WorkspaceState } from "@gram/contracts";
 import { Columns3 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 
@@ -36,9 +36,9 @@ import { BoardHeader } from "./board-header";
 import { useViewStore } from "./view-store";
 
 // The Board view: the workspace as feature lines, and the ask stack docked below: a compact grid,
-// a row per feature (board-grid.tsx). Its header carries the workspace's controls
-// and what waits on you; lines carry their stage and gather under their group's band; unresolved
-// failures stand in a card above them all.
+// a row per feature (board-grid.tsx). Its header carries the workspace's controls and what waits on
+// you; lines carry their stage and gather under their group's band; unresolved failures stand in a
+// card above them all.
 
 /** What a view is given: the workspace the window is on, if any. */
 export interface ViewProps {
@@ -135,7 +135,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
     [cards, facts],
   );
   const entries = useMemo(() => railEntries(rows, state.groups), [rows, state.groups]);
-  // A phone: a card per task, as the grid's columns do not fit its width.
+  // A phone: a card per task, as the grid's columns don't fit its width.
   const phone = usePhone();
   // Every open editor keeps its group's local draft mounted, even after another row takes focus.
   const [editingGroups, setEditingGroups] = useState<ReadonlySet<string>>(() => new Set());

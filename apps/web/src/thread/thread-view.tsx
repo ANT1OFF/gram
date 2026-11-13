@@ -96,6 +96,7 @@ import { Transcript, transcriptScroller, type JumpRequest, type ScrollRestore } 
 import { turnUndos } from "./turn-undo-marker";
 import { useUnseenFrom } from "./unread";
 import { SnoozeChip } from "./snooze-chip";
+import { BrowserChip } from "./browser-chip";
 import { HeaderWakeChip } from "./wake-chip";
 
 const FLASH_MS = 1600;
@@ -504,9 +505,10 @@ export function ThreadView({
               inTitlebar && "before:-mr-2 before:h-6 before:w-0 before:content-['']",
             )}
           >
+            {/* First, so a machine that is offline is the last chip to give way. */}
+            <MachineChip thread={thread} className={hideSm} />
             <WorkerNowChip thread={thread} prOnStrip={prOnStrip} />
             <OrchestratorChips thread={thread} inTitlebar={inTitlebar} />
-            <MachineChip thread={thread} className={hideSm} />
             {thread.forkedFrom && (
               <ForkedFrom from={thread.forkedFrom} title={sourceTitle} hideClass={hideMd} />
             )}
@@ -573,6 +575,7 @@ export function ThreadView({
               ports={summary.ports}
               className={cn("text-meta text-muted-foreground", hideSm)}
             />
+            <BrowserChip threadId={threadId} className={hideSm} />
             <HeaderWakeChip threadId={threadId} />
             <FakeAgentBadge className={hideSm} />
           </div>

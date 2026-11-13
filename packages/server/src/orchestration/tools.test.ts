@@ -1628,7 +1628,9 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           expect(yield* refusal({ threadId: plain.id })).toMatch(/^not_your_worker: /);
           expect(yield* tool.needsApproval!({ ...input, threadId: plain.id })).toBe(false);
 
-          yield* told.completeTurn();
+          // A silent turn gets an automatic wrap-up: finish that too before waiting for idle.
+          // Otherwise the wait can miss idle between these turns and leave the fake running.
+          yield* stopSilently(told);
           yield* waitStatus(worker.thread.id, "idle");
           yield* runtimes.send(worker.thread.id, { text: "Leave the warehouse alone for now." });
           yield* waitReal(
@@ -1726,8 +1728,13 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           readonly workerModels: unknown;
         };
         expect(ledger.workerModels).toEqual([
-          { model: "claude:fake-opus", useFor: "implementation" },
-          { model: "claude:fake-haiku", useFor: "reviews, audits", default: true },
+          { model: "claude:fake-opus", displayName: "Fake Opus (echo)", useFor: "implementation" },
+          {
+            model: "claude:fake-haiku",
+            displayName: "Fake Haiku (echo)",
+            useFor: "reviews, audits",
+            default: true,
+          },
         ]);
         const review = yield* spawn(session, { feature: "review" });
         expect(review.thread.model).toEqual({ agent: "claude", model: "fake-haiku" });
@@ -1744,8 +1751,25 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           })
           .pipe(Effect.flip);
         expect(refused.message).toBe(
-          "not_admitted: The charter doesn't allow workers on claude:fake-sonnet. Allowed: claude:fake-opus, claude:fake-haiku.",
+          "not_admitted: The charter doesn't allow workers on claude:fake-sonnet. Allowed: claude:fake-opus (Fake Opus (echo)), claude:fake-haiku (Fake Haiku (echo)).",
         );
+        // The picker's name for a model names the entry, as its id does.
+        const byName = yield* spawn(session, {
+          feature: "named",
+          model: "claude:Fake Haiku (echo)",
+        });
+        expect(byName.thread.model).toEqual({ agent: "claude", model: "fake-haiku" });
+        // A near miss is refused with the entry it likely meant.
+        const near = yield* session
+          .callTool("spawn_worker", {
+            project: "shop",
+            feature: "near",
+            title: "near",
+            brief: "near",
+            model: "claude:fake-haiko",
+          })
+          .pipe(Effect.flip);
+        expect(near.message).toContain("Did you mean claude:fake-haiku?");
 
         // A switch onto an entry that can't run here is refused, where a spawn would fall back.
         yield* orchestration.setCharter(workspaceId, {

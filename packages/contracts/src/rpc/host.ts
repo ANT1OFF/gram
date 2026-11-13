@@ -37,7 +37,7 @@ import { PositiveInt } from "./shared.ts";
  * field, a new feature a host names in its hello. So a control plane and a host on different
  * releases keep working together, each without what the other doesn't have yet, and updating one
  * doesn't make the other restart. `host-compat.test.ts` holds every change to that, against the
- * protocol as last released (`host-released.json`).
+ * protocol as each release since 1.19.0 spoke it (`host-released/<release>.json`).
  *
  * Bump it only for a break decided on purpose: a message either side already sends changing in a
  * way a released build can't read. A control plane then refuses a host outside
@@ -128,6 +128,19 @@ export const HostFeature = Schema.Literals([
    * takes no such thread.
    */
   "thread-places",
+  /**
+   * Holds a session to the browser it was opened with (`HostSessionOpen.browser`): on only when
+   * it says `true`, and off (Claude Code's `--no-chrome`) otherwise, a request that doesn't say
+   * included. A host without it drops the field and leaves the CLI's own default, which may turn
+   * Claude in Chrome on, so a control plane opens no session there that it can't hold off.
+   */
+  "browser-policy",
+  /**
+   * Points a session's app tools at another of the control plane's MCP endpoints
+   * (`host.sessions.retarget`): this machine's host kept running after Gram quit, whose sessions a
+   * Gram opened again reaches at its new address, with its new token.
+   */
+  "session-retarget",
 ]);
 export type HostFeature = typeof HostFeature.Type;
 
@@ -480,6 +493,13 @@ export const HostSessionOpen = Schema.Struct({
   mcpNoneWithoutToolSearch: Schema.optionalKey(Schema.Boolean),
   noBlockingAsk: Schema.optionalKey(Schema.Boolean),
   peerMessaging: Schema.optionalKey(Schema.Boolean),
+  /**
+   * The session drives the user's browser (`OpenSessionOptions.browser`); a host that serves
+   * `browser-policy` holds an absent one off. A host built before it drops the field and leaves
+   * the CLI's own default, so a control plane sends no session to a host that doesn't name
+   * `browser-policy` (`agentHostThroughHost`, `agentHostOnMachine`).
+   */
+  browser: Schema.optionalKey(Schema.Boolean),
 });
 export type HostSessionOpen = typeof HostSessionOpen.Type;
 
@@ -982,6 +1002,17 @@ export const HostRpcs = RpcGroup.make(
   Rpc.make("host.sessions.addDirectories", {
     payload: { ...session, paths: Schema.Array(Schema.String) },
     success: Schema.Boolean,
+    error: HostFailed,
+  }),
+  /** Points the session's app tools at `mcp` from now on (`session-retarget`). */
+  Rpc.make("host.sessions.retarget", {
+    payload: {
+      ...session,
+      mcp: Schema.Struct({
+        url: Schema.String,
+        headers: Schema.Record(Schema.String, Schema.String),
+      }),
+    },
     error: HostFailed,
   }),
   Rpc.make("host.sessions.processId", {

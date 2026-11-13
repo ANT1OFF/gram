@@ -1,6 +1,7 @@
 import {
   checkoutRoots,
   localPortUrl,
+  loopbackUrl,
   previewAddress,
   previewFileKind,
   previewFileTarget,
@@ -17,6 +18,7 @@ import {
   ExternalLink,
   Globe,
   HandGrab,
+  Pin,
   RotateCw,
   ScanSearch,
 } from "lucide-react";
@@ -38,6 +40,7 @@ import { MarkdownPreview } from "./files/markdown-preview";
 import { markdownRoot } from "@/thread/preview-files";
 import { BrowserInspectionPanel } from "./browser-inspection";
 import { PanelMessage } from "./panel-message";
+import { showPage } from "@/pages/page-pane-store";
 import { useCoveredByOverlay } from "./preview-cover";
 
 /** The shell's preview, or the mock API's stand-in for it; absent where neither has one. */
@@ -60,17 +63,37 @@ const unopened = (url: string): PreviewState => ({
  */
 const loads = new Map<string, { readonly id: number; readonly done: Promise<boolean> }>();
 
-const load = (bridge: DesktopPreview, threadId: string, id: number, url: string) => {
+/** The requests whose typed web address was asked for already: each is asked for once. */
+const typedSent = new Set<number>();
+
+const load = (
+  bridge: DesktopPreview,
+  threadId: string,
+  id: number,
+  url: string,
+  page: { readonly typed?: boolean; readonly webView?: string | undefined },
+) => {
   const known = loads.get(threadId);
   if (known?.id === id) return known.done;
-  const done = bridge.open(threadId, url);
+  // What the user typed opens in a session with their sign-ins, once. Their web page the shell
+  // closed since is re-opened by the shell's own token and record, which it alone decides on.
+  // Anything else, wherever it has gone since, opens on loopback only.
+  let done: Promise<boolean>;
+  if (page.typed === true && !typedSent.has(id)) {
+    typedSent.add(id);
+    done = bridge.openWeb?.(threadId, url) ?? Promise.resolve(false);
+  } else if (page.webView !== undefined) {
+    done = bridge.reopenWeb?.(threadId, page.webView) ?? Promise.resolve(false);
+  } else {
+    done = bridge.open(threadId, url);
+  }
   loads.set(threadId, { id, done });
   return done;
 };
 
 /**
- * The Preview tab: the thread's local app, drawn by the shell over the placeholder below the address
- * strip. The page is the shell's, one per thread and not this document's, so it is hidden while a
+ * The Preview tab: the thread's local app, or any web page the user opens, drawn by the shell over
+ * the placeholder below the address strip. The page is the shell's, one per thread and not this document's, so it is hidden while a
  * popup overlaps it and a message takes its place when it can't load.
  */
 export function PreviewPane({ threadId }: { threadId: ThreadId }) {
@@ -78,6 +101,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
   const api = useApi();
   const page = useLayoutStore((s) => s.previewPages[threadId]);
   const openPreview = useLayoutStore((s) => s.openPreview);
+  const openWebPreview = useLayoutStore((s) => s.openWebPreview);
   const previewFile = useLayoutStore((s) => s.previewFile);
   const notePreviewPage = useLayoutStore((s) => s.notePreviewPage);
   const adoptPreviewPage = useLayoutStore((s) => s.adoptPreviewPage);
@@ -94,6 +118,8 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
   const [draft, setDraft] = useState<string>();
   const [inspecting, setInspecting] = useState(false);
   const [refused, setRefused] = useState(false);
+  const [pinning, setPinning] = useState(false);
+  const [pinError, setPinError] = useState<string>();
   const placeholder = useRef<HTMLDivElement>(null);
   const covered = useCoveredByOverlay(placeholder);
 
@@ -101,6 +127,8 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
 
   const pageId = page?.id;
   const driven = page?.driven === true;
+  const typed = page?.typed === true;
+  const webView = page?.webView;
   // A page another window opened, which the shell still holds: this window's requests start empty.
   useEffect(() => {
     if (bridge === undefined || pageId !== undefined) return;
@@ -109,7 +137,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
       if (!live || held === null) return;
       loads.delete(threadId);
       // An agent's page, perhaps on a public host it was allowed, is shown as it is too.
-      const id = adoptPreviewPage(threadId, held.url, held.driver !== undefined);
+      const id = adoptPreviewPage(threadId, held.url, held.driver !== undefined, held.webView);
       if (id !== undefined) loads.set(threadId, { id, done: Promise.resolve(true) });
     });
     return () => {
@@ -145,12 +173,14 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
         if (live) setState(next ?? unopened(pageUrl));
         return;
       }
-      let opened = await load(bridge, threadId, pageId, pageUrl);
+      const first = load(bridge, threadId, pageId, pageUrl, { typed, webView });
+      let opened = await first;
       let next = opened ? await bridge.state(threadId) : null;
       if (opened && next === null) {
-        // The shell closed the page for more recent threads': load where it had gone.
-        loads.delete(threadId);
-        opened = await load(bridge, threadId, pageId, pageUrl);
+        // The shell closed the page for more recent threads': load where it had gone, once, however
+        // many mounts of the tab find it gone, since a re-open is good once.
+        if (loads.get(threadId)?.done === first) loads.delete(threadId);
+        opened = await load(bridge, threadId, pageId, pageUrl, { typed, webView });
         next = opened ? await bridge.state(threadId) : null;
       }
       if (live) setState(next ?? unopened(pageUrl));
@@ -158,7 +188,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
     return () => {
       live = false;
     };
-  }, [bridge, threadId, pageId, pageUrl, driven]);
+  }, [bridge, threadId, pageId, pageUrl, driven, typed, webView]);
 
   // The shell's page is only this tab's while a page is what it shows: not over Markdown, nor while
   // a file's address is still being asked for.
@@ -167,7 +197,12 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
   // for again instead: its address is the server's, and lasts only as long as the server.
   useEffect(() => {
     if (file === undefined && pageId !== undefined && current !== null && !current.loading) {
-      notePreviewPage(threadId, { id: pageId, url: current.url, ...(driven ? { driven } : {}) });
+      notePreviewPage(threadId, {
+        id: pageId,
+        url: current.url,
+        ...(driven ? { driven } : {}),
+        ...(current.webView === undefined ? {} : { webView: current.webView }),
+      });
     }
   }, [threadId, pageId, file, current, driven, notePreviewPage]);
 
@@ -209,7 +244,9 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
     const typedFile = previewFileTarget(target);
     const url = typedFile === undefined ? previewAddress(target) : undefined;
     setRefused(url === undefined && typedFile === undefined);
-    if (url !== undefined) openPreview(threadId, url);
+    // The one place a web page is asked for: the user typing it here.
+    if (url !== undefined && loopbackUrl(url) !== undefined) openPreview(threadId, url);
+    else if (url !== undefined) openWebPreview(threadId, url);
     else if (typedFile !== undefined) previewFile(threadId, typedFile, { previewPane: true });
   };
   // A file shows as its path, and its board, while the page is still the file the server served.
@@ -222,6 +259,24 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
     page !== undefined &&
     (filePreview.isFetching || (markdown === undefined && (current === null || current.loading)));
   const fileFailed = file !== undefined && filePreview.isError;
+  // Only the user pins, and only a page a thread of a workspace drafted as an HTML file: a copy of
+  // its folder goes into Gram's state, so later edits in the worktree don't change it.
+  const workspaceId = thread?.workspaceId;
+  const pinnable =
+    file !== undefined && filePreview.data?.kind === "html" && workspaceId !== undefined;
+  const pin = async () => {
+    if (file === undefined || workspaceId === undefined) return;
+    setPinning(true);
+    setPinError(undefined);
+    try {
+      const pinned = await api.pinPage(threadId, file);
+      showPage(workspaceId, pinned.id);
+    } catch (error) {
+      setPinError(errorMessage(error).replace(/^InvalidState: /, ""));
+    } finally {
+      setPinning(false);
+    }
+  };
 
   return (
     <div data-testid="preview-pane" className="flex min-h-0 flex-1 flex-col">
@@ -260,7 +315,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
           <input
             data-testid="preview-address"
             aria-label="Preview address"
-            placeholder="localhost:3000 or a file path"
+            placeholder="localhost:3000, a web address or a file path"
             spellCheck={false}
             title={current?.title || undefined}
             value={draft ?? shownUrl}
@@ -300,6 +355,15 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
             bridge?.handBack === undefined ? undefined : () => bridge.handBack?.(threadId)
           }
         />
+        {pinnable && (
+          <ToolButton
+            label="Pin to Pages: keep a copy of this page in Gram"
+            disabled={pinning}
+            onClick={() => void pin()}
+          >
+            <Pin />
+          </ToolButton>
+        )}
         <ToolButton
           label="Open in your browser"
           disabled={(current?.url ?? pageUrl ?? "") === ""}
@@ -315,8 +379,17 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
       />
       {refused && (
         <p role="alert" className="border-b border-border px-3 py-1.5 text-meta text-destructive">
-          Only an address on localhost opens here, such as localhost:3000, or the full path of a
-          Markdown or HTML file.
+          Only a web address opens here, such as localhost:3000 or example.com, or the full path of
+          a Markdown or HTML file.
+        </p>
+      )}
+      {pinError !== undefined && (
+        <p
+          role="alert"
+          data-testid="preview-pin-error"
+          className="border-b border-border px-3 py-1.5 text-meta text-destructive"
+        >
+          {pinError}
         </p>
       )}
       {inspecting && !inspectionAvailable && (
@@ -369,9 +442,9 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
         ) : page === undefined ? (
           <div data-testid="preview-empty" className="flex flex-col items-center gap-2">
             <PanelMessage icon={Globe}>
-              Your app shows here: start its dev server, then pick its port, or type a localhost
-              address above. Markdown and HTML files the agent writes open here too. Other sites
-              open in your browser.
+              Your app shows here: start its dev server, then pick its port, or type any address
+              above. Markdown and HTML files the agent writes open here too. Sites you open here are
+              yours alone: agents never read or drive them.
             </PanelMessage>
             <div className="flex flex-wrap justify-center gap-1">
               {(ports ?? []).map((port) => (

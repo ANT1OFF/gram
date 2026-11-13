@@ -212,6 +212,7 @@ export interface FakeAgentOptions {
    * `echo`: every send completes a turn on its own with "echo: <input>", so the UI and e2e can run
    * without a script. An input containing `/approve` first asks to run a fake Bash command; one
    * containing `/tool` thinks, reads, runs and edits before replying, paced by `toolStepDelay`;
+   * `/stream{N}` replies with N words of markdown in small deltas 20 ms apart, as a model streams;
    * `/cd <path>` reports the agent working in `<path>`; and `/call <tool> <json>` runs one of the
    * thread's app tools and replies `echo: <tool> → <JSON result>` or `echo: <tool> → error: <why>`.
    * Absent: sends only report `running`, and tests drive the rest.
@@ -306,6 +307,46 @@ const replyChunks = (
 
 /** `/call <tool> <json>`; the JSON runs to the end of the input and may be left out for `{}`. */
 const CALL = /\/call\s+([\w-]+)(?:\s+([\s\S]+))?/;
+
+/** `/stream{N}`: a reply of N words, a few at a time. */
+const STREAM = /\/stream\{(\d+)\}/;
+const STREAM_DELTA_WORDS = 4;
+const STREAM_DELTA_GAP = "20 millis";
+const STREAM_WORDS =
+  "thread worker review branch merge commit plan step check result table render scroll state queue".split(
+    " ",
+  );
+
+/**
+ * The deltas of a `/stream{N}` reply: paragraphs with a list and a code block every so often, so
+ * the renderer has the work a real reply gives it. Ends with "stream done." for a test to wait on.
+ */
+const streamDeltas = (words: number): ReadonlyArray<string> => {
+  if (words <= 0) return ["stream done."];
+  const deltas: string[] = [];
+  for (let at = 0; at < words; at += STREAM_DELTA_WORDS) {
+    const some = Array.from(
+      { length: Math.min(STREAM_DELTA_WORDS, words - at) },
+      (_, i) => STREAM_WORDS[(at + i) % STREAM_WORDS.length]!,
+    ).join(" ");
+    const block = Math.floor(at / 48);
+    const start = at % 48 === 0;
+    const prefix = !start
+      ? " "
+      : block % 6 === 3
+        ? "\n\n```ts\nconst "
+        : block % 6 === 4
+          ? "\n```\n\n- "
+          : block % 3 === 1
+            ? "\n\n- "
+            : "\n\n";
+    deltas.push(prefix + some);
+  }
+  // A code block left open by the last full block is closed before the closing words.
+  const open = Math.floor(Math.max(0, words - 1) / 48) % 6 === 3;
+  deltas.push(`${open ? "\n```" : ""}\n\nstream done.`);
+  return deltas;
+};
 
 /** The steps of a `/tool` turn: think, read, run, edit two files, then reply. */
 const toolTurnSteps = (cwd: string, reply: string): ReadonlyArray<ReadonlyArray<AgentEvent>> => {
@@ -639,6 +680,53 @@ export const makeFakeAgentAdapter = (
                     ),
                   { discard: true },
                 ).pipe(Effect.forkIn(scope), Effect.asVoid);
+              }
+              const stream = STREAM.exec(input.text)?.[1];
+              if (stream !== undefined) {
+                // Forked for the same reason as `/tool`: under the lock the deltas arrive at once.
+                const messageId = `reply-${randomUUID()}` as MessageId;
+                const deltas = streamDeltas(Number(stream));
+                const text = deltas.join("");
+                return emit(
+                  {
+                    type: "chunk",
+                    messageId,
+                    chunk: {
+                      type: "start",
+                      messageId,
+                      messageMetadata: { ...said(), agentMessageIds: [`sdk-${randomUUID()}`] },
+                    },
+                  },
+                  { type: "chunk", messageId, chunk: { type: "text-start", id: "t" } },
+                ).pipe(
+                  Effect.andThen(
+                    Effect.forEach(
+                      deltas,
+                      (delta) =>
+                        emit({
+                          type: "chunk",
+                          messageId,
+                          chunk: { type: "text-delta", id: "t", delta },
+                        }).pipe(Effect.andThen(Effect.sleep(STREAM_DELTA_GAP))),
+                      { discard: true },
+                    ),
+                  ),
+                  Effect.andThen(
+                    emit(
+                      { type: "chunk", messageId, chunk: { type: "text-end", id: "t" } },
+                      { type: "chunk", messageId, chunk: { type: "finish" } },
+                      {
+                        type: "usage",
+                        tokens: { inputTokens: input.text.length, outputTokens: text.length },
+                        costUsd: 0,
+                      },
+                      { type: "turnEnd", reason: "completed" },
+                      { type: "status", status: "idle" },
+                    ),
+                  ),
+                  Effect.forkIn(scope),
+                  Effect.asVoid,
+                );
               }
               if (!input.text.includes("/approve")) return emit(...replyChunks(reply, said()));
               const requestId = randomUUID() as RequestId;
