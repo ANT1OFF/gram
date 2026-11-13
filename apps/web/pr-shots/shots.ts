@@ -4576,7 +4576,7 @@ export const SHOTS: readonly Shot[] = [
           "<h1>Hi</h1>",
         );
       });
-      await page.getByRole("button", { name: "Open REPORT.md" }).click();
+      await page.getByRole("button", { name: "Preview REPORT.md" }).click();
       await page.getByTestId("preview-markdown").getByRole("heading").first().waitFor();
     },
   },
