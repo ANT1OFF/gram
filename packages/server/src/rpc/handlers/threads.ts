@@ -394,7 +394,13 @@ export const threadHandlers = Effect.gen(function* () {
         yield* runtimes.reloadSession(threadId);
         return updated;
       }),
-    "thread.browserStatus": ({ threadId }) => runtimes.browserStatusOf(threadId),
+    "thread.browserStatus": ({ threadId }) =>
+      Effect.gen(function* () {
+        const status = yield* runtimes.browserStatusOf(threadId);
+        if (status.state !== "on") return status;
+        const notReady = yield* runtimes.browserNotReadyOf(threadId);
+        return notReady === undefined ? status : { ...status, notReady };
+      }),
     "thread.pin": ({ threadId, pinned }) =>
       runtimes.updateThread(threadId, (t) => ({ ...t, pinned })).pipe(Effect.asVoid),
     // Parking and closing drop the thread's git watcher; returning only once it's released.

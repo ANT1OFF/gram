@@ -287,6 +287,7 @@ export const makeSessionLifecycle = ({
         const stopping = rt.stopping;
         rt.stopping = undefined;
         rt.session = undefined;
+        rt.sessionBrowser = false;
         rt.agentRunning = false;
         if (stopping !== "recover") {
           rt.restartMarker = undefined;
@@ -586,6 +587,7 @@ export const makeSessionLifecycle = ({
           rt,
           Effect.gen(function* () {
             rt.session = session;
+            rt.sessionBrowser = policy.browser === true && thread.role !== "dream";
             rt.reopening = false;
             // An MCP edit can arrive while a restart waits for its former child to exit. The
             // adapter acquires its held child after that wait, so it may already have read this

@@ -598,6 +598,12 @@ export interface ThreadRuntimesShape {
    */
   browserStatusOf(threadId: ThreadId): Effect.Effect<ThreadBrowserStatus, ThreadNotFound>;
   /**
+   * What the thread's running session, if it was opened with the browser, still lacks to use it
+   * (`browserNotReady`), asked of its own MCP servers. `undefined` when it has it, when no such
+   * session runs, and when the agent doesn't answer in time.
+   */
+  browserNotReadyOf(threadId: ThreadId): Effect.Effect<string | undefined, ThreadNotFound>;
+  /**
    * Sends one server-authored input per `(threadId, key)` as a turn of its own, as soon as the
    * thread can take it. It is held in memory and never
    * joins the user's queue, so it isn't in `ThreadSummary.queue`, isn't persisted, and can't be
