@@ -120,7 +120,11 @@ count back.
 
 **A home page.** `home` (`{ title, component }`) is the page at `/`, in place of Gram's own home
 and its first-run welcome ("Open a repository"), which is then never shown. Its title shows as an
-added page's does.
+added page's does. A launch at `/` stays on it.
+
+**Open threads.** Mounted, the app neither restores the pane grid the server saved nor saves its
+own: everyone who opens your app shares that server, so its grid is no one viewer's. Each tab
+starts with nothing open, and a thread's address opens that thread.
 
 **All threads.** `/threads` is Gram's page of every thread (archived ones are in History): those
 that need you first, then the latest, each with its state, its place, what started it and its last
