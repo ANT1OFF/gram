@@ -271,7 +271,12 @@ services:
   terminal here, or a thread in a worktree of this machine, is always refused.
 - A thread started from a [profile](THREAD_PROFILES.md#on-a-headless-control-plane) goes on the
   same machine, in a folder its host makes for it.
-- The models offered are the ones the default machine's Claude Code lists. The launch checks for
+- The models offered are the first list of: the person's own machine's Claude Code, where the
+  deployment started one for them ([Hosts on demand](EMBEDDING.md#hosts-on-demand)); the list that
+  machine last reported, while it is stopped or has not reported yet (kept until this server
+  restarts); the default machine's. A step with no list falls through to the next. A new thread
+  still goes where placement puts it: the person's own machine while it is online, else the default
+  machine. The launch checks for
   local tools don't run, and their answer says so (`headless: true`, and no tool listed), so the web app shows no setup
   banner or title-bar chip for tools this container was never asked to have. Each machine's own
   tools and sign-in show in the Machine select and Settings → Machines.

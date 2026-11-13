@@ -14,6 +14,7 @@ import type {
   ShellSidebar,
   ShellSlotProps,
   ShellMachines,
+  ShellModels,
   ShellThreadsPage,
   ShellToolCard,
   ShellToolCardProps,
@@ -37,6 +38,8 @@ export interface EmbedShellState {
   /** The page of every thread, as the embedding app words it; Gram's own words while empty. */
   readonly threadsPage: ShellThreadsPage;
   readonly machines: ShellMachines;
+  /** The prompt box's model list as the embedding app narrows it; every model while empty. */
+  readonly models: ShellModels;
   /** What New starts in place of Gram's menu; the menu while undefined. */
   readonly newEntry: ShellNewEntry | undefined;
   /** Mounted by an app in front of Gram on a server with hosted features on. Set once, at mount. */
@@ -61,6 +64,7 @@ export const useEmbedShell = create<EmbedShellState>()(() => ({
   attention: undefined,
   threadsPage: {},
   machines: {},
+  models: {},
   newEntry: undefined,
   home: undefined,
   sidebar: {},
@@ -79,6 +83,7 @@ export const EMPTY_SHELL: EmbedShellState = {
   attention: undefined,
   threadsPage: {},
   machines: {},
+  models: {},
   newEntry: undefined,
   home: undefined,
   sidebar: {},

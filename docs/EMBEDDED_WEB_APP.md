@@ -249,6 +249,41 @@ mountGram({
 - `noun`: the word for one, lower case ("machine" when left out).
 - `facts`: up to five short lines the card lists, in your deployment's own terms.
 
+### The model list
+
+The prompt box lists the models each agent offers. Where your deployment allows only some of them,
+or a person's own accounts leave some unusable, narrow the list with `shell.models`, and say what
+to do when none is left. Replace it with `GramHandle.update({ models })` once you know more, such
+as after reading the person's accounts:
+
+```ts
+handle.update({
+  models: {
+    // `runs` is the pinned id the row runs (`opus` runs `claude-opus-5-5`), by the model catalogue.
+    offered: (model) => model.agent === "claude" && model.runs !== undefined && allowed(model.runs),
+    none: {
+      text: "Connect a Claude account to pick a model.",
+      action: { label: "Model accounts", to: "/accounts" },
+    },
+  },
+});
+```
+
+- `offered`: whether a listed model is offered, given `{ agent, id, runs, profile }`:
+  - `id` is the id the agent lists it by.
+  - `runs` is the pinned model id it runs, as the model catalogue (`resolveModel`) reads it. It is
+    absent when the row says nothing of it, such as the CLI's `default`.
+  - `profile` is the gateway profile it goes through, if any.
+
+  Every model is offered when `offered` is left out, and when it throws. A new draft never lists a
+  model that is not offered, and one that started on such a model (a discovered or saved default)
+  moves to the offered default. A thread's own composer and a saved setting still show the model
+  they have. It only narrows the list: your deployment still refuses a model it does not allow.
+
+- `none`: the Model row's words when the agent has nothing to pick, with an optional link to one of
+  your pages. The other agents' models stay pickable beside it. Where the list can't be read at
+  all, it is shown beside Gram's own reason and Retry.
+
 ## Pages that look like Gram's
 
 `@gram/web/kit` exports Gram's own controls: `Button`, `ButtonGroup`, `Badge`, `Alert`, `Switch`,

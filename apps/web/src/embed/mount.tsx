@@ -109,6 +109,7 @@ export const mountGram: MountGram = async (options) => {
       attention: shell.attention,
       threadsPage: shell.threadsPage ?? {},
       machines: shell.machines ?? {},
+      models: shell.models ?? {},
       newEntry: shell.newEntry,
       toolCards: shell.toolCards ?? [],
       home: shell.home?.component,
@@ -149,6 +150,7 @@ export const mountGram: MountGram = async (options) => {
           ...("newEntry" in next ? { newEntry: next.newEntry } : {}),
           ...("sidebar" in next ? { sidebar: next.sidebar ?? {} } : {}),
           ...("document" in next ? { document: next.document ?? {} } : {}),
+          ...("models" in next ? { models: next.models ?? {} } : {}),
         });
       },
       navigate: (to) => router.navigate({ to: to as "/" }),

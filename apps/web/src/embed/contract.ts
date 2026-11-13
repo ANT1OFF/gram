@@ -168,6 +168,55 @@ export interface ShellMachines {
   readonly facts?: readonly string[];
 }
 
+/**
+ * The prompt box's model list as the embedding app narrows it: for a deployment whose own rules,
+ * or a person's own accounts, leave only some of what an agent lists usable. It only narrows what
+ * is offered; the deployment still has to refuse a model it does not allow.
+ */
+/** The agents whose models the prompt box lists. */
+export type ShellAgent = "claude" | "codex";
+
+/** One model the prompt box lists, as the embedding app's `ShellModels.offered` is given it. */
+export interface ShellModelChoice {
+  readonly agent: ShellAgent;
+  /** The id the agent lists it by: an alias such as `opus`, or a pinned id. */
+  readonly id: string;
+  /**
+   * The pinned model id it runs, by Gram's model catalogue (`resolveModel`): the row's own
+   * `resolvedId`, the id a Claude alias's name says it runs, or a pinned row's id. Absent when the
+   * catalogue cannot tell, such as the CLI's `default` with no version in its name: an app that
+   * allows only some models should not offer one it cannot place.
+   */
+  readonly runs?: string;
+  /** The gateway profile it goes through; absent for the agent's own account. */
+  readonly profile?: string;
+}
+
+/**
+ * The prompt box's model list as the embedding app narrows it: for a deployment whose own rules,
+ * or a person's own accounts, leave only some of what an agent lists usable. It narrows what a new
+ * draft offers and picks; a thread's own composer and a saved setting still show the model they
+ * have. It only narrows: the deployment still has to refuse a model it does not allow.
+ */
+export interface ShellModels {
+  /**
+   * Whether a listed model is offered. Every listed model is when left out, and when it throws. A
+   * draft whose model is not offered moves to one that is.
+   */
+  readonly offered?: (model: ShellModelChoice) => boolean;
+  /**
+   * What the Model row says when the agent has no model to pick: none is offered, or the list could
+   * not be read. Other agents' models stay pickable beside it. Gram's own words, and only them,
+   * when left out.
+   */
+  readonly none?: {
+    /** One short sentence: "Connect a Claude account to pick a model." */
+    readonly text: string;
+    /** Where it is put right: a path under the app, one of `routes` or one of Gram's own. */
+    readonly action?: { readonly label: string; readonly to: string };
+  };
+}
+
 export interface ShellThreadsPage {
   /**
    * The page's name: its heading, the title bar, a phone's header and the palette's command.
@@ -288,6 +337,8 @@ export interface ShellContributions {
   readonly newEntry?: ShellNewEntry;
   /** How machines started on demand are worded. Read once, when the app mounts. */
   readonly machines?: ShellMachines;
+  /** The prompt box's model list, narrowed. Replaceable through `GramHandle.update`. */
+  readonly models?: ShellModels;
   /** The open sidebar's look, its head and its account. Replaceable through `GramHandle.update`. */
   readonly sidebar?: ShellSidebar;
   /** Cards of the embedding app's under its own tools' calls. Read once, when the app mounts. */
@@ -339,7 +390,7 @@ export interface GramHandle {
   readonly shell: "on" | "off";
   /**
    * Replaces what `next` names of the navigation groups, the switcher, the thread list, the
-   * right panel's pages, the attention count, the sidebar's look and the tab's title, and leaves
+   * right panel's pages, the attention count, the sidebar's look, the tab's title and the model list, and leaves
    * what it doesn't name as it is: `update({ navigation })` changes counts and keeps the
    * switcher. A key given as `undefined` takes that part away. Routes stay as mounted.
    */
@@ -355,6 +406,7 @@ export interface GramHandle {
       | "newEntry"
       | "sidebar"
       | "document"
+      | "models"
     >,
   ): void;
   /** Moves the window to a path under the app. */
