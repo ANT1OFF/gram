@@ -99,6 +99,7 @@ import { agentHostsOrHeadless, withHeadlessCheck } from "../host/headless.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
+import { compressedStatic } from "./compressed-static.ts";
 import { markLocalApp, unmarkLocalApp } from "./local-app.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
 import {
@@ -107,6 +108,7 @@ import {
   HttpRouter,
   HttpServer,
   HttpServerRequest,
+  HttpServerRespondable,
   HttpServerResponse,
   HttpStaticServer,
   type Rpc,
@@ -722,9 +724,21 @@ const StaticRoutes = Layer.unwrap(
           "/*",
           HttpServerResponse.text("Gram server: no web root configured", { status: 404 }),
         )
-      : HttpStaticServer.layer({ root: webRoot, index: "index.html", spa: true }).pipe(
-          Layer.provide(GuardedHttpPlatform),
-        );
+      : Layer.effectDiscard(
+          Effect.gen(function* () {
+            const router = yield* HttpRouter.HttpRouter;
+            const files = yield* HttpStaticServer.make({
+              root: webRoot,
+              index: "index.html",
+              spa: true,
+            });
+            yield* router.add(
+              "GET",
+              "/*",
+              compressedStatic(webRoot)(files).pipe(Effect.catch(HttpServerRespondable.toResponse)),
+            );
+          }),
+        ).pipe(Layer.provide(GuardedHttpPlatform));
   }),
 );
 
@@ -929,6 +943,14 @@ export const ServerCore = Layer.unwrap(
 // Pinned ws implements closeTimeout; its bundled @types/ws has not declared it yet.
 const websocketOptions: NodeHttpServer.Options["websocket"] & { readonly closeTimeout: number } = {
   closeTimeout: 1_000,
+  // The feed is JSON that repeats itself: a sidebar of threads, a terminal's scrollback and a
+  // page of history all shrink to a fraction, which is seconds on a phone's connection. Small
+  // frames (a keystroke, a streamed delta) go as they are; level 3 keeps the server's share of a
+  // large answer to a few milliseconds.
+  perMessageDeflate: {
+    threshold: 1024,
+    zlibDeflateOptions: { level: 3 },
+  },
 };
 
 /** Requests can arrive between removal of the scoped handler and the listener's final close. */

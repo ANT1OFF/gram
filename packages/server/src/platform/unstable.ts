@@ -10,6 +10,7 @@ export * as HttpPlatform from "effect/http/HttpPlatform";
 export * as HttpRouter from "effect/http/HttpRouter";
 export * as HttpServer from "effect/http/HttpServer";
 export * as HttpServerRequest from "effect/http/HttpServerRequest";
+export * as HttpServerRespondable from "effect/http/HttpServerRespondable";
 export * as HttpServerResponse from "effect/http/HttpServerResponse";
 export * as HttpStaticServer from "effect/http/HttpStaticServer";
 export * as Rpc from "effect/rpc/Rpc";
