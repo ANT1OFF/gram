@@ -158,7 +158,13 @@ says the place beside its sender and opens the sender there, and a phone's heade
 thread under the place's name in place of a kind of thread.
 `threadsPage.bar: "path"` starts the title bar of a thread, a Board and the New form as a path from
 the page of every thread, with a workspace's orchestrator and Board as two buttons beside it, in
-place of the workspace switcher and Chat · Board. `newEntry: { label: "New agent", to:
+place of the workspace switcher and Chat · Board.
+`threadsPage.workspaces: { noun: "Project", plural: "Projects" }` has the page open on a list of the
+workspaces in your word for one, for people who start from a workspace: each row says its
+repositories, what waits on you, what runs, its open pull requests and its autonomy, and has a task
+for it, its Board, its settings and its pause. A switch in the page's head counts both lists and
+leads to the threads, a second button starts a workspace, and the threads in none are counted
+under the list. Left out, the page lists the threads alone. `newEntry: { label: "New agent", to:
 "/agents" }` makes New, in the sidebar's head and a phone menu's foot, one plain button to a page of
 yours in place of Gram's menu of Task, Team and Chat: for an app where what a person mostly starts
 is something of its own. Gram's New form stays reachable from the threads page, the palette and its
