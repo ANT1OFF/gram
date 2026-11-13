@@ -1405,6 +1405,32 @@ the Preview header and transcript show. `preview_start`, `preview_list`,
 `.gram/launch.json` (or `.claude/launch.json`): each start names the exact command
 on a card first, takes the next free port, and stops with its thread.
 
+### The agent browser without the desktop app
+
+Where Gram runs as a server alone, as [in Docker](DOCKER.md#the-agent-browser), the same
+`browser_*` tools drive a headless Chromium on the server instead of the Preview pane. The server
+forks a browser host (`GRAM_HEADLESS_BROWSER`, the path to
+`packages/shell/src/modules/agent-browser/headless-host.ts`), which runs the pane's own code and
+rules over Chromium's DevTools Protocol, so approvals, takeover, the per-submission card and
+evidence work as in the app. Without that variable the tools answer that there is no pane, as
+before.
+
+That browser reaches the server's loopback only: an agent's dev server there, never the internet
+or a private network. Chromium starts with every connection sent to a closed proxy, which it skips
+only for loopback; each request is also paused and put to the pane's rules, then to the Preview's
+local-session rules. A `browser_navigate` anywhere else is refused before any card. Each thread's
+page is a browser context of its own, sharing no cookies or storage, and the profile is a fresh
+temp folder, removed when the browser stops. The browser starts on the first command and starts
+again on the next command after it stops. Recording (`browser_record`) needs the desktop app's image decoder
+and doesn't work here. You don't see the page yet: streaming it to the web app and taking over
+from there come later.
+
+| Variable                  | What it sets                                                                 |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| `GRAM_HEADLESS_BROWSER`   | The browser host the server forks; unset, there is no browser                |
+| `GRAM_BROWSER_EXECUTABLE` | The Chromium or Chrome the host starts                                       |
+| `GRAM_BROWSER_SANDBOX`    | `0` starts it without Chromium's sandbox, which a container's user can't use |
+
 ### Pinned pages
 
 An HTML page an agent drafts in its folder and shows in the Preview tab (`show_panel`) can be

@@ -8,18 +8,10 @@ import { readFileSync, renameSync, writeFileSync } from "node:fs";
 
 import { nativeImage } from "electron";
 
-import {
-  paneRequestMessage,
-  paneCancelMessage,
-  type PaneResponseMessage,
-  type PaneResult,
-} from "@gram/contracts/link-trust";
-
 import { Channels } from "../../channels.ts";
 import { createBrowseHostList, type BrowseHostList } from "../../core/browse-rules.ts";
 import type { ShellLog } from "../../core/log.ts";
 import type { ShellIpc } from "../ipc.ts";
-import type { AgentPanes } from "./pane.ts";
 import { appWindows } from "../../electron/decision-windows.ts";
 
 /** A recording frame's JPEG as BGRA pixels, through Chromium's own decoder. */
@@ -69,27 +61,5 @@ export function installAgentBrowse(
   return hosts;
 }
 
-/**
- * Answers the desktop server's `pane.request` through `panes`, ignoring every other message; with
- * no panes yet, early in launch, the answer is that there is no pane.
- */
-export function servePaneMessage(
-  message: unknown,
-  panes: AgentPanes | undefined,
-  reply: (response: PaneResponseMessage) => void,
-): void {
-  const cancellation = paneCancelMessage(message);
-  if (cancellation !== undefined) {
-    panes?.cancel(cancellation.id);
-    return;
-  }
-  const request = paneRequestMessage(message);
-  if (request === undefined) return;
-  const answer: Promise<PaneResult> =
-    panes === undefined
-      ? Promise.resolve({ ok: false, code: "noPane", message: "The Preview pane isn't ready yet." })
-      : panes.serve(request.request, request.id);
-  void answer.then((result) => reply({ type: "pane.response", id: request.id, result }));
-}
-
 export { createAgentPanes, type AgentPanes, type PaneViews } from "./pane.ts";
+export { servePaneMessage } from "./serve.ts";

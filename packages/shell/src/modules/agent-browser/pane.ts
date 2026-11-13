@@ -7,7 +7,7 @@
 
 import { randomUUID } from "node:crypto";
 
-import type { ResolvedHost, WebContents } from "electron";
+import type { ResolvedHost } from "electron";
 
 import {
   BROWSE_REFUSED_BECAUSE,
@@ -56,9 +56,47 @@ import {
 } from "../../core/page-driver.ts";
 
 /** What the preview module gives this one: each thread's page, made when first asked for. */
+/**
+ * The part of a page's contents this module uses: Electron's `WebContents` in the desktop shell,
+ * or a page of a headless Chromium driven over the DevTools Protocol (`headless-contents.ts`).
+ */
+export interface PaneContents {
+  getURL(): string;
+  getTitle(): string;
+  isDestroyed(): boolean;
+  isLoading(): boolean;
+  loadURL(url: string): Promise<void>;
+  readonly navigationHistory: { canGoBack(): boolean; goBack(): void };
+  readonly debugger: {
+    attach(protocolVersion?: string): void;
+    isAttached(): boolean;
+    detach(): void;
+    sendCommand(method: string, commandParams?: object): Promise<unknown>;
+    on(
+      event: "message",
+      listener: (event: unknown, method: string, params: unknown) => void,
+    ): unknown;
+    on(event: "detach", listener: () => void): unknown;
+    off(
+      event: "message",
+      listener: (event: unknown, method: string, params: unknown) => void,
+    ): unknown;
+  };
+  on(
+    event: "did-start-navigation",
+    listener: (details: { url: string; isMainFrame: boolean; isSameDocument: boolean }) => void,
+  ): unknown;
+  on(event: "did-navigate", listener: (event: unknown, url: string) => void): unknown;
+  once(event: "did-stop-loading" | "destroyed", listener: () => void): unknown;
+  off(event: "did-stop-loading", listener: () => void): unknown;
+}
+
 export interface PaneViews {
   /** The thread's page, made (hidden until its tab shows it) when `create` and none is there. */
-  contentsFor(threadId: string, create: boolean): WebContents | undefined;
+  contentsFor(
+    threadId: string,
+    create: boolean,
+  ): PaneContents | undefined | Promise<PaneContents | undefined>;
 }
 
 export interface AgentPanesOptions {
@@ -88,7 +126,7 @@ export interface AgentPanes {
    * when it isn't an agent's page, or the URL is one the preview's own rules decide (loopback, or
    * the user driving to a page that isn't approved), else whether it loads.
    */
-  navigation(contents: WebContents, url: string): "load" | "block" | undefined;
+  navigation(contents: PaneContents, url: string): "load" | "block" | undefined;
   /**
    * The same for one request the page makes, for the session's `webRequest`. On an agent's page:
    * no main frame reaches loopback from a page or redirect elsewhere; a public page loads from
@@ -96,11 +134,11 @@ export interface AgentPanes {
    * agent's action without the user's card. `undefined` leaves the rest to the preview's rules.
    */
   request(
-    contents: WebContents,
+    contents: PaneContents,
     details: PreviewRequestDetails,
   ): Promise<"allow" | "block"> | undefined;
   /** The user put input into `contents`: if it is an agent's page, the user drives it now. */
-  userInput(contents: WebContents): void;
+  userInput(contents: PaneContents): void;
   /** The user hands the thread's page back to its agent. */
   handBack(threadId: string): void;
   takeOver(threadId: string): void;
@@ -119,7 +157,7 @@ export interface AgentPanes {
 
 interface AgentPage {
   readonly threadId: string;
-  readonly contents: WebContents;
+  readonly contents: PaneContents;
   readonly driver: PageDriver;
   driving: PaneDriver;
   /** A takeover and hand-back cannot revive input admitted under earlier ownership. */
@@ -229,7 +267,7 @@ const fail = (
  * The page's protocol session. Every event subscription shares one debugger listener, so the
  * driver's many subscriptions don't trip Node's listener-leak warning.
  */
-const cdpOf = (contents: WebContents): Cdp => {
+const cdpOf = (contents: PaneContents): Cdp => {
   const listeners = new Map<string, Set<(params: unknown) => void>>();
   const handler = (_event: unknown, method: string, params: unknown) => {
     for (const listener of Array.from(listeners.get(method) ?? [])) listener(params);
@@ -261,7 +299,7 @@ const targetOf = (point: PanePoint): PageTarget =>
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Waits for `contents` to stop loading, if it is, for at most `SETTLE_MS`. */
-const settled = (contents: WebContents, stop: () => boolean = () => false) =>
+const settled = (contents: PaneContents, stop: () => boolean = () => false) =>
   new Promise<void>((resolve) => {
     if (contents.isDestroyed() || !contents.isLoading() || stop()) return resolve();
     const timer = setTimeout(done, SETTLE_MS);
@@ -298,7 +336,7 @@ const encodeRecording = async (recording: Recording): Promise<string> => {
 export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
   const { hosts, views, log } = options;
   const pages = new Map<string, AgentPage>();
-  const byContents = new WeakMap<WebContents, AgentPage>();
+  const byContents = new WeakMap<PaneContents, AgentPage>();
   /** Hosts the user allowed once, by thread, until its page closes. */
   const once = new Map<string, Set<string>>();
   /** Lookups in flight, shared by the requests that wait on them; each answer is used once. */
@@ -365,10 +403,20 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
     options.driverChanged?.(page.threadId, driving);
   };
 
-  const open = async (threadId: string): Promise<AgentPage | undefined> => {
+  /** A page being opened, so a second command while its contents are made waits for the same. */
+  const opening = new Map<string, Promise<AgentPage | undefined>>();
+  const open = (threadId: string): Promise<AgentPage | undefined> => {
     const existing = pages.get(threadId);
-    if (existing !== undefined && !existing.contents.isDestroyed()) return existing;
-    const contents = views.contentsFor(threadId, true);
+    if (existing !== undefined && !existing.contents.isDestroyed())
+      return Promise.resolve(existing);
+    const pending = opening.get(threadId);
+    if (pending !== undefined) return pending;
+    const made = openPage(threadId).finally(() => opening.delete(threadId));
+    opening.set(threadId, made);
+    return made;
+  };
+  const openPage = async (threadId: string): Promise<AgentPage | undefined> => {
+    const contents = await views.contentsFor(threadId, true);
     if (contents === undefined) return undefined;
     // A page that never loaded anything has no renderer yet, and the protocol's first command
     // waits for one forever.
