@@ -216,7 +216,9 @@ a `navigate`.
 `ShellThread` puts one thread inside a page of yours: `<ShellThread threadId={id} />` draws its
 transcript, cards and composer without the thread's own header, and fills the element you put it
 in, so give that element a height. It is the same thread as on its own page (`/t/<id>`). Use it
-for a conversation beside what your page shows, such as a panel at the side.
+for a conversation beside what your page shows, such as a panel at the side. `placeholder` sets the
+words in its empty prompt box ("Steer this thread…" when left out), for a page that shows two
+threads and has to say which one a message goes to.
 
 `ShellThreadPanel` puts the same thread's working panels inside a page of yours: `<ShellThreadPanel
 threadId={id} />` draws its Diff, Pull request, Files and Terminal under a row of tabs, and fills

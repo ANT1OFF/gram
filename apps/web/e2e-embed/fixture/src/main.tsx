@@ -261,7 +261,7 @@ function Changes({ params }: ShellPageProps) {
   return (
     <div className="flex h-full min-h-0">
       <div className="flex w-96 min-w-0 flex-col border-r border-border">
-        <ShellThread threadId={threadId} />
+        <ShellThread threadId={threadId} placeholder="Message this worker…" />
       </div>
       <div className="min-w-0 flex-1">
         <ShellThreadPanel threadId={threadId} />

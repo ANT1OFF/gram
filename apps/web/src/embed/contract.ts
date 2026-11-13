@@ -436,7 +436,14 @@ export type ShellLinkComponent = ComponentType<{
  * the thread's own header, filling the element it is put in. The same thread as on its own page
  * (`/t/<id>`), so what is sent here is sent there.
  */
-export type ShellThreadComponent = ComponentType<{ threadId: string }>;
+export type ShellThreadComponent = ComponentType<{
+  threadId: string;
+  /**
+   * The words in its empty prompt box, for a page that shows more than one thread and has to say
+   * which one a message goes to: "Message the release agent…". "Steer this thread…" when left out.
+   */
+  placeholder?: string;
+}>;
 
 /** The working panels of a thread that `ShellThreadPanel` shows. */
 export type ShellThreadPanelTab = "diff" | "pr" | "files" | "terminal";
