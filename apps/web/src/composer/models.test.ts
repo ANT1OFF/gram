@@ -16,6 +16,8 @@ import {
   effortOptions,
   effortsUnlisted,
   gatewayModelWarning,
+  LEGACY_GROUP,
+  legacyCount,
   matchesModel,
   modelDisplayName,
   modelGroups,
@@ -340,5 +342,30 @@ describe("a thread stored on a raw model id", () => {
       description: NOT_LISTED_BY_ACCOUNT,
     });
     expect(effort.unavailable).toBeDefined();
+  });
+});
+
+describe("legacy models", () => {
+  const rows: AgentModel[] = [
+    { id: "fable", displayName: "Fable 5.2", supportsEffort: false },
+    { id: "claude-fable-5-1", displayName: "Fable 5.1", supportsEffort: false },
+  ];
+
+  it("marks a superseded model legacy, unless the thread is on it", () => {
+    expect(modelOptions(rows, "fable").map((o) => o.legacy)).toEqual([undefined, true]);
+    expect(modelOptions(rows, "claude-fable-5-1").map((o) => o.legacy)).toEqual([
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it("folds legacy models last, or leaves them out, and never a favourite", () => {
+    const options = modelOptions(rows, "fable");
+    expect(modelGroups(options, () => false, false)).toEqual([
+      { label: "Models", items: [options[0]] },
+    ]);
+    expect(modelGroups(options, () => false).map((g) => g.label)).toEqual(["Models", LEGACY_GROUP]);
+    expect(legacyCount(options, () => false)).toBe(1);
+    expect(legacyCount(options, (id) => id === "claude-fable-5-1")).toBe(0);
   });
 });

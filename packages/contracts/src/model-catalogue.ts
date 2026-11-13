@@ -1,3 +1,4 @@
+import { CUSTOM_MODEL_DESCRIPTION as ADDED_IN_SETTINGS } from "./custom-models.ts";
 import type { AgentModel } from "./models.ts";
 
 /** What of a `models.list` row naming a model is read by: its id, the id it runs, its name. */
@@ -167,4 +168,78 @@ export const closestName = <T>(
     }
   }
   return best?.value;
+};
+
+/** A model's family and version as its name says them: "Opus 5.5" is `opus #` at 5.5. */
+interface FamilyVersion {
+  readonly family: string;
+  readonly version: ReadonlyArray<number>;
+}
+
+const VERSION = /\d+(?:\.\d+)*/;
+
+/** `text`'s first version number and the words around it, as one family key; none without one. */
+const familyVersionOf = (text: string): FamilyVersion | undefined => {
+  const found = VERSION.exec(text);
+  if (found === null) return undefined;
+  const family = `${text.slice(0, found.index)}#${text.slice(found.index + found[0].length)}`
+    .toLowerCase()
+    .replace(/[\s\-_]+/g, " ")
+    .replace(/^claude /, "")
+    .trim();
+  return { family, version: found[0].split(".").map(Number) };
+};
+
+/**
+ * What a row's name says of its family and version: its display name ("Fable 5.2", "GPT-6.1-Sol"),
+ * else for a Claude id the name that id has (`claude-opus-5-5` → "Opus 5.5"), else its id
+ * (`gpt-6.1-sol`). None when no version is in any of them.
+ */
+const rowFamily = (row: CatalogueRow): FamilyVersion | undefined => {
+  const runs = (row.resolvedId ?? row.id).replace(LONG, "").replace(/-\d{8}$/, "");
+  return (
+    familyVersionOf(row.displayName) ??
+    (claudeLabel(runs) === undefined ? undefined : familyVersionOf(claudeLabel(runs)!)) ??
+    familyVersionOf(row.id)
+  );
+};
+
+const newer = (a: ReadonlyArray<number>, b: ReadonlyArray<number>): boolean => {
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    const left = a[index] ?? 0;
+    const right = b[index] ?? 0;
+    if (left !== right) return left > right;
+  }
+  return false;
+};
+
+/**
+ * The ids of the catalogue's rows a newer row of the same family supersedes: Opus 5 and Opus 4.6
+ * beside Opus 5.5, Fable 5.1 beside Fable 5.2, GPT-6-Sol beside GPT-6.1-Sol. A family is a name
+ * with its version taken out ("Opus #", "GPT # Sol", "Opus # (1M context)"), so a variant only
+ * gives way to a newer one of itself, and a version is the first number in the name, compared
+ * part by part. Never superseded: the CLI's `default` row and its default model, which it chose
+ * (the default still supersedes older ones); a model the user added; and a row whose name holds
+ * no version, which has nothing reliable to compare by.
+ */
+export const supersededModels = (
+  models: ReadonlyArray<
+    CatalogueRow & { readonly isDefault?: boolean | undefined; readonly description?: string }
+  >,
+): ReadonlySet<string> => {
+  // The CLI's `default` follows another row; a model the user added carries their own name.
+  const ranked = models.flatMap((row) => {
+    if (row.id === "default" || row.description === ADDED_IN_SETTINGS) return [];
+    const found = rowFamily(row);
+    return found === undefined ? [] : [{ id: row.id, kept: row.isDefault === true, ...found }];
+  });
+  return new Set(
+    ranked
+      .filter(
+        (row) =>
+          !row.kept &&
+          ranked.some((other) => other.family === row.family && newer(other.version, row.version)),
+      )
+      .map((row) => row.id),
+  );
 };

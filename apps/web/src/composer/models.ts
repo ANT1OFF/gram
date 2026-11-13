@@ -2,6 +2,7 @@ import {
   CUSTOM_MODEL_DESCRIPTION,
   GATEWAY_UNLISTED_WARNING,
   listedRow,
+  supersededModels,
   type AgentKind,
   type AgentModel,
   type ModelRef,
@@ -216,6 +217,7 @@ export function modelOptions(
 ): PickerOption<string>[] {
   const inGroup = (custom: boolean) =>
     group === undefined ? {} : { group: custom ? CUSTOM_GROUP : group };
+  const superseded = models === undefined ? undefined : supersededModels(models);
   const options: PickerOption<string>[] = models
     ? models.map((m) => {
         const description = m.warning ?? m.description;
@@ -224,6 +226,8 @@ export function modelOptions(
           label: m.displayName,
           ...(description ? { description } : {}),
           ...inGroup(m.description === CUSTOM_MODEL_DESCRIPTION && m.warning === undefined),
+          // The model a thread or entry is on stays in view, superseded or not.
+          ...(superseded?.has(m.id) === true && m.id !== current ? { legacy: true } : {}),
         };
       })
     : fallback.map((option) => ({ ...option, ...inGroup(false) }));
@@ -311,17 +315,31 @@ export interface ModelGroup {
 /** The section of an option without a `group`, and the whole list's when no option has one. */
 const UNGROUPED = "Models";
 
+/** The searching picker's last section: the models a newer one of their family supersedes. */
+export const LEGACY_GROUP = "Legacy models";
+
+/** How many of `options` the picker folds under Legacy models: superseded, and not starred. */
+export const legacyCount = (
+  options: readonly PickerOption<string>[],
+  favourite: (value: string) => boolean,
+): number => options.filter((option) => option.legacy === true && !favourite(option.value)).length;
+
 /**
  * The searching picker's sections: favourites first, then the rest by their `group` (the agent or
  * gateway, or Custom), each section where its first model is in the list, in the list's order.
- * Without groups the rest are one section, "Other models" below favourites.
+ * Without groups the rest are one section, "Other models" below favourites. A superseded model
+ * that isn't a favourite (`legacy`) is left out, or with `legacyShown` listed last under
+ * `LEGACY_GROUP`.
  */
 export function modelGroups(
   options: readonly PickerOption<string>[],
   favourite: (value: string) => boolean,
+  legacyShown = true,
 ): ModelGroup[] {
   const starred = options.filter((option) => favourite(option.value));
-  const rest = options.filter((option) => !favourite(option.value));
+  const unstarred = options.filter((option) => !favourite(option.value));
+  const legacy = unstarred.filter((option) => option.legacy === true);
+  const rest = unstarred.filter((option) => option.legacy !== true);
   const grouped = options.some((option) => option.group !== undefined);
   const sections = new Map<string, PickerOption<string>[]>();
   for (const option of rest) {
@@ -337,6 +355,7 @@ export function modelGroups(
   return [
     ...(starred.length > 0 ? [{ label: "Favourites", items: starred }] : []),
     ...[...sections].map(([label, items]) => ({ label, items })),
+    ...(legacyShown && legacy.length > 0 ? [{ label: LEGACY_GROUP, items: legacy }] : []),
   ];
 }
 

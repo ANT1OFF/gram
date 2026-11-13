@@ -4,6 +4,7 @@ import {
   effectiveCheckout,
   helperOn,
   sendKeyOf,
+  supersededModels,
   type DraftStash,
   type PermissionMode,
   type ReasoningVariant,
@@ -958,7 +959,9 @@ export function Composer({
   const otherAgent =
     offer.offered && summary?.thread.role !== "orchestrator" ? offer.to : undefined;
   const otherModels = useModelsSettled(otherAgent ?? "codex", otherAgent !== undefined).models;
+  const otherSuperseded = supersededModels(otherModels ?? []);
   const otherRow = (id: string, label: string): PickerOption<string> => ({
+    ...(otherSuperseded.has(id) ? { legacy: true } : {}),
     value: `${SWITCH_PREFIX}${id}`,
     label: `${label}…`,
     group: agentLabel(otherAgent ?? "codex"),
