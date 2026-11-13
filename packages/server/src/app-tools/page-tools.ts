@@ -29,7 +29,8 @@ export const offerPageTool = (
       description:
         "Offer a new version of a page the user pinned: `path` is an HTML file in your folders, " +
         "copied with the files beside it. The page keeps its version until the user shows yours. " +
-        "An unknown `page` id lists the pinned pages.",
+        "An unknown `page` id lists the pinned pages. Pinned pages throw on document.write and " +
+        "document.open: build them with DOM APIs.",
     },
     input: offerInput,
     rejectExcessProperties: true,

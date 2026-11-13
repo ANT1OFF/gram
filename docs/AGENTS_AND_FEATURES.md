@@ -1293,13 +1293,18 @@ and nothing else: no other page's, no other origin, no network, socket or WebRTC
 app IPC or bridge. The page runs sandboxed at an opaque origin, with no cookies, storage,
 popups, forms, dialogs or downloads, and can't navigate off its own files. Both the listener and
 the session put that policy on every response, so neither alone keeps the page in. The page's
-frames run one preload first, which exposes nothing: Chromium lets a page with your click copy to
-the clipboard whatever the session allows, so it refuses the page's copy, cut and paste commands
-and keeps the page's handlers from seeing or changing what you copy. So that nothing gets ahead
-of it, a pinned page can't replace its own document: `document.open`, `document.write` and
-`document.writeln` throw. A frame the page makes itself gets no preload, but the sandbox keeps the
-page from scripting it. Your own copy of selected text still works, and copies what the page's
-markup holds there.
+frames run one preload first, which exposes nothing. Chromium lets a page with your click write
+the clipboard whatever the session allows, so the guard promises this much: the page can't write
+the clipboard by script (its copy, cut and paste commands are refused, whatever names them), and
+can't see or change the clipboard's data when you copy, cut or paste. Its handlers don't hear the
+`beforecopy`, `beforecut` and `beforepaste` events or the copy shortcut's keydown (Ctrl or Cmd+C,
+Ctrl+Insert), so it can't move your selection just as you copy. It doesn't promise that what you
+see is what you copy: a selection that spans text the page hid (styled away or off screen) copies
+that text too, as in any browser, and the page can still move the selection at other moments.
+So that nothing gets ahead of the guard, a pinned page can't replace its own document:
+`document.open`, `document.write` and `document.writeln` throw, so agents build pages with DOM
+APIs (`offer_page_version` says so). A frame the page makes itself (`about:blank`, `srcdoc`) gets
+no preload; the sandbox's opaque origin is what keeps the page from scripting it.
 
 ### Your own browser: Claude in Chrome and Codex computer use
 

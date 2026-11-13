@@ -196,7 +196,8 @@ const native = (doc) =>
     ?.writable === true;
 clip.topNative = native(document);
 // A child frame of its own making, laid over a button so the user's click lands in it, copying with
-// the child's own execCommand: a way around a guard that only the top frame runs.
+// the child's own execCommand. The preload doesn't run in such a child; the sandbox's opaque
+// origins are what keep the page out of it, so here creating or scripting it fails.
 try {
   const child = document.createElement("iframe");
   child.id = "frame";
@@ -281,7 +282,7 @@ async function clipboardProbe(contents, url) {
   await delay(400);
   const afterFrame = frame === undefined ? "no frame" : await clipboard.readText();
   // The user's click in the top frame, then a copy through the child's own execCommand, which a
-  // same-origin child may do on the activation its parent got.
+  // same-origin child could do on its parent's activation; under the sandbox it is opaque to the page.
   await clipboard.writeText("sentinel");
   await contents
     .executeJavaScript(
@@ -380,6 +381,61 @@ setTimeout(() => {
 }, 0);
 </script>`,
 };
+
+/**
+ * A page that moves the user's selection onto text it hid just as they copy: from `beforecopy`
+ * (the edit menu's Copy fires it) and from the copy shortcut's keydown. It records which keydowns
+ * its handler heard.
+ */
+const stealPage = `<!doctype html><title>Steal</title>
+<p id="visible">Visible</p>
+<span id="hidden" style="position:absolute;left:-9999px">hidden-steal</span>
+<script>
+window.heard = [];
+const steal = () => {
+  const range = document.createRange();
+  range.selectNodeContents(document.getElementById("hidden"));
+  getSelection().removeAllRanges();
+  getSelection().addRange(range);
+};
+for (const target of [window, document]) {
+  target.addEventListener("beforecopy", steal, true);
+  target.addEventListener("beforecopy", steal);
+  target.addEventListener("keydown", (e) => {
+    heard.push((e.ctrlKey || e.metaKey ? "mod+" : "") + e.key.toLowerCase());
+    if ((e.ctrlKey || e.metaKey) && e.key === "c") steal();
+  }, true);
+}
+</script>`;
+
+/**
+ * The user selects the page's visible text and copies it by the edit menu; then the copy shortcuts
+ * and a plain key go down, and the page says which keydowns it heard.
+ */
+async function stealProbe(contents, url) {
+  await contents.loadURL(url).catch(() => {});
+  await titled(contents, "Steal", 5000);
+  const select = `(() => { const r = document.createRange(); r.selectNodeContents(document.getElementById("visible")); getSelection().removeAllRanges(); getSelection().addRange(r); })()`;
+  await contents.executeJavaScript(select);
+  await clipboard.writeText("sentinel");
+  contents.copy();
+  await delay(300);
+  const menu = await clipboard.readText();
+  await contents.executeJavaScript("window.heard = []");
+  // Input from outside the page reaches no page here, a control's included, so the keys are
+  // dispatched at the page's body: they pass the window's capture phase, where the guard listens
+  // first, just as the keyboard's would.
+  await contents.executeJavaScript(`(() => {
+    const press = (init) =>
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+    press({ key: "c", code: "KeyC", ctrlKey: true });
+    press({ key: "c", code: "KeyC", metaKey: true });
+    press({ key: "Insert", code: "Insert", ctrlKey: true });
+    press({ key: "a", code: "KeyA" });
+  })()`);
+  const heard = JSON.parse(await contents.executeJavaScript("JSON.stringify(window.heard)"));
+  return { menu, heard };
+}
 
 /**
  * Each object command, clicked with the user's gesture, and then the user's own copy of the
@@ -512,6 +568,7 @@ async function main() {
   writeFileSync(join(draft, "second.html"), "<title>Second page</title>");
   writeFileSync(join(draft, "clip.html"), clipPage);
   writeFileSync(join(draft, "clip-object.html"), objectPage);
+  writeFileSync(join(draft, "clip-steal.html"), stealPage);
   for (const [name, html] of Object.entries(hijackPages)) writeFileSync(join(draft, name), html);
   const meta = await Effect.runPromise(
     pages.pin({ workspaceId: "ws-fixture", by, entry: join(draft, "index.html") }),
@@ -674,6 +731,22 @@ async function main() {
       pinnedObject.menu === "leak-object",
     pinnedObject,
   );
+  const pinnedSteal = await stealProbe(
+    pageContents,
+    pageUrl.replace("index.html", "clip-steal.html"),
+  );
+  check(
+    "a page's beforecopy can't move the selection the menu's Copy copies",
+    pinnedSteal.menu === "Visible",
+    pinnedSteal,
+  );
+  check(
+    "a page's keydown handlers don't hear the copy shortcut, and still hear other keys",
+    !pinnedSteal.heard.includes("mod+c") &&
+      !pinnedSteal.heard.includes("mod+insert") &&
+      pinnedSteal.heard.includes("a"),
+    pinnedSteal,
+  );
   const pinnedHijacks = {};
   for (const name of Object.keys(hijackPages)) {
     pinnedHijacks[name] = await hijackProbe(pageContents, pageUrl.replace("index.html", name));
@@ -817,6 +890,17 @@ async function main() {
   const controlObject = await objectProbe(
     control.webContents,
     `${bareUrl.replace("index.html", "clip-object.html")}`,
+  );
+  const controlSteal = await stealProbe(
+    control.webContents,
+    bareUrl.replace("index.html", "clip-steal.html"),
+  );
+  check(
+    "control: without the guard, beforecopy moves the copy onto hidden text and keydown hears the shortcut",
+    controlSteal.menu === "hidden-steal" &&
+      controlSteal.heard.includes("mod+c") &&
+      controlSteal.heard.includes("mod+insert"),
+    controlSteal,
   );
   const controlHijacks = {};
   for (const name of Object.keys(hijackPages)) {

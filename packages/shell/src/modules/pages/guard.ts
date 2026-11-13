@@ -4,9 +4,15 @@
 // say: no setting reaches either. So the pages session's preload runs this in the main world of
 // each frame it reaches, first. It exposes nothing to the page: no `contextBridge` API, no channel.
 //
-// What it closes: a script's copy, cut and paste commands, whatever names them, and the page seeing
-// or changing the clipboard's data on the user's own copy, cut or paste. The user's copy still
-// copies their selection, as the browser would.
+// What it promises: the page can't write the clipboard by script (copy, cut and paste commands,
+// whatever names them), can't see or change the clipboard's data on the user's own copy, cut or
+// paste, and hears neither the `beforecopy`, `beforecut` and `beforepaste` events nor the copy
+// shortcut's keydown (Ctrl or Cmd+C, Ctrl+Insert), so it can't move the selection just as the user
+// copies. The user's copy still copies their selection, as the browser would.
+//
+// What it can't promise: that what the user sees is what they copy. A selection over text the page
+// hid (styled away, off screen, zero-sized) copies that text too, in every browser; and the page
+// can still move the selection at any other moment.
 //
 // Its listeners live on the window, and `document.open()` erases every listener of the window and
 // document it replaces, so the page could put its own in their place. A pinned page therefore never
@@ -31,6 +37,14 @@ export function pageGuard(): void {
   const stop = Event.prototype.stopImmediatePropagation;
   const listen = EventTarget.prototype.addEventListener;
   const lower = String.prototype.toLowerCase;
+  // oxlint-disable-next-line consistent-function-scoping -- the guard is sent as source: self-contained
+  const getter = (proto: object, name: string) =>
+    Object.getOwnPropertyDescriptor(proto, name)!.get!;
+  const keyOf = getter(KeyboardEvent.prototype, "key");
+  const codeOf = getter(KeyboardEvent.prototype, "code");
+  const ctrlOf = getter(KeyboardEvent.prototype, "ctrlKey");
+  const metaOf = getter(KeyboardEvent.prototype, "metaKey");
+  const altOf = getter(KeyboardEvent.prototype, "altKey");
   const fixed = (name: string, value: unknown) =>
     define(doc, name, { value, writable: false, configurable: false, enumerable: false });
   // A function, not an arrow, for its `this`. A command that isn't a string is refused before
@@ -69,6 +83,29 @@ export function pageGuard(): void {
   apply(listen, window, ["copy", silence, true]);
   apply(listen, window, ["cut", silence, true]);
   apply(listen, window, ["paste", silence, true]);
+  // Fired just before a copy, cut or paste: a handler there could move the selection onto text the
+  // page chose.
+  apply(listen, window, ["beforecopy", silence, true]);
+  apply(listen, window, ["beforecut", silence, true]);
+  apply(listen, window, ["beforepaste", silence, true]);
+  // The copy shortcut's keydown, for the same reason, kept from the page's handlers but not
+  // prevented: the browser's copy still runs on it.
+  const copyKey = (event: Event) => {
+    const ctrl = apply(ctrlOf, event, []) === true;
+    const meta = apply(metaOf, event, []) === true;
+    if (apply(altOf, event, []) === true) return false;
+    const key = apply(keyOf, event, []) as string;
+    const code = apply(codeOf, event, []) as string;
+    if ((ctrl || meta) && (code === "KeyC" || key === "c" || key === "C")) return true;
+    return ctrl && key === "Insert";
+  };
+  apply(listen, window, [
+    "keydown",
+    (event: Event) => {
+      if (copyKey(event)) apply(stop, event, []);
+    },
+    true,
+  ]);
 }
 
 /** The preload's whole work: `pageGuard` in the main world, and nothing exposed. */
