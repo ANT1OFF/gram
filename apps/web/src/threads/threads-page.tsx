@@ -220,17 +220,29 @@ function ThreadRow({
         data-needs-you={listing.needsYou || undefined}
         aria-label={`${title}, ${display.label}, ${where}, last activity ${formatStamp(thread.lastActivityAt, now)}`}
         onClick={() => openThread(thread.id)}
-        className="grid w-full grid-cols-[1fr_auto] items-center gap-x-4 gap-y-0.5 rounded-(--radius-sm) px-2.5 py-2 text-start outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+        className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-2.5 gap-y-0.5 rounded-(--radius-sm) px-2.5 py-2 text-start outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
       >
+        {/* The state's dot, as the sidebar and the Board mark a thread: the words under the
+            title say it, the dot lets a long list be read down its edge. */}
+        <span
+          aria-hidden
+          data-testid="threads-row-dot"
+          data-working={display.working || undefined}
+          className={cn(
+            "size-2 shrink-0 rounded-full bg-current",
+            display.tone === "text-status-needs" ? "text-status-needs-mark" : display.tone,
+            display.working && "gram-working",
+          )}
+        />
         <span className="min-w-0 truncate text-body text-foreground">{title}</span>
         <time
           dateTime={new Date(thread.lastActivityAt).toISOString()}
           title={`Last activity ${formatStamp(thread.lastActivityAt, now)}`}
-          className="text-meta text-muted-foreground tabular-nums"
+          className="ms-1.5 text-meta text-muted-foreground tabular-nums"
         >
           {formatRelative(thread.lastActivityAt, now)}
         </time>
-        <span className="flex min-w-0 items-center gap-1.5 text-meta">
+        <span className="col-start-2 flex min-w-0 items-center gap-1.5 text-meta">
           <span
             data-testid="threads-row-state"
             className={cn("shrink-0", display.tone, display.working && "gram-working")}
