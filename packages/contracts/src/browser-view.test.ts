@@ -168,6 +168,11 @@ describe("viewInput", () => {
     expect(keyDown({ modifiers: 2, key: "Insert", code: "Insert", keyCode: 45 })).toBeUndefined();
     expect(keyDown({ modifiers: 8, key: "Delete", code: "Delete", keyCode: 46 })).toBeUndefined();
     expect(keyDown({ key: "Delete", code: "Delete", keyCode: 46 })).toBeDefined();
+    // Nor with Alt as well, which is taken off a key that types and would leave Shift+Insert.
+    for (const modifiers of [9, 11])
+      for (const keyCode of [45, 46, 8, 37])
+        for (const key of ["Insert", "Delete", "v"])
+          expect(keyDown({ modifiers, key, code: "", keyCode, text: "v" })).toBeUndefined();
   });
 
   it("sends only a keyboard's ordinary keys, by code and by name", () => {

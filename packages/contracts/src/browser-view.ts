@@ -270,17 +270,18 @@ const allowedKey = (
   const character = Array.from(key).length === 1 && key >= " " && key !== "\u007f";
   if (!character && !KEY_NAMES.has(key)) return undefined;
   if (/^(F\d+|Browser\w*)$/.test(code)) return undefined;
+  // Shift with Insert pastes and with Delete cuts, from a clipboard every thread's page shares.
+  if ((modifiers & SHIFT) !== 0 && (keyCode === 45 || keyCode === 46)) return undefined;
+  if (/^(insert|delete)$/i.test(key) && (modifiers & SHIFT) !== 0) return undefined;
   const typed = printable(text) ? text : undefined;
   if ((modifiers & ALT) !== 0) {
-    if ((modifiers & META) !== 0) return undefined;
+    // Only a key that types: Alt taken off an editing key would leave that key with Shift.
+    if ((modifiers & META) !== 0 || !character || keyCode < 48) return undefined;
     // Alt with an arrow or F4 is the browser's; Alt with a character is only that character,
     // and its release is that character's.
     if (typed !== undefined) return { code, text: typed, modifiers: modifiers & SHIFT };
     return up && character ? { code, text: undefined, modifiers: modifiers & SHIFT } : undefined;
   }
-  // Shift with Insert pastes and with Delete cuts, from a clipboard every thread's page shares.
-  if ((modifiers & SHIFT) !== 0 && (keyCode === 45 || keyCode === 46)) return undefined;
-  if (/^(insert|delete)$/i.test(key) && (modifiers & SHIFT) !== 0) return undefined;
   if ((modifiers & (CONTROL | META)) === 0) return { code, text: typed, modifiers };
   const chord = CHORD_KEYS.get(keyCode);
   if (chord === undefined || !chord.keys.includes(key.toLowerCase())) return undefined;
