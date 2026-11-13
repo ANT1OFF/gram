@@ -7,7 +7,7 @@ import type { RailRow, RailTone, RailWorker } from "@/orchestration/rail-model";
 
 import { useThreadsStore } from "@/stores/threads";
 
-import { PhoneBoard, phoneCardLine, phoneCards, phoneSegmentOf } from "./board-phone";
+import { doneCardLine, PhoneBoard, phoneCardLine, phoneCards, phoneSegmentOf } from "./board-phone";
 
 vi.mock("@/orchestration/overview-pr-chips", () => ({ WorkerPrChips: () => null }));
 vi.mock("@/orchestration/held-brief", () => ({
@@ -122,6 +122,14 @@ describe("phone board", () => {
     // "working" is what the card's corner already says ("Running"): the station, said once.
     expect(phoneCardLine({ now: "working" }, "working")).toBe("Working");
     expect(phoneCardLine({ now: "" }, "review")).toBe("Review");
+  });
+
+  it("says how a finished card ended, without the number its PR's chip has", () => {
+    const pr = [{ number: 136 }] as unknown as RailWorker["prs"];
+    expect(doneCardLine({ now: "Merged as #136", prs: pr })).toBe("Merged");
+    expect(doneCardLine({ now: "Merged as #136", prs: [] })).toBe("Merged as #136");
+    expect(doneCardLine({ now: "Closed without merging", prs: pr })).toBe("Closed without merging");
+    expect(doneCardLine({ now: "", prs: [] })).toBe("Done");
   });
 
   it("names a card's agent only where the Board's workers run different ones", () => {
