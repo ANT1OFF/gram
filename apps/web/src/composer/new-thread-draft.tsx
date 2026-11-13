@@ -454,15 +454,15 @@ function ConfiguredNewThreadDraft() {
   useShortcut({
     id: "draft.create",
     keys: "mod+enter",
-    label: "Start chat",
+    label: soloWord === undefined ? "Start chat" : "Start agent",
     group: "Composer",
     run: () => void create(),
   });
 
   // An embedding app with its own word for this kind of thread has a Chat of its own: the button
-  // then says only what it does.
+  // then names what it starts without that word, as Start task does beside it.
   const createLabel =
-    stage === "failed" ? "Retry" : soloWord === undefined ? "Start chat" : "Start";
+    stage === "failed" ? "Retry" : soloWord === undefined ? "Start chat" : "Start agent";
   const modeChoice = modeSection({ value: mode, onChange: setMode });
   // A pick is confirmed in words beside the chip for a moment, as in a thread's composer.
   const [picked, setPicked] = useState<string>();
