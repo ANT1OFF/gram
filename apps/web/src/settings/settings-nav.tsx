@@ -60,7 +60,10 @@ export function SettingsNav({
   return (
     <nav
       aria-label="Settings sections"
-      className="w-60 shrink-0 overflow-y-auto border-r border-border p-3 @max-2xl/settings:flex @max-2xl/settings:w-auto @max-2xl/settings:items-center @max-2xl/settings:gap-2 @max-2xl/settings:overflow-visible @max-2xl/settings:border-r-0 @max-2xl/settings:border-b @max-2xl/settings:py-2 @max-2xl/settings:*:data-search:mb-0 @max-2xl/settings:*:data-search:min-w-0 @max-2xl/settings:*:data-search:flex-1 phone:flex-wrap phone:*:data-search:order-last phone:*:data-search:basis-full!"
+      // The narrow bar's classes are important: an app that mounts Gram writes plain utilities of
+      // its own after Gram's stylesheet, and its `flex` or `w-60` then beat the fold, leaving the
+      // whole list over the page on a phone.
+      className="w-60 shrink-0 overflow-y-auto border-r border-border p-3 @max-2xl/settings:flex! @max-2xl/settings:w-auto! @max-2xl/settings:items-center @max-2xl/settings:gap-2 @max-2xl/settings:overflow-visible! @max-2xl/settings:border-r-0! @max-2xl/settings:border-b! @max-2xl/settings:py-2! @max-2xl/settings:*:data-search:mb-0 @max-2xl/settings:*:data-search:min-w-0 @max-2xl/settings:*:data-search:flex-1 phone:flex-wrap phone:*:data-search:order-last phone:*:data-search:basis-full!"
     >
       <h1
         ref={headingRef}
@@ -74,7 +77,7 @@ export function SettingsNav({
       {needsYou}
       {search}
       <SectionPicker groups={groups} current={current} onNavigate={onNavigate} />
-      <ul className="flex flex-col gap-0.5 text-reading @max-2xl/settings:hidden">
+      <ul className="flex flex-col gap-0.5 text-reading @max-2xl/settings:hidden!">
         {groups.map((group) => {
           const Icon = group.icon;
           const open = group.id === current;
@@ -128,7 +131,7 @@ function SectionPicker({
   return (
     <div
       data-testid="settings-section-picker"
-      className="hidden shrink-0 @max-2xl/settings:flex phone:min-w-0 phone:flex-1"
+      className="hidden shrink-0 @max-2xl/settings:flex! phone:min-w-0 phone:flex-1"
     >
       <Select
         value={current ?? null}
@@ -143,7 +146,7 @@ function SectionPicker({
         <SelectTrigger
           size="sm"
           aria-label="Settings section"
-          className="max-w-44 phone:h-11 phone:w-full phone:max-w-none"
+          className="max-w-44 phone:h-11 phone:w-full! phone:max-w-none!"
         >
           <SelectValue placeholder="Section" />
         </SelectTrigger>

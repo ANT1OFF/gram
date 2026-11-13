@@ -257,7 +257,9 @@ function SoloThreads({
   // Ages to the minute, while the popover is open.
   const now = useNow(true, undefined, 60_000);
   return (
-    <section aria-label="Solo threads" data-testid="solo-threads">
+    // A column, so each row is the menu's width: a button on its own takes its words' width, and a
+    // long title then ran past the menu's edge with its age.
+    <section aria-label="Solo threads" data-testid="solo-threads" className="flex flex-col">
       <h2
         className={cn(
           "flex items-center justify-between px-2 pt-1.5 pb-1 text-caption font-medium text-muted-foreground",

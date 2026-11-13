@@ -100,6 +100,11 @@ test("the switcher with its keys, counts and solo threads, and ⌘1–⌘9 switc
   // Solo threads list what lives outside the workspaces, and open it.
   const solo = popover.getByTestId("solo-threads");
   await expect(solo.getByRole("button", { name: /Fix flaky/ })).toBeVisible();
+  // Each is as wide as the list, so a long title is cut inside the menu and its age stays in it.
+  const listWidth = (await solo.boundingBox())?.width ?? 0;
+  for (const row of await solo.getByRole("button").all()) {
+    expect((await row.boundingBox())?.width).toBe(listWidth);
+  }
   await page.keyboard.press("Escape");
   await expect(popover).toBeHidden();
 

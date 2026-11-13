@@ -74,8 +74,8 @@ export function IdleCompactField({
       </div>
       <div data-testid="idle-compact-workers">
         <Toggle
-          label="Include workers"
-          description="The orchestrator is always included; workers too when this is on."
+          label="Compact idle workers too"
+          description="Off, only the orchestrator's own thread is compacted."
           keywords={["compact", "workers"]}
           checked={workers}
           disabled={disabled || !enabled}
