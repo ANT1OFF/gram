@@ -1485,6 +1485,14 @@ servers are left as they are. It works only in threads that run in your own `COD
 under an outward gate run in Gram's own Codex setup, where plugins are off. Codex computer use
 also needs the ChatGPT app.
 
+**Permission prompts.** When a computer-use or other MCP server asks a yes-or-no question
+before it acts ("Allow ChatGPT to use Safari?"), the thread shows it as an approval card. A Codex
+thread's card offers this session or always only where the server offers them. A Claude thread's
+offers this session, which Gram remembers for that session by server and message, since Claude
+Code passes on no grant of its own. Under an outward gate that asks about everything, either
+card is for the one use. A prompt that needs more than a yes or no (a form's own fields, a link,
+a verification) is declined with a notice.
+
 **A broken `computer-use` server.** An old copy of Codex's standalone computer-use client in
 Claude Code's config has a relative command (`./Codex Computer Use.app/…`). Claude Code starts
 every stdio server in the session's folder, so that command fails with ENOENT in every Claude
