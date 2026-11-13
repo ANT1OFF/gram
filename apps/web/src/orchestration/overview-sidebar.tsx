@@ -151,6 +151,7 @@ import { useFeatureCards } from "./use-feature-cards";
 import { NeedsYouEntry } from "./needs-you-entry";
 import { useNeedsYouCounts } from "./use-needs-you";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
+import { accentStyle, useWorkspaceAccent } from "./workspace-accent";
 import { WorkspaceMenuItems } from "./workspace-menu-items";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { useOrchestratorWaiting, useWorkerWaitings } from "./use-waiting-on";
@@ -745,6 +746,8 @@ function WorkspaceRow({
   const hover = waiting === undefined ? summary : `${summary}\nOrchestrator: ${waiting.hint}`;
   const line = orchestratorLine(word, { working, asks });
   const name = state.workspace.name;
+  // The colour the user gave it: a bar beside its line, carried on by its workers' guide.
+  const accent = useWorkspaceAccent(id);
   // Nothing under it, not even its orchestrator at work: one line, its name and the word every
   // surface says of a thread at rest (`STATUS_WORDS`), so the palette and this row agree.
   const orchestratorBusy = useThreadsStore(
@@ -779,7 +782,10 @@ function WorkspaceRow({
               className={cn(
                 "flex min-w-0 items-center gap-0.5 rounded-(--radius-sm)",
                 here && "bg-sidebar-row-active",
+                accent !== undefined && "gram-accent-row",
               )}
+              data-accent={accent}
+              style={accentStyle(accent)}
             />
           }
         >
@@ -880,7 +886,12 @@ function WorkspaceRow({
           <WorkspaceMenuItems state={state} />
         </ContextMenuContent>
       </ContextMenu>
-      <div id={bodyId} hidden={folded} className="flex flex-col">
+      <div
+        id={bodyId}
+        hidden={folded}
+        className={cn("flex flex-col", accent !== undefined && "gram-accent-rail")}
+        style={accentStyle(accent)}
+      >
         {/* The current one's are there folded too, for ⌘J to open it on its first worker. */}
         {(here || !folded) && <WorkspaceBody workspaceId={id} empty={empty} />}
       </div>
@@ -936,6 +947,7 @@ function WorkspaceFeatures({
   return (
     <div
       data-testid="overview-workers"
+      data-accent-guide=""
       className="mb-1 ml-3 flex flex-col gap-px border-l border-sidebar-divider pl-2"
     >
       <PresenceList>

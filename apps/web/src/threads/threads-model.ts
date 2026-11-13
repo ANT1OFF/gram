@@ -54,6 +54,21 @@ export const startedByOf = (
 };
 
 /**
+ * Where a row says its thread is: its place, then what started it. A starter that already names the
+ * place ("Worker of api" in api), or an orchestrator titled as its workspace, says it once.
+ */
+export const whereOf = ({
+  title,
+  place,
+  startedBy,
+}: Pick<ThreadListing, "title" | "place" | "startedBy">): string =>
+  startedBy === undefined
+    ? place
+    : startedBy.endsWith(` of ${place}`) || title === place
+      ? startedBy
+      : `${place} · ${startedBy}`;
+
+/**
  * Every thread there is, archived ones aside (History has those): those that need you first, then
  * the latest active first, each with its place and what started it. `query` keeps those whose
  * title, place or starter has it, any case.
