@@ -125,7 +125,7 @@ describe("createBrowserViews", () => {
     expect(seen.at(-1)).toEqual({ type: "page", page: PAGE });
   });
 
-  it("cuts a long title and refuses an address past any real one", () => {
+  it("cuts a long title and an address past any real one, and still shows the page", () => {
     const host = fakePort();
     const views = createBrowserViews(host.port);
     const seen: Array<ViewEvent> = [];
@@ -138,7 +138,8 @@ describe("createBrowserViews", () => {
     const last = seen.at(-1);
     expect(last?.type === "page" && last.page?.title.length).toBe(300);
     host.say({ type: "pane.view.page", threadId: "t", page: { ...PAGE, url: "u".repeat(50_000) } });
-    expect(seen.at(-1)).toEqual({ type: "page", page: null });
+    const cut = seen.at(-1);
+    expect(cut?.type === "page" && cut.page?.url.length).toBe(8_192);
   });
 
   it("carries input and the strip's buttons only for a thread someone watches", () => {
@@ -150,6 +151,11 @@ describe("createBrowserViews", () => {
     expect(host.posted).toEqual([]);
     const end = views.watch("t", () => {});
     views.input("t", inputs);
+    // What the page may not get (a browser's own key, the middle button) isn't sent on.
+    views.input("t", [
+      { type: "key", action: "down", key: "Copy", code: "", keyCode: 0, modifiers: 0 },
+      { type: "key", action: "down", key: "x".repeat(9_000), code: "", keyCode: 65, modifiers: 0 },
+    ]);
     views.control("t", "handBack");
     expect(host.posted.slice(1)).toEqual([
       { type: "pane.view.input", threadId: "t", inputs },

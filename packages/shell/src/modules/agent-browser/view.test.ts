@@ -274,4 +274,24 @@ describe("createViews", () => {
     expect(views.message({ type: "pane.request", id: "a" })).toBe(false);
     expect(views.message(null)).toBe(false);
   });
+  it("keeps only so many batches waiting for a page that is slow to take them", async () => {
+    const { fake, views, watch } = start();
+    watch();
+    await vi.advanceTimersByTimeAsync(200);
+    const held = Promise.withResolvers<void>();
+    let taken = 0;
+    fake.page.input = async () => {
+      taken++;
+      await held.promise;
+    };
+    for (let sent = 0; sent < 200; sent++)
+      views.message({ type: "pane.view.input", threadId: "t", inputs: [press] });
+    held.resolve();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(taken).toBe(64);
+    // And takes them again once those are through.
+    views.message({ type: "pane.view.input", threadId: "t", inputs: [press] });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(taken).toBe(65);
+  });
 });

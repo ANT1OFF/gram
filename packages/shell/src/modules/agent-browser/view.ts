@@ -18,6 +18,9 @@ import {
 import type { HeadlessPage } from "./headless.ts";
 import type { AgentPanes, PaneContents } from "./pane.ts";
 
+/** The most input batches one thread's page keeps waiting: seconds of a person's fastest typing. */
+const QUEUE_MAX = 64;
+
 export interface ViewsOptions {
   readonly panes: Pick<
     AgentPanes,
@@ -63,6 +66,8 @@ export const createViews = (options: ViewsOptions): Views => {
   const idle = new Map<string, ReturnType<typeof setTimeout>>();
   /** When each thread's inputs so far are in its page, so the next batch follows them. */
   const typing = new Map<string, Promise<void>>();
+  /** How many batches wait their turn, by thread. */
+  const queued = new Map<string, number>();
   let poll: ReturnType<typeof setInterval> | undefined;
 
   const pageOf = (threadId: string, contents: PaneContents, page: HeadlessPage): ViewPage => {
@@ -220,12 +225,19 @@ export const createViews = (options: ViewsOptions): Views => {
       const { threadId } = message;
       if (message.type === "pane.view.watch") watchThread(threadId, message.fresh === true);
       else if (message.type === "pane.view.input") {
+        // No more waiting than a person sends: a flood is dropped, not queued without end.
+        const waiting = queued.get(threadId) ?? 0;
+        if (waiting >= QUEUE_MAX) return true;
+        queued.set(threadId, waiting + 1);
         // One batch after another: a release never overtakes its press.
         const after = (typing.get(threadId) ?? Promise.resolve())
           .then(() => input(threadId, message.inputs))
           .catch(() => {});
         typing.set(threadId, after);
         void after.then(() => {
+          const left = (queued.get(threadId) ?? 1) - 1;
+          if (left > 0) queued.set(threadId, left);
+          else queued.delete(threadId);
           if (typing.get(threadId) === after) typing.delete(threadId);
         });
       } else {
@@ -238,7 +250,7 @@ export const createViews = (options: ViewsOptions): Views => {
           acted(threadId);
           if (panes.driverOf(threadId) === "user") {
             if (message.op === "back") {
-              if (page.canGoBack()) contents.navigationHistory.goBack();
+              contents.navigationHistory.goBack();
             } else if (message.op === "forward") page.goForward();
             else page.reload();
           }

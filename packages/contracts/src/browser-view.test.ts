@@ -170,6 +170,37 @@ describe("viewInput", () => {
     expect(keyDown({ key: "Delete", code: "Delete", keyCode: 46 })).toBeDefined();
   });
 
+  it("sends only a keyboard's ordinary keys, by code and by name", () => {
+    // Names a browser runs as commands whatever the key code.
+    for (const name of ["Copy", "Cut", "Paste", "Undo", "BrowserBack", "ContextMenu", "F12"])
+      expect(keyDown({ key: name, code: "", keyCode: 0 })).toBeUndefined();
+    expect(keyDown({ key: "Copy", code: "KeyA", keyCode: 65 })).toBeUndefined();
+    // Codes a browser reads as its own: closing the page, a new window.
+    for (const keyCode of [0, 93, 112, 166, 229, 235, 236, 255])
+      expect(keyDown({ key: "Unidentified", code: "", keyCode })).toBeUndefined();
+    expect(keyDown({ key: "å", code: "BracketLeft", keyCode: 221, text: "å" })).toBeDefined();
+    // A character typed with AltGr goes down and comes up as that character.
+    expect(
+      keyDown({ key: "@", code: "Digit2", keyCode: 50, text: "@", modifiers: 3 }),
+    ).toMatchObject({
+      text: "@",
+      modifiers: 0,
+    });
+    expect(
+      keyDown({ action: "up", key: "@", code: "Digit2", keyCode: 50, modifiers: 3 }),
+    ).toMatchObject({ modifiers: 0 });
+    expect(
+      keyDown({ action: "up", key: "ArrowLeft", code: "ArrowLeft", keyCode: 37, modifiers: 1 }),
+    ).toBeUndefined();
+  });
+
+  it("takes no middle button, which pastes the selection where the browser runs", () => {
+    const press = { type: "pointer", action: "down", x: 1, y: 1, clickCount: 1, modifiers: 0 };
+    expect(viewInput({ ...press, button: "middle", buttons: 4 })).toBeUndefined();
+    expect(viewInput({ ...press, button: "left", buttons: 5 })).toBeUndefined();
+    expect(viewInput({ ...press, button: "left", buttons: 1 })).toBeDefined();
+  });
+
   it("takes the page over with a press, a key going down or a scroll, and nothing else", () => {
     const key = { type: "key", key: "a", code: "KeyA", keyCode: 65, modifiers: 0 } as const;
     expect(viewInputTakes(viewInput(down)!)).toBe(true);

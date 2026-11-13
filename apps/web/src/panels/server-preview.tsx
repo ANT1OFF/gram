@@ -114,7 +114,8 @@ const modifiersOf = (event: {
   (event.metaKey ? 4 : 0) |
   (event.shiftKey ? 8 : 0);
 
-const BUTTONS = ["left", "middle", "right"] as const;
+// No middle button: on the server it would paste a selection every thread's page shares.
+const BUTTONS = ["left", undefined, "right"] as const;
 
 /** What a key types, when it types anything: a held Control or Command makes it a shortcut. */
 export const typedBy = (event: {
@@ -250,7 +251,7 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
         action: "up",
         ...at,
         button,
-        buttons: event.buttons & 31,
+        buttons: event.buttons & 27,
         clickCount: Math.min(3, Math.max(1, event.detail)),
         modifiers: modifiersOf(event),
       });
@@ -290,6 +291,7 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
     if (at === undefined) return;
     // The agent's page takes no pointer passing over it; the server would drop it too.
     if (action === "move" && !yours) return;
+    if (action === "down" && BUTTONS[event.button] === undefined) return;
     if (action === "down") {
       stage.current?.focus();
       pressed.current = BUTTONS[event.button];
@@ -300,7 +302,7 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
       action,
       ...at,
       button: action === "move" ? "none" : (BUTTONS[event.button] ?? "none"),
-      buttons: event.buttons & 31,
+      buttons: event.buttons & 27,
       clickCount: action === "move" ? 0 : Math.min(3, Math.max(1, event.detail)),
       modifiers: modifiersOf(event),
     });

@@ -79,7 +79,7 @@ export type ViewInput =
 export type ViewControl = "back" | "forward" | "reload" | "handBack";
 
 const VIEW_CONTROLS: ReadonlySet<string> = new Set(["back", "forward", "reload", "handBack"]);
-const BUTTONS: ReadonlySet<string> = new Set(["none", "left", "middle", "right"]);
+const BUTTONS: ReadonlySet<string> = new Set(["none", "left", "right"]);
 
 /** The server asks the host to send a thread's page and frames, for `VIEW_LEASE_MS` more. */
 export interface ViewWatchMessage {
@@ -169,6 +169,83 @@ const CHORD_KEYS: ReadonlyMap<number, { readonly keys: readonly string[]; readon
 /** With Shift as well, only undoing a redo and selecting while moving: not deleting. */
 const SHIFT_CHORD_KEYS: ReadonlySet<number> = new Set([90, 35, 36, 37, 38, 39, 40]);
 
+/**
+ * The key codes a keyboard's ordinary keys carry: editing and moving, the modifiers, digits,
+ * letters, the number pad and punctuation. Every other code is left out, the ones a browser reads
+ * as a command of its own among them (closing the page, a new window).
+ */
+const KEY_CODES: ReadonlySet<number> = new Set([
+  8,
+  9,
+  13,
+  16,
+  17,
+  18,
+  20,
+  27,
+  32,
+  33,
+  34,
+  35,
+  36,
+  37,
+  38,
+  39,
+  40,
+  45,
+  46,
+  91,
+  92,
+  144,
+  145,
+  186,
+  187,
+  188,
+  189,
+  190,
+  191,
+  192,
+  219,
+  220,
+  221,
+  222,
+  223,
+  226,
+  ...Array.from({ length: 10 }, (_, digit) => 48 + digit),
+  ...Array.from({ length: 26 }, (_, letter) => 65 + letter),
+  ...Array.from({ length: 16 }, (_, pad) => 96 + pad),
+]);
+
+/**
+ * The names a key that types nothing may carry. A browser runs some names as commands whatever
+ * the key code (`Copy`, `Cut`, `Paste`, `BrowserBack`), so a name outside this list isn't sent.
+ */
+const KEY_NAMES: ReadonlySet<string> = new Set([
+  "Backspace",
+  "Tab",
+  "Enter",
+  "Shift",
+  "Control",
+  "Alt",
+  "AltGraph",
+  "Meta",
+  "CapsLock",
+  "Escape",
+  "PageUp",
+  "PageDown",
+  "End",
+  "Home",
+  "ArrowLeft",
+  "ArrowUp",
+  "ArrowRight",
+  "ArrowDown",
+  "Insert",
+  "Delete",
+  "NumLock",
+  "ScrollLock",
+  "Clear",
+]);
+
 /** Whether `text` is one character a key types: nothing a browser takes for a control key. */
 const printable = (text: string | undefined): text is string =>
   text !== undefined &&
@@ -177,8 +254,8 @@ const printable = (text: string | undefined): text is string =>
   text !== "\u007f";
 
 /**
- * A key as the page may get it, or `undefined` for one it may not: a function key, a browser or
- * media key, and any shortcut outside `CHORD_KEYS`. A key that types a character while Alt is
+ * A key as the page may get it, or `undefined` for one it may not: anything but an ordinary key
+ * by its code and its name, and any shortcut outside `CHORD_KEYS`. A key that types a character while Alt is
  * held (AltGr, or Option on a Mac) is that character, without the modifiers.
  */
 const allowedKey = (
@@ -187,17 +264,19 @@ const allowedKey = (
   keyCode: number,
   text: string | undefined,
   modifiers: number,
+  up: boolean,
 ): { code: string; text: string | undefined; modifiers: number } | undefined => {
-  // F1 to F24, and the browser's own keys (back, refresh, search) with the media keys.
-  if ((keyCode >= 112 && keyCode <= 135) || (keyCode >= 166 && keyCode <= 183)) return undefined;
-  if (/^(F\d+|Browser\w*|Launch\w*|Media\w*)$/.test(key) || /^(F\d+|Browser\w*)$/.test(code))
-    return undefined;
+  if (!KEY_CODES.has(keyCode)) return undefined;
+  const character = Array.from(key).length === 1 && key >= " " && key !== "\u007f";
+  if (!character && !KEY_NAMES.has(key)) return undefined;
+  if (/^(F\d+|Browser\w*)$/.test(code)) return undefined;
   const typed = printable(text) ? text : undefined;
   if ((modifiers & ALT) !== 0) {
-    // Alt with an arrow or F4 is the browser's; Alt with a character is only that character.
-    return typed === undefined || (modifiers & META) !== 0
-      ? undefined
-      : { code, text: typed, modifiers: modifiers & SHIFT };
+    if ((modifiers & META) !== 0) return undefined;
+    // Alt with an arrow or F4 is the browser's; Alt with a character is only that character,
+    // and its release is that character's.
+    if (typed !== undefined) return { code, text: typed, modifiers: modifiers & SHIFT };
+    return up && character ? { code, text: undefined, modifiers: modifiers & SHIFT } : undefined;
   }
   // Shift with Insert pastes and with Delete cuts, from a clipboard every thread's page shares.
   if ((modifiers & SHIFT) !== 0 && (keyCode === 45 || keyCode === 46)) return undefined;
@@ -221,7 +300,7 @@ export function viewInput(raw: unknown): ViewInput | undefined {
     if (action !== "down" && action !== "up") return undefined;
     if (!short(key, 32) || !short(code, 32) || !whole(keyCode, 0, 255)) return undefined;
     if (text !== undefined && !short(text, 8)) return undefined;
-    const allowed = allowedKey(key, code, keyCode, text, modifiers);
+    const allowed = allowedKey(key, code, keyCode, text, modifiers, action === "up");
     if (allowed === undefined) return undefined;
     return {
       type: "key",
@@ -245,7 +324,8 @@ export function viewInput(raw: unknown): ViewInput | undefined {
   const { action, button, buttons, clickCount } = r;
   if (action !== "move" && action !== "down" && action !== "up") return undefined;
   if (typeof button !== "string" || !BUTTONS.has(button)) return undefined;
-  if (!whole(buttons, 0, 31) || !whole(clickCount, 0, 3)) return undefined;
+  // No middle button: where the browser runs it pastes the selection, which every thread shares.
+  if (!whole(buttons, 0, 31) || (buttons & 4) !== 0 || !whole(clickCount, 0, 3)) return undefined;
   return {
     type: "pointer",
     action,

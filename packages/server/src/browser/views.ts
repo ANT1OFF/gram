@@ -7,6 +7,7 @@
 import {
   VIEW_RENEW_MS,
   viewHostMessage,
+  viewInput,
   type BrowserViewEvent,
   type BrowserViewPage,
   type ViewControl,
@@ -27,10 +28,9 @@ const pageOf = (raw: unknown): BrowserViewPage | null => {
   const r = raw as Record<string, unknown>;
   if (typeof r["url"] !== "string" || typeof r["title"] !== "string") return null;
   // A page chooses its own address and title, and each is sent to every watcher again and again.
-  if (r["url"].length > URL_MAX) return null;
   const action = r["action"] as { summary?: unknown; at?: unknown } | undefined;
   return {
-    url: r["url"],
+    url: r["url"].slice(0, URL_MAX),
     title: r["title"].slice(0, TITLE_MAX),
     loading: r["loading"] === true,
     canGoBack: r["canGoBack"] === true,
@@ -140,7 +140,10 @@ export const createBrowserViews = (
     },
     // Only what someone here is watching is driven from here.
     input: (threadId, inputs) => {
-      if (threads.has(threadId)) port.post({ type: "pane.view.input", threadId, inputs });
+      if (!threads.has(threadId)) return;
+      // Checked here as well as in the host, so nothing unchecked or outsized crosses to it.
+      const checked = inputs.flatMap((each) => viewInput(each) ?? []);
+      if (checked.length > 0) port.post({ type: "pane.view.input", threadId, inputs: checked });
     },
     control: (threadId, op) => {
       if (threads.has(threadId)) port.post({ type: "pane.view.control", threadId, op });
