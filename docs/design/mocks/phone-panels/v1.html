@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phone thread: reaching Diff, PR, Files and Terminal · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .ph {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        font-size: var(--text-sm);
+      }
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+      }
+      .round {
+        flex: none;
+        width: 40px;
+        height: 40px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--border-subtle);
+        border-radius: 999px;
+        background: var(--surface-2);
+        color: var(--fg);
+      }
+      .title {
+        flex: 1;
+        min-width: 0;
+        text-align: center;
+        line-height: 1.3;
+      }
+      .title strong {
+        display: block;
+        font-weight: 600;
+      }
+      .title span {
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .strip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        border-block: 1px solid var(--border-subtle);
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .strip strong {
+        color: var(--fg);
+        font-weight: 600;
+      }
+      .talk {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 14px 16px;
+        min-height: 0;
+        overflow: hidden;
+      }
+      .said {
+        align-self: flex-end;
+        padding: 8px 12px;
+        border-radius: 14px;
+        background: var(--surface-3);
+      }
+      .foot {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px 12px 12px;
+      }
+      .prbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 36px;
+        padding: 0 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 999px;
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .box {
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+        padding: 12px 14px;
+        border: 1px solid var(--border-strong);
+        border-radius: 18px;
+        color: var(--fg-muted);
+      }
+      .seg {
+        display: flex;
+        gap: 2px;
+        margin: 0 12px;
+        padding: 2px;
+        border-radius: 10px;
+        background: var(--surface-2);
+      }
+      .seg button {
+        flex: 1;
+        min-height: 36px;
+        border: 0;
+        border-radius: 8px;
+        background: none;
+        color: var(--fg-muted);
+        font: inherit;
+        font-size: var(--text-xs);
+      }
+      .seg button[aria-selected="true"] {
+        background: var(--surface-1);
+        color: var(--fg);
+        font-weight: 600;
+        box-shadow: 0 0 0 1px var(--border-subtle);
+      }
+      .seg small {
+        color: var(--fg-muted);
+        font-weight: 400;
+      }
+      .chips {
+        display: flex;
+        gap: 6px;
+        overflow: hidden;
+      }
+      .chipb {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 36px;
+        padding: 0 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 999px;
+        background: none;
+        color: var(--fg);
+        font: inherit;
+        font-size: var(--text-xs);
+        white-space: nowrap;
+      }
+      .menu {
+        position: absolute;
+        top: 58px;
+        right: 12px;
+        width: 220px;
+        display: flex;
+        flex-direction: column;
+        padding: 6px;
+        border: 1px solid var(--border-strong);
+        border-radius: 12px;
+        background: var(--surface-2);
+        box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+      }
+      .menu div {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 40px;
+        padding: 0 10px;
+        border-radius: 8px;
+      }
+      .menu .lab {
+        min-height: 26px;
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .menu .rule {
+        min-height: 1px;
+        height: 1px;
+        margin: 4px 0;
+        padding: 0;
+        background: var(--border-subtle);
+      }
+      .menu small {
+        margin-left: auto;
+        color: var(--fg-muted);
+      }
+      .add {
+        color: var(--success);
+      }
+      .del {
+        color: var(--danger);
+      }
+      .files div {
+        display: flex;
+        gap: 8px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+      }
+      .hunk {
+        padding: 8px 16px;
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        line-height: 1.7;
+        white-space: pre;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        Today a phone thread's panels open only from a tap on the pull request bar, which nothing
+        says. Three places to reach them from, each on the same thread, and then the panel open,
+        which is the same in all three: it names its thread and has a worded way back. Pick A, B or
+        C by name.
+      </p>
+
+      <section class="board" data-name="A In the menu" data-size="390x700">
+        <div class="board-frame" style="position: relative">
+          <div class="ph">
+            <header class="head">
+              <button class="round" type="button" aria-label="Menu">
+                <i data-icon="menu"></i>
+              </button>
+              <div class="title">
+                <strong>Fix flaky retry test</strong><span>Standalone agent · Running</span>
+              </div>
+              <button class="round" type="button" aria-label="More">
+                <i data-icon="more"></i>
+              </button>
+            </header>
+            <div class="strip">
+              <strong>Plan</strong> Reproducing the flake <span class="grow"></span>0/4
+            </div>
+            <div class="talk">
+              <div class="said">Make the retry test deterministic.</div>
+              <div>I'll start by reading the test and running it a few times.</div>
+            </div>
+            <div class="foot">
+              <div class="prbar">
+                <span class="dot danger"></span>#412 api fix/flaky-retry<span class="grow"></span
+                ><span class="add">+2</span><span class="del">-1</span>
+              </div>
+              <div class="box">
+                Queue a message…
+                <div class="row"><span>Opus · Ask</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="menu" role="menu" aria-label="More">
+            <div class="lab">Open</div>
+            <div>
+              <i data-icon="file"></i>Diff<small
+                ><span class="add">+2</span> <span class="del">-1</span></small
+              >
+            </div>
+            <div><i data-icon="pr"></i>Pull request<small>#412</small></div>
+            <div><i data-icon="folder"></i>Files</div>
+            <div><i data-icon="terminal"></i>Terminal</div>
+            <div class="rule"></div>
+            <div>Thread</div>
+            <div>View</div>
+            <div>Usage</div>
+            <div>Settings</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="B Tabs under the title" data-size="390x700">
+        <div class="board-frame">
+          <div class="ph">
+            <header class="head">
+              <button class="round" type="button" aria-label="Menu">
+                <i data-icon="menu"></i>
+              </button>
+              <div class="title">
+                <strong>Fix flaky retry test</strong><span>Standalone agent · Running</span>
+              </div>
+              <button class="round" type="button" aria-label="More">
+                <i data-icon="more"></i>
+              </button>
+            </header>
+            <div class="seg" role="tablist" aria-label="Thread and its panels">
+              <button role="tab" aria-selected="true" type="button">Chat</button>
+              <button role="tab" type="button">Diff <small>3</small></button>
+              <button role="tab" type="button">PR</button>
+              <button role="tab" type="button">Files</button>
+              <button role="tab" type="button">Terminal</button>
+            </div>
+            <div class="strip" style="margin-top: 8px">
+              <strong>Plan</strong> Reproducing the flake <span class="grow"></span>0/4
+            </div>
+            <div class="talk">
+              <div class="said">Make the retry test deterministic.</div>
+              <div>I'll start by reading the test and running it a few times.</div>
+            </div>
+            <div class="foot">
+              <div class="prbar">
+                <span class="dot danger"></span>#412 api fix/flaky-retry<span class="grow"></span
+                ><span class="add">+2</span><span class="del">-1</span>
+              </div>
+              <div class="box">
+                Queue a message…
+                <div class="row"><span>Opus · Ask</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="C Chips above the prompt" data-size="390x700">
+        <div class="board-frame">
+          <div class="ph">
+            <header class="head">
+              <button class="round" type="button" aria-label="Menu">
+                <i data-icon="menu"></i>
+              </button>
+              <div class="title">
+                <strong>Fix flaky retry test</strong><span>Standalone agent · Running</span>
+              </div>
+              <button class="round" type="button" aria-label="More">
+                <i data-icon="more"></i>
+              </button>
+            </header>
+            <div class="strip">
+              <strong>Plan</strong> Reproducing the flake <span class="grow"></span>0/4
+            </div>
+            <div class="talk">
+              <div class="said">Make the retry test deterministic.</div>
+              <div>I'll start by reading the test and running it a few times.</div>
+            </div>
+            <div class="foot">
+              <div class="chips">
+                <button class="chipb" type="button">
+                  <i data-icon="file"></i>Diff <span class="add">+2</span
+                  ><span class="del">-1</span>
+                </button>
+                <button class="chipb" type="button"><span class="dot danger"></span>PR #412</button>
+                <button class="chipb" type="button">Files</button>
+                <button class="chipb" type="button">Terminal</button>
+              </div>
+              <div class="box">
+                Queue a message…
+                <div class="row"><span>Opus · Ask</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="Panel open" data-size="390x700">
+        <div class="board-frame">
+          <div class="ph">
+            <header class="head">
+              <button class="round" type="button" aria-label="Back to the thread">
+                <i data-icon="left"></i>
+              </button>
+              <div class="title"><strong>Diff</strong><span>Fix flaky retry test</span></div>
+              <button class="round" type="button" aria-label="More">
+                <i data-icon="more"></i>
+              </button>
+            </header>
+            <div class="seg" role="tablist" aria-label="Panels">
+              <button role="tab" aria-selected="true" type="button">Diff <small>3</small></button>
+              <button role="tab" type="button">PR</button>
+              <button role="tab" type="button">Files</button>
+              <button role="tab" type="button">Terminal</button>
+            </div>
+            <div class="strip" style="margin-top: 8px">
+              Uncommitted · 3 files <span class="grow"></span><span class="add">+7</span>
+              <span class="del">-3</span>
+            </div>
+            <div class="files">
+              <div>docs/testing.md<span class="grow"></span><span class="add">+3</span></div>
+            </div>
+            <div class="hunk">
+              <span class="add">+ # Testing</span>
+              <span class="add">+</span>
+              <span class="add">+ Use the fake clock for anything</span>
+              <span class="add">+ timer-based.</span>
+            </div>
+            <div class="files">
+              <div>
+                src/timers.ts → src/clock.ts<span class="grow"></span><span class="add">+2</span
+                ><span class="del">-2</span>
+              </div>
+              <div>
+                src/retry.test.ts<span class="grow"></span><span class="add">+2</span
+                ><span class="del">-1</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

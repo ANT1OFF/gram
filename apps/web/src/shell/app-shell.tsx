@@ -14,6 +14,7 @@ import { OverviewRail } from "@/orchestration/overview-rail";
 import { OverviewSidebar, useCarryOverviewFocus } from "@/orchestration/overview-sidebar";
 import { ConnectionBanner } from "@/shell/connection-banner";
 import { PhoneDrawer } from "@/shell/phone-drawer";
+import { PhonePanelRow } from "@/shell/phone-panels";
 import { ReviewStrip } from "@/shell/review-strip";
 import { ShellTitlebar } from "@/shell/shell-titlebar";
 import { SideResizeHandle } from "@/shell/side-resize";
@@ -40,6 +41,7 @@ export function AppShell() {
   const [resizing, setResizing] = useState(false);
   const content = useRef<HTMLElement>(null);
   const quiet = useViewStore((s) => s.quiet);
+  const board = useViewStore((s) => s.view === "board");
   const {
     fit,
     focusMode,
@@ -160,6 +162,7 @@ export function AppShell() {
             panelOffered={!panelBarred}
             panelLeft={panelLeft}
           />
+          {phone && hasThread && !panelBarred && !panelShown && !board && <PhonePanelRow />}
           <ConnectionBanner />
           <UpdateNotice />
           <LaunchChecksBanner />

@@ -1,7 +1,13 @@
 import type { ThreadSummary } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { inThreadsFilter, startedByOf, threadListings, threadsFilterCounts } from "./threads-model";
+import {
+  whereOf,
+  inThreadsFilter,
+  startedByOf,
+  threadListings,
+  threadsFilterCounts,
+} from "./threads-model";
 
 const summary = (
   id: string,
@@ -106,5 +112,21 @@ describe("the Threads page's filters", () => {
         .filter((each) => inThreadsFilter(each, "running"))
         .map((each) => each.summary.thread.id),
     ).toEqual(["d", "b"]);
+  });
+});
+
+describe("whereOf", () => {
+  it("says the place once", () => {
+    expect(whereOf({ title: "Fix", place: "Solo", startedBy: undefined })).toBe("Solo");
+    expect(whereOf({ title: "Fix", place: "api", startedBy: "Worker of api" })).toBe(
+      "Worker of api",
+    );
+    expect(whereOf({ title: "api", place: "api", startedBy: "Orchestrator" })).toBe("Orchestrator");
+    expect(whereOf({ title: "Fix", place: "api", startedBy: "Worker of Billing" })).toBe(
+      "api · Worker of Billing",
+    );
+    expect(whereOf({ title: "Nightly", place: "api", startedBy: "Routine: nightly" })).toBe(
+      "api · Routine: nightly",
+    );
   });
 });
