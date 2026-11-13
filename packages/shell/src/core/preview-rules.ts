@@ -9,6 +9,7 @@
 
 import {
   LOOPBACK_HOSTS,
+  isPinnedPageUrl,
   isPrivateAddress,
   refusedHost,
   type PreviewBounds,
@@ -63,6 +64,8 @@ export function previewNavigation(url: string): PreviewNavigation {
   if (parsed === undefined) return "refuse";
   if (parsed.href === "about:blank") return "load";
   if (!WEB.has(parsed.protocol)) return "refuse";
+  // A pinned page runs only in its own session (`modules/pages`), never where agents' pages do.
+  if (isPinnedPageUrl(url)) return "refuse";
   if (loopbackPortOf(url) !== undefined) return "load";
   // A user name before the host, on loopback or not, is how a look-alike hides: the web session
   // refuses it, and the address strip never takes one.
@@ -76,6 +79,7 @@ export function previewRequest(url: string): PreviewRequest {
   if (parsed === undefined) return "block";
   if (LOCAL.has(parsed.protocol)) return "allow";
   if (!WEB.has(parsed.protocol) && !SOCKETS.has(parsed.protocol)) return "block";
+  if (isPinnedPageUrl(url)) return "block";
   return loopbackPortOf(url) === undefined ? "block" : "allow";
 }
 

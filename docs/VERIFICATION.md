@@ -316,6 +316,32 @@ rule it would meet.
 node apps/desktop/scripts/verify-web-preview.mjs /tmp/new-evidence-directory
 ```
 
+### Pinned pages session
+
+`apps/desktop/scripts/verify-pinned-pages.mjs` runs the installed pinned Electron in an owned
+temporary profile with no outside network. It pins a synthetic worktree's page with the server's
+own pages store, serves it with the server's own listener code, and opens it through the shell's
+pages module in the real `gram-pages` session, with the page guard preload built as the app builds
+it. It checks that the pinned copy loads, not the worktree's later edit; that the shell opens only
+the announced listener origin; that the page runs at an opaque origin and loads its own files,
+module script included; that no fetch, socket, beacon, event stream, WebRTC STUN or TURN, popup,
+form, dialog, storage, cookie, download, bridge or app IPC gets out, to Gram's server, a name,
+another pinned page or the internet; that it can't navigate away; that script copies (named by a
+string, an object, a boxed string or a name that changes), the copy event and the async clipboard
+leave the clipboard as it was while the user's own copy still works; that a page that replaces its
+document after parsing (`document.open`, a `document.write` that opens it, a `javascript:` URL)
+can't change what the user copies; that the Preview tab's local session refuses its URL; and that
+with the listener's headers gone the session alone still holds. A control session without the
+policy or the guard shows each probe reaches what it looks for. A `<link rel=preconnect>` fires in
+no session of this Electron, a control's included, so it isn't checked natively. The keyboard's
+copy leaves the clipboard alone even in the control here, so the edit menu's Copy is the user's
+copy the checks rely on. On Linux it needs a display (`DISPLAY`), which is all of the environment
+it passes on.
+
+```sh
+node apps/desktop/scripts/verify-pinned-pages.mjs /tmp/new-evidence-directory
+```
+
 ### Live subscription probes
 
 With explicit authorization, each selected adapter makes two tiny turns through the

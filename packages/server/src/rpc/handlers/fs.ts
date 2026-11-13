@@ -12,10 +12,10 @@ import {
   type Thread,
   type ThreadId,
 } from "@gram/contracts";
-import { isInside, Proc, realPath, tryRealPath } from "@gram/git";
+import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import {
   FILE_MAX_BYTES,
   FILE_MAX_BYTES_CEILING,
@@ -40,38 +40,11 @@ import { SEARCH_MAX_PAGE, SEARCH_PAGE } from "../../fs/search.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
-import { filesWrittenBy, PreviewFiles } from "../../preview/files.ts";
+import { filesWrittenBy, pageFolderCheck, PreviewFiles } from "../../preview/files.ts";
 import { logDefects, type Handlers } from "./common.ts";
 import { editorHandlers } from "./editor.ts";
 import { docHandlers } from "./docs.ts";
 import { outputHandlers } from "./outputs.ts";
-
-/**
- * `target`'s real path, for granting its folder to a page: inside one of `roots`, resolved, or
- * for a file outside them, in the folder it was written to, not one a link of its own leads to.
- * `urlFor` takes it only while it still resolves to itself, so the folder checked is the folder
- * granted.
- */
-const pageFolderCheck = (target: string, outside: boolean, roots: ReadonlyArray<string>) =>
-  Effect.tryPromise({
-    try: async () => {
-      const real = await realPath(target);
-      if (outside) return (await realPath(dirname(target))) === dirname(real) ? real : undefined;
-      for (const root of roots) {
-        const realRoot = await tryRealPath(root);
-        if (realRoot !== undefined && isInside(realRoot, real)) return real;
-      }
-      return undefined;
-    },
-    catch: () =>
-      new NotFound({ entity: "file", id: target, message: `${target} no longer exists` }),
-  }).pipe(
-    Effect.flatMap((real) =>
-      real === undefined
-        ? Effect.fail(new InvalidState({ message: `${target} changed while it was checked` }))
-        : Effect.succeed(real),
-    ),
-  );
 
 /** `path` as spelled, `~` expanded and normalized, never through a link; case counts but on Windows. */
 const namedPathKey = (path: string) => {

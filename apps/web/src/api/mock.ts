@@ -126,6 +126,7 @@ import { createSpeechMock } from "./speech/mock";
 import { createDreamsMock } from "./dreams/mock";
 import { createFilesMock } from "./files/mock";
 import { createDocsMock } from "./docs/mock";
+import { createPagesMock } from "./pages/mock";
 import { createLabelsMock } from "./labels/mock";
 import { createKeybindingsMock } from "./keybindings/mock";
 import { createTerminalMock } from "./terminal/mock";
@@ -212,6 +213,7 @@ import {
   mockProject,
   resolveMockFolder,
 } from "./mock-fs";
+import { MockPages } from "./mock-pages";
 import { MockPreview } from "./mock-preview";
 import { mockToolClock, mockToolTime } from "./mock-tool-times";
 import {
@@ -2768,6 +2770,7 @@ export function createMockApi(options: MockApiOptions = {}) {
     ...createBranchesMock(world),
     ...createConnectorsMock(world),
     ...createDocsMock(world),
+    ...createPagesMock(world),
     ...createFilesMock(world),
     ...createKeybindingsMock(world),
     ...createLabelsMock(world),
@@ -2777,6 +2780,7 @@ export function createMockApi(options: MockApiOptions = {}) {
     shell: {
       ...agentBrowse.shell,
       preview: new MockPreview(),
+      pages: new MockPages(),
     },
     agentBrowseHosts: agentBrowse.agentBrowseHosts,
     simulateBrowseApproval: agentBrowse.simulateBrowseApproval,

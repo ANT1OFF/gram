@@ -1,6 +1,7 @@
 import type { ThreadId, ThreadSummary, WorkspaceId } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
 import {
+  AppWindow,
   Bell,
   ChevronDown,
   Eye,
@@ -41,6 +42,7 @@ import {
   type RightPanelTab,
 } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
+import { usePages } from "@/pages/page-queries";
 import { besideShown, useBesideStore } from "@/orchestration/beside-store";
 import { useCommandViewStore } from "@/thread/command-view-store";
 
@@ -75,6 +77,7 @@ const TABS: PanelTab[] = [
   { value: "terminal", label: "Terminal", icon: SquareTerminal, primary: true },
   { value: "preview", label: "Preview", icon: Globe },
   { value: "docs", label: "Docs", icon: FileText },
+  { value: "pages", label: "Pages", icon: AppWindow },
   { value: "connectors", label: "Connectors", icon: Plug },
   { value: "reviews", label: "Reviews", icon: Eye },
   { value: "notifications", label: "Notifications", icon: Bell },
@@ -146,6 +149,10 @@ export function RightPanel() {
   const previewHere = useFeature("previewPane");
   const workspaceId = useRouteWorkspace();
   const workersHere = workspaceId !== undefined;
+  // Pages, only while the workspace has one pinned or the tab is open: pinning opens it, and an
+  // empty tab would push the narrow panel's More past what it holds.
+  const pinnedHere = (usePages(workspaceId).data?.pages.length ?? 0) > 0;
+  const pagesHere = workspaceId !== undefined && (pinnedHere || storedTab === "pages");
   // Only review requests count as waiting: the user's own open PRs wait on others.
   const notificationCount = useNotificationHistory(unreadNotifications);
   const reviewCount = useReviewRequests().data?.requests.length ?? 0;
@@ -156,6 +163,7 @@ export function RightPanel() {
     (storedTab === "reviews" && !reviewsHere) ||
     (storedTab === "preview" && !previewHere) ||
     (storedTab === "workers" && !workersHere) ||
+    (storedTab === "pages" && !pagesHere) ||
     storedTab === "needsYou"
       ? "diff"
       : storedTab;
@@ -191,7 +199,8 @@ export function RightPanel() {
     (t) =>
       (t.value !== "reviews" || reviewsHere) &&
       (t.value !== "preview" || previewHere) &&
-      (t.value !== "workers" || workersHere),
+      (t.value !== "workers" || workersHere) &&
+      (t.value !== "pages" || pagesHere),
   );
   const expanded = useLayoutStore((s) => s.panelExpanded);
   const focused = useLayoutStore((s) => s.reviewFocus);

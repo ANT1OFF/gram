@@ -5,7 +5,7 @@
 // contracts' `PREVIEW_FILES_SEGMENT`, and only files under that folder answer, read-only, with no
 // dotfiles and nothing `isCredentialPath` names, each opened through `openOutside`.
 
-import { InvalidState, isCredentialPath, PREVIEW_FILES_SEGMENT } from "@gram/contracts";
+import { InvalidState, isCredentialPath, NotFound, PREVIEW_FILES_SEGMENT } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -16,7 +16,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { openOutside } from "../fs/files.ts";
-import { isInside, realPath } from "@gram/git";
+import { isInside, realPath, tryRealPath } from "@gram/git";
 
 /** How many folders keep a live prefix; showing another forgets the least recently shown. */
 const PREVIEW_FOLDERS_KEPT = 64;
@@ -135,18 +135,20 @@ export type PreviewLookup =
   | { readonly kind: "notFound" };
 
 /**
- * The file a request path names: `/gram-preview-files/<prefix>/<path within the folder>`. A segment
- * that is empty, `.`, `..` or starts with a dot answers not found before the disk is asked, as does
- * a path `isCredentialPath` names: a dashboard written beside a repo's `.env`, an SSH key or a
- * `.git` folder can't read them.
+ * The file a request path names: `/<segment>/<prefix>/<path within the folder>`, the segment
+ * `gram-preview-files` unless a listener of its own names another. A segment that is empty, `.`,
+ * `..` or starts with a dot answers not found before the disk is asked, as does a path
+ * `isCredentialPath` names: a dashboard written beside a repo's `.env`, an SSH key or a `.git`
+ * folder can't read them.
  */
-export function lookupPreview(folders: PreviewFolders, urlPath: string): PreviewLookup {
+export function lookupPreview(
+  folders: PreviewFolders,
+  urlPath: string,
+  first: string = PREVIEW_FILES_SEGMENT,
+): PreviewLookup {
   const notFound = { kind: "notFound" } as const;
   const [, root, prefix, ...rest] = urlPath.split("?")[0]!.split("#")[0]!.split("/");
-  const folder =
-    root !== PREVIEW_FILES_SEGMENT || prefix === undefined
-      ? undefined
-      : folders.byPrefix.get(prefix);
+  const folder = root !== first || prefix === undefined ? undefined : folders.byPrefix.get(prefix);
   if (folder === undefined || rest.length === 0) return notFound;
   const segments: Array<string> = [];
   for (const raw of rest) {
@@ -165,8 +167,25 @@ export function lookupPreview(folders: PreviewFolders, urlPath: string): Preview
   return { kind: "file", folder, relative: path };
 }
 
-const answer = (res: ServerResponse, status: number, text: string) => {
-  res.writeHead(status, { ...PREVIEW_HEADERS, "content-type": "text/plain; charset=utf-8" });
+/** What a listener serves: the first segment of its paths and the headers every answer carries. */
+export interface FileListenerRules {
+  readonly segment: string;
+  /** The headers for one answer, given the request's `Origin` header. */
+  readonly headers: (origin: string | undefined) => Readonly<Record<string, string>>;
+}
+
+const PREVIEW_RULES: FileListenerRules = {
+  segment: PREVIEW_FILES_SEGMENT,
+  headers: () => PREVIEW_HEADERS,
+};
+
+const answer = (
+  res: ServerResponse,
+  headers: Readonly<Record<string, string>>,
+  status: number,
+  text: string,
+) => {
+  res.writeHead(status, { ...headers, "content-type": "text/plain; charset=utf-8" });
   res.end(text);
 };
 
@@ -196,6 +215,7 @@ const serveFile = (
   lookup: Extract<PreviewLookup, { kind: "file" }>,
   req: IncomingMessage,
   res: ServerResponse,
+  headers: Readonly<Record<string, string>>,
 ) =>
   Effect.gen(function* () {
     const { folder } = lookup;
@@ -222,7 +242,7 @@ const serveFile = (
     const info = yield* Effect.tryPromise({ try: () => handle.stat(), catch: missing });
     if (!info.isFile() || info.size > PREVIEW_FILE_MAX_BYTES) return yield* missing();
     res.writeHead(200, {
-      ...PREVIEW_HEADERS,
+      ...headers,
       "content-type": CONTENT_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream",
       "content-length": String(info.size),
     });
@@ -239,7 +259,9 @@ const serveFile = (
     });
   }).pipe(
     Effect.scoped,
-    Effect.catchTag("PreviewMissing", () => Effect.sync(() => answer(res, 404, "not found"))),
+    Effect.catchTag("PreviewMissing", () =>
+      Effect.sync(() => answer(res, headers, 404, "not found")),
+    ),
   );
 
 /** The Host header's host, when it is loopback: anything else is a rebound name and is refused. */
@@ -249,19 +271,56 @@ const loopbackHost = (host: string | undefined): boolean => {
   return LOOPBACK.has(name.toLowerCase());
 };
 
-/** One request to the preview listener: GET or HEAD, on a loopback Host, for a file it may serve. */
-const handlePreviewRequest =
-  (folders: PreviewFolders) =>
+/** One request to a file listener: GET or HEAD, on a loopback Host, for a file it may serve. */
+export const handleFileRequest =
+  (folders: PreviewFolders, rules: FileListenerRules = PREVIEW_RULES) =>
   (req: IncomingMessage, res: ServerResponse): void => {
-    if (req.method !== "GET" && req.method !== "HEAD") return answer(res, 405, "read only");
-    if (!loopbackHost(req.headers.host)) return answer(res, 403, "not here");
-    const lookup = lookupPreview(folders, req.url ?? "/");
-    if (lookup.kind === "notFound") return answer(res, 404, "not found");
-    void Effect.runPromise(serveFile(folders, lookup, req, res)).catch(() => {
-      if (!res.headersSent) answer(res, 500, "unreadable");
+    const headers = rules.headers(req.headers.origin);
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      return answer(res, headers, 405, "read only");
+    }
+    if (!loopbackHost(req.headers.host)) return answer(res, headers, 403, "not here");
+    const lookup = lookupPreview(folders, req.url ?? "/", rules.segment);
+    if (lookup.kind === "notFound") return answer(res, headers, 404, "not found");
+    void Effect.runPromise(serveFile(folders, lookup, req, res, headers)).catch(() => {
+      if (!res.headersSent) answer(res, headers, 500, "unreadable");
       else res.destroy();
     });
   };
+
+/** A loopback listener on a port of its own for `handle`, closed with the scope; its port. */
+export const fileListener = (handle: ReturnType<typeof handleFileRequest>) =>
+  Effect.acquireRelease(
+    Effect.callback<ReturnType<typeof createServer>>((resume) => {
+      const created = createServer(handle);
+      created.once("error", (error) => resume(Effect.die(error)));
+      created.listen(0, "127.0.0.1", () => resume(Effect.succeed(created)));
+    }),
+    (created) =>
+      Effect.callback<void>((resume) => {
+        created.closeAllConnections();
+        created.close(() => resume(Effect.void));
+      }),
+  ).pipe(Effect.map((server) => (server.address() as AddressInfo).port));
+
+/**
+ * Grants `folder`, a resolved directory, a prefix under `folders`, and records which directory it
+ * is: another directory under its name since gets a prefix of its own, which a page loaded before
+ * never reaches.
+ */
+export const grantFolder = async (
+  folders: PreviewFolders,
+  folder: string,
+  kept: number = PREVIEW_FOLDERS_KEPT,
+): Promise<string> => {
+  const { dev, ino } = await stat(folder, { bigint: true });
+  const shown = folders.identity.get(folder);
+  if (shown !== undefined && (shown.dev !== dev || shown.ino !== ino))
+    forgetFolder(folders, folder);
+  const prefix = prefixFor(folders, folder, kept);
+  folders.identity.set(folder, { dev, ino });
+  return prefix;
+};
 
 export interface PreviewFilesShape {
   /**
@@ -286,19 +345,7 @@ export class PreviewFiles extends Context.Service<PreviewFiles, PreviewFilesShap
     PreviewFiles,
     Effect.gen(function* () {
       const folders = emptyPreviewFolders();
-      const server = yield* Effect.acquireRelease(
-        Effect.callback<ReturnType<typeof createServer>>((resume) => {
-          const created = createServer(handlePreviewRequest(folders));
-          created.once("error", (error) => resume(Effect.die(error)));
-          created.listen(0, "127.0.0.1", () => resume(Effect.succeed(created)));
-        }),
-        (created) =>
-          Effect.callback<void>((resume) => {
-            created.closeAllConnections();
-            created.close(() => resume(Effect.void));
-          }),
-      );
-      const port = (server.address() as AddressInfo).port;
+      const port = yield* fileListener(handleFileRequest(folders));
       return PreviewFiles.of({
         origin: `http://127.0.0.1:${port}`,
         urlFor: (real) =>
@@ -308,16 +355,7 @@ export class PreviewFiles extends Context.Service<PreviewFiles, PreviewFilesShap
               if ((await realPath(real)) !== real) throw new Error("changed since it was checked");
               if (isCredentialPath(real)) throw new Error("may hold credentials");
               if (!(await stat(real)).isFile()) throw new Error("not a file");
-              const folder = dirname(real);
-              const { dev, ino } = await stat(folder, { bigint: true });
-              // Another directory under the folder's name gets a prefix of its own: one a page
-              // loaded before never reaches it.
-              const shown = folders.identity.get(folder);
-              if (shown !== undefined && (shown.dev !== dev || shown.ino !== ino)) {
-                forgetFolder(folders, folder);
-              }
-              const prefix = prefixFor(folders, folder);
-              folders.identity.set(folder, { dev, ino });
+              const prefix = await grantFolder(folders, dirname(real));
               const name = encodeURIComponent(basename(real));
               return `http://127.0.0.1:${port}/${PREVIEW_FILES_SEGMENT}/${prefix}/${name}`;
             },
@@ -327,6 +365,33 @@ export class PreviewFiles extends Context.Service<PreviewFiles, PreviewFilesShap
     }),
   );
 }
+
+/**
+ * `target`'s real path, for granting its folder to a page: inside one of `roots`, resolved, or
+ * for a file outside them, in the folder it was written to, not one a link of its own leads to.
+ * `urlFor` takes it only while it still resolves to itself, so the folder checked is the folder
+ * granted.
+ */
+export const pageFolderCheck = (target: string, outside: boolean, roots: ReadonlyArray<string>) =>
+  Effect.tryPromise({
+    try: async () => {
+      const real = await realPath(target);
+      if (outside) return (await realPath(dirname(target))) === dirname(real) ? real : undefined;
+      for (const root of roots) {
+        const realRoot = await tryRealPath(root);
+        if (realRoot !== undefined && isInside(realRoot, real)) return real;
+      }
+      return undefined;
+    },
+    catch: () =>
+      new NotFound({ entity: "file", id: target, message: `${target} no longer exists` }),
+  }).pipe(
+    Effect.flatMap((real) =>
+      real === undefined
+        ? Effect.fail(new InvalidState({ message: `${target} changed while it was checked` }))
+        : Effect.succeed(real),
+    ),
+  );
 
 /** The tool calls that change a file, by the name their part carries (`tool-<name>`). */
 const FILE_WRITERS = new Set(["tool-Write", "tool-Edit", "tool-MultiEdit", "tool-NotebookEdit"]);

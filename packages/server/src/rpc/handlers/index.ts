@@ -7,6 +7,7 @@ import { ConnectorHandlersLive } from "./connectors.ts";
 import { ComposerHandlersLive } from "./composer-layer.ts";
 import { FileHandlersLive } from "./fs.ts";
 import { GitHandlersLive } from "./git.ts";
+import { PageHandlersLive } from "./pages.ts";
 import { ProjectHandlersLive } from "./projects.ts";
 import { SettingsHandlersLive } from "./settings.ts";
 import { TerminalHandlersLive } from "./terminal.ts";
@@ -26,6 +27,7 @@ export const RpcHandlersLayer = Layer.mergeAll(
   FileHandlersLive,
   GitHandlersLive,
   OrchestrationHandlersLive,
+  PageHandlersLive,
   ProjectHandlersLive,
   SettingsHandlersLive,
   TerminalHandlersLive,

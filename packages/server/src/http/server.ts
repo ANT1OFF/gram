@@ -30,6 +30,7 @@ import { PrAppToolsLive } from "../app-tools/pr-tools.ts";
 import { ReadAppToolsLive } from "../app-tools/read-tools.ts";
 import { WrapUpAppToolsLive } from "../app-tools/wrap-up-tool.ts";
 import { DocAppToolsLive } from "../app-tools/doc-tools.ts";
+import { PageAppToolsLive } from "../app-tools/page-tools.ts";
 import { Docs } from "../docs/docs.ts";
 import { ReviewRequestAppToolsLive } from "../app-tools/review-request-tools.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
@@ -96,6 +97,8 @@ import {
   type Actor,
 } from "./fronted-identity.ts";
 import { PreviewFiles } from "../preview/files.ts";
+import { PageFiles } from "../pages/page-files.ts";
+import { Pages } from "../pages/pages.ts";
 import { agentHostsOrHeadless, withHeadlessCheck } from "../host/headless.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
@@ -789,6 +792,7 @@ export const ServerCore = Layer.unwrap(
         ReadAppToolsLive,
         WrapUpAppToolsLive,
         DocAppToolsLive,
+        PageAppToolsLive,
         ReviewRequestAppToolsLive,
         OrchestrationAppToolsLive,
         OrchestratorAppToolsLive,
@@ -867,9 +871,10 @@ export const ServerCore = Layer.unwrap(
           Layer.provideMerge(ThreadPorts.layer),
           // The outputs service observes the runtimes for files their threads produce; the browser
           // tools record evidence there too.
-          // The docs a workspace's threads publish (`publish_doc`), kept in Gram's state.
+          // The docs a workspace's threads publish (`publish_doc`), and the pages its user pins,
+          // kept in Gram's state.
           Layer.provideMerge(
-            Layer.mergeAll(AppToolRegistry.layer, WorkspaceOutputs.layer, Docs.layer),
+            Layer.mergeAll(AppToolRegistry.layer, WorkspaceOutputs.layer, Docs.layer, Pages.layer),
           ),
           // The runtimes read the limit readings, which a limit wait falls back on for its reset.
           Layer.provideMerge(
@@ -927,6 +932,7 @@ export const ServerCore = Layer.unwrap(
                   EventHub.layer,
                   TerminalGate.layer,
                   PreviewFiles.layer,
+                  PageFiles.layer,
                   AppActivityLive,
                   ProcessRoots.layer,
                   // The inbound paths and timers of an embedding deployment, inert while the

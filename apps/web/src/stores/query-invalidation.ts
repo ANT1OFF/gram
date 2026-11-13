@@ -36,6 +36,7 @@ const STALE_QUERIES: {
   "routines.changed": ({ workspaceId }) => [["routines", workspaceId]],
   // A doc was published, updated or saved: its list and every open doc read again.
   "docs.changed": ({ workspaceId }) => [["docs", workspaceId]],
+  "pages.changed": ({ workspaceId }) => [["pages", workspaceId]],
   // An adoption or a restore replaces memory wholesale, so both go stale together.
   "dreams.changed": ({ workspaceId }) => [
     ["dreams", workspaceId],

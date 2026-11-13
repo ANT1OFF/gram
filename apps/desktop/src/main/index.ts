@@ -10,6 +10,7 @@ import {
   type AppUpdateState,
   type DesktopBridge,
   type MenuShortcuts,
+  pagesOriginFromMessage,
   type UpdateProgress,
 } from "@gram/contracts";
 import { createLogger, defaultDataDir, logDirFor } from "@gram/server/logging";
@@ -59,6 +60,7 @@ import {
 } from "@gram/shell/modules/agent-browser";
 import { installConnection } from "@gram/shell/modules/connection";
 import { installFonts } from "@gram/shell/modules/fonts";
+import { installPages, type PagesHost } from "@gram/shell/modules/pages";
 import { installPreview, PREVIEW_PARTITIONS, type PreviewHost } from "@gram/shell/modules/preview";
 import {
   createSpeechHost,
@@ -338,6 +340,10 @@ const treeCheckDeps: TreeCheckDeps = {
 /** Agents' pane commands, served once the app is up; until then a command finds no pane. */
 let agentPanes: AgentPanes | undefined;
 
+/** Pinned pages, once installed, and the page listener's origin as the server last announced it. */
+let pages: PagesHost | undefined;
+let pagesOrigin: unknown;
+
 const keepAwake = createKeepAwake(powerSaveBlocker);
 
 /** The server process (src/server); see `server-host.ts`. */
@@ -393,6 +399,11 @@ const server = createServerHost({
       if (response) reply(response);
     });
     servePaneMessage(message, agentPanes, reply);
+    const announced = pagesOriginFromMessage(message);
+    if (announced !== undefined) {
+      pagesOrigin = announced;
+      pages?.setOrigin(announced);
+    }
   },
   // With its agents, terminals and their children: killed outright, it can end none of them.
   forceKill: (pid) => {
@@ -854,6 +865,12 @@ async function runApp() {
     decodeFrame,
   });
   preview = installPreview(ipc, { openLink, log, agent: agentPanes });
+  // Pinned pages, in a session of their own that no agent reaches; the server says where they load.
+  pages = installPages(ipc, {
+    log,
+    guardPreload: join(__dirname, "../page-guard/page-guard.js"),
+  });
+  if (pagesOrigin !== undefined) pages.setOrigin(pagesOrigin);
   installTray(ipc, trayMode);
   // Downloaded through Chromium's network stack (`net`), so the system proxy, PAC, Kerberos and the
   // keychain's roots apply.
