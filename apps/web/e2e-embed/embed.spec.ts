@@ -304,6 +304,25 @@ test("the page of every thread and New take the embedding app's words", async ({
   await page.getByRole("radio", { name: /^One agent/ }).click();
   await expect(page.getByRole("button", { name: /^Start chat/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Start agent", exact: true })).toBeVisible();
+  // The app narrows Who does it to two choices in its own words, and words the button.
+  await expect(page.getByTestId("new-who-worker")).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      threadsPage: {
+        kinds: { solo: "One agent" },
+        newForm: {
+          task: "hidden",
+          team: { label: "Crew", line: "A lead splits it up." },
+          solo: { label: "Alone", start: "Start alone" },
+        },
+      },
+    });
+  });
+  await expect(page.getByTestId("new-who-worker")).toHaveCount(0);
+  await expect(page.getByTestId("new-who-orchestrator")).toBeVisible();
+  await expect(page.getByRole("radio", { name: /^Crew/ })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /^Alone/ })).toBeChecked();
+  await expect(page.getByRole("button", { name: "Start alone", exact: true })).toBeVisible();
   // Taken away again, Gram's own words return.
   await page.evaluate(() => {
     (window as unknown as Update).embed.update({ threadsPage: undefined, newEntry: undefined });

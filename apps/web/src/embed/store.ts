@@ -146,6 +146,9 @@ export const useThreadsTitle = () => useEmbedShell((s) => s.threadsPage.title ??
  */
 export const useSoloWord = () => useEmbedShell((s) => s.threadsPage.kinds?.solo);
 
+/** The New form's Who does it as the embedding app narrows and words it: undefined on Gram's own. */
+export const useNewForm = () => useEmbedShell((s) => s.threadsPage.newForm);
+
 /** Whether the sidebar lists Gram's own workspaces and threads: always, on Gram's own. */
 export const useThreadsListed = () => useEmbedShell((s) => s.threads === "shown");
 

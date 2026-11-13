@@ -239,6 +239,35 @@ export interface ShellThreadsPage {
    * of orchestrators and workers. Each is Gram's own word when left out.
    */
   readonly kinds?: ShellThreadKinds;
+  /**
+   * The New form's Who does it, narrowed and worded by an app whose people choose between fewer
+   * ways to start. Gram's three choices in its own words when left out.
+   */
+  readonly newForm?: ShellNewForm;
+}
+
+/** One of the New form's Who does it choices, in the embedding app's words. */
+export interface ShellNewChoice {
+  /** The choice's name: "Orchestrator". */
+  readonly label: string;
+  /** What comes of it, in one sentence under the name. Gram's own sentence when left out. */
+  readonly line?: string;
+  /** The words on the form's button with this choice picked: "Send to the orchestrator". */
+  readonly start?: string;
+}
+
+/** The New form's Who does it, as an embedding app narrows and words it. */
+export interface ShellNewForm {
+  /**
+   * `hidden` leaves out the choice of one worker straight away (Gram's "Task"), so the form asks
+   * only between an orchestrator and one agent. A shortcut or link that would open the form on
+   * that choice opens it on the orchestrator's. Shown when left out.
+   */
+  readonly task?: "shown" | "hidden";
+  /** The orchestrator's choice (Gram's "Team"). */
+  readonly team?: ShellNewChoice;
+  /** The choice of one agent in no workspace (Gram's "Chat"); its name wins over `kinds.solo` there. */
+  readonly solo?: ShellNewChoice;
 }
 
 /** The page of every thread's words for a thread's kind. */
