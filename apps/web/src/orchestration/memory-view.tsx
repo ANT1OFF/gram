@@ -48,7 +48,7 @@ import { useWorkspacesQuery } from "./use-orchestration";
 
 const SECTION = "flex flex-col gap-3 rounded-(--radius-md) border border-edge bg-card/40 p-3";
 /** A tab's one line on what it is for, beside its action. */
-const LEAD = "min-w-0 flex-1 text-meta text-muted-foreground";
+const LEAD = "min-w-0 flex-1 text-meta text-pretty text-muted-foreground";
 /** A size beside its cap, the cap as short as it reads: 32 KB, not 32.0 KB. */
 const capText = (cap: number): string => `${cap / 1024} KB`;
 const INPUT =
@@ -738,8 +738,10 @@ export function MemoryView({
         <TabsList
           aria-label="Memory"
           data-testid="memory-tabs"
-          // On a phone the tabs keep one line each and the row scrolls sideways.
-          className="sticky top-0 z-10 bg-thread px-4 phone:overflow-x-auto phone:[scrollbar-width:none] phone:[&_[data-slot=tabs-indicator]]:bottom-0 phone:whitespace-nowrap phone:[&>button]:h-11 phone:[&>button]:shrink-0"
+          // On a phone the tabs keep one line each and the row scrolls sideways. Its right edge
+          // fades, so a tab cut by the window reads as more to scroll to, with room after the
+          // last for it to clear the fade.
+          className="sticky top-0 z-10 bg-thread px-4 phone:overflow-x-auto phone:pe-10 phone:[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] phone:[scrollbar-width:none] phone:[&_[data-slot=tabs-indicator]]:bottom-0 phone:whitespace-nowrap phone:[&>button]:h-11 phone:[&>button]:shrink-0"
         >
           <TabsTrigger value="overview" data-testid="memory-tab-overview">
             Current memory
@@ -833,10 +835,11 @@ export function MemoryView({
               />
             )}
           </TabsContent>
-          <TabsContent value="decisions">
+          {/* Decisions and History sit in the column Current memory reads in, not edge to edge. */}
+          <TabsContent value="decisions" className="thread-column">
             <Questions state={state} />
           </TabsContent>
-          <TabsContent value="history">
+          <TabsContent value="history" className="thread-column">
             <Versions workspaceId={workspaceId} />
           </TabsContent>
           <TabsContent value="update">
