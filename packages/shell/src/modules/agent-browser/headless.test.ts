@@ -1,12 +1,20 @@
+import { createSocket } from "node:dgram";
+import { readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
+import { networkInterfaces } from "node:os";
 import { PassThrough } from "node:stream";
 
 import type { PaneCommand } from "@gram/contracts/link-trust";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { NO_BROWSER, headlessPanes, offLoopback } from "./headless-host.ts";
 import {
+  HEADLESS_PAGE_LIMIT,
+  LOAD_DEADLINE_MS,
+  browserEnv,
   headlessArgs,
+  headlessViews,
+  launchHeadless,
   openHeadlessPage,
   pipeConnection,
   type CdpConnection,
@@ -60,12 +68,14 @@ const fakeBrowser = () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       const verdict = sent
         .slice(before)
-        .find(
-          (entry) =>
-            entry.method === "Fetch.continueRequest" || entry.method === "Fetch.failRequest",
-        );
-      if (verdict !== undefined)
-        return verdict.method === "Fetch.continueRequest" ? "allow" : "block";
+        .find((entry) => entry.method.startsWith("Fetch.") && entry.method !== "Fetch.enable");
+      if (verdict !== undefined) {
+        return verdict.method === "Fetch.continueRequest"
+          ? "allow"
+          : verdict.method === "Fetch.fulfillRequest"
+            ? "stay"
+            : "block";
+      }
     }
     throw new Error("No verdict for the paused request.");
   };
@@ -75,8 +85,31 @@ const fakeBrowser = () => {
 describe("headlessArgs", () => {
   it("sends everything but loopback to a closed proxy, and drops the sandbox only when told", () => {
     expect(headlessArgs("/tmp/profile", true)).toContain("--proxy-server=http://127.0.0.1:9");
+    // Chromium's own bypass reaches link-local addresses too; only loopback is named instead.
+    expect(headlessArgs("/tmp/profile", true)).toContain(
+      "--proxy-bypass-list=<-loopback>;127.0.0.1;[::1];localhost",
+    );
+    expect(headlessArgs("/tmp/profile", true)).toContain(
+      "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+    );
     expect(headlessArgs("/tmp/profile", true)).not.toContain("--no-sandbox");
     expect(headlessArgs("/tmp/profile", false)).toContain("--no-sandbox");
+  });
+});
+
+describe("browserEnv", () => {
+  it("keeps where things are and drops tokens and debug switches", () => {
+    expect(
+      browserEnv({
+        PATH: "/usr/bin",
+        HOME: "/home/gram",
+        LANG: "C.UTF-8",
+        NODE_OPTIONS: "--inspect",
+        GH_TOKEN: "invented-token",
+        HTTPS_PROXY: "http://proxy.invalid:3128",
+        GRAM_BROWSER_EXECUTABLE: "/usr/bin/chromium",
+      }),
+    ).toEqual({ PATH: "/usr/bin", HOME: "/home/gram", LANG: "C.UTF-8" });
   });
 });
 
@@ -125,7 +158,9 @@ describe("openHeadlessPage", () => {
     const page = await openHeadlessPage(browser.connection, () => undefined);
     expect(page.getURL()).toBe("about:blank");
     const methods = browser.sent.map((entry) => entry.method);
-    expect(methods.slice(0, 3)).toEqual([
+    // New targets are held first, so nothing the page opens loads before it is looked at.
+    expect(methods.slice(0, 4)).toEqual([
+      "Target.setAutoAttach",
       "Target.createBrowserContext",
       "Target.createTarget",
       "Target.attachToTarget",
@@ -149,10 +184,11 @@ describe("openHeadlessPage", () => {
     expect(await browser.pause("http://127.0.0.1:3000/", "Document")).toBe("allow");
     expect(await browser.pause("http://localhost:3000/app.js", "Script")).toBe("allow");
     expect(await browser.pause("data:text/plain,hi", "Image")).toBe("allow");
-    expect(await browser.pause("https://example.com/", "Document")).toBe("block");
+    // A navigation the page started is ended without content, so its document stays.
+    expect(await browser.pause("https://example.com/", "Document")).toBe("stay");
     expect(await browser.pause("https://example.com/x.js", "Script")).toBe("block");
     expect(await browser.pause("http://10.0.0.5/", "XHR")).toBe("block");
-    expect(await browser.pause("file:///etc/passwd", "Document")).toBe("block");
+    expect(await browser.pause("file:///etc/passwd", "Document")).toBe("stay");
     expect(browser.sent).toContainEqual(
       expect.objectContaining({
         method: "Fetch.failRequest",
@@ -180,7 +216,7 @@ describe("openHeadlessPage", () => {
     const started: Array<string> = [];
     page.on("did-start-navigation", (details) => started.push(details.url));
 
-    expect(await browser.pause("http://127.0.0.1:3000/a", "Document")).toBe("block");
+    expect(await browser.pause("http://127.0.0.1:3000/a", "Document")).toBe("stay");
     expect(asked).toEqual(["navigation http://127.0.0.1:3000/a"]);
     expect(started).toEqual([]);
 
@@ -265,6 +301,106 @@ const navigateMessage = (command: PaneCommand) => ({
   request: { threadId: "t", limits: { actOnLoopbackOnly: false }, command },
 });
 
+describe("openHeadlessPage, what it closes", () => {
+  it("fails the app's own load loudly, so the command that asked hears", async () => {
+    const browser = fakeBrowser();
+    const page = await openHeadlessPage(browser.connection, () => ({
+      navigation: () => "block",
+      request: () => undefined,
+    }));
+    void page.loadURL("http://127.0.0.1:3000/app").catch(() => {});
+    expect(await browser.pause("http://127.0.0.1:3000/app", "Document")).toBe("block");
+  });
+
+  it("stops a load whose server never answers, so the thread's commands go on", async () => {
+    vi.useFakeTimers();
+    try {
+      const browser = fakeBrowser();
+      const page = await openHeadlessPage(browser.connection, () => undefined);
+      const send = browser.connection.send;
+      browser.connection.send = (method, params, sessionId) =>
+        method === "Page.navigate" ? new Promise(() => {}) : send(method, params, sessionId);
+      const load = page.loadURL("http://127.0.0.1:3000/never");
+      const failed = expect(load).rejects.toThrow("The page didn't answer in time.");
+      await vi.advanceTimersByTimeAsync(LOAD_DEADLINE_MS);
+      await failed;
+      expect(browser.sent).toContainEqual({ method: "Page.stopLoading", sessionId: "own" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("starts the thread's own page, closes a window it opens, and gates a worker", async () => {
+    const browser = fakeBrowser();
+    await openHeadlessPage(browser.connection, () => undefined);
+    const attach = (sessionId: string, targetId: string, type: string, context: string) =>
+      browser.emit("Target.attachedToTarget", {
+        sessionId,
+        waitingForDebugger: true,
+        targetInfo: { targetId, type, browserContextId: context },
+      });
+    attach("auto-own", "target-1", "page", "context-1");
+    attach("auto-popup", "popup-1", "page", "context-1");
+    attach("auto-worker", "worker-1", "service_worker", "context-1");
+    attach("auto-other", "other", "page", "browser-own");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(browser.sent.filter((entry) => entry.method === "Target.closeTarget")).toEqual([
+      { method: "Target.closeTarget", params: { targetId: "popup-1" } },
+    ]);
+    const resumed = browser.sent
+      .filter((entry) => entry.method === "Runtime.runIfWaitingForDebugger")
+      .map((entry) => entry.sessionId);
+    expect(resumed.toSorted()).toEqual(["auto-other", "auto-own", "auto-worker"]);
+    expect(browser.sent).toContainEqual(
+      expect.objectContaining({ method: "Fetch.enable", sessionId: "auto-worker" }),
+    );
+    // The worker's own requests get the local rules: loopback goes, anything else doesn't.
+    const before = browser.sent.length;
+    const paused = (requestId: string, url: string) =>
+      browser.emit(
+        "Fetch.requestPaused",
+        { requestId, request: { url, method: "GET" }, frameId: "", resourceType: "Fetch" },
+        "auto-worker",
+      );
+    paused("w1", "http://127.0.0.1:3000/api");
+    paused("w2", "http://169.254.169.254/latest/meta-data/");
+    expect(browser.sent.slice(before)).toEqual([
+      { method: "Fetch.continueRequest", params: { requestId: "w1" }, sessionId: "auto-worker" },
+      {
+        method: "Fetch.failRequest",
+        params: { requestId: "w2", errorReason: "BlockedByClient" },
+        sessionId: "auto-worker",
+      },
+    ]);
+  });
+});
+
+describe("headlessViews", () => {
+  it("keeps a page for the threads used last, and closes the oldest for the next", async () => {
+    const browser = fakeBrowser();
+    const closed: Array<string> = [];
+    const views = headlessViews(
+      browser.connection,
+      () => undefined,
+      () => {},
+      (threadId) => closed.push(threadId),
+    );
+    const first = await views.contentsFor("thread-0", true);
+    for (let i = 1; i < HEADLESS_PAGE_LIMIT; i++) await views.contentsFor(`thread-${i}`, true);
+    expect(await views.contentsFor("thread-0", false)).toBe(first);
+    expect(closed).toEqual([]);
+    await views.contentsFor("another", true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // thread-0 was used again just now, so thread-1 is the one that goes.
+    expect(closed).toEqual(["thread-1"]);
+    expect(first!.isDestroyed()).toBe(false);
+    expect(await views.contentsFor("thread-1", false)).toBeUndefined();
+    expect(browser.sent.some((entry) => entry.method === "Target.disposeBrowserContext")).toBe(
+      true,
+    );
+  });
+});
+
 describe("offLoopback", () => {
   it("refuses a navigation anywhere but loopback, and leaves every other command alone", () => {
     expect(offLoopback(navigateMessage({ op: "navigate", url: "https://example.com/" }))).toBe(
@@ -311,12 +447,14 @@ describe.skipIf(executable === undefined || executable === "")("headless panes i
   let server: Server;
   let origin = "";
   let fetched = 0;
+  let popups = 0;
   beforeAll(async () => {
     server = createServer((request, response) => {
       if (request.url === "/data") fetched++;
+      if (request.url === "/popup") popups++;
       response.setHeader("content-type", "text/html");
       response.end(
-        `<title>Owned fixture</title><button onclick="this.textContent='Pressed';document.title='Pressed'">Press me</button>` +
+        `<title>Owned fixture</title><button onclick="this.textContent='Pressed';document.title='Pressed'">Press me</button><a target="_blank" href="/popup">Open popup</a>` +
           `<script>fetch('/data');fetch('https://example.com/x').then(()=>{document.body.dataset.out='reached'},()=>{document.body.dataset.out='stopped'})</script>`,
       );
     });
@@ -352,6 +490,101 @@ describe.skipIf(executable === undefined || executable === "")("headless panes i
       expect(fetched).toBeGreaterThan(0);
     } finally {
       await close();
+    }
+  }, 60_000);
+
+  it("keeps the page where it is when the page itself tries to leave loopback", async () => {
+    const { panes, close } = headlessPanes({ executable: executable!, sandbox: false });
+    try {
+      const command = (input: PaneCommand) =>
+        panes.serve({ threadId: "owned", limits: { actOnLoopbackOnly: false }, command: input });
+      expect(await command({ op: "navigate", url: `${origin}/` })).toMatchObject({ ok: true });
+      await command({ op: "evaluate", expression: "location.href = 'https://example.com/'; 1" });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const text = await command({ op: "text" });
+      expect(text).toMatchObject({ ok: true, page: { url: `${origin}/` } });
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+  it("closes a window the page opens, so nothing loads outside the checks", async () => {
+    const { panes, close } = headlessPanes({ executable: executable!, sandbox: false });
+    try {
+      const command = (input: PaneCommand) =>
+        panes.serve({ threadId: "owned", limits: { actOnLoopbackOnly: false }, command: input });
+      expect(await command({ op: "navigate", url: `${origin}/` })).toMatchObject({ ok: true });
+      const before = popups;
+      const snapshot = await command({ op: "snapshot" });
+      const ref = /link "Open popup" \[(ref_\d+)\]/.exec(
+        snapshot.ok ? (snapshot.content ?? "") : "",
+      );
+      expect(ref).not.toBeNull();
+      await command({ op: "click", ref: ref![1]! });
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      // Still the thread's own page, and usable.
+      expect(await command({ op: "text" })).toMatchObject({
+        ok: true,
+        page: { url: `${origin}/` },
+      });
+      expect(popups).toBe(before);
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+  // A UDP listener on one of this machine's own addresses that isn't loopback, where there is one.
+  const outside = Object.values(networkInterfaces())
+    .flat()
+    .find((entry) => entry !== undefined && entry.family === "IPv4" && !entry.internal)?.address;
+
+  it.skipIf(outside === undefined)(
+    "sends no WebRTC packet off loopback",
+    async () => {
+      const socket = createSocket("udp4");
+      let packets = 0;
+      socket.on("message", () => packets++);
+      await new Promise<void>((resolve) => socket.bind(0, outside, resolve));
+      const { port } = socket.address();
+      const { panes, close } = headlessPanes({ executable: executable!, sandbox: false });
+      try {
+        const command = (input: PaneCommand) =>
+          panes.serve({ threadId: "owned", limits: { actOnLoopbackOnly: false }, command: input });
+        expect(await command({ op: "navigate", url: `${origin}/` })).toMatchObject({ ok: true });
+        await command({
+          op: "evaluate",
+          expression: `(() => {
+          const peer = new RTCPeerConnection({ iceServers: [{ urls: "stun:${outside}:${port}" }] });
+          peer.createDataChannel("x");
+          peer.createOffer().then((offer) => peer.setLocalDescription(offer));
+          return 1;
+        })()`,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        expect(packets).toBe(0);
+      } finally {
+        await close();
+        socket.close();
+      }
+    },
+    60_000,
+  );
+
+  it("starts the browser with none of this process's other variables", async () => {
+    process.env["GRAM_TEST_INVENTED_SECRET"] = "invented";
+    const browser = launchHeadless({ executable: executable!, sandbox: false });
+    try {
+      const { processInfo } = (await browser.connection.send("SystemInfo.getProcessInfo")) as {
+        processInfo: Array<{ type: string; id: number }>;
+      };
+      const pid = processInfo.find((entry) => entry.type === "browser")?.id;
+      expect(pid).toBeTypeOf("number");
+      const environ = readFileSync(`/proc/${pid}/environ`, "utf8");
+      expect(environ).not.toContain("GRAM_TEST_INVENTED_SECRET");
+      expect(environ).not.toContain("NODE_OPTIONS");
+    } finally {
+      delete process.env["GRAM_TEST_INVENTED_SECRET"];
+      await browser.close();
     }
   }, 60_000);
 });

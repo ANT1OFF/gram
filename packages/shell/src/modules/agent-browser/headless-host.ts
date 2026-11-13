@@ -80,6 +80,7 @@ export const headlessPanes = (options: {
       started.connection,
       () => panes,
       (error) => log.warn({ source: "headless-browser", error: String(error) }, "no page"),
+      (threadId) => panes.closed(threadId),
     );
     views = made;
     started.connection.onClose(() => {

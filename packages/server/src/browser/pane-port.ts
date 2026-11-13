@@ -114,6 +114,30 @@ export const bridgePane = (
 
 type Fork = (modulePath: string, args: ReadonlyArray<string>, options: ForkOptions) => ChildProcess;
 
+/** What the browser host is started with: where things are, and which browser to run. */
+const HOST_ENV = [
+  "PATH",
+  "HOME",
+  "TMPDIR",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TZ",
+  "FONTCONFIG_PATH",
+  "FONTCONFIG_FILE",
+  "GRAM_BROWSER_EXECUTABLE",
+  "GRAM_BROWSER_SANDBOX",
+] as const;
+
+/**
+ * The host's environment out of the server's: none of its tokens, proxies or debug switches
+ * (`NODE_OPTIONS` among them) reach a process that renders pages an agent wrote.
+ */
+export const browserHostEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>
+  Object.fromEntries(
+    HOST_ENV.flatMap((name) => (env[name] === undefined ? [] : [[name, env[name]]])),
+  );
+
 const hostGone = (id: string): PaneResponseMessage => ({
   type: "pane.response",
   id,
@@ -138,6 +162,7 @@ export const forkedPanePort = (modulePath: string, fork: Fork = nodeFork): PaneM
       stdio: ["ignore", "inherit", "inherit", "ipc"],
       // Not the server's own flags, such as `--watch` in development.
       execArgv: [],
+      env: browserHostEnv(process.env),
     });
     child = started;
     started.on("message", (message) => {
@@ -152,7 +177,7 @@ export const forkedPanePort = (modulePath: string, fork: Fork = nodeFork): PaneM
       for (const id of unanswered) deliver(hostGone(id));
     };
     started.once("exit", stopped);
-    started.once("error", stopped);
+    started.on("error", stopped);
     return started;
   };
   return {

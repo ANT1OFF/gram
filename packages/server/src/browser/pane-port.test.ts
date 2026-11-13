@@ -1,11 +1,11 @@
-import type { ChildProcess } from "node:child_process";
+import type { ChildProcess, ForkOptions } from "node:child_process";
 import { EventEmitter } from "node:events";
 
 import type { PaneRequest, PaneResult } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
-import { bridgePane, forkedPanePort } from "./pane-port.ts";
+import { bridgePane, browserHostEnv, forkedPanePort } from "./pane-port.ts";
 
 const REQUEST: PaneRequest = {
   threadId: "thread-1",
@@ -19,8 +19,10 @@ const OK: PaneResult = { ok: true, page: null };
 const fakeHost = () => {
   const children: Array<EventEmitter & { sent: Array<unknown> }> = [];
   let answer: ((message: { type: string; id: string }) => unknown) | undefined;
-  const fork = (modulePath: string) => {
+  const fork = (modulePath: string, _args: ReadonlyArray<string>, options: ForkOptions) => {
     expect(modulePath).toBe("/opt/host.ts");
+    expect(options.execArgv).toEqual([]);
+    expect(options.env).toEqual(browserHostEnv(process.env));
     const child = Object.assign(new EventEmitter(), {
       sent: [] as Array<unknown>,
       send: (message: { type: string; id: string }, callback: (error: Error | null) => void) => {
@@ -104,5 +106,28 @@ describe("forkedPanePort", () => {
       { type: "pane.request", id: "a", request: REQUEST },
       { type: "pane.cancel", id: "a" },
     ]);
+  });
+});
+
+describe("browserHostEnv", () => {
+  it("hands the host where things are and which browser, and none of the server's secrets", () => {
+    expect(
+      browserHostEnv({
+        PATH: "/usr/bin",
+        HOME: "/home/gram",
+        GRAM_BROWSER_EXECUTABLE: "/usr/bin/chromium",
+        GRAM_BROWSER_SANDBOX: "0",
+        NODE_OPTIONS: "--inspect",
+        GH_DEBUG: "1",
+        GH_TOKEN: "invented-token",
+        HTTPS_PROXY: "http://proxy.invalid:3128",
+        GRAM_DECISION_HOOK_TOKEN: "invented-hook-token",
+      }),
+    ).toEqual({
+      PATH: "/usr/bin",
+      HOME: "/home/gram",
+      GRAM_BROWSER_EXECUTABLE: "/usr/bin/chromium",
+      GRAM_BROWSER_SANDBOX: "0",
+    });
   });
 });

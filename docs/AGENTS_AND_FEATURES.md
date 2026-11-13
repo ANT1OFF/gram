@@ -1416,14 +1416,22 @@ evidence work as in the app. Without that variable the tools answer that there i
 before.
 
 That browser reaches the server's loopback only: an agent's dev server there, never the internet
-or a private network. Chromium starts with every connection sent to a closed proxy, which it skips
-only for loopback; each request is also paused and put to the pane's rules, then to the Preview's
-local-session rules. A `browser_navigate` anywhere else is refused before any card. Each thread's
-page is a browser context of its own, sharing no cookies or storage, and the profile is a fresh
-temp folder, removed when the browser stops. The browser starts on the first command and starts
-again on the next command after it stops. Recording (`browser_record`) needs the desktop app's image decoder
-and doesn't work here. You don't see the page yet: streaming it to the web app and taking over
-from there come later.
+or a private network. Chromium starts with every connection sent to a closed proxy, with loopback
+alone exempt (its usual exemption for link-local addresses, where a cloud's metadata service
+lives, is taken away), and WebRTC may use that proxy or nothing, so it sends no UDP. Each of the
+page's requests is also paused and put to the pane's rules, then to the Preview's local-session
+rules; a worker's requests get the local-session rules. A window the page opens is closed before
+it loads anything, since no command drives it. A `browser_navigate` anywhere else is refused
+before any card, and a navigation the page itself starts off loopback ends where it began.
+
+Each thread's page is a browser context of its own, sharing no cookies or storage. Four threads
+keep a page at once; the one used longest ago closes for the next. The profile is a fresh temp
+folder, removed when the browser stops. The browser starts on the first command and starts again
+on the next command after it stops. Neither the browser host nor Chromium gets the server's
+environment: only the paths, locale and font settings, and the variables below. A load whose
+server doesn't answer in 30 seconds is stopped. Recording (`browser_record`) needs the desktop
+app's image decoder and doesn't work here. You don't see the page yet: streaming it to the web
+app and taking over from there come later.
 
 | Variable                  | What it sets                                                                 |
 | ------------------------- | ---------------------------------------------------------------------------- |
