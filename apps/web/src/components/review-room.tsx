@@ -92,8 +92,8 @@ const SETTLE_MS = 400;
  * wide, the window narrowed, a review opened in a narrow window) goes into Focus review on its own,
  * which gives it the window and leaves the conversation a strip (Esc or Restore gives it back). It
  * waits for the layout to settle, so a drag of the panel's edge or the window's ends first. A window
- * that opens that way is left as it was, with Focus review offered beside the tabs: the
- * conversation is what a launch shows. Left while still short of room, focus is not taken again until the review has had
+ * that opens that way, or a thread come to that way, is left as it was, with Focus review offered
+ * beside the tabs: the conversation is what a launch or a thread shows first. Left while still short of room, focus is not taken again until the review has had
  * room. Mounted once, by the shell.
  */
 export function useAutoReviewFocus() {
@@ -139,7 +139,14 @@ export function useAutoReviewFocus() {
       if (!fit.reviewCramped) {
         armed = false;
         if (room.declined) useReviewRoom.setState({ declined: false });
-      } else if (!before.reviewCramped) armed = true;
+      } else if (!before.reviewCramped) {
+        // Coming to a thread is an arrival too, at launch or from another page: its conversation
+        // is what shows, with Focus review offered. Only a change made on the thread arms it.
+        armed =
+          s.threadInView === prev.threadInView &&
+          s.threadQuiet === prev.threadQuiet &&
+          s.panelBarred === prev.panelBarred;
+      }
       schedule();
     };
     const down = () => {

@@ -1,5 +1,5 @@
 import { Outlet } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useAutoReviewFocus } from "@/components/review-room";
 import { RightPanel, useShowPanelRequests } from "@/components/right-panel";
@@ -38,6 +38,7 @@ export function AppShell() {
   const reviewTab = useLayoutStore(reviewSized);
   const level = useMotionLevel();
   const [resizing, setResizing] = useState(false);
+  const content = useRef<HTMLElement>(null);
   const quiet = useViewStore((s) => s.quiet);
   const {
     fit,
@@ -92,6 +93,18 @@ export function AppShell() {
   // nothing while the chat keeps its width under the panel, so the transcript isn't laid out anew.
   return (
     <>
+      {/* The keyboard's first stop: past the sidebar to the page. Seen only while it has focus. */}
+      <a
+        href="#content"
+        data-testid="skip-to-content"
+        className="fixed top-2 left-2 z-50 -translate-y-16 rounded-lg border border-edge bg-background px-3 py-2 text-body text-foreground shadow-overlay outline-none focus:translate-y-0 focus-visible:focus-ring"
+        onClick={(event) => {
+          event.preventDefault();
+          content.current?.focus();
+        }}
+      >
+        Skip to content
+      </a>
       <div
         data-testid="app-shell"
         inert={quiet}
@@ -127,10 +140,12 @@ export function AppShell() {
           )}
         </div>
         <main
+          ref={content}
+          tabIndex={-1}
           inert={chatCovered}
           // Its own stacking context, so nothing layered inside the chat rises over the panel above it.
           className={cn(
-            "isolate flex min-h-0 min-w-0 flex-col bg-thread",
+            "isolate flex min-h-0 min-w-0 flex-col bg-thread outline-none",
             panelLeft ? "order-3" : "order-2",
           )}
           style={chatCovered ? { width: chatWidth } : undefined}
