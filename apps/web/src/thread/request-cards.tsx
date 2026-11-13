@@ -1005,8 +1005,9 @@ function WorkspaceDiff({
 }
 
 /**
- * What an Allow covers when the card leads with one field of the input: that field, the rest of the
- * arguments on a quiet line under it, the description, and the whole input under Details. Two
+ * What an Allow covers when the card leads with one field of the input: the description as a plain
+ * sentence, that field, the rest of the arguments on a quiet line under it, and the whole input
+ * under Details. Two
  * requests for the same command with different arguments read differently here, as the inbox keeps
  * them apart.
  */
@@ -1018,6 +1019,13 @@ export function ApprovalInput({ request }: { request: ApprovalRequest }) {
     approvalSubject(request) !== JSON.stringify(request.input);
   return (
     <>
+      {/* What it is for, in the agent's words, before the input: the input stays in the open under
+          it, since the words are the agent's and the input is what an Allow covers. */}
+      {request.description && (
+        <p data-testid="approval-description" className="mb-2">
+          {request.description}
+        </p>
+      )}
       <pre className="overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-meta whitespace-pre-wrap">
         {approvalSubject(request)}
       </pre>
@@ -1033,9 +1041,6 @@ export function ApprovalInput({ request }: { request: ApprovalRequest }) {
             </span>
           ))}
         </p>
-      )}
-      {request.description && (
-        <p className="mt-2 text-meta text-muted-foreground">{request.description}</p>
       )}
       {more && <ApprovalDetailsFold details={approvalDetails(request)} />}
     </>
