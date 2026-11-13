@@ -2817,21 +2817,22 @@ export const browserFor = (
 };
 
 /**
- * `browserFor` as the session policy's fields: `browser`, the sites and apps the user limits it
- * to (`browserScope`), and for a Codex thread the surfaces of computer use the user kept
+ * `browserFor` as the session policy's fields: `browser`, the sites and apps it is limited to
+ * (`browserScope`: its workspace's lists in `charter`, otherwise the user-wide ones), and for a Codex thread the surfaces of computer use the user kept
  * (`codexSurfaces`), left out while they are all kept.
  */
 export const browserGrant = (
   thread: Pick<Thread, "role" | "spawnedBy" | "browser" | "model">,
   audience: ToolAudience,
   settings: Settings,
+  charter?: Pick<OrchestratorCharter, "browserSites" | "browserApps">,
 ): {
   readonly browser?: true;
   readonly browserSurfaces?: CodexSurfaces;
   readonly browserScope?: BrowserScope;
 } => {
   if (!browserFor(thread, audience, settings)) return {};
-  const scope = browserScope(settings);
+  const scope = browserScope(settings, charter);
   const limited = scope === undefined ? {} : { browserScope: scope };
   if (thread.model.agent !== "codex") return { browser: true, ...limited };
   const surfaces = codexSurfaces(settings);

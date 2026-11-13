@@ -3813,6 +3813,24 @@ describe("browserGrant", () => {
     });
     expect(browserGrant({ ...codex, browser: false }, "plain", limited)).toEqual({});
   });
+
+  it("takes a workspace's own list in place of the user-wide one", () => {
+    const limited = {
+      ...on,
+      agents: { ...on.agents, browserSites: ["github.com"], browserApps: ["com.apple.Safari"] },
+    };
+    expect(
+      browserGrant(codex, "plain", limited, { browserSites: ["linear.app", "not a host"] }),
+    ).toEqual({
+      browser: true,
+      browserScope: { sites: ["linear.app"], apps: ["com.apple.Safari"] },
+    });
+    // An empty list of its own leaves the user-wide one.
+    expect(browserGrant(codex, "plain", limited, { browserSites: [] })).toEqual({
+      browser: true,
+      browserScope: { sites: ["github.com"], apps: ["com.apple.Safari"] },
+    });
+  });
 });
 
 describe("browserFor", () => {

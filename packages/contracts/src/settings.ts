@@ -785,18 +785,38 @@ export const BrowserScope = Schema.Struct({
 export type BrowserScope = typeof BrowserScope.Type;
 const scopeEntries = (
   entries: ReadonlyArray<string> | undefined,
+  problemOf: (entry: string) => string | undefined,
   lower: boolean,
 ): Array<string> => [
   ...new Set(
     (entries ?? [])
-      .map((entry) => (lower ? entry.trim().toLowerCase() : entry.trim()))
-      .filter((entry) => entry !== ""),
+      .filter((entry) => problemOf(entry) === undefined)
+      .map((entry) => (lower ? entry.trim().toLowerCase() : entry.trim())),
   ),
 ];
-/** The user's limits on a lent browser; absent when they list neither sites nor apps. */
-export const browserScope = (settings: Pick<Settings, "agents">): BrowserScope | undefined => {
-  const sites = scopeEntries(settings.agents.browserSites, true);
-  const apps = scopeEntries(settings.agents.browserApps, false);
+/**
+ * The limits on a lent browser: a workspace's own list (`charter`) where it has one, otherwise
+ * the user-wide one, sites and apps each on their own. Absent when neither is listed anywhere.
+ */
+export const browserScope = (
+  settings: Pick<Settings, "agents">,
+  charter?: {
+    readonly browserSites?: ReadonlyArray<string>;
+    readonly browserApps?: ReadonlyArray<string>;
+  },
+): BrowserScope | undefined => {
+  const own = {
+    sites: scopeEntries(charter?.browserSites, browserSiteProblem, true),
+    apps: scopeEntries(charter?.browserApps, browserAppProblem, false),
+  };
+  const sites =
+    own.sites.length > 0
+      ? own.sites
+      : scopeEntries(settings.agents.browserSites, browserSiteProblem, true);
+  const apps =
+    own.apps.length > 0
+      ? own.apps
+      : scopeEntries(settings.agents.browserApps, browserAppProblem, false);
   if (sites.length === 0 && apps.length === 0) return undefined;
   return { ...(sites.length === 0 ? {} : { sites }), ...(apps.length === 0 ? {} : { apps }) };
 };

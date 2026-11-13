@@ -67,7 +67,7 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
           // Only where the user lets it, and only outward: the agent's own peer messaging would
           // reach a session past Gram's routing, so workers and plain threads never have it.
           ...(orchestratorPeerMessaging(settings) ? { peerMessaging: true } : {}),
-          ...browserGrant(thread, audience, settings),
+          ...browserGrant(thread, audience, settings, state.charter),
           ...mcpListsFor({
             audience,
             orchestrated:
@@ -100,7 +100,7 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
         return {
           audience,
           outwardGate,
-          ...browserGrant(thread, audience, settings),
+          ...browserGrant(thread, audience, settings, state?.charter),
           ...mcpListsFor({ audience, orchestrated: undefined, charter: state?.charter }),
           instructions: workerPrompt({
             feature: thread.spawnedBy.feature,
