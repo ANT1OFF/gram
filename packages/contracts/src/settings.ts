@@ -259,6 +259,15 @@ export const AgentSettings = Schema.Struct({
    */
   codexComputerUse: Schema.optionalKey(Schema.Boolean),
   /**
+   * Which of computer use's surfaces a Codex thread given the browser keeps: the user's Chrome
+   * through the ChatGPT extension, the ChatGPT app's own browser, and Mac apps. Read through
+   * `codexSurfaces`; each is kept unless turned off, and none reaches a thread without
+   * `codexComputerUse`.
+   */
+  codexChrome: Schema.optionalKey(Schema.Boolean),
+  codexInAppBrowser: Schema.optionalKey(Schema.Boolean),
+  codexMacApps: Schema.optionalKey(Schema.Boolean),
+  /**
    * The worker model roster a new workspace's charter starts with; absent or empty starts it with
    * none, so its workers run on the orchestrator's model.
    */
@@ -716,6 +725,22 @@ export const browserUseAllowed = (settings: Pick<Settings, "agents">, agent: Age
   agent === "claude"
     ? settings.agents.claudeInChrome === true
     : settings.agents.codexComputerUse === true;
+/**
+ * The surfaces of Codex computer use a session opened with the browser keeps: the user's Chrome
+ * (the ChatGPT extension), the ChatGPT app's own browser, and Mac apps.
+ */
+export const CodexSurfaces = Schema.Struct({
+  chrome: Schema.Boolean,
+  inApp: Schema.Boolean,
+  apps: Schema.Boolean,
+});
+export type CodexSurfaces = typeof CodexSurfaces.Type;
+/** Which surfaces Codex threads given the browser keep; each one unless turned off. */
+export const codexSurfaces = (settings: Pick<Settings, "agents">): CodexSurfaces => ({
+  chrome: settings.agents.codexChrome !== false,
+  inApp: settings.agents.codexInAppBrowser !== false,
+  apps: settings.agents.codexMacApps !== false,
+});
 /** Whether orchestrators get the browser, where their agent's consent allows; off unless turned on. */
 export const orchestratorBrowserOn = (settings: Settings): boolean =>
   settings.workspaces?.orchestratorBrowser === true;
@@ -1027,6 +1052,9 @@ export const SettingsPatch = Schema.Struct({
       restartOnMcpChange: Schema.optionalKey(Schema.Boolean),
       claudeInChrome: Schema.optionalKey(Schema.Boolean),
       codexComputerUse: Schema.optionalKey(Schema.Boolean),
+      codexChrome: Schema.optionalKey(Schema.Boolean),
+      codexInAppBrowser: Schema.optionalKey(Schema.Boolean),
+      codexMacApps: Schema.optionalKey(Schema.Boolean),
       /** Replaces the whole list. */
       workerModels: clearable(Schema.Array(WorkerModel)),
     }),

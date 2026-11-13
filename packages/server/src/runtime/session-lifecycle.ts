@@ -549,6 +549,9 @@ export const makeSessionLifecycle = ({
             // Always said, so the agent's own default (Claude in Chrome "Enabled by default", the
             // ChatGPT app's computer use) never reaches a thread that wasn't given the browser.
             browser: policy.browser === true && thread.role !== "dream",
+            ...(policy.browserSurfaces === undefined
+              ? {}
+              : { browserSurfaces: policy.browserSurfaces }),
             onConnectorsSeen: (seen) => {
               recordSeen(seenConnectors.record(seen));
             },

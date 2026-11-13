@@ -1,4 +1,10 @@
-import { browserUseAllowed, type AgentKind, type SettingsPatch } from "@gram/contracts";
+import {
+  browserUseAllowed,
+  codexSurfaces,
+  type AgentKind,
+  type CodexSurfaces,
+  type SettingsPatch,
+} from "@gram/contracts";
 import { useState } from "react";
 
 import { errorMessage } from "@/api/errors";
@@ -25,6 +31,40 @@ const PATCH: Record<AgentKind, (on: boolean) => SettingsPatch> = {
   codex: (codexComputerUse) => ({ agents: { codexComputerUse } }),
 };
 
+type Surface = keyof CodexSurfaces;
+
+const SURFACE_PATCH: Record<Surface, (on: boolean) => SettingsPatch> = {
+  chrome: (codexChrome) => ({ agents: { codexChrome } }),
+  inApp: (codexInAppBrowser) => ({ agents: { codexInAppBrowser } }),
+  apps: (codexMacApps) => ({ agents: { codexMacApps } }),
+};
+
+const SURFACES: ReadonlyArray<{
+  surface: Surface;
+  label: string;
+  description: string;
+  keywords: readonly string[];
+}> = [
+  {
+    surface: "chrome",
+    label: "Codex in your Chrome",
+    description: "Through the ChatGPT extension, in your own Chrome with your sign-ins.",
+    keywords: ["codex", "chrome", "chatgpt", "extension"],
+  },
+  {
+    surface: "inApp",
+    label: "Codex in ChatGPT's browser",
+    description: "The browser inside the ChatGPT app, apart from your own.",
+    keywords: ["codex", "chatgpt", "in-app browser"],
+  },
+  {
+    surface: "apps",
+    label: "Codex in Mac apps",
+    description: "Other apps on this Mac, by looking at the screen and clicking.",
+    keywords: ["codex", "mac", "apps", "desktop", "screen"],
+  },
+];
+
 /**
  * Settings → Agents → Your browser: each agent's own consent to drive the user's real browser,
  * signed in as them. Off by default, one switch per agent. A thread still has to be given it, by
@@ -33,7 +73,7 @@ const PATCH: Record<AgentKind, (on: boolean) => SettingsPatch> = {
 export function YourBrowserSection() {
   const settings = useServerSettings((s) => s.settings);
   const save = useSaveSettings();
-  const [failed, setFailed] = useState<{ agent: AgentKind; message: string }>();
+  const [failed, setFailed] = useState<{ agent: AgentKind | Surface; message: string }>();
   if (!settings) return null;
 
   const toggle = (agent: AgentKind) => {
@@ -50,6 +90,26 @@ export function YourBrowserSection() {
       // Off is the default, so only an on switch has something to reset.
       onReset: checked ? () => apply(false) : undefined,
       error: failed?.agent === agent ? failed.message : undefined,
+    };
+  };
+
+  const kept = codexSurfaces(settings);
+  const codexOn = browserUseAllowed(settings, "codex");
+  const surfaceToggle = (surface: Surface) => {
+    const apply = (next: boolean) => {
+      setFailed(undefined);
+      save(SURFACE_PATCH[surface](next)).catch((e: unknown) =>
+        setFailed({ agent: surface, message: errorMessage(e) }),
+      );
+    };
+    return {
+      checked: kept[surface],
+      onChange: apply,
+      // Kept is the default, so only one turned off has something to reset.
+      onReset: kept[surface] ? undefined : () => apply(true),
+      disabled: !codexOn,
+      disabledReason: codexOn ? undefined : "Turn on Codex computer use first.",
+      error: failed?.agent === surface ? failed.message : undefined,
     };
   };
 
@@ -92,12 +152,17 @@ export function YourBrowserSection() {
             Comes from the computer-use plugin the ChatGPT app installs in your own Codex setup, so
             it needs that app. Threads that run in Gram&apos;s own Codex setup, under a workspace
             that asks before anything leaves the machine, don&apos;t get it. Without this switch, a
-            Codex thread runs with computer use off even where your setup has it.
+            Codex thread runs with computer use off even where your setup has it. The three switches
+            below choose what it reaches. One runtime serves all three, so with one browser kept,
+            turning the other off takes away its skills, not the runtime.
           </p>
         }
         keywords={["codex", "cua", "computer use", "node_repl"]}
         {...toggle("codex")}
       />
+      {SURFACES.map(({ surface, ...row }) => (
+        <Toggle key={surface} {...row} {...surfaceToggle(surface)} />
+      ))}
     </SettingsGroup>
   );
 }

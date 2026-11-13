@@ -45,6 +45,7 @@ import {
 import { bootContext, plainPrompt, rolePrompt, workerPrompt } from "./prompt.ts";
 import {
   browserFor,
+  browserGrant,
   ADMITTED,
   admittedForRole,
   budgetVerdict,
@@ -3783,6 +3784,22 @@ describe("a roster whose entries follow tiers", () => {
       model: pinned,
       follows: false,
     });
+  });
+});
+
+describe("browserGrant", () => {
+  const codex = { model: { agent: "codex" as const, model: "gpt" }, browser: true };
+  const on = {
+    ...DEFAULT_SETTINGS,
+    agents: { ...DEFAULT_SETTINGS.agents, codexComputerUse: true },
+  };
+
+  it("names Codex's surfaces only when one is turned off", () => {
+    expect(browserGrant(codex, "plain", on)).toEqual({ browser: true });
+    expect(
+      browserGrant(codex, "plain", { ...on, agents: { ...on.agents, codexMacApps: false } }),
+    ).toEqual({ browser: true, browserSurfaces: { chrome: true, inApp: true, apps: false } });
+    expect(browserGrant({ ...codex, browser: false }, "plain", on)).toEqual({});
   });
 });
 
