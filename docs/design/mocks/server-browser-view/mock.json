@@ -1,0 +1,25 @@
+{
+  "title": "Watching and driving the server's browser",
+  "slug": "server-browser-view",
+  "status": "draft",
+  "template": "app-screen",
+  "current": 1,
+  "approved": null,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-13"
+    }
+  ],
+  "directions": [
+    {
+      "name": "Preview tab",
+      "board": "preview-tab",
+      "shots": {
+        "dark": "shots/preview-tab-dark.png",
+        "light": "shots/preview-tab-light.png"
+      }
+    }
+  ]
+}

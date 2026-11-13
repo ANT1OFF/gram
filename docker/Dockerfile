@@ -76,6 +76,14 @@ CMD ["gram-host", "run"]
 
 # The server and the web app: the default target.
 FROM runtime AS control-plane
+# Chromium, for the agent browser on the server (docs/DOCKER.md#the-agent-browser). An empty
+# CHROMIUM leaves it out, and agents' browser tools then say the server's browser can't start.
+ARG CHROMIUM=1
+RUN if [ -n "${CHROMIUM}" ]; then \
+    apt-get update \
+    && apt-get install -y --no-install-recommends chromium fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*; \
+  fi
 # Owned by root: the agents run as gram and can't rewrite the server they run under.
 COPY --from=server-build /opt/gram /opt/gram
 USER gram
@@ -87,7 +95,10 @@ ENV GRAM_CONTAINER=1 \
   GRAM_PORT=4317 \
   GRAM_WEB_ROOT=/opt/gram/apps/web/dist \
   GRAM_DATA_DIR=/home/gram/.gram-state \
-  GRAM_FAKE_AGENT=0
+  GRAM_FAKE_AGENT=0 \
+  GRAM_HEADLESS_BROWSER=/opt/gram/packages/shell/src/modules/agent-browser/headless-host.ts \
+  GRAM_BROWSER_EXECUTABLE=/usr/bin/chromium \
+  GRAM_BROWSER_SANDBOX=0
 EXPOSE 4317
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "/opt/gram/packages/server/src/main.ts"]
