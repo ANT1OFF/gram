@@ -1,7 +1,7 @@
 import type { AgentKind, ProfileId } from "@gram/contracts";
 import { useMutation, useQueries } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
@@ -24,6 +24,7 @@ import {
   MODEL_SEARCH_THRESHOLD,
   modelOptions,
   offeredModels,
+  offeredReplacement,
   unlistedWarning,
   useModelsQuery,
   useProviderLabel,
@@ -130,16 +131,29 @@ function NoModels({ none }: { none: NonNullable<EmbedShellState["models"]["none"
 /**
  * A model list's state: loading before it has anything to show, failed with a retry, or, where
  * the embedding app narrows the list, with nothing left to pick and the app's words for that.
+ * `keep` shows `value` even when it is not offered (a saved setting); a draft's is only shown while
+ * it is offered, and `replacement` names the one it moves to.
  */
-function useModelListing(agent: AgentKind, profileId: ProfileId | undefined, value: string) {
+function useModelListing(
+  agent: AgentKind,
+  profileId: ProfileId | undefined,
+  value: string,
+  keep: boolean,
+) {
   const listing = useModelsQuery(agent, profileId);
   const provider = useProviderLabel(agent, profileId);
   const { offered, none } = useEmbedShell((s) => s.models);
-  const listed = offeredModels(listing.data?.models, agent, offered);
+  const listed = offeredModels(listing.data?.models, agent, offered, profileId);
+  const replacement = offeredReplacement(listed, offered !== undefined, value);
+  const notOffered =
+    offered !== undefined &&
+    listed !== undefined &&
+    value !== "" &&
+    !listed.some((model) => model.id === value || model.resolvedId === value);
   // CLI aliases are a fallback only for local Claude, never for a gateway or another account.
   const options = modelOptions(
     listed,
-    value,
+    !keep && notOffered ? undefined : value,
     agent === "claude" && profileId === undefined ? undefined : [],
     unlistedWarning(agent, profileId),
     provider,
@@ -153,6 +167,7 @@ function useModelListing(agent: AgentKind, profileId: ProfileId | undefined, val
       else await listing.refetch();
     },
   });
+  const empty = none !== undefined && listed !== undefined && listed.length === 0;
   const status =
     listing.isPending && value === "" ? (
       <span role="status" className="text-meta text-muted-foreground">
@@ -167,7 +182,7 @@ function useModelListing(agent: AgentKind, profileId: ProfileId | undefined, val
         </Button>
         {none !== undefined && <NoModels none={none} />}
       </div>
-    ) : none !== undefined && listed !== undefined && listed.length === 0 ? (
+    ) : empty ? (
       <div
         role="status"
         className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground"
@@ -175,7 +190,7 @@ function useModelListing(agent: AgentKind, profileId: ProfileId | undefined, val
         <NoModels none={none} />
       </div>
     ) : undefined;
-  return { options, refresh, status };
+  return { options, refresh, status, empty, replacement };
 }
 
 /**
@@ -192,11 +207,14 @@ export function useModelSection({
   onChange,
   agents,
   onPick,
+  keep = false,
 }: {
   agent: AgentKind;
   profileId?: ProfileId | undefined;
   value: string;
   onChange: (model: string) => void;
+  /** A saved setting, shown as it is: a draft moves off a model the embedding app does not offer. */
+  keep?: boolean | undefined;
   /** The agents whose models the list holds beside `agent`'s; only with `onPick`. */
   agents?: readonly AgentKind[] | undefined;
   /** Called for a model of another agent or gateway than `agent` and `profileId`. */
@@ -207,7 +225,18 @@ export function useModelSection({
   onOpen: () => void;
   onClose: () => void;
 } {
-  const { options, refresh, status } = useModelListing(agent, profileId, value);
+  const { options, refresh, status, empty, replacement } = useModelListing(
+    agent,
+    profileId,
+    value,
+    keep,
+  );
+  // A draft never keeps, nor starts on, a model the embedding app does not offer. Once for each
+  // model it moves off, whatever the caller's `onChange` is this render.
+  const moveTo = useEffectEvent((model: string) => onChange(model));
+  useEffect(() => {
+    if (!keep && replacement !== undefined) moveTo(replacement);
+  }, [keep, replacement]);
   const across = onPick !== undefined && agents !== undefined;
   const [opened, setOpened] = useState(false);
   const acrossOptions = useModelsAcross(
@@ -224,7 +253,9 @@ export function useModelSection({
   };
   // Closed, the other agents' lists are no longer asked for; what they fetched stays cached.
   const onClose = () => setOpened(false);
-  if (status !== undefined) return { section: undefined, status, onOpen, onClose };
+  // With nothing of this agent's to pick, the other agents' models stay pickable beside the words.
+  if (status !== undefined && !(empty && across))
+    return { section: undefined, status, onOpen, onClose };
   if (!across)
     return {
       section: modelSection({
@@ -287,7 +318,8 @@ export function ModelSelect({
   value: string;
   onChange: (model: string) => void;
 }) {
-  const { options, refresh, status } = useModelListing(agent, profileId, value);
+  // Settings: a saved model is shown as it is, offered or not.
+  const { options, refresh, status } = useModelListing(agent, profileId, value, true);
   const [open, setOpenState] = useState(false);
   const setOpen = (next: boolean) => {
     if (next) refresh();

@@ -161,6 +161,28 @@ describe("modelsFor", () => {
     });
   });
 
+  it("falls through to the shared machine while the person's own has not reported (R5)", () => {
+    const shared = machine("m-shared", { onlineSince: 1, models: OTHER });
+    // Online, confirmed, theirs, and silent so far; nothing remembered.
+    expect(modelsFor([own({ onlineSince: 2 }), shared], "ada", true, new Map())).toEqual({
+      models: OTHER,
+    });
+    // A remembered list still comes before the shared machine's: the order holds.
+    const remembered = new Map([["ada", MODELS]]);
+    expect(modelsFor([own({ onlineSince: 2 }), shared], "ada", true, remembered)).toEqual({
+      models: MODELS,
+    });
+    // With nothing anywhere, the reason names the person's own machine.
+    expect(
+      modelsFor(
+        [own({ onlineSince: 2, name: "ada's" }), machine("m-quiet", { onlineSince: 1 })],
+        "ada",
+        true,
+        new Map(),
+      ),
+    ).toEqual({ error: expect.stringContaining("ada's hasn't said which models") });
+  });
+
   it("is the default machine's list for nobody in particular", () => {
     const machines = [
       own({ onlineSince: 1, models: MODELS }),

@@ -7,7 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -15,7 +15,7 @@ import { ApiProvider } from "@/api/context";
 import type { Api } from "@/api/types";
 import { EMPTY_SHELL, useEmbedShell } from "@/embed/store";
 
-import { ModelSelect } from "./model-select";
+import { ModelSelect, useModelSection } from "./model-select";
 
 const MODELS: AgentModel[] = [
   { id: "opus", displayName: "Claude Opus", supportsEffort: true },
@@ -62,7 +62,7 @@ describe("ModelSelect, narrowed by the embedding app", () => {
 
   it("offers only what the app's check passes", async () => {
     useEmbedShell.setState({
-      models: { offered: (_agent, model) => model === "haiku", none: NONE },
+      models: { offered: (model) => model.id === "haiku", none: NONE },
     });
     show(async () => ({ models: MODELS }));
     await screen.findByRole("combobox", { name: "Model" });
@@ -104,5 +104,75 @@ describe("ModelSelect, narrowed by the embedding app", () => {
     show(async () => ({ models: MODELS }));
     await screen.findByRole("combobox", { name: "Model" });
     expect(screen.queryByText(NONE.text)).toBeNull();
+  });
+});
+
+/** A new draft's Model row, as the prompt box has it: its value is the draft's state. */
+function Draft({ initial }: { initial: string }) {
+  const [value, setValue] = useState(initial);
+  const model = useModelSection({ agent: "claude", value, onChange: setValue });
+  const options = model.section?.options ?? [];
+  return (
+    <>
+      <output data-testid="draft-value">{value}</output>
+      <output data-testid="draft-options">{options.map((o) => o.value).join(",")}</output>
+    </>
+  );
+}
+
+const draft = (initial: string, listModels: Api["listModels"]) =>
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ApiProvider api={{ listModels, listProfiles: async () => [] } as unknown as Api}>
+        <Routed>
+          <Draft initial={initial} />
+        </Routed>
+      </ApiProvider>
+    </QueryClientProvider>,
+  );
+
+describe("a new draft, narrowed by the embedding app (R4)", () => {
+  const SONNET: AgentModel = {
+    id: "sonnet",
+    displayName: "Sonnet 5.5",
+    supportsEffort: true,
+    isDefault: true,
+  };
+  const OPUS: AgentModel = { id: "opus", displayName: "Opus 5.5", supportsEffort: true };
+
+  it("moves off a model it started on that is not offered, and never lists it again", async () => {
+    useEmbedShell.setState({ models: { offered: (model) => model.id !== "opus" } });
+    draft("opus", async () => ({ models: [OPUS, SONNET] }));
+    await waitFor(() => expect(screen.getByTestId("draft-value").textContent).toBe("sonnet"));
+    expect(screen.getByTestId("draft-options").textContent).not.toContain("opus");
+  });
+
+  it("keeps a model that is offered, and every model on Gram's own", async () => {
+    draft("opus", async () => ({ models: [OPUS, SONNET] }));
+    await waitFor(() => expect(screen.getByTestId("draft-options").textContent).toContain("opus"));
+    expect(screen.getByTestId("draft-value").textContent).toBe("opus");
+  });
+});
+
+describe("a saved setting, narrowed by the embedding app", () => {
+  it("still shows the model it has", async () => {
+    useEmbedShell.setState({ models: { offered: (model) => model.id === "haiku" } });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApiProvider
+          api={
+            {
+              listModels: async () => ({ models: MODELS }),
+              listProfiles: async () => [],
+            } as unknown as Api
+          }
+        >
+          <Routed>
+            <ModelSelect agent="claude" value="opus" onChange={() => undefined} />
+          </Routed>
+        </ApiProvider>
+      </QueryClientProvider>,
+    );
+    expect((await screen.findByRole("combobox", { name: "Model" })).textContent).toContain("Opus");
   });
 });

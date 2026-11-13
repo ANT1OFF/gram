@@ -1,4 +1,5 @@
 import {
+  claudeLabel,
   CUSTOM_MODEL_DESCRIPTION,
   GATEWAY_UNLISTED_WARNING,
   type AgentKind,
@@ -60,6 +61,35 @@ export function useModelsSettled(
   return { models: isError ? undefined : data?.models, settled: !isPending || isFetched };
 }
 
+const NAMED = /^([a-z]+)\s+(\d+)\.(\d+)(?:\s|$)/i;
+
+/**
+ * The pinned model id `row` runs, by the model catalogue's rule (`resolveModel`): its
+ * `resolvedId`; for a Claude alias row with none, the id its display name says (`Opus 5.5` runs
+ * `claude-opus-5-5`, a `[1m]` row its windowed id); a pinned row's own id. `undefined` when the row
+ * says nothing of it, such as Claude Code's `default` named without a version.
+ */
+export const modelRuns = (agent: AgentKind, row: AgentModel): string | undefined => {
+  if (row.resolvedId !== undefined) return row.resolvedId;
+  if (agent !== "claude") return row.id;
+  if (/^claude-/i.test(row.id)) return row.id.toLowerCase();
+  const named = NAMED.exec(row.displayName.trim());
+  if (named === null) return undefined;
+  const id = `claude-${named[1]!.toLowerCase()}-${named[2]}-${named[3]}`;
+  // The same reading the catalogue makes, so the two never disagree on what a row runs.
+  if (claudeLabel(id) === undefined || !row.displayName.trim().startsWith(claudeLabel(id)!))
+    return undefined;
+  return /\[1m\]$/i.test(row.id) ? `${id}[1m]` : id;
+};
+
+/** What the embedding app's `offered` is asked of one row. */
+type OfferCheck = (model: {
+  readonly agent: AgentKind;
+  readonly id: string;
+  readonly runs?: string;
+  readonly profile?: string;
+}) => boolean;
+
 /**
  * `models` as the embedding app offers them (`ShellModels.offered`): every one on Gram's own, or
  * when the app's check throws. `undefined` stays undefined, so a list still loading still is.
@@ -67,16 +97,38 @@ export function useModelsSettled(
 export const offeredModels = (
   models: readonly AgentModel[] | undefined,
   agent: AgentKind,
-  offered: ((agent: AgentKind, model: string) => boolean) | undefined,
+  offered: OfferCheck | undefined,
+  profileId?: ProfileId,
 ): readonly AgentModel[] | undefined => {
   if (models === undefined || offered === undefined) return models;
   return models.filter((model) => {
+    const runs = modelRuns(agent, model);
     try {
-      return offered(agent, model.id);
+      return offered({
+        agent,
+        id: model.id,
+        ...(runs === undefined ? {} : { runs }),
+        ...(profileId === undefined ? {} : { profile: profileId }),
+      });
     } catch {
       return true;
     }
   });
+};
+
+/**
+ * The model a draft moves to when the one it has is not offered: the agent's default among those
+ * that are, else the first. `undefined` while it may stay: nothing is narrowed, the list is still
+ * loading, nothing is offered, or its model is.
+ */
+export const offeredReplacement = (
+  listed: readonly AgentModel[] | undefined,
+  narrowed: boolean,
+  value: string,
+): string | undefined => {
+  if (!narrowed || listed === undefined || listed.length === 0 || value === "") return undefined;
+  if (listed.some((model) => model.id === value || model.resolvedId === value)) return undefined;
+  return (listed.find((model) => model.isDefault === true) ?? listed[0])!.id;
 };
 
 /**

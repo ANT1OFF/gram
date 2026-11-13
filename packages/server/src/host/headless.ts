@@ -161,10 +161,14 @@ const unavailable = (agent: AgentKind, message: string) =>
   new AgentUnavailable({ agent, reason: "startup-failed", message });
 
 /**
- * The models a headless Gram offers `person`: what their own machine's Claude Code lists, where an
- * embedder started one for them, else what the default machine's lists. A person's machine that
- * has stopped is still theirs, so the list it last reported stands in for it until it is back
- * (`remembered`); work sent then starts it again. Without either, the reason says what to do.
+ * The models a headless Gram offers `person`, the first of these that has a list:
+ *
+ * 1. their own machine's, where an embedder started one for them and it has reported;
+ * 2. the list their own machine last reported (`remembered`), while it is stopped, starting or
+ *    has not reported yet: a person's machine stays theirs while it is down;
+ * 3. the default machine's (`defaultMachine`, which never picks a machine started for someone).
+ *
+ * A step with no list falls through to the next. With none, the reason says what to do.
  */
 export const modelsFor = (
   machines: ReadonlyArray<PlaceableMachine>,
@@ -173,18 +177,26 @@ export const modelsFor = (
   remembered: Map<string, ReadonlyArray<AgentModel>>,
 ): { readonly models: ReadonlyArray<AgentModel> } | { readonly error: string } => {
   const picked = machineFor(machines, person, onDemand);
-  const machine = "error" in picked ? undefined : machines.find((each) => each.id === picked.id);
-  if (person !== undefined && machine?.owner === person && machine.models !== undefined) {
-    remembered.set(person, machine.models);
-    return { models: machine.models };
+  const own =
+    "error" in picked || person === undefined
+      ? undefined
+      : machines.find((each) => each.id === picked.id && each.owner === person);
+  if (own?.models !== undefined && person !== undefined) {
+    remembered.set(person, own.models);
+    return { models: own.models };
   }
   const last = person === undefined ? undefined : remembered.get(person);
   if (last !== undefined) return { models: last };
-  if (machine?.models !== undefined) return { models: machine.models };
+  const shared = defaultMachine(machines);
+  const sharedMachine =
+    "error" in shared ? undefined : machines.find((each) => each.id === shared.id);
+  if (sharedMachine?.models !== undefined) return { models: sharedMachine.models };
+  // Nothing to list: say why, about the machine the person's work would go to.
+  const waiting = own ?? sharedMachine;
+  if (waiting !== undefined)
+    return { error: `${waiting.name} hasn't said which models its Claude Code offers yet.` };
   if ("error" in picked) return picked;
-  return {
-    error: `${machine?.name ?? picked.id} hasn't said which models its Claude Code offers yet.`,
-  };
+  return "error" in shared ? shared : { error: NO_MACHINE_JOINED };
 };
 
 /**

@@ -259,7 +259,8 @@ as after reading the person's accounts:
 ```ts
 handle.update({
   models: {
-    offered: (agent, model) => agent === "claude" && allowed(model),
+    // `runs` is the pinned id the row runs (`opus` runs `claude-opus-5-5`), by the model catalogue.
+    offered: (model) => model.agent === "claude" && model.runs !== undefined && allowed(model.runs),
     none: {
       text: "Connect a Claude account to pick a model.",
       action: { label: "Model accounts", to: "/accounts" },
@@ -268,11 +269,20 @@ handle.update({
 });
 ```
 
-- `offered`: whether a listed model is offered. Every one is when left out, and when it throws. A
-  model a thread already uses stays shown on that thread. It only narrows the list: your
-  deployment still refuses a model it does not allow.
-- `none`: the Model row's words when nothing is left to pick, with an optional link to one of your
-  pages. Where the list can't be read at all, it is shown beside Gram's own reason and Retry.
+- `offered`: whether a listed model is offered, given `{ agent, id, runs, profile }`:
+  - `id` is the id the agent lists it by.
+  - `runs` is the pinned model id it runs, as the model catalogue (`resolveModel`) reads it. It is
+    absent when the row says nothing of it, such as the CLI's `default`.
+  - `profile` is the gateway profile it goes through, if any.
+
+  Every model is offered when `offered` is left out, and when it throws. A new draft never lists a
+  model that is not offered, and one that started on such a model (a discovered or saved default)
+  moves to the offered default. A thread's own composer and a saved setting still show the model
+  they have. It only narrows the list: your deployment still refuses a model it does not allow.
+
+- `none`: the Model row's words when the agent has nothing to pick, with an optional link to one of
+  your pages. The other agents' models stay pickable beside it. Where the list can't be read at
+  all, it is shown beside Gram's own reason and Retry.
 
 ## Pages that look like Gram's
 

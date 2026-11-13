@@ -176,15 +176,38 @@ export interface ShellMachines {
 /** The agents whose models the prompt box lists. */
 export type ShellAgent = "claude" | "codex";
 
+/** One model the prompt box lists, as the embedding app's `ShellModels.offered` is given it. */
+export interface ShellModelChoice {
+  readonly agent: ShellAgent;
+  /** The id the agent lists it by: an alias such as `opus`, or a pinned id. */
+  readonly id: string;
+  /**
+   * The pinned model id it runs, by Gram's model catalogue (`resolveModel`): the row's own
+   * `resolvedId`, the id a Claude alias's name says it runs, or a pinned row's id. Absent when the
+   * catalogue cannot tell, such as the CLI's `default` with no version in its name: an app that
+   * allows only some models should not offer one it cannot place.
+   */
+  readonly runs?: string;
+  /** The gateway profile it goes through; absent for the agent's own account. */
+  readonly profile?: string;
+}
+
+/**
+ * The prompt box's model list as the embedding app narrows it: for a deployment whose own rules,
+ * or a person's own accounts, leave only some of what an agent lists usable. It narrows what a new
+ * draft offers and picks; a thread's own composer and a saved setting still show the model they
+ * have. It only narrows: the deployment still has to refuse a model it does not allow.
+ */
 export interface ShellModels {
   /**
-   * Whether `model`, as `agent` lists it, is offered. Every listed model is when left out. A model
-   * a thread already uses stays shown on that thread.
+   * Whether a listed model is offered. Every listed model is when left out, and when it throws. A
+   * draft whose model is not offered moves to one that is.
    */
-  readonly offered?: (agent: ShellAgent, model: string) => boolean;
+  readonly offered?: (model: ShellModelChoice) => boolean;
   /**
-   * What the Model row says when there is no model to pick: none is offered, or the list could
-   * not be read. Gram's own words, and only them, when left out.
+   * What the Model row says when the agent has no model to pick: none is offered, or the list could
+   * not be read. Other agents' models stay pickable beside it. Gram's own words, and only them,
+   * when left out.
    */
   readonly none?: {
     /** One short sentence: "Connect a Claude account to pick a model." */
