@@ -30,6 +30,8 @@ export interface ThreadsSources {
   readonly needsYou: (summary: ThreadSummary) => boolean;
   /** How a thread's kind is worded. */
   readonly kinds?: ThreadKindWords | undefined;
+  /** Threads the page leaves out, by id: ones an app in front of Gram lists in a place of its own. */
+  readonly elsewhere?: ReadonlySet<string> | undefined;
 }
 
 const titleOf = (summary: ThreadSummary): string =>
@@ -74,7 +76,9 @@ export const whereOf = ({
  * title, place or starter has it, any case.
  */
 export const threadListings = (sources: ThreadsSources, query = ""): ThreadListing[] => {
-  const all = [...sources.summaries].filter((summary) => !summary.thread.parked);
+  const all = [...sources.summaries].filter(
+    (summary) => !summary.thread.parked && sources.elsewhere?.has(summary.thread.id) !== true,
+  );
   const titles = new Map(all.map((summary) => [summary.thread.id as string, titleOf(summary)]));
   const wanted = query.trim().toLowerCase();
   return all

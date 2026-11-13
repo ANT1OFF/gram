@@ -39,6 +39,14 @@ describe("threadListings", () => {
     expect(listed[0]?.needsYou).toBe(true);
   });
 
+  it("leaves out the threads an app in front lists in a place of its own", () => {
+    const listed = threadListings({
+      ...sources([summary("a", 1), summary("b", 3), summary("c", 2)], []),
+      elsewhere: new Set(["b"]),
+    });
+    expect(listed.map((listing) => listing.summary.thread.id)).toEqual(["c", "a"]);
+  });
+
   it("names each one's place and what started it", () => {
     const listed = threadListings(
       sources([

@@ -142,6 +142,8 @@ names that choice in the New form, in place of "Chat", and a solo thread's heade
 Chat of its own has one word for a thread run by one agent. `threadsPage.newForm` narrows and words
 the New form's Who does it: `task: "hidden"` leaves out the choice of one worker straight away, and
 `team` and `solo` each take a `label`, a `line` under it and the button's `start` words.
+`threadsPage.elsewhere` is a list of thread ids the page leaves out: threads your app lists in a
+place of its own, such as its own assistant's conversations. Each still opens at its address.
 `threadsPage.bar: "path"` starts the title bar of a thread, a Board and the New form as a path from
 the page of every thread, with a workspace's orchestrator and Board as two buttons beside it, in
 place of the workspace switcher and Chat · Board. `newEntry: { label: "New agent", to:

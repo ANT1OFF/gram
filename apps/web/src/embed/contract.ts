@@ -240,6 +240,12 @@ export interface ShellThreadsPage {
    */
   readonly kinds?: ShellThreadKinds;
   /**
+   * Threads the page leaves out, by id: ones the embedding app lists in a place of its own (its
+   * own assistant's conversations, say), so they are not listed twice or under the wrong name.
+   * Each still opens at its address. Every thread is listed when left out.
+   */
+  readonly elsewhere?: readonly string[];
+  /**
    * The New form's Who does it, narrowed and worded by an app whose people choose between fewer
    * ways to start. Gram's three choices in its own words when left out.
    */

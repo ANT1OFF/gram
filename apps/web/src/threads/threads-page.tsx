@@ -54,6 +54,7 @@ export function ThreadsPage() {
   const title = useThreadsTitle();
   const newLabel = useEmbedShell((s) => s.threadsPage.newLabel);
   const kinds = useEmbedShell((s) => s.threadsPage.kinds);
+  const elsewhere = useEmbedShell((s) => s.threadsPage.elsewhere);
   const listings = useMemo(() => {
     const workspaceNames = new Map(
       workspaces.map((state) => [state.workspace.id as string, state.workspace.name]),
@@ -71,10 +72,11 @@ export function ThreadsPage() {
           summary.status === "needsInput" ||
           summary.pendingRequests.length > 0,
         kinds,
+        elsewhere: elsewhere === undefined ? undefined : new Set(elsewhere),
       },
       query,
     );
-  }, [summaries, workspaces, groups, query, kinds]);
+  }, [summaries, workspaces, groups, query, kinds, elsewhere]);
   const counts = useMemo(() => threadsFilterCounts(listings), [listings]);
   // A filter whose last thread left it would show an empty list with nothing to say why: every
   // thread again.
