@@ -1,10 +1,10 @@
 {
   "title": "Phone thread: reaching Diff, PR, Files and Terminal",
   "slug": "phone-panels",
-  "status": "draft",
+  "status": "approved",
   "template": "options",
   "current": 1,
-  "approved": null,
+  "approved": 1,
   "versions": [
     {
       "n": 1,
