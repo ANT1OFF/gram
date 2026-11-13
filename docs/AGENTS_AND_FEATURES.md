@@ -1166,6 +1166,119 @@ Definitions are read from the project's own folder each time, not from the threa
 an agent editing its worktree's copy changes nothing. No agent tool runs a script: only the
 user's click or key does.
 
+## Agents after Gram quits
+
+Off by default. **Settings → General → Running work → Run agents after quit** runs this machine's
+host as a service of your user that outlives the app, the way a [joined machine's](MACHINES.md#the-background-service)
+`gram-host` already runs. It takes effect when Gram next starts.
+
+| Platform | Service                                                                        |
+| -------- | ------------------------------------------------------------------------------ |
+| Linux    | systemd user unit `~/.config/systemd/user/gram-local-host-<id>.service`        |
+| macOS    | launchd agent `~/Library/LaunchAgents/io.github.ant1off.gram.local.<id>.plist` |
+
+`<id>` comes from Gram's data folder, so a release and a checkout of Gram on one machine never
+share one. Windows has no such service, and the setting isn't offered there.
+
+While it is on:
+
+- **Quitting Gram leaves its Claude sessions running.** A turn goes on to its end, and a terminal's
+  shell keeps running. An approval, a question or a plan the agent asks for while Gram is closed
+  waits for you, as on a joined machine. Gram's own tools (`gram` MCP) answer only while Gram is
+  open: a call made while it is closed fails, and the agent sees why.
+- **Opening Gram picks them up.** Each thread whose session is still there gets its turn back, under
+  the same id. What the agent did while Gram was closed is replayed into the transcript, the reply
+  in progress whole, and a request it is waiting on shows again. Nothing is opened afresh and
+  nothing is run twice. The session's tools are pointed at the new Gram.
+- **Quitting with agents still in it shows one notice:** "2 agents keep running. Open Gram to see
+  them."
+- **Settings says where it runs** ("Running as `gram-local-host-….service`, with 2 agent sessions
+  that go on if Gram quits"), and **Stop now** ends it at once, after asking when sessions are in
+  it. Turning the setting off stops it, and what is in it, when Gram next starts, and removes its
+  files.
+- **It never lingers.** It isn't started at login, only by Gram. With no Gram connected and nothing
+  running, it ends after 10 minutes. If a session holds something Gram hasn't seen yet, such as a
+  reply finished while Gram was closed, it waits for Gram to open, for up to 3 days. Stopping it
+  ends what it started, as far as each platform can hold it:
+  - **Linux:** the systemd unit's control group holds everything the service started, whatever a
+    process does to its environment, session or parent. Stop is verified on that group: it succeeds
+    only when systemd says the unit is inactive and its group is gone or empty.
+  - **Every platform:** each start gives the service a random run token in its environment, which
+    its agents, shells and tools inherit. Each start's token is kept, in Gram's data folder and in
+    the registry below, until a stop or a later start (with the service not running) has ended that
+    run's processes and verified it. A start that fails keeps them too. Stop then ends every
+    process of yours carrying an outstanding token. It matches by your effective user and by the
+    token as an entry of the process's environment, never by text in a command line, and checks
+    each process's start time again right before each signal. A process list it can't read in full,
+    on any pass including the one after SIGKILL, fails Stop and keeps the records, and Settings
+    says to try again. Starts and stops of one instance are serialized by a lock.
+  - **macOS:** launchd ends the job's process group. The token sweep then ends what left it while
+    keeping the token. Not guaranteed: a process that both clears its environment (`env -i`) and
+    leaves the job's process group (`setsid`), or whose environment `ps` can't read, can outlive a
+    Stop. macOS offers no equivalent of a control group to hold it.
+- **Releases may differ.** A Gram that finds an earlier release's host still running uses it, since
+  between releases the host protocol only grows (see
+  [machines on different releases](MACHINES.md#machines-on-different-releases)). When nothing of a
+  thread is in it, Gram restarts it on its own release.
+
+Codex sessions, sessions through a gateway profile and memory updates still run inside Gram and
+stop when it quits. The host listens on a Unix socket in Gram's data folder
+(`local-host/host.sock`, or a private folder under `$XDG_RUNTIME_DIR` when that path is too long),
+in a folder only your user can open, and on nothing else.
+
+**What it defends, and what it doesn't.** The host is protected against other users of the
+machine and against anything unauthenticated or on the network: the socket's folder is yours
+alone (0700), and the install's secret (`local-host/secret`, 32 random bytes, 0600) is readable by
+you only. Before any of the host protocol, the app and the host each prove they hold that secret
+with an HMAC over a nonce the other side chose. The secret never crosses the socket. Every frame
+after that carries a MAC under a key derived from the secret and both nonces, over its direction
+and its number in sequence. So a process that relays the handshake without holding the secret
+can't add, alter, replay or reflect a frame: the connection closes on the first one that doesn't
+verify, and an unproven connection never displaces the connected app. The host does **not**
+defend against code running as you. Such code can read the secret, as it can already read the
+CLIs' logins and the rest of Gram's data, and same-user programs are inside Gram's trust boundary.
+Frames are authenticated, not encrypted: what crosses the socket (an MCP bearer token, say) is
+readable to whatever can reach the socket. Only code running as you can, through a 0700 folder, and
+that code is trusted, so encryption would add nothing. Gram refuses to start the host, or to use its
+secret, when the socket's folder or the secret's is looser than 0700, the secret looser than 0600,
+either belongs to another user, or either is a link. It never loosens or repairs them silently. The
+service is told the secret file's name, never the secret. Starts and stops of one host are
+serialized by a lock that is taken over only once its owner process is verifiably gone. Its environment file carries only `PATH`,
+locale and XDG folder names, `CLAUDE_CONFIG_DIR` and Gram's own settings for it, never a token, key
+or proxy address. Claude Code finds your sign-in where it keeps it, as it does from a terminal. Gram
+keeps a record of the sessions it left running (`local-host/sessions.json`, readable by you only).
+
+On macOS, Gram starts the agent through `launchctl` rather than as its own child: a process the app
+spawns stays in the app's coalition, which macOS can end with the app. launchd goes on running the
+definition it loaded, whatever the file says now. So Gram boots any job left by an earlier start
+out first, and loads the rewritten one once launchd no longer has it.
+
+On macOS the definition sits in Gram's data folder, not `~/Library/LaunchAgents`, and has no
+`KeepAlive`, so launchd never loads or starts it at login: only Gram does.
+
+Gram also keeps a registry of these services outside any data folder (`~/.local/state/gram/kept-hosts`
+on Linux, `~/Library/Application Support/Gram/kept-hosts` on macOS), one file per data folder,
+naming the service and its run token. A data folder that is moved or removed can't be reached by
+any Gram again. Its service ends on its own 10 minutes after its secret disappears, whatever it is
+running, and the next Gram to start, whichever data folder it uses, stops it (verified) and only
+then removes its registry entry. A service whose data folder is still there is never touched by
+another Gram, so a closed Gram's waiting approvals stay waiting.
+
+To stop one by hand, find it in the registry (each file names its data folder), then:
+
+```sh
+# Linux
+systemctl --user stop gram-local-host-<id>.service
+# macOS
+launchctl bootout gui/$(id -u)/io.github.ant1off.gram.local.<id>
+```
+
+Then end anything still carrying its run token (`GRAM_LOCAL_HOST_RUN=<token>` from the registry
+file) and delete the registry file.
+
+A session taken up on reopen has its Gram tools pointed at the new Gram. That is tried again every
+second until the new Gram's MCP endpoint answers, which is a moment after it starts.
+
 ## Terminals after a restart
 
 A thread's terminal that was still open when Gram quit, crashed, or lost the machine it ran on

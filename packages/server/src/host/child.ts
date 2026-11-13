@@ -15,7 +15,7 @@ import { connectHost, type HostConnection } from "./protocol.ts";
  * The host entry: its TypeScript source under the tests, the `gram-host.js` bundle beside the
  * server's own in a build.
  */
-const hostEntry = (): string =>
+export const hostEntry = (): string =>
   import.meta.url.endsWith(".ts")
     ? fileURLToPath(new URL("./main.ts", import.meta.url))
     : typeof __dirname === "string"

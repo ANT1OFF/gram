@@ -558,14 +558,22 @@ export const makeTurnLifecycle = ({
       );
     });
 
-  const openTurn = (rt: Runtime, id: TurnId = makeTurnId()) =>
+  /**
+   * Opens a turn; with `adopted`, takes up one a Gram before this one opened and left open, whose
+   * agent a host kept running after it quit, under its own id and start, with no new row.
+   */
+  const openTurn = (
+    rt: Runtime,
+    id: TurnId = makeTurnId(),
+    adopted?: { readonly startedAt: number },
+  ) =>
     Effect.gen(function* () {
       rt.admitted = false;
       yield* cancelIdleTimer(rt);
       const now = yield* Clock.currentTimeMillis;
       const turn: Turn = {
         id,
-        startedAt: now,
+        startedAt: adopted?.startedAt ?? now,
         done: yield* Deferred.make<void>(),
         usage: undefined,
         model: (yield* store.getThread(rt.threadId).pipe(Effect.orDie)).model,
@@ -621,7 +629,7 @@ export const makeTurnLifecycle = ({
         }),
       );
       rt.touchedRemote = false;
-      yield* store.startTurn(rt.threadId, turn.id, now);
+      if (adopted === undefined) yield* store.startTurn(rt.threadId, turn.id, now);
       return { turn, now };
     });
 

@@ -187,6 +187,9 @@ its sessions end with it.
 | `gram-host status`                                 | The main Gram it joined, its fingerprint, service |
 | `gram-host leave [--no-service]`                   | Stop the service and forget the join and its key  |
 
+This machine's own host can run the same way, kept running after Gram quits, when you turn that
+on: see [agents after Gram quits](AGENTS_AND_FEATURES.md#agents-after-gram-quits).
+
 ## When a machine is offline
 
 Settings → Machines says why on hover over a machine's state, with the fix where there is one, and

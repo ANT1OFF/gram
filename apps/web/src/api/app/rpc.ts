@@ -22,6 +22,8 @@ export const appRpc = ({ client, connection }: RpcContext): AppApi => ({
   diagnosticsReport: (logLines) =>
     run(client["app.diagnosticsReport"](logLines === undefined ? {} : { logLines })),
   openLogsFolder: () => run(client["app.openLogsFolder"](undefined)),
+  keptHost: () => run(client["app.keptHost"](undefined)),
+  keptHostStop: () => run(client["app.keptHostStop"](undefined)),
   launchChecks: (refresh) =>
     run(client["app.launchChecks"](refresh === undefined ? {} : { refresh })),
   previewIssue: (draft) => run(client["issues.preview"](draft)),

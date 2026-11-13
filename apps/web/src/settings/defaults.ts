@@ -1,6 +1,7 @@
 import {
   chimeOf,
   keepAwakeOn,
+  keepRunningAfterQuitOn,
   DEFAULT_SETTINGS,
   helperDailyBudgetUsd,
   helperSource,
@@ -81,6 +82,11 @@ export const GENERAL_DEFAULTS = defaults({
     label: "Keep computer awake while agents run",
     read: keepAwakeOn,
     reset: { agents: { keepAwake: null } },
+  },
+  keepRunningAfterQuit: {
+    label: "Run agents after quit",
+    read: keepRunningAfterQuitOn,
+    reset: { agents: { keepRunningAfterQuit: null } },
   },
   openAtLaunch: {
     label: "Open at launch",

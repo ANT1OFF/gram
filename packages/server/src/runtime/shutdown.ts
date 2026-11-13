@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 
+import { KeptSessions } from "./kept-sessions.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
 
 /** How long the agent sessions get to stop before the teardown goes on without them. */
@@ -121,11 +122,21 @@ export interface ShutdownProgress {
 }
 
 /**
+ * What the server tells the shell as it quits with agent sessions left running in the host kept
+ * running after Gram quits, for the one notice that says so.
+ */
+export interface KeptRunningNotice {
+  readonly type: "keptRunning";
+  /** Agent sessions that go on with Gram closed. */
+  readonly agents: number;
+}
+
+/**
  * Refuses new turns, then stops the agent sessions within `SESSIONS_TIMEOUT_MS`, posting progress
  * as it goes. A turn the stop cuts off stays open for the next boot to mark interrupted
  * (`ThreadRuntimes.shutdown`).
  */
-export const stopForShutdown = (post: (progress: ShutdownProgress) => void) =>
+export const stopForShutdown = (post: (progress: ShutdownProgress | KeptRunningNotice) => void) =>
   Effect.gen(function* () {
     const runtimes = yield* ThreadRuntimes;
     // Before anything that takes a thread's lock, so nothing starts while the rest waits.
@@ -148,6 +159,10 @@ export const stopForShutdown = (post: (progress: ShutdownProgress) => void) =>
         : Effect.logWarning("shutdown: agent sessions didn't stop in time; going on")
     ).pipe(Effect.annotateLogs({ agents, working, ms }));
     const complete = Option.isSome(stopped) && (yield* runtimes.openSessions) === 0;
+    // Those left running in the host kept running after Gram quits go on: the shell says so once.
+    const kept = Option.getOrUndefined(yield* Effect.serviceOption(KeptSessions));
+    const left = kept?.on === true ? kept.recorded() : 0;
+    if (left > 0) yield* Effect.sync(() => post({ type: "keptRunning", agents: left }));
     yield* Effect.sync(() =>
       post({ type: "shutdown", phase: "teardown", agents: complete ? 0 : agents, working }),
     );

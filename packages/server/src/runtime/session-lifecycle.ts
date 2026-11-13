@@ -22,7 +22,13 @@ import {
   machineRestartToolText,
 } from "./machine-restart.ts";
 import { missingThreadFolder } from "../fs/folders.ts";
-import { AgentUnavailable, type Thread, type TurnId, type ThreadId } from "@gram/contracts";
+import {
+  type AgentEvent,
+  AgentUnavailable,
+  type Thread,
+  type TurnId,
+  type ThreadId,
+} from "@gram/contracts";
 import { UNKNOWN_FAILURE } from "./thread-error.ts";
 import { dreamSupportFor, sequenceEvents, type AppToolRegistryPort } from "@gram/agents";
 import type { ResumeOptions, ResumePlans } from "./history-plans.ts";
@@ -61,6 +67,9 @@ const scopedKeepingFailure = <A, E, R>(self: Effect.Effect<A, E, R>) =>
       );
     }),
   );
+
+/** What a session a Gram before this one left between turns starts with here. */
+const SETTLED: AgentEvent = { type: "status", status: "idle" };
 
 /** What opening and ending a session read and change beside a thread's `Runtime`. */
 export interface SessionLifecycleDeps {
@@ -628,9 +637,24 @@ export const makeSessionLifecycle = ({
         );
         // Numbered, and confirmed once handled, so a reader that resubscribes resumes after the
         // last event it handled. Across machines this is the host's replay after a dropped link.
-        const log = yield* sequenceEvents(session.events);
+        // A session a Gram before this one left running between turns says nothing until its next
+        // one: it starts here as idle, so what is queued goes to it. One mid-turn replays its turn.
+        const settle = session.reattached === true && rt.turn === undefined;
+        const log = yield* sequenceEvents(
+          settle
+            ? Stream.concat(Stream.succeed<AgentEvent>(SETTLED), session.events)
+            : session.events,
+        );
+        const added = settle ? 1 : 0;
         yield* Stream.runForEach(log.subscribe(), ({ seq, event }) =>
-          handleEvent(rt, event).pipe(Effect.andThen(log.ack(seq))),
+          handleEvent(rt, event).pipe(
+            Effect.andThen(log.ack(seq)),
+            Effect.andThen(
+              Effect.sync(() => {
+                if (seq > added) session.handled?.(seq - added);
+              }),
+            ),
+          ),
         );
       }).pipe(
         scopedKeepingFailure,

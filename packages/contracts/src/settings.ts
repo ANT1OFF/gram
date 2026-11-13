@@ -220,6 +220,12 @@ export const AgentSettings = Schema.Struct({
   recommendedSetup: Schema.optionalKey(RecommendedSetup),
   /** Keep the system awake during open turns. Absent means on; the display may still sleep. */
   keepAwake: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Runs this machine's host as a service of the user's that outlives the app, so agents keep
+   * working after Gram quits and Gram picks them up when it opens again. Off unless turned on;
+   * read through `keepRunningAfterQuitOn`. Takes effect when Gram next starts.
+   */
+  keepRunningAfterQuit: Schema.optionalKey(Schema.Boolean),
   /** A new chat's model: pinned, or following a tier. Absent follows the CLI's own default. */
   defaultModel: Schema.optionalKey(ModelSlot),
   /** Absent until a model is added; read through `customModelsOf`. */
@@ -684,6 +690,10 @@ export type Settings = typeof Settings.Type;
 /** System sleep prevention during agent turns, on by default. */
 export const keepAwakeOn = (settings: Settings): boolean => settings.agents.keepAwake !== false;
 
+/** Whether this machine's host keeps running after Gram quits; off unless turned on. */
+export const keepRunningAfterQuitOn = (settings: Pick<Settings, "agents">): boolean =>
+  settings.agents.keepRunningAfterQuit === true;
+
 /**
  * The only MCP servers a Claude orchestrator keeps beside Gram's own, trimmed and without
  * blanks; empty when the user lists none, which leaves it the default (`mcpListsFor`).
@@ -1012,6 +1022,7 @@ export const SettingsPatch = Schema.Struct({
       idleEvictMinutes: Schema.optionalKey(AgentSettings.fields.idleEvictMinutes),
       followWorktreeMoves: Schema.optionalKey(AgentSettings.fields.followWorktreeMoves),
       keepAwake: clearable(Schema.Boolean),
+      keepRunningAfterQuit: clearable(Schema.Boolean),
       restartOnMcpChange: Schema.optionalKey(Schema.Boolean),
       claudeInChrome: Schema.optionalKey(Schema.Boolean),
       codexComputerUse: Schema.optionalKey(Schema.Boolean),

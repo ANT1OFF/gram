@@ -25,6 +25,7 @@ import { OVERVIEW_OPEN_FROM, useLayoutStore } from "@/stores/layout";
 
 import { branchPrefixSetting } from "./branch-prefix";
 import { GENERAL_DEFAULTS, resetFor } from "./defaults";
+import { KeepRunningField } from "./keep-running-field";
 import { OptionGroup, rowInputCls, SettingRow, Toggle } from "./fields";
 import { DraftActions, dropUndo, offerUndo, SaveHint } from "./save-hint";
 import { claimTouchedRow, markSaved, markTouchedSaved } from "./saved-mark";
@@ -317,7 +318,7 @@ export function GeneralSection() {
       <SettingsGroup
         label="Running work"
         anchor={GENERAL_ANCHORS.running}
-        description="What happens while agents run: staying awake, and following their worktree."
+        description="What happens while agents run: staying awake, after Gram quits, and following their worktree."
       >
         <Toggle
           label="Keep computer awake while agents run"
@@ -329,6 +330,12 @@ export function GeneralSection() {
           onChange={(keepAwake) =>
             applyTo("keepAwake")({ agents: { keepAwake: keepAwake ? null : false } })
           }
+        />
+        <KeepRunningField
+          settings={settings}
+          apply={applyTo("keepRunningAfterQuit")}
+          onReset={resetOf("keepRunningAfterQuit")}
+          error={errorOf("keepRunningAfterQuit")}
         />
         <Toggle
           label="Follow worktree moves"

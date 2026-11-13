@@ -7,6 +7,7 @@ import type {
   ConnectorSignInStart,
   ConnectorsSeen,
   ConnectorStatus,
+  McpEndpoint,
   SendOptions,
   SequencedEvent,
 } from "@gram/agents";
@@ -184,7 +185,11 @@ export const HOST_SERVES: ReadonlyArray<HostCapability> = [
 ];
 
 /** The features this build's host names in its hello, beside its capabilities. */
-export const HOST_FEATURES: ReadonlyArray<HostFeature> = ["thread-places", "browser-policy"];
+export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
+  "thread-places",
+  "browser-policy",
+  "session-retarget",
+];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
   [...map].map(([pid, values]) => [pid, [...values]] as const);
@@ -402,6 +407,7 @@ const handlersFor = (host: HostService) => {
         withSession(handle, (session) => session.setModel(model)),
       "host.sessions.addDirectories": ({ handle, paths }) =>
         withSession(handle, (session) => session.addDirectories?.(paths) ?? Effect.succeed(false)),
+      "host.sessions.retarget": ({ handle, mcp }) => host.sessions.retarget(handle, mcp),
       "host.sessions.processId": ({ handle }) =>
         withSession(handle, (session) =>
           (session.processId ?? Effect.succeed(undefined)).pipe(Effect.map((pid) => pid ?? null)),
@@ -631,6 +637,11 @@ export interface HostSessionsConnection {
     paths: ReadonlyArray<string>,
   ) => Effect.Effect<boolean, HostFailed>;
   readonly processId: (handle: string) => Effect.Effect<number | undefined, HostFailed>;
+  /**
+   * Points a session's app tools at `mcp` (`host.sessions.retarget`); absent on a host that
+   * doesn't name `session-retarget`.
+   */
+  readonly retarget?: (handle: string, mcp: McpEndpoint) => Effect.Effect<void, HostFailed>;
   readonly connectors: {
     readonly status: (
       handle: string,
@@ -1318,6 +1329,18 @@ export const connectHost = (
         sessionCall(client["host.sessions.processId"]({ handle }), none).pipe(
           Effect.map((pid) => pid ?? undefined),
         ),
+      ...(hostServes(hello, "session-retarget")
+        ? {
+            retarget: (handle: string, mcp: McpEndpoint) =>
+              sessionCall(
+                client["host.sessions.retarget"]({
+                  handle,
+                  mcp: { url: mcp.url, headers: { ...mcp.headers } },
+                }),
+                none,
+              ),
+          }
+        : {}),
       connectors: {
         status: (handle) =>
           sessionCall(client["host.sessions.connectorsStatus"]({ handle }), isAgentUnavailable),

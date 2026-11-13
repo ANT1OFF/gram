@@ -5,6 +5,7 @@ import { issueHandlers } from "../../issues/handler.ts";
 import { launchChecksHandlers } from "../../launch-checks/handler.ts";
 import { agentSupportHandlers } from "../../agent-support/handler.ts";
 import { appHandlers } from "./app.ts";
+import { keptHostHandlers } from "./kept-host.ts";
 import { logDefects } from "./common.ts";
 import { windowsHandlers } from "./windows.ts";
 import { usageHandlers } from "../../usage/handler.ts";
@@ -18,6 +19,7 @@ export const AppHandlersLive = AppRpcs.toLayer(
     const handlers = {
       ...(yield* usageHandlers),
       ...(yield* appHandlers),
+      ...(yield* keptHostHandlers),
       ...(yield* windowsHandlers),
       ...(yield* diagnosticsHandlers),
       ...(yield* launchChecksHandlers),
