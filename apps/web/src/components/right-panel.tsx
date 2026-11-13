@@ -4,6 +4,7 @@ import {
   AppWindow,
   Bell,
   ChevronDown,
+  Ellipsis,
   Eye,
   FileDiff,
   FileText,
@@ -35,7 +36,7 @@ import { useReviewRequests } from "@/reviews/review-requests";
 import { useFeature } from "@/settings/use-diagnostics";
 import { useRoomySidebar } from "@/embed/store";
 import { usePhone } from "@/lib/use-phone";
-import { PhonePanelHeader } from "@/shell/phone-panels";
+import { PHONE_SEGMENT, PhonePanelHeader } from "@/shell/phone-panels";
 import { useToastDock } from "@/shell/toast-dock";
 import {
   fitShell,
@@ -251,14 +252,19 @@ export function RightPanel() {
     return { tab: t, count, busy, name };
   });
   // A tab with something waiting or running stays out of More, so its count or dot does too.
-  const foldFlags = foldedTabs(
-    faces.map((f) => ({
-      primary: f.tab.primary === true,
-      active: f.tab.value === tab,
-      pinned: f.count > 0 || f.busy,
-    })),
-    labelFit.folds,
+  const flags = faces.map((f) => ({
+    primary: f.tab.primary === true,
+    active: f.tab.value === tab,
+    pinned: f.count > 0 || f.busy,
+  }));
+  // Over a phone's chat the strip is the row the chat has under its title, so a panel's name
+  // stands where it was tapped: every primary tab named, the rarer ones always in More.
+  const rareFolds = flags.some((f) => !f.primary && !f.active && !f.pinned) ? 1 : 0;
+  const foldFlags = foldedTabs(flags, phoneHeader ? rareFolds : labelFit.folds);
+  const changed = useThreadsStore((s) =>
+    threadId === undefined ? 0 : (s.byId[threadId]?.git?.changedFiles ?? 0),
   );
+  const setExpanded = useLayoutStore((s) => s.setPanelExpanded);
   const folded = faces.filter((_, i) => foldFlags[i]);
   const inStrip = faces.filter((_, i) => !foldFlags[i]);
 
@@ -280,11 +286,34 @@ export function RightPanel() {
         onValueChange={(value: ShownTab) => setTab(value)}
         className="min-h-0 flex-1"
       >
-        <div className="relative flex items-center border-b border-border pr-2">
+        <div
+          className={cn(
+            "relative flex items-center",
+            phoneHeader
+              ? "mx-3 mb-1 shrink-0 gap-0.5 rounded-xl bg-muted p-0.5"
+              : "border-b border-border pr-2",
+          )}
+        >
+          {phoneHeader && (
+            <button
+              type="button"
+              data-testid="phone-panel-to-chat"
+              className={cn(PHONE_SEGMENT, "flex-auto text-muted-foreground hover:text-foreground")}
+              onClick={() => setExpanded(false)}
+            >
+              Chat
+            </button>
+          )}
           <TabsList
             ref={tabList}
-            data-label-fit={labelFit.tabs}
-            className={cn("min-w-0 overflow-x-auto border-b-0", !reviewAction && "flex-1")}
+            data-label-fit={phoneHeader ? "all" : labelFit.tabs}
+            className={cn(
+              "min-w-0 overflow-x-auto border-b-0",
+              // The row's own children there, so each segment is as wide as its name needs.
+              phoneHeader
+                ? "contents [&>[data-slot=tabs-indicator]]:hidden"
+                : !reviewAction && "flex-1",
+            )}
           >
             {/* An icon and a name each, the rarer tabs always in More and Terminal, Files, PR and
                 Diff folding there, named, as room runs out; only a panel too narrow for the
@@ -304,22 +333,35 @@ export function RightPanel() {
                     aria-label={face.name}
                     // A 28 px tab with its background on hover and focus; the open one is named,
                     // on a background and underlined, not told apart by colour alone.
-                    className={cn(
-                      TAB_BOX,
-                      "relative my-1 hover:bg-muted focus-visible:bg-muted aria-selected:bg-muted after:absolute after:inset-x-1.5 after:-bottom-1 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors after:duration-(--dur-fast) aria-selected:after:bg-primary",
-                    )}
+                    className={
+                      phoneHeader
+                        ? cn(
+                            PHONE_SEGMENT,
+                            "flex-auto font-normal aria-selected:bg-background aria-selected:font-semibold aria-selected:shadow-raised",
+                          )
+                        : cn(
+                            TAB_BOX,
+                            "relative my-1 hover:bg-muted focus-visible:bg-muted aria-selected:bg-muted after:absolute after:inset-x-1.5 after:-bottom-1 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors after:duration-(--dur-fast) aria-selected:after:bg-primary",
+                          )
+                    }
                   />
                 }
               >
                 <TabFace
                   {...face}
-                  named={tabNamed(labelFit.tabs, face.tab.value === tab)}
+                  named={phoneHeader || tabNamed(labelFit.tabs, face.tab.value === tab)}
+                  plain={phoneHeader}
                   testIds
                 />
+                {phoneHeader && face.tab.value === "diff" && changed > 0 && (
+                  <span aria-hidden className="tabular-nums opacity-80">
+                    {changed}
+                  </span>
+                )}
               </Hint>
             ))}
           </TabsList>
-          {folded.length > 0 && <MoreTabs faces={folded} onPick={setTab} />}
+          {folded.length > 0 && <MoreTabs faces={folded} onPick={setTab} phone={phoneHeader} />}
           {/* Every tab and More as they'd stand, named, out of sight: what the fit is measured on. */}
           <div
             aria-hidden
@@ -390,22 +432,27 @@ function TabFace({
   count,
   busy,
   named,
+  plain = false,
   testIds = false,
-}: TabFaceProps & { named: boolean; testIds?: boolean }) {
+}: TabFaceProps & { named: boolean; plain?: boolean; testIds?: boolean }) {
   return (
     <>
-      <span className="relative flex">
-        <tab.icon aria-hidden className="size-icon-row" />
+      {/* A phone's row is words alone; a busy terminal keeps its dot. */}
+      <span className={cn("relative flex", plain && !busy && "hidden")}>
+        {!plain && <tab.icon aria-hidden className="size-icon-row" />}
         {busy && (
           <span
             aria-hidden
             data-testid={testIds ? "terminal-busy" : undefined}
-            className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-status-working"
+            className={cn(
+              "size-1.5 rounded-full bg-status-working",
+              !plain && "absolute -top-0.5 -right-0.5",
+            )}
           />
         )}
       </span>
       <span aria-hidden data-tab-label className={cn("overflow-hidden", !named && "max-w-0")}>
-        <span className="block pl-1.5 whitespace-nowrap">{tab.label}</span>
+        <span className={cn("block whitespace-nowrap", !plain && "pl-1.5")}>{tab.label}</span>
       </span>
       {count > 0 && (
         <span
@@ -446,9 +493,12 @@ const MENU_ITEM =
 function MoreTabs({
   faces,
   onPick,
+  phone = false,
 }: {
   faces: readonly TabFaceProps[];
   onPick: (tab: ShownTab) => void;
+  /** In a phone's row: a segment as tall as the others, its glyph alone. */
+  phone?: boolean;
 }) {
   return (
     <Menu.Root>
@@ -462,14 +512,21 @@ function MoreTabs({
             data-panel-more
             data-testid="panel-more"
             aria-label="More tabs"
-            className={cn(
-              MORE_BOX,
-              "my-1 text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted data-popup-open:text-foreground",
-            )}
+            className={
+              phone
+                ? cn(
+                    PHONE_SEGMENT,
+                    "w-9 flex-none text-muted-foreground hover:text-foreground data-popup-open:text-foreground",
+                  )
+                : cn(
+                    MORE_BOX,
+                    "my-1 text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted data-popup-open:text-foreground",
+                  )
+            }
           />
         }
       >
-        <MoreFace />
+        {phone ? <Ellipsis aria-hidden className="size-icon-row" /> : <MoreFace />}
       </Hint>
       <Menu.Portal>
         <Menu.Positioner align="start" sideOffset={4} className="isolate z-50 outline-none">

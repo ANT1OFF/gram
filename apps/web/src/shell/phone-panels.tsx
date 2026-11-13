@@ -28,7 +28,8 @@ export const phonePanelName = (tab: string): string =>
   PHONE_PANELS.find((panel) => panel.tab === tab)?.label ??
   `${tab.slice(0, 1).toUpperCase()}${tab.slice(1)}`;
 
-const SEGMENT =
+/** One segment of a phone's row under a title: the chat's row, a workspace's, an open panel's. */
+export const PHONE_SEGMENT =
   "flex h-9 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg px-1 text-meta whitespace-nowrap outline-none transition-[background-color,scale] duration-(--dur-fast) ease-(--ease-out) focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.97]";
 
 /**
@@ -50,7 +51,7 @@ export function PhonePanelRow() {
       <span
         aria-current="page"
         data-testid="phone-panel-chat"
-        className={cn(SEGMENT, "bg-background font-semibold text-foreground shadow-raised")}
+        className={cn(PHONE_SEGMENT, "bg-background font-semibold text-foreground shadow-raised")}
       >
         Chat
       </span>
@@ -64,7 +65,7 @@ export function PhonePanelRow() {
               ? `${label}, ${changed} ${changed === 1 ? "file" : "files"} changed`
               : label
           }
-          className={cn(SEGMENT, "text-muted-foreground hover:text-foreground")}
+          className={cn(PHONE_SEGMENT, "text-muted-foreground hover:text-foreground")}
           onClick={() => openThreadPanel(threadId, tab)}
         >
           {label}
@@ -141,7 +142,7 @@ export function PhoneWorkspaceRow() {
           aria-current={place.current ? "page" : undefined}
           data-testid={`phone-workspace-${place.key}`}
           className={cn(
-            SEGMENT,
+            PHONE_SEGMENT,
             place.current
               ? "bg-background font-semibold text-foreground shadow-raised"
               : "text-muted-foreground hover:text-foreground",

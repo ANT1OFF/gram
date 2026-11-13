@@ -24,9 +24,25 @@ test.describe("a thread's panels on a phone", () => {
     // The panel covers the chat, so the row is out of reach until Back.
     await expect(row).toHaveCount(0);
 
+    // The open panel has the same row in its place: the panels by name, the open one selected,
+    // the rarer ones behind More, all within the screen.
+    const panel = page.getByTestId("right-panel");
+    for (const tab of ["diff", "pr", "files", "terminal"]) {
+      await expect(panel.locator(`[data-panel-tab="${tab}"]`)).toBeVisible();
+    }
+    const more = await panel.getByTestId("panel-more").boundingBox();
+    expect(more!.x + more!.width).toBeLessThanOrEqual(390);
+    await panel.locator('[data-panel-tab="pr"]').tap();
+    await expect(header.getByRole("heading")).toHaveText("PR");
+
     await header.getByRole("button", { name: "Back to the thread" }).tap();
     await expect(page.getByTestId("right-panel")).toHaveCount(0);
     await expect(page.getByTestId("phone-panel-row")).toBeVisible();
+
+    // Chat, first in the open panel's row, leads back as well.
+    await page.getByTestId("phone-panel-row").getByTestId("phone-panel-diff").tap();
+    await page.getByTestId("phone-panel-to-chat").tap();
+    await expect(page.getByTestId("right-panel")).toHaveCount(0);
   });
 
   test("a page without a thread has no row", async ({ page }) => {
