@@ -848,6 +848,17 @@ async function runApp() {
   const connections = installConnection(ipc, {
     log,
     windowIdFor: (sender) => windows.windowIdFor(sender),
+    // A window the server refused while it still runs, such as after Chromium's network service
+    // restarted and took the launch cookie with it: loaded onto the boot address, which sets the
+    // cookie again, as a restart of Gram would have.
+    renewSession: (sender) => {
+      const url = windowUrl();
+      const win = BrowserWindow.fromWebContents(sender);
+      if (url === undefined || win === null || win.isDestroyed() || isProgressWindow(win))
+        return false;
+      void win.loadURL(url);
+      return true;
+    },
   });
   installFonts(ipc);
   // Agents' pages are the preview's, so each asks the other: the panes create a thread's page
@@ -1042,6 +1053,21 @@ async function runApp() {
   // Windows still open at quit come back at the next launch.
   app.on("before-quit", () => {
     if (!updateFinalizer.active()) windows.markQuitting();
+  });
+  // A helper that ended on its own, said in the log: the network service's restart drops every
+  // window's socket and the launch cookie with it, which the log would otherwise not explain.
+  app.on("child-process-gone", (_event, details) => {
+    if (details.reason === "clean-exit") return;
+    log.warn(
+      {
+        source: "app",
+        type: details.type,
+        serviceName: details.serviceName,
+        reason: details.reason,
+        exitCode: details.exitCode,
+      },
+      "a helper process went away",
+    );
   });
 
   if (process.platform === "win32") void sweepStaleUpdateDirs(tmpdir(), SWEEP_MIN_AGE_MS);

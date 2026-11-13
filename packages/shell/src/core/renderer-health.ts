@@ -195,3 +195,42 @@ export function createConnectionLog(log: ShellLog, now: () => number) {
     },
   };
 }
+
+/** How long after renewing a window's session another `expired` from it is left on its screen. */
+export const SESSION_RENEW_INTERVAL_MS = 60_000;
+
+/**
+ * Renews a window's session when it says the server refused it. The launch cookie is a session
+ * cookie, held only in the memory of Chromium's network service: when that process restarts (it
+ * crashed or was killed) the cookie is gone while the server and its token are not, and every
+ * redial is refused as if Gram had restarted. `renew` loads the window onto the server's boot
+ * address, which sets the cookie again, as a fresh launch does. Once per window per interval, so
+ * a server that keeps refusing leaves the window on its expired screen rather than reloading it
+ * over and over.
+ */
+export function createSessionRenewal(
+  log: ShellLog,
+  now: () => number,
+  intervalMs: number = SESSION_RENEW_INTERVAL_MS,
+) {
+  const renewedAt = new Map<string, number>();
+  return {
+    /** `renew` reloads the window onto the boot address, false when there is no server to load. */
+    report(windowId: string, connection: RendererConnection, renew: () => boolean) {
+      if (connection.status !== "expired") return;
+      const fields = { source: "renderer", window: windowId };
+      const last = renewedAt.get(windowId);
+      if (last !== undefined && now() - last < intervalMs) {
+        log.warn(fields, "renderer session expired again soon after it was renewed; leaving it");
+        return;
+      }
+      if (!renew()) return;
+      renewedAt.set(windowId, now());
+      log.info(fields, "renderer session renewed: reloaded onto the server's boot address");
+    },
+    /** Forgets a window that closed. */
+    forget(windowId: string) {
+      renewedAt.delete(windowId);
+    },
+  };
+}
