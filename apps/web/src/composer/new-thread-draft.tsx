@@ -606,8 +606,9 @@ function ConfiguredNewThreadDraft() {
                         dictation.active
                           ? ""
                           : phone
-                            ? // A phone has no files to drop, and four lines of grey before one is typed.
-                              "Describe the task, or leave it empty and write to the agent in the thread."
+                            ? // A phone has no files to drop, and four lines of grey before one is typed;
+                              // @ still reaches a file, and nothing else on the form says so.
+                              "Describe the task, with @ for a file. Or leave it empty and write in the thread."
                             : "Describe the task. Type @ to mention a file, or paste or drop files to attach them. Or leave it empty to start the agent now and write to it in the thread."
                       }
                       value={prompt}
