@@ -226,3 +226,45 @@
   outline: var(--focus-width) solid var(--focus-ring);
   outline-offset: calc(var(--focus-width) * -1);
 }
+
+/* A workspace's colour, the user's own choice (orchestration/workspace-accent.ts): `--accent-hue`
+   on the element, painted here so light and dark each get a tone that reads on their ground. Whose
+   it is, never a status: it never tints a name, a row's ground or a status dot. */
+.gram-accent-text,
+.gram-accent-rail,
+.gram-accent-row,
+.gram-accent-swatch {
+  --accent-tone: oklch(0.56 0.18 var(--accent-hue));
+  --accent-guide: color-mix(in oklab, var(--accent-tone) 60%, transparent);
+}
+[data-mode="dark"]
+  :is(.gram-accent-text, .gram-accent-rail, .gram-accent-row, .gram-accent-swatch) {
+  --accent-tone: oklch(0.78 0.14 var(--accent-hue));
+  --accent-guide: color-mix(in oklab, var(--accent-tone) 90%, transparent);
+}
+.gram-accent-text {
+  color: var(--accent-tone);
+}
+.gram-accent-swatch {
+  background-color: var(--accent-tone);
+}
+/* A workspace's line: a bar in the gutter beside it, clear of its status dot and of the mark the
+   current line takes, the same whether the line is current or not. */
+.gram-accent-row {
+  position: relative;
+}
+.gram-accent-row::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: -5px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent-tone);
+}
+/* The guide beside its workers carries the colour on, which ties them to their orchestrator. */
+.gram-accent-rail [data-accent-guide] {
+  border-left-width: 2px;
+  border-color: var(--accent-guide);
+}
