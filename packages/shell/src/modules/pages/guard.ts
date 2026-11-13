@@ -19,10 +19,10 @@
 // replaces its document: `document.open`, and `document.write` and `writeln`, which open the
 // document when it has finished parsing, throw. A page builds its DOM with the DOM's own methods.
 //
-// It runs in the frames the preload reaches. A frame the page makes itself (an `about:blank` or
-// `srcdoc` child) gets no preload; the sandbox the session puts on every response gives each of the
-// page's documents an opaque origin of its own, so the page can't script such a child, and the child
-// has no user activation to copy with.
+// It runs in the frames the preload reaches, which include a `srcdoc` child the page makes: that
+// child runs the guard too. A child the page makes by script at `about:blank` gets no preload;
+// the sandbox the session puts on every response gives each of the page's documents an opaque
+// origin of its own, so the page can't script such a child.
 
 /**
  * Runs in the page's main world before any of its scripts; self-contained, since it is sent there
