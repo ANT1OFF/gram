@@ -16,7 +16,7 @@ import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { DANGER, MoreContextMenuItem, SEPARATOR } from "@/thread/thread-action-items";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
-import { useMoveTargets } from "./move-workspace";
+import { useMoveTargets } from "./move-targets";
 import { setWorkspacePaused } from "./pause-workspace";
 import {
   accentStyle,

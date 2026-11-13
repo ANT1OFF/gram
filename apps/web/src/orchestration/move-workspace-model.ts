@@ -1,6 +1,5 @@
 import type {
   Autonomy,
-  HostedDeviceView,
   HostedMoveCheck,
   HostedMoveDone,
   HostedMoveProgress,
@@ -9,47 +8,9 @@ import type {
 import { formatClockTime } from "@/lib/time";
 import { presentAutonomy } from "@/settings/workspace-settings-model";
 
-/** A workspace of a server signed in to, as a place a workspace here can move to. */
-export interface MoveTarget {
-  readonly origin: string;
-  /** The server's address as a person reads it: its host. */
-  readonly host: string;
-  readonly workspace: string;
-  /** The workspace's name there, in the server's words. */
-  readonly name: string;
-  readonly organisation: string;
-}
+import type { MoveTarget } from "./move-targets";
 
-const hostOf = (origin: string): string => {
-  try {
-    return new URL(origin).host;
-  } catch {
-    return origin;
-  }
-};
-
-/**
- * Where a workspace can move: every workspace of every server signed in to and not paused, that
- * is not read-only for this person there. None while there is no sign-in.
- */
-export const moveTargets = (view: HostedDeviceView | null | undefined): readonly MoveTarget[] =>
-  (view?.servers ?? [])
-    .filter((server) => server.signedIn && !server.paused)
-    .flatMap((server) =>
-      server.workspaces
-        .filter((workspace) => !workspace.readOnly)
-        .map((workspace) => ({
-          origin: server.origin,
-          host: hostOf(server.origin),
-          workspace: workspace.id,
-          name: workspace.name,
-          organisation: workspace.organisation,
-        })),
-    );
-
-/** One target's key in a list of them: a server may have two workspaces of one name. */
-export const targetKey = (target: Pick<MoveTarget, "origin" | "workspace">): string =>
-  `${target.origin} ${target.workspace}`;
+export { moveTargets, targetKey, type MoveTarget } from "./move-targets";
 
 const count = (n: number, one: string, many: string) =>
   `${n.toLocaleString("en")} ${n === 1 ? one : many}`;
