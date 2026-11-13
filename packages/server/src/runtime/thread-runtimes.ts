@@ -54,6 +54,10 @@ import { makeRateLimitGate } from "./rate-limits.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { RETRIES_EXHAUSTED } from "./thread-error.ts";
 import type { CloseThreadOptions, ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
+import { browserNotReady } from "./browser-status.ts";
+
+/** How long `thread.browserStatus` waits for a session to list its MCP servers. */
+const BROWSER_READY_TIMEOUT = Duration.seconds(3);
 import { makeDurableWork } from "../durable-work.ts";
 import type { RuntimeObserver } from "./runtime-observer.ts";
 import { makeSessionPolicy } from "./session-policy.ts";
@@ -423,6 +427,7 @@ const make = Effect.gen(function* () {
             feedLock: yield* Semaphore.make(1),
             status: "cold",
             session: undefined,
+            sessionBrowser: false,
             quota: undefined,
             profileId: undefined,
             limitWait: thread.limitWait,
@@ -1532,6 +1537,20 @@ const make = Effect.gen(function* () {
     ...approvalMethods,
     requestApproval,
     session: (threadId) => withSession(threadId, (_rt, session) => Effect.succeed(session)),
+    // Read without the thread's lock: it asks the session nothing a turn under way would wait on.
+    browserNotReadyOf: (threadId) =>
+      Effect.gen(function* () {
+        const rt = yield* getRuntime(threadId);
+        const connectors = rt.session?.connectors;
+        if (connectors === undefined || !rt.sessionBrowser) return undefined;
+        const thread = yield* store.getThread(threadId);
+        return yield* connectors.status.pipe(
+          Effect.map((servers) => browserNotReady(thread.model.agent, servers)),
+          Effect.timeoutOption(BROWSER_READY_TIMEOUT),
+          Effect.map(Option.getOrUndefined),
+          Effect.catchTag("AgentUnavailable", () => Effect.succeed(undefined)),
+        );
+      }),
     moveCheckout: (threadId, checkout) =>
       Effect.gen(function* () {
         const rt = yield* getRuntime(threadId);

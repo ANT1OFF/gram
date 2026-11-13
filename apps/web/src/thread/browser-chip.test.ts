@@ -15,6 +15,12 @@ describe("browserChipText", () => {
     expect(browserChipText(codex, { state: "held", why: "It's off." })?.hint).toBe(
       "Lent your browser, but it doesn't get it: It's off.",
     );
+    expect(
+      browserChipText(codex, { state: "on", notReady: "Check that the ChatGPT app is open." }),
+    ).toEqual({
+      label: "Your browser isn't ready",
+      hint: "Lent your browser. Check that the ChatGPT app is open.",
+    });
     // A gated Codex thread never claims the browser is on.
     expect(
       browserChipText(codex, { state: "unavailable", why: "In Gram's own Codex home." }),

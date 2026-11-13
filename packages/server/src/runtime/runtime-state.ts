@@ -120,6 +120,8 @@ export interface Runtime {
   readonly feedLock: Semaphore.Semaphore;
   status: ThreadStatus;
   session: AgentSession | undefined;
+  /** Whether `session` was opened with the user's browser (`OpenSessionOptions.browser`). */
+  sessionBrowser: boolean;
   /**
    * Whose quota the session's rate limits count against: its agent and the profile it opened with,
    * which a model change mid-session doesn't move.

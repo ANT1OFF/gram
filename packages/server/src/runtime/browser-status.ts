@@ -4,7 +4,9 @@
 // what this says is what a session gets.
 import { codexHomeFor } from "@gram/agents/codex";
 import {
+  type AgentKind,
   browserUseAllowed,
+  type Connector,
   orchestratorBrowserOn,
   type Settings,
   type Thread,
@@ -13,6 +15,40 @@ import {
 } from "@gram/contracts";
 import type { ResumeOptions } from "./history-plans.ts";
 import type { SessionPolicy } from "./session-policy.ts";
+
+/** Claude in Chrome's MCP server, and the ones Codex computer use runs through. */
+const BROWSER_SERVERS: Record<AgentKind, ReadonlySet<string>> = {
+  claude: new Set(["claude-in-chrome"]),
+  codex: new Set(["cua_repl", "node_repl", "computer-use"]),
+};
+
+/**
+ * What a running session that was opened with the browser still lacks to use it, read from its
+ * own MCP servers, or `undefined` when one of the browser's servers is connected or still
+ * starting. With none listed, only Codex is said to lack it: its computer use is a plugin's
+ * server, there when the ChatGPT app installed it. Claude Code may not list its built-in one.
+ */
+export const browserNotReady = (
+  agent: AgentKind,
+  servers: ReadonlyArray<Pick<Connector, "name" | "status" | "error">>,
+): string | undefined => {
+  const own = servers.filter((server) => BROWSER_SERVERS[agent].has(server.name));
+  if (own.some((server) => server.status === "connected" || server.status === "pending"))
+    return undefined;
+  const broken = own.find((server) => server.status !== "disabled") ?? own[0];
+  if (broken === undefined)
+    return agent === "codex"
+      ? "This session has no computer-use server. Install computer use from the ChatGPT app, then restart the thread's session."
+      : undefined;
+  const detail = broken.error === undefined ? "" : ` (${broken.error})`;
+  if (agent === "claude")
+    return broken.status === "needs-auth"
+      ? "Claude in Chrome needs you to sign in to claude.ai in the Claude extension."
+      : `Claude in Chrome isn't connected${detail}. Check that Chrome is open with the Claude extension installed and signed in.`;
+  return broken.status === "disabled"
+    ? `Codex computer use is turned off in this session (${broken.name}). Restart the thread's session.`
+    : `Codex computer use isn't running (${broken.name}: ${broken.status}${detail}). Check that the ChatGPT app is open.`;
+};
 
 /** What the thread's agent calls the browser it drives. */
 const browserName = (thread: Pick<Thread, "model">) =>

@@ -1452,6 +1452,11 @@ tailnet's admin page). Every consent is off by default, and each one is separate
   `spawn_worker`. A spawn that asks without those consents starts without it, and its result says
   why.
 
+While a session that was opened with the browser runs, the chip also says when it isn't ready,
+from that session's own MCP servers: **Your browser isn't ready** when Claude in Chrome's server
+is listed but not connected, or when a Codex session has no computer-use server or one that
+failed. It says nothing before such a session runs, or when Claude Code doesn't list the server.
+
 These are user-only settings: no agent can turn one on through `settings_propose`. Gram reads them
 again at each session open, so a change applies from a thread's next session. Giving or taking it
 with ⌘K reopens the session once it is idle. The pane header shows what the server says the
