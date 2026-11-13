@@ -401,6 +401,21 @@ export const USER_ONLY_SETTINGS: ReadonlyArray<UserOnlyKey> = [
     read: (w) => w.settings.agents.codexComputerUse === true,
   },
   {
+    key: "agents.codexChrome",
+    reason: "it lets Codex threads drive your own Chrome, signed in as you",
+    read: (w) => w.settings.agents.codexChrome !== false,
+  },
+  {
+    key: "agents.codexInAppBrowser",
+    reason: "it lets Codex threads drive the ChatGPT app's browser",
+    read: (w) => w.settings.agents.codexInAppBrowser !== false,
+  },
+  {
+    key: "agents.codexMacApps",
+    reason: "it lets Codex threads drive your Mac apps",
+    read: (w) => w.settings.agents.codexMacApps !== false,
+  },
+  {
     key: "workspaces.orchestratorBrowser",
     reason: "it gives orchestrators your browser",
     read: (w) => w.settings.workspaces?.orchestratorBrowser === true,

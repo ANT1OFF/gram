@@ -11,6 +11,7 @@ import {
   ModeRefused,
   NotFound,
 } from "../errors.ts";
+import { CodexSurfaces } from "../settings.ts";
 import { FsFilesResult, FsResolveResult } from "../fs-files.ts";
 import { FsSearchResult } from "../fs-search.ts";
 import {
@@ -500,6 +501,11 @@ export const HostSessionOpen = Schema.Struct({
    * `browser-policy` (`agentHostThroughHost`, `agentHostOnMachine`).
    */
   browser: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Which surfaces a session with `browser` keeps (`OpenSessionOptions.browserSurfaces`). A host
+   * built before it drops the field and keeps them all.
+   */
+  browserSurfaces: Schema.optionalKey(CodexSurfaces),
 });
 export type HostSessionOpen = typeof HostSessionOpen.Type;
 

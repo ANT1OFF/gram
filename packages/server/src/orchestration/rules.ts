@@ -10,6 +10,8 @@
 import { dreamSupportFor, type OutwardGate, type ToolAudience } from "@gram/agents";
 import {
   browserUseAllowed,
+  codexSurfaces,
+  type CodexSurfaces,
   orchestratorBrowserOn,
   workerBrowserOn,
   USER_AWAY_AFTER_MINUTES,
@@ -2810,4 +2812,21 @@ export const browserFor = (
   if (audience === "orchestrator") return orchestratorBrowserOn(settings);
   if (thread.browser !== true) return false;
   return thread.spawnedBy === undefined || workerBrowserOn(settings);
+};
+
+/**
+ * `browserFor` as the session policy's fields: `browser`, and for a Codex thread the surfaces of
+ * computer use the user kept (`codexSurfaces`), left out while they are all kept.
+ */
+export const browserGrant = (
+  thread: Pick<Thread, "role" | "spawnedBy" | "browser" | "model">,
+  audience: ToolAudience,
+  settings: Settings,
+): { readonly browser?: true; readonly browserSurfaces?: CodexSurfaces } => {
+  if (!browserFor(thread, audience, settings)) return {};
+  if (thread.model.agent !== "codex") return { browser: true };
+  const surfaces = codexSurfaces(settings);
+  return surfaces.chrome && surfaces.inApp && surfaces.apps
+    ? { browser: true }
+    : { browser: true, browserSurfaces: surfaces };
 };

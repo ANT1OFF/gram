@@ -1502,6 +1502,16 @@ servers are left as they are. It works only in threads that run in your own `COD
 under an outward gate run in Gram's own Codex setup, where plugins are off. Codex computer use
 also needs the ChatGPT app.
 
+**What Codex reaches.** Under the Codex switch, three more choose what a Codex thread given the
+browser keeps: **Codex in your Chrome** (the ChatGPT extension), **Codex in ChatGPT's browser**
+(the browser inside the ChatGPT app) and **Codex in Mac apps** (`agents.codexChrome`,
+`agents.codexInAppBrowser`, `agents.codexMacApps`). Each is kept unless you turn it off, and all
+three off is the browser not given. For one turned off, Gram turns off its skills plugin in the
+thread's config (`chrome@openai-bundled`, `browser@openai-bundled`, `computer-use@openai-bundled`).
+Without Mac apps it also sets Codex's own `computer_use.default_app_access` to deny, and with
+neither browser, `browser_use.default_origin_policy` to deny. One runtime (`cua_repl`) serves all
+three, so with one browser kept, turning the other off takes away its skills and not the runtime.
+
 **Permission prompts.** When a computer-use or other MCP server asks a yes-or-no question
 before it acts ("Allow ChatGPT to use Safari?"), the thread shows it as an approval card. A Codex
 thread's card offers this session or always only where the server offers them. A Claude thread's

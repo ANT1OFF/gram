@@ -35,6 +35,16 @@ import type * as Scope from "effect/Scope";
 import type * as Stream from "effect/Stream";
 import type { HelperAdapter } from "./helper.ts";
 
+/** The surfaces a session opened with the browser keeps (`OpenSessionOptions.browserSurfaces`). */
+export interface BrowserSurfaces {
+  /** The user's own Chrome, through the agent's extension. */
+  readonly chrome: boolean;
+  /** The agent's own app's browser. */
+  readonly inApp: boolean;
+  /** Apps on the user's desktop. */
+  readonly apps: boolean;
+}
+
 export interface OpenSessionOptions {
   readonly threadId: ThreadId;
   readonly cwd: string;
@@ -165,6 +175,13 @@ export interface OpenSessionOptions {
    * host without either ignores it.
    */
   readonly browser?: boolean;
+  /**
+   * With `browser`, which of the agent's surfaces the session keeps, where the agent has more than
+   * one: Codex computer use reaches the user's Chrome (the ChatGPT extension), the ChatGPT app's
+   * own browser, and Mac apps. Absent keeps them all; all `false` is the browser not given. A
+   * host without separate surfaces ignores it.
+   */
+  readonly browserSurfaces?: BrowserSurfaces;
   /**
    * Told each time the session reports its MCP servers, so a view with no session open can show
    * the last word. Called synchronously from the agent's message loop: it mustn't block or throw.
