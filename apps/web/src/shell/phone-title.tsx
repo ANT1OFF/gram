@@ -96,6 +96,13 @@ export function usePhonePlace(): PhonePlace {
   const waitings = useWorkerWaitings(ledger, asking);
   // Mounted by an app in front of Gram, its pages name where you are: Gram's own name says nothing.
   const place = solo ? (soloWord ?? "Solo") : (workspace?.workspace.name ?? (hosted ? "" : "Gram"));
+  // A thread an app in front shows in a place of its own is under that place's name, not a kind
+  // of coding thread; at rest that is all its line says.
+  const own = useEmbedShell((s) =>
+    threadId === undefined
+      ? undefined
+      : s.threadsPage.places?.find((each) => each.ids.includes(threadId))?.name,
+  );
   if (board && workspace !== undefined) {
     return { title: workspace.workspace.name, line: "Board", asks: false, live: true };
   }
@@ -114,7 +121,13 @@ export function usePhonePlace(): PhonePlace {
     return {
       title,
       heading: thread.spawnedBy === undefined ? undefined : `Worker: ${thread.title}`,
-      line: orchestrator ? `Orchestrator · ${state}` : `${place} · ${state}`,
+      line: orchestrator
+        ? `Orchestrator · ${state}`
+        : own === undefined
+          ? `${place} · ${state}`
+          : state === STATUS_WORDS.idle
+            ? own
+            : `${own} · ${state}`,
       asks: status === "needsApproval" || status === "needsInput",
       live: true,
     };
