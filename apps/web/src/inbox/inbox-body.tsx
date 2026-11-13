@@ -19,6 +19,7 @@ import { formatRelative, formatWakeTime } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
+import { ThreadMachineMarker } from "@/thread/machine-marker";
 import { types } from "@/orchestration/ask-keys";
 import { useAskStackStore } from "@/orchestration/ask-stack-store";
 import {
@@ -516,6 +517,15 @@ function InboxRow({
           >
             {where}
           </span>
+          {/* The other machine its thread runs on, if any; its hover says its state. */}
+          {item.threadId !== undefined && (
+            <ThreadMachineMarker
+              threadId={item.threadId}
+              hover="title"
+              testId="inbox-item-machine"
+              className="self-center"
+            />
+          )}
           {age !== undefined && (
             <span data-testid="inbox-item-age" className="shrink-0 tabular-nums">
               {age}

@@ -15,6 +15,8 @@ const STALE_QUERIES: {
   "reviewRequests.changed": [["reviewRequests"]],
   "openPrs.changed": [["openPrs"]],
   "threadWakes.changed": [["threadWakes"]],
+  // A machine joined, left, connected or dropped: Settings → Machines and the picker read it again.
+  "machines.snapshot": [["machines.status"]],
   // A repo the orchestrator was allowed to add may be a project nobody had opened, so no list has it.
   "workspaces.changed": [["workspaces"], ["projects"], ["automaticDreamStatus"]],
   // The user's own memory edits and answers come as this one. Ledgers are `invalidateLedgers`'.

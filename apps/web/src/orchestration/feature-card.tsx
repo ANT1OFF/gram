@@ -29,6 +29,7 @@ import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { PulseOnce, Swap } from "@/motion";
 import { useOpenThread } from "@/shell/thread-switcher";
+import { ThreadMachineMarker } from "@/thread/machine-marker";
 
 import { useBesideLink } from "./beside-link";
 import {
@@ -261,6 +262,8 @@ function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
       >
         <span data-testid="feature-card-now">{worker.now}</span>
       </Swap>
+      {/* The other machine it runs on, if any, before its pull requests. */}
+      <ThreadMachineMarker threadId={worker.threadId} testId="feature-card-machine" />
       <span className="flex shrink-0 items-center gap-1">
         {worker.prs.map((pr) => (
           <PrChip key={`${pr.repo}#${pr.number}`} pr={pr} threadId={worker.threadId} />
@@ -417,6 +420,7 @@ function CalmFeatureLine({ card, worker }: { card: FeatureCard; worker: FeatureC
         <Swap swapKey={worker.now} className="min-w-0 shrink-[2] truncate">
           <span data-testid="feature-card-now">{worker.now}</span>
         </Swap>
+        <ThreadMachineMarker threadId={worker.threadId} testId="feature-card-machine" />
       </span>
     </div>
   );

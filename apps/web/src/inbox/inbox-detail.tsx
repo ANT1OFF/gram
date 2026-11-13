@@ -8,6 +8,7 @@ import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { ThreadMachineMarker } from "@/thread/machine-marker";
 import { holdAnswer, type SendAction } from "@/orchestration/ask-answer";
 import {
   answerKey,
@@ -436,6 +437,15 @@ export function InboxDetail({
             {[where, item.at === undefined ? undefined : formatRelative(item.at, now)]
               .filter((part) => part !== undefined && part !== "")
               .join(" · ")}
+            {/* The other machine its thread runs on, if any, after where it is from. */}
+            {item.threadId !== undefined && (
+              <ThreadMachineMarker
+                threadId={item.threadId}
+                testId="inbox-detail-machine"
+                side="bottom"
+                className="ml-1.5 inline-flex align-bottom not-italic"
+              />
+            )}
           </p>
         </div>
         {!card && (
