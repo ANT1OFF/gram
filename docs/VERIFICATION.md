@@ -232,7 +232,7 @@ request, not the docs.
 
 `apps/web/e2e-real/perf-headline.spec.ts` is the short list to compare before and after a change:
 opening and paging a 41,000-item thread, sending to a 75,000-item one, a phone's first launch in
-bytes and over slow 3G, a phone's reconnect and a terminal attach over slow 3G. It writes JSON, and
+bytes and over slow 3G (with the data it uses and the files the first sight of the thread waited for), a phone's reconnect and a terminal attach over slow 3G. It writes JSON, and
 `tools/perf/headline-chart.mjs` turns two runs into a table and a chart:
 
 ```sh
