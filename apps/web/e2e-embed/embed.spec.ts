@@ -323,6 +323,21 @@ test("the page of every thread and New take the embedding app's words", async ({
   await expect(page.getByRole("radio", { name: /^Crew/ })).toBeVisible();
   await expect(page.getByRole("radio", { name: /^Alone/ })).toBeChecked();
   await expect(page.getByRole("button", { name: "Start alone", exact: true })).toBeVisible();
+  // The bar is Gram's own until the app asks for a path: then it starts at the page of every
+  // thread, names the New form, and leaves out the workspace's switcher and Chat · Board.
+  await expect(page.getByTestId("titlebar-path")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      threadsPage: { title: "Chat", bar: "path" },
+    });
+  });
+  const path = page.getByTestId("titlebar-path");
+  await expect(path.getByRole("link", { name: "Chat" })).toBeVisible();
+  await expect(path).toContainText("New task");
+  await expect(page.getByTestId("view-switcher")).toHaveCount(0);
+  await expect(page.getByTestId("workspace-switcher-button")).toHaveCount(0);
+  await path.getByRole("link", { name: "Chat" }).click();
+  await expect(page).toHaveURL(/\/threads$/);
   // Taken away again, Gram's own words return.
   await page.evaluate(() => {
     (window as unknown as Update).embed.update({ threadsPage: undefined, newEntry: undefined });
