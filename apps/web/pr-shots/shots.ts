@@ -2146,7 +2146,7 @@ const MACHINE_MARKER_SHOTS: readonly Shot[] = [
   {
     name: "machine-marker-header",
     title:
-      "A worker on an offline machine, opened: its header names the machine, says offline and its folder there, and the hover says why and the fix",
+      "A worker on an offline machine, opened: its header keeps the struck glyph and the machine's name in a crowded title bar, and the hover says where it runs, that it is offline, why and the fix",
     open: async (page) => {
       const made = await openMachineMarkers(page);
       await threadRow(page, made.inReview).click();
