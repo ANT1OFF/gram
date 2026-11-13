@@ -835,21 +835,22 @@ describe("ThreadRuntimes", () => {
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
-  it.effect("tells the user when a thread with a conversation continues in a fresh session", () =>
+  it.effect("gives a thread's new session its recent turns when its conversation is gone", () =>
     Effect.gen(function* () {
       const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
       const fake = yield* FakeAgentControl;
       yield* fake.setResumeNeedsTranscript(true);
       const notices = yield* collectNotices;
-      const { thread, session } = yield* createRunning();
+      const { thread, session } = yield* createRunning("remember the word heron");
       yield* session.completeTurn();
       yield* waitStatus(thread.id, "idle");
       yield* TestClock.adjust("15 minutes");
       yield* waitStatus(thread.id, "cold");
 
-      // As when Claude Code cleans up an old transcript.
+      // As when Claude Code cleans up an old transcript, or the machine it was on is gone.
       yield* fake.forgetTranscript(session.agentSessionId);
-      yield* runtimes.send(thread.id, { text: "again" });
+      yield* runtimes.send(thread.id, { text: "which word?" });
       const fresh = yield* waitFor(
         "the fresh session's send",
         Effect.sync(
@@ -859,6 +860,18 @@ describe("ThreadRuntimes", () => {
       );
       expect(fresh.options.resumeId).toBeUndefined();
       expect(fresh.options.sessionId).toBe(session.agentSessionId);
+      // The agent reads the recent turns, fenced, then the message; the transcript keeps the message.
+      const read = fresh.sent[0]!.text;
+      expect(read).toContain("earlier Claude Code conversation couldn't be resumed");
+      expect(read).toMatch(
+        /<gram-handoff from="claude" to="claude">[\s\S]*heron[\s\S]*<\/gram-handoff>/,
+      );
+      expect(read.endsWith("\nwhich word?")).toBe(true);
+      expect(read.match(/which word\?/g)).toHaveLength(1);
+      const stored = (yield* store.lastMessages(thread.id, 10)).filter((m) => m.role === "user");
+      expect(stored.at(-1)?.parts).toContainEqual(
+        expect.objectContaining({ type: "text", text: "which word?" }),
+      );
       yield* waitFor(
         "the notice",
         Effect.sync(() => notices.length > 0),
@@ -868,10 +881,20 @@ describe("ThreadRuntimes", () => {
           type: "notify",
           kind: "info",
           title:
-            "The previous Claude conversation couldn't be found, so this thread continues in a fresh session.",
+            "The previous Claude conversation couldn't be found, so this thread continues in a new session given its recent turns.",
           threadId: thread.id,
         },
       ]);
+
+      // Given once: the session's own transcript holds it from then on.
+      yield* fresh.completeTurn();
+      yield* waitStatus(thread.id, "idle");
+      yield* runtimes.send(thread.id, { text: "and again" });
+      yield* waitFor(
+        "the second send",
+        Effect.sync(() => fresh.sent.length === 2),
+      );
+      expect(fresh.sent[1]!.text).toBe("and again");
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 

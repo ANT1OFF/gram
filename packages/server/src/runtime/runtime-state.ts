@@ -204,6 +204,12 @@ export interface Runtime {
    * one stopped to reopen.
    */
   restartMarker: "asked" | SessionRestartReason | undefined;
+  /**
+   * The thread's recent turns, as the agent reads them ahead of the next input it is sent, because
+   * the session that opened could not resume the agent's own conversation and opened without it
+   * (`lostSessionContext`). Cleared once an input carrying it reaches the agent.
+   */
+  lostSession: string | undefined;
   /** `mcpConfigChanged` reached the session, which restarts at its next point of rest. */
   pendingRestart: SessionRestartReason | undefined;
   /** When the last background task ended, while a pending restart waits `BACKGROUND_SETTLE`. */

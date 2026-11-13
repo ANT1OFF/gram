@@ -22,7 +22,10 @@
 //   DELETE <url>/objects?prefix=<p>     deletes every key under the prefix
 //
 // Keys: `attachments/<threadId>/<file>`, `docs/<workspaceId>/<docId>.doc`,
-// `outputs/<threadId>/<16 hex of the path's SHA-256>/<file name>`.
+// `outputs/<threadId>/<16 hex of the path's SHA-256>/<file name>`. The deployment may itself keep
+// a thread's agent sessions under `sessions/<threadId>/`, so a thread whose machine is replaced
+// resumes its conversation on the next one; Gram writes nothing there, and deletes that prefix with
+// the thread, as it does its own.
 
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -44,6 +47,8 @@ import type { OutsideService } from "./config.ts";
 import { Embedding } from "./embedding.ts";
 import { callOutside } from "./outside.ts";
 
+/** Where the deployment keeps a thread's agent sessions, by thread: deleted with the thread. */
+export const SESSIONS_PREFIX = "sessions/";
 /** The largest file sent or brought back; a larger one stays where it is. */
 export const OBJECT_MAX_BYTES = 64 * 2 ** 20;
 /** How often the mirrored folders are walked. */
@@ -478,7 +483,10 @@ export const ObjectStoreLive = Layer.unwrap(
           Stream.runForEach((event) =>
             Effect.andThen(
               store.removeUnder(`attachments/${event.threadId}/`),
-              store.removeUnder(`outputs/${event.threadId}/`),
+              Effect.andThen(
+                store.removeUnder(`outputs/${event.threadId}/`),
+                store.removeUnder(`${SESSIONS_PREFIX}${event.threadId}/`),
+              ),
             ),
           ),
           Effect.forkScoped,

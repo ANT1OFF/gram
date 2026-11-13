@@ -245,14 +245,25 @@ export const makeMessageQueue = ({
           queueLength: rt.queue.length,
         }),
       );
-      const read = yield* forAgent(rt, input);
+      // A session that opened without the agent's own conversation reads the thread's recent
+      // turns ahead of its first input, kept until an input carrying them reaches it. Never ahead
+      // of a slash command, which the text before it would break: the next input takes them.
+      const seed = rt.lostSession;
+      const forAgentInput = yield* forAgent(rt, input);
+      const read =
+        seed === undefined || forAgentInput.text.trimStart().startsWith("/")
+          ? forAgentInput
+          : { ...forAgentInput, text: `${seed}\n${forAgentInput.text}` };
       const lost = yield* session.send(read, { messageId }).pipe(
         Effect.as(undefined),
         Effect.catchDefect((defect) =>
           isUndelivered(defect) ? Effect.succeed(defect) : Effect.die(defect),
         ),
       );
-      if (lost === undefined) return;
+      if (lost === undefined) {
+        if (read !== forAgentInput && rt.lostSession === seed) rt.lostSession = undefined;
+        return;
+      }
       // The agent never took it, or can't be said to have. A delivery's own failure settles it,
       // so only the queue's input is kept here: out of the feed, at the queue's head, under its id,
       // so a host that did take it knows it again rather than take it twice.

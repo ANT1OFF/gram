@@ -464,6 +464,7 @@ const make = Effect.gen(function* () {
             stopAsked: undefined,
             reopenOnIdle: false,
             restartMarker: undefined,
+            lostSession: undefined,
             pendingRestart: undefined,
             tasksEndedAt: undefined,
             agentRunning: false,

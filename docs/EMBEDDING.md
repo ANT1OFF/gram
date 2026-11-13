@@ -144,7 +144,7 @@ With `GRAM_OBJECT_STORE_URL` set, attachments, docs and the files threads produc
 
 - An attachment is sent as it is uploaded. Every minute the attachments and docs folders are walked, and whatever is new or changed since it was last sent is sent: a doc that was saved, an image a tool call returned, a fork's copies.
 - A file a thread produced in its checkout (a report, a screenshot it wrote) is copied to the store when it is recorded as an output, since a checkout doesn't outlive its thread.
-- A closed thread's attachments and outputs are deleted from the store with it. Nothing else is deleted: a file missing on the disk is never taken as a reason to delete it in the store.
+- A closed thread's attachments and outputs are deleted from the store with it, and so is anything the deployment keeps under `sessions/<threadId>/`. Nothing else is deleted: a file missing on the disk is never taken as a reason to delete it in the store.
 - A server that starts on a fresh disk lists the docs in the store and brings them back before anything reads them. An attachment is brought back the first time the transcript shows it.
 
 The store is plain HTTP, and every call carries `Authorization: Bearer <GRAM_OBJECT_STORE_TOKEN>` when the token is set. A redirect is refused.
@@ -156,11 +156,12 @@ The store is plain HTTP, and every call carries `Authorization: Bearer <GRAM_OBJ
 | `GET <url>/objects?prefix=<p>`    | `{ "keys": ["<key>", …] }`: every key under the prefix |
 | `DELETE <url>/objects?prefix=<p>` | Delete every key under the prefix; `404` is fine       |
 
-| Key                                                   | What it is                                           |
-| ----------------------------------------------------- | ---------------------------------------------------- |
-| `attachments/<threadId>/<file>`                       | A thread's attachment or stored tool image           |
-| `docs/<workspaceId>/<docId>.doc`                      | A doc's record: its metadata line, then its Markdown |
-| `outputs/<threadId>/<16 hex of SHA-256(path)>/<name>` | A file the thread produced outside its attachments   |
+| Key                                                   | What it is                                                                                                                                  |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `attachments/<threadId>/<file>`                       | A thread's attachment or stored tool image                                                                                                  |
+| `docs/<workspaceId>/<docId>.doc`                      | A doc's record: its metadata line, then its Markdown                                                                                        |
+| `outputs/<threadId>/<16 hex of SHA-256(path)>/<name>` | A file the thread produced outside its attachments                                                                                          |
+| `sessions/<threadId>/…`                               | The deployment's own: a thread's agent sessions it keeps so they outlive a machine. Gram never writes there, and deletes it with the thread |
 
 Limits:
 
