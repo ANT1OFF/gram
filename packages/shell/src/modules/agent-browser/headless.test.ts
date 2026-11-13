@@ -7,7 +7,7 @@ import { PassThrough } from "node:stream";
 import type { PaneCommand } from "@gram/contracts/link-trust";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { NO_BROWSER, headlessPanes, offLoopback } from "./headless-host.ts";
+import { NO_BROWSER, STOPPED_ANSWERING, headlessPanes, offLoopback } from "./headless-host.ts";
 import {
   HEADLESS_PAGE_LIMIT,
   LOAD_DEADLINE_MS,
@@ -675,6 +675,48 @@ describe.skipIf(executable === undefined || executable === "")("headless panes i
       await close();
     }
   }, 30_000);
+
+  it("dismisses a page's dialog, so its commands go on", async () => {
+    const { panes, close } = headlessPanes({ executable: executable!, sandbox: false });
+    try {
+      const command = (input: PaneCommand) =>
+        panes.serve({ threadId: "owned", limits: { actOnLoopbackOnly: false }, command: input });
+      expect(await command({ op: "navigate", url: `${origin}/` })).toMatchObject({ ok: true });
+      await command({
+        op: "evaluate",
+        expression:
+          "setTimeout(() => { document.title = 'asked ' + confirm('Delete?'); alert('done'); }, 0); 1",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const title = await command({ op: "evaluate", expression: "document.title" });
+      expect(title.ok && title.content).toContain("asked false");
+    } finally {
+      await close();
+    }
+  }, 30_000);
+
+  it("closes a page whose script never yields, and opens a fresh one for the next command", async () => {
+    const { panes, close } = headlessPanes({
+      executable: executable!,
+      sandbox: false,
+      deadlineMs: 3_000,
+    });
+    try {
+      const command = (input: PaneCommand) =>
+        panes.serve({ threadId: "owned", limits: { actOnLoopbackOnly: false }, command: input });
+      expect(await command({ op: "navigate", url: `${origin}/` })).toMatchObject({ ok: true });
+      await command({ op: "evaluate", expression: "setTimeout(() => { while (true) {} }, 0); 1" });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(await command({ op: "text" })).toEqual(STOPPED_ANSWERING);
+      expect(await command({ op: "navigate", url: `${origin}/` })).toMatchObject({
+        ok: true,
+        page: { title: "Owned fixture" },
+      });
+      expect(await command({ op: "text" })).toMatchObject({ ok: true });
+    } finally {
+      await close();
+    }
+  }, 60_000);
 
   it("starts the browser with none of this process's other variables", async () => {
     process.env["GRAM_TEST_INVENTED_SECRET"] = "invented";

@@ -360,8 +360,9 @@ const holding = new WeakMap<CdpConnection, Promise<Held>>();
 /**
  * Has the browser hold every new target before it loads anything, once per connection. In a
  * thread's context the page `createTarget` made is the thread's own and starts; any other is a
- * window the page opened, which no command drives: it starts with every request failed, since a
- * held window holds its opener's process too, and is closed. A service or shared worker there
+ * window the page opened, which no command drives: it starts with its requests failed, since a
+ * held window holds its opener's process too, and is closed. A navigation the browser had already
+ * begun for it isn't caught, so its first request can reach loopback, and nothing further. A service or shared worker there
  * starts with its requests paused. Anything outside the threads' contexts (the browser's own
  * pages) just starts.
  */
@@ -514,9 +515,16 @@ const openIn = async (
       })
       .catch(() => {});
 
+  /** Rejects when the page ends, so a command its renderer never answers ends with it. */
+  let endGone: (error: Error) => void = () => {};
+  const gone = new Promise<never>((_resolve, reject) => {
+    endGone = reject;
+  });
+  gone.catch(() => {});
   const destroy = () => {
     if (destroyed) return;
     destroyed = true;
+    endGone(new Error("The page closed."));
     loading = false;
     debuggerSession = undefined;
     debuggerEvents.emit("detach");
@@ -584,7 +592,7 @@ const openIn = async (
       sendCommand: async (method, params) => {
         if (attaching === undefined) throw new Error("The debugger isn't attached.");
         const session = await attaching;
-        const result = await connection.send(method, params, session);
+        const result = await Promise.race([connection.send(method, params, session), gone]);
         // A page's script retitles it without an event, so the title is read again after each
         // command, ready for the result the pane builds next.
         await refreshTitle();
@@ -738,6 +746,14 @@ const openIn = async (
         if ((params as { frameId: string }).frameId === mainFrameId) loading = true;
         return;
       }
+      case "Page.javascriptDialogOpening": {
+        // Nobody is here to answer a dialog, and an open one stops every command: an alert,
+        // confirm or prompt is dismissed, and a page is let leave.
+        void ownSend("Page.handleJavaScriptDialog", {
+          accept: (params as { type?: string }).type === "beforeunload",
+        }).catch(() => {});
+        return;
+      }
       case "Page.frameStoppedLoading": {
         if ((params as { frameId: string }).frameId !== mainFrameId) return;
         // The title first, so whoever waits on the load reads the page's own.
@@ -759,6 +775,8 @@ const openIn = async (
   await ownSend("Page.enable");
   await ownSend("Fetch.enable", ALL_REQUESTS);
   await ownSend("Page.addScriptToEvaluateOnNewDocument", { source: PAGE_SETUP });
+  // No page is loaded ahead of a navigation: such a load is the browser's own, and isn't paused.
+  await ownSend("Page.setPrerenderingAllowed", { isAllowed: false }).catch(() => {});
   await ownSend("Target.setAutoAttach", {
     autoAttach: true,
     waitForDebuggerOnStart: true,
@@ -782,7 +800,7 @@ export const HEADLESS_PAGE_LIMIT = 4;
  * for it, in a browser context of its own. A page that couldn't be made is no page, and the next
  * command tries again. At most `HEADLESS_PAGE_LIMIT` threads keep a page, as the desktop Preview
  * keeps four: the one whose last command (`touch`) is oldest closes to make room, and `closed` hears
- * of it.
+ * of it. `close` ends a thread's page with what it stored; the next command makes a new one.
  */
 export const headlessViews = (
   connection: CdpConnection,
@@ -791,7 +809,7 @@ export const headlessViews = (
   closed: (threadId: string) => void = () => {},
   /** Whether a command is running on the thread's page, which is then never the one closed. */
   busy: (threadId: string) => boolean = () => false,
-): PaneViews & { touch(threadId: string): void } => {
+): PaneViews & { touch(threadId: string): void; close(threadId: string): void } => {
   // In order of use, the least recent first.
   const pages = new Map<string, Promise<PaneContents | undefined>>();
   const touch = (threadId: string) => {
@@ -819,6 +837,14 @@ export const headlessViews = (
   };
   return {
     touch,
+    close: (threadId) => {
+      const page = pages.get(threadId);
+      if (page === undefined) return;
+      pages.delete(threadId);
+      void page.then((contents) => {
+        if (contents !== undefined) closeHeadlessPage(contents);
+      });
+    },
     contentsFor: (threadId, create) => {
       const known = pages.get(threadId);
       if (known !== undefined) {

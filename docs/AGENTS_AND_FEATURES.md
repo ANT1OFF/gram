@@ -1423,7 +1423,7 @@ spelling does. No name but `localhost` resolves, so nothing a page writes leaves
 A page here gets no WebRTC, and if it found some, WebRTC may use that proxy or nothing, so it
 sends no UDP. Each of the
 page's requests is also paused and put to the pane's rules, then to the Preview's local-session
-rules; a worker's requests get the local-session rules. A page's script can't open a window, and a window a link opens is closed with its requests failed, since no command drives it. A `browser_navigate` anywhere else is refused
+rules; a worker's requests get the local-session rules. A page's script can't open a window, and a window that opens all the same (a link, a shifted click) is closed at once, since no command drives it; its first request may still reach loopback, and nothing else. A `browser_navigate` anywhere else is refused
 before any card, and a navigation the page itself starts off loopback ends where it began.
 
 Each thread's page is a browser context of its own, sharing no cookies or storage. Four threads
@@ -1431,8 +1431,7 @@ keep a page at once; the one whose last command is oldest closes for the next, n
 command running. The profile is a fresh temp
 folder, removed when the browser stops. The browser starts on the first command and starts again
 on the next command after it stops. Neither the browser host nor Chromium gets the server's
-environment: only the paths, locale and font settings, and the variables below. A load whose
-server doesn't answer in 30 seconds is stopped. Recording (`browser_record`) needs the desktop
+environment: only the paths, locale and font settings, and the variables below. A load whose server doesn't answer in 30 seconds is stopped. A page's `alert`, `confirm` or `prompt` is dismissed, since nobody is there to answer it. A page that stops answering for 40 seconds, such as one whose script loops, is closed, and the next command opens a fresh one. One multicast DNS query can still leave the machine when a page hands WebRTC a `.local` name, carrying a fixed name and nothing of the page's. Recording (`browser_record`) needs the desktop
 app's image decoder and doesn't work here. You don't see the page yet: streaming it to the web
 app and taking over from there come later.
 

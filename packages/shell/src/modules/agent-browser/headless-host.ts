@@ -13,6 +13,7 @@ import { lookup } from "node:dns/promises";
 import { pathToFileURL } from "node:url";
 
 import {
+  PANE_COMMAND_TIMEOUT_MS,
   browseTarget,
   paneRequestMessage,
   type PaneResult,
@@ -39,6 +40,17 @@ export const NO_BROWSER: PaneResult = {
   code: "failed",
   message:
     "The browser on the Gram server couldn't open a page. Its log says why; the next command tries again.",
+};
+
+/** How long one command may run here: under the server's own wait, so this answer reaches it. */
+export const COMMAND_DEADLINE_MS = PANE_COMMAND_TIMEOUT_MS - 5_000;
+
+/** What a command answers when its page never did. */
+export const STOPPED_ANSWERING: PaneResult = {
+  ok: false,
+  code: "failed",
+  message:
+    "The page stopped answering, so it was closed. Navigate again to open it afresh; if it happens again, the page's own script is likely looping.",
 };
 
 /** Whether `raw` is a navigation this browser refuses outright: anything that isn't loopback. */
@@ -68,6 +80,8 @@ export const headlessPanes = (options: {
   readonly executable: string;
   readonly sandbox: boolean;
   readonly log?: ShellLog;
+  /** How long one command may take; `COMMAND_DEADLINE_MS` unless a test says otherwise. */
+  readonly deadlineMs?: number;
 }): { readonly panes: AgentPanes; close(): Promise<void> } => {
   const log = options.log ?? stderrLog;
   /** The commands running on each thread's page. */
@@ -116,10 +130,24 @@ export const headlessPanes = (options: {
         running.set(thread, (running.get(thread) ?? 0) + 1);
         views?.touch(thread);
       }
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<PaneResult>((resolve) => {
+        deadline = setTimeout(() => {
+          // A page whose script never yields answers nothing, and would hold the thread's
+          // commands for good: it is closed, and the next command opens a fresh one.
+          if (requestId !== undefined) panes.cancel(requestId);
+          if (thread !== undefined) {
+            views?.close(thread);
+            panes.closed(thread);
+          }
+          resolve(STOPPED_ANSWERING);
+        }, options.deadlineMs ?? COMMAND_DEADLINE_MS);
+      });
       try {
-        const result = await panes.serve(raw, requestId);
+        const result = await Promise.race([panes.serve(raw, requestId), late]);
         return result.ok || result.code !== "noPane" ? result : NO_BROWSER;
       } finally {
+        clearTimeout(deadline);
         if (thread !== undefined) {
           const left = (running.get(thread) ?? 1) - 1;
           if (left > 0) running.set(thread, left);
