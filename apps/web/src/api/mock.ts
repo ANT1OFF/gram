@@ -130,6 +130,7 @@ import { createPagesMock } from "./pages/mock";
 import { createLabelsMock } from "./labels/mock";
 import { createKeybindingsMock } from "./keybindings/mock";
 import { createTerminalMock } from "./terminal/mock";
+import { createBrowserViewMock } from "./browser-view/mock";
 import { createRoutinesMock } from "./routines/mock";
 import { createThreadWakesMock } from "./thread-wakes/mock";
 import { createWaitsMock } from "./mock-waits";
@@ -2785,6 +2786,7 @@ export function createMockApi(options: MockApiOptions = {}) {
     agentBrowseHosts: agentBrowse.agentBrowseHosts,
     simulateBrowseApproval: agentBrowse.simulateBrowseApproval,
     ...createTerminalMock(world),
+    ...createBrowserViewMock(),
     ...createThreadWakesMock(world),
     ...createRoutinesMock(world, () => owned.listWorkspaces()),
   };

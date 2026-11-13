@@ -76,7 +76,8 @@ are much slower across that boundary.
 Agents' `browser_*` tools work in the container: the image has Debian's Chromium, and the server
 runs it headless for them ([how](AGENTS_AND_FEATURES.md#the-agent-browser-without-the-desktop-app)).
 It reaches the container's loopback only, so an agent can open and test the dev server it started
-there, and nothing on the internet or your network. You don't see its page yet.
+there, and nothing on the internet or your network. The thread's Preview tab shows its page live
+in your browser, and a click or a key in it takes the page over until you hand it back.
 
 Chromium runs without its own sandbox here (`GRAM_BROWSER_SANDBOX=0`), since the container's user
 can't make the namespaces it needs. The container is the boundary, as it is for the agents, which

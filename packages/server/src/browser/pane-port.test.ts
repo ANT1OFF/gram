@@ -109,6 +109,27 @@ describe("forkedPanePort", () => {
   });
 });
 
+describe("forkedPanePort, watching", () => {
+  it("sends a watching message only to a host that is running, and says when it stops", () => {
+    const host = fakeHost();
+    const port = forkedPanePort("/opt/host.ts", host.fork);
+    let stops = 0;
+    port.onStopped(() => stops++);
+    port.postIfRunning({ type: "pane.view.watch", threadId: "thread-1" });
+    expect(host.children).toHaveLength(0);
+    port.postMessage({ type: "pane.request", id: "a", request: REQUEST });
+    port.postIfRunning({ type: "pane.view.watch", threadId: "thread-1" });
+    expect(host.children[0]!.sent.at(-1)).toEqual({
+      type: "pane.view.watch",
+      threadId: "thread-1",
+    });
+    host.children[0]!.emit("exit", 0, null);
+    expect(stops).toBe(1);
+    port.postIfRunning({ type: "pane.view.watch", threadId: "thread-1" });
+    expect(host.children).toHaveLength(1);
+  });
+});
+
 describe("browserHostEnv", () => {
   it("hands the host where things are and which browser, and none of the server's secrets", () => {
     expect(

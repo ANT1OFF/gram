@@ -3,6 +3,7 @@
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { AgentRuntimeRpcs } from "./rpc/agent-runtime.ts";
 import { AppRpcs } from "./rpc/app.ts";
+import { BrowserViewRpcs } from "./rpc/browser-view.ts";
 import { ComposerRpcs } from "./rpc/composer.ts";
 import { ConnectorRpcs } from "./rpc/connectors.ts";
 import { DreamRpcs } from "./rpc/dreams.ts";
@@ -24,6 +25,7 @@ import { ThreadRpcs } from "./rpc/threads.ts";
 export const GramRpcGroups: readonly [
   typeof AgentRuntimeRpcs,
   typeof AppRpcs,
+  typeof BrowserViewRpcs,
   typeof ComposerRpcs,
   typeof ConnectorRpcs,
   typeof DreamRpcs,
@@ -38,6 +40,7 @@ export const GramRpcGroups: readonly [
 ] = [
   AgentRuntimeRpcs,
   AppRpcs,
+  BrowserViewRpcs,
   ComposerRpcs,
   ConnectorRpcs,
   DreamRpcs,
@@ -58,6 +61,7 @@ export type GramRpcs = typeof GramRpcs;
 
 export * from "./rpc/agent-runtime.ts";
 export * from "./rpc/app.ts";
+export * from "./rpc/browser-view.ts";
 export * from "./rpc/composer.ts";
 export * from "./rpc/connectors.ts";
 export * from "./rpc/dreams.ts";

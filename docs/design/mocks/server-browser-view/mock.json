@@ -1,14 +1,19 @@
 {
   "title": "Watching and driving the server's browser",
   "slug": "server-browser-view",
-  "status": "draft",
+  "status": "approved",
   "template": "app-screen",
-  "current": 1,
-  "approved": null,
+  "current": 2,
+  "approved": 2,
   "versions": [
     {
       "n": 1,
       "file": "v1.html",
+      "created": "2026-11-13"
+    },
+    {
+      "n": 2,
+      "file": "v2.html",
       "created": "2026-11-13"
     }
   ],

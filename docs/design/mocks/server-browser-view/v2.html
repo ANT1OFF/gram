@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Watching and driving the server's browser · v2</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <script type="application/json" id="mock-tweaks">
+      {
+        "density": {
+          "label": "Density",
+          "type": "enum",
+          "options": ["compact", "comfortable"],
+          "default": "compact"
+        }
+      }
+    </script>
+    <style>
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+        min-height: 0;
+        flex: 1;
+      }
+      .convo {
+        display: flex;
+        flex-direction: column;
+        gap: var(--gap);
+        padding: var(--pad);
+        border-right: 1px solid var(--border-subtle);
+        min-width: 0;
+        overflow: hidden;
+      }
+      .tool-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .panel {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+      }
+      .strip {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .strip .address {
+        flex: 1;
+        min-width: 0;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        height: 28px;
+      }
+      .icon-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--fg-muted);
+      }
+      .icon-btn:hover {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .activity {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-bottom: 1px solid var(--border-subtle);
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .where {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        font-size: 12px;
+        color: var(--fg-subtle);
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .stage {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        background: var(--surface-1);
+      }
+      .frame {
+        flex: 1;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 16px;
+        background: var(--surface-2);
+      }
+      .frame.dim {
+        opacity: 0.45;
+      }
+      .frame.yours {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
+      .over {
+        position: absolute;
+        left: 50%;
+        bottom: 16px;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px 6px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 8px;
+        background: var(--surface-2);
+        font-size: 12px;
+        box-shadow: var(--shadow-overlay);
+        white-space: nowrap;
+      }
+      .center {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: var(--pad);
+      }
+      @media (max-width: 700px) {
+        .split {
+          grid-template-columns: 1fr;
+        }
+        .convo {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        The thread's Preview tab in a browser tab, showing the page the agent drives in the server's
+        headless Chromium. Any click or key in the page takes control, as in the desktop app, and
+        control returns to the agent after 20 seconds without input, or at once with Hand back. Look
+        at that, and at the states when there is no live page.
+      </p>
+
+      <section
+        class="board"
+        data-name="Preview tab"
+        data-size="1280x800"
+        data-states="agent,yours,empty,starting,failed,reconnecting"
+      >
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>[Workspace name] · gram on [server]</span>
+            </div>
+            <div class="app-body">
+              <nav class="sidebar" aria-label="Threads">
+                <div class="section-label">Threads</div>
+                <a class="nav-item" href="#" aria-current="page"
+                  ><i data-icon="msg"></i>[Fix the filters on the invoices page]</a
+                >
+                <a class="nav-item" href="#"><i data-icon="msg"></i>[Another thread]</a>
+                <a class="nav-item" href="#"><i data-icon="settings"></i>Settings</a>
+              </nav>
+              <div class="main split">
+                <section class="convo" aria-label="Conversation">
+                  <p class="small">
+                    [The agent's last message: it started the dev server and is checking the filters
+                    in the browser.]
+                  </p>
+                  <div class="tool-row"><i data-icon="terminal"></i>preview_start web · :5173</div>
+                  <div class="tool-row">
+                    <i data-icon="globe"></i>browser_navigate localhost:5173/invoices
+                  </div>
+                  <div class="tool-row"><i data-icon="globe"></i>browser_click "Filters"</div>
+                </section>
+
+                <section class="panel" aria-label="Preview">
+                  <div class="tabs" role="tablist">
+                    <button class="tab" role="tab" type="button">Files</button>
+                    <button class="tab" role="tab" type="button">Diff</button>
+                    <button class="tab" role="tab" aria-selected="true" type="button">
+                      Preview
+                    </button>
+                  </div>
+                  <div class="strip">
+                    <button class="icon-btn" type="button" aria-label="Back">
+                      <i data-icon="left"></i>
+                    </button>
+                    <button class="icon-btn" type="button" aria-label="Reload">
+                      <i data-icon="refresh"></i>
+                    </button>
+                    <input
+                      class="input address"
+                      aria-label="Preview address"
+                      value="localhost:5173/invoices"
+                      data-when="agent,yours,starting,reconnecting,failed"
+                    />
+                    <input
+                      class="input address"
+                      aria-label="Preview address"
+                      placeholder="The agent's page on the server"
+                      disabled
+                      data-when="empty"
+                    />
+                    <button class="icon-btn" type="button" aria-label="Inspect page capture">
+                      <i data-icon="search"></i>
+                    </button>
+                    <button
+                      class="btn sm primary"
+                      type="button"
+                      data-when="yours"
+                      title="You have control. Hand the page back to the agent"
+                    >
+                      <i data-icon="orch"></i>Hand back
+                    </button>
+                  </div>
+
+                  <div class="activity" data-when="agent">
+                    <span class="dot" style="background: var(--status-working)"></span>
+                    Agent: Opens the Filters menu · 14:32
+                  </div>
+                  <div class="activity" data-when="yours">
+                    <i data-icon="user"></i>
+                    You have control. It returns to the agent after 20 s without input.
+                  </div>
+                  <div class="where">
+                    <i data-icon="shield"></i>
+                    On the server's browser: it opens addresses on the server only, such as its dev
+                    servers.
+                  </div>
+
+                  <div class="stage">
+                    <div class="frame" data-when="agent">
+                      <div class="placeholder" style="flex: 1">
+                        [Live frames of localhost:5173/invoices from the server, scaled to fit]
+                      </div>
+                    </div>
+                    <div class="over" data-when="agent">
+                      The agent is driving. Click or type in the page to take over.
+                    </div>
+
+                    <div class="frame yours" data-when="yours">
+                      <div class="placeholder" style="flex: 1">
+                        [The same page, live; your pointer, keys and scrolling go to it]
+                      </div>
+                    </div>
+
+                    <div class="frame dim" data-when="reconnecting">
+                      <div class="placeholder" style="flex: 1">[The last frame, dimmed]</div>
+                    </div>
+                    <div class="over" data-when="reconnecting" role="status">
+                      <span class="spinner" aria-hidden="true"></span>
+                      Reconnecting to the server's browser…
+                    </div>
+
+                    <div class="center" data-when="empty">
+                      <div class="empty">
+                        <span class="empty-icon"><i data-icon="globe"></i></span>
+                        <h3>No page yet</h3>
+                        <p>
+                          When the agent browses, its page shows here live, from the server's
+                          browser.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div class="center" data-when="starting" aria-busy="true">
+                      <div class="row" style="gap: 8px">
+                        <span class="spinner" aria-hidden="true"></span>
+                        <span class="muted">Starting the browser on the server…</span>
+                      </div>
+                    </div>
+
+                    <div class="center" data-when="failed">
+                      <div class="callout danger" role="alert">
+                        <i data-icon="xcircle"></i>
+                        <div class="stack">
+                          <strong>The server's browser couldn't open a page.</strong>
+                          <span>
+                            [The server's message, such as: this Gram has no browser set up
+                            (GRAM_HEADLESS_BROWSER).] The next command tries again.
+                          </span>
+                        </div>
+                        <button class="btn sm" type="button">Try again</button>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -803,7 +803,8 @@ export const ServerCore = Layer.unwrap(
         WorkspaceAppToolsLive,
         McpProposeAppToolsLive,
         IssueAppToolsLive,
-        BrowserAppToolsLive.pipe(Layer.provide(PanePort.layer)),
+        // Merged, so the handlers that show an agent's page to a client reach the same port.
+        BrowserAppToolsLive.pipe(Layer.provideMerge(PanePort.layer)),
         DevServerAppToolsLive,
         ThreadAssistLive,
         RepoEventsInboundLive,

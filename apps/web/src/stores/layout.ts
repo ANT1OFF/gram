@@ -981,11 +981,13 @@ export interface LayoutState
    * Shows the requested panel, opening the right panel if it's hidden. Ignored unless the request is
    * for `viewedThreadId`; a `preview` request is ignored unless its target is a loopback URL, and
    * opens the Preview tab where `previewPane` says there is one, or suggests the page otherwise.
+   * `serverPage` says the tab shows the page an agent drives in the server's own browser, so the
+   * agent browsing brings it up there too.
    */
   requestPanel(
     request: PanelRequest,
     viewedThreadId: ThreadId | undefined,
-    options?: { previewPane?: boolean },
+    options?: { previewPane?: boolean; serverPage?: boolean },
   ): void;
   /**
    * Loads `url` in `threadId`'s Preview tab and shows the tab; ignored unless `url` is a loopback
@@ -1337,7 +1339,8 @@ export const useLayoutStore = create<LayoutState>()(
           const id = ++requestSeq;
           if (panel === "preview" && driven === true) {
             // Already in the pane, possibly on a public host the user allowed the agent.
-            if (options?.previewPane !== true || target === undefined) return;
+            if (target === undefined) return;
+            if (options?.previewPane !== true && options?.serverPage !== true) return;
             set((s) => ({
               previewPages: { ...s.previewPages, [threadId]: { id, url: target, driven: true } },
             }));

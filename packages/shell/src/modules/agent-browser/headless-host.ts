@@ -18,13 +18,16 @@ import {
   paneRequestMessage,
   type PaneResult,
   type PaneResponseMessage,
+  type ViewHostMessage,
+  type ViewStatus,
 } from "@gram/contracts/link-trust";
 
 import { createBrowseHostList } from "../../core/browse-rules.ts";
 import type { ShellLog } from "../../core/log.ts";
-import { headlessViews, launchHeadless, type HeadlessBrowser } from "./headless.ts";
+import { headlessPage, headlessViews, launchHeadless, type HeadlessBrowser } from "./headless.ts";
 import { createAgentPanes, type AgentPanes } from "./pane.ts";
 import { servePaneMessage } from "./serve.ts";
+import { createViews, type Views } from "./view.ts";
 
 /** What a navigation off loopback answers here, before the pane would raise a card for it. */
 export const OFF_LOOPBACK: PaneResult = {
@@ -74,7 +77,8 @@ const stderrLog: ShellLog = {
 
 /**
  * The pane over a headless browser started from `executable` when first needed. `close` ends the
- * browser; the next request starts another.
+ * browser; the next request starts another. `view` takes the server's messages about watching a
+ * thread's page, and answers them through `send`.
  */
 export const headlessPanes = (options: {
   readonly executable: string;
@@ -82,12 +86,18 @@ export const headlessPanes = (options: {
   readonly log?: ShellLog;
   /** How long one command may take; `COMMAND_DEADLINE_MS` unless a test says otherwise. */
   readonly deadlineMs?: number;
-}): { readonly panes: AgentPanes; close(): Promise<void> } => {
+  /** Where a watched page's state and frames go; without it nothing is watched. */
+  readonly send?: (message: ViewHostMessage) => void;
+  /** How long a person keeps a page after their last input, when a test says otherwise. */
+  readonly idleMs?: number;
+}): { readonly panes: AgentPanes; readonly view: Views["message"]; close(): Promise<void> } => {
   const log = options.log ?? stderrLog;
   /** When each thread's latest command is answered. */
   const tails = new Map<string, Promise<void>>();
   /** The commands running on each thread's page. */
   const running = new Map<string, number>();
+  /** Why a thread has no page yet: its first command is making one, or couldn't. */
+  const phases = new Map<string, ViewStatus>();
   let browser: HeadlessBrowser | undefined;
   let views: ReturnType<typeof headlessViews> | undefined;
   const viewsNow = () => {
@@ -116,12 +126,21 @@ export const headlessPanes = (options: {
     hosts,
     views: { contentsFor: (threadId, create) => viewsNow().contentsFor(threadId, create) },
     log,
+    driverChanged: (threadId) => watching.changed(threadId),
     resolveHost: async (host) => ({
       endpoints: (await lookup(host, { all: true })).map(({ address, family }) => ({
         address,
         family: family === 6 ? ("ipv6" as const) : ("ipv4" as const),
       })),
     }),
+  });
+  const watching = createViews({
+    panes,
+    pageOf: async (threadId) => views?.peek(threadId),
+    watch: headlessPage,
+    statusOf: (threadId) => phases.get(threadId),
+    send: options.send ?? (() => {}),
+    ...(options.idleMs === undefined ? {} : { idleMs: options.idleMs }),
   });
   const served: AgentPanes = {
     ...panes,
@@ -131,6 +150,10 @@ export const headlessPanes = (options: {
       if (thread !== undefined) {
         running.set(thread, (running.get(thread) ?? 0) + 1);
         views?.touch(thread);
+        if ((await views?.peek(thread)) === undefined) {
+          phases.set(thread, { kind: "starting" });
+          watching.changed(thread);
+        }
       }
       // The clock starts when the thread's earlier commands are done, so one waiting its turn
       // behind a long command isn't taken for a page that stopped answering.
@@ -168,7 +191,12 @@ export const headlessPanes = (options: {
       }
       try {
         const result = await answered;
-        return result.ok || result.code !== "noPane" ? result : NO_BROWSER;
+        const none = !result.ok && result.code === "noPane";
+        if (thread !== undefined) {
+          if (none) phases.set(thread, { kind: "failed", message: NO_BROWSER.message });
+          else phases.delete(thread);
+        }
+        return none ? NO_BROWSER : result;
       } finally {
         clearTimeout(deadline);
         finished = true;
@@ -176,13 +204,17 @@ export const headlessPanes = (options: {
           const left = (running.get(thread) ?? 1) - 1;
           if (left > 0) running.set(thread, left);
           else running.delete(thread);
+          if (phases.get(thread)?.kind === "starting") phases.delete(thread);
+          watching.changed(thread);
         }
       }
     },
   };
   return {
     panes: served,
+    view: watching.message,
     close: async () => {
+      watching.close();
       const stopping = browser?.close();
       browser = undefined;
       views = undefined;
@@ -203,12 +235,14 @@ const main = () => {
     console.error("GRAM_BROWSER_EXECUTABLE names no browser.");
     process.exit(2);
   }
-  const { panes, close } = headlessPanes({
+  const { panes, view, close } = headlessPanes({
     executable,
     sandbox: process.env["GRAM_BROWSER_SANDBOX"] !== "0",
+    send: (message) => send(message),
   });
   const reply = (response: PaneResponseMessage) => send(response);
   process.on("message", (message) => {
+    if (view(message)) return;
     const request = paneRequestMessage(message);
     if (request !== undefined && offLoopback(message)) {
       reply({ type: "pane.response", id: request.id, result: OFF_LOOPBACK });
