@@ -224,6 +224,7 @@ export const ReadAppToolsLive = Layer.effectDiscard(
       summary: ThreadSummary,
       projects: ReadonlyMap<string, Project>,
       caller: ThreadId,
+      workspaces?: ReadonlyMap<string, string>,
     ) =>
       Effect.gen(function* () {
         const { thread } = summary;
@@ -251,6 +252,19 @@ export const ReadAppToolsLive = Layer.effectDiscard(
           project: projects.get(thread.projectId)?.name ?? "",
           path: checkout.path,
           ...(thread.id === caller ? { self: true } : {}),
+          // What it is in a workspace, so a thread with work for one finds who to hand it to: its
+          // orchestrator, by the workspace's name, or a worker by the orchestrator it reports to.
+          ...(thread.role === "orchestrator"
+            ? {
+                role: "orchestrator" as const,
+                ...(thread.workspaceId === undefined ||
+                workspaces?.get(thread.workspaceId) === undefined
+                  ? {}
+                  : { workspace: workspaces.get(thread.workspaceId) }),
+              }
+            : thread.spawnedBy === undefined
+              ? {}
+              : { role: "worker" as const, orchestratorThreadId: thread.spawnedBy.threadId }),
           ...(thread.completedAt === undefined ? {} : { completed: true }),
           ...(thread.parked ? { parked: true } : {}),
         };
@@ -452,7 +466,7 @@ export const ReadAppToolsLive = Layer.effectDiscard(
         name: "list_threads",
         class: "read",
         description:
-          "Other Gram threads: title, status, activity line, branch, agent and project. Use it to check whether someone is already working on something. To mention a thread to the user, link it as [title](#threadId).",
+          'Other Gram threads: title, status, activity line, branch, agent and project. Use it to check whether someone is already working on something. A workspace\'s orchestrator has `role: "orchestrator"` and its `workspace` by name, and a worker has `role: "worker"` and its `orchestratorThreadId`: work for a workspace goes to its orchestrator (send_message), not to one of its workers. To mention a thread to the user, link it as [title](#threadId).',
       },
       input: Schema.Struct({
         status: Schema.optionalKey(ThreadStatus),
@@ -473,8 +487,14 @@ export const ReadAppToolsLive = Layer.effectDiscard(
             );
           });
           const shown = matching.slice(0, clamp(limit, 1, 200));
+          const workspaces = new Map(
+            (yield* store.listWorkspaces).map(({ workspace }) => [
+              workspace.id as string,
+              workspace.name,
+            ]),
+          );
           const threads = yield* Effect.forEach(shown, (summary) =>
-            compactThread(summary, projects, threadId),
+            compactThread(summary, projects, threadId, workspaces),
           );
           return { threads, ...(matching.length > shown.length ? { truncated: true } : {}) };
         }).pipe(Effect.mapError(toolError("list_threads"))),
