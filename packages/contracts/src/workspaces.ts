@@ -340,6 +340,14 @@ export const OrchestratorCharter = Schema.Struct({
    * gives each what its agent is configured with. Read it through `connectorSetOf`.
    */
   connectors: Schema.optionalKey(ConnectorSet),
+  /**
+   * The only sites, and the only Mac apps, this workspace's threads may act on with the user's
+   * browser, in place of the user-wide lists (`agents.browserSites`, `agents.browserApps`); a list
+   * absent or empty leaves the user-wide one. Plain strings, so a charter with an entry today's
+   * rules refuse still loads; read them through `browserScope`, which drops those.
+   */
+  browserSites: Schema.optionalKey(Schema.Array(Schema.String)),
+  browserApps: Schema.optionalKey(Schema.Array(Schema.String)),
   /** Absent in migrated workspaces keeps the bot approval gate. */
   mergeReviewPolicy: Schema.optionalKey(MergeReviewPolicy),
   /** Advisory overlap exclusions: exact repo-relative paths, or basenames at any depth.

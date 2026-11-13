@@ -1522,6 +1522,12 @@ Claude thread is refused when a Claude in Chrome call opens an address on anothe
 clicks on a listed site can still lead elsewhere, so the extension's own site permissions remain
 the backstop there. Claude in Chrome reaches no Mac apps.
 
+A workspace can carry lists of its own, under its settings' **More options** (`browserSites` and
+`browserApps` in its charter). For that workspace's orchestrator and workers, a list of its own
+takes the place of the user-wide one, sites and apps each on their own; left empty, the user-wide
+list applies. Only the user edits them: no agent can change either through `settings_propose` or
+`workspace_update`.
+
 **Permission prompts.** When a computer-use or other MCP server asks a yes-or-no question
 before it acts ("Allow ChatGPT to use Safari?"), the thread shows it as an approval card. A Codex
 thread's card offers this session or always only where the server offers them. A Claude thread's

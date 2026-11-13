@@ -52,6 +52,7 @@ import { SETTINGS_CARD, SETTINGS_STACK, SettingsGroup } from "./settings-group";
 import { WorkerBriefFooterField } from "./worker-brief-footer-field";
 import { WorkerModeField } from "./worker-mode-field";
 import { useWorkspaceChanges } from "./workspace-actions";
+import { WorkspaceBrowserFields } from "./workspace-browser-field";
 import { WorkspaceConnectorsField } from "./workspace-connectors-field";
 import {
   autonomyLevel,
@@ -588,6 +589,19 @@ function MoreOptions({ state, changes }: { state: WorkspaceState; changes: Chang
               new Promise<void>((resolve, reject) => {
                 void changes
                   .saveCharter(next, "Connectors saved", (message) => reject(new Error(message)))
+                  .then(resolve);
+              })
+            }
+          />
+          <WorkspaceBrowserFields
+            charter={charter}
+            disabled={changes.busy}
+            onChange={(next) =>
+              new Promise<void>((resolve, reject) => {
+                void changes
+                  .saveCharter(next, "Browser limits saved", (message) =>
+                    reject(new Error(message)),
+                  )
                   .then(resolve);
               })
             }
