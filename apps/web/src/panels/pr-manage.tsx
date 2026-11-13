@@ -79,10 +79,13 @@ export function PrManage({
               open && "rotate-90",
             )}
           />
-          <span className="shrink-0">Reviewers, labels and watching</span>{" "}
+          {/* Folded, its facts name the three things it holds ("4 reviewers · 2 labels · not
+              watching"), so they stand alone and are not cut by the heading saying them first. */}
+          <span className={cn("shrink-0", !open && "sr-only")}>Reviewers, labels and watching</span>{" "}
           {!open && (
             <span data-testid="pr-manage-facts" className="min-w-0 truncate">
-              · {facts.join(" · ")}
+              <span className="sr-only">· </span>
+              {facts.join(" · ")}
             </span>
           )}
         </button>

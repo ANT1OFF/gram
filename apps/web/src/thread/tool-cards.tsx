@@ -245,8 +245,10 @@ function ToolShell({
               </Swap>
             </span>
             <span className="shrink-0 font-medium">{words.label}</span>
+            {/* Waiting on an approval, the card right under the row says what is asked in full:
+                the row names the tool and the wait, and does not say the command a second time. */}
             <span className="min-w-0 flex-1 truncate font-mono text-meta text-muted-foreground">
-              {summary}
+              {phase === "awaiting" ? null : summary}
             </span>
             {meta}
             {/* A finished row is the common case: its check says so, and the word is for a reader.
