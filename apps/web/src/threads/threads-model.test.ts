@@ -1,7 +1,7 @@
 import type { ThreadSummary } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { startedByOf, threadListings } from "./threads-model";
+import { inThreadsFilter, startedByOf, threadListings, threadsFilterCounts } from "./threads-model";
 
 const summary = (
   id: string,
@@ -84,5 +84,27 @@ describe("startedByOf", () => {
         kinds,
       })[0]?.place,
     ).toBe("One agent");
+  });
+});
+
+describe("the Threads page's filters", () => {
+  it("counts every thread, those that need you and those at work, never one in both", () => {
+    const listed = threadListings(
+      sources(
+        [
+          summary("a", 1, {}, "running"),
+          summary("b", 2, {}, "running"),
+          summary("c", 3),
+          summary("d", 4, {}, "starting"),
+        ],
+        ["a"],
+      ),
+    );
+    expect(threadsFilterCounts(listed)).toEqual({ all: 4, needsYou: 1, running: 2 });
+    expect(
+      listed
+        .filter((each) => inThreadsFilter(each, "running"))
+        .map((each) => each.summary.thread.id),
+    ).toEqual(["d", "b"]);
   });
 });

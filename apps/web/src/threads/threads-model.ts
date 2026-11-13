@@ -89,3 +89,30 @@ export const threadListings = (sources: ThreadsSources, query = ""): ThreadListi
         b.summary.thread.lastActivityAt - a.summary.thread.lastActivityAt,
     );
 };
+
+/** What the Threads page narrows to: every thread, those that need you, or those at work now. */
+export type ThreadsFilter = "all" | "needsYou" | "running";
+
+export const THREADS_FILTERS: readonly { readonly value: ThreadsFilter; readonly label: string }[] =
+  [
+    { value: "all", label: "All" },
+    { value: "needsYou", label: "Needs you" },
+    { value: "running", label: "Running" },
+  ];
+
+const atWork = (listing: ThreadListing): boolean =>
+  listing.summary.status === "running" || listing.summary.status === "starting";
+
+/** Whether `filter` keeps `listing`. A thread that needs you is not also counted as at work. */
+export const inThreadsFilter = (listing: ThreadListing, filter: ThreadsFilter): boolean =>
+  filter === "all" ||
+  (filter === "needsYou" ? listing.needsYou : !listing.needsYou && atWork(listing));
+
+/** How many of `listings` each filter keeps, for the count beside its name. */
+export const threadsFilterCounts = (
+  listings: readonly ThreadListing[],
+): Readonly<Record<ThreadsFilter, number>> => ({
+  all: listings.length,
+  needsYou: listings.filter((listing) => inThreadsFilter(listing, "needsYou")).length,
+  running: listings.filter((listing) => inThreadsFilter(listing, "running")).length,
+});
