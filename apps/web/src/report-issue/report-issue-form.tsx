@@ -127,7 +127,7 @@ export function ReportIssueForm({
           <CircleCheck aria-hidden className="size-icon-row shrink-0 text-success" />
           <button
             type="button"
-            className="font-medium text-primary underline-offset-2 hover:underline"
+            className="font-medium text-link underline-offset-2 hover:underline"
             onClick={() => void openExternalUrl(api, filed.url)}
           >
             #{filed.number}

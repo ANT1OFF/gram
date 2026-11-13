@@ -70,7 +70,11 @@ export function MergeApprovalSegments({
             className={cn(
               SEGMENT,
               "h-7 px-2.5 text-meta disabled:opacity-100",
-              checked && choice.value === "automatic" && "aria-checked:text-warning",
+              // A step toward the text colour: the warning hue alone is under the text floor on
+              // the selected slab's tint in light.
+              checked &&
+                choice.value === "automatic" &&
+                "aria-checked:text-[color-mix(in_oklab,var(--warning-text),var(--fg)_35%)]",
             )}
           >
             {checked && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}

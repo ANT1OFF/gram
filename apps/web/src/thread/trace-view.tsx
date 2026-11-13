@@ -41,7 +41,7 @@ const KIND: Readonly<
 > = {
   model: {
     bar: "bg-primary",
-    text: "text-primary",
+    text: "text-link",
     icon: Sparkles,
     name: "Model",
   },

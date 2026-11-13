@@ -141,6 +141,7 @@ export function AppShell() {
           )}
         </div>
         <main
+          id="content"
           ref={content}
           tabIndex={-1}
           inert={chatCovered}

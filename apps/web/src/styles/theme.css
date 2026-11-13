@@ -119,6 +119,7 @@
   --color-border-strong: var(--border-strong);
   --color-link: var(--accent-text);
   --color-subtle: var(--fg-subtle);
+  --color-disabled: var(--fg-disabled);
   --color-highlight: var(--highlight);
   /* Components use these as text as well as glyphs, so they take the text-grade tokens. */
   --color-success: var(--success-text);

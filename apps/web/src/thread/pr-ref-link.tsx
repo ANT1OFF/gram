@@ -59,7 +59,7 @@ export function PrRefsProvider({
 }
 
 /** Streamdown's link style, so a reference reads like any other link in the message. */
-const LINK = "wrap-anywhere font-medium text-primary underline";
+const LINK = "wrap-anywhere font-medium text-link underline";
 
 function PrRefLink({
   "data-repo": repo,

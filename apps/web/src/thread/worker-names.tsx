@@ -131,7 +131,7 @@ function WorkerRefLink({ threadId, children }: { threadId: ThreadId; children?: 
       params={{ threadId }}
       onClick={beside}
       data-testid="worker-name-link"
-      className="font-medium text-primary underline underline-offset-2"
+      className="font-medium text-link underline underline-offset-2"
     >
       {children}
     </Link>
