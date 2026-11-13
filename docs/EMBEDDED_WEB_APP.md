@@ -156,9 +156,10 @@ place of its own, such as its own assistant's conversations. Each still opens at
 (`{ name: "Chat", path: "/chat/$threadId", ids }`): a message one of those threads sent to another
 says the place beside its sender and opens the sender there, and a phone's header puts such a
 thread under the place's name in place of a kind of thread.
-`threadsPage.bar: "path"` starts the title bar of a thread, a Board and the New form as a path from
-the page of every thread, with a workspace's orchestrator and Board as two buttons beside it, in
-place of the workspace switcher and Chat · Board. `newEntry: { label: "New agent", to:
+`threadsPage.bar: "path"` starts the title bar of a thread, a Board, a workspace's Memory and the
+New form as a path from the page of every thread, with a workspace's orchestrator, Board and Memory
+as one segmented control beside it, in place of the workspace switcher and Chat · Board. Memory
+then drops its own title row, which the bar already says. `newEntry: { label: "New agent", to:
 "/agents" }` makes New, in the sidebar's head and a phone menu's foot, one plain button to a page of
 yours in place of Gram's menu of Task, Team and Chat: for an app where what a person mostly starts
 is something of its own. Gram's New form stays reachable from the threads page, the palette and its

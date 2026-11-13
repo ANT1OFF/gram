@@ -27,15 +27,18 @@ const PLACE =
 const creating = (pathname: string) =>
   pathname === "/new" || pathname === "/new-task" || pathname === "/new-workspace";
 
+/** Whether `pathname` is a workspace's Memory, one of its three places. */
+const onMemory = (pathname: string) => pathname.startsWith("/w/") && pathname.endsWith("/memory");
+
 /**
  * Whether the title bar starts as a path on this page: an embedding app asked for it
- * (`threadsPage.bar: "path"`), and the page is a thread, a Board or the New form. Gram's other
- * pages, and Gram on its own, keep the workspace and its views.
+ * (`threadsPage.bar: "path"`), and the page is a thread, a Board, a workspace's Memory or the New
+ * form. Gram's other pages, and Gram on its own, keep the workspace and its views.
  */
 export function usePathBar(): boolean {
   const asked = useEmbedShell((s) => s.threadsPage.bar === "path");
   const pathname = useLocation({ select: (location) => location.pathname });
-  return asked && (pathname.startsWith("/t/") || creating(pathname));
+  return asked && (pathname.startsWith("/t/") || onMemory(pathname) || creating(pathname));
 }
 
 function Step() {
@@ -57,7 +60,9 @@ export function TitlebarPath({ solo, narrow }: { solo: boolean; narrow: boolean 
   const board = useViewStore((s) => s.view === "board");
   const route = useParams({ strict: false }).threadId as ThreadId | undefined;
   const last =
-    board || (route !== undefined && route === workspace?.workspace.orchestratorThreadId);
+    board ||
+    onMemory(pathname) ||
+    (route !== undefined && route === workspace?.workspace.orchestratorThreadId);
   return (
     <nav
       aria-label="Where you are"
@@ -132,7 +137,7 @@ export function useWorkspacePlaces(solo: boolean): readonly WorkspacePlace[] | u
     {
       key: "memory",
       label: "Memory",
-      current: !board && pathname.endsWith("/memory"),
+      current: !board && onMemory(pathname),
       go: () => {
         useViewStore.getState().setView("chat");
         void navigate({ to: "/w/$workspaceId/memory", params: { workspaceId } });
