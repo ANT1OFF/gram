@@ -1,0 +1,41 @@
+{
+  "title": "Run trace",
+  "slug": "run-trace",
+  "status": "in-review",
+  "template": "options",
+  "current": 1,
+  "approved": null,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-13"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A Waterfall",
+      "board": "a-waterfall",
+      "shots": {
+        "dark": "shots/a-waterfall-dark.png",
+        "light": "shots/a-waterfall-light.png"
+      }
+    },
+    {
+      "name": "B Steps",
+      "board": "b-steps",
+      "shots": {
+        "dark": "shots/b-steps-dark.png",
+        "light": "shots/b-steps-light.png"
+      }
+    },
+    {
+      "name": "C Lanes",
+      "board": "c-lanes",
+      "shots": {
+        "dark": "shots/c-lanes-dark.png",
+        "light": "shots/c-lanes-light.png"
+      }
+    }
+  ]
+}

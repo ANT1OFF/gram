@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Run trace directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      /* One run, drawn three ways. Step colours: the model is the accent, a tool is neutral, a
+         worker is the merged purple, time waiting on a person is the needs colour, a failure is
+         the danger colour. */
+      .rt {
+        --k-model: var(--accent);
+        --k-tool: var(--fg-subtle);
+        --k-worker: var(--merged);
+        --k-wait: var(--status-needs-mark);
+        --k-failed: var(--danger);
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: inherit;
+        background: var(--surface-2);
+        color: var(--fg);
+        font-size: var(--text-md);
+      }
+      .rt .icon {
+        width: 14px;
+        height: 14px;
+        flex: none;
+      }
+      .rt-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 44px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        background: var(--surface-1);
+      }
+      .rt-title {
+        font-weight: 600;
+      }
+      .rt-tabs {
+        display: flex;
+        gap: 2px;
+        margin-left: 8px;
+      }
+      .rt-tabs button {
+        font: inherit;
+        font-size: var(--text-sm);
+        height: 28px;
+        padding: 0 10px;
+        border: 0;
+        border-radius: var(--radius-xs);
+        background: none;
+        color: var(--fg-muted);
+      }
+      .rt-tabs button[aria-selected="true"] {
+        background: var(--surface-hover);
+        color: var(--fg);
+        font-weight: 550;
+      }
+      .rt-turn {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xs);
+        background: var(--surface-2);
+        color: var(--fg-muted);
+        font: inherit;
+        font-size: var(--text-sm);
+      }
+      .rt-sum {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px 20px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        font-size: var(--text-sm);
+        color: var(--fg-muted);
+      }
+      .rt-sum b {
+        color: var(--fg);
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .rt-key {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .rt-sw {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        background: var(--k);
+        flex: none;
+      }
+      .rt-split {
+        display: flex;
+        height: 6px;
+        border-radius: 3px;
+        overflow: hidden;
+        gap: 2px;
+        flex: 1 1 160px;
+        min-width: 120px;
+      }
+      .rt-split i {
+        background: var(--k);
+        border-radius: 3px;
+      }
+      [data-k="model"] {
+        --k: var(--k-model);
+      }
+      [data-k="tool"] {
+        --k: var(--k-tool);
+      }
+      [data-k="worker"] {
+        --k: var(--k-worker);
+      }
+      [data-k="wait"] {
+        --k: var(--k-wait);
+      }
+      [data-k="failed"] {
+        --k: var(--k-failed);
+      }
+      .rt-num {
+        font-variant-numeric: tabular-nums;
+        color: var(--fg-subtle);
+        font-size: var(--text-xs);
+      }
+      .rt-failed {
+        color: var(--danger-text);
+      }
+      .rt-body {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+      }
+
+      /* ---------- A Waterfall ---------- */
+      .wf {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .wf-row {
+        display: grid;
+        grid-template-columns: 300px 56px minmax(0, 1fr);
+        align-items: center;
+        gap: 12px;
+        height: 30px;
+        padding: 0 16px;
+        border: 0;
+        background: none;
+        font: inherit;
+        color: var(--fg);
+        text-align: left;
+        width: 100%;
+      }
+      .wf-row[aria-selected="true"] {
+        background: var(--surface-hover);
+      }
+      .wf-head {
+        height: 28px;
+        color: var(--fg-subtle);
+        font-size: var(--text-xs);
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .wf-name {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        padding-left: calc(var(--d, 0) * 18px);
+        font-size: var(--text-sm);
+      }
+      .wf-name span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .wf-name .icon {
+        color: var(--k);
+      }
+      .wf-track {
+        position: relative;
+        height: 100%;
+        background-image: linear-gradient(to right, var(--border-subtle) 1px, transparent 1px);
+        background-size: calc(100% * 60 / 190) 100%;
+      }
+      .wf-track i {
+        position: absolute;
+        top: 9px;
+        height: 12px;
+        min-width: 3px;
+        border-radius: 3px;
+        background: var(--k);
+      }
+      .wf-ticks {
+        position: relative;
+        height: 100%;
+      }
+      .wf-ticks span {
+        position: absolute;
+        top: 6px;
+        padding-left: 4px;
+      }
+      .rt-detail {
+        flex: 0 0 330px;
+        border-left: 1px solid var(--border-subtle);
+        background: var(--surface-1);
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-width: 0;
+        font-size: var(--text-sm);
+      }
+      .rt-detail h4 {
+        margin: 0;
+        font-size: var(--text-md);
+      }
+      .rt-facts {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 4px 14px;
+        margin: 0;
+        color: var(--fg-muted);
+      }
+      .rt-facts dd {
+        margin: 0;
+        color: var(--fg);
+        font-variant-numeric: tabular-nums;
+      }
+      .rt-code {
+        margin: 0;
+        padding: 10px 12px;
+        border-radius: var(--radius-xs);
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-2);
+        font: 400 var(--text-xs) / 1.6 var(--font-mono);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .rt-label {
+        font-size: var(--text-xs);
+        color: var(--fg-subtle);
+      }
+
+      /* ---------- B Steps ---------- */
+      .st-chat {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 24px 32px;
+      }
+      .st-user {
+        align-self: flex-end;
+        max-width: 420px;
+        padding: 8px 12px;
+        border-radius: var(--radius-sm);
+        background: var(--surface-hover);
+      }
+      .st-fold {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--fg-muted);
+        font-size: var(--text-sm);
+      }
+      .st-panel {
+        flex: 0 0 500px;
+        border-left: 1px solid var(--border-subtle);
+        background: var(--surface-1);
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .st-panel .rt-tabs {
+        margin: 0;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .st-list {
+        display: flex;
+        flex-direction: column;
+        padding: 6px 0;
+      }
+      .st-row {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr) 70px 44px;
+        align-items: center;
+        gap: 10px;
+        min-height: 28px;
+        padding: 0 14px 0 calc(14px + var(--d, 0) * 20px);
+        border: 0;
+        background: none;
+        font: inherit;
+        font-size: var(--text-sm);
+        color: var(--fg);
+        text-align: left;
+        width: 100%;
+      }
+      .st-row[aria-selected="true"] {
+        background: var(--surface-hover);
+      }
+      .st-what {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+      .st-what span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .st-what .icon {
+        color: var(--k);
+      }
+      .st-what em {
+        font-style: normal;
+        color: var(--fg-subtle);
+        flex: none;
+      }
+      .st-meter {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--surface-hover);
+      }
+      .st-meter i {
+        display: block;
+        height: 100%;
+        min-width: 2px;
+        border-radius: 2px;
+        background: var(--k);
+      }
+      .st-took {
+        text-align: right;
+      }
+      .st-open {
+        margin: 2px 14px 8px 58px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      /* ---------- C Lanes ---------- */
+      .ln {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .ln-tiles {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .ln-tile {
+        padding: 12px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        border-right: 1px solid var(--border-subtle);
+      }
+      .ln-tile:last-child {
+        border-right: 0;
+      }
+      .ln-tile b {
+        font-size: var(--text-lg);
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .ln-tile span {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: var(--text-xs);
+        color: var(--fg-muted);
+      }
+      .ln-chart {
+        display: flex;
+        flex-direction: column;
+        padding: 6px 16px 12px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .ln-lane {
+        display: grid;
+        grid-template-columns: 150px minmax(0, 1fr);
+        align-items: center;
+        gap: 12px;
+        height: 40px;
+      }
+      .ln-lane > span {
+        font-size: var(--text-sm);
+        color: var(--fg-muted);
+        display: flex;
+        flex-direction: column;
+        line-height: 1.25;
+      }
+      .ln-lane > span small {
+        font-size: var(--text-xs);
+        color: var(--fg-subtle);
+      }
+      .ln-track {
+        position: relative;
+        height: 100%;
+        background-image: linear-gradient(to right, var(--border-subtle) 1px, transparent 1px);
+        background-size: calc(100% * 60 / 190) 100%;
+      }
+      .ln-track button {
+        position: absolute;
+        top: 7px;
+        height: 26px;
+        min-width: 4px;
+        padding: 0 6px;
+        border: 0;
+        border-radius: 4px;
+        background: color-mix(in oklab, var(--k) 22%, var(--surface-2));
+        box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--k) 55%, var(--surface-2));
+        color: var(--fg);
+        font: inherit;
+        font-size: var(--text-xs);
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        text-align: left;
+      }
+      .ln-track button.tiny {
+        padding: 0;
+        color: transparent;
+      }
+      .ln-track button[aria-selected="true"] {
+        box-shadow:
+          inset 0 0 0 1px var(--k),
+          0 0 0 2px var(--focus-ring);
+      }
+      .ln-under {
+        flex: 1;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        min-height: 0;
+      }
+      .ln-under > section {
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-width: 0;
+        font-size: var(--text-sm);
+      }
+      .ln-under > section + section {
+        border-left: 1px solid var(--border-subtle);
+      }
+      .ln-under h4 {
+        margin: 0;
+        font-size: var(--text-md);
+      }
+      .ln-slow {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 90px 44px;
+        align-items: center;
+        gap: 10px;
+        height: 26px;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        One run of an agent, with a worker under it, a failed test and a wait for approval, drawn
+        three ways. Pick the structure by name; colour and spacing come after.
+      </p>
+
+      <section class="board" data-name="A Waterfall" data-size="1240x700">
+        <div class="board-frame">
+          <div class="rt">
+            <div class="rt-bar">
+              <span class="rt-title">Fix the flaky retry test</span>
+              <div class="rt-tabs" role="tablist">
+                <button type="button" role="tab">Conversation</button>
+                <button type="button" role="tab" aria-selected="true">Trace</button>
+              </div>
+              <button class="rt-turn" type="button">Turn 3 · 14:02 <i data-icon="down"></i></button>
+            </div>
+            <div class="rt-sum" data-fill="sum"></div>
+            <div class="rt-body">
+              <div class="wf" data-fill="waterfall"></div>
+              <aside class="rt-detail" data-fill="detail"></aside>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="B Steps" data-size="1240x700">
+        <div class="board-frame">
+          <div class="rt">
+            <div class="rt-bar">
+              <span class="rt-title">Fix the flaky retry test</span>
+            </div>
+            <div class="rt-body">
+              <div class="st-chat">
+                <div class="st-user">
+                  The retry test fails about one run in five. Find out why and fix it.
+                </div>
+                <div class="st-fold">
+                  <i data-icon="right"></i> Worked for 3m 10s · 9 tool calls · 1 worker
+                </div>
+                <p style="margin: 0; max-width: 560px">
+                  The test raced the timer:
+                  <span class="mono">retry()</span> read the delay before the fake clock advanced,
+                  so the second attempt sometimes ran with no backoff. I moved the read inside the
+                  attempt and pushed the fix. All 14 tests pass.
+                </p>
+              </div>
+              <aside class="st-panel">
+                <div class="rt-tabs" role="tablist">
+                  <button type="button" role="tab">Diff</button>
+                  <button type="button" role="tab">PR</button>
+                  <button type="button" role="tab">Files</button>
+                  <button type="button" role="tab">Terminal</button>
+                  <button type="button" role="tab" aria-selected="true">Trace</button>
+                  <button class="rt-turn" type="button">Turn 3 <i data-icon="down"></i></button>
+                </div>
+                <div class="rt-sum" data-fill="sum-short"></div>
+                <div class="st-list" data-fill="steps"></div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="C Lanes" data-size="1240x700">
+        <div class="board-frame">
+          <div class="rt">
+            <div class="rt-bar">
+              <span class="rt-title">Fix the flaky retry test</span>
+              <div class="rt-tabs" role="tablist">
+                <button type="button" role="tab">Conversation</button>
+                <button type="button" role="tab" aria-selected="true">Trace</button>
+              </div>
+              <button class="rt-turn" type="button">Turn 3 · 14:02 <i data-icon="down"></i></button>
+            </div>
+            <div class="rt-body">
+              <div class="ln">
+                <div class="ln-tiles" data-fill="tiles"></div>
+                <div class="ln-chart" data-fill="lanes"></div>
+                <div class="ln-under">
+                  <section data-fill="detail"></section>
+                  <section data-fill="slowest"></section>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      /* The one run all three boards draw. Seconds from the turn's start; d is its depth. */
+      const TOTAL = 190;
+      const STEPS = [
+        { k: "model", d: 0, s: 0, e: 6, label: "Model", note: "planned" },
+        { k: "tool", d: 0, s: 6, e: 7, label: "Read retry.ts" },
+        { k: "tool", d: 0, s: 7, e: 9, label: "Searched for backoff" },
+        { k: "model", d: 0, s: 9, e: 15, label: "Model" },
+        {
+          k: "worker",
+          d: 0,
+          s: 15,
+          e: 75,
+          label: "Explore: find callers of retry()",
+          note: "worker",
+        },
+        { k: "model", d: 1, s: 15, e: 19, label: "Model" },
+        { k: "tool", d: 1, s: 19, e: 22, label: "Searched for retry(" },
+        { k: "tool", d: 1, s: 22, e: 24, label: "Read http-client.ts" },
+        { k: "tool", d: 1, s: 22, e: 25, label: "Read queue.ts" },
+        { k: "model", d: 1, s: 25, e: 41, label: "Model" },
+        { k: "tool", d: 1, s: 41, e: 44, label: "Read scheduler.ts" },
+        {
+          k: "model",
+          d: 1,
+          s: 44,
+          e: 75,
+          label: "Model",
+          note: "wrote its report",
+        },
+        {
+          k: "failed",
+          d: 0,
+          s: 15,
+          e: 58,
+          label: "Ran bun test retry",
+          note: "exit 1",
+          sel: true,
+        },
+        { k: "model", d: 0, s: 75, e: 92, label: "Model" },
+        { k: "tool", d: 0, s: 92, e: 93, label: "Edited retry.ts" },
+        { k: "tool", d: 0, s: 93, e: 131, label: "Ran bun test retry" },
+        {
+          k: "wait",
+          d: 0,
+          s: 131,
+          e: 176,
+          label: "Asked to run git push",
+          note: "you approved",
+        },
+        { k: "tool", d: 0, s: 176, e: 181, label: "Ran git push" },
+        {
+          k: "model",
+          d: 0,
+          s: 181,
+          e: 190,
+          label: "Model",
+          note: "wrote the reply",
+        },
+      ];
+      const ICON = {
+        model: "msg",
+        tool: "terminal",
+        worker: "orch",
+        wait: "user",
+        failed: "xcircle",
+      };
+      const took = (n) =>
+        n < 60 ? `${n}s` : `${Math.floor(n / 60)}m ${String(n % 60).padStart(2, "0")}s`;
+      const at = (n) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
+      const pct = (n) => `${(n / TOTAL) * 100}%`;
+      const key = (k, text) =>
+        `<span class="rt-key" data-k="${k}"><i class="rt-sw"></i>${text}</span>`;
+      const split = `<span class="rt-split"><i data-k="model" style="flex:38"></i><i data-k="tool" style="flex:107"></i><i data-k="wait" style="flex:45"></i></span>`;
+      const fill = (name, html) => {
+        for (const el of document.querySelectorAll(`[data-fill="${name}"]`)) el.innerHTML = html;
+      };
+
+      fill(
+        "sum",
+        `<span><b>3m 10s</b> finished 14:05</span>${split}${key("model", "Model <b>38s</b>")}${key("tool", "Tools <b>1m 47s</b>")}${key("wait", "Waiting on you <b>45s</b>")}<span><b>48.2k</b> in · <b>6.1k</b> out</span><span><b>$0.84</b></span><span class="rt-failed">1 failed</span>`,
+      );
+      fill(
+        "sum-short",
+        `<span><b>3m 10s</b></span>${split}<span><b>54.3k</b> tokens</span><span><b>$0.84</b></span><span class="rt-failed">1 failed</span>`,
+      );
+
+      fill(
+        "waterfall",
+        `<div class="wf-row wf-head"><span>Step</span><span>Took</span><span class="wf-ticks">${[0, 60, 120, 180].map((n) => `<span style="left:${pct(n)}">${at(n)}</span>`).join("")}</span></div>` +
+          STEPS.map(
+            (step) =>
+              `<button type="button" class="wf-row" data-k="${step.k}"${step.sel ? ' aria-selected="true"' : ""}><span class="wf-name" style="--d:${step.d}"><i data-icon="${ICON[step.k]}"></i><span>${step.label}</span></span><span class="rt-num">${took(step.e - step.s)}</span><span class="wf-track"><i style="left:${pct(step.s)};width:${pct(step.e - step.s)}"></i></span></button>`,
+          ).join(""),
+      );
+
+      const detail = `<div class="row between"><h4>Ran bun test retry</h4><span class="badge danger">Failed</span></div>
+        <dl class="rt-facts"><dt>Started</dt><dd>14:02:31, 0:15 into the turn</dd><dt>Took</dt><dd>43s</dd><dt>Ran beside</dt><dd>Explore: find callers of retry()</dd><dt>Exit code</dt><dd>1</dd></dl>
+        <span class="rt-label">Command</span><pre class="rt-code">bun test packages/net/retry.test.ts</pre>
+        <span class="rt-label">Output</span><pre class="rt-code">✗ backs off between attempts
+  expected delay 400, got 0
+13 pass, 1 fail</pre>
+        <div class="row"><button class="btn sm" type="button">Show in conversation</button><button class="btn sm" type="button">Copy output</button></div>`;
+      fill("detail", detail);
+
+      fill(
+        "steps",
+        STEPS.map((step) => {
+          const row = `<button type="button" class="st-row" data-k="${step.k}" style="--d:${step.d}"${step.sel ? ' aria-selected="true"' : ""}><span class="rt-num">${at(step.s)}</span><span class="st-what"><i data-icon="${ICON[step.k]}"></i><span>${step.label}</span>${step.note ? `<em>${step.note}</em>` : ""}</span><span class="st-meter"><i style="width:${((step.e - step.s) / 60) * 100}%"></i></span><span class="rt-num st-took">${took(step.e - step.s)}</span></button>`;
+          return step.sel
+            ? `${row}<div class="st-open"><pre class="rt-code">✗ backs off between attempts
+  expected delay 400, got 0
+13 pass, 1 fail</pre></div>`
+            : row;
+        }).join(""),
+      );
+
+      fill(
+        "tiles",
+        [
+          ["3m 10s", "Wall time"],
+          ["38s", key("model", "Model")],
+          ["1m 47s", key("tool", "Tools")],
+          ["45s", key("wait", "Waiting on you")],
+          ["54.3k", "Tokens"],
+          ["$0.84", "Cost"],
+        ]
+          .map(([value, name]) => `<div class="ln-tile"><b>${value}</b><span>${name}</span></div>`)
+          .join(""),
+      );
+      const lane = (name, sub, steps) =>
+        `<div class="ln-lane"><span>${name}<small>${sub}</small></span><span class="ln-track">${steps
+          .map(
+            (step) =>
+              `<button type="button" data-k="${step.k}" class="${step.e - step.s < 12 ? "tiny" : ""}" title="${step.label}"${step.sel ? ' aria-selected="true"' : ""} style="left:${pct(step.s)};width:calc(${pct(step.e - step.s)} - 2px)">${step.label}</button>`,
+          )
+          .join("")}</span></div>`;
+      const main = STEPS.filter((step) => step.d === 0);
+      fill(
+        "lanes",
+        `<div class="ln-lane" style="height:24px"><span></span><span class="wf-ticks rt-num">${[0, 60, 120, 180].map((n) => `<span style="left:${pct(n)};top:4px">${at(n)}</span>`).join("")}</span></div>` +
+          lane(
+            "Agent",
+            "claude-opus-5",
+            main.filter((step) => step.k === "model"),
+          ) +
+          lane(
+            "Its tools",
+            "9 calls",
+            main.filter((step) => step.k === "tool"),
+          ) +
+          lane(
+            "Side by side",
+            "ran beside the worker",
+            main.filter((step) => step.k === "failed"),
+          ) +
+          lane(
+            "Explore worker",
+            "claude-haiku-5.5 · 4 calls",
+            STEPS.filter((step) => step.d === 1),
+          ) +
+          lane(
+            "You",
+            "approvals and questions",
+            main.filter((step) => step.k === "wait"),
+          ),
+      );
+      fill(
+        "slowest",
+        `<h4>Where the time went</h4>` +
+          STEPS.filter((step) => step.d === 0)
+            .toSorted((a, b) => b.e - b.s - (a.e - a.s))
+            .slice(0, 6)
+            .map(
+              (step) =>
+                `<div class="ln-slow" data-k="${step.k}"><span class="st-what"><i data-icon="${ICON[step.k]}"></i><span>${step.label}</span></span><span class="st-meter"><i style="width:${((step.e - step.s) / 60) * 100}%"></i></span><span class="rt-num st-took">${took(step.e - step.s)}</span></div>`,
+            )
+            .join(""),
+      );
+    </script>
+  </body>
+</html>
