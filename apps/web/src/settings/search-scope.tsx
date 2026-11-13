@@ -128,7 +128,7 @@ export function SearchEmptyState({ query }: { query: string }) {
       {searchWords(query).length > 0 && (
         <p
           data-testid="settings-search-empty"
-          className="text-reading text-muted-foreground [[data-settings-results]:has([data-setting-match])_&]:hidden"
+          className="text-reading text-muted-foreground [[data-settings-results]:has([data-setting-match],[data-settings-loading])_&]:hidden"
         >
           No settings match “{query.trim()}”.
         </p>
