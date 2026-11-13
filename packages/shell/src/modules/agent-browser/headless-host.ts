@@ -84,6 +84,8 @@ export const headlessPanes = (options: {
   readonly deadlineMs?: number;
 }): { readonly panes: AgentPanes; close(): Promise<void> } => {
   const log = options.log ?? stderrLog;
+  /** When each thread's latest command is answered. */
+  const tails = new Map<string, Promise<void>>();
   /** The commands running on each thread's page. */
   const running = new Map<string, number>();
   let browser: HeadlessBrowser | undefined;
@@ -130,24 +132,46 @@ export const headlessPanes = (options: {
         running.set(thread, (running.get(thread) ?? 0) + 1);
         views?.touch(thread);
       }
+      // The clock starts when the thread's earlier commands are done, so one waiting its turn
+      // behind a long command isn't taken for a page that stopped answering.
+      const before = (thread === undefined ? undefined : tails.get(thread)) ?? Promise.resolve();
       let deadline: ReturnType<typeof setTimeout> | undefined;
+      let finished = false;
       const late = new Promise<PaneResult>((resolve) => {
-        deadline = setTimeout(() => {
-          // A page whose script never yields answers nothing, and would hold the thread's
-          // commands for good: it is closed, and the next command opens a fresh one.
-          if (requestId !== undefined) panes.cancel(requestId);
-          if (thread !== undefined) {
-            views?.close(thread);
-            panes.closed(thread);
-          }
-          resolve(STOPPED_ANSWERING);
-        }, options.deadlineMs ?? COMMAND_DEADLINE_MS);
+        void before.then(() => {
+          if (finished) return;
+          deadline = setTimeout(() => {
+            // A page whose script never yields answers nothing, and would hold the thread's
+            // commands for good: it is closed, and the next command opens a fresh one. The page
+            // ends before the pane hears, so the pane sends nothing more to it.
+            if (requestId !== undefined) panes.cancel(requestId);
+            const closing = thread === undefined ? undefined : views?.close(thread);
+            void Promise.resolve(closing)
+              .catch(() => {})
+              .then(() => {
+                if (thread !== undefined) panes.closed(thread);
+                resolve(STOPPED_ANSWERING);
+              });
+          }, options.deadlineMs ?? COMMAND_DEADLINE_MS);
+        });
       });
+      const answered = Promise.race([panes.serve(raw, requestId), late]);
+      if (thread !== undefined) {
+        const tail = answered.then(
+          () => {},
+          () => {},
+        );
+        tails.set(thread, tail);
+        void tail.then(() => {
+          if (tails.get(thread) === tail) tails.delete(thread);
+        });
+      }
       try {
-        const result = await Promise.race([panes.serve(raw, requestId), late]);
+        const result = await answered;
         return result.ok || result.code !== "noPane" ? result : NO_BROWSER;
       } finally {
         clearTimeout(deadline);
+        finished = true;
         if (thread !== undefined) {
           const left = (running.get(thread) ?? 1) - 1;
           if (left > 0) running.set(thread, left);

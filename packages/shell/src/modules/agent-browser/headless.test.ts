@@ -26,6 +26,7 @@ const fakeBrowser = () => {
   const listeners = new Set<(method: string, params: unknown, sessionId?: string) => void>();
   const sent: Array<{ method: string; params?: object; sessionId?: string }> = [];
   let attached = 0;
+  const closers: Array<() => void> = [];
   const connection: CdpConnection = {
     send: async (method, params, sessionId) => {
       sent.push({ method, ...(params ? { params } : {}), ...(sessionId ? { sessionId } : {}) });
@@ -50,8 +51,12 @@ const fakeBrowser = () => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    onClose: () => {},
-    close: () => {},
+    onClose: (listener) => {
+      closers.push(listener);
+    },
+    close: () => {
+      for (const closer of closers.splice(0)) closer();
+    },
   };
   const emit = (method: string, params: unknown, sessionId?: string) => {
     for (const listener of Array.from(listeners)) listener(method, params, sessionId);
@@ -314,6 +319,31 @@ describe("openHeadlessPage, what it closes", () => {
     }));
     void page.loadURL("http://127.0.0.1:3000/app").catch(() => {});
     expect(await browser.pause("http://127.0.0.1:3000/app", "Document")).toBe("block");
+  });
+
+  it("ends every page when the browser goes away, so the next command starts another", async () => {
+    const browser = fakeBrowser();
+    const views = headlessViews(browser.connection, () => undefined);
+    const page = await views.contentsFor("thread-0", true);
+    page!.debugger.attach();
+    const waiting = page!.debugger.sendCommand("Runtime.evaluate", { expression: "1" });
+    browser.connection.close();
+    expect(page!.isDestroyed()).toBe(true);
+    await waiting.catch(() => {});
+    expect(await views.contentsFor("thread-0", false)).toBeUndefined();
+  });
+
+  it("sends no detach to a page that is closing", async () => {
+    const browser = fakeBrowser();
+    const views = headlessViews(browser.connection, () => undefined);
+    const page = await views.contentsFor("thread-0", true);
+    page!.debugger.attach();
+    await page!.debugger.sendCommand("DOM.enable");
+    await views.close("thread-0");
+    expect(page!.isDestroyed()).toBe(true);
+    page!.debugger.detach();
+    expect(browser.sent.some((entry) => entry.method === "Target.detachFromTarget")).toBe(false);
+    expect(browser.sent.some((entry) => entry.method === "Target.closeTarget")).toBe(true);
   });
 
   it("stops a load whose server never answers, so the thread's commands go on", async () => {
@@ -713,6 +743,66 @@ describe.skipIf(executable === undefined || executable === "")("headless panes i
         page: { title: "Owned fixture" },
       });
       expect(await command({ op: "text" })).toMatchObject({ ok: true });
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+  it("survives closing a page that keeps opening dialogs, and other threads go on", async () => {
+    const { panes, close } = headlessPanes({
+      executable: executable!,
+      sandbox: false,
+      deadlineMs: 3_000,
+    });
+    try {
+      const command = (threadId: string, input: PaneCommand) =>
+        panes.serve({ threadId, limits: { actOnLoopbackOnly: false }, command: input });
+      expect(await command("other", { op: "navigate", url: `${origin}/` })).toMatchObject({
+        ok: true,
+      });
+      expect(await command("owned", { op: "navigate", url: `${origin}/` })).toMatchObject({
+        ok: true,
+      });
+      await command("owned", {
+        op: "evaluate",
+        expression: "setInterval(() => alert(1), 0); 1",
+      });
+      await command("owned", { op: "navigate", url: `${origin}/next` });
+      await command("owned", { op: "evaluate", expression: "1" });
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      // The browser is still there: the other thread's page answers, and this one opens afresh.
+      const other = await command("other", { op: "evaluate", expression: "document.title" });
+      expect(other.ok && other.content).toContain("Owned fixture");
+      expect(await command("owned", { op: "navigate", url: `${origin}/` })).toMatchObject({
+        ok: true,
+        page: { title: "Owned fixture" },
+      });
+    } finally {
+      await close();
+    }
+  }, 90_000);
+
+  it("leaves a command waiting its turn alone while the one before it runs", async () => {
+    const { panes, close } = headlessPanes({
+      executable: executable!,
+      sandbox: false,
+      deadlineMs: 3_000,
+    });
+    try {
+      const command = (input: PaneCommand) =>
+        panes.serve({ threadId: "owned", limits: { actOnLoopbackOnly: false }, command: input });
+      expect(await command({ op: "navigate", url: `${origin}/` })).toMatchObject({ ok: true });
+      const results = await Promise.all([
+        command({
+          op: "evaluate",
+          expression: "new Promise((done) => setTimeout(() => done(1), 2000))",
+        }),
+        command({
+          op: "evaluate",
+          expression: "new Promise((done) => setTimeout(() => done(2), 2000))",
+        }),
+      ]);
+      expect(results.map((result) => result.ok)).toEqual([true, true]);
     } finally {
       await close();
     }

@@ -546,7 +546,11 @@ const openIn = async (
         }, LOAD_DEADLINE_MS);
       });
       try {
-        const result = (await Promise.race([ownSend("Page.navigate", { url: target }), late])) as {
+        const result = (await Promise.race([
+          ownSend("Page.navigate", { url: target }),
+          late,
+          gone,
+        ])) as {
           errorText?: string;
         };
         if (result.errorText !== undefined && result.errorText !== "")
@@ -582,7 +586,9 @@ const openIn = async (
         const session = debuggerSession;
         attaching = undefined;
         debuggerSession = undefined;
-        if (session !== undefined)
+        // Not for a page that is ending: its sessions go with its target, and a detach sent into
+        // a page stuck behind its own dialogs has brought the whole browser down.
+        if (session !== undefined && !destroyed)
           void connection.send("Target.detachFromTarget", { sessionId: session }).catch(() => {});
         debuggerEvents.emit("detach");
       },
@@ -782,10 +788,13 @@ const openIn = async (
   await connection.send("Target.setDiscoverTargets", { discover: true }).catch(() => {});
   refreshHistory();
   closers.set(contents, () => {
+    // Ended for the pane first, so nothing more is sent to a page on its way out.
+    destroy();
     void connection.send("Target.closeTarget", { targetId }).catch(() => {});
     dispose();
-    destroy();
   });
+  // A browser that died takes its pages with it: the next command starts another.
+  connection.onClose(destroy);
   return contents;
 };
 
@@ -806,7 +815,7 @@ export const headlessViews = (
   closed: (threadId: string) => void = () => {},
   /** Whether a command is running on the thread's page, which is then never the one closed. */
   busy: (threadId: string) => boolean = () => false,
-): PaneViews & { touch(threadId: string): void; close(threadId: string): void } => {
+): PaneViews & { touch(threadId: string): void; close(threadId: string): Promise<void> } => {
   // In order of use, the least recent first.
   const pages = new Map<string, Promise<PaneContents | undefined>>();
   const touch = (threadId: string) => {
@@ -834,13 +843,12 @@ export const headlessViews = (
   };
   return {
     touch,
-    close: (threadId) => {
+    close: async (threadId) => {
       const page = pages.get(threadId);
       if (page === undefined) return;
       pages.delete(threadId);
-      void page.then((contents) => {
-        if (contents !== undefined) closeHeadlessPage(contents);
-      });
+      const contents = await page;
+      if (contents !== undefined) closeHeadlessPage(contents);
     },
     contentsFor: (threadId, create) => {
       const known = pages.get(threadId);
