@@ -1,5 +1,6 @@
 import {
   effectiveCheckout,
+  HOST_PROTOCOL_VERSION,
   hostOf,
   isLocalHost,
   type HostId,
@@ -60,7 +61,12 @@ export function machineMark(
       words: "on a machine that is no longer joined",
       hint: "Runs on a machine that is no longer joined to this Gram",
     };
-  const health = machineHealth({ ...machine, confirmed: true }, {}, now);
+  // The protocol this build speaks is the server's: the page is served with it.
+  const health = machineHealth(
+    { ...machine, confirmed: true },
+    { protocol: HOST_PROTOCOL_VERSION },
+    now,
+  );
   const head = `Runs on ${machine.name}`;
   if (health.tone === "online")
     return {
@@ -68,17 +74,28 @@ export function machineMark(
       words: `on ${machine.name}`,
       hint: `${head}\n${KIND[machine.kind]} · ${health.label}`,
     };
-  const state = health.tone === "update" ? "needs update" : "offline";
+  // A host this Gram can't talk to: the older of the two needs the update. When that is this Gram,
+  // the machine is offline with the reason on its hover, never told to update itself.
+  const older = health.tone === "update";
+  const newer =
+    older &&
+    machine.offline?.kind === "mismatch" &&
+    machine.offline.protocol > HOST_PROTOCOL_VERSION;
+  const state = older && !newer ? "needs update" : "offline";
   return {
     name: machine.name,
     state,
     words: `on ${machine.name}, ${state}`,
     hint: [
       head,
-      `${KIND[machine.kind]} · ${health.tone === "update" ? health.label : "offline"}`,
+      `${KIND[machine.kind]} · ${newer ? "newer than this Gram" : state}`,
       health.why,
       // A provisioned host is replaced by whoever started it; the fixes are a joined machine's.
-      machine.kind === "provisioned" ? undefined : health.fix,
+      machine.kind === "provisioned"
+        ? undefined
+        : older && !newer
+          ? "Update it in Settings → Machines."
+          : health.fix,
     ]
       .filter((line) => line !== undefined)
       .join("\n"),

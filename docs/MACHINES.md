@@ -61,11 +61,15 @@ orchestrator's chat and the Inbox.
   has words of its own ("asks you", "checks"), the glyph stands alone and the name is on the row's
   hover.
 - **A machine nothing reaches** takes the struck glyph and says "offline", or "needs update" for a
-  host this Gram can't talk to, in the text colour. It shows without a hover, and at once: the
-  server sends every window the machines' states when one connects or drops, so nothing polls.
+  host on an earlier protocol than this Gram's, in the text colour. It shows without a hover, and
+  at once: the server sends every window the machines' states when one connects or drops, so
+  nothing polls.
 - **The hover** says the machine, whether it is a joined machine or a provisioned host, and its
   state ("online for 2 hours"); offline, also why and the fix, in the words Settings → Machines
-  uses ([when a machine is offline](#when-a-machine-is-offline)).
+  uses ([when a machine is offline](#when-a-machine-is-offline)). Two things only Settings says:
+  why Tailscale is down on this computer (a mark says the connection was lost, and when), and the
+  time of each refused dial after the first, since a badly signed dial can be repeated by anyone
+  on the tailnet and is no news to every window.
 - A thread whose machine was removed says "not joined".
 - An orchestrator reads the same on `list_workers`: a worker's row has `machine`, its name and
   `online`, when it runs on another machine.

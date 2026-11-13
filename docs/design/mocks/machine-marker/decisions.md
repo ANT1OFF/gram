@@ -15,3 +15,6 @@ keeps this; the build reads it with the approved version.
   struck glyph and the name stay.
 - Build: a thread whose machine was removed says "not joined"; the mock had no such state.
 - Build: the Inbox marks a row after where it is from, and the detail pane's where line too.
+- Build: "needs update" is only for a host on an earlier protocol. One on a later protocol reads
+  "offline", its hover saying it is newer than this Gram: the brief's default drew both as "needs
+  update", which would tell the wrong side to update.

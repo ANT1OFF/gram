@@ -169,8 +169,10 @@ export interface RemoteHostsShape {
    */
   readonly watch: (listener: () => void) => () => void;
   /**
-   * Where `states` reads whether machines can dial in over Tailscale, and why not; until it is
-   * given, access counts as on unless it was last kept off.
+   * Where `states` reads whether access over Tailscale is switched off, so an offline machine says
+   * that rather than that it never dialled; until it is given, access counts as on unless it was
+   * last kept off. Only the switch is read: why Tailscale is down here changes with no word to
+   * this registry, so `states` leaves it to Settings → Machines, which asks each time.
    */
   readonly accessFrom: (read: () => DialAccess) => void;
   /**
@@ -527,7 +529,9 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
                 live === undefined ? undefined : { since: live.since },
                 {
                   problem: machines.problemOf(machine.id),
-                  tailscale: readAccess?.() ?? (kept === null ? "off" : "on"),
+                  tailscale: (readAccess === undefined ? kept === null : readAccess() === "off")
+                    ? "off"
+                    : "on",
                 },
               );
               return {

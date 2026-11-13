@@ -1,4 +1,4 @@
-import { HostId, type MachineState } from "@gram/contracts";
+import { HOST_PROTOCOL_VERSION, HostId, type MachineState } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
 import { machineMark, threadHost } from "./machine-mark";
@@ -66,7 +66,7 @@ describe("a machine's mark", () => {
     });
   });
 
-  it("says a host this Gram can't talk to needs an update", () => {
+  it("says a host on an earlier protocol needs an update, and where to update it", () => {
     const mark = machineMark(
       STUDIO,
       [
@@ -81,10 +81,38 @@ describe("a machine's mark", () => {
     );
     expect(mark.state).toBe("needs update");
     expect(mark.words).toBe("on studio, needs update");
-    expect(mark.hint.split("\n").slice(0, 3)).toEqual([
+    expect(mark.hint.split("\n")).toEqual([
       "Runs on studio",
-      "Joined machine · Needs update (1.13.0 → this Gram's)",
+      "Joined machine · needs update",
       "studio runs Gram 1.13.0, which this Gram can't talk to.",
+      "Update it in Settings → Machines.",
+    ]);
+  });
+
+  it("never tells a host on a later protocol to update: this Gram is the one behind", () => {
+    const mark = machineMark(
+      STUDIO,
+      [
+        {
+          id: STUDIO,
+          name: "studio",
+          kind: "joined",
+          offline: {
+            kind: "mismatch",
+            at: AT,
+            protocol: HOST_PROTOCOL_VERSION + 1,
+            release: "9.0.0",
+          },
+        },
+      ],
+      NOW,
+    );
+    expect(mark.state).toBe("offline");
+    expect(mark.hint.split("\n")).toEqual([
+      "Runs on studio",
+      "Joined machine · newer than this Gram",
+      "studio runs Gram 9.0.0, which this Gram can't talk to.",
+      "Update Gram here, or rerun the installer on studio to match this one.",
     ]);
   });
 

@@ -54,6 +54,7 @@ function PlacedChip({
           <span
             data-testid="pane-machine"
             data-machine-state={mark.state ?? "online"}
+            role="img"
             aria-label={mark.state === undefined ? where : `${where}, ${mark.state}`}
             className={cn(
               // Never wider than the chips' room, so it stays on their one line rather than
