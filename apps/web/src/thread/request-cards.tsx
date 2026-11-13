@@ -1025,6 +1025,32 @@ function McpRow({
   );
 }
 
+/**
+ * One value as it would be written, in a chip of its own: whitespace kept exactly (`pre-wrap`), and
+ * the chip's edge shows where it starts and ends, so `a  b`, ` a` and `a ` never read alike.
+ */
+function McpValue({
+  children,
+  testId,
+  strong = false,
+}: {
+  children: string;
+  testId: string;
+  strong?: boolean;
+}) {
+  return (
+    <code
+      data-testid={testId}
+      className={cn(
+        "inline-block min-h-[1lh] min-w-2 rounded-(--radius-2xs) border border-border bg-muted/50 px-1 align-top font-mono break-all whitespace-pre-wrap",
+        strong && "font-medium",
+      )}
+    >
+      {children}
+    </code>
+  );
+}
+
 const MCP_TRANSPORT = {
   stdio: "stdio",
   http: "HTTP (streamable)",
@@ -1074,15 +1100,22 @@ function McpServerDiff({
               <ul>
                 {card.headers.map((header) => (
                   <li key={header.name} data-testid="mcp-header" className={mono}>
-                    {header.name}: {header.value}
+                    {header.name}: <McpValue testId="mcp-header-value">{header.value}</McpValue>
                   </li>
                 ))}
               </ul>
             </McpRow>
           )}
-          {card.commandLine !== undefined && (
+          {card.command !== undefined && (
             <McpRow label="Command" testId="mcp-command">
-              <code className={cn(mono, "font-medium")}>{card.commandLine}</code>
+              {/* The program, then each argument, one chip each: spaces kept, edges seen. */}
+              <span className="flex flex-wrap gap-1">
+                {[card.command, ...(card.args ?? [])].map((word, i) => (
+                  <McpValue key={i} testId="mcp-arg" strong={i === 0}>
+                    {word}
+                  </McpValue>
+                ))}
+              </span>
             </McpRow>
           )}
           {card.env !== undefined && (
@@ -1090,7 +1123,7 @@ function McpServerDiff({
               <ul>
                 {card.env.map((variable) => (
                   <li key={variable.name} data-testid="mcp-env" className={mono}>
-                    {variable.name}={variable.value}
+                    {variable.name}=<McpValue testId="mcp-env-value">{variable.value}</McpValue>
                   </li>
                 ))}
               </ul>
@@ -1104,7 +1137,7 @@ function McpServerDiff({
                 {target.replaces !== undefined && (
                   <span data-testid="mcp-replaces" className="text-muted-foreground">
                     Replaces its {target.replaces.scope} {target.replaces.transport} server{" "}
-                    <span className={cn(mono, "line-through")}>
+                    <span className={cn(mono, "whitespace-pre-wrap line-through")}>
                       {target.replaces.url ?? target.replaces.commandLine ?? card.name}
                     </span>
                     {target.replaces.carriesValues &&

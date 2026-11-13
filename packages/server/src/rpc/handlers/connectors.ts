@@ -54,6 +54,8 @@ import {
   removeArgs,
   secretsOf,
 } from "../../connectors/mcp-cli.ts";
+import { isLocalApp } from "../../http/local-app.ts";
+import { makeKeyedLock } from "../../git/keyed-lock.ts";
 import { redactText } from "../../logging/redact.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { AgentHosts } from "../../runtime/agent-hosts.ts";
@@ -268,7 +270,12 @@ export const AGENT_LIST_TIMEOUT_MS = 10_000;
  */
 export const CONFIGURED_REFRESH_MS = 5_000;
 
-export const connectorHandlers = Effect.gen(function* () {
+/**
+ * The connectors' handlers and the writes under them. Every write of a server's entry, whether the
+ * RPCs' or an approved `mcp_server_propose`'s, holds that name's lock (`writes.withName`), so a
+ * check of what an agent has under the name and the write after it can't be split by another.
+ */
+export const makeConnectorConfigs = Effect.gen(function* () {
   const runtimes = yield* ThreadRuntimes;
   const store = yield* ThreadStore;
   const hosts = yield* AgentHosts;
@@ -285,6 +292,10 @@ export const connectorHandlers = Effect.gen(function* () {
     { readonly agents: ReadonlyArray<AgentConfiguredServers>; readonly at: number }
   >();
   const configuredRefreshes = yield* FiberMap.make<string>();
+  /** One writer at a time per server name, across agents, scopes and folders. */
+  const nameLock = makeKeyedLock<string>();
+  const withName = <A, E, R>(name: string, effect: Effect.Effect<A, E, R>) =>
+    nameLock.withLock(name.toLowerCase(), effect);
   /**
    * Bumped by each configure through Gram. A read started before it may have read the
    * config before the write, so it never becomes the last read, and no read after joins it.
@@ -843,7 +854,37 @@ export const connectorHandlers = Effect.gen(function* () {
       return { agents: (configuredCache.get(key) ?? cached).agents, refreshing };
     });
 
-  return {
+  /** `connectors.add`'s write, without its lock. */
+  const addServer = (request: AddConnectorPayload) =>
+    configure(request, "add", request.targets, (target, folder) =>
+      target === "claude"
+        ? viaClaude(
+            addJsonArgs(request.name, request.scope, request.config),
+            folder,
+            secretsOf(request.config),
+          ).pipe(Effect.ensuring(forgetLogins(request.name)))
+        : viaHost(target, secretsOf(request.config), (config) =>
+            config.add(placement(target, folder, request.scope, request.name), request.config),
+          ),
+    );
+
+  /** `connectors.remove`'s write, without its lock. */
+  const removeServer = (request: RemoveConnectorPayload) =>
+    configure(
+      request,
+      "remove",
+      request.target === undefined ? undefined : [request.target],
+      (target, folder) =>
+        target === "claude"
+          ? viaClaude(removeArgs(request.name, request.scope), folder, []).pipe(
+              Effect.ensuring(forgetLogins(request.name)),
+            )
+          : viaHost(target, [], (config) =>
+              config.remove(placement(target, folder, request.scope ?? "user", request.name)),
+            ),
+    );
+
+  const handlers = {
     // A view of the agents' own configs, never a registry: the last read is kept only so every view
     // answers at once, and each agent's own config stays the truth.
     "connectors.configured": ({ cwd, checkSignIn, fresh }) =>
@@ -901,51 +942,99 @@ export const connectorHandlers = Effect.gen(function* () {
             )
           : connectors.authenticate(name).pipe(Effect.map(toSignIn)),
       ),
-    "connectors.add": (request) =>
-      configure(request, "add", request.targets, (target, folder) =>
-        target === "claude"
-          ? viaClaude(
-              addJsonArgs(request.name, request.scope, request.config),
-              folder,
-              secretsOf(request.config),
-            ).pipe(Effect.ensuring(forgetLogins(request.name)))
-          : viaHost(target, secretsOf(request.config), (config) =>
-              config.add(placement(target, folder, request.scope, request.name), request.config),
-            ),
-      ),
-    "connectors.remove": (request) =>
-      configure(
-        request,
-        "remove",
-        request.target === undefined ? undefined : [request.target],
-        (target, folder) =>
-          target === "claude"
-            ? viaClaude(removeArgs(request.name, request.scope), folder, []).pipe(
-                Effect.ensuring(forgetLogins(request.name)),
-              )
-            : viaHost(target, [], (config) =>
-                config.remove(placement(target, folder, request.scope ?? "user", request.name)),
-              ),
-      ),
+    "connectors.add": (request: AddConnectorPayload) => withName(request.name, addServer(request)),
+    "connectors.remove": (request: RemoveConnectorPayload) =>
+      withName(request.name, removeServer(request)),
   } satisfies Partial<Handlers>;
+
+  /**
+   * `target`'s server named `name` as seen from `folder`, read now from its own config and shown as
+   * the list shows it; `undefined` when it has none. Fails with why the config couldn't be read.
+   */
+  const serverIn = (
+    target: McpTarget,
+    folder: string,
+    name: string,
+  ): Effect.Effect<ConfiguredServer | undefined, string> =>
+    (target === "claude"
+      ? mcp.configured(folder).pipe(Effect.mapError((error) => error.message))
+      : hosts.get(target).pipe(
+          Effect.flatMap((host) =>
+            host.mcpConfig === undefined
+              ? Effect.succeed([])
+              : host.mcpConfig.list({ cwd: folder, checkSignIn: false }),
+          ),
+          Effect.mapError((error) => redactText(detailOf(error.message, []))),
+        )
+    ).pipe(
+      Effect.map((servers) => {
+        const found = servers.find((server) => server.name === name);
+        return found === undefined ? undefined : presentable(found);
+      }),
+    );
+
+  return {
+    handlers,
+    /**
+     * The writes behind `connectors.add` and `connectors.remove`, without the RPCs' lock, for a
+     * caller that holds `withName` itself across a check and the writes.
+     */
+    writes: { withName, add: addServer, remove: removeServer, serverIn },
+  };
+});
+
+/** The connectors' RPC handlers alone, as the RPC layer serves them before its local-app check. */
+export const connectorHandlers = Effect.map(makeConnectorConfigs, (configs) => configs.handlers);
+
+/** Why a server can't be added or removed over this connection. */
+export const CONNECTOR_WRITES_LOCAL_ONLY =
+  "MCP servers are added and removed from Gram on this computer, or by an agent's proposal you approve there.";
+
+type CallHeaders = { readonly headers?: Readonly<Record<string, string | undefined>> } | undefined;
+
+/**
+ * `handlers` as the RPC layer serves them: adding or removing a server runs a program or reaches a
+ * service as the user, so only the local app's own connection may do it (`isLocalApp`, which the
+ * transport stamps and no caller can forge). A paired phone's socket is refused. An approved
+ * `mcp_server_propose` writes in-process, through `ConnectorConfigs`' writes, not through here.
+ */
+export const localAppConnectorWrites = <
+  H extends {
+    readonly "connectors.add": (request: AddConnectorPayload) => Effect.Effect<unknown, unknown>;
+    readonly "connectors.remove": (
+      request: RemoveConnectorPayload,
+    ) => Effect.Effect<unknown, unknown>;
+  },
+>(
+  handlers: H,
+): H => ({
+  ...handlers,
+  "connectors.add": (request: AddConnectorPayload, call?: CallHeaders) =>
+    isLocalApp(call?.headers)
+      ? handlers["connectors.add"](request)
+      : Effect.fail(new InvalidState({ message: CONNECTOR_WRITES_LOCAL_ONLY })),
+  "connectors.remove": (request: RemoveConnectorPayload, call?: CallHeaders) =>
+    isLocalApp(call?.headers)
+      ? handlers["connectors.remove"](request)
+      : Effect.fail(new InvalidState({ message: CONNECTOR_WRITES_LOCAL_ONLY })),
 });
 
 /**
- * The one set of `connectors.*` handlers a server has: the RPCs serve it, and `mcp_server_propose`
- * writes through it, so an approved proposal takes Settings → Connectors' own path, its reloads
- * and the forgetting of its last read included.
+ * The one set of connectors a server has: the RPCs serve its handlers, and `mcp_server_propose`
+ * writes through its `writes`, so an approved proposal takes Settings → Connectors' own path, its
+ * reloads, the forgetting of its last read and its per-name lock included.
  */
 export class ConnectorConfigs extends Context.Service<
   ConnectorConfigs,
-  Effect.Success<typeof connectorHandlers>
+  Effect.Success<typeof makeConnectorConfigs>
 >()("@gram/server/ConnectorConfigs") {
-  static readonly layer = Layer.effect(ConnectorConfigs, connectorHandlers);
+  static readonly layer = Layer.effect(ConnectorConfigs, makeConnectorConfigs);
 }
 
 /** The `connectors.*` group's handler layer. */
 export const ConnectorHandlersLive = ConnectorRpcs.toLayer(
   Effect.gen(function* () {
-    const handlers = yield* ConnectorConfigs;
-    return ConnectorRpcs.of(logDefects(ConnectorRpcs, handlers));
+    const { handlers } = yield* ConnectorConfigs;
+    return ConnectorRpcs.of(logDefects(ConnectorRpcs, localAppConnectorWrites(handlers)));
   }),
 );

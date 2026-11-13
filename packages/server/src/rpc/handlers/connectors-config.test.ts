@@ -20,12 +20,15 @@ import {
   McpCli,
   type McpCliOutput,
 } from "../../connectors/mcp-cli.ts";
+import { LOCAL_APP_HEADER, localAppHeadersForTests } from "../../http/local-app.ts";
 import { FakeAgentControl } from "../../runtime/fake-agent.ts";
 import { RuntimeTestLayer, waitFor } from "../../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
 import {
   AGENT_LIST_TIMEOUT_MS,
   CONFIGURED_REFRESH_MS,
+  CONNECTOR_WRITES_LOCAL_ONLY,
+  localAppConnectorWrites,
   CONNECTOR_RECONNECT_EVERY_MS,
   connectorHandlers,
   LIVE_STATUS_TIMEOUT_MS,
@@ -113,6 +116,63 @@ const liveThread = Effect.gen(function* () {
   });
   yield* waitFor("idle", runtimes.status(thread.id).pipe(Effect.map((s) => s === "idle")));
   return thread;
+});
+
+describe("connectors.add / connectors.remove over RPC", () => {
+  const config = { type: "http" as const, url: "https://mcp.example.invalid/phone" };
+
+  it.effect("refuses a paired phone's connection, which the transport never marks", () =>
+    Effect.gen(function* () {
+      const cli = recordingCli();
+      const fake = yield* FakeAgentControl;
+      const rpc = localAppConnectorWrites(
+        yield* connectorHandlers.pipe(Effect.provideService(McpCli, cli.cli)),
+      );
+      // A phone's `/ws` reaches the handler with the local-app header taken off.
+      for (const call of [undefined, { headers: {} }]) {
+        const added = yield* rpc["connectors.add"](
+          { scope: "user", name: "phone", config, targets: ["claude", "codex"] },
+          call,
+        ).pipe(Effect.flip);
+        expect(added.message).toBe(CONNECTOR_WRITES_LOCAL_ONLY);
+        const removed = yield* rpc["connectors.remove"]({ name: "phone" }, call).pipe(Effect.flip);
+        expect(removed.message).toBe(CONNECTOR_WRITES_LOCAL_ONLY);
+      }
+      expect(cli.calls).toEqual([]);
+      expect(fake.mcpConfigCalls).toEqual([]);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("refuses a forged local-app header and takes the transport's own mark", () =>
+    Effect.gen(function* () {
+      const cli = recordingCli();
+      const fake = yield* FakeAgentControl;
+      const rpc = localAppConnectorWrites(
+        yield* connectorHandlers.pipe(Effect.provideService(McpCli, cli.cli)),
+      );
+      for (const value of [
+        "1",
+        "0".repeat(64),
+        localAppHeadersForTests()[LOCAL_APP_HEADER]!.toUpperCase(),
+      ]) {
+        const forged = { headers: { [LOCAL_APP_HEADER]: value } };
+        const added = yield* rpc["connectors.add"](
+          { scope: "user", name: "forged", config, targets: ["codex"] },
+          forged,
+        ).pipe(Effect.flip);
+        expect(added.message).toBe(CONNECTOR_WRITES_LOCAL_ONLY);
+      }
+      expect(fake.mcpConfigCalls).toEqual([]);
+
+      const local = { headers: localAppHeadersForTests() };
+      yield* rpc["connectors.add"](
+        { scope: "user", name: "local", config, targets: ["codex"] },
+        local,
+      );
+      yield* rpc["connectors.remove"]({ name: "local", scope: "user", target: "codex" }, local);
+      expect(fake.mcpConfigCalls).toEqual(["codex:add:user:local", "codex:remove:user:local"]);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
 });
 
 describe("connectors.add / connectors.remove", () => {

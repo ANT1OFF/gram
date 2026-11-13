@@ -7,6 +7,7 @@ import {
   type ConfiguredServer,
   type ThreadId,
 } from "@gram/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -27,6 +28,7 @@ import {
 } from "../orchestration/test-harness.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ConnectorConfigs } from "../rpc/handlers/connectors.ts";
+import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { McpCli, type McpCliShape } from "./mcp-cli.ts";
@@ -38,15 +40,19 @@ const TOOL = "mcp_server_propose";
 const fakeCli = () => {
   const calls: Array<ReadonlyArray<string>> = [];
   const configured: Array<ConfiguredServer> = [];
+  /** Runs during each call, after it is recorded: whatever else happens while `claude` runs. */
+  const during: { run: (args: ReadonlyArray<string>) => Effect.Effect<void> } = {
+    run: () => Effect.void,
+  };
   const cli: McpCliShape = {
     configured: () => Effect.sync(() => [...configured]),
     run: (args) =>
-      Effect.sync(() => {
-        calls.push([...args]);
-        return { status: 0, stdout: "", stderr: "" };
-      }),
+      Effect.sync(() => void calls.push([...args])).pipe(
+        Effect.andThen(Effect.suspend(() => during.run(args))),
+        Effect.as({ status: 0, stdout: "", stderr: "" }),
+      ),
   };
-  return { calls, configured, cli };
+  return { calls, configured, during, cli };
 };
 
 /** The orchestration world with the connectors' handlers and `mcp_server_propose` over it. */
@@ -311,8 +317,81 @@ describe("mcp_server_propose", () => {
         });
         yield* answer(thread.id, request, "allow");
         const error = yield* Fiber.join(asked);
-        expect(error.message).toContain("changed while it waited");
+        expect(error.message).toContain(
+          "Claude Code's docs-index changed after the card was drawn",
+        );
         expect(cli.calls).toEqual([]);
+      }),
+    ),
+  );
+
+  it.effect("never overwrites a server that appears between one target's write and the next", () =>
+    inMcp((world, cli) =>
+      Effect.gen(function* () {
+        const fake = yield* FakeAgentControl;
+        const codex = (yield* (yield* AgentHosts).get("codex")).mcpConfig!;
+        // While Claude Code's add runs, Codex gets a server of the name by another way than Gram's
+        // writes (its own CLI, a hand edit), which no lock of Gram's holds back.
+        cli.during.run = (args) =>
+          args[1] === "add-json"
+            ? codex
+                .add(
+                  { cwd: world.repo, scope: "user", name: "docs-index" },
+                  { type: "http", url: "https://other.example.invalid/mcp" },
+                )
+                .pipe(Effect.orDie)
+            : Effect.void;
+        const thread = yield* plainThread(world);
+        const asked = yield* call(thread.id, "plain", LOCAL).pipe(Effect.flip, Effect.forkScoped);
+        const request = yield* cardIn(thread.id);
+        expect(decodeCard(request.input).action).toBe("add");
+        yield* answer(thread.id, request, "allow");
+        const error = yield* Fiber.join(asked);
+        expect(error.message).toContain("Codex's docs-index changed after the card was drawn");
+        expect(error.message).toContain(
+          "nothing was written to Codex. Claude Code already has it.",
+        );
+        // Only the other writer's add reached Codex; the proposal's never did.
+        expect(fake.mcpConfigCalls).toEqual(["codex:add:user:docs-index"]);
+        const [held] = yield* codex.list({ cwd: world.repo, checkSignIn: false });
+        expect(held?.url).toBe("https://other.example.invalid/mcp");
+      }),
+    ),
+  );
+
+  it.effect("holds Settings' own add of the name until an approved proposal has written", () =>
+    inMcp((world, cli) =>
+      Effect.gen(function* () {
+        const fake = yield* FakeAgentControl;
+        const { handlers } = yield* ConnectorConfigs;
+        const release = yield* Deferred.make<void>();
+        const started = yield* Deferred.make<void>();
+        cli.during.run = (args) =>
+          args[1] === "add-json"
+            ? Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(release)))
+            : Effect.void;
+        const thread = yield* plainThread(world);
+        const asked = yield* call(thread.id, "plain", LOCAL).pipe(Effect.forkScoped);
+        yield* answer(thread.id, yield* cardIn(thread.id), "allow");
+        // The proposal holds the name's lock, in the middle of Claude Code's add.
+        yield* Deferred.await(started);
+        const settings = yield* handlers["connectors.add"]({
+          cwd: world.repo,
+          scope: "user",
+          name: "docs-index",
+          config: { type: "http", url: "https://settings.example.invalid/mcp" },
+          targets: ["codex"],
+        }).pipe(Effect.forkScoped);
+        yield* settle;
+        expect(fake.mcpConfigCalls).toEqual([]);
+        yield* Deferred.succeed(release, undefined);
+        expect(yield* Fiber.join(asked)).toMatchObject({ applied: true, action: "add" });
+        yield* Fiber.join(settings);
+        // The proposal wrote Codex as its card showed, then the user's own add ran after it.
+        expect(fake.mcpConfigCalls).toEqual([
+          "codex:add:user:docs-index",
+          "codex:add:user:docs-index",
+        ]);
       }),
     ),
   );

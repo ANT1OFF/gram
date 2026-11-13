@@ -120,6 +120,29 @@ describe("checkMcpServerProposal", () => {
     expect(errorsOf(stdio({ command: "/usr/local/bin/server" }))).toEqual([]);
   });
 
+  it("refuses an auth scheme with its credentials, in any case and however short", () => {
+    const url = "https://mcp.example.invalid/x";
+    for (const value of [
+      "Basic dTpw",
+      "Bearer abc",
+      "bearer abcdefghijklmnopqrstuvwxyz",
+      "BEARER x",
+      "Digest username=u",
+      "Authorization: bearer abc",
+    ]) {
+      expect(errorsOf(remote(url, { "X-Tenant": value })), value).toEqual([
+        expect.stringContaining("Header X-Tenant looks like a credential"),
+      ]);
+      expect(errorsOf(stdio({ env: { SERVICE_CONFIG: value } })), value).toEqual([
+        expect.stringContaining("Env var SERVICE_CONFIG looks like a credential"),
+      ]);
+    }
+    // The words alone, or inside ordinary text, are not credentials.
+    for (const value of ["basic", "Bearer", "use basic mode", "tokens: 10"]) {
+      expect(errorsOf(stdio({ env: { SERVICE_CONFIG: value } })), value).toEqual([]);
+    }
+  });
+
   it("refuses characters that would hide what the card shows", () => {
     expect(errorsOf(stdio({ command: `np${RLO}x` }))[0]).toContain("hidden characters");
     expect(errorsOf(stdio({ args: ["a\nb"] }))[0]).toContain("hidden characters");

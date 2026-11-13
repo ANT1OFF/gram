@@ -164,11 +164,20 @@ const entropy = (text: string) => {
 };
 
 /**
- * A value shaped like a credential: a provider key or bearer token the log scrubber knows, a JWT,
+ * An HTTP auth scheme and its credentials, however short and in any case (`Basic dTpw`,
+ * `bearer abc`), at the start of a value or after a `:`, `=` or `,`, as a header line holds one.
+ */
+const AUTH_SCHEME =
+  /(?:^|[:=,])\s*(?:basic|bearer|digest|negotiate|ntlm|token|hoba|mutual|vapid|aws4-hmac-sha256|scram-sha-\d+)\s+\S/i;
+
+/**
+ * A value shaped like a credential: an auth scheme with its credentials, a provider key the log
+ * scrubber knows, a JWT,
  * a private key, or a long run of random-looking letters and digits. A UUID is an identifier, not
  * a key.
  */
 export const secretValue = (value: string): boolean => {
+  if (AUTH_SCHEME.test(value)) return true;
   if (redactText(value) !== value) return true;
   if (/\beyJ[\w-]{8,}\.[\w-]{8,}\./.test(value)) return true;
   if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value)) return true;

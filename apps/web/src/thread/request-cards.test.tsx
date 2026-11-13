@@ -1210,12 +1210,18 @@ describe("an MCP server proposal", () => {
     expect(screen.getByTestId("mcp-runs-program").textContent).toContain(
       "Runs a program on this machine",
     );
-    expect(screen.getByTestId("mcp-command").textContent).toBe(
-      "Commandnpx -y @example/docs-index-mcp --root '/work/my docs'",
-    );
+    // The program and each argument in a chip of its own, exactly as written.
+    expect(screen.getAllByTestId("mcp-arg").map((chip) => chip.textContent)).toEqual([
+      "npx",
+      "-y",
+      "@example/docs-index-mcp",
+      "--root",
+      "/work/my docs",
+    ]);
     expect(screen.getAllByTestId("mcp-env").map((row) => row.textContent)).toEqual([
       "LOG_LEVEL=info",
     ]);
+    expect(screen.getByTestId("mcp-env-value").className).toContain("whitespace-pre-wrap");
     expect(screen.getAllByTestId("mcp-target").map((row) => row.textContent)).toEqual([
       "Claude CodeClaude Code's user config (claude mcp add-json --scope user): every project",
       "CodexCodex's config.toml, [mcp_servers.docs-index]: every project, Gram's own Codex home included",

@@ -41,14 +41,11 @@ const TOOL = MCP_SERVER_PROPOSE_TOOL;
 /** What each target has under the proposal's name now; fails when one's config can't be read. */
 type Existing = Partial<Record<McpTarget, ConfiguredServer>>;
 
-/** The same servers, as the card would show them: what decides whether an approval still holds. */
-const sameExisting = (a: Existing, b: Existing, targets: ReadonlyArray<McpTarget>) =>
-  targets.every((target) => {
-    const [x, y] = [a[target], b[target]];
-    return x === undefined || y === undefined
-      ? x === y
-      : JSON.stringify(existingOf(x)) === JSON.stringify(existingOf(y));
-  });
+/** The same server, or none, as the card would show it: what decides whether an approval holds. */
+const sameServer = (a: ConfiguredServer | undefined, b: ConfiguredServer | undefined) =>
+  a === undefined || b === undefined
+    ? a === b
+    : JSON.stringify(existingOf(a)) === JSON.stringify(existingOf(b));
 
 /** Why `existing` can't be replaced as proposed, if it can't. */
 const conflict = (proposal: McpServerProposal, existing: Existing) => {
@@ -74,7 +71,7 @@ export const mcpProposeAppToolsLayer = (options: McpProposeToolOptions = {}) =>
       const registry = yield* AppToolRegistry;
       const runtimes = yield* ThreadRuntimes;
       const store = yield* ThreadStore;
-      const connectors = yield* ConnectorConfigs;
+      const { handlers: connectors, writes } = yield* ConnectorConfigs;
       const ttl = Duration.fromInputUnsafe(options.proposalTtl ?? SETTINGS_PROPOSAL_TTL_MS);
 
       /** The caller's checkout: where a `project` server's `.mcp.json` is, and what the CLI runs in. */
@@ -158,60 +155,78 @@ export const mcpProposeAppToolsLayer = (options: McpProposeToolOptions = {}) =>
             );
 
             // The approval is for this card: this caller, this folder, and what each target held
-            // when it was drawn. Anything else and nothing is written.
+            // when it was drawn. Anything else and nothing more is written.
             const roleNow = yield* runtimes.audienceOf(caller);
             const folderNow = yield* folderOf(caller).pipe(Effect.orElseSucceed(() => undefined));
-            const existingNow = yield* existingIn(folder, proposal);
-            if (
-              roleNow !== role ||
-              folderNow !== folder ||
-              !sameExisting(existing, existingNow, proposal.targets)
-            ) {
+            if (roleNow !== role || folderNow !== folder) {
               return yield* fail(
                 TOOL,
-                "What the card showed changed while it waited (this thread's role or folder, or a server of that name), so the approval no longer applies; nothing changed. Propose again if it's still wanted.",
+                "This thread's role or folder changed while the card waited, so the approval no longer applies; nothing changed. Propose again if it's still wanted.",
               );
             }
 
-            const done: Array<McpTarget> = [];
-            for (const target of proposal.targets) {
-              const label = MCP_TARGET_LABEL[target];
-              const scope: McpScope = target === "codex" ? "user" : proposal.scope;
-              const already =
-                done.length === 0
-                  ? ""
-                  : ` ${done.map((t) => MCP_TARGET_LABEL[t]).join(", ")} already has it.`;
-              // `claude mcp add-json` refuses a taken name, so the old entry goes first; Codex
-              // replaces its table in one write.
-              const replacing = existing[target] !== undefined && target === "claude";
-              if (replacing) {
-                yield* connectors["connectors.remove"]({
-                  cwd: folder,
-                  name: proposal.name,
-                  scope,
-                  target,
-                }).pipe(
-                  Effect.mapError((e) =>
-                    fail(TOOL, `${e.message}; nothing was replaced in ${label}.${already}`),
-                  ),
-                );
-              }
-              yield* connectors["connectors.add"]({
-                cwd: folder,
-                scope,
-                name: proposal.name,
-                config: proposal.config,
-                targets: [target],
-              }).pipe(
-                Effect.mapError((e) =>
-                  fail(
-                    TOOL,
-                    `${e.message}${replacing ? `; the old ${proposal.name} was already removed from ${label}` : ""}.${already}`,
-                  ),
-                ),
-              );
-              done.push(target);
-            }
+            // Under the name's lock, which Settings' own adds and removes take too: each target's
+            // server of the name is read again just before its write, so nothing written between
+            // targets, or by anyone between the check and the write, is overwritten unshown.
+            yield* writes.withName(
+              proposal.name,
+              Effect.gen(function* () {
+                const done: Array<McpTarget> = [];
+                for (const target of proposal.targets) {
+                  const label = MCP_TARGET_LABEL[target];
+                  const scope: McpScope = target === "codex" ? "user" : proposal.scope;
+                  const already =
+                    done.length === 0
+                      ? ""
+                      : ` ${done.map((t) => MCP_TARGET_LABEL[t]).join(", ")} already has it.`;
+                  const now = yield* writes
+                    .serverIn(target, folder, proposal.name)
+                    .pipe(
+                      Effect.mapError((error) =>
+                        fail(
+                          TOOL,
+                          `Gram couldn't read ${label}'s MCP config (${error}); nothing was written to ${label}.${already}`,
+                        ),
+                      ),
+                    );
+                  if (!sameServer(existing[target], now)) {
+                    return yield* fail(
+                      TOOL,
+                      `${label}'s ${proposal.name} changed after the card was drawn, so the approval no longer covers it; nothing was written to ${label}.${already} Propose again if it's still wanted.`,
+                    );
+                  }
+                  // `claude mcp add-json` refuses a taken name, so the old entry goes first; Codex
+                  // replaces its table in one write.
+                  const replacing = existing[target] !== undefined && target === "claude";
+                  if (replacing) {
+                    yield* writes
+                      .remove({ cwd: folder, name: proposal.name, scope, target })
+                      .pipe(
+                        Effect.mapError((e) =>
+                          fail(TOOL, `${e.message}; nothing was replaced in ${label}.${already}`),
+                        ),
+                      );
+                  }
+                  yield* writes
+                    .add({
+                      cwd: folder,
+                      scope,
+                      name: proposal.name,
+                      config: proposal.config,
+                      targets: [target],
+                    })
+                    .pipe(
+                      Effect.mapError((e) =>
+                        fail(
+                          TOOL,
+                          `${e.message}${replacing ? `; the old ${proposal.name} was already removed from ${label}` : ""}.${already}`,
+                        ),
+                      ),
+                    );
+                  done.push(target);
+                }
+              }),
+            );
             yield* Effect.logInfo("MCP server added by proposal").pipe(
               Effect.annotateLogs({ threadId: caller, role, action: card.action, ...logged }),
             );

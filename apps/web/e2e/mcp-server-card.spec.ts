@@ -116,7 +116,7 @@ for (const [colorScheme, palette] of [
       );
       await expect(card).toContainText("Add MCP server “docs-index”?");
       await expect(card.getByTestId("mcp-runs-program")).toBeVisible();
-      await expect(card.getByTestId("mcp-command")).toContainText(LOCAL.commandLine);
+      await expect(card.getByTestId("mcp-arg")).toHaveText([LOCAL.command, ...LOCAL.args]);
       await expect(card.getByTestId("mcp-env")).toHaveText(["LOG_LEVEL=info", "DOCS_LOCALE=en"]);
       await expect(card.getByTestId("approval-allow")).toContainText("Add server");
       await expect(card.getByTestId("approval-deny")).toBeVisible();
@@ -166,4 +166,35 @@ test("on a short window the card scrolls and its buttons stay on screen", async 
     await expect(card.getByTestId(id)).toBeInViewport({ ratio: 1 });
   }
   await expect(page.getByLabel("Message", { exact: true })).toBeInViewport();
+});
+
+test("spaces in values show exactly as they would be written, each value's edges visible", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const args = ["server.js", "a   b", " lead", "trail ", ""];
+  const card = await raise(
+    page,
+    TOOL,
+    {
+      ...LOCAL,
+      command: "node",
+      args,
+      commandLine: "node server.js 'a   b' ' lead' 'trail ' ''",
+      env: [{ name: "MODE", value: " a  b " }],
+    },
+    "Spaces.",
+  );
+  // What the user reads, as the browser lays it out: nothing collapsed or trimmed.
+  const shown = await card
+    .getByTestId("mcp-arg")
+    .evaluateAll((chips) => chips.map((chip) => (chip as HTMLElement).innerText));
+  expect(shown).toEqual(["node", ...args]);
+  const env = card.getByTestId("mcp-env-value");
+  expect(await env.evaluate((chip) => (chip as HTMLElement).innerText)).toBe(" a  b ");
+  expect(await env.evaluate((chip) => getComputedStyle(chip).whiteSpace)).toBe("pre-wrap");
+  // An empty argument is still a chip with an edge, not nothing.
+  const empty = card.getByTestId("mcp-arg").last();
+  expect((await empty.boundingBox())!.width).toBeGreaterThan(4);
+  await card.screenshot({ path: test.info().outputPath("spaces.png") });
 });
