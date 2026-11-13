@@ -1271,7 +1271,8 @@ on a card first, takes the next free port, and stops with its thread.
 
 An HTML page an agent drafts in its folder and shows in the Preview tab (`show_panel`) can be
 kept: **Pin** in the Preview tab's strip copies the page's folder into Gram's state on this
-computer (`<data dir>/pages/<workspace>/`), as Docs are kept, and opens it in the **Pages** tab.
+computer (`<data dir>/pages/<workspace>/`), as Docs are kept, and opens it in the **Pages** tab,
+which the panel shows while the workspace has a pinned page.
 Only you pin, show a newer version or unpin; no agent tool does. Nothing done in the worktree
 afterwards changes what you pinned. A pinned page is a bundle: its folder, with a `manifest.json`
 at its root naming the entry file and the data the page declares it reads, which is none for now.
