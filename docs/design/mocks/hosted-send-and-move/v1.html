@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Send work to a hosted workspace, and move a workspace there · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .sm-page {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        width: 100%;
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 22px 24px;
+        font-size: var(--text-sm);
+      }
+      .sm-page h2 {
+        margin: 0;
+        font-size: var(--text-lg);
+      }
+      .sm-label {
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .sm-prompt {
+        min-height: 72px;
+        padding: 12px 14px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl, 10px);
+        background: var(--surface-3);
+        color: var(--fg);
+      }
+      .sm-where {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .sm-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 10px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 999px;
+        background: none;
+        color: var(--fg);
+        font: inherit;
+      }
+      .sm-chip[aria-expanded="true"] {
+        border-color: var(--accent);
+      }
+      .sm-menu {
+        width: 380px;
+      }
+      .sm-menu .menu-item {
+        height: auto;
+        padding: 6px 8px;
+        align-items: flex-start;
+      }
+      .sm-menu .two {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        flex: 1;
+      }
+      .sm-menu .two span {
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .sm-menu .menu-item[aria-checked="true"] {
+        color: var(--fg);
+      }
+      .sm-line {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        color: var(--fg-muted);
+      }
+      .sm-line strong {
+        color: var(--fg);
+        font-weight: 550;
+      }
+      .sm-checks {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg, 8px);
+        background: var(--surface-3);
+      }
+      .sm-check {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 12px;
+      }
+      .sm-check + .sm-check {
+        border-top: 1px solid var(--border-subtle);
+      }
+      .sm-check .text {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        flex: 1;
+      }
+      .sm-check .text span {
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .sm-ok,
+      .sm-warn,
+      .sm-bad {
+        display: inline-flex;
+      }
+      .sm-ok {
+        color: var(--success);
+      }
+      .sm-warn {
+        color: var(--warning);
+      }
+      .sm-bad {
+        color: var(--danger);
+      }
+      .sm-rows {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .sm-row {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 2px 8px;
+        padding: 7px 8px;
+        border-radius: var(--radius-md, 7px);
+      }
+      .sm-row.sel {
+        background: var(--surface-hover);
+      }
+      .sm-row .title {
+        color: var(--fg);
+      }
+      .sm-row > span:first-child {
+        display: inline-flex;
+      }
+      .sm-row .edge {
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .sm-row .edge.asks {
+        color: var(--warning);
+      }
+      .sm-row .edge.off {
+        color: var(--fg);
+      }
+      .sm-pane {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 18px 22px;
+        font-size: var(--text-sm);
+      }
+      .sm-headline {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .sm-headline h3 {
+        margin: 0;
+      }
+      .sm-ask {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px 14px;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-lg, 8px);
+        background: var(--surface-3);
+      }
+      .sm-sheet {
+        width: min(680px, 100%);
+        margin: 24px auto;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 20px 22px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl, 10px);
+        background: var(--surface-3);
+        font-size: var(--text-sm);
+      }
+      .sm-sheet h3 {
+        margin: 0;
+        font-size: var(--text-lg);
+      }
+      .sm-two {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .sm-box {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 10px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg, 8px);
+      }
+      .sm-box ul {
+        margin: 0;
+        padding-left: 16px;
+        color: var(--fg-muted);
+      }
+      .sm-neighbours {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .sm-progress {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--surface-hover);
+      }
+      .sm-progress i {
+        display: block;
+        width: 62%;
+        height: 100%;
+        border-radius: 2px;
+        background: var(--accent);
+      }
+      .sm-side {
+        flex: 0 0 300px;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        Once signed in to a server (Settings → Hosted, drawn in the hosted-device mock), two things:
+        send a task to one of its workspaces from New task, and move a whole workspace there. A sent
+        worker is a thread of the hosted workspace: it runs there under that server's rules, keeps
+        going when this Mac sleeps, and reports to the orchestrator here. Step through each board's
+        states in its strip.
+      </p>
+
+      <section
+        class="board"
+        data-name="1 Send a task"
+        data-size="1280x760"
+        data-states="pick,ready,blocked"
+      >
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>New task</span>
+            </div>
+            <div class="app-body">
+              <div class="sm-page">
+                <h2>New task</h2>
+                <span class="sm-label">What needs doing</span>
+                <div class="sm-prompt">
+                  Make refund webhooks idempotent: a replayed event must not refund twice.
+                </div>
+
+                <span class="sm-label">Where it runs</span>
+                <div class="sm-where">
+                  <span class="sm-label">Machine</span>
+                  <button class="sm-chip" type="button" aria-expanded="true" data-when="pick">
+                    <i data-icon="terminal"></i>This Mac<i data-icon="down"></i>
+                  </button>
+                  <button class="sm-chip" type="button" data-when="ready,blocked">
+                    <i data-icon="upload"></i>Platform · gram.example.com<i data-icon="down"></i>
+                  </button>
+                  <span class="sm-label">Repository</span>
+                  <button class="sm-chip" type="button">
+                    <i data-icon="folder"></i>billing-api<i data-icon="down"></i>
+                  </button>
+                </div>
+
+                <div class="menu sm-menu" role="menu" data-when="pick">
+                  <div class="section-label">Machines</div>
+                  <button class="menu-item" role="menuitemradio" aria-checked="true" type="button">
+                    <i data-icon="terminal"></i><span class="two">This Mac</span
+                    ><i data-icon="check"></i>
+                  </button>
+                  <button class="menu-item" role="menuitemradio" aria-checked="false" type="button">
+                    <i data-icon="globe"></i
+                    ><span class="two">cachyos<span>Joined machine · online</span></span>
+                  </button>
+                  <div class="divider"></div>
+                  <div class="section-label">Hosted workspaces · gram.example.com</div>
+                  <a
+                    class="menu-item"
+                    role="menuitemradio"
+                    aria-checked="false"
+                    href="#"
+                    data-goto="1 Send a task@ready"
+                  >
+                    <i data-icon="upload"></i
+                    ><span class="two"
+                      >Platform<span>Example Co · runs there, under its rules</span></span
+                    >
+                  </a>
+                  <button
+                    class="menu-item"
+                    role="menuitemradio"
+                    aria-checked="false"
+                    type="button"
+                    disabled
+                  >
+                    <i data-icon="upload"></i
+                    ><span class="two"
+                      >Research<span>Example Co doesn't take work sent from this app</span></span
+                    >
+                  </button>
+                </div>
+
+                <div class="sm-line" data-when="ready,blocked">
+                  <i data-icon="upload"></i>
+                  <span>
+                    <strong>Runs in Platform on gram.example.com</strong>, as a thread of that
+                    workspace. It keeps going when this Mac sleeps, and reports to this workspace's
+                    orchestrator. Example Co's rules and approvals apply there, not this workspace's
+                    autonomy.
+                  </span>
+                </div>
+
+                <div class="sm-checks" data-when="ready">
+                  <div class="sm-check">
+                    <span class="sm-ok"><i data-icon="okcircle"></i></span>
+                    <div class="text">
+                      The server reaches the repository<span
+                        >example-co/billing-api, through its own GitHub access</span
+                      >
+                    </div>
+                  </div>
+                  <div class="sm-check">
+                    <span class="sm-ok"><i data-icon="okcircle"></i></span>
+                    <div class="text">
+                      main is pushed<span>The worker branches from origin/main at 4be1c09</span>
+                    </div>
+                  </div>
+                  <div class="sm-check">
+                    <span class="sm-warn"><i data-icon="alert"></i></span>
+                    <div class="text">
+                      3 uncommitted files stay on this Mac<span
+                        >src/refunds.ts and 2 more. The worker won't see them.</span
+                      >
+                    </div>
+                    <button class="btn sm ghost" type="button">Show them</button>
+                  </div>
+                </div>
+
+                <div class="sm-checks" data-when="blocked">
+                  <div class="sm-check">
+                    <span class="sm-bad"><i data-icon="xcircle"></i></span>
+                    <div class="text">
+                      The server can't reach this repository<span
+                        >example-co/billing-api isn't in Example Co's GitHub access on
+                        gram.example.com.</span
+                      >
+                    </div>
+                    <button class="btn sm" type="button">
+                      Ask for access<i data-icon="external"></i>
+                    </button>
+                  </div>
+                  <div class="sm-check">
+                    <span class="sm-warn"><i data-icon="alert"></i></span>
+                    <div class="text">
+                      feat/refund-keys isn't pushed<span
+                        >The task starts from this branch. 2 commits are only on this Mac.</span
+                      >
+                    </div>
+                    <button class="btn sm" type="button">Push it</button>
+                  </div>
+                </div>
+
+                <div class="row">
+                  <button class="btn primary" type="button" data-when="pick">
+                    Start <span class="kbd">⌘↵</span>
+                  </button>
+                  <a
+                    class="btn primary"
+                    href="#"
+                    data-when="ready"
+                    data-goto="2 A sent worker@running"
+                    >Send to Platform <span class="kbd">⌘↵</span></a
+                  >
+                  <button class="btn primary" type="button" data-when="blocked" disabled>
+                    Send to Platform
+                  </button>
+                  <button class="btn ghost" type="button" data-when="blocked">Check again</button>
+                  <span class="grow"></span>
+                  <span class="sm-label" data-when="ready,blocked"
+                    >Signed in as [Your name] · Example Co</span
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="board"
+        data-name="2 A sent worker"
+        data-size="1280x560"
+        data-states="running,asks,signed-out"
+      >
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>billing-api</span>
+            </div>
+            <div class="app-body">
+              <nav class="sidebar sm-side" aria-label="Workers">
+                <div class="section-label">billing-api · workers</div>
+                <div class="sm-rows">
+                  <div class="sm-row sel">
+                    <span class="spinner" data-when="running"></span>
+                    <span class="sm-warn" data-when="asks"><i data-icon="hand"></i></span>
+                    <span data-when="signed-out"><i data-icon="dashed"></i></span>
+                    <span class="title truncate">Idempotent refund webhooks</span>
+                    <span class="edge" data-when="running"><i data-icon="upload"></i>Platform</span>
+                    <span class="edge asks" data-when="asks"
+                      >asks you <i data-icon="upload"></i
+                    ></span>
+                    <span class="edge off" data-when="signed-out"
+                      ><i data-icon="upload"></i>signed out</span
+                    >
+                  </div>
+                  <div class="sm-row">
+                    <span class="spinner"></span>
+                    <span class="title truncate">Retry failed uploads</span>
+                    <span class="edge"><i data-icon="pr"></i>#141</span>
+                  </div>
+                  <div class="sm-row">
+                    <span class="sm-ok"><i data-icon="okcircle"></i></span>
+                    <span class="title truncate">Stable sort in History</span>
+                    <span class="edge"><i data-icon="globe"></i>cachyos</span>
+                  </div>
+                </div>
+              </nav>
+              <div class="sm-pane">
+                <div class="sm-headline">
+                  <h3>Idempotent refund webhooks</h3>
+                  <span class="badge info"
+                    ><i data-icon="upload"></i>Platform · gram.example.com</span
+                  >
+                  <span class="grow"></span>
+                  <button class="btn sm" type="button">
+                    Open in Platform<i data-icon="external"></i>
+                  </button>
+                </div>
+                <div class="sm-line">
+                  <i data-icon="shield"></i>
+                  <span>
+                    Runs on the server under Example Co's rules. This Mac holds none of its files;
+                    its pull request is how the work comes back.
+                  </span>
+                </div>
+
+                <div class="sm-checks" data-when="running">
+                  <div class="sm-check">
+                    <span class="spinner"></span>
+                    <div class="text">
+                      Running its tests<span
+                        >Started 09:12 · 14 minutes · last report 2 minutes ago</span
+                      >
+                    </div>
+                  </div>
+                  <div class="sm-check">
+                    <i data-icon="pr"></i>
+                    <div class="text">
+                      #412 open on example-co/billing-api<span>2 of 5 checks passed</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="sm-ask" data-when="asks">
+                  <strong>It asks you</strong>
+                  <span>
+                    The events table has no unique key on the provider's event id. Add a migration
+                    for one, or keep a separate table of seen ids?
+                  </span>
+                  <div class="row">
+                    <button class="btn sm primary" type="button">Add the migration</button>
+                    <button class="btn sm" type="button">A separate table</button>
+                    <button class="btn sm ghost" type="button">Write an answer</button>
+                  </div>
+                  <span class="sm-label"
+                    >Your answer is recorded on gram.example.com under your name.</span
+                  >
+                </div>
+
+                <div class="callout" data-when="signed-out">
+                  <strong>Signed out of gram.example.com</strong>
+                  <p class="muted">
+                    The worker keeps running there. This Mac stopped hearing from it at 09:40, so
+                    its state here is as of then, and the orchestrator isn't told when it finishes.
+                  </p>
+                  <div class="row">
+                    <button class="btn sm primary" type="button">Sign in</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="board"
+        data-name="3 Move a workspace"
+        data-size="1280x800"
+        data-states="review,moving,moved"
+      >
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>billing-api</span>
+            </div>
+            <div class="app-body">
+              <div class="sm-sheet" data-when="review">
+                <h3>Move billing-api to a server</h3>
+                <div class="sm-where">
+                  <span class="sm-label">To</span>
+                  <button class="sm-chip" type="button">
+                    <i data-icon="upload"></i>Platform · gram.example.com<i data-icon="down"></i>
+                  </button>
+                  <span class="sm-label">Example Co · signed in as [Your name]</span>
+                </div>
+                <div class="sm-two">
+                  <div class="sm-box">
+                    <strong>Goes</strong>
+                    <ul>
+                      <li>Charter, stages and settings</li>
+                      <li>Memory</li>
+                      <li>The orchestrator's conversation (1,204 messages)</li>
+                      <li>The Board's cards and 38 workers' history</li>
+                      <li>2 routines</li>
+                    </ul>
+                  </div>
+                  <div class="sm-box">
+                    <strong>Stays on this Mac</strong>
+                    <ul>
+                      <li>Agent sessions and terminals</li>
+                      <li>Worktrees and uncommitted changes</li>
+                      <li>Sign-ins and keys</li>
+                      <li>Folder access and approvals in flight</li>
+                    </ul>
+                  </div>
+                </div>
+                <div class="sm-checks">
+                  <div class="sm-check">
+                    <span class="sm-ok"><i data-icon="okcircle"></i></span>
+                    <div class="text">example-co/billing-api<span>The server reaches it</span></div>
+                  </div>
+                  <div class="sm-check">
+                    <span class="sm-bad"><i data-icon="xcircle"></i></span>
+                    <div class="text">
+                      example-co/billing-fixtures<span
+                        >Not in Example Co's GitHub access there. The workspace moves without
+                        it.</span
+                      >
+                    </div>
+                    <button class="btn sm" type="button">
+                      Ask for access<i data-icon="external"></i>
+                    </button>
+                  </div>
+                  <div class="sm-check">
+                    <span class="sm-warn"><i data-icon="alert"></i></span>
+                    <div class="text">
+                      2 workers are running<span
+                        >They finish their step, push their branches and stop. The server's
+                        orchestrator is told where each got to.</span
+                      >
+                    </div>
+                  </div>
+                  <div class="sm-check">
+                    <i data-icon="shield"></i>
+                    <div class="text">
+                      Autonomy becomes Publish<span
+                        >It is Full here. Example Co allows Publish at most.</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <div class="row">
+                  <a class="btn primary" href="#" data-goto="3 Move a workspace@moving"
+                    >Move to Platform</a
+                  >
+                  <button class="btn ghost" type="button">Cancel</button>
+                  <span class="grow"></span>
+                  <span class="sm-label">Archived here afterwards, never deleted.</span>
+                </div>
+                <div class="sm-neighbours">
+                  <span
+                    >Not moving house? <a href="#">Copy settings and memory</a> keeps this workspace
+                    here and sets one up there.</span
+                  >
+                </div>
+              </div>
+
+              <div class="sm-sheet" data-when="moving">
+                <h3>Moving billing-api to Platform</h3>
+                <div class="sm-checks">
+                  <div class="sm-check">
+                    <span class="sm-ok"><i data-icon="okcircle"></i></span>
+                    <div class="text">Workers stopped, 2 branches pushed</div>
+                  </div>
+                  <div class="sm-check">
+                    <span class="spinner"></span>
+                    <div class="text">Sending the workspace<span>31 MB of 50 MB</span></div>
+                  </div>
+                  <div class="sm-check">
+                    <i data-icon="dashed"></i>
+                    <div class="text">The server sets it up and its orchestrator reads in</div>
+                  </div>
+                </div>
+                <div class="sm-progress"><i></i></div>
+                <div class="row">
+                  <button class="btn" type="button">Cancel the move</button>
+                  <span class="sm-label">Nothing changes here until the server has it all.</span>
+                  <a class="btn sm ghost" href="#" data-goto="3 Move a workspace@moved"
+                    >Skip to result</a
+                  >
+                </div>
+              </div>
+
+              <div class="sm-sheet" data-when="moved">
+                <h3>billing-api now runs in Platform</h3>
+                <span class="muted">
+                  Moved to gram.example.com today at 09:48. Its orchestrator there has the
+                  conversation, memory and Board, and was told what didn't come: 2 worktrees with
+                  uncommitted changes, and example-co/billing-fixtures.
+                </span>
+                <div class="sm-checks">
+                  <div class="sm-check">
+                    <i data-icon="archive"></i>
+                    <div class="text">
+                      Here it is archived as "Moved to Platform"<span
+                        >Read-only. Its worktrees stay on this Mac until you remove them.</span
+                      >
+                    </div>
+                  </div>
+                  <div class="sm-check">
+                    <i data-icon="upload"></i>
+                    <div class="text">
+                      It shows under gram.example.com in the sidebar<span
+                        >Open it here or in the browser.</span
+                      >
+                    </div>
+                    <button class="btn sm primary" type="button">Open it</button>
+                  </div>
+                </div>
+                <div class="sm-neighbours">
+                  <span
+                    ><a href="#">Bring it back to this Mac…</a> pulls it down and archives it
+                    there.</span
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
