@@ -156,9 +156,10 @@ place of its own, such as its own assistant's conversations. Each still opens at
 (`{ name: "Chat", path: "/chat/$threadId", ids }`): a message one of those threads sent to another
 says the place beside its sender and opens the sender there, and a phone's header puts such a
 thread under the place's name in place of a kind of thread.
-`threadsPage.bar: "path"` starts the title bar of a thread, a Board and the New form as a path from
-the page of every thread, with a workspace's orchestrator and Board as two buttons beside it, in
-place of the workspace switcher and Chat · Board.
+`threadsPage.bar: "path"` starts the title bar of a thread, a Board, a workspace's Memory and the
+New form as a path from the page of every thread, with a workspace's orchestrator, Board and Memory
+as one segmented control beside it, in place of the workspace switcher and Chat · Board. Memory
+then drops its own title row, which the bar already says.
 `threadsPage.workspaces: { noun: "Project", plural: "Projects" }` has the page open on a list of the
 workspaces in your word for one, for people who start from a workspace: each row says its
 repositories, what waits on you, what runs, its open pull requests and its autonomy, and has a task
