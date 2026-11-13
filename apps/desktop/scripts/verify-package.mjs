@@ -53,7 +53,15 @@ const FUSES = {
 };
 
 /** The Node-side bundles in app.asar, by the names their builds record lists under. */
-const NODE_BUNDLES = ["main", "preload", "server", "proc-worker", "gram-host", "speech"];
+const NODE_BUNDLES = [
+  "main",
+  "preload",
+  "page-guard",
+  "server",
+  "proc-worker",
+  "gram-host",
+  "speech",
+];
 
 /** The lists in `dir` for NODE_BUNDLES, by name; a missing one is left out. */
 const readBundleLists = (dir) =>
