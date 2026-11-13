@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http";
 import { networkInterfaces } from "node:os";
 import { PassThrough } from "node:stream";
 
-import type { PaneCommand } from "@gram/contracts/link-trust";
+import type { PaneCommand, ViewHostMessage } from "@gram/contracts/link-trust";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { NO_BROWSER, STOPPED_ANSWERING, headlessPanes, offLoopback } from "./headless-host.ts";
@@ -526,6 +526,13 @@ describe("headlessPanes", () => {
 // Against a real Chromium, when `GRAM_BROWSER_EXECUTABLE` names one (Playwright's will do).
 const executable = process.env["GRAM_BROWSER_EXECUTABLE"];
 
+/** Waits until `met`, for ten seconds at most. */
+const until = async (met: () => boolean) => {
+  for (let waited = 0; !met() && waited < 10_000; waited += 50)
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(met()).toBe(true);
+};
+
 describe.skipIf(executable === undefined || executable === "")("headless panes in Chromium", () => {
   let server: Server;
   let origin = "";
@@ -572,6 +579,96 @@ describe.skipIf(executable === undefined || executable === "")("headless panes i
       expect(shot).toMatchObject({ ok: true, image: { mimeType: "image/jpeg" } });
       expect(fetched).toBeGreaterThan(0);
     } finally {
+      await close();
+    }
+  }, 60_000);
+
+  it("shows a watcher the page and its frames, and gives a person the page for a while", async () => {
+    const seen: Array<ViewHostMessage> = [];
+    const { panes, view, close } = headlessPanes({
+      executable: executable!,
+      sandbox: false,
+      send: (message) => seen.push(message),
+      idleMs: 1_500,
+    });
+    const pages = () =>
+      seen.flatMap((message) => (message.type === "pane.view.page" ? [message] : []));
+    const watch = setInterval(() => view({ type: "pane.view.watch", threadId: "owned" }), 500);
+    try {
+      const command = (input: PaneCommand) =>
+        panes.serve({ threadId: "owned", limits: { actOnLoopbackOnly: false }, command: input });
+      expect(view({ type: "pane.view.watch", threadId: "owned" })).toBe(true);
+      // Watching starts no browser and shows no page before the agent has one.
+      await until(() => pages().length > 0);
+      expect(pages()[0]).toEqual({ type: "pane.view.page", threadId: "owned", page: null });
+
+      expect(await command({ op: "navigate", url: `${origin}/` })).toMatchObject({ ok: true });
+      await until(() => pages().at(-1)?.page?.title === "Owned fixture");
+      expect(pages().at(-1)?.page).toMatchObject({
+        url: `${origin}/`,
+        loading: false,
+        canGoBack: false,
+        canGoForward: false,
+        driver: "agent",
+      });
+      await until(() => seen.some((message) => message.type === "pane.view.frame"));
+      const frame = seen.find((message) => message.type === "pane.view.frame");
+      expect(frame).toMatchObject({ threadId: "owned" });
+      // A JPEG, base64: its first bytes are FF D8 FF.
+      expect(frame?.type === "pane.view.frame" && frame.jpeg.startsWith("/9j/")).toBe(true);
+      expect(frame?.type === "pane.view.frame" && frame.width).toBeGreaterThan(100);
+
+      const at = await command({
+        op: "evaluate",
+        expression:
+          "(() => { const r = document.querySelector('button').getBoundingClientRect(); return JSON.stringify([r.x + r.width / 2, r.y + r.height / 2]); })()",
+      });
+      const [x, y] = JSON.parse(
+        /\[[\d., ]+\]/.exec(at.ok ? (at.content ?? "") : "")?.[0] ?? "[]",
+      ) as Array<number>;
+      expect(x).toBeGreaterThan(0);
+      const pointer = { type: "pointer", x, y, button: "left", clickCount: 1, modifiers: 0 };
+      // A pointer passing over the agent's page takes nothing over and reaches nothing.
+      view({
+        type: "pane.view.input",
+        threadId: "owned",
+        inputs: [{ ...pointer, action: "move", button: "none", buttons: 0, clickCount: 0 }],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(pages().at(-1)?.page?.driver).toBe("agent");
+
+      view({
+        type: "pane.view.input",
+        threadId: "owned",
+        inputs: [
+          { ...pointer, action: "down", buttons: 1 },
+          { ...pointer, action: "up", buttons: 0 },
+        ],
+      });
+      await until(() => pages().at(-1)?.page?.driver === "user");
+      await until(() => pages().at(-1)?.page?.title === "Pressed");
+      expect(await command({ op: "click", ref: "ref_1" })).toMatchObject({
+        ok: false,
+        code: "userHasControl",
+      });
+
+      // With nothing more from the person, the page is the agent's again.
+      await until(() => pages().at(-1)?.page?.driver === "agent");
+      expect(await command({ op: "text" })).toMatchObject({ ok: true });
+
+      // Typing takes it over too, and the strip's button gives it back at once.
+      view({
+        type: "pane.view.input",
+        threadId: "owned",
+        inputs: [
+          { type: "key", action: "down", key: "Tab", code: "Tab", keyCode: 9, modifiers: 0 },
+        ],
+      });
+      await until(() => pages().at(-1)?.page?.driver === "user");
+      view({ type: "pane.view.control", threadId: "owned", op: "handBack" });
+      await until(() => pages().at(-1)?.page?.driver === "agent");
+    } finally {
+      clearInterval(watch);
       await close();
     }
   }, 60_000);

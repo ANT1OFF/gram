@@ -115,6 +115,8 @@ export const UNRECORDED_RPCS: ReadonlySet<string> = new Set([
   "helper.status",
   "composer.drafts",
   "terminal.input",
+  "browserView.subscribe",
+  "browserView.input",
   "terminal.resize",
   "terminal.list",
   "terminal.subscribe",

@@ -35,5 +35,10 @@ export const Diagnostics = Schema.Struct({
   }),
   /** Present when the server runs the echo fake agent instead of real agents. */
   fakeAgent: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Present when the server runs a browser of its own for agents (no desktop app draws their
+   * pages): a client with no Preview pane then shows an agent's page from `browserView.*`.
+   */
+  serverBrowser: Schema.optionalKey(Schema.Boolean),
 });
 export type Diagnostics = typeof Diagnostics.Type;

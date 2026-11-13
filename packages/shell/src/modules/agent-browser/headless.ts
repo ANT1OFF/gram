@@ -15,6 +15,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Readable, Writable } from "node:stream";
 
+import type { ViewInput } from "@gram/contracts/link-trust";
+
 import { previewNavigation, previewRequest } from "../../core/preview-rules.ts";
 import type { PreviewRequestDetails } from "../preview/main.ts";
 import type { PaneContents, PaneViews } from "./pane.ts";
@@ -457,6 +459,73 @@ const holdNewTargets = (connection: CdpConnection): Promise<Held> => {
 /** How long a load the app asked for may take before it is stopped. */
 export const LOAD_DEADLINE_MS = 30_000;
 
+/** One frame of a page: a base64 JPEG, and the page's size in its own CSS pixels. */
+export interface HeadlessFrame {
+  readonly jpeg: string;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** A page as someone watching it uses it: its frames, and a person's input to it. */
+export interface HeadlessPage {
+  /** Sends the page's frames as it repaints, the first at once; returns what stops them. */
+  screencast(onFrame: (frame: HeadlessFrame) => void): () => void;
+  /** Puts one pointer or key input into the page, as a person at it would. */
+  input(input: ViewInput): Promise<void>;
+  reload(): void;
+  /** Whether there is a page behind this one: the blank one every page starts on isn't one. */
+  canGoBack(): boolean;
+  goForward(): void;
+  canGoForward(): boolean;
+}
+
+/** The longest edge of a frame, in pixels: a larger page is sent scaled down. */
+export const FRAME_EDGE = 1600;
+
+/** The least time between two frames: twelve a second at most, whatever the page repaints. */
+export const FRAME_INTERVAL_MS = 80;
+
+const watched = new WeakMap<PaneContents, HeadlessPage>();
+
+/** What watching a page `openHeadlessPage` made needs; `undefined` for any other contents. */
+export const headlessPage = (contents: PaneContents): HeadlessPage | undefined =>
+  watched.get(contents);
+
+const MOUSE = { move: "mouseMoved", down: "mousePressed", up: "mouseReleased" } as const;
+
+/** The DevTools Protocol's `Input` command for one input. */
+export const inputCommand = (input: ViewInput): { method: string; params: object } => {
+  if (input.type === "wheel") {
+    const { x, y, deltaX, deltaY, modifiers } = input;
+    return {
+      method: "Input.dispatchMouseEvent",
+      params: { type: "mouseWheel", x, y, deltaX, deltaY, modifiers },
+    };
+  }
+  if (input.type === "pointer") {
+    const { x, y, button, buttons, clickCount, modifiers } = input;
+    return {
+      method: "Input.dispatchMouseEvent",
+      params: { type: MOUSE[input.action], x, y, button, buttons, clickCount, modifiers },
+    };
+  }
+  const { key, code, keyCode, text, modifiers } = input;
+  const typed = input.action === "down" && text !== undefined;
+  return {
+    method: "Input.dispatchKeyEvent",
+    params: {
+      type: input.action === "up" ? "keyUp" : typed ? "keyDown" : "rawKeyDown",
+      key,
+      code,
+      windowsVirtualKeyCode: keyCode,
+      nativeVirtualKeyCode: keyCode,
+      modifiers,
+      ...(typed ? { text, unmodifiedText: text } : {}),
+      ...(input.repeat === true ? { autoRepeat: true } : {}),
+    },
+  };
+};
+
 /** Ends each page: its target, and the browser context that held its cookies and storage. */
 const closers = new WeakMap<PaneContents, () => void>();
 
@@ -487,7 +556,7 @@ const openIn = async (
   let loading = false;
   let destroyed = false;
   let mainFrameId: string | undefined;
-  let history: { currentIndex: number; entries: Array<{ id: number }> } = {
+  let history: { currentIndex: number; entries: Array<{ id: number; url?: string }> } = {
     currentIndex: 0,
     entries: [],
   };
@@ -611,6 +680,51 @@ const openIn = async (
     once: (event, listener) => events.once(event, listener),
     off: (event, listener) => events.off(event, listener),
   };
+
+  /** Who gets the page's frames now; one watcher at a time. */
+  let onFrame: ((frame: HeadlessFrame) => void) | undefined;
+  let lastFrameAt = 0;
+  let focused = false;
+  watched.set(contents, {
+    screencast: (listener) => {
+      onFrame = listener;
+      if (!destroyed)
+        void ownSend("Page.startScreencast", {
+          format: "jpeg",
+          quality: 70,
+          maxWidth: FRAME_EDGE,
+          maxHeight: FRAME_EDGE,
+        }).catch(() => {});
+      return () => {
+        if (onFrame !== listener) return;
+        onFrame = undefined;
+        if (!destroyed) void ownSend("Page.stopScreencast").catch(() => {});
+      };
+    },
+    input: async (input) => {
+      if (destroyed) return;
+      if (!focused) {
+        // Keys go to a page that believes it has the focus, which no headless page has by itself.
+        focused = true;
+        await ownSend("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
+      }
+      const { method, params } = inputCommand(input);
+      await Promise.race([ownSend(method, params), gone]).catch(() => {});
+      // What the input did may have retitled the page, which no event says.
+      if (input.type !== "pointer" || input.action === "up") await refreshTitle();
+    },
+    reload: () => {
+      if (!destroyed) void ownSend("Page.reload").catch(() => {});
+    },
+    goForward: () => {
+      const entry = history.entries[history.currentIndex + 1];
+      if (entry !== undefined && !destroyed)
+        void ownSend("Page.navigateToHistoryEntry", { entryId: entry.id }).catch(() => {});
+    },
+    canGoBack: () =>
+      history.currentIndex > 0 && history.entries[history.currentIndex - 1]?.url !== "about:blank",
+    canGoForward: () => history.currentIndex < history.entries.length - 1,
+  });
 
   /** `stay` stops a navigation the page itself started and keeps the document it is on. */
   const decide = async (paused: PausedRequest): Promise<"allow" | "block" | "stay"> => {
@@ -757,6 +871,27 @@ const openIn = async (
         }).catch(() => {});
         return;
       }
+      case "Page.screencastFrame": {
+        const frame = params as {
+          data: string;
+          sessionId: number;
+          metadata: { deviceWidth: number; deviceHeight: number };
+        };
+        onFrame?.({
+          jpeg: frame.data,
+          width: frame.metadata.deviceWidth,
+          height: frame.metadata.deviceHeight,
+        });
+        // The browser sends the next frame once this one is acknowledged, so a late answer is
+        // what paces a page that repaints all the time.
+        const wait = Math.max(0, lastFrameAt + FRAME_INTERVAL_MS - Date.now());
+        lastFrameAt = Date.now() + wait;
+        setTimeout(() => {
+          if (!destroyed)
+            void ownSend("Page.screencastFrameAck", { sessionId: frame.sessionId }).catch(() => {});
+        }, wait);
+        return;
+      }
       case "Page.frameStoppedLoading": {
         if ((params as { frameId: string }).frameId !== mainFrameId) return;
         // The title first, so whoever waits on the load reads the page's own.
@@ -815,7 +950,12 @@ export const headlessViews = (
   closed: (threadId: string) => void = () => {},
   /** Whether a command is running on the thread's page, which is then never the one closed. */
   busy: (threadId: string) => boolean = () => false,
-): PaneViews & { touch(threadId: string): void; close(threadId: string): Promise<void> } => {
+): PaneViews & {
+  touch(threadId: string): void;
+  close(threadId: string): Promise<void>;
+  /** The thread's page if it has one, without counting as a use of it. */
+  peek(threadId: string): Promise<PaneContents | undefined>;
+} => {
   // In order of use, the least recent first.
   const pages = new Map<string, Promise<PaneContents | undefined>>();
   const touch = (threadId: string) => {
@@ -843,6 +983,10 @@ export const headlessViews = (
   };
   return {
     touch,
+    peek: async (threadId) => {
+      const page = await pages.get(threadId);
+      return page === undefined || page.isDestroyed() ? undefined : page;
+    },
     close: async (threadId) => {
       const page = pages.get(threadId);
       if (page === undefined) return;

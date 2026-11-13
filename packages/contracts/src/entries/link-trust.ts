@@ -5,5 +5,6 @@ export * from "../preview.ts";
 export * from "../page-url.ts";
 // Where an agent may browse in the Preview pane, and the pane commands a shell serves.
 export * from "../agent-browse.ts";
+export * from "../browser-view.ts";
 
 export * from "../browser-inspection.ts";

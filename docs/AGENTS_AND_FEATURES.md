@@ -1432,8 +1432,22 @@ command running. The profile is a fresh temp
 folder, removed when the browser stops. The browser starts on the first command and starts again
 on the next command after it stops. Neither the browser host nor Chromium gets the server's
 environment: only the paths, locale and font settings, and the variables below. A load whose server doesn't answer in 30 seconds is stopped. A page's `alert`, `confirm` or `prompt` is dismissed, since nobody is there to answer it. A page that stops answering for 40 seconds, such as one whose script loops, is closed, and the next command opens a fresh one. One multicast DNS query can still leave the machine when a page hands WebRTC a `.local` name, carrying a fixed name and nothing of the page's. Recording (`browser_record`) needs the desktop
-app's image decoder and doesn't work here. You don't see the page yet: streaming it to the web
-app and taking over from there come later.
+app's image decoder and doesn't work here.
+
+You watch that page in the thread's Preview tab, in a browser tab or any window with no Preview
+pane of its own: the tab shows the page live from the server, with the agent's latest action above
+it, and comes up by itself when the agent browses. A click, a key or a scroll in the page takes it
+over, as in the desktop app: your input goes to the page, and the agent's next input is refused
+until it has the page again. It gets the page back when you press **Hand back**, when you have sent
+nothing for 20 seconds, or when you close the tab. Back, forward and reload in the strip are yours
+too. The address is shown, not typed: the tab shows the page the agent opened, and opens none of
+its own. Pasting from your clipboard, file uploads and sound don't cross.
+
+The frames are JPEGs of the page as it repaints, twelve a second at most, sent only while someone
+watches (`browserView.subscribe`); input goes back as `browserView.input`, which the browser host
+checks before it reaches Chromium. Only a member calls these, never a viewer. A desktop app
+connected to a server that runs its own browser still shows its own Preview pane, not the server's
+page.
 
 | Variable                  | What it sets                                                                 |
 | ------------------------- | ---------------------------------------------------------------------------- |

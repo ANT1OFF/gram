@@ -21,6 +21,21 @@ import * as Layer from "effect/Layer";
 export interface PanePortShape {
   /** Sends one request to the shell; a missing shell or one that doesn't answer is a failed result. */
   send(request: PaneRequest): Effect.Effect<PaneResult>;
+  /**
+   * The door for watching a thread's page from a client (`views.ts`): only the headless browser
+   * host has one, since the desktop app draws its pages itself.
+   */
+  readonly view?: PaneViewPort | undefined;
+}
+
+/** Messages about watching pages, to and from the browser host. */
+export interface PaneViewPort {
+  /** Sends the host a message if it is running; watching never starts it. */
+  post(message: object): void;
+  /** Hears every message the host sends. */
+  on(listener: (message: unknown) => void): void;
+  /** Hears each time the host stops, and its pages with it. */
+  onStopped(listener: () => void): void;
 }
 
 export class PanePort extends Context.Service<PanePort, PanePortShape>()("@gram/server/PanePort") {
@@ -32,9 +47,16 @@ export class PanePort extends Context.Service<PanePort, PanePortShape>()("@gram/
     const port = (process as { parentPort?: PaneMessagePort }).parentPort;
     if (port !== undefined) return bridgePane(port);
     const hostModule = process.env["GRAM_HEADLESS_BROWSER"];
-    return hostModule === undefined || hostModule === ""
-      ? NO_PANE
-      : bridgePane(forkedPanePort(hostModule));
+    if (hostModule === undefined || hostModule === "") return NO_PANE;
+    const host = forkedPanePort(hostModule);
+    return {
+      ...bridgePane(host),
+      view: {
+        post: host.postIfRunning,
+        on: (listener) => void host.on("message", ({ data }) => listener(data)),
+        onStopped: host.onStopped,
+      },
+    };
   });
 }
 
@@ -148,11 +170,19 @@ const hostGone = (id: string): PaneResponseMessage => ({
  * A port to the browser host at `modulePath`, forked on the first message and again on the first
  * one after it stops. A request it was still running when it stopped fails at once.
  */
-export const forkedPanePort = (modulePath: string, fork: Fork = nodeFork): PaneMessagePort => {
+export const forkedPanePort = (
+  modulePath: string,
+  fork: Fork = nodeFork,
+): PaneMessagePort & {
+  /** Sends `message` to the host if one is running, and starts none. */
+  postIfRunning(message: object): void;
+  onStopped(listener: () => void): void;
+} => {
   const listeners = new Set<(event: { readonly data: unknown }) => void>();
   const deliver = (data: unknown) => {
     for (const listener of Array.from(listeners)) listener({ data });
   };
+  const stops = new Set<() => void>();
   /** The requests the current host hasn't answered. */
   const open = new Set<string>();
   let child: ChildProcess | undefined;
@@ -175,6 +205,7 @@ export const forkedPanePort = (modulePath: string, fork: Fork = nodeFork): PaneM
       const unanswered = Array.from(open);
       open.clear();
       for (const id of unanswered) deliver(hostGone(id));
+      for (const listener of Array.from(stops)) listener();
     };
     started.once("exit", stopped);
     started.on("error", stopped);
@@ -196,6 +227,12 @@ export const forkedPanePort = (modulePath: string, fork: Fork = nodeFork): PaneM
     on: (_event, listener) => {
       listeners.add(listener);
       return undefined;
+    },
+    postIfRunning: (message) => {
+      child?.send(message, () => {});
+    },
+    onStopped: (listener) => {
+      stops.add(listener);
     },
   };
 };
