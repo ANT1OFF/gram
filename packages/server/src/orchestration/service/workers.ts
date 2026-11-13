@@ -3,6 +3,7 @@
 // whether a worker may merge its own PR.
 import {
   autonomyOf,
+  type HostId,
   InvalidState,
   isPinned,
   type Thread,
@@ -50,6 +51,26 @@ const machinesListed = (
     ? {}
     : { machines: machines.map((m) => ({ name: m.name, online: m.onlineSince !== undefined })) };
 
+/**
+ * Each worker on another machine with that machine's name and whether it is dialled in, so the
+ * orchestrator reads where a worker runs on its row rather than matching ids.
+ */
+export const withMachines = <W extends { readonly hostId?: HostId | undefined }>(
+  workers: ReadonlyArray<W>,
+  machines: ReadonlyArray<{
+    readonly id: string;
+    readonly name: string;
+    readonly onlineSince?: number;
+  }>,
+): ReadonlyArray<W & { readonly machine?: { readonly name: string; readonly online: boolean } }> =>
+  workers.map((worker) => {
+    const machine =
+      worker.hostId === undefined ? undefined : machines.find((m) => m.id === worker.hostId);
+    return machine === undefined
+      ? worker
+      : { ...worker, machine: { name: machine.name, online: machine.onlineSince !== undefined } };
+  });
+
 export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
   const {
     requireAuthority,
@@ -75,31 +96,37 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
       const { thread, state } = yield* requireAuthority("list_workers", callerId);
       const found = yield* survey(state, false);
       const ownWakes = wakesOf(found.outbox, thread.id);
+      const machines = kit.joinedMachines();
+      const ledger = ledgerOf({
+        state,
+        features: filterWorkers(
+          visibleFeatures(found.features, (threadId) => found.lastActivityAt.get(threadId) ?? 0, {
+            // Asking for archived workers by state is asking to see them.
+            includeArchived:
+              options.includeArchived === true || options.states?.includes("archived") === true,
+            since: options.since,
+          }),
+          options,
+        ),
+        groups:
+          options.includeArchived === true || options.states?.includes("archived") === true
+            ? found.groups
+            : found.groups.filter((group) => group.state !== "archived"),
+        budget: found.budget,
+        orchestratorEdits: found.outbox.orchestratorEdits,
+        held: heldOf(found.outbox),
+        questions: ledgerQuestions(found.outbox),
+        now: found.now,
+      });
       return {
-        ...ledgerOf({
-          state,
-          features: filterWorkers(
-            visibleFeatures(found.features, (threadId) => found.lastActivityAt.get(threadId) ?? 0, {
-              // Asking for archived workers by state is asking to see them.
-              includeArchived:
-                options.includeArchived === true || options.states?.includes("archived") === true,
-              since: options.since,
-            }),
-            options,
-          ),
-          groups:
-            options.includeArchived === true || options.states?.includes("archived") === true
-              ? found.groups
-              : found.groups.filter((group) => group.state !== "archived"),
-          budget: found.budget,
-          orchestratorEdits: found.outbox.orchestratorEdits,
-          held: heldOf(found.outbox),
-          questions: ledgerQuestions(found.outbox),
-          now: found.now,
-        }),
+        ...ledger,
+        features: ledger.features.map((feature) => ({
+          ...feature,
+          workers: withMachines(feature.workers, machines),
+        })),
         ...(ownWakes.length === 0 ? {} : { wakes: ownWakes }),
         ...(app === undefined ? {} : { app }),
-        ...machinesListed(kit.joinedMachines()),
+        ...machinesListed(machines),
         autonomy: autonomyOf(state.charter),
         workerModels: yield* rosterFor(thread, state.charter).pipe(
           Effect.map((here) => rosterOf(here.roster, here.unavailable, here.catalogue)),

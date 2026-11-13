@@ -235,6 +235,8 @@ export const AuthMiddleware = HttpRouter.middleware(
     // Access opened, closed or moved, by the switch or by recovery: joined machines' connections
     // and dials follow it, so none outlives the address it came in on.
     if (remoteHosts !== undefined) control.watch((origin) => remoteHosts.keepOrigin(origin));
+    // Why an offline machine can't dial in, as a thread that runs on it says on its marker.
+    remoteHosts?.accessFrom(control.dialAccess);
     const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
     // Absent in tests that serve the middleware alone.
     const embedInbound = Option.getOrUndefined(yield* Effect.serviceOption(EmbedInbound));

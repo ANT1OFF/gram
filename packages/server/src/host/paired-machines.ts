@@ -360,6 +360,11 @@ export const createPairedMachines = (
   store: PairedMachineStore,
   now: () => number = Date.now,
   nonceStore: DialNonceStore = memoryNonceStore(),
+  /**
+   * Told after the machines or a machine's last problem changed (one joined, was confirmed or
+   * removed, or a dial of one was refused), so what shows them can follow without asking again.
+   */
+  onChange: () => void = () => {},
 ) => {
   let machines = store.read();
   let invitation: { code: string; origin: string; expiresAt: number } | undefined;
@@ -395,17 +400,25 @@ export const createPairedMachines = (
   /** Each machine's last problem since this Gram started. */
   const problems = new Map<string, MachineProblem>();
   const note = (id: string, problem: MachineProblem | undefined) => {
-    if (problem === undefined) problems.delete(id);
-    else if (byId(id) !== undefined) problems.set(id, problem);
+    if (problem === undefined) {
+      if (!problems.delete(id)) return;
+    } else if (byId(id) !== undefined) problems.set(id, problem);
+    else return;
+    onChange();
   };
   const save = (next: PairedMachine[]) => {
     store.write(next);
     machines = next;
+    onChange();
   };
   /** Memory first, so a removal holds even when saving it throws (until a restart re-reads it). */
   const forget = (next: PairedMachine[]) => {
     machines = next;
-    store.write(next);
+    try {
+      store.write(next);
+    } finally {
+      onChange();
+    }
   };
   const byId = (id: string) => machines.find((machine) => machine.id === id);
   const keys = new Map<string, KeyObject>();

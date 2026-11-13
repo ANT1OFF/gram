@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
-import { HOST_PROTOCOL_VERSION, HostId } from "@gram/contracts";
+import { HOST_PROTOCOL_VERSION, HostId, type ServerEvent } from "@gram/contracts";
 import * as Context from "effect/Context";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -15,6 +15,7 @@ import { serverPort } from "../http/server.ts";
 import { HttpRouter, HttpServer, HttpServerRequest, Socket } from "../platform/unstable.ts";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { type DialOptions, dialOnce } from "./dial.ts";
+import { machineNews, publishMachineStates } from "./machine-events.ts";
 import { generateHostKey, hostIdOf, privateKeyFrom, signedConnectHeaders } from "./machine-keys.ts";
 import { memoryMachineStore } from "./paired-machines.ts";
 import { HOST_CAPABILITIES, type HostService, serveHost } from "./protocol.ts";
@@ -215,6 +216,122 @@ describe("joined machines over the network", () => {
       }).pipe(Effect.scoped),
     20_000,
   );
+
+  it.live(
+    "publishes a machine's state as it is confirmed, dials in, drops and is removed, each once",
+    () =>
+      Effect.gen(function* () {
+        const { hosts, base } = yield* served;
+        const sent: Array<Extract<ServerEvent, { type: "machines.snapshot" }>> = [];
+        yield* publishMachineStates(
+          {
+            publish: (event) =>
+              Effect.sync(() => {
+                if (event.type === "machines.snapshot") sent.push(event);
+              }),
+          },
+          hosts,
+        );
+        /** The latest snapshot's machines, once one satisfies `ready`. */
+        const latest = (ready: (machines: (typeof sent)[number]["machines"]) => boolean) =>
+          Effect.gen(function* () {
+            while (true) {
+              const machines = sent.at(-1)?.machines;
+              if (machines !== undefined && ready(machines)) return machines;
+              yield* Effect.sleep("20 millis");
+            }
+          }).pipe(Effect.timeout("10 seconds"));
+
+        // Joined but not confirmed, it gets no work, so no thread can name it: nothing is sent.
+        const key = generateHostKey();
+        const hostId = hostIdOf(key.publicKey);
+        const { url } = hosts.machines.mint(ORIGIN);
+        const code = new URLSearchParams(new URL(url).hash.slice(1)).get("code")!;
+        yield* joinMachine(base, code, key.publicKey);
+        yield* Effect.sleep("50 millis");
+        expect(sent).toEqual([]);
+        expect(hosts.states()).toEqual([]);
+
+        hosts.machines.confirm(hostId);
+        expect(yield* latest((machines) => machines.length === 1)).toEqual([
+          { id: hostId, name: "build box", kind: "joined", offline: { kind: "never" } },
+        ]);
+        expect(sent).toHaveLength(1);
+
+        const dial: DialOptions = {
+          origin: ORIGIN,
+          hostId,
+          key: privateKeyFrom(key.privateKeyPem),
+          url: `${base.replace("http:", "ws:")}/host/connect`,
+        };
+        const fiber = yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
+        yield* online(hosts, hostId);
+        const up = yield* latest((machines) => machines[0]?.onlineSince !== undefined);
+        expect(up).toEqual([
+          { id: hostId, name: "build box", kind: "joined", onlineSince: expect.any(Number) },
+        ]);
+        expect(sent).toHaveLength(2);
+
+        // A change that leaves the states as they were sent publishes nothing.
+        const before = sent.length;
+        hosts.accessFrom(() => "on");
+        yield* Effect.sleep("50 millis");
+        expect(sent).toHaveLength(before);
+
+        // Its connection drops: offline, with why.
+        yield* Fiber.interrupt(fiber);
+        const down = yield* latest((machines) => machines[0]?.offline !== undefined);
+        expect(down).toEqual([
+          {
+            id: hostId,
+            name: "build box",
+            kind: "joined",
+            offline: { kind: "lost", at: expect.any(Number) },
+          },
+        ]);
+        expect(sent).toHaveLength(3);
+
+        // Access over Tailscale turned off explains it better than the loss.
+        hosts.accessFrom(() => "off");
+        expect(
+          yield* latest((machines) => machines[0]?.offline?.kind === "tailscale-off"),
+        ).toHaveLength(1);
+
+        expect(sent).toHaveLength(4);
+
+        // Why Tailscale is down here changes with no word to the registry, so it is never the
+        // pushed reason: only the switch is.
+        hosts.accessFrom(() => "stopped");
+        expect(yield* latest((machines) => machines[0]?.offline?.kind === "lost")).toHaveLength(1);
+        expect(sent).toHaveLength(5);
+
+        hosts.remove(HostId.make(hostId));
+        expect(yield* latest((machines) => machines.length === 0)).toEqual([]);
+        expect(sent).toHaveLength(6);
+      }).pipe(Effect.scoped),
+    20_000,
+  );
+
+  it("counts a refused dial as news once, however often it repeats", () => {
+    const id = HostId.make("m-0123456789abcdef01234567");
+    const refused = (at: number) =>
+      machineNews([
+        { id, name: "build box", kind: "joined", offline: { kind: "bad-signature", at } },
+      ]);
+    // Anyone on the tailnet who knows the id can repeat this: only its time differs.
+    expect(refused(2)).toBe(refused(1));
+    const skewed = (at: number, skewMs: number) =>
+      machineNews([
+        { id, name: "build box", kind: "joined", offline: { kind: "clock", at, skewMs } },
+      ]);
+    expect(skewed(2, 180_400)).toBe(skewed(1, 180_000));
+    expect(skewed(2, 300_000)).not.toBe(skewed(1, 180_000));
+    // A connection that closed is news each time it does.
+    const lost = (at: number) =>
+      machineNews([{ id, name: "build box", kind: "joined", offline: { kind: "lost", at } }]);
+    expect(lost(2)).not.toBe(lost(1));
+    expect(refused(1)).not.toBe(lost(1));
+  });
 
   it.live("refuses a dial signed by another key, or for another Gram", () =>
     Effect.gen(function* () {

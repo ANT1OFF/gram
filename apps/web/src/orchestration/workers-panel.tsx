@@ -1,10 +1,9 @@
 import { Menu } from "@base-ui/react/menu";
-import type { FeatureCardPr, HostId, ThreadId, WorkspaceId } from "@gram/contracts";
-import { CheckIcon, ListFilter, Search, Server, Workflow, X } from "lucide-react";
+import type { FeatureCardPr, ThreadId, WorkspaceId } from "@gram/contracts";
+import { CheckIcon, ListFilter, Search, Workflow, X } from "lucide-react";
 import { useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { create } from "zustand";
 import { useParams } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 
 import { EmptyState } from "@/components/empty-state";
 import { showInbox } from "@/inbox/inbox-store";
@@ -12,8 +11,7 @@ import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
-import { machineHealth } from "@/settings/machine-status";
-import { MACHINES_KEY, machinesApi } from "@/settings/machines-api";
+import { MachineMarker } from "@/thread/machine-marker";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -506,7 +504,15 @@ function Row({ row }: { row: PanelRow }) {
           >
             {row.line}
           </span>
-          {row.hostId !== undefined && <MachineTag hostId={row.hostId} />}
+          {/* The other machine it runs on, named after its status; its hover says its state. */}
+          {row.hostId !== undefined && (
+            <>
+              <span aria-hidden className="shrink-0">
+                ·
+              </span>
+              <MachineMarker hostId={row.hostId} hover="title" testId="workers-panel-machine" />
+            </>
+          )}
           <WorkerPrChips
             threadId={row.threadId}
             cardPrs={NO_CARD_PRS}
@@ -529,38 +535,6 @@ function Row({ row }: { row: PanelRow }) {
         />
       )}
     </div>
-  );
-}
-
-/** The joined machine a worker runs on, named on hover as in Settings → Machines. */
-function MachineTag({ hostId }: { hostId: HostId }) {
-  const { data } = useQuery({
-    queryKey: MACHINES_KEY,
-    queryFn: machinesApi.list,
-    retry: false,
-    staleTime: 10_000,
-  });
-  const machine = data?.machines.find((m) => m.id === hostId);
-  const name = machine?.name ?? "another machine";
-  const health =
-    machine === undefined || data === undefined ? undefined : machineHealth(machine, data);
-  const label =
-    health === undefined || health.tone === "online"
-      ? `On ${name}`
-      : `On ${name}, which ${health.tone === "update" ? "needs an update" : "is offline"}${
-          health.why === undefined ? "" : `. ${health.why}`
-        }`;
-  // An icon of fixed width, its name on hover: the chips' fit is measured without it changing.
-  return (
-    <span
-      data-testid="workers-panel-machine"
-      role="img"
-      aria-label={label}
-      title={label}
-      className="flex h-lh shrink-0 items-center text-muted-foreground"
-    >
-      <Server aria-hidden className="size-3" />
-    </span>
   );
 }
 

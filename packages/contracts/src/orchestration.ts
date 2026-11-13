@@ -481,6 +481,11 @@ export const WorkerLedgerEntry = Schema.Struct({
   worktreeMissing: Schema.optionalKey(Schema.Literal(true)),
   /** The machine its checkout is on (`Checkout.hostId`); absent while that is this machine. */
   hostId: Schema.optionalKey(HostId),
+  /**
+   * That machine by name, and whether it is dialled in now, as `list_workers` says it: set there
+   * only, for a worker on another machine. One no longer joined keeps its `hostId` alone.
+   */
+  machine: Schema.optionalKey(Schema.Struct({ name: Schema.String, online: Schema.Boolean })),
   /** The other repos this worker was given; `project`, `branch` and `pr` above are its first. */
   alsoIn: Schema.optionalKey(Schema.Array(WorkerRepo)),
   /** Workers in the same project whose changed files intersect this one's. */

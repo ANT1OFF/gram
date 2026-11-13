@@ -28,6 +28,7 @@ import { StageChip } from "@/orchestration/stage-stepper";
 import { StatusDot } from "@/orchestration/status-dot";
 import { useOrchestratorLedger } from "@/orchestration/use-orchestration";
 import { useFeatureSummary } from "@/orchestration/use-feature-cards";
+import { MachineMarker, ThreadMachineMarker, useThreadHost } from "@/thread/machine-marker";
 
 // The Board as a grid: a row per feature with its cells side by side, Task · Stage · Now · Pull
 // request, so a feature's name, how far it has come, what it does and its checks read on one line.
@@ -355,11 +356,23 @@ function GridRow({ sub = false, children }: { sub?: boolean; children: ReactNode
 }
 
 /** A worker under its feature's row: its title, indented, then its cells. */
-function SubTask({ children }: { children: ReactNode }) {
+function SubTask({
+  children,
+  threadId,
+}: {
+  children: ReactNode;
+  /** The worker the row is, whose other machine is named under its title; absent for a brief. */
+  threadId?: ThreadId | undefined;
+}) {
   return (
     <span className="flex min-w-0 items-start gap-1.5 pl-3 text-meta text-foreground/80">
       <span aria-hidden className="mt-1.5 h-px w-2 shrink-0 bg-border-strong" />
-      <span className="line-clamp-2 min-w-0 break-words">{children}</span>
+      <span className="flex min-w-0 flex-col">
+        <span className="line-clamp-2 min-w-0 break-words">{children}</span>
+        {threadId !== undefined && (
+          <ThreadMachineMarker threadId={threadId} delay={HINT_MS} testId="rail-machine" />
+        )}
+      </span>
     </span>
   );
 }
@@ -399,6 +412,8 @@ export function GridLine({
     </ul>
   );
   const needs = workers.filter(({ worker }) => worker.tone === "needs").length;
+  // A lone worker's other machine, named under the task with its stage and repos.
+  const onlyHost = useThreadHost(only?.worker.threadId);
   return (
     <li
       ref={place?.ref}
@@ -446,8 +461,9 @@ export function GridLine({
               className="ml-auto opacity-0 group-hover/line:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100"
             />
           </span>
-          {(stage !== undefined || summary !== undefined || repos) && (
+          {(stage !== undefined || summary !== undefined || repos || onlyHost !== undefined) && (
             <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-meta">
+              <MachineMarker hostId={onlyHost} delay={HINT_MS} testId="rail-machine" />
               {stage !== undefined && <StageChip stage={stage} testId="rail-stage-chip" />}
               {repos && (
                 <span data-testid="rail-repos" className="truncate text-muted-foreground">
@@ -501,7 +517,7 @@ export function GridLine({
           {workers.map(({ worker, station }) => (
             <li key={worker.threadId}>
               <GridRow sub>
-                <SubTask>{worker.title}</SubTask>
+                <SubTask threadId={worker.threadId}>{worker.title}</SubTask>
                 <WorkerCells
                   workspaceId={row.card.workspaceId}
                   worker={worker}

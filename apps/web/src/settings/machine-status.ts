@@ -83,8 +83,17 @@ export const compareReleases = (a: string, b: string): number => {
   return 0;
 };
 
+/**
+ * What of a machine its health reads: all a thread's marker is sent of it (`MachineState`), and a
+ * part of what Settings → Machines lists.
+ */
+export type MachineHealthFacts = Pick<
+  JoinedMachine,
+  "name" | "confirmed" | "onlineSince" | "offline" | "release" | "selfUpdate"
+>;
+
 /** Whether `machine` runs an earlier release than this Gram's (or one too old to say). */
-const behind = (machine: JoinedMachine, mine: string | undefined) =>
+const behind = (machine: MachineHealthFacts, mine: string | undefined) =>
   mine !== undefined &&
   (machine.release === undefined || compareReleases(machine.release, mine) < 0);
 
@@ -94,7 +103,7 @@ const behind = (machine: JoinedMachine, mine: string | undefined) =>
  * another release that speaks the same protocol works, and only its hover says it could update.
  */
 export function machineHealth(
-  machine: JoinedMachine,
+  machine: MachineHealthFacts,
   status: Pick<MachinesStatus, "release" | "protocol">,
   now = Date.now(),
 ): MachineHealth {

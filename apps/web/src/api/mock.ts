@@ -37,6 +37,7 @@ import type {
   ReviewRequest,
   GramUIMessage,
   GramUIMessageChunk,
+  MachineState,
   MessageId,
   TaskId,
   Thread,
@@ -61,6 +62,7 @@ import {
   workerBrowserOn,
   derivedTitle,
   effectiveCheckout,
+  HostId,
   machineProjectRoot,
   mcpTargetOf,
   normalizeThreadPrs,
@@ -1084,6 +1086,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       type: "threads.snapshot",
       threads: [...this.#threads.values()].map((r) => r.summary),
     });
+    channel.push({ type: "machines.snapshot", machines: this.#machines });
     channel.push(this.#limits.snapshot());
     this.#events.add(channel);
     return channel;
@@ -2577,6 +2580,26 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     });
     const boundPr = await this.#worktrees.bind(thread.id, repo ?? "example/api", number);
     return { ...thread, boundPr };
+  }
+
+  /** The other machines and their states, as the server sends them; none until `setMachines`. */
+  #machines: ReadonlyArray<MachineState> = [];
+
+  /** Dev and e2e hook: the confirmed machines and whether each is dialled in, sent to every window. */
+  setMachines(machines: ReadonlyArray<MachineState>) {
+    this.#machines = machines;
+    this.#emit({ type: "machines.snapshot", machines });
+  }
+
+  /** Dev and e2e hook: puts the thread's checkout on the machine `hostId`, as one placed there has it. */
+  placeOnMachine(threadId: ThreadId, hostId: string) {
+    const runtime = this.#runtime(threadId);
+    const thread: Thread = {
+      ...runtime.summary.thread,
+      checkout: { ...runtime.summary.thread.checkout, hostId: HostId.make(hostId) },
+    };
+    runtime.summary = { ...runtime.summary, thread };
+    this.#emit({ type: "thread.upsert", thread });
   }
 
   /** `simulateMissingFolder` (`mock-scenarios.ts`). */

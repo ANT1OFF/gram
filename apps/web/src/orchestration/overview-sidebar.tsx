@@ -136,6 +136,8 @@ import {
   STOP,
 } from "./overview-section";
 import { shownPrNumbers, useChipsFit, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
+import { threadHost, type MachineMark } from "@/thread/machine-mark";
+import { MachineMarker, useMachineMark, useThreadHost } from "@/thread/machine-marker";
 import { peek } from "./peek-store";
 import { ANSWERED, nowBesidePrs, TONE_DOT, workerStarting, type RailTone } from "./rail-model";
 import { showWorkersTab } from "./workers-tab";
@@ -938,6 +940,13 @@ export function WorkerRow({
   // At work, its dot says it all: no words at its edge, unless an answer just sent; its plan's step
   // and what it runs are on its hover card.
   const routine = working && !starting && !asking && !row.failed && row.now !== ANSWERED;
+  // The other machine it runs on, if any: named at its edge unless the edge has words of its own,
+  // when the glyph alone stands and the name is on its hover card.
+  const hostId = useThreadHost(row.threadId);
+  const machine = useMachineMark(hostId);
+  // What its edge says beyond its dot: "Starting…", an ask, a failure, a wait's reason, real
+  // activity. A tone's own word ("Idle") gives way to the machine's name.
+  const edgeSays = starting || (!routine && (waiting !== undefined || nowLineShown(row)));
   const prChips = useWorkerPrChips(row.threadId, row.prs);
   // The words win outright: with words at its edge its PR chips stay on its hover card; at work,
   // with no words or pause mark, they sit after its title while the whole title fits beside them.
@@ -948,6 +957,7 @@ export function WorkerRow({
     ...(unread ? ["unread"] : []),
     ...(pause === undefined ? [] : [PAUSE_WORD[pause.state]]),
     starting ? STARTING : (waiting?.label ?? row.now),
+    ...(machine === undefined ? [] : [machine.words]),
     ...(agent === undefined ? [] : [agentLabel(agent)]),
     ...(lastActivity === undefined ? [] : [`last active ${formatStamp(lastActivity)}`]),
   ];
@@ -1015,13 +1025,20 @@ export function WorkerRow({
       {/* At its edge: a pause and its agent's marks, then what its dot can't say in short words (an
           ask, a failure, a wait's reason, "Starting…"); at work, nothing. */}
       <span className={ROW_TRAIL}>
+        {/* Its hover is the row's own: its card, or the flyout's title, says the machine whole. */}
+        <MachineMarker
+          hostId={hostId}
+          show={edgeSays ? "glyph" : "name"}
+          hover="none"
+          testId="overview-worker-machine"
+        />
         {pause !== undefined && <WorkerPauseMark pause={pause} />}
         {agentMark && agent !== undefined && (
           <span data-testid="overview-worker-agent" className="flex shrink-0">
             <AgentIcon agent={agent} className="size-icon-row" />
           </span>
         )}
-        {starting ? (
+        {machine !== undefined && !edgeSays ? null : starting ? (
           <span
             data-testid="overview-worker-starting"
             className="min-w-0 truncate text-meta text-muted-foreground"
@@ -1092,6 +1109,7 @@ export function WorkerRow({
                 asking={asking}
                 pause={pause}
                 waiting={waiting}
+                machine={machine}
               />
             </PreviewCard.Popup>
           </PreviewCard.Positioner>
@@ -1211,6 +1229,7 @@ function WorkerCard({
   asking,
   pause,
   waiting,
+  machine,
 }: {
   row: OverviewWorkerRow;
   feature: string;
@@ -1221,6 +1240,8 @@ function WorkerCard({
   asking: boolean;
   pause: WorkerPauseState | undefined;
   waiting: WaitingOn | undefined;
+  /** The other machine it runs on; absent on this one. */
+  machine: MachineMark | undefined;
 }) {
   const time = formatStamp(lastActivity);
   // Its agent, then its feature where the title doesn't already say it; wrapped, never cut.
@@ -1284,6 +1305,18 @@ function WorkerCard({
         <span className="flex">
           <PrChip pr={row.pr} threadId={row.threadId} />
         </span>
+      )}
+      {/* Where it runs, whole: the machine, how it got in, its state, and why when it is offline. */}
+      {machine !== undefined && (
+        <p
+          data-testid="overview-worker-card-machine"
+          className={cn(
+            "text-meta whitespace-pre-line",
+            machine.state === undefined ? "text-muted-foreground" : "text-foreground/80",
+          )}
+        >
+          {machine.hint}
+        </p>
       )}
       <p className="mt-0.5 flex gap-3 border-t border-border pt-1.5 text-meta text-muted-foreground">
         <span>Click · open</span>
@@ -1642,6 +1675,11 @@ export function SoloRow({
   const faded = settled || settledRow(summary.status, display, thread.lastActivityAt, now);
   // What needs you, or a failure: said in words at the row's edge, in its colour.
   const alarm = display.tone === "text-status-needs" || display.tone === "text-destructive";
+  // The other machine it runs on, if any: named at its edge before its time, its glyph alone
+  // beside an alarm's words.
+  const hostId = threadHost(thread);
+  const machine = useMachineMark(hostId);
+  const where = machine === undefined ? "" : `, ${machine.words}`;
   return (
     <RowMenu menu={<RowMenuItems threadId={thread.id} />}>
       <button
@@ -1653,8 +1691,8 @@ export function SoloRow({
         aria-current={viewed || undefined}
         data-settled={faded || undefined}
         data-unread={thread.unread || undefined}
-        aria-label={`${title}${thread.unread ? ", unread" : ""}, ${display.label}${lastActive === "" ? "" : `, ${lastActive}`}`}
-        title={`${title}\n${display.label}${lastActive === "" ? "" : ` · ${lastActive}`}`}
+        aria-label={`${title}${thread.unread ? ", unread" : ""}, ${display.label}${where}${lastActive === "" ? "" : `, ${lastActive}`}`}
+        title={`${title}\n${display.label}${lastActive === "" ? "" : ` · ${lastActive}`}${machine === undefined ? "" : `\n${machine.hint}`}`}
         aria-keyshortcuts="Shift+F10"
         onClick={() => openThread(thread.id)}
         onKeyDown={rowMenuKeys}
@@ -1676,6 +1714,13 @@ export function SoloRow({
             last activity (none while it works). Its hover says its state. */}
         <span className={cn(ROW_TITLE, thread.unread && UNREAD_TITLE)}>{title}</span>
         <span data-testid="overview-solo-status" className={ROW_TRAIL}>
+          <MachineMarker
+            hostId={hostId}
+            show={alarm ? "glyph" : "name"}
+            hover="none"
+            testId="overview-solo-machine"
+          />
+          {machine !== undefined && !alarm && !display.working && <span aria-hidden>·</span>}
           {alarm ? (
             <span
               className={cn(

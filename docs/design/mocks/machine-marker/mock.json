@@ -1,0 +1,41 @@
+{
+  "title": "Machine marker",
+  "slug": "machine-marker",
+  "status": "approved",
+  "template": "options",
+  "current": 1,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-13"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A Glyph",
+      "board": "a-glyph",
+      "shots": {
+        "dark": "shots/a-dark.png",
+        "light": "shots/a-light.png"
+      }
+    },
+    {
+      "name": "B Edge label",
+      "board": "b-edge-label",
+      "shots": {
+        "dark": "shots/b-dark.png",
+        "light": "shots/b-light.png"
+      }
+    },
+    {
+      "name": "C Chip",
+      "board": "c-chip",
+      "shots": {
+        "dark": "shots/c-dark.png",
+        "light": "shots/c-light.png"
+      }
+    }
+  ]
+}
