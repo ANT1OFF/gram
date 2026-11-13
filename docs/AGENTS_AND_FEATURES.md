@@ -1418,14 +1418,17 @@ before.
 That browser reaches the server's loopback only: an agent's dev server there, never the internet
 or a private network. Chromium starts with every connection sent to a closed proxy, with loopback
 alone exempt (its usual exemption for link-local addresses, where a cloud's metadata service
-lives, is taken away), and WebRTC may use that proxy or nothing, so it sends no UDP. Each of the
+lives, is taken away), so `127.0.0.1`, `[::1]` and `localhost` load and no other loopback
+spelling does. No name but `localhost` resolves, so nothing a page writes leaves in a DNS query.
+A page here gets no WebRTC, and if it found some, WebRTC may use that proxy or nothing, so it
+sends no UDP. Each of the
 page's requests is also paused and put to the pane's rules, then to the Preview's local-session
-rules; a worker's requests get the local-session rules. A window the page opens is closed before
-it loads anything, since no command drives it. A `browser_navigate` anywhere else is refused
+rules; a worker's requests get the local-session rules. A page's script can't open a window, and a window a link opens is closed with its requests failed, since no command drives it. A `browser_navigate` anywhere else is refused
 before any card, and a navigation the page itself starts off loopback ends where it began.
 
 Each thread's page is a browser context of its own, sharing no cookies or storage. Four threads
-keep a page at once; the one used longest ago closes for the next. The profile is a fresh temp
+keep a page at once; the one whose last command is oldest closes for the next, never one with a
+command running. The profile is a fresh temp
 folder, removed when the browser stops. The browser starts on the first command and starts again
 on the next command after it stops. Neither the browser host nor Chromium gets the server's
 environment: only the paths, locale and font settings, and the variables below. A load whose

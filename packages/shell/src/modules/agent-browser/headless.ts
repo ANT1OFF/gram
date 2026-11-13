@@ -146,6 +146,9 @@ export const headlessArgs = (userDataDir: string, sandbox: boolean): Array<strin
   "--proxy-bypass-list=<-loopback>;127.0.0.1;[::1];localhost",
   // WebRTC sends UDP past any proxy unless told to use the proxy or nothing.
   "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+  // No name but loopback's resolves, so nothing a page writes leaves in a DNS query: WebRTC looks
+  // up a candidate's or a TURN server's name itself, past the proxy.
+  "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1, EXCLUDE [::1]",
   ...(sandbox ? [] : ["--no-sandbox"]),
   "about:blank",
 ];
@@ -292,20 +295,28 @@ export const openHeadlessPage = async (
   const { browserContextId } = (await connection.send("Target.createBrowserContext", {
     disposeOnDetach: true,
   })) as { browserContextId: string };
-  held.contexts.add(browserContextId);
-  held.expecting.add(browserContextId);
+  held.contexts.set(browserContextId, undefined);
   const dispose = () => {
     held.contexts.delete(browserContextId);
-    held.expecting.delete(browserContextId);
+    held.waiting.delete(browserContextId);
     void connection.send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
   };
   try {
-    return await openIn(connection, gate, browserContextId, dispose);
+    return await openIn(connection, gate, browserContextId, dispose, held);
   } catch (error) {
     dispose();
     throw error;
   }
 };
+
+/**
+ * Run in every frame of a thread's page before its own scripts. It takes away what has no use on
+ * a page that reaches loopback alone and that no person is looking at: WebRTC, and opening
+ * windows. Neither is the guard: the browser's flags hold WebRTC to loopback, and a window that
+ * opens all the same is closed with its requests failed (`holdNewTargets`).
+ */
+const PAGE_SETUP = `for (const name of ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel", "RTCIceTransport", "RTCDtlsTransport", "RTCSctpTransport"]) { try { delete globalThis[name]; } catch {} }
+try { Object.defineProperty(globalThis, "open", { value: () => null, writable: false, configurable: false }); } catch {}`;
 
 const ALL_REQUESTS = { patterns: [{ urlPattern: "*", requestStage: "Request" }] };
 
@@ -330,35 +341,83 @@ const answerWorker = (connection: CdpConnection, sessionId: string, params: unkn
   ).catch(() => {});
 };
 
+interface AttachedTarget {
+  readonly sessionId: string;
+  readonly targetId: string;
+}
+
 interface Held {
-  /** The browser contexts whose first page is a thread's own and yet to attach. */
-  readonly expecting: Set<string>;
-  /** The contexts that are threads' pages. */
-  readonly contexts: Set<string>;
+  /** Each thread's browser context, and its own page's target once `createTarget` has named it. */
+  readonly contexts: Map<string, string | undefined>;
+  /** The pages that attached in a context before its own page was named. */
+  readonly waiting: Map<string, Array<AttachedTarget>>;
+  /** Names the context's own page, and settles the pages that were waiting on it. */
+  own(context: string, targetId: string): void;
 }
 
 const holding = new WeakMap<CdpConnection, Promise<Held>>();
 
 /**
  * Has the browser hold every new target before it loads anything, once per connection. In a
- * thread's context the first page is the thread's own and starts; any later one is a window the
- * page opened, which no command drives, and is closed before its first request. A service or
- * shared worker there starts with its requests paused. Anything outside the threads' contexts
- * (the browser's own pages) just starts.
+ * thread's context the page `createTarget` made is the thread's own and starts; any other is a
+ * window the page opened, which no command drives: it starts with every request failed, since a
+ * held window holds its opener's process too, and is closed. A service or shared worker there
+ * starts with its requests paused. Anything outside the threads' contexts (the browser's own
+ * pages) just starts.
  */
 const holdNewTargets = (connection: CdpConnection): Promise<Held> => {
   const known = holding.get(connection);
   if (known !== undefined) return known;
-  const held: Held = { expecting: new Set(), contexts: new Set() };
   const workers = new Set<string>();
+  /** The sessions of windows being closed, none of whose requests go anywhere. */
+  const doomed = new Set<string>();
+  const release = (sessionId: string) =>
+    void connection
+      .send("Runtime.runIfWaitingForDebugger", {}, sessionId)
+      .catch(() => {})
+      .then(() => connection.send("Target.detachFromTarget", { sessionId }))
+      .catch(() => {});
+  const doom = ({ sessionId, targetId }: AttachedTarget) => {
+    doomed.add(sessionId);
+    void connection
+      .send("Fetch.enable", ALL_REQUESTS, sessionId)
+      .catch(() => {})
+      .then(() => connection.send("Runtime.runIfWaitingForDebugger", {}, sessionId))
+      .catch(() => {})
+      .then(() => connection.send("Target.closeTarget", { targetId }))
+      .catch(() => {});
+  };
+  const settle = (context: string, page: AttachedTarget) =>
+    held.contexts.get(context) === page.targetId ? release(page.sessionId) : doom(page);
+  const held: Held = {
+    contexts: new Map(),
+    waiting: new Map(),
+    own: (context, targetId) => {
+      held.contexts.set(context, targetId);
+      const waiting = held.waiting.get(context) ?? [];
+      held.waiting.delete(context);
+      for (const page of waiting) settle(context, page);
+    },
+  };
   connection.on((method, params, sessionId) => {
     if (sessionId !== undefined) {
-      if (workers.has(sessionId) && method === "Fetch.requestPaused")
-        answerWorker(connection, sessionId, params);
+      if (method !== "Fetch.requestPaused") return;
+      if (workers.has(sessionId)) answerWorker(connection, sessionId, params);
+      else if (doomed.has(sessionId)) {
+        void connection
+          .send(
+            "Fetch.failRequest",
+            { requestId: (params as PausedRequest).requestId, errorReason: "BlockedByClient" },
+            sessionId,
+          )
+          .catch(() => {});
+      }
       return;
     }
     if (method === "Target.detachedFromTarget") {
-      workers.delete((params as { sessionId?: string }).sessionId ?? "");
+      const gone = (params as { sessionId?: string }).sessionId ?? "";
+      workers.delete(gone);
+      doomed.delete(gone);
       return;
     }
     if (method !== "Target.attachedToTarget") return;
@@ -370,20 +429,20 @@ const holdNewTargets = (connection: CdpConnection): Promise<Held> => {
     // Only what the browser attached by itself is held; a session this file asked for isn't.
     if (attached.waitingForDebugger !== true) return;
     const context = attached.targetInfo.browserContextId ?? "";
-    const release = () =>
-      void connection
-        .send("Runtime.runIfWaitingForDebugger", {}, attached.sessionId)
-        .catch(() => {})
-        .then(() => connection.send("Target.detachFromTarget", { sessionId: attached.sessionId }))
-        .catch(() => {});
-    if (!held.contexts.has(context)) return release();
+    if (!held.contexts.has(context)) return release(attached.sessionId);
+    const target = { sessionId: attached.sessionId, targetId: attached.targetInfo.targetId };
     if (attached.targetInfo.type === "page") {
-      if (held.expecting.delete(context)) return release();
-      void connection
-        .send("Target.closeTarget", { targetId: attached.targetInfo.targetId })
-        .catch(() => {});
+      if (held.contexts.get(context) !== undefined) return settle(context, target);
+      // Its own page isn't named yet: this may be it, so it waits for `createTarget`'s answer.
+      held.waiting.set(context, [...(held.waiting.get(context) ?? []), target]);
       return;
     }
+    // Chromium's own helpers in the context (its UI pages, an extension's worker) just start.
+    if (
+      attached.targetInfo.type !== "service_worker" &&
+      attached.targetInfo.type !== "shared_worker"
+    )
+      return release(attached.sessionId);
     workers.add(attached.sessionId);
     void gateWorker(connection, attached.sessionId);
   });
@@ -408,11 +467,13 @@ const openIn = async (
   gate: () => HeadlessGate | undefined,
   browserContextId: string,
   dispose: () => void,
+  held: Held,
 ): Promise<PaneContents> => {
   const { targetId } = (await connection.send("Target.createTarget", {
     url: "about:blank",
     browserContextId,
   })) as { targetId: string };
+  held.own(browserContextId, targetId);
   const { sessionId: own } = (await connection.send("Target.attachToTarget", {
     targetId,
     flatten: true,
@@ -639,9 +700,9 @@ const openIn = async (
         void decide(paused)
           .catch((): "block" => "block")
           .then((verdict) => {
+            appLoads.delete(paused.requestId);
             if (verdict === "allow")
               return ownSend("Fetch.continueRequest", { requestId: paused.requestId });
-            appLoads.delete(paused.requestId);
             // No content: the navigation ends and the page stays where it was, as a stopped
             // navigation does in the desktop app, where failing it would leave an error page.
             if (verdict === "stay")
@@ -697,6 +758,7 @@ const openIn = async (
   url = frameTree.frame.url;
   await ownSend("Page.enable");
   await ownSend("Fetch.enable", ALL_REQUESTS);
+  await ownSend("Page.addScriptToEvaluateOnNewDocument", { source: PAGE_SETUP });
   await ownSend("Target.setAutoAttach", {
     autoAttach: true,
     waitForDebuggerOnStart: true,
@@ -719,23 +781,29 @@ export const HEADLESS_PAGE_LIMIT = 4;
  * The pane's views in a headless browser: each thread's page made the first time a command asks
  * for it, in a browser context of its own. A page that couldn't be made is no page, and the next
  * command tries again. At most `HEADLESS_PAGE_LIMIT` threads keep a page, as the desktop Preview
- * keeps four; `closed` hears of each one closed to make room.
+ * keeps four: the one whose last command (`touch`) is oldest closes to make room, and `closed` hears
+ * of it.
  */
 export const headlessViews = (
   connection: CdpConnection,
   gate: () => HeadlessGate | undefined,
   failed: (error: unknown) => void = () => {},
   closed: (threadId: string) => void = () => {},
-): PaneViews => {
+  /** Whether a command is running on the thread's page, which is then never the one closed. */
+  busy: (threadId: string) => boolean = () => false,
+): PaneViews & { touch(threadId: string): void } => {
   // In order of use, the least recent first.
   const pages = new Map<string, Promise<PaneContents | undefined>>();
-  const used = (threadId: string, page: Promise<PaneContents | undefined>) => {
+  const touch = (threadId: string) => {
+    const page = pages.get(threadId);
+    if (page === undefined) return;
     pages.delete(threadId);
     pages.set(threadId, page);
   };
   const openFor = (threadId: string) => {
     for (const [other, page] of Array.from(pages)) {
       if (pages.size < HEADLESS_PAGE_LIMIT) break;
+      if (busy(other)) continue;
       pages.delete(other);
       void page.then((contents) => {
         if (contents !== undefined) closeHeadlessPage(contents);
@@ -750,12 +818,15 @@ export const headlessViews = (
     return made;
   };
   return {
+    touch,
     contentsFor: (threadId, create) => {
       const known = pages.get(threadId);
       if (known !== undefined) {
-        used(threadId, known);
+        touch(threadId);
         return known.then((page) => {
           if (page !== undefined && !page.isDestroyed()) return page;
+          // What a page that ended by itself stored goes with it.
+          if (page !== undefined) closeHeadlessPage(page);
           if (pages.get(threadId) === known) pages.delete(threadId);
           return create ? openFor(threadId) : undefined;
         });

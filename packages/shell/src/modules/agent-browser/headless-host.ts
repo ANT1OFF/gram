@@ -70,6 +70,8 @@ export const headlessPanes = (options: {
   readonly log?: ShellLog;
 }): { readonly panes: AgentPanes; close(): Promise<void> } => {
   const log = options.log ?? stderrLog;
+  /** The commands running on each thread's page. */
+  const running = new Map<string, number>();
   let browser: HeadlessBrowser | undefined;
   let views: ReturnType<typeof headlessViews> | undefined;
   const viewsNow = () => {
@@ -81,6 +83,7 @@ export const headlessPanes = (options: {
       () => panes,
       (error) => log.warn({ source: "headless-browser", error: String(error) }, "no page"),
       (threadId) => panes.closed(threadId),
+      (threadId) => (running.get(threadId) ?? 0) > 0,
     );
     views = made;
     started.connection.onClose(() => {
@@ -107,8 +110,22 @@ export const headlessPanes = (options: {
   const served: AgentPanes = {
     ...panes,
     serve: async (raw, requestId) => {
-      const result = await panes.serve(raw, requestId);
-      return result.ok || result.code !== "noPane" ? result : NO_BROWSER;
+      const threadId = (raw as { threadId?: unknown } | null)?.threadId;
+      const thread = typeof threadId === "string" ? threadId : undefined;
+      if (thread !== undefined) {
+        running.set(thread, (running.get(thread) ?? 0) + 1);
+        views?.touch(thread);
+      }
+      try {
+        const result = await panes.serve(raw, requestId);
+        return result.ok || result.code !== "noPane" ? result : NO_BROWSER;
+      } finally {
+        if (thread !== undefined) {
+          const left = (running.get(thread) ?? 1) - 1;
+          if (left > 0) running.set(thread, left);
+          else running.delete(thread);
+        }
+      }
     },
   };
   return {

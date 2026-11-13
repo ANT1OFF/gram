@@ -92,6 +92,10 @@ describe("headlessArgs", () => {
     expect(headlessArgs("/tmp/profile", true)).toContain(
       "--webrtc-ip-handling-policy=disable_non_proxied_udp",
     );
+    // No name but loopback's resolves, so a page can't send data out in a DNS query.
+    expect(headlessArgs("/tmp/profile", true)).toContain(
+      "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1, EXCLUDE [::1]",
+    );
     expect(headlessArgs("/tmp/profile", true)).not.toContain("--no-sandbox");
     expect(headlessArgs("/tmp/profile", false)).toContain("--no-sandbox");
   });
@@ -342,15 +346,46 @@ describe("openHeadlessPage, what it closes", () => {
     attach("auto-own", "target-1", "page", "context-1");
     attach("auto-popup", "popup-1", "page", "context-1");
     attach("auto-worker", "worker-1", "service_worker", "context-1");
+    attach("auto-ui", "ui-1", "browser_ui", "context-1");
     attach("auto-other", "other", "page", "browser-own");
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(browser.sent.filter((entry) => entry.method === "Target.closeTarget")).toEqual([
       { method: "Target.closeTarget", params: { targetId: "popup-1" } },
     ]);
+    // Everything is let go, the popup too: held, it would hold the page that opened it.
     const resumed = browser.sent
       .filter((entry) => entry.method === "Runtime.runIfWaitingForDebugger")
       .map((entry) => entry.sessionId);
-    expect(resumed.toSorted()).toEqual(["auto-other", "auto-own", "auto-worker"]);
+    expect(resumed.toSorted()).toEqual([
+      "auto-other",
+      "auto-own",
+      "auto-popup",
+      "auto-ui",
+      "auto-worker",
+    ]);
+    // But the popup's requests all fail, loopback included.
+    const order = browser.sent
+      .filter((entry) => entry.sessionId === "auto-popup")
+      .map((entry) => entry.method);
+    expect(order).toEqual(["Fetch.enable", "Runtime.runIfWaitingForDebugger"]);
+    const beforePopup = browser.sent.length;
+    browser.emit(
+      "Fetch.requestPaused",
+      {
+        requestId: "p1",
+        request: { url: "http://127.0.0.1:3000/popup", method: "GET" },
+        frameId: "f",
+        resourceType: "Document",
+      },
+      "auto-popup",
+    );
+    expect(browser.sent.slice(beforePopup)).toEqual([
+      {
+        method: "Fetch.failRequest",
+        params: { requestId: "p1", errorReason: "BlockedByClient" },
+        sessionId: "auto-popup",
+      },
+    ]);
     expect(browser.sent).toContainEqual(
       expect.objectContaining({ method: "Fetch.enable", sessionId: "auto-worker" }),
     );
@@ -387,17 +422,35 @@ describe("headlessViews", () => {
     );
     const first = await views.contentsFor("thread-0", true);
     for (let i = 1; i < HEADLESS_PAGE_LIMIT; i++) await views.contentsFor(`thread-${i}`, true);
-    expect(await views.contentsFor("thread-0", false)).toBe(first);
+    // A command on thread-0 just now makes thread-1 the one used longest ago.
+    views.touch("thread-0");
     expect(closed).toEqual([]);
     await views.contentsFor("another", true);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    // thread-0 was used again just now, so thread-1 is the one that goes.
     expect(closed).toEqual(["thread-1"]);
     expect(first!.isDestroyed()).toBe(false);
     expect(await views.contentsFor("thread-1", false)).toBeUndefined();
     expect(browser.sent.some((entry) => entry.method === "Target.disposeBrowserContext")).toBe(
       true,
     );
+  });
+});
+
+describe("headlessViews, a page in use", () => {
+  it("never closes a page a command is running on, even past the limit", async () => {
+    const browser = fakeBrowser();
+    const closed: Array<string> = [];
+    const views = headlessViews(
+      browser.connection,
+      () => undefined,
+      () => {},
+      (threadId) => closed.push(threadId),
+      (threadId) => threadId === "thread-0",
+    );
+    for (let i = 0; i < HEADLESS_PAGE_LIMIT; i++) await views.contentsFor(`thread-${i}`, true);
+    await views.contentsFor("another", true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(closed).toEqual(["thread-1"]);
   });
 });
 
@@ -454,7 +507,7 @@ describe.skipIf(executable === undefined || executable === "")("headless panes i
       if (request.url === "/popup") popups++;
       response.setHeader("content-type", "text/html");
       response.end(
-        `<title>Owned fixture</title><button onclick="this.textContent='Pressed';document.title='Pressed'">Press me</button><a target="_blank" href="/popup">Open popup</a>` +
+        `<title>Owned fixture</title><button onclick="this.textContent='Pressed';document.title='Pressed'">Press me</button><a target="_blank" href="/popup">Open popup</a><button onclick="window.opened = window.open('/popup')">Open window</button>` +
           `<script>fetch('/data');fetch('https://example.com/x').then(()=>{document.body.dataset.out='reached'},()=>{document.body.dataset.out='stopped'})</script>`,
       );
     });
@@ -539,36 +592,89 @@ describe.skipIf(executable === undefined || executable === "")("headless panes i
     .find((entry) => entry !== undefined && entry.family === "IPv4" && !entry.internal)?.address;
 
   it.skipIf(outside === undefined)(
-    "sends no WebRTC packet off loopback",
+    "sends no WebRTC packet off loopback, by its flags alone",
     async () => {
       const socket = createSocket("udp4");
       let packets = 0;
       socket.on("message", () => packets++);
       await new Promise<void>((resolve) => socket.bind(0, outside, resolve));
       const { port } = socket.address();
-      const { panes, close } = headlessPanes({ executable: executable!, sandbox: false });
+      // A bare page with none of this module's page scripts, so only the flags stand between
+      // WebRTC and the network.
+      const browser = launchHeadless({ executable: executable!, sandbox: false });
       try {
-        const command = (input: PaneCommand) =>
-          panes.serve({ threadId: "owned", limits: { actOnLoopbackOnly: false }, command: input });
-        expect(await command({ op: "navigate", url: `${origin}/` })).toMatchObject({ ok: true });
-        await command({
-          op: "evaluate",
-          expression: `(() => {
-          const peer = new RTCPeerConnection({ iceServers: [{ urls: "stun:${outside}:${port}" }] });
-          peer.createDataChannel("x");
-          peer.createOffer().then((offer) => peer.setLocalDescription(offer));
-          return 1;
-        })()`,
-        });
+        const { connection } = browser;
+        const { targetId } = (await connection.send("Target.createTarget", {
+          url: `${origin}/`,
+        })) as { targetId: string };
+        const { sessionId } = (await connection.send("Target.attachToTarget", {
+          targetId,
+          flatten: true,
+        })) as { sessionId: string };
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const made = (await connection.send(
+          "Runtime.evaluate",
+          {
+            expression: `(() => {
+              const peer = new RTCPeerConnection({ iceServers: [{ urls: "stun:${outside}:${port}" }] });
+              peer.createDataChannel("x");
+              peer.createOffer().then((offer) => peer.setLocalDescription(offer));
+              return location.origin;
+            })()`,
+          },
+          sessionId,
+        )) as { result: { value?: string } };
+        expect(made.result.value).toBe(origin);
         await new Promise((resolve) => setTimeout(resolve, 3_000));
         expect(packets).toBe(0);
       } finally {
-        await close();
+        await browser.close();
         socket.close();
       }
     },
     60_000,
   );
+
+  it("gives a thread's page no WebRTC at all", async () => {
+    const { panes, close } = headlessPanes({ executable: executable!, sandbox: false });
+    try {
+      const command = (input: PaneCommand) =>
+        panes.serve({ threadId: "owned", limits: { actOnLoopbackOnly: false }, command: input });
+      expect(await command({ op: "navigate", url: `${origin}/` })).toMatchObject({ ok: true });
+      const kinds = await command({
+        op: "evaluate",
+        expression: "typeof RTCPeerConnection + ' ' + typeof webkitRTCPeerConnection",
+      });
+      expect(kinds.ok && kinds.content).toContain("undefined undefined");
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+  it("stays usable after a click opens a window with window.open", async () => {
+    const { panes, close } = headlessPanes({ executable: executable!, sandbox: false });
+    try {
+      const command = (input: PaneCommand) =>
+        panes.serve({ threadId: "owned", limits: { actOnLoopbackOnly: false }, command: input });
+      expect(await command({ op: "navigate", url: `${origin}/` })).toMatchObject({ ok: true });
+      const before = popups;
+      const snapshot = await command({ op: "snapshot" });
+      const ref = /button "Open window" \[(ref_\d+)\]/.exec(
+        snapshot.ok ? (snapshot.content ?? "") : "",
+      );
+      expect(ref).not.toBeNull();
+      expect(await command({ op: "click", ref: ref![1]! })).toMatchObject({ ok: true });
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      const state = await command({
+        op: "evaluate",
+        expression: "window.opened === null",
+      });
+      expect(state.ok && state.content).toContain("true");
+      expect(popups).toBe(before);
+    } finally {
+      await close();
+    }
+  }, 30_000);
 
   it("starts the browser with none of this process's other variables", async () => {
     process.env["GRAM_TEST_INVENTED_SECRET"] = "invented";
