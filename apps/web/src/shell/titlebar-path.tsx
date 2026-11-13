@@ -1,10 +1,13 @@
 import type { ThreadId } from "@gram/contracts";
 import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
+import { useId } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useEmbedShell, useThreadsTitle } from "@/embed/store";
 import { cn } from "@/lib/utils";
+import { SegmentSlab } from "@/motion/segment-slab";
+import { SEGMENT_SLAB, SEGMENT_TRACK } from "@/settings/fields";
 import { useOpenBoard } from "@/orchestration/open-board";
 import { WorkspaceSwitcher } from "@/shell/workspace-switcher";
 import { useLayoutStore } from "@/stores/layout";
@@ -13,9 +16,12 @@ import { useViewWorkspace } from "@/views/view-workspace";
 
 const NO_DRAG = "[-webkit-app-region:no-drag]";
 
-/** One of a workspace's two places: outlined, and filled while the window is on it. */
+/**
+ * One of a workspace's places, a segment on one track: the one the window is on sits on the
+ * selected slab, as the Diff's scope does, so which is open reads at a glance. On a worker, none is.
+ */
 const PLACE =
-  "border border-border text-muted-foreground aria-[current=page]:border-transparent aria-[current=page]:bg-secondary aria-[current=page]:text-foreground aria-pressed:border-transparent aria-pressed:bg-secondary aria-pressed:text-foreground";
+  "relative h-6 px-2 text-muted-foreground hover:bg-transparent hover:text-foreground aria-[current=page]:text-foreground aria-pressed:text-foreground";
 
 /** Whether `pathname` is one of the New form's pages. */
 const creating = (pathname: string) =>
@@ -81,11 +87,20 @@ export function TitlebarPath({ solo, narrow }: { solo: boolean; narrow: boolean 
   );
 }
 
+/** One of a workspace's places: its orchestrator's thread, its Board, its Memory. */
+export interface WorkspacePlace {
+  readonly key: "orchestrator" | "board" | "memory";
+  readonly label: string;
+  /** The window is on it. */
+  readonly current: boolean;
+  readonly go: () => void;
+}
+
 /**
- * A workspace's two places beside the path, as buttons: its orchestrator's thread, in the
- * embedding app's word for one, and its Board. Nothing on a solo thread or the New form.
+ * The workspace's places, for the bar or a phone's row: its orchestrator's thread, in the
+ * embedding app's word for one, its Board and its Memory. None on a solo thread or the New form.
  */
-export function TitlebarPathViews({ solo }: { solo: boolean }) {
+export function useWorkspacePlaces(solo: boolean): readonly WorkspacePlace[] | undefined {
   const pathname = useLocation({ select: (location) => location.pathname });
   const word = useEmbedShell((s) => s.threadsPage.kinds?.orchestrator ?? "Orchestrator");
   const workspace = useViewWorkspace();
@@ -93,59 +108,72 @@ export function TitlebarPathViews({ solo }: { solo: boolean }) {
   const route = useParams({ strict: false }).threadId as ThreadId | undefined;
   const navigate = useNavigate();
   const openBoard = useOpenBoard();
-  if (solo || creating(pathname) || workspace === undefined) return null;
+  if (solo || creating(pathname) || workspace === undefined) return undefined;
   const orchestrator = workspace.workspace.orchestratorThreadId;
-  const atOrchestrator = !board && orchestrator !== undefined && route === orchestrator;
+  const workspaceId = workspace.workspace.id;
+  return [
+    ...(orchestrator === undefined
+      ? []
+      : [
+          {
+            key: "orchestrator" as const,
+            label: word,
+            current: !board && route === orchestrator,
+            go: () => {
+              const view = useViewStore.getState();
+              view.setQuiet(false);
+              view.setView("chat");
+              useLayoutStore.getState().openThread(orchestrator);
+              void navigate({ to: "/t/$threadId", params: { threadId: orchestrator } });
+            },
+          },
+        ]),
+    { key: "board", label: "Board", current: board, go: () => openBoard(workspaceId) },
+    {
+      key: "memory",
+      label: "Memory",
+      current: !board && pathname.endsWith("/memory"),
+      go: () => {
+        useViewStore.getState().setView("chat");
+        void navigate({ to: "/w/$workspaceId/memory", params: { workspaceId } });
+      },
+    },
+  ];
+}
+
+/**
+ * A workspace's places beside the path, as one segmented control: its orchestrator's thread, its
+ * Board and its Memory. Nothing on a solo thread or the New form.
+ */
+export function TitlebarPathViews({ solo }: { solo: boolean }) {
+  const places = useWorkspacePlaces(solo);
+  // The slab under the place the window is on, gliding between them; one per bar on screen.
+  const slab = useId();
+  if (places === undefined) return null;
   return (
     <div
       role="group"
       aria-label="Workspace"
       data-testid="titlebar-path-views"
-      className={cn("flex shrink-0 items-center gap-1", NO_DRAG)}
+      className={cn("shrink-0 items-center", SEGMENT_TRACK, NO_DRAG)}
     >
-      {orchestrator !== undefined && (
+      {places.map((place) => (
         <Button
+          key={place.key}
           variant="ghost"
           size="xs"
-          aria-current={atOrchestrator ? "page" : undefined}
+          // Board is a view of the window, pressed; the others are pages, current.
+          {...(place.key === "board"
+            ? { "aria-pressed": place.current }
+            : { "aria-current": place.current ? ("page" as const) : undefined })}
+          {...(place.key === "memory" ? { "data-testid": "titlebar-path-memory" } : {})}
           className={PLACE}
-          onClick={() => {
-            const view = useViewStore.getState();
-            view.setQuiet(false);
-            view.setView("chat");
-            useLayoutStore.getState().openThread(orchestrator);
-            void navigate({ to: "/t/$threadId", params: { threadId: orchestrator } });
-          }}
+          onClick={place.go}
         >
-          {word}
+          {place.current && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
+          {place.label}
         </Button>
-      )}
-      <Button
-        variant="ghost"
-        size="xs"
-        aria-pressed={board}
-        className={PLACE}
-        onClick={() => openBoard(workspace.workspace.id)}
-      >
-        Board
-      </Button>
-      {/* What the orchestrator knows: a place of the workspace, named as the other two are. */}
-      <Button
-        variant="ghost"
-        size="xs"
-        aria-current={!board && pathname.endsWith("/memory") ? "page" : undefined}
-        data-testid="titlebar-path-memory"
-        className={PLACE}
-        onClick={() => {
-          useViewStore.getState().setView("chat");
-          void navigate({
-            to: "/w/$workspaceId/memory",
-            params: { workspaceId: workspace.workspace.id },
-          });
-        }}
-      >
-        Memory
-      </Button>
+      ))}
     </div>
   );
 }

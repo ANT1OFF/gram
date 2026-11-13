@@ -12,7 +12,8 @@ import { OverviewRail } from "@/orchestration/overview-rail";
 import { OverviewSidebar, useCarryOverviewFocus } from "@/orchestration/overview-sidebar";
 import { ConnectionBanner } from "@/shell/connection-banner";
 import { PhoneDrawer } from "@/shell/phone-drawer";
-import { PhonePanelRow } from "@/shell/phone-panels";
+import { PhonePanelRow, PhoneWorkspaceRow } from "@/shell/phone-panels";
+import { useWorkspacePlaces } from "@/shell/titlebar-path";
 import { ReviewStrip } from "@/shell/review-strip";
 import { ShellTitlebar } from "@/shell/shell-titlebar";
 import { SideResizeHandle } from "@/shell/side-resize";
@@ -59,6 +60,8 @@ export function AppShell() {
     chatWidth,
   } = useShellLayout();
   useWorkspaceKeys();
+  // On a phone, a workspace's place (its orchestrator, Board, Memory) has the row of the three.
+  const atPlace = useWorkspacePlaces(false)?.some((place) => place.current) === true;
   // Settings has no overview: entering or leaving it swaps nothing to carry.
   useCarryOverviewFocus(settings ? "none" : fit.sidebar);
   // A review that runs too narrow to read beside the conversation takes the window on its own.
@@ -158,7 +161,10 @@ export function AppShell() {
             panelOffered={!panelBarred}
             panelLeft={panelLeft}
           />
-          {phone && hasThread && !panelBarred && !panelShown && !board && <PhonePanelRow />}
+          {phone && !panelShown && <PhoneWorkspaceRow />}
+          {phone && hasThread && !panelBarred && !panelShown && !board && !atPlace && (
+            <PhonePanelRow />
+          )}
           <ConnectionBanner />
           <UpdateNotice />
           <LaunchChecksBanner />
