@@ -46,6 +46,8 @@ import {
 } from "./fields";
 import { FontsSection } from "./fonts-section";
 import { PaletteEditor } from "./palette-editor";
+import { hostTheme } from "@/theme/host-theme";
+
 import { paletteChoices, type PaletteChoice } from "./palette-choices";
 import { ReadingSection } from "./reading-section";
 import { SearchScope, useSettingSearch } from "./search-scope";
@@ -207,7 +209,7 @@ function ThemeRows() {
 function PaletteControls({ onEditColours }: { onEditColours: () => void }) {
   const { prefs, attrs, palettes } = useThemeAttributes();
   const customPalettes = useThemeStore((s) => s.customPalettes);
-  const choices = paletteChoices(prefs.palette, customPalettes);
+  const choices = paletteChoices(prefs.palette, customPalettes, hostTheme());
   const shownMode = attrs["data-mode"];
   return (
     <SearchScope label="Palette" className="flex flex-col gap-5">

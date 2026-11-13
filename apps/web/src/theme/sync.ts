@@ -1,5 +1,6 @@
 import { paletteCss, PRESET_PALETTES, type Palette } from "@gram/themes";
 
+import { hostPaletteFor, hostPalettes, hostTheme } from "./host-theme";
 import type { ThemeStore } from "./store";
 import type { SystemSource } from "./system";
 import { applyAttributes, themeAttributes } from "./theme";
@@ -12,8 +13,10 @@ export function startThemeSync(
 ): () => void {
   const apply = () => {
     const state = store.getState();
-    const palettes = [...PRESET_PALETTES, ...state.customPalettes];
-    applyAttributes(root, themeAttributes(state, system.get(), palettes));
+    const host = hostTheme();
+    const palettes = [...PRESET_PALETTES, ...state.customPalettes, ...hostPalettes(host)];
+    const prefs = { ...state, palette: hostPaletteFor(state.palette, host) };
+    applyAttributes(root, themeAttributes(prefs, system.get(), palettes));
   };
   apply();
   const unsubscribeStore = store.subscribe(apply);

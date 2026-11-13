@@ -314,6 +314,38 @@ handle.update({
   your pages. The other agents' models stay pickable beside it. Where the list can't be read at
   all, it is shown beside Gram's own reason and Retry.
 
+## Your app's look
+
+`theme` gives the app your look in this page, with no change to Gram's own default:
+
+```tsx
+await mountGram({
+  element,
+  server,
+  theme: {
+    name: "House",
+    palettes: { dark: { bg: "#0b0c0d", surface: "#0b0c0d", text: "#ecebe6", … }, light: { … } },
+    colors: { dark: { accent: "#ecebe6", "on-accent": "#0b0c0d", "status-needs": "#c2a878" } },
+    fonts: { ui: '"Inter Tight", sans-serif', mono: '"Martian Mono", monospace' },
+    radii: { sm: 4, md: 6, lg: 8 },
+    shadows: "none",
+    chart: { dark: ["#6f6d66", "#c2a878", "#d27a6e"], light: ["#b5b2a8", "#8c6d3a", "#c4685b"] },
+  },
+});
+```
+
+- `palettes` are seeds, as Gram's own palettes have them, one set per mode. Gram derives every
+  colour from them the way it does for its presets, and they stand in for its default pair: a
+  person who never picked a palette sees yours, and Settings shows that card under `name`. A
+  person who picks another palette gets it.
+- `colors` are set over what the seeds derive, by the theme's names (`accent`, `on-accent`,
+  `accent-text`, `status-needs`, …), for one mode or both. At More contrast the derived colours
+  hold.
+- `fonts`, `radii` and `shadows: "none"` set the look's values. The Fonts setting still wins.
+- `chart` names colours for charts on your pages, `--chart-1` onwards. Gram's screens draw none.
+
+Leave `theme` out and the app looks exactly as it does on its own.
+
 ## Pages that look like Gram's
 
 `@gram/web/kit` exports Gram's own controls: `Button`, `ButtonGroup`, `Badge`, `Alert`, `Switch`,

@@ -31,6 +31,8 @@ import type {
   UseShellLocation,
 } from "./contract";
 import { EMPTY_SHELL, routeProblem, shellFor, useEmbedShell } from "./store";
+import { installHostTheme } from "@/theme/host-theme";
+
 import { bootTheme } from "./theme-boot";
 
 /** An added page, in the conversation's place: it scrolls on its own, as Usage does. */
@@ -82,7 +84,9 @@ export const mountGram: MountGram = async (options) => {
     const mock = options.server === "mock";
     setServerBase(mock ? undefined : (options.server as { base?: string } | undefined)?.base);
     setAppBasePath(options.basePath);
-    bootTheme(document.documentElement, window.localStorage);
+    // The host's look first, so the boot attributes already name its palette.
+    installHostTheme(document, options.theme);
+    bootTheme(document.documentElement, window.localStorage, undefined, options.theme);
 
     const api = await createApi(
       mock ? "mock" : "rpc",
