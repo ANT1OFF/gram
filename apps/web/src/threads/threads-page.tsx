@@ -25,6 +25,7 @@ import { useThreadsStore } from "@/stores/threads";
 
 import {
   inThreadsFilter,
+  whereOf,
   THREADS_FILTERS,
   threadListings,
   threadsFilterCounts,
@@ -89,6 +90,8 @@ export function ThreadsPage() {
   const phone = usePhone();
   const barTitled = useEmbedPageTitle() !== undefined;
   const Heading = phone || barTitled ? "h2" : "h1";
+  // With no thread at all there is nothing to count or to search: the page says what goes here.
+  const none = listings.length === 0 && query.trim() === "";
   return (
     <section
       data-testid="threads-page"
@@ -103,12 +106,14 @@ export function ThreadsPage() {
           >
             {title}
           </Heading>
-          <span className="text-meta text-muted-foreground tabular-nums">
-            {/* Without the title beside it, the count says what it counts. */}
-            {phone
-              ? `${listings.length} ${listings.length === 1 ? "thread" : "threads"}`
-              : listings.length}
-          </span>
+          {!none && (
+            <span className="text-meta text-muted-foreground tabular-nums">
+              {/* Without the title beside it, the count says what it counts. */}
+              {phone
+                ? `${listings.length} ${listings.length === 1 ? "thread" : "threads"}`
+                : listings.length}
+            </span>
+          )}
           <Button
             size="sm"
             className="ms-auto"
@@ -119,21 +124,23 @@ export function ThreadsPage() {
             {newLabel ?? "New task"}
           </Button>
         </header>
-        <label className="relative flex items-center">
-          <Search
-            aria-hidden
-            className="pointer-events-none absolute left-2.5 size-icon-row text-muted-foreground"
-          />
-          <input
-            type="search"
-            data-testid="threads-search"
-            aria-label="Search threads"
-            placeholder="Search threads"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="h-9 w-full rounded-lg border border-input bg-transparent pr-2.5 pl-8 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          />
-        </label>
+        {!none && (
+          <label className="relative flex items-center">
+            <Search
+              aria-hidden
+              className="pointer-events-none absolute left-2.5 size-icon-row text-muted-foreground"
+            />
+            <input
+              type="search"
+              data-testid="threads-search"
+              aria-label="Search threads"
+              placeholder="Search threads"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="h-9 w-full rounded-lg border border-input bg-transparent pr-2.5 pl-8 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            />
+          </label>
+        )}
         {listings.length > 0 && (
           <div
             role="radiogroup"
@@ -165,7 +172,7 @@ export function ThreadsPage() {
             title={query.trim() === "" ? "No threads yet" : "No thread matches"}
             line={
               query.trim() === ""
-                ? "A task you start, and each worker it hands work to, is listed here."
+                ? "Start a task and it is listed here, with every worker an orchestrator hands work to."
                 : "Try other words: a title, a workspace, or what started it."
             }
           />
@@ -199,7 +206,7 @@ function ThreadRow({
   const { thread } = summary;
   const detail = useThreadsStore((s) => s.statusDetail[thread.id]);
   const display = soloDisplay(threadStatusOf(summary, detail), threadNeed(groups, thread.id));
-  const where = startedBy === undefined ? place : `${place} · ${startedBy}`;
+  const where = whereOf({ title, place, startedBy });
   return (
     <li>
       <button
