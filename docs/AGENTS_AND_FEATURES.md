@@ -366,7 +366,8 @@ Gateways are opt-in URL/key profiles, selected explicitly. Saved keys or gateway
 defaults never silently replace a local subscription. Gateway children keep their
 credential homes isolated; local CLI authentication is not copied into them.
 Gateway keys stay in Gram's local vault; subscription credentials stay isolated per provider.
-Manual MCP configuration and each agent's own sign-in remain available. Restricted
+Manual MCP configuration and each agent's own sign-in remain available; an agent may also
+propose a server, which is added only on your approval (`mcp_server_propose`). Restricted
 Codex sessions disable plugin/apps loading and refuse excluded MCP servers that
 remain enabled, while preserving the configured built-in search policy.
 
@@ -678,6 +679,17 @@ autonomy level, `full` included, and in every permission mode. Workers can read
 settings with `settings_read`, but they can't propose changes. Pausing and resuming,
 default permission modes, connectors, credentials, gateways, folders and consent
 switches are refused even with approval.
+
+Any agent, an orchestrator, a worker or a plain thread, can propose an MCP server with
+`mcp_server_propose`. The card shows everything that would be written: a remote server's URL
+and host, or a local server's command line and env as written, under a line saying it runs a
+program on this machine; then the scope (user, or the repo's `.mcp.json`) and each agent with
+where it goes. Only on approval does Gram add it, through Settings → Connectors' own path
+(`claude mcp add-json`, and Codex's own config write, which Gram's Codex home copies). A proposal
+carrying a credential (a secret-looking env var, header, argument or URL) is refused: you add
+those by hand. A name in use is refused unless the agent asks to replace it, and the card then
+shows both. A remote server that needs a sign-in is signed in from the agent:
+`/mcp` → Authenticate in Claude Code, `codex mcp login <name>` in Codex.
 
 They can also set up workspaces by chat. `workspace_list` shows the workspaces with
 their projects and settings. `workspace_create` proposes a new workspace: its name,

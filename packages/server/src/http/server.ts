@@ -25,6 +25,8 @@ import { ClaudeAiSeenLive } from "../connectors/claude-ai-seen.ts";
 import { McpTokens } from "../app-tools/mcp-tokens.ts";
 import { OrchestrationAppToolsLive } from "../app-tools/orchestration-tools.ts";
 import { SettingsAppToolsLive } from "../settings/chat-tools.ts";
+import { McpProposeAppToolsLive } from "../connectors/mcp-propose.ts";
+import { ConnectorConfigs } from "../rpc/handlers/connectors.ts";
 import { WorkspaceAppToolsLive } from "../settings/workspace-tools.ts";
 import { PrAppToolsLive } from "../app-tools/pr-tools.ts";
 import { ReadAppToolsLive } from "../app-tools/read-tools.ts";
@@ -833,6 +835,7 @@ export const ServerCore = Layer.unwrap(
         RoutineAppToolsLive,
         SettingsAppToolsLive,
         WorkspaceAppToolsLive,
+        McpProposeAppToolsLive,
         IssueAppToolsLive,
         BrowserAppToolsLive.pipe(Layer.provide(PanePort.layer)),
         DevServerAppToolsLive,
@@ -845,7 +848,8 @@ export const ServerCore = Layer.unwrap(
         .pipe(Layer.provideMerge(PrDependenciesLive))
         .pipe(
           Layer.provideMerge(MergeWhenReadyLive),
-          Layer.provideMerge(IssueReporter.layer),
+          // The connectors' handlers, which the RPCs serve and `mcp_server_propose` writes through.
+          Layer.provideMerge(Layer.mergeAll(IssueReporter.layer, ConnectorConfigs.layer)),
           Layer.provideMerge(
             Layer.mergeAll(
               DreamsLive,

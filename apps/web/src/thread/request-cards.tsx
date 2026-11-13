@@ -1,5 +1,6 @@
 import type {
   ApprovalRequest,
+  McpServerProposalCard,
   PendingRequest,
   PermissionMode,
   PlanRequest,
@@ -16,6 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldQuestion,
+  SquareTerminal,
   MessageCircleQuestion,
   ListChecks,
 } from "lucide-react";
@@ -73,6 +75,7 @@ import {
   approvalDetails,
   approvalExtras,
   approvalSubject,
+  mcpServerProposal,
   mustReadDetails,
   settingsProposal,
   workspaceProposal,
@@ -1004,6 +1007,152 @@ function WorkspaceDiff({
   );
 }
 
+/** One labelled line of an MCP server card: the label muted, the value as written. */
+function McpRow({
+  label,
+  children,
+  testId,
+}: {
+  label: string;
+  children: ReactNode;
+  testId?: string;
+}) {
+  return (
+    <div data-testid={testId} className="contents">
+      <dt className="py-1 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 border-border py-1 break-words">{children}</dd>
+    </div>
+  );
+}
+
+/**
+ * One value as it would be written, in a chip of its own: whitespace kept exactly (`pre-wrap`), and
+ * the chip's edge shows where it starts and ends, so `a  b`, ` a` and `a ` never read alike.
+ */
+function McpValue({
+  children,
+  testId,
+  strong = false,
+}: {
+  children: string;
+  testId: string;
+  strong?: boolean;
+}) {
+  return (
+    <code
+      data-testid={testId}
+      className={cn(
+        "inline-block min-h-[1lh] min-w-2 rounded-(--radius-2xs) border border-border bg-muted/50 px-1 align-top font-mono break-all whitespace-pre-wrap",
+        strong && "font-medium",
+      )}
+    >
+      {children}
+    </code>
+  );
+}
+
+const MCP_TRANSPORT = {
+  stdio: "stdio",
+  http: "HTTP (streamable)",
+  sse: "SSE",
+} as const;
+
+/**
+ * A `mcp_server_propose` card: everything that would be written, as written. A remote server's URL
+ * and host; a local one's command line and env, under a plain line saying it runs a program here.
+ * Then the scope, and each agent with where it is written and any server of the name it replaces.
+ */
+function McpServerDiff({
+  card,
+  summary,
+}: {
+  card: McpServerProposalCard;
+  summary: string | undefined;
+}) {
+  const mono = "font-mono break-all";
+  return (
+    <div data-testid="mcp-server-diff" className="flex flex-col gap-2">
+      <ProposalWords summary={summary} reason={card.reason} notes={card.notes}>
+        {card.transport === "stdio" && (
+          <p data-testid="mcp-runs-program" className="flex items-start gap-1.5 font-medium">
+            <SquareTerminal aria-hidden className="mt-0.5 size-icon-row shrink-0" />
+            Runs a program on this machine, as you, whenever an agent session starts its MCP
+            servers.
+          </p>
+        )}
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 text-meta [&>div>*]:border-t [&>div>*]:border-border">
+          <McpRow label="Name">
+            <span className={mono}>{card.name}</span>
+          </McpRow>
+          <McpRow label="Transport">{MCP_TRANSPORT[card.transport]}</McpRow>
+          {card.url !== undefined && (
+            <McpRow label="URL" testId="mcp-url">
+              <span className={mono}>{card.url}</span>
+            </McpRow>
+          )}
+          {card.host !== undefined && (
+            <McpRow label="Host" testId="mcp-host">
+              <span className={cn(mono, "font-medium")}>{card.host}</span>
+            </McpRow>
+          )}
+          {card.headers !== undefined && (
+            <McpRow label="Headers">
+              <ul>
+                {card.headers.map((header) => (
+                  <li key={header.name} data-testid="mcp-header" className={mono}>
+                    {header.name}: <McpValue testId="mcp-header-value">{header.value}</McpValue>
+                  </li>
+                ))}
+              </ul>
+            </McpRow>
+          )}
+          {card.command !== undefined && (
+            <McpRow label="Command" testId="mcp-command">
+              {/* The program, then each argument, one chip each: spaces kept, edges seen. */}
+              <span className="flex flex-wrap gap-1">
+                {[card.command, ...(card.args ?? [])].map((word, i) => (
+                  <McpValue key={i} testId="mcp-arg" strong={i === 0}>
+                    {word}
+                  </McpValue>
+                ))}
+              </span>
+            </McpRow>
+          )}
+          {card.env !== undefined && (
+            <McpRow label="Env">
+              <ul>
+                {card.env.map((variable) => (
+                  <li key={variable.name} data-testid="mcp-env" className={mono}>
+                    {variable.name}=<McpValue testId="mcp-env-value">{variable.value}</McpValue>
+                  </li>
+                ))}
+              </ul>
+            </McpRow>
+          )}
+          <McpRow label="Scope">{card.scopeText}</McpRow>
+          {card.targets.map((target) => (
+            <McpRow key={target.target} label={target.label} testId="mcp-target">
+              <span className="flex flex-col">
+                <span>{target.where}</span>
+                {target.replaces !== undefined && (
+                  <span data-testid="mcp-replaces" className="text-muted-foreground">
+                    Replaces its {target.replaces.scope} {target.replaces.transport} server{" "}
+                    <span className={cn(mono, "whitespace-pre-wrap line-through")}>
+                      {target.replaces.url ?? target.replaces.commandLine ?? card.name}
+                    </span>
+                    {target.replaces.carriesValues &&
+                      ", and its env or header values, which aren't shown"}
+                  </span>
+                )}
+              </span>
+            </McpRow>
+          ))}
+        </dl>
+      </ProposalWords>
+    </div>
+  );
+}
+
 /**
  * What an Allow covers when the card leads with one field of the input: the description as a plain
  * sentence, that field, the rest of the arguments on a quiet line under it, and the whole input
@@ -1072,6 +1221,8 @@ export function ApprovalCard({
   const settings = pause === undefined ? settingsProposal(request) : undefined;
   // A workspace made or changed by chat: the same, with its projects above its settings.
   const workspace = pause === undefined ? workspaceProposal(request) : undefined;
+  // An MCP server proposed by chat: the server whole, and where it is written.
+  const mcpServer = pause === undefined ? mcpServerProposal(request) : undefined;
   // Outward app tools restrict scopes to `["once"]`; absent means every scope is allowed. A browse
   // card's "always" is the host's place in Settings → Agent may browse, not a permission rule.
   // "Always allow this rule…" never saves on its first press: it shows exactly what it would keep, and where,
@@ -1083,7 +1234,11 @@ export function ApprovalCard({
   const [confirming, setConfirming] = useState(preview && canAlways);
   // The receipt says what was chosen, in its scope, where the card was. A limit pause, a settings
   // change and a workspace say their own outcome, so only a tool's approval has one.
-  const plain = pause === undefined && settings === undefined && workspace === undefined;
+  const plain =
+    pause === undefined &&
+    settings === undefined &&
+    workspace === undefined &&
+    mcpServer === undefined;
   const allow = (scope: "once" | "always") =>
     void respond(
       { kind: "approval", decision: "allow", scope },
@@ -1167,7 +1322,9 @@ export function ApprovalCard({
               ? workspace.action === "create"
                 ? `Create workspace “${workspace.workspace.name}”?`
                 : `Change workspace “${workspace.workspace.name}”?`
-              : `Allow ${request.displayName}?`
+              : mcpServer !== undefined
+                ? `${mcpServer.action === "replace" ? "Replace" : "Add"} MCP server “${mcpServer.name}”?`
+                : `Allow ${request.displayName}?`
       }
       footer={
         pause !== undefined ? (
@@ -1200,7 +1357,11 @@ export function ApprovalCard({
                   ? "Create workspace"
                   : settings !== undefined || workspace !== undefined
                     ? "Apply changes"
-                    : ALLOW_ONCE}{" "}
+                    : mcpServer !== undefined
+                      ? mcpServer.action === "replace"
+                        ? "Replace server"
+                        : "Add server"
+                      : ALLOW_ONCE}{" "}
                 <CardKbd id="approval.allow" />
               </Button>
             </PressScale>
@@ -1249,6 +1410,8 @@ export function ApprovalCard({
         <SettingsDiff card={settings} summary={summary} />
       ) : workspace !== undefined ? (
         <WorkspaceDiff card={workspace} summary={summary} />
+      ) : mcpServer !== undefined ? (
+        <McpServerDiff card={mcpServer} summary={summary} />
       ) : summary === undefined ? (
         <ApprovalInput request={request} />
       ) : (

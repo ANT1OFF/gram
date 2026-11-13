@@ -1,9 +1,18 @@
 // @vitest-environment happy-dom
-import type { PendingRequest, RequestId, ThreadId } from "@gram/contracts";
+import {
+  checkMcpServerProposal,
+  mcpServerProposalCard,
+  mcpServerProposalSummary,
+  type McpServerProposeInput,
+  type PendingRequest,
+  type RequestId,
+  type ThreadId,
+} from "@gram/contracts";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiProvider } from "@/api/context";
+import { answersInPlace } from "@/orchestration/ask-model";
 import type { Api } from "@/api/types";
 import { installKeyboard } from "@/keyboard/registry";
 
@@ -23,6 +32,7 @@ import {
   appToolSummary,
   approvalDetails,
   approvalExtras,
+  mcpServerProposal,
   mustReadDetails,
   settingsProposal,
   workspaceProposal,
@@ -1137,6 +1147,145 @@ describe("PlanCard", () => {
         kind: "plan",
         decision: "reject",
         message: "Smaller steps",
+      }),
+    );
+  });
+});
+
+/** A `mcp_server_propose` card as the server raises it, built by the server's own builder. */
+const mcpCard = (
+  input: McpServerProposeInput,
+  existing: Parameters<typeof mcpServerProposalCard>[2] = {},
+): Extract<PendingRequest, { kind: "approval" }> => {
+  const checked = checkMcpServerProposal(input);
+  if (!checked.ok) throw new Error(checked.errors.join(" "));
+  const card = mcpServerProposalCard(checked.proposal, "/work/repo", existing);
+  return {
+    kind: "approval",
+    id: "r-mcp" as RequestId,
+    toolName: "mcp__gram__mcp_server_propose",
+    displayName: "Add MCP server",
+    input: card as unknown as Record<string, unknown>,
+    description: mcpServerProposalSummary(card),
+    suggestions: [],
+    scopes: ["once"],
+  };
+};
+
+describe("an MCP server proposal", () => {
+  const local = mcpCard({
+    name: "docs-index",
+    server: {
+      type: "stdio",
+      command: "npx",
+      args: ["-y", "@example/docs-index-mcp", "--root", "/work/my docs"],
+      env: { LOG_LEVEL: "info" },
+    },
+    targets: ["claude", "codex"],
+    reason: "You asked for search over the local docs.",
+  });
+
+  it("reads as one only on its own tool, and is always read whole", () => {
+    expect(mustReadDetails(local)).toBe(true);
+    // Never answered from the Inbox's list or an away notification.
+    expect(answersInPlace(local)).toBe(false);
+    expect(mcpServerProposal(local)?.name).toBe("docs-index");
+    expect(mcpServerProposal({ ...local, toolName: "mcp__gram__other" })).toBeUndefined();
+    expect(mcpServerProposal({ ...local, input: { name: "x" } })).toBeUndefined();
+  });
+
+  it("shows a local server's command line and env as written, says it runs a program, and declines", async () => {
+    const { api, respond } = fakeApi();
+    render(
+      <ApiProvider api={api}>
+        <ApprovalCard threadId={T} request={local} active />
+      </ApiProvider>,
+    );
+    const card = screen.getByTestId("approval-card");
+    expect(card.textContent).toContain("Add MCP server “docs-index”?");
+    expect(screen.getByTestId("approval-summary").textContent).toBe(local.description);
+    expect(screen.getByTestId("settings-reason").textContent).toBe(
+      "Why: You asked for search over the local docs.",
+    );
+    expect(screen.getByTestId("mcp-runs-program").textContent).toContain(
+      "Runs a program on this machine",
+    );
+    // The program and each argument in a chip of its own, exactly as written.
+    expect(screen.getAllByTestId("mcp-arg").map((chip) => chip.textContent)).toEqual([
+      "npx",
+      "-y",
+      "@example/docs-index-mcp",
+      "--root",
+      "/work/my docs",
+    ]);
+    expect(screen.getAllByTestId("mcp-env").map((row) => row.textContent)).toEqual([
+      "LOG_LEVEL=info",
+    ]);
+    expect(screen.getByTestId("mcp-env-value").className).toContain("whitespace-pre-wrap");
+    expect(screen.getAllByTestId("mcp-target").map((row) => row.textContent)).toEqual([
+      "Claude CodeClaude Code's user config (claude mcp add-json --scope user): every project",
+      "CodexCodex's config.toml, [mcp_servers.docs-index]: every project, Gram's own Codex home included",
+    ]);
+    expect(screen.queryByTestId("mcp-url")).toBeNull();
+    // Approve and Decline, nothing to remember.
+    expect(screen.queryByTestId("approval-always")).toBeNull();
+    expect(screen.getByTestId("approval-allow").textContent).toContain("Add server");
+    fireEvent.click(screen.getByTestId("approval-deny"));
+    await waitFor(() =>
+      expect(respond).toHaveBeenCalledWith(T, "r-mcp", {
+        kind: "approval",
+        decision: "deny",
+        scope: "once",
+      }),
+    );
+  });
+
+  it("shows a remote server's URL and host, what it replaces, and how to sign in", async () => {
+    const remote = mcpCard(
+      {
+        name: "tracker",
+        server: { type: "http", url: "https://mcp.example.invalid/tracker" },
+        targets: ["claude"],
+        replace: true,
+        reason: "A newer address.",
+      },
+      {
+        claude: {
+          name: "tracker",
+          transport: "http",
+          url: "https://old.example.invalid/mcp",
+          scope: "user",
+          carriesValues: true,
+        },
+      },
+    );
+    const { api, respond } = fakeApi();
+    render(
+      <ApiProvider api={api}>
+        <ApprovalCard threadId={T} request={remote} active />
+      </ApiProvider>,
+    );
+    expect(screen.getByTestId("approval-card").textContent).toContain(
+      "Replace MCP server “tracker”?",
+    );
+    expect(screen.queryByTestId("mcp-runs-program")).toBeNull();
+    expect(screen.getByTestId("mcp-url").textContent).toBe(
+      "URLhttps://mcp.example.invalid/tracker",
+    );
+    expect(screen.getByTestId("mcp-host").textContent).toBe("Hostmcp.example.invalid");
+    expect(screen.getByTestId("mcp-replaces").textContent).toBe(
+      "Replaces its user http server https://old.example.invalid/mcp, and its env or header values, which aren't shown",
+    );
+    expect(screen.getByTestId("settings-notes").textContent).toContain(
+      "in Claude Code, run /mcp and choose Authenticate",
+    );
+    expect(screen.getByTestId("approval-allow").textContent).toContain("Replace server");
+    fireEvent.click(screen.getByTestId("approval-allow"));
+    await waitFor(() =>
+      expect(respond).toHaveBeenCalledWith(T, "r-mcp", {
+        kind: "approval",
+        decision: "allow",
+        scope: "once",
       }),
     );
   });
