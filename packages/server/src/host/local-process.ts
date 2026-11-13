@@ -14,6 +14,7 @@ import {
   restartLocalService,
   startLocalService,
   stopLocalService,
+  sweepAbandoned,
 } from "./local-service-unit.ts";
 import { ensureLocalSecret } from "./local-handshake.ts";
 import * as Cause from "effect/Cause";
@@ -174,6 +175,17 @@ export class LocalHostProcess extends Context.Service<
               Effect.orElseSucceed(() => false),
             ));
           const paths = localServicePaths(kept.dataDir, platform);
+          // A host whose data folder was moved or removed can't be reached by any Gram again:
+          // it is stopped, verified, whichever data folder this Gram runs on, setting on or off.
+          const swept = yield* sweepAbandoned(platform);
+          if (swept.stopped.length > 0)
+            yield* Effect.logInfo("worker host: stopped hosts whose data folder is gone").pipe(
+              Effect.annotateLogs({ services: swept.stopped.join(", ") }),
+            );
+          for (const failure of swept.failed)
+            yield* Effect.logWarning(
+              "worker host: a host whose data folder is gone didn't stop",
+            ).pipe(Effect.annotateLogs({ service: failure.name, reason: failure.reason }));
           if (wanted) {
             const probe = Option.getOrUndefined(yield* Effect.serviceOption(PathProbe));
             const path = probe === undefined ? undefined : yield* probe.path;

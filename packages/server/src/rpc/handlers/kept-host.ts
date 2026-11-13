@@ -44,7 +44,8 @@ export const keptHostHandlers = Effect.gen(function* () {
     "app.keptHostStop": () =>
       platform === undefined || paths === undefined || !available
         ? Effect.fail(new InvalidState({ message: "This machine keeps no host running." }))
-        : stopLocalService(platform, paths, undefined, false).pipe(
+        : // Its definition goes too: stopped, it isn't loaded or started again until Gram does.
+          stopLocalService(platform, paths, undefined, true).pipe(
             Effect.andThen(
               Effect.logInfo("kept host: stopped from Settings; its sessions ended with it"),
             ),

@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
@@ -14,7 +22,10 @@ import {
   localSystemdUnit,
   startLocalService,
   stopLocalService,
+  sweepAbandoned,
   systemdEnvFile,
+  keptHostInstances,
+  keptHostRegistry,
 } from "./local-service-unit.ts";
 import type { Run } from "./service.ts";
 import { RUN_TOKEN_ENV } from "./run-sweep.ts";
@@ -45,7 +56,16 @@ describe("the kept-running host's service", () => {
       HOME,
     );
     expect(mac.name).toMatch(/^io\.github\.ant1off\.gram\.local\.[0-9a-f]{10}$/);
-    expect(mac.serviceFile).toBe(`${HOME}/Library/LaunchAgents/${mac.name}.plist`);
+    // Never in ~/Library/LaunchAgents, which launchd loads at every login (review finding 5).
+    expect(mac.serviceFile).toBe(
+      `${HOME}/Library/Application Support/gram-state/local-host/${mac.name}.plist`,
+    );
+    expect(mac.serviceFile).not.toContain("LaunchAgents");
+    // The registry is outside every data folder, so a moved one is still found.
+    expect(mac.registryFile).toBe(
+      `${HOME}/Library/Application Support/Gram/kept-hosts/${mac.id}.json`,
+    );
+    expect(release.registryFile).toBe(`${HOME}/.local/state/gram/kept-hosts/${release.id}.json`);
   });
 
   it("moves a socket too deep for the OS to the runtime folder", () => {
@@ -121,13 +141,16 @@ describe("the kept-running host's service", () => {
     expect(systemdEnvFile({ PATH: '/a b/"q"/$x' })).toBe('PATH="/a b/\\"q\\"/\\$x"\n');
   });
 
-  it("writes a launchd agent that isn't run at load or kept alive after a clean end", () => {
+  it("writes a launchd agent that launchd never starts by itself, at login or after an exit", () => {
     const paths = localServicePaths("/data", "darwin", {}, HOME);
     const plist = localLaunchdPlist(paths, ["/Applications/Gram.app/x", "local"], {
       PATH: "/usr/bin",
     });
     expect(plist).toContain("<key>RunAtLoad</key>\n  <false/>");
-    expect(plist).toContain("<key>SuccessfulExit</key>\n    <false/>");
+    // Any KeepAlive condition (SuccessfulExit included) has launchd start the job once it is
+    // loaded, which a login does: the review's reproduction. A one-shot job carries none.
+    expect(plist).not.toContain("KeepAlive");
+    expect(plist).not.toContain("SuccessfulExit");
     expect(plist).toContain("<key>AbandonProcessGroup</key>\n  <false/>");
     expect(plist).toContain(`<string>${paths.name}</string>`);
   });
@@ -288,6 +311,76 @@ describe("the kept-running host's service", () => {
       expect(verbs.indexOf("bootstrap")).toBeGreaterThan(verbs.indexOf("bootout"));
       expect(verbs.at(-1)).toBe("kickstart");
       expect(readFileSync(paths.serviceFile, "utf8")).toContain(RUN_TOKEN_ENV);
+    }),
+  );
+
+  it.effect("finds and stops a host whose data folder is gone, and leaves every other alone", () =>
+    Effect.gen(function* () {
+      const root = mkdtempSync(join(tmpdir(), "gram-local-service-"));
+      dirs.push(root);
+      const env = { XDG_CONFIG_HOME: join(root, "config"), XDG_STATE_HOME: join(root, "state") };
+      const start = (dataDir: string) =>
+        Effect.gen(function* () {
+          const paths = localServicePaths(dataDir, "linux", env, root);
+          mkdirSync(paths.folder, { recursive: true });
+          writeFileSync(paths.secretFile, `${"d".repeat(64)}\n`);
+          yield* startLocalService(
+            {
+              dataDir,
+              platform: "linux",
+              paths,
+              program: ["/x", "local"],
+              env: { PATH: "/usr/bin" },
+            },
+            answering(() => ({ code: 0, output: "" })),
+          );
+          return paths;
+        });
+      const kept = yield* start(join(root, "kept"));
+      const moved = yield* start(join(root, "moved"));
+      const registry = keptHostRegistry("linux", env, root);
+      expect(
+        keptHostInstances(registry)
+          .map((i) => i.name)
+          .toSorted(),
+      ).toEqual([kept.name, moved.name].toSorted());
+      expect(statSync(moved.registryFile).mode & 0o777).toBe(0o600);
+      // The review's reproduction: the data folder is moved away while its host waits on an
+      // approval, and another Gram starts.
+      const movedToken = readFileSync(moved.runFile, "utf8").trim();
+      renameSync(join(root, "moved"), join(root, "elsewhere"));
+      const calls: Array<string> = [];
+      const swept: Array<string> = [];
+      const systemd = answering(
+        (_f, args) =>
+          args[1] === "is-active" ? { code: 3, output: "inactive" } : { code: 0, output: "" },
+        calls,
+      );
+      const outcome = yield* sweepAbandoned("linux", systemd, env, root, (token) =>
+        Effect.sync(() => {
+          swept.push(token);
+          return { left: [] };
+        }),
+      );
+      expect(outcome).toEqual({ stopped: [moved.name], failed: [] });
+      expect(calls).toContain(`systemctl --user stop ${moved.name}`);
+      expect(calls.some((call) => call.includes(kept.name))).toBe(false);
+      // Its run token came from the registry, its own file having moved with the folder.
+      expect(swept).toEqual([movedToken]);
+      expect(keptHostInstances(registry).map((i) => i.name)).toEqual([kept.name]);
+      // One that won't stop stays in the registry, for the next start to try again.
+      rmSync(kept.secretFile);
+      const stuck = yield* sweepAbandoned(
+        "linux",
+        answering((_f, args) =>
+          args[1] === "is-active" ? { code: 0, output: "active" } : { code: 1, output: "no" },
+        ),
+        env,
+        root,
+        noSweep,
+      );
+      expect(stuck.failed.map((f) => f.name)).toEqual([kept.name]);
+      expect(keptHostInstances(registry).map((i) => i.name)).toEqual([kept.name]);
     }),
   );
 });

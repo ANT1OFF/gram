@@ -181,11 +181,27 @@ export const serveLocal = <R>(
     let quietSince: number | undefined;
     // Ends once no app has been connected for `idleExitMs` while nothing of a thread ran and no
     // session holds events an app hasn't seen, or for `abandonMs` with only those left.
+    /** Since when the install's secret has been gone: its data folder was moved or removed. */
+    let orphanedSince: number | undefined;
     yield* Effect.gen(function* () {
       if (aloneSince === undefined) {
         quietSince = undefined;
+        orphanedSince = undefined;
         return;
       }
+      // With its secret gone, no Gram can ever connect again, so nothing it holds, an approval
+      // included, can be answered: it ends after the idle wait whatever runs, rather than for good.
+      if (readLocalSecret(options.secretFile) === undefined) {
+        orphanedSince ??= Date.now();
+        if (Date.now() - orphanedSince >= idleExitMs) {
+          yield* Effect.logWarning(
+            "gram-host local: its data folder is gone and no Gram can reach it; ending",
+          );
+          yield* Deferred.succeed(done, undefined);
+        }
+        return;
+      }
+      orphanedSince = undefined;
       if (runningNow(yield* options.busy)) {
         aloneSince = Date.now();
         quietSince = undefined;

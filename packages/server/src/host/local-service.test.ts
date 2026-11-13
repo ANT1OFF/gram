@@ -197,5 +197,30 @@ describe.skipIf(process.platform === "win32")(
         expect(Exit.isFailure(refused)).toBe(true);
       }).pipe(Effect.scoped, Effect.provide(env)),
     );
+
+    it.live(
+      "ends once its data folder is gone, an approval waiting or not, as no Gram can reach it",
+      () =>
+        Effect.gen(function* () {
+          const dir = yield* folder;
+          const socket = join(dir, "local-host", "host.sock");
+          const secretFile = join(dir, "local-host", "secret");
+          const secret = ensureLocalSecret(secretFile);
+          // A turn waits on an approval: an ordinary closed Gram's host stays up for it.
+          const busy: HostBusy = { ...idle, turns: 1 };
+          const serving = yield* serveLocal(socket, host, {
+            busy: Effect.succeed(busy),
+            secretFile,
+            idleExitMs: 150,
+            idleCheckMs: 20,
+          }).pipe(Effect.scoped, Effect.forkScoped);
+          yield* Effect.scoped(connectLocalService(socket, secret, 5_000));
+          yield* Effect.sleep("400 millis");
+          expect(serving.pollUnsafe()).toBeUndefined();
+          // The review's reproduction: the data folder moves away, so the secret is gone with it.
+          rmSync(secretFile);
+          yield* Fiber.join(serving).pipe(Effect.timeout("5 seconds"));
+        }).pipe(Effect.scoped, Effect.provide(env)),
+    );
   },
 );

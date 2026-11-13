@@ -10,7 +10,15 @@
 
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createConnection, type Socket as NetSocket } from "node:net";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
@@ -51,6 +59,13 @@ export interface LocalServicePaths {
   readonly runFile: string;
   /** `gram-local-host-<id>.service`, or the launchd label `io.github.ant1off.gram.local.<id>`. */
   readonly name: string;
+  /** The instance's id: from its data folder, which its service's name carries. */
+  readonly id: string;
+  /**
+   * Its entry in the user's registry of kept-running hosts, outside any data folder, so an
+   * instance whose data folder was moved or removed can still be found and stopped.
+   */
+  readonly registryFile: string;
   /** The unit or property list file. */
   readonly serviceFile: string;
 }
@@ -79,9 +94,11 @@ export const localServicePaths = (
         );
   const name =
     platform === "darwin" ? `io.github.ant1off.gram.local.${id}` : `gram-local-host-${id}.service`;
+  // On macOS the definition sits in Gram's data folder, not `~/Library/LaunchAgents`, which launchd
+  // loads at every login: only Gram's own `launchctl bootstrap` ever loads it.
   const serviceFile =
     platform === "darwin"
-      ? join(home, "Library", "LaunchAgents", `${name}.plist`)
+      ? join(folder, `${name}.plist`)
       : join(
           env["XDG_CONFIG_HOME"]?.startsWith("/") === true
             ? env["XDG_CONFIG_HOME"]
@@ -98,9 +115,30 @@ export const localServicePaths = (
     secretFile: join(folder, "secret"),
     runFile: join(folder, "run"),
     name,
+    id,
+    registryFile: join(keptHostRegistry(platform, env, home), `${id}.json`),
     serviceFile,
   };
 };
+
+/**
+ * The user's registry of kept-running hosts, one file per instance: under the XDG state folder on
+ * Linux, Gram's support folder on macOS. Never in a data folder, which can move.
+ */
+export const keptHostRegistry = (
+  platform: LocalServicePlatform,
+  env: NodeJS.ProcessEnv = process.env,
+  home = homedir(),
+): string =>
+  platform === "darwin"
+    ? join(home, "Library", "Application Support", "Gram", "kept-hosts")
+    : join(
+        env["XDG_STATE_HOME"]?.startsWith("/") === true
+          ? env["XDG_STATE_HOME"]
+          : join(home, ".local", "state"),
+        "gram",
+        "kept-hosts",
+      );
 
 /**
  * What the service runs. From an AppImage, the app's files are mounted afresh at each start and
@@ -230,8 +268,9 @@ const xml = (text: string) =>
     .replaceAll("'", "&apos;");
 
 /**
- * The launchd agent. Not run at load and not kept alive: the app kicks it off, and it ends on its
- * own. Its environment is in the file, which is this user's alone.
+ * The launchd agent: a one-shot job, started only by the app's `kickstart`. Not run at load and
+ * with no `KeepAlive` (any `KeepAlive` condition, `SuccessfulExit` included, makes launchd start
+ * the job when it is loaded, as at login). Its environment is in the file, this user's alone.
  */
 export const localLaunchdPlist = (
   paths: LocalServicePaths,
@@ -259,11 +298,6 @@ ${vars}
   </dict>
   <key>RunAtLoad</key>
   <false/>
-  <key>KeepAlive</key>
-  <dict>
-    <key>SuccessfulExit</key>
-    <false/>
-  </dict>
   <key>ProcessType</key>
   <string>Interactive</string>
   <key>AbandonProcessGroup</key>
@@ -312,6 +346,8 @@ export const startLocalService = (spec: LocalServiceSpec, runner: ServiceRunner 
     // A token of this start, which everything it starts inherits, so a stop finds it all.
     const token = randomBytes(16).toString("hex");
     writeFileSync(paths.runFile, `${token}\n`, { mode: 0o600 });
+    // Found again whatever happens to the data folder: moved, removed, or another Gram's.
+    recordInstance(paths, spec.dataDir, platform, token);
     const env = { ...spec.env, [RUN_TOKEN_ENV]: token };
     if (platform === "linux") {
       writeFileSync(paths.envFile, systemdEnvFile(env), { mode: 0o600 });
@@ -397,6 +433,8 @@ export const stopLocalService = (
   forget = true,
   sweep: (token: string) => Effect.Effect<{ readonly left: ReadonlyArray<number> }> = (token) =>
     sweepRun(token, platform),
+  /** The run token, when its file in the data folder may be gone (`sweepAbandoned`). */
+  knownToken?: string,
 ) =>
   Effect.gen(function* () {
     const stop =
@@ -405,7 +443,7 @@ export const stopLocalService = (
         : yield* runner("launchctl", ["bootout", `${domain()}/${paths.name}`]);
     // What got away from the service's own stop: a pseudo-terminal's shell has a session of its
     // own, which launchd doesn't end, and what it put in the background can outlive it.
-    const token = readRunToken(paths);
+    const token = readRunToken(paths) ?? knownToken;
     const swept = token === undefined ? { left: [] } : yield* sweep(token);
     const state = yield* serviceState(platform, paths, runner);
     if (state === "running" || state === "unknown")
@@ -425,8 +463,116 @@ export const stopLocalService = (
     if (forget) {
       rmSync(paths.serviceFile, { force: true });
       forgetFiles(paths);
+      // Only now, the stop confirmed: until then the instance stays findable.
+      rmSync(paths.registryFile, { force: true });
       if (platform === "linux") yield* runner("systemctl", ["--user", "daemon-reload"]);
     }
+  });
+
+/** One kept-running host as the user's registry has it. */
+export interface KeptHostInstance {
+  readonly id: string;
+  readonly platform: LocalServicePlatform;
+  /** The data folder it was started for, which may since have moved or gone. */
+  readonly dataDir: string;
+  readonly name: string;
+  readonly serviceFile: string;
+  /** Its last start's run token, which a stop ends every process of. */
+  readonly runToken: string;
+  readonly startedAt: string;
+}
+
+const recordInstance = (
+  paths: LocalServicePaths,
+  dataDir: string,
+  platform: LocalServicePlatform,
+  runToken: string,
+) => {
+  mkdirSync(dirname(paths.registryFile), { recursive: true, mode: 0o700 });
+  const entry: KeptHostInstance = {
+    id: paths.id,
+    platform,
+    dataDir,
+    name: paths.name,
+    serviceFile: paths.serviceFile,
+    runToken,
+    startedAt: new Date().toISOString(),
+  };
+  const temporary = `${paths.registryFile}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(entry, null, 2)}\n`, { mode: 0o600 });
+  renameSync(temporary, paths.registryFile);
+};
+
+/** Every instance in the user's registry. */
+export const keptHostInstances = (registry: string): ReadonlyArray<KeptHostInstance> => {
+  let names: ReadonlyArray<string>;
+  try {
+    names = readdirSync(registry);
+  } catch {
+    return [];
+  }
+  const found: Array<KeptHostInstance> = [];
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    try {
+      const entry = JSON.parse(readFileSync(join(registry, name), "utf8")) as KeptHostInstance;
+      if (
+        typeof entry.dataDir === "string" &&
+        typeof entry.name === "string" &&
+        typeof entry.runToken === "string" &&
+        `${entry.id}.json` === name
+      )
+        found.push(entry);
+    } catch {
+      // Unreadable: left for a person to look at, never acted on.
+    }
+  }
+  return found;
+};
+
+/**
+ * Whether `instance` lost its data folder: its install secret is gone, so no Gram can ever connect
+ * to it again. One whose folder is there is some Gram's, closed or not, and left alone.
+ */
+export const abandoned = (instance: KeptHostInstance): boolean =>
+  !existsSync(join(instance.dataDir, "local-host", "secret"));
+
+/**
+ * Stops and forgets every instance in the registry whose data folder is gone (moved or removed),
+ * each stop verified as any other; one that won't stop stays in the registry for the next try.
+ * Answers what was stopped, and what couldn't be, with why.
+ */
+export const sweepAbandoned = (
+  platform: LocalServicePlatform,
+  runner: ServiceRunner = run,
+  env: NodeJS.ProcessEnv = process.env,
+  home = homedir(),
+  sweep?: (token: string) => Effect.Effect<{ readonly left: ReadonlyArray<number> }>,
+) =>
+  Effect.gen(function* () {
+    const stopped: Array<string> = [];
+    const failed: Array<{ readonly name: string; readonly reason: string }> = [];
+    for (const instance of keptHostInstances(keptHostRegistry(platform, env, home))) {
+      if (instance.platform !== platform || !abandoned(instance)) continue;
+      const paths = localServicePaths(instance.dataDir, platform, env, home);
+      const outcome = yield* stopLocalService(
+        platform,
+        { ...paths, serviceFile: instance.serviceFile },
+        runner,
+        true,
+        sweep,
+        instance.runToken,
+      ).pipe(Effect.exit);
+      if (Exit.isSuccess(outcome)) stopped.push(instance.name);
+      else {
+        const error = Cause.squash(outcome.cause);
+        failed.push({
+          name: instance.name,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return { stopped, failed };
   });
 
 /**

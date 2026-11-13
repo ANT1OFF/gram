@@ -1229,6 +1229,29 @@ spawns stays in the app's coalition, which macOS can end with the app. launchd g
 definition it loaded, whatever the file says now. So Gram boots any job left by an earlier start
 out first, and loads the rewritten one once launchd no longer has it.
 
+On macOS the definition sits in Gram's data folder, not `~/Library/LaunchAgents`, and has no
+`KeepAlive`, so launchd never loads or starts it at login: only Gram does.
+
+Gram also keeps a registry of these services outside any data folder (`~/.local/state/gram/kept-hosts`
+on Linux, `~/Library/Application Support/Gram/kept-hosts` on macOS), one file per data folder,
+naming the service and its run token. A data folder that is moved or removed can't be reached by
+any Gram again. Its service ends on its own 10 minutes after its secret disappears, whatever it is
+running, and the next Gram to start, whichever data folder it uses, stops it (verified) and only
+then removes its registry entry. A service whose data folder is still there is never touched by
+another Gram, so a closed Gram's waiting approvals stay waiting.
+
+To stop one by hand, find it in the registry (each file names its data folder), then:
+
+```sh
+# Linux
+systemctl --user stop gram-local-host-<id>.service
+# macOS
+launchctl bootout gui/$(id -u)/io.github.ant1off.gram.local.<id>
+```
+
+Then end anything still carrying its run token (`GRAM_LOCAL_HOST_RUN=<token>` from the registry
+file) and delete the registry file.
+
 A session taken up on reopen has its Gram tools pointed at the new Gram. That is tried again every
 second until the new Gram's MCP endpoint answers, which is a moment after it starts.
 
