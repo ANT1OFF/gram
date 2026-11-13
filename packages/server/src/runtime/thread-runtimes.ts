@@ -1469,6 +1469,41 @@ const make = Effect.gen(function* () {
     { discard: true },
   );
 
+  // Each thread whose session the host kept running after the last Gram quit is taken up again:
+  // its open turn, under its own id, and its session followed on from where the last Gram's
+  // handling ended, which replays the turn. Once the app tools are set (`setAppTools`), and not
+  // before: taken up earlier, a session would be followed with no MCP endpoint, its tools left
+  // pointing at the Gram that quit.
+  const takeUpKept = Effect.forEach(
+    [...kept.survivors],
+    (threadId) =>
+      Effect.gen(function* () {
+        const rt = yield* getRuntime(threadId);
+        const thread = yield* store.getThread(threadId);
+        yield* locked(
+          rt,
+          Effect.gen(function* () {
+            const open = yield* store.lastTurn(threadId);
+            if (open !== undefined && open.endedAt === undefined)
+              yield* openTurn(rt, open.id, { startedAt: open.startedAt });
+            yield* openSession(rt, thread);
+          }),
+        );
+        yield* Effect.logInfo("took up a session kept running after Gram quit").pipe(
+          Effect.annotateLogs({ threadId }),
+        );
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("couldn't take up a session kept running after Gram quit").pipe(
+            Effect.annotateLogs({ threadId, cause: Cause.pretty(cause) }),
+            Effect.andThen(kept.discard(threadId)),
+          ),
+        ),
+      ),
+    { discard: true },
+  );
+  let takenUp = false;
+
   const service = ThreadRuntimes.of({
     ...switchMethods,
     restSession,
@@ -1729,8 +1764,11 @@ const make = Effect.gen(function* () {
     }),
     ...historyMethods,
     setAppTools: (port) =>
-      Effect.sync(() => {
+      Effect.suspend(() => {
         appTools = port;
+        if (takenUp) return Effect.void;
+        takenUp = true;
+        return takeUpKept;
       }),
     ...policyMethods,
     observe: (observer) =>
@@ -1749,37 +1787,6 @@ const make = Effect.gen(function* () {
       shuttingDown = true;
       kept.detach();
     }),
-  );
-  // Each thread whose session the host kept running after the last Gram quit is taken up again
-  // before anything else runs: its open turn, under its own id, and its session followed on from
-  // where the last Gram's handling ended, which replays the turn.
-  yield* Effect.forEach(
-    [...kept.survivors],
-    (threadId) =>
-      Effect.gen(function* () {
-        const rt = yield* getRuntime(threadId);
-        const thread = yield* store.getThread(threadId);
-        yield* locked(
-          rt,
-          Effect.gen(function* () {
-            const open = yield* store.lastTurn(threadId);
-            if (open !== undefined && open.endedAt === undefined)
-              yield* openTurn(rt, open.id, { startedAt: open.startedAt });
-            yield* openSession(rt, thread);
-          }),
-        );
-        yield* Effect.logInfo("took up a session kept running after Gram quit").pipe(
-          Effect.annotateLogs({ threadId }),
-        );
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("couldn't take up a session kept running after Gram quit").pipe(
-            Effect.annotateLogs({ threadId, cause: Cause.pretty(cause) }),
-            Effect.andThen(kept.discard(threadId)),
-          ),
-        ),
-      ),
-    { discard: true },
   );
   return service;
 });

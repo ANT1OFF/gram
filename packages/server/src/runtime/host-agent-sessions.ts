@@ -13,6 +13,7 @@ import {
   type UserInput,
 } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
@@ -32,6 +33,14 @@ export const HOST_STOPPED_ENDED: AgentEvent = {
   type: "ended",
   reason: "This machine's host stopped, and the agent with it.",
 };
+
+/**
+ * How a taken-up session's app tools are pointed at this Gram: again every second for up to ten
+ * minutes; its MCP endpoint answers once the server is up.
+ */
+const RETARGET_RETRY = Schedule.spaced("1 second").pipe(
+  Schedule.upTo({ duration: Duration.minutes(10) }),
+);
 
 /** How often the events a session's consumer has received are confirmed to its host. */
 const ACK_EVERY = "250 millis";
@@ -206,20 +215,33 @@ const openOnHost = (
           ),
         ),
       ));
-    // Its app tools still point at the Gram that opened it, whose address and token are gone.
-    if (attach !== undefined && o.mcp !== undefined) {
+    // Its app tools still point at the Gram that opened it, whose address and token are gone. At
+    // a Gram's start the session is taken up before that Gram serves its MCP endpoint, so pointing
+    // them here is tried again until it takes, for as long as the session lasts, rather than once.
+    const mcp = o.mcp;
+    if (attach !== undefined && mcp !== undefined) {
       const retarget = host.retarget;
-      yield* (
-        retarget === undefined
-          ? Effect.fail(new HostFailed({ message: "The host can't point app tools elsewhere." }))
-          : retarget(handle, o.mcp)
-      ).pipe(
-        Effect.catch((error) =>
-          Effect.logWarning("kept host: a session's app tools couldn't be pointed here").pipe(
-            Effect.annotateLogs({ reason: error.message }),
+      if (retarget === undefined) {
+        yield* Effect.logWarning(
+          "kept host: its host can't point a session's app tools here; they fail until it reopens",
+        );
+      } else {
+        yield* retarget(handle, mcp).pipe(
+          Effect.tapError((error) =>
+            Effect.logDebug("kept host: a session's app tools aren't pointed here yet").pipe(
+              Effect.annotateLogs({ reason: error.message }),
+            ),
           ),
-        ),
-      );
+          Effect.retry(RETARGET_RETRY),
+          Effect.tap(() => Effect.logInfo("kept host: a session's app tools point here")),
+          Effect.catch((error) =>
+            Effect.logWarning("kept host: a session's app tools couldn't be pointed here").pipe(
+              Effect.annotateLogs({ reason: error.message }),
+            ),
+          ),
+          Effect.forkScoped,
+        );
+      }
     }
     /** What a kept session confirmed: the host's last event handled with the agent at rest. */
     let confirmed = attach?.confirmed ?? 0;

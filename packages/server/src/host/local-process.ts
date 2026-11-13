@@ -15,6 +15,7 @@ import {
   startLocalService,
   stopLocalService,
 } from "./local-service-unit.ts";
+import { ensureLocalSecret } from "./local-handshake.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -78,10 +79,12 @@ const recordHolds = (dataDir: string, pid: number): boolean => {
  */
 const startKeptRunning = (spec: LocalServiceSpec, release: string | undefined) =>
   Effect.gen(function* () {
+    // Made by the app, read by the host: only an app that holds it is served.
+    const secret = ensureLocalSecret(spec.paths.secretFile);
     const connect = (withinMs: number) =>
       Effect.gen(function* () {
         const scope = yield* Scope.fork(yield* Effect.scope);
-        const connected = yield* connectLocalService(spec.paths.socket, withinMs).pipe(
+        const connected = yield* connectLocalService(spec.paths.socket, secret, withinMs).pipe(
           Scope.provide(scope),
           Effect.exit,
         );
@@ -179,7 +182,7 @@ export class LocalHostProcess extends Context.Service<
               platform,
               paths,
               program: localServiceProgram(paths),
-              env: localServiceEnv(options.keptTerminals, process.env, path),
+              env: localServiceEnv(options.keptTerminals, paths.secretFile, process.env, path),
             };
             const started = yield* startKeptRunning(spec, kept.release).pipe(Effect.exit);
             if (Exit.isSuccess(started)) {
@@ -209,7 +212,13 @@ export class LocalHostProcess extends Context.Service<
           // Turned off: a service left from when it was on stops, and whatever ran in it.
           if (existsSync(paths.serviceFile)) {
             yield* Effect.logInfo("worker host: stopping the host kept running after Gram quit");
-            yield* stopLocalService(platform, paths).pipe(Effect.ignore);
+            yield* stopLocalService(platform, paths).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning(
+                  "worker host: the host kept running after Gram quit didn't stop",
+                ).pipe(Effect.annotateLogs({ reason: error.message })),
+              ),
+            );
           }
         }
         const connection = options.hostProcess

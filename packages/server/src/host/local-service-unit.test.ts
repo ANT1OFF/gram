@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
@@ -17,8 +17,18 @@ import {
   systemdEnvFile,
 } from "./local-service-unit.ts";
 import type { Run } from "./service.ts";
+import { RUN_TOKEN_ENV } from "./run-sweep.ts";
 
 const HOME = "/home/someone";
+
+const answering =
+  (answers: (file: string, args: ReadonlyArray<string>) => Run, calls: Array<string> = []) =>
+  (file: string, args: ReadonlyArray<string>) =>
+    Effect.sync(() => {
+      calls.push([file, ...args].join(" "));
+      return answers(file, args);
+    });
+const noSweep = () => Effect.succeed({ left: [] as ReadonlyArray<number> });
 
 describe("the kept-running host's service", () => {
   it("is named for its data folder, so a release and a checkout never share one", () => {
@@ -69,6 +79,7 @@ describe("the kept-running host's service", () => {
   it("carries over only names it lists: no token, key or proxy is written to disk", () => {
     const env = localServiceEnv(
       "/data/kept-terminals",
+      "/data/local-host/secret",
       {
         PATH: "/ignored",
         LANG: "C.UTF-8",
@@ -90,6 +101,8 @@ describe("the kept-running host's service", () => {
       GRAM_FAKE_AGENT: "1",
       ELECTRON_RUN_AS_NODE: "1",
       [KEPT_TERMINALS_ENV]: "/data/kept-terminals",
+      // The file's name only: the secret itself never goes into the service's definition.
+      GRAM_LOCAL_HOST_SECRET_FILE: "/data/local-host/secret",
     });
   });
 
@@ -138,7 +151,10 @@ describe("the kept-running host's service", () => {
       const runner = (file: string, args: ReadonlyArray<string>) =>
         Effect.sync((): Run => {
           calls.push([file, ...args].join(" "));
-          return { code: 0, output: "" };
+          // systemd's own answer once it is stopped: `inactive`, exit 3.
+          return args[1] === "is-active"
+            ? { code: 3, output: "inactive" }
+            : { code: 0, output: "" };
         });
       yield* startLocalService(
         {
@@ -157,16 +173,121 @@ describe("the kept-running host's service", () => {
       expect(statSync(paths.envFile).mode & 0o777).toBe(0o600);
       expect(statSync(paths.folder).mode & 0o777).toBe(0o700);
       expect(readFileSync(paths.serviceFile, "utf8")).toContain("ExecStart=");
+      // Each start gets a run token of its own, in its environment and beside it, this user's.
+      const token = readFileSync(paths.runFile, "utf8").trim();
+      expect(token).toMatch(/^[0-9a-f]{32}$/);
+      expect(readFileSync(paths.envFile, "utf8")).toContain(`${RUN_TOKEN_ENV}="${token}"`);
+      expect(statSync(paths.runFile).mode & 0o777).toBe(0o600);
 
       calls.length = 0;
-      yield* stopLocalService("linux", paths, runner);
+      const swept: Array<string> = [];
+      yield* stopLocalService("linux", paths, runner, true, (t) =>
+        Effect.sync(() => {
+          swept.push(t);
+          return { left: [] };
+        }),
+      );
+      expect(swept).toEqual([token]);
       expect(calls).toEqual([
         `systemctl --user stop ${paths.name}`,
+        `systemctl --user is-active ${paths.name}`,
         "systemctl --user daemon-reload",
       ]);
+      expect(() => statSync(paths.runFile)).toThrow();
       expect(() => statSync(paths.serviceFile)).toThrow();
       expect(() => statSync(paths.envFile)).toThrow();
       expect(() => statSync(paths.launcher)).toThrow();
+    }),
+  );
+
+  /** Paths in a fresh folder, for `platform`. */
+  const fresh = (platform: "linux" | "darwin") => {
+    const root = mkdtempSync(join(tmpdir(), "gram-local-service-"));
+    dirs.push(root);
+    return localServicePaths(
+      join(root, "data"),
+      platform,
+      { XDG_CONFIG_HOME: join(root, "config") },
+      root,
+    );
+  };
+
+  it.effect("fails a stop the service manager doesn't confirm, and keeps the files then", () =>
+    Effect.gen(function* () {
+      const paths = fresh("linux");
+      // The review's reproduction: the stop fails and the unit is still active.
+      const stillActive = answering((_file, args) =>
+        args[1] === "is-active"
+          ? { code: 0, output: "active" }
+          : { code: 1, output: "Failed to stop" },
+      );
+      const running = yield* stopLocalService("linux", paths, stillActive, true, noSweep).pipe(
+        Effect.flip,
+      );
+      expect(running.message).toContain("still running");
+      // A manager that can't answer at all (systemctl missing): unknown, so not a success either.
+      const silent = answering(() => ({ code: 127, output: "" }));
+      const unknown = yield* stopLocalService("linux", paths, silent, true, noSweep).pipe(
+        Effect.flip,
+      );
+      expect(unknown.message).toContain("may still be running");
+      // Stopped, but something it started (by its run token) couldn't be ended.
+      mkdirSync(paths.folder, { recursive: true });
+      writeFileSync(paths.runFile, `${"c".repeat(32)}\n`);
+      const stopped = answering((_f, args) =>
+        args[1] === "is-active" ? { code: 3, output: "inactive" } : { code: 0, output: "" },
+      );
+      const left = yield* stopLocalService("linux", paths, stopped, true, () =>
+        Effect.succeed({ left: [4242] }),
+      ).pipe(Effect.flip);
+      expect(left.message).toContain("4242");
+      // None of these took: the service's files stay, for a stop that does.
+      expect(readFileSync(paths.runFile, "utf8")).toContain("c".repeat(32));
+      // launchd, with the job still loaded after its bootout.
+      const mac = fresh("darwin");
+      const loaded = answering((_f, args) =>
+        args[0] === "print" ? { code: 0, output: "state = running" } : { code: 0, output: "" },
+      );
+      const macRunning = yield* stopLocalService("darwin", mac, loaded, true, noSweep).pipe(
+        Effect.flip,
+      );
+      expect(macRunning.message).toContain("still running");
+    }),
+  );
+
+  it.effect("boots a loaded launchd job out before loading the rewritten definition", () =>
+    Effect.gen(function* () {
+      const paths = fresh("darwin");
+      const calls: Array<string> = [];
+      // The review's reproduction: an earlier start's job is still loaded, so launchd would go on
+      // running its cached definition. It stays known until booted out, then is gone.
+      let booted = false;
+      const runner = answering((_f, args) => {
+        if (args[0] === "bootout") {
+          booted = true;
+          return { code: 0, output: "" };
+        }
+        if (args[0] === "print")
+          return booted
+            ? { code: 113, output: "Could not find service" }
+            : { code: 0, output: "state = running" };
+        return { code: 0, output: "" };
+      }, calls);
+      yield* startLocalService(
+        {
+          dataDir: "/data",
+          platform: "darwin",
+          paths,
+          program: ["/Applications/Gram.app/x", "local"],
+          env: { PATH: "/usr/bin" },
+        },
+        runner,
+      );
+      const verbs = calls.map((call) => call.split(" ")[1]);
+      expect(verbs.indexOf("bootout")).toBeGreaterThanOrEqual(0);
+      expect(verbs.indexOf("bootstrap")).toBeGreaterThan(verbs.indexOf("bootout"));
+      expect(verbs.at(-1)).toBe("kickstart");
+      expect(readFileSync(paths.serviceFile, "utf8")).toContain(RUN_TOKEN_ENV);
     }),
   );
 });

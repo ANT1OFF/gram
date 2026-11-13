@@ -18,6 +18,7 @@ import * as Schedule from "effect/Schedule";
 import * as FiberSet from "effect/FiberSet";
 import type * as Scope from "effect/Scope";
 import { DAY_MS } from "../zone-time.ts";
+import { admitApp, readLocalSecret } from "./local-handshake.ts";
 import { type HostService, serveHost } from "./protocol.ts";
 import type { HostBusy } from "@gram/contracts";
 
@@ -71,6 +72,11 @@ const answering = (socketPath: string): Promise<boolean> =>
 export interface LocalServiceOptions {
   /** What runs there now, for the idle exit. */
   readonly busy: Effect.Effect<HostBusy>;
+  /**
+   * The install's secret, read again at each connection: only an app that proves it holds it is
+   * served (`local-handshake.ts`). Missing or unreadable, nobody is.
+   */
+  readonly secretFile: string;
   /** Told when an app connects or goes, so sessions wait out a closed app (`sessionsOnHost`). */
   readonly connected?: (yes: boolean) => void;
   readonly idleExitMs?: number;
@@ -137,7 +143,17 @@ export const serveLocal = <R>(
     yield* Effect.acquireRelease(
       Effect.callback<Server, Error>((resume) => {
         const listening = createServer({ allowHalfOpen: true }, (socket) => {
-          run(serve(socket));
+          run(
+            Effect.promise(() => admitApp(socket, readLocalSecret(options.secretFile))).pipe(
+              Effect.flatMap((admitted) =>
+                admitted
+                  ? serve(socket)
+                  : Effect.logWarning(
+                      "gram-host local: refused a connection that didn't prove it is this install's app",
+                    ).pipe(Effect.andThen(Effect.sync(() => socket.destroy()))),
+              ),
+            ),
+          );
         });
         listening.once("error", (error) => resume(Effect.fail(error)));
         // Made with this user's access only: the folder is already theirs alone.

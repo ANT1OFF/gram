@@ -48,6 +48,8 @@ export const keptHostHandlers = Effect.gen(function* () {
             Effect.andThen(
               Effect.logInfo("kept host: stopped from Settings; its sessions ended with it"),
             ),
+            // Said as it is: a stop that didn't take, or left something running, is a failure.
+            Effect.mapError((error) => new InvalidState({ message: error.message })),
           ),
   } satisfies Partial<Handlers>;
 });

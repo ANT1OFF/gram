@@ -9,8 +9,8 @@
 // starts is in a coalition of its own, so it is started through `launchctl`, never spawned.
 
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection, type Socket as NetSocket } from "node:net";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
@@ -24,6 +24,8 @@ import * as Exit from "effect/Exit";
 import type * as Scope from "effect/Scope";
 import { KEPT_TERMINALS_ENV } from "../terminal/kept.ts";
 import { hostEntry } from "./child.ts";
+import { proveToHost } from "./local-handshake.ts";
+import { RUN_TOKEN_ENV, sweepRun } from "./run-sweep.ts";
 import { connectHost, type HostConnection } from "./protocol.ts";
 import type { Run, ServiceRunner } from "./service.ts";
 
@@ -43,6 +45,10 @@ export interface LocalServicePaths {
   readonly envFile: string;
   /** A script the service runs, which finds the host inside the app wherever it is mounted. */
   readonly launcher: string;
+  /** The install's secret, which the app proves it holds to the host and the host to the app. */
+  readonly secretFile: string;
+  /** The token of the service's last start, which a stop ends every process of. */
+  readonly runFile: string;
   /** `gram-local-host-<id>.service`, or the launchd label `io.github.ant1off.gram.local.<id>`. */
   readonly name: string;
   /** The unit or property list file. */
@@ -89,6 +95,8 @@ export const localServicePaths = (
     socket,
     envFile: join(folder, "env"),
     launcher: join(folder, "launch.cjs"),
+    secretFile: join(folder, "secret"),
+    runFile: join(folder, "run"),
     name,
     serviceFile,
   };
@@ -147,9 +155,13 @@ const CARRIED = [
   "GRAM_FAKE_AGENT_REPLY",
 ] as const;
 
+/** Names the file holding the install's secret, in the host's environment (never the secret). */
+export const LOCAL_SECRET_ENV = "GRAM_LOCAL_HOST_SECRET_FILE";
+
 /** The service's environment. */
 export const localServiceEnv = (
   keptTerminals: string | undefined,
+  secretFile: string,
   env: NodeJS.ProcessEnv = process.env,
   path: string = env["PATH"] ?? "/usr/bin:/bin",
 ): Record<string, string> => {
@@ -159,6 +171,7 @@ export const localServiceEnv = (
     if (value !== undefined && value !== "" && !/[\n\r]/.test(value)) out[name] = value;
   }
   out["ELECTRON_RUN_AS_NODE"] = "1";
+  out[LOCAL_SECRET_ENV] = secretFile;
   if (keptTerminals !== undefined) out[KEPT_TERMINALS_ENV] = keptTerminals;
   return out;
 };
@@ -296,8 +309,12 @@ export const startLocalService = (spec: LocalServiceSpec, runner: ServiceRunner 
     mkdirSync(paths.folder, { recursive: true, mode: 0o700 });
     writeFileSync(paths.launcher, LAUNCHER, { mode: 0o600 });
     mkdirSync(dirname(paths.serviceFile), { recursive: true });
+    // A token of this start, which everything it starts inherits, so a stop finds it all.
+    const token = randomBytes(16).toString("hex");
+    writeFileSync(paths.runFile, `${token}\n`, { mode: 0o600 });
+    const env = { ...spec.env, [RUN_TOKEN_ENV]: token };
     if (platform === "linux") {
-      writeFileSync(paths.envFile, systemdEnvFile(spec.env), { mode: 0o600 });
+      writeFileSync(paths.envFile, systemdEnvFile(env), { mode: 0o600 });
       writeFileSync(paths.serviceFile, localSystemdUnit(paths, spec.program, spec.dataDir), {
         mode: 0o644,
       });
@@ -310,17 +327,43 @@ export const startLocalService = (spec: LocalServiceSpec, runner: ServiceRunner 
       return;
     }
     // Its environment is in the property list, so the file is this user's alone.
-    writeFileSync(paths.serviceFile, localLaunchdPlist(paths, spec.program, spec.env), {
+    writeFileSync(paths.serviceFile, localLaunchdPlist(paths, spec.program, env), {
       mode: 0o600,
     });
-    const loaded = yield* runner("launchctl", ["print", `${domain()}/${paths.name}`]);
-    if (loaded.code !== 0)
-      yield* runner("launchctl", ["bootstrap", domain(), paths.serviceFile]).pipe(
-        Effect.flatMap(must("launchctl bootstrap")),
-      );
+    // launchd keeps the definition it loaded, whatever the file says now: a job left loaded from
+    // an earlier start (another release, an older environment) would run as it was. It is booted
+    // out first, and only once launchd no longer has it is the new definition loaded.
+    yield* runner("launchctl", ["bootout", `${domain()}/${paths.name}`]);
+    yield* untilLaunchdForgets(paths, runner);
+    yield* bootstrapRetrying(paths, runner);
     yield* runner("launchctl", ["kickstart", `${domain()}/${paths.name}`]).pipe(
       Effect.flatMap(must("launchctl kickstart")),
     );
+  });
+
+/** Waits, up to ten seconds, until launchd has no job by the service's label. */
+const untilLaunchdForgets = (paths: LocalServicePaths, runner: ServiceRunner) =>
+  Effect.gen(function* () {
+    for (let i = 0; i < 50; i++) {
+      const state = yield* serviceState("darwin", paths, runner);
+      if (state === "absent") return;
+      yield* Effect.sleep("200 millis");
+    }
+    return yield* Effect.fail(
+      new Error(`launchd still has ${paths.name} loaded after booting it out.`),
+    );
+  });
+
+/** `launchctl bootstrap`, again for a moment while launchd finishes an earlier bootout (EIO). */
+const bootstrapRetrying = (paths: LocalServicePaths, runner: ServiceRunner) =>
+  Effect.gen(function* () {
+    let last: Run = { code: 1, output: "" };
+    for (let i = 0; i < 10; i++) {
+      last = yield* runner("launchctl", ["bootstrap", domain(), paths.serviceFile]);
+      if (last.code === 0) return;
+      yield* Effect.sleep("300 millis");
+    }
+    return yield* must("launchctl bootstrap")(last);
   });
 
 /**
@@ -334,7 +377,12 @@ export const restartLocalService = (spec: LocalServiceSpec, runner: ServiceRunne
 
 /** What the app wrote for the service in Gram's data folder: its launcher, environment and record. */
 const forgetFiles = (paths: LocalServicePaths) => {
-  for (const file of [paths.launcher, paths.envFile, join(paths.folder, "sessions.json")])
+  for (const file of [
+    paths.launcher,
+    paths.envFile,
+    paths.runFile,
+    join(paths.folder, "sessions.json"),
+  ])
     rmSync(file, { force: true });
 };
 
@@ -347,37 +395,88 @@ export const stopLocalService = (
   paths: LocalServicePaths,
   runner: ServiceRunner = run,
   forget = true,
+  sweep: (token: string) => Effect.Effect<{ readonly left: ReadonlyArray<number> }> = (token) =>
+    sweepRun(token, platform),
 ) =>
   Effect.gen(function* () {
-    if (platform === "linux") {
-      yield* runner("systemctl", ["--user", "stop", paths.name]);
-      if (forget) {
-        rmSync(paths.serviceFile, { force: true });
-        forgetFiles(paths);
-        yield* runner("systemctl", ["--user", "daemon-reload"]);
-      }
-      return;
-    }
-    yield* runner("launchctl", ["bootout", `${domain()}/${paths.name}`]);
+    const stop =
+      platform === "linux"
+        ? yield* runner("systemctl", ["--user", "stop", paths.name])
+        : yield* runner("launchctl", ["bootout", `${domain()}/${paths.name}`]);
+    // What got away from the service's own stop: a pseudo-terminal's shell has a session of its
+    // own, which launchd doesn't end, and what it put in the background can outlive it.
+    const token = readRunToken(paths);
+    const swept = token === undefined ? { left: [] } : yield* sweep(token);
+    const state = yield* serviceState(platform, paths, runner);
+    if (state === "running" || state === "unknown")
+      return yield* Effect.fail(
+        new Error(
+          state === "running"
+            ? `The service is still running after the stop (${stop.code}: ${stop.output.slice(0, 300)}).`
+            : `The service manager can't say the service stopped (${stop.code}: ${stop.output.slice(0, 300)}); it may still be running.`,
+        ),
+      );
+    if (swept.left.length > 0)
+      return yield* Effect.fail(
+        new Error(
+          `${swept.left.length} ${swept.left.length === 1 ? "process" : "processes"} it started couldn't be ended (${swept.left.join(", ")}).`,
+        ),
+      );
     if (forget) {
       rmSync(paths.serviceFile, { force: true });
       forgetFiles(paths);
+      if (platform === "linux") yield* runner("systemctl", ["--user", "daemon-reload"]);
     }
   });
+
+/**
+ * The service as its manager says it is: running, loaded but not running, absent, or unknown when
+ * the manager couldn't answer (not there, or an answer that says neither).
+ */
+export const serviceState = (
+  platform: LocalServicePlatform,
+  paths: LocalServicePaths,
+  runner: ServiceRunner = run,
+): Effect.Effect<"running" | "stopped" | "absent" | "unknown"> =>
+  platform === "linux"
+    ? runner("systemctl", ["--user", "is-active", paths.name]).pipe(
+        Effect.map((result) => {
+          const state = result.output.split("\n")[0]?.trim() ?? "";
+          if (
+            result.code === 0 ||
+            /^(active|activating|deactivating|reloading|refreshing)$/.test(state)
+          )
+            return "running";
+          return state === "inactive" || state === "failed" ? "stopped" : "unknown";
+        }),
+      )
+    : runner("launchctl", ["print", `${domain()}/${paths.name}`]).pipe(
+        Effect.map((result) => {
+          if (result.code === 0)
+            return /state = running/.test(result.output) ? "running" : "stopped";
+          // 113: launchd has no job by that label in this user's domain.
+          return result.code === 113 || /could not find service/i.test(result.output)
+            ? "absent"
+            : "unknown";
+        }),
+      );
 
 /** Whether the service runs now, by its manager's own answer. */
 export const localServiceRunning = (
   platform: LocalServicePlatform,
   paths: LocalServicePaths,
   runner: ServiceRunner = run,
-) =>
-  platform === "linux"
-    ? runner("systemctl", ["--user", "is-active", paths.name]).pipe(
-        Effect.map((result) => result.code === 0),
-      )
-    : runner("launchctl", ["print", `${domain()}/${paths.name}`]).pipe(
-        Effect.map((result) => result.code === 0 && /state = running/.test(result.output)),
-      );
+) => Effect.map(serviceState(platform, paths, runner), (state) => state === "running");
+
+/** The run token the service's last start was given, if one was. */
+const readRunToken = (paths: LocalServicePaths): string | undefined => {
+  try {
+    const token = readFileSync(paths.runFile, "utf8").trim();
+    return token === "" ? undefined : token;
+  } catch {
+    return undefined;
+  }
+};
 
 /** One connection to the socket, or the reason there is none. */
 const dial = (socketPath: string) =>
@@ -412,6 +511,7 @@ const dialWithin = (socketPath: string, withinMs: number) =>
  */
 export const connectLocalService = (
   socketPath: string,
+  secret: string,
   withinMs = 15_000,
 ): Effect.Effect<HostConnection, HostUnavailable, Scope.Scope> =>
   Effect.gen(function* () {
@@ -427,6 +527,15 @@ export const connectLocalService = (
       ),
       (socket) => Effect.sync(() => socket.destroy()),
     );
+    // Before any of the protocol: each side proves it holds the install's secret.
+    yield* Effect.tryPromise({
+      try: () => proveToHost(raw, secret),
+      catch: (error) =>
+        new HostUnavailable({
+          hostId: LOCAL_HOST_ID,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+    });
     const ended = yield* Deferred.make<never, HostUnavailable>();
     raw.once("close", () =>
       Deferred.doneUnsafe(

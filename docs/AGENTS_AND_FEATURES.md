@@ -1199,8 +1199,12 @@ While it is on:
 - **It never lingers.** It isn't started at login, only by Gram. With no Gram connected and nothing
   running, it ends after 10 minutes. If a session holds something Gram hasn't seen yet, such as a
   reply finished while Gram was closed, it waits for Gram to open, for up to 3 days. Stopping it
-  ends everything it started. The host closes its sessions and shells as it stops, and on Linux
-  systemd also stops its whole control group, so even a shell in a session of its own goes.
+  ends everything it started. Each start of the service gives it a random run token in its
+  environment, which every agent, shell and tool under it inherits. A stop ends the service, then
+  every process of yours that still carries the token, even a background job a shell left in a
+  session of its own (launchd doesn't end those; on Linux systemd's control group does as well).
+  Stop reports success only when the service manager says the service has stopped and nothing
+  carrying the token is left. Otherwise Settings shows why.
 - **Releases may differ.** A Gram that finds an earlier release's host still running uses it, since
   between releases the host protocol only grows (see
   [machines on different releases](MACHINES.md#machines-on-different-releases)). When nothing of a
@@ -1209,13 +1213,24 @@ While it is on:
 Codex sessions, sessions through a gateway profile and memory updates still run inside Gram and
 stop when it quits. The host listens on a Unix socket in Gram's data folder
 (`local-host/host.sock`, or a private folder under `$XDG_RUNTIME_DIR` when that path is too long),
-in a folder only your user can open, and on nothing else. Its environment file carries only `PATH`,
+in a folder only your user can open, and on nothing else. Any process of your user could still
+connect to that socket. So before any of the host protocol, the app and the host each prove they
+hold this install's secret (`local-host/secret`, 32 random bytes, readable by you only), with an
+HMAC over a nonce the other side chose. The secret itself never crosses the socket. A connection
+that can't prove it is closed unserved, and never displaces the app that is connected, so
+approvals and permission modes are answered only by Gram. The service is told the secret file's
+name, never the secret. Its environment file carries only `PATH`,
 locale and XDG folder names, `CLAUDE_CONFIG_DIR` and Gram's own settings for it, never a token, key
 or proxy address. Claude Code finds your sign-in where it keeps it, as it does from a terminal. Gram
 keeps a record of the sessions it left running (`local-host/sessions.json`, readable by you only).
 
 On macOS, Gram starts the agent through `launchctl` rather than as its own child: a process the app
-spawns stays in the app's coalition, which macOS can end with the app.
+spawns stays in the app's coalition, which macOS can end with the app. launchd goes on running the
+definition it loaded, whatever the file says now. So Gram boots any job left by an earlier start
+out first, and loads the rewritten one once launchd no longer has it.
+
+A session taken up on reopen has its Gram tools pointed at the new Gram. That is tried again every
+second until the new Gram's MCP endpoint answers, which is a moment after it starts.
 
 ## Terminals after a restart
 

@@ -9,6 +9,7 @@ import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { describe, expect, it } from "@effect/vitest";
 import {
   HOST_PROTOCOL_VERSION,
+  HostFailed,
   HostUnavailable,
   LOCAL_HOST_ID,
   MessageId,
@@ -33,10 +34,11 @@ import {
   serveHost,
 } from "../host/protocol.ts";
 import { reposOn } from "../host/repos.ts";
-import { sessionsOnHost } from "../host/sessions.ts";
+import { type AppToolsAt, sessionsOnHost } from "../host/sessions.ts";
 import { watchedSocket } from "../host/socket-end.ts";
 import { terminalsOnHost } from "../host/terminals.ts";
 import { streamPair } from "../host/test-stream.ts";
+import type { McpEndpoint } from "@gram/agents";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "./agent-hosts.ts";
 import { FakeAgentAdapter, FakeAgentControl } from "./fake-agent.ts";
@@ -62,7 +64,7 @@ const eventually = <A, E, R>(label: string, check: Effect.Effect<A | undefined |
  * This machine's host as the kept-running service has it: built once for the whole test, its
  * sessions on the fake agent, waiting for an app while none is connected (`graceFrom`).
  */
-const keptHost = (fake: AgentHosts["Service"]) =>
+const keptHost = (fake: AgentHosts["Service"], toolsAt?: AppToolsAt) =>
   Effect.gen(function* () {
     const proc = yield* Proc;
     let connectedAt: number | undefined;
@@ -84,7 +86,7 @@ const keptHost = (fake: AgentHosts["Service"]) =>
       terminals: yield* terminalsOnHost,
       sessions: yield* sessionsOnHost(
         (kind) => fake.get(kind),
-        () => Effect.die(new Error("no app tools in this test")),
+        toolsAt ?? (() => Effect.die(new Error("no app tools in this test"))),
         { graceFrom: () => connectedAt },
       ),
       scan: Effect.succeed({ listening: new Map(), children: new Map() }),
@@ -127,6 +129,8 @@ const gramRun = (
   kept: KeptSessions["Service"],
   fake: Context.Context<AgentHosts | FakeAgentControl>,
   db: string,
+  /** Each open the runtime asks for: whether it came with the thread's app tools. */
+  opens: Array<{ readonly threadId: string | undefined; readonly appTools: boolean }> = [],
 ) => {
   const agents = Layer.effectContext(
     Effect.sync(() => {
@@ -144,6 +148,10 @@ const gramRun = (
               return {
                 ...through,
                 open: (options) => {
+                  opens.push({
+                    threadId: options.threadId,
+                    appTools: options.appTools !== undefined,
+                  });
                   const { appTools: _, ...rest } = options;
                   return through.open(rest);
                 },
@@ -258,7 +266,14 @@ describe("a session kept running after Gram quits", () => {
           const connection = yield* host.connect(scope);
           const kept = yield* makeKeptSessions(record, connection.sessions, connection.hello.pid);
           expect([...kept.survivors]).toEqual([first.threadId]);
-          const context = yield* Layer.build(gramRun(connection, kept, fake, db));
+          const takeUps: Array<{
+            readonly threadId: string | undefined;
+            readonly appTools: boolean;
+          }> = [];
+          const context = yield* Layer.build(gramRun(connection, kept, fake, db, takeUps));
+          // The review's reproduction: taken up before the app tools were set, the session was
+          // followed with none, and its tools went on pointing at the Gram that quit.
+          expect(takeUps).toEqual([{ threadId: first.threadId, appTools: true }]);
           yield* Effect.gen(function* () {
             const runtimes = yield* ThreadRuntimes;
             const store = yield* ThreadStore;
@@ -315,5 +330,76 @@ describe("a session kept running after Gram quits", () => {
         }).pipe(Effect.scoped);
       }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
     60_000,
+  );
+
+  it.live(
+    "points a taken-up session's app tools at the Gram that opened again, once its endpoint answers",
+    () =>
+      Effect.gen(function* () {
+        const dir = mkdtempSync(join(tmpdir(), "gram-kept-"));
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => rmSync(dir, { recursive: true, force: true })),
+        );
+        const record = join(dir, "local-host", "sessions.json");
+        const fake = yield* Layer.build(FakeAgentAdapter);
+        const agent = yield* Context.get(fake, AgentHosts).get("claude");
+        // Where the host's copy of the thread's app tools points, each time it is pointed.
+        const reached: Array<string> = [];
+        const host = yield* keptHost(Context.get(fake, AgentHosts), (endpoint) =>
+          Effect.sync(() => {
+            reached.push(endpoint.url);
+            return { tools: [], call: async () => ({ content: [] }) };
+          }),
+        );
+        const threadId = "thread-kept-tools" as ThreadId;
+        const first = { url: "http://127.0.0.1:1111/mcp", headers: { authorization: "Bearer a" } };
+        const next = { url: "http://127.0.0.1:2222/mcp", headers: { authorization: "Bearer b" } };
+
+        // The first Gram opens the session with its app tools, then quits.
+        yield* Effect.gen(function* () {
+          const scope = yield* Effect.scope;
+          const connection = yield* host.connect(scope);
+          const kept = yield* makeKeptSessions(record, connection.sessions, connection.hello.pid);
+          const through = agentHostThroughHost(connection.sessions, connection.gone, agent, {
+            hooks: kept.hooks,
+            take: kept.take,
+          });
+          yield* through.open({ threadId, cwd: "/srv/work/repo", mcp: first });
+          kept.detach();
+        }).pipe(Effect.scoped);
+        expect(reached).toEqual([first.url]);
+
+        // The next Gram takes it up at its start, before its MCP endpoint serves: as in the
+        // review's reproduction, its first tries fail.
+        yield* Effect.gen(function* () {
+          const scope = yield* Effect.scope;
+          const connection = yield* host.connect(scope);
+          const kept = yield* makeKeptSessions(record, connection.sessions, connection.hello.pid);
+          expect([...kept.survivors]).toEqual([threadId]);
+          let tries = 0;
+          const realRetarget = connection.sessions.retarget!;
+          const sessions = {
+            ...connection.sessions,
+            retarget: (handle: string, mcp: McpEndpoint) =>
+              Effect.suspend(() =>
+                ++tries <= 2
+                  ? Effect.fail(new HostFailed({ message: "503: not serving yet" }))
+                  : realRetarget(handle, mcp),
+              ),
+          };
+          const through = agentHostThroughHost(sessions, connection.gone, agent, {
+            hooks: kept.hooks,
+            take: kept.take,
+          });
+          const session = yield* through.open({ threadId, cwd: "/srv/work/repo", mcp: next });
+          expect(session.reattached).toBe(true);
+          yield* eventually(
+            "the app tools pointed at the new Gram",
+            Effect.sync(() => reached.at(-1) === next.url),
+          );
+          expect(tries).toBe(3);
+        }).pipe(Effect.scoped);
+      }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+    30_000,
   );
 });

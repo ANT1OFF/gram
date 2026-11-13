@@ -37,6 +37,7 @@ import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHostKeeping } from "./terminals.ts";
 import { KEPT_TERMINALS_ENV, keptTerminalsIn } from "../terminal/kept.ts";
 import { serveLocal } from "./local-service.ts";
+import { LOCAL_SECRET_ENV } from "./local-service-unit.ts";
 import { stopOn } from "./stop.ts";
 import {
   HOST_FEATURES,
@@ -264,6 +265,9 @@ const local = (socketPath: string) =>
     let connectedAt: number | undefined;
     let busyOf: BusyOf = Effect.succeed({ turns: 0, terminals: 0, clones: 0, checks: 0 });
     const kept = process.env[KEPT_TERMINALS_ENV];
+    const secretFile = process.env[LOCAL_SECRET_ENV];
+    if (secretFile === undefined || secretFile === "")
+      return yield* Effect.fail(new Error("No secret file was named; nothing will be served."));
     yield* serveLocal(
       socketPath,
       hostService(
@@ -280,6 +284,7 @@ const local = (socketPath: string) =>
       ),
       {
         busy: Effect.suspend(() => busyOf),
+        secretFile,
         connected: (yes) => {
           connectedAt = yes ? Date.now() : undefined;
         },
