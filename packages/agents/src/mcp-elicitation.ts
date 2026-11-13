@@ -1,24 +1,37 @@
-// An MCP server's permission prompt (`mcpServer/elicitation/request`) as an approval card: what
-// Codex computer use and the ChatGPT browser extension raise before they touch an app or a site
-// ("Allow ChatGPT to use Safari?"). Only a prompt that is a yes or no is a card: its form asks
-// for nothing but how long the yes lasts. A form with fields of its own, a link to open and a
-// user verification are still declined, as before.
+// An MCP server's permission prompt (an MCP elicitation) as an approval card: what computer use
+// and the browser extensions raise before they touch an app or a site ("Allow ChatGPT to use
+// Safari?"). Only a prompt that is a yes or no is a card: its form asks for nothing but how long
+// the yes lasts. A form with fields of its own, a link to open and a user verification are
+// declined. Each adapter reads its agent's request into `McpPrompt` and writes the answer back
+// in its agent's shape.
 
 import type { ApprovalScope } from "@gram/contracts";
-import type { ServerRequest } from "./protocol/ServerRequest.ts";
-import type { McpServerElicitationRequestResponse } from "./protocol/v2/McpServerElicitationRequestResponse.ts";
 
-export type Elicitation = Extract<
-  ServerRequest,
-  { method: "mcpServer/elicitation/request" }
->["params"];
+/** An elicitation as either agent hands it over. */
+export interface McpPrompt {
+  readonly serverName: string;
+  readonly message: string;
+  /** `form` and its spellings carry `requestedSchema`; any other mode can't be a card. */
+  readonly mode: string;
+  readonly requestedSchema?: unknown;
+  /** The request's `_meta`, where the agent passes it on. */
+  readonly meta?: unknown;
+  /**
+   * Whether the agent keeps a grant for the session itself when told to (`_meta.persist`). Where
+   * it doesn't, the adapter remembers it, and the card offers the session whatever the prompt says.
+   */
+  readonly adapterRemembers?: boolean;
+}
 
-/** The answer that turns a prompt down and lets the turn go on. */
-export const ELICITATION_DECLINE: McpServerElicitationRequestResponse = {
-  action: "decline",
-  content: null,
-  _meta: null,
-};
+/** The answer to a prompt, before an adapter spells it for its agent. */
+export interface McpPromptAnswer {
+  readonly action: "accept" | "decline";
+  readonly content?: Record<string, string | number | boolean>;
+  /** How long an accepted grant lasts beyond this one use. */
+  readonly persist?: Exclude<ApprovalScope, "once">;
+}
+
+const DECLINE: McpPromptAnswer = { action: "decline" };
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -54,14 +67,11 @@ interface Form {
 }
 
 /** The prompt's form, or `undefined` for a mode that has none or a schema that isn't one. */
-const formOf = (elicitation: Elicitation): Form | undefined => {
-  if (
-    elicitation.mode !== "form" &&
-    elicitation.mode !== "openai/form" &&
-    elicitation.mode !== "openaiForm"
-  )
+const formOf = (prompt: McpPrompt): Form | undefined => {
+  if (prompt.mode !== "form" && prompt.mode !== "openai/form" && prompt.mode !== "openaiForm")
     return undefined;
-  const schema = record(elicitation.requestedSchema);
+  // A form with no schema asks for nothing but the yes.
+  const schema = prompt.requestedSchema === undefined ? {} : record(prompt.requestedSchema);
   if (schema === undefined) return undefined;
   const properties = record(schema["properties"]) ?? {};
   const fields = Object.entries(properties).flatMap(([key, value]): Array<Field> => {
@@ -96,8 +106,8 @@ const formOf = (elicitation: Elicitation): Form | undefined => {
 };
 
 /** The lifetimes the prompt's `_meta.persist` names. */
-const metaLifetimes = (elicitation: Elicitation): ReadonlySet<ApprovalScope> => {
-  const meta = record(elicitation["_meta"]);
+const metaLifetimes = (prompt: McpPrompt): ReadonlySet<ApprovalScope> => {
+  const meta = record(prompt.meta);
   const persist = meta?.["persist"];
   const words = typeof persist === "string" ? [persist] : Array.isArray(persist) ? persist : [];
   const found = new Set<ApprovalScope>();
@@ -113,14 +123,14 @@ const metaLifetimes = (elicitation: Elicitation): ReadonlySet<ApprovalScope> => 
  * The accepting answer for `scope`, or `undefined` where the prompt can't be accepted that way:
  * it doesn't offer that lifetime, or its form requires a field a yes or no can't fill.
  */
-const acceptFor = (
-  elicitation: Elicitation,
-  scope: ApprovalScope,
-): McpServerElicitationRequestResponse | undefined => {
-  const form = formOf(elicitation);
+const acceptFor = (prompt: McpPrompt, scope: ApprovalScope): McpPromptAnswer | undefined => {
+  const form = formOf(prompt);
   if (form === undefined) return undefined;
-  const offered = metaLifetimes(elicitation);
-  let named = scope === "once" || offered.has(scope);
+  const offered = metaLifetimes(prompt);
+  let named =
+    scope === "once" ||
+    offered.has(scope) ||
+    (scope === "session" && prompt.adapterRemembers === true);
   const content: Record<string, string | number | boolean> = {};
   for (const field of form.fields) {
     const chosen = field.options.find((option) =>
@@ -143,11 +153,7 @@ const acceptFor = (
     }
   }
   if (!named || form.required.some((key) => !(key in content))) return undefined;
-  return {
-    action: "accept",
-    content,
-    _meta: scope === "once" ? null : { persist: scope },
-  };
+  return { action: "accept", content, ...(scope === "once" ? {} : { persist: scope }) };
 };
 
 const SCOPES: ReadonlyArray<ApprovalScope> = ["once", "session", "always"];
@@ -156,22 +162,18 @@ const SCOPES: ReadonlyArray<ApprovalScope> = ["once", "session", "always"];
  * The lifetimes a card for the prompt may offer, in card order; empty where it can't be a card.
  * Under an outward gate (`gated`) a yes is for the one use only.
  */
-export const elicitationScopes = (
-  elicitation: Elicitation,
-  gated: boolean,
-): Array<ApprovalScope> =>
-  acceptFor(elicitation, "once") === undefined
+export const promptScopes = (prompt: McpPrompt, gated: boolean): Array<ApprovalScope> =>
+  acceptFor(prompt, "once") === undefined
     ? []
     : SCOPES.filter(
-        (scope) => scope === "once" || (!gated && acceptFor(elicitation, scope) !== undefined),
+        (scope) => scope === "once" || (!gated && acceptFor(prompt, scope) !== undefined),
       );
 
 /** The app or site the prompt is about, as the server names it, or `undefined`. */
-export const elicitationSubject = (elicitation: Elicitation): string | undefined => {
-  const meta = record(elicitation["_meta"]);
+export const promptSubject = (prompt: McpPrompt): string | undefined => {
+  const meta = record(prompt.meta);
   const target = record(meta?.["target"]);
   const params = record(meta?.["tool_params"]);
-  const message = "message" in elicitation ? elicitation.message : "";
   return (
     text(meta?.["app_name"]) ??
     text(meta?.["appName"]) ??
@@ -180,20 +182,19 @@ export const elicitationSubject = (elicitation: Elicitation): string | undefined
     text(target?.["name"]) ??
     text(params?.["app_name"]) ??
     text(params?.["app"]) ??
-    text(/^Allow ChatGPT to use (.+?)\?$/i.exec(message.trim())?.[1])
+    text(/^Allow (?:ChatGPT|Claude) to use (.+?)\?$/i.exec(prompt.message.trim())?.[1])
   );
 };
 
 /** The answer to the prompt: the user's yes for `scope`, or a decline. */
-export const elicitationResponse = (
-  elicitation: Elicitation,
+export const promptAnswer = (
+  prompt: McpPrompt,
   allow: boolean,
   scope: ApprovalScope,
   gated: boolean,
-): McpServerElicitationRequestResponse => {
-  if (!allow) return ELICITATION_DECLINE;
-  const offered = elicitationScopes(elicitation, gated);
+): McpPromptAnswer => {
+  if (!allow) return DECLINE;
   // A scope the card didn't offer falls back to the one use, never to a longer grant.
-  const granted = offered.includes(scope) ? scope : "once";
-  return acceptFor(elicitation, granted) ?? ELICITATION_DECLINE;
+  const granted = promptScopes(prompt, gated).includes(scope) ? scope : "once";
+  return acceptFor(prompt, granted) ?? DECLINE;
 };

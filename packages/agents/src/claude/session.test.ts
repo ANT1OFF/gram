@@ -1672,6 +1672,103 @@ describe("AgentSession", () => {
     }),
   );
 
+  it.effect("shows an MCP server's permission prompt as a card and keeps a session grant", () =>
+    Effect.gen(function* () {
+      const h = harness();
+      const session = yield* openSession().pipe(Effect.provide(h.layer));
+      yield* take(session, 2);
+      const onElicitation = query(h).options.onElicitation!;
+      const prompt = {
+        serverName: "computer-use",
+        message: "Allow Claude to use Notes?",
+        mode: "form" as const,
+        requestedSchema: { type: "object", properties: {} },
+      };
+      const asked = onElicitation(prompt, { signal: signal(), requestId: "elicit-1" });
+      expect(yield* take(session, 2)).toEqual([
+        {
+          type: "request",
+          request: {
+            kind: "approval",
+            id: "elicit-1",
+            toolName: "mcp__computer-use__elicitation",
+            displayName: "Notes",
+            input: { server: "computer-use", app: "Notes" },
+            description: "Allow Claude to use Notes?",
+            suggestions: [],
+            scopes: ["once", "session"],
+          },
+        },
+        { type: "status", status: "awaitingApproval" },
+      ]);
+      yield* session.respond(RequestId.make("elicit-1"), {
+        kind: "approval",
+        decision: "allow",
+        scope: "session",
+      });
+      expect(yield* Effect.promise(() => asked)).toEqual({ action: "accept", content: {} });
+      expect(yield* take(session, 1)).toEqual([{ type: "requestResolved", requestId: "elicit-1" }]);
+      // The same server asking the same thing again is answered without a card.
+      expect(
+        yield* Effect.promise(() =>
+          onElicitation(prompt, { signal: signal(), requestId: "elicit-2" }),
+        ),
+      ).toEqual({ action: "accept", content: {} });
+      // A prompt that needs more than a yes or no is declined, with a notice.
+      expect(
+        yield* Effect.promise(() =>
+          onElicitation(
+            {
+              serverName: "computer-use",
+              message: "Sign in",
+              mode: "url",
+              url: "https://example.com",
+            },
+            { signal: signal(), requestId: "elicit-3" },
+          ),
+        ),
+      ).toEqual({ action: "decline" });
+      expect(yield* take(session, 1)).toEqual([
+        {
+          type: "notice",
+          level: "warning",
+          message: "computer-use asked for input Gram can't give yet; declined.",
+        },
+      ]);
+    }),
+  );
+
+  it.effect(
+    "offers an MCP permission prompt once only under a gate that asks about everything",
+    () =>
+      Effect.gen(function* () {
+        const h = harness();
+        const session = yield* openSession({ outwardGate: "all" }).pipe(Effect.provide(h.layer));
+        yield* take(session, 2);
+        const onElicitation = query(h).options.onElicitation!;
+        const prompt = { serverName: "computer-use", message: "Allow Claude to use Notes?" };
+        const ask = (requestId: string) => onElicitation(prompt, { signal: signal(), requestId });
+        const first = ask("elicit-1");
+        expect(yield* take(session, 2)).toMatchObject([{ request: { scopes: ["once"] } }, {}]);
+        // A longer grant than the card offered is the one use: the next prompt asks again.
+        yield* session.respond(RequestId.make("elicit-1"), {
+          kind: "approval",
+          decision: "allow",
+          scope: "session",
+        });
+        expect(yield* Effect.promise(() => first)).toEqual({ action: "accept", content: {} });
+        yield* take(session, 1);
+        const second = ask("elicit-2");
+        expect(yield* take(session, 2)).toMatchObject([{ request: { id: "elicit-2" } }, {}]);
+        yield* session.respond(RequestId.make("elicit-2"), {
+          kind: "approval",
+          decision: "deny",
+          scope: "once",
+        });
+        expect(yield* Effect.promise(() => second)).toEqual({ action: "decline" });
+      }),
+  );
+
   it.effect("round-trips an approval; always adds session copies without local settings", () =>
     Effect.gen(function* () {
       const h = harness({ config: { settingSources: [] } });

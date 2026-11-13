@@ -6,10 +6,21 @@ import {
 } from "@gram/contracts";
 import type { OutwardGate } from "../host.ts";
 import { gateAsks, gateLevel, outwardKind, type OutwardKind } from "../outward.ts";
-import { elicitationResponse, elicitationScopes, elicitationSubject } from "./elicitation.ts";
+import { promptAnswer, promptScopes, promptSubject, type McpPrompt } from "../mcp-elicitation.ts";
 import type { ServerRequest } from "./protocol/ServerRequest.ts";
 import type { CommandExecutionApprovalDecision } from "./protocol/v2/CommandExecutionApprovalDecision.ts";
 import type { FileUpdateChange } from "./protocol/v2/FileUpdateChange.ts";
+
+type Elicitation = Extract<ServerRequest, { method: "mcpServer/elicitation/request" }>["params"];
+
+/** Codex keeps a session or standing grant itself when the answer's `_meta.persist` says so. */
+const promptOf = (p: Elicitation): McpPrompt => ({
+  serverName: p.serverName,
+  message: "message" in p ? p.message : "",
+  mode: p.mode,
+  ...("requestedSchema" in p ? { requestedSchema: p.requestedSchema } : {}),
+  meta: p["_meta"],
+});
 
 /** The card id for a Codex server request; ids are per app-server process. */
 const requestIdOf = (request: ServerRequest): RequestId => RequestId.make(`codex-${request.id}`);
@@ -183,10 +194,11 @@ export const toPendingRequest = (
       // A server's permission prompt, as computer use raises before it touches an app or a site.
       // One that isn't a plain yes or no has no scopes, and is declined like any unknown request.
       const p = request.params;
-      const scopes = elicitationScopes(p, level !== undefined);
+      const prompt = promptOf(p);
+      const scopes = promptScopes(prompt, level !== undefined);
       if (scopes.length === 0) return undefined;
-      const subject = elicitationSubject(p);
-      const message = "message" in p ? p.message.trim() : "";
+      const subject = promptSubject(prompt);
+      const message = prompt.message.trim();
       return {
         kind: "approval",
         id,
@@ -266,8 +278,19 @@ export const responseFor = (
         ),
       };
     }
-    case "mcpServer/elicitation/request":
-      return elicitationResponse(request.params, allow, scope, gated);
+    case "mcpServer/elicitation/request": {
+      const { action, content, persist } = promptAnswer(
+        promptOf(request.params),
+        allow,
+        scope,
+        gated,
+      );
+      return {
+        action,
+        content: content ?? null,
+        _meta: persist === undefined ? null : { persist },
+      };
+    }
     default:
       return { decision: "cancel" };
   }
