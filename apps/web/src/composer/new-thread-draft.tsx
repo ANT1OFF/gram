@@ -1,3 +1,4 @@
+import { useSoloWord } from "@/embed/store";
 import {
   DEFAULT_SETTINGS,
   HostId,
@@ -449,6 +450,7 @@ function ConfiguredNewThreadDraft() {
   const browse = () => focusOption('[aria-label="Project path"]');
   const browseMachine = () => focusOption(`[aria-label="Folder on ${pickedMachine?.name ?? ""}"]`);
 
+  const soloWord = useSoloWord();
   useShortcut({
     id: "draft.create",
     keys: "mod+enter",
@@ -457,7 +459,10 @@ function ConfiguredNewThreadDraft() {
     run: () => void create(),
   });
 
-  const createLabel = stage === "failed" ? "Retry" : "Start chat";
+  // An embedding app with its own word for this kind of thread has a Chat of its own: the button
+  // then says only what it does.
+  const createLabel =
+    stage === "failed" ? "Retry" : soloWord === undefined ? "Start chat" : "Start";
   const modeChoice = modeSection({ value: mode, onChange: setMode });
   // A pick is confirmed in words beside the chip for a moment, as in a thread's composer.
   const [picked, setPicked] = useState<string>();
