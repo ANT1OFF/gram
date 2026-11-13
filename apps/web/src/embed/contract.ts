@@ -92,6 +92,19 @@ export interface ShellNavigationGroup {
   readonly label?: string;
   /** Defaults to `foot`. Groups keep their order within each placement. */
   readonly placement?: ShellNavigationPlacement;
+  /**
+   * The heading opens and closes the group's rows, in the open sidebar and a phone's menu. Only a
+   * group with a `label` can be; the compact sidebar and the palette list its rows either way.
+   * Closed, the group still shows the row the window is at, and its heading says the sum of its
+   * hidden rows' counts. Off by default.
+   */
+  readonly collapsible?: boolean;
+  /**
+   * Whether a collapsible group starts closed. Once the person opens or closes it, their choice is
+   * kept on this device, by the group's `id`, and this applies only to a group they have not
+   * touched.
+   */
+  readonly collapsed?: boolean;
   readonly items: readonly ShellNavigationItem[];
 }
 
@@ -143,6 +156,12 @@ export interface ShellSidebar {
    * Collapse in the `roomy` look). A phone's drawer has it at its foot too.
    */
   readonly account?: ComponentType<ShellSlotProps>;
+  /**
+   * Whether resting the pointer on the compact strip opens the sidebar over the page beside it.
+   * Defaults to true. Off, only the strip's Expand sidebar tile (or the keyboard) opens it, and it
+   * then stays open as the person left it.
+   */
+  readonly peek?: boolean;
 }
 
 /**

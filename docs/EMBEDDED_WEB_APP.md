@@ -120,7 +120,15 @@ command palette under the group's name. A destination's `to` may be one of your 
 Gram's, and it is marked while the window is at it or under it. A destination may list other paths it is
 also marked at in `alsoAt` (a row to `/threads` naming `/t` and `/new` stays marked inside a thread
 and on New task); a row whose own `to` matches comes first. A destination's `count` (above 0)
-is drawn at the row's end, and as a dot on its compact tile.
+is drawn at the row's end, and as a dot on its compact tile. A group with a `label` may be `collapsible`: its heading
+then opens and closes its rows in the open sidebar and the phone's drawer, and `collapsed` starts
+it closed. Once the person opens or closes it, their choice is kept on the device by the group's
+`id`. Closed, it still shows the row the window is at, and its heading says the sum of its hidden
+rows' counts; the compact sidebar and the palette list its rows either way.
+
+**The compact sidebar's peek.** Resting the pointer on the compact strip opens the sidebar over the
+page beside it. `sidebar.peek: false` turns that off: the strip then has an Expand sidebar tile at
+its head, which opens the sidebar again, and focus from the keyboard still opens it over the page.
 
 **Gram's threads.** `threads: "hidden"` leaves the workspaces and threads out of the sidebar, the
 drawer and the compact sidebar, for an app whose own places lead. Needs you, search and the

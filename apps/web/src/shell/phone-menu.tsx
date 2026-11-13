@@ -1,10 +1,12 @@
 import { Drawer } from "@base-ui/react/drawer";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { History, Search, Settings } from "lucide-react";
-import { createElement, useEffect, useRef, useState } from "react";
+import { ChevronDown, History, Search, Settings } from "lucide-react";
+import { createElement, useEffect, useId, useRef, useState } from "react";
 
 import { EmbedSwitcher, ItemIcon, linkTo, useCurrentDestination } from "@/embed/slots";
-import { navigationAt, shownCount, useEmbedShell } from "@/embed/store";
+import type { ShellNavigationGroup } from "@/embed/contract";
+import { useGroupFold } from "@/embed/folded";
+import { hiddenCount, navigationAt, shownCount, shownRows, useEmbedShell } from "@/embed/store";
 import { useHistoryStore } from "@/history/history-view";
 import { useLaunchIssues } from "@/launch-checks/banner";
 import { cn } from "@/lib/utils";
@@ -56,48 +58,111 @@ function Places({ placement }: { placement: "main" | "foot" }) {
       className="flex flex-col"
     >
       {groups.map((group, index) => (
-        <section
+        <PhoneGroup
           key={group.id}
-          {...(group.label === undefined ? {} : { "aria-label": group.label })}
-          data-testid="embed-navigation-group"
-        >
-          {/* The first group needs no name under the menu's head: its places lead. */}
-          {group.label !== undefined && (index > 0 || placement === "foot") && (
-            <h2 data-testid="embed-navigation-heading" className={HEADING}>
-              {group.label}
-            </h2>
-          )}
-          <ul className="flex flex-col gap-px px-2.5">
-            {group.items.map((item) => {
-              const current = item.to === at;
-              const count = shownCount(item.count);
-              return (
-                <li key={item.id}>
-                  <Link
-                    {...linkTo(item.to)}
-                    {...{ [OVERVIEW_STOP]: "" }}
-                    data-testid="embed-navigation-item"
-                    aria-current={current ? "page" : undefined}
-                    className={ROW}
-                  >
-                    <ItemIcon item={item} className="size-[1.375rem] shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                    {count !== undefined && (
-                      <span
-                        data-testid="embed-navigation-count"
-                        className="shrink-0 text-body text-status-needs tabular-nums"
-                      >
-                        {count}
-                      </span>
-                    )}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+          group={group}
+          // The first group needs no name under the menu's head: its places lead.
+          named={index > 0 || placement === "foot"}
+          at={at}
+        />
       ))}
     </nav>
+  );
+}
+
+/**
+ * One group of the menu: its plain heading and its large rows. A collapsible group always shows its
+ * heading, a button that opens and closes it; closed, it keeps the row the window is at, and the
+ * heading counts what it hides.
+ */
+function PhoneGroup({
+  group,
+  named,
+  at,
+}: {
+  group: ShellNavigationGroup;
+  named: boolean;
+  at: string | undefined;
+}) {
+  const fold = useGroupFold(group);
+  const rows = useId();
+  const items = shownRows(group, fold.open, at);
+  const hidden = hiddenCount(group, fold.open, at);
+  return (
+    <section
+      {...(group.label === undefined ? {} : { "aria-label": group.label })}
+      data-testid="embed-navigation-group"
+      data-open={fold.foldable ? String(fold.open) : undefined}
+    >
+      {fold.foldable ? (
+        <h2 data-testid="embed-navigation-heading">
+          <button
+            type="button"
+            {...{ [OVERVIEW_STOP]: "" }}
+            data-testid="embed-navigation-toggle"
+            aria-expanded={fold.open}
+            aria-controls={rows}
+            onClick={fold.toggle}
+            className={cn(
+              HEADING,
+              "flex min-h-11 w-full items-center gap-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+            )}
+          >
+            <span className="min-w-0 flex-1 truncate">{group.label}</span>
+            {hidden !== undefined && (
+              <span
+                data-testid="embed-navigation-hidden-count"
+                className="shrink-0 text-status-needs tabular-nums"
+              >
+                {hidden}
+              </span>
+            )}
+            <ChevronDown
+              aria-hidden
+              className={cn(
+                "size-4 shrink-0 transition-transform duration-(--dur-fast)",
+                !fold.open && "-rotate-90",
+              )}
+            />
+          </button>
+        </h2>
+      ) : (
+        group.label !== undefined &&
+        named && (
+          <h2 data-testid="embed-navigation-heading" className={HEADING}>
+            {group.label}
+          </h2>
+        )
+      )}
+      <ul id={rows} className="flex flex-col gap-px px-2.5">
+        {items.map((item) => {
+          const current = item.to === at;
+          const count = shownCount(item.count);
+          return (
+            <li key={item.id}>
+              <Link
+                {...linkTo(item.to)}
+                {...{ [OVERVIEW_STOP]: "" }}
+                data-testid="embed-navigation-item"
+                aria-current={current ? "page" : undefined}
+                className={ROW}
+              >
+                <ItemIcon item={item} className="size-[1.375rem] shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                {count !== undefined && (
+                  <span
+                    data-testid="embed-navigation-count"
+                    className="shrink-0 text-body text-status-needs tabular-nums"
+                  >
+                    {count}
+                  </span>
+                )}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

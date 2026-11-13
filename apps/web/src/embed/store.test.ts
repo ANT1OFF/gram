@@ -2,6 +2,9 @@ import { applySettingsPatch, DEFAULT_SETTINGS } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
 import {
+  foldable,
+  groupOpen,
+  hiddenCount,
   itemName,
   navigationAt,
   currentDestination,
@@ -11,6 +14,7 @@ import {
   shellFor,
   shownCount,
   shownNavigation,
+  shownRows,
   toolCardFor,
   toolMatches,
 } from "./store";
@@ -155,5 +159,41 @@ describe("an embedding app's tool cards", () => {
     expect(toolCardFor(cards, "mcp__acme__refund")).toBe(Second);
     expect(toolCardFor(cards, "Bash")).toBeUndefined();
     expect(toolCardFor([], "Bash")).toBeUndefined();
+  });
+});
+
+describe("a collapsible navigation group", () => {
+  const items = [
+    { id: "connections", label: "Connections", to: "/connections", count: 2 },
+    { id: "servers", label: "MCP servers", to: "/mcp-servers" },
+    { id: "access", label: "Access", to: "/access", count: 1 },
+  ];
+  const govern = { id: "govern", label: "Govern", collapsible: true, collapsed: true, items };
+
+  it("folds only when asked and when it has a heading to fold under", () => {
+    expect(foldable(govern)).toBe(true);
+    expect(foldable({ ...govern, collapsible: undefined })).toBe(false);
+    expect(foldable({ ...govern, label: undefined })).toBe(false);
+    expect(foldable({ ...govern, label: "  " })).toBe(false);
+  });
+
+  it("starts as the embedding app says, then as the person left it", () => {
+    expect(groupOpen(govern, undefined)).toBe(false);
+    expect(groupOpen({ ...govern, collapsed: undefined }, undefined)).toBe(true);
+    expect(groupOpen(govern, true)).toBe(true);
+    expect(groupOpen({ ...govern, collapsed: false }, false)).toBe(false);
+    // A group that does not fold is always open, whatever was kept for its id.
+    expect(groupOpen({ ...govern, collapsible: false }, false)).toBe(true);
+  });
+
+  it("closed, keeps the row the window is at and counts what it hides", () => {
+    expect(shownRows(govern, true, "/access")).toEqual(items);
+    expect(shownRows(govern, false, undefined)).toEqual([]);
+    expect(shownRows(govern, false, "/access").map((item) => item.id)).toEqual(["access"]);
+    expect(hiddenCount(govern, false, undefined)).toBe(3);
+    expect(hiddenCount(govern, false, "/access")).toBe(2);
+    expect(hiddenCount(govern, false, "/connections")).toBe(1);
+    expect(hiddenCount(govern, true, undefined)).toBeUndefined();
+    expect(hiddenCount({ ...govern, items: [items[1]!] }, false, undefined)).toBeUndefined();
   });
 });
