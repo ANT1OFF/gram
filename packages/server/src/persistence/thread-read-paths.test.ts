@@ -199,6 +199,47 @@ describe("findUserMessages", () => {
   );
 });
 
+describe("recentMessages", () => {
+  it.effect("finds a reply-heavy thread's window start on the user rows' index alone", () =>
+    withStore(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const sql = yield* SqlClient.SqlClient;
+          const id = yield* addThread("worker", "few prompts, many replies");
+          // A prompt every 100 rows: the 20-turn window starts 2,000 rows back.
+          yield* sql`WITH RECURSIVE n(x) AS (
+              SELECT 0 UNION ALL SELECT x + 1 FROM n WHERE x < 2999
+            ) INSERT INTO messages (thread_id, id, seq, role, message, rev)
+            SELECT ${id}, 'w-' || x, x + 1, CASE WHEN x % 100 = 0 THEN 'user' ELSE 'assistant' END,
+              json_object('id', 'w-' || x,
+                'role', CASE WHEN x % 100 = 0 THEN 'user' ELSE 'assistant' END,
+                'parts', json('[]')), x + 1 FROM n`;
+          yield* sql`ANALYZE`;
+          const probe = yield* Effect.acquireRelease(Effect.sync(sqliteProbe), (p) =>
+            Effect.sync(p.restore),
+          );
+          probe.start();
+          const page = yield* store.recentMessages(id, 20);
+          const { calls } = probe.stop();
+          expect(page.messages[0]?.id).toBe("w-1000");
+          expect(page.earlier).toBe(true);
+          const start = calls.find((call) => call.sql.includes("OFFSET"));
+          expect(start).toBeDefined();
+          const plan = yield* sql.unsafe<{ detail: string }>(
+            `EXPLAIN QUERY PLAN ${start!.sql}`,
+            start!.bindings,
+          );
+          // Not `messages_thread_seq`, which fetches every reply's row on the way back to test its role.
+          expect(plan.map((row) => row.detail)).toEqual([
+            "SEARCH messages USING COVERING INDEX messages_thread_user (thread_id=? AND seq<?)",
+          ]);
+        }),
+      ),
+    ),
+  );
+});
+
 describe("listThreads", () => {
   it.effect("decodes the threads once until one of them is written", () =>
     withStore(
