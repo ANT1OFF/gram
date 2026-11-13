@@ -1396,8 +1396,10 @@ on a card first, takes the next free port, and stops with its thread.
 ### Pinned pages
 
 An HTML page an agent drafts in its folder and shows in the Preview tab (`show_panel`) can be
-kept: **Pin** in the Preview tab's strip copies the page's folder into Gram's state on this
-computer (`<data dir>/pages/<workspace>/`), as Docs are kept, and opens it in the **Pages** tab,
+kept. A page meant to be pinned builds its content with DOM APIs, never `document.write` or
+`document.open`, which throw once it is pinned (below). **Pin** in the Preview tab's strip keeps
+one: it copies the page's folder into Gram's state on this computer
+(`<data dir>/pages/<workspace>/`), as Docs are kept, and opens it in the **Pages** tab,
 which the panel shows while the workspace has a pinned page.
 Only you pin, show a newer version or unpin; no agent tool does. Nothing done in the worktree
 afterwards changes what you pinned. A pinned page is a bundle: its folder, with a `manifest.json`
@@ -1427,10 +1429,13 @@ can't see or change the clipboard's data when you copy, cut or paste. Its handle
 Ctrl+Insert), so it can't move your selection just as you copy. It doesn't promise that what you
 see is what you copy: a selection that spans text the page hid (styled away or off screen) copies
 that text too, as in any browser, and the page can still move the selection at other moments.
+Nor does it cover the cut shortcut (Ctrl or Cmd+X, Shift+Delete), whose keydown the page still
+hears, or dragging text out of the page, whose `dragstart` handler can set what is dragged.
 So that nothing gets ahead of the guard, a pinned page can't replace its own document:
 `document.open`, `document.write` and `document.writeln` throw, so agents build pages with DOM
-APIs (`offer_page_version` says so). A frame the page makes itself (`about:blank`, `srcdoc`) gets
-no preload; the sandbox's opaque origin is what keeps the page from scripting it.
+APIs (`offer_page_version` says so). A `srcdoc` child the page makes runs the guard too. A child
+it makes by script at `about:blank` gets no preload; the sandbox's opaque origin is what keeps the
+page from scripting it.
 
 ### Your own browser: Claude in Chrome and Codex computer use
 

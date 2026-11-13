@@ -203,8 +203,9 @@ export function installPages(ipc: ShellIpc, options: PagesOptions): PagesHost {
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
-        // The guard, in each frame the preload reaches; sandboxed, so no Node. A child the page
-        // makes itself gets none, and is out of the page's reach by the sandbox's opaque origins.
+        // The guard, in each frame the preload reaches, a `srcdoc` child the page makes included;
+        // sandboxed, so no Node. A script-made `about:blank` child gets none, and is out of the
+        // page's reach by the sandbox's opaque origins.
         ...(options.guardPreload === undefined ? {} : { preload: options.guardPreload }),
         nodeIntegrationInSubFrames: true,
         webviewTag: false,
