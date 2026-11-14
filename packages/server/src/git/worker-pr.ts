@@ -470,3 +470,100 @@ export const workerPrBlocker = (
 /** Whether this PR belongs to a recorded worker worktree, independent of its current checkout. */
 export const workerOwnsPr = (thread: Thread, repo: string, number: number) =>
   workerPrBlocker(thread, repo, number).pipe(Effect.map((why) => why === undefined));
+
+/** A git branch name as it may appear in an agent's instructions: the ref charset only. */
+const SAFE_BRANCH = /^[\w./-]{1,200}$/;
+
+/**
+ * Whether another thread follows or holds `branch` of `repo#number`: its bound or extra PR, a
+ * worktree on that branch, or a branch recorded for one. Then the PR is someone else's work, and
+ * the user decides, not the agent.
+ */
+const heldByAnother = (thread: Thread, repo: string, number: number, branch: string) =>
+  Effect.gen(function* () {
+    const store = yield* ThreadStore;
+    const pr = { repo, number };
+    const same = (other: { readonly repo: string; readonly number: number }) =>
+      sameRepo(other.repo, pr.repo) && other.number === pr.number;
+    return (yield* store.listThreads).some(
+      (other) =>
+        other.id !== thread.id &&
+        ((other.boundPr !== undefined && same(other.boundPr)) ||
+          (other.extraPrs ?? []).some(same) ||
+          [other.checkout, ...(other.extraCheckouts ?? [])].some(
+            (checkout) => checkout.branch === branch,
+          ) ||
+          (other.ownedBranches ?? []).some((owned) => owned.branch === branch)),
+    );
+  });
+
+/**
+ * Whether `branch` is checked out in a git worktree of the repository other than `here`, as
+ * `git worktree list` says from `here`; a doubt is a yes. There `git switch` would refuse it, so
+ * the agent couldn't follow the fix.
+ */
+const checkedOutElsewhere = (here: string, branch: string) =>
+  Effect.gen(function* () {
+    const out = yield* git(here, ["worktree", "list", "--porcelain"], { timeoutMs: 5_000 });
+    if (out.status !== 0) return true;
+    const self = yield* canonical(here);
+    for (const block of out.stdout.split(/\n\s*\n/)) {
+      const lines = block.split("\n");
+      const path = lines.find((line) => line.startsWith("worktree "))?.slice("worktree ".length);
+      if (path === undefined || !lines.includes(`branch refs/heads/${branch}`)) continue;
+      if ((yield* canonical(path)) !== self) return true;
+    }
+    return false;
+  }).pipe(Effect.orElseSucceed(() => true));
+
+/**
+ * At `full` autonomy, the refusal the calling agent gets in place of a card when the PR would be
+ * the worker's own but for something the agent can fix itself, never widening what is owned:
+ *
+ * - its head branch isn't held in the worker's worktree, no other thread follows or holds it, and
+ *   no other git worktree has it checked out (a deploy PR a release script opened from a scratch
+ *   worktree it then removed, say): the agent is told to check it out there and call again, which
+ *   then goes through without the user;
+ * - it is merged or closed (`merge` only): there is nothing to merge.
+ *
+ * `undefined` for everything else (a fork, a repository outside the workspace, another thread's
+ * PR, a doubt), which still asks the user. The caller has already established the delegation.
+ */
+export const ownershipRefusal = (
+  thread: Thread,
+  repo: string,
+  number: number,
+  options: {
+    readonly audience: "worker" | "orchestrator";
+    /** The tool to call again. */
+    readonly tool: string;
+    /** What Gram then does without asking, as in "Gram then merges it without asking". */
+    readonly action: string;
+    /** Whether a merged or closed PR is refused as having nothing to merge. */
+    readonly merge: boolean;
+  },
+) =>
+  Effect.gen(function* () {
+    const ownership = yield* workerPrOwnership(thread, repo, number);
+    if (typeof ownership !== "string") return undefined;
+    const state = /^it is (merged|closed)$/.exec(ownership)?.[1];
+    if (state !== undefined)
+      return options.merge
+        ? `${repo}#${number} is ${state}, so there is nothing to merge; check it with pr_status. Nobody was asked.`
+        : undefined;
+    if (ownership !== OWNERSHIP_BLOCKERS.branchNotHeld || !isLocalHost(thread.checkout))
+      return undefined;
+    const here = thread.checkout.path;
+    if (thread.checkout.kind !== "worktree" || !(yield* folderExists(here))) return undefined;
+    const head = yield* prHead(here, number, repo);
+    const branch = head.headRefName;
+    if (!SAFE_BRANCH.test(branch) || branch.startsWith("-") || head.fork) return undefined;
+    if (yield* heldByAnother(thread, repo, number, branch)) return undefined;
+    if (yield* checkedOutElsewhere(here, branch)) return undefined;
+    const steps = `\`git fetch origin ${branch}\` then \`git switch ${branch}\``;
+    const fix =
+      options.audience === "worker"
+        ? `Check it out in the worktree Gram gave you (${steps}; commit your own work first), then call ${options.tool} again`
+        : `Have the worker check it out in the worktree Gram gave it (${steps}), then call ${options.tool} again`;
+    return `Full auto covers only a worker's own pull request: one whose head branch is checked out in the worktree Gram gave the worker. ${repo}#${number}'s head branch \`${branch}\` isn't checked out there. ${fix}; Gram then ${options.action} without asking. The user wasn't asked, and their approval isn't the way through for this.`;
+  }).pipe(Effect.catchCause(() => Effect.succeed(undefined)));

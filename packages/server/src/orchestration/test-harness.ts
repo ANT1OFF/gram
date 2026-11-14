@@ -323,7 +323,7 @@ const fakePublisher = (world: World) =>
 const fakeGh = (world: World) => {
   const fakeRun = (bin: string, args: ReadonlyArray<string>, cwd: string) => {
     if (bin === "git") {
-      if (args[0] === "symbolic-ref") {
+      if (args[0] === "symbolic-ref" || (args[0] === "worktree" && args[1] === "list")) {
         const out = spawnSync(bin, args, { cwd, encoding: "utf8", timeout: 2_000 });
         return {
           status: out.status ?? 1,

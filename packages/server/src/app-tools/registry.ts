@@ -234,6 +234,8 @@ export const bindAppTools = (
         : undefined;
     const cardDetails = definition.cardDetails;
     const whyAsked = delegatedCall === undefined ? undefined : definition.whyAsked;
+    const refuseInstead =
+      delegatedCall === undefined ? undefined : definition.refuseInsteadOfAsking;
     /**
      * Whether a card was raised and approved for the call (`undefined` with no gate), and why full
      * autonomy didn't cover it, if it would have but for the call itself.
@@ -252,6 +254,18 @@ export const bindAppTools = (
               );
         const verdict = alwaysAsks ? "forced" : approvalFor(descriptor.class, asked, delegated);
         if (verdict === "none") return { carded: false, why: undefined };
+        // A call the agent can fix itself is refused to it, never put to the user. Only a refusal
+        // comes of it: a hook that fails, dies or is slow leaves the card.
+        const refusal =
+          refuseInstead === undefined || verdict !== "class"
+            ? undefined
+            : yield* Effect.suspend(() => refuseInstead(threadId, target)).pipe(
+                Effect.timeoutOption(WHY_ASKED_TIMEOUT),
+                Effect.map(Option.getOrUndefined),
+                Effect.catchCause(() => Effect.succeed(undefined)),
+              );
+        if (typeof refusal === "string" && refusal !== "")
+          return yield* new AppToolError({ tool: descriptor.name, message: refusal });
         const description =
           describeCall === undefined ? undefined : yield* describeCall(threadId, target);
         // The card's details are the input as it runs, in the schema's own encoding: a key the

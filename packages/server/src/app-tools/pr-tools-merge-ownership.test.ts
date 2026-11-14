@@ -4,7 +4,7 @@ import { DEFAULT_CHARTER, HostId, initialBabysitState, LOCAL_HOST_ID } from "@gr
 import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
-import { hasGit, run } from "../git/test-repo.ts";
+import { hasGit, removeDir, run, tempDir } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import {
@@ -181,9 +181,8 @@ describe("merge_when_ready", () => {
   for (const scenario of [
     "fork",
     "other worker",
-    "never held",
+    "held elsewhere",
     "outside repo",
-    "closed",
     "supervised",
     "publish",
     "orchestrator hold",
@@ -213,11 +212,16 @@ describe("merge_when_ready", () => {
               yield* completeTurn(other.session);
               headRefName = other.thread.checkout.branch!;
             }
-            if (scenario === "never held") headRefName = "feat/never-held";
+            // Checked out in a worktree of the user's: the worker can't switch to it, so it asks.
+            if (scenario === "held elsewhere") {
+              headRefName = "feat/held-elsewhere";
+              const elsewhere = tempDir();
+              yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(elsewhere)));
+              run(world.repo, "worktree", "add", "-q", "-b", headRefName, elsewhere);
+            }
             world.prHeads.set(12, {
               headRefName,
               ...(scenario === "fork" ? { fork: true } : {}),
-              ...(scenario === "closed" ? { state: "CLOSED" } : {}),
             });
             const repo = scenario === "outside repo" ? "elsewhere/tools" : "acme/app";
             yield* runtimes.updateThread(worker.thread.id, (t) => ({
@@ -254,10 +258,9 @@ describe("merge_when_ready", () => {
             const explained: Partial<Record<typeof scenario, string>> = {
               fork: "its branch is on a fork, not in the repository itself",
               "other worker": "its branch isn't checked out in a worktree Gram gave the worker",
-              "never held": "its branch isn't checked out in a worktree Gram gave the worker",
+              "held elsewhere": "its branch isn't checked out in a worktree Gram gave the worker",
               "outside repo":
                 "its repository isn't a workspace project the worker has a worktree in",
-              closed: "it is closed, not open",
             };
             const reason = explained[scenario];
             if (card.kind !== "approval") throw new Error("not an approval");
@@ -295,11 +298,10 @@ describe("merge_when_ready", () => {
                     fork: "Push the branch to the repository from the worktree Gram gave you and open the pull request from there. Gram can then merge it without asking.",
                     "other worker":
                       "Check the branch out inside the worktree Gram gave you (or ask your orchestrator to start a fresh worker for the follow-up), then call again. Gram can then merge it without asking.",
-                    "never held":
+                    "held elsewhere":
                       "Check the branch out inside the worktree Gram gave you (or ask your orchestrator to start a fresh worker for the follow-up), then call again. Gram can then merge it without asking.",
                     "outside repo":
                       "Open the pull request from the worktree Gram gave you; for a repository outside the workspace, the user has to add it or approve this.",
-                    closed: "There is nothing to merge; check it with pr_status.",
                   }[scenario as "fork"]
                 }`,
               );
@@ -325,6 +327,9 @@ describe("merge_when_ready", () => {
           yield* completeTurn(worker.session);
           yield* atAutonomy(thread, "full");
           // The follow-up's branch was checked out in a worktree the worker made for itself.
+          const selfMade = tempDir();
+          yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(selfMade)));
+          run(world.repo, "worktree", "add", "-q", "-b", "feat/self-made", selfMade);
           world.prHeads.set(12, { headRefName: "feat/self-made" });
           yield* runtimes.updateThread(worker.thread.id, (t) => ({
             ...t,

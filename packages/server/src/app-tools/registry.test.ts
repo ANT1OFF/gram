@@ -291,6 +291,43 @@ describe("app tool policy", () => {
     );
   }
 
+  it.effect("refuses to the agent instead of asking only when the hook says how", () =>
+    Effect.gen(function* () {
+      const asked: Array<unknown> = [];
+      const handled: Array<number> = [];
+      const [merge] = bindAppTools(
+        [
+          defineAppTool({
+            descriptor: { name: "merge", class: "outward", description: "" },
+            input: Schema.Struct({ n: Schema.Number }),
+            handle: (_threadId, { n }) => Effect.sync(() => (handled.push(n), { merged: n })),
+            delegatedAtFullAutonomy: (_threadId, { n }) => Effect.succeed(n > 2),
+            // Read only once a card would go up; anything but text is no refusal.
+            refuseInsteadOfAsking: (_threadId, { n }) =>
+              n === 2
+                ? Effect.succeed("check the branch out, then call again")
+                : n === 1
+                  ? Effect.die(new Error("boom"))
+                  : Effect.succeed(undefined),
+          }),
+        ],
+        "t1" as ThreadId,
+        {
+          approve: (_threadId, _descriptor, input) => Effect.sync(() => void asked.push(input)),
+        },
+      );
+      // Delegated: the hook is never read and nothing is refused.
+      expect(yield* merge!.run({ n: 3 })).toEqual({ merged: 3 });
+      const refused = yield* merge!.run({ n: 2 }).pipe(Effect.flip);
+      expect(refused.message).toBe("check the branch out, then call again");
+      // A hook that dies, or has nothing to say, leaves the card as it was.
+      expect(yield* merge!.run({ n: 1 })).toEqual({ merged: 1 });
+      expect(yield* merge!.run({ n: 0 })).toEqual({ merged: 0 });
+      expect(asked).toEqual([{ n: 1 }, { n: 0 }]);
+      expect(handled).toEqual([3, 1, 0]);
+    }),
+  );
+
   it.effect(
     "asks the delegation about the resolved target, and refuses a key an outward tool doesn't take",
     () =>
