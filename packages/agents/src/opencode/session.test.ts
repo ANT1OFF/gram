@@ -370,6 +370,9 @@ describe("OpenCode's rules", () => {
       expect(effect("plan", action)).toBe("deny");
     expect(effect("plan", "read")).toBe("allow");
     expect(effect("acceptEdits", "edit")).toBe("allow");
+    for (const mode of ["default", "auto", "acceptEdits", "dontAsk"] as const)
+      expect(effect(mode, "subagent")).toBe("deny");
+    expect(effect("bypassPermissions", "subagent")).toBe("allow");
   });
 
   it("asks about every command while a push gate is on, and lets through what it doesn't ask about", () => {

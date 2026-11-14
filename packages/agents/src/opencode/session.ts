@@ -82,7 +82,8 @@ const ACTS = ["edit", "write", "shell", "webfetch", "subagent", "external_direct
  * policies still outrank: the last matching rule wins, and no match asks. OpenCode runs no
  * sandbox, so only `bypassPermissions` runs commands unasked: `auto` asks as `default` does, and
  * `dontAsk` refuses whatever isn't a read, as Claude Code's does with nothing allowed beforehand.
- * `plan` reads and proposes; it can't edit, write or run anything.
+ * `plan` reads and proposes; it can't edit, write or run anything. Subagents run only when
+ * permissions are bypassed: a subagent's session isn't known to hold its parent's rules.
  */
 export const rulesFor = (mode: PermissionMode): ReadonlyArray<OpenCodePermissionRule> => {
   // First, so the rules after it win: an action not named here (an MCP tool, `execute`) is
@@ -108,13 +109,16 @@ export const rulesFor = (mode: PermissionMode): ReadonlyArray<OpenCodePermission
         ...reads,
         rule("edit", "allow"),
         rule("write", "allow"),
-        ...["shell", "webfetch", "subagent", "external_directory"].map((action) =>
-          rule(action, "ask"),
-        ),
+        ...["shell", "webfetch", "external_directory"].map((action) => rule(action, "ask")),
+        rule("subagent", "deny"),
       ];
     case "auto":
     case "default":
-      return [...reads, ...ACTS.map((action) => rule(action, "ask"))];
+      return [
+        ...reads,
+        ...ACTS.filter((action) => action !== "subagent").map((action) => rule(action, "ask")),
+        rule("subagent", "deny"),
+      ];
   }
 };
 
@@ -536,7 +540,13 @@ export const makeOpenCodeHost = (
                   await client
                     .setPermissions(session.id, sessionRules(mode, gate))
                     .then(() => client.setAgent(session.id, agentFor(mode)))
-                    .catch(() => undefined);
+                    .catch(() => {
+                      Queue.offerUnsafe(events, {
+                        type: "ended",
+                        reason:
+                          "OpenCode couldn't be put back in this thread's mode after a failed change.",
+                      });
+                    });
                   throw error;
                 } finally {
                   changingMode = false;
