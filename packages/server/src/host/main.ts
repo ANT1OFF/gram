@@ -181,6 +181,13 @@ const hostService = (
       admission,
       // A joined machine keeps only what its sessions could open; this machine's host any folder.
       ...(hostId === LOCAL_HOST_ID ? {} : { admit: (cwd) => folders.gate.admit(cwd, "session") }),
+      // A clone made to put a thread's folder back counts as one, as any other the host makes.
+      ensure: (url) =>
+        Effect.acquireUseRelease(
+          Effect.sync(() => (clones += 1)),
+          () => repos.ensure(url),
+          () => Effect.sync(() => (clones -= 1)),
+        ),
     });
     return {
       hello: {

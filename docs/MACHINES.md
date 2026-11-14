@@ -443,7 +443,11 @@ the local app, as the other `/machines/*` routes are.
   default is `origin`. The ref holds every file git doesn't ignore, untracked ones included, and
   whoever can read that remote can read it, so name a private mirror when that matters. A push
   that fails is reported (`pushed: false`) and doesn't stop the answer: the work is still on the
-  disk.
+  disk. Each kept folder's answer says the `branch` it was on and, when the call named one, the
+  `remote`.
+- The ref is one per thread at the remote. A thread with folders in two clones of one remote has
+  one of them kept under it: the second is answered `pushed: false` and says why, rather than
+  replace the first's work.
 - `POST /machines/stop/cancel` takes a stop back: the host takes new work again.
 - `POST /machines/stop/status` lists each joined machine: `online`, `stoppedAt` when it was
   readied and hasn't dialled in since, and `wanted` when a thread waits on it now. A message sent
@@ -451,13 +455,81 @@ the local app, as the other `/machines/*` routes are.
   for it, so start a host (or take the stop back) when `wanted` turns true. With the setting on,
   this wait applies to any joined machine that is away.
 - `POST /machines/stop/resume` opens again the sessions the stop put to rest, once a host has
-  dialled in, and answers which it reopened and which folders are missing from the disk. Threads
-  that had no session open at the stop open with their next message, as ever.
+  dialled in, and answers which it reopened, which folders it made again (`restored`) and which
+  are still missing from the disk (`missing`, with why when the machine was asked). Threads that
+  had no session open at the stop open with their next message, as ever. `"remote"` names where
+  the hidden refs are fetched from; left out, it is where the stop pushed them. `"kept"` gives
+  the stop's `kept` back, as it was answered: see [what a resume is held to](#what-a-resume-is-held-to).
+- A branch whose tip is already on the remote's branch of the same name, with nothing
+  uncommitted, needs no hidden ref: the stop answers `caughtUp: true` for that folder with no
+  `ref`. A ref this folder left at an earlier stop is deleted then. One that names anything
+  else is left, and the answer's `note` says so: it may be the work of another folder of the
+  thread, in another clone or on another machine, and only that ref holds it. The ref is deleted
+  only while it still names the commit it was looked up at.
+- Closing a thread deletes nothing at the remote: a closed thread can be reopened, and what a
+  stop kept of it is still there for it. A thread's ref therefore stays until a later stop of
+  the thread finds its branch caught up. Whoever runs the remote can delete the refs under
+  `refs/gram/wip/` of threads that are gone for good.
 
-The new host must start with the stopped one's home folder (`GRAM_HOST_HOME`) and the threads'
-folders at the same paths. The machine's key is in that home, so the new host dials in as the same
-machine and nothing about the threads changes. A host on an empty disk is a different machine;
-restoring the hidden refs onto a fresh disk is not done for you.
+The new host must start with the stopped one's home folder (`GRAM_HOST_HOME`). The machine's key
+is in that home, so the new host dials in as the same machine and nothing about the threads
+changes. With the threads' folders at the same paths, they are found as they were.
+
+**On a replaced disk** (the same machine key, the folders gone) a thread's work in progress
+follows it. For each missing folder that Gram made from the machine's clone of a repository (a
+worker's worktree, or the clone itself), resume asks the host to clone the repository again,
+fetch `refs/gram/wip/<thread>`, and make the folder again at the same path: the branch at the tip
+it was on, unpushed commits included, and the files that weren't committed written back as
+uncommitted files (what was staged comes back unstaged; ignored files were never kept). A thread
+no ref was kept of, because its branch at the remote held everything (`caughtUp`), gets its
+folder from that branch at the remote. The answer's `restored` says which with `source`: `ref` or
+`branch`. The thread's session then opens as after any resume.
+
+- It needs a host that names the `wip-restore` feature, and the host's own git credentials for
+  the clone and the fetch. With an older host the folder is reported missing, as before.
+- A folder that is there is never written over. Only a folder Gram made from a clone is made
+  again: one the user picked on the machine, or a profile's folder, is reported missing.
+- A folder nothing was kept of (no ref at the remote and no branch of its name there) stays
+  missing, and says so.
+- The machine's folder gate is asked about the folder before anything is written in it, and a
+  folder it refuses is not made.
+- A branch that is on the disk already is only ever moved forward. This matters when the disk
+  was kept and only the thread's folder is gone: a branch there with commits made after the stop
+  is never moved back to the ref. When the ref held nothing uncommitted, the folder is made on
+  the branch as it is on the disk, and the `note` says so. When it held uncommitted files, or
+  the branch went another way, nothing is put back and the folder is reported missing with why:
+  the branch on the disk and the ref at the remote both stay as they are.
+- A thread whose branch is the one the machine's clone is on (a fresh clone is on the default
+  branch) gets it: the clone's own checkout is left where it is with its HEAD detached, when it
+  has no changes of its own.
+- The ref is what the last stop wrote. Work done after a resume and lost without another stop is
+  not in it; when the remote's branch has commits made after it, the answer's `note` says so.
+- The agent's own conversation file was on the old disk; this puts back the files, not that.
+
+### What a resume is held to
+
+Whoever can push to the remote can write `refs/gram/wip/<thread>`. So a resume holds the machine
+to what the stop said it kept: the ref must name exactly the stop's `commit` for that folder, or
+nothing is put back and the folder is reported missing with why. A folder the stop answered
+`caughtUp` for is made from its branch, whatever the ref names.
+
+Gram remembers each stop's answer while it runs. After Gram itself restarted it remembers none,
+so give the stop's `kept` array back in the resume call (`"kept": [...]`, entries as they were
+answered; up to 512). With neither, the ref is taken as the remote has it, and a thread with no
+ref gets its branch.
+
+### What the remote must allow
+
+The machine's git credentials, and any push policy in front of the remote, need these and
+nothing more for a stop and a resume:
+
+- Read: listing and fetching `refs/gram/wip/<thread>` and `refs/heads/<branch>`, and the clone
+  and fetch of the repository itself.
+- Write `refs/gram/wip/<thread>`: create it, and replace it with a commit that isn't a
+  descendant of the one it named (a forced update).
+- Delete `refs/gram/wip/<thread>`.
+
+No branch and no tag is ever written by a stop or a resume.
 
 ## A Claude token from this machine
 

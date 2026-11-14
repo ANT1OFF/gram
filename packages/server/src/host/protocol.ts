@@ -17,6 +17,7 @@ import {
   type HostAgentReload,
   type HostStatus,
   type HostStopPrepared,
+  type HostStopRestored,
   type HostUpdateCheck,
   type HostUpdateProgress,
   HostUpdateRefused,
@@ -79,7 +80,13 @@ import { NOT_A_CLAUDE_TOKEN } from "./host-config.ts";
 import type { HostGit } from "./git.ts";
 import type { HostRepos } from "./repos.ts";
 import { type Admission, UPDATING } from "./admission.ts";
-import { type HostStop, type StopRequest, STOPPING } from "./stop.ts";
+import {
+  type DropRequest,
+  type HostStop,
+  type RestoreRequest,
+  type StopRequest,
+  STOPPING,
+} from "./stop.ts";
 import type { HostSessionsService } from "./sessions.ts";
 import type { HostTerminalsService, TerminalRoot } from "./terminals.ts";
 import type {
@@ -190,6 +197,7 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "browser-policy",
   "session-retarget",
   "file-parts",
+  "wip-restore",
 ];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
@@ -334,6 +342,12 @@ const handlersFor = (host: HostService) => {
           ? Effect.fail(new HostFailed({ message: "This host can't be readied to stop." }))
           : host.stop.prepare(request),
       "host.stop.cancel": () => host.stop?.cancel ?? Effect.void,
+      "host.stop.restore": (request) =>
+        host.stop?.restore === undefined
+          ? Effect.fail(new HostFailed({ message: "This host puts no kept work back." }))
+          : gated(host.stop.restore(request)),
+      "host.stop.drop": (request) =>
+        host.stop === undefined ? Effect.succeed({ dropped: false }) : host.stop.drop(request),
       "host.ports.scan": () =>
         host.scan.pipe(
           Effect.map(scanToWire),
@@ -748,6 +762,14 @@ export interface HostConnection {
       request: StopRequest,
     ) => Effect.Effect<HostStopPrepared, HostFailed | HostUnavailable>;
     readonly cancel: Effect.Effect<void, HostFailed | HostUnavailable>;
+    /** Makes a thread's folder again from what a stop kept; absent on a host that doesn't. */
+    readonly restore?: (
+      request: RestoreRequest,
+    ) => Effect.Effect<HostStopRestored, HostFailed | HostUnavailable>;
+    /** Deletes the kept work of a thread that is gone for good; absent as `restore` is. */
+    readonly drop?: (
+      request: DropRequest,
+    ) => Effect.Effect<{ readonly dropped: boolean }, HostFailed | HostUnavailable>;
   };
   /** Whether the host has gone: its process ended or its stream closed. Calls fail at once then. */
   readonly gone: () => boolean;
@@ -877,6 +899,10 @@ export const HOST_STOP_UNANSWERED =
 
 /** How long a host gets to commit and push its threads' work in progress before a stop. */
 const STOP_TIMEOUT = "10 minutes";
+/** How long a host gets to clone a repository again and put one thread's work back. */
+const RESTORE_TIMEOUT = "20 minutes";
+/** How long a host gets to delete one thread's kept work at its remote. */
+const DROP_TIMEOUT = "3 minutes";
 
 /** How long a host gets to say hello before it counts as not answering. */
 const HELLO_TIMEOUT = "5 seconds";
@@ -1503,6 +1529,45 @@ export const connectHost = (
             ),
           ),
         cancel: stopCall(client["host.stop.cancel"]()),
+        // Only on a host that says it does: an older one leaves a missing folder missing.
+        ...(hostServes(hello, "wip-restore")
+          ? {
+              restore: (request: RestoreRequest) =>
+                stopCall(
+                  client["host.stop.restore"](
+                    defined({
+                      threadId: request.threadId,
+                      cwd: request.cwd,
+                      url: request.url,
+                      branch: request.branch,
+                      remote: request.remote,
+                      commit: request.commit,
+                      caughtUp: request.caughtUp,
+                    }),
+                  ).pipe(
+                    Effect.timeoutOrElse({
+                      duration: RESTORE_TIMEOUT,
+                      orElse: () => Effect.fail(unavailable(HOST_NOT_ANSWERING)),
+                    }),
+                  ),
+                ),
+              drop: (request: DropRequest) =>
+                stopCall(
+                  client["host.stop.drop"](
+                    defined({
+                      threadId: request.threadId,
+                      cwd: request.cwd,
+                      remote: request.remote,
+                    }),
+                  ).pipe(
+                    Effect.timeoutOrElse({
+                      duration: DROP_TIMEOUT,
+                      orElse: () => Effect.fail(unavailable(HOST_NOT_ANSWERING)),
+                    }),
+                  ),
+                ),
+            }
+          : {}),
       },
       ...(hello.capabilities.includes("update")
         ? {
