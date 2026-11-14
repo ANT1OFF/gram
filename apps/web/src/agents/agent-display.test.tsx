@@ -10,8 +10,9 @@ afterEach(cleanup);
 
 describe("agentLabel", () => {
   it("names every agent kind, and passes an unknown one through", () => {
-    expect(Object.keys(AGENT_DISPLAY)).toEqual(["claude", "codex"]);
+    expect(Object.keys(AGENT_DISPLAY)).toEqual(["claude", "codex", "opencode"]);
     expect(agentLabel("codex")).toBe("Codex");
+    expect(agentLabel("opencode")).toBe("OpenCode");
     expect(agentLabel("claude")).toBe("Claude Code");
     expect(agentLabel("unknown-agent")).toBe("unknown-agent");
     expect(agentLabel("toString")).toBe("toString");

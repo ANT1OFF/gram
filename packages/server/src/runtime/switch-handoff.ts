@@ -31,6 +31,7 @@ import {
 const AGENT: Readonly<Record<AgentKind, { readonly name: string; readonly short: string }>> = {
   claude: { name: "Claude Code", short: "Claude" },
   codex: { name: "Codex", short: "Codex" },
+  opencode: { name: "OpenCode", short: "OpenCode" },
 };
 
 /** The recent turns' budget, in tokens (characters over four). */

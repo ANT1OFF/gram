@@ -156,6 +156,12 @@ export const HostFeature = Schema.Literals([
    * a folder missing, as before.
    */
   "wip-restore",
+  /**
+   * Knows OpenCode as an agent kind (`opencode`): opens its sessions, or says it can't. A control
+   * plane opens no OpenCode session on a host without it, reloads no OpenCode config there, and
+   * leaves an OpenCode worker's agent out of what it sends that host.
+   */
+  "agent-opencode",
 ]);
 export type HostFeature = typeof HostFeature.Type;
 

@@ -7,6 +7,9 @@
  * - OpenAI: the `openai` icon of simple-icons 15.22.0 (CC0-1.0), the last release to carry it;
  *   16.0.0 dropped it, so it can't be refreshed from there.
  *
+ * - OpenCode: a plain frame-and-block glyph drawn here, standing in until a licensed mark is
+ *   chosen; it copies no one's logo.
+ *
  * The licences cover the drawings. The marks stay their owners' trademarks, used here only to say
  * which agent a thread runs on.
  */
@@ -41,6 +44,17 @@ export function OpenAiMark(props: AgentMarkProps) {
   return (
     <Mark {...props}>
       <path d={OPENAI} />
+    </Mark>
+  );
+}
+
+export function OpenCodeMark(props: AgentMarkProps) {
+  return (
+    <Mark {...props}>
+      <path
+        fillRule="evenodd"
+        d="M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm1 3v14h14V5H5Zm3 4h8v6H8V9Z"
+      />
     </Mark>
   );
 }
