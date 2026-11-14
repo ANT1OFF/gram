@@ -12,6 +12,7 @@ import { useAllActivity } from "@/stores/all-activity";
 import { useThreadsStore } from "@/stores/threads";
 
 import { continueLabel } from "./agent-switch-model";
+import { ConversationOnlyItem } from "./conversation-only-toggle";
 import { ThreadMenuItems } from "./thread-action-items";
 import { useThreadDialogs } from "./thread-dialogs-store";
 import { useSwitchOffer } from "./use-switch-offer";
@@ -202,6 +203,7 @@ export function ThreadMenu({ threadId, label }: { threadId: ThreadId; label?: st
             <Menu.Popup data-testid="thread-menu" className={MENU_POPUP}>
               {items(MENU_ITEM)}
               <AllActivityItem threadId={threadId} className={MENU_ITEM} />
+              <ConversationOnlyItem className={MENU_ITEM} />
             </Menu.Popup>
           </Menu.Positioner>
         </Menu.Portal>

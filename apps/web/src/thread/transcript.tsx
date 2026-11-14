@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { StreamExtrasView, useOrchestratorStreamContext } from "@/orchestration/stream-context";
 import { digestOf } from "@/orchestration/stream-model";
 import { useThreadsStore } from "@/stores/threads";
+import { useConversationOnly } from "@/stores/conversation-only";
 import { isFoldOpen, useTurnFolds } from "@/stores/turn-folds";
 
 import { AwaitingToolsProvider } from "./awaiting-tools";
@@ -40,7 +41,9 @@ import { isToolPart, type Chapter } from "./parts";
 import { runningSubagents } from "./subagent-strip-model";
 import type { ScrollAnchor } from "./find-bar";
 import { ConversationRail } from "./table-of-contents";
+import { showsInConversation } from "./conversation-only";
 import { reuseFolds, turnFolds, type MessageFold } from "./tool-group-model";
+import { WorkingLine } from "./working-line";
 import { FileRefsProvider } from "./file-ref-link";
 import { PrRefsProvider } from "./pr-ref-link";
 import {
@@ -52,6 +55,9 @@ import {
 
 /** Statuses in which the latest turn is still under way, so its files aren't final. */
 const TURN_IN_PROGRESS = new Set(["starting", "running", "needsApproval", "needsInput"]);
+
+/** Statuses in which the agent itself is at work, not waiting on the reader. */
+const WORKING = new Set(["starting", "running"]);
 
 /** Distance from the bottom (px) tolerated while already following new content. */
 const FOLLOW_THRESHOLD = 64;
@@ -311,8 +317,21 @@ export function Transcript({
   const limitLine = limitWait !== undefined || limitCleared !== undefined;
   // One line under the last row at a time: a compaction under way, else a fresh thread's start,
   // else where a stopped turn ended, else a limit's wait.
+  // "Conversation only" leaves a running turn's calls out, so one line says the agent is at work.
+  // Not while it waits on the reader: the card above the composer says that.
+  const conversationOnly = useConversationOnly((s) => s.on);
+  const working = useThreadsStore(
+    (s) => conversationOnly && WORKING.has(s.byId[threadId]?.status ?? ""),
+  );
+  const workingSince = working
+    ? (loadedMessages.findLast((message) => message.role === "user")?.metadata?.createdAt ?? 0)
+    : undefined;
   const tailLine =
-    compaction !== undefined || startSteps !== undefined || stopReceipt !== undefined || limitLine;
+    compaction !== undefined ||
+    startSteps !== undefined ||
+    stopReceipt !== undefined ||
+    limitLine ||
+    workingSince !== undefined;
   const endRoom = FADE_PX + (tailLine ? compactingRow : 0);
   // An orchestrator's stream is its own digest of the thread, with no turns to fold.
   const orchestrated = useOrchestratorStreamContext() !== undefined;
@@ -336,8 +355,10 @@ export function Transcript({
     sameIds,
   );
   const builtFolds = useMemo(
-    () => (orchestrated ? NO_FOLDS : turnFolds(messages, inProgress, workingCalls)),
-    [messages, inProgress, orchestrated, workingCalls],
+    // "Conversation only" shows every word and none of the work, which leaves nothing to fold.
+    () =>
+      orchestrated || conversationOnly ? NO_FOLDS : turnFolds(messages, inProgress, workingCalls),
+    [messages, inProgress, orchestrated, conversationOnly, workingCalls],
   );
   // A run of retries reads as one card: each retry's repeat of the words, and a reply that is only a
   // failure that card lists among its earlier attempts, draw nothing.
@@ -408,6 +429,7 @@ export function Transcript({
     estimateSize: (index) => {
       const message = messages[index];
       if (message !== undefined && retryHidden.has(message.id)) return 0;
+      if (message !== undefined && conversationOnly && !showsInConversation(message)) return 0;
       return message ? estimateRowHeight(message, closedFold(message.id)) : 96;
     },
     overscan: 6,
@@ -1043,6 +1065,9 @@ export function Transcript({
                     const id = messages[item.index]!.id;
                     const closed = closedFold(id);
                     const retried = retryHidden.has(id);
+                    // A reply of nothing but work, in "Conversation only": no row, so no room.
+                    const workOnly =
+                      conversationOnly && !showsInConversation(messages[item.index]!);
                     return (
                       <div
                         key={item.key}
@@ -1053,7 +1078,7 @@ export function Transcript({
                         tabIndex={-1}
                         className={cn(
                           "absolute top-0 left-0 w-full rounded-(--radius-md) px-6 outline-none transition-[background-color,box-shadow] duration-(--dur-fast) [contain:content] focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset data-[flash=true]:bg-highlight/10 data-[flash=true]:ring-2 data-[flash=true]:ring-highlight/50 data-[flash=true]:ring-inset",
-                          closed?.empty !== true && !retried && "py-1.5",
+                          closed?.empty !== true && !retried && !workOnly && "py-1.5",
                         )}
                         style={{ transform: `translateY(${item.start}px)` }}
                       >
@@ -1088,6 +1113,8 @@ export function Transcript({
                         <StartingProgress threadId={threadId} steps={startSteps} />
                       ) : stopReceipt !== undefined ? (
                         <StopReceiptLine threadId={threadId} receipt={stopReceipt} />
+                      ) : workingSince !== undefined && !limitLine ? (
+                        <WorkingLine since={workingSince} />
                       ) : (
                         limitLine && (
                           <LimitWaitLine
