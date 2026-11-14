@@ -1412,14 +1412,15 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
     ),
   );
 
-  it.effect("leaves a worker the user has written to alone until it reports, and says why", () =>
+  it.effect("queues a message to a worker the user is talking to behind their exchange", () =>
     inServer((world) =>
       Effect.gen(function* () {
         const runtimes = yield* ThreadRuntimes;
         const orchestration = yield* Orchestration;
         const { session, workspaceId } = yield* openOrchestrator(world);
         const worker = yield* spawn(session, { feature: "mail-trigger" });
-        yield* completeTurn(worker.session);
+        // The brief's turn and the wrap-up its silent end earns, so the user's turn is the next.
+        yield* stopSilently(worker.session);
         const message = { threadId: worker.thread.id, text: "Status?" };
 
         yield* runtimes.send(worker.thread.id, { text: "Actually, use the other queue." });
@@ -1429,15 +1430,32 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             Effect.map((outbox) => outbox.workers[worker.thread.id]?.userIntervened === true),
           ),
         );
-        const theirs = yield* session.callTool("send_message", message).pipe(Effect.flip);
-        expect(theirs.message).toMatch(/^user_intervened: /);
-        expect(theirs.message).toContain("you can't message it");
-        expect(theirs.message).toContain('"Hand back" in its thread\'s header');
+        yield* waitStatus(worker.thread.id, "running");
+        // Mid-exchange: neither refused nor steered in, and an interrupt waits all the same.
+        for (const mode of [undefined, "steer", "interrupt"] as const) {
+          const behind = yield* session.callTool("send_message", {
+            ...message,
+            ...(mode === undefined ? {} : { mode }),
+          });
+          expect(behind).toMatchObject({ threadId: worker.thread.id, delivered: "queued" });
+          expect((behind as { note?: string }).note).toContain("queued behind their exchange");
+        }
+        expect(worker.session.steered).toEqual([]);
+        expect(worker.session.interrupts).toBe(0);
         expect((yield* orchestration.ledger(workspaceId)).features[0]?.workers[0]).toMatchObject({
           userIntervened: true,
-          messagesFromOrchestrator: 0,
+          messagesFromOrchestrator: 3,
         });
+        // The user's turn ends, and the orchestrator's words reach the worker after it.
+        // (Its end isn't counted as a rest, since the queue isn't empty: end it at the agent.)
+        yield* worker.session.completeTurn();
+        yield* waitReal(
+          "the queued messages",
+          Effect.sync(() => worker.session.sent.at(-1)?.origin?.threadId !== undefined),
+        );
+        expect(worker.session.sent.at(-1)?.text).toContain("Status?");
 
+        // Not mid-exchange (the running turn is the orchestrator's), a steer goes in as asked.
         yield* worker.session.callTool("report", {
           state: "progress",
           summary: "Switched queues.",
@@ -1675,7 +1693,6 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
               Effect.map((outbox) => outbox.workers[worker.thread.id]?.userIntervened === true),
             ),
           );
-          expect(yield* refusal({ project: "depot" })).toMatch(/^user_intervened: /);
           yield* told.callTool("report", { state: "progress", summary: "Left it alone." });
           yield* orchestration.setPaused(workspaceId, true);
           expect(yield* refusal({ project: "depot" })).toMatch(/^paused: /);
@@ -2286,7 +2303,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           const again = yield* session.callTool("answer_worker", answer).pipe(Effect.flip);
           expect(again.message).toMatch(/^unknown_request: /);
 
-          // A worker the user has taken over keeps its questions for the user, too.
+          // A worker the user has written to is still the orchestrator's: it answers its question.
           yield* worker.session.emit({
             type: "request",
             request: { kind: "question", id: "req-q2" as RequestId, questions: [question] },
@@ -2297,12 +2314,16 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             threadId: worker.thread.id,
             input: { text: "Wait." },
           });
-          yield* settle;
-          const theirs = yield* session
-            .callTool("answer_worker", { ...answer, requestId: "req-q2" })
-            .pipe(Effect.flip);
-          expect(theirs.message).toMatch(/^user_intervened: /);
-          expect(theirs.message).toContain("so is its question");
+          yield* waitReal(
+            "the user's mark",
+            outboxOf(workspaceId).pipe(
+              Effect.map((outbox) => outbox.workers[worker.thread.id]?.userIntervened === true),
+            ),
+          );
+          expect(
+            yield* session.callTool("answer_worker", { ...answer, requestId: "req-q2" }),
+          ).toEqual({ threadId: worker.thread.id, requestId: "req-q2", answered: true });
+          expect(worker.session.responses.at(-1)).toMatchObject({ requestId: "req-q2" });
         }),
       ),
   );
@@ -2899,15 +2920,22 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             true,
           );
           yield* store.updateThread(b.thread.id, () => original);
+          // An archived sender keeps its binding, and an archived orchestrator pauses its workers'
+          // messages: neither is a card.
           yield* store.updateThread(a.thread.id, (t) => ({ ...t, parked: true }));
           expect(yield* hosted.needsApproval!({ threadId: b.thread.id, text: "Coordinate." })).toBe(
-            true,
+            false,
           );
           yield* store.updateThread(a.thread.id, () => a.thread);
           yield* store.updateThread(thread.id, (t) => ({ ...t, parked: true }));
           expect(yield* hosted.needsApproval!({ threadId: b.thread.id, text: "Coordinate." })).toBe(
-            true,
+            false,
           );
+          expect(
+            (yield* hosted.run({ threadId: b.thread.id, text: "Coordinate." }).pipe(Effect.flip))
+              .message,
+          ).toMatch(/^paused: Your orchestrator is archived/);
+          expect(yield* store.listRequests(a.thread.id)).toEqual([]);
           yield* store.updateThread(thread.id, () => thread);
           for (const targetId of [plain.id, b.thread.id]) {
             if (targetId === b.thread.id)
@@ -2936,7 +2964,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
   );
 
   it.effect(
-    "Full Auto sibling delivery refuses pauses and explicit user holds without creating cards",
+    "Full Auto sibling delivery refuses pauses, and goes behind a user's exchange, without cards",
     () =>
       inServer((world) =>
         Effect.gen(function* () {
@@ -2956,25 +2984,25 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           expect((yield* hosted.run(message).pipe(Effect.flip)).message).toMatch(/^paused:/);
           expect(yield* store.listRequests(a.thread.id)).toEqual([]);
           yield* orchestration.setPaused(workspaceId, false);
-          for (const worker of [a, b]) {
-            yield* runtimes.send(worker.thread.id, { text: "User takes over." });
-            yield* waitReal(
-              "the user hold",
-              outboxOf(workspaceId).pipe(
-                Effect.map((outbox) => outbox.workers[worker.thread.id]?.userIntervened === true),
-              ),
+          const marked = (id: typeof a.thread.id) =>
+            outboxOf(workspaceId).pipe(
+              Effect.map((outbox) => outbox.workers[id]?.userIntervened === true),
             );
-            expect((yield* hosted.run(message).pipe(Effect.flip)).message).toMatch(
-              /^user_intervened:/,
-            );
-            expect(yield* store.listRequests(a.thread.id)).toEqual([]);
-            yield* worker.session.callTool("report", {
-              state: "progress",
-              summary: "Handed back.",
-            });
-          }
-          expect(b.session.steered).toEqual([]);
-          expect(yield* hosted.run(message)).toMatchObject({ delivered: "steered" });
+          // The user writing to the sender leaves its messages as they were.
+          yield* runtimes.send(a.thread.id, { text: "User takes over." });
+          yield* waitReal("the sender's mark", marked(a.thread.id));
+          expect(yield* hosted.run(message)).toMatchObject({ delivered: expect.any(String) });
+          expect(yield* store.listRequests(a.thread.id)).toEqual([]);
+          // The user mid-exchange with the receiver: the steer waits behind them instead.
+          yield* waitStatus(b.thread.id, "running");
+          yield* runtimes.steer(b.thread.id, { text: "User takes over." });
+          yield* waitReal("the receiver's mark", marked(b.thread.id));
+          const steeredBefore = b.session.steered.length;
+          const queued = yield* hosted.run({ ...message, text: "Coordinate again." });
+          expect(queued).toMatchObject({ delivered: "queued" });
+          expect((queued as { note?: string }).note).toContain("queued behind their exchange");
+          expect(b.session.steered).toHaveLength(steeredBefore);
+          expect(yield* store.listRequests(a.thread.id)).toEqual([]);
         }),
       ),
   );

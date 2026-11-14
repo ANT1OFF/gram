@@ -25,7 +25,7 @@ const sheet = (page: Page) => page.getByTestId("peek-sheet");
 const workerName = (page: Page, threadId: string) =>
   page.getByTestId("feature-card").locator(`a[data-testid="worker-link"][href$="/t/${threadId}"]`);
 
-/** Whether the orchestrator can't message it, and how many messages it has. */
+/** Whether the user is marked as talking to it, and how many messages it has. */
 const workerFacts = (page: Page, made: MockOneThreadSimulation, threadId: string) =>
   page.evaluate(
     async ({ workspaceId, worker }) => {

@@ -417,7 +417,7 @@ export const OrchestrationLive = Layer.effect(
       allowsAtFull,
       allowsCoordination,
       workerMergesOwn,
-    } = makeWorkers(kit, { survey, wakeFor, wake });
+    } = makeWorkers(kit, { survey, wakeFor });
 
     const {
       armLimitResume,

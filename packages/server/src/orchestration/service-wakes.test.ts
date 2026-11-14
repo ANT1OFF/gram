@@ -634,7 +634,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
   );
 
   it.effect(
-    "holds a worker for what the user typed, not for a notice, until they hand it back",
+    "marks a worker the user typed into, not one a notice reached, until they hand it back",
     () =>
       inServer((world) =>
         Effect.gen(function* () {
@@ -660,28 +660,30 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           yield* runtimes.send(worker.thread.id, { text: "codeql is failing" });
           yield* waitReal("the hold", held);
           yield* completeTurn(worker.session);
-          yield* handlers["orchestrator.releaseWorker"]({ threadId: worker.thread.id });
-          expect(yield* held).toBe(false);
-          expect((yield* outboxOf(workspaceId)).notes).toEqual([
-            `The user handed "Mail trigger" [thread ${worker.thread.id}] back to you; you may message it again.`,
-          ]);
-          // Nothing is said to the worker, and a second release is a no-op.
-          expect(texts(worker.session).at(-1)).toBe("codeql is failing");
-          yield* handlers["orchestrator.releaseWorker"]({ threadId: worker.thread.id });
-          expect((yield* outboxOf(workspaceId)).notes).toHaveLength(1);
-
-          yield* TestClock.adjust("60 seconds");
-          const digest = yield* waitReal(
-            "the digest that says so",
-            Effect.sync(() => texts(session).find((text) => text.includes("handed"))),
-          );
-          expect(digest).toContain('The user handed "Mail trigger"');
+          // The mark is information: the worker is still the orchestrator's, which messages it.
           expect(
             yield* session.callTool("send_message", {
               threadId: worker.thread.id,
               text: "Status?",
             }),
           ).toMatchObject({ delivered: "sent" });
+          yield* completeTurn(worker.session);
+          yield* handlers["orchestrator.releaseWorker"]({ threadId: worker.thread.id });
+          expect(yield* held).toBe(false);
+          expect((yield* outboxOf(workspaceId)).notes).toEqual([
+            `The user handed "Mail trigger" [thread ${worker.thread.id}] back to you: they are done talking to it.`,
+          ]);
+          // Nothing is said to the worker, and a second release is a no-op.
+          expect(texts(worker.session).at(-1)).toBe("Status?");
+          yield* handlers["orchestrator.releaseWorker"]({ threadId: worker.thread.id });
+          expect((yield* outboxOf(workspaceId)).notes).toHaveLength(1);
+          // The note rides the next digest.
+          yield* TestClock.adjust("60 seconds");
+          const digest = yield* waitReal(
+            "the digest that says so",
+            Effect.sync(() => texts(session).find((text) => text.includes("handed"))),
+          );
+          expect(digest).toContain('The user handed "Mail trigger"');
 
           const plain = yield* runtimes.create({
             projectRoot: world.repo,
@@ -697,7 +699,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
   );
 
   it.effect(
-    "Take over holds a worker by the typed message's path, sends it nothing, and Hand back ends it",
+    "Take over marks a worker by the typed message's path, sends it nothing, and Hand back ends it",
     () =>
       inServer((world) =>
         Effect.gen(function* () {
@@ -719,22 +721,18 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           const taken = yield* memo;
           expect(taken?.userInputAt).toBeTypeOf("number");
           expect(taken?.lastInputAt).toBe(taken?.userInputAt);
-          // Nothing reached the worker, and the orchestrator is held off as after a message.
+          // Nothing reached the worker, and the orchestrator can still message it.
           yield* settle;
           expect(texts(worker.session)).toEqual(said);
-          const theirs = yield* session
-            .callTool("send_message", { threadId: worker.thread.id, text: "Status?" })
-            .pipe(Effect.flip);
-          expect(theirs.message).toMatch(/^user_intervened: /);
-
-          yield* handlers["orchestrator.releaseWorker"]({ threadId: worker.thread.id });
-          expect(yield* held).toBe(false);
           expect(
             yield* session.callTool("send_message", {
               threadId: worker.thread.id,
               text: "Status?",
             }),
           ).toMatchObject({ delivered: "sent" });
+
+          yield* handlers["orchestrator.releaseWorker"]({ threadId: worker.thread.id });
+          expect(yield* held).toBe(false);
 
           const plain = yield* runtimes.create({
             projectRoot: world.repo,

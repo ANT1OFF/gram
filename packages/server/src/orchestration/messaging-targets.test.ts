@@ -226,7 +226,7 @@ describe.skipIf(!hasGit)("message target validation", () => {
   );
 
   it.effect(
-    "message_orchestrator refuses stale membership, paused workspaces and held workers before approval",
+    "message_orchestrator refuses stale membership and paused workspaces before approval, not a worker the user wrote to",
     () =>
       inServer((world) =>
         Effect.gen(function* () {
@@ -257,9 +257,13 @@ describe.skipIf(!hasGit)("message target validation", () => {
               },
             }),
           );
-          yield* fails(/^user_intervened:/);
+          // The user writing to the worker leaves it its orchestrator's: no refusal, no card.
+          expect(yield* tool.needsApproval!(input)).toBe(false);
+          expect(yield* tool.run(input)).toMatchObject({ threadId: thread.id });
+          expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
+          // Its binding is its persisted `spawnedBy`, not the memo: a lost memo asks nobody either.
           yield* store.putOutbox(workspaceId, encodeOutbox({ ...outbox, workers: {} }));
-          yield* fails(/^no_authority:/);
+          expect(yield* tool.needsApproval!(input)).toBe(false);
           yield* store.putOutbox(workspaceId, encodeOutbox(outbox));
           yield* store.updateThread(worker.thread.id, (current) => {
             const { spawnedBy: _spawnedBy, ...detached } = current;
@@ -368,13 +372,14 @@ describe.skipIf(!hasGit)("message target validation", () => {
             worker.thread.id,
             { approve: () => Effect.die("unexpected approval") },
           )[0]!;
-          expect((yield* tool.run({ text: "Coordinate." }).pipe(Effect.flip)).message).toMatch(
-            change === "pause"
-              ? /^paused:/
-              : change === "hold"
-                ? /^user_intervened:/
-                : /^no_authority:/,
-          );
+          if (change === "hold" || change === "membership") {
+            // Neither the user writing to the worker nor a lost memo unbinds it from its parent.
+            expect(yield* tool.run({ text: "Coordinate." })).toMatchObject({ threadId: thread.id });
+          } else {
+            expect((yield* tool.run({ text: "Coordinate." }).pipe(Effect.flip)).message).toMatch(
+              change === "pause" ? /^paused:/ : /^no_authority:/,
+            );
+          }
           expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
         }),
       ),
