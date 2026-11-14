@@ -75,8 +75,31 @@ export const WaitItem = Schema.Struct({
    * can tell it changed since; absent is 0.
    */
   revision: Schema.optionalKey(Schema.Int),
+  /**
+   * The signed-in person it waits on, where the server knew one when it was added: who typed the
+   * thread's latest message for an item the agent or the helper added, who added it for the
+   * user's own. Absent, it waits on anyone, which is every item of a server nobody signs in to.
+   * Never changed afterwards.
+   */
+  person: Schema.optionalKey(Schema.String),
 });
 export type WaitItem = typeof WaitItem.Type;
+
+/**
+ * Whether `item` is on `reader`'s Waiting on you: their own, and the ones for anyone. A reader
+ * who isn't signed in (`undefined`) is the one person of their server, and every item is theirs.
+ */
+export const waitIsFor = (item: Pick<WaitItem, "person">, reader: string | undefined): boolean =>
+  reader === undefined || item.person === undefined || item.person === reader;
+
+/** `items` as `reader` lists them (`waitIsFor`); the same array when all of them are. */
+export const waitsFor = <Item extends Pick<WaitItem, "person">>(
+  items: ReadonlyArray<Item>,
+  reader: string | undefined,
+): ReadonlyArray<Item> =>
+  items.every((item) => waitIsFor(item, reader))
+    ? items
+    : items.filter((item) => waitIsFor(item, reader));
 
 /** Whether `item` still waits on the user. */
 export const waitIsOpen = (item: Pick<WaitItem, "resolvedAt">): boolean =>

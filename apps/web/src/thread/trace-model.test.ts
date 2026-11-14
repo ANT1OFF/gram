@@ -162,6 +162,23 @@ describe("a turn's trace", () => {
       width: 80,
     });
 
+    // The agent reports a call held at its approval card as started: it waits on the person.
+    const held = turnTrace(
+      [
+        reply("a", [bash("c1", "input-available")], {
+          c1: { startedAt: 1_000 },
+        }),
+      ],
+      none,
+      none,
+      0,
+      undefined,
+      5_000,
+      new Set(["c1"]),
+    )!;
+    expect(held.steps.at(-1)).toMatchObject({ kind: "wait", tone: "running" });
+    expect(held.totals).toMatchObject({ waitMs: 4_000, toolMs: 0 });
+
     const thinking = turnTrace(
       [reply("a", [bash("c1")], { c1: { startedAt: 1_000, endedAt: 2_000 } })],
       none,

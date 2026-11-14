@@ -263,6 +263,8 @@ export const machineCheckouts = (
           }),
     release: (thread, options) =>
       Effect.gen(function* () {
+        // What a stop kept of the thread at its remote stays: a closed thread can be reopened
+        // (`thread-lifecycle.ts` keeps it as it was), and its work in progress with it.
         const removal = options.removeWorktree;
         if (removal === undefined) return;
         const used = yield* others(thread);

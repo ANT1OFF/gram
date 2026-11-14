@@ -20,6 +20,7 @@ import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { compactTokens } from "@/usage/usage-model";
 
+import { useAwaitingToolIds } from "./awaiting-tools";
 import { toolNameOf } from "./parts";
 import { replyTokens } from "./reply-tokens-model";
 import { formatElapsed } from "./subagent-strip-model";
@@ -141,6 +142,7 @@ export function TraceView({
   const running = last && working && endedAt === undefined;
   const root = useRef<HTMLDivElement>(null);
   const now = useNow(running, root);
+  const awaiting = useAwaitingToolIds(threadId);
   const trace = useMemo(
     () =>
       turnTrace(
@@ -150,8 +152,21 @@ export function TraceView({
         turn?.startedAt ?? startedAt,
         running ? undefined : (endedAt ?? turns[at + 1]?.startedAt),
         now,
+        awaiting,
       ),
-    [replies, subagents, subagentUsage, turn, startedAt, running, endedAt, turns, at, now],
+    [
+      replies,
+      subagents,
+      subagentUsage,
+      turn,
+      startedAt,
+      running,
+      endedAt,
+      turns,
+      at,
+      now,
+      awaiting,
+    ],
   );
   // The step picked, and the turn it was picked in: another turn starts with none.
   const [pick, setPick] = useState<{ turn: string | undefined; id: string } | undefined>();
@@ -178,7 +193,7 @@ export function TraceView({
       data-thread={threadId}
       className="flex min-h-0 flex-1 flex-col bg-background text-meta"
     >
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-1.5">
+      <div className="@container/tracetop flex shrink-0 items-center gap-2 border-b border-border px-4 py-1.5">
         <Button variant="ghost" size="sm" data-testid="trace-close" onClick={onClose}>
           <ArrowLeft aria-hidden data-icon="inline-start" />
           Conversation
@@ -196,10 +211,24 @@ export function TraceView({
           >
             <ChevronLeft aria-hidden />
           </Button>
-          <span data-testid="trace-turn" className="text-muted-foreground tabular-nums">
-            {turn === undefined
-              ? "No turns"
-              : `Turn ${turn.number} of ${turns.length}${turn.startedAt === undefined ? "" : ` · ${formatClockTime(turn.startedAt)}`}`}
+          {/* One line at any width: a phone's bar keeps the turn and drops when it started. */}
+          <span
+            data-testid="trace-turn"
+            className="whitespace-nowrap text-muted-foreground tabular-nums"
+          >
+            {turn === undefined ? (
+              "No turns"
+            ) : (
+              <>
+                Turn {turn.number} of {turns.length}
+                {turn.startedAt !== undefined && (
+                  <span className="@max-md/tracetop:hidden">
+                    {" · "}
+                    {formatClockTime(turn.startedAt)}
+                  </span>
+                )}
+              </>
+            )}
           </span>
           <Button
             variant="ghost"
@@ -260,51 +289,58 @@ function Summary({
     ["wait", waitMs],
   ];
   return (
-    <div
-      data-testid="trace-summary"
-      className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-border px-4 py-2 text-muted-foreground"
-    >
-      <span>
-        <b className="font-semibold text-foreground tabular-nums">{formatElapsed(wallMs)}</b>{" "}
-        {running ? "so far" : `finished ${formatClockTime(trace.end)}`}
-      </span>
-      <span aria-hidden className="flex h-1.5 min-w-32 flex-1 gap-0.5 overflow-hidden rounded-full">
+    <div className="@container/tracesum shrink-0 border-b border-border">
+      <div
+        data-testid="trace-summary"
+        className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-4 py-2 text-muted-foreground"
+      >
+        <span>
+          <b className="font-semibold text-foreground tabular-nums">{formatElapsed(wallMs)}</b>{" "}
+          {running ? "so far" : `finished ${formatClockTime(trace.end)}`}
+        </span>
+        {/* Between the total and its parts where they fit on one row; under them in a narrow view,
+          where it squeezed the parts onto a second row. */}
+        <span
+          aria-hidden
+          className="flex h-1.5 min-w-32 gap-0.5 overflow-hidden rounded-full @max-2xl/tracesum:order-last @max-2xl/tracesum:basis-full @2xl/tracesum:flex-1"
+        >
+          {shares.map(
+            ([kind, ms]) =>
+              ms > 0 && (
+                <span
+                  key={kind}
+                  className={cn("rounded-full", KIND[kind].bar)}
+                  style={{ flexGrow: ms, flexBasis: 0 }}
+                />
+              ),
+          )}
+        </span>
         {shares.map(
           ([kind, ms]) =>
-            ms > 0 && (
+            (ms > 0 || kind !== "wait") && (
               <span
                 key={kind}
-                className={cn("rounded-full", KIND[kind].bar)}
-                style={{ flexGrow: ms, flexBasis: 0 }}
-              />
+                data-testid={`trace-total-${kind}`}
+                className="flex items-center gap-1.5"
+              >
+                <span aria-hidden className={cn("size-2 rounded-xs", KIND[kind].bar)} />
+                {KIND[kind].name}
+                <b className="font-semibold text-foreground tabular-nums">{tookLabel(ms)}</b>
+              </span>
             ),
         )}
-      </span>
-      {shares.map(
-        ([kind, ms]) =>
-          (ms > 0 || kind !== "wait") && (
-            <span
-              key={kind}
-              data-testid={`trace-total-${kind}`}
-              className="flex items-center gap-1.5"
-            >
-              <span aria-hidden className={cn("size-2 rounded-xs", KIND[kind].bar)} />
-              {KIND[kind].name}
-              <b className="font-semibold text-foreground tabular-nums">{tookLabel(ms)}</b>
-            </span>
-          ),
-      )}
-      {tokens !== undefined && (
-        <span>
-          <b className="font-semibold text-foreground tabular-nums">{compactTokens(tokens)}</b>{" "}
-          tokens
-        </span>
-      )}
-      {trace.failed > 0 && (
-        <span data-testid="trace-failed" className="text-destructive">
-          {trace.failed} failed
-        </span>
-      )}
+        {tokens !== undefined && (
+          <span>
+            <b className="font-semibold text-foreground tabular-nums">{compactTokens(tokens)}</b>{" "}
+            tokens
+          </span>
+        )}
+        {trace.failed > 0 && (
+          <span data-testid="trace-failed" className="text-destructive">
+            {trace.failed} failed
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -378,9 +414,16 @@ function Waterfall({
                     <span className="shrink truncate text-muted-foreground">{step.note}</span>
                   )}
                 </span>
-                <span className="text-caption text-muted-foreground tabular-nums">
-                  {step.took ?? (step.tone === "running" ? "…" : "")}
-                </span>
+                {/* A call held at its approval card says so where its time will be. */}
+                {step.kind === "wait" && step.tone === "running" ? (
+                  <span data-testid="trace-step-waits" className={cn("text-caption", kind.text)}>
+                    Waiting
+                  </span>
+                ) : (
+                  <span className="text-caption text-muted-foreground tabular-nums">
+                    {step.took ?? (step.tone === "running" ? "…" : "")}
+                  </span>
+                )}
                 <span className="relative h-full">
                   {trace.ticks.map((tick) => (
                     <span

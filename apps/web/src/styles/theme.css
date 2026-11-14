@@ -93,9 +93,9 @@
   --color-popover-foreground: var(--fg);
   --color-primary: var(--accent);
   --color-primary-foreground: var(--on-accent);
-  --color-secondary: var(--surface-3);
+  --color-secondary: var(--surface-fill);
   --color-secondary-foreground: var(--fg);
-  --color-muted: var(--surface-3);
+  --color-muted: var(--surface-fill);
   --color-muted-foreground: var(--fg-muted);
   --color-description: var(--fg-description);
   --color-accent: var(--surface-hover);

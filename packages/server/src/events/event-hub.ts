@@ -1,10 +1,11 @@
-import type { ServerEvent, ThreadFeedEvent, ThreadId } from "@gram/contracts";
+import { type ServerEvent, type ThreadFeedEvent, type ThreadId, waitsFor } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import { signedInPerson } from "../embedding/person.ts";
 import { BacklogGauge } from "./backlog.ts";
 import { ClientBuffer, serverEventKey, serverEventOrder } from "./client-buffer.ts";
 
@@ -68,6 +69,11 @@ export interface EventHubShape {
   publish(event: ServerEvent): Effect.Effect<void>;
   /** Tells the `ownEvents` streams, in order with what `publish` tells them, and no window. */
   publishOwn(event: OwnEvent): Effect.Effect<void>;
+  /**
+   * `event` to the clients `serverEvents` was opened for `person`, and to nobody else: what is one
+   * person's own (a change to their own settings). The server's own consumers don't see it.
+   */
+  publishTo(person: string, event: ServerEvent): Effect.Effect<void>;
   publishFeed(item: ThreadFeedItem): Effect.Effect<void>;
   /**
    * Subscribes, then emits `snapshot` (one event, or several in order), then live events. A client
@@ -75,6 +81,8 @@ export interface EventHubShape {
    */
   serverEvents(
     snapshot: Effect.Effect<ServerEvent | ReadonlyArray<ServerEvent>>,
+    /** Whose connection this is, for `publishTo`. */
+    person?: string,
   ): Stream.Stream<ServerEvent>;
   /**
    * Every event published while the stream runs that `select` keeps, in order, none ever dropped:
@@ -117,6 +125,8 @@ export interface EventHubOptions {
 
 interface Client<I> {
   readonly accept: (item: I) => boolean;
+  /** Whose connection this is, where the subscriber said. */
+  readonly person?: string | undefined;
   readonly buffer: ClientBuffer<I>;
   /**
    * Tells the client's stream its buffer has something to take. A PubSub, not a Queue, so a waiting
@@ -126,16 +136,60 @@ interface Client<I> {
 }
 
 /**
+ * `event` as the connections opened for `person` are sent it: Waiting on you holds a signed-in
+ * person's own items and the ones for anyone (`waitsFor`), wherever the items came from. The same
+ * event when nothing of it is another person's, which is always so where nobody signs in.
+ */
+export const eventFor = (event: ServerEvent, person: string | undefined): ServerEvent => {
+  const reader = signedInPerson(person);
+  if (reader === undefined) return event;
+  if (event.type === "thread.waits") {
+    const waits = waitsFor(event.waits, reader);
+    const helperResolved =
+      event.helperResolved === undefined ? undefined : waitsFor(event.helperResolved, reader);
+    if (waits === event.waits && helperResolved === event.helperResolved) return event;
+    return {
+      type: "thread.waits",
+      threadId: event.threadId,
+      waits,
+      ...(helperResolved === undefined || helperResolved.length === 0 ? {} : { helperResolved }),
+    };
+  }
+  if (event.type === "threads.snapshot") {
+    let changed = false;
+    const threads = event.threads.map((summary) => {
+      const waits = summary.waits === undefined ? undefined : waitsFor(summary.waits, reader);
+      const helperResolved =
+        summary.helperResolved === undefined ? undefined : waitsFor(summary.helperResolved, reader);
+      if (waits === summary.waits && helperResolved === summary.helperResolved) return summary;
+      changed = true;
+      const { waits: _, helperResolved: __, ...rest } = summary;
+      return {
+        ...rest,
+        ...(waits === undefined || waits.length === 0 ? {} : { waits }),
+        ...(helperResolved === undefined || helperResolved.length === 0 ? {} : { helperResolved }),
+      };
+    });
+    return changed ? { type: "threads.snapshot", threads } : event;
+  }
+  return event;
+};
+
+/**
  * Publishing writes straight into each client's bounded buffer, so there's no per-client backlog
  * anywhere else. Suspended, so a publish effect built ahead of time reaches the clients registered
  * when it runs rather than when it was built.
  */
-const deliver = <I>(clients: ReadonlySet<Client<I>>, item: I) =>
+const deliver = <I>(
+  clients: ReadonlySet<Client<I>>,
+  item: I,
+  reaches: (client: Client<I>) => boolean = () => true,
+) =>
   Effect.suspend(() =>
     Effect.forEach(
       [...clients],
       (client) =>
-        client.accept(item)
+        reaches(client) && client.accept(item)
           ? Effect.sync(() => client.buffer.offer(item)).pipe(
               Effect.andThen(PubSub.publish(client.wake, true)),
             )
@@ -154,6 +208,7 @@ const clientStream = <I, A, E>(
   options: {
     readonly buffer: ClientBuffer<I>;
     readonly accept: (item: I) => boolean;
+    readonly person?: string | undefined;
     readonly start: Effect.Effect<Iterable<A>, E>;
     /** The event to send for `item`, or `undefined` to skip it; applied when it's taken. */
     readonly emit: (item: I) => A | undefined;
@@ -164,6 +219,7 @@ const clientStream = <I, A, E>(
     Effect.gen(function* () {
       const client: Client<I> = {
         accept: options.accept,
+        person: options.person,
         buffer: options.buffer,
         wake: yield* PubSub.sliding<true>(1),
       };
@@ -252,19 +308,22 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
           }),
         publishOwn: (event) =>
           Effect.suspend(() => Effect.all(offerInternal(event), { discard: true })),
+        publishTo: (person, event) =>
+          deliver(eventClients, event, (client) => client.person === person),
         publishFeed: (item) => deliver(feedClients, item),
 
-        serverEvents: (snapshot) => {
+        serverEvents: (snapshot, person) => {
           const head = snapshot.pipe(
             Effect.map((events): ReadonlyArray<ServerEvent> =>
-              "type" in events ? [events] : events,
+              ("type" in events ? [events] : events).map((event) => eventFor(event, person)),
             ),
           );
           return clientStream(eventClients, {
             buffer: new ClientBuffer(serverEventCapacity, serverEventKey, serverEventOrder),
             accept: () => true,
+            person,
             start: head,
-            emit: (event) => event,
+            emit: (event) => eventFor(event, person),
             resync: head,
           });
         },

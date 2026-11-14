@@ -4,12 +4,20 @@
 // already show: inside its checkouts or granted folders, its own attachments folder, or a file it
 // sent or wrote. The list hands back names and sizes only; the Files view reads the bytes through
 // the thread's own `fs.image` / `attachment.read` / Files panel, which check them again.
+//
+// A thread on another machine: what Gram stored or copied here for it (a tool's image, a sent file)
+// is recorded as any other. A file that is only on that machine is recorded when an object store
+// keeps outputs and the machine's host reads files in parts: it is checked there, and copied to the
+// store from there. Otherwise it stays unrecorded, as it was before hosts could.
 
 import {
   checkoutRoots,
   effectiveCheckout,
+  HOST_FILE_PART_BYTES,
+  hostOf,
   InvalidState,
   isCredentialPath,
+  isLocalHost,
   OUTPUTS_PAGE,
   OUTPUTS_PAGE_MAX,
   outputKindOf,
@@ -27,15 +35,18 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
-import { lstat } from "node:fs/promises";
+import { appendFile, lstat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 import { attachmentsDir } from "../attachments/attachments.ts";
 import { ServerConfig } from "../config.ts";
-import { ObjectStore, outputKey } from "../embedding/object-store.ts";
+import { OBJECT_MAX_BYTES, ObjectStore, outputKey } from "../embedding/object-store.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { expandHome } from "../fs/folders.ts";
+import type { HostFileReads } from "../host/file-reads.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { SqlClient, type SqlError } from "../platform/unstable.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -138,6 +149,36 @@ const toOutput = (row: Row): WorkspaceOutput => ({
   at: row.at,
 });
 
+/**
+ * The whole file written at `to`, a part at a time from the machine it is on, or `false`:
+ * it changed under the read, a part didn't come, or it is over what the store takes.
+ */
+const stageFrom =
+  (
+    part: NonNullable<HostFileReads["part"]>,
+    path: string,
+    roots: ReadonlyArray<string>,
+    outside: Parameters<NonNullable<HostFileReads["part"]>>[2],
+    first: { readonly size: number; readonly mtime: number },
+  ) =>
+  (to: string): Effect.Effect<boolean> =>
+    Effect.gen(function* () {
+      if (first.size > OBJECT_MAX_BYTES) return false;
+      let offset = 0;
+      // An empty file still lands, as an empty file.
+      yield* Effect.promise(() => appendFile(to, Buffer.alloc(0)));
+      while (offset < first.size) {
+        const length = Math.min(HOST_FILE_PART_BYTES, first.size - offset);
+        const got = yield* part(path, roots, outside, offset, length);
+        if (got.size !== first.size || got.mtime !== first.mtime) return false;
+        const bytes = Buffer.from(got.data, "base64");
+        if (bytes.length === 0 || bytes.length > length) return false;
+        yield* Effect.promise(() => appendFile(to, bytes));
+        offset += bytes.length;
+      }
+      return true;
+    }).pipe(Effect.catchCause(() => Effect.succeed(false)));
+
 export class WorkspaceOutputs extends Context.Service<WorkspaceOutputs, WorkspaceOutputsShape>()(
   "@gram/server/WorkspaceOutputs",
 ) {
@@ -155,6 +196,8 @@ export class WorkspaceOutputs extends Context.Service<WorkspaceOutputs, Workspac
       const sql = yield* SqlClient.SqlClient;
       const attachments = attachmentsDir(config.dataDir);
       const objects = yield* ObjectStore;
+      // Absent where nothing places a thread on another machine.
+      const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
 
       /** The candidate resolved and checked against `thread`'s folders, or nothing. */
       const admit = (thread: Thread, output: ObservedOutput) =>
@@ -193,15 +236,15 @@ export class WorkspaceOutputs extends Context.Service<WorkspaceOutputs, Workspac
           return checked;
         });
 
-      const recordNow = (threadId: ThreadId, output: ObservedOutput) =>
+      /**
+       * Keeps the row for a checked file and tells the workspace; `false` when the same file was
+       * seen before (a reread, a resend), which changes nothing, so nobody is told.
+       */
+      const keep = (thread: Thread, source: OutputSource, checked: Omit<Checked, "real">) =>
         Effect.gen(function* () {
-          const thread = yield* store.getThread(threadId).pipe(Effect.option);
-          if (thread._tag === "None") return;
-          const checked = yield* admit(thread.value, output);
-          if (checked === undefined) return;
-          const kind = outputKindOf(checked.path, output.source);
+          const threadId = thread.id;
+          const kind = outputKindOf(checked.path, source);
           const mediaType = outputMediaType(checked.path);
-          // The same file seen again (a reread, a resend) changes nothing, so nobody is told.
           const known = yield* run(
             sql<{ kind: string; source: string; size: number; mtime: number }>`SELECT kind, source,
                 size, mtime FROM thread_outputs WHERE thread_id = ${threadId} AND path = ${checked.path}`,
@@ -210,29 +253,87 @@ export class WorkspaceOutputs extends Context.Service<WorkspaceOutputs, Workspac
           if (
             same !== undefined &&
             same.kind === kind &&
-            same.source === output.source &&
+            same.source === source &&
             same.size === checked.size &&
             same.mtime === checked.mtime
           )
-            return;
+            return false;
           const at = yield* Clock.currentTimeMillis;
           yield* run(
             sql`INSERT INTO thread_outputs
                 (thread_id, path, kind, source, media_type, size, mtime, at)
-              VALUES (${threadId}, ${checked.path}, ${kind}, ${output.source}, ${mediaType},
+              VALUES (${threadId}, ${checked.path}, ${kind}, ${source}, ${mediaType},
                 ${checked.size}, ${checked.mtime}, ${at})
               ON CONFLICT(thread_id, path) DO UPDATE SET kind = excluded.kind,
                 source = excluded.source, media_type = excluded.media_type,
                 size = excluded.size, mtime = excluded.mtime, at = excluded.at`,
           );
+          return true;
+        });
+
+      const changed = (thread: Thread) =>
+        thread.workspaceId === undefined
+          ? Effect.void
+          : hub.publish({ type: "outputs.changed", workspaceId: thread.workspaceId });
+
+      /**
+       * A file that is only on the thread's machine: checked there, recorded, and copied to the
+       * object store from there. Nothing happens without a store that keeps outputs, while the
+       * machine is away, or on a host that reads no file in parts.
+       */
+      const recordElsewhere = (thread: Thread, output: ObservedOutput) =>
+        Effect.gen(function* () {
+          if (hosts === undefined || thread.role === "dream" || !(yield* objects.on)) return;
+          const checkout = effectiveCheckout(thread);
+          const spelled = output.path.trim();
+          if (spelled === "" || isCredentialPath(spelled)) return;
+          const host = yield* hosts.get(hostOf(checkout)).pipe(Effect.option);
+          const part = host._tag === "None" ? undefined : host.value.reads?.part;
+          if (part === undefined) return;
+          // The folder a relative path is in comes first, as the host reads it.
+          const roots = [
+            ...new Set([
+              checkout.path,
+              thread.checkout.path,
+              ...checkoutRoots(thread),
+              ...(thread.additionalDirectories ?? []),
+            ]),
+          ];
+          // Outside its folders a thread shows only what it sent or wrote itself.
+          const outside = {
+            allowed: output.source === "sent" || output.source === "written",
+            refusal: "isn't in this thread's folders",
+          };
+          const first = yield* part(spelled, roots, outside, 0, 1).pipe(Effect.option);
+          if (first._tag === "None" || isCredentialPath(first.value.path)) return;
+          const { path, size, mtime } = first.value;
+          if (!(yield* keep(thread, output.source, { path, size, mtime }))) return;
+          yield* objects.putStaged(
+            outputKey(thread.id, path),
+            `${size}:${mtime}`,
+            stageFrom(part, path, roots, outside, { size, mtime }),
+          );
+          yield* changed(thread);
+        });
+
+      const recordNow = (threadId: ThreadId, output: ObservedOutput) =>
+        Effect.gen(function* () {
+          const thread = yield* store.getThread(threadId).pipe(Effect.option);
+          if (thread._tag === "None") return;
+          const checked = yield* admit(thread.value, output);
+          if (checked === undefined) {
+            // Not a file of this machine's: the thread's own machine may have it.
+            if (!isLocalHost(effectiveCheckout(thread.value)))
+              yield* recordElsewhere(thread.value, output);
+            return;
+          }
+          if (!(yield* keep(thread.value, output.source, checked))) return;
           // A file in the attachments folder is mirrored with it; one in a checkout is copied now,
           // since the checkout doesn't outlive its thread.
           if (!isInside(attachments, checked.path)) {
             yield* objects.put(outputKey(threadId, checked.path), checked.real);
           }
-          const workspaceId = thread.value.workspaceId;
-          if (workspaceId !== undefined)
-            yield* hub.publish({ type: "outputs.changed", workspaceId });
+          yield* changed(thread.value);
         });
 
       // Observer callbacks run one at a time for the whole runtime, so the file checks go to a

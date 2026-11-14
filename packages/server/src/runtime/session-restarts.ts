@@ -21,7 +21,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Clock from "effect/Clock";
 import * as FiberMap from "effect/FiberMap";
-import { type Runtime, locked, type GetRuntime } from "./runtime-state.ts";
+import { AWAITS_MACHINE, type Runtime, locked, type GetRuntime } from "./runtime-state.ts";
 import type { AgentHosts } from "./agent-hosts.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import type { EventHubShape } from "../events/event-hub.ts";
@@ -438,6 +438,7 @@ export const makeRestartMethods = ({
       const before = yield* store.getThread(threadId);
       // Dreams read unvetted transcripts and run only as their pass opens them.
       if (before.role === "dream") return yield* refuse("a dream's session opens only for its run");
+      if (before.awaitingMachine !== undefined) return yield* refuse(AWAITS_MACHINE);
       if (!(yield* checkouts.present(before.checkout.path))) {
         return yield* refuse(missingThreadFolder(before.checkout.path));
       }

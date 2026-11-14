@@ -146,6 +146,7 @@ With `GRAM_OBJECT_STORE_URL` set, attachments, docs and the files threads produc
 
 - An attachment is sent as it is uploaded. Every minute the attachments and docs folders are walked, and whatever is new or changed since it was last sent is sent: a doc that was saved, an image a tool call returned, a fork's copies.
 - A file a thread produced in its checkout (a report, a screenshot it wrote) is copied to the store when it is recorded as an output, since a checkout doesn't outlive its thread.
+- A thread on another machine: the file is checked and read on that machine, a part at a time through its host, and copied to the store under the same key, so it outlives the machine. Its path in the key is the path on that machine. This needs a host that names the `file-parts` feature; with an older host the file is neither recorded nor copied, as before.
 - A closed thread's attachments and outputs are deleted from the store with it, and so is anything the deployment keeps under `sessions/<threadId>/`. Nothing else is deleted: a file missing on the disk is never taken as a reason to delete it in the store.
 - A server that starts on a fresh disk lists the docs in the store and brings them back before anything reads them. An attachment is brought back the first time the transcript shows it.
 
@@ -169,7 +170,7 @@ Limits:
 
 - A file over 64 MB is neither sent nor brought back.
 - What was sent is remembered in `object-store.json` in the data folder. Without it (a fresh disk) everything on the disk is sent again, once.
-- An output on another machine's checkout is not copied: the server copies only files it can read itself.
+- An output on another machine is copied only while that machine is connected and its host names `file-parts`. It is read into `object-store-staging` in the data folder, sent from there and removed; that folder is emptied at each start.
 - An output copied to the store is not read back from it by the Files view; the deployment serves it from the store by its key.
 - A send that fails is tried again at the next walk, and an output's at the next time it is recorded.
 - A delete the store didn't confirm is kept in `object-store.json` and asked again at each walk.
@@ -272,3 +273,28 @@ GET /embed/v1/settings
 - Every other setting can be supplied, the default permission mode, the terminal's shell and the editor command among them. Whoever holds `GRAM_EMBED_TOKEN` configures this server as its owner would, and the person using it can't undo that: give the token only to the service that is meant to.
 
 The Settings page doesn't yet mark a supplied setting: a change to one fails with the message above.
+
+### A person's own settings
+
+Most settings are one value for the server. A few are a person's own view of the app, named one by one in the contract (`PERSONAL_SETTINGS` in `packages/contracts/src/settings.ts`); today that is `layout.grid`, the pane grid and its focused pane.
+
+- The server keeps one value of each per person (`person_settings`). The person is whoever the fronting proxy signed in (`sub`), or the one local person where nobody signs in that way, which is the desktop app: there nothing differs from before, and the grid it had saved is that person's.
+- `settings.get` answers the shared settings with the caller's own laid over them. A personal setting is read from the person's own rows only: someone who has saved none has none, whatever the shared row once held.
+- `settings.set` writes the personal part of a patch for the caller and the rest for everyone. A change to a personal setting sends `settings.changed` to that signed-in person's connections and to nobody else's.
+- A viewer may send a patch of personal settings only. One that names anything shared is refused whole.
+- A supplied setting wins over a person's own as over the shared value, and a change to it is refused the same way.
+
+### A person's own Waiting on you
+
+With sign-in through a fronting proxy, an item of Waiting on you names the person it waits on (`person` on the item, and on its `wait_items` row), where the server knew one when it was added:
+
+- one the agent adds (`wait_on_user`) or the helper suggests waits on whoever typed the thread's latest message;
+- one a person adds from a message waits on that person;
+- an item added when no signed-in person had written in the thread (a worker an orchestrator started, a thread only a wake has written to), and every item from before items named anyone, waits on anyone.
+
+An item keeps who it waits on when it is updated, kept, resolved or reopened.
+
+- A signed-in person is sent, and `thread.listWaits` answers them, their own items and the ones for anyone: in `threads.snapshot`, in `thread.waits` and in what the helper resolved lately. So the tray, the sidebar count and the board hold nobody else's.
+- This is what a person's list shows, not a permission. The chip an item draws in the transcript is the thread's, and everyone who reads the thread sees it; `thread.resolveWait` and `thread.keepWait` take an item's id from anyone who may write.
+- The agent's side is the thread's: `list_waits`, the note it gets with the next message and the limit of open items count every item, whoever each waits on.
+- Where nobody signs in that way, which is the desktop app, no item names a person and nothing differs from before.

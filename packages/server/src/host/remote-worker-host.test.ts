@@ -205,7 +205,20 @@ describe("a joined machine's worker host", () => {
         yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
         const { root, env } = project(dir);
         const repos = join(dir, "repos");
-        const { connection } = yield* machine(repos, env);
+        const { connection: made } = yield* machine(repos, env);
+        /** The threads whose kept work the machine was asked to delete at its remote. */
+        const dropped: Array<string> = [];
+        const connection = {
+          ...made,
+          stop: {
+            ...made.stop,
+            drop: (request: { readonly threadId: string }) =>
+              Effect.sync(() => {
+                dropped.push(request.threadId);
+                return { dropped: true };
+              }),
+          },
+        };
         const host = yield* machineWorkerHost(MACHINE, connection, yield* deps());
         expect(host.id).toBe(MACHINE.id);
 
@@ -265,6 +278,8 @@ describe("a joined machine's worker host", () => {
         expect(existsSync(checkout.path)).toBe(true);
         yield* host.checkouts.release(worker, { removeWorktree: { force: true } });
         expect(existsSync(checkout.path)).toBe(false);
+        // A closed thread can be reopened: what a stop kept of it at its remote is not deleted.
+        expect(dropped).toEqual([]);
       }).pipe(Effect.scoped, Effect.provide(Live)),
     30_000,
   );

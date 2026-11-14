@@ -553,6 +553,37 @@ const queueActor = Effect.gen(function* () {
   yield* sql`ALTER TABLE queue_items ADD COLUMN actor TEXT`;
 });
 
+/**
+ * Each person's own settings (`PERSONAL_SETTINGS` in the contracts), a row per person and setting,
+ * beside the settings everyone shares: `person` is who a fronting proxy named, or `local` for the
+ * one person of a server with no such sign-in (`embedding/person.ts`), `key` the setting's dotted
+ * path and `value` its JSON. The pane grid saved so far was the local person's, so it becomes
+ * theirs; the shared row keeps its copy, which nothing reads any more.
+ */
+const personSettings = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE TABLE person_settings (
+    person TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (person, key)
+  ) WITHOUT ROWID`;
+  yield* sql`INSERT INTO person_settings (person, key, value)
+    SELECT 'local', 'layout.grid', json_extract(value, '$.layout.grid') FROM settings
+    WHERE key = 'app' AND json_valid(value)
+      AND json_type(value, '$.layout.grid') = 'object'`;
+});
+
+/**
+ * Who a Waiting on you item waits on: the signed-in person it was added for, as the item's own
+ * `person` says, or NULL for anyone. Every item so far is for anyone, and so is every item of a
+ * server nobody signs in to.
+ */
+const waitPerson = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE wait_items ADD COLUMN person TEXT`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
@@ -563,6 +594,8 @@ export const migrations = {
   "0007_hosts": hosts,
   "0008_actor_events": actorEvents,
   "0009_queue_actor": queueActor,
+  "0010_person_settings": personSettings,
+  "0011_wait_person": waitPerson,
 };
 
 /**

@@ -12,6 +12,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import {
   AgentKind,
+  AwaitingMachine,
   PROFILE_CHARTER_MAX,
   ProfileAutonomy,
   ProfileConnectorServer,
@@ -308,6 +309,19 @@ export const ProfileStartRequest = Schema.Struct({
   threadId: ThreadId,
   /** The joined machine the thread goes on, by the id it was provisioned or joined with. */
   hostId: Schema.optionalKey(HostId),
+  /**
+   * `later`: the thread is made now and its machine named afterwards (`PROFILE_MOVE_PATH`), for a
+   * caller that starts a machine for each thread and wants the thread shown while it boots. The
+   * profile's `input` waits in the thread's queue. Only for a workplace of `none` or `scratch`,
+   * and never with `hostId`. Absent: the thread is placed now, as ever.
+   */
+  machine: Schema.optionalKey(Schema.Literal("later")),
+  /**
+   * With `machine: "later"`: the id of the signed-in person the thread is started by, as the
+   * fronting proxy states it. The first message is theirs (`MessageMetadata.sentBy`), and the
+   * thread is theirs alone until it is placed.
+   */
+  startedBy: Schema.optionalKey(Schema.String),
 });
 export type ProfileStartRequest = typeof ProfileStartRequest.Type;
 
@@ -315,6 +329,8 @@ export const ProfileStartResponse = Schema.Struct({
   threadId: ThreadId,
   /** False when an earlier ask under the same id made the thread, and this one made nothing. */
   created: Schema.Boolean,
+  /** True while the thread waits for its machine to be named; absent once it is on one. */
+  awaitingMachine: Schema.optionalKey(Schema.Boolean),
 });
 export type ProfileStartResponse = typeof ProfileStartResponse.Type;
 
@@ -353,3 +369,30 @@ export const ProfileMoveResponse = Schema.Struct({
   moved: Schema.Boolean,
 });
 export type ProfileMoveResponse = typeof ProfileMoveResponse.Type;
+
+/**
+ * Where a fronting platform's own service says how the wait of a thread started before its machine
+ * stands (`ProfileStartRequest.machine`): `POST`, with a `ProfileWaitRequest` as JSON, answered
+ * with a `ProfileWaitResponse`. With `failed`, no machine is coming, and the thread says so in
+ * that sentence; without it, the wait begins again (the platform is starting another machine).
+ * Either way the thread's queue is kept, and naming a machine places the thread. One of the hosted
+ * features; a person's sign-in never reaches it.
+ */
+export const PROFILE_WAIT_PATH = "/threads/machine-wait";
+
+/** The longest sentence a failed wait is given. */
+export const PROFILE_WAIT_MESSAGE_MAX = 500;
+
+export const ProfileWaitRequest = Schema.Struct({
+  threadId: ThreadId,
+  /** Why no machine is coming, in a sentence for the person. Absent: the wait begins again. */
+  failed: Schema.optionalKey(Schema.String),
+});
+export type ProfileWaitRequest = typeof ProfileWaitRequest.Type;
+
+export const ProfileWaitResponse = Schema.Struct({
+  threadId: ThreadId,
+  /** The wait as it stands now. */
+  awaitingMachine: AwaitingMachine,
+});
+export type ProfileWaitResponse = typeof ProfileWaitResponse.Type;

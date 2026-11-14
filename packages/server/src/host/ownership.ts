@@ -15,6 +15,11 @@
 // orchestration have one owner: a link between them (a spawn, a join, a move) is made only
 // between machines of the same person's, or of no one's (`sameOwner`), so a workspace's
 // orchestrator and its workers never span two people.
+//
+// One thread has no machine yet: one started before its machine (`Thread.awaitingMachine`). Until
+// it is placed it is reached only by whoever it was started by, where the start named a person
+// (`mayReachThread`), and it is placed only on a machine of theirs or of no one's
+// (`mayPlaceAwaited`).
 
 import {
   effectiveCheckout,
@@ -130,6 +135,9 @@ export const mayReachThread = (
     if ((yield* currentCaller) === undefined) return true;
     const thread = yield* getThread(threadId).pipe(Effect.orElseSucceed(() => undefined));
     if (thread === undefined) return true;
+    // Started for someone before its machine was there: theirs alone until it is on one.
+    const startedBy = thread.awaitingMachine?.startedBy;
+    if (startedBy !== undefined && (yield* currentCaller)?.person !== startedBy) return false;
     for (const checkout of checkoutsOf(thread))
       if (!(yield* mayReach(ownerOf, hostOf(checkout)))) return false;
     return true;
@@ -173,6 +181,21 @@ export const sameOwner = (
   a: { readonly hostId?: HostId | undefined },
   b: { readonly hostId?: HostId | undefined },
 ): boolean => ownerOf(hostOf(a)) === ownerOf(hostOf(b));
+
+/**
+ * Whether a thread waiting for its machine (`Thread.awaitingMachine`) may be placed on `hostId`:
+ * a machine started for whoever the thread was started by, or for nobody. It has no machine yet,
+ * so there is no owner to keep; a thread started by no one in particular goes on any.
+ */
+export const mayPlaceAwaited = (
+  ownerOf: OwnerOf,
+  thread: Pick<Thread, "awaitingMachine">,
+  hostId: HostId,
+): boolean => {
+  const owner = ownerOf(hostId);
+  const startedBy = thread.awaitingMachine?.startedBy;
+  return owner === undefined || startedBy === undefined || owner === startedBy;
+};
 
 /** What a move that would hand a thread to another owner, or to none, is told. */
 export const MOVE_CHANGES_OWNER =

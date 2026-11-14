@@ -1535,8 +1535,15 @@ const make = Effect.gen(function* () {
             )
               return yield* busy("the thread started work on its old machine meanwhile");
             if (!(yield* sameCheckout(threadId, plan.from))) return yield* busy(MOVED_MEANWHILE);
+            // Placed: a thread that waited for its machine waits no longer, in the same write.
             const thread = yield* store
-              .updateThread(threadId, ({ currentCheckout: _current, ...t }) => ({ ...t, checkout }))
+              .updateThread(
+                threadId,
+                ({ currentCheckout: _current, awaitingMachine: _awaited, ...t }) => ({
+                  ...t,
+                  checkout,
+                }),
+              )
               .pipe(Effect.mapError(() => busy("the thread is gone")));
             yield* publishUpsert(thread);
             return thread;

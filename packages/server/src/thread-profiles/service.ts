@@ -2,6 +2,7 @@
 // a fronting platform's own service calls (`routes.ts`): one, so a start asked for twice under one
 // id, by either way in, makes one thread.
 import { Proc } from "@gram/git";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -15,6 +16,9 @@ import { CheckoutService } from "../runtime/hooks.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { makeProfileRepositories } from "./repositories.ts";
 import { makeProfileStarter, type ProfileStarter } from "./start.ts";
+
+/** How often the threads waiting for a machine are looked at for one that waited too long. */
+const WAITS_LOOK = "15 seconds";
 
 /**
  * A starter over the services in scope. The machines are absent in runtime-only test layers,
@@ -55,7 +59,26 @@ export class ProfileStarters extends Context.Service<ProfileStarters, ProfileSta
     ProfileStarters,
     never,
     ThreadStore | ThreadRuntimes | CheckoutService | ServerConfig
-  > = Layer.effect(ProfileStarters, profileStarterHere);
+  > = Layer.effect(
+    ProfileStarters,
+    Effect.gen(function* () {
+      const starter = yield* profileStarterHere;
+      // For the server's life: a thread that waited too long for its machine says none came. Read
+      // from the store each time, so it holds across a restart with nothing to arm again.
+      yield* Effect.forkScoped(
+        starter.expireWaits.pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("couldn't look for threads whose machine never came").pipe(
+              Effect.annotateLogs({ cause: Cause.pretty(cause) }),
+            ),
+          ),
+          Effect.andThen(Effect.sleep(WAITS_LOOK)),
+          Effect.forever,
+        ),
+      );
+      return starter;
+    }),
+  );
 }
 
 /** The server's starter where it has one, else one of its own (a test layer of the handlers). */

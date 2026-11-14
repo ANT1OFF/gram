@@ -3,7 +3,7 @@ import type { ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import {
   mkdir,
   mkdtemp,
@@ -236,6 +236,64 @@ describe("ObjectStore", () => {
           ]);
         }),
       );
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("sends a file staged from another machine once per stamp, and keeps no copy", () =>
+    Effect.gen(function* () {
+      const store = yield* bucket;
+      const dir = yield* dataDir;
+      const key = outputKey(T1, "/work/repo/report.pdf");
+      let staged = 0;
+      const stage = (text: string) => (path: string) =>
+        Effect.promise(async () => {
+          staged += 1;
+          await writeFile(path, text);
+          return true;
+        });
+
+      yield* withStore(dir, { url: store.url }, (objects, hub) =>
+        Effect.gen(function* () {
+          expect(yield* objects.on).toBe(true);
+          yield* objects.putStaged(key, "3:1000", stage("pdf"));
+          yield* eventually("the staged output sent", () => store.objects.size === 1);
+          expect(store.objects.get(key)?.toString()).toBe("pdf");
+          // The same stamp again asks for nothing; a new one sends the file again.
+          yield* objects.putStaged(key, "3:1000", stage("pdf"));
+          yield* objects.putStaged(key, "4:2000", stage("pdf2"));
+          yield* eventually("the change sent", () => store.objects.get(key)?.toString() === "pdf2");
+          expect(staged).toBe(2);
+          // One that couldn't be read sends nothing, and one the store refused is asked again.
+          yield* objects.putStaged(key, "5:3000", () => Effect.succeed(false));
+          store.status = 503;
+          yield* objects.putStaged(key, "6:4000", stage("pdf-33"));
+          yield* eventually("the refused send tried", () => staged === 3);
+          store.status = undefined;
+          yield* objects.putStaged(key, "6:4000", stage("pdf-33"));
+          yield* eventually(
+            "the refused one sent",
+            () => store.objects.get(key)?.toString() === "pdf-33",
+          );
+          expect(staged).toBe(4);
+          yield* eventually(
+            "the staged copies removed",
+            () => readdirSync(join(dir, "object-store-staging")).length === 0,
+          );
+          // Deleted with its thread, as an output copied from this disk is.
+          yield* hub.publish({ type: "thread.removed", threadId: T1 });
+          yield* eventually("the thread's objects deleted", () => store.objects.size === 0);
+        }),
+      );
+      // Nothing is asked with the hosted features off.
+      yield* withStore(dir, { url: store.url, on: false }, (objects) =>
+        Effect.gen(function* () {
+          expect(yield* objects.on).toBe(false);
+          yield* objects.putStaged(key, "9:9000", stage("late"));
+          yield* Effect.sleep("100 millis");
+        }),
+      );
+      expect(staged).toBe(4);
+      expect(store.objects.size).toBe(0);
     }).pipe(Effect.scoped),
   );
 

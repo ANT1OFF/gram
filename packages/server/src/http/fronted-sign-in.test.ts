@@ -13,7 +13,9 @@ import {
   GramRpcs,
   PROFILE_MOVE_PATH,
   PROFILE_START_PATH,
+  PROFILE_WAIT_PATH,
   RequestId,
+  ThreadId,
   WorkspaceId,
 } from "@gram/contracts";
 import * as Cause from "effect/Cause";
@@ -21,7 +23,9 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import { ServerConfig } from "../config.ts";
+import { EventHub } from "../events/event-hub.ts";
 import { gitPlatformTest } from "../git/platform.ts";
 import { makeRepo, removeDir } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -36,6 +40,7 @@ import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG, waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ACTOR_HEADER, actorHeadersForTests } from "./actor.ts";
 import { tokenCookieName } from "./auth.ts";
 import { SERVICE_TYP, IDENTITY_HEADER } from "./fronted-identity.ts";
@@ -51,6 +56,7 @@ const proxy = makeTestProxy();
 
 const PROFILE_THREAD = "6b1d2a90-3c4e-4f5a-8b6c-7d8e9f0a1b2c";
 const OTHER_PROFILE_THREAD = "6b1d2a90-3c4e-4f5a-8b6c-7d8e9f0a1b2d";
+const WAITING_PROFILE_THREAD = "6b1d2a90-3c4e-4f5a-8b6c-7d8e9f0a1b2e";
 
 /** The event sink's receiver: every event the server sends it, in order. */
 const sunk: Array<{ type: string; data: Record<string, unknown> }> = [];
@@ -252,6 +258,13 @@ const ada = { sub: "user-ada", name: "Ada", role: "member" };
 const grace = { sub: "user-grace", name: "Grace", role: "member" };
 const vera = { sub: "user-vera", name: "Vera", role: "viewer" };
 
+/** A saved grid of two panes side by side, the right one focused. */
+const grid = (...panes: ReadonlyArray<string>) => ({
+  preset: "2c" as const,
+  panes: panes.map((id) => ThreadId.make(id)),
+  focused: 1,
+});
+
 describe("sign-in through a fronting proxy", () => {
   const dirs: string[] = [];
   afterAll(() => {
@@ -450,6 +463,106 @@ describe("sign-in through a fronting proxy", () => {
           (yield* post(port, `${PROFILE_MOVE_PATH}/`, moveBody(), platform(PROFILE_MOVE_PATH)))
             .status,
         ).toBeGreaterThanOrEqual(400);
+
+        // A thread may be started before its machine: it is there at once, waiting, and its
+        // record names no machine. How its wait stands is the platform's to say, never a
+        // person's.
+        const waiting = yield* post(
+          port,
+          PROFILE_START_PATH,
+          startBody({ threadId: WAITING_PROFILE_THREAD, machine: "later", startedBy: "ada" }),
+          platform(PROFILE_START_PATH),
+        );
+        expect(waiting.status, waiting.body).toBe(200);
+        expect(JSON.parse(waiting.body)).toEqual({
+          threadId: WAITING_PROFILE_THREAD,
+          created: true,
+          awaitingMachine: true,
+        });
+        expect(
+          (yield* (yield* ThreadStore).listActorEvents())
+            .filter((event) => event.action === PROFILE_START_PATH)
+            .map((event) => event.data)
+            .at(-1),
+        ).toEqual({ status: 200, threadId: WAITING_PROFILE_THREAD, created: true });
+        const stored = yield* (yield* ThreadStore).getThread(ThreadId.make(WAITING_PROFILE_THREAD));
+        expect(stored.awaitingMachine?.startedBy).toBe("ada");
+        expect(
+          (yield* post(
+            port,
+            PROFILE_START_PATH,
+            startBody({
+              threadId: OTHER_PROFILE_THREAD,
+              machine: "later",
+              hostId: "machine-next",
+            }),
+            platform(PROFILE_START_PATH),
+          )).status,
+        ).toBe(409);
+        expect(
+          (yield* post(
+            port,
+            PROFILE_START_PATH,
+            startBody({ threadId: OTHER_PROFILE_THREAD, machine: "soon" }),
+            platform(PROFILE_START_PATH),
+          )).status,
+        ).toBe(400);
+        const waitBody = (extra: Record<string, unknown> = {}) =>
+          JSON.stringify({ threadId: WAITING_PROFILE_THREAD, ...extra });
+        const failed = yield* post(
+          port,
+          PROFILE_WAIT_PATH,
+          waitBody({ failed: "The machine couldn't be started." }),
+          platform(PROFILE_WAIT_PATH),
+        );
+        expect(failed.status, failed.body).toBe(200);
+        expect(JSON.parse(failed.body)).toMatchObject({
+          threadId: WAITING_PROFILE_THREAD,
+          awaitingMachine: {
+            startedBy: "ada",
+            failed: { message: "The machine couldn't be started." },
+          },
+        });
+        const begun = yield* post(port, PROFILE_WAIT_PATH, waitBody(), platform(PROFILE_WAIT_PATH));
+        expect(JSON.parse(begun.body).awaitingMachine.failed).toBeUndefined();
+        // A thread that doesn't wait has no wait to change.
+        const notWaiting = yield* post(
+          port,
+          PROFILE_WAIT_PATH,
+          JSON.stringify({ threadId: PROFILE_THREAD }),
+          platform(PROFILE_WAIT_PATH),
+        );
+        expect(notWaiting.status).toBe(409);
+        expect(
+          (yield* post(
+            port,
+            PROFILE_WAIT_PATH,
+            waitBody({ sudo: true }),
+            platform(PROFILE_WAIT_PATH),
+          )).status,
+        ).toBe(400);
+        expect(
+          (yield* post(port, PROFILE_WAIT_PATH, waitBody(), { ...host, ...signedIn })).status,
+        ).toBe(403);
+        expect(
+          (yield* post(port, PROFILE_WAIT_PATH, waitBody(), platform(PROFILE_START_PATH))).status,
+        ).toBe(403);
+        expect(
+          (yield* post(port, `${PROFILE_WAIT_PATH}/`, waitBody(), platform(PROFILE_WAIT_PATH)))
+            .status,
+        ).toBeGreaterThanOrEqual(400);
+        // Named for a machine that isn't there, it goes on waiting.
+        const unnamed = yield* post(
+          port,
+          PROFILE_MOVE_PATH,
+          JSON.stringify({ threadId: WAITING_PROFILE_THREAD, hostId: "machine-next" }),
+          platform(PROFILE_MOVE_PATH),
+        );
+        expect(unnamed.status, unnamed.body).toBe(409);
+        expect(
+          (yield* (yield* ThreadStore).getThread(ThreadId.make(WAITING_PROFILE_THREAD)))
+            .awaitingMachine,
+        ).toBeDefined();
 
         // A thread's agent on this machine still needs its own token for its app tools.
         const mcp = yield* get(port, "/mcp", { ...host, authorization: "Bearer nope" });
@@ -674,6 +787,287 @@ describe("sign-in through a fronting proxy", () => {
         const said = JSON.stringify(yield* store.listMessages(threadId));
         expect(said).toContain("hello from Ada");
         expect(said).not.toContain("hello from Vera");
+      }),
+    );
+
+    it.effect(
+      "keeps each person's own layout, tells only them, and lets a viewer keep theirs",
+      () =>
+        Effect.gen(function* () {
+          const { port } = yield* info;
+          const store = yield* ThreadStore;
+          const hub = yield* EventHub;
+          const before = (yield* store.listActorEvents()).at(-1)?.seq ?? 0;
+          const adaClient = yield* as(port, ada);
+          const adaOtherTab = yield* as(port, ada);
+          const graceClient = yield* as(port, grace);
+          const veraClient = yield* as(port, vera);
+
+          /** The types of the events a connection is sent, as they arrive. */
+          const listen = (who: typeof adaClient) =>
+            Effect.gen(function* () {
+              const types: Array<string> = [];
+              yield* Effect.forkScoped(
+                Stream.runForEach(who["events.subscribe"](), (event) =>
+                  Effect.sync(() => types.push(event.type)),
+                ),
+              );
+              yield* waitFor(
+                "the first snapshot",
+                Effect.sync(() => types.includes("threads.snapshot")),
+              );
+              return types;
+            });
+          const adaHears = yield* listen(adaOtherTab);
+          const graceHears = yield* listen(graceClient);
+          const veraHears = yield* listen(veraClient);
+
+          // Ada arranges her panes: her other tab is told, and nobody else's connection is.
+          const adas = yield* adaClient["settings.set"]({
+            patch: { layout: { grid: grid("ada-left", "ada-right") } },
+          });
+          expect(adas.layout?.grid).toEqual(grid("ada-left", "ada-right"));
+          yield* waitFor(
+            "Ada's other tab to hear",
+            Effect.sync(() => adaHears.includes("settings.changed")),
+          );
+          // What everyone is sent arrives after it, so anything sent before it would be here.
+          yield* hub.publish({ type: "profiles.changed" });
+          yield* waitFor(
+            "the others to hear what everyone is sent",
+            Effect.sync(
+              () =>
+                graceHears.includes("profiles.changed") && veraHears.includes("profiles.changed"),
+            ),
+          );
+          expect(graceHears).not.toContain("settings.changed");
+          expect(veraHears).not.toContain("settings.changed");
+
+          // Grace has none yet, arranges her own, and each reads their own back.
+          expect((yield* graceClient["settings.get"]()).layout?.grid).toBeUndefined();
+          yield* graceClient["settings.set"]({
+            patch: { layout: { grid: grid("grace-left", "grace-right") } },
+          });
+          expect((yield* adaOtherTab["settings.get"]()).layout?.grid).toEqual(
+            grid("ada-left", "ada-right"),
+          );
+          expect((yield* graceClient["settings.get"]()).layout?.grid).toEqual(
+            grid("grace-left", "grace-right"),
+          );
+
+          // A viewer's layout is saved too, and a shared setting is still not theirs to change,
+          // alone or beside their own.
+          yield* veraClient["settings.set"]({
+            patch: { layout: { grid: grid("vera-left", "vera-right") } },
+          });
+          expect((yield* veraClient["settings.get"]()).layout?.grid).toEqual(
+            grid("vera-left", "vera-right"),
+          );
+          const level = (yield* veraClient["settings.get"]()).logLevel;
+          expect(
+            yield* refusal(veraClient["settings.set"]({ patch: { logLevel: "trace" } })),
+          ).toContain(VIEWER_REFUSAL);
+          expect(
+            yield* refusal(
+              veraClient["settings.set"]({
+                patch: { layout: { grid: grid("vera-a", "vera-b"), focusMode: true } },
+              }),
+            ),
+          ).toContain(VIEWER_REFUSAL);
+          const veras = yield* veraClient["settings.get"]();
+          expect(veras.logLevel).toBe(level);
+          expect(veras.layout).toEqual({ grid: grid("vera-left", "vera-right") });
+
+          // A member's change to both is written to each place: the shared part for everyone.
+          yield* graceClient["settings.set"]({
+            patch: { layout: { grid: grid("grace-a", "grace-b"), focusMode: true } },
+          });
+          expect((yield* adaClient["settings.get"]()).layout).toEqual({
+            grid: grid("ada-left", "ada-right"),
+            focusMode: true,
+          });
+          yield* graceClient["settings.set"]({ patch: { layout: { focusMode: null } } });
+
+          // Clearing is a person's own as well.
+          yield* adaClient["settings.set"]({ patch: { layout: { grid: null } } });
+          expect((yield* adaClient["settings.get"]()).layout?.grid).toBeUndefined();
+          expect((yield* graceClient["settings.get"]()).layout?.grid).toEqual(
+            grid("grace-a", "grace-b"),
+          );
+
+          // The shared row holds none of it, and a person's own view is not on the record of
+          // changes: only the two that changed a shared setting are.
+          expect((yield* store.getSettings).layout?.grid).toBeUndefined();
+          expect(
+            (yield* store.listActorEvents({ afterSeq: before })).map((event) => [
+              event.actor.id,
+              event.action,
+              event.data,
+            ]),
+          ).toEqual([
+            [
+              "user-grace",
+              "settings.set",
+              {
+                settings: [
+                  "layout.grid.preset",
+                  "layout.grid.panes",
+                  "layout.grid.focused",
+                  "layout.focusMode",
+                ],
+              },
+            ],
+            ["user-grace", "settings.set", { settings: ["layout.focusMode"] }],
+          ]);
+        }),
+    );
+
+    it.effect("lists each person the items that wait on them, and the ones for anyone", () =>
+      Effect.gen(function* () {
+        const { port } = yield* info;
+        const store = yield* ThreadStore;
+        const runtimes = yield* ThreadRuntimes;
+        const registry = yield* AppToolRegistry;
+        const folder = mkdtempSync(join(tmpdir(), "gram-fronted-"));
+        dirs.push(folder);
+        const adaClient = yield* as(port, ada);
+        const graceClient = yield* as(port, grace);
+
+        const thread = yield* adaClient["thread.create"]({
+          projectRoot: folder,
+          checkout: { kind: "current" },
+        });
+        const threadId = thread.id;
+        yield* waitFor(
+          "the session",
+          runtimes.session(threadId).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          ),
+        );
+        const idle = waitFor(
+          "the turn to end",
+          runtimes.status(threadId).pipe(Effect.map((status) => status === "idle")),
+        );
+
+        /** The titles of this thread's items as a connection is sent them, latest last. */
+        const listen = (who: typeof adaClient) =>
+          Effect.gen(function* () {
+            const heard: Array<ReadonlyArray<string>> = [];
+            let snapshots = 0;
+            yield* Effect.forkScoped(
+              Stream.runForEach(who["events.subscribe"](), (event) =>
+                Effect.sync(() => {
+                  if (event.type === "threads.snapshot") {
+                    snapshots++;
+                    const summary = event.threads.find((one) => one.thread.id === threadId);
+                    heard.push((summary?.waits ?? []).map((item) => item.title));
+                  }
+                  if (event.type === "thread.waits" && event.threadId === threadId) {
+                    heard.push(event.waits.map((item) => item.title));
+                  }
+                }),
+              ),
+            );
+            yield* waitFor(
+              "the first snapshot",
+              Effect.sync(() => snapshots > 0),
+            );
+            return heard;
+          });
+        const titles = (who: typeof adaClient) =>
+          Effect.map(who["thread.listWaits"]({ threadId }), (items) =>
+            items.map((item) => item.title),
+          );
+        /** The agent's `wait_on_user`, and the item it stored. */
+        const agentAdds = (input: { kind: string; title: string; id?: string }) =>
+          Effect.gen(function* () {
+            const tool = registry
+              .forThread(threadId)
+              .find((one) => one.descriptor.name === "wait_on_user")!;
+            const { id } = (yield* tool.run(input)) as { id: string };
+            return (yield* store.listWaits(threadId)).find((item) => item.id === id)!;
+          });
+        const adaHears = yield* listen(adaClient);
+        const graceHears = yield* listen(graceClient);
+
+        // An item from before anyone was named waits on anyone.
+        yield* store.putWait(threadId, {
+          id: "w-anyone" as never,
+          kind: "action",
+          title: "For anyone",
+          source: "agent",
+          createdAt: 1,
+        });
+
+        // Ada writes, and what the agent then adds waits on her.
+        yield* adaClient["thread.send"]({
+          threadId,
+          input: { text: "hello from Ada" },
+          clientMessageId: "ada-waits-1",
+        });
+        yield* idle;
+        const adas = yield* agentAdds({ kind: "draft", title: "For Ada" });
+        expect(adas.person).toBe("user-ada");
+
+        // Grace writes next: the agent's next item is hers, and so is the one she adds herself.
+        yield* graceClient["thread.send"]({
+          threadId,
+          input: { text: "hello from Grace" },
+          clientMessageId: "grace-waits-1",
+        });
+        yield* idle;
+        const graces = yield* agentAdds({ kind: "review", title: "For Grace" });
+        expect(graces.person).toBe("user-grace");
+        const reply = (yield* store.listMessages(threadId)).findLast(
+          (message) => message.role === "assistant",
+        )!;
+        const added = yield* graceClient["thread.addWait"]({
+          threadId,
+          messageId: reply.id as never,
+          title: "Grace's own",
+        });
+        expect(added.person).toBe("user-grace");
+        // An update in place leaves an item with whom it waits on, whoever wrote last.
+        const updated = yield* agentAdds({
+          kind: "draft",
+          title: "For Ada, revised",
+          id: adas.id,
+        });
+        expect(updated.person).toBe("user-ada");
+
+        // Each reads their own and the one for anyone, and the server's own list holds all four.
+        expect(yield* titles(adaClient)).toEqual(["For anyone", "For Ada, revised"]);
+        expect(yield* titles(graceClient)).toEqual(["For anyone", "For Grace", "Grace's own"]);
+        expect((yield* store.listWaits(threadId)).map((item) => item.title)).toEqual([
+          "For anyone",
+          "For Ada, revised",
+          "For Grace",
+          "Grace's own",
+        ]);
+        expect((yield* store.listWaits(threadId)).map((item) => item.person ?? null)).toEqual([
+          null,
+          "user-ada",
+          "user-grace",
+          "user-grace",
+        ]);
+
+        // The same over each one's events, as they changed and on a connection opened now.
+        yield* waitFor(
+          "the last change to arrive",
+          Effect.sync(
+            () =>
+              adaHears.at(-1)?.includes("For Ada, revised") === true &&
+              graceHears.at(-1)?.includes("Grace's own") === true,
+          ),
+        );
+        expect(adaHears.at(-1)).toEqual(["For anyone", "For Ada, revised"]);
+        expect(graceHears.at(-1)).toEqual(["For anyone", "For Grace", "Grace's own"]);
+        expect(adaHears.flat()).not.toContain("For Grace");
+        expect(adaHears.flat()).not.toContain("Grace's own");
+        expect(graceHears.flat().some((title) => title.startsWith("For Ada"))).toBe(false);
+        const adaLater = yield* listen(yield* as(port, ada));
+        expect(adaLater[0]).toEqual(["For anyone", "For Ada, revised"]);
       }),
     );
   });
@@ -995,6 +1389,7 @@ describe("sign-in through a fronting proxy", () => {
         const local = { ...host, cookie, origin: `http://127.0.0.1:${port}` };
         expect((yield* post(port, PROFILE_START_PATH, "{}", local)).status).toBe(404);
         expect((yield* post(port, PROFILE_MOVE_PATH, "{}", local)).status).toBe(404);
+        expect((yield* post(port, PROFILE_WAIT_PATH, "{}", local)).status).toBe(404);
       }),
     );
   });
