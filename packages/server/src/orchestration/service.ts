@@ -550,6 +550,8 @@ export const OrchestrationLive = Layer.effect(
       answerWorkerQuestion,
       withdrawQuestion,
       closeWorkerQuestion,
+      recordUserAnswer,
+      withdrawQuestionsOf,
       answerQuestionAsUser,
       dismissQuestionAsUser,
       userAnswers,
@@ -585,6 +587,7 @@ export const OrchestrationLive = Layer.effect(
       joinWorkspace,
       joinGroup,
       wake,
+      withdrawQuestionsOf,
     });
 
     const {
@@ -614,6 +617,7 @@ export const OrchestrationLive = Layer.effect(
       workerRemoved,
       clearHandoff,
       forgetReasons,
+      withdrawQuestionsOf,
     });
 
     const { onBoot } = makeBoot(kit, {
@@ -877,6 +881,8 @@ export const OrchestrationLive = Layer.effect(
       answerWorkerQuestion,
       withdrawQuestion,
       closeWorkerQuestion,
+      recordUserAnswer,
+      withdrawQuestionsOf,
       answerQuestionAsUser,
       dismissQuestionAsUser,
       userAnswers,

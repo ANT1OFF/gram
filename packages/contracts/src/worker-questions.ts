@@ -74,6 +74,11 @@ export const QuestionWithdrawal = Schema.Struct({
   how: WithdrawnHow,
   /** The question that replaced it, when the worker's own later question did. */
   supersededBy: Schema.optionalKey(Schema.String),
+  /**
+   * Set when Gram withdrew it because the worker's thread left: archived, deleted, detached from
+   * its orchestrator or moved to another workspace. `by` is then `worker`, whose thread it was.
+   */
+  threadLeft: Schema.optionalKey(Schema.Literals(["archived", "deleted", "detached", "moved"])),
 });
 export type QuestionWithdrawal = typeof QuestionWithdrawal.Type;
 
@@ -116,6 +121,12 @@ export const WorkerQuestion = Schema.Struct({
   source: Schema.optionalKey(Schema.String),
   /** A dismissal's reason, when the user gave one; a withdrawal's, always. */
   reason: Schema.optionalKey(Schema.String),
+  /**
+   * On the user's answer taken from a message they wrote to an agent rather than on the question:
+   * the agent whose thread it was in, which judged that it answers the question. The answer is that
+   * message, copied word for word by Gram.
+   */
+  recordedBy: Schema.optionalKey(Schema.Literals(["worker", "orchestrator"])),
   /** Set when the worker or its orchestrator withdrew it rather than the user dismissing it. */
   withdrawal: Schema.optionalKey(QuestionWithdrawal),
   /** Epoch ms. */
@@ -143,6 +154,28 @@ export const DismissWorkerQuestionInput = Schema.Struct({
   reason: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(DISMISS_REASON_MAX))),
 });
 export type DismissWorkerQuestionInput = typeof DismissWorkerQuestionInput.Type;
+
+/**
+ * Why `record_user_answer` won't take the user's latest message as an answer; `undefined` when it
+ * will. `sentAt` is when the message was written, `askedAt` when the question was.
+ */
+export const userAnswerProblem = (
+  questionId: string,
+  message: { readonly text: string; readonly sentAt: number | undefined } | undefined,
+  askedAt: number,
+): string | undefined => {
+  if (message === undefined || message.sentAt === undefined || message.sentAt < askedAt) {
+    return `The user hasn't written in your thread since ${questionId} was asked, so there are no words of theirs to record as its answer. Nothing was closed.`;
+  }
+  const text = message.text.trim();
+  if (text === "") {
+    return `The user's latest message has no text, only files, so it can't be ${questionId}'s answer. Nothing was closed.`;
+  }
+  if (text.length > WORKER_QUESTION_ANSWER_MAX) {
+    return `The user's latest message is longer than the ${WORKER_QUESTION_ANSWER_MAX} characters an answer keeps, so it isn't recorded as ${questionId}'s answer. Nothing was closed: ask them to answer it on its card.`;
+  }
+  return undefined;
+};
 
 /** What `ask_question` takes from a worker. */
 export interface AskQuestionInput {
@@ -222,12 +255,14 @@ export const workerAnswerMessage = (
   question: Pick<WorkerQuestion, "id" | "question">,
   answer: string,
   by:
-    | { readonly closedBy: "user" }
+    | { readonly closedBy: "user"; readonly recordedBy?: "worker" | "orchestrator" | undefined }
     | { readonly closedBy: "orchestrator"; readonly source: string },
 ): string =>
-  by.closedBy === "user"
-    ? `The user answered your question ${question.id} (${quote(question)}): ${answer.trim()}\n\nYour orchestrator has a copy. Go on with this answer.`
-    : `Your orchestrator answered your question ${question.id} (${quote(question)}), settled by ${oneLine(by.source)}: ${answer.trim()}\n\nGo on with this answer. If it doesn't fit what you found, say why with \`report\`.`;
+  by.closedBy === "user" && by.recordedBy === "orchestrator"
+    ? `The user answered your question ${question.id} (${quote(question)}) in a message to your orchestrator, copied here word for word: ${answer.trim()}\n\nGo on with this answer.`
+    : by.closedBy === "user"
+      ? `The user answered your question ${question.id} (${quote(question)}): ${answer.trim()}\n\nYour orchestrator has a copy. Go on with this answer.`
+      : `Your orchestrator answered your question ${question.id} (${quote(question)}), settled by ${oneLine(by.source)}: ${answer.trim()}\n\nGo on with this answer. If it doesn't fit what you found, say why with \`report\`.`;
 
 /** What the worker is sent when the user dismisses its question. */
 export const workerDismissMessage = (
@@ -266,11 +301,14 @@ export const questionTime = (ms: number): string => {
 export const questionStatusLine = (
   question: Pick<
     WorkerQuestion,
-    "stage" | "closedBy" | "closedAt" | "forwardedAt" | "forwardedBy" | "withdrawal"
+    "stage" | "closedBy" | "closedAt" | "forwardedAt" | "forwardedBy" | "withdrawal" | "recordedBy"
   >,
 ): string => {
   const at = question.closedAt === undefined ? "" : ` · ${questionTime(question.closedAt)}`;
   const withdrawal = question.withdrawal;
+  if (question.stage === "dismissed" && withdrawal?.threadLeft !== undefined) {
+    return `Withdrawn: its thread was ${withdrawal.threadLeft}${at}`;
+  }
   if (question.stage === "dismissed" && withdrawal !== undefined) {
     const who = withdrawal.by === "worker" ? "the worker" : "the orchestrator";
     switch (withdrawal.how) {
@@ -302,7 +340,13 @@ export const questionStatusLine = (
     case "dismissed": {
       const verb = question.stage === "answered" ? "Answered" : "Dismissed";
       const who = question.closedBy === "orchestrator" ? "the orchestrator" : "you";
-      return `${verb} by ${who}${at}`;
+      const where =
+        question.recordedBy === "worker"
+          ? " in its thread"
+          : question.recordedBy === "orchestrator"
+            ? " to the orchestrator"
+            : "";
+      return `${verb} by ${who}${where}${at}`;
     }
   }
 };

@@ -597,7 +597,7 @@ describe.skipIf(!hasGit)("worker questions", () => {
     ),
   );
 
-  it.effect("durably dismisses a forwarded archived worker question without waking it", () =>
+  it.effect("archiving a worker withdraws its open questions, without waking it", () =>
     Effect.gen(function* () {
       const world = yield* makeWorld;
       const saved = yield* withServer(
@@ -608,38 +608,33 @@ describe.skipIf(!hasGit)("worker questions", () => {
           const { session, workspaceId, worker } = yield* withWorker(world);
           yield* asked(worker.session);
           yield* session.callTool("forward_question", { questionId: "WQ1" });
+          yield* asked(worker.session, { question: "Keep the old cart route?" });
           yield* completeTurn(worker.session);
-          yield* runtimes.updateThread(worker.thread.id, (thread) => ({ ...thread, parked: true }));
           const sent = worker.session.sent.length;
           const steered = worker.session.steered.length;
-          const dismissed = yield* orchestration.dismissQuestionAsUser({
-            workspaceId,
-            questionId: "WQ1",
-            reason: "Already decided in the conversation",
-          });
-          expect(dismissed).toMatchObject({ stage: "dismissed", closedBy: "user" });
-          expect(dismissed.delivered).toBeUndefined();
+          yield* runtimes.updateThread(worker.thread.id, (thread) => ({ ...thread, parked: true }));
+          yield* settle;
+          for (const id of ["WQ1", "WQ2"]) {
+            expect(yield* stored(workspaceId, id)).toMatchObject({
+              stage: "dismissed",
+              reason: "Its thread was archived.",
+              withdrawal: { by: "worker", how: "withdrawn", threadLeft: "archived" },
+            });
+          }
           expect(worker.session.sent).toHaveLength(sent);
           expect(worker.session.steered).toHaveLength(steered);
           expect(
             (yield* orchestration.ledger(workspaceId)).questions?.filter(
-              (q) => q.stage === "forwarded",
+              (q) => q.stage === "forwarded" || q.stage === "triage",
             ),
           ).toEqual([]);
-          expect((yield* questionCards(worker.thread.id)).at(-1)?.stage).toBe("dismissed");
-          const results = yield* Effect.all(
-            [
-              orchestration.dismissQuestionAsUser({ workspaceId, questionId: "wq1" }),
-              orchestration.answerQuestionAsUser({
-                workspaceId,
-                questionId: "WQ1",
-                answer: "Late answer",
-              }),
-            ],
-            { concurrency: "unbounded" },
-          );
-          expect(results.every((q) => q.stage === "dismissed")).toBe(true);
-          expect((yield* stored(workspaceId, "WQ1"))?.answer).toBeUndefined();
+          const card = (yield* questionCards(worker.thread.id)).at(-1);
+          expect(card?.withdrawal?.threadLeft).toBe("archived");
+          // A card still on screen can't reopen it.
+          const late = yield* orchestration
+            .dismissQuestionAsUser({ workspaceId, questionId: "WQ1" })
+            .pipe(Effect.flip);
+          expect(late.message).toContain("WQ1 is closed already");
           return { workspaceId, threadId: worker.thread.id };
         }),
       );
@@ -647,19 +642,80 @@ describe.skipIf(!hasGit)("worker questions", () => {
       yield* withServer(
         world,
         Effect.gen(function* () {
-          const orchestration = yield* Orchestration;
           const store = yield* ThreadStore;
           yield* settle;
-          expect((yield* stored(saved.workspaceId, "WQ1"))?.stage).toBe("dismissed");
-          expect(
-            (yield* orchestration.ledger(saved.workspaceId)).questions?.filter(
-              (q) => q.stage === "forwarded",
-            ),
-          ).toEqual([]);
+          expect((yield* stored(saved.workspaceId, "WQ2"))?.stage).toBe("dismissed");
           expect((yield* store.getThread(saved.threadId)).parked).toBe(true);
         }),
       );
     }),
+  );
+
+  it.effect("a worker records the user's answer from their message, word for word", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const { session, workspaceId, worker } = yield* withWorker(world);
+        yield* asked(worker.session);
+        yield* session.callTool("forward_question", { questionId: "WQ1" });
+        // Nothing of the user's in the worker's thread since it asked.
+        const none = yield* worker.session
+          .callTool("record_user_answer", { questionId: "WQ1" })
+          .pipe(Effect.flip);
+        expect(String((none as { message?: string }).message)).toContain(
+          "hasn't written in your thread since WQ1 was asked",
+        );
+        yield* completeTurn(worker.session);
+        yield* (yield* ThreadRuntimes).send(worker.thread.id, { text: "go with 410 and log it" });
+        yield* settle;
+        expect(
+          yield* worker.session.callTool("record_user_answer", { questionId: "wq1" }),
+        ).toMatchObject({ questionId: "WQ1", answer: "go with 410 and log it" });
+        expect(yield* stored(workspaceId, "WQ1")).toMatchObject({
+          stage: "answered",
+          closedBy: "user",
+          recordedBy: "worker",
+          answer: "go with 410 and log it",
+          copyOwed: true,
+        });
+        const digest = yield* nextDigest(session);
+        expect(digest).toContain(
+          "answered by the user in a message to the worker, which recorded it word for word",
+        );
+        expect(digest).toContain("go with 410 and log it");
+        const again = yield* worker.session
+          .callTool("record_user_answer", { questionId: "WQ1" })
+          .pipe(Effect.flip);
+        expect(String((again as { message?: string }).message)).toContain(
+          "WQ1 is answered already",
+        );
+      }),
+    ),
+  );
+
+  it.effect("the orchestrator records the user's answer to a forwarded question", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const { session, workspaceId, worker, thread } = yield* withWorker(world);
+        yield* asked(worker.session);
+        yield* session.callTool("forward_question", { questionId: "WQ1" });
+        yield* settle;
+        yield* completeTurn(session);
+        yield* (yield* ThreadRuntimes).send(thread.id, { text: "drop the old route" });
+        yield* settle;
+        yield* session.callTool("record_user_answer", { questionId: "WQ1" });
+        yield* settle;
+        expect(yield* stored(workspaceId, "WQ1")).toMatchObject({
+          stage: "answered",
+          closedBy: "user",
+          recordedBy: "orchestrator",
+          answer: "drop the old route",
+        });
+        expect((yield* stored(workspaceId, "WQ1"))?.copyOwed).toBeUndefined();
+        expect(worker.session.steered.at(-1)?.text).toContain(
+          "in a message to your orchestrator, copied here word for word: drop the old route",
+        );
+      }),
+    ),
   );
 
   it.effect(
@@ -1353,7 +1409,12 @@ describe.skipIf(!hasGit)("worker questions", () => {
           .callTool("close_question", { id: "WQ1", answer: "x", how: "withdrawn" })
           .pipe(Effect.flip);
         expect(detached.message).toMatch(/^not_your_worker: /);
-        expect((yield* stored(workspaceId, "WQ1"))?.withdrawal).toBeUndefined();
+        // Detaching withdrew it in the thread's name; the refused call changed nothing of that.
+        expect((yield* stored(workspaceId, "WQ1"))?.withdrawal).toEqual({
+          by: "worker",
+          how: "withdrawn",
+          threadLeft: "detached",
+        });
       }),
     ),
   );

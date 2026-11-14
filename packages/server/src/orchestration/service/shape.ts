@@ -808,6 +808,24 @@ export interface OrchestrationShape {
     input: { readonly questionId: string; readonly how: WithdrawnHow; readonly reason: string },
   ): Effect.Effect<WorkerQuestion, AppToolError>;
   /**
+   * `record_user_answer`: the worker that asked an open question, or its orchestrator, records that
+   * the user answered it in a message to the caller. The answer is that message, copied word for
+   * word from the caller's transcript.
+   */
+  recordUserAnswer(
+    callerId: ThreadId,
+    input: { readonly questionId: string },
+  ): Effect.Effect<WorkerQuestion, AppToolError>;
+  /**
+   * The open questions `threadId` asked in `workspaceId`, withdrawn because its thread left:
+   * archived, deleted, detached or moved. Never fails.
+   */
+  withdrawQuestionsOf(
+    workspaceId: WorkspaceId,
+    threadId: ThreadId,
+    why: "archived" | "deleted" | "detached" | "moved",
+  ): Effect.Effect<void>;
+  /**
    * The questions `questionIds` name, for `userAnswers` on `tool`: each one of the caller's
    * workspace that the user closed with words of their own (an answer, or a dismissal's reason).
    * Refused for one that is open, was answered by an orchestrator or isn't on record.

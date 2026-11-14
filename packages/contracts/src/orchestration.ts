@@ -1365,7 +1365,7 @@ const questionLines = (
         ...questionBody(question),
         question.stage === "dismissed"
           ? `dismissed by the user${at}${question.reason === undefined ? ", no reason given" : `: ${quoted(question.reason, DIGEST_QUESTION_MAX)}`}`
-          : `answered by the user${at}: ${quoted(question.answer ?? "", DIGEST_QUESTION_MAX)}`,
+          : `answered by the user${question.recordedBy === "worker" ? " in a message to the worker, which recorded it word for word" : ""}${at}: ${quoted(question.answer ?? "", DIGEST_QUESTION_MAX)}`,
         question.delivered === undefined
           ? "No worker notification is recorded; the user's decision is still closed. Do not reopen or wake an archived worker."
           : `Worker notification: ${question.delivered}.`,

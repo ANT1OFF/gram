@@ -2495,7 +2495,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             model: viaGateway,
           });
           expect(codex.options.instructions).toContain(
-            "MCP server named `gram`: `report`, `ask_question`, `mark_completed`, `pr_bind`, `set_title`, `pr_status`, `pr_review_monitor`",
+            "MCP server named `gram`: `report`, `ask_question`, `record_user_answer`, `mark_completed`, `pr_bind`, `set_title`, `pr_status`, `pr_review_monitor`",
           );
           expect(codex.options.instructions).toContain(
             "Pushing, opening a pull request and merging ask the user first.",
