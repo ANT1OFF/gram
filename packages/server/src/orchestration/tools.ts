@@ -762,6 +762,24 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         ),
     });
 
+    const recordUserAnswerTool = defineAppTool({
+      descriptor: {
+        name: "record_user_answer",
+        class: "self",
+        description:
+          "Record that the user answered an open worker question (`WQ7`) in a message to you rather than on its card. Use it only when their latest message here answers it: Gram records that message, word for word, as the answer, and it leaves their board. A worker records its own questions; an orchestrator, its workers'. The other side is told.",
+      },
+      audience: ["worker", "orchestrator"],
+      input: Schema.Struct({ questionId: Schema.NonEmptyString }),
+      needsApproval: () => Effect.succeed(false),
+      handle: (caller, input) =>
+        orchestration
+          .recordUserAnswer(caller, input)
+          .pipe(
+            Effect.map((question) => ({ questionId: question.id, answer: question.answer ?? "" })),
+          ),
+    });
+
     /** The memory of the caller's workspace, or a refusal: the tree belongs to the slot's holder. */
     const memoryOf = (tool: string, caller: ThreadId) =>
       orchestration
@@ -1020,6 +1038,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       answerWorker,
       askQuestionTool,
       forwardQuestionTool,
+      recordUserAnswerTool,
       report,
       scheduleWake,
       cancelWake,

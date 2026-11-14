@@ -184,6 +184,32 @@ export const withdrawn = (
 };
 
 /**
+ * The question answered by the user in a message they wrote to an agent, at any open stage:
+ * `answer` is that message word for word, and `recordedBy` the agent that judged it answers the
+ * question. Recorded by the worker, the orchestrator gets the copy; by the orchestrator, the worker
+ * gets the answer. A closed one, the user's answer above all, stays as it is.
+ */
+export const answeredFromMessage = (
+  question: StoredWorkerQuestion,
+  answer: string,
+  recordedBy: "worker" | "orchestrator",
+  at: number,
+): StoredWorkerQuestion | QuestionRefusal => {
+  if (!isOpenQuestion(question)) return closedRefusal(question);
+  return {
+    ...question,
+    stage: "answered",
+    answer,
+    closedBy: "user",
+    recordedBy,
+    closedAt: at,
+    ...(recordedBy === "orchestrator"
+      ? { deliveryOwed: true as const }
+      : { copyOwed: true as const }),
+  };
+};
+
+/**
  * The question once its owed notice is settled: with how it reached the worker, or with none when
  * the worker couldn't take one. Either way it is no longer owed.
  */

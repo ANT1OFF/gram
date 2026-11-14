@@ -21,7 +21,9 @@ ask_question ──► triage ──answer_worker(questionId, source)──► a
                    └─workspace or feature paused ────► forwarded
 
 triage or forwarded ──ask_question(withdraw, reason)──► withdrawn (by the worker)
-                    └─close_question(WQ id, how, why)──► withdrawn (by the orchestrator)
+                    ├─close_question(WQ id, how, why)──► withdrawn (by the orchestrator)
+                    ├─record_user_answer(WQ id)────────► answered (your message, word for word)
+                    └─its thread archived, deleted, detached or moved──► withdrawn
 ```
 
 - **Ask.** A worker calls `ask_question` with its question, optional `context`, 2–4
@@ -79,6 +81,21 @@ triage or forwarded ──ask_question(withdraw, reason)──► withdrawn (by 
   `dismissed` question with an optional `withdrawal` record (`by`, `how`, `supersededBy`), so a
   build that predates withdrawals still reads it as closed: the stage and `closedBy` values are a
   released protocol.
+- **Answered in a message.** The user doesn't have to find the card. When they answer an open
+  question in a message to the worker that asked it, or to that worker's orchestrator, the agent
+  records it with `record_user_answer` on its `WQ` id. The agent only judges that the message
+  answers the question: Gram copies the user's latest message in the caller's thread, word for
+  word, as the answer (`closedBy: "user"`, with `recordedBy` naming the agent), so the record
+  never holds an agent's retelling. It is refused when the user hasn't written there since the
+  question was asked, when that message has only files, and when it is longer than an answer
+  keeps. Recorded by the worker, the orchestrator gets the digest copy as for any answer of the
+  user's; recorded by the orchestrator, the worker gets the answer. The card reads "Answered by
+  you in its thread" or "Answered by you to the orchestrator".
+- **A worker that leaves.** When a worker's thread is archived, deleted, detached from its
+  orchestrator or moved to another workspace, Gram withdraws its open questions in its name
+  (`withdrawal.threadLeft`), since nobody would act on an answer. They leave the board at once,
+  nobody is woken, and the card reads "Withdrawn: its thread was archived". A worker brought back
+  asks again if it still needs to.
 - **Delivery.** An answer or a dismissal goes to the worker as a server notice
   (`sendNotice`, key `question:<id>`). It is steered into a running turn at the next tool
   boundary, or queued and sent when the worker is idle. It is not counted as the user

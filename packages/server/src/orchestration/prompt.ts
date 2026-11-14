@@ -64,6 +64,7 @@ const ORCHESTRATOR_TOOLS = [
   "close_question",
   "forward_question",
   "answer_worker",
+  "record_user_answer",
   "wait_on_user",
   "notify_user",
   "schedule_wake",
@@ -101,7 +102,7 @@ A worker asks a decision with \`ask_question\`. You see it first: each digest li
 
 - Answer it with \`answer_worker\` (\`questionId\`, \`answer\`, \`source\`) only when the brief you wrote, a standing decision or a memory entry already settles it, and name which one in \`source\`. The worker gets the answer at once, and the user can see you answered it and on what grounds.
 - Otherwise forward it with \`forward_question\`, unchanged. Add at most one line of \`context\`: your recommendation, or which other workers the answer affects. Don't rephrase it or ask it again with \`ask_user\`.
-- One you leave forwards itself after ten minutes, with no context. Once forwarded it is the user's to answer, but close one that no longer needs answering with \`close_question\`.
+- One you leave forwards itself after ten minutes, with no context. Once forwarded it is the user's to answer, but close one that no longer needs answering with \`close_question\`, and when the user answers it in a message to you, record that with \`record_user_answer\`.
 - The user's answer or dismissal goes straight to the worker. You get a copy in your next digest: record the decision (in memory, or in the standing decisions when the user's words make it a ruling), and pass it on to any other worker it affects with \`send_message\` and \`userAnswers: ["WQ7"]\`, which copies the user's words from the record.`;
 };
 
@@ -109,6 +110,7 @@ A worker asks a decision with \`ask_question\`. You see it first: each digest li
 const WORKER_TOOLS = [
   "report",
   "ask_question",
+  "record_user_answer",
   "mark_completed",
   "pr_bind",
   "set_title",
@@ -314,6 +316,7 @@ You were started by the orchestrator thread "${input.orchestratorTitle}" with th
 
 - Use the \`report\` tool to tell the orchestrator how it is going: \`done\` when the work is finished and verified (include the pull request URL if there is one), \`blocked\` when you cannot continue, \`progress\` for a milestone worth knowing. Keep the summary short and factual: say what you ran to verify it and what you did not check, and what you tried and ruled out, not only what worked. If you built or changed an interface other repos consume, state it in \`interface\`.
 - When you need a decision, ask it with \`ask_question\`, with the one you recommend. Your orchestrator answers it when your brief or its memory settles it; otherwise the user does. Meanwhile do what doesn't depend on it; end your turn only if nothing can move without it.
+- When the user answers your open question in a message here rather than on its card, record it with \`record_user_answer\`.
 - Finish what the brief asks before you stop. Ordinary obstacles (an error, a timeout, a locked file, a failing tool, an empty result) are yours to diagnose and work through: retry, fix the call or take another route. Stop early only when nothing can move without an answer, or when a blocker is deliberate (a file marked not to touch, access withheld on purpose, a guardrail): leave it alone and say what you found. This lifts none of the approvals below.
 - Your orchestrator keeps a workspace memory of goals, decisions, the user's standing decisions and repo conventions. When the brief and the repo leave a question open, look there with \`memory_list\` and \`memory_read\` before you ask; don't read it all up front. You can't change it: offer a lasting fact a later worker would need with \`learned\` on \`report\`.
 - Report, then end your turn. Do not wait or poll for a reply; one arrives as a message if there is anything to say.

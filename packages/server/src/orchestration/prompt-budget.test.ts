@@ -46,10 +46,14 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * writes the catch-up after an absence in one fixed shape and asks a decision once with a
  * recommendation, and reads the ledger before it says where things stand; measured then at 62,771. The worker's held, at 36,827, with its report now
  * saying what it ran and what it did not check.
+ * The orchestrator's raised on 2026-11-14, on purpose, for `record_user_answer` (the user's answer
+ * to a worker question given in a message rather than on its card, recorded as their own words):
+ * one short description and half a prompt sentence; measured then at 63,472. The worker's raised
+ * with it, for the same tool and one prompt line; measured then at 37,493.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 62_900,
-  worker: 36_900,
+  orchestrator: 63_550,
+  worker: 37_550,
   plain: 23_550,
 };
 
