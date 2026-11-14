@@ -204,7 +204,7 @@ moving keyboard focus into it, slides the open sidebar over the page beside it; 
 Escape, or going somewhere closes it, and its pin keeps the sidebar open. Gram on its own keeps its
 rail.
 
-**The sidebar's look.** `sidebar` (`{ look?, header?, account? }`) sets how the open sidebar is
+**The sidebar's look.** `sidebar` (`{ look?, header?, account?, accountName? }`) sets how the open sidebar is
 drawn. `look: "standard"` (the default) is Gram's own. `look: "roomy"` keeps Gram's surface, edge to
 edge, with group headings in small capitals and air above them, rows
 40 px tall with 18 px icons and labels in the body's stronger weight, the current row as a solid
@@ -219,10 +219,11 @@ strip's overlay takes the look without Collapse. Change it through `update({ sid
 **On a phone.** In the standard look the phone's drawer is Gram's own. In the roomy look it is a
 plain menu: your `header` large at its head beside a round Search, your switcher under it, your
 `main` groups as large rows (52 px, 22 px icons, plain group headings, the first group's left out),
-and at its foot your `account` as a round avatar and one New pill, both floating over the list's
-end. The avatar opens a sheet from the bottom: your `account` as a full row, your `foot` groups,
-History, Settings and the theme. Both your `header` and `account` are given `placement: "drawer"`
-there (a name alone, large; the avatar's letter or picture alone, which Gram puts in a 52 px round
+and at its foot a button with your `account` as a round avatar, `accountName` (a short name of
+yours for the person) over the word Settings, and one New pill. The button opens a sheet from the
+bottom: your `account` as a full row, your `foot` groups, History, Settings and the theme. Both
+your `header` and `account` are given `placement: "drawer"` there (a name alone, large; the
+avatar's letter or picture alone, which Gram puts at the head of that 52 px
 button), and your switcher is given `placement: "drawer"` too (one quiet line). The phone's header
 is then a round menu button, the page's name centred (a thread's or the Board's state under it)
 and a round "…", on the page's own ground; the menu button carries a dot while any destination

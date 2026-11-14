@@ -18,7 +18,8 @@ import { MODE_PREFS, type ModePref } from "@/theme/theme";
 import { switchTheme } from "@/theme/transition";
 
 // A phone's menu in the `roomy` look: one plain column, the app's name at its head, every place a
-// large row, and at its foot the person (a round avatar that opens their sheet) and one New pill.
+// large row, and at its foot the person (their avatar, name and the word Settings on one button
+// that opens their sheet) and one New pill.
 // The places you go to rather than work in (the foot's places, History, Settings, the theme) are
 // in the person's sheet, so nothing hides under the foot.
 
@@ -29,6 +30,13 @@ export const ROUND =
 /** A row of the menu and of the person's sheet: tall, a large icon, the reading size. */
 const ROW =
   "flex min-h-13 w-full min-w-0 items-center gap-4 rounded-xl px-3.5 text-left text-reading text-foreground outline-none transition-[background-color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-safe:active:scale-[0.985] aria-[current=page]:bg-sidebar-row-active aria-[current=page]:font-medium [&_svg]:size-[1.375rem] [&_svg]:shrink-0";
+
+/**
+ * The person's button at the menu's foot: their avatar, their name and the word Settings in one
+ * 52 px chip, quieter than the New pill beside it. It gives way to the pill and cuts a long name.
+ */
+const YOU =
+  "flex h-13 min-w-0 items-center gap-2.5 rounded-full border border-border-strong bg-card pr-4 text-left text-foreground outline-none transition-[background-color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.97]";
 
 /** A heading over a group of rows: plain words, quiet, with air above. */
 const HEADING = "px-6 pt-5 pb-1.5 text-body text-muted-foreground";
@@ -204,7 +212,7 @@ export function PhoneMenu() {
       </div>
       <div
         data-testid="phone-menu-foot"
-        className="flex shrink-0 items-center justify-between border-t border-edge bg-sidebar px-5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]"
+        className="flex shrink-0 items-center justify-between gap-2 border-t border-edge bg-sidebar px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]"
       >
         <YouButton />
         <NewEntryMenu pill />
@@ -220,12 +228,13 @@ const MODE_WORDS: Readonly<Record<ModePref, string>> = {
 };
 
 /**
- * The person at the menu's foot: their avatar as the embedding app draws it in a round button, and
- * the sheet it opens from the bottom with who they are, the foot's places, History, Settings, the
+ * The person at the menu's foot: their avatar as the embedding app draws it, their name and
+ * "Settings" in one button, and the sheet it opens from the bottom with who they are, the foot's places, History, Settings, the
  * theme and anything else the app put at its foot.
  */
 function YouButton() {
   const account = useEmbedShell((s) => s.sidebar.account);
+  const name = useEmbedShell((s) => s.sidebar.accountName);
   const [open, setOpen] = useState(false);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const historyOpen = useHistoryStore((s) => s.open);
@@ -242,14 +251,34 @@ function YouButton() {
   return (
     <Drawer.Root open={open} onOpenChange={setOpen}>
       <Drawer.Trigger
-        aria-label="You"
+        aria-label={name === undefined ? "Settings and more" : `${name}: Settings and more`}
         data-testid="phone-menu-you"
-        className={cn(ROUND, "size-13 overflow-hidden text-body-strong")}
+        className={YOU}
       >
+        <span
+          className={cn(
+            "ml-0.5 grid size-[2.875rem] shrink-0 place-items-center overflow-hidden rounded-full text-body-strong",
+            account === undefined && "[&_svg]:size-5",
+          )}
+        >
+          {account === undefined ? (
+            <Settings aria-hidden />
+          ) : (
+            createElement(account, { placement: "drawer" })
+          )}
+        </span>
+        {/* The words say what the button holds: without them the avatar alone hid Settings. */}
         {account === undefined ? (
-          <Settings aria-hidden />
+          <span className="truncate text-reading">Settings</span>
         ) : (
-          createElement(account, { placement: "drawer" })
+          <span className="flex min-w-0 flex-col">
+            {name !== undefined && (
+              <span data-testid="phone-menu-you-name" className="truncate text-body-strong">
+                {name}
+              </span>
+            )}
+            <span className="truncate text-body text-muted-foreground">Settings</span>
+          </span>
         )}
       </Drawer.Trigger>
       <Drawer.Portal>

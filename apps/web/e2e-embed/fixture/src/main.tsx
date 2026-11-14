@@ -209,6 +209,7 @@ function Account() {
   look: "roomy",
   header: Brand,
   account: Account,
+  accountName: "Ingrid",
 };
 
 const pathUnder =

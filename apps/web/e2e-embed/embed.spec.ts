@@ -1055,4 +1055,31 @@ test.describe("on a phone", () => {
     );
     expect(errors).toEqual([]);
   });
+
+  test("the roomy menu's foot names the person and says Settings is behind their button", async ({
+    page,
+  }) => {
+    const errors = await mounted(page, "/govern/limits");
+    await page.evaluate(() => {
+      const w = window as unknown as Update & { fixtureSidebar: object };
+      w.embed.update({ sidebar: w.fixtureSidebar });
+    });
+    await page.getByTestId("phone-menu").click();
+    const you = page.getByTestId("phone-menu-you");
+    await expect(you).toHaveAccessibleName("Ingrid: Settings and more");
+    await expect(you).toContainText("Ingrid");
+    await expect(you).toContainText("Settings");
+    // The button and the New pill share the foot's one line, and neither is cut by the menu's edge.
+    const foot = await page.getByTestId("phone-menu-foot").boundingBox();
+    const button = await you.boundingBox();
+    expect(button?.height).toBeGreaterThanOrEqual(44);
+    expect((button?.x ?? 0) + (button?.width ?? 0)).toBeLessThan(
+      (foot?.x ?? 0) + (foot?.width ?? 0),
+    );
+    await you.click();
+    await expect(
+      page.getByTestId("phone-menu-you-sheet").getByTestId("overview-settings"),
+    ).toBeVisible();
+    expect(errors).toEqual([]);
+  });
 });
