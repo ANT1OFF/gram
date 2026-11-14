@@ -1881,59 +1881,44 @@ describe("wakeWorthy", () => {
       '"Runner" has waited 10 min on the user (approval)',
     ],
     [
-      "a question a minute old at publish",
-      {
-        type: "requestPending",
-        worker: "Runner",
-        kind: "question",
-        pendingMs: QUESTION_WAKE_MS + 1,
-        autonomy: "publish",
-      },
-      undefined,
-    ],
-    [
-      "a question exactly a minute old at full",
+      "a question exactly a minute old",
       {
         type: "requestPending",
         worker: "Runner",
         kind: "question",
         pendingMs: QUESTION_WAKE_MS,
-        autonomy: "full",
       },
       undefined,
     ],
     [
-      "a question older than a minute at full",
+      "a question older than a minute",
       {
         type: "requestPending",
         worker: "Runner",
         kind: "question",
         pendingMs: QUESTION_WAKE_MS + 1,
-        autonomy: "full",
       },
       '"Runner" has had a question open for 1 min; answer_worker can answer it',
     ],
     [
-      "an approval a minute old at full",
+      "an approval a minute old",
       {
         type: "requestPending",
         worker: "Runner",
         kind: "approval",
         pendingMs: QUESTION_WAKE_MS + 1,
-        autonomy: "full",
       },
       undefined,
     ],
     [
-      "a question ten minutes old at supervised",
+      "a question ten minutes old",
       {
         type: "requestPending",
         worker: "Runner",
         kind: "question",
         pendingMs: REQUEST_PENDING_WAKE_MS + 1,
-        autonomy: "supervised",
       },
-      '"Runner" has waited 10 min on the user (question)',
+      '"Runner" has had a question open for 10 min; answer_worker can answer it',
     ],
     ["a worker error", { type: "workerError", worker: "Runner" }, '"Runner" is in error'],
     [
@@ -2113,19 +2098,21 @@ describe("prompts", () => {
     expect(roleAt("publish")).not.toContain("owner/repo#N");
   });
 
-  it("tells an orchestrator what is the user's at each level, and only at full what is its own", () => {
+  it("tells an orchestrator what leaves the machine at each level, and that answering workers is its own at all of them", () => {
     const at = roleAt;
     for (const level of ["supervised", "publish"] as const) {
       expect(at(level)).toContain(`autonomy is \`${level}\``);
       expect(at(level)).toContain("Merging is the user's decision");
-      expect(at(level)).toContain("You cannot answer a worker's waiting request of any kind");
+      expect(at(level)).toContain("You cannot merge, close a pull request or delete anything");
       // Its workers' `ask_question` questions are its to triage at every level.
       expect(at(level)).toContain("## Your workers' questions");
       expect(at(level)).toContain(
         "Answer it with `answer_worker` (`questionId`, `answer`, `source`)",
       );
-      // A request a worker waits on the user for stays the user's below `full`.
-      expect(at(level)).not.toContain("`answer_worker` and its `requestId`");
+      // A question a worker waits on the user for is its to answer at every level; an approval
+      // or a plan never is.
+      expect(at(level)).toContain("`answer_worker` and its `requestId`");
+      expect(at(level)).toContain("Approval and plan requests stay the user's");
       expect(at(level)).not.toContain("`merge_when_ready`");
     }
     expect(at("supervised")).toContain("ask the user before they push");
@@ -2769,13 +2756,10 @@ describe("retried requests", () => {
 });
 
 describe("request wake timing", () => {
-  it("is a minute for a question at full, and ten for everything else", () => {
-    expect(requestWakeMs("question", "full")).toBe(QUESTION_WAKE_MS);
-    for (const autonomy of ["supervised", "publish", undefined] as const) {
-      expect(requestWakeMs("question", autonomy)).toBe(REQUEST_PENDING_WAKE_MS);
-    }
+  it("is a minute for a question at every level, and ten for everything else", () => {
+    expect(requestWakeMs("question")).toBe(QUESTION_WAKE_MS);
     for (const kind of ["approval", "plan"]) {
-      expect(requestWakeMs(kind, "full")).toBe(REQUEST_PENDING_WAKE_MS);
+      expect(requestWakeMs(kind)).toBe(REQUEST_PENDING_WAKE_MS);
     }
   });
 });

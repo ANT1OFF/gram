@@ -100,9 +100,11 @@ ask_question ──► triage ──answer_worker(questionId, source)──► a
 - A worker with no orchestrator listening gets `asked: false` and is told to carry on, as
   `report` does.
 
-Unlike `answer_worker` on a pending request, which only `full` autonomy allows, triage
-works at every autonomy level. A worker's `ask_question` is addressed to its orchestrator
-first, so a settled answer from the orchestrator takes nothing from the user.
+Triage works at every autonomy level, and so does `answer_worker` on a worker's pending
+question (its harness's own ask): the level decides what leaves the machine, not who answers a
+worker. A worker's `ask_question` is addressed to its orchestrator first, so a settled answer
+from the orchestrator takes nothing from the user. Approval and plan requests are never the
+orchestrator's to answer.
 
 ## Model and storage
 

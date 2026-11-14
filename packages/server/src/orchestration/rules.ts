@@ -289,6 +289,18 @@ export const mcpListsFor = (input: {
 };
 
 /**
+ * What an orchestrator does to a worker it spawned itself without a card, at every level of
+ * autonomy, because it moves nothing off the machine: restarting its session. It is `isDelegated`,
+ * and a pause takes it away like everything else an orchestrator does on its own.
+ */
+export const coordinationAllows = (input: {
+  readonly caller: RuleThread;
+  readonly target: RuleThread;
+  readonly workspace: RuleWorkspace | undefined;
+  readonly paused?: boolean | undefined;
+}): boolean => input.workspace !== undefined && input.paused !== true && isDelegated(input);
+
+/**
  * The one delegation of an *outward* action: at `full` autonomy an orchestrator with
  * authority acts on a worker it spawned itself without a card. It is `isDelegated` and the level,
  * and a pause takes it away like everything else an orchestrator does on its own. Asked for a tool
@@ -1702,16 +1714,16 @@ export const digestGroups = (
 
 /** How long a worker's request waits on the user before its orchestrator hears of it. */
 export const REQUEST_PENDING_WAKE_MS = 600_000;
-/** How long a worker's question waits before an orchestrator that may answer it hears of it. */
+/** How long a worker's question waits before its orchestrator, which may answer it, hears of it. */
 export const QUESTION_WAKE_MS = 60_000;
 
 /**
- * How long a request of `kind` waits before it is a wake reason. At `full` autonomy a question is
- * the orchestrator's to answer (`answer_worker`), so it hears within a minute, which still leaves
- * the user the first go at it; everything else is the user's alone and keeps the ten minutes.
+ * How long a request of `kind` waits before it is a wake reason. A question is the orchestrator's
+ * to answer (`answer_worker`) at every level of autonomy, so it hears within a minute, which still
+ * leaves the user the first go at it; everything else is the user's alone and keeps the ten minutes.
  */
-export const requestWakeMs = (kind: string, autonomy: Autonomy | undefined): number =>
-  kind === "question" && autonomy === "full" ? QUESTION_WAKE_MS : REQUEST_PENDING_WAKE_MS;
+export const requestWakeMs = (kind: string): number =>
+  kind === "question" ? QUESTION_WAKE_MS : REQUEST_PENDING_WAKE_MS;
 
 /** A PR badge reduced to what a wake turns on. */
 export interface PrMark {
@@ -1738,8 +1750,6 @@ export type WakeEvent =
       /** `approval`, `question` or `plan`. */
       readonly kind: string;
       readonly pendingMs: number;
-      /** The workspace's level, which decides how soon a question is worth a wake; absent reads as not `full`. */
-      readonly autonomy?: Autonomy | undefined;
     }
   | {
       readonly type: "workerError";
@@ -1822,9 +1832,9 @@ export const wakeWorthy = (event: WakeEvent): string | undefined => {
     case "workerRemoved":
       return event.parked ? undefined : `a worker was ${event.action}`;
     case "requestPending": {
-      if (event.pendingMs <= requestWakeMs(event.kind, event.autonomy)) return undefined;
+      if (event.pendingMs <= requestWakeMs(event.kind)) return undefined;
       const minutes = Math.floor(event.pendingMs / 60_000);
-      return event.kind === "question" && event.autonomy === "full"
+      return event.kind === "question"
         ? `${label(event.worker)} has had a question open for ${minutes} min; answer_worker can answer it`
         : `${label(event.worker)} has waited ${minutes} min on the user (${event.kind.replaceAll(/[^a-z]/gi, "")})`;
     }

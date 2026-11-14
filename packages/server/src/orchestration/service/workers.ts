@@ -23,6 +23,7 @@ import { wakesOf, withNotes } from "../outbox.ts";
 import { ledgerQuestions } from "../worker-questions.ts";
 import { slotHereNow } from "../../runtime/model-slots.ts";
 import {
+  coordinationAllows,
   fullAutonomyAllows,
   rosterOf,
   workerModelLabel,
@@ -307,7 +308,7 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
     });
 
   // ---------------------------------------------------------------------------------------
-  // Full autonomy's two delegations
+  // What an orchestrator does to its own workers without a card: always, and at full autonomy
   // ---------------------------------------------------------------------------------------
 
   const allowsAtFull: OrchestrationShape["fullAutonomyAllows"] = (callerId, targetId) =>
@@ -321,6 +322,20 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
         target,
         workspace: state?.workspace,
         charter: state?.charter,
+        paused: state?.paused !== undefined || pausedFeatureOf(state, target) !== undefined,
+      });
+    }).pipe(Effect.catchCause(() => Effect.succeed(false)));
+
+  const allowsCoordination: OrchestrationShape["coordinationAllows"] = (callerId, targetId) =>
+    Effect.gen(function* () {
+      const caller = yield* findThread(callerId);
+      const target = yield* findThread(targetId);
+      if (caller === undefined || target === undefined) return false;
+      const state = yield* findWorkspace(caller.workspaceId);
+      return coordinationAllows({
+        caller,
+        target,
+        workspace: state?.workspace,
         paused: state?.paused !== undefined || pausedFeatureOf(state, target) !== undefined,
       });
     }).pipe(Effect.catchCause(() => Effect.succeed(false)));
@@ -347,6 +362,7 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
     armHolds,
     onHoldDue,
     allowsAtFull,
+    allowsCoordination,
     workerMergesOwn,
   };
 };

@@ -182,7 +182,8 @@ export const rosterModelHere = (
  * How far an orchestrator and its workers go without asking. `supervised` asks before anything
  * leaves the machine: a push, a PR, a merge. `publish` lets them push branches and open PRs, and
  * asks before what can't be taken back: merging or closing a PR, a release, a workflow run.
- * `full` asks about nothing, and lets the orchestrator merge and answer its workers' questions.
+ * `full` asks about nothing, and lets the orchestrator merge. The level decides only what leaves
+ * the machine: answering workers' questions, their messages and restarts are the same at each.
  */
 export const Autonomy = Schema.Literals(["supervised", "publish", "full"]);
 export type Autonomy = typeof Autonomy.Type;

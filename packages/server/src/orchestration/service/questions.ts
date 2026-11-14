@@ -4,7 +4,6 @@
 // asked. Also `answer_worker`, the orchestrator's answer to what a worker waits on.
 
 import {
-  autonomyOf,
   InvalidState,
   NotFound,
   WORKER_ANSWER_MAX,
@@ -107,16 +106,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
           refusal(
             "paused",
             `Orchestration is paused (${state.paused.reason}), so you answer nothing for the user. Only the user can resume it; end your turn.`,
-          ),
-        );
-      }
-      const autonomy = autonomyOf(state.charter);
-      if (autonomy !== "full") {
-        return yield* toolError(
-          tool,
-          refusal(
-            "not_allowed",
-            `This workspace's autonomy is ${autonomy}; only the user answers a worker's questions. Tell them with notify_user if it has waited long.`,
           ),
         );
       }

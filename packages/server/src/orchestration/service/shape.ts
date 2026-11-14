@@ -623,7 +623,7 @@ export interface OrchestrationShape {
     },
     AppToolError
   >;
-  /** Message-only worker delegation to the bound parent or siblings at full autonomy; reads only. */
+  /** Message-only worker delegation to the bound parent or siblings, at every level of autonomy; reads only. */
   isWorkerSend(callerId: ThreadId, targetId: string): Effect.Effect<boolean>;
   /** Rechecks current worker relationships, workspace pause and user holds before delivery. */
   checkWorkerMessage(callerId: ThreadId, targetId: ThreadId): Effect.Effect<void, AppToolError>;
@@ -707,6 +707,11 @@ export interface OrchestrationShape {
    * only, since a gate may ask twice, and anything that goes wrong answers `false`.
    */
   fullAutonomyAllows(callerId: ThreadId, targetId: string): Effect.Effect<boolean>;
+  /**
+   * Whether `callerId` restarts `targetId`'s session without a card: an orchestrator on its own
+   * worker, unpaused, at every level of autonomy (`coordinationAllows`). Reads only.
+   */
+  coordinationAllows(callerId: ThreadId, targetId: string): Effect.Effect<boolean>;
   /** The ledger as `list_workers` shows it to the orchestrator, and the worker models it may name. */
   listWorkers(
     callerId: ThreadId,

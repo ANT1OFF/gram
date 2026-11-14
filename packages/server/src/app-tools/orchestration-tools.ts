@@ -489,7 +489,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         name: "send_message",
         class: "crossThread",
         description:
-          'Use `message` for message text (`text` and `content` are aliases). Send it to another Gram thread by the exact full threadId from list_threads or list_workers; shortened IDs are refused. For your parent, use message_orchestrator without an ID. `mode`: "queue" (after the turn), "steer" (mid-turn after the tool calls under way; cancels nothing) or "interrupt" (stops the turn now, cutting off tool calls; urgent stops only). Default steer. Your own workers need no approval. In Full Auto a current worker may also message its bound workspace orchestrator or a current sibling worker without approval; these keep the back-to-back, chain and rate limits. Prefer `report` for progress, decisions, blockers and completed work to your orchestrator. Paused workspaces and user-held workers refuse these messages. Other targets, and worker sends outside Full Auto, ask approval per call, even in Bypass. `clientRequestId` retries an own-worker or Full Auto send without sending it twice. An orchestrator\'s `userMessages` (1–5) appends the user\'s latest messages word for word, for a paste the worker needs. Link a thread for the user as [title](#threadId).',
+          'Use `message` for message text (`text` and `content` are aliases). Send it to another Gram thread by the exact full threadId from list_threads or list_workers; shortened IDs are refused. For your parent, use message_orchestrator without an ID. `mode`: "queue" (after the turn), "steer" (mid-turn after the tool calls under way; cancels nothing) or "interrupt" (stops the turn now, cutting off tool calls; urgent stops only). Default steer. Your own workers need no approval. A current worker may also message its bound workspace orchestrator or a current sibling worker without approval; these keep the back-to-back, chain and rate limits. Prefer `report` for progress, decisions, blockers and completed work to your orchestrator. Paused workspaces and user-held workers refuse these messages. Other targets ask approval per call, even in Bypass. `clientRequestId` retries an own-worker or worker send without sending it twice. An orchestrator\'s `userMessages` (1–5) appends the user\'s latest messages word for word, for a paste the worker needs. Link a thread for the user as [title](#threadId).',
       },
       input: inputAliases(
         Schema.Struct({
@@ -546,7 +546,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         name: "message_orchestrator",
         class: "crossThread",
         description:
-          "Use `message` for message text (`text` and `content` are aliases). Send specific coordination or clarification to your current bound workspace orchestrator, steered into its turn; no thread ID is needed. Prefer `report` for structured progress, completion and interface status. Full Auto needs no approval for this current owned route; lower autonomy asks per call, even in Bypass. Pauses, user holds and stale membership refuse it. The usual origin, back-to-back, two-hop and rate guards apply. clientRequestId deduplicates Full Auto retries per sender.",
+          "Use `message` for message text (`text` and `content` are aliases). Send specific coordination or clarification to your current bound workspace orchestrator, steered into its turn; no thread ID is needed. Prefer `report` for structured progress, completion and interface status. This current owned route needs no approval. Pauses, user holds and stale membership refuse it. The usual origin, back-to-back, two-hop and rate guards apply. clientRequestId deduplicates retries per sender.",
       },
       audience: ["worker"],
       rejectExcessProperties: true,
@@ -692,7 +692,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           ? Effect.succeed(false)
           : orchestration === undefined
             ? Effect.succeed(true)
-            : orchestration.fullAutonomyAllows(caller, threadId).pipe(Effect.map((full) => !full)),
+            : orchestration.coordinationAllows(caller, threadId).pipe(Effect.map((own) => !own)),
       describe: (caller, { threadId, interrupt }) =>
         threadId === undefined || threadId === caller
           ? Effect.succeed("Restart this thread's session once this turn ends")

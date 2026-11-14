@@ -1158,12 +1158,10 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       return { thread: caller, state: owner.state, verdict };
     });
 
+  // A worker's messages to its orchestrator and siblings are how a workspace works, at every level
+  // of autonomy: the level decides what leaves the machine, not who may talk to whom.
   const workerSendAuthority = (callerId: ThreadId, targetId: string) =>
-    workerMessageRoute(callerId, targetId).pipe(
-      Effect.map((route) =>
-        route !== undefined && autonomyOf(route.state.charter) === "full" ? route : undefined,
-      ),
-    );
+    workerMessageRoute(callerId, targetId);
 
   const resolveWorkerParent: OrchestrationShape["resolveWorkerParent"] = (callerId) =>
     Effect.gen(function* () {
@@ -1201,7 +1199,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           "send_message",
           refusal(
             "no_authority",
-            "These threads are no longer a current worker and its bound parent or sibling in the same Full Auto workspace. Retry the call to request approval.",
+            "These threads are no longer a current worker and its bound parent or sibling in the same workspace. Retry the call to request approval.",
           ),
         );
       }

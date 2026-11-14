@@ -794,8 +794,8 @@ function HandoffGiven({ handoff, to }: { handoff: Handoff; to: AgentKind }) {
 }
 
 /**
- * An orchestrator answered a worker's question in the user's place, which only Full autonomy
- * allows. The same card stands in both transcripts, so what was said for the user is never out of
+ * An orchestrator answered a worker's question in the user's place, from the brief, its memory or
+ * what the user told it. The same card stands in both transcripts, so what was said for the user is never out of
  * sight; both texts are an agent's own, shown as written.
  */
 export function WorkerAnswerCard({
@@ -842,7 +842,7 @@ export function WorkerAnswerCard({
         </dd>
       </dl>
       <p className="text-meta text-muted-foreground">
-        Allowed because this workspace is at Full autonomy. Write to the{" "}
+        It answers what your brief, its memory or your own words settle. Write to the{" "}
         {inWorker ? "worker" : "worker's thread"} if you would have said otherwise.
       </p>
     </article>

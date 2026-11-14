@@ -606,7 +606,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "answer_worker",
         class: "crossThread",
         description:
-          "Answer one of your own workers' questions. Two kinds: (1) a question it asked you with `ask_question`, named by `questionId` (`WQ7`) from the digest's triage list: answer it only when the brief, a standing decision or a memory entry already settles it, and say which in `source`; otherwise forward it with `forward_question`. Once forwarded it is the user's and can't be answered here. (2) A question it is waiting on the user for (its harness's ask), named by `threadId` and `requestId` from list_workers or the digest: only at `full` autonomy, and only when the answer is in the brief, the memory or what the user has told you; never an approval or a plan request, which stay the user's. Give one or the other. The worker gets the answer at once, and the user sees it in both threads. Refused while orchestration is paused and for a worker the user has written to since its last report.",
+          "Answer one of your own workers' questions. Two kinds: (1) a question it asked you with `ask_question`, named by `questionId` (`WQ7`) from the digest's triage list: answer it only when the brief, a standing decision or a memory entry already settles it, and say which in `source`; otherwise forward it with `forward_question`. Once forwarded it is the user's and can't be answered here. (2) A question it is waiting on the user for (its harness's ask), named by `threadId` and `requestId` from list_workers or the digest: only when the answer is in the brief, the memory or what the user has told you; never an approval or a plan request, which stay the user's. Give one or the other. The worker gets the answer at once, and the user sees it in both threads. Refused while orchestration is paused and for a worker the user has written to since its last report.",
       },
       audience: ["orchestrator"],
       input: Schema.Struct({
@@ -616,8 +616,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         requestId: Schema.optionalKey(Schema.NonEmptyString),
         answer: Schema.NonEmptyString.check(Schema.isMaxLength(WORKER_ANSWER_MAX)),
       }),
-      // No card either way: the handler refuses everything the autonomy level doesn't allow, and
-      // a card would ask the user to let the orchestrator answer what they could answer themselves.
+      // No card either way: the handler refuses what isn't the orchestrator's to answer, and a card
+      // would ask the user to let the orchestrator answer what they could answer themselves.
       needsApproval: () => Effect.succeed(false),
       handle: (caller, input) =>
         Effect.gen(function* () {

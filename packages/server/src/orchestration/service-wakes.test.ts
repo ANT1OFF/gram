@@ -554,9 +554,16 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         const worker = yield* spawn(session, { feature: "mail-trigger", title: "Mail trigger" });
         yield* worker.session.emit({
           type: "request",
-          request: { kind: "question", id: "req-1" as RequestId, questions: [] },
+          request: {
+            kind: "approval",
+            id: "req-1" as RequestId,
+            toolName: "Bash",
+            displayName: "Bash",
+            input: { command: "rm -rf build" },
+            suggestions: [],
+          },
         });
-        yield* waitStatus(worker.thread.id, "needsInput");
+        yield* waitStatus(worker.thread.id, "needsApproval");
         yield* settle;
         // Needing the user is a state change, but nothing had happened to wake anyone over yet.
         yield* TestClock.adjust("9 minutes");
@@ -564,7 +571,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         expect(session.sent).toHaveLength(1);
         expect((yield* orchestration.ledger(workspaceId)).features[0]?.workers[0]).toMatchObject({
           state: "needsUser",
-          pendingRequests: [{ kind: "question", ageMin: 9 }],
+          pendingRequests: [{ kind: "approval", ageMin: 9 }],
         });
 
         yield* TestClock.adjust("2 minutes");
@@ -573,7 +580,30 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         yield* waitSent(thread.id, 2);
         expect(session.sent[1]?.text).toContain("'Mail trigger' has waited 10 min on the user");
         expect(session.sent[1]?.text).toContain("new, needsUser");
-        expect(session.sent[1]?.text).toContain("waiting 11m on question");
+        expect(session.sent[1]?.text).toContain("waiting 11m on approval");
+      }),
+    ),
+  );
+
+  it.effect("tells of a worker's open question after a minute, at the default autonomy", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const { session, thread } = yield* openOrchestrator(world);
+        const worker = yield* spawn(session, { feature: "mail-trigger", title: "Mail trigger" });
+        yield* worker.session.emit({
+          type: "request",
+          request: { kind: "question", id: "req-1" as RequestId, questions: [] },
+        });
+        yield* waitStatus(worker.thread.id, "needsInput");
+        yield* settle;
+        expect(session.sent).toHaveLength(1);
+        // Answering a worker is not an autonomy matter, so the wake does not wait for Full.
+        yield* TestClock.adjust("61 seconds");
+        yield* settle;
+        yield* TestClock.adjust("60 seconds");
+        yield* waitSent(thread.id, 2);
+        expect(session.sent[1]?.text).toContain("has had a question open");
+        expect(session.sent[1]?.text).toContain("answer_worker can answer it");
       }),
     ),
   );

@@ -413,6 +413,7 @@ export const OrchestrationLive = Layer.effect(
       armHolds,
       onHoldDue,
       allowsAtFull,
+      allowsCoordination,
       workerMergesOwn,
     } = makeWorkers(kit, { survey, wakeFor, wake });
 
@@ -863,6 +864,7 @@ export const OrchestrationLive = Layer.effect(
       describeAddRepo,
       addWorkerRepo,
       fullAutonomyAllows: allowsAtFull,
+      coordinationAllows: allowsCoordination,
       workerMergesOwn,
       listWorkers,
       setStageAs,
