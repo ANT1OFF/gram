@@ -2,12 +2,12 @@ import { join } from "node:path";
 import { KeptSessions } from "../runtime/kept-sessions.ts";
 import { answerAsk, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
 import { DecisionHook } from "../embedding/decision-hook.ts";
-import { EventSink } from "../embedding/event-sink.ts";
+import { type AnswerNote, EventSink } from "../embedding/event-sink.ts";
 import { UsageLimitPoller } from "../usage/limit-poller.ts";
 import { PlanKeeperLive } from "../plans/keeper.ts";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
-import { GramRpcs } from "@gram/contracts";
+import { GramRpcs, type RequestId } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Cause from "effect/Cause";
@@ -49,7 +49,7 @@ import { ThreadArchive, ThreadArchiverLive } from "../orchestration/archive.ts";
 import { DreamFiles } from "../orchestration/dream-files.ts";
 import { DreamsLive } from "../orchestration/dreams.ts";
 import { OrchestrationMemory } from "../orchestration/memory.ts";
-import { OrchestrationLive } from "../orchestration/service.ts";
+import { Orchestration, OrchestrationLive } from "../orchestration/service.ts";
 import { RoutineEventSourcesLive } from "../routines/events.ts";
 import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
@@ -112,6 +112,7 @@ import { agentHostsOrHeadless, withHeadlessCheck } from "../host/headless.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
+import { mayReachThread, ownersOf } from "../host/ownership.ts";
 import { compressedStatic } from "./compressed-static.ts";
 import { markLocalApp, unmarkLocalApp } from "./local-app.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
@@ -284,6 +285,8 @@ export const AuthMiddleware = HttpRouter.middleware(
       );
     // Stopping a joined machine and resuming its threads: a hosted feature, local app only.
     const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
+    const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
+    const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
     const stopDeps =
       remoteHosts === undefined || store === undefined || runtimes === undefined
         ? undefined
@@ -488,6 +491,46 @@ export const AuthMiddleware = HttpRouter.middleware(
                 {
                   runtimes,
                   store,
+                  ...(eventSink === undefined
+                    ? {}
+                    : {
+                        noteAnswer: (askId: string, note: AnswerNote | undefined) =>
+                          eventSink.noteAnswer(askId as RequestId, note),
+                      }),
+                  ...(orchestration === undefined
+                    ? {}
+                    : {
+                        workerQuestions: {
+                          find: (workspaceId, questionId) =>
+                            orchestration.ledger(workspaceId).pipe(
+                              Effect.map((ledger) =>
+                                (ledger.questions ?? []).find(
+                                  (question) => question.id === questionId,
+                                ),
+                              ),
+                              Effect.orElseSucceed(() => undefined),
+                            ),
+                          answer: orchestration.answerQuestionAsUser,
+                          mayReach: (workspaceId, threadId) =>
+                            Effect.gen(function* () {
+                              const ownerOf = ownersOf(remoteHosts?.machines);
+                              const state = yield* store
+                                .getWorkspace(workspaceId)
+                                .pipe(Effect.option);
+                              const holder =
+                                state._tag === "Some"
+                                  ? state.value.workspace.orchestratorThreadId
+                                  : undefined;
+                              for (const id of holder === undefined
+                                ? [threadId]
+                                : [threadId, holder]) {
+                                if (!(yield* mayReachThread(store.getThread, ownerOf, id)))
+                                  return false;
+                              }
+                              return true;
+                            }),
+                        },
+                      }),
                 },
                 request,
                 stated.actor,

@@ -125,7 +125,13 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  *   description?}], multiSelect}`, what a receiver needs to answer it through `asks/answer`: the
  *   answer is keyed by each `question` and names choices by `label`, exactly as given here. A
  *   question ask too large to carry whole carries none. A plan carries `plan`, its Markdown, cut
- *   and marked `planTruncated` past 50,000 characters.
+ *   and marked `planTruncated` past 50,000 characters. A worker's own question (`WQ7`, an
+ *   orchestrator's worker asking the user a decision) opens as a question ask once it waits on the
+ *   user, with the id `wq:<workspaceId>:<WQ id>`, `workerQuestion` naming it, and the worker's
+ *   `context` and `recommended` pick where it gave them; it is answered through `asks/answer` like
+ *   any question, and resolved however it closed: `answered` only for a person's answer, wherever
+ *   they gave it, and `withdrawn` for one dismissed, withdrawn or settled by its orchestrator.
+ *   `sink.started`'s `openAsks` lists those still waiting.
  * - `ask.resolved` `{id, how, decision?, answeredBy?, proof?}`: `how` is `answered` when a person
  *   answered it and `withdrawn` when it went unanswered (the turn stopped, the session went, the
  *   agent took it back). `decision` is the person's `approve` or `reject` of an approval or a
