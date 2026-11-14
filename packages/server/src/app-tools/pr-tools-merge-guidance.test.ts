@@ -11,10 +11,12 @@ import {
   completeTurn,
   makeWorld,
   openOrchestrator,
+  publishGit,
   spawn,
   waitReal,
   withServer,
 } from "../orchestration/test-harness.ts";
+import { badge } from "./pr-tools-kit.ts";
 import { AppToolRegistry } from "./registry.ts";
 
 /** The deploy PR a release script opened from a scratch worktree it then removed. */
@@ -157,6 +159,74 @@ describe("merge_when_ready guidance at full autonomy", () => {
           }),
         );
       }).pipe(Effect.scoped),
+    );
+  }
+
+  for (const autonomy of ["full", "publish"] as const) {
+    it.effect.skipIf(!hasGit)(
+      `refuses a change to a merged PR's intent without ownership or a card at ${autonomy}`,
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const store = yield* ThreadStore;
+              const runtimes = yield* ThreadRuntimes;
+              const registry = yield* AppToolRegistry;
+              const { session, thread } = yield* openOrchestrator(world);
+              const worker = yield* spawn(session, { feature: "merged" });
+              yield* completeTurn(worker.session);
+              yield* atAutonomy(thread, "full");
+              if (autonomy === "publish")
+                yield* store.updateWorkspace(thread.workspaceId!, (state) => ({
+                  ...state,
+                  charter: { ...state.charter, autonomy: "publish" as const },
+                }));
+              // The deploy PR, merged from a branch the worker never held, with its intent left.
+              world.prHeads.set(21, { headRefName: DEPLOY, state: "MERGED" });
+              yield* runtimes.updateThread(worker.thread.id, (t) => ({
+                ...t,
+                boundPr: {
+                  repo: "acme/app",
+                  number: 21,
+                  monitor: false,
+                  mergeWhenReady: {
+                    method: "squash",
+                    allowedBy: "user",
+                    hold: "deploy window",
+                    heldBy: "thread",
+                    setAt: 0,
+                  },
+                },
+              }));
+              // Its badge says so; below full nothing else is read before refusing.
+              yield* publishGit(world, yield* store.getThread(worker.thread.id), {
+                pr: badge({
+                  number: 21,
+                  url: "https://github.com/acme/app/pull/21",
+                  state: "MERGED",
+                }),
+              });
+              const merge = registry
+                .forTransport(worker.thread.id, "worker")
+                .find((t) => t.descriptor.name === "merge_when_ready")!;
+              for (const input of [{ release: true }, { hold: "later" }, {}]) {
+                const refused = yield* merge.run(input).pipe(Effect.flip);
+                expect(refused.message).toBe(
+                  "acme/app#21 is merged, so there is nothing to merge; check it with pr_status. Nobody was asked.",
+                );
+              }
+              expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
+              // Dropping it goes through, and needs nothing either.
+              yield* merge.run({ enabled: false });
+              expect(
+                (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
+              ).toBeUndefined();
+              expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
+            }),
+          );
+        }).pipe(Effect.scoped),
     );
   }
 

@@ -62,6 +62,7 @@ import { parseRunRef, RunMonitor } from "../git/run-monitor.ts";
 import {
   withOwnedBranch,
   ownershipAsk,
+  endedPrText,
   ownershipRefusal,
   workerOwnsPr as ownsPr,
   workerPrOwnership,
@@ -605,7 +606,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
               { repo, number },
               "set_auto_merge",
               enabled ? "merges it" : "turns its auto-merge off",
-              enabled,
+              true,
             ),
       whyAsked: (caller, { thread, enabled, number, repo }) =>
         Effect.gen(function* () {
@@ -796,9 +797,29 @@ export const PrAppToolsLive = Layer.effectDiscard(
       }).pipe(Effect.catchCause(() => Effect.succeed(false)));
 
     /**
-     * At `full` autonomy, the refusal `caller` gets in place of a card on `thread`'s PR when it can
-     * make the PR its own itself (`ownershipRefusal`); `undefined` keeps the card.
+     * The refusal `caller` gets in place of a card on `thread`'s PR: for a merge call on a PR its
+     * badges already show merged or closed, at any autonomy and without asking GitHub; and at
+     * `full`, when it can make the PR its own itself or the PR has ended (`ownershipRefusal`).
+     * `undefined` keeps the card.
      */
+    /** `pr`'s state from the badges Gram already has for `thread`, when they say it has ended. */
+    const endedFromBadges = (
+      thread: Thread,
+      pr: { readonly repo: string; readonly number: number },
+    ) =>
+      Effect.gen(function* () {
+        const badges = [
+          yield* publisher.badgeFor(thread),
+          ...(yield* publisher.extraBadgesFor(thread)),
+        ];
+        const badge = badges.find((each) => each !== undefined && isBadgeOf(each, pr));
+        return badge?.state === "MERGED"
+          ? endedPrText(pr.repo, pr.number, "merged")
+          : badge?.state === "CLOSED"
+            ? endedPrText(pr.repo, pr.number, "closed")
+            : undefined;
+      }).pipe(Effect.catchCause(() => Effect.succeed(undefined)));
+
     const refusalForAgent = (
       caller: ThreadId,
       thread: Thread,
@@ -808,12 +829,15 @@ export const PrAppToolsLive = Layer.effectDiscard(
       merge: boolean,
     ) =>
       Effect.gen(function* () {
+        if (merge) {
+          const ended = yield* endedFromBadges(thread, pr);
+          if (ended !== undefined) return ended;
+        }
         if (!(yield* mergeDelegated(caller, thread))) return undefined;
         return yield* ownershipRefusal(thread, pr.repo, pr.number, {
           audience: caller === thread.id ? "worker" : "orchestrator",
           tool,
           action,
-          merge,
         }).pipe(
           Effect.provideService(ThreadStore, store),
           Effect.provideService(Proc, proc),
@@ -974,12 +998,14 @@ export const PrAppToolsLive = Layer.effectDiscard(
               : "it is approved on its head, green and clean";
           return `Merge ${prName(pr)} (${method ?? thread.boundPr?.mergeWhenReady?.method ?? "squash"}) once ${condition}${afterRefs.length === 0 ? "" : `, after ${afterRefs.map(prName).join(", ")}`}${clearHold ? ", no hold" : hold === undefined ? "" : `, held: ${hold}`}${thread.id === caller ? "" : `, on “${thread.title}”`}`;
         }),
-      // A head branch the worker can check out, or a merged PR, is the agent's to sort out.
+      // A merged or closed PR, or a head branch the worker can check out, is the agent's to sort
+      // out; a worker's call on an orchestrator's hold still asks unless the PR has ended.
       refuseInsteadOfAsking: (caller, { thread, pr, enabled = true }) =>
-        !enabled ||
-        (caller === thread.id && thread.boundPr?.mergeWhenReady?.heldBy === "orchestrator")
+        !enabled
           ? Effect.succeed(undefined)
-          : refusalForAgent(caller, thread, pr, MERGE, "merges it once its checks pass", true),
+          : caller === thread.id && thread.boundPr?.mergeWhenReady?.heldBy === "orchestrator"
+            ? endedFromBadges(thread, pr)
+            : refusalForAgent(caller, thread, pr, MERGE, "merges it once its checks pass", true),
       // Read once a card is up: full auto would have merged it, but for the PR's ownership.
       whyAsked: (caller, { thread, pr, enabled = true, method }) =>
         Effect.gen(function* () {

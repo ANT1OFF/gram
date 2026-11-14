@@ -516,6 +516,10 @@ const checkedOutElsewhere = (here: string, branch: string) =>
     return false;
   }).pipe(Effect.orElseSucceed(() => true));
 
+/** The refusal for a merge call on a PR that is merged or closed: there is nothing to merge. */
+export const endedPrText = (repo: string, number: number, state: "merged" | "closed") =>
+  `${repo}#${number} is ${state}, so there is nothing to merge; check it with pr_status. Nobody was asked.`;
+
 /**
  * At `full` autonomy, the refusal the calling agent gets in place of a card when the PR would be
  * the worker's own but for something the agent can fix itself, never widening what is owned:
@@ -523,8 +527,9 @@ const checkedOutElsewhere = (here: string, branch: string) =>
  * - its head branch isn't held in the worker's worktree, no other thread follows or holds it, and
  *   no other git worktree has it checked out (a deploy PR a release script opened from a scratch
  *   worktree it then removed, say): the agent is told to check it out there and call again, which
- *   then goes through without the user;
- * - it is merged or closed (`merge` only): there is nothing to merge.
+ *   then goes through without the user.
+ *
+ * - it is merged or closed: there is nothing to merge (`endedPrText`).
  *
  * `undefined` for everything else (a fork, a repository outside the workspace, another thread's
  * PR, a doubt), which still asks the user. The caller has already established the delegation.
@@ -539,18 +544,13 @@ export const ownershipRefusal = (
     readonly tool: string;
     /** What Gram then does without asking, as in "Gram then merges it without asking". */
     readonly action: string;
-    /** Whether a merged or closed PR is refused as having nothing to merge. */
-    readonly merge: boolean;
   },
 ) =>
   Effect.gen(function* () {
     const ownership = yield* workerPrOwnership(thread, repo, number);
     if (typeof ownership !== "string") return undefined;
-    const state = /^it is (merged|closed)$/.exec(ownership)?.[1];
-    if (state !== undefined)
-      return options.merge
-        ? `${repo}#${number} is ${state}, so there is nothing to merge; check it with pr_status. Nobody was asked.`
-        : undefined;
+    const state = /^it is (merged|closed)$/.exec(ownership)?.[1] as "merged" | "closed" | undefined;
+    if (state !== undefined) return endedPrText(repo, number, state);
     if (ownership !== OWNERSHIP_BLOCKERS.branchNotHeld || !isLocalHost(thread.checkout))
       return undefined;
     const here = thread.checkout.path;
