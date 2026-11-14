@@ -111,6 +111,24 @@ describe("workerShown", () => {
     }
   });
 
+  it("does not resurrect a missing worker from a stale forwarded question", () => {
+    const missing = card.workers.find((worker) => worker.threadId === "closed")!;
+    const stale = { ...facts, asking: new Set([missing.threadId]) };
+    expect(workerShown(missing, stale)).toBe(false);
+    expect(
+      overviewFeatures(
+        [card],
+        new Map([[missing.threadId, "worker-question:ws:WQ1"]]),
+        over,
+      ).flatMap((feature) => feature.rows.map((row) => row.threadId)),
+    ).not.toContain(missing.threadId);
+    expect(
+      boardRows(railRows([card], { ...stale, status: () => undefined }), false).flatMap((row) =>
+        Object.values(row.cells).flatMap((cell) => cell.map((worker) => worker.threadId)),
+      ),
+    ).not.toContain(missing.threadId);
+  });
+
   it("goes by Done's rule: what is over is what Done lists", () => {
     expect([...over].filter(([, done]) => done).map(([threadId]) => threadId)).toEqual([
       "reported",

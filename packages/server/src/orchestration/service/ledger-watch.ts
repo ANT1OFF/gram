@@ -40,6 +40,7 @@ import { activeHolds, limitUses, subscriptionAgents, subscriptionLimits } from "
 import { wakesOf } from "../outbox.ts";
 import { ledgerQuestions } from "../worker-questions.ts";
 import { heldOf, projectOfCheckout, workersOf, clipped, type OrchestrationKit } from "./kit.ts";
+import type { WorkerQuestions } from "./questions.ts";
 import { type OrchestrationShape } from "./shape.ts";
 
 /** How long `watchLedger` lets changes settle before it builds the ledger again. */
@@ -74,7 +75,10 @@ const localCheckRow = (check: LocalCheck): NonNullable<WorkerFacts["localCheck"]
 });
 
 /** The survey, the ledger and feature cards, and their watches. */
-export const makeLedgerWatch = (kit: OrchestrationKit) => {
+export const makeLedgerWatch = (
+  kit: OrchestrationKit,
+  deps: Pick<WorkerQuestions, "reconcileQuestions">,
+) => {
   const {
     store,
     extraFacts,
@@ -111,6 +115,7 @@ export const makeLedgerWatch = (kit: OrchestrationKit) => {
    */
   const survey = (state: WorkspaceState, persistCost: boolean) =>
     Effect.gen(function* () {
+      yield* deps.reconcileQuestions(state.workspace.id);
       const now = yield* Clock.currentTimeMillis;
       const workers = workersOf(yield* store.listThreads, state);
       const projects = new Map((yield* store.listProjects).map((p) => [p.id, p]));
