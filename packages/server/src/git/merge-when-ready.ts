@@ -62,8 +62,10 @@ import {
   explainOwnershipBlocker,
   OWNERSHIP_BLOCKERS,
   ownershipFix,
+  ownedPrClaimedElsewhere,
   workerPrBlocker,
   workerPrIdentity,
+  workerPrOwnership,
   withMachines,
 } from "./worker-pr.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
@@ -784,6 +786,22 @@ export const MergeWhenReadyLive = Layer.effect(
             const reusedScope = yield* reusedIdentityScope(now.value, bound, intent, head);
             if (intent.userAuthorization?.reused === true && reusedScope === undefined)
               return undefined;
+            /**
+             * What the ownership check below established: the workspace's projects and the
+             * worker's held folders it read, and the branch it found owned. A launch after GitHub's
+             * read goes only while these stand and no other thread has claimed the PR meanwhile.
+             */
+            let owned:
+              | {
+                  readonly projects: string;
+                  readonly folders: string;
+                  readonly at: {
+                    readonly path: string;
+                    readonly hostId?: string;
+                    readonly branch: string;
+                  };
+                }
+              | undefined;
             // No card was raised for this intent, so the autonomy that waived it is asked again now,
             // and the PR must belong to a recorded worktree branch in a workspace project. The
             // live checkout can already be on the next stacked PR's branch.
@@ -809,7 +827,7 @@ export const MergeWhenReadyLive = Layer.effect(
               )
                 why = "orchestration no longer delegates merges to this worker";
               else {
-                const ownership = yield* workerPrBlocker(
+                const found = yield* workerPrOwnership(
                   now.value,
                   bound.repo,
                   bound.number,
@@ -819,6 +837,13 @@ export const MergeWhenReadyLive = Layer.effect(
                   Effect.provideService(Proc, proc),
                   withMachines(machines),
                 );
+                const ownership = typeof found === "string" ? found : undefined;
+                if (typeof found === "object")
+                  owned = {
+                    projects: JSON.stringify(workspace.workspace.projectIds),
+                    folders: JSON.stringify([now.value.checkout, now.value.extraCheckouts]),
+                    at: found,
+                  };
                 if (ownership !== undefined) {
                   why = `the pull request is no longer this worker's own: ${explainOwnershipBlocker(ownership).reason}`;
                   fix = ownershipFix(ownership, "worker");
@@ -939,11 +964,24 @@ export const MergeWhenReadyLive = Layer.effect(
                               .pipe(Effect.orElseSucceed(() => undefined));
                       if (
                         workspace === undefined ||
+                        // A project removed or a folder changed during the read: the PR may be out
+                        // of the worker's scope now, and the next look checks ownership afresh.
+                        owned === undefined ||
+                        JSON.stringify(workspace.workspace.projectIds) !== owned.projects ||
+                        JSON.stringify([latest.checkout, latest.extraCheckouts]) !==
+                          owned.folders ||
                         autonomyOf(workspace.charter) !== "full" ||
                         workspace.paused !== undefined ||
                         featurePaused(workspace, latest) ||
                         orchestration === undefined ||
-                        !(yield* orchestration.workerMergesOwn(threadId))
+                        !(yield* orchestration.workerMergesOwn(threadId)) ||
+                        // Another thread bound the PR or took its branch during the read.
+                        (yield* ownedPrClaimedElsewhere(
+                          latest,
+                          bound.repo,
+                          bound.number,
+                          owned.at,
+                        ).pipe(Effect.provideService(ThreadStore, store)))
                       )
                         return undefined;
                     }

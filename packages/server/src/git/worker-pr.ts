@@ -44,6 +44,7 @@ export const OWNERSHIP_BLOCKERS = {
   unverified: "its ownership could not be verified",
   machineUnconfirmed: "its machine did not confirm the worktree Gram made there",
   cloneUnrecorded: "its worktree on another machine predates the record of its clone",
+  otherThread: "another thread binds it or holds its branch",
 } as const;
 
 /** An ownership blocker in plain words (`reason`) and what an agent can do about it. */
@@ -120,6 +121,13 @@ const EXPLANATIONS: Record<string, OwnershipExplanation> = {
     fix: "Keep the branch Gram gave you checked out in that worktree, with its origin unchanged, and call again. If the machine is offline or its gram-host is out of date, the user has to approve this.",
     orchestratorFix:
       "Have the worker keep the branch Gram gave it checked out in that worktree, with its origin unchanged. If the machine is offline or its gram-host is out of date, the user has to approve this.",
+  },
+  [OWNERSHIP_BLOCKERS.otherThread]: {
+    reason:
+      "another thread has it as its pull request, or holds its branch in a worktree of its own, so it is that thread's work even where the worker has the branch checked out",
+    fix: "Leave it to the thread that holds it, or ask your orchestrator; otherwise the user has to approve this.",
+    orchestratorFix:
+      "Merge it on the thread that holds it; otherwise the user has to approve this.",
   },
   [OWNERSHIP_BLOCKERS.cloneUnrecorded]: {
     reason:
@@ -309,6 +317,48 @@ const machineConfirms = (
         Effect.orElseSucceed(() => false),
       );
 
+/** A checkout's repository folder, resolved where it is on this machine. */
+const rootOf = (checkout: Pick<Checkout, "path" | "repoRoot" | "hostId">) =>
+  isLocalHost(checkout)
+    ? canonical(checkout.repoRoot ?? checkout.path)
+    : Effect.succeed(checkout.repoRoot ?? checkout.path);
+
+/**
+ * Whether another live (unarchived) thread claims `repo#number`: it is that thread's main PR, or
+ * its branch is checked out, or recorded as observed, in a folder that thread holds in the same
+ * repository as `where`. Checking the branch out here doesn't take it from that thread. A folder
+ * that is `where` itself is the worker's own, whoever else sits in it.
+ */
+const claimedByAnother = (
+  thread: Thread,
+  repo: string,
+  number: number,
+  branch: string,
+  where: Checkout,
+) =>
+  Effect.gen(function* () {
+    const store = yield* ThreadStore;
+    const root = yield* rootOf(where);
+    for (const other of yield* store.listThreads) {
+      if (other.id === thread.id || other.parked) continue;
+      const bound = other.boundPr;
+      if (bound !== undefined && sameRepo(bound.repo, repo) && bound.number === number) return true;
+      for (const checkout of [other.checkout, ...(other.extraCheckouts ?? [])]) {
+        if (sameCheckout(checkout, where) || hostOf(checkout) !== hostOf(where)) continue;
+        if ((yield* rootOf(checkout)) !== root) continue;
+        if (checkout.branch === branch) return true;
+        if (
+          isLocalHost(checkout) &&
+          (other.ownedBranches ?? []).some(
+            (owned) => samePath(owned.path, checkout.path) && owned.branch === branch,
+          )
+        )
+          return true;
+      }
+    }
+    return false;
+  });
+
 /**
  * The verified held path and branch of the worker's open, non-fork PR, else why it is not owned.
  * The held worktree must still belong to a workspace project. Read-only, so the tool's gate can
@@ -421,6 +471,11 @@ const checkWorkerPr = (
         ? OWNERSHIP_BLOCKERS.headUnknown
         : OWNERSHIP_BLOCKERS.headMoved;
     const where = branches.get(head.headRefName) ?? held;
+    if (
+      requireOwnedBranch &&
+      (yield* claimedByAnother(thread, repo, number, head.headRefName, where))
+    )
+      return OWNERSHIP_BLOCKERS.otherThread;
     return {
       path: where.path,
       ...(isLocalHost(where) ? {} : { hostId: hostOf(where) }),
@@ -455,6 +510,27 @@ export const workerPrIdentity = (
   checkWorkerPr(thread, repo, number, reviewedHead, false).pipe(
     Effect.map((result) => typeof result === "object"),
   );
+
+/**
+ * Whether another thread claims the PR the worker owns as `owned` (`workerPrOwnership`'s answer):
+ * the store's view only, no git or GitHub read, for a recheck after a provider read. A doubt is a
+ * claim.
+ */
+export const ownedPrClaimedElsewhere = (
+  thread: Thread,
+  repo: string,
+  number: number,
+  owned: { readonly path: string; readonly hostId?: string | undefined; readonly branch: string },
+) =>
+  Effect.gen(function* () {
+    const where = heldWorktrees(thread).find(
+      (checkout) =>
+        samePath(checkout.path, owned.path) &&
+        (owned.hostId === undefined ? isLocalHost(checkout) : hostOf(checkout) === owned.hostId),
+    );
+    if (where === undefined) return true;
+    return yield* claimedByAnother(thread, repo, number, owned.branch, where);
+  }).pipe(Effect.catchCause(() => Effect.succeed(true)));
 
 /** Why this PR is not the worker's own, with optional pinning to a previously reviewed head. */
 export const workerPrBlocker = (
@@ -565,5 +641,5 @@ export const ownershipRefusal = (
       options.audience === "worker"
         ? `Check it out in the worktree Gram gave you (${steps}; commit your own work first), then call ${options.tool} again`
         : `Have the worker check it out in the worktree Gram gave it (${steps}), then call ${options.tool} again`;
-    return `Full auto covers only a worker's own pull request: one whose head branch is checked out in the worktree Gram gave the worker. ${repo}#${number}'s head branch \`${branch}\` isn't checked out there. ${fix}; Gram then ${options.action} without asking. The user wasn't asked, and their approval isn't the way through for this.`;
+    return `Full auto covers only a worker's own pull request: one whose head branch is checked out in the worktree Gram gave the worker. ${repo}#${number}'s head branch \`${branch}\` isn't checked out there. ${fix}; Gram then ${options.action} without asking. That holds only while no other thread has it as its pull request or holds its branch: checking out another thread's branch never makes it yours. The user wasn't asked, and their approval isn't the way through for this.`;
   }).pipe(Effect.catchCause(() => Effect.succeed(undefined)));

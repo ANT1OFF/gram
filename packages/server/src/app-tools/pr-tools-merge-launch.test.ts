@@ -807,6 +807,49 @@ describe("merge_when_ready", () => {
   }
 
   it.effect.skipIf(!hasGit)(
+    "a project removed from the workspace during the fresh GitHub read stops the launch",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        world.localCheckRunner = () => Effect.succeed({ ok: true });
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const pr = yield* soloPr(world, false);
+            const store = yield* ThreadStore;
+            const other = yield* store.ensureProject({ root: world.dir, name: "other" });
+            const base = pr.moveBase("base.txt");
+            let removed = false;
+            world.freshPrRead = Effect.gen(function* () {
+              world.freshPrRead = undefined;
+              yield* store
+                .updateWorkspace(pr.workspaceId, (state) => ({
+                  ...state,
+                  workspace: {
+                    ...state.workspace,
+                    projectIds: [other.id],
+                    homeProjectId: other.id,
+                  },
+                }))
+                .pipe(Effect.orDie);
+              removed = true;
+            });
+            yield* pr.publish(base, pr.head, "passing");
+            expect(yield* pr.tool("merge_when_ready").run({})).toMatchObject({
+              mergeWhenReady: true,
+            });
+            yield* waitReal(
+              "the project removed",
+              Effect.sync(() => removed),
+            );
+            yield* settle;
+            expect(pr.merges()).toEqual([]);
+          }),
+        );
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect.skipIf(!hasGit)(
     "a configuration change during the fresh GitHub read retires the pass",
     () =>
       Effect.gen(function* () {

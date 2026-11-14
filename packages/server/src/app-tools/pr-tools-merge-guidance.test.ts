@@ -12,11 +12,12 @@ import {
   makeWorld,
   openOrchestrator,
   publishGit,
+  settle,
   spawn,
   waitReal,
   withServer,
 } from "../orchestration/test-harness.ts";
-import { badge } from "./pr-tools-kit.ts";
+import { armedWorkerBadge, badge } from "./pr-tools-kit.ts";
 import { AppToolRegistry } from "./registry.ts";
 
 /** The deploy PR a release script opened from a scratch worktree it then removed. */
@@ -44,7 +45,7 @@ describe("merge_when_ready guidance at full autonomy", () => {
             expect(yield* merge.delegatedAtFullAutonomy!({ pr: 21 })).toBe(false);
             const refused = yield* merge.run({ pr: 21 }).pipe(Effect.flip);
             expect(refused.message).toBe(
-              `Full auto covers only a worker's own pull request: one whose head branch is checked out in the worktree Gram gave the worker. acme/app#21's head branch \`${DEPLOY}\` isn't checked out there. Check it out in the worktree Gram gave you (\`git fetch origin ${DEPLOY}\` then \`git switch ${DEPLOY}\`; commit your own work first), then call merge_when_ready again; Gram then merges it once its checks pass without asking. The user wasn't asked, and their approval isn't the way through for this.`,
+              `Full auto covers only a worker's own pull request: one whose head branch is checked out in the worktree Gram gave the worker. acme/app#21's head branch \`${DEPLOY}\` isn't checked out there. Check it out in the worktree Gram gave you (\`git fetch origin ${DEPLOY}\` then \`git switch ${DEPLOY}\`; commit your own work first), then call merge_when_ready again; Gram then merges it once its checks pass without asking. That holds only while no other thread has it as its pull request or holds its branch: checking out another thread's branch never makes it yours. The user wasn't asked, and their approval isn't the way through for this.`,
             );
             expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
             expect((yield* store.getThread(worker.thread.id)).boundPr).toBeUndefined();
@@ -62,6 +63,135 @@ describe("merge_when_ready guidance at full autonomy", () => {
         );
       }).pipe(Effect.scoped),
   );
+
+  for (const claim of ["bound", "held"] as const) {
+    it.effect.skipIf(!hasGit)(
+      `checking out a sibling's ${claim === "bound" ? "bound PR's branch" : "branch"} doesn't make it the worker's own`,
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const store = yield* ThreadStore;
+              const runtimes = yield* ThreadRuntimes;
+              const registry = yield* AppToolRegistry;
+              const { session, thread } = yield* openOrchestrator(world);
+              const worker = yield* spawn(session, { feature: "taker" });
+              const sibling = yield* spawn(session, { feature: "owner" });
+              yield* completeTurn(worker.session);
+              yield* completeTurn(sibling.session);
+              yield* atAutonomy(thread, "full");
+              const theirs = sibling.thread.checkout.branch!;
+              world.prHeads.set(30, { headRefName: theirs });
+              if (claim === "bound") {
+                // The sibling's PR, its branch since left in the sibling's worktree.
+                yield* runtimes.updateThread(sibling.thread.id, (t) => ({
+                  ...t,
+                  boundPr: { repo: "acme/app", number: 30, monitor: false },
+                }));
+                run(sibling.thread.checkout.path, "switch", "-q", "--detach");
+                run(worker.thread.checkout.path, "switch", "-q", theirs);
+              } else {
+                // Still checked out in the sibling's worktree; forced out here as well.
+                run(
+                  worker.thread.checkout.path,
+                  "checkout",
+                  "-q",
+                  "--ignore-other-worktrees",
+                  theirs,
+                );
+              }
+              const merge = registry
+                .forTransport(worker.thread.id, "worker")
+                .find((t) => t.descriptor.name === "merge_when_ready")!;
+              expect(yield* merge.delegatedAtFullAutonomy!({ pr: 30 })).toBe(false);
+              const call = yield* Effect.forkScoped(merge.run({ pr: 30 }).pipe(Effect.flip));
+              const card = yield* waitReal(
+                "the approval card",
+                store.listRequests(worker.thread.id).pipe(Effect.map((all) => all[0])),
+              );
+              if (card.kind !== "approval") throw new Error("not an approval");
+              expect(card.autonomyNote).toBe(
+                "full auto, PR ownership unverified: another thread has it as its pull request, or holds its branch in a worktree of its own, so it is that thread's work even where the worker has the branch checked out",
+              );
+              yield* runtimes.respond(worker.thread.id, card.id, {
+                kind: "approval",
+                decision: "deny",
+                scope: "once",
+              });
+              expect((yield* Fiber.join(call)).message).toContain(
+                "Leave it to the thread that holds it",
+              );
+              expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
+            }),
+          );
+        }).pipe(Effect.scoped),
+    );
+  }
+
+  for (const when of ["before the launch", "during the fresh read"] as const) {
+    it.effect.skipIf(!hasGit)(`a sibling binding the armed PR ${when} stops its merge`, () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            const runtimes = yield* ThreadRuntimes;
+            const registry = yield* AppToolRegistry;
+            const { session, thread } = yield* openOrchestrator(world);
+            const worker = yield* spawn(session, { feature: "armed" });
+            const sibling = yield* spawn(session, { feature: "claimant" });
+            yield* completeTurn(worker.session);
+            yield* completeTurn(sibling.session);
+            yield* atAutonomy(thread, "full");
+            world.prHeads.set(12, { headRefName: worker.thread.checkout.branch! });
+            const tools = registry.forTransport(worker.thread.id, "worker");
+            yield* tools
+              .find((t) => t.descriptor.name === "pr_bind")!
+              .run({
+                repo: "acme/app",
+                number: 12,
+              });
+            const publish = (approved: boolean) =>
+              store
+                .getThread(worker.thread.id)
+                .pipe(
+                  Effect.flatMap((t) => publishGit(world, t, { pr: armedWorkerBadge(approved) })),
+                );
+            yield* publish(false);
+            yield* tools.find((t) => t.descriptor.name === "merge_when_ready")!.run({});
+            expect(
+              (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
+            ).toMatchObject({ allowedBy: "autonomy" });
+            const claim = runtimes
+              .updateThread(sibling.thread.id, (t) => ({
+                ...t,
+                boundPr: { repo: "acme/app", number: 12, monitor: false },
+              }))
+              .pipe(Effect.asVoid, Effect.orDie);
+            let claimed = false;
+            if (when === "before the launch") {
+              yield* claim;
+              claimed = true;
+            } else
+              world.freshPrRead = Effect.suspend(() => {
+                world.freshPrRead = undefined;
+                return claim.pipe(Effect.tap(() => Effect.sync(() => void (claimed = true))));
+              });
+            yield* publish(true);
+            yield* waitReal(
+              "the claim",
+              Effect.sync(() => claimed || undefined),
+            );
+            yield* settle;
+            expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
+          }),
+        );
+      }).pipe(Effect.scoped),
+    );
+  }
 
   it.effect.skipIf(!hasGit)("tells an orchestrator how its worker can hold the branch", () =>
     Effect.gen(function* () {
