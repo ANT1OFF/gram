@@ -171,6 +171,9 @@
   /* A setting's or a group's line of description: the secondary colour, so the setting's name (fg,
      medium) and what it does read as two levels, and no wider than a comfortable line of prose. */
   --fg-description: var(--fg-muted);
+  /* The person's own message: the raised fill. Light takes a step toward the text (below), where
+     a near-white bubble on a near-white page was told from a reply by its shadow alone. */
+  --bubble-bg: var(--surface-3);
   /* A disabled control's words: below the text floor on purpose (nothing there to read or press),
      so it cannot pass for a quiet live one, as subtle text on a pale page did. */
   --fg-disabled: color-mix(in oklab, var(--fg-subtle) 55%, var(--surface-2));
@@ -243,6 +246,7 @@
      workspace's line and the sidebar's group lines take a step more, still restrained. */
   --selected-bg: color-mix(in oklab, var(--accent) 20%, var(--surface-3));
   --sidebar-row-active: color-mix(in oklab, var(--fg) 7%, var(--surface-3));
+  --bubble-bg: color-mix(in oklab, var(--fg) 5%, var(--surface-3));
   --sidebar-divider: color-mix(in srgb, var(--border-strong) 40%, var(--border-subtle));
   --shell-divider: color-mix(in srgb, var(--border-strong) 30%, var(--border-subtle));
 }
