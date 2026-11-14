@@ -5,7 +5,15 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { listeningUrl, openCodeEnv, SERVER_SECRETS, withShell, wrapperScript } from "./server.ts";
+import {
+  listeningUrl,
+  openCodeEnv,
+  SERVER_SECRETS,
+  startOpenCodeServer,
+  UNREADABLE_CONFIG,
+  withShell,
+  wrapperScript,
+} from "./server.ts";
 import { GATEWAY_KEY_ENV } from "./session.ts";
 
 describe("opencode serve's environment", () => {
@@ -22,6 +30,10 @@ describe("opencode serve's environment", () => {
       CLAUDE_CODE_OAUTH_TOKEN: "tok",
       OPENCODE_SERVER_PASSWORD: "parent",
       OPENCODE_CONFIG_CONTENT: "{}",
+      OPENCODE_SERVER_USERNAME: "someone",
+      GIT_TRACE_CURL: "1",
+      SHELLOPTS: "xtrace",
+      GH_DEBUG: "api",
       [GATEWAY_KEY_ENV]: "old",
       OPENAI_API_KEY: "sk-test",
     });
@@ -37,11 +49,14 @@ describe("opencode serve's environment", () => {
   });
 
   it("sets the tools' shell in the inline config, keeping the rest", () => {
-    expect(JSON.parse(withShell('{"model":"gram/m"}', "/w/shell"))).toEqual({
+    expect(JSON.parse(withShell('{"model":"gram/m"}', "/w/shell")!)).toEqual({
       model: "gram/m",
       shell: "/w/shell",
     });
-    expect(JSON.parse(withShell(undefined, "/w/shell"))).toEqual({ shell: "/w/shell" });
+    expect(JSON.parse(withShell(undefined, "/w/shell")!)).toEqual({ shell: "/w/shell" });
+    // JSONC or a broken file isn't read, so no parse error can quote it.
+    expect(withShell('{"apiKey": "sk-test", // note\n}', "/w/shell")).toBeUndefined();
+    expect(withShell("[]", "/w/shell")).toBeUndefined();
   });
 
   it.skipIf(process.platform === "win32")(
@@ -68,6 +83,18 @@ describe("opencode serve's environment", () => {
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "starts nothing on inline config it can't read, saying so without quoting it",
+    async () => {
+      const error = await startOpenCodeServer({
+        binary: "/nonexistent/opencode",
+        env: { OPENCODE_CONFIG_CONTENT: '{"apiKey":"sk-test",}' },
+      }).catch((each: unknown) => each);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe(UNREADABLE_CONFIG);
     },
   );
 

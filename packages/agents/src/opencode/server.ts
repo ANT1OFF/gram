@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -42,7 +42,14 @@ export interface StartOpenCodeServer {
 export const listeningUrl = (line: string): string | undefined =>
   /server listening on (http:\/\/127\.0\.0\.1:\d+)/.exec(line)?.[1];
 
-const STRIPPED_PREFIXES = ["ANTHROPIC_", "CLAUDE_CODE_OAUTH_TOKEN"];
+const STRIPPED_PREFIXES = ["ANTHROPIC_", "CLAUDE_CODE_OAUTH_TOKEN", "GIT_TRACE"];
+/** Shell and CLI tracing the tools would inherit, and a user name the client's auth doesn't send. */
+const STRIPPED_EXACT = new Set([
+  "SHELLOPTS",
+  "GH_DEBUG",
+  "GIT_CURL_VERBOSE",
+  "OPENCODE_SERVER_USERNAME",
+]);
 
 /**
  * The env `opencode serve` runs in: the user's, without what could attach a debugger, preload code
@@ -58,7 +65,8 @@ export const openCodeEnv = (
   for (const [name, value] of Object.entries(env)) {
     if (value === undefined || isTokenChildStripped(name)) continue;
     const key = name.toUpperCase();
-    if (STRIPPED_PREFIXES.some((prefix) => key.startsWith(prefix))) continue;
+    if (STRIPPED_PREFIXES.some((prefix) => key.startsWith(prefix)) || STRIPPED_EXACT.has(key))
+      continue;
     if ((SERVER_SECRETS as ReadonlyArray<string>).includes(key)) continue;
     out[name] = value;
   }
@@ -78,23 +86,35 @@ export const openCodeEnv = (
 export const wrapperScript = (shell: string): string =>
   `#!/bin/sh\nunset ${SERVER_SECRETS.join(" ")}\nexec ${shell} "$@"\n`;
 
-/** `config` (OpenCode's inline config, as JSON) with its shell set to `shell`. */
-export const withShell = (config: string | undefined, shell: string): string => {
-  let parsed: Record<string, unknown> = {};
-  if (config !== undefined && config !== "") {
-    const value: unknown = JSON.parse(config);
-    if (typeof value === "object" && value !== null && !Array.isArray(value))
-      parsed = value as Record<string, unknown>;
+/** Why a server isn't started on inline config it can't read; never the config, which can hold a key. */
+export const UNREADABLE_CONFIG =
+  "OPENCODE_CONFIG_CONTENT isn't a JSON object, so OpenCode wasn't started.";
+
+/**
+ * `config` (OpenCode's inline config, as JSON) with its shell set to `shell`, or `undefined` when
+ * it isn't a JSON object.
+ */
+export const withShell = (config: string | undefined, shell: string): string | undefined => {
+  if (config === undefined || config === "") return JSON.stringify({ shell });
+  let value: unknown;
+  try {
+    value = JSON.parse(config);
+  } catch {
+    return undefined;
   }
-  return JSON.stringify({ ...parsed, shell });
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  return JSON.stringify({ ...(value as Record<string, unknown>), shell });
 };
+
+/** The shell the wrapper starts: bash where it is, else the system's `sh`. */
+const systemShell = (): string => (existsSync("/bin/bash") ? "/bin/bash" : "/bin/sh");
 
 /** Writes the wrapper in a folder only this user can open; Windows runs OpenCode's own shell. */
 const writeWrapper = (): { readonly path: string; readonly remove: () => void } | undefined => {
   if (process.platform === "win32") return undefined;
   const dir = mkdtempSync(join(tmpdir(), "gram-opencode-"));
   const path = join(dir, "shell");
-  writeFileSync(path, wrapperScript("/bin/bash"), { mode: 0o700 });
+  writeFileSync(path, wrapperScript(systemShell()), { mode: 0o700 });
   return { path, remove: () => rmSync(dir, { recursive: true, force: true }) };
 };
 
@@ -111,19 +131,28 @@ export const startOpenCodeServer = ({
 }: StartOpenCodeServer): Promise<OpenCodeServer> =>
   new Promise((resolve, reject) => {
     const password = randomBytes(24).toString("base64url");
-    const wrapper = writeWrapper();
-    const base = openCodeEnv(env);
     const config = env["OPENCODE_CONFIG_CONTENT"];
+    let wrapper: ReturnType<typeof writeWrapper>;
+    let content: string | undefined = config;
+    try {
+      wrapper = writeWrapper();
+      if (wrapper !== undefined) content = withShell(config, wrapper.path);
+    } catch {
+      reject(new Error("Couldn't write the shell OpenCode's tools run in."));
+      return;
+    }
+    if (wrapper !== undefined && content === undefined) {
+      wrapper.remove();
+      reject(new Error(UNREADABLE_CONFIG));
+      return;
+    }
+    const base = openCodeEnv(env);
     const child = spawnServe(
       binary,
       ["serve", "--hostname", "127.0.0.1", "--port", "0"],
       {
         ...base,
-        ...(wrapper === undefined
-          ? config === undefined
-            ? {}
-            : { OPENCODE_CONFIG_CONTENT: config }
-          : { OPENCODE_CONFIG_CONTENT: withShell(config, wrapper.path) }),
+        ...(content === undefined ? {} : { OPENCODE_CONFIG_CONTENT: content }),
         ...(env["GRAM_OPENCODE_GATEWAY_KEY"] === undefined
           ? {}
           : { GRAM_OPENCODE_GATEWAY_KEY: env["GRAM_OPENCODE_GATEWAY_KEY"] }),

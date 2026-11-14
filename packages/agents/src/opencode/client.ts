@@ -44,6 +44,8 @@ export interface OpenCodeSessionInfo {
   readonly directory?: string;
   readonly updated?: number;
   readonly created?: number;
+  /** The session a subagent's session was made from. */
+  readonly parentID?: string;
 }
 
 export interface OpenCodeClient {
@@ -89,6 +91,7 @@ const sessionInfo = (value: unknown): OpenCodeSessionInfo | undefined => {
     ...(typeof location["directory"] === "string" ? { directory: location["directory"] } : {}),
     ...(typeof time["updated"] === "number" ? { updated: time["updated"] } : {}),
     ...(typeof time["created"] === "number" ? { created: time["created"] } : {}),
+    ...(typeof value["parentID"] === "string" ? { parentID: value["parentID"] } : {}),
   };
 };
 

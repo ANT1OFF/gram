@@ -43,6 +43,8 @@ const standIn = () => {
     },
     getSession: async (id) => {
       calls.push(["getSession", id]);
+      if (id === "ses_child") return { id, parentID: "ses_1" };
+      if (id === "ses_stranger") return { id, parentID: "ses_other" };
       return id === "ses_old" ? { id } : undefined;
     },
     listSessions: async () => [{ id: "ses_1", title: "Fix it", updated: 7, directory: "/w" }],
@@ -226,7 +228,11 @@ describe("the OpenCode host", () => {
       stand.failPermissions.on = true;
       const error = yield* session.setMode("bypassPermissions").pipe(Effect.flip);
       expect(error).toMatchObject({ _tag: "ModeRefused", mode: "bypassPermissions" });
-      expect(stand.calls.map(([name]) => name)).not.toContain("setAgent");
+      // The rules it couldn't change are put back as the old mode's, and the agent with them.
+      expect(stand.calls.slice(-2).map(([name, , rules]) => [name, rules])).toEqual([
+        ["setPermissions", rulesFor("bypassPermissions")],
+        ["setPermissions", rulesFor("default")],
+      ]);
       yield* session.respond("per_1" as never, {
         kind: "approval",
         decision: "allow",
@@ -279,6 +285,39 @@ describe("the OpenCode host", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live(
+    "shows a subagent's approval in its parent's thread and answers it under the subagent",
+    () =>
+      Effect.gen(function* () {
+        const stand = standIn();
+        const host = yield* hostWith(stand);
+        const session = yield* host.open({ threadId: THREAD, cwd: "/w" });
+        const seen: Array<AgentEvent> = [];
+        yield* session.events.pipe(
+          Stream.runForEach((event) => Effect.sync(() => seen.push(event))),
+          Effect.forkScoped,
+        );
+        const ask = (id: string, sessionID: string) =>
+          stand.emit({
+            type: "permission.asked",
+            data: { id, sessionID, action: "edit", resources: ["a.ts"] },
+          });
+        ask("per_child", "ses_child");
+        ask("per_stranger", "ses_stranger");
+        yield* Effect.sleep("20 millis");
+        const requests = seen.flatMap((event) =>
+          event.type === "request" ? [event.request.id] : [],
+        );
+        expect(requests).toEqual(["per_child"]);
+        yield* session.respond("per_child" as never, {
+          kind: "approval",
+          decision: "allow",
+          scope: "once",
+        });
+        expect(stand.calls.at(-1)).toEqual(["reply", "ses_child", "per_child", "once", undefined]);
+      }).pipe(Effect.scoped),
+  );
+
   it.live("says OpenCode is unavailable when it isn't installed", () =>
     Effect.gen(function* () {
       const host = yield* makeOpenCodeHost({
@@ -309,7 +348,7 @@ const asked = (command: string, mode: Mode = "bypassPermissions") =>
   gateAllows(mode, "all", { action: "shell", resources: [command] });
 
 const effect = (mode: Mode, action: string) =>
-  rulesFor(mode).findLast((each) => each.action === action)?.effect ?? "ask";
+  rulesFor(mode).findLast((each) => each.action === action || each.action === "*")?.effect ?? "ask";
 
 describe("OpenCode's rules", () => {
   it("runs commands unasked only when permissions are bypassed", () => {
@@ -319,6 +358,11 @@ describe("OpenCode's rules", () => {
     expect(effect("dontAsk", "shell")).toBe("deny");
     expect(effect("dontAsk", "edit")).toBe("deny");
     expect(effect("dontAsk", "read")).toBe("allow");
+    // An action none of the rules names, such as an MCP tool, falls to the first, catch-all rule.
+    expect(effect("dontAsk", "github_create_issue")).toBe("deny");
+    expect(effect("plan", "github_create_issue")).toBe("ask");
+    expect(rulesFor("dontAsk")[0]).toEqual({ action: "*", resource: "*", effect: "deny" });
+    expect(rulesFor("plan")[0]).toEqual({ action: "*", resource: "*", effect: "ask" });
   });
 
   it("lets plan read and nothing else", () => {

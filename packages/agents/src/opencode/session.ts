@@ -28,13 +28,14 @@ import type { AgentHost, AgentSession, OpenSessionOptions, OutwardGate } from ".
 import { gateAsks, gateLevel, outwardKind } from "../outward.ts";
 import type { OpenCodeClient } from "./client.ts";
 import { makeOpenCodeMapper } from "./mapper.ts";
-import { permissionOf } from "./protocol.ts";
-import type {
-  OpenCodeModel,
-  OpenCodePermission,
-  OpenCodeModelRef,
-  OpenCodePermissionReply,
-  OpenCodePermissionRule,
+import {
+  permissionOf,
+  type OpenCodeEvent,
+  type OpenCodeModel,
+  type OpenCodeModelRef,
+  type OpenCodePermission,
+  type OpenCodePermissionReply,
+  type OpenCodePermissionRule,
 } from "./protocol.ts";
 import type { OpenCodeServer, StartOpenCodeServer } from "./server.ts";
 
@@ -84,7 +85,12 @@ const ACTS = ["edit", "write", "shell", "webfetch", "subagent", "external_direct
  * `plan` reads and proposes; it can't edit, write or run anything.
  */
 export const rulesFor = (mode: PermissionMode): ReadonlyArray<OpenCodePermissionRule> => {
-  const reads = READS.map((action) => rule(action, "allow"));
+  // First, so the rules after it win: an action not named here (an MCP tool, `execute`) is
+  // refused in `dontAsk`, asked about in `plan` and `default`, and run in `bypassPermissions`.
+  const reads = [
+    rule("*", mode === "dontAsk" ? "deny" : mode === "bypassPermissions" ? "allow" : "ask"),
+    ...READS.map((action) => rule(action, "allow")),
+  ];
   switch (mode) {
     case "bypassPermissions":
       return [...reads, ...ACTS.map((action) => rule(action, "allow"))];
@@ -331,6 +337,8 @@ export const makeOpenCodeHost = (
         const server = yield* serverFor(options.model?.profileId);
         const client: OpenCodeClient = server.client;
         let mode = options.permissionMode ?? "default";
+        /** While a mode change is under way, every gated command is shown, under either mode. */
+        let changingMode = false;
         const gate = gateLevel(options.outwardGate);
         const model = modelRefFor(options.model);
         const resumed =
@@ -371,26 +379,62 @@ export const makeOpenCodeHost = (
           tools: [],
           commands: [],
         });
+        /** The sessions this one's subagents run in, by id: whether each is one of them. */
+        const children = new Map<string, Promise<boolean>>();
+        /** Which session each shown request is answered under. */
+        const answeredUnder = new Map<string, string>();
+        const isChild = (id: string): Promise<boolean> => {
+          let known = children.get(id);
+          if (known === undefined) {
+            known = client.getSession(id).then(
+              (info) => info?.parentID === session.id,
+              () => false,
+            );
+            children.set(id, known);
+          }
+          return known;
+        };
+        const onPermission = (event: OpenCodeEvent, under: string) => {
+          if (event.type === "permission.asked") {
+            const permission = permissionOf(event.data);
+            if (permission === undefined) return;
+            // A command the mode runs unasked and the gate doesn't ask about: let it through.
+            if (!changingMode && gateAllows(mode, gate, permission)) {
+              void client.reply(under, permission.id, "once").catch((error: unknown) => {
+                Queue.offerUnsafe(events, {
+                  type: "notice",
+                  level: "error",
+                  message: `OpenCode didn't take Gram's answer: ${error instanceof Error ? error.message : String(error)}`,
+                });
+              });
+              return;
+            }
+            answeredUnder.set(permission.id, under);
+          } else {
+            const requestId = event.data["requestID"];
+            if (under !== session.id && answeredUnder.get(String(requestId)) !== under) return;
+          }
+          const data = { ...event.data, sessionID: session.id };
+          for (const out of mapper.map({ ...event, data })) Queue.offerUnsafe(events, out);
+        };
         const abort = new AbortController();
         const ready = Promise.withResolvers<void>();
         const subscribed = client
           .subscribe((event) => {
             if (event.type === "server.connected") ready.resolve();
-            if (event.type === "permission.asked") {
-              const permission = permissionOf(event.data);
-              // A command the mode runs unasked and the gate doesn't ask about: let it through.
-              if (permission?.sessionID === session.id && gateAllows(mode, gate, permission)) {
-                void client.reply(session.id, permission.id, "once").catch((error: unknown) => {
-                  Queue.offerUnsafe(events, {
-                    type: "notice",
-                    level: "error",
-                    message: `OpenCode didn't take Gram's answer: ${error instanceof Error ? error.message : String(error)}`,
-                  });
-                });
-                return;
-              }
+            if (event.type !== "permission.asked" && event.type !== "permission.replied") {
+              for (const out of mapper.map(event)) Queue.offerUnsafe(events, out);
+              return;
             }
-            for (const out of mapper.map(event)) Queue.offerUnsafe(events, out);
+            const from = typeof event.data["sessionID"] === "string" ? event.data["sessionID"] : "";
+            if (from === session.id || from === "") {
+              onPermission(event, session.id);
+              return;
+            }
+            // A subagent's session asks under its own id; its parent's thread shows and answers it.
+            void isChild(from).then((child) => {
+              if (child) onPermission(event, from);
+            });
           }, abort.signal)
           .then(
             () => {
@@ -424,16 +468,8 @@ export const makeOpenCodeHost = (
         const waiting = yield* attempt("Couldn't read the session's requests", () =>
           client.permissions(session.id),
         ).pipe(Effect.orElseSucceed(() => []));
-        for (const permission of waiting) {
-          if (gateAllows(mode, gate, permission)) {
-            yield* Effect.promise(() =>
-              client.reply(session.id, permission.id, "once").catch(() => undefined),
-            );
-            continue;
-          }
-          for (const out of mapper.map({ type: "permission.asked", data: { ...permission } }))
-            Queue.offerUnsafe(events, out);
-        }
+        for (const permission of waiting)
+          onPermission({ type: "permission.asked", data: { ...permission } }, session.id);
 
         const quietly = (what: string, run: () => Promise<unknown>) =>
           Effect.promise(() =>
@@ -474,31 +510,45 @@ export const makeOpenCodeHost = (
             const message =
               answer.kind === "approval" && answer.decision === "deny" ? answer.message : undefined;
             return Effect.tryPromise({
-              try: () => client.reply(session.id, requestId, decision, message),
+              try: () =>
+                client.reply(
+                  answeredUnder.get(requestId) ?? session.id,
+                  requestId,
+                  decision,
+                  message,
+                ),
               catch: (error) =>
                 new AnswerUndelivered({
                   message: error instanceof Error ? error.message : String(error),
                 }),
             });
           },
-          // The mode is reported only once OpenCode holds its rules, never on a failed change.
+          // The mode is reported only once OpenCode holds its rules, never on a failed change, and
+          // a change that fails half way puts the old rules and agent back.
           setMode: (next) =>
             Effect.tryPromise({
               try: async () => {
-                await client.setPermissions(session.id, sessionRules(next, gate));
-                await client.setAgent(session.id, agentFor(next));
+                changingMode = true;
+                try {
+                  await client.setPermissions(session.id, sessionRules(next, gate));
+                  await client.setAgent(session.id, agentFor(next));
+                } catch (error) {
+                  await client
+                    .setPermissions(session.id, sessionRules(mode, gate))
+                    .then(() => client.setAgent(session.id, agentFor(mode)))
+                    .catch(() => undefined);
+                  throw error;
+                } finally {
+                  changingMode = false;
+                }
+                mode = next;
               },
               catch: (error) =>
                 new ModeRefused({
                   mode: next,
                   message: `OpenCode didn't change mode: ${error instanceof Error ? error.message : String(error)}`,
                 }),
-            }).pipe(
-              Effect.tap(() => {
-                mode = next;
-                return Queue.offer(events, { type: "mode", mode: next });
-              }),
-            ),
+            }).pipe(Effect.tap(() => Queue.offer(events, { type: "mode", mode: next }))),
           setModel: (next) => {
             const ref = modelRefFor(next);
             return ref === undefined
