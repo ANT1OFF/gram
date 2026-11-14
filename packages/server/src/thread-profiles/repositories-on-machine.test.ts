@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { hasGit, removeDir, tempDir } from "../git/test-repo.ts";
 import {
+  fileOrigin,
   makeProfileRepositories,
   PROFILE_ORIGINS_DIR,
   PROFILE_REPOS_DIR,
@@ -38,13 +39,14 @@ const setup = (proc: ProcShape) => {
   const commands: Array<ReadonlyArray<string>> = [];
   const asked: Array<{ request: CheckoutRequest; projectRoot: string; origin: string }> = [];
   const projects: Array<{ root: string; name: string }> = [];
+  const recorded = Proc.of({
+    run: (bin, args, options) => {
+      if (bin === "git") commands.push(args);
+      return proc.run(bin, args, options);
+    },
+  });
   const repositories = makeProfileRepositories({
-    proc: Proc.of({
-      run: (bin, args, options) => {
-        if (bin === "git") commands.push(args);
-        return proc.run(bin, args, options);
-      },
-    }),
+    proc: recorded,
     dataDir,
     ensureProject: (input) => Effect.sync(() => projects.push(input)),
     // What a joined machine's worker host does with it: reads the origin here, clones there.
@@ -64,7 +66,7 @@ const setup = (proc: ProcShape) => {
       }),
     discard: () => Effect.void,
   });
-  return { dataDir, commands, asked, projects, repositories };
+  return { dataDir, commands, asked, projects, repositories, proc: recorded };
 };
 
 const withSetup = <A, E>(
@@ -166,6 +168,25 @@ describe.skipIf(!hasGit)("a profile's repositories on a joined machine", () => {
         expect(refused.message).toMatch(/isn't an https or ssh URL/);
         expect(asked).toEqual([]);
         expect(existsSync(join(dataDir, PROFILE_ORIGINS_DIR))).toBe(false);
+      }),
+    ),
+  );
+
+  it.live("a repository filed by hand shares the origin a profile's repository of it uses", () =>
+    withSetup(({ dataDir, commands, repositories, proc }) =>
+      Effect.gen(function* () {
+        const filed = yield* fileOrigin(proc, dataDir, APP);
+        expect(filed.name).toBe("app");
+        expect(filed.path.startsWith(join(dataDir, PROFILE_ORIGINS_DIR))).toBe(true);
+        expect(git(filed.path, "config", "--local", "--get", "remote.origin.url")).toBe(APP);
+        expect(yield* fileOrigin(proc, dataDir, APP)).toEqual(filed);
+
+        const place = yield* repositories.prepare(THREAD, [{ url: APP }], MACHINE);
+        expect(place.projectRoot).toBe(filed.path);
+        for (const args of commands)
+          expect(args.some((arg) => ["clone", "fetch", "ls-remote", "pull"].includes(arg))).toBe(
+            false,
+          );
       }),
     ),
   );

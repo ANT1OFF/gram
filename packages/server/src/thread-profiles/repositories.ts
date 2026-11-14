@@ -64,7 +64,7 @@ export const profileBranchOf = (threadId: ThreadId): string => `thread/${threadI
  * no credential is needed or used. One already there is kept only when its `origin` is the same
  * remote.
  */
-const originsOn = (proc: ProcShape, root: string) => {
+export const originsOn = (proc: ProcShape, root: string) => {
   const on = Effect.provideService(Proc, proc);
   const run = (cwd: string, args: ReadonlyArray<string>) =>
     on(git(cwd, args, { timeoutMs: 10_000 })).pipe(
@@ -133,6 +133,19 @@ const originsOn = (proc: ProcShape, root: string) => {
   };
 };
 
+/**
+ * Files the repository `url` names under the data folder as an origin alone, made without reaching
+ * the remote: how a server that runs no work itself takes a repository, for the machine a thread is
+ * placed on to clone with its own credentials. The project's name is the repository's.
+ */
+export const fileOrigin = (proc: ProcShape, dataDir: string, url: string) =>
+  originsOn(proc, join(dataDir, PROFILE_ORIGINS_DIR))(url).pipe(
+    Effect.map(({ path }) => ({ path, name: originName(path) })),
+  );
+
+/** The project name of a clone or origin kept at a `<host>/<owner>/<name>+<identity>` folder. */
+export const originName = (path: string): string => basename(path).split("+")[0] || path;
+
 export const makeProfileRepositories = (deps: ProfileRepositoriesDeps) => {
   const on = Effect.provideService(Proc, deps.proc);
   const repos = reposOn(deps.proc, join(deps.dataDir, PROFILE_REPOS_DIR), deps.gitEnv);
@@ -174,7 +187,7 @@ export const makeProfileRepositories = (deps: ProfileRepositoriesDeps) => {
           : machine === undefined
             ? yield* baseOf(clone, repository.ref)
             : repository.ref;
-      yield* deps.ensureProject({ root: clone, name: basename(clone).split("+")[0] ?? clone });
+      yield* deps.ensureProject({ root: clone, name: originName(clone) });
       const checkout = yield* deps
         .prepare(
           {

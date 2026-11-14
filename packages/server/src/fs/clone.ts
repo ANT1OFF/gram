@@ -34,9 +34,17 @@ export const cloneFailure = (out: ProcOutput): string => {
   return lines.join(" ") || `exited with ${out.status}`;
 };
 
-/** Why a clone failed, retaining the process output needed to diagnose it. */
+/** What `gh` says when it has no GitHub login to clone with. */
+const GH_SIGNED_OUT = /gh auth login|GH_TOKEN environment variable/;
+
+/**
+ * Why a clone failed, retaining the process output needed to diagnose it. A `gh` with no login
+ * says where to sign in rather than quoting gh's own advice, which names no machine.
+ */
 export const cloneFailureMessage = (label: string, out: ProcOutput): string =>
-  `Couldn't clone ${label}: ${cloneFailure(out)}`;
+  GH_SIGNED_OUT.test(`${out.stderr}\n${out.stdout}`)
+    ? `Couldn't clone ${label}: the GitHub CLI on the machine running Gram's server isn't signed in. Run \`gh auth login\` there, or paste the repository's git URL to clone with git's own credentials.`
+    : `Couldn't clone ${label}: ${cloneFailure(out)}`;
 
 /** Which repositories the clone at `root` has as remotes, as `remoteKey`s; empty when unreadable. */
 const remotesOf = (root: string): Effect.Effect<ReadonlySet<string>, never, Proc> =>
