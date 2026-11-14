@@ -570,6 +570,49 @@ describe("the baseline", () => {
     }),
   );
 
+  it.effect("upgrades a 1.24.0 database, whose 0009 was user_messages, and keeps its rows", () =>
+    Effect.gen(function* () {
+      const file = join(yield* tempDir, "release-1-24.db");
+      const open = (record: Parameters<typeof migratorOptions>[0]) =>
+        SqliteMigrator.layer(migratorOptions(record)).pipe(
+          Layer.provideMerge(SqliteClient.layer({ filename: file })),
+        );
+      const release = {
+        "0001_baseline": migrations["0001_baseline"],
+        "0002_merge_freezes": migrations["0002_merge_freezes"],
+        "0003_message_receipts": migrations["0003_message_receipts"],
+        "0004_merge_fences": migrations["0004_merge_fences"],
+        "0005_usage_limit_history": migrations["0005_usage_limit_history"],
+        "0006_message_parts": migrations["0006_message_parts"],
+        "0007_hosts": migrations["0007_hosts"],
+        "0008_actor_events": migrations["0008_actor_events"],
+        "0009_user_messages": migrations["0012_user_messages"],
+      };
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`INSERT INTO projects(id, root, name) VALUES ('released', '/synthetic/release', 'from 1.24.0')`;
+        expect((yield* applied).at(-1)).toEqual({ migration_id: 9, name: "user_messages" });
+      }).pipe(Effect.provide(open(release)));
+      for (let reopen = 0; reopen < 2; reopen++) {
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          expect(yield* sql`SELECT id, name FROM projects`).toEqual([
+            { id: "released", name: "from 1.24.0" },
+          ]);
+          expect((yield* applied).slice(-4).map((row) => [row.migration_id, row.name])).toEqual([
+            [9, "queue_actor"],
+            [10, "person_settings"],
+            [11, "wait_person"],
+            [12, "user_messages"],
+          ]);
+          expect(
+            yield* sql`SELECT name FROM sqlite_master WHERE name = 'messages_thread_user'`,
+          ).toEqual([{ name: "messages_thread_user" }]);
+        }).pipe(Effect.provide(open(migrations)));
+      }
+    }),
+  );
+
   it.effect("takes a 1.x migration appended after it, once, on a database it made", () =>
     Effect.gen(function* () {
       const file = join(yield* tempDir, "gram.db");
