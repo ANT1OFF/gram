@@ -17,6 +17,7 @@
 * say when a lent browser isn't ready ([#519](https://github.com/ANT1OFF/gram/issues/519)) ([cf80610](https://github.com/ANT1OFF/gram/commit/cf80610a50e7aec4620b9dd4329a8e67bb7e4720))
 * watch and drive the server's browser from the Preview tab ([#550](https://github.com/ANT1OFF/gram/issues/550)) ([a538963](https://github.com/ANT1OFF/gram/commit/a538963d08a6287c66135827e6c78f144087d9c7))
 * **web:** browser asks say what they would do in words, and the browser chip says "held back" ([#585](https://github.com/ANT1OFF/gram/issues/585)) ([a7dc72c](https://github.com/ANT1OFF/gram/commit/a7dc72c8503beeea0bc9e73868164195327764b3))
+* **web:** Conversation only keeps the images a tool call returned, and has a shortcut ([#597](https://github.com/ANT1OFF/gram/issues/597)) ([153f8e7](https://github.com/ANT1OFF/gram/commit/153f8e76aa932229f6d03e026cc71f3bb5a8d219))
 * **web:** Conversation only, a switch that takes tool calls and reasoning out of every transcript ([#592](https://github.com/ANT1OFF/gram/issues/592)) ([eea13dd](https://github.com/ANT1OFF/gram/commit/eea13dd3df3b75206810bebe8e0373e708c8cba7))
 * **web:** the server's page says who drives in one line, with a worded Hand back ([#584](https://github.com/ANT1OFF/gram/issues/584)) ([bb44eff](https://github.com/ANT1OFF/gram/commit/bb44effed29f6693b0deff0d8703e61a990e971f))
 
