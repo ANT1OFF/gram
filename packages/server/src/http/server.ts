@@ -59,6 +59,7 @@ import { LOOPBACK_HOST, ServerConfig } from "../config.ts";
 import { Embedding } from "../embedding/embedding.ts";
 import { EmbedInbound, EMBED_PREFIX } from "../embedding/inbound.ts";
 import { RepoEventsInboundLive } from "../embedding/repo-events.ts";
+import { ThreadNotesInboundLive } from "../embedding/thread-notes.ts";
 import { ObjectStoreLive } from "../embedding/object-store.ts";
 import { TimersLive } from "../embedding/timers.ts";
 import { SuppliedSettingsLive } from "../settings/supplied.ts";
@@ -808,6 +809,7 @@ export const ServerCore = Layer.unwrap(
         DevServerAppToolsLive,
         ThreadAssistLive,
         RepoEventsInboundLive,
+        ThreadNotesInboundLive,
         SuppliedSettingsLive,
       )
         // Above the merges, which it asks again when a dependency merges; a `pipe` takes twenty.

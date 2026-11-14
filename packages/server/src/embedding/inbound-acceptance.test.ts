@@ -7,6 +7,7 @@ import { GramRpcs, type PrStatus, type ServerEvent } from "@gram/contracts";
 import { Pr } from "@gram/git";
 import { captureLogs } from "@gram/agents/testing/logs";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import { createServer, request as httpRequest } from "node:http";
@@ -21,7 +22,7 @@ import { IDENTITY_HEADER } from "../http/fronted-identity.ts";
 import { makeTestProxy } from "../http/fronted-identity.testing.ts";
 import { LaunchToken, ServerLayer, serverPort } from "../http/server.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { FakeAgentAdapter } from "../runtime/fake-agent.ts";
+import { FakeAgentAdapter, FakeAgentControl } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -196,7 +197,7 @@ const MockPr = Layer.succeed(Pr, {
 
 const server = (config: Partial<Parameters<typeof ServerConfig.layer>[0]>) =>
   ServerLayer.pipe(
-    Layer.provide(FakeAgentAdapter),
+    Layer.provideMerge(FakeAgentAdapter),
     Layer.provide(TurnHooks.layerNoop),
     Layer.provide(gitPlatformTest({ pr: MockPr })),
     Layer.provide(ServerConfig.layer({ ...TEST_CONFIG, ...config })),
@@ -298,6 +299,68 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
       }),
     );
   });
+
+  it.effect(
+    "gives a thread at rest the platform's note as a turn, once, however often it is sent",
+    () =>
+      Effect.gen(function* () {
+        const at = yield* port;
+        const runtimes = yield* ThreadRuntimes;
+        const control = yield* FakeAgentControl;
+        const repo = makeRepo(join(tmp, "notes"));
+        const thread = yield* runtimes.create({
+          projectRoot: repo,
+          checkout: { kind: "main", path: repo },
+        });
+        const note = {
+          threadId: thread.id,
+          key: "ask-1:answered",
+          text: "The approval was given.",
+        };
+
+        for (const body of [
+          { ...note, threadId: "" },
+          { ...note, key: "has a space" },
+          { ...note, text: "  " },
+          { ...note, text: "x".repeat(4001) },
+        ]) {
+          expect((yield* call(at, "/embed/v1/thread-notes", { token: TOKEN, body })).status).toBe(
+            400,
+          );
+        }
+        const missing = yield* call(at, "/embed/v1/thread-notes", {
+          token: TOKEN,
+          body: { ...note, threadId: "no-such-thread" },
+        });
+        expect(missing.status).toBe(404);
+        expect((yield* call(at, "/embed/v1/thread-notes", { body: note })).status).toBe(401);
+
+        // The thread has no session: the note opens one, and the call waits for the agent to take it.
+        const first = yield* call(at, "/embed/v1/thread-notes", { token: TOKEN, body: note }).pipe(
+          Effect.forkScoped({ startImmediately: true }),
+        );
+        yield* eventually(
+          "the note sent to the agent",
+          control.latest(thread.id).pipe(
+            Effect.map((session) => session.sent.some((input) => input.text.includes(note.text))),
+            Effect.orElseSucceed(() => false),
+          ),
+        );
+        const session = yield* control.latest(thread.id);
+        const sent = session.sent.find((input) => input.text.includes(note.text));
+        expect(sent?.text).toContain("not from a person");
+        yield* session.completeTurn("Trying it again.");
+        const answered = yield* Fiber.join(first);
+        expect(answered.status).toBe(200);
+        expect(JSON.parse(answered.body)).toEqual({ delivered: true });
+
+        // Sent again, as a caller that never heard the answer would: delivered, and not sent twice.
+        const again = yield* call(at, "/embed/v1/thread-notes", { token: TOKEN, body: note });
+        expect(JSON.parse(again.body)).toEqual({ delivered: true });
+        yield* Effect.sleep("200 millis");
+        expect(session.sent.filter((input) => input.text.includes(note.text))).toHaveLength(1);
+      }).pipe(Effect.scoped),
+  );
 
   it.effect("reads a pull request when its event is pushed, not before", () =>
     Effect.gen(function* () {
