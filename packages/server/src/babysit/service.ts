@@ -10,6 +10,7 @@ import {
   isLocalHost,
   InvalidState,
   MONITOR_MARK_REVIEWS_MAX,
+  mergeStateAllowsMerge,
   ORCHESTRATOR_HAS_NO_PR,
   requiredChecksOf,
   reviewBotsOf,
@@ -879,10 +880,15 @@ export const BabysitLive = Layer.effect(
           return yield* dropped(threadId, "PR no longer monitored and open", taken);
         // Only a merge-state change prompted this notice. If that state or its checks moved
         // during the lookups, any useful change has its own scheduled notice; this one is stale.
+        // CLEAN and green UNSTABLE are equivalent and schedule no replacement for each other.
         if (
           taken.size === 1 &&
           taken.has("merge") &&
-          (latest.badge.mergeState !== badge.mergeState ||
+          ((latest.badge.mergeState !== badge.mergeState &&
+            !(
+              mergeStateAllowsMerge(latest.badge.mergeState) &&
+              mergeStateAllowsMerge(badge.mergeState)
+            )) ||
             requiredChecksOf(latest.badge) !== requiredChecksOf(badge) ||
             latest.badge.headRefOid !== badge.headRefOid)
         )

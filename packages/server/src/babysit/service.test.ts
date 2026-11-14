@@ -503,6 +503,32 @@ describe("review monitor", () => {
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
+  for (const [ready, equivalent] of [
+    ["CLEAN", "UNSTABLE"],
+    ["UNSTABLE", "CLEAN"],
+  ] as const) {
+    it.effect(`keeps an approved ${ready} notice when it becomes ${equivalent} during lookup`, () =>
+      Effect.gen(function* () {
+        reset();
+        const id = yield* monitoredThread;
+        const approved = reviewState({ verdictOnHead: "approved" });
+        yield* publish(id, badge({ mergeState: "DIRTY", review: approved }));
+        world.fetchStarted = yield* Deferred.make<void>();
+        world.fetchGate = yield* Deferred.make<void>();
+        yield* publish(id, badge({ mergeState: ready, review: approved }));
+        yield* TestClock.adjust("30 seconds");
+        yield* Deferred.await(world.fetchStarted);
+        yield* publish(id, badge({ mergeState: equivalent, review: approved }));
+        yield* Deferred.succeed(world.fetchGate, undefined);
+        const delivered = yield* waitFor(
+          "ready notice across equivalent states",
+          notices(id).pipe(Effect.map((n) => n.length === 1 && n)),
+        );
+        expect(delivered).toMatchObject([{ verdict: "approved", mergeState: ready }]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+    );
+  }
+
   for (const mergeState of ["UNKNOWN", "UNSTABLE"]) {
     it.effect(`drops a merge-only notice that turns ${mergeState} during its review lookup`, () =>
       Effect.gen(function* () {
