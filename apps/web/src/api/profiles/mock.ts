@@ -45,6 +45,8 @@ export function createProfilesMock(world: MockWorld, agents: readonly AgentKind[
     removeProfile: (profileId) => gateways.removeProfile(profileId),
     discoverProfileModels: (profileId) => gateways.discoverProfileModels(profileId),
     importProfileKey: (profileId) => gateways.importProfileKey(profileId),
+    startOpenRouterSignIn: () => gateways.startOpenRouterSignIn(),
+    finishOpenRouterSignIn: (attemptId) => gateways.finishOpenRouterSignIn(attemptId),
     helperStatus: () => gateways.helperStatus(),
     helperPresence: async (typing) => {
       if (typing) gateways.presence.typing++;

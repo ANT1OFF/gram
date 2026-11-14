@@ -454,3 +454,42 @@ describe("profileIdFor", () => {
     expect(profileIdFor("   ", new Set())).toBe("gateway");
   });
 });
+
+describe("Add OpenRouter", () => {
+  it("signs in and makes an OpenRouter profile, on which each agent gets its maker's models", async () => {
+    const api = await emptyApi();
+    renderWithApi(<GatewaysSettings />, api);
+    const add = within(await screen.findByRole("region", { name: "Add OpenRouter" }));
+    expect(add.getByText(/privacy settings/)).toBeTruthy();
+    fireEvent.click(add.getByRole("button", { name: "Sign in with OpenRouter" }));
+    const openRouter = within(await card("OpenRouter"));
+    expect(openRouter.getByText("https://openrouter.ai/api/v1")).toBeTruthy();
+    // Once there is one, the card makes way for it.
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Add OpenRouter" })).toBeNull(),
+    );
+    const claude = await api.listModels("claude", "openrouter" as ProfileId);
+    expect(claude.models.map((model) => model.id)).toEqual([
+      "anthropic/claude-sonnet-5.5",
+      "anthropic/claude-haiku-5.5",
+    ]);
+  });
+
+  it("takes a pasted key only when it looks like OpenRouter's", async () => {
+    const api = await emptyApi();
+    renderWithApi(<GatewaysSettings />, api);
+    const add = within(await screen.findByRole("region", { name: "Add OpenRouter" }));
+    fireEvent.click(add.getByRole("button", { name: "Paste a key" }));
+    const field = add.getByLabelText("OpenRouter key");
+    const save = add.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    fireEvent.change(field, { target: { value: "sk-ant-wrong" } });
+    expect(save.disabled).toBe(true);
+    fireEvent.change(field, { target: { value: "sk-or-v1-right" } });
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    const openRouter = await card("OpenRouter");
+    expect(within(openRouter).getByText("https://openrouter.ai/api/v1")).toBeTruthy();
+    const [saved] = await api.listProfiles();
+    expect(saved).toMatchObject({ kind: "openrouter", keyRef: "profile:openrouter" });
+  });
+});

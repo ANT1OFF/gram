@@ -15,6 +15,8 @@ export const profilesRpc = ({ client }: RpcContext): ProfilesApi => ({
   discoverProfileModels: (profileId) => run(client["profiles.discoverModels"]({ profileId })),
   importProfileKey: (profileId) =>
     run(client["profiles.importKey"]({ profileId, source: "opencode" })),
+  startOpenRouterSignIn: () => run(client["profiles.openRouterSignIn"](undefined)),
+  finishOpenRouterSignIn: (attemptId) => run(client["profiles.openRouterFinish"]({ attemptId })),
   helperStatus: () => run(client["helper.status"](undefined)),
   helperPresence: (typing) => run(client["helper.presence"]({ typing })),
   composerDrafts: (windowId, threadIds) =>

@@ -7,6 +7,7 @@ import {
   customModelsOf,
   gatewayAgentModel,
   gatewayModelForAgent,
+  OPENROUTER_BASE_URL,
   gatewayModelUsable,
   GATEWAY_UNLISTED_WARNING,
   withCustomModels,
@@ -41,6 +42,15 @@ import {
   type VaultPort,
 } from "../../gateway/key-vault.ts";
 import { codexModelFor } from "../../gateway/codex-home.ts";
+import {
+  challengeFor,
+  exchangeCode,
+  listenForCode,
+  newVerifier,
+  signInUrl,
+  type CodeListener,
+  type KeyPoster,
+} from "../../gateway/openrouter-sign-in.ts";
 import { readOpenCodeKey, seedProfiles } from "../../gateway/seed.ts";
 import { runTitleWatcher, schedulerTitles, titlePhase } from "../../gateway/titles.ts";
 import { HelperScheduler } from "../../helper/scheduler.ts";
@@ -68,7 +78,14 @@ export interface GatewayDeps {
   readonly platform?: NodeJS.Platform;
   /** The model the user's own Codex config uses on a base URL, Codex's default on that profile. */
   readonly codexModel?: (baseURL: string) => Effect.Effect<string | undefined>;
+  /** Posts the OpenRouter code exchange; `fetch` by default. */
+  readonly post?: KeyPoster;
+  /** Listens for OpenRouter's callback; a loopback listener by default. */
+  readonly listen?: () => Promise<CodeListener>;
 }
+
+/** The OpenRouter profile a sign-in makes when there is none. */
+const OPENROUTER_PROFILE_ID = "openrouter" as ProfileId;
 
 /**
  * What protects the vault's keys, for Settings: `backend` is the one `safeStorage` picked on Linux.
@@ -190,7 +207,11 @@ export const makeGateway = ({
   onKeyChanged = () => Effect.void,
   platform = process.platform,
   codexModel = () => Effect.succeed(undefined),
+  post = (url, init) => fetch(url, init),
+  listen = () => listenForCode(),
 }: GatewayDeps) => {
+  /** Sign-ins with OpenRouter waiting for the person to come back, by attempt. */
+  const signIns = new Map<string, { readonly verifier: string; readonly listener: CodeListener }>();
   const changed = publish({ type: "profiles.changed" });
 
   const findProfile = (profileId: ProfileId) =>
@@ -306,46 +327,48 @@ export const makeGateway = ({
       ),
     );
 
+  // `keyRef` is server-owned: it names the stored key, and a client can't point it elsewhere.
+  const upsertProfile = ({ profile }: { readonly profile: GatewayProfile }) =>
+    Effect.gen(function* () {
+      const invalid = hasControlCharacter(profile.name)
+        ? "name"
+        : hasControlCharacter(profile.baseURL)
+          ? "base URL"
+          : hasControlCharacter(profile.helperModel ?? "")
+            ? "helper model"
+            : undefined;
+      if (invalid !== undefined) {
+        return yield* Effect.fail(
+          new GatewayError({
+            profileId: profile.id,
+            message: `A gateway's ${invalid} can't contain line breaks or other control characters.`,
+          }),
+        );
+      }
+      const profiles = yield* store.listProfiles;
+      const existing = profiles.find((p) => p.id === profile.id);
+      // The first profile, or any profile while none is the default, becomes the default.
+      const noOtherDefault = !profiles.some((p) => p.id !== profile.id && p.default === true);
+      const next: GatewayProfile = {
+        ...withoutDefault(profile),
+        keyRef: existing?.keyRef ?? "",
+        ...(profile.default === true || noOtherDefault ? { default: true } : {}),
+      };
+      if (next.default === true) {
+        for (const other of profiles) {
+          if (other.id !== next.id && other.default === true)
+            yield* store.upsertProfile(withoutDefault(other));
+        }
+      }
+      yield* store.upsertProfile(next);
+      yield* changed;
+      return next;
+    });
+
   const handlers = {
     "profiles.list": () => store.listProfiles,
 
-    // `keyRef` is server-owned: it names the stored key, and a client can't point it elsewhere.
-    "profiles.upsert": ({ profile }) =>
-      Effect.gen(function* () {
-        const invalid = hasControlCharacter(profile.name)
-          ? "name"
-          : hasControlCharacter(profile.baseURL)
-            ? "base URL"
-            : hasControlCharacter(profile.helperModel ?? "")
-              ? "helper model"
-              : undefined;
-        if (invalid !== undefined) {
-          return yield* Effect.fail(
-            new GatewayError({
-              profileId: profile.id,
-              message: `A gateway's ${invalid} can't contain line breaks or other control characters.`,
-            }),
-          );
-        }
-        const profiles = yield* store.listProfiles;
-        const existing = profiles.find((p) => p.id === profile.id);
-        // The first profile, or any profile while none is the default, becomes the default.
-        const noOtherDefault = !profiles.some((p) => p.id !== profile.id && p.default === true);
-        const next: GatewayProfile = {
-          ...withoutDefault(profile),
-          keyRef: existing?.keyRef ?? "",
-          ...(profile.default === true || noOtherDefault ? { default: true } : {}),
-        };
-        if (next.default === true) {
-          for (const other of profiles) {
-            if (other.id !== next.id && other.default === true)
-              yield* store.upsertProfile(withoutDefault(other));
-          }
-        }
-        yield* store.upsertProfile(next);
-        yield* changed;
-        return next;
-      }),
+    "profiles.upsert": upsertProfile,
 
     "profiles.setKey": ({ profileId, key }) =>
       Effect.gen(function* () {
@@ -380,6 +403,64 @@ export const makeGateway = ({
         Effect.tap(() => onKeyChanged(profileId)),
         Effect.tap(() => changed),
       ),
+
+    "profiles.openRouterSignIn": () =>
+      Effect.gen(function* () {
+        const listener = yield* Effect.tryPromise({
+          try: () => listen(),
+          catch: () =>
+            new GatewayError({
+              profileId: OPENROUTER_PROFILE_ID,
+              message: "Couldn't listen for OpenRouter to send you back.",
+            }),
+        });
+        const verifier = newVerifier();
+        const attemptId = crypto.randomUUID();
+        // A newer attempt replaces any other: one sign-in at a time.
+        for (const [id, other] of signIns) {
+          other.listener.close();
+          signIns.delete(id);
+        }
+        signIns.set(attemptId, { verifier, listener });
+        return { attemptId, url: signInUrl(listener.callbackUrl, challengeFor(verifier)) };
+      }),
+
+    "profiles.openRouterFinish": ({ attemptId }) =>
+      Effect.gen(function* () {
+        const fail = (message: string) =>
+          new GatewayError({ profileId: OPENROUTER_PROFILE_ID, message });
+        const attempt = signIns.get(attemptId);
+        if (attempt === undefined) {
+          return yield* fail("This sign-in has ended. Start again.");
+        }
+        const code = yield* Effect.tryPromise({
+          try: () => attempt.listener.code,
+          catch: (error) =>
+            fail(error instanceof Error ? error.message : "The sign-in didn't finish."),
+        }).pipe(Effect.ensuring(Effect.sync(() => signIns.delete(attemptId))));
+        const key = yield* exchangeCode(OPENROUTER_PROFILE_ID, code, attempt.verifier, post);
+        const profiles = yield* store.listProfiles;
+        const existing = profiles.find((profile) => profile.kind === "openrouter");
+        const taken = new Set<string>(profiles.map((profile) => profile.id));
+        let id: string = OPENROUTER_PROFILE_ID;
+        for (let n = 2; taken.has(id); n++) id = `${OPENROUTER_PROFILE_ID}-${n}`;
+        const profile =
+          existing === undefined
+            ? yield* upsertProfile({
+                profile: {
+                  id: id as ProfileId,
+                  name: "OpenRouter",
+                  baseURL: OPENROUTER_BASE_URL,
+                  kind: "openrouter",
+                  keyRef: "",
+                  models: [],
+                },
+              })
+            : existing;
+        yield* storeKey(profile, key);
+        const result = yield* afterKeyChange(profile.id, Option.some(key));
+        return { ...result, profileId: profile.id };
+      }),
 
     // Reads OpenCode's `auth.json` only here, after the user consented in the UI.
     "profiles.importKey": ({ profileId }) => importOpenCodeKey(profileId),
