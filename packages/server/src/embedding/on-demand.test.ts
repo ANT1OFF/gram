@@ -299,6 +299,12 @@ const answer = { kind: "approval", decision: "allow", scope: "once" } as never;
 /** A checkout on `hostId`, for a move. */
 const onto = (hostId: string) => ({ kind: "main", path: "/w/x", hostId }) as never;
 
+/** The first placement of a thread that waits for its machine, on `hostId`. */
+const placing = (hostId: string) => ({
+  from: onto("awaited"),
+  prepare: Effect.succeed(onto(hostId)),
+});
+
 describe("hosts provisioned on demand: what reaches a person's threads", () => {
   // An already running session needs no machine looked up: the delivery itself is checked.
   it("refuses another person's send, steer and answer to a thread on someone's machine", async () => {
@@ -372,13 +378,10 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
   // A thread started before its machine has no owner to keep: it has who it was started by.
   it("places a thread that waits for its machine only on its starter's machine, or no one's", async () => {
     const { reached, owned } = recording();
-    const plan = (hostId: string) => ({
-      from: onto("awaited"),
-      prepare: Effect.succeed(onto(hostId)),
-    });
-    const [ada, grace, anyone] = ["waiting-ada", "waiting-grace", "waiting-anyone"].map((id) =>
-      ThreadId.make(id),
-    ) as [ThreadId, ThreadId, ThreadId];
+    const plan = placing;
+    const ada = ThreadId.make("waiting-ada");
+    const grace = ThreadId.make("waiting-grace");
+    const anyone = ThreadId.make("waiting-anyone");
     await Effect.runPromise(owned.relocate(ada, plan("m-ada")));
     await Effect.runPromise(owned.relocate(ada, plan("m-shared")));
     await Effect.runPromise(owned.relocate(anyone, plan("m-ada")));

@@ -598,14 +598,19 @@ describe("a thread started before its machine", () => {
   );
 });
 
+/** A thread that waits for its machine, started by `startedBy` when one is given. */
+const waitingThread = (startedBy?: string) =>
+  ({
+    id: ID,
+    checkout: { kind: "main", path: `/.threads/${ID}`, hostId: AWAITED_HOST_ID },
+    awaitingMachine: { since: 0, ...(startedBy === undefined ? {} : { startedBy }) },
+  }) as never;
+/** `MACHINE` was started for Ada and `OTHER` for Bob. */
+const ownerOfMachine = (id: HostId) => (id === MACHINE ? "ada" : id === OTHER ? "bob" : undefined);
+
 describe("whose a thread is while it waits for its machine", () => {
-  const waiting = (startedBy?: string) =>
-    ({
-      id: ID,
-      checkout: { kind: "main", path: `/.threads/${ID}`, hostId: AWAITED_HOST_ID },
-      awaitingMachine: { since: 0, ...(startedBy === undefined ? {} : { startedBy }) },
-    }) as never;
-  const ownerOf = (id: HostId) => (id === MACHINE ? "ada" : id === OTHER ? "bob" : undefined);
+  const waiting = waitingThread;
+  const ownerOf = ownerOfMachine;
   const reaches = (thread: never, person: string | undefined | "server") =>
     mayReachThread(() => Effect.succeed(thread), ownerOf, ID).pipe(
       Effect.provideService(RoutedFor, person === "server" ? undefined : { person }),
