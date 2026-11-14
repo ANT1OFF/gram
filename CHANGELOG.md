@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.25.0](https://github.com/ANT1OFF/gram/compare/v1.24.0...v1.25.0) (2026-11-14)
+
+
+### Features
+
+* **embedding:** the platform can give a thread a note that wakes it ([#608](https://github.com/ANT1OFF/gram/issues/608)) ([a13694d](https://github.com/ANT1OFF/gram/commit/a13694da931da2c061ce0311f58cf79d9c501a96))
+* **orchestration:** record the user's answer from a message, and withdraw a departed worker's questions ([#606](https://github.com/ANT1OFF/gram/issues/606)) ([3629c95](https://github.com/ANT1OFF/gram/commit/3629c952d01e30619467bada88386cd984239c0c))
+* **web:** Conversation only is a focused mode that leaves Gram's notices out ([#603](https://github.com/ANT1OFF/gram/issues/603)) ([4bc783a](https://github.com/ANT1OFF/gram/commit/4bc783acd2f622c8354214af8c434cd5387e1720))
+
+
+### Bug Fixes
+
+* **desktop:** only pass a plain element id into the pinned-pages fixture's script ([#604](https://github.com/ANT1OFF/gram/issues/604)) ([e4852bb](https://github.com/ANT1OFF/gram/commit/e4852bb23829e3f84932c906c59ec9def487ee05))
+* **desktop:** use constant scripts for pinned page clicks ([#615](https://github.com/ANT1OFF/gram/issues/615)) ([810011f](https://github.com/ANT1OFF/gram/commit/810011fadb5bfd60af7c90cecef3c4a32a60ee96))
+* **embedding:** tell the agent to pass a host's refusal on as given ([#607](https://github.com/ANT1OFF/gram/issues/607)) ([b195a94](https://github.com/ANT1OFF/gram/commit/b195a94e06dac61363b89405a8349e627cc50b5d))
+* **orchestration:** let a worker withdraw its question and its orchestrator close it ([#601](https://github.com/ANT1OFF/gram/issues/601)) ([3212268](https://github.com/ANT1OFF/gram/commit/321226875caa35f873a1cfcd7c069001e9aeb2be))
+* **web:** restore entry budget and prevent accidental sidebar peeks ([#616](https://github.com/ANT1OFF/gram/issues/616)) ([f3561db](https://github.com/ANT1OFF/gram/commit/f3561db858757769e08964a1ceed8d73e9f6d0d3))
+
 ## [1.24.0](https://github.com/ANT1OFF/gram/compare/v1.23.0...v1.24.0) (2026-11-14)
 
 
