@@ -1074,6 +1074,8 @@ export function Transcript({
                     const workOnly =
                       conversationOnly && !showsInConversation(messages[item.index]!);
                     return (
+                      // Paint containment clips 16 px out, like a reply's content, so a raised
+                      // card's shadow at the row's edge keeps its rounded shape.
                       <div
                         key={item.key}
                         data-index={item.index}
@@ -1082,7 +1084,7 @@ export function Transcript({
                         ref={virtualizer.measureElement}
                         tabIndex={-1}
                         className={cn(
-                          "absolute top-0 left-0 w-full rounded-(--radius-md) px-6 outline-none transition-[background-color,box-shadow] duration-(--dur-fast) [contain:content] focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset data-[flash=true]:bg-highlight/10 data-[flash=true]:ring-2 data-[flash=true]:ring-highlight/50 data-[flash=true]:ring-inset",
+                          "absolute top-0 left-0 w-full rounded-(--radius-md) px-6 outline-none transition-[background-color,box-shadow] duration-(--dur-fast) [contain:content] [overflow-clip-margin:1rem] focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset data-[flash=true]:bg-highlight/10 data-[flash=true]:ring-2 data-[flash=true]:ring-highlight/50 data-[flash=true]:ring-inset",
                           closed?.empty !== true && !retried && !workOnly && "py-1.5",
                         )}
                         style={{ transform: `translateY(${item.start}px)` }}
