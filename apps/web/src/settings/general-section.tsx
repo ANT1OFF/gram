@@ -95,8 +95,6 @@ export function GeneralSection() {
   const settings = useServerSettings((s) => s.settings);
   const save = useSaveSettings();
   const [failed, setFailed] = useState<{ key: string; message: string }>();
-  const sendHint = useShortcutHint("composer.send");
-  const createHint = useShortcutHint("draft.create");
   // Synced through the layout store, so ⌘B and this row are one setting.
   const overview = useLayoutStore((s) => s.overviewSidebar);
   const setOverview = useLayoutStore((s) => s.setOverviewSidebar);
@@ -296,25 +294,7 @@ export function GeneralSection() {
           />
         </SettingRow>
       </SettingsGroup>
-      <SettingsGroup
-        label="Sending"
-        anchor={GENERAL_ANCHORS.sending}
-        description="Which keys send a message."
-      >
-        <SettingRow
-          label="Send with"
-          description={sendWithDescription(sendHint, createHint)}
-          onReset={resetOf("sendKey")}
-          error={errorOf("sendKey")}
-        >
-          <OptionGroup
-            label="Send with"
-            options={SEND_KEYS}
-            value={sendKeyOf(settings)}
-            onChange={(sendKey) => applyTo("sendKey")({ composer: { sendKey } })}
-          />
-        </SettingRow>
-      </SettingsGroup>
+      <SendingGroup />
       <SettingsGroup
         label="Running work"
         anchor={GENERAL_ANCHORS.running}
@@ -357,6 +337,44 @@ export function GeneralSection() {
  * so asks reach the menu bar and notifications after a restart. Nothing where the shell can't
  * offer it: a browser, Linux, or a development run.
  */
+/**
+ * Which keys send a message: General's, and Keyboard's where an app in front of Gram leaves General
+ * out.
+ */
+export function SendingGroup() {
+  const settings = useServerSettings((s) => s.settings);
+  const save = useSaveSettings();
+  const [failed, setFailed] = useState<string>();
+  const sendHint = useShortcutHint("composer.send");
+  const createHint = useShortcutHint("draft.create");
+  if (!settings) return null;
+  const apply = (patch: SettingsPatch) => {
+    setFailed(undefined);
+    save(patch).catch((e: unknown) => setFailed(errorMessage(e)));
+  };
+  return (
+    <SettingsGroup
+      label="Sending"
+      anchor={GENERAL_ANCHORS.sending}
+      description="Which keys send a message."
+    >
+      <SettingRow
+        label="Send with"
+        description={sendWithDescription(sendHint, createHint)}
+        onReset={resetFor(settings, apply)(GENERAL_DEFAULTS.sendKey)}
+        error={failed}
+      >
+        <OptionGroup
+          label="Send with"
+          options={SEND_KEYS}
+          value={sendKeyOf(settings)}
+          onChange={(sendKey) => apply({ composer: { sendKey } })}
+        />
+      </SettingRow>
+    </SettingsGroup>
+  );
+}
+
 export function LaunchAtLoginSetting() {
   const login = window.gram?.launchAtLogin;
   const [state, setState] = useState<LaunchAtLogin | null>();

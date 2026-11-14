@@ -1,5 +1,6 @@
 import { embeddingOn, type Settings } from "@gram/contracts";
 import type { ComponentType } from "react";
+import { useMatches } from "@tanstack/react-router";
 import { create } from "zustand";
 
 import type {
@@ -13,6 +14,7 @@ import type {
   ShellPageProps,
   ShellPanel,
   ShellRepositories,
+  ShellSettings,
   ShellSidebar,
   ShellSlotProps,
   ShellMachines,
@@ -56,6 +58,8 @@ export interface EmbedShellState {
   readonly document: ShellDocument;
   /** Where "Add repository" lists repositories; the server's `gh` listing while undefined. */
   readonly repositories: ShellRepositories | undefined;
+  /** Which of Gram's Settings pages stay and the app's own: all of Gram's while empty. Set once. */
+  readonly settings: ShellSettings;
 }
 
 export const useEmbedShell = create<EmbedShellState>()(() => ({
@@ -75,6 +79,7 @@ export const useEmbedShell = create<EmbedShellState>()(() => ({
   toolCards: [],
   document: {},
   repositories: undefined,
+  settings: {},
 }));
 
 /** What the store holds before anything is added, and again after `unmount`. */
@@ -95,6 +100,29 @@ export const EMPTY_SHELL: EmbedShellState = {
   toolCards: [],
   document: {},
   repositories: undefined,
+  settings: {},
+};
+
+/**
+ * Whether Gram's own Settings page `id` stays: always on Gram's own, and on an embedding app's
+ * when it keeps it.
+ */
+export const gramSettingKept = (settings: ShellSettings, id: string): boolean =>
+  settings.gram === undefined || settings.gram.includes(id);
+
+/** Whether Gram's Settings page `id` stays, read in a component. */
+export const useGramSettingKept = (id: string) =>
+  useEmbedShell((s) => gramSettingKept(s.settings, id));
+
+/** The embedding app's word for a workspace of threads ("Project"); "Workspace" on Gram's own. */
+export const useThreadsWorkspaceNoun = () =>
+  useEmbedShell((s) => s.threadsPage.workspaces?.noun ?? "Workspace");
+
+/** Whether the page in view is one the embedding app added, its home among them. */
+export const useHostPage = () => {
+  const titles = useEmbedShell((s) => s.titles);
+  const path = useMatches({ select: (matches) => matches.at(-1)?.fullPath as string | undefined });
+  return path !== undefined && titles[path] !== undefined;
 };
 
 /** Whether the open sidebar is drawn in the embedding app's `roomy` look: never on Gram's own. */

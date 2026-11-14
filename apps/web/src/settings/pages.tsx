@@ -13,6 +13,9 @@ import {
 } from "lucide-react";
 import { lazy, type ComponentType } from "react";
 
+import type { ShellIcon, ShellSettings, ShellSettingsPage } from "@/embed/contract";
+import { gramSettingKept, useEmbedShell } from "@/embed/store";
+
 import {
   AiHelpersSummary,
   GatewaysSummary,
@@ -75,13 +78,15 @@ export type SettingsGroupId =
   | "notifications"
   | "keyboard"
   | "voice-input"
-  | "about";
+  | "about"
+  // An embedding app's own page, each a group of its own (`shell.settings.pages`).
+  | `host:${string}`;
 
 export interface SettingsNavGroup {
   readonly id: SettingsGroupId;
   readonly label: string;
   readonly path: SettingsPath;
-  readonly icon: LucideIcon;
+  readonly icon: LucideIcon | ShellIcon;
   /** The page's own subsections, linked under it in the nav while it is open. */
   readonly sections?: readonly SettingsAnchor[];
 }
@@ -113,16 +118,17 @@ export const SETTINGS_GROUPS: readonly SettingsNavGroup[] = [
 
 /** The group a page sits in, by the group's id. */
 export const settingsGroupOf = (page: Pick<SettingsPage, "group">): SettingsNavGroup =>
+  shownSettingsGroups().find((group) => group.id === page.group) ??
   SETTINGS_GROUPS.find((group) => group.id === page.group)!;
 
 /** Whether `page` opens from its group rather than being the group's own page. */
 export const isSubpage = (page: Pick<SettingsPage, "id" | "group">): boolean =>
-  page.id !== page.group;
+  page.id !== page.group && page.group !== `host:${page.id}`;
 
 /** The pages that open from `group`, in nav order. */
 export const subpagesOf = (
   group: SettingsGroupId,
-  pages: readonly SettingsPage[] = SETTINGS_PAGES,
+  pages: readonly SettingsPage[] = shownSettingsPages(),
 ): readonly SettingsPage[] => pages.filter((page) => page.group === group && isSubpage(page));
 
 export type SettingsPath =
@@ -145,7 +151,9 @@ export type SettingsPath =
   | "/settings/phones"
   | "/settings/about"
   | "/settings/diagnostics"
-  | "/settings/help";
+  | "/settings/help"
+  // An embedding app's own page, at `/settings/<id>` (routes/settings.$page.tsx).
+  | "/settings/$page";
 
 /**
  * A page's settings as Settings search shows them, fetched when a search first needs them: the page
@@ -559,13 +567,80 @@ export const SETTINGS_PAGES = settingsPagesFor(
   typeof window === "undefined" ? undefined : window.gram?.platform,
 );
 
+/** Gram's page ids, which an embedding app's own page may not take. */
+const GRAM_IDS = new Set(ALL_SETTINGS_PAGES.map((page) => page.id));
+
+/**
+ * Where an embedding app's page opens. A link takes the path whole, so it is the page's own
+ * address, not the route's pattern that the type names.
+ */
+const hostPath = (id: string) => `/settings/${id}` as SettingsPath;
+
+/** An embedding app's own page as Settings lists it: a group of its own, found by its words. */
+const hostPage = (page: ShellSettingsPage): SettingsPage => ({
+  id: page.id,
+  label: page.label,
+  path: hostPath(page.id),
+  group: `host:${page.id}`,
+  description: page.description,
+  ...(page.keywords === undefined ? {} : { keywords: page.keywords }),
+  search: null,
+});
+
+/** The embedding app's pages Settings may show: well named, none of Gram's, none twice. */
+const hostPages = (settings: ShellSettings): readonly ShellSettingsPage[] => {
+  const seen = new Set<string>();
+  return (settings.pages ?? []).filter((page) => {
+    if (!/^[a-z][a-z0-9-]*$/.test(page.id) || GRAM_IDS.has(page.id) || seen.has(page.id))
+      return false;
+    seen.add(page.id);
+    return true;
+  });
+};
+
+/**
+ * Settings' pages as shown: on Gram's own, all of `pages`; in front of an embedding app, its own
+ * first, then the ones of Gram's it keeps, a page that opens from another only with it.
+ */
+export function settingsPagesShown(
+  settings: ShellSettings,
+  pages: readonly SettingsPage[] = SETTINGS_PAGES,
+): readonly SettingsPage[] {
+  const kept = pages.filter(
+    (page) => gramSettingKept(settings, page.id) && gramSettingKept(settings, page.group),
+  );
+  return [...hostPages(settings).map(hostPage), ...kept];
+}
+
+/** Settings' groups as shown, in the same order as `settingsPagesShown`. */
+export function settingsGroupsShown(settings: ShellSettings): readonly SettingsNavGroup[] {
+  return [
+    ...hostPages(settings).map((page): SettingsNavGroup => ({
+      id: `host:${page.id}`,
+      label: page.label,
+      path: hostPath(page.id),
+      icon: page.icon,
+    })),
+    ...SETTINGS_GROUPS.filter((group) => gramSettingKept(settings, group.id)),
+  ];
+}
+
+/** The page shown now; the embedding app's settings are set once, before the router is built. */
+export const shownSettingsPages = () => settingsPagesShown(useEmbedShell.getState().settings);
+export const shownSettingsGroups = () => settingsGroupsShown(useEmbedShell.getState().settings);
+
+/** The embedding app's own page at `/settings/<id>`, or undefined. */
+export const hostSettingsPage = (id: string): ShellSettingsPage | undefined =>
+  hostPages(useEmbedShell.getState().settings).find((page) => page.id === id);
+
 /**
  * Where an old `/settings/advanced` link goes: the page a `/settings/advanced/<id>` names, by its
  * id or its old one, else General.
  */
 export function advancedRedirect(pathname: string): SettingsPath {
   const id = pathname.replace(/^\/settings\/advanced\/?/, "").split("/")[0] ?? "";
-  return settingsPageById(id === "" ? null : id, ALL_SETTINGS_PAGES)?.path ?? "/settings/general";
+  return (settingsPageById(id === "" ? null : id, ALL_SETTINGS_PAGES)?.path ??
+    "/settings/general") as SettingsPath;
 }
 
 const LAST_PAGE_KEY = "gram.settings.page";
@@ -576,7 +651,7 @@ const RENAMED_PAGES: Readonly<Record<string, string>> = { updates: "about" };
 /** The page among `pages` an id names. */
 export function settingsPageById(
   id: string | null,
-  pages: readonly SettingsPage[] = SETTINGS_PAGES,
+  pages: readonly SettingsPage[] = shownSettingsPages(),
 ): SettingsPage | undefined {
   if (id === null) return undefined;
   const current = RENAMED_PAGES[id] ?? id;
@@ -591,7 +666,7 @@ export function lastSettingsPage(): SettingsPage {
   } catch {
     // Storage can be off (a locked-down browser); Settings then always opens on General.
   }
-  return settingsPageById(id) ?? SETTINGS_PAGES[0]!;
+  return settingsPageById(id) ?? shownSettingsPages()[0]!;
 }
 
 export function rememberSettingsPage(id: string): void {
