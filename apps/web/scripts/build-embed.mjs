@@ -2,7 +2,7 @@
 // types and a manifest. See docs/EMBEDDED_WEB_APP.md.
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -104,7 +104,29 @@ writeFileSync(
 );
 writeFileSync(join(outDir, "gram-web-kit.d.ts"), 'export * from "./types/embed/kit.js";\n');
 // The theme's names for an embedding app's own Tailwind build; the values come with the app.
-copyFileSync(join(webDir, "src/styles/theme.css"), join(outDir, "theme.css"));
+// The variants and utilities of the two Tailwind add-ons the app's classes use go in front, so
+// that build can write every class of the package's (docs/EMBEDDED_WEB_APP.md, "One utilities
+// layer") without installing the add-ons at the same versions itself.
+// tw-animate-css exports its stylesheet under the "style" condition only, which Node's resolver
+// does not take, so it is found in the folders a package resolves from.
+const styleOf = (name, file) => {
+  for (const folder of require.resolve.paths(name) ?? []) {
+    const path = join(folder, name, file);
+    if (existsSync(path)) return path;
+  }
+  throw new Error(`build-embed: ${name} is not installed`);
+};
+const ADD_ONS = [
+  ["tw-animate-css", styleOf("tw-animate-css", "dist/tw-animate.css")],
+  ["shadcn/tailwind.css", require.resolve("shadcn/tailwind.css")],
+];
+writeFileSync(
+  join(outDir, "theme.css"),
+  [
+    ...ADD_ONS.map(([name, path]) => `/* ${name} */\n${readFileSync(path, "utf8")}`),
+    readFileSync(join(webDir, "src/styles/theme.css"), "utf8"),
+  ].join("\n"),
+);
 
 // The catalog's exact versions: the app is built and tested against these and no others.
 const root = JSON.parse(readFileSync(join(webDir, "../../package.json"), "utf8"));

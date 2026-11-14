@@ -32,6 +32,26 @@ test("the whole app mounts from the built package, with its styles and theme", a
   expect(errors).toEqual([]);
 });
 
+test("a responsive class of Gram's holds beside the app's own utilities", async ({ page }) => {
+  await mounted(page);
+  // The fixture's own pages use `flex`, so its build writes `.flex` after the package's
+  // stylesheet, in the same layer. Unless that build also writes the package's classes, in one
+  // order, its `.flex` comes after Gram's `@max-md:hidden` and a narrow container keeps the item.
+  const display = await page.evaluate(() => {
+    const box = document.createElement("div");
+    box.style.containerType = "inline-size";
+    box.style.width = "200px";
+    const item = document.createElement("div");
+    item.className = "flex @max-md:hidden";
+    box.append(item);
+    document.body.append(box);
+    const drawn = getComputedStyle(item).display;
+    box.remove();
+    return drawn;
+  });
+  expect(display).toBe("none");
+});
+
 test("a thread the page gave the in-memory server opens at its own id", async ({ page }) => {
   const errors = await mounted(page);
   await page.goto("/t/page-notes");

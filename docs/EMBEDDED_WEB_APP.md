@@ -394,10 +394,24 @@ stylesheet sets on `<html>`, so your pages follow the person's palette, mode and
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source("./");
 @import "@gram/web/theme.css";
+@source "../node_modules/@gram/web";
 ```
 
 Leave Tailwind's base styles out, as above: the page's are Gram's. Follow
 [the design notes](../DESIGN.md) for which name goes where.
+
+### One utilities layer
+
+The `@source` line points your build at the package's folder, and it is not optional. Your
+stylesheet and `gram-web.css` both write into the `utilities` layer, and yours comes later. Inside
+one build Tailwind puts a plain class before its responsive and state variants, so `hidden` loses
+to `md:flex`. Across two builds nothing keeps that order: a `.flex` your pages use lands after
+Gram's `@max-md:hidden`, and every screen of Gram's with that pair stops folding at its width. With
+the line, your build also writes each class the package uses, after Gram's copy and in one order,
+so the last word on every class is in the right place. `theme.css` carries the variants and
+utilities of the Tailwind add-ons Gram's classes use (`data-open:`, `animate-in` and the rest), so
+your build needs nothing installed for them. It costs a second copy of Gram's utilities in your
+stylesheet, about a sixth more before compression.
 
 ## Keeping embedders in step
 
