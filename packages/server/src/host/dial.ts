@@ -1,5 +1,5 @@
 import type { KeyObject } from "node:crypto";
-import * as NodeSocket from "@effect/platform-node/NodeSocket";
+import * as NodeWS from "@effect/platform-node/NodeWS";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -129,7 +129,7 @@ export const dialOnce = <R>(
       Deferred.await(ended),
     );
     return why ?? "the main Gram ended the connection";
-  }).pipe(Effect.scoped, Effect.provide(NodeSocket.layerWebSocketConstructor));
+  }).pipe(Effect.scoped, Effect.provide(NodeWS.layerWebSocketConstructor));
 
 /**
  * How long the host keeps its sessions and terminals with no connection to the main Gram: a blip

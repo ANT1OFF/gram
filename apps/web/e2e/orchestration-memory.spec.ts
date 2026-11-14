@@ -234,7 +234,7 @@ test("memory files are read, edited within their caps, deleted, and a version is
   await expect(files).toHaveCount(3);
   // The questions lived in the version that is no longer current.
   await memoryTab(page, "Decisions");
-  await expect(view.getByTestId("memory-questions")).toContainText("None.");
+  await expect(view.getByTestId("memory-questions")).toContainText("No open questions.");
 });
 
 test("an answer picks a choice or says it in words, closes the question, and reaches the orchestrator", async ({
@@ -294,7 +294,7 @@ test("an answer picks a choice or says it in words, closes the question, and rea
   await page.keyboard.press("Escape");
   await expect(inbox).toBeHidden();
   await expect(questions).toHaveCount(0, { timeout: 15_000 });
-  await expect(section).toContainText("None.");
+  await expect(section).toContainText("No open questions.");
   await expect(closed.locator('[data-question="Q1"]')).toHaveAttribute(
     "data-closed-as",
     "answered",

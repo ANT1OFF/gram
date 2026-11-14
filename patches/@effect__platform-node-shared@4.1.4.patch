@@ -1,8 +1,8 @@
 diff --git a/dist/NodeChildProcessSpawner.js b/dist/NodeChildProcessSpawner.js
-index 47285c035b3060e737f2c1beef66dcb70e39da84..5017103c6b3befc7545d51a37cfabeda83de87be 100644
+index 1e1123a7e7f4df662d656d2128cb9f70349a467f..5c05228cf3bdd0d0573b182a5d35b4d80abcdace 100644
 --- a/dist/NodeChildProcessSpawner.js
 +++ b/dist/NodeChildProcessSpawner.js
-@@ -306,7 +306,13 @@ const make = /*#__PURE__*/Effect.gen(function* () {
+@@ -370,7 +370,13 @@ const make = /*#__PURE__*/Effect.gen(function* () {
      }
      return Effect.try({
        try: () => {
@@ -17,7 +17,7 @@ index 47285c035b3060e737f2c1beef66dcb70e39da84..5017103c6b3befc7545d51a37cfabeda
        },
        catch: error => toPlatformError("kill", toError(error), command)
      });
-@@ -325,7 +331,7 @@ const make = /*#__PURE__*/Effect.gen(function* () {
+@@ -389,7 +395,7 @@ const make = /*#__PURE__*/Effect.gen(function* () {
    };
    const killProcess = (command, childProcess, signal) => Effect.suspend(() => {
      const killed = childProcess.kill(signal);

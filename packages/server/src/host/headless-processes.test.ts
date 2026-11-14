@@ -10,7 +10,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import * as NodeSocket from "@effect/platform-node/NodeSocket";
+import * as NodeWS from "@effect/platform-node/NodeWS";
 import { afterAll, describe, expect, it } from "@effect/vitest";
 import { GramRpcs, type Thread, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
@@ -246,7 +246,7 @@ describe.skipIf(!hasGit || !hasOpenssl || process.platform === "win32")(
                   headers: { cookie },
                 } as never),
               ),
-              Layer.provide(NodeSocket.layerWebSocketConstructorWS),
+              Layer.provide(NodeWS.layerWebSocketConstructor),
               Layer.provide(RpcSerialization.layerJson),
             ),
           );

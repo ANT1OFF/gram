@@ -29,7 +29,9 @@ export const OVER_STATES: ReadonlySet<WorkerState> = new Set<WorkerState>([
 
 /**
  * Whether a worker shows in the sidebar and on the Board:
- * - at work now, or asking you: always;
+ * - at work now: always;
+ * - gone from the ledger: never, even with a stale ask;
+ * - asking you: always while its thread exists;
  * - archived: never, the user put it away;
  * - otherwise while the ledger has it and its work isn't over. Reported done, merged or delivered
  *   still shows while it has an open PR or something pending (a request, a standing report, a wake,
@@ -43,7 +45,9 @@ export const workerShown = (
     Partial<Pick<FeatureCardWorker, "station">>,
   facts: ShownFacts,
 ): boolean => {
-  if (facts.running.has(worker.threadId) || facts.asking.has(worker.threadId)) return true;
+  if (facts.running.has(worker.threadId)) return true;
+  if (facts.over !== undefined && !facts.over.has(worker.threadId)) return false;
+  if (facts.asking.has(worker.threadId)) return true;
   if (worker.state === "archived") return false;
   if (facts.over === undefined) {
     return !OVER_STATES.has(worker.state) && worker.station !== "merged";

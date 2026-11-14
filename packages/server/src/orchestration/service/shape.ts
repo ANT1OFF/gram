@@ -801,7 +801,8 @@ export interface OrchestrationShape {
   ): Effect.Effect<WorkerQuestion, AppToolError>;
   /**
    * `close_question` on a `WQ` id: the orchestrator closes one of its workers' open questions, in
-   * triage or forwarded, without answering it; the worker is told.
+   * triage or forwarded, without answering it; the worker is told. Also accepts its workspace's
+   * orphan questions whose asking thread is missing or no longer a worker.
    */
   closeWorkerQuestion(
     callerId: ThreadId,

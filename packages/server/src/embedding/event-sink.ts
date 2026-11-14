@@ -774,7 +774,8 @@ export const makeEventSink = (
           ),
         );
         if (outcome === "off") {
-          yield* Effect.sleep(recheck);
+          // Turning on records the opening snapshot, which wakes this: what it sends goes at once.
+          yield* Queue.take(wake).pipe(Effect.timeoutOption(recheck));
         } else if (outcome === "sent") {
           wait = retryBase;
         } else if (outcome === "empty") {

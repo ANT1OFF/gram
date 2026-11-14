@@ -193,7 +193,7 @@ test("each top-left icon names itself and its key on hover", async ({ page }) =>
   const tooltip = page.locator('[data-slot="tooltip-content"]');
   const expected: readonly [string, RegExp][] = [
     ["Hide sidebar", /^Hide sidebar \((⌘|Ctrl\+)B\)$/],
-    ["Compact sidebar", /^Compact sidebar: workspaces as tiles$/],
+    ["Compact sidebar", /^Compact sidebar: a strip that opens on hover$/],
     // Settings, at the foot beside History, says its key too.
     ["Settings", /^Settings \((⌘|Ctrl\+),\)/],
     // New opens a menu, whose Task, Team and Chat each show their own key.

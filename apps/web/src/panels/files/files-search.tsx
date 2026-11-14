@@ -1,6 +1,6 @@
 import type { FsSearchLimit, FsSearchMatch, FsSearchRange, ThreadId } from "@gram/contracts";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { SquareArrowOutUpRight } from "lucide-react";
+import { SquareArrowUpRightExit } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { useApi } from "@/api/context";
@@ -222,7 +222,7 @@ function ResultList({
               className="mt-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
               onClick={() => void openInEditor(match.path, { threadId, line: match.line })}
             >
-              <SquareArrowOutUpRight />
+              <SquareArrowUpRightExit />
             </Button>
           )}
         </li>

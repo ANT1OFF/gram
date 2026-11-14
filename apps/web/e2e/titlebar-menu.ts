@@ -64,11 +64,13 @@ export async function closeContents(page: Page): Promise<void> {
  * reaches the page under them: Contents is View's, and View the bar's "…"'s.
  */
 export async function closeMenus(page: Page): Promise<void> {
-  const menus = page.getByRole("menu");
+  // Closed popups remain mounted during their exit animation; they own no further Escape.
+  const menus = page.getByRole("menu").and(page.locator("[data-open]"));
   for (let open = await menus.count(); open > 0; open = await menus.count()) {
     await page.keyboard.press("Escape");
     await expect(menus).toHaveCount(open - 1);
   }
+  await expect(page.getByRole("menu")).toHaveCount(0);
 }
 
 /**

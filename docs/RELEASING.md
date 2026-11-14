@@ -40,8 +40,18 @@ made.
 
 The metadata PR also records the host protocol the release speaks. On its branch, once the
 version fields read the new version, run `bun run host-protocol:release` and commit the new
-`packages/contracts/src/rpc/host-released/<version>.json`. The earlier releases' files stay as
-they are. Every release's file from 1.19.0 on is what later changes are held to, so a joined
+`packages/contracts/src/rpc/host-released/<version>.json`, formatted with
+`bun fmt --no-script` (the command writes it compact, which the format check refuses). The
+earlier releases' files stay as they are.
+
+On the same branch, add the version's What's New cards: one file per highlight in
+`apps/web/src/whats-new/<version>/`, as `NN-<slug>.ts` default-exporting a `WhatsNewItem` (see
+[whats-new/index.ts](../apps/web/src/whats-new/index.ts)). Write them for people using the app,
+from what the release changes for them, and check each card's control names against the code.
+`assemble.test.ts` fails without that directory, and publication renders the release notes
+from it. Changes that reached `main` in a squashed merge with a non-conventional title (an
+integration branch, say) are missing from release-please's changelog and its proposal: list them
+in the version's section of `CHANGELOG.md` by hand, on the same branch, before it merges. Every release's file from 1.19.0 on is what later changes are held to, so a joined
 machine on this release, or a deployment pinned to it, keeps working with every later one (see
 [machines on different releases](MACHINES.md#machines-on-different-releases)). The command
 refuses when the tree breaks any recorded release's protocol beyond its `ACCEPTED` entries in

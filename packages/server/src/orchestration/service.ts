@@ -347,7 +347,9 @@ export const OrchestrationLive = Layer.effect(
     });
 
     const { survey, ledger, watchLedger, featureCards, watchFeatureCards, dependencyBadgesOf } =
-      makeLedgerWatch(kit);
+      makeLedgerWatch(kit, {
+        reconcileQuestions: (workspaceId) => reconcileQuestions(workspaceId),
+      });
     if (kit.eventSink !== undefined) {
       yield* kit.eventSink.setFeatureCardRefresh((workspaceId) =>
         featureCards(workspaceId).pipe(
@@ -552,6 +554,7 @@ export const OrchestrationLive = Layer.effect(
       closeWorkerQuestion,
       recordUserAnswer,
       withdrawQuestionsOf,
+      reconcileQuestions,
       answerQuestionAsUser,
       dismissQuestionAsUser,
       userAnswers,
@@ -629,6 +632,7 @@ export const OrchestrationLive = Layer.effect(
       armPauseResumes,
       armQuestionTimers,
       deliverOwedQuestions,
+      reconcileQuestions,
       noteRestart,
       followPark,
       resumeHandoff,
