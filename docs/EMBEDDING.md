@@ -172,6 +172,23 @@ Limits:
 - A delete the store didn't confirm is kept in `object-store.json` and asked again at each walk.
 - A file is sent only from where it was when it was checked: one whose folder has since become a link is left out, and the log says so.
 
+## A note for a thread
+
+The platform can give one thread a note, which its agent takes as a turn of its own once the thread is free, as it takes any input the server writes itself. It wakes a thread at rest for something that happened outside it, such as an answer given elsewhere to what the agent was waiting on.
+
+```
+POST /embed/v1/thread-notes
+{ "threadId": "...", "key": "ask-41:answered", "text": "The approval you asked for was given. Try the action again." }
+→ 200 { "delivered": true }
+→ 202 { "delivered": false, "queued": true }
+```
+
+- A thread with no session has one opened for the note. One that is working takes it after its turn; one waiting on an approval or an answer takes it after that.
+- The call waits up to 20 seconds for the agent to take the note, and answers `202` if it hasn't yet. The note goes on waiting.
+- `key` names the note. Sent again while it waits, it is not queued twice; sent again after the agent took it, it answers `delivered` and is not sent again. So a caller that sends until it hears `delivered` delivers it once. Neither is kept past the process: a note still waiting when the server stops is lost, and the caller, which never heard `delivered`, sends it to the server that starts.
+- The agent reads the text after a line saying it comes from the app the workspace runs in and not from a person in the thread. It grants nothing.
+- `404` for a thread the server doesn't have, `409` when the thread couldn't take it (it ended, or its agent couldn't start), `400` for a body that isn't one. `text` is 1 to 4000 characters.
+
 ## Settings supplied from outside
 
 The deployment can set some of the settings for this server. A supplied setting reads as supplied to everything inside, and nothing inside can change it: the Settings page, a paired phone and an agent's `settings_propose` are each refused, with a message that says the service that runs this Gram set it.
