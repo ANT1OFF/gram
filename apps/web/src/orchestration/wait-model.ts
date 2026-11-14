@@ -77,6 +77,13 @@ const checks = (tag: string, detail: string): WorkerWait => ({ bucket: "checks",
 const prName = (pr: WorkerPr): string => `#${pr.number} in ${pr.repo}`;
 
 /**
+ * A PR whose failing checks no live worker owns (`workerOwnsCiFix`): its orchestrator's to follow
+ * up from its digest, never the user's unless an agent asks them.
+ */
+const orphanedChecks = (pr: WorkerPr): string =>
+  `${prName(pr)} has failing checks and no live worker; its orchestrator follows them up.`;
+
+/**
  * What one open PR waits on. CI first, then the review bot on its head, then what GitHub says
  * stands between it and a merge. A person is named where GitHub says who: the code owners asked
  * first, then whoever else is asked to review, then whoever asked for changes.
@@ -227,7 +234,7 @@ export const workerWait = (
     );
     return failure === undefined
       ? { bucket: "done", tag: "archived" }
-      : person("CI failing", `${prName(failure)} has no live worker to fix failed checks.`);
+      : { bucket: "done", tag: "archived", detail: orphanedChecks(failure) };
   }
 
   if (state === "error") return person("stopped", "It stopped on an error.");
@@ -264,7 +271,7 @@ export const workerWait = (
         checksOf(pr.checks) === "failing" &&
         !ownedCi.has(ciFixPrKey(pr)) &&
         !workerOwnsCiFix({ ...worker, state, status }, pr)
-          ? person("CI failing", `Nobody is following up failed checks on ${prName(pr)}.`)
+          ? checks("CI failing", orphanedChecks(pr))
           : prWait(pr),
       )
       .reduce((a, b) => (RANK[b.bucket] < RANK[a.bucket] ? b : a));

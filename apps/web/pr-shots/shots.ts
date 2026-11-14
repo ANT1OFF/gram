@@ -244,7 +244,7 @@ const openWorkspaceSettings = async (page: Page) => {
  * A seeded workspace's orchestrator at 1440 × 900, opened from its overview row as a user would: the
  * seed lives in memory, so nothing reloads after it.
  */
-/** The ask scenario with two failures. */
+/** The ask scenario with a stopped worker, and a held worker's red CI that stays its own. */
 const seedFailures = () => window.gramMock!.simulateFailures();
 
 /** The failures scenario with a draft and a review waiting, on a solo thread, at 1440 px. */
@@ -3907,9 +3907,17 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "orchestrator-failing",
+    title:
+      "Orchestrator chat: the failure card leads with a stopped worker; a worker's red CI is its own to fix",
+    open: async (page) => {
+      await openOrchestratorOf(page, seedFailures);
+    },
+  },
+  {
     name: "board-failing",
     title:
-      "Board: the failure card above the lines, a stopped worker and red CI, each with its step",
+      "Board: the failure card above the lines, a stopped worker with its step; a worker's red CI stays on its line",
     open: async (page) => {
       await openOrchestratorOf(page, seedFailures);
       await openBoardView(page);

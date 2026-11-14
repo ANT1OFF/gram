@@ -26,7 +26,7 @@ export interface Attention {
   readonly label: string;
 }
 
-/** Nobody is working the PR in these statuses, so a red build or a change request is the user's. */
+/** Nobody is working the PR in these statuses, so a change request on a thread of the user's is theirs. */
 const QUIET: ReadonlySet<string> = new Set(["idle", "cold", "ended"]);
 
 const LABELS: Record<AttentionReason, string> = {
@@ -38,20 +38,20 @@ const LABELS: Record<AttentionReason, string> = {
  * What a thread's open PR asks of the user: a red required check and/or the review bot asking for
  * changes on its head (`botAsksChanges`, as its row's glyph reads it).
  * Absent while the agent works or asks, for a parked thread, once the PR is merged or closed, and
- * for an orchestrator, whose checkout's PR is none of the ones it drives.
+ * for an orchestrator, whose checkout's PR is none of the ones it drives. A worker's red build is
+ * never the user's (`ownsCiFailure`): its worker fixes it, or its orchestrator, and an agent asks
+ * the user when it needs them.
  */
 export function attentionOf(summary: ThreadSummary): Attention | undefined {
   if (summary.thread.role === "orchestrator") return undefined;
   const pr = summary.git?.pr;
   if (pr === undefined || pr.state !== "OPEN") return undefined;
-  const archivedWorker = summary.thread.parked && summary.thread.spawnedBy !== undefined;
-  if ((summary.thread.parked && !archivedWorker) || (!QUIET.has(summary.status) && !archivedWorker))
-    return undefined;
+  if (summary.thread.parked || !QUIET.has(summary.status)) return undefined;
   const head = pr.headRefOid ?? pr.updatedAt ?? "";
   const reasons: Array<[AttentionReason, string]> = [];
   if (requiredChecksOf(pr) === "failing" && !ownsCiFailure(summary, pr.url))
     reasons.push(["ciFailed", `ci:${pr.number}:${head}`]);
-  if (!summary.thread.parked && botAsksChanges(reviewStatusOf(pr.review))) {
+  if (botAsksChanges(reviewStatusOf(pr.review))) {
     reasons.push(["changesRequested", `review:${pr.number}:${pr.review?.latestReviewId ?? head}`]);
   }
   const [first] = reasons;
@@ -63,8 +63,14 @@ export function attentionOf(summary: ThreadSummary): Attention | undefined {
   };
 }
 
-/** The latest ledger supplies holds, standing reports and unreported stops to every badge. */
+/**
+ * Whether an agent, not the user, answers for a thread's failing checks on the PR at `url`: the
+ * thread is a worker (spawned by an orchestrator, or in its workspace's ledger, archived or not),
+ * whose live self fixes them and whose orchestrator follows them up once it is gone; or a live
+ * worker follows the same PR (`workerOwnsCiFix`). The latest ledger supplies the workers.
+ */
 export function ownsCiFailure(summary: ThreadSummary, url: string): boolean {
+  if (summary.thread.spawnedBy !== undefined) return true;
   const ledger =
     summary.thread.workspaceId === undefined
       ? undefined
@@ -72,10 +78,8 @@ export function ownsCiFailure(summary: ThreadSummary, url: string): boolean {
   return (
     ledger?.features.some((feature) =>
       feature.workers.some((worker) => {
-        const live =
-          worker.threadId === summary.thread.id
-            ? summary
-            : useThreadsStore.getState().byId[worker.threadId];
+        if (worker.threadId === summary.thread.id) return true;
+        const live = useThreadsStore.getState().byId[worker.threadId];
         if (live === undefined || live.thread.parked) return false;
         return ledgerPrsOf(worker).some(
           (pr) =>

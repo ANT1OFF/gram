@@ -50,16 +50,14 @@ const groupOf = (
 
 /**
  * Whether a thread needs the user: its group is Needs you (a request, an error, a stopped babysit,
- * its plan's headline, or PR attention it hasn't seen), pinned or not; a parked one only for PR
- * attention unseen. The one test the sidebar surfaces by, the window title and the dock badge
- * count by, the thread's header rings by and ⌘⇧U visits by.
+ * its plan's headline, or PR attention it hasn't seen), pinned or not, and it isn't parked. The one
+ * test the sidebar surfaces by, the window title and the dock badge count by, the thread's header
+ * rings by and ⌘⇧U visits by.
  */
 export const needsYou = (
   s: ThreadSummary,
   acknowledged?: Readonly<Record<string, string>> | undefined,
-): boolean =>
-  (!s.thread.parked || unseenAttention(s, acknowledged) !== undefined) &&
-  groupOf(s, acknowledged) === "needsYou";
+): boolean => !s.thread.parked && groupOf(s, acknowledged) === "needsYou";
 
 /**
  * A worker its ledger archived whose only claim on the user is its thread's old error: nothing asks,
@@ -71,10 +69,13 @@ export const archivedErrorOnly = (s: ThreadSummary, archived: boolean): boolean 
   s.pendingRequests.length === 0 &&
   unseenAttention(s) === undefined;
 
-/** Curation wins, except an archived worker's unresolved CI still needs an owner. */
+/**
+ * Curation wins. A parked thread has no PR attention (`attentionOf`): an archived worker's red build
+ * is its orchestrator's to follow up.
+ */
 export function sectionOf(s: ThreadSummary): SidebarSection {
   if (s.thread.pinned) return "pinned";
-  if (s.thread.parked && unseenAttention(s) === undefined) return "parked";
+  if (s.thread.parked) return "parked";
   return groupOf(s);
 }
 

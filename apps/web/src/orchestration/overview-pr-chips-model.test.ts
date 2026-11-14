@@ -54,7 +54,7 @@ describe("prChipTone", () => {
 });
 
 /** A worker's ledger row for #214, failing, its worker in `status`. */
-const ledgerOf = (status: "running" | "needsInput") => ({
+const ledgerOf = (status: "running" | "needsInput" | "ended") => ({
   prs: [
     {
       repo: "acme/api",
@@ -146,9 +146,12 @@ describe("prChipsOf", () => {
     const [fixing] = prChipsOf([failing], [], ledgerOf("running"));
     expect(fixing).toMatchObject({ tone: "plain", marks: { checks: { kind: "fixing" } } });
     expect(fixing!.label).toBe("PR #214 checks failing; its worker is fixing them");
-    // A worker waiting on the user owns nothing: the failure is red again.
-    const [owned] = prChipsOf([failing], [], ledgerOf("needsInput"));
-    expect(owned).toMatchObject({ tone: "danger", marks: { checks: { kind: "failing" } } });
+    // A worker waiting on the user still owns them: its ask is what reaches the user.
+    const [asking] = prChipsOf([failing], [], ledgerOf("needsInput"));
+    expect(asking).toMatchObject({ tone: "plain", marks: { checks: { kind: "fixing" } } });
+    // One whose thread is closed owns nothing: the chip reads them failing.
+    const [orphaned] = prChipsOf([failing], [], ledgerOf("ended"));
+    expect(orphaned).toMatchObject({ tone: "danger", marks: { checks: { kind: "failing" } } });
     // Without the ledger, as before.
     expect(prChipsOf([failing], [])[0]).toMatchObject({ tone: "danger" });
   });

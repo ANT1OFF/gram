@@ -28,7 +28,7 @@ interface Seeded {
 }
 
 /**
- * The failures scenario (asks in two workspaces, a stopped worker, red CI), answers recorded, with
+ * The failures scenario (asks in two workspaces, a stopped worker, a held worker's red CI), answers recorded, with
  * t-flaky's approval up: a thread outside any workspace counts its asks too, so a count read before
  * it arrives would be one short.
  */
@@ -81,10 +81,11 @@ test("the pill opens every workspace's items by kind, and Open thread lands on t
   page,
 }) => {
   const made = await start(page);
-  // The scenario's eight (six asks, the stopped worker and the red build) and the three the threads
-  // outside any workspace ask (t-flaky's push, t-question's question, t-plan's plan). Those three
-  // are up first, so the count is read once the scenario's have arrived too.
-  const count = 11;
+  // The scenario's seven (six asks and the stopped worker) and the three the threads outside any
+  // workspace ask (t-flaky's push, t-question's question, t-plan's plan). Those three are up first,
+  // so the count is read once the scenario's have arrived too. Its red build is its worker's to fix,
+  // held by the user or not, so it is none of them.
+  const count = 10;
   await expect(pill(page)).toHaveAttribute("data-count", String(count));
   // The pill is the one way in beside the sidebar: the title bar has no second Inbox entry.
   await expect(page.getByTestId("inbox-button")).toHaveCount(0);
@@ -102,7 +103,7 @@ test("the pill opens every workspace's items by kind, and Open thread lands on t
   // A strip heads it with every category and its count, in the list's order.
   const categories = inbox(page).getByTestId("needs-you-strip").getByTestId("needs-you-category");
   await expect(categories.nth(0)).toHaveAttribute("data-category", "errors");
-  await expect(categories.nth(0)).toHaveAccessibleName("Errors, 2");
+  await expect(categories.nth(0)).toHaveAccessibleName("Errors, 1");
   await expect(categories.nth(1)).toHaveAttribute("data-category", "approvals");
   // All only once one is picked, as the way back.
   await expect(categories.and(page.locator('[data-category="all"]'))).toHaveCount(0);
@@ -466,13 +467,14 @@ test("Later puts an item away, Back now brings it, and Dismiss holds a failure b
 }) => {
   const made = await start(page);
   await openInbox(page);
-  // Errors picked: the stopped worker and the red build.
+  // Errors picked: the stopped worker, never its worker's red build.
   await inbox(page).locator('[data-testid="needs-you-category"][data-category="errors"]').click();
   const items = inbox(page).getByTestId("inbox-item");
-  await expect(items).toHaveCount(2);
-  await expect(items.and(page.locator(`[data-thread-id="${made.failing}"]`))).toHaveCount(1);
+  await expect(items).toHaveCount(1);
+  await expect(items.and(page.locator(`[data-thread-id="${made.stopped}"]`))).toHaveCount(1);
+  await expect(items.and(page.locator(`[data-thread-id="${made.failing}"]`))).toHaveCount(0);
   await inbox(page).locator('[data-testid="needs-you-category"][data-category="all"]').click();
-  await expect(items).toHaveCount(11);
+  await expect(items).toHaveCount(10);
 
   // Later: away from the list and the count, in the Later list until it wakes or is brought back.
   const before = Number(await pill(page).getAttribute("data-count"));
@@ -495,7 +497,7 @@ test("Later puts an item away, Back now brings it, and Dismiss holds a failure b
   await show(page, "gh pr merge 91 --squash");
   await expect(detail(page).getByTestId("inbox-dismiss")).toHaveCount(0);
   // Dismiss holds a failure until it fails again, behind Undo; the Board's strip loses it too.
-  const red = items.and(page.locator(`[data-thread-id="${made.failing}"][data-kind="failure"]`));
+  const red = items.and(page.locator(`[data-thread-id="${made.stopped}"][data-kind="failure"]`));
   await red.click();
   await detail(page).getByTestId("inbox-dismiss").click();
   await expect(red).toHaveCount(0);
@@ -575,7 +577,8 @@ test("narrow: the rail's pill opens an Inbox that fits, and with no pill ⌘⌥3
     expect(box.x + box.width).toBeLessThanOrEqual(width);
   };
   await fits(1000);
-  await expect(inbox(page).getByTestId("inbox-item")).toHaveCount(11);
+  // The scenario's seven and the three outside any workspace; its worker's red build is none.
+  await expect(inbox(page).getByTestId("inbox-item")).toHaveCount(10);
   await page.keyboard.press("Escape");
   await expect(inbox(page)).toBeHidden();
 

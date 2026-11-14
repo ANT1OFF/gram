@@ -60,7 +60,7 @@ describe("standingFailures", () => {
     expect(standingFailures(undefined, {}, new Set())).toEqual([]);
   });
 
-  it("lists an errored worker and failing CI nobody live owns, a PR two follow once", () => {
+  it("lists an errored worker and never a worker's failing CI", () => {
     const failures = standingFailures(
       ledger([
         stopped,
@@ -72,38 +72,38 @@ describe("standingFailures", () => {
     );
     expect(failures.map((item) => [item.failure.kind, item.failure.tag])).toEqual([
       ["error", "Spending limit"],
-      ["checks", "#212 checks failing"],
     ]);
   });
 
   it("leaves out what was dismissed, until it fails again under another id", () => {
     const all = ledger([stopped, worker("t-red", "mail-trigger", "inReview", { pr: red })]);
     const [first] = standingFailures(all, {}, new Set());
-    const rest = standingFailures(all, {}, new Set(first!.ids));
-    expect(rest.map((item) => item.failure.threadId)).toEqual(["t-red"]);
+    expect(standingFailures(all, {}, new Set(first!.ids))).toEqual([]);
   });
 
-  it("leaves failing CI to a worker that runs or can be woken, monitored or not", () => {
-    // Working, idle at rest, or not started: the worker fixes its own checks.
-    for (const status of ["running", "idle", "cold"] as const) {
-      expect(redTags({}, solo("t-red", status))).toEqual([]);
-    }
-  });
-
-  it("keeps failing CI with the user when no worker can act on it", () => {
-    const failing = ["#212 checks failing"];
-    // No thread, an archived one, or one stopped.
-    expect(redTags({})).toEqual(failing);
-    expect(redTags({}, solo("t-red", "idle", { parked: true }))).toEqual(failing);
-    expect(redTags({ state: "archived" }, solo("t-red", "idle"))).toEqual(failing);
-    expect(redTags({}, solo("t-red", "ended"))).toEqual(failing);
-    // Blocked, asking, or taken over by the user.
-    expect(redTags({ reportStands: true }, solo("t-red", "idle"))).toEqual(failing);
-    expect(redTags({ userIntervened: true }, solo("t-red", "idle"))).toEqual(failing);
-    expect(redTags({}, solo("t-red", "needsInput"))).toEqual(failing);
-    expect(redTags({ quiet: { kind: "toolStalled", at: 1 } }, solo("t-red", "running"))).toEqual(
-      failing,
-    );
+  // A live worker is told of its checks and fixes them; when it can't, its own ask or error is
+  // what the user sees. One no live worker owns is its orchestrator's, in its digest.
+  it.each([
+    ["running", {}, "running"],
+    ["at rest", {}, "idle"],
+    ["not started", { state: "briefed" }, "cold"],
+    ["waiting on an approval", { state: "needsUser" }, "needsApproval"],
+    ["asking", {}, "needsInput"],
+    ["reporting itself blocked", { reportStands: true }, "idle"],
+    ["held by the user", { userIntervened: true }, "idle"],
+    ["stalled on a tool", { quiet: { kind: "toolStalled", at: 1 } }, "running"],
+    ["waiting out a usage limit", { limitWait: { kind: "limit", resumeAt: 9 } }, "idle"],
+    ["with no thread loaded", {}, undefined],
+    ["archived", { state: "archived" }, "parked"],
+    ["whose thread is closed", {}, "ended"],
+  ] as const)("never lists failing CI as the user's for a worker %s", (_, patch, status) => {
+    const live =
+      status === undefined
+        ? undefined
+        : status === "parked"
+          ? solo("t-red", "idle", { parked: true })
+          : solo("t-red", status);
+    expect(redTags(patch as Partial<WorkerLedgerEntry>, live)).toEqual([]);
   });
 });
 

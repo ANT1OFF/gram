@@ -175,53 +175,61 @@ describe("worker-owned CI across badges and notifications", () => {
       builtAt: 1,
     } satisfies OrchestratorLedger);
 
-  it("removes monitored CI from the section, rollup navigation, count and away notice decision", () => {
+  it("removes a worker's CI from the section, rollup navigation, count and away notice decision", () => {
     const red = live();
-    expect(needsYouCount([red])).toBe(1);
     setWorker();
     expect(attentionOf(red)).toBeUndefined();
     expect(sectionOf(red)).toBe("idle");
     expect(nextNeedsYou([red], undefined)).toBeUndefined();
     expect(needsYouCount([red])).toBe(0);
     expect(ownsCiFailure(red, red.git!.pr!.url)).toBe(true);
-    expect(ownsCiFailure(red, "https://github.com/other/repo/pull/12")).toBe(false);
-    setWorker({ reportStands: true });
-    expect(needsYouCount([red])).toBe(1);
-    expect(ownsCiFailure(red, red.git!.pr!.url)).toBe(false);
   });
 
-  it("leaves an idle worker's unmonitored CI to the worker, not the user", () => {
+  it.each([
+    ["at rest, monitored", {}],
+    ["at rest, unmonitored", { pr: { repo: "o/r", number: 12, checks: "failing" } }],
+    ["briefed, not started", { state: "briefed", status: "cold" }],
+    ["reporting itself blocked", { state: "blocked", reportStands: true }],
+    ["with a question reported", { state: "question", reportStands: true }],
+    ["held by the user", { userIntervened: true }],
+    ["waiting out a usage limit", { limitWait: { kind: "limit", resumeAt: 9 } }],
+    ["stalled on a tool", { quiet: { kind: "toolStalled", at: 1 } }],
+  ] as const)("never raises a worker's red build to the user: %s", (_, over) => {
     const red = live();
-    setWorker({ pr: { repo: "o/r", number: 12, checks: "failing" } });
+    setWorker(over as Partial<WorkerLedgerEntry>);
     expect(attentionOf(red)).toBeUndefined();
     expect(needsYouCount([red])).toBe(0);
     expect(ownsCiFailure(red, red.git!.pr!.url)).toBe(true);
-    setWorker({ userIntervened: true, pr: { repo: "o/r", number: 12, checks: "failing" } });
-    expect(needsYouCount([red])).toBe(1);
   });
 
-  it("keeps archived workers' unresolved CI in every count while parked solo threads stay parked", () => {
+  it("leaves a worker's red build to it even before its ledger lands", () => {
+    expect(needsYouCount([live()])).toBe(0);
+  });
+
+  it("leaves an archived worker's red build to its orchestrator, not the user", () => {
     setWorker({ state: "archived" });
     const red = live();
     const archived = { ...red, thread: { ...red.thread, parked: true } };
-    expect(attentionOf(archived)?.reason).toBe("ciFailed");
-    expect(sectionOf(archived)).toBe("needsYou");
-    expect(rollupOf([archived])).toBe("needsYou");
-    expect(needsYouCount([archived])).toBe(1);
-    expect(nextNeedsYou([archived], undefined)).toBe(archived.thread.id);
-    expect(ownsCiFailure(archived, archived.git!.pr!.url)).toBe(false);
+    expect(attentionOf(archived)).toBeUndefined();
+    expect(sectionOf(archived)).toBe("parked");
+    expect(rollupOf([archived])).not.toBe("needsYou");
+    expect(needsYouCount([archived])).toBe(0);
+    expect(nextNeedsYou([archived], undefined)).toBeUndefined();
+    expect(ownsCiFailure(archived, archived.git!.pr!.url)).toBe(true);
     expect(needsYouCount([summary("solo", "idle", pr({ checks: "failing" }), true)])).toBe(0);
   });
 
-  it("uses any live owner of a shared PR for the badge and away notice", () => {
+  it("uses any live worker on a shared PR for a thread of the user's", () => {
     setWorker();
     const red = live();
     useThreadsStore.setState({ byId: { [red.thread.id]: red } });
-    const twin = { ...red, thread: { ...red.thread, id: "twin" as ThreadId } };
+    const mine = summary("mine", "idle", pr({ checks: "failing" }));
+    const twin = { ...mine, thread: { ...mine.thread, workspaceId: W } };
     expect(ownsCiFailure(twin, red.git!.pr!.url)).toBe(true);
     expect(needsYouCount([twin, red])).toBe(0);
     useThreadsStore.setState({ byId: {} });
     expect(ownsCiFailure(twin, red.git!.pr!.url)).toBe(false);
+    expect(needsYouCount([twin])).toBe(1);
   });
 
   it("keeps approval requests and questions actionable beside owned CI", () => {
