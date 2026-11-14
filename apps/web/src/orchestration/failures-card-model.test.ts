@@ -21,16 +21,16 @@ const item = (failure: Partial<FailureItem["failure"]>): FailureItem => ({
 });
 
 describe("failureRow", () => {
-  it("names the failing check as the step for red CI", () => {
-    const row = failureRow(
-      item({ kind: "checks", tag: "#212 checks failing", pr: { repo: "acme/api", number: 212 } }),
-      { onGateway: false },
-    );
+  it("names the failing check as the step for an idle thread's red CI, never claiming no agent", () => {
+    const row = failureRow(item({ kind: "checks", tag: "#212 checks failing" }), {
+      onGateway: false,
+    });
     expect(row).toEqual({
       cause: "Checks failing",
-      detail: "In acme/api. No agent is fixing it.",
+      detail: "Its agent is at rest; ask it to fix them.",
       step: { kind: "checks", label: "Open failing check" },
     });
+    expect(row.detail).not.toMatch(/no agent/i);
   });
 
   it("sends a spent limit to where the limit is set", () => {

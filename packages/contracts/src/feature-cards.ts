@@ -6,7 +6,7 @@
 // Everything here is a pure function over ledger facts, so the stations, the now line and the event
 // budget say the same thing in every view and are tested without a server.
 
-import { ciFixOwnedPrs, ciFixPrKey, ledgerPrsOf } from "./ci-fix-ownership.ts";
+import { ledgerPrsOf } from "./ci-fix-ownership.ts";
 import * as Schema from "effect/Schema";
 import { ChecksRollup } from "./git.ts";
 import { ThreadId, WorkspaceId } from "./ids.ts";
@@ -684,7 +684,8 @@ export type StreamEventKind = typeof StreamEventKind.Type;
 export type StreamBudget = "card" | "line" | "silent";
 
 /**
- * The event budget: merges, failures and asks speak; wakes and stage moves never reach the stream.
+ * The event budget: merges, failed workers and asks speak; failing checks update their card, as the
+ * worker that owns them fixes them; wakes and stage moves never reach the stream.
  */
 export const EVENT_BUDGET: Readonly<Record<StreamEventKind, StreamBudget>> = {
   briefed: "card",
@@ -699,7 +700,7 @@ export const EVENT_BUDGET: Readonly<Record<StreamEventKind, StreamBudget>> = {
   merged: "line",
   error: "line",
   archived: "card",
-  checksFailing: "line",
+  checksFailing: "card",
   checksPassing: "card",
   spawn: "card",
   stage: "card",
@@ -750,8 +751,9 @@ type DigestFacts = Pick<OrchestrationDigest, "changes" | "features" | "paused">;
 
 /**
  * The stream lines one digest speaks, given the digest before it: each worker state move the
- * budget calls a line, PR checks that turned failing, and a pause that is new. Everything else the
- * digest carries updates a card or stays silent.
+ * budget calls a line, and a pause that is new. Everything else the digest carries updates a card
+ * or stays silent: failing checks among it, which their worker fixes, or for a PR no live worker
+ * owns, its orchestrator. The user hears of a failing check only when an agent asks them.
  */
 export const streamLinesOf = (
   digest: DigestFacts,
@@ -763,12 +765,6 @@ export const streamLinesOf = (
       feature.workers.map((worker) => [worker.threadId, worker]),
     ),
   );
-  const before = new Map(
-    (previous?.features ?? []).flatMap((feature) =>
-      feature.workers.map((worker) => [worker.threadId, worker]),
-    ),
-  );
-  const seen = new Set<string>();
   for (const change of digest.changes) {
     if (change.from === change.to || EVENT_BUDGET[change.to] !== "line") continue;
     const line = LINE_OF_STATE[change.to];
@@ -779,7 +775,6 @@ export const streamLinesOf = (
         ? ledgerPrsOf(worker).find((each) => each.state === "merged")
         : undefined;
     const key = `${change.threadId}:${change.to}`;
-    seen.add(key);
     lines.push({
       key,
       kind: line[0],
@@ -789,40 +784,6 @@ export const streamLinesOf = (
       ...(pr === undefined ? {} : { pr: featureCardPrOf(pr) }),
       words: line[1],
     });
-  }
-  const ownedCi = ciFixOwnedPrs(workers.values());
-  const priorOwnedCi = ciFixOwnedPrs(before.values());
-  // Checks turning failing or losing their last owner speak once.
-  if (previous !== undefined && EVENT_BUDGET.checksFailing === "line") {
-    for (const [threadId, worker] of workers) {
-      const was = before.get(threadId);
-      if (was === undefined) continue;
-      for (const pr of ledgerPrsOf(worker)) {
-        if (checksOf(pr.checks) !== "failing" || ownedCi.has(ciFixPrKey(pr))) continue;
-        const prior = ledgerPrsOf(was).find(
-          (each) => each.repo === pr.repo && each.number === pr.number,
-        );
-        if (
-          prior !== undefined &&
-          checksOf(prior.checks) === "failing" &&
-          !priorOwnedCi.has(ciFixPrKey(prior))
-        )
-          continue;
-        if (prior === undefined && was.state === worker.state) continue;
-        const key = `${threadId}:checks:${pr.repo}#${pr.number}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        lines.push({
-          key,
-          kind: "failed",
-          feature: worker.feature,
-          threadId,
-          title: worker.title,
-          pr: featureCardPrOf(pr),
-          words: "checks fail",
-        });
-      }
-    }
   }
   if (
     digest.paused !== undefined &&

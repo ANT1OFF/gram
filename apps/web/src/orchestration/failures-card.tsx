@@ -27,8 +27,9 @@ import { saveCleared, useSetAside } from "./inbox-set-aside";
 import { standingFailures, type FailureItem } from "./needs-you-model";
 import { useOrchestratorLedger } from "./use-orchestration";
 
-// Failures first: workers stopped on an error and failing CI no live worker owns, from the shared
-// needs-you model, in one compact card above the Board's lines and the orchestrator's transcript.
+// Failures first: workers stopped on an error, from the shared needs-you model, in one compact card
+// above the Board's lines and the orchestrator's transcript. A worker's failing checks are never
+// here: its worker fixes them, or its orchestrator does, and an agent asks the user if it needs them.
 // Each row says the cause, the worker and its PR, and names the step that moves it. The worker's
 // name opens it; Dismiss sets the occurrence aside (`inbox.cleared`) behind the ask stack's Undo,
 // so it comes back only if it fails again.

@@ -298,7 +298,7 @@ test("a finished group folds to one line, and a group's plan is set from its ban
   await expect(cleanup.getByTestId("rail-group-stage-chip")).toContainText("released");
 });
 
-test("the failure card lists a stopped worker and red CI above the lines, names each step, opens one, and dismisses with Undo", async ({
+test("the failure card lists a stopped worker above the lines, names its step, opens it, and dismisses with Undo", async ({
   page,
 }) => {
   const made = await start(page, () => window.gramMock!.simulateFailures());
@@ -306,15 +306,10 @@ test("the failure card lists a stopped worker and red CI above the lines, names 
   const failure = (threadId: string) =>
     strip.locator(`[data-testid="board-failure"][data-thread-id="${threadId}"]`);
   await expect(failure(made.stopped)).toHaveAttribute("data-kind", "error");
-  await expect(failure(made.failing)).toHaveAttribute("data-kind", "checks");
-  // The cause, the worker and its PR, and a named step, in words beside the icon.
-  await expect(failure(made.failing).getByTestId("board-failure-cause")).toHaveText(
-    "Checks failing",
-  );
-  await expect(failure(made.failing).getByTestId("board-failure-pr")).toHaveText(/^#\d+$/);
-  await expect(failure(made.failing).getByTestId("board-failure-action")).toHaveText(
-    "Open failing check",
-  );
+  // The held worker's red build is its own to fix: never a row here.
+  await expect(failure(made.failing)).toHaveCount(0);
+  await expect(strip.getByText(/no agent is fixing/i)).toHaveCount(0);
+  // The cause, the worker, and a named step, in words beside the icon.
   await expect(failure(made.stopped).getByTestId("board-failure-cause")).toHaveText(
     "Spending limit",
   );
@@ -324,15 +319,22 @@ test("the failure card lists a stopped worker and red CI above the lines, names 
   const firstLine = await board(page).getByTestId("rail-row").first().boundingBox();
   expect(stripBox!.y + stripBox!.height).toBeLessThanOrEqual(firstLine!.y);
 
+  // Open goes to the worker, in Chat.
+  await failure(made.stopped).getByTestId("board-failure-open").click();
+  await expect(page).toHaveURL(new RegExp(`/t/${made.stopped}$`));
+  await expect(page.getByTestId("view-board")).toHaveCount(0);
+  await goInApp(page, `/t/${made.orchestratorThreadId}`);
+  await pickBoard(page);
+
   // Dismiss holds behind Undo, at the Board's foot; Undo brings it back.
-  await failure(made.failing).getByTestId("board-failure-dismiss").click();
-  await expect(failure(made.failing)).toHaveCount(0);
+  await failure(made.stopped).getByTestId("board-failure-dismiss").click();
+  await expect(failure(made.stopped)).toHaveCount(0);
   await expect(board(page).getByTestId("board-undo-undo")).toContainText("Dismissed");
   await board(page).getByTestId("board-undo-undo-button").click();
-  await expect(failure(made.failing)).toBeVisible();
+  await expect(failure(made.stopped)).toBeVisible();
 
   // Once it goes, it is kept in settings (`inbox.cleared`).
-  await failure(made.failing).getByTestId("board-failure-dismiss").click();
+  await failure(made.stopped).getByTestId("board-failure-dismiss").click();
   await expect
     .poll(
       () =>
@@ -344,15 +346,10 @@ test("the failure card lists a stopped worker and red CI above the lines, names 
         ),
       { timeout: 10_000 },
     )
-    .toContainEqual(expect.stringContaining("failure:checks:"));
-
-  // Open goes to the worker, in Chat.
-  await failure(made.stopped).getByTestId("board-failure-open").click();
-  await expect(page).toHaveURL(new RegExp(`/t/${made.stopped}$`));
-  await expect(page.getByTestId("view-board")).toHaveCount(0);
+    .toContainEqual(expect.stringContaining("failure:error:"));
 });
 
-test("a worker's own red CI leaves the Failing strip and Needs you, and returns once the user holds it", async ({
+test("a worker's red CI stays out of the Failing strip and Needs you, held by the user or not", async ({
   page,
 }, testInfo) => {
   // Held, so t-flaky's scripted approval can't land mid-test and move the count this compares.
@@ -366,26 +363,30 @@ test("a worker's own red CI leaves the Failing strip and Needs you, and returns 
   );
   const stopped = strip.locator(`[data-testid="board-failure"][data-thread-id="${made.stopped}"]`);
   const pill = page.getByTestId("overview-needs-you");
-  // Taken over, the red build is the user's.
-  await expect(failed).toHaveCount(1);
+  // Taken over, the red build is still its worker's: the user hears of it only if it asks.
   await expect(stopped).toHaveCount(1);
-  const before = Number(await pill.getAttribute("data-count"));
-  const unownedShot = testInfo.outputPath("unowned-ci.png");
-  await page.screenshot({ path: unownedShot });
-  await testInfo.attach("unowned-ci", { path: unownedShot });
-
-  // Handed back, the idle worker owns it, monitored or not: it isn't the user's to fix.
-  await page.evaluate((id) => window.gramMock!.releaseWorker(id), made.failing);
   await expect(failed).toHaveCount(0);
+  const before = Number(await pill.getAttribute("data-count"));
+  const heldShot = testInfo.outputPath("held-worker-ci.png");
+  await page.screenshot({ path: heldShot });
+  await testInfo.attach("held-worker-ci", { path: heldShot });
+
+  await page.evaluate((id) => window.gramMock!.releaseWorker(id), made.failing);
   await expect(stopped).toHaveCount(1);
-  await expect(pill).toHaveAttribute("data-count", String(before - 1));
+  await expect(failed).toHaveCount(0);
+  await expect(pill).toHaveAttribute("data-count", String(before));
   const ownedShot = testInfo.outputPath("worker-owned-ci.png");
   await page.screenshot({ path: ownedShot });
   await testInfo.attach("worker-owned-ci", { path: ownedShot });
+});
 
-  await page.evaluate((id) => window.gramMock!.takeOverWorker(id), made.failing);
-  await expect(failed).toHaveCount(1);
-  await expect(pill).toHaveAttribute("data-count", String(before));
+test("a repo that runs no CI gets one calm note on the Board, not a failure", async ({ page }) => {
+  await start(page, () => window.gramMock!.simulateNoCi());
+  const note = board(page).getByTestId("board-no-ci");
+  await expect(note).toHaveCount(1);
+  await expect(note).toContainText(/^No CI on \S+: its pull requests report no hosted checks/);
+  // A fact, not an alarm: nothing in the Failing strip for it.
+  await expect(board(page).getByTestId("board-failure")).toHaveCount(0);
 });
 
 test("⌘⇧D, the orchestrator's header, the palette and Memory all open the Board view", async ({

@@ -324,9 +324,9 @@ export function simulateUnpushed(core: MockCoreScenes, threadId: ThreadId, commi
 }
 
 /**
- * Dev and e2e hook: the ask stack's scenario with two failures beside its asks, for the Failing
- * strip: the board's working worker stopped on a spending limit, and the in-review worker's PR
- * checks red while the user holds it (Take over), so no worker owns the fix.
+ * Dev and e2e hook: the ask stack's scenario with a failure beside its asks, for the Failing strip:
+ * the board's working worker stopped on a spending limit. The in-review worker's PR checks go red
+ * while the user holds it (Take over): still its worker's to fix, so never a failure of the user's.
  */
 export async function simulateFailures(core: MockCoreScenes): Promise<MockFailuresSimulation> {
   const asks = await core.mock.simulateAsks();
@@ -348,6 +348,24 @@ export async function simulateFailures(core: MockCoreScenes): Promise<MockFailur
   }
   await core.orchestration.takeOver(asks.inReview);
   return { ...asks, stopped: asks.working, failing: asks.inReview };
+}
+
+/**
+ * Dev and e2e hook: the ask stack's scenario where the in-review worker's repo runs no CI, as one
+ * with Actions turned off: its PR reports no hosted checks and its project has no local check. The
+ * Board says so once, calmly (`NoCiNote`), instead of a mark per PR.
+ */
+export async function simulateNoCi(core: MockCoreScenes): Promise<MockAsksSimulation> {
+  const asks = await core.mock.simulateAsks();
+  const runtime = core.runtime(asks.inReview);
+  const git = runtime.summary.git;
+  if (git?.pr !== undefined) {
+    const state = { ...git, pr: { ...git.pr, checks: "none" as const } };
+    runtime.summary = { ...runtime.summary, git: state };
+    core.emit({ type: "git.state", threadId: asks.inReview, state });
+  }
+  core.orchestration.noLocalCheck(runtime.summary.thread.projectId, asks.workspaceId);
+  return asks;
 }
 
 export function simulateChecks(

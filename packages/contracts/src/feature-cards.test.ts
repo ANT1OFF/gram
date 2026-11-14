@@ -502,7 +502,8 @@ describe("event budget", () => {
   it("lets merges, failures and asks speak; wakes and stage moves never reach the stream", () => {
     expect(EVENT_BUDGET.merged).toBe("line");
     expect(EVENT_BUDGET.error).toBe("line");
-    expect(EVENT_BUDGET.checksFailing).toBe("line");
+    // A failing check is its worker's to fix, or its orchestrator's: it updates the card only.
+    expect(EVENT_BUDGET.checksFailing).toBe("card");
     expect(EVENT_BUDGET.needsUser).toBe("line");
     expect(EVENT_BUDGET.question).toBe("line");
     expect(EVENT_BUDGET.wake).toBe("silent");
@@ -531,60 +532,30 @@ describe("event budget", () => {
     ]);
   });
 
-  it("says unowned checks failing once, on the digest where they turned", () => {
-    // An ended worker can't fix its PR, so its red CI is the user's.
-    const ended = { state: "inReview", status: "ended" } as const;
-    const passing = digest(1, {
-      features: [feature([worker({ ...ended, pr: pr({ checks: "pending" }) })])],
+  it.each([
+    ["running", { state: "inReview", status: "running" }],
+    ["at rest", { state: "inReview", status: "idle" }],
+    ["waiting on an approval", { state: "needsUser", status: "needsApproval" }],
+    ["reporting itself blocked", { state: "blocked", status: "idle", reportStands: true }],
+    ["closed", { state: "inReview", status: "ended" }],
+    ["archived", { state: "archived", status: "idle" }],
+  ] as const)("never speaks failing checks of a worker %s", (_, own) => {
+    const pending = digest(1, {
+      features: [feature([worker({ ...own, pr: pr({ checks: "pending" }) })])],
     });
     const failing = digest(2, {
-      features: [feature([worker({ ...ended, pr: pr({ checks: "failing" }) })])],
+      features: [feature([worker({ ...own, pr: pr({ checks: "failing" }) })])],
     });
-    const still = digest(3, { features: failing.features });
-    expect(streamLinesOf(failing, passing).map((line) => line.words)).toEqual(["checks fail"]);
-    expect(streamLinesOf(still, failing)).toEqual([]);
-  });
-
-  it("keeps owned CI quiet while away, and speaks when the worker reports itself blocked", () => {
-    const monitored = worker({ state: "inReview", pr: pr({ checks: "failing", monitored: true }) });
-    const pending = digest(1, {
-      features: [feature([{ ...monitored, pr: { ...monitored.pr!, checks: "pending" } }])],
-    });
-    const owned = digest(2, { features: [feature([monitored])] });
-    const idle = digest(3, {
-      features: [feature([{ ...monitored, pr: pr({ checks: "failing" }) }])],
-    });
-    const stopped = digest(4, {
-      features: [feature([{ ...monitored, reportStands: true }])],
-    });
-    expect(streamLinesOf(owned, pending)).toEqual([]);
-    // Idle and unmonitored, it can still be woken to fix them.
-    expect(streamLinesOf(idle, owned)).toEqual([]);
-    expect(streamLinesOf(stopped, owned).map((line) => line.words)).toEqual(["checks fail"]);
+    expect(streamLinesOf(failing, pending)).toEqual([]);
     expect(
       sinceYouLeftOf(
         [
           { digest: pending, at: 1 },
-          { digest: owned, at: 2 },
+          { digest: failing, at: 2 },
         ],
         0,
       ),
     ).toBeUndefined();
-  });
-
-  it("keeps a shared PR quiet while any live worker owns its failing CI", () => {
-    const twin = worker({ threadId: B, state: "inReview", pr: pr({ checks: "pending" }) });
-    const owner = worker({ state: "inReview", pr: pr({ checks: "pending", monitored: true }) });
-    const pending = digest(1, { features: [feature([twin, owner])] });
-    const failed = digest(2, {
-      features: [
-        feature([
-          { ...twin, pr: { ...twin.pr!, checks: "failing" } },
-          { ...owner, pr: { ...owner.pr!, checks: "failing" } },
-        ]),
-      ],
-    });
-    expect(streamLinesOf(failed, pending)).toEqual([]);
   });
 
   it("stays silent for a wake that moved nothing", () => {

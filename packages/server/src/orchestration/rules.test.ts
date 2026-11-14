@@ -1174,6 +1174,68 @@ const digest = (
   after: ReadonlyArray<WorkerLedgerEntry>,
 ) => digestDiff({ snapshot: acknowledged(...before), ledger: ledgerOf(...after), reports: [] });
 
+describe("digestDiff on failing checks", () => {
+  const red = { repo: "Example/Api", number: 7, state: "open" as const, checks: "failing" };
+  const owner = (over: Partial<WorkerLedgerEntry> = {}) =>
+    ledgerWorker({ state: "inReview", status: "idle", pr: red, ...over });
+
+  it.each([
+    ["running", { status: "running" }],
+    ["at rest", { status: "idle" }],
+    ["waiting on an approval", { state: "needsUser", status: "needsApproval" }],
+    ["asking a question", { state: "question", status: "idle", reportStands: true }],
+    ["stopped on an error", { state: "error", status: "error" }],
+    ["held by the user", { userIntervened: true }],
+  ] as const)("leaves a live worker's failing checks to it when %s", (_, over) => {
+    const diff = digest([owner()], [owner(over as Partial<WorkerLedgerEntry>)]);
+    expect(diff.notes.filter((note) => note.includes("failing checks"))).toEqual([]);
+  });
+
+  it("tells the orchestrator once when archiving leaves a failing PR without a live worker", () => {
+    const before = [owner()];
+    const after = [owner({ state: "archived" })];
+    const diff = digest(before, after);
+    expect(diff.notes).toEqual([
+      expect.stringMatching(
+        /^Feature mail-trigger: example\/api#7 has failing checks and no live worker owns them \(its worker "Mail trigger: control plane" is archived\)\. Follow it up: brief or spawn a worker to fix them, or close the PR; ask the user only if a fix needs them\.$/,
+      ),
+    ]);
+    expect(diff.worthWaking).toBe(true);
+    // Told once.
+    expect(
+      digestDiff({ snapshot: diff.nextSnapshot, ledger: ledgerOf(...after), reports: [] }).notes,
+    ).toEqual([]);
+  });
+
+  it("tells it when the worker's thread is closed or the worker is detached", () => {
+    expect(step([owner()], [owner({ status: "ended" })])).toEqual([
+      expect.stringContaining("(the thread of its worker"),
+    ]);
+    expect(step([owner()], [])).toEqual([expect.stringContaining("was detached or closed)")]);
+  });
+
+  it("stays quiet while another live worker follows the same PR", () => {
+    const twin = owner({ threadId: W2, title: "Runner" });
+    expect(step([owner(), twin], [owner({ state: "archived" }), twin])).toEqual([]);
+    expect(step([owner(), twin], [twin])).toEqual([]);
+  });
+
+  it("says nothing new of a worker archived before, whose facts no longer refresh", () => {
+    const archived = owner({ state: "archived" });
+    expect(step([archived], [archived])).toEqual([]);
+    expect(digestDiff({ snapshot: {}, ledger: ledgerOf(archived), reports: [] }).notes).toEqual([]);
+  });
+
+  it("names green or closed PRs never", () => {
+    expect(
+      step([owner()], [owner({ state: "archived", pr: { ...red, checks: "passing" } })]),
+    ).toEqual([]);
+    expect(
+      step([owner()], [owner({ state: "archived", pr: { ...red, state: "closed" } })]),
+    ).toEqual([]);
+  });
+});
+
 describe("digestDiff", () => {
   it("says nothing about an empty workspace", () => {
     expect(digestDiff({ snapshot: {}, ledger: ledgerOf(), reports: [] })).toEqual({

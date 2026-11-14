@@ -188,6 +188,7 @@ import {
   simulateMissingFolder,
   simulateUnpushed,
   simulateFailures,
+  simulateNoCi,
   simulateChecks,
   simulateRecap,
   simulateReviewRequest,
@@ -2859,6 +2860,11 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   async simulateSettingsChange(patch: SettingsPatch) {
     await this.#settings.api.updateSettings(patch);
     this.#emit({ type: "settings.changed" });
+  }
+
+  /** `simulateNoCi` (`mock-scenarios.ts`). */
+  async simulateNoCi(): Promise<MockAsksSimulation> {
+    return simulateNoCi(this.#scenes);
   }
 
   /** `simulateChecks` (`mock-scenarios.ts`). */
