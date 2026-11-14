@@ -406,9 +406,10 @@ ask you something. **Show all activity** (the title bar's "…", under View) sho
 everything, and so does finding a folded reply with ⌘F. Only the view changes: the orchestrator
 still receives every digest.
 
-**Conversation only** (the thread header's speech-bubble button, or the same menus) takes the
+**Conversation only** (the thread header's speech-bubble button, the same menus, or ⌘⌥5) takes the
 agent's tool calls, commands and reasoning out of every transcript and leaves what was said, the
-plan, questions, approvals, errors, attached images and the pages and files it published. A running
+plan, questions, approvals, errors, images (attached ones, and the screenshots and pictures a tool
+call returned, as thumbnails) and the pages and files it published. A running
 turn shows one "Working" line with its time. It is one switch for every thread, kept across
 launches, and it only changes the view: the trace and the side panels still show the work.
 
