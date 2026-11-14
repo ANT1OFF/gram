@@ -453,7 +453,10 @@ the local app, as the other `/machines/*` routes are.
   readied and hasn't dialled in since, and `wanted` when a thread waits on it now. A message sent
   to a thread on a machine that is away, or readied and not yet stopped, waits up to five minutes
   for it, so start a host (or take the stop back) when `wanted` turns true. With the setting on,
-  this wait applies to any joined machine that is away.
+  this wait applies to any joined machine that is away. A thread started
+  [before its machine](THREAD_PROFILES.md#before-its-machine) is on no machine yet, so it shows
+  in no machine's `wanted`: its message waits in its queue, with no time limit, until a machine
+  is named for it.
 - `POST /machines/stop/resume` opens again the sessions the stop put to rest, once a host has
   dialled in, and answers which it reopened, which folders it made again (`restored`) and which
   are still missing from the disk (`missing`, with why when the machine was asked). Threads that
