@@ -91,7 +91,19 @@ describe("noticeReasons", () => {
     expect(noticeReasons(snap, { ...snap, verdict: "changesRequested" })).toEqual(["verdict"]);
     expect(noticeReasons(snap, { ...snap, mergeState: "DIRTY" })).toEqual(["merge"]);
     // Mergeable past a check nobody requires.
-    expect(noticeReasons(snap, { ...snap, mergeState: "UNSTABLE" })).toEqual(["merge"]);
+    expect(noticeReasons(snap, { ...snap, checks: "passing", mergeState: "UNSTABLE" })).toEqual([
+      "ci",
+      "merge",
+    ]);
+  });
+
+  it("ignores transient merge changes while preserving conflict and CI failure reasons", () => {
+    expect(noticeReasons(snap, { ...snap, mergeState: "UNKNOWN" })).toEqual([]);
+    expect(noticeReasons(snap, { ...snap, mergeState: "UNSTABLE" })).toEqual([]);
+    expect(noticeReasons(snap, { ...snap, mergeState: "CONFLICTING" })).toEqual(["merge"]);
+    expect(noticeReasons({ ...snap, checks: "passing" }, { ...snap, checks: "failing" })).toEqual([
+      "ci",
+    ]);
   });
 
   it("stays quiet for checks restarting, a verdict cleared by a push, or passing merge states", () => {

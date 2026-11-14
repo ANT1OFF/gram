@@ -416,6 +416,229 @@ const turnsDone = (threadId: ThreadId) =>
   });
 
 describe("review monitor", () => {
+  for (const terminal of ["MERGED", "CLOSED"] as const) {
+    it.effect(`turns off the monitor on ${terminal} and suppresses the two #616 refreshes`, () =>
+      Effect.gen(function* () {
+        reset();
+        const id = yield* monitoredThread;
+        const store = yield* ThreadStore;
+        yield* store.updateSettings((s) => ({ ...s, reviewBots: [] }));
+        yield* (yield* ThreadRuntimes).updateThread(id, (t) => ({
+          ...t,
+          boundPr: { repo: "acme/web", number: 616, monitor: true, reviewMonitor: true },
+        }));
+        const pr = badge({ number: 616, headRefOid: "d6d2452", checks: "pending" });
+        yield* publish(id, pr);
+        // A CI settle is due before the PR merges/closes, but has not been delivered yet.
+        yield* publish(id, { ...pr, checks: "passing" });
+        for (const mergeState of ["UNSTABLE", "UNKNOWN"]) {
+          yield* publish(id, { ...pr, state: terminal, mergeState, checks: "passing" });
+          yield* TestClock.adjust("30 seconds");
+          yield* quiet;
+          expect(yield* notices(id)).toEqual([]);
+        }
+        expect((yield* store.getThread(id)).boundPr).toMatchObject({
+          number: 616,
+          monitor: true,
+          reviewMonitor: false,
+        });
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+    );
+  }
+
+  it.effect("keeps people's reviews and CI green notices without a review bot", () =>
+    Effect.gen(function* () {
+      reset();
+      const id = yield* monitoredThread;
+      yield* (yield* ThreadStore).updateSettings((s) => ({ ...s, reviewBots: [] }));
+      yield* publish(id, { ...reviewedBy([]), checks: "pending", mergeState: "UNSTABLE" });
+      yield* publish(id, {
+        ...reviewedBy([personReview("PRR_h1", "alice", "approved")]),
+        checks: "pending",
+        mergeState: "UNSTABLE",
+      });
+      yield* waitFor(
+        "person review without a bot",
+        humanNotices(id).pipe(Effect.map((n) => n.length === 1)),
+      );
+      yield* publish(id, badge({ checks: "passing", mergeState: "UNSTABLE" }));
+      yield* TestClock.adjust("30 seconds");
+      const delivered = yield* waitFor(
+        "CI green on UNSTABLE",
+        notices(id).pipe(Effect.map((n) => n.length === 1 && n)),
+      );
+      expect(delivered).toMatchObject([{ mergeState: "UNSTABLE", ciFailed: [] }]);
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect("drops queued review notices when a bot-reviewed PR merges", () =>
+    Effect.gen(function* () {
+      reset();
+      yield* (yield* FakeAgentControl).setSteerCapability(false);
+      const { id } = yield* busyThread;
+      yield* publish(id, badge({ checks: "pending" }));
+      yield* publish(id, badge({ checks: "passing" }));
+      yield* TestClock.adjust("30 seconds");
+      yield* waitFor("queued CI notice", notices(id).pipe(Effect.map((n) => n.length === 1)));
+      yield* publish(id, badge({ state: "MERGED", mergeState: "UNSTABLE" }));
+      expect(yield* notices(id)).toEqual([]);
+      expect((yield* (yield* ThreadStore).getThread(id)).boundPr?.reviewMonitor).toBe(false);
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect("does not deliver a review fetched across a PR merge", () =>
+    Effect.gen(function* () {
+      reset();
+      const id = yield* monitoredThread;
+      yield* publish(id, badge());
+      world.fetchStarted = yield* Deferred.make<void>();
+      world.fetchGate = yield* Deferred.make<void>();
+      yield* round(id);
+      yield* TestClock.adjust("30 seconds");
+      yield* Deferred.await(world.fetchStarted);
+      yield* publish(id, badge({ state: "MERGED" }));
+      yield* Deferred.succeed(world.fetchGate, undefined);
+      yield* quiet;
+      expect(yield* notices(id)).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  for (const [ready, equivalent] of [
+    ["CLEAN", "UNSTABLE"],
+    ["UNSTABLE", "CLEAN"],
+  ] as const) {
+    it.effect(`keeps an approved ${ready} notice when it becomes ${equivalent} during lookup`, () =>
+      Effect.gen(function* () {
+        reset();
+        const id = yield* monitoredThread;
+        const approved = reviewState({ verdictOnHead: "approved" });
+        yield* publish(id, badge({ mergeState: "DIRTY", review: approved }));
+        world.fetchStarted = yield* Deferred.make<void>();
+        world.fetchGate = yield* Deferred.make<void>();
+        yield* publish(id, badge({ mergeState: ready, review: approved }));
+        yield* TestClock.adjust("30 seconds");
+        yield* Deferred.await(world.fetchStarted);
+        yield* publish(id, badge({ mergeState: equivalent, review: approved }));
+        yield* Deferred.succeed(world.fetchGate, undefined);
+        const delivered = yield* waitFor(
+          "ready notice across equivalent states",
+          notices(id).pipe(Effect.map((n) => n.length === 1 && n)),
+        );
+        expect(delivered).toMatchObject([{ verdict: "approved", mergeState: ready }]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+    );
+  }
+
+  for (const mergeState of ["UNKNOWN", "UNSTABLE"]) {
+    it.effect(`drops a merge-only notice that turns ${mergeState} during its review lookup`, () =>
+      Effect.gen(function* () {
+        reset();
+        const id = yield* monitoredThread;
+        yield* publish(id, badge({ checks: "pending" }));
+        world.fetchStarted = yield* Deferred.make<void>();
+        world.fetchGate = yield* Deferred.make<void>();
+        yield* publish(id, badge({ checks: "pending", mergeState: "DIRTY" }));
+        yield* TestClock.adjust("30 seconds");
+        yield* Deferred.await(world.fetchStarted);
+        yield* publish(id, badge({ checks: "pending", mergeState }));
+        yield* Deferred.succeed(world.fetchGate, undefined);
+        yield* quiet;
+        expect(yield* notices(id)).toEqual([]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+    );
+  }
+
+  it.effect(
+    "ignores bot verdicts and rounds without a configured bot, including unread badges",
+    () =>
+      Effect.gen(function* () {
+        reset();
+        const id = yield* monitoredThread;
+        yield* publish(id, badge());
+        yield* (yield* ThreadStore).updateSettings((s) => ({ ...s, reviewBots: [] }));
+        yield* publish(id, badge({ review: reviewState({ verdictOnHead: "approved" }) }));
+        yield* round(id);
+        yield* publish(id, badge({ reviewUnread: true }));
+        yield* TestClock.adjust("30 seconds");
+        yield* quiet;
+        expect(yield* notices(id)).toEqual([]);
+        // CI settling still wakes the agent, even though bot reviews have not been read.
+        yield* publish(id, badge({ checks: "pending", reviewUnread: true }));
+        yield* publish(id, badge({ checks: "passing", reviewUnread: true }));
+        yield* TestClock.adjust("30 seconds");
+        yield* waitFor("CI green notice", notices(id).pipe(Effect.map((n) => n.length === 1)));
+        expect((yield* inputs(id))[0]?.text).toBe(
+          "Review update on #12 (head aaaaaaa): merge state BLOCKED.",
+        );
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  for (const mergeState of ["UNKNOWN", "UNSTABLE"]) {
+    it.effect(`ignores a merge-only change to ${mergeState} with pending checks`, () =>
+      Effect.gen(function* () {
+        reset();
+        const id = yield* monitoredThread;
+        yield* (yield* ThreadStore).updateSettings((s) => ({ ...s, reviewBots: [] }));
+        yield* publish(id, badge({ checks: "pending" }));
+        yield* publish(id, badge({ checks: "pending", mergeState }));
+        yield* TestClock.adjust("30 seconds");
+        yield* quiet;
+        expect(yield* notices(id)).toEqual([]);
+        // A conflict scheduled earlier also ceases to be useful if it becomes transient.
+        yield* publish(id, badge({ checks: "pending", mergeState: "DIRTY" }));
+        yield* publish(id, badge({ checks: "pending", mergeState }));
+        yield* TestClock.adjust("30 seconds");
+        yield* quiet;
+        expect(yield* notices(id)).toEqual([]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+    );
+  }
+
+  for (const mergeState of ["UNKNOWN", "UNSTABLE", "BLOCKED", "DIRTY", "CONFLICTING"]) {
+    it.effect(`keeps real CI failures on ${mergeState} without a bot`, () =>
+      Effect.gen(function* () {
+        reset();
+        const id = yield* monitoredThread;
+        yield* (yield* ThreadStore).updateSettings((s) => ({ ...s, reviewBots: [] }));
+        yield* publish(id, badge({ checks: "passing" }));
+        world.checkRuns = [{ name: "build", status: "failing", link: "" }];
+        yield* publish(id, badge({ checks: "failing", mergeState }));
+        yield* TestClock.adjust("30 seconds");
+        const delivered = yield* waitFor(
+          "CI failure",
+          notices(id).pipe(Effect.map((n) => n.length === 1 && n)),
+        );
+        expect(delivered).toMatchObject([{ mergeState, ciFailed: ["build"] }]);
+        expect((yield* inputs(id))[0]?.text).not.toContain("bot verdict");
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+    );
+  }
+
+  for (const mergeState of ["DIRTY", "CONFLICTING", "BLOCKED"]) {
+    it.effect(`notifies for ${mergeState} only when the agent has work`, () =>
+      Effect.gen(function* () {
+        reset();
+        const id = yield* monitoredThread;
+        yield* publish(id, badge({ mergeState: "UNKNOWN", review: reviewState() }));
+        if (mergeState === "BLOCKED") {
+          yield* publish(id, badge({ mergeState, review: reviewState() }));
+          yield* TestClock.adjust("30 seconds");
+          yield* quiet;
+          expect(yield* notices(id)).toEqual([]);
+          yield* publish(id, badge({ mergeState: "UNKNOWN", review: reviewState() }));
+          world.review = { available: true, threads: [botThread("PRRT_1", "blocker")] };
+        }
+        yield* publish(id, badge({ mergeState, review: reviewState() }));
+        yield* TestClock.adjust("30 seconds");
+        const delivered = yield* waitFor(
+          "actionable merge notice",
+          notices(id).pipe(Effect.map((n) => n.length === 1 && n)),
+        );
+        expect(delivered).toMatchObject([{ mergeState }]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+    );
+  }
+
   it.effect(
     "keeps what it saw with the binding, and after a restart tells what changed meanwhile",
     () =>
@@ -1403,6 +1626,24 @@ describe("babysit mode", () => {
       const id = yield* monitoredThread;
       const babysit = yield* Babysit;
       const runtimes = yield* ThreadRuntimes;
+      const hub = yield* EventHub;
+      const notified: Array<Extract<ServerEvent, { type: "notify" }>> = [];
+      const subscribed = yield* Deferred.make<void>();
+      yield* hub
+        .serverEvents(
+          Deferred.succeed(subscribed, undefined).pipe(
+            Effect.as({ type: "threads.snapshot", threads: [] } as const),
+          ),
+        )
+        .pipe(
+          Stream.runForEach((event) =>
+            Effect.sync(() => {
+              if (event.type === "notify") notified.push(event);
+            }),
+          ),
+          Effect.forkScoped,
+        );
+      yield* Deferred.await(subscribed);
       yield* babysit.setEnabled(id, true);
       yield* publish(
         id,
@@ -1415,6 +1656,16 @@ describe("babysit mode", () => {
         report: { number: 12, verdict: "approved", checks: "passing", merged: false },
       });
       expect(thread.completedAt).toBeDefined();
+      yield* waitFor(
+        "ready-to-merge notification",
+        Effect.sync(() => notified.length > 0),
+      );
+      expect(notified).toContainEqual(
+        expect.objectContaining({
+          title: "#12 is ready to merge",
+          body: "Approved on head, checks green, merge state clean. Not merged.",
+        }),
+      );
       expect(JSON.stringify(yield* runtimes.replay(id))).toContain("data-babysit-report");
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );

@@ -49,16 +49,22 @@ const findingLine = (finding: ReviewNoticeFinding) => {
 };
 
 /** The notice as the text the agent reads; the transcript renders the structured form as a card. */
-export const serializeReviewNotice = (notice: ReviewNotice): string => {
+export const serializeReviewNotice = (notice: ReviewNotice, reviewBotConfigured = true): string => {
   const head = notice.headRefOid === undefined ? "" : ` (head ${notice.headRefOid.slice(0, 7)})`;
   const facts = [
-    notice.verdict === undefined
-      ? "no bot verdict on head yet"
-      : `bot verdict on head: ${VERDICT_TEXT[notice.verdict]}`,
+    ...(reviewBotConfigured
+      ? [
+          notice.verdict === undefined
+            ? "no bot verdict on head yet"
+            : `bot verdict on head: ${VERDICT_TEXT[notice.verdict]}`,
+        ]
+      : []),
     ...(notice.mergeState === undefined ? [] : [`merge state ${notice.mergeState}`]),
     ...(notice.round === undefined ? [] : [`round ${notice.round}`]),
   ];
-  const lines = [`Review update on #${notice.number}${head}: ${facts.join("; ")}.`];
+  const lines = [
+    `Review update on #${notice.number}${head}${facts.length === 0 ? "" : `: ${facts.join("; ")}`}.`,
+  ];
   if (notice.ciFailed.length > 0) lines.push(`CI failed: ${notice.ciFailed.join(", ")}`);
   if (notice.blockers.length > 0) {
     lines.push(`Blockers (${notice.blockers.length}):`, ...notice.blockers.map(findingLine));
