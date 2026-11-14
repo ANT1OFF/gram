@@ -104,6 +104,19 @@ describe("the start card", () => {
     });
   });
 
+  it("starts at once, choosing nothing, where a machine reaches all of the person's repositories", async () => {
+    useEmbedShell.setState({ machines: { noun: "sandbox", repositories: "theirs" } });
+    const calls = serve([{ available: true }]);
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: /Start a sandbox/ }));
+    await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
+    expect(screen.queryByPlaceholderText("owner/name")).toBeNull();
+    expect(calls.find((call) => call.method === "POST")).toMatchObject({
+      url: expect.stringContaining("/machines/on-demand/start"),
+      body: JSON.stringify({ repositories: [] }),
+    });
+  });
+
   it("shows the start step by step, and nothing once the machine is up", async () => {
     serve([{ available: true, progress: { hostKey: "k", phase: "joining", at: 1 } }]);
     show();
