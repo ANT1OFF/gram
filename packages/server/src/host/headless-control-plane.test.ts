@@ -49,6 +49,7 @@ import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { FakeAgentControl, makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
+import { PROFILE_ORIGINS_DIR } from "../thread-profiles/repositories.ts";
 import { hostStatusOf } from "./claude-sign-in.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
@@ -271,6 +272,18 @@ describe.skipIf(!hasGit)("a headless control plane", () => {
         const app = yield* appClient(GramRpcs, port, cookie);
 
         const added = yield* app["projects.add"]({ root: project.root });
+
+        // Cloning by remote files the origin alone, reaching nothing (the remote's host doesn't
+        // answer), for the machine a thread is placed on to clone with its own credentials.
+        const filed = yield* app["projects.clone"]({ remote: REMOTE });
+        expect(filed.name).toBe("widgets");
+        expect(filed.root.startsWith(join(dir, "data", PROFILE_ORIGINS_DIR))).toBe(true);
+        expect(
+          execFileSync("git", ["-C", filed.root, "config", "--get", "remote.origin.url"], {
+            encoding: "utf8",
+          }).trim(),
+        ).toBe(REMOTE);
+        expect((yield* app["projects.clone"]({ remote: REMOTE })).id).toBe(filed.id);
 
         // With no machine joined, nothing can run: the server says so rather than run it here.
         const noMachine = yield* app["orchestrator.open"]({ projectId: added.id }).pipe(
