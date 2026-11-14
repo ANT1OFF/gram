@@ -224,9 +224,16 @@ describe("ObjectStore", () => {
             ),
           ).toBe(true);
 
+          // What the deployment keeps of each thread's agent sessions goes with its thread too.
+          store.objects.set(`sessions/${T1}/claude/s.jsonl`, Buffer.from("{}"));
+          store.objects.set("sessions/thread-2/claude/s.jsonl", Buffer.from("{}"));
+
           yield* hub.publish({ type: "thread.removed", threadId: T1 });
-          yield* eventually("the thread's objects deleted", () => store.objects.size === 1);
-          expect([...store.objects.keys()]).toEqual(["attachments/thread-2/b.txt"]);
+          yield* eventually("the thread's objects deleted", () => store.objects.size === 2);
+          expect([...store.objects.keys()].toSorted()).toEqual([
+            "attachments/thread-2/b.txt",
+            "sessions/thread-2/claude/s.jsonl",
+          ]);
         }),
       );
     }).pipe(Effect.scoped),
