@@ -76,8 +76,10 @@ build and test the pages around Gram.
 
 `mockThreads` gives that server threads of your own beside its own, each at an id you choose with a
 title and a plain-text conversation so far: `{ id, title, messages: [{ role, text }] }`. A page of
-yours that shows one of your threads then has something to show in a preview. It is ignored with a
-real server.
+yours that shows one of your threads then has something to show in a preview. With
+`awaitingMachine: {}` the thread is one [started before its machine](#a-thread-started-before-its-machine):
+its `user` messages wait in its queue, and `awaitingMachine: { failed: "…" }` is one no machine
+came for, saying that sentence. It is ignored with a real server.
 
 The answer is a handle: `shell` says `"on"` or `"off"` (whether the server took your additions),
 `update` replaces what it names of the navigation, the switcher, `threads`, `panel`, `threadsPage`, `newEntry` and `document` and keeps the rest
@@ -301,6 +303,61 @@ mountGram({
 
 - `noun`: the word for one, lower case ("machine" when left out).
 - `facts`: up to five short lines the card lists, in your deployment's own terms.
+- `startAgain`: asks for another machine for a thread that got none
+  ([below](#a-thread-started-before-its-machine)).
+
+### A thread started before its machine
+
+A thread your service starts with its machine named later
+([Before its machine](THREAD_PROFILES.md#before-its-machine)) opens at once, and its own page says
+how the wait stands. Nothing is mounted for it: the thread carries the state.
+
+- **While the machine starts.** The header's chip says "machine starting". The first message that
+  waits is drawn in the conversation as the person's own, with a dashed edge and "sent when the
+  machine has started" under it, then "Starting this thread's machine · usually under a minute"
+  with the time since the wait began. The prompt box still takes messages, which wait in the queue
+  over it ("Queued · waits for the machine"); none can be sent early. In the sidebar the thread sits
+  with the working ones, and its hover says what waits and since when.
+- **When no machine came.** The chip says "no machine", the message says "not sent yet, and kept",
+  and the line gives way to the failure: your sentence (`failed` on `POST /threads/machine-wait`) or
+  Gram's "No machine started for this thread.", then "What you sent is kept, and goes once a
+  machine has started." The thread moves under Needs you, as "No machine started".
+- **Try again.** Gram starts no machine, and a person's page may not call
+  `POST /threads/machine-wait` (it is your service's call, refused to a signed-in person). So the
+  failure's Try again is yours to answer:
+
+  ```ts
+  mountGram({
+    shell: {
+      machines: {
+        startAgain: async ({ threadId }) => {
+          await fetch(`/api/threads/${threadId}/machine`, { method: "POST" });
+        },
+      },
+    },
+  });
+  ```
+
+  Behind it your service does three things: `POST /threads/machine-wait` with `{ threadId }` alone,
+  which clears the failure and begins the five minutes again; starts another machine; and names it
+  with `POST /threads/move-to-machine` once it is online. Resolve as soon as you have asked. The
+  page then reads "Starting a machine again · the first didn't start", counted from the new try;
+  it reads so at once in the window that asked, and everywhere once the wait has begun again on the
+  server. Reject (or throw) when you can't ask: the failure stays, with "Couldn't ask for another
+  machine." and your error's message under it. It is called once per press, never while an earlier
+  call is still out. Read once, at mount.
+
+  Without `startAgain` the failure has no button and says "What you sent is kept. To try again,
+  start the thread again."
+
+- **Once it is placed** the thread is as any other: the chip names its machine, the message is
+  sent, and the queue goes after it.
+
+These screens say "machine" whatever `machines.noun` is. Their `data-testid`s: `pane-machine` (the
+chip, with `data-machine-state` `starting` or `no machine`), `machine-wait` (`data-state`
+`starting`, `again` or `failed`), `machine-wait-message`, `machine-wait-held`,
+`machine-wait-starting`, `machine-wait-elapsed`, `machine-wait-failed`, `machine-wait-sentence`,
+`machine-wait-retry` and `machine-wait-retry-failed`.
 
 ### The model list
 

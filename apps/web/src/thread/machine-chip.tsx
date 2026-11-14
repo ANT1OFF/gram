@@ -7,19 +7,24 @@ import { cn } from "@/lib/utils";
 import { tildify } from "@/new-thread/path";
 import { useHome } from "@/new-thread/use-folder";
 
+import { AwaitingMachineChip } from "./awaiting-machine";
 import { threadHost } from "./machine-mark";
 import { useMachineMark } from "./machine-marker";
 
 /**
  * Where a thread on another machine runs, in the pane header: the machine's name, and that it is
  * offline when it is, then its folder there (`~` for its home), with the whole path and the
- * machine's state on hover. Nothing for a thread on this machine.
+ * machine's state on hover. Nothing for a thread on this machine; for one started before its
+ * machine, that the machine is starting or that none came (`AwaitingMachineChip`).
  *
  * Two chips rather than one: short of room the header drops whole chips, and the folder is the one
  * to go, so the machine and its state stay as long as any chip does.
  */
 export function MachineChip({ thread, className }: { thread: Thread; className?: string }) {
   const hostId = threadHost(thread);
+  // On no machine yet: its wait in the machine's place, kept however narrow the pane, since
+  // nothing else in the header says why the thread hasn't answered.
+  if (thread.awaitingMachine !== undefined) return <AwaitingMachineChip thread={thread} />;
   if (hostId === undefined) return null;
   return <PlacedChip hostId={hostId} path={effectiveCheckout(thread).path} className={className} />;
 }

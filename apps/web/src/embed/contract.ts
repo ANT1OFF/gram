@@ -202,6 +202,16 @@ export interface ShellMachines {
    * before it stops, how long its files are kept, what it costs. None when left out.
    */
   readonly facts?: readonly string[];
+  /**
+   * Asks whoever starts the machines for another, for a thread that was started before its machine
+   * and got none (`Thread.awaitingMachine.failed`): the thread's Try again calls it. Gram starts no
+   * machine and its page can't begin the wait again itself, so the app's own service does both:
+   * `POST /threads/machine-wait` with the thread's id alone, then a machine, then its naming. Resolve
+   * once asked; the thread then reads as starting again. A rejection's message is shown under the
+   * failure, which stays. Left out, the failure has no Try again and says to start the thread
+   * again.
+   */
+  readonly startAgain?: (request: { readonly threadId: string }) => void | Promise<void>;
 }
 
 /**
@@ -543,6 +553,12 @@ export interface MockThread {
     readonly brief: string;
     readonly askedBy?: string;
   };
+  /**
+   * Makes it a thread started before its machine, which still waits for one: on no machine, with
+   * its `user` messages waiting in its queue in place of a conversation. With `failed`, no machine
+   * came, and that is the sentence it says. Ignored with `worker`.
+   */
+  readonly awaitingMachine?: { readonly failed?: string };
 }
 
 /** A palette's ten seed colours, as Gram's own palettes define them (hex). */

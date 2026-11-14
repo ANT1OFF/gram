@@ -12,6 +12,7 @@ import {
   settledRow,
   STATUS_DISPLAY,
   statusHint,
+  threadStatusOf,
 } from "./status";
 
 describe("activityLine", () => {
@@ -48,6 +49,36 @@ describe("backgroundWorking", () => {
 describe("rowStatus", () => {
   const open = {} as Thread;
   const merged = { completedAt: 1, completedReason: "prMerged" } as unknown as Thread;
+
+  it("says a thread's wait for its machine before any status of its own", () => {
+    const starting = { awaitingMachine: { since: 1 } } as unknown as Thread;
+    expect(rowStatus(starting, "cold", undefined, undefined, [], undefined, 1)).toMatchObject({
+      label: "Machine starting",
+      title: "Its machine is starting · 1 message waits",
+      tone: "text-status-working",
+      working: true,
+    });
+    expect(rowStatus(starting, "cold", undefined).title).toBe("Its machine is starting");
+    const failed = {
+      awaitingMachine: { since: 1, failed: { at: 2, message: "No capacity." } },
+    } as unknown as Thread;
+    expect(rowStatus(failed, "cold", undefined)).toMatchObject({
+      label: "No machine",
+      title: "No machine started · Try again in the thread",
+      tone: "text-destructive",
+      working: false,
+    });
+    expect(
+      threadStatusOf({
+        thread: starting,
+        status: "cold",
+        queue: [
+          { id: "q1" as never, input: { text: "one" } },
+          { id: "q2" as never, input: { text: "two" } },
+        ],
+      }).title,
+    ).toBe("Its machine is starting · 2 messages wait");
+  });
 
   it("names the status in both the label and the tooltip", () => {
     expect(rowStatus(open, "needsApproval", undefined)).toMatchObject({
