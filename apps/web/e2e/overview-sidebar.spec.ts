@@ -107,7 +107,7 @@ const liveFromCards = (page: Page, workspaceId: string) =>
     });
   }, workspaceId);
 
-/** Whether the orchestrator can't message it, and how many messages it has. */
+/** Whether the user is marked as talking to it, and how many messages it has. */
 const workerFacts = (page: Page, made: MockOneThreadSimulation, threadId: string) =>
   page.evaluate(
     async ({ workspaceId, target }) => {

@@ -390,7 +390,7 @@ export const workerWaitingOn = (
         kind: "held",
         short: "",
         detail:
-          "It's under your control, so the orchestrator can't message it. Hand it back when ready.",
+          "You're talking to it, so the orchestrator's messages wait behind yours. Hand it back when you're done.",
       },
     ]);
   }

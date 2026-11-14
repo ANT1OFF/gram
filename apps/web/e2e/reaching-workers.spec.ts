@@ -198,7 +198,7 @@ test("Take over holds a worker without a message, and Hand back returns it", asy
   expect(await isHeld(page, made, made.asking)).toBe(false);
   // While Take over is offered, a line under the header says what it would change.
   await expect(page.getByTestId("worker-banner-take-over")).toContainText(
-    "the orchestrator stops messaging it until you hand it back",
+    "the orchestrator's messages then wait behind yours",
   );
   // Shown as the line, it isn't a mark beside Take over too.
   await expect(page.getByTestId("worker-take-over-info")).toHaveCount(0);
@@ -241,7 +241,7 @@ test("Take over holds a worker without a message, and Hand back returns it", asy
   await expect(page.getByTestId("worker-take-over-info")).toHaveCount(0);
   await page.getByTestId("worker-take-over").hover();
   await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
-    "the orchestrator stops messaging it",
+    "the orchestrator's messages wait behind yours",
   );
   expect(await page.evaluate(() => window.gramMock!.getSettings())).toMatchObject({
     onboarding: { takeOverHintSeen: true },

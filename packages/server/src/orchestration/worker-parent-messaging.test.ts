@@ -183,7 +183,6 @@ describe.skipIf(!hasGit)("Full Auto worker parent messaging", () => {
           ).toMatch(/^no_authority:/);
         });
         for (const change of [
-          { parked: true },
           { role: "dream" },
           { workspaceId: "other-workspace" },
           { spawnedBy: undefined },
@@ -201,11 +200,19 @@ describe.skipIf(!hasGit)("Full Auto worker parent messaging", () => {
           yield* refused;
         }
         yield* store.updateThread(worker.thread.id, () => worker.thread);
-        for (const change of [
-          { parked: true },
-          { role: undefined },
-          { workspaceId: "other-workspace" },
-        ]) {
+        // An archived worker keeps its binding: archiving is housekeeping, not a detach.
+        yield* store.updateThread(worker.thread.id, (t) => ({ ...t, parked: true }));
+        expect(yield* tool.needsApproval!(message)).toBe(false);
+        yield* store.updateThread(worker.thread.id, () => worker.thread);
+        // An archived orchestrator is still the worker's: refused as a pause, never carded.
+        yield* store.updateThread(thread.id, (t) => ({ ...t, parked: true }));
+        expect(yield* tool.needsApproval!(message)).toBe(false);
+        expect(
+          (yield* definition.handle(worker.thread.id, message, { carded: false }).pipe(Effect.flip))
+            .message,
+        ).toMatch(/^paused: Your orchestrator is archived/);
+        yield* store.updateThread(thread.id, () => thread);
+        for (const change of [{ role: undefined }, { workspaceId: "other-workspace" }]) {
           yield* store.updateThread(
             thread.id,
             () =>
@@ -229,12 +236,14 @@ describe.skipIf(!hasGit)("Full Auto worker parent messaging", () => {
           yield* refused;
         }
         yield* store.putWorkspace(workspace);
+        // The worker's binding is its persisted `spawnedBy` and the workspace's orchestrator, so a
+        // missing or unreadable memo asks nobody to approve its message to its own parent.
         const outbox = yield* store.getOutbox(workspaceId);
         const decoded = yield* outboxOf(workspaceId);
         const { [worker.thread.id]: _worker, ...workers } = decoded.workers;
         for (const bad of [encodeOutbox({ ...decoded, workers }), "invalid-json"]) {
           yield* store.putOutbox(workspaceId, bad);
-          yield* refused;
+          expect(yield* tool.needsApproval!(message)).toBe(false);
         }
         yield* store.putOutbox(workspaceId, outbox!);
         // The relationship alone decides: no autonomy level puts a card on a worker's own parent.
@@ -336,16 +345,19 @@ describe.skipIf(!hasGit)("Full Auto worker parent messaging", () => {
             worker.thread.id,
             { approve: () => Effect.die("unexpected approval") },
           )[0]!;
-          const refused = yield* tool
-            .run({ threadId: thread.id, text: "Coordinate.", clientRequestId: "racy-send" })
-            .pipe(Effect.flip);
-          expect(refused.message).toMatch(
-            change === "pause"
-              ? /^paused:/
-              : change === "hold"
-                ? /^user_intervened:/
-                : /^no_authority:/,
-          );
+          const send = tool.run({
+            threadId: thread.id,
+            text: "Coordinate.",
+            clientRequestId: "racy-send",
+          });
+          if (change === "hold") {
+            // The user writing to the worker meanwhile keeps it the orchestrator's: it still sends.
+            expect(yield* send).toMatchObject({ threadId: thread.id, delivered: "steered" });
+            expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
+            return;
+          }
+          const refused = yield* send.pipe(Effect.flip);
+          expect(refused.message).toMatch(change === "pause" ? /^paused:/ : /^no_authority:/);
           expect((yield* runtimes.snapshot).find((s) => s.thread.id === thread.id)?.queue).toEqual(
             [],
           );
@@ -438,37 +450,46 @@ describe.skipIf(!hasGit)("Full Auto worker parent messaging", () => {
     ),
   );
 
-  it.effect("sameparent pauses and user holds refuse existing relationships and retries", () =>
-    inServer((world) =>
-      Effect.gen(function* () {
-        const { thread, worker, tool, workspaceId } = yield* setup(world);
-        const orchestration = yield* Orchestration;
-        const store = yield* ThreadStore;
-        const message = {
-          threadId: thread.id,
-          text: "Coordinate.",
-          clientRequestId: "parent-once",
-        };
-        expect(yield* tool.run(message)).toMatchObject({ delivered: "steered" });
-        yield* orchestration.setPaused(workspaceId, true);
-        expect(yield* tool.needsApproval!(message)).toBe(false);
-        expect((yield* tool.run(message).pipe(Effect.flip)).message).toMatch(/^paused:/);
-        yield* orchestration.setPaused(workspaceId, false);
-        const outbox = yield* outboxOf(workspaceId);
-        yield* store.putOutbox(
-          workspaceId,
-          encodeOutbox({
-            ...outbox,
-            workers: {
-              ...outbox.workers,
-              [worker.thread.id]: { ...outbox.workers[worker.thread.id]!, userIntervened: true },
-            },
-          }),
-        );
-        expect(yield* tool.needsApproval!(message)).toBe(false);
-        expect((yield* tool.run(message).pipe(Effect.flip)).message).toMatch(/^user_intervened:/);
-        expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
-      }),
-    ),
+  it.effect(
+    "sameparent pauses refuse existing relationships and retries; a user's hold doesn't",
+    () =>
+      inServer((world) =>
+        Effect.gen(function* () {
+          const { thread, worker, tool, workspaceId } = yield* setup(world);
+          const orchestration = yield* Orchestration;
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          const message = {
+            threadId: thread.id,
+            text: "Coordinate.",
+            clientRequestId: "parent-once",
+          };
+          expect(yield* tool.run(message)).toMatchObject({ delivered: "steered" });
+          yield* orchestration.setPaused(workspaceId, true);
+          expect(yield* tool.needsApproval!(message)).toBe(false);
+          expect((yield* tool.run(message).pipe(Effect.flip)).message).toMatch(/^paused:/);
+          yield* orchestration.setPaused(workspaceId, false);
+          const outbox = yield* outboxOf(workspaceId);
+          yield* store.putOutbox(
+            workspaceId,
+            encodeOutbox({
+              ...outbox,
+              workers: {
+                ...outbox.workers,
+                [worker.thread.id]: { ...outbox.workers[worker.thread.id]!, userIntervened: true },
+              },
+            }),
+          );
+          expect(yield* tool.needsApproval!(message)).toBe(false);
+          expect(yield* tool.run(message)).toMatchObject({ delivered: "steered", repeated: true });
+          // A new message from the worker the user is talking to goes too, without a card.
+          yield* runtimes.send(thread.id, { text: "User context." });
+          expect(yield* tool.run({ ...message, clientRequestId: "parent-twice" })).toMatchObject({
+            threadId: thread.id,
+            delivered: "steered",
+          });
+          expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
+        }),
+      ),
   );
 });

@@ -123,6 +123,66 @@ describe("merge_when_ready", () => {
     );
   }
 
+  it.effect.skipIf(!hasGit)(
+    "a user writing to an archived worker brings it back as its orchestrator's live worker",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            const runtimes = yield* ThreadRuntimes;
+            const registry = yield* AppToolRegistry;
+            const orchestration = yield* Orchestration;
+            const { session, thread, workspaceId } = yield* openOrchestrator(world);
+            const worker = yield* spawn(session, { feature: "archived-then-typed" });
+            yield* completeTurn(worker.session);
+            yield* atAutonomy(thread, "full");
+            world.prHeads.set(12, { headRefName: worker.thread.checkout.branch! });
+            const tools = registry.forTransport(worker.thread.id, "worker");
+            const tool = (name: string) => tools.find((t) => t.descriptor.name === name)!;
+            yield* tool("pr_bind").run({ repo: "acme/app", number: 12 });
+            yield* publishGit(world, worker.thread, { pr: armedWorkerBadge(false) });
+            // The orchestrator archived it; its binding stays.
+            yield* runtimes.updateThread(worker.thread.id, (t) => ({ ...t, parked: true }));
+            expect((yield* store.getThread(worker.thread.id)).parked).toBe(true);
+
+            yield* runtimes.send(worker.thread.id, { text: "Pick this back up and merge it." });
+            yield* waitReal(
+              "the worker back from the archive",
+              store.getThread(worker.thread.id).pipe(Effect.map((t) => !t.parked)),
+            );
+            const latest = yield* store.getThread(worker.thread.id);
+            expect(latest.spawnedBy?.threadId).toBe(thread.id);
+            expect(latest.workspaceId).toBe(workspaceId);
+
+            // Its own tools work as a live worker's, and none asks the user.
+            expect(yield* tool("message_orchestrator").needsApproval!({ text: "Back." })).toBe(
+              false,
+            );
+            expect(yield* tool("message_orchestrator").run({ text: "Back." })).toMatchObject({
+              threadId: thread.id,
+            });
+            expect(yield* tool("merge_when_ready").delegatedAtFullAutonomy!({})).toBe(true);
+            yield* tool("merge_when_ready").run({});
+            expect(
+              (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
+            ).toMatchObject({ allowedBy: "autonomy" });
+            yield* worker.session.callTool("report", {
+              state: "progress",
+              summary: "Armed the merge.",
+            });
+            expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
+            const row = (yield* orchestration.ledger(workspaceId)).features
+              .flatMap((f) => f.workers)
+              .find((w) => w.threadId === worker.thread.id);
+            expect(row?.state).not.toBe("archived");
+          }),
+        );
+      }).pipe(Effect.scoped),
+  );
+
   it.effect.skipIf(!hasGit)("remembers branches a worker observed in its held worktree", () =>
     Effect.gen(function* () {
       const world = yield* makeWorld;

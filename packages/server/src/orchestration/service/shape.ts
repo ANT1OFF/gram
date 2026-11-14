@@ -509,8 +509,9 @@ export interface OrchestrationShape {
     input: AdoptThreadInput,
   ): Effect.Effect<AdoptedThread, AppToolError>;
   /**
-   * Hands a worker the user wrote to back to its orchestrator: clears `userIntervened` and tells
-   * the next digest, without a word to the worker. A worker that isn't held is left as it is.
+   * "Hand back": says the user is done talking to a worker. Clears `userIntervened` and tells the
+   * next digest, without a word to the worker; a hint only, since the worker stayed its
+   * orchestrator's throughout. A worker without the flag is left as it is.
    */
   releaseWorker(threadId: ThreadId): Effect.Effect<void, ThreadNotFound | InvalidState>;
   /**
@@ -626,7 +627,7 @@ export interface OrchestrationShape {
   >;
   /** Message-only worker delegation to the bound parent or siblings, at every level of autonomy; reads only. */
   isWorkerSend(callerId: ThreadId, targetId: string): Effect.Effect<boolean>;
-  /** Rechecks current worker relationships, workspace pause and user holds before delivery. */
+  /** Rechecks current worker relationships and the workspace's pauses before delivery. */
   checkWorkerMessage(callerId: ThreadId, targetId: ThreadId): Effect.Effect<void, AppToolError>;
   /**
    * `named` pinned before the approval check: a known project as its id, a repo Gram doesn't

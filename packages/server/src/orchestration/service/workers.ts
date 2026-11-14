@@ -40,7 +40,6 @@ import type { Digests } from "./digests.ts";
 export interface WorkersDeps {
   readonly survey: LedgerWatch["survey"];
   readonly wakeFor: Digests["wakeFor"];
-  readonly wake: Digests["wake"];
 }
 
 /** Listing workers, their reports, and the user's holds on them. */
@@ -90,7 +89,7 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
     runtimes,
     findWorkspace,
   } = kit;
-  const { survey, wakeFor, wake } = deps;
+  const { survey, wakeFor } = deps;
 
   const listWorkers: OrchestrationShape["listWorkers"] = (callerId, options) =>
     Effect.gen(function* () {
@@ -201,9 +200,10 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
     });
 
   /**
-   * Ends the user's hold on a worker other than by a report, which says enough by itself: the
-   * user handing it back, or the hold lapsing. The next digest says which, and one is scheduled,
-   * since an orchestrator told nothing else would go on leaving the worker alone.
+   * Clears the board's "the user is talking to it" flag other than by a report, which says enough
+   * by itself: the user handing it back, or the flag lapsing. The worker was the orchestrator's
+   * throughout and nothing waited on the flag, so the next digest says which without a wake of its
+   * own.
    */
   const endHold = (workspaceId: WorkspaceId, worker: Thread, by: "user" | "lapsed") =>
     Effect.gen(function* () {
@@ -213,8 +213,8 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
         if (memo?.userIntervened !== true) return [outbox, false];
         const note =
           by === "user"
-            ? `The user handed "${worker.title}" [thread ${worker.id}] back to you; you may message it again.`
-            : `"${worker.title}" [thread ${worker.id}] sat idle ${USER_HOLD_IDLE_MS / 60_000} minutes after the user last wrote to it, so it is yours again; you may message it.`;
+            ? `The user handed "${worker.title}" [thread ${worker.id}] back to you: they are done talking to it.`
+            : `"${worker.title}" [thread ${worker.id}] sat idle ${USER_HOLD_IDLE_MS / 60_000} minutes after the user last wrote to it, so they are likely done talking to it.`;
         return [
           withNotes(
             {
@@ -233,7 +233,6 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
         data: { threadId: worker.id, by },
       });
       yield* orchestrationChanged(workspaceId);
-      yield* wake(workspaceId, by === "user" ? "a worker was handed back" : "a hold lapsed", true);
     });
 
   const releaseWorker: OrchestrationShape["releaseWorker"] = (threadId) =>

@@ -1107,6 +1107,9 @@ export const makeOrchestrationKit = Effect.gen(function* () {
 
   // Message-only authority: current workers can coordinate with their bound parent or siblings.
   // Read persisted relationships on every gate and dispatch; no thread text establishes ownership.
+  // The user writing to a worker changes none of this: it stays its orchestrator's worker, and its
+  // messages go as before. An archived caller keeps its binding too (a message the user writes to
+  // it brings it back, `onUserInput`); only an archived sibling takes nothing.
   const workerMessageRoute = (callerId: ThreadId, targetId?: string) =>
     Effect.gen(function* () {
       const caller = yield* findThread(callerId);
@@ -1118,47 +1121,47 @@ export const makeOrchestrationKit = Effect.gen(function* () {
         caller.id === target.id ||
         caller.spawnedBy === undefined ||
         caller.role !== undefined ||
-        caller.parked ||
-        target.parked ||
         !admittedForRole(caller.model.agent, "worker") ||
         caller.workspaceId === undefined ||
         caller.workspaceId !== target.workspaceId
       )
         return undefined;
       const owner = yield* authorityOf(caller.spawnedBy.threadId);
-      if (
-        owner === undefined ||
-        owner.thread.parked ||
-        owner.state.workspace.id !== caller.workspaceId
-      )
-        return undefined;
+      if (owner === undefined || owner.state.workspace.id !== caller.workspaceId) return undefined;
       const parent = target.id === owner.thread.id;
       if (
         !parent &&
-        (target.role !== undefined ||
+        (target.parked ||
+          target.role !== undefined ||
           target.spawnedBy?.threadId !== owner.thread.id ||
           !admittedForRole(target.model.agent, "worker"))
       )
         return undefined;
-      // A missing/unreadable membership memo must not silently lose a user hold.
-      const outbox = readStoredOutbox(yield* store.getOutbox(owner.state.workspace.id));
-      if (
-        outbox._tag !== "read" ||
-        outbox.state.workers[callerId] === undefined ||
-        (!parent && outbox.state.workers[target.id] === undefined)
-      )
-        return undefined;
-      const verdict = checkWorkerSend({
+      // A sibling is a member only once the workspace has recorded it. The caller's own binding is
+      // its persisted `spawnedBy` and the workspace's orchestrator, which `authorityOf` read above.
+      if (!parent) {
+        const outbox = readStoredOutbox(yield* store.getOutbox(owner.state.workspace.id));
+        if (outbox._tag !== "read" || outbox.state.workers[target.id] === undefined)
+          return undefined;
+      }
+      const checked = checkWorkerSend({
         // Worker sends also pass the ordinary per-sender rate, back-to-back and hop guard.
         recentSends: [],
         now: yield* Clock.currentTimeMillis,
         paused: owner.state.paused !== undefined,
         // A sibling of a paused feature takes no message: it would start its turn again.
         pausedFeature: parent ? undefined : pausedFeatureOf(owner.state, target),
-        userIntervened:
-          outbox.state.workers[callerId]?.userIntervened === true ||
-          (!parent && outbox.state.workers[target.id]?.userIntervened === true),
       });
+      // An archived orchestrator parks its workspace; until that pause is written, say the same.
+      const verdict: typeof checked =
+        checked.ok && owner.thread.parked
+          ? {
+              ok: false,
+              code: "paused",
+              reason:
+                "Your orchestrator is archived, so its workers' messages wait until the user brings it back. Carry on with what you can, or end your turn.",
+            }
+          : checked;
       return { thread: caller, state: owner.state, verdict };
     });
 
@@ -1191,7 +1194,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
 
   const isWorkerSend: OrchestrationShape["isWorkerSend"] = (callerId, targetId) =>
     workerSendAuthority(callerId, targetId).pipe(
-      // A pause/hold refuses delivery instead of asking the user to approve around it.
+      // A pause refuses delivery instead of asking the user to approve around it.
       Effect.map((authority) => authority !== undefined),
     );
 
