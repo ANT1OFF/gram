@@ -23,6 +23,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { randomUUID } from "node:crypto";
+import { ActingPerson } from "../embedding/person.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore, type WaitResolution } from "../persistence/thread-store.ts";
 
@@ -79,7 +80,9 @@ export interface ThreadWaitsShape {
    * message `draft.anchor` names, else the reply streaming now, or a message of its own. An update
    * that lands elsewhere marks the chip it left `revised`. Refuses a new item past `MAX_OPEN_WAITS`
    * before anything is drawn, and an `id` that names no open item. What the agent writes is no news
-   * to it; what another `source` writes goes in its next note.
+   * to it; what another `source` writes goes in its next note. A new item waits on a person where
+   * the server knows one (`WaitItem.person`): the one this call is made for when the user adds it,
+   * else whoever typed the thread's latest message. An update leaves that as it was.
    */
   put(
     threadId: ThreadId,
@@ -156,7 +159,8 @@ const waitChunk = (item: WaitItem, state?: "revised"): GramUIMessageChunk => ({
 /**
  * The one writer of `wait_items`: every change is stored and then
  * published as the thread's open items in full (`thread.waits`), one at a time, so the last event a
- * client sees is the last write.
+ * client sees is the last write. The hub gives each signed-in person's connections their own of
+ * them (`waitsFor`).
  */
 export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>()(
   "@gram/server/ThreadWaits",
@@ -230,6 +234,12 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
               const adds = previous === undefined || previous.suggested === true;
               if (adds && kept >= MAX_OPEN_WAITS) return yield* new WaitsFull({ open: kept });
               const now = Date.now();
+              const person =
+                previous !== undefined
+                  ? previous.person
+                  : source === "user"
+                    ? yield* ActingPerson
+                    : yield* store.lastSender(threadId);
               const drawn: WaitItem = {
                 id: previous?.id ?? newWaitId(),
                 kind: draft.kind,
@@ -242,6 +252,7 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
                 ...(previous === undefined
                   ? {}
                   : { updatedAt: now, revision: waitRevision(previous) + 1 }),
+                ...(person === undefined ? {} : { person }),
               };
               const messageId =
                 draft.anchor !== undefined
@@ -299,6 +310,8 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
                 (item) => item.source === "helper" && item.messageId === messageId,
               );
               if (seen || fullAt(all) >= MAX_OPEN_WAITS) return false;
+              // Suggested from a reply to whoever typed last: theirs to keep.
+              const person = yield* store.lastSender(threadId);
               const item: WaitItem = {
                 id: newWaitId(),
                 kind: draft.kind,
@@ -310,6 +323,7 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
                 createdAt: Date.now(),
                 messageId,
                 suggested: true,
+                ...(person === undefined ? {} : { person }),
               };
               yield* store.putWait(threadId, item);
               yield* publish(threadId);

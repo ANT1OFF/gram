@@ -58,6 +58,7 @@ describe("migration ordering gate", () => {
         [8, "actor_events"],
         [9, "queue_actor"],
         [10, "person_settings"],
+        [11, "wait_person"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -236,6 +237,7 @@ describe("the baseline", () => {
         [8, "actor_events"],
         [9, "queue_actor"],
         [10, "person_settings"],
+        [11, "wait_person"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -266,6 +268,7 @@ describe("the baseline", () => {
           "actor_events",
           "queue_actor",
           "person_settings",
+          "wait_person",
         ]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
     }),
@@ -307,6 +310,7 @@ describe("the baseline", () => {
             [8, "actor_events"],
             [9, "queue_actor"],
             [10, "person_settings"],
+            [11, "wait_person"],
           ]);
           // A closed thread has no live row, but must retain its permanent safety identity.
           if (reopen === 0) {
@@ -467,7 +471,7 @@ describe("the baseline", () => {
       for (let reopen = 0; reopen < 2; reopen++) {
         yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
-          expect((yield* applied).map((row) => row.name).slice(-7)).toEqual([
+          expect((yield* applied).map((row) => row.name).slice(-8)).toEqual([
             "merge_fences",
             "usage_limit_history",
             "message_parts",
@@ -475,6 +479,7 @@ describe("the baseline", () => {
             "actor_events",
             "queue_actor",
             "person_settings",
+            "wait_person",
           ]);
           expect(yield* sql`SELECT key, data FROM usage_limits`).toEqual([
             { key: "codex//five_hour", data: '{"synthetic":true}' },
@@ -592,6 +597,32 @@ describe("the baseline", () => {
             [nextId, "example"],
           ]);
         }).pipe(Effect.provide(open(next)));
+      }
+    }),
+  );
+  it.effect("upgrades the database before a wait item named a person: each is for anyone", () =>
+    Effect.gen(function* () {
+      const file = join(yield* tempDir, "previous-to-wait-person.db");
+      const entries = Object.entries(migrations);
+      const index = entries.findIndex(([key]) => /^\d+_wait_person$/.test(key));
+      expect(index).toBeGreaterThan(0);
+      const open = (record: Parameters<typeof migratorOptions>[0]) =>
+        SqliteMigrator.layer(migratorOptions(record)).pipe(
+          Layer.provideMerge(SqliteClient.layer({ filename: file })),
+        );
+      const item = JSON.stringify({ id: "w-1", kind: "draft", title: "T", source: "agent" });
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`INSERT INTO wait_items (thread_id, id, created_at, item)
+          VALUES ('t-1', 'w-1', 1, ${item})`;
+      }).pipe(Effect.provide(open(Object.fromEntries(entries.slice(0, index)))));
+      for (let reopen = 0; reopen < 2; reopen++) {
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          expect(yield* sql`SELECT thread_id, id, person, item FROM wait_items`).toEqual([
+            { thread_id: "t-1", id: "w-1", person: null, item },
+          ]);
+        }).pipe(Effect.provide(open(migrations)));
       }
     }),
   );

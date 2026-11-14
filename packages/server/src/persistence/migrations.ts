@@ -574,6 +574,16 @@ const personSettings = Effect.gen(function* () {
       AND json_type(value, '$.layout.grid') = 'object'`;
 });
 
+/**
+ * Who a Waiting on you item waits on: the signed-in person it was added for, as the item's own
+ * `person` says, or NULL for anyone. Every item so far is for anyone, and so is every item of a
+ * server nobody signs in to.
+ */
+const waitPerson = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE wait_items ADD COLUMN person TEXT`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
@@ -585,6 +595,7 @@ export const migrations = {
   "0008_actor_events": actorEvents,
   "0009_queue_actor": queueActor,
   "0010_person_settings": personSettings,
+  "0011_wait_person": waitPerson,
 };
 
 /**

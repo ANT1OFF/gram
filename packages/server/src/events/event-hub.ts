@@ -1,10 +1,11 @@
-import type { ServerEvent, ThreadFeedEvent, ThreadId } from "@gram/contracts";
+import { type ServerEvent, type ThreadFeedEvent, type ThreadId, waitsFor } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import { signedInPerson } from "../embedding/person.ts";
 import { BacklogGauge } from "./backlog.ts";
 import { ClientBuffer, serverEventKey, serverEventOrder } from "./client-buffer.ts";
 
@@ -133,6 +134,46 @@ interface Client<I> {
    */
   readonly wake: PubSub.PubSub<true>;
 }
+
+/**
+ * `event` as the connections opened for `person` are sent it: Waiting on you holds a signed-in
+ * person's own items and the ones for anyone (`waitsFor`), wherever the items came from. The same
+ * event when nothing of it is another person's, which is always so where nobody signs in.
+ */
+export const eventFor = (event: ServerEvent, person: string | undefined): ServerEvent => {
+  const reader = signedInPerson(person);
+  if (reader === undefined) return event;
+  if (event.type === "thread.waits") {
+    const waits = waitsFor(event.waits, reader);
+    const helperResolved =
+      event.helperResolved === undefined ? undefined : waitsFor(event.helperResolved, reader);
+    if (waits === event.waits && helperResolved === event.helperResolved) return event;
+    return {
+      type: "thread.waits",
+      threadId: event.threadId,
+      waits,
+      ...(helperResolved === undefined || helperResolved.length === 0 ? {} : { helperResolved }),
+    };
+  }
+  if (event.type === "threads.snapshot") {
+    let changed = false;
+    const threads = event.threads.map((summary) => {
+      const waits = summary.waits === undefined ? undefined : waitsFor(summary.waits, reader);
+      const helperResolved =
+        summary.helperResolved === undefined ? undefined : waitsFor(summary.helperResolved, reader);
+      if (waits === summary.waits && helperResolved === summary.helperResolved) return summary;
+      changed = true;
+      const { waits: _, helperResolved: __, ...rest } = summary;
+      return {
+        ...rest,
+        ...(waits === undefined || waits.length === 0 ? {} : { waits }),
+        ...(helperResolved === undefined || helperResolved.length === 0 ? {} : { helperResolved }),
+      };
+    });
+    return changed ? { type: "threads.snapshot", threads } : event;
+  }
+  return event;
+};
 
 /**
  * Publishing writes straight into each client's bounded buffer, so there's no per-client backlog
@@ -274,7 +315,7 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
         serverEvents: (snapshot, person) => {
           const head = snapshot.pipe(
             Effect.map((events): ReadonlyArray<ServerEvent> =>
-              "type" in events ? [events] : events,
+              ("type" in events ? [events] : events).map((event) => eventFor(event, person)),
             ),
           );
           return clientStream(eventClients, {
@@ -282,7 +323,7 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
             accept: () => true,
             person,
             start: head,
-            emit: (event) => event,
+            emit: (event) => eventFor(event, person),
             resync: head,
           });
         },
