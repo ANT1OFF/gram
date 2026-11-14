@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Conversation only directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .pane {
+        display: flex;
+        flex-direction: column;
+        min-height: 100%;
+        height: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px 8px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .head .title {
+        font-weight: 600;
+        flex: 1;
+        min-width: 0;
+      }
+      .ib {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 7px;
+        border: 0;
+        border-radius: var(--radius-md);
+        background: transparent;
+        color: var(--fg-muted);
+        font: inherit;
+        font-size: 12px;
+      }
+      .ib[aria-pressed="true"] {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .seg {
+        display: inline-flex;
+        gap: 2px;
+        padding: 2px;
+        border-radius: var(--radius-md);
+        background: color-mix(in oklab, var(--fg) 6%, transparent);
+      }
+      .seg .ib {
+        height: 24px;
+      }
+      .seg .ib[aria-pressed="true"] {
+        background: var(--surface-1);
+      }
+      .body {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+      }
+      .talk {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        flex: 1;
+        min-width: 0;
+        padding: 16px;
+      }
+      .talk p {
+        margin: 0;
+      }
+      .you {
+        align-self: flex-end;
+        max-width: 80%;
+        padding: 8px 12px;
+        border-radius: var(--radius-xl);
+        background: var(--surface-2, var(--surface-1));
+      }
+      .work,
+      .live {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .live {
+        color: var(--fg);
+      }
+      .work {
+        border: 0;
+        padding: 0;
+        background: none;
+        font: inherit;
+        font-size: 13px;
+        align-self: flex-start;
+      }
+      .tool {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .tool code {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--fg);
+      }
+      .box {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        background: var(--surface-1);
+        max-width: 460px;
+      }
+      .opt {
+        display: flex;
+        gap: 10px;
+        align-items: baseline;
+        padding: 8px 10px;
+        border: 0;
+        border-radius: var(--radius-md);
+        background: color-mix(in oklab, var(--fg) 5%, transparent);
+        color: var(--fg);
+        font: inherit;
+        text-align: left;
+      }
+      .opt .k {
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .steps {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        font-size: 13px;
+      }
+      .steps li {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .steps .done {
+        color: var(--fg-muted);
+        text-decoration: line-through;
+      }
+      .steps .todo-step {
+        color: var(--fg-muted);
+      }
+      .art {
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
+      }
+      .art .thumb {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        border-radius: var(--radius-md);
+        background: color-mix(in oklab, var(--fg) 7%, transparent);
+        color: var(--fg-muted);
+      }
+      .shot {
+        min-height: 96px;
+        max-width: 300px;
+      }
+      .compose {
+        margin: 0 16px 14px;
+        padding: 10px 14px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl);
+        background: var(--surface-1);
+        color: var(--fg-muted);
+      }
+      .side {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        width: 250px;
+        padding: 12px;
+        border-left: 1px solid var(--border-subtle);
+        background: var(--surface-1);
+      }
+      .side h4 {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--fg-muted);
+      }
+      .side .tool {
+        font-size: 12px;
+      }
+      .side .tool code {
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tool .spinner,
+      .live .spinner {
+        width: 12px;
+        height: 12px;
+      }
+      svg.icon {
+        width: 15px;
+        height: 15px;
+        flex: none;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        One thread, mid-turn, drawn four ways: as it is today, and three ways to read it without the
+        commands. The switch and what is left where the work was differ in each. Pick one by name.
+      </p>
+
+      <section class="board" data-name="Today" data-size="620x760">
+        <div class="board-frame">
+          <div class="pane">
+            <div class="head">
+              <span class="title truncate">Retry the mail trigger</span>
+              <button class="ib" type="button" aria-label="More"><i data-icon="more"></i></button>
+            </div>
+            <div class="body">
+              <div class="talk">
+                <p class="you">
+                  The mail trigger drops a message when the inbox times out. Can it retry?
+                </p>
+                <button class="work" type="button">
+                  Worked 3m 12s · 14 tools <i data-icon="right"></i>
+                </button>
+                <p>
+                  The trigger gave up on the first timeout. It now retries three times with a
+                  growing wait, and the dropped message from this morning went through on the second
+                  try.
+                </p>
+                <div class="placeholder shot">Screenshot: the run log, second try succeeds</div>
+                <div class="box art">
+                  <span class="thumb"><i data-icon="file"></i></span>
+                  <span class="grow"
+                    ><strong>retry-notes.md</strong><br /><span class="muted small"
+                      >Written this turn</span
+                    ></span
+                  >
+                  <button class="btn sm" type="button">Open</button>
+                </div>
+                <p class="you">Good. Add a test and push it.</p>
+                <p>I'll cover the timeout and the give-up case.</p>
+                <div class="tool">
+                  <i data-icon="okcircle"></i>Edited <code>retry.test.ts</code>
+                </div>
+                <div class="tool"><i data-icon="okcircle"></i>Ran <code>bun test retry</code></div>
+                <p>Both cases pass. One thing before I push:</p>
+                <div class="box">
+                  <strong>Should a message that fails all three tries be kept?</strong>
+                  <button class="opt" type="button">
+                    <span class="k">A</span>Keep it in a failed list
+                    <span class="badge">Recommended</span>
+                  </button>
+                  <button class="opt" type="button">
+                    <span class="k">B</span>Drop it and log the loss
+                  </button>
+                </div>
+                <div class="tool">
+                  <span class="spinner"></span>Running
+                  <code>git push -u origin feat/mail-trigger</code>
+                </div>
+                <div class="box">
+                  <ul class="steps">
+                    <li class="done"><i data-icon="okcircle"></i>Retry with a growing wait</li>
+                    <li class="done">
+                      <i data-icon="okcircle"></i>Test the timeout and the give-up case
+                    </li>
+                    <li><span class="spinner"></span>Push the branch</li>
+                    <li class="todo-step"><i data-icon="dashed"></i>Open the pull request</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div class="compose">Message the agent</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="A Clean" data-size="620x760">
+        <div class="board-frame">
+          <div class="pane">
+            <div class="head">
+              <span class="title truncate">Retry the mail trigger</span>
+              <button class="ib" type="button" aria-pressed="true">
+                <i data-icon="msg"></i>Conversation only
+              </button>
+              <button class="ib" type="button" aria-label="More"><i data-icon="more"></i></button>
+            </div>
+            <div class="body">
+              <div class="talk">
+                <p class="you">
+                  The mail trigger drops a message when the inbox times out. Can it retry?
+                </p>
+                <p>
+                  The trigger gave up on the first timeout. It now retries three times with a
+                  growing wait, and the dropped message from this morning went through on the second
+                  try.
+                </p>
+                <div class="placeholder shot">Screenshot: the run log, second try succeeds</div>
+                <div class="box art">
+                  <span class="thumb"><i data-icon="file"></i></span>
+                  <span class="grow"
+                    ><strong>retry-notes.md</strong><br /><span class="muted small"
+                      >Written this turn</span
+                    ></span
+                  >
+                  <button class="btn sm" type="button">Open</button>
+                </div>
+                <p class="you">Good. Add a test and push it.</p>
+                <p>I'll cover the timeout and the give-up case.</p>
+                <p>Both cases pass. One thing before I push:</p>
+                <div class="box">
+                  <strong>Should a message that fails all three tries be kept?</strong>
+                  <button class="opt" type="button">
+                    <span class="k">A</span>Keep it in a failed list
+                    <span class="badge">Recommended</span>
+                  </button>
+                  <button class="opt" type="button">
+                    <span class="k">B</span>Drop it and log the loss
+                  </button>
+                </div>
+                <div class="box">
+                  <ul class="steps">
+                    <li class="done"><i data-icon="okcircle"></i>Retry with a growing wait</li>
+                    <li class="done">
+                      <i data-icon="okcircle"></i>Test the timeout and the give-up case
+                    </li>
+                    <li><span class="spinner"></span>Push the branch</li>
+                    <li class="todo-step"><i data-icon="dashed"></i>Open the pull request</li>
+                  </ul>
+                </div>
+                <div class="live">
+                  <span class="spinner"></span>Working <span class="muted">11s</span>
+                </div>
+              </div>
+            </div>
+            <div class="compose">Message the agent</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="B Receipts" data-size="620x760">
+        <div class="board-frame">
+          <div class="pane">
+            <div class="head">
+              <span class="title truncate">Retry the mail trigger</span>
+              <span class="seg" role="group" aria-label="Transcript">
+                <button class="ib" type="button" aria-pressed="true">Conversation</button>
+                <button class="ib" type="button" aria-pressed="false">Everything</button>
+              </span>
+              <button class="ib" type="button" aria-label="More"><i data-icon="more"></i></button>
+            </div>
+            <div class="body">
+              <div class="talk">
+                <p class="you">
+                  The mail trigger drops a message when the inbox times out. Can it retry?
+                </p>
+                <p>
+                  The trigger gave up on the first timeout. It now retries three times with a
+                  growing wait, and the dropped message from this morning went through on the second
+                  try.
+                </p>
+                <div class="placeholder shot">Screenshot: the run log, second try succeeds</div>
+                <div class="box art">
+                  <span class="thumb"><i data-icon="file"></i></span>
+                  <span class="grow"
+                    ><strong>retry-notes.md</strong><br /><span class="muted small"
+                      >Written this turn</span
+                    ></span
+                  >
+                  <button class="btn sm" type="button">Open</button>
+                </div>
+                <button class="work" type="button">
+                  14 steps · 3m 12s <i data-icon="right"></i>
+                </button>
+                <p class="you">Good. Add a test and push it.</p>
+                <p>I'll cover the timeout and the give-up case.</p>
+                <p>Both cases pass. One thing before I push:</p>
+                <div class="box">
+                  <strong>Should a message that fails all three tries be kept?</strong>
+                  <button class="opt" type="button">
+                    <span class="k">A</span>Keep it in a failed list
+                    <span class="badge">Recommended</span>
+                  </button>
+                  <button class="opt" type="button">
+                    <span class="k">B</span>Drop it and log the loss
+                  </button>
+                </div>
+                <div class="box">
+                  <ul class="steps">
+                    <li class="done"><i data-icon="okcircle"></i>Retry with a growing wait</li>
+                    <li class="done">
+                      <i data-icon="okcircle"></i>Test the timeout and the give-up case
+                    </li>
+                    <li><span class="spinner"></span>Push the branch</li>
+                    <li class="todo-step"><i data-icon="dashed"></i>Open the pull request</li>
+                  </ul>
+                </div>
+                <button class="work live" type="button">
+                  <span class="spinner"></span>Pushing the branch
+                  <span class="muted">· 3 steps · 41s</span> <i data-icon="right"></i>
+                </button>
+              </div>
+            </div>
+            <div class="compose">Message the agent</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="C Beside" data-size="860x760">
+        <div class="board-frame">
+          <div class="pane">
+            <div class="head">
+              <span class="title truncate">Retry the mail trigger</span>
+              <button class="ib" type="button" aria-pressed="true">
+                <i data-icon="panel"></i>Work
+              </button>
+              <button class="ib" type="button" aria-label="More"><i data-icon="more"></i></button>
+            </div>
+            <div class="body">
+              <div class="talk">
+                <p class="you">
+                  The mail trigger drops a message when the inbox times out. Can it retry?
+                </p>
+                <p>
+                  The trigger gave up on the first timeout. It now retries three times with a
+                  growing wait, and the dropped message from this morning went through on the second
+                  try.
+                </p>
+                <div class="placeholder shot">Screenshot: the run log, second try succeeds</div>
+                <div class="box art">
+                  <span class="thumb"><i data-icon="file"></i></span>
+                  <span class="grow"
+                    ><strong>retry-notes.md</strong><br /><span class="muted small"
+                      >Written this turn</span
+                    ></span
+                  >
+                  <button class="btn sm" type="button">Open</button>
+                </div>
+                <p class="you">Good. Add a test and push it.</p>
+                <p>I'll cover the timeout and the give-up case.</p>
+                <p>Both cases pass. One thing before I push:</p>
+                <div class="box">
+                  <strong>Should a message that fails all three tries be kept?</strong>
+                  <button class="opt" type="button">
+                    <span class="k">A</span>Keep it in a failed list
+                    <span class="badge">Recommended</span>
+                  </button>
+                  <button class="opt" type="button">
+                    <span class="k">B</span>Drop it and log the loss
+                  </button>
+                </div>
+                <div class="box">
+                  <ul class="steps">
+                    <li class="done"><i data-icon="okcircle"></i>Retry with a growing wait</li>
+                    <li class="done">
+                      <i data-icon="okcircle"></i>Test the timeout and the give-up case
+                    </li>
+                    <li><span class="spinner"></span>Push the branch</li>
+                    <li class="todo-step"><i data-icon="dashed"></i>Open the pull request</li>
+                  </ul>
+                </div>
+              </div>
+              <aside class="side" aria-label="Work">
+                <h4>This turn · 41s</h4>
+                <div class="tool">
+                  <i data-icon="okcircle"></i>Edited <code>retry.test.ts</code>
+                </div>
+                <div class="tool"><i data-icon="okcircle"></i>Ran <code>bun test retry</code></div>
+                <div class="tool">
+                  <span class="spinner"></span><code>git push -u origin feat/mail-trigger</code>
+                </div>
+                <h4>Earlier</h4>
+                <button class="work" type="button">
+                  14 steps · 3m 12s <i data-icon="right"></i>
+                </button>
+              </aside>
+            </div>
+            <div class="compose">Message the agent</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

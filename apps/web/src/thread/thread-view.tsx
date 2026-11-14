@@ -91,6 +91,7 @@ import {
   type StripRow,
 } from "./subagent-strip-model";
 import { TableOfContents } from "./table-of-contents";
+import { ConversationOnlyButton } from "./conversation-only-toggle";
 import { ThreadMenu } from "./thread-menu";
 import { Transcript, transcriptScroller, type JumpRequest, type ScrollRestore } from "./transcript";
 import { turnUndos } from "./turn-undo-marker";
@@ -610,6 +611,7 @@ export function ThreadView({
           <RunningCount count={display.running} />
           <span className="sr-only">{display.label}</span>
         </Hint>
+        <ConversationOnlyButton hideClass={hideMd} inTitlebar={inTitlebar} />
         {/* In the title bar, Contents, Run script and the thread's menu are the bar's one "…". */}
         {!inTitlebar && (
           <>
