@@ -503,6 +503,25 @@ describe("review monitor", () => {
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
+  for (const mergeState of ["UNKNOWN", "UNSTABLE"]) {
+    it.effect(`drops a merge-only notice that turns ${mergeState} during its review lookup`, () =>
+      Effect.gen(function* () {
+        reset();
+        const id = yield* monitoredThread;
+        yield* publish(id, badge({ checks: "pending" }));
+        world.fetchStarted = yield* Deferred.make<void>();
+        world.fetchGate = yield* Deferred.make<void>();
+        yield* publish(id, badge({ checks: "pending", mergeState: "DIRTY" }));
+        yield* TestClock.adjust("30 seconds");
+        yield* Deferred.await(world.fetchStarted);
+        yield* publish(id, badge({ checks: "pending", mergeState }));
+        yield* Deferred.succeed(world.fetchGate, undefined);
+        yield* quiet;
+        expect(yield* notices(id)).toEqual([]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+    );
+  }
+
   it.effect(
     "ignores bot verdicts and rounds without a configured bot, including unread badges",
     () =>

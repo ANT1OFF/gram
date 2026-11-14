@@ -868,15 +868,6 @@ export const BabysitLive = Layer.effect(
           suggestions,
           ciFailed,
         };
-        yield* Effect.logDebug("review notice sent").pipe(
-          Effect.annotateLogs({
-            threadId,
-            pr: bound.number,
-            reasons: [...taken].join(","),
-            reviewFetched: review !== undefined,
-            ...(round === undefined ? {} : { round }),
-          }),
-        );
         // A merge or close may have arrived while the review/check lookup was in flight.
         const latest = yield* target(threadId).pipe(Effect.orElseSucceed(() => undefined));
         if (
@@ -886,6 +877,25 @@ export const BabysitLive = Layer.effect(
           latest.bound.number !== bound.number
         )
           return yield* dropped(threadId, "PR no longer monitored and open", taken);
+        // Only a merge-state change prompted this notice. If that state or its checks moved
+        // during the lookups, any useful change has its own scheduled notice; this one is stale.
+        if (
+          taken.size === 1 &&
+          taken.has("merge") &&
+          (latest.badge.mergeState !== badge.mergeState ||
+            requiredChecksOf(latest.badge) !== requiredChecksOf(badge) ||
+            latest.badge.headRefOid !== badge.headRefOid)
+        )
+          return yield* dropped(threadId, "merge state changed during lookup", taken);
+        yield* Effect.logDebug("review notice sent").pipe(
+          Effect.annotateLogs({
+            threadId,
+            pr: bound.number,
+            reasons: [...taken].join(","),
+            reviewFetched: review !== undefined,
+            ...(round === undefined ? {} : { round }),
+          }),
+        );
         // An agent that can't start fails the send with the notice already in the thread's queue,
         // which is delivered; sending it again would say it twice. Any other failure is a thread that
         // has ended or gone, with no one to tell.
