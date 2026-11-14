@@ -124,6 +124,7 @@ export const mountGram: MountGram = async (options) => {
       sidebar: shell.sidebar ?? {},
       document: shell.document ?? {},
       repositories: shell.repositories,
+      settings: shell.settings ?? {},
       titles: Object.fromEntries([
         ...(shell.routes ?? []).flatMap((route) =>
           route.title === undefined ? [] : [[route.path, route.title] as const],
