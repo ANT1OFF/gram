@@ -227,14 +227,23 @@ const input = (contents, method, params) => {
   return contents.debugger.sendCommand(method, params);
 };
 
-/** Clicks `id` in `contents`, so the page has the user's activation. `id` must be a plain element id. */
+// Only these fixture controls are clickable; caller data never becomes JavaScript source.
+const clickScripts = new Map([
+  [
+    "copy",
+    '(() => { const r = document.getElementById("copy").getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()',
+  ],
+  [
+    "dl",
+    '(() => { const r = document.getElementById("dl").getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()',
+  ],
+]);
+
+/** Clicks the fixture's Copy or Download control, so the page has the user's activation. */
 async function clickAt(contents, id) {
-  if (typeof id !== "string" || !/^[A-Za-z][\w-]*$/.test(id)) {
-    throw new Error(`clickAt: not a plain element id: ${String(id)}`);
-  }
-  const box = await contents.executeJavaScript(
-    `(() => { const r = document.getElementById(${JSON.stringify(id)}).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`,
-  );
+  const script = clickScripts.get(id);
+  if (script === undefined) throw new Error("clickAt: unknown element id");
+  const box = await contents.executeJavaScript(script);
   const [x, y] = box.map(Math.round);
   for (const type of ["mousePressed", "mouseReleased"]) {
     await input(contents, "Input.dispatchMouseEvent", {
