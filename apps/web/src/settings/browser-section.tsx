@@ -158,13 +158,16 @@ export function YourBrowserSection() {
             it needs that app. Threads that run in Gram&apos;s own Codex setup, under a workspace
             that asks before anything leaves the machine, don&apos;t get it. Without this switch, a
             Codex thread runs with computer use off even where your setup has it. The three switches
-            below choose what it reaches. One runtime serves all three, so with one browser kept,
+            under it choose what it reaches. One runtime serves all three, so with one browser kept,
             turning the other off takes away its skills, not the runtime.
           </p>
         }
         keywords={["codex", "cua", "computer use", "node_repl"]}
         {...toggle("codex")}
       />
+      {SURFACES.map(({ surface, ...row }) => (
+        <Toggle key={surface} nested {...row} {...surfaceToggle(surface)} />
+      ))}
       <Toggle
         label="Ask before each action"
         description="A thread with your browser asks before every click, page or app it opens."
@@ -192,9 +195,6 @@ export function YourBrowserSection() {
         }
         error={failed?.agent === "ask" ? failed.message : undefined}
       />
-      {SURFACES.map(({ surface, ...row }) => (
-        <Toggle key={surface} {...row} {...surfaceToggle(surface)} />
-      ))}
       <Field
         label="Allowed sites"
         description="Limit a lent browser to these sites. Empty means any."
@@ -215,14 +215,14 @@ export function YourBrowserSection() {
           entries={settings.agents.browserSites ?? []}
           onChange={(browserSites) => save({ agents: { browserSites } })}
           problemOf={browserSiteProblem}
-          placeholder="github.com"
+          placeholder="example.com"
           emptyReason="Type a site first."
           testId="browser-sites"
         />
       </Field>
       <Field
         label="Allowed Mac apps"
-        description="Limit Codex to these Mac apps. Empty means any."
+        description="Limit Codex to these Mac apps, each by its bundle id. Empty means any."
         learnMore={
           <p>
             List an app by its bundle id (com.apple.Safari). Only Codex computer use reaches Mac
@@ -238,7 +238,7 @@ export function YourBrowserSection() {
           entries={settings.agents.browserApps ?? []}
           onChange={(browserApps) => save({ agents: { browserApps } })}
           problemOf={browserAppProblem}
-          placeholder="com.apple.Safari"
+          placeholder="com.example.App"
           emptyReason="Type a bundle id first."
           testId="browser-apps"
         />
