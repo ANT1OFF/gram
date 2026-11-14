@@ -33,11 +33,15 @@ const KIND: Readonly<Record<MachineState["kind"], string>> = {
   provisioned: "Provisioned host",
 };
 
-/** The machine a thread's checkout is on, or `undefined` for this one. */
+/**
+ * The machine a thread's checkout is on, or `undefined` for this one, and for a thread that waits
+ * for its machine (`Thread.awaitingMachine`): it is on none yet, and its wait is said in its own
+ * words (`awaiting-machine-model.ts`), never as a machine that is no longer joined.
+ */
 export const threadHost = (
-  thread: Pick<Thread, "checkout" | "currentCheckout"> | undefined,
+  thread: Pick<Thread, "checkout" | "currentCheckout" | "awaitingMachine"> | undefined,
 ): HostId | undefined => {
-  if (thread === undefined) return undefined;
+  if (thread === undefined || thread.awaitingMachine !== undefined) return undefined;
   const checkout = effectiveCheckout(thread);
   return isLocalHost(checkout) ? undefined : hostOf(checkout);
 };

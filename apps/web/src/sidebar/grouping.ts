@@ -16,12 +16,16 @@ export type SidebarSection = (typeof SECTIONS)[number];
 /**
  * The contract's group, moved by the plan's phase where the thread keeps a plan (a merge with work
  * left is idle, every step done is settled), and lifted to Needs you while its PR has attention the
- * user hasn't seen.
+ * user hasn't seen. A thread that waits for its machine is working, and needs you once none came.
  */
 const groupOf = (
   s: ThreadSummary,
   acknowledged?: Readonly<Record<string, string>> | undefined,
 ): SidebarGroup => {
+  // Started before its machine: with the working ones while the machine starts, and under Needs
+  // you once none came, where Try again is.
+  if (s.thread.awaitingMachine !== undefined)
+    return s.thread.awaitingMachine.failed === undefined ? "working" : "needsYou";
   const status = sidebarGroup({
     status: s.status,
     completedAt: s.thread.completedAt,

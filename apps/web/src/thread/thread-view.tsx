@@ -27,6 +27,7 @@ import { turnEndMessages } from "@/panels/turn-diff";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
 import { useTitlebarOutline } from "@/shell/titlebar-outline";
 import { useTitlebarSlot, useTitlebarThread } from "@/shell/titlebar-slot";
+import { usePhone } from "@/lib/use-phone";
 import { useStable } from "@/lib/use-stable";
 import { cn } from "@/lib/utils";
 import { AttentionPulse, Swap, TurnCompleteSheen } from "@/motion";
@@ -64,6 +65,8 @@ import { copyMarkdown } from "./message-actions";
 import { forkedFromText } from "./fork-text";
 import { trackWrappedChips } from "./header-chips";
 import { LabelChip, useThreadLabel } from "./label-chip";
+import { AwaitingMachine, useMachineWait } from "./awaiting-machine";
+import { WAIT_WORDS } from "./awaiting-machine-model";
 import { MachineChip } from "./machine-chip";
 import { FolderMissingNotice } from "./folder-missing-notice";
 import { LapsedConnectorsNotice } from "./lapsed-connectors-notice";
@@ -403,6 +406,8 @@ export function ThreadView({
   }
 
   const { thread, status } = summary;
+  // Started before its machine, which isn't named yet (`Thread.awaitingMachine`).
+  const awaiting = thread.awaitingMachine !== undefined;
   // A worker's link in its orchestrator's chat, or in a sibling's beside it, opens beside the chat.
   const linkScope =
     thread.role === "orchestrator" ? thread.id : beside ? thread.spawnedBy?.threadId : undefined;
@@ -712,31 +717,44 @@ export function ThreadView({
           )}
           {/* The transcript's waiting rows hold the approval cards the requests below draw. */}
           <ApprovalSlotsProvider threadId={threadId}>
+            {/* Started before its machine: nothing is said yet, so the conversation is the
+                message that waits and how the wait stands. */}
+            {awaiting && shown.length === 0 && (
+              <div
+                data-testid="machine-wait-scroll"
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+              >
+                <AwaitingMachine thread={thread} />
+              </div>
+            )}
             <OrchestratorStreamProvider stream={stream}>
-              <Transcript
-                threadId={threadId}
-                loading={phase === "loading"}
-                messages={shown}
-                subagents={children}
-                subagentUsage={subagentUsage}
-                streamingIds={streamingSet}
-                turnEnds={turnEnds}
-                turnUndos={undos}
-                animate={focused}
-                jump={chapterJump}
-                chapters={chapters}
-                onChapterJump={jumpToChapter}
-                reveal={revealJump}
-                restore={restore}
-                flashId={flashId}
-                earlier={earlier}
-                loadingEarlier={loadingEarlier}
-                earlierFailed={earlierFailed}
-                onLoadEarlier={(retry) => void pageEarlier(retry)}
-                live={thread.spawnedBy !== undefined}
-                unreadFrom={unreadFrom}
-              />
+              {!(awaiting && shown.length === 0) && (
+                <Transcript
+                  threadId={threadId}
+                  loading={phase === "loading"}
+                  messages={shown}
+                  subagents={children}
+                  subagentUsage={subagentUsage}
+                  streamingIds={streamingSet}
+                  turnEnds={turnEnds}
+                  turnUndos={undos}
+                  animate={focused}
+                  jump={chapterJump}
+                  chapters={chapters}
+                  onChapterJump={jumpToChapter}
+                  reveal={revealJump}
+                  restore={restore}
+                  flashId={flashId}
+                  earlier={earlier}
+                  loadingEarlier={loadingEarlier}
+                  earlierFailed={earlierFailed}
+                  onLoadEarlier={(retry) => void pageEarlier(retry)}
+                  live={thread.spawnedBy !== undefined}
+                  unreadFrom={unreadFrom}
+                />
+              )}
             </OrchestratorStreamProvider>
+            {awaiting && shown.length > 0 && <AwaitingMachine thread={thread} />}
             <div className="w-full thread-column shrink-0 px-6">
               {/* A worker opens on its catch-up instead, whose words send nothing to it. */}
               {thread.role === "orchestrator" && <BriefingPlaceholder thread={thread} />}
@@ -785,7 +803,8 @@ export function ThreadView({
 
 /**
  * The thread's composer. Into a worker the orchestrator still directs, a message takes it over, as
- * Take over does: the composer says so where the message is written.
+ * Take over does: the composer says so where the message is written. On a thread that waits for
+ * its machine it says the message waits too.
  */
 function ThreadComposer({
   thread,
@@ -797,12 +816,23 @@ function ThreadComposer({
   placeholder?: string;
 }) {
   const takesControl = useSendTakesControl(thread);
+  // Started before its machine: the box says where a message goes now, which is into the wait.
+  const wait = useMachineWait(thread);
+  const phone = usePhone();
+  const words =
+    wait === undefined
+      ? placeholder
+      : phone
+        ? WAIT_WORDS.composePhone
+        : wait.state === "failed"
+          ? WAIT_WORDS.composeFailed
+          : WAIT_WORDS.composeStarting;
   return (
     <Composer
       threadId={thread.id}
       focused={focused}
       takesControl={takesControl}
-      {...(placeholder === undefined ? {} : { placeholder })}
+      {...(words === undefined ? {} : { placeholder: words })}
     />
   );
 }

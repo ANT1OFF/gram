@@ -202,6 +202,9 @@ export const soloFailures = (
     return item.ids.some((id) => hidden.has(id)) ? [] : [item];
   });
 
+/** What a thread whose machine never came is listed for. */
+export const NO_MACHINE_TAG = "No machine started";
+
 /**
  * What else a thread needing the user (`needsYou`) has to show for it, beside its asks and its
  * error: an item for unseen PR attention, a stopped babysit, or failing that the thread itself, so
@@ -242,7 +245,11 @@ export const threadNeedsItems = (
               watchStoppedText(pr?.number, thread.babysit.stopReason),
               `babysit:${thread.lastActivityAt}`,
             ]
-          : ["thread", "Needs you", `${summary.status}:${thread.lastActivityAt}`];
+          : // Started before its machine, and none came: named by that failure, so a dismiss
+            // holds until the next try fails.
+            thread.awaitingMachine?.failed !== undefined
+            ? ["thread", NO_MACHINE_TAG, `machine:${thread.awaitingMachine.failed.at}`]
+            : ["thread", "Needs you", `${summary.status}:${thread.lastActivityAt}`];
     const id = `failure:${kind}:${thread.id}:${occurrence}`;
     if (hidden.has(id)) return [];
     return [

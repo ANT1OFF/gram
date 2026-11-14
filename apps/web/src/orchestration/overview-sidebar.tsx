@@ -1767,7 +1767,18 @@ export function SoloRow({
   const need = useDerivedAsks((s) => threadNeed(s.needsYou.groups, thread.id));
   const display = soloDisplay(threadStatusOf(summary, detail), need);
   const title = threadDisplayTitle(thread);
-  const lastActive = display.working ? `Last activity ${formatStamp(thread.lastActivityAt)}` : "";
+  // Started before its machine: its hover says what waits and since when, or that none came.
+  const waiting = thread.awaitingMachine;
+  const state =
+    waiting === undefined
+      ? display.label
+      : waiting.failed === undefined
+        ? `${display.title} · since ${formatStamp(waiting.since)}`
+        : display.title;
+  const lastActive =
+    display.working && waiting === undefined
+      ? `Last activity ${formatStamp(thread.lastActivityAt)}`
+      : "";
   const faded = settled || settledRow(summary.status, display, thread.lastActivityAt, now);
   // What needs you, or a failure: said in words at the row's edge, in its colour.
   const alarm = display.tone === "text-status-needs" || display.tone === "text-destructive";
@@ -1788,7 +1799,7 @@ export function SoloRow({
         data-settled={faded || undefined}
         data-unread={thread.unread || undefined}
         aria-label={`${title}${thread.unread ? ", unread" : ""}, ${display.label}${where}${lastActive === "" ? "" : `, ${lastActive}`}`}
-        title={`${title}\n${display.label}${lastActive === "" ? "" : ` · ${lastActive}`}${machine === undefined ? "" : `\n${machine.hint}`}`}
+        title={`${title}\n${state}${lastActive === "" ? "" : ` · ${lastActive}`}${machine === undefined ? "" : `\n${machine.hint}`}`}
         aria-keyshortcuts="Shift+F10"
         onClick={() => openThread(thread.id)}
         onKeyDown={rowMenuKeys}

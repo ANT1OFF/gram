@@ -57,6 +57,7 @@ import type {
   TurnUndoData,
 } from "@gram/contracts";
 import {
+  AWAITED_HOST_ID,
   browserUseAllowed,
   orchestratorBrowserOn,
   workerBrowserOn,
@@ -1296,7 +1297,8 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     if (input.origin === undefined && input.notice === undefined) {
       this.#orchestration.userTyped(threadId);
     }
-    if (runtime.running) {
+    // As the server: what is sent to a thread that waits for its machine waits in its queue.
+    if (runtime.running || runtime.summary.thread.awaitingMachine !== undefined) {
       this.#setQueue(runtime, [
         ...runtime.summary.queue,
         { id: this.#ids() as QueueItemId, input },
@@ -1483,6 +1485,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       readonly brief: string;
       readonly askedBy?: string;
     };
+    readonly awaitingMachine?: { readonly failed?: string };
   }): Promise<void> {
     const id = seed.id as ThreadId;
     if (this.#threads.has(id)) return;
@@ -1511,6 +1514,8 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       seed.worker !== undefined && state !== undefined && orchestrator !== undefined
         ? { ...seed.worker, orchestrator }
         : undefined;
+    // Started before its machine: on no machine, its messages in its queue, nothing said yet.
+    const awaiting = seed.worker === undefined ? seed.awaitingMachine : undefined;
     const thread: Thread = {
       id,
       projectId: home.id,
@@ -1519,20 +1524,32 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       model: { agent: "claude", model: "opus" },
       mode: "default",
       checkout:
-        worker === undefined
-          ? { kind: "main", path: home.root, branch: "main", base: "main" }
-          : {
-              kind: "worktree",
-              path: `${home.root}/.worktrees/${worker.feature}`,
-              branch: `feat/${worker.feature}`,
-              base: "main",
-            },
+        awaiting !== undefined
+          ? { kind: "main", path: `/.threads/${seed.id}`, hostId: AWAITED_HOST_ID }
+          : worker === undefined
+            ? { kind: "main", path: home.root, branch: "main", base: "main" }
+            : {
+                kind: "worktree",
+                path: `${home.root}/.worktrees/${worker.feature}`,
+                branch: `feat/${worker.feature}`,
+                base: "main",
+              },
       labels: [],
       pinned: false,
       parked: false,
       unread: false,
       createdAt: at,
       lastActivityAt: at,
+      ...(awaiting === undefined
+        ? {}
+        : {
+            awaitingMachine: {
+              since: at,
+              ...(awaiting.failed === undefined
+                ? {}
+                : { failed: { at, message: awaiting.failed } }),
+            },
+          }),
       ...(worker === undefined
         ? {}
         : {
@@ -1544,11 +1561,20 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
             },
           }),
     };
+    const said = awaiting === undefined ? (seed.messages ?? []) : [];
     const runtime = this.#add({
       thread,
-      status: "idle",
+      status: awaiting === undefined ? "idle" : "cold",
       pendingRequests: [],
-      queue: [],
+      queue:
+        awaiting === undefined
+          ? []
+          : (seed.messages ?? [])
+              .filter((message) => message.role === "user")
+              .map((message) => ({
+                id: this.#ids() as QueueItemId,
+                input: { text: message.text },
+              })),
       capabilities: MOCK_CAPABILITIES,
     });
     const brief: readonly GramUIMessage[] =
@@ -1579,7 +1605,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       type: "messages",
       messages: [
         ...brief,
-        ...(seed.messages ?? []).map((message, index): GramUIMessage => ({
+        ...said.map((message, index): GramUIMessage => ({
           id: `${seed.id}-m${index}`,
           role: message.role,
           metadata: { createdAt: at },
@@ -1589,10 +1615,29 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     });
     runtime.fold.apply({ type: "caughtUp", rev: this.#rev });
     this.#emit({ type: "thread.upsert", thread });
-    this.#emit({ type: "thread.status", threadId: id, status: "idle" });
+    this.#emit({ type: "thread.status", threadId: id, status: runtime.summary.status });
     if (state !== undefined && worker !== undefined) {
       this.#emit({ type: "orchestration.changed", workspaceId: state.workspace.id });
     }
+  }
+
+  /**
+   * Dev and e2e hook: how the wait of a thread started before its machine stands, as the server's
+   * `POST /threads/machine-wait` and its own five minutes leave it. With `failed`, no machine came
+   * and that is its sentence; without, the wait begins again from now. A thread that doesn't wait
+   * is left as it is.
+   */
+  simulateMachineWait(threadId: ThreadId, change: { readonly failed?: string } = {}) {
+    const runtime = this.#runtime(threadId);
+    const waiting = runtime.summary.thread.awaitingMachine;
+    if (waiting === undefined) return;
+    const now = Date.now();
+    this.#update(runtime, {
+      awaitingMachine:
+        change.failed === undefined
+          ? { since: now }
+          : { since: waiting.since, failed: { at: now, message: change.failed } },
+    });
   }
 
   /** `simulateMessage` (`mock-thread-sims.ts`). */
@@ -2584,6 +2629,8 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     // As the server: refused as a send there would be, into a running turn too.
     this.#refuseMissingFolder(runtime);
     const item = runtime.summary.queue.find((q) => q.id === itemId);
+    // As the server: a thread that waits for its machine holds its queue until it is placed.
+    if (runtime.summary.thread.awaitingMachine !== undefined) return;
     // As the server: with nothing running there is nothing to steer into, so it goes now.
     if (!runtime.running) {
       this.#setQueue(

@@ -33,6 +33,8 @@ declare global {
   interface Window {
     /** The mount's handle, for the specs. */
     embed?: GramHandle;
+    /** The threads whose Try again asked this page for another machine, in order. */
+    embedStartedAgain?: string[];
   }
 }
 
@@ -283,6 +285,18 @@ mountGram({
         { role: "assistant", text: "Three stale issues, all older than ninety days." },
       ],
     },
+    // Started before its machine, and none came: its Try again asks this page for another. Only
+    // for the spec that asks, since a thread that needs someone leads every list.
+    ...(new URLSearchParams(location.search).has("waiting-thread")
+      ? [
+          {
+            id: "page-waiting",
+            title: "Release notes",
+            messages: [{ role: "user" as const, text: "Draft the release notes for 2.4." }],
+            awaitingMachine: { failed: "The machine couldn't be started: no capacity." },
+          },
+        ]
+      : []),
   ],
   server: new URLSearchParams(location.search).has("session-test")
     ? {
@@ -297,6 +311,12 @@ mountGram({
     : "mock",
   ...(pathUnder === undefined ? {} : { basePath: pathUnder }),
   shell: {
+    machines: {
+      // What a real app hands to its own service, which begins the wait again and starts a machine.
+      startAgain: ({ threadId }) => {
+        window.embedStartedAgain = [...(window.embedStartedAgain ?? []), threadId];
+      },
+    },
     routes: [
       { path: "/govern/policies", title: "Policies", component: Policies },
       { path: "/govern/limits", title: "Limits", component: Limits },

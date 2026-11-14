@@ -20,6 +20,7 @@ import {
 import { firstLine } from "@/lib/format";
 import { Spinner } from "@/motion/spinner";
 import { STATUS_WORDS } from "@/orchestration/status-words";
+import { startingHint, WAIT_WORDS } from "@/thread/awaiting-machine-model";
 import { compactingLabel } from "@/thread/compaction-marker";
 
 import type { Attention, AttentionReason } from "./attention";
@@ -169,7 +170,9 @@ const TITLE_WORK = 6;
  * the spinner means its own turn and nothing else. Unseen `attention` takes the glyph of a quiet
  * thread, since it is why the row sits under Needs you; behind a working or stacked glyph the row
  * draws it among its chips instead (`ATTENTION_ICON`). A running thread that is compacting its
- * context says so in place of the generic Working.
+ * context says so in place of the generic Working. A thread started before its machine says its
+ * wait before anything else: that its machine is starting (with how many messages wait, `waits`),
+ * or that none came.
  */
 export const rowStatus = (
   thread: Thread,
@@ -178,7 +181,26 @@ export const rowStatus = (
   attention?: Attention | undefined,
   work: readonly RunningWork[] = NONE,
   compaction?: CompactionActivity | undefined,
+  waits = 0,
 ): RowStatus => {
+  // Started before its machine: nothing of its own runs yet, so its wait is its whole status.
+  if (thread.awaitingMachine !== undefined) {
+    return thread.awaitingMachine.failed === undefined
+      ? {
+          icon: Spinner,
+          tone: "text-status-working",
+          label: WAIT_WORDS.rowStarting,
+          title: startingHint(waits),
+          working: true,
+        }
+      : {
+          icon: CircleAlert,
+          tone: "text-destructive",
+          label: WAIT_WORDS.rowFailed,
+          title: WAIT_WORDS.rowFailedHint,
+          working: false,
+        };
+  }
   if (status === "running" && compaction !== undefined) {
     return {
       ...STATUS_DISPLAY.running,
@@ -263,7 +285,8 @@ export const threadStatusOf = (
   summary: Pick<
     ThreadSummary,
     "thread" | "status" | "activity" | "background" | "terminalProcesses" | "compaction"
-  >,
+  > &
+    Partial<Pick<ThreadSummary, "queue">>,
   detail?: string | undefined,
   attention?: Attention | undefined,
 ): RowStatus =>
@@ -274,4 +297,5 @@ export const threadStatusOf = (
     attention,
     runningWork(summary),
     summary.compaction,
+    summary.queue?.length ?? 0,
   );

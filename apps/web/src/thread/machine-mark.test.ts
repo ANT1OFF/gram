@@ -1,4 +1,4 @@
-import { HOST_PROTOCOL_VERSION, HostId, type MachineState } from "@gram/contracts";
+import { AWAITED_HOST_ID, HOST_PROTOCOL_VERSION, HostId, type MachineState } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
 import { machineMark, threadHost } from "./machine-mark";
@@ -37,6 +37,15 @@ describe("the machine a thread runs on", () => {
         currentCheckout: { kind: "worktree", path: "/work/b", hostId: STUDIO },
       } as never),
     ).toBe(STUDIO);
+  });
+
+  it("is none for a thread that waits for its machine, which is on none yet", () => {
+    expect(
+      threadHost({
+        checkout: { kind: "main", path: "/.threads/t1", hostId: AWAITED_HOST_ID },
+        awaitingMachine: { since: 1 },
+      } as never),
+    ).toBeUndefined();
   });
 });
 

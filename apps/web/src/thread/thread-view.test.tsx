@@ -27,14 +27,19 @@ vi.mock("@tanstack/react-router", () => ({
 const FLAKY = "t-flaky" as ThreadId;
 let api: MockApi;
 
-beforeEach(async () => {
-  api = createMockApi({ speed: 0, autoplay: false });
+/** The store as a fresh snapshot of the server leaves it. */
+const resync = async () => {
   const abort = new AbortController();
   for await (const event of api.events(abort.signal)) {
     useThreadsStore.getState().applyEvent(event);
     if (event.type === "threads.snapshot") break;
   }
   abort.abort();
+};
+
+beforeEach(async () => {
+  api = createMockApi({ speed: 0, autoplay: false });
+  await resync();
 });
 
 afterEach(() => {
@@ -361,5 +366,83 @@ describe("ThreadView header", () => {
       expect(within(menu).queryByTestId("branch-chip")).toBeNull();
       cleanup();
     }
+  });
+});
+
+describe("ThreadView of a thread that waits for its machine", () => {
+  const WAIT = "t-wait" as ThreadId;
+
+  const open = async (awaitingMachine: { failed?: string } = {}) => {
+    await api.simulateThread({
+      id: WAIT,
+      title: "Release notes",
+      messages: [
+        { role: "user", text: "Draft the release notes for 2.4." },
+        { role: "user", text: "Keep it under 300 words." },
+      ],
+      awaitingMachine,
+    });
+    await resync();
+    renderWithApi(<ThreadView threadId={WAIT} focused={false} />, api);
+    return within(await screen.findByTestId("thread-view"));
+  };
+
+  it("shows the first message as the person's own, that the machine is starting, and what else waits", async () => {
+    const view = await open();
+    expect(view.getByTestId("pane-machine").textContent).toBe("machine starting");
+    expect((await view.findByTestId("machine-wait-message")).textContent).toContain(
+      "Draft the release notes for 2.4.",
+    );
+    expect(view.getByTestId("machine-wait-starting").textContent).toContain(
+      "Starting this thread's machine",
+    );
+    // The rest of the queue stays over the prompt box, in the wait's words.
+    const queue = view.getByTestId("queue");
+    expect(queue.textContent).toContain("Queued · waits for the machine");
+    expect(
+      within(queue)
+        .getAllByTestId("queue-item")
+        .map((li) => li.textContent),
+    ).toEqual(["Keep it under 300 words."]);
+    expect(view.getByLabelText("Message").getAttribute("placeholder")).toBe(
+      "Add a message. It is sent when the machine has started.",
+    );
+    expect(view.queryByText(/no longer joined/)).toBeNull();
+  });
+
+  it("queues what is sent while it waits, and holds the queue", async () => {
+    await open();
+    await expect(api.send(WAIT, { text: "And link the pull requests." })).resolves.toEqual({
+      queued: true,
+    });
+    const queued = useThreadsStore.getState().byId[WAIT]?.queue ?? [];
+    await api.queueSteer(WAIT, queued[0]!.id);
+    await resync();
+    expect((useThreadsStore.getState().byId[WAIT]?.queue ?? []).map((q) => q.input.text)).toEqual([
+      "Draft the release notes for 2.4.",
+      "Keep it under 300 words.",
+      "And link the pull requests.",
+    ]);
+  });
+
+  it("says the failure and follows the wait when it begins again", async () => {
+    const view = await open({ failed: "The machine couldn't be started: no capacity." });
+    expect(view.getByTestId("pane-machine").textContent).toBe("no machine");
+    expect((await view.findByTestId("machine-wait-sentence")).textContent).toBe(
+      "The machine couldn't be started: no capacity.",
+    );
+    expect(view.getByLabelText("Message").getAttribute("placeholder")).toBe(
+      "Add a message. It is kept until a machine has started.",
+    );
+    // The wait begun again on the server, as `POST /threads/machine-wait` leaves it.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 60_000);
+    act(() => api.simulateMachineWait(WAIT));
+    await resync();
+    expect((await view.findByTestId("machine-wait-starting")).textContent).toContain(
+      "Starting a machine again",
+    );
+    expect(view.queryByTestId("machine-wait-failed")).toBeNull();
+    expect(view.getByTestId("pane-machine").textContent).toBe("machine starting");
   });
 });

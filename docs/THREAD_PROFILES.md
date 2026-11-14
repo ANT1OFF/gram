@@ -87,6 +87,10 @@ Content-Type: application/json
   wherever a thread is read, its summary included: `since`, `startedBy` when one was given, and
   `failed` once no machine came. Its checkout is on the machine `awaited`, which is no machine's
   id, so a client that doesn't know the state shows it as a thread whose machine is away.
+- **How it looks.** Gram's web app shows the wait on the thread's own page: the first message as
+  the person's own and not yet sent, that the machine is starting and for how long, and once none
+  came the failure's sentence with Try again, which the app Gram is mounted in answers
+  ([A thread started before its machine](EMBEDDED_WEB_APP.md#a-thread-started-before-its-machine)).
 - **Whose it is.** `startedBy` is the id the fronting proxy states for the signed-in person. The
   first message is sent as theirs (`sentBy`), and until the thread is placed only they reach it.
   It is placed only on a machine started for them or for nobody. Without `startedBy` it is
@@ -126,7 +130,8 @@ Content-Type: application/json
 - **In order.** Start the thread with `machine: "later"`; start the machine and
   [register it](PROVISIONED_HOSTS.md) with the same person as its `owner`, or with none; once it
   is online, name it. If it fails to start, say so on `/threads/machine-wait`; to try again, call
-  that without `failed`, start another machine and name it.
+  that without `failed`, start another machine and name it. The person asks for that with the
+  page's Try again, which reaches your service through the mount's `machines.startAgain`.
 - **With the hosted features off** all three paths answer `404`, and `thread.createFromProfile`
   takes no `machine`: it places the thread now, as before.
 

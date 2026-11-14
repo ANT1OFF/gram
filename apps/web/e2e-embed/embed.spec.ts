@@ -40,6 +40,29 @@ test("a thread the page gave the in-memory server opens at its own id", async ({
   expect(errors).toEqual([]);
 });
 
+test("a thread no machine came for asks the embedding app for another on Try again", async ({
+  page,
+}) => {
+  const errors = await mounted(page, "/t/page-waiting?waiting-thread");
+  await expect(page.getByTestId("pane-machine")).toHaveText("no machine");
+  await expect(page.getByTestId("machine-wait-message")).toContainText(
+    "Draft the release notes for 2.4.",
+  );
+  await expect(page.getByTestId("machine-wait-sentence")).toHaveText(
+    "The machine couldn't be started: no capacity.",
+  );
+  await expect(page.getByTestId("machine-wait-failed")).toContainText(
+    "What you sent is kept, and goes once a machine has started.",
+  );
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByTestId("machine-wait-starting")).toContainText(
+    "Starting a machine again · the first didn't start",
+  );
+  await expect(page.getByTestId("pane-machine")).toHaveText("machine starting");
+  expect(await page.evaluate(() => window.embedStartedAgain)).toEqual(["page-waiting"]);
+  expect(errors).toEqual([]);
+});
+
 test("the sidebar lists the added group, and its page opens inside Gram's shell", async ({
   page,
 }) => {
