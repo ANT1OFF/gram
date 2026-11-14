@@ -50,11 +50,16 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * to a worker question given in a message rather than on its card, recorded as their own words):
  * one short description and half a prompt sentence; measured then at 63,472. The worker's raised
  * with it, for the same tool and one prompt line; measured then at 37,493.
+ * All three raised on 2026-11-14, on purpose, for one `merge_when_ready` sentence on full auto:
+ * a PR whose head branch the worker's worktree doesn't hold is refused with how to check it out,
+ * never put to the user, and dropping an intent never asks. It was cut down first, with the rest
+ * told by the refusal and the result's `gateWarning`, and `set_auto_merge` and `local_check` left
+ * to their refusals; measured then at 63,617, 37,638 and 23,583.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 63_550,
-  worker: 37_550,
-  plain: 23_550,
+  orchestrator: 63_700,
+  worker: 37_700,
+  plain: 23_650,
 };
 
 const AUTONOMIES: ReadonlyArray<Autonomy> = ["supervised", "publish", "full"];

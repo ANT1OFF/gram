@@ -87,9 +87,10 @@ export const OrchestrationPause = Schema.Struct({
 export type OrchestrationPause = typeof OrchestrationPause.Type;
 
 /**
- * How long a worker the user wrote to stays theirs once its turn is over and it sits idle or cold
- * with nothing more from them. A hold that outlives the conversation strands the worker: one
- * that never reports again, or went cold, would otherwise never come back to its orchestrator.
+ * How long the board shows the user as talking to a worker once its turn is over and it sits idle
+ * or cold with nothing more from them. It is information only: the worker stays its
+ * orchestrator's throughout, and the orchestrator's messages wait behind the user's exchange
+ * rather than for this to pass.
  */
 export const USER_HOLD_IDLE_MS = 10 * 60_000;
 
@@ -519,7 +520,11 @@ export const WorkerLedgerEntry = Schema.Struct({
       headline: Schema.optionalKey(Schema.String),
     }),
   ),
-  /** The user typed into the worker since its last report, so the orchestrator holds off. */
+  /**
+   * The user typed into the worker since its last report: information for the board and the
+   * orchestrator. The worker stays the orchestrator's, whose messages wait behind the user's
+   * exchange instead of interrupting it.
+   */
   userIntervened: Schema.Boolean,
   messagesFromOrchestrator: Schema.Int,
   /** The wakes it has set for itself, soonest first; absent when it has none. */

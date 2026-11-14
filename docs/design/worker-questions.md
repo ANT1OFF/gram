@@ -126,11 +126,11 @@ triage or forwarded ──ask_question(withdraw, reason)──► withdrawn (by 
 - An orchestrator can answer or forward only its own workers' questions
   (`not_your_worker`), and only while they are in triage. Once a question is forwarded,
   `answer_worker` is refused (`forwarded`): it is the user's now.
-- Both tools are refused while the workspace or the feature is paused, and for a worker
-  the user holds (`user_intervened`). In that case the question is the user's anyway.
+- Both tools are refused while the workspace or the feature is paused. The user writing to a
+  worker refuses neither: the worker stays its orchestrator's throughout.
 - A worker withdraws only its own questions (`not_yours`); an orchestrator closes only its own
-  workers' (`not_your_worker`), and not while the workspace or feature is paused or the user
-  holds the worker. Neither can withdraw a closed question, so the user's answer stands.
+  workers' (`not_your_worker`), and not while the workspace or feature is paused. Neither can
+  withdraw a closed question, so the user's answer stands.
 - An orchestrator cannot change a closed question. Repeated or concurrent user replies
   to a question already closed by the user return the first saved decision, without
   overwriting it or notifying the worker twice. A user reply to a question already

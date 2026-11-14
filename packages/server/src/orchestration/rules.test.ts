@@ -941,7 +941,6 @@ describe("checkWorkerSend", () => {
   const send = (overrides: Partial<WorkerSendCheck> = {}): WorkerSendCheck => ({
     recentSends: [],
     now: NOW,
-    userIntervened: false,
     paused: false,
     ...overrides,
   });
@@ -956,7 +955,6 @@ describe("checkWorkerSend", () => {
 
   it.each<readonly [string, Partial<WorkerSendCheck>]>([
     ["paused", { paused: true }],
-    ["user_intervened", { userIntervened: true }],
     ["rate", { recentSends: fullWindow }],
   ])("refuses with %s", (code, overrides) => {
     const verdict = checkWorkerSend(send(overrides));
@@ -965,32 +963,16 @@ describe("checkWorkerSend", () => {
   });
 
   it("names the refusal no waiting cures before the ones it does", () => {
-    const everything: Partial<WorkerSendCheck> = {
-      paused: true,
-      userIntervened: true,
-      recentSends: fullWindow,
-    };
-    const order = ["paused", "user_intervened", "rate"];
-    const cleared: ReadonlyArray<Partial<WorkerSendCheck>> = [
-      {},
-      { paused: false },
-      { userIntervened: false },
-    ];
-    let check = everything;
-    order.forEach((code, index) => {
-      check = { ...check, ...cleared[index] };
-      expect(checkWorkerSend(send(check))).toMatchObject({ code });
+    expect(checkWorkerSend(send({ paused: true, recentSends: fullWindow }))).toMatchObject({
+      code: "paused",
     });
+    expect(checkWorkerSend(send({ recentSends: fullWindow }))).toMatchObject({ code: "rate" });
   });
 
-  it("tells the orchestrator how the user's hold ends, and to say so to the user", () => {
-    const verdict = checkWorkerSend(send({ userIntervened: true }));
-    const reason = verdict.ok ? "" : verdict.reason;
-    expect(reason).toContain("theirs for now and you can't message it");
-    expect(reason).toContain("when it next reports");
-    expect(reason).toContain('"Hand back" in its thread\'s header');
-    expect(reason).toContain("idle 10 minutes after their last message");
-    expect(reason).toContain("tell the user they can hand it back");
+  it("never refuses a worker for the user having written to it", () => {
+    // The check has no say in the user's exchange: the send waits behind it instead (`deliver`).
+    expect("userIntervened" in send()).toBe(false);
+    expect(checkWorkerSend(send())).toMatchObject({ ok: true });
   });
 
   it("lets a hold lapse ten minutes after the user's latest input, or the latest input without one", () => {
@@ -2185,7 +2167,8 @@ describe("prompts", () => {
     for (const prompt of [full, workerAt("full")]) {
       expect(prompt).not.toContain("nothing asks the user");
       expect(prompt).toContain("Recorded approval and plan requests remain the user's");
-      expect(prompt).toContain("workspace pauses or user-held workers");
+      expect(prompt).toContain("Full Auto does not clear workspace pauses.");
+      expect(prompt).not.toContain("user-held workers");
       expect(prompt).toContain("Merge holds, dependencies, pending or failing CI");
       expect(prompt).toContain("required reviews and GitHub rules");
       expect(prompt).toContain("provider authentication or limits");
@@ -2194,6 +2177,10 @@ describe("prompts", () => {
       expect(prompt).toContain("permission mode remains the user's");
     }
     expect(full).toContain("`merge_when_ready` and its `threadId`");
+    // The user writing to a worker leaves it the orchestrator's: its messages wait, never refused.
+    expect(full).toContain("A worker the user has typed into is still yours");
+    expect(full).toContain("your message waits behind their exchange");
+    expect(full).not.toContain("is theirs until it next reports");
     expect(full).toContain(
       "answer a **question** a worker is waiting on the user for (its harness's own ask) with `answer_worker`",
     );

@@ -264,9 +264,10 @@ export const OrchestrationRpcs = RpcGroup.make(
     error: errors(NotFound, InvalidState),
   }),
   /**
-   * Hands a worker the user wrote to back to its orchestrator: clears its `userIntervened`, and
-   * the orchestrator's next digest says so. Nothing is sent to the worker. `InvalidState` for a
-   * thread that isn't a worker with an orchestrator listening.
+   * Says the user is done talking to a worker ("Hand back"): clears its `userIntervened`, and the
+   * orchestrator's next digest says so. The worker was its orchestrator's throughout, so this is a
+   * hint and gates nothing. Nothing is sent to the worker. `InvalidState` for a thread that isn't
+   * a worker with an orchestrator listening.
    */
   Rpc.make("orchestrator.releaseWorker", {
     payload: threadRef,

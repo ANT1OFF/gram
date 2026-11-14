@@ -269,8 +269,8 @@ export function WorkerNowChip({
 
 /**
  * "Under your control", while the user holds the worker (they typed into it, took it over, or
- * started it under their control):
- * the orchestrator can't message it until they hand it back. Watching it never holds it.
+ * started it under their control): it stays the orchestrator's worker, whose messages wait behind
+ * the user's exchange. Hand back only says they're done. Watching it never holds it.
  */
 function HoldChip({
   thread,
@@ -292,7 +292,7 @@ function HoldChip({
       className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border pl-1 text-meta text-foreground"
     >
       <Hint
-        label={`The orchestrator can't message it until you hand it back. It comes back by itself at its next report, or ${USER_HOLD_IDLE_MS / 60_000} minutes after your last message once idle.`}
+        label={`It stays the orchestrator's worker, and the orchestrator's messages wait behind yours. This clears by itself at its next report, or ${USER_HOLD_IDLE_MS / 60_000} minutes after your last message once idle.`}
         side="bottom"
         render={
           <span
@@ -305,7 +305,7 @@ function HoldChip({
         <span className={cn(compact && "sr-only")}>Under your control</span>
       </Hint>
       <Hint
-        label="Let the orchestrator message and direct this worker again"
+        label="Tell the orchestrator you're done talking to this worker"
         side="bottom"
         render={
           <button

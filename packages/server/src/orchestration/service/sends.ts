@@ -40,11 +40,9 @@ export const makeSends = (kit: OrchestrationKit) => {
   const guardSend = (tool: string, callerId: ThreadId, targetId: ThreadId) =>
     Effect.gen(function* () {
       const { state } = yield* requireAuthority(tool, callerId);
-      const memo = (yield* readOutbox(state.workspace.id)).workers[targetId];
       const verdict = checkWorkerSend({
         recentSends: sends.get(sendKey(callerId, targetId)) ?? [],
         now: yield* Clock.currentTimeMillis,
-        userIntervened: memo?.userIntervened === true,
         paused: state.paused !== undefined,
         pausedFeature: pausedFeatureOf(state, yield* findThread(targetId)),
       });
