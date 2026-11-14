@@ -320,6 +320,9 @@ mountGram({
 
 - `noun`: the word for one, lower case ("machine" when left out).
 - `facts`: up to five short lines the card lists, in your deployment's own terms.
+- `repositories`: `"chosen"` (the default) has the person pick the repositories as they start one;
+  `"theirs"` says a machine reaches every repository the person can, as them, so the card's button
+  starts it at once and asks for none (`{"repositories": []}`).
 - `startAgain`: asks for another machine for a thread that got none
   ([below](#a-thread-started-before-its-machine)).
 

@@ -11,7 +11,12 @@ import {
   startOnDemand,
 } from "@/api/on-demand";
 import { Button } from "@/components/ui/button";
-import { useEmbedShell, useMachineFacts, useMachineNoun } from "@/embed/store";
+import {
+  useEmbedShell,
+  useMachineFacts,
+  useMachineNoun,
+  useMachineReachesTheirs,
+} from "@/embed/store";
 import { Spinner } from "@/motion";
 
 export const ON_DEMAND_QUERY_KEY = ["on-demand-machine"] as const;
@@ -68,6 +73,8 @@ export function StartMachineCard({
 }) {
   const noun = useMachineNoun();
   const facts = useMachineFacts();
+  // Where it reaches all of theirs there is nothing to choose: Start starts it.
+  const reachesTheirs = useMachineReachesTheirs();
   const { status, refresh } = useOnDemandMachine();
   const [choosing, setChoosing] = useState(false);
   const [picked, setPicked] = useState<ReadonlyArray<string>>(repositories);
@@ -86,7 +93,7 @@ export function StartMachineCard({
     setSending(true);
     setError(undefined);
     try {
-      await startOnDemand(picked);
+      await startOnDemand(reachesTheirs ? [] : picked);
       setChoosing(false);
       await refresh();
     } catch (cause) {
@@ -231,7 +238,12 @@ export function StartMachineCard({
             </Button>
           </>
         ) : (
-          <Button type="button" size="sm" onClick={() => setChoosing(true)}>
+          <Button
+            type="button"
+            size="sm"
+            disabled={sending}
+            onClick={() => (reachesTheirs ? void start() : setChoosing(true))}
+          >
             <Play className="size-3.5" aria-hidden />
             {failed ? "Try again" : `Start a ${noun}`}
           </Button>
