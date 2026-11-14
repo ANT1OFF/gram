@@ -8,7 +8,8 @@
 //   since it was last sent is `PUT`. What was sent is remembered in a manifest beside them
 //   (`object-store.json`), so a restart sends nothing twice.
 // - A file a thread produced outside those folders (an output in its checkout) is copied up as it
-//   is recorded (`put`).
+//   is recorded (`put`). One on another machine is read there first, into a file of this server's
+//   own that is sent and removed (`putStaged`).
 // - A closed thread's objects are deleted with it. Nothing else deletes: a file missing here is
 //   never taken as a reason to delete it there, since a fresh disk is missing all of them.
 // - A server starting on a fresh disk (no manifest) lists the docs and brings them back before
@@ -57,6 +58,8 @@ const SWEEP_EVERY = "1 minute";
 const LIST_MAX = 10_000;
 const LIST_MAX_BYTES = 4 * 2 ** 20;
 const MANIFEST = "object-store.json";
+/** Where a file read from another machine waits to be sent; emptied at each start. */
+const STAGING = "object-store-staging";
 const NAME = "object store";
 
 export interface ObjectStoreShape {
@@ -65,6 +68,19 @@ export interface ObjectStoreShape {
    * per change of the file. Nothing is sent if the file is no longer exactly there.
    */
   readonly put: (key: string, real: string) => Effect.Effect<void>;
+  /** Whether anything is sent now: a store is configured and the hosted features are on. */
+  readonly on: Effect.Effect<boolean>;
+  /**
+   * Copies a file this server can't read where it is to `key`, soon and at most once per `stamp`
+   * (`<size>:<mtime>` of the file where it is). `stage` is asked to write the file's bytes at a
+   * path of this server's own and to say whether it did; that copy is sent, then removed. Nothing
+   * is asked of `stage` for a stamp already sent, with the store off, or for a closed thread.
+   */
+  readonly putStaged: (
+    key: string,
+    stamp: string,
+    stage: (path: string) => Effect.Effect<boolean>,
+  ) => Effect.Effect<void>;
   /**
    * Brings `key` back to `path` when the file isn't there. Whether it is there now. Never
    * overwrites, and never fails: a store that can't be reached reads as a file still missing.
@@ -78,6 +94,8 @@ export interface ObjectStoreShape {
 export const ObjectStore = Context.Reference<ObjectStoreShape>("@gram/server/ObjectStore", {
   defaultValue: () => ({
     put: () => Effect.void,
+    on: Effect.succeed(false),
+    putStaged: () => Effect.void,
     fetch: () => Effect.succeed(false),
     sweep: Effect.void,
   }),
@@ -426,15 +444,69 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
         yield* saveManifest;
       });
 
+    /**
+     * Sends a file read from another machine: staged under the data folder, sent from there, and
+     * removed whether or not it went. Remembered by the stamp the other machine gave, since the
+     * staged copy's own times say nothing about the file.
+     */
+    const stagingDir = resolve(dataDir, STAGING);
+    const sendStaged = (
+      key: string,
+      stamp: string,
+      stage: (path: string) => Effect.Effect<boolean>,
+    ) =>
+      Effect.gen(function* () {
+        if (!safeKey(key)) return yield* skip(key, "its name can't be a key");
+        if (manifest.objects[key] === stamp) return;
+        const path = join(stagingDir, `${randomUUID()}${PART}`);
+        yield* Effect.gen(function* () {
+          yield* Effect.promise(() => mkdir(stagingDir, { recursive: true }));
+          if (!(yield* stage(path))) return;
+          const info = yield* Effect.promise(() => lstat(path).catch(() => undefined));
+          if (info === undefined || !info.isFile()) return;
+          if (info.size > OBJECT_MAX_BYTES) return yield* skip(key, "over the size limit");
+          const body = yield* Effect.promise(() => openAsBlob(path));
+          yield* callOutside(NAME, service, {
+            method: "PUT",
+            path: objectPath(key),
+            body,
+            timeoutMs: 120_000,
+          });
+          manifest.objects[key] = stamp;
+          unsaved = true;
+        }).pipe(
+          Effect.ensuring(Effect.promise(() => rm(path, { force: true }).catch(() => undefined))),
+        );
+      }).pipe(
+        Effect.catchCause((cause) =>
+          // Sent the next time the output is recorded.
+          Effect.logWarning("couldn't send another machine's file to the object store").pipe(
+            Effect.annotateLogs({ key, cause: Cause.pretty(cause) }),
+          ),
+        ),
+      );
+    // A copy a stopped server left behind is of no use: its file is read again when recorded.
+    yield* Effect.promise(() =>
+      rm(stagingDir, { recursive: true, force: true }).catch(() => undefined),
+    );
+
     // Outputs go one at a time, off the caller's fiber.
-    const pending = yield* Queue.unbounded<readonly [string, string]>();
+    type Output =
+      | { readonly key: string; readonly real: string }
+      | {
+          readonly key: string;
+          readonly stamp: string;
+          readonly stage: (path: string) => Effect.Effect<boolean>;
+        };
+    const pending = yield* Queue.unbounded<Output>();
     yield* Queue.take(pending).pipe(
-      Effect.flatMap(([key, real]) =>
+      Effect.flatMap((output) =>
         Effect.gen(function* () {
           if (!(yield* on)) return;
           // Not a thread closed since: its outputs were deleted, and this would put one back.
-          if (manifest.deletes.some((prefix) => key.startsWith(prefix))) return;
-          yield* send(key, real, real);
+          if (manifest.deletes.some((prefix) => output.key.startsWith(prefix))) return;
+          if ("stage" in output) yield* sendStaged(output.key, output.stamp, output.stage);
+          else yield* send(output.key, output.real, output.real);
           yield* saveManifest;
         }),
       ),
@@ -452,7 +524,10 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
       fetch,
       restoreDocs,
       removeUnder,
-      put: (key: string, real: string) => Queue.offer(pending, [key, real]).pipe(Effect.asVoid),
+      on,
+      put: (key: string, real: string) => Queue.offer(pending, { key, real }).pipe(Effect.asVoid),
+      putStaged: (key: string, stamp: string, stage: (path: string) => Effect.Effect<boolean>) =>
+        Queue.offer(pending, { key, stamp, stage }).pipe(Effect.asVoid),
     };
   });
 
@@ -491,7 +566,13 @@ export const ObjectStoreLive = Layer.unwrap(
           ),
           Effect.forkScoped,
         );
-        return { put: store.put, fetch: store.fetch, sweep: store.sweep };
+        return {
+          put: store.put,
+          on: store.on,
+          putStaged: store.putStaged,
+          fetch: store.fetch,
+          sweep: store.sweep,
+        };
       }),
     );
   }),

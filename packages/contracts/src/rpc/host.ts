@@ -141,6 +141,12 @@ export const HostFeature = Schema.Literals([
    * Gram opened again reaches at its new address, with its new token.
    */
   "session-retarget",
+  /**
+   * Reads a file a thread produced a part at a time (`host.files.part`), checked on the host as a
+   * preview is, so a control plane that keeps threads' outputs in an object store can copy one
+   * that is on this machine. A host without it keeps such a file to itself.
+   */
+  "file-parts",
 ]);
 export type HostFeature = typeof HostFeature.Type;
 
@@ -585,6 +591,22 @@ export const HostFetchedFile = Schema.Struct({
 export type HostFetchedFile = typeof HostFetchedFile.Type;
 const readErrors = Schema.Union([InvalidState, HostFailed]);
 
+/** The most bytes one `host.files.part` carries. */
+export const HOST_FILE_PART_BYTES = 4 * 2 ** 20;
+
+/**
+ * A part of a file on the host: the file's path there, its size and modification time (epoch ms,
+ * whole) as they were when the part was read, and the part's bytes as base64. A reader that sees
+ * the size or the time change between parts has read a file that changed under it.
+ */
+export const HostFilePart = Schema.Struct({
+  path: Schema.String,
+  size: Schema.Int,
+  mtime: Schema.Int,
+  data: Schema.String,
+});
+export type HostFilePart = typeof HostFilePart.Type;
+
 /**
  * What a control plane asks of a worker host. The caller has already decided a path is one it may
  * read; the host only reads it. Paths are the host's own. That holds while the only caller is the
@@ -674,6 +696,20 @@ export const HostRpcs = RpcGroup.make(
   Rpc.make("host.files.fetch", {
     payload: { path: Schema.String, cwd: Schema.String, maxBytes: PositiveInt },
     success: HostFetchedFile,
+    error: listErrors,
+  }),
+  /**
+   * Up to `length` bytes of a file from `offset`, for copying a thread's output off the host:
+   * `path` scoped to `roots` as a preview's is, outside them only where `outside` allows, a
+   * regular file and never a credential file. Served by a host that names `file-parts`.
+   */
+  Rpc.make("host.files.part", {
+    payload: {
+      ...fileRead,
+      offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+      length: PositiveInt.check(Schema.isLessThanOrEqualTo(HOST_FILE_PART_BYTES)),
+    },
+    success: HostFilePart,
     error: listErrors,
   }),
   /**

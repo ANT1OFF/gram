@@ -189,6 +189,7 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "thread-places",
   "browser-policy",
   "session-retarget",
+  "file-parts",
 ];
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
@@ -292,6 +293,12 @@ const handlersFor = (host: HostService) => {
       "host.folders.check": ({ path }) =>
         host.folders === undefined ? Effect.fail(noFolders) : host.folders.check(path),
       "host.files.fetch": ({ path, cwd, maxBytes }) => host.reads.fetch(path, cwd, maxBytes),
+      "host.files.part": ({ path, roots, outside, offset, length }) =>
+        host.reads.part === undefined
+          ? Effect.fail(
+              new InvalidState({ message: "This machine's host reads no file in parts." }),
+            )
+          : host.reads.part(path, roots, outside, offset, length),
       "host.attachments.put": ({ threadId, name, data }) =>
         host.attachments.put(threadId, name, data),
       "host.attachments.remove": ({ threadId }) => host.attachments.remove(threadId),
@@ -1047,6 +1054,15 @@ export const connectHost = (
         guarded(client["host.files.fetch"]({ path, cwd, maxBytes })).pipe(
           Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
         ),
+      // Only from a host that says it reads one: an older host keeps the file to itself.
+      ...(hostServes(hello, "file-parts")
+        ? {
+            part: (path, roots, outside, offset, length) =>
+              guarded(client["host.files.part"]({ path, roots, outside, offset, length })).pipe(
+                Effect.catch((error) => Effect.flatMap(keepFileErrors(error), Effect.fail)),
+              ),
+          }
+        : {}),
     };
     const folders: HostFolders = {
       browse: (input, limit) =>
