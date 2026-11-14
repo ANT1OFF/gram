@@ -39,12 +39,14 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { ENDPOINT_UNUSABLE, type EndpointConfig, ServerConfig } from "../config.ts";
-import { EventHub } from "../events/event-hub.ts";
-import { ThreadStore } from "../persistence/thread-store.ts";
+import { EventHub, isOwnEvent, type OwnEvent } from "../events/event-hub.ts";
+import { type StoredMessage, ThreadStore } from "../persistence/thread-store.ts";
 import { postJson } from "./endpoint.ts";
+import { messageEvent } from "./message-event.ts";
 import { openOutbox, type Outbox, type SinkEventInput } from "./outbox.ts";
 
 /** An event as server code records it: the sink adds when, and the outbox its number. */
@@ -105,8 +107,18 @@ export interface EventSinkOptions {
   /** The ids of the cards open now, for a `sink.started` that isn't the server's start. */
   readonly openAsks?: Effect.Effect<ReadonlyArray<string>>;
   /** The server's events to record; absent in a test that records by hand. */
-  readonly events?: Stream.Stream<ServerEvent>;
+  readonly events?: Stream.Stream<ServerEvent | OwnEvent>;
+  /**
+   * Reads a thread's stored messages (`ThreadStoreShape.storedMessages`), for the `message`
+   * events a deployment asked for. Absent, none is sent, whatever `events` carries.
+   */
+  readonly messages?: (
+    threadId: ThreadId,
+    select: { readonly messageId: string } | { readonly afterSeq: number; readonly limit: number },
+  ) => Effect.Effect<ReadonlyArray<StoredMessage>>;
   readonly batchSize?: number;
+  /** With `messages`: the bytes of events one batch carries before it takes no more. */
+  readonly batchBytes?: number;
   /** The first wait after a send that failed or was not taken; it doubles up to `retryMax`. */
   readonly retryBase?: Duration.Duration;
   readonly retryMax?: Duration.Duration;
@@ -122,6 +134,18 @@ export interface EventSinkOptions {
  * which opens with every thread.
  */
 export const SINK_MAX_UNSENT = 200_000;
+
+/**
+ * With messages sent, a batch stops taking events once it holds this many bytes of them, so two
+ * hundred large messages are not one request. It always carries one event at least.
+ */
+export const SINK_BATCH_BYTES = 1024 * 1024;
+
+/** How many messages a thread's stored messages are read and recorded at a time. */
+const MESSAGES_PAGE = 50;
+
+/** How many messages' last-sent content is remembered, to leave an unchanged rewrite unsent. */
+const SENT_MESSAGES_KEPT = 5000;
 
 /** A thread as `thread.upsert` and `sink.started` send it. */
 export const threadData = (thread: Thread, status?: string): Record<string, unknown> => ({
@@ -161,6 +185,7 @@ export const makeEventSink = (
     const recheck = options.recheck ?? Duration.seconds(2);
     const cardsSettle = Duration.seconds(1);
     const maxUnsent = options.maxUnsent ?? SINK_MAX_UNSENT;
+    const batchBytes = options.batchBytes ?? SINK_BATCH_BYTES;
     const outbox: Outbox = yield* Effect.acquireRelease(
       Effect.sync(() => openOutbox(options.file)),
       (opened) => Effect.sync(() => opened.close()),
@@ -283,6 +308,12 @@ export const makeEventSink = (
 
     /** What a server event is to the sink; most are for windows alone and are nothing. */
     const eventsOf = (event: ServerEvent): ReadonlyArray<SinkRecord> => {
+      // A removed thread's messages went with it: a thread reopened under its id starts over.
+      if (event.type === "thread.removed") {
+        for (const key of sentMessages.keys()) {
+          if (key.startsWith(`${event.threadId} `)) sentMessages.delete(key);
+        }
+      }
       switch (event.type) {
         case "thread.upsert": {
           const { thread } = event;
@@ -390,6 +421,49 @@ export const makeEventSink = (
       }
     };
 
+    /** What each message last sent held, so a save that changed nothing isn't sent again. */
+    const sentMessages = new Map<string, string>();
+    const messageRecord = (
+      threadId: ThreadId,
+      stored: StoredMessage,
+      now: number,
+      again: boolean,
+    ) => {
+      const key = `${threadId} ${stored.message.id}`;
+      const held = createHash("sha256")
+        .update(JSON.stringify([stored.role, stored.turnId ?? null, stored.message]))
+        .digest("base64");
+      if (!again && sentMessages.get(key) === held) return [];
+      sentMessages.delete(key);
+      sentMessages.set(key, held);
+      if (sentMessages.size > SENT_MESSAGES_KEPT) {
+        sentMessages.delete(sentMessages.keys().next().value!);
+      }
+      return [messageEvent(scoped(threadId), stored, now)];
+    };
+
+    /** Records what a stored message, or a thread's every stored message, is now. */
+    const recordMessages = (event: OwnEvent): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const read = options.messages;
+        if (read === undefined) return;
+        if (event.type === "message.settled") {
+          const now = yield* Clock.currentTimeMillis;
+          // Gone already (a rewind, a send taken back): there is nothing of it to send.
+          const stored = yield* read(event.threadId, { messageId: event.messageId });
+          yield* write(stored.flatMap((one) => messageRecord(event.threadId, one, now, false)));
+          return;
+        }
+        let afterSeq = 0;
+        while (true) {
+          const now = yield* Clock.currentTimeMillis;
+          const page = yield* read(event.threadId, { afterSeq, limit: MESSAGES_PAGE });
+          yield* write(page.flatMap((one) => messageRecord(event.threadId, one, now, true)));
+          if (page.length < MESSAGES_PAGE) return;
+          afterSeq = page.at(-1)!.seq;
+        }
+      });
+
     // With no window watching, nothing else reconciles a workspace's feature cards. A ledger
     // moves in bursts, so the workspaces that moved collect for a moment and are each read once.
     const movedWorkspaces = new Set<WorkspaceId>();
@@ -419,6 +493,7 @@ export const makeEventSink = (
         Stream.runForEach((event) =>
           Effect.gen(function* () {
             if (!(yield* isOn)) return;
+            if (isOwnEvent(event)) return yield* recordMessages(event);
             yield* write(eventsOf(event));
             if (event.type === "orchestration.changed") {
               movedWorkspaces.add(event.workspaceId);
@@ -438,8 +513,16 @@ export const makeEventSink = (
     /** Sends one batch: `sent` when the receiver took something, `empty` with nothing to send. */
     const sendOnce = Effect.gen(function* () {
       const confirmed = outbox.confirmed();
-      const events: ReadonlyArray<SinkEvent> = outbox.after(confirmed, batchSize);
-      if (events.length === 0) return "empty" as const;
+      const held: ReadonlyArray<SinkEvent> = outbox.after(confirmed, batchSize);
+      if (held.length === 0) return "empty" as const;
+      let events = held;
+      if (options.messages !== undefined) {
+        let bytes = 0;
+        const fits = held.findIndex(
+          (event) => (bytes += JSON.stringify(event).length) > batchBytes,
+        );
+        if (fits !== -1) events = held.slice(0, Math.max(1, fits));
+      }
       const source = outbox.source();
       const batch: SinkBatch = { v: EMBEDDING_WIRE_VERSION, source, events };
       const answer = yield* postJson(options.endpoint, batch, options.timeoutMs ?? 30_000).pipe(
@@ -556,6 +639,16 @@ export const makeEventSink = (
     };
   });
 
+/** The server events the sink records something of. */
+const recorded = (event: ServerEvent): boolean =>
+  event.type === "thread.upsert" ||
+  event.type === "thread.removed" ||
+  event.type === "thread.status" ||
+  event.type === "thread.request" ||
+  event.type === "thread.requestResolved" ||
+  event.type === "thread.usage" ||
+  event.type === "orchestration.changed";
+
 /** The file the sink's outbox is kept in, beside the server's database. */
 export const eventSinkFile = (dataDir: string): string => join(dataDir, "event-sink.db");
 
@@ -600,17 +693,13 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
             ),
             Effect.map((lists) => lists.flat().map((request) => request.id)),
           ),
-          events: hub.internalEvents(
-            (event) =>
-              event.type === "thread.upsert" ||
-              event.type === "thread.removed" ||
-              event.type === "thread.status" ||
-              event.type === "thread.request" ||
-              event.type === "thread.requestResolved" ||
-              event.type === "thread.usage" ||
-              event.type === "orchestration.changed",
-            "event sink",
-          ),
+          // Messages are sent only where the deployment asked: otherwise the hub's word of them
+          // is never queued here, and the sink records what it did before there was any.
+          events:
+            config.eventSinkMessages === true
+              ? hub.ownEvents((event) => isOwnEvent(event) || recorded(event), "event sink")
+              : hub.internalEvents(recorded, "event sink"),
+          ...(config.eventSinkMessages === true ? { messages: store.storedMessages } : {}),
         });
       }),
     );

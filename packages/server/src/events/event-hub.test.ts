@@ -138,6 +138,41 @@ describe("EventHub per-client buffers", () => {
     }).pipe(Effect.scoped, Effect.provide(SmallHub)),
   );
 
+  it.live("own events reach `ownEvents` in order with the rest, and nothing else", () =>
+    Effect.gen(function* () {
+      const hub = yield* EventHub;
+      const own = yield* hub
+        .ownEvents((event) => event.type !== "notify")
+        .pipe(Stream.take(3), Stream.runCollect, Effect.forkScoped);
+      const internal: Array<string> = [];
+      yield* hub
+        .internalEvents(() => true)
+        .pipe(
+          Stream.runForEach((event) => Effect.sync(() => void internal.push(event.type))),
+          Effect.forkScoped,
+        );
+      yield* Effect.yieldNow;
+      const ui = yield* Stream.toPull(hub.serverEvents(Effect.succeed(SNAPSHOT)));
+      yield* pullUntil(ui, (e) => e.type === "threads.snapshot");
+      const threadId = "t1" as ThreadId;
+      yield* hub.publish({ type: "thread.removed", threadId: "t0" as ThreadId });
+      yield* hub.publishOwn({ type: "message.settled", threadId, messageId: "m1" });
+      yield* hub.publish({ type: "notify", kind: "info", title: "skipped" });
+      yield* hub.publishOwn({ type: "messages.replaced", threadId });
+      yield* hub.publish({ type: "notify", kind: "info", title: "last" });
+      expect([...(yield* Fiber.join(own))]).toEqual([
+        { type: "thread.removed", threadId: "t0" },
+        { type: "message.settled", threadId, messageId: "m1" },
+        { type: "messages.replaced", threadId },
+      ]);
+      // No window hears of them, and neither does an `internalEvents` stream that keeps everything.
+      const seen = yield* pullUntil(ui, (e) => e.type === "notify" && e.title === "last");
+      expect(seen.map((e) => e.type)).toEqual(["thread.removed", "notify", "notify"]);
+      yield* Effect.sleep("10 millis");
+      expect(internal).toEqual(["thread.removed", "notify", "notify"]);
+    }).pipe(Effect.scoped, Effect.provide(EventHub.layer)),
+  );
+
   it.live("resumes with `resumed`, and resyncs a stalled client in full", () =>
     Effect.gen(function* () {
       const hub = yield* EventHub;

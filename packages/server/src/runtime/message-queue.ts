@@ -33,7 +33,14 @@ import {
   type Thread,
   type ThreadStatus,
 } from "@gram/contracts";
-import { typedText, userMessage, userParts, authored, typedInput } from "./user-input.ts";
+import {
+  typedText,
+  userMessage,
+  userParts,
+  authored,
+  typedInput,
+  withSender,
+} from "./user-input.ts";
 import type { AgentSession, SteerOptions } from "@gram/agents";
 import { randomUUID } from "node:crypto";
 import type { JoinQueued, JoinResult, ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
@@ -238,7 +245,11 @@ export const makeMessageQueue = ({
       // The id doubles as the agent transcript id, so a rewind can resume just before this message.
       const messageId = ids.messageId ?? randomUUID();
       if (ids.published !== true) {
-        yield* publishMessage(rt, userMessage(input, messageId, turn.id, now), turn.id);
+        yield* publishMessage(
+          rt,
+          yield* withSender(userMessage(input, messageId, turn.id, now)),
+          turn.id,
+        );
       }
       yield* markRunning(rt, turn);
       yield* markSessionUsed(rt);
@@ -313,7 +324,7 @@ export const makeMessageQueue = ({
       const input = yield* withWaitNote(rt, sent, turn.id);
       const messageId = randomUUID();
       const now = yield* Clock.currentTimeMillis;
-      const message = {
+      const message = yield* withSender({
         id: messageId,
         role: "user",
         parts: userParts(input, messageId),
@@ -323,7 +334,7 @@ export const makeMessageQueue = ({
           ...(input.author === undefined ? {} : { author: input.author }),
           delivery: options?.interrupt === true ? "interrupt" : "steer",
         },
-      } as unknown as GramUIMessage;
+      } as unknown as GramUIMessage);
       const read = yield* forAgent(rt, input);
       const taken = yield* (
         options?.interrupt === true ? session.steer(read, options) : session.steer(read)
@@ -577,7 +588,11 @@ export const makeMessageQueue = ({
       rt.launch = { id, input, turnId };
       rt.actors.set(id, yield* storedActor);
       yield* persistQueue(rt);
-      yield* publishMessage(rt, userMessage(input, id, turnId, createdAt), turnId);
+      yield* publishMessage(
+        rt,
+        yield* withSender(userMessage(input, id, turnId, createdAt)),
+        turnId,
+      );
     });
 
   /**

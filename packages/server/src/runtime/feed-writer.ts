@@ -88,13 +88,23 @@ export const makeFeedWriter = ({
       return hub.publishFeed(item).pipe(Effect.as(item));
     });
 
+  /**
+   * Tells the server's own consumers that a stored message is whole: written, and not streaming.
+   * A message written whole is at once; a streamed one when it has finished and no tool output
+   * of its is still to be replaced, or when its turn ends (`persist`). Every later write of it
+   * tells again.
+   */
+  const settled = (rt: Runtime, messageId: string) =>
+    hub.publishOwn({ type: "message.settled", threadId: rt.threadId, messageId });
+
   /** Stores a whole message and pushes it to live subscribers. */
   const publishMessage = (rt: Runtime, message: GramUIMessage, turnId?: TurnId) =>
     feedLocked(
       rt,
-      store
-        .upsertMessage(rt.threadId, message, turnId)
-        .pipe(Effect.flatMap((rev) => publishFeed(rt, { type: "message", message, rev }))),
+      store.upsertMessage(rt.threadId, message, turnId).pipe(
+        Effect.flatMap((rev) => publishFeed(rt, { type: "message", message, rev })),
+        Effect.tap(() => settled(rt, message.id)),
+      ),
     );
 
   /** Called with the feed lock held. Sends live subscribers the stored feed in place of theirs. */
@@ -152,13 +162,16 @@ export const makeFeedWriter = ({
    * settles: finished, with no tool output still to replace. A save that skips it sets a timer for
    * the rest of that interval, so a reply that pauses mid-stream (a stall, a long tool call) is
    * still indexed by then: search lags what is stored by `SEARCH_REFRESH_MS` at most.
+   *
+   * `turnOver` is the save a turn's end or a session's makes: a finished message is then told as
+   * settled whatever tool output it still waits on, since that may never come.
    */
-  const persist = (rt: Runtime, inFlight: InFlight) =>
+  const persist = (rt: Runtime, inFlight: InFlight, turnOver = false) =>
     Effect.gen(function* () {
-      const settled = inFlight.finished && inFlight.accumulator.preliminaryTools().length === 0;
+      const whole = inFlight.finished && inFlight.accumulator.preliminaryTools().length === 0;
       const now = yield* monotonicMs;
       const last = searchIndexedAt.get(inFlight);
-      const refresh = settled || last === undefined || now - last >= SEARCH_REFRESH_MS;
+      const refresh = whole || last === undefined || now - last >= SEARCH_REFRESH_MS;
       const key = `${rt.threadId} ${inFlight.messageId}`;
       if (refresh) {
         searchIndexedAt.set(inFlight, now);
@@ -178,6 +191,7 @@ export const makeFeedWriter = ({
           { onlyIfMissing: true },
         );
       }
+      if (whole || (turnOver && inFlight.finished)) yield* settled(rt, inFlight.messageId);
       return rev;
     });
 
@@ -375,7 +389,7 @@ export const makeFeedWriter = ({
           if (!inFlight.finished && !inFlight.nested) {
             yield* appendChunkLocked(rt, inFlight.messageId, { type: "finish" });
           }
-          yield* persist(rt, inFlight);
+          yield* persist(rt, inFlight, true);
           inFlight.unsaved = false;
           // Codex unified exec can exit after its parent reply finishes. Keep that accumulator
           // until its authoritative output arrives, so it updates the original stored card.
@@ -421,6 +435,7 @@ export const makeFeedWriter = ({
         const message = { ...reply, metadata: { ...reply.metadata, ...stamp } };
         const rev = yield* store.upsertMessage(rt.threadId, message);
         yield* publishFeed(rt, { type: "message", message, rev });
+        yield* settled(rt, messageId);
       }),
     );
 
@@ -438,7 +453,7 @@ export const makeFeedWriter = ({
           if (!inFlight.finished) {
             yield* appendChunkLocked(rt, inFlight.messageId, { type: "finish" });
           }
-          yield* persist(rt, inFlight);
+          yield* persist(rt, inFlight, true);
           inFlight.unsaved = false;
           rt.open.delete(inFlight.messageId);
         }

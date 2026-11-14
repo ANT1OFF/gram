@@ -1412,6 +1412,7 @@ const make = Effect.gen(function* () {
 
   const historyMethods = makeHistoryMethods({
     store,
+    hub,
     runtimes,
     config,
     getRuntime,

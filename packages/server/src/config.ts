@@ -155,6 +155,11 @@ export interface ServerConfigShape {
    * `GRAM_EVENT_SINK_TOKEN`. Absent or unusable, nothing is recorded or sent.
    */
   readonly eventSink?: EndpointSetting;
+  /**
+   * The sink is sent each thread's messages too, as `message` events
+   * (`GRAM_EVENT_SINK_MESSAGES=1`). Nothing without `eventSink`.
+   */
+  readonly eventSinkMessages?: boolean;
 }
 
 /**
@@ -250,6 +255,7 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
       ...(embed === undefined ? {} : { embed }),
       ...(decisionHook === undefined ? {} : { decisionHook }),
       ...(eventSink === undefined ? {} : { eventSink }),
+      ...(env["GRAM_EVENT_SINK_MESSAGES"] === "1" ? { eventSinkMessages: true } : {}),
     };
   };
 }
