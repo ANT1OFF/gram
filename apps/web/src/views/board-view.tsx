@@ -12,6 +12,7 @@ import { UndoLine } from "@/inbox/inbox-line";
 import { showInboxAsk } from "@/inbox/inbox-store";
 import { useWorkspaceAsks } from "@/orchestration/ask-stack";
 import { FailuresCard } from "@/orchestration/failures-card";
+import { NoCiNote } from "@/orchestration/no-ci-note";
 import { useOpenWorker, useRailFacts } from "@/orchestration/feature-sheet";
 import {
   boardRows,
@@ -175,6 +176,8 @@ function RailBoard({ state }: { state: WorkspaceState }) {
       <BoardHeader state={state} hidden={hidden} />
       {/* Failures first: above the lines and what waits on you, and never scrolled away. */}
       <FailuresCard workspaceId={workspaceId} className="shrink-0 px-4 pt-2 pb-1" />
+      {/* Why a repo's PRs show no checks, once for the workspace: a fact, not a failure. */}
+      <NoCiNote workspaceId={workspaceId} className="shrink-0 px-4 pt-1.5 pb-1" />
       <div
         data-testid="rail-scroller"
         data-layout={phone ? "phone" : "grid"}

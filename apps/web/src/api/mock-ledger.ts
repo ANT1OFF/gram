@@ -73,6 +73,8 @@ export const mockWorkerState = (
 
 /** What the ledger knows about a worker beyond its thread: only the simulations set any of it. */
 export interface WorkerExtras {
+  /** Its project has no local check, in the server's words. */
+  readonly localGate?: string | undefined;
   readonly lastReport?: WorkerReport | undefined;
   /** A turn of its has run in this mock session: no longer briefed. */
   readonly started?: boolean | undefined;
@@ -134,10 +136,21 @@ export const ledgerEntry = (
   summary: ThreadSummary,
   feature: string,
   projectName: string,
-  { lastReport, started, askedAt, overlapsWith, userIntervened, alsoIn, wakes, now }: WorkerExtras,
+  {
+    localGate,
+    lastReport,
+    started,
+    askedAt,
+    overlapsWith,
+    userIntervened,
+    alsoIn,
+    wakes,
+    now,
+  }: WorkerExtras,
 ): WorkerLedgerEntry => {
   const { thread, git, usage } = summary;
   return {
+    ...(localGate === undefined ? {} : { localGate }),
     feature,
     projectId: thread.projectId,
     project: projectName,

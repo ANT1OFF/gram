@@ -380,6 +380,15 @@ test("a worker's red CI stays out of the Failing strip and Needs you, held by th
   await testInfo.attach("worker-owned-ci", { path: ownedShot });
 });
 
+test("a repo that runs no CI gets one calm note on the Board, not a failure", async ({ page }) => {
+  await start(page, () => window.gramMock!.simulateNoCi());
+  const note = board(page).getByTestId("board-no-ci");
+  await expect(note).toHaveCount(1);
+  await expect(note).toContainText(/^No CI on \S+: its pull requests report no hosted checks/);
+  // A fact, not an alarm: nothing in the Failing strip for it.
+  await expect(board(page).getByTestId("board-failure")).toHaveCount(0);
+});
+
 test("⌘⇧D, the orchestrator's header, the palette and Memory all open the Board view", async ({
   page,
 }) => {
