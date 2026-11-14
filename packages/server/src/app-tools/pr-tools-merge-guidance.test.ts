@@ -149,6 +149,33 @@ describe("merge_when_ready guidance at full autonomy", () => {
       identity: cloneIdentityOf("ssh://git@github.com/ACME/App.git"),
     },
     { label: "an identity naming no repository", identity: "not-an-identity" },
+    { label: "an encoded owner", identity: cloneIdentityOf("https://github.com/%61cme/app.git") },
+    {
+      label: "an encoded repository",
+      identity: cloneIdentityOf("https://github.com/acme/%61pp.git"),
+    },
+    {
+      label: "an encoded separator",
+      identity: cloneIdentityOf("https://github.com/acme%2Fapp.git"),
+    },
+    // Cyrillic а in place of a: recorded as its clone would be, whether or not a URL reads back.
+    {
+      label: "a lookalike character",
+      identity: JSON.stringify(["https:", "github.com", "443", "", "/acme/\u0430pp.git"]),
+    },
+    { label: "a subpath", identity: cloneIdentityOf("https://github.com/prefix/acme/app.git") },
+    {
+      label: "a numeric subpath",
+      identity: cloneIdentityOf("https://github.com/123/acme/app.git"),
+    },
+    {
+      label: "an extra segment",
+      identity: cloneIdentityOf("https://github.com/acme/app/extra.git"),
+    },
+    {
+      label: "an enterprise host",
+      identity: cloneIdentityOf("https://ghe.example.test/elsewhere/other.git"),
+    },
     {
       label: "another repository",
       identity: cloneIdentityOf("https://github.com/elsewhere/other.git"),
@@ -318,8 +345,16 @@ describe("merge_when_ready guidance at full autonomy", () => {
       }).pipe(Effect.scoped),
   );
 
-  for (const { label, identity } of REMOTE_IDENTITIES.filter(
-    (each) => each.label === "it without .git" || each.label === "its scp form",
+  for (const { label, identity } of REMOTE_IDENTITIES.filter((each) =>
+    [
+      "it without .git",
+      "its scp form",
+      "an encoded owner",
+      "an encoded repository",
+      "a lookalike character",
+      "a subpath",
+      "an extra segment",
+    ].includes(each.label),
   )) {
     it.effect.skipIf(!hasGit)(
       `a worker on another machine taking the armed PR's branch under ${label} during the fresh read stops its merge`,

@@ -4,6 +4,7 @@ import {
   OWNERSHIP_BLOCKERS,
   ownershipAsk,
   ownershipForAgent,
+  plainGitHubRepoOf,
 } from "./worker-pr.ts";
 
 describe("ownership blockers", () => {
@@ -62,5 +63,54 @@ describe("ownership blockers", () => {
     const gone = ownershipAsk(OWNERSHIP_BLOCKERS.noWorkspace, "worker", "", "", "run it", false);
     expect(gone.agent).not.toContain("has to approve");
     expect(gone.agent).toContain("otherwise rely on CI");
+  });
+});
+
+describe("plainGitHubRepoOf", () => {
+  it("names a repository only from a plain GitHub URL", () => {
+    for (const url of [
+      "https://github.com/acme/app",
+      "https://github.com/acme/app.git",
+      "https://github.com/acme/app/",
+      "https://github.com:443/acme/app.git",
+      "https://GitHub.com/acme/app.git",
+      "ssh://git@github.com/acme/app.git",
+      "ssh://git@github.com:22/acme/app.git",
+      "ssh://git@ssh.github.com:443/acme/app.git",
+      "git@github.com:acme/app.git",
+      "github.com:acme/app",
+    ])
+      expect(plainGitHubRepoOf(url), url).toBe("acme/app");
+    expect(plainGitHubRepoOf("https://github.com/Acme-Co/my_app.v2.git")).toBe("Acme-Co/my_app.v2");
+  });
+
+  it("names nothing for an encoded, lookalike, extra-segment or other-host URL", () => {
+    for (const url of [
+      "https://github.com/%61cme/app.git",
+      "https://github.com/acme/%61pp.git",
+      "https://github.com/acme%2Fapp.git",
+      "https://github.com/acme/\u0430pp.git",
+      "https://github.com/acme/app\uff0egit",
+      "https://github.com/prefix/acme/app.git",
+      "https://github.com/123/acme/app.git",
+      "https://github.com/acme/app/extra.git",
+      "https://github.com/acme/app.git?x=1",
+      "https://github.com/acme/app.git#x",
+      "https://user@github.com/acme/app.git",
+      "https://github.com:8443/acme/app.git",
+      "ssh://git@github.com:2222/acme/app.git",
+      "ssh.github.com:acme/app.git",
+      "https://ghe.example.test/acme/app.git",
+      "https://github.com/.acme/app.git",
+      "https://github.com/acme./app.git",
+      "https://github.com/acme/..",
+      "https://github.com/acme/app.git.git",
+      "https://github.com/acme\\app.git",
+      "https://github.com/acme/ app.git",
+      "file:///srv/acme/app.git",
+      "/srv/acme/app.git",
+      "",
+    ])
+      expect(plainGitHubRepoOf(url), url).toBeUndefined();
   });
 });

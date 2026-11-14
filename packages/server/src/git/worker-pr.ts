@@ -10,15 +10,7 @@ import {
   type Project,
   type Thread,
 } from "@gram/contracts";
-import {
-  git,
-  originOwnerRepo,
-  parseOwnerRepo,
-  prHead,
-  type Proc,
-  realPathOrOwned,
-  samePath,
-} from "@gram/git";
+import { git, originOwnerRepo, prHead, type Proc, realPathOrOwned, samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { folderExists, ghFolderOf } from "../fs/folders.ts";
@@ -325,26 +317,77 @@ const machineConfirms = (
         Effect.orElseSucceed(() => false),
       );
 
+/** GitHub's own hosts, and the port each transport may name on them (none, or its default). */
+const GITHUB_HOSTS: Readonly<Record<string, { readonly https: string; readonly ssh: string }>> = {
+  "github.com": { https: "443", ssh: "22" },
+  "www.github.com": { https: "443", ssh: "22" },
+  "ssh.github.com": { https: "443", ssh: "443" },
+};
+/** An account or repository name as GitHub spells one: plain ASCII, nothing encoded. */
+const PLAIN_NAME = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * The `owner/repo` a clone URL names on GitHub, read strictly: an https, ssh or scp URL to one of
+ * GitHub's own hosts on its default port, whose path is exactly an owner and a repository, each a
+ * plain GitHub name (`[A-Za-z0-9._-]`, the owner without a dot at either end; the repository with
+ * at most one `.git` suffix, which is dropped), with nothing encoded, no other characters, no query
+ * or fragment and no further segments. `undefined` for anything else: such a URL may still name
+ * the repository some other way (an encoded letter, a lookalike character, a subpath, a mirror or
+ * enterprise host), so it never counts as naming a different one.
+ */
+export const plainGitHubRepoOf = (url: string): string | undefined => {
+  if (!/^[\x21-\x7e]+$/.test(url) || /[%?#\\]/.test(url)) return undefined;
+  const parts =
+    /^https:\/\/([^/@:]+)(?::(\d+))?\/([^/]+)\/([^/]+?)\/?$/.exec(url) ??
+    /^ssh:\/\/(?:[A-Za-z0-9._-]+@)?([^/@:]+)(?::(\d+))?\/([^/]+)\/([^/]+?)\/?$/.exec(url) ??
+    /^(?:[A-Za-z0-9._-]+@)?([^/@:]+):()([^/]+)\/([^/]+?)\/?$/.exec(url);
+  if (parts === null) return undefined;
+  const [, rawHost = "", port = "", owner = "", rawName = ""] = parts;
+  const host = GITHUB_HOSTS[rawHost.toLowerCase()];
+  if (host === undefined) return undefined;
+  const transport = url.startsWith("https://") ? "https" : "ssh";
+  if (port !== "" && port !== host[transport]) return undefined;
+  // scp has no port, so only `github.com`'s ssh default (22) serves it.
+  if (!url.includes("://") && host.ssh !== "22") return undefined;
+  const name = rawName.endsWith(".git") ? rawName.slice(0, -4) : rawName;
+  if (
+    !PLAIN_NAME.test(owner) ||
+    owner.startsWith(".") ||
+    owner.endsWith(".") ||
+    !PLAIN_NAME.test(name) ||
+    name === "." ||
+    name === ".." ||
+    name.endsWith(".git")
+  )
+    return undefined;
+  return `${owner}/${name}`;
+};
+
+/** A local folder's `origin` URL, unread when its config can't be read. */
+const originUrlOf = (at: string) =>
+  git(at, ["remote", "get-url", "origin"], { timeoutMs: 2_000 }).pipe(
+    Effect.map((out) => (out.status === 0 ? out.stdout.trim() || undefined : undefined)),
+    Effect.orElseSucceed(() => undefined),
+  );
+
 /**
  * Whether `checkout`, a folder of another thread's, may be a clone of `repo`, by what this machine
  * can trust: here, its origin; on another machine, the origin Gram recorded as it made it there
- * (`cloneIdentity`), never the path that machine reports. Both are read as the GitHub repository
- * they name, so the aliases of one (`.git` or not, https, ssh or scp, any case) are one. Only a
- * repository positively named as another one is a no: a folder, origin or identity that is
- * missing, unreadable or names no repository may hold the branch, so it counts as holding it.
- * For the strict match that grants a worker its own folder there, see `projectOfClone`.
+ * (`cloneIdentity`), never the path that machine reports. Either is read as the GitHub repository
+ * it names (`plainGitHubRepoOf`), so its aliases (`.git` or not, https, ssh or scp, any case) are
+ * one repository. Only a URL that plainly names another repository is a no: a folder, origin or
+ * identity that is missing, unreadable, malformed or ambiguous may hold the branch, so it counts as
+ * holding it. For the strict match that grants a worker its own folder there, see `projectOfClone`.
  */
 const mayHoldRepo = (checkout: Checkout, repo: string) =>
   Effect.gen(function* () {
+    let url: string | undefined;
     if (isLocalHost(checkout)) {
       const at = (yield* folderExists(checkout.path)) ? checkout.path : checkout.repoRoot;
-      if (at === undefined) return true;
-      const origin = yield* originOwnerRepo(at);
-      return origin === undefined || sameRepo(origin, repo);
-    }
-    if (checkout.cloneIdentity === undefined) return true;
-    const url = cloneUrlOf(checkout.cloneIdentity);
-    const named = url === undefined ? undefined : parseOwnerRepo(url);
+      url = at === undefined ? undefined : yield* originUrlOf(at);
+    } else
+      url = checkout.cloneIdentity === undefined ? undefined : cloneUrlOf(checkout.cloneIdentity);
+    const named = url === undefined ? undefined : plainGitHubRepoOf(url);
     return named === undefined || sameRepo(named, repo);
   }).pipe(Effect.orElseSucceed(() => true));
 
