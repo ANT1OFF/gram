@@ -48,6 +48,7 @@ import { samePath } from "@gram/git";
 import type { AgentHosts } from "./agent-hosts.ts";
 import {
   DECISION_UNAVAILABLE,
+  refusalForAgent,
   refusalText,
   type Decided,
   type DecisionHookShape,
@@ -305,13 +306,17 @@ export const makeAgentEvents = ({
           if (session === undefined || (asking !== undefined && session !== asking)) return;
           const refusal =
             refused === undefined ? undefined : refusalText(refused.action, refused.decided.reason);
+          const forAgent =
+            refused === undefined
+              ? undefined
+              : refusalForAgent(refused.action, refused.decided.reason);
           if (refused !== undefined || asked === undefined) {
             const delivered = yield* session
               .respond(
                 request.id,
-                refusal === undefined
+                forAgent === undefined
                   ? { kind: "approval", decision: "allow", scope: "once" }
-                  : { kind: "approval", decision: "deny", scope: "once", message: refusal },
+                  : { kind: "approval", decision: "deny", scope: "once", message: forAgent },
               )
               .pipe(
                 Effect.as(true),
