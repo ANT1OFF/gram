@@ -4,7 +4,9 @@ import {
   OWNERSHIP_BLOCKERS,
   ownershipAsk,
   ownershipForAgent,
-  plainGitHubRepoOf,
+  remoteNamesOtherRepo,
+  remoteNamesRepo,
+  remoteRepoOf,
 } from "./worker-pr.ts";
 
 describe("ownership blockers", () => {
@@ -72,25 +74,64 @@ describe("ownership blockers", () => {
   });
 });
 
-describe("plainGitHubRepoOf", () => {
-  it("names a repository only from a plain GitHub URL", () => {
+/** The repository `remoteRepoOf` reads, as `owner/name`. */
+const named = (url: string) => {
+  const repo = remoteRepoOf(url);
+  return repo === undefined ? undefined : `${repo.owner}/${repo.name}`;
+};
+
+/** Every way the property test spells a remote of `path` on `host`. */
+const forms = (host: string, path: string) => [
+  `https://${host}/${path}`,
+  `https://${host}:443/${path}`,
+  `https://${host}:8443/${path}`,
+  `https://user@${host}/${path}`,
+  `ssh://git@${host}/${path}`,
+  `ssh://git@${host}:22/${path}`,
+  `ssh://git@${host}:443/${path}`,
+  `ssh://git@${host}:2222/${path}`,
+  `git@${host}:${path}`,
+  `https://${host}/prefix/${path}`,
+];
+
+/** Whether `owner/name` spells the property test's repository, acme/app. */
+const isTarget = (owner: string, name: string) =>
+  owner.toLowerCase() === "acme" && name.toLowerCase() === "app";
+
+describe("remoteRepoOf", () => {
+  it("reads a plain remote's repository, dropping one .git suffix in any case", () => {
     for (const url of [
       "https://github.com/acme/app",
       "https://github.com/acme/app.git",
+      "https://github.com/acme/app.GIT",
+      "https://github.com/acme/app.Git",
+      "https://github.com/acme/app.gIt",
       "https://github.com/acme/app/",
+      "https://github.com/acme/app.git/",
       "https://github.com:443/acme/app.git",
       "https://GitHub.com/acme/app.git",
+      "https://user@github.com/acme/app.git",
       "ssh://git@github.com/acme/app.git",
-      "ssh://git@github.com:22/acme/app.git",
+      "ssh://git@github.com:22/acme/app.GIT",
       "ssh://git@ssh.github.com:443/acme/app.git",
       "git@github.com:acme/app.git",
+      "git@github.com:acme/app.gIt",
       "github.com:acme/app",
+      "https://ghe.example.test/acme/app.git",
+      "ssh://git@ghe.example.test:2222/acme/app.git",
     ])
-      expect(plainGitHubRepoOf(url), url).toBe("acme/app");
-    expect(plainGitHubRepoOf("https://github.com/Acme-Co/my_app.v2.git")).toBe("Acme-Co/my_app.v2");
+      expect(named(url), url).toBe("acme/app");
+    expect(named("https://github.com/Acme-Co/my_app.v2.git")).toBe("Acme-Co/my_app.v2");
+    expect(remoteRepoOf("ssh://git@ssh.github.com:443/acme/app.git")).toEqual({
+      transport: "ssh",
+      host: "ssh.github.com",
+      port: "443",
+      owner: "acme",
+      name: "app",
+    });
   });
 
-  it("names nothing for an encoded, lookalike, extra-segment or other-host URL", () => {
+  it("names no repository for an encoded, lookalike or extra-segment remote", () => {
     for (const url of [
       "https://github.com/%61cme/app.git",
       "https://github.com/acme/%61pp.git",
@@ -102,32 +143,91 @@ describe("plainGitHubRepoOf", () => {
       "https://github.com/acme/app/extra.git",
       "https://github.com/acme/app.git?x=1",
       "https://github.com/acme/app.git#x",
-      "https://user@github.com/acme/app.git",
-      "https://github.com:8443/acme/app.git",
-      "ssh://git@github.com:2222/acme/app.git",
-      "ssh.github.com:acme/app.git",
-      "https://ghe.example.test/acme/app.git",
       "https://github.com/.acme/app.git",
       "https://github.com/acme./app.git",
       "https://github.com/acme/..",
       "https://github.com/acme/app.git.git",
+      "https://github.com/acme/app.GIT.git",
+      "https://github.com/acme/.git",
       "https://github.com/acme\\app.git",
       "https://github.com/acme/ app.git",
+      "https://.github.com/acme/app.git",
+      "https://git_hub.com/acme/app.git",
       "file:///srv/acme/app.git",
+      "/srv/acme/app.git",
+      "",
+    ])
+      expect(remoteRepoOf(url), url).toBeUndefined();
+  });
+
+  it("only plainly names another repository on GitHub's own host and default port", () => {
+    expect(remoteNamesOtherRepo("https://github.com/elsewhere/other.git", "acme/app")).toBe(true);
+    expect(remoteNamesOtherRepo("git@github.com:elsewhere/other.git", "acme/app")).toBe(true);
+    for (const url of [
+      "https://ghe.example.test/elsewhere/other.git",
+      "https://github.com:8443/elsewhere/other.git",
+      "ssh://git@github.com:2222/elsewhere/other.git",
+      "ssh.github.com:elsewhere/other.git",
       // Hosts spelled like keys every object inherits: no table lookup may find them.
       "https://constructor/elsewhere/other.git",
       "https://__proto__/elsewhere/other.git",
       "https://Constructor/elsewhere/other.git",
       "ssh://git@__proto__/elsewhere/other.git",
-      "ssh://git@constructor:22/elsewhere/other.git",
       "git@constructor:elsewhere/other.git",
-      "git@__proto__:elsewhere/other.git",
       "https://toString/elsewhere/other.git",
       "https://hasOwnProperty/elsewhere/other.git",
       "https://valueOf/elsewhere/other.git",
-      "/srv/acme/app.git",
-      "",
     ])
-      expect(plainGitHubRepoOf(url), url).toBeUndefined();
+      expect(remoteNamesOtherRepo(url, "acme/app"), url).toBe(false);
+    expect(remoteNamesOtherRepo(undefined, "acme/app")).toBe(false);
+    expect(remoteNamesRepo(undefined, "acme/app")).toBe(false);
+  });
+
+  it("never lets ownership and conflict detection disagree on a remote", () => {
+    const hosts = [
+      "github.com",
+      "GitHub.com",
+      "www.github.com",
+      "ssh.github.com",
+      "ghe.example.test",
+      "constructor",
+      "__proto__",
+    ];
+    const owners = ["acme", "ACME", "Acme", "%61cme", "\u0430cme", ".acme", "elsewhere"];
+    const names = ["app", "App", "APP", "%61pp", "\u0430pp", "other", "app.v2"];
+    const suffixes = [
+      "",
+      ".git",
+      ".GIT",
+      ".Git",
+      ".gIt",
+      "/",
+      ".git/",
+      ".GIT/",
+      ".git.git",
+      "/extra",
+    ];
+    let checked = 0;
+    for (const host of hosts)
+      for (const owner of owners)
+        for (const name of names)
+          for (const suffix of suffixes)
+            for (const url of forms(host, `${owner}/${name}${suffix}`)) {
+              checked++;
+              const owns = remoteNamesRepo(url, "acme/app");
+              const other = remoteNamesOtherRepo(url, "acme/app");
+              // A remote ownership takes for the repository is never plainly another one.
+              expect(owns && other, url).toBe(false);
+              // A remote that spells the repository with any .git case is never plainly another.
+              if (isTarget(owner, name)) expect(other, url).toBe(false);
+              // Plainly another needs a plain parse on GitHub's own host and default port.
+              if (other) {
+                const read = remoteRepoOf(url)!;
+                expect(read, url).toBeDefined();
+                expect(isTarget(read.owner, read.name), url).toBe(false);
+                expect(["github.com", "www.github.com", "ssh.github.com"]).toContain(read.host);
+              }
+            }
+    expect(checked).toBe(hosts.length * owners.length * names.length * suffixes.length * 10);
   });
 });

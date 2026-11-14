@@ -10,7 +10,7 @@ import {
   type Project,
   type Thread,
 } from "@gram/contracts";
-import { git, originOwnerRepo, prHead, type Proc, realPathOrOwned, samePath } from "@gram/git";
+import { git, prHead, type Proc, realPathOrOwned, samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { folderExists, ghFolderOf } from "../fs/folders.ts";
@@ -261,6 +261,13 @@ const ownedIn = (thread: Thread, checkout: Checkout): ReadonlyArray<string> => {
     .map((owned) => owned.branch);
 };
 
+/** A local folder's `origin` URL, unread when its config can't be read. */
+const originUrlOf = (at: string) =>
+  git(at, ["remote", "get-url", "origin"], { timeoutMs: 2_000 }).pipe(
+    Effect.map((out) => (out.status === 0 ? out.stdout.trim() || undefined : undefined)),
+    Effect.orElseSucceed(() => undefined),
+  );
+
 /**
  * The workspace project a worktree on another machine was made for, from what this machine
  * recorded as it made it: the identity of the origin it cloned (`cloneIdentity`), which must be
@@ -274,13 +281,9 @@ const projectOfClone = (
   Effect.gen(function* () {
     if (checkout.cloneIdentity === undefined) return undefined;
     for (const project of projects) {
-      const root = project.repoRoot ?? project.root;
-      if (!sameRepo(yield* originOwnerRepo(root), repo)) continue;
-      const out = yield* git(root, ["remote", "get-url", "origin"], { timeoutMs: 2_000 }).pipe(
-        Effect.orElseSucceed(() => undefined),
-      );
-      if (out === undefined || out.status !== 0) continue;
-      if (cloneIdentityOf(out.stdout.trim()) === checkout.cloneIdentity) return project;
+      const origin = yield* originUrlOf(project.repoRoot ?? project.root);
+      if (origin === undefined || !remoteNamesRepo(origin, repo)) continue;
+      if (cloneIdentityOf(origin) === checkout.cloneIdentity) return project;
     }
     return undefined;
   });
@@ -331,31 +334,54 @@ const GITHUB_HOSTS: ReadonlyMap<string, { readonly https: string; readonly ssh: 
 );
 /** An account or repository name as GitHub spells one: plain ASCII, nothing encoded. */
 const PLAIN_NAME = /^[A-Za-z0-9._-]+$/;
+/** A host name: plain ASCII letters, digits, dots and hyphens. */
+const PLAIN_HOST = /^[A-Za-z0-9.-]+$/;
+/** A `.git` suffix, in any case, as git and GitHub take it. */
+const GIT_SUFFIX = /\.git$/i;
+
+/** The repository a remote URL names, as `remoteRepoOf` reads it. */
+export interface RemoteRepo {
+  /** `ssh` for an scp-style URL too. */
+  readonly transport: "https" | "ssh";
+  /** Lowercased. */
+  readonly host: string;
+  /** The port it names; the transport's default (`443`, `22`) when it names none. */
+  readonly port: string;
+  readonly owner: string;
+  /** Without its `.git` suffix. */
+  readonly name: string;
+}
 
 /**
- * The `owner/repo` a clone URL names on GitHub, read strictly: an https, ssh or scp URL to one of
- * GitHub's own hosts on its default port, whose path is exactly an owner and a repository, each a
- * plain GitHub name (`[A-Za-z0-9._-]`, the owner without a dot at either end; the repository with
- * at most one `.git` suffix, which is dropped), with nothing encoded, no other characters, no query
- * or fragment and no further segments. `undefined` for anything else: such a URL may still name
- * the repository some other way (an encoded letter, a lookalike character, a subpath, a mirror or
- * enterprise host), so it never counts as naming a different one.
+ * The one reading of a remote (a local `origin`, or the URL of a clone identity Gram recorded)
+ * as a repository, for both questions asked of it: whether it is the PR's repository (ownership,
+ * `remoteNamesRepo`) and whether it is plainly another one (conflict, `remoteNamesOtherRepo`).
+ * Reading both from one parse is what keeps them from disagreeing.
+ *
+ * Strict: an https URL (credentials allowed), an ssh URL or an scp-style address, with a plain
+ * host and port, and a path of exactly an owner and a repository, each a plain GitHub name
+ * (`[A-Za-z0-9._-]`, the owner without a dot at either end; one `.git` suffix in any case
+ * dropped). ASCII only, with no `%`, query, fragment, backslash or further segment. `undefined`
+ * for anything else, which names no repository: it is never the PR's, nor plainly another.
  */
-export const plainGitHubRepoOf = (url: string): string | undefined => {
+export const remoteRepoOf = (url: string): RemoteRepo | undefined => {
   if (!/^[\x21-\x7e]+$/.test(url) || /[%?#\\]/.test(url)) return undefined;
-  const parts =
-    /^https:\/\/([^/@:]+)(?::(\d+))?\/([^/]+)\/([^/]+?)\/?$/.exec(url) ??
-    /^ssh:\/\/(?:[A-Za-z0-9._-]+@)?([^/@:]+)(?::(\d+))?\/([^/]+)\/([^/]+?)\/?$/.exec(url) ??
-    /^(?:[A-Za-z0-9._-]+@)?([^/@:]+):()([^/]+)\/([^/]+?)\/?$/.exec(url);
+  const https = /^https:\/\/(?:[^/@]+@)?([^/@:]+)(?::(\d+))?\/([^/]+)\/([^/]+?)\/?$/.exec(url);
+  const ssh =
+    https === null
+      ? /^ssh:\/\/(?:[A-Za-z0-9._-]+@)?([^/@:]+)(?::(\d+))?\/([^/]+)\/([^/]+?)\/?$/.exec(url)
+      : null;
+  const scp =
+    https === null && ssh === null
+      ? /^(?:[A-Za-z0-9._-]+@)?([^/@:]+):()([^/]+)\/([^/]+?)\/?$/.exec(url)
+      : null;
+  const parts = https ?? ssh ?? scp;
   if (parts === null) return undefined;
-  const [, rawHost = "", port = "", owner = "", rawName = ""] = parts;
-  const host = GITHUB_HOSTS.get(rawHost.toLowerCase());
-  if (host === undefined) return undefined;
-  const transport = url.startsWith("https://") ? "https" : "ssh";
-  if (port !== "" && port !== host[transport]) return undefined;
-  // scp has no port, so only `github.com`'s ssh default (22) serves it.
-  if (!url.includes("://") && host.ssh !== "22") return undefined;
-  const name = rawName.endsWith(".git") ? rawName.slice(0, -4) : rawName;
+  const [, rawHost = "", rawPort = "", owner = "", rawName = ""] = parts;
+  const transport = https === null ? "ssh" : "https";
+  if (!PLAIN_HOST.test(rawHost) || rawHost.startsWith(".") || rawHost.endsWith("."))
+    return undefined;
+  const name = rawName.replace(GIT_SUFFIX, "");
   if (
     !PLAIN_NAME.test(owner) ||
     owner.startsWith(".") ||
@@ -363,27 +389,46 @@ export const plainGitHubRepoOf = (url: string): string | undefined => {
     !PLAIN_NAME.test(name) ||
     name === "." ||
     name === ".." ||
-    name.endsWith(".git")
+    GIT_SUFFIX.test(name)
   )
     return undefined;
-  return `${owner}/${name}`;
+  return {
+    transport,
+    host: rawHost.toLowerCase(),
+    port: rawPort === "" ? (transport === "https" ? "443" : "22") : rawPort,
+    owner,
+    name,
+  };
 };
 
-/** A local folder's `origin` URL, unread when its config can't be read. */
-const originUrlOf = (at: string) =>
-  git(at, ["remote", "get-url", "origin"], { timeoutMs: 2_000 }).pipe(
-    Effect.map((out) => (out.status === 0 ? out.stdout.trim() || undefined : undefined)),
-    Effect.orElseSucceed(() => undefined),
+/** Whether the remote `url` names `repo`: what ownership asks of a worker's folder. */
+export const remoteNamesRepo = (url: string | undefined, repo: string): boolean => {
+  const named = url === undefined ? undefined : remoteRepoOf(url);
+  return named !== undefined && sameRepo(`${named.owner}/${named.name}`, repo);
+};
+
+/**
+ * Whether the remote `url` plainly names a repository other than `repo`, on GitHub's own host and
+ * its default port: the only answer that lets another thread's folder hold no claim on a branch.
+ * It is never true where `remoteNamesRepo` is.
+ */
+export const remoteNamesOtherRepo = (url: string | undefined, repo: string): boolean => {
+  const named = url === undefined ? undefined : remoteRepoOf(url);
+  if (named === undefined) return false;
+  const host = GITHUB_HOSTS.get(named.host);
+  return (
+    host !== undefined &&
+    named.port === host[named.transport] &&
+    !sameRepo(`${named.owner}/${named.name}`, repo)
   );
+};
 
 /**
  * Whether `checkout`, a folder of another thread's, may be a clone of `repo`, by what this machine
  * can trust: here, its origin; on another machine, the origin Gram recorded as it made it there
- * (`cloneIdentity`), never the path that machine reports. Either is read as the GitHub repository
- * it names (`plainGitHubRepoOf`), so its aliases (`.git` or not, https, ssh or scp, any case) are
- * one repository. Only a URL that plainly names another repository is a no: a folder, origin or
- * identity that is missing, unreadable, malformed or ambiguous may hold the branch, so it counts as
- * holding it. For the strict match that grants a worker its own folder there, see `projectOfClone`.
+ * (`cloneIdentity`), never the path that machine reports. Only a remote that plainly names
+ * another repository (`remoteNamesOtherRepo`) is a no: a folder, origin or identity that is
+ * missing, unreadable, malformed or ambiguous may hold the branch, so it counts as holding it.
  */
 const mayHoldRepo = (checkout: Checkout, repo: string) =>
   Effect.gen(function* () {
@@ -393,8 +438,7 @@ const mayHoldRepo = (checkout: Checkout, repo: string) =>
       url = at === undefined ? undefined : yield* originUrlOf(at);
     } else
       url = checkout.cloneIdentity === undefined ? undefined : cloneUrlOf(checkout.cloneIdentity);
-    const named = url === undefined ? undefined : plainGitHubRepoOf(url);
-    return named === undefined || sameRepo(named, repo);
+    return !remoteNamesOtherRepo(url, repo);
   }).pipe(Effect.orElseSucceed(() => true));
 
 /**
@@ -503,7 +547,7 @@ const checkWorkerPr = (
         continue;
       }
       if (!roots.has(yield* canonical(checkout.repoRoot ?? checkout.path))) continue;
-      if (!sameRepo(yield* originOwnerRepo(at), repo)) continue;
+      if (!remoteNamesRepo(yield* originUrlOf(at), repo)) continue;
       if (checkout.branch !== undefined) branches.set(checkout.branch, checkout);
       for (const owned of ownedIn(thread, checkout)) branches.set(owned, checkout);
       if (present) {

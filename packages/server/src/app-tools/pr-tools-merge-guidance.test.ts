@@ -149,6 +149,13 @@ describe("merge_when_ready guidance at full autonomy", () => {
       identity: cloneIdentityOf("ssh://git@github.com/ACME/App.git"),
     },
     { label: "an identity naming no repository", identity: "not-an-identity" },
+    // The .git suffix in mixed case, as git and GitHub take it: still the project's repository.
+    { label: "a .GIT suffix", identity: cloneIdentityOf("https://github.com/acme/app.GIT") },
+    { label: "a .Git suffix", identity: cloneIdentityOf("https://github.com/acme/app.Git") },
+    {
+      label: "a .gIt suffix in scp form",
+      identity: cloneIdentityOf("git@github.com:acme/app.gIt"),
+    },
     { label: "an encoded owner", identity: cloneIdentityOf("https://github.com/%61cme/app.git") },
     {
       label: "an encoded repository",
@@ -385,6 +392,8 @@ describe("merge_when_ready guidance at full autonomy", () => {
               "https://github.com/acme/app",
               "git@github.com:acme/app.git",
               "https://github.com/ACME/App.git",
+              "https://github.com/acme/app.GIT",
+              "git@github.com:acme/app.gIt",
             ])
               expect(yield* ownership(origin)).toBe("another thread binds it or holds its branch");
           }),
@@ -403,6 +412,9 @@ describe("merge_when_ready guidance at full autonomy", () => {
       "an extra segment",
       "a constructor host",
       "a __proto__ host",
+      "a .GIT suffix",
+      "a .Git suffix",
+      "a .gIt suffix in scp form",
     ].includes(each.label),
   )) {
     it.effect.skipIf(!hasGit)(
