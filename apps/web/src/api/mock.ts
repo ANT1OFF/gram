@@ -224,6 +224,7 @@ import {
   mockStartsWithBoard,
   mockStartsRealistic,
   mockStartsAtScale,
+  mockServerBrowser,
 } from "./mock-overrides";
 import { mockDiff, mockGitState, mockPrDetail } from "./mock-git";
 import { searchMessages } from "./mock-search";
@@ -2780,7 +2781,9 @@ export function createMockApi(options: MockApiOptions = {}) {
     /** Local browser-shell stand-ins; hosted flags never change available bridge members. */
     shell: {
       ...agentBrowse.shell,
-      preview: new MockPreview(),
+      // A browser tab on a server that runs its own browser has no shell to draw a page. Typed as
+      // there, since every spec but that scene's reads it.
+      preview: (mockServerBrowser() ? undefined : new MockPreview()) as MockPreview,
       pages: new MockPages(),
     },
     agentBrowseHosts: agentBrowse.agentBrowseHosts,

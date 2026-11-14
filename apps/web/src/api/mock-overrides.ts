@@ -47,3 +47,11 @@ export const mockAgents = (): readonly AgentKind[] | undefined => {
   const named = value.split(",");
   return AGENT_KINDS.filter((agent) => named.includes(agent));
 };
+
+/**
+ * `"1"`: the mock is a server that runs a browser for its agents, opened in a browser tab: no shell
+ * draws a page, and the Preview tab shows what `simulateServerPage` stages.
+ */
+export const MOCK_SERVER_BROWSER_KEY = "gram.mock.serverBrowser";
+
+export const mockServerBrowser = (): boolean => flag(MOCK_SERVER_BROWSER_KEY) === "1";

@@ -12,15 +12,29 @@ import {
   type BrowserViewPage,
   type ThreadId,
 } from "@gram/contracts";
-import { ArrowLeft, ArrowRight, Globe, LoaderCircle, RotateCw, Shield } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bot,
+  Circle,
+  Globe,
+  HandGrab,
+  LoaderCircle,
+  RotateCw,
+  Shield,
+  TriangleAlert,
+  type LucideIcon,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useApi } from "@/api/context";
 import type { Api } from "@/api/types";
+import { Hint } from "@/components/hint";
+import { Button } from "@/components/ui/button";
+import { formatLogTime } from "@/lib/time";
 import { spin } from "@/motion";
 
-import { PanelMessage } from "./panel-message";
-import { AgentActivity, DriverButton, ToolButton } from "./preview-strip";
+import { ToolButton } from "./preview-strip";
 
 type Frame = Extract<BrowserViewEvent, { type: "frame" }>;
 type Status = Extract<BrowserViewEvent, { type: "page" }>["status"];
@@ -341,8 +355,14 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
           ? "failed"
           : "empty";
 
+  const [addressFocused, setAddressFocused] = useState(false);
+
   return (
-    <div data-testid="server-preview" data-state={state} className="flex min-h-0 flex-1 flex-col">
+    <div
+      data-testid="server-preview"
+      data-state={state}
+      className="@container flex min-h-0 flex-1 flex-col"
+    >
       <div className="flex items-center gap-0.5 border-b border-border p-1.5">
         <ToolButton
           label="Back"
@@ -361,43 +381,139 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
         <ToolButton label="Reload" disabled={page === null} onClick={() => control("reload")}>
           <RotateCw ref={page?.loading === true ? spin : undefined} />
         </ToolButton>
-        <input
-          ref={leave}
-          data-testid="preview-address"
-          aria-label="Preview address"
-          placeholder="The agent's page on the server"
-          readOnly
-          spellCheck={false}
-          title={page?.title || undefined}
-          value={page?.url ?? ""}
-          onFocus={(event) => event.currentTarget.select()}
-          className="mx-1 h-7 min-w-0 flex-1 rounded-md border border-input bg-transparent px-2 font-mono text-meta outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-        />
-        <DriverButton
-          driver={page?.driver}
-          onTakeOver={undefined}
-          onHandBack={() => control("handBack")}
-        />
+        <div className="mx-1 flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-input pr-2 pl-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+          <Hint
+            label={WHERE}
+            render={
+              <span
+                data-testid="server-preview-where"
+                tabIndex={0}
+                aria-label={WHERE}
+                className="flex h-5 shrink-0 items-center gap-1 rounded-sm bg-muted px-1.5 text-meta text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              />
+            }
+          >
+            <Shield aria-hidden className="size-icon-row" />
+            {/* The word where the panel has room for it and the address both. */}
+            <span className="hidden @lg:inline">Server</span>
+          </Hint>
+          <input
+            ref={leave}
+            data-testid="preview-address"
+            aria-label="Preview address"
+            placeholder="No page yet"
+            readOnly
+            spellCheck={false}
+            title={page?.title || undefined}
+            // As a browser shows it: the whole address once it is being read or copied.
+            value={addressFocused ? (page?.url ?? "") : shownAddress(page?.url ?? "")}
+            onFocus={(event) => {
+              setAddressFocused(true);
+              const input = event.currentTarget;
+              requestAnimationFrame(() => input.select());
+            }}
+            onBlur={() => setAddressFocused(false)}
+            className="h-full min-w-0 flex-1 bg-transparent font-mono text-meta outline-none"
+          />
+        </div>
       </div>
-      <AgentActivity
-        driver={page?.driver}
-        action={page?.action}
-        recording={page?.recording === true}
-      />
-      {yours && (
-        <p
+      {page !== null && (
+        <div
           role="status"
-          data-testid="server-preview-yours"
-          className="border-b border-border px-3 py-1 text-meta text-muted-foreground"
+          aria-live="polite"
+          data-testid="server-preview-status"
+          className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border px-3 py-1.5 text-meta text-muted-foreground"
         >
-          You have control. It returns to the agent after {IDLE_SECONDS} s without input. Shift+Esc
-          leaves the page.
-        </p>
+          {state === "reconnecting" ? (
+            <span data-testid="server-preview-reconnecting" className="flex items-center gap-1.5">
+              <LoaderCircle aria-hidden ref={spin} className="size-icon-row" />
+              Reconnecting to the server's browser…
+            </span>
+          ) : (
+            <>
+              {page.recording === true && (
+                <span
+                  data-testid="preview-recording"
+                  className="flex shrink-0 items-center gap-1 text-destructive"
+                >
+                  <Circle aria-hidden className="size-2.5 fill-current" />
+                  <span className="@lg:hidden" aria-hidden>
+                    Rec
+                  </span>
+                  <span className="sr-only @lg:not-sr-only">Recording</span>
+                </span>
+              )}
+              <span
+                data-testid="preview-driver"
+                data-driver={yours ? "user" : "agent"}
+                className="flex shrink-0 items-center gap-1 font-medium text-foreground"
+              >
+                {yours ? (
+                  <HandGrab aria-hidden className="size-icon-row text-primary" />
+                ) : (
+                  <Bot aria-hidden className="size-icon-row text-status-working" />
+                )}
+                {yours ? "You're driving" : "Agent driving"}
+              </span>
+              {yours ? (
+                <>
+                  {/* In a narrow panel the button ends the first line and the rest takes the next. */}
+                  <span className="order-3 flex min-w-0 basis-full flex-wrap items-center gap-x-2 @lg:order-none @lg:flex-1 @lg:basis-auto">
+                    <span data-testid="server-preview-yours">
+                      Agent resumes after {IDLE_SECONDS} s idle
+                    </span>
+                    <span className="shrink-0">
+                      <Key>Shift</Key>
+                      <Key>Esc</Key>to leave
+                    </span>
+                  </span>
+                  <Hint
+                    label="You have control. Hand the page back to the agent"
+                    render={
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        data-testid="server-preview-hand-back"
+                        className="order-2 ml-auto shrink-0 @lg:order-none"
+                        onClick={() => control("handBack")}
+                      />
+                    }
+                  >
+                    <HandGrab aria-hidden />
+                    Hand back
+                  </Hint>
+                </>
+              ) : (
+                <>
+                  {page.action !== undefined && (
+                    <span className="flex min-w-0 flex-[1_1_8rem] items-baseline gap-2">
+                      <span
+                        data-testid="preview-action"
+                        className="min-w-0 truncate"
+                        title={page.action.summary}
+                      >
+                        {page.action.summary}
+                      </span>
+                      <time
+                        className="shrink-0 tabular-nums"
+                        dateTime={new Date(page.action.at).toISOString()}
+                      >
+                        {formatLogTime(page.action.at)}
+                      </time>
+                    </span>
+                  )}
+                  {live && (
+                    <span data-testid="server-preview-hint" className="shrink-0">
+                      Click or type in the page to take over
+                    </span>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </div>
       )}
-      <p className="flex items-center gap-1.5 border-b border-border px-3 py-1 text-meta text-muted-foreground">
-        <Shield aria-hidden className="size-icon-row shrink-0" />
-        On the server's browser: it opens addresses on the server only, such as its dev servers.
-      </p>
       <div
         ref={stage}
         data-testid="server-preview-stage"
@@ -420,45 +536,91 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
             data-testid="server-preview-frame"
             alt=""
             draggable={false}
-            className={`max-h-full max-w-full select-none ${connected ? "" : "opacity-45"} ${
-              yours ? "outline-2 -outline-offset-2 outline-ring" : ""
+            className={`max-h-full max-w-full select-none -outline-offset-2 ${connected ? "" : "opacity-45"} ${
+              yours ? "outline-2 outline-ring" : "shadow-[0_0_0_1px_var(--border)]"
             }`}
           />
         ) : state === "failed" && status?.kind === "failed" ? (
-          <div data-testid="server-preview-failed" role="alert">
-            <PanelMessage>The server's browser couldn't open a page. {status.message}</PanelMessage>
-          </div>
+          <Notice
+            testId="server-preview-failed"
+            role="alert"
+            icon={TriangleAlert}
+            tone="error"
+            title="The server's browser couldn't open a page"
+          >
+            <span className="block rounded-md bg-muted px-2 py-1 font-mono text-meta break-words text-foreground">
+              {status.message}
+            </span>
+            <span className="mt-2 block">The agent's next browser command tries again.</span>
+          </Notice>
         ) : state === "empty" ? (
-          <div data-testid="server-preview-empty">
-            <PanelMessage icon={Globe}>
-              No page yet. When the agent browses, its page shows here live, from the server's
-              browser.
-            </PanelMessage>
-          </div>
+          <Notice testId="server-preview-empty" icon={Globe} title="No page yet">
+            When the agent browses, its page shows here live, from the server's browser. It opens
+            addresses on the server only, such as its dev servers.
+          </Notice>
         ) : (
           state === "starting" && (
-            <PanelMessage loading>Starting the browser on the server…</PanelMessage>
+            <Notice
+              testId="server-preview-starting"
+              icon={LoaderCircle}
+              spinning
+              title="Starting the browser on the server…"
+            >
+              The agent's page shows here once it opens.
+            </Notice>
           )
         )}
-        {state === "agent" && (
-          <p
-            data-testid="server-preview-hint"
-            className="pointer-events-none absolute inset-x-4 bottom-4 mx-auto w-fit rounded-lg border border-border bg-popover px-3 py-1.5 text-center text-meta text-popover-foreground shadow-overlay"
-          >
-            The agent is driving. Click or type in the page to take over.
-          </p>
-        )}
-        {state === "reconnecting" && (
-          <p
-            role="status"
-            data-testid="server-preview-reconnecting"
-            className="pointer-events-none absolute inset-x-4 bottom-4 mx-auto flex w-fit items-center gap-2 rounded-lg border border-border bg-popover px-3 py-1.5 text-meta text-popover-foreground shadow-overlay"
-          >
-            <LoaderCircle aria-hidden ref={spin} className="size-icon-row" />
-            Reconnecting to the server's browser…
-          </p>
-        )}
       </div>
+    </div>
+  );
+}
+
+/** What the "Server" mark in the address says of where the page runs. */
+const WHERE =
+  "On the server's browser: it opens addresses on the server only, such as its dev servers.";
+
+/** An address as the strip shows it at rest: without `http://`, as a browser's own bar does. */
+export const shownAddress = (url: string) => url.replace(/^https?:\/\//, "");
+
+function Key({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="mr-1 rounded-sm border border-border bg-muted px-1 font-sans text-caption text-foreground">
+      {children}
+    </kbd>
+  );
+}
+
+/** What the tab says in the page's place while there is none: a mark, what is so, and what next. */
+function Notice({
+  testId,
+  role = "status",
+  icon: Icon,
+  tone,
+  spinning = false,
+  title,
+  children,
+}: {
+  testId: string;
+  role?: "status" | "alert";
+  icon: LucideIcon;
+  tone?: "error";
+  spinning?: boolean;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-testid={testId}
+      role={role}
+      className="flex max-w-88 flex-col items-center gap-2 p-6 text-center"
+    >
+      <Icon
+        aria-hidden
+        ref={spinning ? spin : undefined}
+        className={`size-icon-empty ${tone === "error" ? "text-destructive" : "text-muted-foreground"}`}
+      />
+      <p className="text-reading font-medium text-balance text-foreground">{title}</p>
+      <div className="text-body text-muted-foreground">{children}</div>
     </div>
   );
 }
