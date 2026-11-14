@@ -1,6 +1,6 @@
 import { Menu } from "@base-ui/react/menu";
 import type { ThreadId } from "@gram/contracts";
-import { ArrowLeftRight, Check, Ellipsis, GitFork, SquareArrowOutUpRight } from "lucide-react";
+import { ArrowLeftRight, Check, Ellipsis, GitFork, SquareArrowUpRightExit } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
@@ -93,7 +93,7 @@ export function useThreadMenu(threadId: ThreadId): {
             if (folder) void openInEditor(folder, { threadId });
           }}
         >
-          <SquareArrowOutUpRight aria-hidden className="size-icon-row" />
+          <SquareArrowUpRightExit aria-hidden className="size-icon-row" />
           Open folder in editor
         </Menu.Item>
       )}

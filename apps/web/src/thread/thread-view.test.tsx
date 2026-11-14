@@ -12,6 +12,7 @@ import { useThreadsStore } from "@/stores/threads";
 import { pendingRestartHint } from "@/composer/pending-restart";
 
 import { ThreadView } from "./thread-view";
+import { useTraceViewStore } from "./trace-view-store";
 
 // NumberFlow's custom element doesn't upgrade in happy-dom, so an animated ticker throws on update.
 vi.mock("@/motion/number-ticker", () => ({
@@ -44,6 +45,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
+  useTraceViewStore.setState({ open: {} });
   vi.useRealTimers();
 });
 
@@ -444,5 +446,27 @@ describe("ThreadView of a thread that waits for its machine", () => {
     );
     expect(view.queryByTestId("machine-wait-failed")).toBeNull();
     expect(view.getByTestId("pane-machine").textContent).toBe("machine starting");
+  });
+});
+
+describe("ThreadView trace", () => {
+  it("keeps the conversation mounted while the trace loads, opens and closes", async () => {
+    const DOCS = "t-docs" as ThreadId;
+    renderWithApi(<ThreadView threadId={DOCS} focused={false} />, api);
+    const transcript = await screen.findByTestId("transcript");
+    expect(screen.queryByTestId("trace-view")).toBeNull();
+
+    act(() => useTraceViewStore.getState().show(DOCS));
+    // Keep the conversation visible while the optional view's cold import is in flight.
+    expect(screen.queryByTestId("trace-view")).toBeNull();
+    expect(transcript.closest(".hidden")).toBeNull();
+    await screen.findByTestId("trace-view");
+    expect(screen.getByTestId("transcript")).toBe(transcript);
+    expect(transcript.closest(".hidden")).not.toBeNull();
+
+    fireEvent.click(screen.getByTestId("trace-close"));
+    expect(screen.queryByTestId("trace-view")).toBeNull();
+    expect(screen.getByTestId("transcript")).toBe(transcript);
+    expect(transcript.closest(".hidden")).toBeNull();
   });
 });

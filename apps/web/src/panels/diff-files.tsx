@@ -8,7 +8,7 @@ import {
   FileSymlink,
   FolderOpen,
   FolderSearch,
-  SquareArrowOutUpRight,
+  SquareArrowUpRightExit,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
@@ -334,7 +334,7 @@ function DiffFileRow({
               onClick={() => onOpenInEditor(file.path)}
               className={ROW_ACTION}
             >
-              <SquareArrowOutUpRight aria-hidden className="size-icon-row" />
+              <SquareArrowUpRightExit aria-hidden className="size-icon-row" />
             </button>
           )}
           {onRevealInFileManager && (

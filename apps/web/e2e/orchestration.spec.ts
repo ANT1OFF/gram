@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { closeMenus } from "./titlebar-menu";
+import { waitForBoardLayout } from "./board-layout";
 
 import { openHeaderMore, openMore, openThreadMenu as openThreadMenuOf } from "./more-menu";
 import { slowdown } from "./slowdown";
@@ -549,6 +550,7 @@ test("the new-workspace sheet adds a typed folder, checked as it is typed", asyn
   await expect(sheet.getByRole("checkbox", { name: /^infra/ })).toBeChecked();
   await expect(sheet.getByTestId("new-workspace-repo")).toHaveText(["api", "infra"]);
   await expect(field).toHaveValue("");
+  await expect(field).toBeEnabled();
   await page.keyboard.press("ControlOrMeta+Enter");
   await expect(page.getByRole("heading", { level: 1 })).toHaveAccessibleName("Orchestrator: api");
   const state = await page.evaluate(async () => {
@@ -927,6 +929,7 @@ test("the Board hides finished work until asked, and remembers that per workspac
   // The finished group opens on a click.
   await cleanup.getByTestId("rail-group-toggle").click();
   await expect(cleanup.getByTestId("rail-group-toggle")).toHaveAttribute("aria-expanded", "true");
+  await waitForBoardLayout(chip(made.merged[0]!));
   await chip(made.merged[0]!).scrollIntoViewIfNeeded();
   await expect(chip(made.merged[0]!)).toBeInViewport();
 

@@ -355,8 +355,27 @@ export const makeThreadId = () => Schema.decodeSync(ThreadId)(randomUUID());
 
 export const makeQueueItemId = () => Schema.decodeSync(QueueItemId)(randomUUID());
 
+/**
+ * Runs `effect` holding `lock`, taking it at once whenever it is free, even with fibers queued.
+ *
+ * Effect's `Semaphore` worked so through 4.0.6. From 4.0.7 it is first in, first out: a fiber
+ * that releases and asks again queues behind the waiters woken by its release. The runtime
+ * depends on the old order. Its event loop handles each event in a section of its own, and a
+ * turn's end and the agent's `idle` after it, or a turn's end and the session's exit, must not
+ * have a waiter's section (a deadline's stop, a reopen) in between. Waiters still go in turn;
+ * only a fiber that finds the lock free goes first.
+ */
+export const lockedAhead = <A, E, R>(lock: Semaphore.Semaphore, effect: Effect.Effect<A, E, R>) =>
+  Effect.uninterruptibleMask((restore) =>
+    Effect.flatMap(lock.takeIfAvailable(1), (taken) =>
+      taken
+        ? Effect.ensuring(restore(effect), lock.release(1))
+        : restore(lock.withPermits(1)(effect)),
+    ),
+  );
+
 export const locked = <A, E, R>(rt: Runtime, effect: Effect.Effect<A, E, R>) =>
-  rt.lock.withPermits(1)(effect);
+  lockedAhead(rt.lock, effect);
 
 /**
  * Idle with a session and no background subagent, which stopping the session would kill; the last

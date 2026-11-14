@@ -18,7 +18,11 @@ import {
 } from "@/embed/store";
 import { attentionWords } from "@/embed/attention";
 import { cn } from "@/lib/utils";
-import { PhoneMenu, ROUND } from "@/shell/phone-menu";
+import { lazyPart } from "@/lib/lazy-part";
+import { ROUND } from "@/shell/phone-button-style";
+
+/** The embedding app's phone menu and account sheet, loaded apart from the shell. */
+export const phoneMenuBody = lazyPart(() => import("./phone-menu"));
 
 interface PhoneDrawerState {
   readonly open: boolean;
@@ -135,11 +139,14 @@ function useCloseOnPick(open: boolean) {
  * behind it. A tap on the scrim, Escape or a pick in it closes it.
  */
 export function PhoneDrawer() {
-  const open = usePhoneDrawer((s) => s.open);
+  const requested = usePhoneDrawer((s) => s.open);
   const setOpen = usePhoneDrawer((s) => s.setOpen);
   const name = useDrawerName();
   const roomy = useRoomySidebar();
-  useCloseOnPick(open);
+  // Keep the drawer closed until its content is ready, preserving its opening focus and transition.
+  const menu = phoneMenuBody.useModule(requested && roomy);
+  const open = requested && (!roomy || menu !== undefined);
+  useCloseOnPick(requested);
   // Leaving the phone layout (a tablet turned to landscape) closes it, so it doesn't come back open.
   useEffect(() => () => usePhoneDrawer.getState().setOpen(false), []);
   return (
@@ -158,7 +165,7 @@ export function PhoneDrawer() {
             roomy && "w-[min(22.5rem,86vw)]",
           )}
         >
-          {roomy ? <PhoneMenu /> : <OverviewSidebar phone />}
+          {roomy ? menu !== undefined && <menu.PhoneMenu /> : <OverviewSidebar phone />}
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>

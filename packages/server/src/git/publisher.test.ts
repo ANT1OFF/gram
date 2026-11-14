@@ -474,13 +474,14 @@ describe.skipIf(!hasGit)("GitStatePublisher", () => {
       const runtimes = yield* ThreadRuntimes;
       const publisher = yield* GitStatePublisher;
       const seen = new Map<ThreadId, GitState>();
+      // Subscribed before the threads exist: each state is published once, as the thread opens.
       yield* hub.serverEvents(Effect.succeed({ type: "threads.snapshot", threads: [] })).pipe(
         Stream.runForEach((event) =>
           Effect.sync(() => {
             if (event.type === "git.state") seen.set(event.threadId, event.state);
           }),
         ),
-        Effect.forkScoped,
+        Effect.forkScoped({ startImmediately: true }),
       );
       const here = yield* runtimes.create({
         projectRoot: root,

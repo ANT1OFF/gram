@@ -385,14 +385,18 @@ describe("lines that leave the Board", () => {
     expect(hiddenWorkerCount(cards, boardRows(rows, false))).toBe(2);
   });
 
-  it("keeps a line the ledger no longer has while its worker runs or asks, or by its card before it is read", () => {
+  it("keeps a line while its worker runs, but drops a missing worker despite a stale ask", () => {
     const going = worker("c", { title: "Release notes", state: "inReview", station: "review" });
     const cards = [card("closed", [going])];
     const over = new Map<ThreadId, boolean>();
     expect(railRows(cards, facts())[0]?.settled).toBe(false);
     expect(railRows(cards, { ...facts(), over })[0]?.settled).toBe(true);
     expect(railRows(cards, { ...facts([], { c: "running" }), over })[0]?.settled).toBe(false);
-    expect(railRows(cards, { ...facts(["c"]), over })[0]?.settled).toBe(false);
+    expect(railRows(cards, { ...facts(["c"]), over })[0]?.settled).toBe(true);
+    expect(boardRows(railRows(cards, { ...facts(["c"]), over }), false)).toEqual([]);
+    expect(
+      railRows(cards, { ...facts(["c"]), over: new Map([["c" as ThreadId, true]]) })[0]?.settled,
+    ).toBe(false);
     expect(
       railRows(cards, { ...facts(), running: new Set(["c" as ThreadId]), over })[0]?.settled,
     ).toBe(false);

@@ -47,7 +47,7 @@ test("Settings sits beside History in the overview, or at the title bar's left",
   expect(compact.x).toBeGreaterThan(hide.x);
   await overview(page).getByTestId("overview-compact").hover();
   await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText(
-    "Compact sidebar: workspaces as tiles",
+    "Compact sidebar: a strip that opens on hover",
   );
   const hint = page.locator('[data-slot="tooltip-content"][data-open]');
   await expect(nav.getByRole("button", { name: "Usage", exact: true })).toHaveCount(0);
@@ -68,8 +68,8 @@ test("Settings sits beside History in the overview, or at the title bar's left",
     .getByRole("navigation", { name: "Settings sections" })
     .getByTestId("settings-needs-you");
   await expect(pill).toBeVisible();
-  const pillBox = (await pill.boundingBox())!;
-  expect(pillBox.x).toBeLessThan(40);
+  // The shell column animates away as Settings takes its place. Check the settled position.
+  await expect.poll(async () => (await pill.boundingBox())!.x).toBeLessThan(40);
   await expect(titlebar(page).getByTestId("inbox-button")).toHaveCount(0);
   await page.getByTestId("settings-back").click();
   await expect(page).not.toHaveURL(/\/settings/);

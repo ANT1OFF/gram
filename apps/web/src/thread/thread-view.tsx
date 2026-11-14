@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } 
 import { createPortal } from "react-dom";
 
 import { useApi } from "@/api/context";
+import { lazyPart } from "@/lib/lazy-part";
 import { PinnedDocChip } from "@/docs/doc-chip";
 import { needsYou } from "@/sidebar/grouping";
 import { activityLine, statusHint, threadStatusOf } from "@/sidebar/status";
@@ -97,7 +98,6 @@ import {
 import { TableOfContents } from "./table-of-contents";
 import { ConversationOnlyButton } from "./conversation-only-toggle";
 import { ThreadMenu } from "./thread-menu";
-import { TraceView } from "./trace-view";
 import { useTraceViewStore } from "./trace-view-store";
 import { Transcript, transcriptScroller, type JumpRequest, type ScrollRestore } from "./transcript";
 import { turnUndos } from "./turn-undo-marker";
@@ -105,6 +105,9 @@ import { useUnseenFrom } from "./unread";
 import { SnoozeChip } from "./snooze-chip";
 import { BrowserChip } from "./browser-chip";
 import { HeaderWakeChip } from "./wake-chip";
+
+/** The optional turn trace, loaded apart from the conversation. */
+const traceBody = lazyPart(() => import("./trace-view"));
 
 const FLASH_MS = 1600;
 
@@ -167,6 +170,8 @@ export function ThreadView({
   const { top, children, subagentUsage } = useSplitSubagents(messages);
   // The thread's trace, in place of its conversation. Beside the chat there is no room for one.
   const tracing = useTraceViewStore((s) => (beside === undefined ? s.open[threadId] : undefined));
+  const trace = traceBody.useModule(tracing !== undefined);
+  const traceShown = tracing !== undefined && trace !== undefined;
   // An orchestrator's calm stream: its silent digests left out, its feature cards placed.
   const stream = useOrchestratorStream(summary?.thread, top);
   // What the transcript renders, which every index handed to it counts in: an orchestrator's
@@ -675,8 +680,8 @@ export function ThreadView({
             {detail}
           </p>
         )}
-        {tracing !== undefined && (
-          <TraceView
+        {traceShown && (
+          <trace.TraceView
             threadId={threadId}
             messages={top}
             subagents={children}
@@ -692,7 +697,7 @@ export function ThreadView({
           />
         )}
         {/* The conversation stays mounted under its trace, so it is where it was left. */}
-        <div className={tracing === undefined ? "contents" : "hidden"}>
+        <div className={traceShown ? "hidden" : "contents"}>
           <StatusHeader thread={thread} digests={stream?.plan.digests} />
           <WaitingTray threadId={threadId} />
           <PlanStrip threadId={threadId} />

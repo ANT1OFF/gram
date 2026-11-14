@@ -11,8 +11,8 @@
 # (docs/PACKAGES.md#images).
 
 # The full image builds: it has the compilers node-pty needs. The slim one runs.
-ARG BUILD_IMAGE=node:26.13.0-bookworm
-ARG NODE_IMAGE=node:26.13.0-bookworm-slim
+ARG BUILD_IMAGE=node:26.13.1-bookworm
+ARG NODE_IMAGE=node:26.13.1-bookworm-slim
 
 FROM ${BUILD_IMAGE} AS build
 RUN npm install -g bun@1.4.4

@@ -1617,6 +1617,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     });
     runtime.fold.apply({ type: "caughtUp", rev: this.#rev });
     this.#emit({ type: "thread.upsert", thread });
+    if (awaiting !== undefined) this.#setQueue(runtime, runtime.summary.queue);
     this.#emit({ type: "thread.status", threadId: id, status: runtime.summary.status });
     if (state !== undefined && worker !== undefined) {
       this.#emit({ type: "orchestration.changed", workspaceId: state.workspace.id });
