@@ -570,6 +570,65 @@ describe("a joined machine's file reads", () => {
     }).pipe(Effect.scoped, onHost),
   );
 
+  it.effect("read a thread's file in parts, scoped as a preview and never a credential", () =>
+    Effect.gen(function* () {
+      const { dir, checkout } = yield* hostFolders;
+      const reads = (yield* connected()).reads!;
+      const text = "export const onHost = 1;\n";
+      const head = yield* reads.part!("src/app.ts", [checkout], NOT_VOUCHED, 0, 6);
+      expect(head).toMatchObject({ path: join(checkout, "src", "app.ts"), size: text.length });
+      expect(head.mtime).toBeGreaterThan(0);
+      expect(Buffer.from(head.data, "base64").toString("utf8")).toBe("export");
+      const rest = yield* reads.part!("src/app.ts", [checkout], NOT_VOUCHED, 6, 1024);
+      expect(Buffer.from(rest.data, "base64").toString("utf8")).toBe(text.slice(6));
+      expect(rest.mtime).toBe(head.mtime);
+      // Past its end there is nothing, and the size still says so.
+      const past = yield* reads.part!("src/app.ts", [checkout], NOT_VOUCHED, 4096, 16);
+      expect(past).toMatchObject({ size: text.length, data: "" });
+
+      const outside = join(dir, "outside.txt");
+      const refused = yield* reads.part!(outside, [checkout], NOT_VOUCHED, 0, 16).pipe(Effect.flip);
+      expect(refused.message).toContain("is outside this thread's folder");
+      const vouched = yield* reads.part!(
+        outside,
+        [checkout],
+        { ...NOT_VOUCHED, allowed: true },
+        0,
+        7,
+      );
+      expect(Buffer.from(vouched.data, "base64").toString("utf8")).toBe("outside");
+      // A link out of the checkout, a credential file wherever it is, and a folder.
+      const link = yield* reads.part!("escape.txt", [checkout], NOT_VOUCHED, 0, 16).pipe(
+        Effect.flip,
+      );
+      expect(link.message).toContain("is outside this thread's folder");
+      writeFileSync(join(checkout, ".git-credentials"), "synthetic-not-a-secret\n");
+      for (const path of [join(dir, ".git-credentials"), ".git-credentials"]) {
+        const key = yield* reads.part!(
+          path,
+          [checkout],
+          { ...NOT_VOUCHED, allowed: true },
+          0,
+          16,
+        ).pipe(Effect.flip);
+        expect(key.message).toContain("may hold credentials");
+      }
+      const folder = yield* reads.part!("src", [checkout], NOT_VOUCHED, 0, 16).pipe(Effect.flip);
+      expect(folder.message).toContain("Not a regular file");
+    }).pipe(Effect.scoped, onHost),
+  );
+
+  it.effect("offer no reads in parts on a host that doesn't name them", () =>
+    Effect.gen(function* () {
+      const old = yield* connected({
+        features: HOST_FEATURES.filter((feature) => feature !== "file-parts"),
+      });
+      expect(old.reads).toBeDefined();
+      expect(old.reads!.part).toBeUndefined();
+      expect((yield* connected({ features: undefined })).reads!.part).toBeUndefined();
+    }).pipe(Effect.scoped, onHost),
+  );
+
   it.effect("hold a session's attachments per thread, until the thread is gone", () =>
     Effect.gen(function* () {
       const attached = realpathSync(mkdtempSync(join(tmpdir(), "gram-host-attached-")));

@@ -146,6 +146,7 @@ With `GRAM_OBJECT_STORE_URL` set, attachments, docs and the files threads produc
 
 - An attachment is sent as it is uploaded. Every minute the attachments and docs folders are walked, and whatever is new or changed since it was last sent is sent: a doc that was saved, an image a tool call returned, a fork's copies.
 - A file a thread produced in its checkout (a report, a screenshot it wrote) is copied to the store when it is recorded as an output, since a checkout doesn't outlive its thread.
+- A thread on another machine: the file is checked and read on that machine, a part at a time through its host, and copied to the store under the same key, so it outlives the machine. Its path in the key is the path on that machine. This needs a host that names the `file-parts` feature; with an older host the file is neither recorded nor copied, as before.
 - A closed thread's attachments and outputs are deleted from the store with it, and so is anything the deployment keeps under `sessions/<threadId>/`. Nothing else is deleted: a file missing on the disk is never taken as a reason to delete it in the store.
 - A server that starts on a fresh disk lists the docs in the store and brings them back before anything reads them. An attachment is brought back the first time the transcript shows it.
 
@@ -169,7 +170,7 @@ Limits:
 
 - A file over 64 MB is neither sent nor brought back.
 - What was sent is remembered in `object-store.json` in the data folder. Without it (a fresh disk) everything on the disk is sent again, once.
-- An output on another machine's checkout is not copied: the server copies only files it can read itself.
+- An output on another machine is copied only while that machine is connected and its host names `file-parts`. It is read into `object-store-staging` in the data folder, sent from there and removed; that folder is emptied at each start.
 - An output copied to the store is not read back from it by the Files view; the deployment serves it from the store by its key.
 - A send that fails is tried again at the next walk, and an output's at the next time it is recorded.
 - A delete the store didn't confirm is kept in `object-store.json` and asked again at each walk.
