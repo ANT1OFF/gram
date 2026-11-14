@@ -18,6 +18,7 @@ import { StripOpen, useStripOpen } from "@/embed/strip-open";
 import { useHistoryStore } from "@/history/history-view";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
+import { pointerMovedFor, trackPointerMoves } from "@/lib/pointer-moved";
 import { useMotionLevel } from "@/motion";
 import { OVERVIEW_STOP } from "@/shell/focus-regions";
 import { TopLeftNav } from "@/shell/top-left-nav";
@@ -124,6 +125,7 @@ export function OverviewRail() {
   const overlay = useRef<HTMLDivElement>(null);
   const width = useLayoutStore((s) => s.sidebarWidth);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  useEffect(trackPointerMoves, []);
   // Where the strip ends, which the sidebar opens beside: read as it opens.
   const [left, setLeft] = useState(0);
   const show = (next: boolean) => {
@@ -201,9 +203,18 @@ export function OverviewRail() {
         data-surface="chrome"
         data-open={open || undefined}
         {...{ [OVERVIEW_ROOT]: "compact" }}
-        onPointerEnter={() => {
-          if (!open && peek) later(true, OPEN_AFTER_MS);
+        // Layout can put the strip under a parked pointer (including Chromium's initial origin).
+        // Only an actual move onto it starts a hover, and leaving cancels that pending open.
+        onPointerMove={(event) => {
+          if (
+            !open &&
+            peek &&
+            (event.clientX !== 0 || event.clientY !== 0) &&
+            pointerMovedFor(event.nativeEvent, event.currentTarget)
+          )
+            later(true, OPEN_AFTER_MS);
         }}
+        onPointerLeave={leave}
         // A click on a tile goes somewhere itself: the sidebar a resting pointer was about to open
         // would only cover where it went.
         onClick={() => {

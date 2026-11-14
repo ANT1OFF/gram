@@ -1025,8 +1025,13 @@ test("resting on the strip opens the sidebar over the page; a row in it opens, l
   await expect(overlay(page)).toBeVisible();
   await expect(overlay(page).getByTestId("overview-sidebar")).toHaveAttribute("data-overlay", "");
   // Beside the strip, over the page: the strip stays as it is.
-  const over = (await overlay(page).boundingBox())!;
-  expect(Math.abs(over.x - (box.x + box.width))).toBeLessThanOrEqual(1);
+  // The overlay is visible during its slide; check its position once it reaches the strip's edge.
+  await expect
+    .poll(async () => {
+      const over = (await overlay(page).boundingBox())!;
+      return Math.abs(over.x - (box.x + box.width));
+    })
+    .toBeLessThanOrEqual(1);
   await expect(rail(page)).toBeVisible();
   // The tiles' names keep away while the sidebar says them in full.
   await expect(page.getByRole("tooltip")).toHaveCount(0);
@@ -1182,12 +1187,13 @@ test("⌘B hides an automatic compact overview, the focus going to the composer,
   await page.setViewportSize({ width: 1100, height: 900 });
   await expect(rail(page)).toBeVisible();
   await expect(current).toBeFocused();
-  // Left by a click on plain text, the focus drops to the page and stays there.
+  // Left by a click on plain text, focus goes to the page's main (the skip-link target) and stays.
   await page.keyboard.press("Escape");
   await page.mouse.move(800, 450);
   await expect(overlay(page)).toHaveCount(0);
   await page.getByTestId("shell-titlebar").click({ position: { x: 600, y: 10 } });
-  const onPage = () => page.evaluate(() => document.activeElement === document.body);
+  const onPage = () =>
+    page.evaluate(() => document.activeElement === document.getElementById("content"));
   await expect.poll(onPage).toBe(true);
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(overview(page)).toBeVisible();

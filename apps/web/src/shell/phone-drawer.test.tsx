@@ -20,7 +20,6 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("@/shell/phone-menu", () => ({
-  ROUND: "round",
   PhoneMenu: () => <aside data-testid="phone-menu-stub" />,
 }));
 
@@ -124,11 +123,14 @@ describe("PhoneDrawer", () => {
   });
 
   describe("in the roomy look", () => {
-    it("holds the plain menu in place of the overview", () => {
+    it("opens with the plain menu ready in place of the overview", async () => {
       roomy(0);
       render(<Shell />);
       fireEvent.click(screen.getByRole("button", { name: "Menu" }));
-      expect(screen.getByTestId("phone-menu-stub")).not.toBeNull();
+      // A cold import must not open an empty dialog and take focus before the menu arrives.
+      expect(drawer()).toBeNull();
+      expect(await screen.findByTestId("phone-menu-stub")).not.toBeNull();
+      expect(drawer()).not.toBeNull();
       expect(screen.queryByTestId("overview-stub")).toBeNull();
     });
 

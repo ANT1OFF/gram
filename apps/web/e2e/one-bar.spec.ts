@@ -71,17 +71,30 @@ const fitsTheBar = async (page: Page) => {
       message: "title bar content wider than the bar",
     })
     .toBeLessThanOrEqual(0);
-  const barBox = (await bar.boundingBox())!;
   const last = bar.getByRole("button", { name: /right panel$/ });
-  const lastBox = (await last.boundingBox())!;
-  expect(lastBox.x + lastBox.width).toBeLessThanOrEqual(barBox.x + barBox.width);
+  // Compare in one layout read: the sidebar column can still be animating between protocol calls.
+  await expect
+    .poll(() =>
+      last.evaluate((control) => {
+        const header = control.closest('[data-testid="shell-titlebar"]')!;
+        return control.getBoundingClientRect().right - header.getBoundingClientRect().right;
+      }),
+    )
+    .toBeLessThanOrEqual(0);
   // What the bar carries doesn't run under the window's controls, nor anything in it past its end.
   const divider = bar.getByTestId("titlebar-divider");
   if ((await divider.count()) > 0) {
-    const edge = (await divider.boundingBox())!.x;
     const carried = bar.getByTestId("titlebar-slot");
-    const slotBox = (await carried.boundingBox())!;
-    expect(slotBox.x + slotBox.width).toBeLessThanOrEqual(edge);
+    await expect
+      .poll(() =>
+        carried.evaluate((slot) => {
+          const edge = slot
+            .closest('[data-testid="shell-titlebar"]')!
+            .querySelector('[data-testid="titlebar-divider"]')!;
+          return slot.getBoundingClientRect().right - edge.getBoundingClientRect().left;
+        }),
+      )
+      .toBeLessThanOrEqual(0);
     // The bar folds a frame after what it carries changes; a pixel of rounding, as its measure
     // allows. The header itself: a needs-you ring may stand past it on purpose.
     const header = carried.locator("header").first();

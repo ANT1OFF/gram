@@ -78,8 +78,14 @@ test("⌘J shows the Workers tab with the keys on its rows, opens a worker, and 
   // ⌘J, then ⌘⏎ on a row: the worker in the main view.
   await page.keyboard.press("ControlOrMeta+KeyJ");
   await expect(row(page, made.live)).toBeVisible();
-  await row(page, made.live).focus();
-  await page.keyboard.press("ControlOrMeta+Enter");
+  // The tab's opening transition can still leave its rows inert; wait until this row takes keys.
+  await expect
+    .poll(async () => {
+      await row(page, made.live).focus();
+      return row(page, made.live).evaluate((target) => document.activeElement === target);
+    })
+    .toBe(true);
+  await row(page, made.live).press("ControlOrMeta+Enter");
   await expect(page).toHaveURL(new RegExp(`/t/${made.live}$`));
   const crumbs = page.getByTestId("worker-crumbs");
   await expect(crumbs).toContainText("agent-platform");

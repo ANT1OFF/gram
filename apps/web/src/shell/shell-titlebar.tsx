@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { TitlebarPause } from "@/orchestration/workspace-pause-button";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
 import { PhoneMenuButton } from "@/shell/phone-drawer";
-import { ROUND } from "@/shell/phone-menu";
+import { ROUND } from "@/shell/phone-button-style";
 import { useHostAttention } from "@/embed/attention";
 import { useRoomySidebar } from "@/embed/store";
 import { PhoneTitle } from "@/shell/phone-title";

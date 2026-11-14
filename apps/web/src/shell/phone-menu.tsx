@@ -10,6 +10,7 @@ import { hiddenCount, navigationAt, shownCount, shownRows, useEmbedShell } from 
 import { useHistoryStore } from "@/history/history-view";
 import { useLaunchIssues } from "@/launch-checks/banner";
 import { cn } from "@/lib/utils";
+import { ROUND } from "@/shell/phone-button-style";
 import { NewEntryMenu } from "@/orchestration/new-entry-menu";
 import { OVERVIEW_STOP } from "@/shell/focus-regions";
 import { useLayoutStore } from "@/stores/layout";
@@ -22,10 +23,6 @@ import { switchTheme } from "@/theme/transition";
 // that opens their sheet) and one New pill.
 // The places you go to rather than work in (the foot's places, History, Settings, the theme) are
 // in the person's sheet, so nothing hides under the foot.
-
-/** A round 44 px control: the menu's search, the avatar, the phone header's buttons. */
-export const ROUND =
-  "relative grid size-11 shrink-0 place-items-center rounded-full border border-border bg-card text-foreground outline-none transition-[background-color,scale] duration-(--dur-fast) ease-(--ease-out) hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring motion-safe:active:scale-[0.96] [&_svg]:size-5";
 
 /** A row of the menu and of the person's sheet: tall, a large icon, the reading size. */
 const ROW =

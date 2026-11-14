@@ -4,7 +4,7 @@ import { ChevronLeft } from "lucide-react";
 
 import { openThreadPanel } from "@/components/git-badges";
 import { cn } from "@/lib/utils";
-import { ROUND } from "@/shell/phone-menu";
+import { ROUND } from "@/shell/phone-button-style";
 import { usePhonePlace } from "@/shell/phone-title";
 import { useWorkspacePlaces } from "@/shell/titlebar-path";
 import { useLayoutStore, type RightPanelTab } from "@/stores/layout";
