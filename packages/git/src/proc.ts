@@ -114,6 +114,18 @@ const collect = <E>(
 
 const encoder = new TextEncoder();
 
+/**
+ * The escaped command line as one command with no arguments: Effect's `ChildProcess` refuses
+ * arguments beside `shell` (since 4.1.0). Node joined them with spaces into this same line.
+ */
+const shellLine = (invocation: {
+  readonly file: string;
+  readonly args: ReadonlyArray<string>;
+}): { readonly file: string; readonly args: ReadonlyArray<string> } => ({
+  file: [invocation.file, ...invocation.args].join(" "),
+  args: [],
+});
+
 /** The spawn path behind `Proc.run`, taking the resolved executable and the full child env. */
 export const runCommand = (
   spawner: ChildProcessSpawner["Service"],
@@ -127,7 +139,7 @@ export const runCommand = (
   const cap = options.maxOutputBytes ?? MAX_OUTPUT_BYTES;
   // Node won't spawn a Windows batch file (npm's `claude.cmd`) directly; it goes through `cmd.exe`.
   const batch = process.platform === "win32" && isWindowsBatchFile(exe);
-  const invocation = batch ? batchFileInvocation(exe, args) : { file: exe, args };
+  const invocation = batch ? shellLine(batchFileInvocation(exe, args)) : { file: exe, args };
   const command = ChildProcess.make(invocation.file, invocation.args, {
     cwd: options.cwd,
     env: withGitLongPaths(

@@ -17,7 +17,7 @@ import {
 import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import * as NodeSocket from "@effect/platform-node/NodeSocket";
+import * as NodeWS from "@effect/platform-node/NodeWS";
 import type { RemoteAppTools } from "@gram/agents";
 import { captureLogs } from "@gram/agents/testing/logs";
 import { afterAll, describe, expect, it } from "@effect/vitest";
@@ -129,7 +129,7 @@ const appClient = <Rpcs extends Rpc.Any>(
         Layer.provide(
           Socket.layerWebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { cookie } } as never),
         ),
-        Layer.provide(NodeSocket.layerWebSocketConstructorWS),
+        Layer.provide(NodeWS.layerWebSocketConstructor),
         Layer.provide(RpcSerialization.layerJson),
       ),
     );
@@ -350,7 +350,7 @@ describe.skipIf(!hasGit)("a headless control plane", () => {
             host: HOST,
           },
           openTimeout: "15 seconds",
-        } as never).pipe(Effect.provide(NodeSocket.layerWebSocketConstructorWS));
+        } as never).pipe(Effect.provide(NodeWS.layerWebSocketConstructor));
         yield* Effect.forkScoped(serveHost(socket, machine.service));
         const listed = yield* eventually(
           "the machine online",

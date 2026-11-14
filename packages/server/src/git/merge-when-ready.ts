@@ -1019,6 +1019,14 @@ export const MergeWhenReadyLive = Layer.effect(
                               }
                               yield* settle(key, ghCwd);
                               if (unsettled.has(key)) yield* watchFence(key);
+                              // Merged: the others look at the moved base from here, apart from
+                              // this attempt, which a check that reads the merge stops.
+                              if ("out" in result && result.out.status === 0)
+                                yield* FiberMap.run(
+                                  aftermath,
+                                  `merged\u0000${threadId}\u0000${head}`,
+                                  afterMerge(threadId, bound),
+                                );
                             }),
                           ),
                         ),
@@ -1149,11 +1157,6 @@ export const MergeWhenReadyLive = Layer.effect(
           body: thread.value.title,
           threadId,
         });
-        yield* FiberMap.run(
-          aftermath,
-          `merged\u0000${threadId}\u0000${head}`,
-          afterMerge(threadId, bound),
-        );
       }).pipe(
         Effect.catch((e) =>
           Effect.logWarning("merge_when_ready attempt failed").pipe(
