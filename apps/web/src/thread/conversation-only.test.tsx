@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import type { GramUIMessage, ThreadId } from "@gram/contracts";
 import { cleanup, fireEvent, render as renderPlain, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { renderWithRouter } from "@/panels/test-utils";
 import { useConversationOnly } from "@/stores/conversation-only";
@@ -28,7 +28,7 @@ const reply = (id: string, parts: GramUIMessage["parts"]): GramUIMessage => ({
   parts,
 });
 
-const render = (message: GramUIMessage) =>
+const render = (message: GramUIMessage, api: object = {}) =>
   renderWithRouter(
     <MessageBlock
       threadId={T}
@@ -37,8 +37,26 @@ const render = (message: GramUIMessage) =>
       subagents={new Map()}
       subagentUsage={new Map()}
     />,
-    {} as never,
+    api as never,
   );
+
+const PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const STORED = "/data/attachments/t-conversation/tool-0123456789abcdef.png";
+/** A screenshot a tool call returned: the call, then the image the server stored for it. */
+const screenshot = (id: string): GramUIMessage["parts"] => [
+  {
+    type: "tool-Read",
+    toolCallId: id,
+    state: "output-available",
+    input: { file_path: "/repo/shot.png" },
+    output: { type: "image", file: { type: "image/png" } },
+  } as GramUIMessage["parts"][number],
+  {
+    type: "data-tool-image",
+    data: { toolCallId: id, mediaType: "image/png", size: 68, path: STORED },
+  },
+];
 
 afterEach(() => {
   cleanup();
@@ -104,6 +122,31 @@ describe("a reply in Conversation only", () => {
     useConversationOnly.setState({ on: true });
     render(reply("m2", [bash("c1", "bun test retry")]));
     expect(screen.queryByTestId("message-assistant")).toBeNull();
+  });
+});
+
+describe("an image a tool call returned", () => {
+  it("keeps a reply that is only a call with an image", () => {
+    expect(showsInConversation(reply("m4", screenshot("r1")))).toBe(true);
+  });
+
+  it("stays as a thumbnail where the call was, without the call's row", async () => {
+    useConversationOnly.setState({ on: true });
+    const readAttachment = vi.fn(async (_thread: ThreadId, path: string) => ({
+      path,
+      mediaType: "image/png",
+      size: 68,
+      tooLarge: false,
+      base64: PNG,
+    }));
+    render(reply("m5", [...screenshot("r1"), { type: "text", text: "A checkerboard." }]), {
+      readAttachment,
+    });
+    const thumbnail = await screen.findByTestId("attachment-thumbnail");
+    expect(readAttachment).toHaveBeenCalledWith(T, STORED);
+    expect(thumbnail.getAttribute("aria-label")).toBe("Open shot.png");
+    expect(screen.getByTestId("tool-images").dataset["size"]).toBe("thumbnail");
+    expect(screen.queryByTestId("tool-card")).toBeNull();
   });
 });
 

@@ -17,6 +17,7 @@ import {
 import { useOpenBoard } from "@/orchestration/open-board";
 import { useWorkspacesQuery } from "@/orchestration/use-orchestration";
 import { nextNeedsYou } from "@/sidebar/grouping";
+import { useConversationOnly } from "@/stores/conversation-only";
 import { useThreadsStore } from "@/stores/threads";
 
 import { useQuietMode } from "./quiet-mode";
@@ -250,6 +251,13 @@ export function useViewShortcuts(): void {
     label: "Focus",
     group: "Navigation",
     run: () => useViewStore.getState().toggleQuiet(),
+  });
+  useShortcut({
+    id: "view.conversationOnly",
+    keys: "mod+alt+5",
+    label: "Conversation only",
+    group: "Navigation",
+    run: () => useConversationOnly.getState().toggle(),
   });
   useShortcut({
     id: "quiet.leave",

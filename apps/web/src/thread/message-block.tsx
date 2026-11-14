@@ -64,7 +64,7 @@ import { ToolCard } from "./tool-cards";
 import { ToolGroup, TurnFoldRow } from "./tool-group";
 import { TurnTimelineButton } from "./turn-timeline";
 import { toolImagesOf, toolRuns, type MessageFold } from "./tool-group-model";
-import { ToolImagesContext } from "./tool-images";
+import { ToolImages, ToolImagesContext } from "./tool-images";
 import { TurnFilesChip } from "./turn-files-chip";
 import { isUndoReceipt, TurnUndoMarker } from "./turn-undo-marker";
 import { WidgetCard } from "./widget-card";
@@ -407,7 +407,17 @@ export const MessageBlock = memo(function MessageBlock({
         <ToolImagesContext value={toolImages}>
           {message.parts.map((part, i) => {
             const key = `${message.id}:${i}`;
-            if (conversationOnly && isWork(part)) return null;
+            if (conversationOnly && isWork(part)) {
+              // The call is left out; a screenshot or a picture it returned stays where it was.
+              return isToolPart(part) ? (
+                <ToolImages
+                  key={key}
+                  part={part}
+                  size="thumbnail"
+                  className="flex flex-wrap items-end gap-2"
+                />
+              ) : null;
+            }
             if (runs.absorbed.has(i) || fold?.under.has(i)) return null;
             if (folded && fold.hidden.has(i)) return null;
             const run = runs.starts.get(i);

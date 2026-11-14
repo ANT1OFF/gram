@@ -28,4 +28,5 @@
 
 ## Gaps
 
-- No keyboard shortcut yet.
+None. Since the first build: ⌘⌥5 switches it, and an image a tool call returned stays as a
+thumbnail where the call was.

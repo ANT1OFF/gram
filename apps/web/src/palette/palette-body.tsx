@@ -75,6 +75,7 @@ import { threadDisplayTitle } from "@/thread/thread-title";
 import { toggleOverviewSidebar } from "@/views/shell-layout";
 import { inHistory } from "@/views/solo-threads";
 import { useSettleRule } from "@/views/use-settle-rule";
+import { useConversationOnly } from "@/stores/conversation-only";
 import { useViewStore } from "@/views/view-store";
 
 import { useReportIssueDialog } from "@/report-issue/report-issue-dialog";
@@ -494,6 +495,13 @@ export function PaletteBody({
       ...shortcut("view.quiet"),
       keywords: "focus quiet calm hide activity",
       run: go("go:quiet", () => useViewStore.getState().setQuiet(true)),
+    },
+    {
+      id: "view:conversation-only",
+      label: "Conversation only",
+      ...shortcut("view.conversationOnly"),
+      keywords: "hide tool calls commands reasoning work transcript clean",
+      run: go("view:conversation-only", () => useConversationOnly.getState().toggle()),
     },
     {
       id: "go:inbox",

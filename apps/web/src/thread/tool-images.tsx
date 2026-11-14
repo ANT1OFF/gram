@@ -158,6 +158,14 @@ function ToolImage({
 }
 
 /**
+ * Whether a call carries an image in itself, with no `data-tool-image` part beside it: one saved
+ * inline in its output, or a Read of an image file.
+ */
+export const hasOwnImages = (part: AnyToolPart): boolean =>
+  (part.state === "output-available" && splitToolImageOutput(part.output).images.length > 0) ||
+  readImageSource(part) !== undefined;
+
+/**
  * A tool call's images: a strip of thumbnails under its collapsed row, and the same images larger
  * in its opened body. Either opens full size on a click. Renders nothing for a call without any.
  */
