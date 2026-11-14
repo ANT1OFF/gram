@@ -41,6 +41,7 @@ import { CatchUpCard } from "@/orchestration/catch-up-card";
 import { FailuresCard } from "@/orchestration/failures-card";
 import { StatusHeader } from "@/orchestration/status-header";
 import { useAllActivity } from "@/stores/all-activity";
+import { useConversationOnly } from "@/stores/conversation-only";
 import { OrchestratorStreamProvider, useOrchestratorStream } from "@/orchestration/stream-context";
 import { StuckCard } from "@/orchestration/stuck-card";
 import {
@@ -111,6 +112,8 @@ const isControl = (target: EventTarget) =>
   target.closest("button, a, input, select, textarea, [role='button'], [role='menuitem']") !== null;
 
 /** A thread's header, transcript, cards and composer; the focused one owns the keyboard. */
+const NO_STRIP_LINES: readonly StripRow[] = [];
+
 export function ThreadView({
   threadId,
   focused: paneFocused,
@@ -197,6 +200,7 @@ export function ThreadView({
   );
   const background = summary?.background;
   const canStop = summary?.capabilities?.stopTasks === true;
+  const conversationOnly = useConversationOnly((s) => s.on);
   const stripLines = useMemo(
     () => stripRows(running, background ?? [], canStop),
     [running, background, canStop],
@@ -665,7 +669,8 @@ export function ThreadView({
         <WaitingTray threadId={threadId} />
         <PlanStrip threadId={threadId} />
         <WorkerBanner thread={thread} inTitlebar={inTitlebar} />
-        <CatchUpCard thread={thread} />
+        {/* A helper's summary isn't the conversation, which is all "Conversation only" shows. */}
+        {!conversationOnly && <CatchUpCard thread={thread} />}
         <StuckCard thread={thread} />
         <OrchestratorBanner thread={thread} loaded={phase !== "loading"} />
         {thread.role === "orchestrator" && thread.workspaceId !== undefined && (
@@ -719,7 +724,9 @@ export function ThreadView({
           <div className="w-full thread-column shrink-0 px-6">
             {/* A worker opens on its catch-up instead, whose words send nothing to it. */}
             {thread.role === "orchestrator" && <BriefingPlaceholder thread={thread} />}
-            {thread.spawnedBy === undefined && <RecapCard threadId={threadId} focused={focused} />}
+            {thread.spawnedBy === undefined && !conversationOnly && (
+              <RecapCard threadId={threadId} focused={focused} />
+            )}
             <RequestCards
               threadId={threadId}
               requests={summary.pendingRequests}
@@ -737,8 +744,9 @@ export function ThreadView({
         <EditBanner threadId={threadId} />
         <PinnedDocChip threadId={threadId} />
         <PrStrip threadId={threadId} focused={focused} />
+        {/* Subagents at work are work, which "Conversation only" leaves out. */}
         <SubagentStrip
-          rows={stripLines}
+          rows={conversationOnly ? NO_STRIP_LINES : stripLines}
           shownRow={shownRow}
           onJump={jumpToSubagent}
           onOpen={openCommand}

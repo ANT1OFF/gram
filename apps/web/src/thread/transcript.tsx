@@ -326,10 +326,15 @@ export function Transcript({
   const workingSince = working
     ? (loadedMessages.findLast((message) => message.role === "user")?.metadata?.createdAt ?? 0)
     : undefined;
+  // The mode is a focused one: a compaction, a start's steps and a stop's receipt are the agent's
+  // housekeeping, so the working line stands for the first two and the third leaves nothing.
+  const compactingLine = conversationOnly ? undefined : compaction;
+  const startLine = conversationOnly ? undefined : startSteps;
+  const stopLine = conversationOnly ? undefined : stopReceipt;
   const tailLine =
-    compaction !== undefined ||
-    startSteps !== undefined ||
-    stopReceipt !== undefined ||
+    compactingLine !== undefined ||
+    startLine !== undefined ||
+    stopLine !== undefined ||
     limitLine ||
     workingSince !== undefined;
   const endRoom = FADE_PX + (tailLine ? compactingRow : 0);
@@ -1107,12 +1112,12 @@ export function Transcript({
                       className="absolute left-0 flow-root w-full px-6"
                       style={{ top: virtualizer.getTotalSize() - endRoom }}
                     >
-                      {compaction !== undefined ? (
-                        <CompactingLine compaction={compaction} />
-                      ) : startSteps !== undefined ? (
-                        <StartingProgress threadId={threadId} steps={startSteps} />
-                      ) : stopReceipt !== undefined ? (
-                        <StopReceiptLine threadId={threadId} receipt={stopReceipt} />
+                      {compactingLine !== undefined ? (
+                        <CompactingLine compaction={compactingLine} />
+                      ) : startLine !== undefined ? (
+                        <StartingProgress threadId={threadId} steps={startLine} />
+                      ) : stopLine !== undefined ? (
+                        <StopReceiptLine threadId={threadId} receipt={stopLine} />
                       ) : workingSince !== undefined && !limitLine ? (
                         <WorkingLine since={workingSince} />
                       ) : (
