@@ -104,6 +104,8 @@ export interface FakeAgentControlShape {
   readonly sessions: ReadonlyArray<FakeSession>;
   /** The past session ids `deleteSession` was asked to delete. */
   readonly deletedSessions: ReadonlyArray<string>;
+  /** `archive:<id>` or `unarchive:<id>` for each `setSessionArchived`, in order. */
+  readonly archiveMarks: ReadonlyArray<string>;
   /** `<agent>:add:<scope>:<name>` and `<agent>:remove:<scope>:<name>` for each host config write. */
   readonly mcpConfigCalls: ReadonlyArray<string>;
   /** The agent of each host MCP config list started, in order. */
@@ -397,6 +399,7 @@ export const makeFakeAgentAdapter = (
     Effect.sync(() => {
       const sessions: Array<FakeSession> = [];
       const deletedSessions: Array<string> = [];
+      const archiveMarks: Array<string> = [];
       let interruptBehavior: InterruptBehavior = "complete";
       let steerFails = false;
       let sendHangs = false;
@@ -1013,6 +1016,10 @@ export const makeFakeAgentAdapter = (
               ),
         deleteSession: ({ agentSessionId }) =>
           Effect.sync(() => void deletedSessions.push(agentSessionId)),
+        setSessionArchived: ({ agentSessionId, archived }) =>
+          Effect.sync(
+            () => void archiveMarks.push(`${archived ? "archive" : "unarchive"}:${agentSessionId}`),
+          ),
         reloadConfig: (profileId) =>
           Effect.sync(() => void configReloads.push(`${kind}:${profileId ?? ""}`)),
         // Claude keeps no shared server, so only the others have it, as the real hosts do.
@@ -1076,6 +1083,7 @@ export const makeFakeAgentAdapter = (
       const control: FakeAgentControlShape = {
         sessions,
         deletedSessions,
+        archiveMarks,
         mcpConfigCalls,
         mcpLists,
         configReloads,
