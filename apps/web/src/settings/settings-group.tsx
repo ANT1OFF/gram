@@ -70,17 +70,42 @@ export function SettingsGroup({
       className="flex scroll-mt-4 flex-col gap-2"
     >
       {/* Flush with the page's title and the card's edge: one left edge for every heading. */}
-      <div className="flex items-start gap-3">
-        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+      {/* With an action, on a phone the title and the action share the first line and the sentence
+          takes the full width under them; beside the action it was squeezed into a column three
+          lines tall. The phone's classes are important, to hold where an embedding app's plain
+          utilities come after Gram's stylesheet. */}
+      <div
+        className={cn(
+          "flex items-start gap-3",
+          action !== undefined && "phone:flex-wrap phone:gap-y-0.5",
+        )}
+      >
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5",
+            action !== undefined && "phone:contents!",
+          )}
+        >
           <div className="flex min-h-6 items-center gap-1">
             <h3 id={titleId} className={GROUP_TITLE}>
               {label}
             </h3>
             <HelpTip label={label} help={learnMore} />
           </div>
-          {description !== undefined && <SettingDescription>{description}</SettingDescription>}
+          {description !== undefined && (
+            <div
+              className={cn(
+                "min-w-0",
+                action !== undefined && "phone:order-last phone:-mt-2 phone:basis-full!",
+              )}
+            >
+              <SettingDescription>{description}</SettingDescription>
+            </div>
+          )}
         </div>
-        {action !== undefined && <div className="flex shrink-0 items-center">{action}</div>}
+        {action !== undefined && (
+          <div className="flex shrink-0 items-center phone:ms-auto">{action}</div>
+        )}
       </div>
       <div data-testid={testId} className={cn(card ? SETTINGS_CARD : "flex flex-col gap-4")}>
         {children}
