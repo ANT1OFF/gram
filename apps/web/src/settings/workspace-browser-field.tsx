@@ -52,14 +52,14 @@ export function WorkspaceBrowserFields({
           disabled={disabled}
           onChange={(next) => onChange(withBrowserList(charter, "browserSites", next))}
           problemOf={browserSiteProblem}
-          placeholder="github.com"
+          placeholder="example.com"
           emptyReason="Type a site first."
           testId="workspace-browser-sites"
         />
       </Field>
       <Field
         label="Allowed Mac apps"
-        description="Limit Codex to these Mac apps here. Empty follows Settings."
+        description="Limit Codex to these Mac apps here, each by its bundle id. Empty follows Settings."
         learnMore={
           <p>
             List an app by its bundle id (com.apple.Safari). This workspace&apos;s list takes the
@@ -76,7 +76,7 @@ export function WorkspaceBrowserFields({
           disabled={disabled}
           onChange={(next) => onChange(withBrowserList(charter, "browserApps", next))}
           problemOf={browserAppProblem}
-          placeholder="com.apple.Safari"
+          placeholder="com.example.App"
           emptyReason="Type a bundle id first."
           testId="workspace-browser-apps"
         />
