@@ -53,7 +53,7 @@ import {
   OrchestrationDigestCard,
   WorkerReportCard,
 } from "./orchestration-cards";
-import { isWork, showsInConversation } from "./conversation-only";
+import { isNotice, leavesOut, showsInConversation } from "./conversation-only";
 import { isToolPart } from "./parts";
 import { HumanReviewNoticeCard, ReviewNoticeCard } from "./review-notice-card";
 import { TaskChip } from "./task-chip";
@@ -267,14 +267,20 @@ export const MessageBlock = memo(function MessageBlock({
   const conversationOnly = useConversationOnly((s) => s.on);
 
   if (message.role === "user") {
+    if (conversationOnly && isNotice(message)) return null;
     const notice = message.parts.find((p) => p.type === "data-review-notice");
     const humanReview = message.parts.find((p) => p.type === "data-human-review-notice");
     const digest = message.parts.find((p) => p.type === "data-orchestration-digest");
     const idleCompact = message.parts.find((p) => p.type === "data-idle-compact");
     if (idleCompact) return <IdleCompactRequest notice={idleCompact.data} />;
     const origin = message.parts.find((p) => p.type === "data-thread-origin");
-    const waitNote = message.parts.find((p) => p.type === "data-wait-note");
-    const waitChips = message.parts.flatMap((p) => (p.type === "data-wait" ? [p] : []));
+    // What Gram told the agent with a message, and the waits it set, aren't the conversation.
+    const waitNote = conversationOnly
+      ? undefined
+      : message.parts.find((p) => p.type === "data-wait-note");
+    const waitChips = conversationOnly
+      ? []
+      : message.parts.flatMap((p) => (p.type === "data-wait" ? [p] : []));
     const files = message.parts.flatMap((part) => (part.type === "file" ? [part] : []));
     const attached = files.length > 0 && (
       <ul aria-label="Attached files" className="mt-1 flex flex-wrap gap-1 whitespace-normal">
@@ -415,7 +421,7 @@ export const MessageBlock = memo(function MessageBlock({
         <ToolImagesContext value={toolImages}>
           {message.parts.map((part, i) => {
             const key = `${message.id}:${i}`;
-            if (conversationOnly && isWork(part)) {
+            if (conversationOnly && leavesOut(part)) {
               // The call is left out; a screenshot or a picture it returned stays where it was.
               return isToolPart(part) ? (
                 <ToolImages
@@ -523,7 +529,7 @@ export const MessageBlock = memo(function MessageBlock({
         </ToolImagesContext>
         <PublishedFileCards threadId={threadId} parts={message.parts} />
       </MessageContent>
-      {actions && turnEnd !== undefined && (
+      {actions && turnEnd !== undefined && !conversationOnly && (
         <TurnFilesChip threadId={threadId} turnId={turnEnd} undo={turnUndo} />
       )}
       {actions && (
