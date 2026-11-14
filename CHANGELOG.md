@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.24.0](https://github.com/ANT1OFF/gram/compare/v1.23.0...v1.24.0) (2026-11-14)
+
+
+### Features
+
+* agents propose MCP servers, added only on the user's approval ([#514](https://github.com/ANT1OFF/gram/issues/514)) ([fca60b6](https://github.com/ANT1OFF/gram/commit/fca60b6be7a52c9be029dd8dad27bb55092ebdf2))
+* choose which surfaces Codex computer use reaches ([#528](https://github.com/ANT1OFF/gram/issues/528)) ([c799c63](https://github.com/ANT1OFF/gram/commit/c799c63c32d7af3399dff56e3a34314eb4681e8c))
+* let a lent browser ask before each action ([#541](https://github.com/ANT1OFF/gram/issues/541)) ([4077399](https://github.com/ANT1OFF/gram/commit/4077399ac1164a989a62e71ffabfc26f8cabdd9e))
+* let a workspace limit a lent browser to its own sites and apps ([#536](https://github.com/ANT1OFF/gram/issues/536)) ([93e7899](https://github.com/ANT1OFF/gram/commit/93e7899e4a329f750ddd0f6dd953de6ba5db49f6))
+* let agents browse on the server without the desktop app ([#544](https://github.com/ANT1OFF/gram/issues/544)) ([011c01c](https://github.com/ANT1OFF/gram/commit/011c01c5e1feb4cce549fd48f3e10af8c500a757))
+* limit a lent browser to listed sites and Mac apps ([#531](https://github.com/ANT1OFF/gram/issues/531)) ([5b93938](https://github.com/ANT1OFF/gram/commit/5b939381ad7c63b68ce17a743311c09c4b4f00ac))
+* **orchestration:** a digest says when it lands in the middle of the user's conversation ([#593](https://github.com/ANT1OFF/gram/issues/593)) ([64155c5](https://github.com/ANT1OFF/gram/commit/64155c58b4623ffcfb9850df91e61c017268882e))
+* **orchestration:** autonomy decides only code and GitHub, and how an orchestrator talks to the user ([#590](https://github.com/ANT1OFF/gram/issues/590)) ([8c8174b](https://github.com/ANT1OFF/gram/commit/8c8174b37ddcb108a8adb4e5a29d7a305998392a))
+* pass on the user's answer from the record, and one notification for asks that wait together ([#587](https://github.com/ANT1OFF/gram/issues/587)) ([8d74ac2](https://github.com/ANT1OFF/gram/commit/8d74ac24fad133e35b680890345f037406f27ea6))
+* say when a lent browser isn't ready ([#519](https://github.com/ANT1OFF/gram/issues/519)) ([cf80610](https://github.com/ANT1OFF/gram/commit/cf80610a50e7aec4620b9dd4329a8e67bb7e4720))
+* watch and drive the server's browser from the Preview tab ([#550](https://github.com/ANT1OFF/gram/issues/550)) ([a538963](https://github.com/ANT1OFF/gram/commit/a538963d08a6287c66135827e6c78f144087d9c7))
+* **web:** browser asks say what they would do in words, and the browser chip says "held back" ([#585](https://github.com/ANT1OFF/gram/issues/585)) ([a7dc72c](https://github.com/ANT1OFF/gram/commit/a7dc72c8503beeea0bc9e73868164195327764b3))
+* **web:** Conversation only, a switch that takes tool calls and reasoning out of every transcript ([#592](https://github.com/ANT1OFF/gram/issues/592)) ([eea13dd](https://github.com/ANT1OFF/gram/commit/eea13dd3df3b75206810bebe8e0373e708c8cba7))
+* **web:** the server's page says who drives in one line, with a worded Hand back ([#584](https://github.com/ANT1OFF/gram/issues/584)) ([bb44eff](https://github.com/ANT1OFF/gram/commit/bb44effed29f6693b0deff0d8703e61a990e971f))
+
+
+### Bug Fixes
+
+* a window whose launch cookie was lost reloads onto the running server ([#532](https://github.com/ANT1OFF/gram/issues/532)) ([5225592](https://github.com/ANT1OFF/gram/commit/522559259884fc4b68fc9c3c543679cca063bd31))
+* keep a joined machine connected through a stall of a few seconds ([#533](https://github.com/ANT1OFF/gram/issues/533)) ([9e94333](https://github.com/ANT1OFF/gram/commit/9e9433356bb64b8473f036c7fb1ef47f115d7a97))
+* keep a thread edit made while a one-flag clear was in flight ([#540](https://github.com/ANT1OFF/gram/issues/540)) ([d89fb79](https://github.com/ANT1OFF/gram/commit/d89fb7944a5ad3afa7c8dd8a2ef7f21e245daaee))
+* keep an embedding app's home at / instead of jumping to the server's last focused thread ([#553](https://github.com/ANT1OFF/gram/issues/553)) ([6d3468d](https://github.com/ANT1OFF/gram/commit/6d3468de5387d7ae15f9779f668eb087e0011e97))
+* **web:** Your browser nests what Codex computer use reaches under its switch, and the allowed lists' examples no longer repeat an entry ([#578](https://github.com/ANT1OFF/gram/issues/578)) ([25e8e0d](https://github.com/ANT1OFF/gram/commit/25e8e0dd6eb7d0d820ae0fab111aec9ee1abeebe))
+
+
+### Performance Improvements
+
+* read only the user messages each caller needs ([#539](https://github.com/ANT1OFF/gram/issues/539)) ([f5dd278](https://github.com/ANT1OFF/gram/commit/f5dd278e04a22fef6e1f517951596bab578be7fa))
+
 ## [1.23.0](https://github.com/ANT1OFF/gram/compare/v1.22.0...v1.23.0) (2026-11-13)
 
 
