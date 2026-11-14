@@ -20,6 +20,7 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import type { FakeSession } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { Orchestration } from "./service.ts";
+import { encodeOutbox } from "./outbox.ts";
 import {
   completeTurn,
   makeWorld,
@@ -1402,13 +1403,13 @@ describe.skipIf(!hasGit)("worker questions", () => {
         yield* orchestration.setPaused(workspaceId, false);
         yield* settle;
 
-        // Another orchestrator's worker, or a thread no longer its worker: not its to close.
+        // Detaching already withdrew it; closing again preserves that first decision.
         yield* orchestration.detach(worker.thread.id);
         yield* settle;
         const detached = yield* session
           .callTool("close_question", { id: "WQ1", answer: "x", how: "withdrawn" })
           .pipe(Effect.flip);
-        expect(detached.message).toMatch(/^not_your_worker: /);
+        expect(detached.message).toMatch(/^closed: /);
         // Detaching withdrew it in the thread's name; the refused call changed nothing of that.
         expect((yield* stored(workspaceId, "WQ1"))?.withdrawal).toEqual({
           by: "worker",
@@ -1439,4 +1440,164 @@ describe.skipIf(!hasGit)("worker questions", () => {
       }),
     ),
   );
+});
+
+describe.skipIf(!hasGit)("departed workers' questions", () => {
+  for (const action of [
+    "closed",
+    "deleted",
+    "detached",
+    "parent closed",
+    "membership removed",
+  ] as const) {
+    it.effect(`${action} withdraws triage and forwarded questions without waking the worker`, () =>
+      inServer((world) =>
+        Effect.gen(function* () {
+          const orchestration = yield* Orchestration;
+          const runtimes = yield* ThreadRuntimes;
+          const store = yield* ThreadStore;
+          const { session, thread, workspaceId, worker } = yield* withWorker(world);
+          yield* asked(worker.session);
+          yield* session.callTool("forward_question", { questionId: "WQ1" });
+          yield* asked(worker.session, { question: "Keep the old route?" });
+          yield* completeTurn(worker.session);
+          const sent = worker.session.sent.length;
+          const steered = worker.session.steered.length;
+          if (action === "closed") yield* runtimes.close(worker.thread.id);
+          else if (action === "deleted") yield* store.removeThread(worker.thread.id);
+          else if (action === "detached") yield* orchestration.detach(worker.thread.id);
+          else if (action === "parent closed") yield* runtimes.close(thread.id);
+          else
+            yield* runtimes.updateThread(
+              worker.thread.id,
+              ({ spawnedBy: _spawnedBy, ...rest }) => rest,
+            );
+          yield* settle;
+          if (action !== "deleted") {
+            expect((yield* outboxOf(workspaceId)).questions?.filter(isOpenQuestion)).toEqual([]);
+          }
+          // A direct store deletion has no runtime signal; the next ledger repairs it too.
+          const ledger = yield* orchestration.ledger(workspaceId);
+          expect(ledger.questions?.filter(isOpenQuestion)).toEqual([]);
+          const threadLeft = action === "closed" || action === "deleted" ? "deleted" : "detached";
+          for (const id of ["WQ1", "WQ2"]) {
+            expect(yield* stored(workspaceId, id)).toMatchObject({
+              stage: "dismissed",
+              withdrawal: { by: "worker", how: "withdrawn", threadLeft },
+            });
+          }
+          expect(worker.session.sent).toHaveLength(sent);
+          expect(worker.session.steered).toHaveLength(steered);
+          yield* TestClock.adjust("11 minutes");
+          yield* settle;
+          expect((yield* stored(workspaceId, "WQ2"))?.stage).toBe("dismissed");
+        }),
+      ),
+    );
+  }
+
+  for (const membership of ["missing", "detached", "foreign"] as const) {
+    it.effect(
+      `close_question handles an older ${membership} asking thread within its workspace`,
+      () =>
+        inTwoWorkspaces((a, b) =>
+          Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            const orchestration = yield* Orchestration;
+            yield* asked(a.worker.session);
+            yield* a.session.callTool("forward_question", { questionId: "WQ1" });
+            yield* settle;
+            // Bypass lifecycle handling, as an older install could have done.
+            if (membership === "missing") yield* store.removeThread(a.worker.thread.id);
+            else
+              yield* store.updateThread(
+                a.worker.thread.id,
+                ({ spawnedBy: _spawnedBy, ...thread }) => ({
+                  ...thread,
+                  ...(membership === "foreign"
+                    ? { spawnedBy: { threadId: b.session.options.threadId, feature: "other" } }
+                    : {}),
+                }),
+              );
+            const steered = a.worker.session.steered.length;
+            const close = orchestration.closeWorkerQuestion(a.session.options.threadId, {
+              questionId: "WQ1",
+              how: "withdrawn",
+              reason: "The work was removed.",
+            });
+            if (membership === "foreign") {
+              expect((yield* close.pipe(Effect.flip)).message).toMatch(/^not_your_worker: /);
+              expect((yield* stored(a.workspaceId, "WQ1"))?.stage).toBe("forwarded");
+            } else {
+              expect(yield* close).toMatchObject({
+                stage: "dismissed",
+                closedBy: "orchestrator",
+                withdrawal: { by: "orchestrator", how: "withdrawn" },
+              });
+            }
+            expect(a.worker.session.steered).toHaveLength(steered);
+            expect((yield* outboxOf(b.workspaceId)).questions ?? []).toEqual([]);
+          }),
+        ),
+    );
+  }
+
+  for (const vacant of [false, true]) {
+    it.effect(
+      `startup withdraws pre-existing orphan questions with ${vacant ? "no" : "a live"} orchestrator`,
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          const savedWorkspaceId = yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const { session, thread, workspaceId, worker } = yield* withWorker(world);
+              const store = yield* ThreadStore;
+              yield* asked(worker.session);
+              yield* session.callTool("forward_question", { questionId: "WQ1" });
+              yield* asked(worker.session, { question: "Keep the old route?" });
+              yield* (yield* Orchestration).answerQuestionAsUser({
+                workspaceId,
+                questionId: "WQ2",
+                answer: "Yes",
+              });
+              yield* settle;
+              yield* asked(worker.session, { question: "Use the new route?" });
+              const before = yield* outboxOf(workspaceId);
+              yield* store.removeThread(worker.thread.id);
+              if (vacant) yield* store.removeThread(thread.id);
+              // Persist precisely the old bug: live questions after the asking thread was deleted.
+              yield* store.putOutbox(workspaceId, encodeOutbox(before));
+              return workspaceId;
+            }),
+          );
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              yield* waitReal(
+                "startup orphan cleanup",
+                stored(savedWorkspaceId, "WQ1").pipe(
+                  Effect.map((question) =>
+                    question?.stage === "dismissed" ? question : undefined,
+                  ),
+                ),
+              );
+              expect(yield* stored(savedWorkspaceId, "WQ1")).toMatchObject({
+                withdrawal: { by: "worker", how: "withdrawn", threadLeft: "deleted" },
+              });
+              expect(yield* stored(savedWorkspaceId, "WQ3")).toMatchObject({
+                stage: "dismissed",
+                withdrawal: { threadLeft: "deleted" },
+              });
+              // An already answered question is immutable even though its worker is gone.
+              expect(yield* stored(savedWorkspaceId, "WQ2")).toMatchObject({
+                stage: "answered",
+                answer: "Yes",
+                closedBy: "user",
+              });
+            }),
+          );
+        }),
+    );
+  }
 });

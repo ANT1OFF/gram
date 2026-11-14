@@ -402,7 +402,12 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
     perform: (current, retry, { workspaceId }) =>
       Effect.gen(function* () {
         const worker = yield* findThread(current.threadId);
-        if (worker === undefined || worker.parked || worker.workspaceId !== workspaceId) {
+        if (
+          worker === undefined ||
+          worker.parked ||
+          worker.workspaceId !== workspaceId ||
+          (current.withdrawal?.by === "orchestrator" && worker.spawnedBy === undefined)
+        ) {
           return { delivered: undefined };
         }
         const text = closedQuestionText(current);
@@ -824,6 +829,29 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       ),
     );
 
+  /** Repair questions left open by an older version or a missed lifecycle signal. */
+  const reconcileQuestions = (workspaceId: WorkspaceId) =>
+    Effect.gen(function* () {
+      const open = questionsOf(yield* readOutbox(workspaceId)).filter(isOpenQuestion);
+      if (open.length === 0) return;
+      // Use the store's authoritative list: a failed lookup must never count as a deletion.
+      const threads = new Map((yield* store.listThreads).map((thread) => [thread.id, thread]));
+      for (const threadId of new Set(open.map((question) => question.threadId))) {
+        const thread = threads.get(threadId);
+        const why =
+          thread === undefined
+            ? "deleted"
+            : thread.spawnedBy === undefined
+              ? "detached"
+              : thread.workspaceId !== workspaceId
+                ? "moved"
+                : thread.parked
+                  ? "archived"
+                  : undefined;
+        if (why !== undefined) yield* withdrawQuestionsOf(workspaceId, threadId, why);
+      }
+    });
+
   /**
    * `ask_question` with `withdraw`: the worker closes its own open question, in triage or with the
    * user, because it no longer needs an answer or a newer one of its own (`supersededBy`) replaces
@@ -883,7 +911,8 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       const target = found === undefined ? undefined : yield* findThread(found.threadId);
       if (
         found !== undefined &&
-        (target === undefined || !(yield* delegated(callerId, target.id)))
+        target?.spawnedBy !== undefined &&
+        !(yield* delegated(callerId, target.id))
       ) {
         return yield* toolError(
           tool,
@@ -989,6 +1018,7 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
     closeWorkerQuestion,
     recordUserAnswer,
     withdrawQuestionsOf,
+    reconcileQuestions,
     answerQuestionAsUser,
     dismissQuestionAsUser,
     userAnswers,

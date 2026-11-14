@@ -732,6 +732,17 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       if (holding !== undefined) yield* followPark(holding, thread);
       const workspaceId = workerWorkspaces.get(thread.id);
       if (workspaceId === undefined) return;
+      if (thread.spawnedBy === undefined || thread.workspaceId !== workspaceId) {
+        yield* workerRemoved(
+          workspaceId,
+          thread.id,
+          parkedWorkers.has(thread.id),
+          thread.workspaceId !== undefined && thread.workspaceId !== workspaceId
+            ? "moved"
+            : "detached",
+        );
+        return;
+      }
       const newlyParked = thread.parked && !parkedWorkers.has(thread.id);
       if (thread.parked) parkedWorkers.add(thread.id);
       else parkedWorkers.delete(thread.id);
@@ -796,6 +807,7 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
         (thread) => workerWorkspaces.get(thread.id) === workspaceId,
       );
       for (const orphan of orphans) {
+        yield* withdrawQuestionsOf(workspaceId, orphan.id, "detached");
         workerWorkspaces.delete(orphan.id);
         parkedWorkers.delete(orphan.id);
         // The store stripped `spawnedBy` without publishing; an unchanged update republishes.

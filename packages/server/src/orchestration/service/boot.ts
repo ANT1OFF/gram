@@ -20,6 +20,7 @@ export interface BootDeps {
   readonly armAlarms: WakeAlarms["armAlarms"];
   readonly armLimitResume: (workspaceId: WorkspaceId) => Effect.Effect<void>;
   readonly armPauseResumes: Pauses["armPauseResumes"];
+  readonly reconcileQuestions: WorkerQuestions["reconcileQuestions"];
   readonly armQuestionTimers: WorkerQuestions["armQuestionTimers"];
   readonly deliverOwedQuestions: WorkerQuestions["deliverOwedQuestions"];
   readonly noteRestart: Observers["noteRestart"];
@@ -52,6 +53,7 @@ export const makeBoot = (kit: OrchestrationKit, deps: BootDeps) => {
     armLimitResume,
     armPauseResumes,
     armQuestionTimers,
+    reconcileQuestions,
     deliverOwedQuestions,
     noteRestart,
     followPark,
@@ -68,6 +70,7 @@ export const makeBoot = (kit: OrchestrationKit, deps: BootDeps) => {
     // First, so the states read below carry the pause and no restart acts on an empty outbox.
     for (const state of yield* store.listWorkspaces) yield* quarantineOutbox(state.workspace.id);
     for (const state of yield* store.listWorkspaces) {
+      yield* reconcileQuestions(state.workspace.id);
       const holder = state.workspace.orchestratorThreadId;
       if (holder === undefined || !threads.some((thread) => thread.id === holder)) continue;
       orchestrators.set(holder, state.workspace.id);
