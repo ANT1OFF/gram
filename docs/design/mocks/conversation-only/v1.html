@@ -239,33 +239,54 @@
             </div>
             <div class="body">
               <div class="talk">
-                <p class="you">The mail trigger drops a message when the inbox times out. Can it retry?</p>
-                <button class="work" type="button">Worked 3m 12s · 14 tools <i data-icon="right"></i></button>
+                <p class="you">
+                  The mail trigger drops a message when the inbox times out. Can it retry?
+                </p>
+                <button class="work" type="button">
+                  Worked 3m 12s · 14 tools <i data-icon="right"></i>
+                </button>
                 <p>
-                  The trigger gave up on the first timeout. It now retries three times with a growing
-                  wait, and the dropped message from this morning went through on the second try.
+                  The trigger gave up on the first timeout. It now retries three times with a
+                  growing wait, and the dropped message from this morning went through on the second
+                  try.
                 </p>
                 <div class="placeholder shot">Screenshot: the run log, second try succeeds</div>
                 <div class="box art">
                   <span class="thumb"><i data-icon="file"></i></span>
-                  <span class="grow"><strong>retry-notes.md</strong><br /><span class="muted small">Written this turn</span></span>
+                  <span class="grow"
+                    ><strong>retry-notes.md</strong><br /><span class="muted small"
+                      >Written this turn</span
+                    ></span
+                  >
                   <button class="btn sm" type="button">Open</button>
                 </div>
                 <p class="you">Good. Add a test and push it.</p>
                 <p>I'll cover the timeout and the give-up case.</p>
-                <div class="tool"><i data-icon="okcircle"></i>Edited <code>retry.test.ts</code></div>
+                <div class="tool">
+                  <i data-icon="okcircle"></i>Edited <code>retry.test.ts</code>
+                </div>
                 <div class="tool"><i data-icon="okcircle"></i>Ran <code>bun test retry</code></div>
                 <p>Both cases pass. One thing before I push:</p>
                 <div class="box">
                   <strong>Should a message that fails all three tries be kept?</strong>
-                  <button class="opt" type="button"><span class="k">A</span>Keep it in a failed list <span class="badge">Recommended</span></button>
-                  <button class="opt" type="button"><span class="k">B</span>Drop it and log the loss</button>
+                  <button class="opt" type="button">
+                    <span class="k">A</span>Keep it in a failed list
+                    <span class="badge">Recommended</span>
+                  </button>
+                  <button class="opt" type="button">
+                    <span class="k">B</span>Drop it and log the loss
+                  </button>
                 </div>
-                <div class="tool"><span class="spinner"></span>Running <code>git push -u origin feat/mail-trigger</code></div>
+                <div class="tool">
+                  <span class="spinner"></span>Running
+                  <code>git push -u origin feat/mail-trigger</code>
+                </div>
                 <div class="box">
                   <ul class="steps">
                     <li class="done"><i data-icon="okcircle"></i>Retry with a growing wait</li>
-                    <li class="done"><i data-icon="okcircle"></i>Test the timeout and the give-up case</li>
+                    <li class="done">
+                      <i data-icon="okcircle"></i>Test the timeout and the give-up case
+                    </li>
                     <li><span class="spinner"></span>Push the branch</li>
                     <li class="todo-step"><i data-icon="dashed"></i>Open the pull request</li>
                   </ul>
@@ -282,20 +303,29 @@
           <div class="pane">
             <div class="head">
               <span class="title truncate">Retry the mail trigger</span>
-              <button class="ib" type="button" aria-pressed="true"><i data-icon="msg"></i>Conversation only</button>
+              <button class="ib" type="button" aria-pressed="true">
+                <i data-icon="msg"></i>Conversation only
+              </button>
               <button class="ib" type="button" aria-label="More"><i data-icon="more"></i></button>
             </div>
             <div class="body">
               <div class="talk">
-                <p class="you">The mail trigger drops a message when the inbox times out. Can it retry?</p>
+                <p class="you">
+                  The mail trigger drops a message when the inbox times out. Can it retry?
+                </p>
                 <p>
-                  The trigger gave up on the first timeout. It now retries three times with a growing
-                  wait, and the dropped message from this morning went through on the second try.
+                  The trigger gave up on the first timeout. It now retries three times with a
+                  growing wait, and the dropped message from this morning went through on the second
+                  try.
                 </p>
                 <div class="placeholder shot">Screenshot: the run log, second try succeeds</div>
                 <div class="box art">
                   <span class="thumb"><i data-icon="file"></i></span>
-                  <span class="grow"><strong>retry-notes.md</strong><br /><span class="muted small">Written this turn</span></span>
+                  <span class="grow"
+                    ><strong>retry-notes.md</strong><br /><span class="muted small"
+                      >Written this turn</span
+                    ></span
+                  >
                   <button class="btn sm" type="button">Open</button>
                 </div>
                 <p class="you">Good. Add a test and push it.</p>
@@ -303,18 +333,27 @@
                 <p>Both cases pass. One thing before I push:</p>
                 <div class="box">
                   <strong>Should a message that fails all three tries be kept?</strong>
-                  <button class="opt" type="button"><span class="k">A</span>Keep it in a failed list <span class="badge">Recommended</span></button>
-                  <button class="opt" type="button"><span class="k">B</span>Drop it and log the loss</button>
+                  <button class="opt" type="button">
+                    <span class="k">A</span>Keep it in a failed list
+                    <span class="badge">Recommended</span>
+                  </button>
+                  <button class="opt" type="button">
+                    <span class="k">B</span>Drop it and log the loss
+                  </button>
                 </div>
                 <div class="box">
                   <ul class="steps">
                     <li class="done"><i data-icon="okcircle"></i>Retry with a growing wait</li>
-                    <li class="done"><i data-icon="okcircle"></i>Test the timeout and the give-up case</li>
+                    <li class="done">
+                      <i data-icon="okcircle"></i>Test the timeout and the give-up case
+                    </li>
                     <li><span class="spinner"></span>Push the branch</li>
                     <li class="todo-step"><i data-icon="dashed"></i>Open the pull request</li>
                   </ul>
                 </div>
-                <div class="live"><span class="spinner"></span>Working <span class="muted">11s</span></div>
+                <div class="live">
+                  <span class="spinner"></span>Working <span class="muted">11s</span>
+                </div>
               </div>
             </div>
             <div class="compose">Message the agent</div>
@@ -335,35 +374,54 @@
             </div>
             <div class="body">
               <div class="talk">
-                <p class="you">The mail trigger drops a message when the inbox times out. Can it retry?</p>
+                <p class="you">
+                  The mail trigger drops a message when the inbox times out. Can it retry?
+                </p>
                 <p>
-                  The trigger gave up on the first timeout. It now retries three times with a growing
-                  wait, and the dropped message from this morning went through on the second try.
+                  The trigger gave up on the first timeout. It now retries three times with a
+                  growing wait, and the dropped message from this morning went through on the second
+                  try.
                 </p>
                 <div class="placeholder shot">Screenshot: the run log, second try succeeds</div>
                 <div class="box art">
                   <span class="thumb"><i data-icon="file"></i></span>
-                  <span class="grow"><strong>retry-notes.md</strong><br /><span class="muted small">Written this turn</span></span>
+                  <span class="grow"
+                    ><strong>retry-notes.md</strong><br /><span class="muted small"
+                      >Written this turn</span
+                    ></span
+                  >
                   <button class="btn sm" type="button">Open</button>
                 </div>
-                <button class="work" type="button">14 steps · 3m 12s <i data-icon="right"></i></button>
+                <button class="work" type="button">
+                  14 steps · 3m 12s <i data-icon="right"></i>
+                </button>
                 <p class="you">Good. Add a test and push it.</p>
                 <p>I'll cover the timeout and the give-up case.</p>
                 <p>Both cases pass. One thing before I push:</p>
                 <div class="box">
                   <strong>Should a message that fails all three tries be kept?</strong>
-                  <button class="opt" type="button"><span class="k">A</span>Keep it in a failed list <span class="badge">Recommended</span></button>
-                  <button class="opt" type="button"><span class="k">B</span>Drop it and log the loss</button>
+                  <button class="opt" type="button">
+                    <span class="k">A</span>Keep it in a failed list
+                    <span class="badge">Recommended</span>
+                  </button>
+                  <button class="opt" type="button">
+                    <span class="k">B</span>Drop it and log the loss
+                  </button>
                 </div>
                 <div class="box">
                   <ul class="steps">
                     <li class="done"><i data-icon="okcircle"></i>Retry with a growing wait</li>
-                    <li class="done"><i data-icon="okcircle"></i>Test the timeout and the give-up case</li>
+                    <li class="done">
+                      <i data-icon="okcircle"></i>Test the timeout and the give-up case
+                    </li>
                     <li><span class="spinner"></span>Push the branch</li>
                     <li class="todo-step"><i data-icon="dashed"></i>Open the pull request</li>
                   </ul>
                 </div>
-                <button class="work live" type="button"><span class="spinner"></span>Pushing the branch <span class="muted">· 3 steps · 41s</span> <i data-icon="right"></i></button>
+                <button class="work live" type="button">
+                  <span class="spinner"></span>Pushing the branch
+                  <span class="muted">· 3 steps · 41s</span> <i data-icon="right"></i>
+                </button>
               </div>
             </div>
             <div class="compose">Message the agent</div>
@@ -376,20 +434,29 @@
           <div class="pane">
             <div class="head">
               <span class="title truncate">Retry the mail trigger</span>
-              <button class="ib" type="button" aria-pressed="true"><i data-icon="panel"></i>Work</button>
+              <button class="ib" type="button" aria-pressed="true">
+                <i data-icon="panel"></i>Work
+              </button>
               <button class="ib" type="button" aria-label="More"><i data-icon="more"></i></button>
             </div>
             <div class="body">
               <div class="talk">
-                <p class="you">The mail trigger drops a message when the inbox times out. Can it retry?</p>
+                <p class="you">
+                  The mail trigger drops a message when the inbox times out. Can it retry?
+                </p>
                 <p>
-                  The trigger gave up on the first timeout. It now retries three times with a growing
-                  wait, and the dropped message from this morning went through on the second try.
+                  The trigger gave up on the first timeout. It now retries three times with a
+                  growing wait, and the dropped message from this morning went through on the second
+                  try.
                 </p>
                 <div class="placeholder shot">Screenshot: the run log, second try succeeds</div>
                 <div class="box art">
                   <span class="thumb"><i data-icon="file"></i></span>
-                  <span class="grow"><strong>retry-notes.md</strong><br /><span class="muted small">Written this turn</span></span>
+                  <span class="grow"
+                    ><strong>retry-notes.md</strong><br /><span class="muted small"
+                      >Written this turn</span
+                    ></span
+                  >
                   <button class="btn sm" type="button">Open</button>
                 </div>
                 <p class="you">Good. Add a test and push it.</p>
@@ -397,13 +464,20 @@
                 <p>Both cases pass. One thing before I push:</p>
                 <div class="box">
                   <strong>Should a message that fails all three tries be kept?</strong>
-                  <button class="opt" type="button"><span class="k">A</span>Keep it in a failed list <span class="badge">Recommended</span></button>
-                  <button class="opt" type="button"><span class="k">B</span>Drop it and log the loss</button>
+                  <button class="opt" type="button">
+                    <span class="k">A</span>Keep it in a failed list
+                    <span class="badge">Recommended</span>
+                  </button>
+                  <button class="opt" type="button">
+                    <span class="k">B</span>Drop it and log the loss
+                  </button>
                 </div>
                 <div class="box">
                   <ul class="steps">
                     <li class="done"><i data-icon="okcircle"></i>Retry with a growing wait</li>
-                    <li class="done"><i data-icon="okcircle"></i>Test the timeout and the give-up case</li>
+                    <li class="done">
+                      <i data-icon="okcircle"></i>Test the timeout and the give-up case
+                    </li>
                     <li><span class="spinner"></span>Push the branch</li>
                     <li class="todo-step"><i data-icon="dashed"></i>Open the pull request</li>
                   </ul>
@@ -411,11 +485,17 @@
               </div>
               <aside class="side" aria-label="Work">
                 <h4>This turn · 41s</h4>
-                <div class="tool"><i data-icon="okcircle"></i>Edited <code>retry.test.ts</code></div>
+                <div class="tool">
+                  <i data-icon="okcircle"></i>Edited <code>retry.test.ts</code>
+                </div>
                 <div class="tool"><i data-icon="okcircle"></i>Ran <code>bun test retry</code></div>
-                <div class="tool"><span class="spinner"></span><code>git push -u origin feat/mail-trigger</code></div>
+                <div class="tool">
+                  <span class="spinner"></span><code>git push -u origin feat/mail-trigger</code>
+                </div>
                 <h4>Earlier</h4>
-                <button class="work" type="button">14 steps · 3m 12s <i data-icon="right"></i></button>
+                <button class="work" type="button">
+                  14 steps · 3m 12s <i data-icon="right"></i>
+                </button>
               </aside>
             </div>
             <div class="compose">Message the agent</div>

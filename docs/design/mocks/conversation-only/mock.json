@@ -1,10 +1,10 @@
 {
   "title": "Conversation only",
   "slug": "conversation-only",
-  "status": "draft",
+  "status": "approved",
   "template": "options",
   "current": 1,
-  "approved": null,
+  "approved": 1,
   "versions": [
     {
       "n": 1,
