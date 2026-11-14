@@ -2146,6 +2146,7 @@ describe("prompts", () => {
       );
       expect(prompt).toContain("Back each claim with what you checked");
       expect(prompt).toContain("A worker's report is its word until you have looked");
+      expect(prompt).toContain("Before you tell the user where things stand, call `list_workers`");
       expect(prompt).toContain("**Needs you**, **Done**, **Failed**, **Still working**");
       expect(prompt).toContain("Ask a decision once, with the option you recommend and why");
     }

@@ -44,11 +44,11 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * The orchestrator's raised again on 2026-11-14, on purpose and at the user's word, for how it
  * talks to the user: it answers every message in its turn, backs a claim with what it checked,
  * writes the catch-up after an absence in one fixed shape and asks a decision once with a
- * recommendation; measured then at 62,634. The worker's held, at 36,827, with its report now
+ * recommendation, and reads the ledger before it says where things stand; measured then at 62,771. The worker's held, at 36,827, with its report now
  * saying what it ran and what it did not check.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 62_700,
+  orchestrator: 62_900,
   worker: 36_900,
   plain: 23_550,
 };
