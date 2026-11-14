@@ -1,5 +1,5 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
-import { NodeWS } from "@effect/platform-node/NodeSocket";
+import * as NodeWS from "@effect/platform-node/NodeWS";
 import { afterAll, describe, expect, it as test, layer, vi } from "@effect/vitest";
 import {
   applySettingsPatch,
