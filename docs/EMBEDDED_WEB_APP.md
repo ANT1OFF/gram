@@ -21,6 +21,7 @@ out. Nothing here changes the desktop app.
 | `gram-web.d.ts`, `types/` | The types below, as [contract.ts](../apps/web/src/embed/contract.ts) declares them. |
 | `gram-web-kit.js`         | Gram's own controls, for your pages (below).                                        |
 | `theme.css`               | The names of Gram's theme for your own Tailwind build (below).                      |
+| `classes.txt`             | Every class in `gram-web.css`, for that build to write again in one order (below).  |
 | `chunks/`, `assets/`      | What the entry loads later, found relative to it.                                   |
 | `package.json`            | The manifest: the two exports, and React as an exact peer.                          |
 
@@ -394,7 +395,7 @@ stylesheet sets on `<html>`, so your pages follow the person's palette, mode and
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source("./");
 @import "@gram/web/theme.css";
-@source "../node_modules/@gram/web";
+@source "../node_modules/@gram/web/classes.txt";
 ```
 
 Leave Tailwind's base styles out, as above: the page's are Gram's. Follow
@@ -402,16 +403,22 @@ Leave Tailwind's base styles out, as above: the page's are Gram's. Follow
 
 ### One utilities layer
 
-The `@source` line points your build at the package's folder, and it is not optional. Your
+The `@source` line points your build at the package's `classes.txt`, and it is not optional. Your
 stylesheet and `gram-web.css` both write into the `utilities` layer, and yours comes later. Inside
 one build Tailwind puts a plain class before its responsive and state variants, so `hidden` loses
 to `md:flex`. Across two builds nothing keeps that order: a `.flex` your pages use lands after
-Gram's `@max-md:hidden`, and every screen of Gram's with that pair stops folding at its width. With
-the line, your build also writes each class the package uses, after Gram's copy and in one order,
-so the last word on every class is in the right place. `theme.css` carries the variants and
-utilities of the Tailwind add-ons Gram's classes use (`data-open:`, `animate-in` and the rest), so
-your build needs nothing installed for them. It costs a second copy of Gram's utilities in your
-stylesheet, about a sixth more before compression.
+Gram's `@max-md:hidden`, and every screen of Gram's with that pair stops folding at its width.
+
+`classes.txt` names every class in the package's stylesheet. With the line, your build writes each
+of them again, after Gram's copy and in one order, so the last word on every class is in the right
+place. `theme.css` carries the variants and utilities of the Tailwind add-ons Gram's classes use
+(`data-open:`, `animate-in` and the rest), so your build needs nothing installed for them. Point
+at the list and not at the package's folder: the bundle also holds the class names of the
+libraries it carries, which Gram's build never wrote and its screens are not drawn with.
+
+It costs a second copy of Gram's utilities in your stylesheet, about a tenth more before
+compression. A class of Gram's that should stay a default your own classes override can be left
+where Gram wrote it with `@source not inline("…")`.
 
 ## Keeping embedders in step
 

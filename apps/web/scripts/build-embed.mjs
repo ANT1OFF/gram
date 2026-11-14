@@ -128,6 +128,40 @@ writeFileSync(
   ].join("\n"),
 );
 
+// The classes of the package's stylesheet, for that build to write again: exactly the utilities
+// the app's own build wrote, by name. Scanning the bundle instead would also find the class names
+// inside the libraries it carries, which the app's build never wrote and its screens are not
+// drawn with (a markdown renderer's `list-inside`).
+const utilityClasses = (css) => {
+  const start = css.indexOf("@layer utilities{");
+  if (start === -1) throw new Error("build-embed: the stylesheet has no utilities layer");
+  let depth = 0;
+  let end = start;
+  for (let at = css.indexOf("{", start); at < css.length; at += 1) {
+    if (css[at] === "{") depth += 1;
+    else if (css[at] === "}" && (depth -= 1) === 0) {
+      end = at;
+      break;
+    }
+  }
+  const names = new Set();
+  // Selectors only: what stands before each `{`, after the last `{`, `}` or `;`.
+  for (const [, selector] of css.slice(start, end).matchAll(/(?:^|[{};])([^{};]*)(?={)/g))
+    for (const [, name] of selector.matchAll(
+      /\.(-?(?:[a-zA-Z_]|\\[0-9a-f]{1,6} ?|\\.)(?:[\w-]|[^\0-\x7f]|\\[0-9a-f]{1,6} ?|\\.)*)/g,
+    ))
+      names.add(
+        name
+          .replace(/\\([0-9a-f]{1,6}) ?/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+          .replace(/\\(.)/g, "$1"),
+      );
+  return [...names].toSorted();
+};
+writeFileSync(
+  join(outDir, "classes.txt"),
+  `${utilityClasses(readFileSync(join(outDir, "gram-web.css"), "utf8")).join("\n")}\n`,
+);
+
 // The catalog's exact versions: the app is built and tested against these and no others.
 const root = JSON.parse(readFileSync(join(webDir, "../../package.json"), "utf8"));
 const catalog = root.workspaces?.catalog ?? root.catalog ?? {};
@@ -150,6 +184,7 @@ writeFileSync(
         "./kit": { types: "./gram-web-kit.d.ts", default: "./gram-web-kit.js" },
         "./style.css": "./gram-web.css",
         "./theme.css": "./theme.css",
+        "./classes.txt": "./classes.txt",
       },
       // Named by the kit's declarations only: the code is in the bundle.
       dependencies: Object.fromEntries(TYPE_LIBRARIES.map((name) => [name, peer(name)])),
