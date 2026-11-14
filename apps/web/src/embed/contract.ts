@@ -770,5 +770,10 @@ export type ShellThreadPanelComponent = ComponentType<{
 export type UseShellLocation = () => {
   /** The path under the app, without `basePath`. */
   readonly pathname: string;
-  navigate(to: string): Promise<void>;
+  /**
+   * Moves the window to `to`, a path under the app. `replace` takes the place of the current entry
+   * in the history instead of adding one: for a page that sends the window on (a redirect), so
+   * the browser's Back does not land on it and be sent on again.
+   */
+  navigate(to: string, options?: { readonly replace?: boolean }): Promise<void>;
 };

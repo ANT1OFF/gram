@@ -1139,3 +1139,15 @@ test("Back and a link out of Settings leave it for an added page", async ({ page
   await expect(page).toHaveURL(/\/w\/acme\/govern\/policies$/);
   expect(errors).toEqual([]);
 });
+
+test("navigate with replace takes the current entry's place in the history", async ({ page }) => {
+  const errors = await mounted(page, "/w/acme/");
+  await page.getByTestId("embed-navigation").getByRole("link", { name: "Policies" }).click();
+  await expect(page).toHaveURL(/\/w\/acme\/govern\/policies$/);
+  await page.getByTestId("fixture-replace").click();
+  await expect(page).toHaveURL(/\/w\/acme\/govern\/limits$/);
+  // Back skips the page that sent the window on.
+  await page.goBack();
+  await expect(page).toHaveURL(/\/w\/acme\/$/);
+  expect(errors).toEqual([]);
+});
