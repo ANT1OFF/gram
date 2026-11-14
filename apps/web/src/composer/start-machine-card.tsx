@@ -1,4 +1,4 @@
-import { CircleCheck, Play } from "lucide-react";
+import { CircleCheck, Lock, Play } from "lucide-react";
 import { useId, useState } from "react";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchOnDemandStatus,
   isComing,
+  type OnDemandChoice,
   type OnDemandPhase,
   type OnDemandStatus,
   startOnDemand,
@@ -65,6 +66,102 @@ export const needsMachine = (status: OnDemandStatus | undefined): boolean =>
 
 const REPOSITORY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/;
 
+/** What this person picked last time, kept in this browser for the next start. */
+const PICKED_KEY = "gram:on-demand-choices";
+const remembered = (): Record<string, string> => {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(PICKED_KEY) ?? "{}");
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+      ? Object.fromEntries(
+          Object.entries(value).filter(
+            (entry): entry is [string, string] => typeof entry[1] === "string",
+          ),
+        )
+      : {};
+  } catch {
+    return {};
+  }
+};
+const remember = (picked: Readonly<Record<string, string>>) => {
+  try {
+    localStorage.setItem(PICKED_KEY, JSON.stringify(picked));
+  } catch {
+    // Not kept: the next start offers the defaults again.
+  }
+};
+
+/** Each choice's pick: the one remembered where it can still be picked, else its default. */
+export const pickedFor = (
+  choices: ReadonlyArray<OnDemandChoice>,
+  kept: Readonly<Record<string, string>>,
+): Record<string, string> =>
+  Object.fromEntries(
+    choices.map((choice) => {
+      const wanted = kept[choice.id];
+      const usable = choice.options.some((option) => option.id === wanted && option.available);
+      return [choice.id, usable && wanted !== undefined ? wanted : choice.default];
+    }),
+  );
+
+/** One choice as a row of options; those this person may not pick are shown, locked, with why. */
+function ChoiceRow({
+  choice,
+  value,
+  onChange,
+}: {
+  readonly choice: OnDemandChoice;
+  readonly value: string;
+  readonly onChange: (id: string) => void;
+}) {
+  const labelId = useId();
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span id={labelId} className="text-meta text-muted-foreground">
+        {choice.label}
+        {choice.description !== undefined && ` · ${choice.description}`}
+      </span>
+      <div
+        role="radiogroup"
+        aria-labelledby={labelId}
+        className="grid grid-cols-[repeat(auto-fit,minmax(7rem,1fr))] gap-1.5"
+      >
+        {choice.options.map((option) => {
+          const picked = option.id === value;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              role="radio"
+              aria-checked={picked}
+              disabled={!option.available}
+              title={option.note}
+              onClick={() => onChange(option.id)}
+              className={[
+                "flex flex-col items-start gap-0.5 rounded-md border px-2.5 py-1.5 text-left transition-colors",
+                picked
+                  ? "border-primary bg-primary/5"
+                  : "border-edge-group hover:border-edge-strong",
+                option.available ? "" : "cursor-not-allowed opacity-60",
+              ].join(" ")}
+            >
+              <span className="flex items-center gap-1 text-body">
+                {!option.available && <Lock className="size-3" aria-hidden />}
+                {option.label}
+              </span>
+              {(option.available ? option.detail : (option.note ?? option.detail)) !==
+                undefined && (
+                <span className="text-meta text-muted-foreground">
+                  {option.available ? option.detail : (option.note ?? option.detail)}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function StartMachineCard({
   repositories = [],
 }: {
@@ -81,8 +178,11 @@ export function StartMachineCard({
   const [typed, setTyped] = useState("");
   const [error, setError] = useState<string>();
   const [sending, setSending] = useState(false);
+  const [kept, setKept] = useState<Readonly<Record<string, string>>>(remembered);
   const titleId = useId();
   if (!needsMachine(status)) return null;
+  const choices = status?.choices;
+  const picks = choices === undefined ? {} : pickedFor(choices.choices, kept);
 
   const progress = status?.progress;
   const coming = isComing(status);
@@ -93,7 +193,8 @@ export function StartMachineCard({
     setSending(true);
     setError(undefined);
     try {
-      await startOnDemand(reachesTheirs ? [] : picked);
+      remember(picks);
+      await startOnDemand(reachesTheirs ? [] : picked, picks);
       setChoosing(false);
       await refresh();
     } catch (cause) {
@@ -163,6 +264,21 @@ export function StartMachineCard({
             <li key={fact}>{fact}</li>
           ))}
         </ul>
+      )}
+      {choices !== undefined && !failed && (
+        <div className="flex flex-col gap-3" data-testid="on-demand-choices">
+          {choices.choices.map((choice) => (
+            <ChoiceRow
+              key={choice.id}
+              choice={choice}
+              value={picks[choice.id] ?? choice.default}
+              onChange={(id) => setKept({ ...picks, [choice.id]: id })}
+            />
+          ))}
+          {choices.note !== undefined && (
+            <p className="text-meta text-muted-foreground">{choices.note}</p>
+          )}
+        </div>
       )}
       {choosing && (
         <fieldset className="flex flex-col gap-2">

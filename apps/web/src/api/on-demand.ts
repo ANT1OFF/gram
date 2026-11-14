@@ -18,8 +18,28 @@ export type OnDemandPhase =
   | "stopped"
   | "failed";
 
+/** One option of a choice the deployment offers before a machine starts, such as a size. */
+export interface OnDemandOption {
+  readonly id: string;
+  readonly label: string;
+  readonly detail?: string;
+  /** Whether this person may pick it; one they may not is shown with `note` saying why. */
+  readonly available: boolean;
+  readonly note?: string;
+}
+
+export interface OnDemandChoice {
+  readonly id: string;
+  readonly label: string;
+  readonly description?: string;
+  readonly options: ReadonlyArray<OnDemandOption>;
+  readonly default: string;
+}
+
 export interface OnDemandStatus {
   readonly available: true;
+  /** What the person may pick before it starts, and a line on whose limits they are. */
+  readonly choices?: { readonly choices: ReadonlyArray<OnDemandChoice>; readonly note?: string };
   /** Their own machine, once one was started and joined. */
   readonly machine?: { readonly id: string; readonly name: string; readonly online: boolean };
   /** How the latest start goes, as the deployment reported it. */
@@ -43,8 +63,10 @@ export const parseStatus = (value: unknown): OnDemandStatus | undefined => {
   if (body?.["available"] !== true) return undefined;
   const machine = record(body["machine"]);
   const progress = record(body["progress"]);
+  const choices = parseChoices(body["choices"]);
   return {
     available: true,
+    ...(choices === undefined ? {} : { choices }),
     ...(machine !== undefined &&
     typeof machine["id"] === "string" &&
     typeof machine["name"] === "string"
@@ -66,6 +88,51 @@ export const parseStatus = (value: unknown): OnDemandStatus | undefined => {
         }
       : {}),
   };
+};
+
+const text = (value: unknown) => (typeof value === "string" ? value : undefined);
+
+/** The server already read the provider's choices field by field; this keeps the shape honest. */
+const parseChoices = (value: unknown): OnDemandStatus["choices"] => {
+  const body = record(value);
+  if (body === undefined || !Array.isArray(body["choices"])) return undefined;
+  const choices: OnDemandChoice[] = [];
+  for (const raw of body["choices"]) {
+    const entry = record(raw);
+    const id = text(entry?.["id"]);
+    const label = text(entry?.["label"]);
+    const fallback = text(entry?.["default"]);
+    if (!entry || id === undefined || label === undefined || fallback === undefined) continue;
+    if (!Array.isArray(entry["options"])) continue;
+    const options = entry["options"].flatMap((each): OnDemandOption[] => {
+      const option = record(each);
+      const optionId = text(option?.["id"]);
+      const optionLabel = text(option?.["label"]);
+      if (!option || optionId === undefined || optionLabel === undefined) return [];
+      const detail = text(option["detail"]);
+      const note = text(option["note"]);
+      return [
+        {
+          id: optionId,
+          label: optionLabel,
+          ...(detail === undefined ? {} : { detail }),
+          available: option["available"] !== false,
+          ...(note === undefined ? {} : { note }),
+        },
+      ];
+    });
+    const description = text(entry["description"]);
+    choices.push({
+      id,
+      label,
+      ...(description === undefined ? {} : { description }),
+      options,
+      default: fallback,
+    });
+  }
+  if (choices.length === 0) return undefined;
+  const note = text(body["note"]);
+  return { choices, ...(note === undefined ? {} : { note }) };
 };
 
 /** Their status, or undefined where the server's deployment starts no machines. */
@@ -96,9 +163,15 @@ const post = async (path: string, body: unknown): Promise<void> => {
   );
 };
 
-/** Asks for a machine of this person's own, with the repositories it may use. */
-export const startOnDemand = (repositories: ReadonlyArray<string>) =>
-  post(ON_DEMAND_START_PATH, { repositories });
+/** Asks for a machine of this person's own, with the repositories it may use and what they picked. */
+export const startOnDemand = (
+  repositories: ReadonlyArray<string>,
+  choices: Readonly<Record<string, string>> = {},
+) =>
+  post(ON_DEMAND_START_PATH, {
+    repositories,
+    ...(Object.keys(choices).length === 0 ? {} : { choices }),
+  });
 export const stopOnDemand = () => post(ON_DEMAND_STOP_PATH, {});
 
 /** A machine still on its way up: asked every second, otherwise every half minute. */

@@ -61,14 +61,50 @@ export interface OnDemandProgress {
   readonly at: number;
 }
 
+/** A short id a provider names a choice or one of its options with: `size`, `arm64`. */
+const CHOICE_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const MAX_CHOICES = 6;
+const MAX_OPTIONS = 8;
+/** How long a person's choices, as the provider offered them, are kept before it is asked again. */
+export const CHOICES_TTL_MS = 30_000;
+
+/** One option of a choice, as the provider offers it to one person. */
+export interface OnDemandOption {
+  readonly id: string;
+  readonly label: string;
+  /** What it is, in a few words: "4 CPU · 8 GB". */
+  readonly detail?: string;
+  /** Whether this person may pick it. One they may not is shown, with `note` saying why. */
+  readonly available: boolean;
+  readonly note?: string;
+}
+
+/** Something a person picks before their machine starts, such as its size. */
+export interface OnDemandChoice {
+  readonly id: string;
+  readonly label: string;
+  readonly description?: string;
+  readonly options: ReadonlyArray<OnDemandOption>;
+  /** What is picked when the person picks nothing: an available option. */
+  readonly default: string;
+}
+
+/** The provider's choices for one person, and a line on whose limits they are. */
+export interface OnDemandChoices {
+  readonly choices: ReadonlyArray<OnDemandChoice>;
+  readonly note?: string;
+}
+
 /** What the server knows of on-demand hosts: the provider, and each person's latest progress. */
 export class OnDemandHosts extends Data.Class<{
   readonly provider: OutsideService;
   readonly progress: Map<string, OnDemandProgress>;
+  /** Each person's choices as the provider last offered them, and when it was asked. */
+  readonly choices: Map<string, { readonly at: number; readonly value?: OnDemandChoices }>;
 }> {}
 
 export const makeOnDemandHosts = (provider: OutsideService): OnDemandHosts =>
-  new OnDemandHosts({ provider, progress: new Map() });
+  new OnDemandHosts({ provider, progress: new Map(), choices: new Map() });
 
 /** A machine as a person's status reads it. */
 export interface OwnedMachine {
@@ -83,10 +119,13 @@ const json = (status: number, body: unknown) => HttpServerResponse.jsonUnsafe(bo
 const refusal = (status: number, tag: string, message: string) =>
   json(status, { _tag: tag, message });
 
+/** What a person picked, by choice id: short ids only. */
+export type Picked = Readonly<Record<string, string>>;
+
 /** The start body, or why not. */
 export const parseStart = (
   body: string,
-): { readonly repositories: ReadonlyArray<string> } | string => {
+): { readonly repositories: ReadonlyArray<string>; readonly choices: Picked } | string => {
   let value: unknown;
   try {
     value = body === "" ? {} : JSON.parse(body);
@@ -94,17 +133,112 @@ export const parseStart = (
     return "the body is not JSON";
   }
   if (typeof value !== "object" || value === null || Array.isArray(value))
-    return "expected {repositories?}";
+    return "expected {repositories?, choices?}";
+  const picked = "choices" in value ? value.choices : undefined;
+  if (
+    picked !== undefined &&
+    (typeof picked !== "object" ||
+      picked === null ||
+      Array.isArray(picked) ||
+      Object.keys(picked).length > MAX_CHOICES ||
+      !Object.entries(picked).every(
+        ([key, each]) => CHOICE_ID.test(key) && typeof each === "string" && CHOICE_ID.test(each),
+      ))
+  )
+    return `\`choices\` names at most ${MAX_CHOICES} choices by short id, each with an option's id`;
+  const choices: Picked = picked === undefined ? {} : { ...(picked as Record<string, string>) };
   const listed = "repositories" in value ? value.repositories : undefined;
-  if (listed === undefined) return { repositories: [] };
+  if (listed === undefined) return { repositories: [], choices };
   if (
     !Array.isArray(listed) ||
     listed.length > MAX_REPOSITORIES ||
     !listed.every((each) => typeof each === "string" && REPOSITORY.test(each))
   )
     return `\`repositories\` is a list of at most ${MAX_REPOSITORIES} owner/name`;
-  return { repositories: [...new Set(listed as string[])] };
+  return { repositories: [...new Set(listed as string[])], choices };
 };
+
+const text = (value: unknown, max: number) =>
+  typeof value === "string" && value.length > 0 && value.length <= max && !/[\0\n\r]/.test(value)
+    ? value
+    : undefined;
+
+/** The provider's `/hosts/choices` answer, read field by field. Undefined: none that hold. */
+export const parseChoices = (value: unknown): OnDemandChoices | undefined => {
+  if (typeof value !== "object" || value === null) return undefined;
+  const listed = (value as { choices?: unknown }).choices;
+  if (!Array.isArray(listed)) return undefined;
+  const choices: OnDemandChoice[] = [];
+  for (const raw of listed.slice(0, MAX_CHOICES)) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const entry = raw as Record<string, unknown>;
+    const id = entry["id"];
+    const label = text(entry["label"], 60);
+    if (typeof id !== "string" || !CHOICE_ID.test(id) || label === undefined) continue;
+    if (!Array.isArray(entry["options"])) continue;
+    const options: OnDemandOption[] = [];
+    for (const each of entry["options"].slice(0, MAX_OPTIONS)) {
+      if (typeof each !== "object" || each === null) continue;
+      const option = each as Record<string, unknown>;
+      const optionId = option["id"];
+      const optionLabel = text(option["label"], 60);
+      if (typeof optionId !== "string" || !CHOICE_ID.test(optionId) || optionLabel === undefined)
+        continue;
+      const detail = text(option["detail"], 80);
+      const note = text(option["note"], 160);
+      options.push({
+        id: optionId,
+        label: optionLabel,
+        ...(detail === undefined ? {} : { detail }),
+        available: option["available"] !== false,
+        ...(note === undefined ? {} : { note }),
+      });
+    }
+    const usable = options.filter((option) => option.available);
+    if (usable.length === 0) continue;
+    const asked = entry["default"];
+    const description = text(entry["description"], 200);
+    choices.push({
+      id,
+      label,
+      ...(description === undefined ? {} : { description }),
+      options,
+      default: usable.some((option) => option.id === asked) ? (asked as string) : usable[0]!.id,
+    });
+  }
+  if (choices.length === 0) return undefined;
+  const note = text((value as { note?: unknown }).note, 200);
+  return { choices, ...(note === undefined ? {} : { note }) };
+};
+
+/**
+ * A person's choices, from the provider's `POST /hosts/choices` (`{owner}`), kept a short while.
+ * A provider that offers none (404), or doesn't answer, gives none: the machine starts as it would.
+ */
+export const choicesFor = (hosts: OnDemandHosts, owner: string, now: number = Date.now()) =>
+  Effect.gen(function* () {
+    const kept = hosts.choices.get(owner);
+    if (kept !== undefined && now - kept.at < CHOICES_TTL_MS) return kept.value;
+    const answered = yield* callOutside("host provider", hosts.provider, {
+      method: "POST",
+      path: "/hosts/choices",
+      json: { owner },
+      accept: [404],
+      timeoutMs: 5_000,
+    }).pipe(
+      Effect.flatMap((response) =>
+        response.status === 404
+          ? Effect.promise(() => response.body?.cancel() ?? Promise.resolve()).pipe(
+              Effect.as(undefined),
+            )
+          : Effect.promise(() => response.json().catch(() => undefined) as Promise<unknown>),
+      ),
+      Effect.result,
+    );
+    const value = answered._tag === "Success" ? parseChoices(answered.success) : undefined;
+    hosts.choices.set(owner, { at: now, ...(value === undefined ? {} : { value }) });
+    return value;
+  });
 
 /** A person's own machine: theirs, for work in a folder, the newest that is online first. */
 export const ownMachine = (
@@ -120,11 +254,13 @@ export const statusFor = (
   hosts: OnDemandHosts,
   machines: ReadonlyArray<OwnedMachine>,
   person: string,
+  choices?: OnDemandChoices,
 ) => {
   const mine = ownMachine(machines, person);
   const progress = hosts.progress.get(person);
   return {
     available: true,
+    ...(choices === undefined ? {} : { choices }),
     ...(mine === undefined
       ? {}
       : { machine: { id: mine.id, name: mine.name, online: mine.onlineSince !== undefined } }),
@@ -164,7 +300,8 @@ export const onDemandRequest = (
   Effect.gen(function* () {
     if (path === ON_DEMAND_STATUS_PATH) {
       if (request.method !== "GET") return refusal(405, "MethodNotAllowed", "method not allowed");
-      return json(200, statusFor(hosts, machines(), actor.id));
+      const choices = yield* choicesFor(hosts, actor.id);
+      return json(200, statusFor(hosts, machines(), actor.id, choices));
     }
     if (request.method !== "POST") return refusal(405, "MethodNotAllowed", "method not allowed");
     if (actor.role !== "member")
@@ -206,7 +343,10 @@ export const onDemandRequest = (
       json: {
         kind: "personal",
         owner: actor.id,
-        options: { repositories: parsed.repositories },
+        options: {
+          repositories: parsed.repositories,
+          ...(Object.keys(parsed.choices).length === 0 ? {} : { choices: parsed.choices }),
+        },
         proof,
       },
     }).pipe(
