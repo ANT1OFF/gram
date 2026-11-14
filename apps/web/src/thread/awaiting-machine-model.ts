@@ -27,6 +27,12 @@ export interface AskedAgain {
 }
 
 /**
+ * How long a try asked for here reads as "starting again" before the thread says so itself. Whoever
+ * runs the machines begins the wait again when asked; if they never do, the failure comes back.
+ */
+export const ASKED_LAPSE_MS = 60_000;
+
+/**
  * Gram's own sentence for a wait that ran out (the server's `NO_MACHINE_CAME`), which already says
  * the messages are kept; the line under the failure says that for every sentence, so the failure's
  * head keeps its first sentence alone.
@@ -85,6 +91,8 @@ export const WAIT_WORDS = {
   heldFailed: "not sent yet, and kept",
   /** The queue's heading while the thread waits. */
   queue: "Queued · waits for the machine",
+  /** The prompt box's word after a send while the thread waits. */
+  queued: "Queued — sends when the machine has started",
   /** The prompt box. */
   composeStarting: "Add a message. It is sent when the machine has started.",
   composeFailed: "Add a message. It is kept until a machine has started.",
