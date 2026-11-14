@@ -9,6 +9,14 @@ import { HostId } from "./ids.ts";
  */
 export const LOCAL_HOST_ID = HostId.make("local");
 
+/**
+ * The machine of a thread whose machine hasn't been named yet (`Thread.awaitingMachine`): no
+ * machine has this id, since a joined machine's is derived from its key, so nothing is ever
+ * reached through it. A client that doesn't know the state shows such a thread as one whose
+ * machine is away.
+ */
+export const AWAITED_HOST_ID = HostId.make("awaited");
+
 /** A checkout's place: the host it lives on and its path there. */
 export const CheckoutRef = Schema.Struct({ hostId: HostId, path: Schema.String });
 export type CheckoutRef = typeof CheckoutRef.Type;

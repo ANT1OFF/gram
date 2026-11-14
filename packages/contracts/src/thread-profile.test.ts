@@ -7,9 +7,14 @@ import {
   profileBindingOf,
   profileFilesOf,
   profilePathProblem,
+  ProfileStartRequest,
+  ProfileStartResponse,
+  ProfileWaitRequest,
   type ThreadProfile,
 } from "./thread-profile.ts";
-import { ProfileAutonomy, profileAutonomyOf } from "./domain.ts";
+import * as Schema from "effect/Schema";
+import { AwaitingMachine, ProfileAutonomy, profileAutonomyOf } from "./domain.ts";
+import { AWAITED_HOST_ID, LOCAL_HOST_ID } from "./hosts.ts";
 import { Autonomy } from "./workspaces.ts";
 
 const minimal: ThreadProfile = {
@@ -273,5 +278,36 @@ describe("ThreadProfile", () => {
     expect(ProfileAutonomy.literals).toEqual(Autonomy.literals);
     expect(profileAutonomyOf({})).toBe("publish");
     expect(profileAutonomyOf({ autonomy: "full" })).toBe("full");
+  });
+
+  it("starts a thread with its machine named later, and says how its wait stands", () => {
+    const start = Schema.decodeUnknownSync(ProfileStartRequest, { onExcessProperty: "error" });
+    const threadId = "6b1d2a90-3c4e-4f5a-8b6c-7d8e9f0a1b2c";
+    // A caller that knows nothing of it sends what it always sent.
+    expect(start({ profile: minimal, threadId })).toEqual({ profile: minimal, threadId });
+    expect(start({ profile: minimal, threadId, machine: "later", startedBy: "ada" })).toEqual({
+      profile: minimal,
+      threadId,
+      machine: "later",
+      startedBy: "ada",
+    });
+    expect(() => start({ profile: minimal, threadId, machine: "now" })).toThrow();
+    // An answer read by a caller that doesn't know the field is the answer it knew.
+    const answer = Schema.decodeUnknownSync(ProfileStartResponse);
+    expect(answer({ threadId, created: true })).toEqual({ threadId, created: true });
+    expect(answer({ threadId, created: true, awaitingMachine: true }).awaitingMachine).toBe(true);
+    const wait = Schema.decodeUnknownSync(ProfileWaitRequest, { onExcessProperty: "error" });
+    expect(wait({ threadId })).toEqual({ threadId });
+    expect(wait({ threadId, failed: "No capacity." }).failed).toBe("No capacity.");
+    const waiting = Schema.decodeUnknownSync(AwaitingMachine);
+    expect(waiting({ since: 1 })).toEqual({ since: 1 });
+    expect(waiting({ since: 1, startedBy: "ada", failed: { at: 2, message: "No." } })).toEqual({
+      since: 1,
+      startedBy: "ada",
+      failed: { at: 2, message: "No." },
+    });
+    // The machine of a thread that has none is no machine's id, this one's included.
+    expect(AWAITED_HOST_ID).not.toBe(LOCAL_HOST_ID);
+    expect(AWAITED_HOST_ID.startsWith("m-")).toBe(false);
   });
 });
