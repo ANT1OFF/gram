@@ -1532,8 +1532,9 @@ failed. It says nothing before such a session runs, or when Claude Code doesn't 
 These are user-only settings: no agent can turn one on through `settings_propose`. Gram reads them
 again at each session open, so a change applies from a thread's next session. Giving or taking it
 with ⌘K reopens the session once it is idle. The pane header shows what the server says the
-thread's next session gets (`thread.browserStatus`): **Your browser** while it has it, struck
-through while a consent holds it back, and **Browser not available** where its session can't have
+thread's next session gets (`thread.browserStatus`): **Your browser** while it has it, **Your
+browser isn't ready** while its session can't reach it, **Browser held back** while a consent
+holds it back, and **Browser not available** where its session can't have
 it at all: a Codex thread in Gram's own Codex home, a thread on a gateway, or one started from a
 profile. The home is the one the thread's next session actually opens in, from the same resume
 plan: a fork that hasn't run yet resumes its source session in the source's home. There ⌘K's lend command is dimmed with the reason, and `thread.setBrowser` refuses it. A

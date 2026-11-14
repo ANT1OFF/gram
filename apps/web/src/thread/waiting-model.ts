@@ -15,6 +15,8 @@ import {
 
 import type { InboxEntry } from "@/orchestration/inbox-model";
 
+import { browserAskLine } from "./request-model";
+
 /** The part of a `ThreadSummary` Waiting on you reads. */
 export interface WaitsOf {
   readonly thread: { readonly id: ThreadId };
@@ -210,7 +212,9 @@ const questionView = (
 const requestTitle = (request: PendingRequest): string => {
   switch (request.kind) {
     case "approval":
-      return `${request.displayName}: ${oneLine(approvalSubject(request))}`;
+      return (
+        browserAskLine(request) ?? `${request.displayName}: ${oneLine(approvalSubject(request))}`
+      );
     case "question":
       return oneLine(request.questions[0]?.question ?? "A question");
     case "plan":
