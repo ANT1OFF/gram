@@ -203,6 +203,12 @@ export interface ShellMachines {
    */
   readonly facts?: readonly string[];
   /**
+   * Which repositories one may use: `chosen` (the default) asks the person to pick them as they
+   * start it; `theirs` is any they can reach, as them, so the start card asks nothing and starts
+   * it at once.
+   */
+  readonly repositories?: "chosen" | "theirs";
+  /**
    * Asks whoever starts the machines for another, for a thread that was started before its machine
    * and got none (`Thread.awaitingMachine.failed`): the thread's Try again calls it. Gram starts no
    * machine and its page can't begin the wait again itself, so the app's own service does both:
