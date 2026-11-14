@@ -66,8 +66,25 @@ export class LimitWait extends Schema.Opaque<LimitWait>()(
      * account that went through): the wait ends early, at `resumeAt`, rather than at its reset.
      */
     cleared: Schema.optionalKey(Schema.Number),
+    /**
+     * What the provider said of it, in its own words without the API's status prefix
+     * (`limitDetail`): "You have reached the usage limit of your Claude login."
+     */
+    detail: Schema.optionalKey(Schema.String),
   }),
 ) {}
+
+const API_PREFIX = /^\s*API Error:\s*(?:Request rejected\s*)?(?:\(?\d{3}\)?)?\s*[·:\-–]?\s*/i;
+
+/**
+ * A provider's refusal as a person reads it under a limit wait: its words without `API Error:` and
+ * the status code before them, cut to a sentence or two. `undefined` when only the code was said.
+ */
+export const limitDetail = (error: string): string | undefined => {
+  const words = error.replace(API_PREFIX, "").replace(/\s+/g, " ").trim();
+  if (words === "" || words.startsWith("{")) return undefined;
+  return words.length <= 240 ? words : `${words.slice(0, 239).trimEnd()}…`;
+};
 
 /**
  * A limit wait that ended early because fresh data showed the limit no longer applied

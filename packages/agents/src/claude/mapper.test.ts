@@ -1865,6 +1865,34 @@ describe("synthetic", () => {
     expect(last?.type === "usage" && last.contextWindow).toBe(200_000);
   });
 
+  it("shows an API error Claude Code reports as a reply as the turn's failure, not as its words", () => {
+    const refused = {
+      ...assistant("err-1", []),
+      error: "rate_limit",
+      message: {
+        id: "err-1",
+        role: "assistant",
+        model: "<synthetic>",
+        content: [{ type: "text", text: "API Error: Request rejected (429) · Usage limit" }],
+      },
+    } as unknown as SDKMessage;
+    const events = replay([refused]);
+    expect(events.some((e) => e.type === "chunk" && e.chunk.type === "text-delta")).toBe(false);
+    // A local command's synthetic reply carries no error, and is still shown.
+    const local = {
+      ...assistant("local-2", []),
+      message: {
+        id: "local-2",
+        role: "assistant",
+        model: "<synthetic>",
+        content: [{ type: "text", text: "## Context Usage" }],
+      },
+    } as unknown as SDKMessage;
+    expect(replay([local]).some((e) => e.type === "chunk" && e.chunk.type === "text-delta")).toBe(
+      true,
+    );
+  });
+
   it("flushes open messages when the query ends mid-turn", () => {
     const mapper = newMapper();
     mapper.map(assistant("msg_1", [{ type: "text", text: "partial" }]));
