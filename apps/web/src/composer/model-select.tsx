@@ -26,6 +26,7 @@ import {
   offeredModels,
   offeredReplacement,
   pickerModelId,
+  servedRows,
   unlistedWarning,
   useModelsQuery,
   useProviderLabel,
@@ -87,7 +88,7 @@ function useModelsAcross(
       staleTime: 5 * 60_000,
     })),
   });
-  const offered = useEmbedShell((s) => s.models.offered);
+  const { offered, listed: served } = useEmbedShell((s) => s.models);
   const own: PickerOption<string>[] = [];
   const custom: PickerOption<string>[] = [];
   agents.forEach((agent, index) => {
@@ -95,7 +96,12 @@ function useModelsAcross(
     const listed = onAccount
       ? currentOptions
       : modelOptions(
-          offeredModels(listings[index]?.data?.models, agent, offered),
+          offeredModels(
+            listings[index]?.data?.models ??
+              (listings[index]?.isError === true ? servedRows(served?.[agent]) : undefined),
+            agent,
+            offered,
+          ),
           undefined,
           [],
           undefined,

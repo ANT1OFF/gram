@@ -11,10 +11,12 @@ import {
   type ReasoningVariant,
 } from "@gram/contracts";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
 import { agentLabel } from "@/agents/agent-label";
 import { useApi } from "@/api/context";
+import type { ShellListedModel } from "@/embed/contract";
+import { useEmbedShell } from "@/embed/store";
 
 import { DEFAULT_MODEL_OPTIONS, EFFORT_OPTIONS } from "./options";
 import type { PickerOption } from "./picker";
@@ -25,7 +27,7 @@ import type { PickerOption } from "./picker";
  */
 export function useModelsQuery(agent: AgentKind, profileId?: ProfileId, enabled = true) {
   const api = useApi();
-  return useQuery({
+  const query = useQuery({
     queryKey: ["models", agent, profileId ?? null],
     queryFn: () =>
       profileId === undefined ? api.listModels(agent) : api.listModels(agent, profileId),
@@ -35,6 +37,39 @@ export function useModelsQuery(agent: AgentKind, profileId?: ProfileId, enabled 
     staleTime: 5 * 60_000,
     enabled,
   });
+  const served = useServedModels(agent, profileId);
+  return served === undefined || !query.isError
+    ? query
+    : // The deployment's own list stands in for a listing the agent could not give.
+      { ...query, isError: false as const, error: null, data: { models: served } };
+}
+
+/**
+ * The rows of the models a deployment serves an agent (`ShellModels.listed`): each named as the
+ * app names it, else as Claude Code names the alias that runs it ("Sonnet 5.5"), the first the
+ * default. Efforts are not listed, so every one is offered, as for a list the agent never gave.
+ */
+export const servedRows = (
+  listed: readonly ShellListedModel[] | undefined,
+): readonly AgentModel[] | undefined =>
+  listed === undefined || listed.length === 0
+    ? undefined
+    : listed.map((model, index) => ({
+        id: model.id,
+        displayName: model.name ?? claudeLabel(model.id) ?? model.id,
+        supportsEffort: true,
+        ...(index === 0 ? { isDefault: true } : {}),
+      }));
+
+/** What the embedding app serves `agent` on its own account; never for a gateway profile. */
+export function useServedModels(
+  agent: AgentKind,
+  profileId?: ProfileId,
+): readonly AgentModel[] | undefined {
+  const listed = useEmbedShell((s) =>
+    profileId === undefined ? s.models.listed?.[agent] : undefined,
+  );
+  return useMemo(() => servedRows(listed), [listed]);
 }
 
 export function useModels(
@@ -147,7 +182,7 @@ export const pickerModelId = (
 /**
  * A model's name as the composer's picker shows it: the agent's own display name for the model
  * (`pickerModelId`), else the built-in Claude name, else the id itself ("opus" reads "Claude Opus"
- * wherever it is named).
+ * wherever it is named, `claude-sonnet-5-5` "Sonnet 5.5").
  */
 export const modelDisplayName = (
   models: readonly AgentModel[] | undefined,
@@ -155,7 +190,9 @@ export const modelDisplayName = (
   id: string,
 ): string =>
   listedRow(models, id)?.displayName ??
-  (agent === "claude" ? DEFAULT_MODEL_OPTIONS.find((o) => o.value === id)?.label : undefined) ??
+  (agent === "claude"
+    ? (DEFAULT_MODEL_OPTIONS.find((o) => o.value === id)?.label ?? claudeLabel(id))
+    : undefined) ??
   id;
 
 /**
@@ -164,6 +201,7 @@ export const modelDisplayName = (
  */
 export function useModelNames(refs: readonly (ModelRef | undefined)[]): (ref: ModelRef) => string {
   const api = useApi();
+  const listed = useEmbedShell((s) => s.models.listed);
   const keys = [
     ...new Map(
       refs.flatMap((ref) =>
@@ -187,7 +225,12 @@ export function useModelNames(refs: readonly (ModelRef | undefined)[]): (ref: Mo
     const index = keys.findIndex(
       (each) => each.agent === ref.agent && (each.profileId ?? "") === (ref.profileId ?? ""),
     );
-    const models = index === -1 ? undefined : results[index]?.data?.models;
+    const result = index === -1 ? undefined : results[index];
+    const models =
+      result?.data?.models ??
+      (result?.isError === true && ref.profileId === undefined
+        ? servedRows(listed?.[ref.agent])
+        : undefined);
     return modelDisplayName(models, ref.agent, ref.model);
   };
 }
@@ -305,7 +348,8 @@ export function modelOptions(
   if (current && !options.some((o) => o.value === current) && !listedRow(models, current)) {
     options.push({
       value: current,
-      label: current,
+      // A pinned Claude id reads as Claude Code names it: `claude-sonnet-5-5` is "Sonnet 5.5".
+      label: claudeLabel(current) ?? current,
       ...(models && unlisted !== undefined && !isOffered(models, current)
         ? { description: unlisted }
         : {}),
