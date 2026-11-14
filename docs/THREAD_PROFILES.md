@@ -153,7 +153,9 @@ Content-Type: application/json
   what was made for it on the target is removed. `hostId` must be a joined machine, online now.
 - **Whose it stays.** A thread is for the person its machine was started for. It moves only to a
   machine started for the same person and the same purpose (`owner` and `onDemand` as the machine
-  records them), or from one machine started for nobody to another. Its owner and its lineage's
+  records them), or from one machine started for nobody to another. A thread on a machine
+  registered before machines said their kind may move to one started for the threads placed on
+  it (`onDemand: "thread"`), never the other way. Its owner and its lineage's
   stay what they were. A thread whose machine is no longer on record doesn't move: who it is for
   can't be told. Being the platform's service doesn't change this.
 - **Nothing left behind.** The move claims the thread in its runtime before anything is made on

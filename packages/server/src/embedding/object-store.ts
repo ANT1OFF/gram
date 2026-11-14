@@ -101,6 +101,11 @@ export const ObjectStore = Context.Reference<ObjectStoreShape>("@gram/server/Obj
   }),
 });
 
+/** How long a copy from another machine that did not arrive waits before it is tried again. */
+const STAGED_RETRY_AFTER_MS = 5 * 60_000;
+/** How many times in a row such a copy is tried before it waits. */
+const STAGED_TRIES_AT_ONCE = 2;
+
 const objectPath = (key: string) => `/objects/${key.split("/").map(encodeURIComponent).join("/")}`;
 const prefixPath = (prefix: string) => `/objects?prefix=${encodeURIComponent(prefix)}`;
 
@@ -450,6 +455,11 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
      * staged copy's own times say nothing about the file.
      */
     const stagingDir = resolve(dataDir, STAGING);
+    /** The copies under way or that did not arrive, by key: what was tried, and when. */
+    const failedStaged = new Map<
+      string,
+      { readonly stamp: string; readonly at: number; readonly tries: number }
+    >();
     const sendStaged = (
       key: string,
       stamp: string,
@@ -458,6 +468,19 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
       Effect.gen(function* () {
         if (!safeKey(key)) return yield* skip(key, "its name can't be a key");
         if (manifest.objects[key] === stamp) return;
+        // A copy that has failed twice is not made again at once: an output is recorded each
+        // time it is written, and reading the whole file from its machine every time, for a
+        // store that is down, would hold up every other thread's outputs behind it.
+        const before = failedStaged.get(key);
+        const tries = before?.stamp === stamp ? before.tries : 0;
+        if (
+          before !== undefined &&
+          tries >= STAGED_TRIES_AT_ONCE &&
+          Date.now() - before.at < STAGED_RETRY_AFTER_MS
+        )
+          return;
+        // Counted as failed until it has arrived.
+        failedStaged.set(key, { stamp, at: Date.now(), tries: tries + 1 });
         const path = join(stagingDir, `${randomUUID()}${PART}`);
         yield* Effect.gen(function* () {
           yield* Effect.promise(() => mkdir(stagingDir, { recursive: true }));
@@ -474,6 +497,7 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
           });
           manifest.objects[key] = stamp;
           unsaved = true;
+          failedStaged.delete(key);
         }).pipe(
           Effect.ensuring(Effect.promise(() => rm(path, { force: true }).catch(() => undefined))),
         );

@@ -314,8 +314,10 @@ services:
   deployment started one for them ([Hosts on demand](EMBEDDING.md#hosts-on-demand)); the list that
   machine last reported, while it is stopped or has not reported yet (kept until this server
   restarts); the default machine's. A step with no list falls through to the next. A new thread
-  still goes where placement puts it: the person's own machine while it is online, else the default
-  machine. The launch checks for
+  still goes where placement puts it: the person's own machine while it is online. Where hosts are
+  started on demand, a signed-in person with none of theirs online is asked to start one rather
+  than placed elsewhere, and is offered no other machine's models; otherwise it goes on the
+  default machine, which is never one started for a person or for the threads placed on it. The launch checks for
   local tools don't run, and their answer says so (`headless: true`, and no tool listed), so the web app shows no setup
   banner or title-bar chip for tools this container was never asked to have. Each machine's own
   tools and sign-in show in the Machine select and Settings → Machines.

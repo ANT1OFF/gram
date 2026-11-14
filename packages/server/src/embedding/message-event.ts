@@ -23,6 +23,9 @@ export const TEXT_CUT_MARK = "\n[truncated]";
 
 const bytesOf = (value: unknown): number => Buffer.byteLength(JSON.stringify(value) ?? "null");
 
+/** What the mark adds to a text it ends: its own bytes, without the quotes a string has anyway. */
+const MARK_BYTES = bytesOf(TEXT_CUT_MARK) - 2;
+
 type Part = Record<string, unknown> & { readonly type: string };
 
 const isTool = (part: Part): boolean =>
@@ -120,7 +123,9 @@ export const fitMessage = (
     .toSorted((a, b) => b.bytes - a.bytes);
   for (const { index, text, bytes } of texts) {
     if (total <= budget) break;
-    const kept = startOf(text, Math.max(0, bytes - (total - budget) - TEXT_CUT_MARK.length));
+    // The mark's bytes as it is sent, not its length: its line break is two bytes in JSON. One
+    // byte over, and the whole message would go as the mark below, its text with it.
+    const kept = startOf(text, Math.max(0, bytes - (total - budget) - MARK_BYTES));
     const shortened = `${kept}${TEXT_CUT_MARK}`;
     const after = bytesOf(shortened);
     if (after >= bytes) continue;
