@@ -4520,6 +4520,71 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("transcript"),
   },
   {
+    name: "transcript-command-scripts",
+    title: "A shell command opened: the Python its here-doc feeds, coloured as Python",
+    open: async (page) => {
+      await page.setViewportSize({ width: 1440, height: 1400 });
+      await page.goto("/");
+      await threadRow(page, "t-deps").waitFor();
+      const id = await page.evaluate(async () => {
+        const mock = window.gramMock!;
+        const [created] = mock.seedLongThreads({ count: 1, turns: 0 });
+        await mock.rename(created!, "Check the build host");
+        const command = [
+          `/bin/zsh -lc "ssh -o BatchMode=yes build-01 'export PATH=/opt/tools/bin:"'$HOME/.local/bin:$PATH; python3 -'"' <<'PY'`,
+          "import os, subprocess",
+          "from pathlib import Path",
+          "repo = Path.home() / 'src' / 'app'",
+          "def run(args, **kwargs):",
+          "    return subprocess.check_output(args, text=True, **kwargs).strip()",
+          "assert not run(['git', '-C', str(repo), 'status', '--porcelain'])",
+          "print('Commit:', run(['git', '-C', str(repo), 'rev-parse', '--short', 'HEAD']))",
+          "for name in ['python3', 'node', 'bun']:",
+          "    print(name + ':', run([name, '--version']))",
+          `PY"`,
+        ].join("\n");
+        const at = Date.UTC(2026, 10, 14, 20, 0);
+        mock.simulateMessage(created!, {
+          id: "shot-cmd-user",
+          role: "user",
+          metadata: { createdAt: at },
+          parts: [{ type: "text", text: "Is the build host clean and on the new toolchain?" }],
+        });
+        mock.simulateMessage(created!, {
+          id: "shot-cmd-reply",
+          role: "assistant",
+          metadata: { createdAt: at + 30_000 },
+          parts: [
+            { type: "text", text: "Checking the checkout and the tool versions on the host." },
+            {
+              type: "tool-Bash",
+              toolCallId: "shot-cmd-1",
+              state: "output-available",
+              input: { command, description: "Check the build host's checkout and tools" },
+              output: {
+                stdout: "Commit: 4f2c9a1\npython3: Python 3.13.1\nnode: v24.3.0\nbun: 1.4.4\n",
+                stderr: "",
+                interrupted: false,
+              },
+            },
+            { type: "text", text: "The checkout is clean at 4f2c9a1 and all three tools resolve." },
+          ],
+        } as never);
+        return created!;
+      });
+      await threadRow(page, id).click();
+      const transcript = page.getByTestId("transcript");
+      await transcript.getByText("The checkout is clean").waitFor();
+      await transcript.getByRole("button", { name: /Worked/ }).click();
+      const card = transcript.getByTestId("tool-card").first();
+      await card.waitFor();
+      await card.getByRole("button").first().click();
+      await card.locator('code [style*="--shiki-dark"]').first().waitFor();
+      await page.waitForTimeout(600);
+    },
+    element: (page) => page.getByTestId("transcript"),
+  },
+  {
     name: "interrupted-tool-calls",
     title: "Two Reads an interrupt cut off, opened, beside the Gram notice that followed them",
     open: async (page) => {
