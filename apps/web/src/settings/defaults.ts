@@ -13,6 +13,7 @@ import {
   reviewRequestsHideBots,
   reviewRequestsMaxAgeDays,
   noticeActionsOn,
+  gatherAsksOn,
   notifyAboutOf,
   openAtLaunchOf,
   OVERVIEW_HIDDEN_BY_DEFAULT,
@@ -184,6 +185,11 @@ export const NOTIFICATIONS_DEFAULTS = defaults({
     label: "Notify me about",
     read: notifyAboutOf,
     reset: { notifications: { notifyAbout: null } },
+  },
+  gatherAsks: {
+    label: "Gather waiting asks",
+    read: gatherAsksOn,
+    reset: { notifications: { gatherAsks: null } },
   },
   native: {
     label: "Desktop notifications",

@@ -26,6 +26,7 @@ import {
 } from "./recommended.ts";
 import {
   noticeActionsOn,
+  gatherAsksOn,
   notifyAboutOf,
   openAtLaunchOf,
   overviewSidebarOf,
@@ -307,6 +308,7 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
   pref("notifications.sounds", "Sounds"),
   pref("notifications.chime", "Chime", (s) => chimeOf(s.notifications)),
   pref("notifications.notifyAbout", "Notify about", notifyAboutOf),
+  pref("notifications.gatherAsks", "Gather waiting asks", gatherAsksOn),
   pref("notifications.reviewRequests", "Review request notifications", reviewRequestsOn),
   pref(
     "notifications.reviewRequestsDirectOnly",

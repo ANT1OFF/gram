@@ -1,5 +1,6 @@
 import {
   chimeOf,
+  gatherAsksOn,
   helperOn,
   noticeActionsOn,
   workspaceMuted,
@@ -26,12 +27,14 @@ import { useServerSettings } from "@/settings-sync/store";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
-import { buildNotice, type AwayNotice } from "./away-notice";
+import { buildNotice, buildSummary, SUMMARY_ID, type AwayNotice } from "./away-notice";
 import { scheduleChime } from "./chime";
 import { interrupts } from "./interrupt-policy";
 
-// Asks as desktop notifications while the window isn't in front. Each new ask raises one; one answered anywhere is taken back; Allow and
-// Merge answer through the stack's own path, and only the very ask that was shown.
+// Asks as desktop notifications while the window isn't in front. The first raises its own; one answered anywhere is taken back; Allow and
+// Merge answer through the stack's own path, and only the very ask that was shown. A second that
+// arrives while the first still waits joins it in one notification that lists them all (Settings →
+// Notifications → Gather waiting asks), which opens the Inbox and answers nothing.
 
 /** Asks already open as the window loads are the stack's, not news. */
 const STARTUP_GRACE_MS = 5_000;
@@ -89,6 +92,8 @@ export function AwayNotifications({
   const seen = useRef(new Set<string>());
   /** Notifications on screen or in Notification Center, by id. */
   const live = useRef(new Map<string, AwayNotice>());
+  /** The asks the one shared notification stands for, by their own notice's id; empty when it isn't up. */
+  const gathered = useRef(new Map<string, AwayNotice>());
 
   useEffect(() => {
     mountedAt.current = performance.now();
@@ -103,6 +108,13 @@ export function AwayNotifications({
       if (findShownAsk(all, notice) !== undefined) continue;
       live.current.delete(id);
       bridge.withdrawNotification?.(id);
+    }
+    // The shared one stands until the last ask it lists is gone; it isn't raised again as they go.
+    if (gathered.current.size > 0) {
+      for (const [id, notice] of gathered.current) {
+        if (findShownAsk(all, notice) === undefined) gathered.current.delete(id);
+      }
+      if (gathered.current.size === 0) bridge.withdrawNotification?.(SUMMARY_ID);
     }
     const quiet = performance.now() - (mountedAt.current ?? 0) < graceMs;
     for (const workspace of all) {
@@ -147,7 +159,29 @@ export function AwayNotifications({
         title,
         actions: noticeActionsOn(prefs),
       });
-      if (live.current.has(notice.id)) return;
+      if (live.current.has(notice.id) || gathered.current.has(notice.id)) return;
+      if (gatherAsksOn(prefs) && live.current.size + gathered.current.size > 0) {
+        // Something already waits: this one joins it, and those up singly give way to the one.
+        const first = gathered.current.size === 0;
+        for (const [id, single] of live.current) {
+          gathered.current.set(id, single);
+          window.gram?.withdrawNotification?.(id);
+        }
+        live.current.clear();
+        gathered.current.set(notice.id, notice);
+        const summary = buildSummary([...gathered.current.values()]);
+        window.gram?.withdrawNotification?.(SUMMARY_ID);
+        window.gram?.notify({
+          id: SUMMARY_ID,
+          title: summary.title,
+          subtitle: summary.subtitle,
+          body: summary.body,
+          ...(summary.openThreadId === undefined ? {} : { threadId: summary.openThreadId }),
+        });
+        // One chime as it forms; the asks that join it later arrive quietly.
+        if (first) scheduleChime(chimeOf(prefs.notifications));
+        return;
+      }
       live.current.set(notice.id, notice);
       window.gram?.notify({
         id: notice.id,
@@ -174,6 +208,15 @@ export function AwayNotifications({
       if (findShownAsk(latest.current, notice) !== undefined) showInboxAsk(notice.askKey);
     };
     return bridge.onNotificationAction(({ id, action }) => {
+      if (id === SUMMARY_ID) {
+        // Open only: the oldest ask it lists that still waits, in the Inbox with the rest.
+        const waiting = [...gathered.current.values()].find(
+          (each) => findShownAsk(latest.current, each) !== undefined,
+        );
+        gathered.current.clear();
+        if (waiting !== undefined) open(waiting);
+        return;
+      }
       const notice = live.current.get(id);
       if (notice === undefined) return;
       live.current.delete(id);

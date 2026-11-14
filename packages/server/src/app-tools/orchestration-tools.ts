@@ -23,7 +23,11 @@ import { isLiveWorker } from "../orchestration/ledger.ts";
 import { sendFingerprint } from "../orchestration/outbox.ts";
 import { featureSlug } from "../orchestration/rules.ts";
 import { Orchestration, type SentMessage } from "../orchestration/service.ts";
-import { attachUserWords, USER_MESSAGES_MAX } from "../orchestration/user-words.ts";
+import {
+  attachUserWords,
+  USER_MESSAGES_MAX,
+  withUserAnswers,
+} from "../orchestration/user-words.ts";
 import { findUserMessages, ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { CheckoutService } from "../runtime/hooks.ts";
@@ -461,12 +465,31 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         };
       });
 
+    /** `text` with what the user said to the worker questions `ids` name after it. */
+    const attachUserAnswers = (
+      tool: string,
+      caller: ThreadId,
+      text: string,
+      ids: ReadonlyArray<string> | undefined,
+    ) =>
+      Effect.gen(function* () {
+        if (ids === undefined) return text;
+        if (orchestration === undefined) {
+          return yield* new AppToolError({
+            tool,
+            message:
+              "`userAnswers` attaches the user's answers to an orchestrator's workers' questions; this thread has none. Leave it out.",
+          });
+        }
+        return withUserAnswers(text, yield* orchestration.userAnswers(caller, tool, ids));
+      });
+
     const sendMessage = defineAppTool({
       descriptor: {
         name: "send_message",
         class: "crossThread",
         description:
-          'Use `message` for message text (`text` and `content` are aliases). Send it to another Gram thread by the exact full threadId from list_threads or list_workers; shortened IDs are refused. For your parent, use message_orchestrator without an ID. `mode`: "queue" (after the turn), "steer" (mid-turn after the tool calls under way; cancels nothing) or "interrupt" (stops the turn now, cutting off tool calls; urgent stops only). Default steer. Your own workers need no approval. In Full Auto a current worker may also message its bound workspace orchestrator or a current sibling worker without approval; these keep the back-to-back, chain and rate limits. Prefer `report` for progress, decisions, blockers and completed work to your orchestrator. Paused workspaces and user-held workers refuse these messages. Other targets, and worker sends outside Full Auto, ask approval per call, even in Bypass. `clientRequestId` retries an own-worker or Full Auto send without sending it twice. An orchestrator\'s `userMessages` (1–5) appends the user\'s latest messages word for word, for a paste the worker needs exactly. Link a thread for the user as [title](#threadId).',
+          'Use `message` for message text (`text` and `content` are aliases). Send it to another Gram thread by the exact full threadId from list_threads or list_workers; shortened IDs are refused. For your parent, use message_orchestrator without an ID. `mode`: "queue" (after the turn), "steer" (mid-turn after the tool calls under way; cancels nothing) or "interrupt" (stops the turn now, cutting off tool calls; urgent stops only). Default steer. Your own workers need no approval. In Full Auto a current worker may also message its bound workspace orchestrator or a current sibling worker without approval; these keep the back-to-back, chain and rate limits. Prefer `report` for progress, decisions, blockers and completed work to your orchestrator. Paused workspaces and user-held workers refuse these messages. Other targets, and worker sends outside Full Auto, ask approval per call, even in Bypass. `clientRequestId` retries an own-worker or Full Auto send without sending it twice. An orchestrator\'s `userMessages` (1–5) appends the user\'s latest messages word for word, for a paste the worker needs. Link a thread for the user as [title](#threadId).',
       },
       input: inputAliases(
         Schema.Struct({
@@ -477,18 +500,20 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           userMessages: Schema.optionalKey(
             Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: USER_MESSAGES_MAX })),
           ),
+          // Its limits are checked where it is read: this schema is every thread's to pay for.
+          userAnswers: Schema.optionalKey(Schema.Array(Schema.String)),
         }),
         { text: ["message", "content"] },
       ),
       approvalRequiresResolvedTarget: true,
-      resolve: (caller, { userMessages, ...input }) =>
+      resolve: (caller, { userMessages, userAnswers, ...input }) =>
         Effect.gen(function* () {
           const target = yield* resolveSendTarget(input.threadId);
           const text = yield* attachUserWords(
             store,
             "send_message",
             caller,
-            input.text,
+            yield* attachUserAnswers("send_message", caller, input.text, userAnswers),
             userMessages,
           );
           return { ...input, text, targetTitle: target.title };

@@ -378,6 +378,11 @@ export const NotificationSettings = Schema.Struct({
   mutedWorkspaces: Schema.optionalKey(Schema.Array(Schema.String)),
   /** What may raise a desktop notification while the window isn't in front; read through `notifyAboutOf`. */
   notifyAbout: Schema.optionalKey(NotifyAbout),
+  /**
+   * Asks that wait together while the window isn't in front share one desktop notification, in
+   * place of one each. Absent means on; read through `gatherAsksOn`.
+   */
+  gatherAsks: Schema.optionalKey(Schema.Boolean),
 });
 
 export const UpdateSettings = Schema.Struct({
@@ -1010,6 +1015,10 @@ export const reviewRequestsAwaitBot = (settings: Settings): boolean =>
 export const noticeActionsOn = (settings: Settings): boolean =>
   settings.notifications.actions !== false;
 
+/** Whether asks waiting together share one desktop notification; on unless turned off. */
+export const gatherAsksOn = (settings: Settings): boolean =>
+  settings.notifications.gatherAsks !== false;
+
 /** What may raise a desktop notification; asks and failures unless the user chose asks only. */
 export const notifyAboutOf = (settings: Settings): NotifyAbout =>
   settings.notifications.notifyAbout ?? "asksAndFailures";
@@ -1164,6 +1173,7 @@ export const SettingsPatch = Schema.Struct({
       /** Replaces the whole list. */
       mutedWorkspaces: Schema.optionalKey(Schema.Array(Schema.String)),
       notifyAbout: clearable(NotifyAbout),
+      gatherAsks: clearable(Schema.Boolean),
     }),
   ),
   updates: Schema.optionalKey(

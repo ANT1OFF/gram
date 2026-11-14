@@ -781,6 +781,16 @@ export interface OrchestrationShape {
     callerId: ThreadId,
     input: { readonly questionId: string; readonly answer: string; readonly source: string },
   ): Effect.Effect<WorkerQuestion, AppToolError>;
+  /**
+   * The questions `questionIds` name, for `userAnswers` on `tool`: each one of the caller's
+   * workspace that the user closed with words of their own (an answer, or a dismissal's reason).
+   * Refused for one that is open, was answered by an orchestrator or isn't on record.
+   */
+  userAnswers(
+    callerId: ThreadId,
+    tool: string,
+    questionIds: ReadonlyArray<string>,
+  ): Effect.Effect<ReadonlyArray<WorkerQuestion>, AppToolError>;
   /** `workerQuestion.answer`: the user's answer, to the worker now and to the orchestrator's next digest. */
   answerQuestionAsUser(
     input: AnswerWorkerQuestionInput,
