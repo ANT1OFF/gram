@@ -78,7 +78,7 @@ export const AUTONOMY_LEVELS: readonly AutonomyLevel[] = [
     label: "Full",
     description: "Asks about nothing. Branch protection outside Gram is the only gate.",
     detail:
-      "The orchestrator may turn on auto-merge and answer its workers' questions. What stands between an agent and your repositories is what you have outside Gram: branch protection, required reviews and your provider's spending limits.",
+      "The orchestrator may turn on auto-merge. What stands between an agent and your repositories is what you have outside Gram: branch protection, required reviews and your provider's spending limits.",
     warn: true,
   },
 ];

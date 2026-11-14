@@ -15,10 +15,13 @@ checkout stays as it was. Workers report progress, ask questions and open pull r
 orchestrator answers what it can, passes the rest to you, and merges once the checks you
 configured pass.
 
-- **Adjustable autonomy.** **Supervised** asks before anything leaves your machine (a push, a pull
-  request, a merge); **Publish** pushes branches and opens pull requests but asks before merging,
-  closing a pull request, releasing or running a workflow; **Full** asks about nothing and lets
-  the orchestrator merge and answer its workers' questions. Only you can
+- **Adjustable autonomy.** The level decides one thing: what leaves your machine without asking
+  you. **Supervised** asks before a push, a pull request or a merge; **Publish** pushes branches
+  and opens pull requests but asks before merging, closing a pull request, releasing or running a
+  workflow; **Full** asks about nothing and lets the orchestrator merge. How the orchestrator
+  works with its workers is the same at every level: it answers a worker's waiting question when
+  your brief, its memory or your own words settle it, workers message it and each other, and it
+  restarts a worker's session. Approvals and plan requests stay yours. Only you can
   [pause a workspace](#pausing-a-workspace).
 - **Hands-off or hands-on.** Every worker is a normal thread: open it to read the transcript,
   send it a message mid-turn, answer its question or stop it.
@@ -35,8 +38,8 @@ configured pass.
   decisions and your standing rulings, which you can edit. An optional
   [memory update](#memory-updates-and-selected-harness-support) run consolidates it into a candidate you review.
 - **Messaging.** The orchestrator sends briefs and messages to workers; workers send back reports
-  and questions, and can message each other and their orchestrator directly. Below Full autonomy
-  each such message asks you first. Messages between threads are labelled with their sender and
+  and questions, and can message each other and their orchestrator directly, at every level of
+  autonomy. Messages between threads are labelled with their sender and
   never shown as yours.
 - **Models by assignment.** Each workspace lists the models its workers may use, with a note in
   your own words on what each is for, and the orchestrator picks by those notes: for example,

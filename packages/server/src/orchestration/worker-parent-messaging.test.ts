@@ -13,7 +13,6 @@ import {
   atAutonomy,
   makeWorld,
   outboxOf,
-  settle,
   waitReal,
   waitStatus,
   openOrchestrator,
@@ -238,16 +237,15 @@ describe.skipIf(!hasGit)("Full Auto worker parent messaging", () => {
           yield* refused;
         }
         yield* store.putOutbox(workspaceId, outbox!);
-        for (const autonomy of ["supervised", "publish"] as const) {
+        // The relationship alone decides: no autonomy level puts a card on a worker's own parent.
+        for (const autonomy of ["supervised", "publish", "full"] as const) {
           yield* orchestration.setCharter(workspaceId, {
             ...DEFAULT_CHARTER,
             autonomy,
             workerMode: "bypassPermissions",
           });
-          yield* refused;
+          expect(yield* tool.needsApproval!(message)).toBe(false);
         }
-        yield* orchestration.setCharter(workspaceId, { ...DEFAULT_CHARTER, autonomy: "full" });
-        expect(yield* tool.needsApproval!(message)).toBe(false);
         expect(
           (yield* tool.needsApproval!({ ...message, threadId: "unknown-thread" }).pipe(Effect.flip))
             .message,
@@ -258,48 +256,27 @@ describe.skipIf(!hasGit)("Full Auto worker parent messaging", () => {
   );
 
   it.effect.each(["supervised", "publish"] as const)(
-    "sameparent %s forces an actual Bypass card; Full preserves the pending request",
+    "sameparent %s sends to the parent without a card in Bypass",
     (autonomy) =>
       inServer((world) =>
         Effect.gen(function* () {
           const { thread, worker, tool, workspaceId } = yield* setup(world);
           const store = yield* ThreadStore;
-          const runtimes = yield* ThreadRuntimes;
           const orchestration = yield* Orchestration;
           yield* orchestration.setCharter(workspaceId, {
             ...DEFAULT_CHARTER,
             autonomy,
             workerMode: "bypassPermissions",
           });
-          const pending = yield* tool
-            .run({ threadId: thread.id, text: "Coordinate." })
-            .pipe(Effect.flip, Effect.forkScoped);
-          const [card] = yield* waitReal(
-            "the parent message approval",
-            store.listRequests(worker.thread.id).pipe(Effect.map((all) => all.length === 1 && all)),
-          );
-          expect(card).toMatchObject({
-            kind: "approval",
-            displayName: "send_message",
-            scopes: ["once"],
+          expect(yield* tool.run({ threadId: thread.id, text: "Coordinate." })).toMatchObject({
+            delivered: expect.any(String),
           });
-          yield* orchestration.setCharter(workspaceId, { ...DEFAULT_CHARTER, autonomy: "full" });
-          yield* settle;
-          expect(yield* store.listRequests(worker.thread.id)).toEqual([card]);
-          yield* runtimes.respond(worker.thread.id, card!.id, {
-            kind: "approval",
-            decision: "deny",
-            scope: "once",
-          });
-          expect((yield* Fiber.join(pending)).message).toContain("declined send_message");
-          expect((yield* runtimes.snapshot).find((s) => s.thread.id === thread.id)?.queue).toEqual(
-            [],
-          );
+          expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
         }),
       ),
   );
 
-  it.effect.each(["pause", "hold", "autonomy", "ownership", "slot"] as const)(
+  it.effect.each(["pause", "hold", "ownership", "slot"] as const)(
     "sameparent rechecks %s after the approval decision and before dispatch",
     (change) =>
       inServer((world) =>
@@ -336,11 +313,6 @@ describe.skipIf(!hasGit)("Full Auto worker parent messaging", () => {
                         }),
                       );
                     }
-                    if (change === "autonomy")
-                      yield* orchestration.setCharter(workspaceId, {
-                        ...DEFAULT_CHARTER,
-                        autonomy: "publish",
-                      });
                     if (change === "ownership")
                       yield* store.updateThread(worker.thread.id, (t) => ({
                         ...t,

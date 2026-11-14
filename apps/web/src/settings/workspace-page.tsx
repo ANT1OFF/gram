@@ -499,7 +499,7 @@ function AutonomySection({ state, changes }: { state: WorkspaceState; changes: C
   return (
     <SettingsGroup
       label="Autonomy"
-      description="How far the orchestrator and its workers go on their own."
+      description="What may leave your machine without asking you."
       keywords={["worker mode", "workers at once", "permission", "usage limit"]}
     >
       <AutonomyField

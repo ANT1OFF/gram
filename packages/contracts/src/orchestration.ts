@@ -1472,7 +1472,7 @@ export const serializeDigest = (digest: OrchestrationDigest): string => {
   }
   if (digest.userAwayMinutes !== undefined) {
     lines.push(
-      `The user has been away from Gram for ${awayFor(digest.userAwayMinutes)}. Your next message to them is what they read first when they're back: keep it to a few lines, what changed and what waits on them.`,
+      `The user has been away from Gram for ${awayFor(digest.userAwayMinutes)}. Your next message to them is what they read first when they're back: open with whether anything needs them, then Needs you, Done, Failed and Still working, one sentence each.`,
     );
   }
   if (digest.changes.length > 0) {
