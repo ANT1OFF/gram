@@ -237,6 +237,20 @@ each turn's usage, and every decision the hook made.
   in the POST it answers is not believed, and the same events are sent again.
 - If the receiver takes nothing while 200,000 events wait, the backlog is given up and a new
   `source` id starts at 1 with `sink.started`.
+- With `GRAM_EVENT_SINK_MESSAGES=1` the sink is sent each thread's messages too, as `message`
+  events. Unset, it sends none, and nothing else about the sink changes. A message is sent once
+  when it settles (a person's message as it is stored, a reply when it has finished streaming or
+  its turn ends) and again each time the stored message changes afterwards, never while it
+  streams. `data` holds its `id`, its stored revision `rev` (a receiver keeps the highest it has
+  seen), `role`, `turnId` where it belongs to a turn, `at` (when it was written, epoch ms), `seq`
+  (its place in its thread) and `message`, the stored message as the server gives it to its own
+  web app. With sign-in through a fronting proxy, a message a person sent names them as the
+  event's `actor`. One event is at most 256 KB: a larger message keeps its text and has its
+  largest tool results cut first, each cut marked `{"truncated": true, "bytes": n}`, and
+  `truncated` is then true; the whole message stays in the server's own store. A fork's copied
+  messages and a reopened thread's history are sent when they are put there. A thread's
+  `thread.removed` takes its messages with it: a receiver deletes them then. Messages stored
+  before the setting was on are not sent.
 - A card's closing says how: `answered`, with the person's `approve` or `reject` and (with
   sign-in through a fronting proxy) who they are, or `withdrawn` when it went unanswered.
 - With sign-in through a fronting proxy, a card is answered as its own request,

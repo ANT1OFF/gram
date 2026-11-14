@@ -1,8 +1,10 @@
 // A user's input as the runtime keeps it, and the transcript message a turn opens with.
 
 import type { TurnId, UserInput, QueuedInput, GramUIMessage } from "@gram/contracts";
+import * as Effect from "effect/Effect";
 import { basename } from "node:path";
 import { pathToFileURL } from "node:url";
+import { ActingPerson } from "../embedding/person.ts";
 
 /** A client's input with no `waitNote`, which only the server sets. */
 export const typedInput = (input: UserInput): UserInput => {
@@ -91,3 +93,14 @@ export const userMessage = (
       ...(input.author === undefined ? {} : { author: input.author }),
     },
   }) as unknown as GramUIMessage;
+
+/**
+ * `message` with who sent it (`metadata.sentBy`): the signed-in person this call is made for, on a
+ * message a person typed. Unchanged where nobody is signed in, and for any other message.
+ */
+export const withSender = (message: GramUIMessage): Effect.Effect<GramUIMessage> =>
+  Effect.map(ActingPerson, (person) =>
+    person === undefined || message.metadata?.author !== "user"
+      ? message
+      : { ...message, metadata: { ...message.metadata, sentBy: person } },
+  );

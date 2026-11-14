@@ -45,8 +45,29 @@ export const isThreadRemoved = (
   event: ServerEvent,
 ): event is Extract<ServerEvent, { type: "thread.removed" }> => event.type === "thread.removed";
 
+/**
+ * What only the server's own consumers hear (`ownEvents`), never a window: a stored message that
+ * is whole, or a thread whose stored messages were all written at once.
+ */
+export type OwnEvent =
+  /**
+   * `messageId` was stored and isn't streaming: a person's message or another written whole, or a
+   * reply once it finished (`runtime/feed-writer.ts`).
+   */
+  | { readonly type: "message.settled"; readonly threadId: ThreadId; readonly messageId: string }
+  /** Every message the thread holds was put there together: a fork's copies, a reopened history. */
+  | { readonly type: "messages.replaced"; readonly threadId: ThreadId };
+
+const OWN_TYPES: ReadonlySet<string> = new Set(["message.settled", "messages.replaced"]);
+
+/** Whether an `ownEvents` item is one only the server's own consumers hear. */
+export const isOwnEvent = (event: ServerEvent | OwnEvent): event is OwnEvent =>
+  OWN_TYPES.has(event.type);
+
 export interface EventHubShape {
   publish(event: ServerEvent): Effect.Effect<void>;
+  /** Tells the `ownEvents` streams, in order with what `publish` tells them, and no window. */
+  publishOwn(event: OwnEvent): Effect.Effect<void>;
   publishFeed(item: ThreadFeedItem): Effect.Effect<void>;
   /**
    * Subscribes, then emits `snapshot` (one event, or several in order), then live events. A client
@@ -69,6 +90,11 @@ export interface EventHubShape {
     select: (event: ServerEvent) => boolean,
     name?: string,
   ): Stream.Stream<ServerEvent>;
+  /** `internalEvents`, with what `publishOwn` tells in its place among them. */
+  ownEvents(
+    select: (event: ServerEvent | OwnEvent) => boolean,
+    name?: string,
+  ): Stream.Stream<ServerEvent | OwnEvent>;
   /**
    * Subscribes before running `replay`, so items published while the replay is read are buffered
    * rather than lost, then emits stored messages, the in-flight replay, `caughtUp`, and live items.
@@ -173,20 +199,22 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
        * Each `internalEvents` stream's offer, which queues only what it selects, and returns the log
        * line its backlog is owed, if any.
        */
-      const internalClients = new Set<(event: ServerEvent) => Effect.Effect<void> | undefined>();
+      const internalClients = new Set<
+        (event: ServerEvent | OwnEvent) => Effect.Effect<void> | undefined
+      >();
       const feedClients = new Set<Client<ThreadFeedItem>>();
       const serverEventCapacity = options.serverEventCapacity ?? 1_000;
       const feedCapacity = options.feedCapacity ?? 10_000;
 
-      const internalEvents = (
-        select: (event: ServerEvent) => boolean,
+      const ownEvents = (
+        select: (event: ServerEvent | OwnEvent) => boolean,
         name = "internal events",
-      ): Stream.Stream<ServerEvent> =>
+      ): Stream.Stream<ServerEvent | OwnEvent> =>
         Stream.unwrap(
           Effect.gen(function* () {
-            const queue = yield* Queue.unbounded<ServerEvent>();
+            const queue = yield* Queue.unbounded<ServerEvent | OwnEvent>();
             const gauge = new BacklogGauge(name);
-            const offer = (event: ServerEvent) => {
+            const offer = (event: ServerEvent | OwnEvent) => {
               if (!select(event)) return undefined;
               Queue.offerUnsafe(queue, event);
               return gauge.observe(Queue.sizeUnsafe(queue));
@@ -205,17 +233,25 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
           }),
         );
 
+      /** Offers `event` to every internal stream; the log lines their backlogs are owed. */
+      const offerInternal = (event: ServerEvent | OwnEvent) => {
+        const logs: Array<Effect.Effect<void>> = [];
+        for (const offer of internalClients) {
+          const log = offer(event);
+          if (log !== undefined) logs.push(log);
+        }
+        return logs;
+      };
+
       return EventHub.of({
         publish: (event) =>
           Effect.suspend(() => {
-            const logs: Array<Effect.Effect<void>> = [];
-            for (const offer of internalClients) {
-              const log = offer(event);
-              if (log !== undefined) logs.push(log);
-            }
+            const logs = offerInternal(event);
             const delivered = deliver(eventClients, event);
             return logs.length === 0 ? delivered : Effect.andThen(Effect.all(logs), delivered);
           }),
+        publishOwn: (event) =>
+          Effect.suspend(() => Effect.all(offerInternal(event), { discard: true })),
         publishFeed: (item) => deliver(feedClients, item),
 
         serverEvents: (snapshot) => {
@@ -234,7 +270,12 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
         },
 
         // One body for both overloads: what reaches the queue passed `select`, guard or not.
-        internalEvents: internalEvents as EventHubShape["internalEvents"],
+        internalEvents: ((select: (event: ServerEvent) => boolean, name?: string) =>
+          ownEvents(
+            (event) => !isOwnEvent(event) && select(event),
+            name,
+          )) as EventHubShape["internalEvents"],
+        ownEvents,
 
         threadFeed: (threadId, replay, resync = replay) => {
           let lastSeq = 0;

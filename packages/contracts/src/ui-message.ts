@@ -97,6 +97,11 @@ export const MessageMetadataSchema = Schema.Struct({
    * sent at rest or from the queue.
    */
   delivery: Schema.optionalKey(Schema.Literals(["steer", "interrupt"])),
+  /**
+   * On a message a person typed, the id of the signed-in person who sent it, where the server
+   * knows who is signed in (sign-in through a fronting proxy). Absent everywhere else.
+   */
+  sentBy: Schema.optionalKey(Schema.String),
 });
 export type MessageMetadata = typeof MessageMetadataSchema.Type;
 

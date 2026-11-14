@@ -266,6 +266,13 @@ export interface SeqMessage {
   readonly message: GramUIMessage;
 }
 
+/** A message with what its row says of it: its place in the thread, revision, role and turn. */
+export interface StoredMessage extends SeqMessage {
+  readonly rev: number;
+  readonly role: string;
+  readonly turnId?: string;
+}
+
 /**
  * Prunes the append-only history tables to what they keep (`ORCHESTRATION_EVENTS_KEPT_MS` and the
  * rest), as of `now`. Run by the store's start.
@@ -560,6 +567,14 @@ export interface ThreadStoreShape {
     closed?: boolean,
   ): Effect.Effect<ReadonlyArray<SeqMessage>>;
   getMessage(threadId: ThreadId, messageId: string): Effect.Effect<GramUIMessage | undefined>;
+  /**
+   * The thread's stored messages with their rows' own columns, in thread order: the one
+   * `messageId` names, or else up to `limit` of those after place `afterSeq`.
+   */
+  storedMessages(
+    threadId: ThreadId,
+    select: { readonly messageId: string } | { readonly afterSeq: number; readonly limit: number },
+  ): Effect.Effect<ReadonlyArray<StoredMessage>>;
   getMessageTurn(
     threadId: ThreadId,
     messageId: string,
@@ -1221,6 +1236,15 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         }),
       );
       yield* pruneHistory(sql, Date.now());
+
+      interface StoredMessageRow {
+        readonly id: string;
+        readonly seq: number;
+        readonly rev: number;
+        readonly role: string;
+        readonly turn_id: string | null;
+        readonly message: string;
+      }
 
       /** A thread's messages in the order given, without those that don't decode. */
       const messageRows = (
@@ -2487,6 +2511,36 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                       seq: Number(r.seq),
                       message,
                     })),
+                ),
+              ),
+            ),
+          ),
+        storedMessages: (threadId, select) =>
+          run(
+            ("messageId" in select
+              ? sql<StoredMessageRow>`SELECT id, seq, rev, role, turn_id, message FROM messages
+                  WHERE thread_id = ${threadId} AND id = ${select.messageId}`
+              : sql<StoredMessageRow>`SELECT id, seq, rev, role, turn_id, message FROM messages
+                  WHERE thread_id = ${threadId} AND seq > ${select.afterSeq}
+                  ORDER BY seq LIMIT ${select.limit}`
+            ).pipe(
+              Effect.flatMap((rows) =>
+                readableRows(
+                  unreadable,
+                  "messages",
+                  rows,
+                  (r) => `${threadId}/${r.id}`,
+                  (r) =>
+                    mapDecoded(
+                      decodeStored(UIMessageSchema, r.message),
+                      (message): StoredMessage => ({
+                        seq: Number(r.seq),
+                        rev: Number(r.rev),
+                        role: r.role,
+                        ...(r.turn_id === null ? {} : { turnId: r.turn_id }),
+                        message,
+                      }),
+                    ),
                 ),
               ),
             ),
