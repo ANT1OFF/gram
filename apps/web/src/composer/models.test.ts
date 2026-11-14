@@ -29,6 +29,7 @@ import {
   NOT_LISTED_BY_CODEX,
   NOT_LISTED_BY_GATEWAY,
   pickerModelId,
+  servedRows,
   unlistedWarning,
 } from "./models";
 
@@ -110,7 +111,7 @@ describe("Claude account model warnings", () => {
     const options = modelOptions(account, "claude-mythos-5-1", undefined, NOT_LISTED_BY_ACCOUNT);
     expect(options.at(-1)).toEqual({
       value: "claude-mythos-5-1",
-      label: "claude-mythos-5-1",
+      label: "Mythos 5.1",
       description: NOT_LISTED_BY_ACCOUNT,
     });
     // The id an alias runs is that alias's row, not a row of its own.
@@ -405,6 +406,40 @@ describe("a thread stored on a raw model id", () => {
       description: NOT_LISTED_BY_ACCOUNT,
     });
     expect(effort.unavailable).toBeDefined();
+  });
+});
+
+describe("models the embedding app serves", () => {
+  const served = servedRows([
+    { id: "claude-sonnet-5-5" },
+    { id: "claude-opus-5-5", name: "Claude Opus 5.5" },
+  ]);
+
+  it("names each by the app's name, else as Claude Code names it, the first the default", () => {
+    expect(served?.map((row) => [row.id, row.displayName, row.isDefault === true])).toEqual([
+      ["claude-sonnet-5-5", "Sonnet 5.5", true],
+      ["claude-opus-5-5", "Claude Opus 5.5", false],
+    ]);
+    expect(servedRows([])).toBeUndefined();
+    expect(servedRows(undefined)).toBeUndefined();
+  });
+
+  it("lists a thread on a served id once, checked, with every effort", () => {
+    const picked = pickerModelId(served, "claude-sonnet-5-5");
+    const options = modelOptions(served, picked, undefined, NOT_LISTED_BY_ACCOUNT, "Claude Code");
+    expect(options.map((o) => o.label)).toEqual(["Sonnet 5.5", "Claude Opus 5.5"]);
+    expect(modelSection({ value: picked, options, onChange: () => {} }).named).toBe("Sonnet 5.5");
+    expect(effortOptions(served, picked).length).toBeGreaterThan(0);
+    expect(accountModelWarning(served, "claude-sonnet-5-5")).toBeUndefined();
+  });
+});
+
+describe("a pinned Claude id no list names", () => {
+  it("reads as Claude Code names it, not as the raw id", () => {
+    const options = modelOptions(undefined, "claude-sonnet-5-5");
+    expect(options.at(-1)).toMatchObject({ value: "claude-sonnet-5-5", label: "Sonnet 5.5" });
+    expect(modelDisplayName(undefined, "claude", "claude-sonnet-5-5")).toBe("Sonnet 5.5");
+    expect(modelDisplayName(undefined, "codex", "claude-sonnet-5-5")).toBe("claude-sonnet-5-5");
   });
 });
 

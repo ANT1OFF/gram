@@ -238,6 +238,14 @@ export interface ShellModelChoice {
   readonly profile?: string;
 }
 
+/** One model the deployment serves an agent (`ShellModels.listed`). */
+export interface ShellListedModel {
+  /** The pinned id the agent is asked for: `claude-sonnet-5-5`. */
+  readonly id: string;
+  /** Its name in the list; Gram's own reading of the id when left out ("Sonnet 5.5"). */
+  readonly name?: string;
+}
+
 /**
  * The prompt box's model list as the embedding app narrows it: for a deployment whose own rules,
  * or a person's own accounts, leave only some of what an agent lists usable. It narrows what a new
@@ -250,6 +258,13 @@ export interface ShellModels {
    * draft whose model is not offered moves to one that is.
    */
   readonly offered?: (model: ShellModelChoice) => boolean;
+  /**
+   * The models the deployment serves each agent, the default first, for when the agent cannot say
+   * which it offers (its listing fails, as on a machine whose agent is set up for another
+   * provider). Gram lists these in its place, by their pinned ids, so a thread on `claude-sonnet-5-5`
+   * shows as that row and is never listed twice. The agent's own list wins whenever it answers.
+   */
+  readonly listed?: Partial<Record<ShellAgent, readonly ShellListedModel[]>>;
   /**
    * What the Model row says when the agent has no model to pick: none is offered, or the list could
    * not be read. Other agents' models stay pickable beside it. Gram's own words, and only them,
