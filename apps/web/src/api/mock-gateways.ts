@@ -331,6 +331,21 @@ export function createMockGateways(
             "Codex isn't signed in. Run `codex login` with your ChatGPT account, then retry model discovery.",
         });
       }
+      // OpenCode lists every signed-in provider's models as `<provider>/<model>`, Anthropic's left out.
+      if (profileId === undefined && agent === "opencode")
+        return {
+          models: [
+            {
+              id: "openai/gpt-5.5",
+              displayName: "GPT-5.5",
+              supportsEffort: true,
+              efforts: ["low", "medium", "high"],
+              isDefault: true,
+            },
+            { id: "openrouter/moonshotai/kimi-k2", displayName: "Kimi K2", supportsEffort: false },
+            { id: "openrouter/z-ai/glm-4.6", displayName: "GLM 4.6", supportsEffort: false },
+          ],
+        };
       if (profileId === undefined)
         return {
           models: [
