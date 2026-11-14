@@ -467,13 +467,13 @@ const steps: readonly Shot[] = [
   {
     name: "stress-orchestrator-failing",
     title:
-      "Stress test: failures first, the orchestrator's chat leads with a stopped worker and red CI",
+      "Stress test: failures first, the orchestrator's chat leads with a stopped worker, never a worker's red CI",
     open: async (page) => {
       await page.goto("/t/t-flaky");
       await threadRow(page, "t-flaky").waitFor();
       const made = await page.evaluate(() => window.gramMock!.simulateFailures());
       await openOrchestrator(page, made.orchestratorThreadId);
-      await expect(page.getByTestId("board-failure")).toHaveCount(2);
+      await expect(page.getByTestId("board-failure")).toHaveCount(1);
     },
   },
   {

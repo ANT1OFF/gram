@@ -1,30 +1,21 @@
 import type { WorkerLedgerEntry, WorkerPr } from "./orchestration.ts";
 
 /** Facts that establish who will act on a failing check, independent of presentation. */
-export type CiFixWorker = Pick<WorkerLedgerEntry, "state" | "status" | "pendingRequests"> &
-  Partial<Pick<WorkerLedgerEntry, "quiet" | "reportStands" | "userIntervened">>;
+export type CiFixWorker = Pick<WorkerLedgerEntry, "state" | "status">;
 
 /**
- * A worker that can still act fixes its own failing checks: running, or at rest where its
- * orchestrator, a monitor or a wake can reach it. The user is the owner once it can't: archived,
- * stopped on an error or ended, blocked or asking, taken over by the user, or with a tool stalled.
+ * A live worker owns its PR's failing checks, whatever it is doing now: running, at rest, waiting
+ * on an approval, a question or a usage limit, stopped on an error, blocked, held by the user, or
+ * briefed and not yet started. It is notified of its checks and fixes them; when it can't, its own
+ * ask, report or error is what reaches the user, never the check. Only an archived worker or a
+ * closed thread (`ended`) owns nothing: such a PR is its orchestrator's to follow up, in its digest.
  */
 export const workerOwnsCiFix = (worker: CiFixWorker | undefined, pr: WorkerPr): boolean =>
   pr.state !== "merged" &&
   pr.state !== "closed" &&
   worker !== undefined &&
   worker.state !== "archived" &&
-  worker.state !== "error" &&
-  worker.status !== "error" &&
-  worker.status !== "ended" &&
-  worker.state !== "blocked" &&
-  worker.state !== "question" &&
-  worker.reportStands !== true &&
-  worker.userIntervened !== true &&
-  worker.pendingRequests.length === 0 &&
-  worker.status !== "needsInput" &&
-  worker.status !== "needsApproval" &&
-  worker.quiet?.kind !== "toolStalled";
+  worker.status !== "ended";
 
 export const ciFixPrKey = (pr: Pick<WorkerPr, "repo" | "number">): string =>
   `${pr.repo.toLowerCase()}#${pr.number}`;
@@ -39,7 +30,7 @@ export const ledgerPrsOf = (
     ...(worker.alsoIn ?? []).flatMap((repo) => [repo.pr, ...(repo.morePrs ?? [])]),
   ].filter((pr) => pr !== undefined);
 
-/** One active owner is enough when several workers follow the same PR. */
+/** One live owner is enough when several workers follow the same PR. */
 export const ciFixOwnedPrs = (workers: Iterable<WorkerLedgerEntry>): ReadonlySet<string> =>
   new Set(
     [...workers].flatMap((worker) =>

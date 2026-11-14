@@ -861,7 +861,7 @@ describe("workspace tree", () => {
     expect(orchestratorRowTitle("Release train")).toBe("Release train");
   });
 
-  it("lifts a tree to Needs you for what waits on the orchestrator, not for its checkout's PR", () => {
+  it("lifts a tree to Needs you for what waits on the orchestrator, not for a PR's red build", () => {
     useAttentionStore.setState({ loaded: true, acknowledged: {} });
     const red = {
       repo: true,
@@ -878,8 +878,9 @@ describe("workspace tree", () => {
     } as GitState;
     const [own] = workspaceTrees([workspace], [{ ...orchestrator, git: red }, c]);
     expect(rollupOf(treeThreads(own!))).toBe("idle");
+    // A worker's red build is its own to fix, or its orchestrator's: never the tree's need.
     const [under] = workspaceTrees([workspace], [orchestrator, { ...c, git: red }]);
-    expect(rollupOf(treeThreads(under!))).toBe("needsYou");
+    expect(rollupOf(treeThreads(under!))).toBe("idle");
     const asking = thread("t-orch", "needsApproval", { role: "orchestrator" }, [push("r-o")]);
     const [waiting] = workspaceTrees([workspace], [{ ...asking, git: red }, c]);
     expect(rollupOf(treeThreads(waiting!))).toBe("needsYou");

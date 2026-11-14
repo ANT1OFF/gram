@@ -101,14 +101,15 @@ for (const mode of ["light", "dark"] as const) {
       await sidebar.screenshot({ path: test.info().outputPath(`${mode}-${width}.png`) });
     }
 
-    // A short title leaves the room: at a wide pane the failing PR's chip is after it, saying so.
+    // A short title leaves the room: at a wide pane the failing PR's chip is after it, saying its
+    // live worker is fixing the checks (`workerOwnsCiFix`), not alarming.
     await resizePane(page, 380);
     await page.evaluate(
       (threadId) => window.gramMock!.rename(threadId as never, "Nav fix"),
       made.working,
     );
     await expect(working.getByTestId("overview-worker-title")).toHaveText("Nav fix");
-    await expect(failingPr.locator('[data-checks="failing"]')).toBeVisible();
+    await expect(failingPr.locator('[data-checks="fixing"]')).toBeVisible();
     await page.evaluate(
       (threadId) =>
         window.gramMock!.rename(

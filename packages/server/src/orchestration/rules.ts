@@ -11,6 +11,10 @@ import { dreamSupportFor, type OutwardGate, type ToolAudience } from "@gram/agen
 import {
   browserScope,
   type BrowserScope,
+  checksOf,
+  ciFixOwnedPrs,
+  ciFixPrKey,
+  ledgerPrsOf,
   browserUseAllowed,
   codexSurfaces,
   type CodexSurfaces,
@@ -1160,7 +1164,25 @@ interface WorkerSnapshot {
   readonly quietKey?: string | undefined;
   /** Its worktree was gone, so the digest that said so isn't repeated. */
   readonly worktreeMissing?: true | undefined;
+  /** Its open PRs with failing checks (`ciFixPrKey`), so they can be named once it has gone. */
+  readonly failing?: ReadonlyArray<string> | undefined;
+  /** Those no live worker owned, already told, so the note isn't repeated. */
+  readonly orphaned?: ReadonlyArray<string> | undefined;
 }
+
+/** A worker's open PRs whose checks fail, by `ciFixPrKey`, sorted. */
+const failingPrKeys = (worker: FeatureLedgerEntry["workers"][number]): ReadonlyArray<string> =>
+  ledgerPrsOf(worker)
+    .filter((pr) => pr.state === "open" && checksOf(pr.checks) === "failing")
+    .map(ciFixPrKey)
+    .toSorted();
+
+/**
+ * A failing PR no live worker owns (`workerOwnsCiFix`), as a digest note the orchestrator acts on:
+ * the user hears of a failing check only when an agent asks them.
+ */
+const orphanedChecksNote = (feature: string, pr: string, why: string): string =>
+  `Feature ${feature}: ${pr} has failing checks and no live worker owns them (${why}). Follow it up: brief or spawn a worker to fix them, or close the PR; ask the user only if a fix needs them.`;
 
 /** Report timestamps do not turn unchanged worker-authored evidence into news. */
 const reportEvidenceKey = (
@@ -1418,6 +1440,8 @@ export const digestDiff = (input: {
   const notes: Array<string> = [];
   const next: Record<string, WorkerSnapshot> = {};
   let loud = false;
+  // A failing PR is its live worker's to fix; one none owns is the orchestrator's, told once.
+  const ownedCi = ciFixOwnedPrs(ledger.features.flatMap((feature) => feature.workers));
 
   for (const feature of ledger.features) {
     const quietFeature = held(feature.feature);
@@ -1444,6 +1468,27 @@ export const digestDiff = (input: {
         ...(quietKey === undefined ? {} : { quietKey }),
         ...(worker.worktreeMissing === true ? { worktreeMissing: true as const } : {}),
       };
+      const failing = failingPrKeys(worker);
+      // A live worker's own failing PRs are in `ownedCi`; what's left has no live owner.
+      const orphaned = failing.filter((key) => !ownedCi.has(key));
+      if (failing.length > 0) next[worker.threadId] = { ...next[worker.threadId]!, failing };
+      if (orphaned.length > 0) next[worker.threadId] = { ...next[worker.threadId]!, orphaned };
+      // Told as it loses its owner: an archived worker's PR facts are no longer refreshed, so one
+      // archived before the last digest, or first seen archived, has nothing new to say.
+      for (const key of orphaned) {
+        if (before === undefined || before.state === "archived") continue;
+        if (before.orphaned?.includes(key) === true) continue;
+        notes.push(
+          orphanedChecksNote(
+            worker.feature,
+            key,
+            worker.state === "archived"
+              ? `its worker ${label(worker.title)} is archived`
+              : `the thread of its worker ${label(worker.title)} is closed`,
+          ),
+        );
+        loud ||= !quietFeature;
+      }
       // Parking is housekeeping, even when stale quiet, interface or worktree flags remain.
       if (worker.state === "archived") continue;
       const named = { threadId: worker.threadId, feature: worker.feature, title: worker.title };
@@ -1539,6 +1584,16 @@ export const digestDiff = (input: {
       note: "no longer your worker: it was detached or closed",
     });
     loud ||= !held(before.feature);
+    for (const key of before.failing ?? []) {
+      if (ownedCi.has(key) || before.orphaned?.includes(key) === true) continue;
+      notes.push(
+        orphanedChecksNote(
+          before.feature,
+          key,
+          `its worker ${label(before.title)} was detached or closed`,
+        ),
+      );
+    }
   }
 
   const previousFeatures = snapshotStates(snapshot);

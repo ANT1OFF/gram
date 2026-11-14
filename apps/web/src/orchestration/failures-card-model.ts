@@ -51,10 +51,12 @@ export const failureRow = (
 ): FailureRow => {
   const { failure } = item;
   if (failure.kind === "checks") {
-    const pr = failure.pr;
+    // Only a thread of the user's own has one (`threadNeedsItems`): a worker's checks are its own
+    // to fix, or its orchestrator's. Its PR's attention stands only while its agent is at rest
+    // (`attentionOf`), so nothing is at work on them until the user asks it.
     return {
       cause: "Checks failing",
-      detail: pr === undefined ? "No agent is fixing it." : `In ${pr.repo}. No agent is fixing it.`,
+      detail: "Its agent is at rest; ask it to fix them.",
       step: { kind: "checks", label: "Open failing check" },
     };
   }

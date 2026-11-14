@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { workerOwnsCiFix, type CiFixWorker } from "./ci-fix-ownership.ts";
 import type { WorkerPr } from "./orchestration.ts";
 
-const worker: CiFixWorker = { state: "inReview", status: "idle", pendingRequests: [] };
+const worker: CiFixWorker = { state: "inReview", status: "idle" };
 const pr: WorkerPr = {
   repo: "example/api",
   number: 212,
@@ -20,8 +20,6 @@ describe("CI fix ownership", () => {
     expect(workerOwnsCiFix({ ...worker, status: "cold" }, bare)).toBe(true);
     expect(workerOwnsCiFix({ ...worker, status: "running" }, bare)).toBe(true);
     expect(workerOwnsCiFix(worker, { ...bare, mergeWhenReady: {} })).toBe(true);
-    // A turn that ended without a report is its orchestrator's to follow up, not the user's.
-    expect(workerOwnsCiFix({ ...worker, quiet: { kind: "turnEnded", at: 1 } }, bare)).toBe(true);
   });
 
   it("is nobody's once the PR is merged or closed", () => {
@@ -29,26 +27,30 @@ describe("CI fix ownership", () => {
     expect(workerOwnsCiFix(worker, { ...pr, state: "closed" })).toBe(false);
   });
 
+  // A live worker is told of its checks and fixes them; when it can't, its own ask, report or
+  // error is what reaches the user, never the check.
   it.each([
-    { state: "error" },
-    { state: "archived" },
-    { status: "ended" },
-    { status: "error" },
-    { state: "blocked" },
-    { state: "question" },
-    { reportStands: true },
-    { userIntervened: true },
+    { status: "running" },
+    { status: "starting" },
+    { status: "idle" },
+    { status: "cold" },
+    { state: "briefed", status: "cold" },
     { status: "needsApproval" },
     { status: "needsInput" },
-    { pendingRequests: [{ kind: "approval", ageMin: 0 }] },
-    { quiet: { kind: "toolStalled", at: 1 } },
-  ] satisfies Partial<CiFixWorker>[])("escalates a failed follow-up: %j", (over) => {
-    expect(workerOwnsCiFix({ ...worker, ...over }, pr)).toBe(false);
+    { state: "needsUser", status: "needsApproval" },
+    { state: "question" },
+    { state: "blocked" },
+    { state: "error", status: "error" },
+    { state: "readyToMerge" },
+    { state: "done" },
+  ] satisfies Partial<CiFixWorker>[])("stays with a live worker: %j", (over) => {
+    expect(workerOwnsCiFix({ ...worker, ...over }, pr)).toBe(true);
   });
 
-  it("keeps a stalled tool the user's, running or not", () => {
-    expect(
-      workerOwnsCiFix({ ...worker, status: "running", quiet: { kind: "toolStalled", at: 1 } }, pr),
-    ).toBe(false);
-  });
+  it.each([{ state: "archived" }, { status: "ended" }] satisfies Partial<CiFixWorker>[])(
+    "has no owner once the worker is gone: %j",
+    (over) => {
+      expect(workerOwnsCiFix({ ...worker, ...over }, pr)).toBe(false);
+    },
+  );
 });
