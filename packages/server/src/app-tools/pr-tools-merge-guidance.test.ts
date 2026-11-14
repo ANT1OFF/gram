@@ -1,9 +1,11 @@
 // merge_when_ready at full autonomy: what the agent can fix itself is refused to it with the fix,
 // never put to the user; dropping an intent and a merged PR need neither ownership nor a card.
 import { describe, expect, it } from "@effect/vitest";
+import { HostId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { hasGit, run } from "../git/test-repo.ts";
+import { cloneIdentityOf } from "../host/repos.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import {
@@ -123,6 +125,115 @@ describe("merge_when_ready guidance at full autonomy", () => {
               expect((yield* Fiber.join(call)).message).toContain(
                 "Leave it to the thread that holds it",
               );
+              expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
+            }),
+          );
+        }).pipe(Effect.scoped),
+    );
+  }
+
+  for (const origin of [
+    "https://github.com/acme/app.git",
+    "https://github.com/elsewhere/other.git",
+  ] as const) {
+    const same = origin.includes("acme/app");
+    it.effect.skipIf(!hasGit)(
+      same
+        ? "a branch a live worker holds on another machine stays that worker's"
+        : "the same branch name in another repository on another machine claims nothing",
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          const machine = HostId.make("m-0123456789abcdef01234567");
+          const remoteBranch = "feat/remote-held";
+          const remoteRoot = "/synthetic/clone";
+          const remotePath = "/synthetic/worktree";
+          world.joinedMachine = {
+            id: machine,
+            online: true,
+            worktrees: new Map([[remotePath, { clone: remoteRoot, origin, branch: remoteBranch }]]),
+          };
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const store = yield* ThreadStore;
+              const runtimes = yield* ThreadRuntimes;
+              const registry = yield* AppToolRegistry;
+              const { session, thread } = yield* openOrchestrator(world);
+              const worker = yield* spawn(session, { feature: "local-adopter" });
+              const sibling = yield* spawn(session, { feature: "remote-holder" });
+              yield* completeTurn(worker.session);
+              yield* completeTurn(sibling.session);
+              yield* atAutonomy(thread, "full");
+              // The sibling only follows the PR, and holds its branch in its worktree there.
+              yield* runtimes.updateThread(sibling.thread.id, (t) => ({
+                ...t,
+                extraPrs: [{ repo: "acme/app", number: 21, monitor: true }],
+                checkout: {
+                  kind: "worktree" as const,
+                  path: remotePath,
+                  repoRoot: remoteRoot,
+                  branch: remoteBranch,
+                  hostId: machine,
+                  cloneIdentity: cloneIdentityOf(origin)!,
+                },
+              }));
+              world.prHeads.set(21, { headRefName: remoteBranch });
+              run(worker.thread.checkout.path, "switch", "-q", "-c", remoteBranch);
+              const merge = registry
+                .forTransport(worker.thread.id, "worker")
+                .find((t) => t.descriptor.name === "merge_when_ready")!;
+              expect(yield* merge.delegatedAtFullAutonomy!({ pr: 21 })).toBe(!same);
+              if (!same) return;
+              const call = yield* Effect.forkScoped(merge.run({ pr: 21 }).pipe(Effect.flip));
+              const card = yield* waitReal(
+                "the approval card",
+                store.listRequests(worker.thread.id).pipe(Effect.map((all) => all[0])),
+              );
+              if (card.kind !== "approval") throw new Error("not an approval");
+              expect(card.autonomyNote).toContain("another thread has it as its pull request");
+              yield* runtimes.respond(worker.thread.id, card.id, {
+                kind: "approval",
+                decision: "deny",
+                scope: "once",
+              });
+              yield* Fiber.join(call);
+              expect(
+                (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
+              ).toBeUndefined();
+            }),
+          );
+        }).pipe(Effect.scoped),
+    );
+  }
+
+  for (const state of ["MERGED", "CLOSED"] as const) {
+    it.effect.skipIf(!hasGit)(
+      `set_auto_merge refuses an unbound ${state.toLowerCase()} PR without a card`,
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const store = yield* ThreadStore;
+              const registry = yield* AppToolRegistry;
+              const { session, thread } = yield* openOrchestrator(world);
+              const worker = yield* spawn(session, { feature: "ended-unbound" });
+              yield* completeTurn(worker.session);
+              yield* atAutonomy(thread, "full", { mergeReviewPolicy: "bot" });
+              world.prHeads.set(21, { headRefName: worker.thread.checkout.branch!, state });
+              yield* publishGit(world, worker.thread, {
+                pr: badge({ number: 21, url: "https://github.com/acme/app/pull/21", state }),
+              });
+              const tool = registry
+                .forTransport(worker.thread.id, "worker")
+                .find((t) => t.descriptor.name === "set_auto_merge")!;
+              const refused = yield* tool.run({ number: 21 }).pipe(Effect.flip);
+              expect(refused.message).toBe(
+                `acme/app#21 is ${state.toLowerCase()}, so there is nothing to merge; check it with pr_status. Nobody was asked.`,
+              );
+              expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
               expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
             }),
           );

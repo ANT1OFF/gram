@@ -981,7 +981,10 @@ export const MergeWhenReadyLive = Layer.effect(
                           bound.repo,
                           bound.number,
                           owned.at,
-                        ).pipe(Effect.provideService(ThreadStore, store)))
+                        ).pipe(
+                          Effect.provideService(ThreadStore, store),
+                          Effect.provideService(Proc, proc),
+                        ))
                       )
                         return undefined;
                     }

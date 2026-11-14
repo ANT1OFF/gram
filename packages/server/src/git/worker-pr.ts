@@ -317,17 +317,30 @@ const machineConfirms = (
         Effect.orElseSucceed(() => false),
       );
 
-/** A checkout's repository folder, resolved where it is on this machine. */
-const rootOf = (checkout: Pick<Checkout, "path" | "repoRoot" | "hostId">) =>
-  isLocalHost(checkout)
-    ? canonical(checkout.repoRoot ?? checkout.path)
-    : Effect.succeed(checkout.repoRoot ?? checkout.path);
+/**
+ * Whether `checkout`, a folder of another thread's, is a clone of `repo`, by what this machine can
+ * trust: here, its origin; on another machine, the identity of the origin Gram recorded as it made
+ * it there, matched to a project's origin here (`projectOfClone`), never the path that machine
+ * reports. A doubt is a yes, so a branch it may hold still counts as held.
+ */
+const holdsRepo = (checkout: Checkout, repo: string, projects: ReadonlyArray<Project>) =>
+  Effect.gen(function* () {
+    if (isLocalHost(checkout)) {
+      const at = (yield* folderExists(checkout.path)) ? checkout.path : checkout.repoRoot;
+      if (at === undefined) return true;
+      const origin = yield* originOwnerRepo(at);
+      return origin === undefined || sameRepo(origin, repo);
+    }
+    if (checkout.cloneIdentity === undefined) return true;
+    return (yield* projectOfClone(checkout, projects, repo)) !== undefined;
+  }).pipe(Effect.orElseSucceed(() => true));
 
 /**
  * Whether another live (unarchived) thread claims `repo#number`: it is that thread's main PR, or
- * its branch is checked out, or recorded as observed, in a folder that thread holds in the same
- * repository as `where`. Checking the branch out here doesn't take it from that thread. A folder
- * that is `where` itself is the worker's own, whoever else sits in it.
+ * its branch is checked out, or recorded as observed, in a folder that thread holds of the same
+ * repository, on any machine and in any clone. Checking the branch out here doesn't take it from
+ * that thread. A folder that is `where` itself is the worker's own, whoever else sits in it.
+ * Following a PR (`extraPrs`) alone claims nothing.
  */
 const claimedByAnother = (
   thread: Thread,
@@ -338,22 +351,24 @@ const claimedByAnother = (
 ) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore;
-    const root = yield* rootOf(where);
+    const projects = yield* store.listProjects;
     for (const other of yield* store.listThreads) {
       if (other.id === thread.id || other.parked) continue;
       const bound = other.boundPr;
       if (bound !== undefined && sameRepo(bound.repo, repo) && bound.number === number) return true;
       for (const checkout of [other.checkout, ...(other.extraCheckouts ?? [])]) {
-        if (sameCheckout(checkout, where) || hostOf(checkout) !== hostOf(where)) continue;
-        if ((yield* rootOf(checkout)) !== root) continue;
-        if (checkout.branch === branch) return true;
-        if (
-          isLocalHost(checkout) &&
-          (other.ownedBranches ?? []).some(
-            (owned) => samePath(owned.path, checkout.path) && owned.branch === branch,
-          )
-        )
-          return true;
+        if (sameCheckout(checkout, where)) continue;
+        // On another machine only the branch Gram recorded for the folder there counts.
+        const holds =
+          checkout.branch === branch ||
+          (isLocalHost(checkout) &&
+            (other.ownedBranches ?? []).some(
+              (owned) =>
+                samePath(owned.path, checkout.path) &&
+                (owned.hostId === undefined || owned.hostId === LOCAL_HOST_ID) &&
+                owned.branch === branch,
+            ));
+        if (holds && (yield* holdsRepo(checkout, repo, projects))) return true;
       }
     }
     return false;
@@ -513,8 +528,8 @@ export const workerPrIdentity = (
 
 /**
  * Whether another thread claims the PR the worker owns as `owned` (`workerPrOwnership`'s answer):
- * the store's view only, no git or GitHub read, for a recheck after a provider read. A doubt is a
- * claim.
+ * the store's threads and local origins, no GitHub read, for a recheck after a provider read. A
+ * doubt is a claim.
  */
 export const ownedPrClaimedElsewhere = (
   thread: Thread,

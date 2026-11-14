@@ -597,17 +597,22 @@ export const PrAppToolsLive = Layer.effectDiscard(
                 }),
           } satisfies MergeTarget;
         }),
+      // A merged or closed PR is refused whichever PR it is; the checkout guidance stays for a
+      // worker's bound PR, as the delegation does.
       refuseInsteadOfAsking: (caller, { thread, enabled, number, repo }) =>
-        thread.id === caller && thread.boundPr?.number !== number
-          ? Effect.succeed(undefined)
-          : refusalForAgent(
-              caller,
-              thread,
-              { repo, number },
-              "set_auto_merge",
-              enabled ? "merges it" : "turns its auto-merge off",
-              true,
-            ),
+        Effect.gen(function* () {
+          const ended = yield* endedFromBadges(thread, { repo, number });
+          if (ended !== undefined) return ended;
+          if (thread.id === caller && thread.boundPr?.number !== number) return undefined;
+          return yield* refusalForAgent(
+            caller,
+            thread,
+            { repo, number },
+            "set_auto_merge",
+            enabled ? "merges it" : "turns its auto-merge off",
+            false,
+          );
+        }),
       whyAsked: (caller, { thread, enabled, number, repo }) =>
         Effect.gen(function* () {
           // As the gate: a worker's exception is for its bound PR alone.

@@ -23,6 +23,7 @@ describe("ownership blockers", () => {
       "Gram couldn't read the worker's worktree or the pull request on GitHub",
       "the machine the worker runs on didn't confirm that the worktree Gram made there still has its branch and its repository",
       "the worktree Gram made on the worker's machine is older than Gram's record of which repository it cloned there",
+      "another thread has it as its pull request, or holds its branch in a worktree of its own, so it is that thread's work even where the worker has the branch checked out",
     ]);
     for (const blocker of Object.values(OWNERSHIP_BLOCKERS))
       expect(explainOwnershipBlocker(blocker).fix).toMatch(/\.$/);
