@@ -102,10 +102,19 @@ export const GatewayModel = Schema.Struct({
 });
 export type GatewayModel = typeof GatewayModel.Type;
 
+/**
+ * A gateway with its own conventions beyond the OpenAI-style `/models`: `openrouter` serves every
+ * maker's models under `<maker>/<model>` ids, so each agent is offered only its maker's.
+ */
+export const GatewayKind = Schema.Literals(["openrouter"]);
+export type GatewayKind = typeof GatewayKind.Type;
+
 export const GatewayProfile = Schema.Struct({
   id: ProfileId,
   name: Schema.String,
   baseURL: Schema.String,
+  /** Absent: a LiteLLM-style gateway, every model offered to every agent. */
+  kind: Schema.optionalKey(GatewayKind),
   /**
    * Reference to the stored key (Electron `safeStorage`); never the key itself. Server-owned: `""`
    * until `profiles.setKey` stores a key, then `profile:<id>`. A client-supplied value is ignored on
@@ -168,6 +177,25 @@ export const gatewayModelUsable = (model: GatewayModel): boolean => {
   if (info.mode !== undefined && !CONVERSATION_MODES.has(info.mode)) return false;
   return info.deprecated !== true && info.restricted !== true && info.tools !== false;
 };
+
+/** OpenRouter's OpenAI-style root: Codex appends `/responses`, Claude Code drops `/v1`. */
+export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+
+/** The maker whose models each agent runs on an `openrouter` gateway; the others it runs poorly. */
+const OPENROUTER_MAKERS: Readonly<Record<AgentKind, string>> = {
+  claude: "anthropic/",
+  codex: "openai/",
+};
+
+/**
+ * Whether `agent` is offered `model` on `profile`: always on a LiteLLM-style gateway, only its
+ * own maker's models on OpenRouter.
+ */
+export const gatewayModelForAgent = (
+  profile: Pick<GatewayProfile, "kind">,
+  model: Pick<GatewayModel, "id">,
+  agent: AgentKind,
+): boolean => profile.kind !== "openrouter" || model.id.startsWith(OPENROUTER_MAKERS[agent]);
 
 /** A synthetic gateway profile on a reserved host, for tests and examples. */
 export const EXAMPLE_GATEWAY = {
