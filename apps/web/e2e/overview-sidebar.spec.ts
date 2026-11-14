@@ -1025,8 +1025,13 @@ test("resting on the strip opens the sidebar over the page; a row in it opens, l
   await expect(overlay(page)).toBeVisible();
   await expect(overlay(page).getByTestId("overview-sidebar")).toHaveAttribute("data-overlay", "");
   // Beside the strip, over the page: the strip stays as it is.
-  const over = (await overlay(page).boundingBox())!;
-  expect(Math.abs(over.x - (box.x + box.width))).toBeLessThanOrEqual(1);
+  // The overlay is visible during its slide; check its position once it reaches the strip's edge.
+  await expect
+    .poll(async () => {
+      const over = (await overlay(page).boundingBox())!;
+      return Math.abs(over.x - (box.x + box.width));
+    })
+    .toBeLessThanOrEqual(1);
   await expect(rail(page)).toBeVisible();
   // The tiles' names keep away while the sidebar says them in full.
   await expect(page.getByRole("tooltip")).toHaveCount(0);
