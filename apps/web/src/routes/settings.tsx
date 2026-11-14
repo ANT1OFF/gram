@@ -104,7 +104,7 @@ function SettingsLayout() {
 
   return (
     <div className="@container/settings flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex min-h-0 flex-1 overflow-hidden @max-2xl/settings:flex-col">
+      <div className="flex min-h-0 flex-1 overflow-hidden @max-2xl/settings:flex-col!">
         <SettingsNav
           groups={SETTINGS_GROUPS}
           current={current === undefined ? undefined : current.group}
@@ -153,7 +153,7 @@ function SettingsLayout() {
               // Beside the nav and leaning into the room past it (`settings-column`), so the eye
               // crosses no blank band between a page's name and its first control, and a wide
               // window keeps no dead half to the page's right.
-              "settings-column flex flex-col gap-10 px-8 py-6 @max-2xl/settings:gap-8 @max-2xl/settings:p-4",
+              "settings-column flex flex-col gap-10 px-8 py-6 @max-2xl/settings:gap-8! @max-2xl/settings:p-4!",
               current?.wide &&
                 !searching &&
                 "[--settings-column-width:var(--settings-column-wide)]",

@@ -294,8 +294,11 @@ export function ExpandableError({ message }: { message: string }) {
  */
 export const SEGMENT_TRACK = "isolate flex gap-0.5 rounded-lg bg-accent p-0.5";
 
-/** A row of choices, framed as one control; right-aligned when it wraps on a `SettingRow`. */
-export const OPTION_GROUP = `${SEGMENT_TRACK} flex-wrap @min-[32rem]/row:justify-end`;
+/**
+ * A row of choices, framed as one control; right-aligned when it wraps on a `SettingRow`. As wide
+ * as its choices: under a field's name the track otherwise ran the card's width, mostly empty.
+ */
+export const OPTION_GROUP = `${SEGMENT_TRACK} w-fit max-w-full flex-wrap @min-[32rem]/row:justify-end`;
 
 /**
  * A ghost Button as one segment of a row whose selection is a sliding `SegmentSlab`: unselected
