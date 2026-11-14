@@ -835,9 +835,14 @@ export interface OrchestrationShape {
     tool: string,
     questionIds: ReadonlyArray<string>,
   ): Effect.Effect<ReadonlyArray<WorkerQuestion>, AppToolError>;
-  /** `workerQuestion.answer`: the user's answer, to the worker now and to the orchestrator's next digest. */
+  /**
+   * `workerQuestion.answer`: the user's answer, to the worker now and to the orchestrator's next
+   * digest. A repeat of an answer the user already gave is taken as that answer, unless
+   * `onlyIfOpen`: then it is refused, so the caller knows its answer is the one that closed it.
+   */
   answerQuestionAsUser(
     input: AnswerWorkerQuestionInput,
+    options?: { readonly onlyIfOpen?: boolean },
   ): Effect.Effect<WorkerQuestion, NotFound | InvalidState | ThreadNotFound | AgentUnavailable>;
   /** `workerQuestion.dismiss`: the user's dismissal, told to the worker and to the next digest. */
   dismissQuestionAsUser(

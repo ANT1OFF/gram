@@ -112,13 +112,15 @@ const fakeDeps = (found: WorkerQuestion | undefined, reach = true, fails?: strin
     noteAnswer: (id, note) => Effect.sync(() => void notes.push([id, note])),
     workerQuestions: {
       find: () => Effect.succeed(found),
-      answer: (input) =>
-        fails === undefined
-          ? Effect.sync(() => {
-              answered.push(input);
-              return question({ stage: "answered", closedBy: "user", answer: input.answer });
-            })
-          : Effect.fail({ _tag: "InvalidState", message: fails }),
+      answer: (input, options) =>
+        options.onlyIfOpen !== true
+          ? Effect.die("an ask's answer must be the one that closes it")
+          : fails === undefined
+            ? Effect.sync(() => {
+                answered.push(input);
+                return question({ stage: "answered", closedBy: "user", answer: input.answer });
+              })
+            : Effect.fail({ _tag: "InvalidState", message: fails }),
       mayReach: () => Effect.succeed(reach),
     },
   };
@@ -182,6 +184,67 @@ describe("answering a worker question's ask", () => {
         });
         expect(closed.notes.at(-1)).toEqual(["wq:ws-1:WQ7", undefined]);
       }),
+  );
+
+  it.effect("refuses one answered already, and never notes it as the person's", () =>
+    Effect.gen(function* () {
+      const done = fakeDeps(question({ stage: "answered", closedBy: "user", answer: "404" }));
+      expect(
+        (yield* answerWorkerQuestion(done.deps, asked, threadId, answer, "bob", proof))?.status,
+      ).toBe(409);
+      expect(done.answered).toEqual([]);
+      expect(done.notes).toEqual([]);
+      const triage = fakeDeps(question({ stage: "triage" }));
+      expect(
+        (yield* answerWorkerQuestion(triage.deps, asked, threadId, answer, "bob", proof))?.status,
+      ).toBe(409);
+      expect(triage.notes).toEqual([]);
+    }),
+  );
+
+  it.live("takes one of two answers at once, and keeps only its person's note", () =>
+    Effect.gen(function* () {
+      let current = question();
+      const notes = new Map<string, AnswerNote>();
+      const answered: Array<string> = [];
+      const deps: AskAnswerDeps = {
+        runtimes: { respond: () => Effect.die("not a harness ask") },
+        store: { appendActorEvents: () => Effect.succeed(0) },
+        noteAnswer: (id, note) =>
+          Effect.sync(() => void (note === undefined ? notes.delete(id) : notes.set(id, note))),
+        workerQuestions: {
+          find: () => Effect.sync(() => current),
+          answer: (input) =>
+            Effect.gen(function* () {
+              yield* Effect.sleep("5 millis");
+              if (current.stage !== "forwarded")
+                return yield* Effect.fail({ _tag: "InvalidState", message: "closed" });
+              answered.push(input.answer);
+              current = question({ stage: "answered", closedBy: "user", answer: input.answer });
+              return current;
+            }),
+          mayReach: () => Effect.succeed(true),
+        },
+      };
+      const [first, second] = yield* Effect.all(
+        [
+          answerWorkerQuestion(deps, asked, threadId, answer, "ada", proof),
+          answerWorkerQuestion(
+            deps,
+            asked,
+            threadId,
+            { kind: "question", answers: { [current.question]: ["404"] } },
+            "bob",
+            proof,
+          ),
+        ],
+        { concurrency: 2 },
+      );
+      expect(first).toBeUndefined();
+      expect(second?.status).toBe(409);
+      expect(answered).toEqual(["410"]);
+      expect(notes.get("wq:ws-1:WQ7")?.answeredBy).toBe("ada");
+    }),
   );
 });
 
