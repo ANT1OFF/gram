@@ -124,8 +124,10 @@ export const durableSqliteLayer = (
       const acquire = Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const scope = yield* Effect.scope;
-          yield* restore(gate.take(1));
-          yield* Scope.addFinalizer(scope, closePoisoned.pipe(Effect.ensuring(gate.release(1))));
+          // Held until the scope closes. The finalizer added after it runs first, so a poisoned
+          // connection is closed while the gate is still held.
+          yield* restore(gate.takeScoped(1));
+          yield* Scope.addFinalizer(scope, closePoisoned);
           return (yield* available).connection;
         }),
       );
