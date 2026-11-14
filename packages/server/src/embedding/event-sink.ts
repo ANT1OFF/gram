@@ -28,6 +28,7 @@ import {
   type SinkEventType,
   type Thread,
   type ThreadId,
+  type WorkerQuestion,
   type WorkspaceId,
 } from "@gram/contracts";
 import * as Cause from "effect/Cause";
@@ -47,8 +48,23 @@ import { join } from "node:path";
 import { ENDPOINT_UNUSABLE, type EndpointConfig, ServerConfig } from "../config.ts";
 import { EventHub, isOwnEvent, type OwnEvent } from "../events/event-hub.ts";
 import { type StoredMessage, ThreadStore } from "../persistence/thread-store.ts";
+import { readOutbox as readStoredOutbox } from "../orchestration/outbox.ts";
+import { publicQuestion, questionsOf } from "../orchestration/worker-questions.ts";
+import {
+  ASK_OPTION_DESCRIPTION_MAX_CHARS,
+  ASK_OPTION_LABEL_MAX_CHARS,
+  ASK_OPTIONS_MAX,
+  ASK_QUESTION_MAX_CHARS,
+  ASK_QUESTIONS_MAX,
+} from "./ask-limits.ts";
 import { postJson } from "./endpoint.ts";
 import { messageEvent } from "./message-event.ts";
+import {
+  isUsersQuestion,
+  workerQuestionAsk,
+  workerQuestionAskId,
+  workerQuestionHow,
+} from "./worker-question-asks.ts";
 import { openOutbox, type Outbox, type SinkEventInput } from "./outbox.ts";
 
 /** An event as server code records it: the sink adds when, and the outbox its number. */
@@ -108,6 +124,13 @@ export interface EventSinkOptions {
   readonly threads: Effect.Effect<ReadonlyArray<Thread>>;
   /** The ids of the cards open now, for a `sink.started` that isn't the server's start. */
   readonly openAsks?: Effect.Effect<ReadonlyArray<string>>;
+  /**
+   * A workspace's worker questions, or every workspace's without one, for the asks of those that
+   * wait on the user (`worker-question-asks.ts`). Absent, none is sent.
+   */
+  readonly workerQuestions?: (
+    workspaceId?: WorkspaceId,
+  ) => Effect.Effect<ReadonlyArray<WorkerQuestion>>;
   /** The server's events to record; absent in a test that records by hand. */
   readonly events?: Stream.Stream<ServerEvent | OwnEvent>;
   /**
@@ -179,12 +202,12 @@ const askTitle = (request: PendingRequest): string => {
   return "Plan";
 };
 
-/** The most of a question ask `ask.opened` carries; past any of these it carries none of it. */
-export const ASK_QUESTIONS_MAX = 8;
-export const ASK_QUESTION_MAX_CHARS = 4000;
-export const ASK_OPTIONS_MAX = 20;
-export const ASK_OPTION_LABEL_MAX_CHARS = 200;
-const ASK_OPTION_DESCRIPTION_MAX_CHARS = 2000;
+export {
+  ASK_OPTION_LABEL_MAX_CHARS,
+  ASK_OPTIONS_MAX,
+  ASK_QUESTION_MAX_CHARS,
+  ASK_QUESTIONS_MAX,
+} from "./ask-limits.ts";
 /** The most of a plan `ask.opened` carries; a longer plan is cut and marked `planTruncated`. */
 export const ASK_PLAN_MAX_CHARS = 50_000;
 
@@ -313,6 +336,89 @@ export const makeEventSink = (
         yield* Queue.offer(wake, true);
       });
 
+    /** The worker questions whose asks are open at the receiver, by ask id. */
+    const openQuestions = new Map<
+      string,
+      { readonly threadId: ThreadId; readonly workspaceId: WorkspaceId }
+    >();
+
+    /**
+     * The asks of `workspaceId`'s worker questions (every workspace's without one) that changed:
+     * opened for one now waiting on the user, resolved for one that waited and no longer does.
+     */
+    const questionEvents = (workspaceId?: WorkspaceId) =>
+      Effect.gen(function* () {
+        if (options.workerQuestions === undefined) return [];
+        const questions = yield* options.workerQuestions(workspaceId);
+        const events: Array<SinkRecord> = [];
+        const waiting = new Set<string>();
+        for (const question of questions) {
+          if (!isUsersQuestion(question)) continue;
+          const id = workerQuestionAskId(question.workspaceId, question.id);
+          waiting.add(id);
+          if (openQuestions.has(id)) continue;
+          openQuestions.set(id, { threadId: question.threadId, workspaceId: question.workspaceId });
+          events.push({
+            type: "ask.opened",
+            threadId: question.threadId,
+            workspaceId: question.workspaceId,
+            data: workerQuestionAsk(question),
+          });
+        }
+        const byId = new Map(
+          questions.map((question) => [
+            workerQuestionAskId(question.workspaceId, question.id),
+            question,
+          ]),
+        );
+        for (const [id, where] of openQuestions) {
+          if (waiting.has(id)) continue;
+          if (workspaceId !== undefined && where.workspaceId !== workspaceId) continue;
+          openQuestions.delete(id);
+          const closed = byId.get(id);
+          const how = closed === undefined ? "withdrawn" : workerQuestionHow(closed);
+          const answer = answerNotes.get(id);
+          answerNotes.delete(id);
+          const by = how === "answered" ? answer?.answeredBy : undefined;
+          events.push({
+            type: "ask.resolved",
+            threadId: where.threadId,
+            workspaceId: where.workspaceId,
+            ...(by === undefined ? {} : { actor: { kind: "person" as const, id: by } }),
+            data: {
+              id,
+              how,
+              ...(by === undefined ? {} : { answeredBy: by }),
+              ...(by === undefined || answer?.proof === undefined ? {} : { proof: answer.proof }),
+            },
+          });
+        }
+        return events;
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logError("event sink: worker questions could not be read", cause).pipe(
+            Effect.as([] as ReadonlyArray<SinkRecord>),
+          ),
+        ),
+      );
+
+    /** `sink.started`, then an `ask.opened` for each worker question waiting on the user. */
+    const opening = Effect.gen(function* () {
+      openQuestions.clear();
+      const asks = yield* questionEvents();
+      const first = yield* started;
+      return [
+        {
+          ...first,
+          data: {
+            ...first.data,
+            openAsks: [...first.data.openAsks, ...openQuestions.keys()],
+          },
+        },
+        ...asks,
+      ];
+    });
+
     const started = Effect.gen(function* () {
       const threads = yield* options.threads;
       for (const thread of threads) {
@@ -357,7 +463,7 @@ export const makeEventSink = (
             ),
           ),
         );
-        if (cleared) yield* append([yield* started]);
+        if (cleared) yield* append(yield* opening);
       });
 
     /** Whether the sink is on; turning on opens with a snapshot. */
@@ -370,7 +476,7 @@ export const makeEventSink = (
       const next = yield* options.on;
       if (next && !on) {
         on = true;
-        yield* write([yield* started]);
+        yield* write(yield* opening);
       }
       on = next;
       return on;
@@ -584,6 +690,7 @@ export const makeEventSink = (
             if (isOwnEvent(event)) return yield* recordMessages(event);
             yield* write(eventsOf(event));
             if (event.type === "orchestration.changed") {
+              yield* write(yield* questionEvents(event.workspaceId));
               movedWorkspaces.add(event.workspaceId);
               yield* Queue.offer(cardsWake, true);
             }
@@ -859,6 +966,26 @@ export class EventSink extends Context.Service<EventSink, EventSinkShape>()(
             ),
             Effect.map((lists) => lists.flat().map((request) => request.id)),
           ),
+          workerQuestions: (workspaceId) =>
+            Effect.gen(function* () {
+              const ids =
+                workspaceId === undefined
+                  ? (yield* store.listWorkspaces).map((state) => state.workspace.id)
+                  : [workspaceId];
+              const lists = yield* Effect.forEach(
+                ids,
+                (id) =>
+                  store
+                    .getOutbox(id)
+                    .pipe(
+                      Effect.map((row) =>
+                        questionsOf(readStoredOutbox(row).state).map(publicQuestion),
+                      ),
+                    ),
+                { concurrency: 4 },
+              );
+              return lists.flat();
+            }),
           // Messages are sent only where the deployment asked: otherwise the hub's word of them
           // is never queued here, and the sink records what it did before there was any.
           events:
