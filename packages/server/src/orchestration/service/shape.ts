@@ -27,6 +27,7 @@ import {
   type UserInput,
   type WorkerAnswer,
   type WorkerQuestion,
+  type WithdrawnHow,
   type AskQuestionInput,
   type AnswerWorkerQuestionInput,
   type DismissWorkerQuestionInput,
@@ -785,6 +786,26 @@ export interface OrchestrationShape {
   answerWorkerQuestion(
     callerId: ThreadId,
     input: { readonly questionId: string; readonly answer: string; readonly source: string },
+  ): Effect.Effect<WorkerQuestion, AppToolError>;
+  /**
+   * `ask_question` with `withdraw`: the worker closes its own open question without an answer,
+   * `superseded` by its newer one when `supersededBy` names it, `withdrawn` otherwise.
+   */
+  withdrawQuestion(
+    workerId: ThreadId,
+    input: {
+      readonly questionId: string;
+      readonly reason: string;
+      readonly supersededBy?: string | undefined;
+    },
+  ): Effect.Effect<WorkerQuestion, AppToolError>;
+  /**
+   * `close_question` on a `WQ` id: the orchestrator closes one of its workers' open questions, in
+   * triage or forwarded, without answering it; the worker is told.
+   */
+  closeWorkerQuestion(
+    callerId: ThreadId,
+    input: { readonly questionId: string; readonly how: WithdrawnHow; readonly reason: string },
   ): Effect.Effect<WorkerQuestion, AppToolError>;
   /**
    * The questions `questionIds` name, for `userAnswers` on `tool`: each one of the caller's

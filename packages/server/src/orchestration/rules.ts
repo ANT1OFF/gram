@@ -867,6 +867,7 @@ export type RefusalCode =
   | "unknown_question"
   | "closed"
   | "forwarded"
+  | "not_yours"
   | "unknown_machine"
   | "ambiguous_machine";
 

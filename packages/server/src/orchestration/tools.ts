@@ -1,6 +1,7 @@
 import {
   ANSWER_SOURCE_MAX,
   AppToolError,
+  DISMISS_REASON_MAX,
   askQuestion,
   BriefPriority,
   closeQuestion,
@@ -667,12 +668,14 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "ask_question",
         class: "self",
         description:
-          "Ask a decision you need, without waiting for it. Your orchestrator sees it first and answers it only when your brief, a standing decision or its memory settles it; otherwise it goes to the user as you wrote it. The answer, or the user dismissing it, reaches you as a message naming the question's id, mid-turn if you are running. Give `options` (2–4, each a short `label` and a `description`) when the answer is a choice, `multiSelect` when several may be picked, and `recommended`: the label you would pick, or with no options your own short recommendation. Put what the decision needs in `context`. Keep working on what doesn't depend on it; end your turn only if nothing can move without it. Not for approvals: those your tools ask for themselves." +
+          "Ask a decision you need, without waiting for it. Your orchestrator sees it first and answers it only when your brief, a standing decision or its memory settles it; otherwise it goes to the user as you wrote it. The answer, or the user dismissing it, reaches you as a message naming the question's id. Give `options` (2–4, each a short `label` and a `description`) when the answer is a choice, `multiSelect` when several may be picked, and `recommended`: the label you would pick, or with no options your own short recommendation. Put what the decision needs in `context`. Not for approvals: those your tools ask for themselves. To take back an open one, give its id as `withdraw` and a `reason`; with a new `question` too, that one supersedes it." +
           VISUALS_HELP,
       },
       audience: ["worker"],
       input: Schema.Struct({
-        question: Schema.NonEmptyString.check(Schema.isMaxLength(QUESTION_TEXT_MAX)),
+        question: Schema.optionalKey(
+          Schema.NonEmptyString.check(Schema.isMaxLength(QUESTION_TEXT_MAX)),
+        ),
         context: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(QUESTION_CONTEXT_MAX))),
         options: Schema.optionalKey(questionOptions),
         multiSelect: Schema.optionalKey(Schema.Boolean),
@@ -680,15 +683,48 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           Schema.String.check(Schema.isMaxLength(WORKER_RECOMMENDATION_MAX)),
         ),
         mock: Schema.optionalKey(Schema.String),
+        withdraw: Schema.optionalKey(Schema.NonEmptyString),
+        reason: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(DISMISS_REASON_MAX))),
       }),
       handle: (worker, input) =>
         Effect.gen(function* () {
-          const confined = yield* visualsFor("ask_question", worker, input);
+          const { withdraw, reason, question: words, ...rest } = input;
+          if (words === undefined) {
+            if (withdraw === undefined) {
+              return yield* new AppToolError({
+                tool: "ask_question",
+                message: "Give the `question`, or `withdraw` and a `reason` to take one back.",
+              });
+            }
+            const closed = yield* orchestration.withdrawQuestion(worker, {
+              questionId: withdraw,
+              reason: reason ?? "",
+            });
+            return { withdrawn: closed.id };
+          }
+          const confined = yield* visualsFor("ask_question", worker, { ...rest, question: words });
           const question = yield* orchestration.askQuestion(worker, confined);
+          // The new question first, so the one it replaces can name it; a refusal then is reported
+          // beside the question that was asked, never instead of it.
+          const superseded =
+            withdraw === undefined
+              ? {}
+              : yield* orchestration
+                  .withdrawQuestion(worker, {
+                    questionId: withdraw,
+                    reason:
+                      reason ?? (question === undefined ? "" : `Asked again as ${question.id}.`),
+                    ...(question === undefined ? {} : { supersededBy: question.id }),
+                  })
+                  .pipe(
+                    Effect.map((closed) => ({ withdrawn: closed.id })),
+                    Effect.catch((error) => Effect.succeed({ notWithdrawn: error.message })),
+                  );
           if (question === undefined) {
             return {
               asked: false,
               note: "No orchestrator is listening; decide yourself and say what you assumed.",
+              ...superseded,
             };
           }
           return {
@@ -698,6 +734,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             ...(question.stage === "triage"
               ? { forwardsToUserAt: new Date(question.triageUntil).toISOString() }
               : {}),
+            ...superseded,
           };
         }),
     });
@@ -707,7 +744,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "forward_question",
         class: "crossThread",
         description:
-          "Forward one of your workers' questions from the digest's triage list to the user, unchanged: they see it as the worker wrote it, on the board, in the needs-you count and in an away notification. Add at most one line of `context` (200 characters): your recommendation, or which other workers the answer affects. Forward what the brief, the standing decisions and your memory don't settle; answer what they do with `answer_worker`. A question left in triage forwards itself after ten minutes, with no context. The user's answer goes straight to the worker, and you get a copy in your next digest.",
+          "Forward one of your workers' questions from the digest's triage list to the user, unchanged: they see it as the worker wrote it, on the board, in the needs-you count and in an away notification. Add at most one line of `context` (200 characters): your recommendation, or which other workers the answer affects. Forward what the brief, the standing decisions and your memory don't settle; answer what they do with `answer_worker`. The user's answer goes straight to the worker; you get a copy in your next digest.",
       },
       audience: ["orchestrator"],
       input: Schema.Struct({
@@ -937,7 +974,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "close_question",
         class: "self",
         description:
-          "Close an entry of questions.md yourself. `how` is `decided` when you settled it without the user (say what and why in `answer`), `withdrawn` when it no longer matters, `superseded` when another question replaced it (name that one), or `answered` when the user answered it some other way, in this conversation say. An answer given with Gram's Answer button closes its entry by itself; there is nothing to close then.",
+          "Close an entry of questions.md yourself. `how` is `decided` when you settled it without the user (say what and why in `answer`), `withdrawn` when it no longer matters, `superseded` when another question replaced it (name that one), or `answered` when the user answered it some other way, in this conversation say. An answer given with Gram's Answer button closes its entry by itself; there is nothing to close then. A worker's open question (`WQ7`) closes the same way, but never as `decided`; it leaves the user's board, and its worker is told.",
       },
       audience: ["orchestrator"],
       input: Schema.Struct({
@@ -947,6 +984,21 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       }),
       handle: (caller, input) =>
         Effect.gen(function* () {
+          if (/^wq\d+$/i.test(input.id.trim())) {
+            if (input.how === "decided") {
+              return yield* new AppToolError({
+                tool: "close_question",
+                message:
+                  "A worker's question isn't `decided` here: answer one in triage with `answer_worker` and its `source`; a forwarded one is the user's to answer. Close it as `withdrawn`, `superseded` or `answered` (elsewhere).",
+              });
+            }
+            const closed = yield* orchestration.closeWorkerQuestion(caller, {
+              questionId: input.id,
+              how: input.how === "answered" ? "answered elsewhere" : input.how,
+              reason: input.answer,
+            });
+            return { id: closed.id, closed: true };
+          }
           const workspaceId = yield* memoryOf("close_question", caller);
           const date = yield* today;
           const { write, result } = yield* memory.modify(workspaceId, QUESTIONS_FILE, (current) =>

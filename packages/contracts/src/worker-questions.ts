@@ -57,6 +57,26 @@ export type WorkerQuestionStage = typeof WorkerQuestionStage.Type;
 export const ForwardedBy = Schema.Literals(["orchestrator", "timeout", "paused"]);
 export type ForwardedBy = typeof ForwardedBy.Type;
 
+/**
+ * How a question was closed without an answer by its worker or its orchestrator: it no longer
+ * matters, another question replaced it, or it was settled elsewhere (in a conversation, say).
+ */
+export const WithdrawnHow = Schema.Literals(["withdrawn", "superseded", "answered elsewhere"]);
+export type WithdrawnHow = typeof WithdrawnHow.Type;
+
+/**
+ * A withdrawal's record. The question is `dismissed` (closed with no answer), so a build that
+ * predates withdrawals reads it as closed; `closedBy` is `orchestrator` for the orchestrator's and
+ * absent for the worker's own, since the stage and `closedBy` values are a released protocol.
+ */
+export const QuestionWithdrawal = Schema.Struct({
+  by: Schema.Literals(["worker", "orchestrator"]),
+  how: WithdrawnHow,
+  /** The question that replaced it, when the worker's own later question did. */
+  supersededBy: Schema.optionalKey(Schema.String),
+});
+export type QuestionWithdrawal = typeof QuestionWithdrawal.Type;
+
 /** How the answer or dismissal reached the worker. */
 export const QuestionDelivery = Schema.Literals(["steered", "queued", "sent"]);
 export type QuestionDelivery = typeof QuestionDelivery.Type;
@@ -94,8 +114,10 @@ export const WorkerQuestion = Schema.Struct({
   closedBy: Schema.optionalKey(Schema.Literals(["orchestrator", "user"])),
   /** What settles an orchestrator's answer: the brief, a standing decision, a memory entry. */
   source: Schema.optionalKey(Schema.String),
-  /** A dismissal's reason, when the user gave one. */
+  /** A dismissal's reason, when the user gave one; a withdrawal's, always. */
   reason: Schema.optionalKey(Schema.String),
+  /** Set when the worker or its orchestrator withdrew it rather than the user dismissing it. */
+  withdrawal: Schema.optionalKey(QuestionWithdrawal),
   /** Epoch ms. */
   closedAt: Schema.optionalKey(Schema.Number),
   delivered: Schema.optionalKey(QuestionDelivery),
@@ -216,6 +238,18 @@ export const workerDismissMessage = (
   return `The user dismissed your question ${question.id} (${quote(question)}) without answering it.${why}\n\nDon't wait for an answer: go on with your own judgment and say what you assumed in your report, or ask again with \`ask_question\` if you can't move without one.`;
 };
 
+/** What the worker is sent when its orchestrator closes its question without an answer. */
+export const workerWithdrawnMessage = (
+  question: Pick<WorkerQuestion, "id" | "question">,
+  how: WithdrawnHow,
+  reason: string,
+): string => {
+  const head = `Your orchestrator closed your question ${question.id} (${quote(question)}) as ${how}: ${reason.trim()}`;
+  return how === "answered elsewhere"
+    ? `${head}\n\nGo on with that answer; it was removed from the user's board.`
+    : `${head}\n\nIt was removed from the user's board. Don't wait for an answer to it; ask again with \`ask_question\` if you still can't move without one.`;
+};
+
 const pad = (n: number): string => String(n).padStart(2, "0");
 
 /** "14:05", the local 24-hour time a card shows. */
@@ -226,11 +260,30 @@ export const questionTime = (ms: number): string => {
 
 /**
  * "Answered by you · 14:05", "Answered by the orchestrator · 09:12", "Dismissed by you · 16:40",
- * "Forwarded to you · 11:02", "With the orchestrator": where a question stands, in a card's words.
+ * "Forwarded to you · 11:02", "With the orchestrator", "Superseded by the worker with WQ9 · 10:30":
+ * where a question stands, in a card's words.
  */
 export const questionStatusLine = (
-  question: Pick<WorkerQuestion, "stage" | "closedBy" | "closedAt" | "forwardedAt" | "forwardedBy">,
+  question: Pick<
+    WorkerQuestion,
+    "stage" | "closedBy" | "closedAt" | "forwardedAt" | "forwardedBy" | "withdrawal"
+  >,
 ): string => {
+  const at = question.closedAt === undefined ? "" : ` · ${questionTime(question.closedAt)}`;
+  const withdrawal = question.withdrawal;
+  if (question.stage === "dismissed" && withdrawal !== undefined) {
+    const who = withdrawal.by === "worker" ? "the worker" : "the orchestrator";
+    switch (withdrawal.how) {
+      case "withdrawn":
+        return `Withdrawn by ${who}${at}`;
+      case "superseded":
+        return withdrawal.supersededBy === undefined
+          ? `Superseded, says ${who}${at}`
+          : `Superseded by ${withdrawal.supersededBy}${at}`;
+      case "answered elsewhere":
+        return `Answered elsewhere, says ${who}${at}`;
+    }
+  }
   switch (question.stage) {
     case "triage":
       return "With the orchestrator";
@@ -249,9 +302,7 @@ export const questionStatusLine = (
     case "dismissed": {
       const verb = question.stage === "answered" ? "Answered" : "Dismissed";
       const who = question.closedBy === "orchestrator" ? "the orchestrator" : "you";
-      return question.closedAt === undefined
-        ? `${verb} by ${who}`
-        : `${verb} by ${who} · ${questionTime(question.closedAt)}`;
+      return `${verb} by ${who}${at}`;
     }
   }
 };
