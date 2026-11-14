@@ -7,11 +7,12 @@
 // was for and runs as them (a worker question's `closedFor`), so a retry can't make it the
 // server's.
 
-import { InvalidState, type Thread, type ThreadId, ThreadNotFound } from "@gram/contracts";
+import { hostOf, InvalidState, type Thread, type ThreadId, ThreadNotFound } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import {
   admitThread,
   keepsOwner,
+  mayPlaceAwaited,
   mayReachThread,
   MOVE_CHANGES_OWNER,
   sameOwner,
@@ -55,18 +56,25 @@ export const ownedRuntimes = (
       }),
     // The same floor under a move off a machine that is gone (an embedder's): whoever asks must
     // reach the thread, and what `prepare` places it on must be of the same owner.
+    // A thread still waiting for its first machine has no owner to keep: it goes on a machine of
+    // whoever it was started by, or of no one's (`mayPlaceAwaited`).
     relocate: (threadId, plan) =>
-      Effect.andThen(
-        admitOrAbsent(threadId),
-        runtimes.relocate(threadId, {
+      Effect.gen(function* () {
+        yield* admitOrAbsent(threadId);
+        const thread = yield* getThread(threadId).pipe(Effect.orElseSucceed(() => undefined));
+        const keeps = (checkout: typeof plan.from) =>
+          thread?.awaitingMachine === undefined
+            ? sameOwner(ownerOf, plan.from, checkout)
+            : mayPlaceAwaited(ownerOf, thread, hostOf(checkout));
+        return yield* runtimes.relocate(threadId, {
           ...plan,
           prepare: Effect.flatMap(plan.prepare, (checkout) =>
-            sameOwner(ownerOf, plan.from, checkout)
+            keeps(checkout)
               ? Effect.succeed(checkout)
               : Effect.die(new InvalidState({ message: MOVE_CHANGES_OWNER, threadId })),
           ),
-        }),
-      ),
+        });
+      }),
     // What changes a thread's record or its session outside a delivery (an archive, a park, a
     // workspace's directory grants, a reload, a queue edit, a completion): the same rule, so a
     // caller's own approved card never reaches another person's thread through them.

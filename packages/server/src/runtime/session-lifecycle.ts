@@ -13,7 +13,14 @@ import * as Clock from "effect/Clock";
 import * as Stream from "effect/Stream";
 import * as Fiber from "effect/Fiber";
 import * as Scope from "effect/Scope";
-import { type Runtime, locked, feedLocked, replyOf, makeQueueItemId } from "./runtime-state.ts";
+import {
+  AWAITS_MACHINE,
+  type Runtime,
+  locked,
+  feedLocked,
+  replyOf,
+  makeQueueItemId,
+} from "./runtime-state.ts";
 import {
   type AfterMachineRestart,
   afterMachineRestart,
@@ -498,6 +505,13 @@ export const makeSessionLifecycle = ({
   const openSession = (rt: Runtime, thread: Thread, resumeAt?: string, switchAttempt?: string) =>
     Effect.gen(function* () {
       if (isShuttingDown()) return;
+      // The one door every session opens through: none does before the thread's machine is named.
+      if (thread.awaitingMachine !== undefined)
+        return yield* new AgentUnavailable({
+          agent: thread.model.agent,
+          reason: "startup-failed",
+          message: AWAITS_MACHINE,
+        });
       if (
         thread.sessionSwitch !== undefined &&
         thread.sessionSwitch.phase !== "checkpoint" &&

@@ -13,6 +13,7 @@ import {
   GramRpcs,
   PROFILE_MOVE_PATH,
   PROFILE_START_PATH,
+  PROFILE_WAIT_PATH,
   RequestId,
   ThreadId,
   WorkspaceId,
@@ -55,6 +56,7 @@ const proxy = makeTestProxy();
 
 const PROFILE_THREAD = "6b1d2a90-3c4e-4f5a-8b6c-7d8e9f0a1b2c";
 const OTHER_PROFILE_THREAD = "6b1d2a90-3c4e-4f5a-8b6c-7d8e9f0a1b2d";
+const WAITING_PROFILE_THREAD = "6b1d2a90-3c4e-4f5a-8b6c-7d8e9f0a1b2e";
 
 /** The event sink's receiver: every event the server sends it, in order. */
 const sunk: Array<{ type: string; data: Record<string, unknown> }> = [];
@@ -461,6 +463,106 @@ describe("sign-in through a fronting proxy", () => {
           (yield* post(port, `${PROFILE_MOVE_PATH}/`, moveBody(), platform(PROFILE_MOVE_PATH)))
             .status,
         ).toBeGreaterThanOrEqual(400);
+
+        // A thread may be started before its machine: it is there at once, waiting, and its
+        // record names no machine. How its wait stands is the platform's to say, never a
+        // person's.
+        const waiting = yield* post(
+          port,
+          PROFILE_START_PATH,
+          startBody({ threadId: WAITING_PROFILE_THREAD, machine: "later", startedBy: "ada" }),
+          platform(PROFILE_START_PATH),
+        );
+        expect(waiting.status, waiting.body).toBe(200);
+        expect(JSON.parse(waiting.body)).toEqual({
+          threadId: WAITING_PROFILE_THREAD,
+          created: true,
+          awaitingMachine: true,
+        });
+        expect(
+          (yield* (yield* ThreadStore).listActorEvents())
+            .filter((event) => event.action === PROFILE_START_PATH)
+            .map((event) => event.data)
+            .at(-1),
+        ).toEqual({ status: 200, threadId: WAITING_PROFILE_THREAD, created: true });
+        const stored = yield* (yield* ThreadStore).getThread(ThreadId.make(WAITING_PROFILE_THREAD));
+        expect(stored.awaitingMachine?.startedBy).toBe("ada");
+        expect(
+          (yield* post(
+            port,
+            PROFILE_START_PATH,
+            startBody({
+              threadId: OTHER_PROFILE_THREAD,
+              machine: "later",
+              hostId: "machine-next",
+            }),
+            platform(PROFILE_START_PATH),
+          )).status,
+        ).toBe(409);
+        expect(
+          (yield* post(
+            port,
+            PROFILE_START_PATH,
+            startBody({ threadId: OTHER_PROFILE_THREAD, machine: "soon" }),
+            platform(PROFILE_START_PATH),
+          )).status,
+        ).toBe(400);
+        const waitBody = (extra: Record<string, unknown> = {}) =>
+          JSON.stringify({ threadId: WAITING_PROFILE_THREAD, ...extra });
+        const failed = yield* post(
+          port,
+          PROFILE_WAIT_PATH,
+          waitBody({ failed: "The machine couldn't be started." }),
+          platform(PROFILE_WAIT_PATH),
+        );
+        expect(failed.status, failed.body).toBe(200);
+        expect(JSON.parse(failed.body)).toMatchObject({
+          threadId: WAITING_PROFILE_THREAD,
+          awaitingMachine: {
+            startedBy: "ada",
+            failed: { message: "The machine couldn't be started." },
+          },
+        });
+        const begun = yield* post(port, PROFILE_WAIT_PATH, waitBody(), platform(PROFILE_WAIT_PATH));
+        expect(JSON.parse(begun.body).awaitingMachine.failed).toBeUndefined();
+        // A thread that doesn't wait has no wait to change.
+        const notWaiting = yield* post(
+          port,
+          PROFILE_WAIT_PATH,
+          JSON.stringify({ threadId: PROFILE_THREAD }),
+          platform(PROFILE_WAIT_PATH),
+        );
+        expect(notWaiting.status).toBe(409);
+        expect(
+          (yield* post(
+            port,
+            PROFILE_WAIT_PATH,
+            waitBody({ sudo: true }),
+            platform(PROFILE_WAIT_PATH),
+          )).status,
+        ).toBe(400);
+        expect(
+          (yield* post(port, PROFILE_WAIT_PATH, waitBody(), { ...host, ...signedIn })).status,
+        ).toBe(403);
+        expect(
+          (yield* post(port, PROFILE_WAIT_PATH, waitBody(), platform(PROFILE_START_PATH))).status,
+        ).toBe(403);
+        expect(
+          (yield* post(port, `${PROFILE_WAIT_PATH}/`, waitBody(), platform(PROFILE_WAIT_PATH)))
+            .status,
+        ).toBeGreaterThanOrEqual(400);
+        // Named for a machine that isn't there, it goes on waiting.
+        const unnamed = yield* post(
+          port,
+          PROFILE_MOVE_PATH,
+          JSON.stringify({ threadId: WAITING_PROFILE_THREAD, hostId: "machine-next" }),
+          platform(PROFILE_MOVE_PATH),
+        );
+        expect(unnamed.status, unnamed.body).toBe(409);
+        expect(
+          (yield* (yield* ThreadStore).getThread(ThreadId.make(WAITING_PROFILE_THREAD)))
+            .awaitingMachine,
+        ).toBeDefined();
 
         // A thread's agent on this machine still needs its own token for its app tools.
         const mcp = yield* get(port, "/mcp", { ...host, authorization: "Bearer nope" });
@@ -1287,6 +1389,7 @@ describe("sign-in through a fronting proxy", () => {
         const local = { ...host, cookie, origin: `http://127.0.0.1:${port}` };
         expect((yield* post(port, PROFILE_START_PATH, "{}", local)).status).toBe(404);
         expect((yield* post(port, PROFILE_MOVE_PATH, "{}", local)).status).toBe(404);
+        expect((yield* post(port, PROFILE_WAIT_PATH, "{}", local)).status).toBe(404);
       }),
     );
   });

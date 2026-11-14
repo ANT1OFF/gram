@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>A thread whose machine is starting · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <script type="application/json" id="mock-tweaks">
+      {
+        "density": {
+          "label": "Density",
+          "type": "enum",
+          "options": ["compact", "comfortable"],
+          "default": "compact"
+        },
+        "words": {
+          "label": "Failure in",
+          "type": "enum",
+          "options": ["grams-words", "the-platforms-words"],
+          "default": "grams-words"
+        }
+      }
+    </script>
+    <style>
+      .tm-thread {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        flex: 1;
+      }
+      .tm-feed {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        width: 100%;
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 20px 20px 8px;
+        font-size: var(--text-sm);
+      }
+      .tm-mine {
+        align-self: flex-end;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 4px;
+        max-width: 80%;
+      }
+      .tm-bubble {
+        padding: 9px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl, 10px);
+        background: var(--surface-3);
+        color: var(--fg);
+      }
+      /* Not sent yet: the same bubble, held back, never greyed past reading. */
+      .tm-bubble.held {
+        border-style: dashed;
+      }
+      .tm-under {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .tm-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--fg-muted);
+      }
+      .tm-status strong {
+        color: var(--fg);
+        font-weight: 550;
+      }
+      .tm-status .time {
+        font-variant-numeric: tabular-nums;
+      }
+      .tm-reply {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-width: 90%;
+        color: var(--fg);
+      }
+      .tm-compose {
+        width: 100%;
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 8px 20px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: var(--text-sm);
+      }
+      .tm-queued {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg, 8px);
+        color: var(--fg-muted);
+      }
+      .tm-queued .text {
+        flex: 1;
+        min-width: 0;
+        color: var(--fg);
+      }
+      .tm-slab {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl, 10px);
+        background: var(--surface-3);
+      }
+      .tm-slab .draft {
+        flex: 1;
+        min-height: 40px;
+        color: var(--fg-muted);
+      }
+      .tm-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 9px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 999px;
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+        white-space: nowrap;
+      }
+      .tm-chip.bad {
+        color: var(--danger);
+      }
+      .tm-row {
+        display: grid;
+        grid-template-columns: 16px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 2px 8px;
+        padding: 7px 10px;
+        font-size: var(--text-sm);
+      }
+      .tm-row + .tm-row {
+        border-top: 1px solid var(--border-subtle);
+      }
+      .tm-row .sub {
+        grid-column: 2 / -1;
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .tm-row .bad {
+        color: var(--danger);
+      }
+      .tm-rows {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        max-width: 340px;
+        padding: 12px;
+      }
+      .tm-cap {
+        padding: 0 12px 12px;
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+        max-width: 340px;
+      }
+      .callout > .btn {
+        margin-left: auto;
+      }
+      /* The failure's sentence: Gram's own, or the one the platform gave. */
+      [data-words] {
+        display: none;
+      }
+      html:not([data-tweak-words="the-platforms-words"]) [data-words="grams-words"],
+      html[data-tweak-words="the-platforms-words"] [data-words="the-platforms-words"] {
+        display: inline;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        A thread started before its machine: the first message is there at once, held until the
+        machine has started. Step through the states on the Thread board: starting, no machine came,
+        trying again, placed. Decide: is the held message right as a bubble in the conversation, and
+        is Try again enough on the failure?
+      </p>
+
+      <section
+        class="board"
+        data-name="Thread"
+        data-size="1100x680"
+        data-states="starting,no-machine,trying-again,placed"
+      >
+        <div class="board-frame">
+          <div class="app">
+            <div class="app-body">
+              <div class="main">
+                <header class="topbar">
+                  <h2>Release notes</h2>
+                  <span class="tm-chip" data-when="starting,trying-again"
+                    ><span class="spinner" aria-hidden="true"></span>machine starting</span
+                  >
+                  <span class="tm-chip bad" data-when="no-machine"
+                    ><i data-icon="alert"></i>no machine</span
+                  >
+                  <span class="tm-chip" data-when="placed"
+                    ><i data-icon="globe"></i>on notes-7f3a</span
+                  >
+                  <span class="grow"></span>
+                  <button class="btn sm" type="button" aria-label="More">
+                    <i data-icon="more"></i>
+                  </button>
+                </header>
+
+                <div class="tm-thread">
+                  <div class="tm-feed">
+                    <div class="tm-mine">
+                      <div class="tm-bubble held" data-when="starting,no-machine,trying-again">
+                        Draft the release notes for 2.4 from the merged pull requests.
+                      </div>
+                      <div class="tm-bubble" data-when="placed">
+                        Draft the release notes for 2.4 from the merged pull requests.
+                      </div>
+                      <span class="tm-under" data-when="starting,trying-again"
+                        ><i data-icon="clock"></i>14:02 · sent when the machine has started</span
+                      >
+                      <span class="tm-under" data-when="no-machine"
+                        ><i data-icon="clock"></i>14:02 · not sent yet, and kept</span
+                      >
+                      <span class="tm-under" data-when="placed">14:02 · sent 14:03</span>
+                    </div>
+
+                    <div class="tm-status" role="status" data-when="starting">
+                      <span class="spinner" aria-hidden="true"></span>
+                      <span
+                        ><strong>Starting this thread's machine</strong> · usually under a
+                        minute</span
+                      >
+                      <span class="grow"></span>
+                      <span class="time">0:42</span>
+                    </div>
+
+                    <div class="callout danger" role="alert" data-when="no-machine">
+                      <i data-icon="xcircle"></i>
+                      <div class="stack">
+                        <strong>
+                          <span data-words="grams-words">No machine started for this thread.</span>
+                          <span data-words="the-platforms-words"
+                            >The machine couldn't be started: no capacity in this region.</span
+                          >
+                        </strong>
+                        <span>What you sent is kept, and goes once a machine has started.</span>
+                      </div>
+                      <button class="btn sm" type="button" data-goto="Thread@trying-again">
+                        Try again
+                      </button>
+                    </div>
+
+                    <div class="tm-status" role="status" data-when="trying-again">
+                      <span class="spinner" aria-hidden="true"></span>
+                      <span
+                        ><strong>Starting a machine again</strong> · the first didn't start</span
+                      >
+                      <span class="grow"></span>
+                      <span class="time">0:07</span>
+                    </div>
+
+                    <div class="tm-reply" data-when="placed">
+                      <div class="tm-status">
+                        <span class="spinner" aria-hidden="true"></span>
+                        <span>Reading AGENTS.md</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="tm-compose">
+                    <div class="tm-queued" data-when="starting,no-machine,trying-again">
+                      <i data-icon="clock"></i>
+                      <span class="text truncate">Keep it under 300 words.</span>
+                      <span class="xsmall">waits for the machine</span>
+                      <button class="btn sm" type="button" aria-label="Remove from the queue">
+                        <i data-icon="x"></i>
+                      </button>
+                    </div>
+                    <div class="tm-queued" data-when="placed">
+                      <i data-icon="clock"></i>
+                      <span class="text truncate">Keep it under 300 words.</span>
+                      <span class="xsmall">queued · after this turn</span>
+                      <button class="btn sm" type="button" aria-label="Remove from the queue">
+                        <i data-icon="x"></i>
+                      </button>
+                    </div>
+                    <label class="tm-slab">
+                      <span class="sr-only">Message</span>
+                      <span class="draft" data-when="starting,trying-again"
+                        >Add a message. It is sent when the machine has started.</span
+                      >
+                      <span class="draft" data-when="no-machine"
+                        >Add a message. It is kept until a machine has started.</span
+                      >
+                      <span class="draft" data-when="placed">Message Release notes</span>
+                      <button class="btn primary sm" type="button" aria-label="Queue the message">
+                        <i data-icon="up"></i>
+                      </button>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="Sidebar rows" data-size="360x360">
+        <div class="board-frame">
+          <div class="tm-rows" role="list">
+            <div class="tm-row" role="listitem">
+              <span class="spinner" aria-hidden="true"></span>
+              <span class="truncate">Release notes</span>
+              <span class="xsmall muted">0:42</span>
+              <span class="sub">Its machine is starting · 1 message waits</span>
+            </div>
+            <div class="tm-row" role="listitem">
+              <span class="bad"><i data-icon="alert"></i></span>
+              <span class="truncate">Weekly triage</span>
+              <span class="xsmall muted">14:07</span>
+              <span class="sub">No machine started · Try again in the thread</span>
+            </div>
+            <div class="tm-row" role="listitem">
+              <span class="dot" aria-hidden="true"></span>
+              <span class="truncate">Changelog for 2.3</span>
+              <span class="xsmall muted">13:51</span>
+              <span class="sub">on notes-51c0 · Reading AGENTS.md</span>
+            </div>
+          </div>
+          <p class="tm-cap">
+            A waiting thread sits with the working ones; one whose machine didn't come sits under
+            Needs you. Its hover says what waits and since when, never "no longer joined".
+          </p>
+        </div>
+      </section>
+
+      <section
+        class="board"
+        data-name="Thread on a phone"
+        data-size="390x640"
+        data-states="starting,no-machine"
+      >
+        <div class="board-frame">
+          <div class="tm-thread" style="min-height: 600px">
+            <header class="topbar">
+              <h2 class="truncate">Release notes</h2>
+              <span class="grow"></span>
+              <span class="tm-chip" data-when="starting"
+                ><span class="spinner" aria-hidden="true"></span>starting</span
+              >
+              <span class="tm-chip bad" data-when="no-machine"
+                ><i data-icon="alert"></i>no machine</span
+              >
+            </header>
+            <div class="tm-feed">
+              <div class="tm-mine">
+                <div class="tm-bubble held">
+                  Draft the release notes for 2.4 from the merged pull requests.
+                </div>
+                <span class="tm-under" data-when="starting"
+                  ><i data-icon="clock"></i>14:02 · sent when the machine has started</span
+                >
+                <span class="tm-under" data-when="no-machine"
+                  ><i data-icon="clock"></i>14:02 · not sent yet, and kept</span
+                >
+              </div>
+              <div class="tm-status" role="status" data-when="starting">
+                <span class="spinner" aria-hidden="true"></span>
+                <span><strong>Starting this thread's machine</strong></span>
+                <span class="grow"></span>
+                <span class="time">0:42</span>
+              </div>
+              <div class="callout danger" role="alert" data-when="no-machine">
+                <i data-icon="xcircle"></i>
+                <div class="stack">
+                  <strong>
+                    <span data-words="grams-words">No machine started for this thread.</span>
+                    <span data-words="the-platforms-words"
+                      >The machine couldn't be started: no capacity in this region.</span
+                    >
+                  </strong>
+                  <span>What you sent is kept, and goes once a machine has started.</span>
+                  <button class="btn sm" type="button" style="align-self: flex-start">
+                    Try again
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="tm-compose">
+              <label class="tm-slab">
+                <span class="sr-only">Message</span>
+                <span class="draft">Add a message. It waits for the machine.</span>
+                <button class="btn primary sm" type="button" aria-label="Queue the message">
+                  <i data-icon="up"></i>
+                </button>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

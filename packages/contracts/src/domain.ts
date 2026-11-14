@@ -746,6 +746,27 @@ export const profileAutonomyOf = (
   binding: Pick<ThreadProfileBinding, "autonomy">,
 ): ProfileAutonomy => binding.autonomy ?? "publish";
 
+/**
+ * A thread started before its machine (`POST /threads/from-profile` with `machine: "later"`): it
+ * is stored, what is sent to it waits in its queue, and no session opens until a machine is named
+ * for it (`POST /threads/move-to-machine`), which makes its folder there and sends the queue.
+ */
+export const AwaitingMachine = Schema.Struct({
+  /** Epoch ms the wait began: the start, or the last time it was begun again after a failure. */
+  since: Schema.Number,
+  /**
+   * The person the thread was started by, where the start named one. Until the thread is placed
+   * only they reach it, and it is placed only on a machine started for them or for nobody.
+   */
+  startedBy: Schema.optionalKey(Schema.String),
+  /**
+   * No machine came: when that was established and why, in a sentence for the person. The queue is
+   * kept, and naming a machine later still places the thread and sends it.
+   */
+  failed: Schema.optionalKey(Schema.Struct({ at: Schema.Number, message: Schema.String })),
+});
+export type AwaitingMachine = typeof AwaitingMachine.Type;
+
 export const Thread = Schema.Struct({
   id: ThreadId,
   /**
@@ -879,6 +900,12 @@ export const Thread = Schema.Struct({
    * by; absent for every other thread. Set when the thread is made and never changed after.
    */
   profile: Schema.optionalKey(ThreadProfileBinding),
+  /**
+   * Set while the thread waits for a machine to be named for it (`AwaitingMachine`): it was started
+   * from a profile before its machine was there. Absent on every other thread, and once it is
+   * placed. A client that doesn't read it still shows the thread, as one whose machine is away.
+   */
+  awaitingMachine: Schema.optionalKey(AwaitingMachine),
   /**
    * The workspace the thread belongs to: the one an orchestrator runs, or the one a worker was
    * spawned in or joined (`thread.joinWorkspace`, `adopt_thread`). A worker keeps it when its

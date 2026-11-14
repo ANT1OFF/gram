@@ -81,6 +81,12 @@ export interface CreateThreadInput {
    * `thread.createFromProfile` gives one.
    */
   readonly profile?: NonNullable<Thread["profile"]>;
+  /**
+   * The thread waits for a machine to be named for it (`Thread.awaitingMachine`): no session opens
+   * and its `input` waits in the queue until `relocate` places it. Server-only: only a start from
+   * a profile gives one.
+   */
+  readonly awaitingMachine?: NonNullable<Thread["awaitingMachine"]>;
   /** Worktrees in other repos the thread holds beside `checkout` (`Thread.extraCheckouts`). */
   readonly extraCheckouts?: ReadonlyArray<Checkout>;
   /** Given the user's browser at spawn (`Thread.browser`); its session policy still decides. */
@@ -512,6 +518,10 @@ export interface ThreadRuntimesShape {
    * then `prepare` runs; then, under the lock again, the checkout changes only if nothing started
    * meanwhile and the thread is still at `from`. Refused for a thread at work, closing or claimed
    * already. Once it lets go, deliveries and the queue go on, where the thread is placed now.
+   *
+   * A thread waiting for its machine (`Thread.awaitingMachine`) is placed for the first time this
+   * way: the wait ends as the checkout is written, in one write, and what waited in its queue is
+   * sent from the placement it now has.
    */
   relocate<E>(
     threadId: ThreadId,
