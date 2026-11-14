@@ -200,5 +200,9 @@ export const ShellThread: ShellThreadComponent = ({ threadId, placeholder }) => 
 export const useShellLocation: UseShellLocation = () => {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const navigate = useNavigate();
-  return { pathname, navigate: (to) => navigate({ to: to as "/" }) };
+  return {
+    pathname,
+    navigate: (to, options) =>
+      navigate({ to: to as "/", ...(options?.replace === true ? { replace: true } : {}) }),
+  };
 };

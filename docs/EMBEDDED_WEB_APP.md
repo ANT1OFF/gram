@@ -279,7 +279,9 @@ the workspaces of the one server.
 
 Inside your pages and switcher, `ShellLink` is a link to a path under the app that doesn't load
 the page again, and `useShellLocation()` gives the path the window is on (without `basePath`) and
-a `navigate`.
+a `navigate`. A page that sends the window on by itself (a redirect, or dropping a query it has
+read) calls `navigate(to, { replace: true })`, so the browser's Back skips it instead of landing
+on it and being sent on again.
 
 `ShellThread` puts one thread inside a page of yours: `<ShellThread threadId={id} />` draws its
 transcript, cards and composer without the thread's own header, and fills the element you put it

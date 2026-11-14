@@ -72,6 +72,15 @@ function Policies() {
         <ShellLink to="/govern/agents/a-42" className="text-link underline">
           Agent 42
         </ShellLink>
+        {/* A page sending the window on, as a redirect does: Back skips it. */}
+        <Button
+          data-testid="fixture-replace"
+          variant="ghost"
+          size="sm"
+          onClick={() => void navigate("/govern/limits", { replace: true })}
+        >
+          Limits instead
+        </Button>
       </div>
     </div>
   );
