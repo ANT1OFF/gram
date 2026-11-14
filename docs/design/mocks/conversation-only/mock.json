@@ -1,0 +1,41 @@
+{
+  "title": "Conversation only",
+  "slug": "conversation-only",
+  "status": "draft",
+  "template": "options",
+  "current": 1,
+  "approved": null,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-14"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A Clean",
+      "board": "a-clean",
+      "shots": {
+        "dark": "shots/a-dark.png",
+        "light": "shots/a-light.png"
+      }
+    },
+    {
+      "name": "B Receipts",
+      "board": "b-receipts",
+      "shots": {
+        "dark": "shots/b-dark.png",
+        "light": "shots/b-light.png"
+      }
+    },
+    {
+      "name": "C Beside",
+      "board": "c-beside",
+      "shots": {
+        "dark": "shots/c-dark.png",
+        "light": "shots/c-light.png"
+      }
+    }
+  ]
+}
