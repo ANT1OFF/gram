@@ -215,7 +215,10 @@ naming the person in `owner` and `onDemand: "personal"`. From then on:
   start card), never placed on a shared host or one started for something else;
 - a host started for the threads placed on it by name (`onDemand: "thread"`, an automated run's,
   say, with or without an `owner`) takes only those threads and their workers;
-- a worker spawned with no machine named goes on its orchestrator's machine;
+- a worker goes on its orchestrator's machine: when it names none, and when it names "local" (this
+  server runs nothing itself). It names another machine only if that machine is the same person's
+  own; a machine started for other work, another person's, or (on a headless server) one that says
+  no kind is refused before any approval card or checkout;
 - a host started for one person is never anyone's default, and work that names it for anyone else
   is refused;
 - a thread is its host's owner's, and nothing else makes it anyone's. Threads that work together

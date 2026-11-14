@@ -119,6 +119,55 @@ export const orchestratorsMachine = (under: Pick<Thread, "checkout" | "currentCh
   return own === LOCAL_HOST_ID ? undefined : own;
 };
 
+/** A joined machine as a worker's placement reads it. */
+export interface NamedMachine {
+  readonly id: HostId;
+  readonly owner?: string | undefined;
+  readonly onDemand?: "personal" | "thread" | undefined;
+}
+
+/** Why a worker can't go on a machine its orchestrator named. */
+export const NOT_THIS_ORCHESTRATIONS_MACHINE =
+  "A worker goes on its orchestrator's own machine, or on another machine of the same person's own. That one was started for other work.";
+/** Why a worker named for this machine can't run here. */
+export const RUNS_ON_ITS_ORCHESTRATORS_MACHINE =
+  "This Gram runs no work itself: a worker runs on its orchestrator's machine. Omit machine.";
+
+/**
+ * Where a worker its orchestrator placed goes, or why not. `named` is the joined machine the
+ * orchestrator named, `"here"` for this machine (`LOCAL_MACHINE_NAMES`), or nothing.
+ *
+ * - Its orchestrator's own machine always.
+ * - Another machine only if it is the orchestrator's person's own (`onDemand: "personal"`, the
+ *   same `owner`), or, on a Gram that runs work itself, a machine started for nothing in particular
+ *   (no owner, no kind). Never a machine started for other work (`onDemand: "thread"`, another
+ *   run's), and on a headless Gram never an unmarked one either, which may be another run's from
+ *   before machines said their kind.
+ * - On a headless Gram, which runs no work itself, "here" is its orchestrator's machine.
+ *
+ * `undefined` keeps today's meaning: this machine, where it runs work.
+ */
+export const workerMachine = (
+  named: NamedMachine | "here" | undefined,
+  context: {
+    readonly own: HostId | undefined;
+    readonly ownOwner: string | undefined;
+    readonly headless: boolean;
+  },
+): { readonly hostId: HostId | undefined } | { readonly error: string } => {
+  const { own, ownOwner, headless } = context;
+  if (named === undefined || named === "here") {
+    if (!headless) return { hostId: undefined };
+    return own === undefined ? { error: RUNS_ON_ITS_ORCHESTRATORS_MACHINE } : { hostId: own };
+  }
+  if (named.id === own) return { hostId: named.id };
+  const personsOwn =
+    named.onDemand === "personal" && named.owner !== undefined && named.owner === ownOwner;
+  const unmarked = named.onDemand === undefined && named.owner === undefined;
+  if (personsOwn || (unmarked && !headless)) return { hostId: named.id };
+  return { error: NOT_THIS_ORCHESTRATIONS_MACHINE };
+};
+
 export interface SpawningDeps {
   readonly outsideWorkspace: Projects["outsideWorkspace"];
   readonly survey: LedgerWatch["survey"];
@@ -228,18 +277,27 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
   const placedMachine = (tool: string, named: string | undefined, under: Thread) =>
     Effect.gen(function* () {
       const own = orchestratorsMachine(under);
-      const hostId =
-        named !== undefined || headless === undefined
+      // What was named, as a machine's record or this machine, before the rule decides.
+      const resolved = named === undefined ? undefined : yield* machineNamed(tool, named);
+      const record =
+        resolved === undefined
           ? named === undefined
             ? undefined
-            : yield* machineNamed(tool, named)
-          : own !== undefined
-            ? own
-            : yield* headless.machine.pipe(
-                Effect.mapError((error) =>
-                  toolError(tool, refusal("unknown_machine", error.message)),
-                ),
-              );
+            : ("here" as const)
+          : (joinedMachines().find((machine) => machine.id === resolved) ?? { id: resolved });
+      // An orchestrator on this machine of a headless Gram names nothing: placement decides.
+      if (headless !== undefined && own === undefined && record === undefined) {
+        return yield* headless.machine.pipe(
+          Effect.mapError((error) => toolError(tool, refusal("unknown_machine", error.message))),
+        );
+      }
+      const placed = workerMachine(record, {
+        own,
+        ownOwner: own === undefined ? undefined : ownerOf(own),
+        headless: headless !== undefined,
+      });
+      if ("error" in placed) return yield* toolError(tool, refusal("not_admitted", placed.error));
+      const hostId = placed.hostId;
       // A worker goes on a machine of its orchestrator's person's, or of no one's under no one's
       // (`host/ownership.ts`): an orchestration never spans two people, so nothing that reaches
       // its workers has to ask whose each one is.

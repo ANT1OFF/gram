@@ -193,6 +193,74 @@ describe("spawn admission on a joined machine", () => {
       }).pipe(Effect.provide(context));
     }).pipe(Effect.scoped),
   );
+  it.effect(
+    "refuses a machine started for other work, or for another person, before any card, checkout or thread",
+    () =>
+      Effect.gen(function* () {
+        for (const named of [
+          { ...MACHINE, onDemand: "thread" },
+          { ...MACHINE, owner: "grace", onDemand: "personal" },
+        ]) {
+          const world = yield* makeWorld;
+          const machines = Layer.succeed(RemoteHosts, {
+            ...NO_LINKS,
+            list: () => [named],
+          } as unknown as RemoteHostsShape);
+          const context = yield* Layer.build(
+            serverLayer(world, {}, agents).pipe(Layer.provide(machines)),
+          );
+          yield* Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            const { session, thread } = yield* openOrchestrator(world);
+            const before = yield* store.listThreads;
+            // By its name and by its id: the same machine, refused alike.
+            for (const machine of ["build box", MACHINE.id]) {
+              const refused = yield* session
+                .callTool("spawn_worker", {
+                  project: "shop",
+                  feature: `other-${named.onDemand}`,
+                  title: "Elsewhere",
+                  brief: "Synthetic",
+                  machine,
+                })
+                .pipe(
+                  Effect.flip,
+                  Effect.map((error) => error.message),
+                );
+              expect(refused).toMatch(
+                /^not_admitted: A worker goes on its orchestrator's own machine/,
+              );
+            }
+            // Refused before a card is raised, as admission runs ahead of it.
+            let approvals = 0;
+            const registry = yield* AppToolRegistry;
+            const gated = bindAppTools(
+              registry.definitions.map((definition) =>
+                definition.descriptor.name === "spawn_worker"
+                  ? { ...definition, alwaysAsks: true }
+                  : definition,
+              ),
+              thread.id,
+              { approve: () => Effect.sync(() => void approvals++) },
+            ).find((tool) => tool.descriptor.name === "spawn_worker")!;
+            const carded = yield* gated
+              .run({
+                project: "shop",
+                feature: "other-card",
+                title: "Elsewhere",
+                brief: "Synthetic",
+                machine: "build box",
+              })
+              .pipe(Effect.result);
+            expect(carded).toMatchObject({ _tag: "Failure" });
+            expect(approvals).toBe(0);
+            expect(yield* store.listThreads).toEqual(before);
+            expect(existsSync(join(world.repo, ".worktrees"))).toBe(false);
+          }).pipe(Effect.provide(context));
+        }
+      }).pipe(Effect.scoped),
+  );
+
   for (const status of ["notSignedIn", "notInstalled"] as const) {
     it.effect(`refuses a joined machine reported as ${status} before preparing a checkout`, () =>
       Effect.gen(function* () {
