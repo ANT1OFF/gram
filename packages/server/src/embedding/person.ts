@@ -19,3 +19,7 @@ export const LOCAL_PERSON = "local";
 /** Whose own settings a call reads and writes (`person_settings`): the acting person's, else the local person's. */
 export const personKey = (acting: string | undefined): string =>
   acting === undefined ? LOCAL_PERSON : `id:${acting}`;
+
+/** The signed-in person `key` is {@link personKey} of; `undefined` for the local person's. */
+export const signedInPerson = (key: string | undefined): string | undefined =>
+  key?.startsWith("id:") === true ? key.slice(3) : undefined;

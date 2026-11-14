@@ -39,6 +39,7 @@ import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG, waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ACTOR_HEADER, actorHeadersForTests } from "./actor.ts";
 import { tokenCookieName } from "./auth.ts";
 import { SERVICE_TYP, IDENTITY_HEADER } from "./fronted-identity.ts";
@@ -817,6 +818,155 @@ describe("sign-in through a fronting proxy", () => {
             ["user-grace", "settings.set", { settings: ["layout.focusMode"] }],
           ]);
         }),
+    );
+
+    it.effect("lists each person the items that wait on them, and the ones for anyone", () =>
+      Effect.gen(function* () {
+        const { port } = yield* info;
+        const store = yield* ThreadStore;
+        const runtimes = yield* ThreadRuntimes;
+        const registry = yield* AppToolRegistry;
+        const folder = mkdtempSync(join(tmpdir(), "gram-fronted-"));
+        dirs.push(folder);
+        const adaClient = yield* as(port, ada);
+        const graceClient = yield* as(port, grace);
+
+        const thread = yield* adaClient["thread.create"]({
+          projectRoot: folder,
+          checkout: { kind: "current" },
+        });
+        const threadId = thread.id;
+        yield* waitFor(
+          "the session",
+          runtimes.session(threadId).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          ),
+        );
+        const idle = waitFor(
+          "the turn to end",
+          runtimes.status(threadId).pipe(Effect.map((status) => status === "idle")),
+        );
+
+        /** The titles of this thread's items as a connection is sent them, latest last. */
+        const listen = (who: typeof adaClient) =>
+          Effect.gen(function* () {
+            const heard: Array<ReadonlyArray<string>> = [];
+            let snapshots = 0;
+            yield* Effect.forkScoped(
+              Stream.runForEach(who["events.subscribe"](), (event) =>
+                Effect.sync(() => {
+                  if (event.type === "threads.snapshot") {
+                    snapshots++;
+                    const summary = event.threads.find((one) => one.thread.id === threadId);
+                    heard.push((summary?.waits ?? []).map((item) => item.title));
+                  }
+                  if (event.type === "thread.waits" && event.threadId === threadId) {
+                    heard.push(event.waits.map((item) => item.title));
+                  }
+                }),
+              ),
+            );
+            yield* waitFor(
+              "the first snapshot",
+              Effect.sync(() => snapshots > 0),
+            );
+            return heard;
+          });
+        const titles = (who: typeof adaClient) =>
+          Effect.map(who["thread.listWaits"]({ threadId }), (items) =>
+            items.map((item) => item.title),
+          );
+        /** The agent's `wait_on_user`, and the item it stored. */
+        const agentAdds = (input: { kind: string; title: string; id?: string }) =>
+          Effect.gen(function* () {
+            const tool = registry
+              .forThread(threadId)
+              .find((one) => one.descriptor.name === "wait_on_user")!;
+            const { id } = (yield* tool.run(input)) as { id: string };
+            return (yield* store.listWaits(threadId)).find((item) => item.id === id)!;
+          });
+        const adaHears = yield* listen(adaClient);
+        const graceHears = yield* listen(graceClient);
+
+        // An item from before anyone was named waits on anyone.
+        yield* store.putWait(threadId, {
+          id: "w-anyone" as never,
+          kind: "action",
+          title: "For anyone",
+          source: "agent",
+          createdAt: 1,
+        });
+
+        // Ada writes, and what the agent then adds waits on her.
+        yield* adaClient["thread.send"]({
+          threadId,
+          input: { text: "hello from Ada" },
+          clientMessageId: "ada-waits-1",
+        });
+        yield* idle;
+        const adas = yield* agentAdds({ kind: "draft", title: "For Ada" });
+        expect(adas.person).toBe("user-ada");
+
+        // Grace writes next: the agent's next item is hers, and so is the one she adds herself.
+        yield* graceClient["thread.send"]({
+          threadId,
+          input: { text: "hello from Grace" },
+          clientMessageId: "grace-waits-1",
+        });
+        yield* idle;
+        const graces = yield* agentAdds({ kind: "review", title: "For Grace" });
+        expect(graces.person).toBe("user-grace");
+        const reply = (yield* store.listMessages(threadId)).findLast(
+          (message) => message.role === "assistant",
+        )!;
+        const added = yield* graceClient["thread.addWait"]({
+          threadId,
+          messageId: reply.id as never,
+          title: "Grace's own",
+        });
+        expect(added.person).toBe("user-grace");
+        // An update in place leaves an item with whom it waits on, whoever wrote last.
+        const updated = yield* agentAdds({
+          kind: "draft",
+          title: "For Ada, revised",
+          id: adas.id,
+        });
+        expect(updated.person).toBe("user-ada");
+
+        // Each reads their own and the one for anyone, and the server's own list holds all four.
+        expect(yield* titles(adaClient)).toEqual(["For anyone", "For Ada, revised"]);
+        expect(yield* titles(graceClient)).toEqual(["For anyone", "For Grace", "Grace's own"]);
+        expect((yield* store.listWaits(threadId)).map((item) => item.title)).toEqual([
+          "For anyone",
+          "For Ada, revised",
+          "For Grace",
+          "Grace's own",
+        ]);
+        expect((yield* store.listWaits(threadId)).map((item) => item.person ?? null)).toEqual([
+          null,
+          "user-ada",
+          "user-grace",
+          "user-grace",
+        ]);
+
+        // The same over each one's events, as they changed and on a connection opened now.
+        yield* waitFor(
+          "the last change to arrive",
+          Effect.sync(
+            () =>
+              adaHears.at(-1)?.includes("For Ada, revised") === true &&
+              graceHears.at(-1)?.includes("Grace's own") === true,
+          ),
+        );
+        expect(adaHears.at(-1)).toEqual(["For anyone", "For Ada, revised"]);
+        expect(graceHears.at(-1)).toEqual(["For anyone", "For Grace", "Grace's own"]);
+        expect(adaHears.flat()).not.toContain("For Grace");
+        expect(adaHears.flat()).not.toContain("Grace's own");
+        expect(graceHears.flat().some((title) => title.startsWith("For Ada"))).toBe(false);
+        const adaLater = yield* listen(yield* as(port, ada));
+        expect(adaLater[0]).toEqual(["For anyone", "For Ada, revised"]);
+      }),
     );
   });
 

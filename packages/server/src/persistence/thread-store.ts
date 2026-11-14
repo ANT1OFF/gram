@@ -585,6 +585,11 @@ export interface ThreadStoreShape {
   ): Effect.Effect<
     { readonly role: GramUIMessage["role"]; readonly turnId: TurnId | undefined } | undefined
   >;
+  /**
+   * Who typed the thread's latest message a person typed (`metadata.sentBy`): `undefined` where
+   * nobody was signed in to say, or no person has written in the thread.
+   */
+  lastSender(threadId: ThreadId): Effect.Effect<string | undefined>;
   /** The message stored just before `messageId`, if any. */
   previousMessage(threadId: ThreadId, messageId: string): Effect.Effect<GramUIMessage | undefined>;
   /** One transaction: admission, history truncation, session reset and final provenance check.
@@ -1298,15 +1303,17 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       /** `toldAt`: `null` for news to the agent, `undefined` to leave what was stored. */
       const writeWait = (threadId: ThreadId, item: WaitItem, toldAt: number | null | undefined) =>
         (toldAt === undefined
-          ? sql`INSERT INTO wait_items (thread_id, id, message_id, created_at, resolved_at, item)
+          ? sql`INSERT INTO wait_items
+                (thread_id, id, message_id, created_at, resolved_at, person, item)
               VALUES (${threadId}, ${item.id}, ${item.messageId ?? null}, ${item.createdAt},
-                ${item.resolvedAt ?? null}, ${toJson(WaitItem, item)})
+                ${item.resolvedAt ?? null}, ${item.person ?? null}, ${toJson(WaitItem, item)})
               ON CONFLICT (thread_id, id) DO UPDATE SET message_id = excluded.message_id,
                 resolved_at = excluded.resolved_at, item = excluded.item`
           : sql`INSERT INTO wait_items
-                (thread_id, id, message_id, created_at, resolved_at, told_at, item)
+                (thread_id, id, message_id, created_at, resolved_at, told_at, person, item)
               VALUES (${threadId}, ${item.id}, ${item.messageId ?? null}, ${item.createdAt},
-                ${item.resolvedAt ?? null}, ${toldAt}, ${toJson(WaitItem, item)})
+                ${item.resolvedAt ?? null}, ${toldAt}, ${item.person ?? null},
+                ${toJson(WaitItem, item)})
               ON CONFLICT (thread_id, id) DO UPDATE SET message_id = excluded.message_id,
                 resolved_at = excluded.resolved_at, told_at = excluded.told_at,
                 item = excluded.item`
@@ -2059,6 +2066,20 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                       role: rows[0].role as GramUIMessage["role"],
                       turnId: (rows[0].turn_id ?? undefined) as TurnId | undefined,
                     },
+              ),
+            ),
+          ),
+        lastSender: (threadId) =>
+          run(
+            sql<{
+              person: string | null;
+            }>`SELECT json_extract(message, '$.metadata.sentBy') AS person
+              FROM messages
+              WHERE thread_id = ${threadId} AND role = 'user' AND json_valid(message)
+                AND json_extract(message, '$.metadata.author') = 'user'
+              ORDER BY seq DESC LIMIT 1`.pipe(
+              Effect.map((rows) =>
+                typeof rows[0]?.person === "string" ? rows[0].person : undefined,
               ),
             ),
           ),

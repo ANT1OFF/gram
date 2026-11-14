@@ -13,6 +13,7 @@ import {
   plainWaitText,
   ThreadId,
   waitTitleOf,
+  waitsFor,
   type Thread,
   type CheckoutRequest,
   type TaskChipData,
@@ -34,6 +35,7 @@ import { randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 import { attachmentsDir, withDraftAttachments } from "../../attachments/attachments.ts";
 import { ServerConfig } from "../../config.ts";
+import { ActingPerson } from "../../embedding/person.ts";
 import { EventHub } from "../../events/event-hub.ts";
 import { expandHome, resolveFolder } from "../../fs/folders.ts";
 import { deleteMergedBranch } from "../../git/branch-cleanup.ts";
@@ -546,7 +548,11 @@ export const threadHandlers = Effect.gen(function* () {
         return item;
       }),
     "thread.listWaits": ({ threadId, state }) =>
-      store.getThread(threadId).pipe(Effect.andThen(store.listWaits(threadId, state ?? "open"))),
+      Effect.gen(function* () {
+        yield* store.getThread(threadId);
+        // A signed-in person's own and the ones for anyone, as their events carry them.
+        return waitsFor(yield* store.listWaits(threadId, state ?? "open"), yield* ActingPerson);
+      }),
     "thread.markCompleted": ({ threadId, completed }) =>
       runtimes.markCompleted(threadId, completed ? "user" : undefined).pipe(Effect.asVoid),
     "thread.subscribe": ({ threadId, afterRev, from }) =>
