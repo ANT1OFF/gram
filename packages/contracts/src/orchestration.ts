@@ -1344,7 +1344,7 @@ const questionLines = (
   }
   if (questions.closed.length > 0) {
     lines.push(
-      `Worker questions the user closed since your last digest (${questions.closed.length}). Worker notification delivery is recorded below. Record each decision (in memory, or in the standing decisions when the user's words make it a ruling), and pass it on to any other worker it affects.`,
+      `Worker questions the user closed since your last digest (${questions.closed.length}). Worker notification delivery is recorded below. Record each decision (in memory, or in the standing decisions when the user's words make it a ruling), and pass it on to any other worker it affects with \`send_message\` and \`userAnswers\` naming the question, so the worker reads the user's words and not your retelling.`,
     );
     for (const question of questions.closed) {
       const at = question.closedAt === undefined ? "" : ` at ${utcMinute(question.closedAt)}`;

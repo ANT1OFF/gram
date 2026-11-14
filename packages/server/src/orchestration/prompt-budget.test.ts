@@ -36,9 +36,14 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * The orchestrator's raised on 2026-11-12, on purpose, for `spawn_worker`'s `browser` (a worker
  * lent the user's own browser): one clause, with why a spawn went without it left to the result's
  * `warning`; measured then at 61,871.
+ * The orchestrator's raised on 2026-11-14, on purpose, for `send_message`'s `userAnswers` (the
+ * user's answer to a worker question, copied from the record when a ruling is passed on): one
+ * clause in the prompt and the parameter itself, with the rest told by the digest that
+ * carries the answer; measured then at 61,998. The worker's held: `send_message` is every
+ * thread's, so its text lost two words to make room for the parameter.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 61_900,
+  orchestrator: 62_000,
   worker: 36_900,
   plain: 23_550,
 };

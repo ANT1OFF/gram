@@ -11,6 +11,7 @@ import {
   WORKER_REPORT_SUMMARY_MAX,
   type ThreadId,
   type QuestionDelivery,
+  type WorkerQuestion,
   askQuestionProblem,
   forwardContextProblem,
   isOpenQuestion,
@@ -18,6 +19,7 @@ import {
   workerDismissMessage,
   ANSWER_SOURCE_MAX,
   WORKER_QUESTION_ANSWER_MAX,
+  WORKER_QUESTIONS_KEPT_CLOSED,
   WORKER_QUESTION_TRIAGE_MS,
   type WorkspaceId,
 } from "@gram/contracts";
@@ -43,6 +45,7 @@ import {
 } from "../worker-questions.ts";
 import { refusal, userHoldReason, type PendingReason } from "../rules.ts";
 import { type OrchestrationShape } from "./shape.ts";
+import { USER_ANSWERS_MAX } from "../user-words.ts";
 import { toolError, pausedFeatureOf, clipped, type OrchestrationKit } from "./kit.ts";
 
 /** A worker's own words for a question, trimmed and scrubbed like everything a worker writes. */
@@ -668,6 +671,42 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       ...(input.reason === undefined ? {} : { reason: input.reason }),
     });
 
+  const userAnswers: OrchestrationShape["userAnswers"] = (callerId, tool, questionIds) =>
+    Effect.gen(function* () {
+      const { state } = yield* requireAuthority(tool, callerId);
+      const outbox = yield* readOutbox(state.workspace.id);
+      const ids = [...new Set(questionIds.map((id) => id.trim()))];
+      if (ids.length === 0 || ids.length > USER_ANSWERS_MAX || ids.includes("")) {
+        return yield* toolError(
+          tool,
+          `\`userAnswers\` names 1 to ${USER_ANSWERS_MAX} worker questions by id, such as WQ7. Nothing was sent.`,
+        );
+      }
+      const answers: Array<WorkerQuestion> = [];
+      for (const id of ids) {
+        const found = findStoredQuestion(outbox, id);
+        if (found === undefined) {
+          return yield* toolError(
+            tool,
+            `There is no question ${id} on record in this workspace, so nothing of the user's was attached and nothing was sent. Closed questions are kept ${WORKER_QUESTIONS_KEPT_CLOSED} deep.`,
+          );
+        }
+        const words = found.stage === "answered" ? found.answer : found.reason;
+        if (found.closedBy !== "user" || words === undefined || words.trim() === "") {
+          return yield* toolError(
+            tool,
+            found.closedBy === "orchestrator"
+              ? `${found.id} was answered by an orchestrator, not the user, so there are no words of the user's to attach. Nothing was sent.`
+              : found.closedBy === "user"
+                ? `The user dismissed ${found.id} without a reason, so there are no words of theirs to attach. Nothing was sent.`
+                : `${found.id} is still open, so the user hasn't answered it. Nothing was sent.`,
+          );
+        }
+        answers.push(publicQuestion(found));
+      }
+      return answers;
+    });
+
   /** A question's triage time is up: to the user, with no context line. */
   const onQuestionDue = (workspaceId: WorkspaceId, questionId: string) =>
     Effect.gen(function* () {
@@ -692,6 +731,7 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
     answerWorkerQuestion,
     answerQuestionAsUser,
     dismissQuestionAsUser,
+    userAnswers,
     onQuestionDue,
   };
 };

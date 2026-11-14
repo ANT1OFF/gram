@@ -75,6 +75,13 @@ ask_question ──► triage ──answer_worker(questionId, source)──► a
   it affects. The digest distinguishes recorded worker notification from closure alone.
   A copy is acknowledged with the digest that
   carried it, like due wakes, so the 10-note cap can't drop it.
+- **Passing it on.** The orchestrator passes a ruling to another worker without retelling it:
+  `userAnswers` on `send_message` takes up to five question ids, and Gram
+  appends what the user answered to each (or the reason they dismissed it), copied from the
+  record under a line saying so, with the worker's question kept to one quoted line. A question that is
+  open, that an orchestrator answered, or that the user dismissed without a reason has no words
+  of the user's, so the call is refused and nothing is sent. The user's messages from
+  `userMessages` still come last.
 
 ## Refusals
 

@@ -549,6 +549,7 @@ export const OrchestrationLive = Layer.effect(
       answerWorkerQuestion,
       answerQuestionAsUser,
       dismissQuestionAsUser,
+      userAnswers,
       onQuestionDue,
     } = makeWorkerQuestions(kit, { recordReport, wake });
 
@@ -872,6 +873,7 @@ export const OrchestrationLive = Layer.effect(
       answerWorkerQuestion,
       answerQuestionAsUser,
       dismissQuestionAsUser,
+      userAnswers,
       keepsWakesOf,
       pendingWakesOf,
       scheduleWake,
