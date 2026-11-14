@@ -14,7 +14,8 @@ export type ShellPlacement =
   | "titlebar"
   /**
    * A phone's menu in the `roomy` look: the header as a large name at the menu's head, and the
-   * account as a round avatar alone (its 44 px button is Gram's, which opens the account sheet).
+   * account as a round avatar alone (Gram draws it in a button with `accountName` and the word
+   * Settings, which opens the account sheet).
    */
   | "drawer";
 
@@ -139,8 +140,9 @@ export interface ShellAttention {
  * The compact strip keeps its own shape in either. A phone's drawer keeps Gram's in `standard`; in
  * `roomy` it is a plain menu: the header large at its head (placement `drawer`) beside a round
  * search, the switcher (placement `drawer`) under it, the `main` groups as large rows, and at its
- * foot the account (placement `drawer`, a round avatar opening a sheet with the `foot` groups,
- * History, Settings and the theme) and one New pill. The phone's header is then round buttons
+ * foot the account (placement `drawer`, a round avatar in a button that names the person and
+ * Settings, opening a sheet with the `foot` groups, History, Settings and the theme) and one New
+ * pill. The phone's header is then round buttons
  * either side of the page's name, with the menu's button dotted while a destination counts above 0.
  */
 export type ShellSidebarLook = "standard" | "roomy";
@@ -159,6 +161,12 @@ export interface ShellSidebar {
    * Collapse in the `roomy` look). A phone's drawer has it at its foot too.
    */
   readonly account?: ComponentType<ShellSlotProps>;
+  /**
+   * The person's name as a phone's menu says it beside their avatar, over the word Settings: keep
+   * it short, a first name. Left out, the button says Settings alone. Only the `roomy` look's
+   * phone menu reads it.
+   */
+  readonly accountName?: string;
   /**
    * Whether resting the pointer on the compact strip opens the sidebar over the page beside it.
    * Defaults to true. Off, only the strip's Expand sidebar tile (or the keyboard) opens it, and it
@@ -575,9 +583,7 @@ export interface HostTheme {
     readonly display?: string;
   };
   /** Corner radii in pixels, by the theme's step names. */
-  readonly radii?: Partial<
-    Record<"2xs" | "xs" | "sm" | "md" | "lg" | "xl", number>
-  >;
+  readonly radii?: Partial<Record<"2xs" | "xs" | "sm" | "md" | "lg" | "xl", number>>;
   /** `"none"`: raised cards and menus are drawn by their edge, with no shadow. */
   readonly shadows?: "none";
   /** Colours for charts in order, per mode, as `--chart-1` onwards. */
