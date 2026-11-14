@@ -301,7 +301,7 @@ export function DiffPanel({
           </div>
           <div
             data-testid="diff-holds"
-            className="order-last flex min-w-0 basis-full items-center gap-x-2 empty:hidden @2xl/diffbar:order-none @2xl/diffbar:flex-1 @2xl/diffbar:basis-0"
+            className="flex min-w-0 items-center gap-x-2 empty:hidden @max-2xl/diffbar:order-last @max-2xl/diffbar:basis-full @2xl/diffbar:flex-1"
           >
             {summary !== undefined && (
               <span
