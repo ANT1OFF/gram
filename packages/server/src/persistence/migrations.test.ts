@@ -1,4 +1,4 @@
-import { type HostId, Thread, type ThreadId } from "@gram/contracts";
+import { DEFAULT_SETTINGS, type HostId, Settings, Thread, type ThreadId } from "@gram/contracts";
 import { SqliteMigrator } from "@effect/sql-sqlite-node";
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import { describe, expect, it } from "@effect/vitest";
@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqlClient } from "../platform/unstable.ts";
 import { MIGRATIONS_TABLE, migrationLoader, migrations, migratorOptions } from "./migrations.ts";
+import { LOCAL_PERSON, personKey } from "../embedding/person.ts";
 import { ThreadStore } from "./thread-store.ts";
 
 const tableNames = Effect.gen(function* () {
@@ -56,6 +57,7 @@ describe("migration ordering gate", () => {
         [7, "hosts"],
         [8, "actor_events"],
         [9, "queue_actor"],
+        [10, "person_settings"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -182,6 +184,7 @@ describe("the baseline", () => {
         "table orchestration_events",
         "table orchestration_outbox",
         "table palettes",
+        "table person_settings",
         "table profiles",
         "table projects",
         "table queue_items",
@@ -232,6 +235,7 @@ describe("the baseline", () => {
         [7, "hosts"],
         [8, "actor_events"],
         [9, "queue_actor"],
+        [10, "person_settings"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -261,6 +265,7 @@ describe("the baseline", () => {
           "hosts",
           "actor_events",
           "queue_actor",
+          "person_settings",
         ]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
     }),
@@ -301,6 +306,7 @@ describe("the baseline", () => {
             [7, "hosts"],
             [8, "actor_events"],
             [9, "queue_actor"],
+            [10, "person_settings"],
           ]);
           // A closed thread has no live row, but must retain its permanent safety identity.
           if (reopen === 0) {
@@ -461,13 +467,14 @@ describe("the baseline", () => {
       for (let reopen = 0; reopen < 2; reopen++) {
         yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
-          expect((yield* applied).map((row) => row.name).slice(-6)).toEqual([
+          expect((yield* applied).map((row) => row.name).slice(-7)).toEqual([
             "merge_fences",
             "usage_limit_history",
             "message_parts",
             "hosts",
             "actor_events",
             "queue_actor",
+            "person_settings",
           ]);
           expect(yield* sql`SELECT key, data FROM usage_limits`).toEqual([
             { key: "codex//five_hour", data: '{"synthetic":true}' },
@@ -585,6 +592,81 @@ describe("the baseline", () => {
             [nextId, "example"],
           ]);
         }).pipe(Effect.provide(open(next)));
+      }
+    }),
+  );
+  it.effect(
+    "upgrades the database before a person's own settings: the saved pane grid is the local person's",
+    () =>
+      Effect.gen(function* () {
+        const file = join(yield* tempDir, "previous-to-person-settings.db");
+        const entries = Object.entries(migrations);
+        // By name, not position: later migrations append after it.
+        const index = entries.findIndex(([key]) => /^\d+_person_settings$/.test(key));
+        expect(index).toBeGreaterThan(0);
+        const previous = Object.fromEntries(entries.slice(0, index));
+        const open = (record: Parameters<typeof migratorOptions>[0]) =>
+          SqliteMigrator.layer(migratorOptions(record)).pipe(
+            Layer.provideMerge(SqliteClient.layer({ filename: file })),
+          );
+        const grid = { preset: "2c", panes: ["t-left", "t-right"], colFr: [2, 1], focused: 1 };
+        const saved = JSON.stringify({
+          ...Schema.encodeSync(Settings)(DEFAULT_SETTINGS),
+          layout: { grid, focusMode: true },
+        });
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          expect((yield* tableNames).has("person_settings")).toBe(false);
+          yield* sql`INSERT INTO settings (key, value) VALUES ('app', ${saved})`;
+        }).pipe(Effect.provide(open(previous)));
+        for (let reopen = 0; reopen < 2; reopen++) {
+          yield* Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            // The shared row is as it was, and the grid is now the local person's own.
+            expect(yield* sql`SELECT value FROM settings WHERE key = 'app'`).toEqual([
+              { value: saved },
+            ]);
+            expect(yield* sql`SELECT person, key, value FROM person_settings`).toEqual([
+              { person: "local", key: "layout.grid", value: JSON.stringify(grid) },
+            ]);
+          }).pipe(Effect.provide(open(migrations)));
+        }
+        // The app reads it back as the desktop's one person, and nobody else is given it.
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          expect((yield* store.getSettingsFor(LOCAL_PERSON)).layout).toEqual({
+            grid,
+            focusMode: true,
+          });
+          expect((yield* store.getSettingsFor(personKey("someone-else"))).layout).toEqual({
+            focusMode: true,
+          });
+        }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+      }),
+  );
+  it.effect("upgrades a database with no saved grid, or a row it can't read, to no rows", () =>
+    Effect.gen(function* () {
+      const entries = Object.entries(migrations);
+      const index = entries.findIndex(([key]) => /^\d+_person_settings$/.test(key));
+      const previous = Object.fromEntries(entries.slice(0, index));
+      for (const [name, value] of [
+        ["none", JSON.stringify({ layout: { focusMode: true } })],
+        ["unreadable", "{not json"],
+        ["cleared", JSON.stringify({ layout: { grid: null } })],
+      ] as const) {
+        const file = join(yield* tempDir, `person-settings-${name}.db`);
+        const open = (record: Parameters<typeof migratorOptions>[0]) =>
+          SqliteMigrator.layer(migratorOptions(record)).pipe(
+            Layer.provideMerge(SqliteClient.layer({ filename: file })),
+          );
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`INSERT INTO settings (key, value) VALUES ('app', ${value})`;
+        }).pipe(Effect.provide(open(previous)));
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          expect(yield* sql`SELECT person FROM person_settings`).toEqual([]);
+        }).pipe(Effect.provide(open(migrations)));
       }
     }),
   );

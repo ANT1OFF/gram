@@ -238,9 +238,10 @@ count back.
 and its first-run welcome ("Open a repository"), which is then never shown. Its title shows as an
 added page's does. A launch at `/` stays on it.
 
-**Open threads.** Mounted, the app neither restores the pane grid the server saved nor saves its
-own: everyone who opens your app shares that server, so its grid is no one viewer's. Each tab
-starts with nothing open, and a thread's address opens that thread.
+**Open threads.** The pane grid is each person's own: the server keeps it under the person your
+proxy signed in, so a reload brings back the panes that person had open, and nobody else's. A
+thread's address opens that thread in it. With a `home`, a launch at `/` restores the panes and
+stays on your home; without one it opens the pane that had the focus, as Gram does on its own.
 
 **All threads.** `/threads` is Gram's page of every thread (archived ones are in History): those
 that need you first, then the latest, each with its state, its place, what started it and its last

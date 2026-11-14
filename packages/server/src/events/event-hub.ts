@@ -68,6 +68,11 @@ export interface EventHubShape {
   publish(event: ServerEvent): Effect.Effect<void>;
   /** Tells the `ownEvents` streams, in order with what `publish` tells them, and no window. */
   publishOwn(event: OwnEvent): Effect.Effect<void>;
+  /**
+   * `event` to the clients `serverEvents` was opened for `person`, and to nobody else: what is one
+   * person's own (a change to their own settings). The server's own consumers don't see it.
+   */
+  publishTo(person: string, event: ServerEvent): Effect.Effect<void>;
   publishFeed(item: ThreadFeedItem): Effect.Effect<void>;
   /**
    * Subscribes, then emits `snapshot` (one event, or several in order), then live events. A client
@@ -75,6 +80,8 @@ export interface EventHubShape {
    */
   serverEvents(
     snapshot: Effect.Effect<ServerEvent | ReadonlyArray<ServerEvent>>,
+    /** Whose connection this is, for `publishTo`. */
+    person?: string,
   ): Stream.Stream<ServerEvent>;
   /**
    * Every event published while the stream runs that `select` keeps, in order, none ever dropped:
@@ -117,6 +124,8 @@ export interface EventHubOptions {
 
 interface Client<I> {
   readonly accept: (item: I) => boolean;
+  /** Whose connection this is, where the subscriber said. */
+  readonly person?: string | undefined;
   readonly buffer: ClientBuffer<I>;
   /**
    * Tells the client's stream its buffer has something to take. A PubSub, not a Queue, so a waiting
@@ -130,12 +139,16 @@ interface Client<I> {
  * anywhere else. Suspended, so a publish effect built ahead of time reaches the clients registered
  * when it runs rather than when it was built.
  */
-const deliver = <I>(clients: ReadonlySet<Client<I>>, item: I) =>
+const deliver = <I>(
+  clients: ReadonlySet<Client<I>>,
+  item: I,
+  reaches: (client: Client<I>) => boolean = () => true,
+) =>
   Effect.suspend(() =>
     Effect.forEach(
       [...clients],
       (client) =>
-        client.accept(item)
+        reaches(client) && client.accept(item)
           ? Effect.sync(() => client.buffer.offer(item)).pipe(
               Effect.andThen(PubSub.publish(client.wake, true)),
             )
@@ -154,6 +167,7 @@ const clientStream = <I, A, E>(
   options: {
     readonly buffer: ClientBuffer<I>;
     readonly accept: (item: I) => boolean;
+    readonly person?: string | undefined;
     readonly start: Effect.Effect<Iterable<A>, E>;
     /** The event to send for `item`, or `undefined` to skip it; applied when it's taken. */
     readonly emit: (item: I) => A | undefined;
@@ -164,6 +178,7 @@ const clientStream = <I, A, E>(
     Effect.gen(function* () {
       const client: Client<I> = {
         accept: options.accept,
+        person: options.person,
         buffer: options.buffer,
         wake: yield* PubSub.sliding<true>(1),
       };
@@ -252,9 +267,11 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
           }),
         publishOwn: (event) =>
           Effect.suspend(() => Effect.all(offerInternal(event), { discard: true })),
+        publishTo: (person, event) =>
+          deliver(eventClients, event, (client) => client.person === person),
         publishFeed: (item) => deliver(feedClients, item),
 
-        serverEvents: (snapshot) => {
+        serverEvents: (snapshot, person) => {
           const head = snapshot.pipe(
             Effect.map((events): ReadonlyArray<ServerEvent> =>
               "type" in events ? [events] : events,
@@ -263,6 +280,7 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
           return clientStream(eventClients, {
             buffer: new ClientBuffer(serverEventCapacity, serverEventKey, serverEventOrder),
             accept: () => true,
+            person,
             start: head,
             emit: (event) => event,
             resync: head,

@@ -27,8 +27,12 @@ import {
   ProjectLocalCheck,
   applyProjectSettingsWrites,
   type SettingsWrite,
+  PERSONAL_SETTINGS,
   SettingsPatch,
   applySettingsPatch,
+  personalSettingKey,
+  splitSettingsPatch,
+  withoutPersonalSettings,
   embeddingOn,
   settingsPatchPaths,
   ProjectId,
@@ -790,6 +794,17 @@ export interface ThreadStoreShape {
   getSuppliedSettings: Effect.Effect<SettingsPatch | undefined>;
   /** Replaces what is supplied, `undefined` for nothing; answers the settings as they now read. */
   putSuppliedSettings(patch: SettingsPatch | undefined): Effect.Effect<Settings>;
+  /**
+   * The settings as `person` reads them: the shared settings, their own view laid over them
+   * (`PERSONAL_SETTINGS`, kept per person in `person_settings`), and what is supplied over both.
+   * A personal setting is read from the person's own rows only, never from the shared row.
+   */
+  getSettingsFor(person: string): Effect.Effect<Settings>;
+  /**
+   * Writes the personal settings `patch` names for `person`, `null` clearing one, and nothing
+   * else of it; answers the settings as that person now reads them.
+   */
+  putPersonSettings(person: string, patch: SettingsPatch): Effect.Effect<Settings>;
   /** Read-modify-write in one transaction; `f` answering `undefined` writes nothing. */
   updateSeenConnectors(
     f: (seen: ReadonlyArray<SeenConnector>) => ReadonlyArray<SeenConnector> | undefined,
@@ -1684,6 +1699,40 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const readSettings = Effect.gen(function* () {
         return yield* withSupplied(yield* readStoredSettings);
       });
+      /** `person`'s own settings, a patch for each; a value this build can't read is left out. */
+      const readPersonPatches = (person: string) =>
+        Effect.gen(function* () {
+          const rows = yield* sql<{
+            key: string;
+            value: string;
+          }>`SELECT key, value FROM person_settings WHERE person = ${person}`;
+          const held = new Map(rows.map((row) => [row.key, row.value]));
+          const patches: Array<SettingsPatch> = [];
+          for (const path of PERSONAL_SETTINGS) {
+            const stored = held.get(personalSettingKey(path));
+            if (stored === undefined) continue;
+            try {
+              patches.push(
+                Schema.decodeUnknownSync(SettingsPatch)({
+                  [path[0]]: { [path[1]]: JSON.parse(stored) },
+                }),
+              );
+            } catch {
+              // Written by a build that knew another shape: absent until it is set again.
+              yield* Effect.logWarning("a person's setting is unreadable; ignored").pipe(
+                Effect.annotateLogs({ key: personalSettingKey(path) }),
+              );
+            }
+          }
+          return patches;
+        });
+      const readSettingsFor = (person: string) =>
+        Effect.gen(function* () {
+          const shared = withoutPersonalSettings(yield* readStoredSettings);
+          return yield* withSupplied(
+            (yield* readPersonPatches(person)).reduce(applySettingsPatch, shared),
+          );
+        });
       /** Field by field: a part that doesn't decode reads as its default, and the rest is kept. */
       const readStoredSettings = Effect.gen(function* () {
         const stored = yield* storedSettings;
@@ -3060,6 +3109,28 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
 
         getSettings: run(readSettings),
         putSettings: (settings) => tx(writeSettings(settings)),
+        getSettingsFor: (person) => run(readSettingsFor(person)),
+        putPersonSettings: (person, patch) =>
+          tx(
+            Effect.gen(function* () {
+              const encoded = Schema.encodeSync(SettingsPatch)(splitSettingsPatch(patch).personal);
+              for (const path of PERSONAL_SETTINGS) {
+                const section = (encoded as Record<string, unknown>)[path[0]];
+                if (typeof section !== "object" || section === null || !(path[1] in section))
+                  continue;
+                const value = (section as Record<string, unknown>)[path[1]];
+                const key = personalSettingKey(path);
+                if (value === null || value === undefined) {
+                  yield* sql`DELETE FROM person_settings WHERE person = ${person} AND key = ${key}`;
+                } else {
+                  yield* sql`INSERT INTO person_settings (person, key, value)
+                    VALUES (${person}, ${key}, ${JSON.stringify(value)})
+                    ON CONFLICT (person, key) DO UPDATE SET value = excluded.value`;
+                }
+              }
+              return yield* readSettingsFor(person);
+            }),
+          ),
         getSuppliedSettings: run(readSupplied),
         putSuppliedSettings: (patch) =>
           tx(

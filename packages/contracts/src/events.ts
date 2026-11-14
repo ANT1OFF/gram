@@ -189,8 +189,9 @@ export const ServerEvent = Schema.Union([
   /** `keybindings.json` changed on disk (or through `keybindings.set`). */
   Schema.Struct({ type: Schema.Literal("keybindings.changed"), keybindings: KeybindingsState }),
   /**
-   * The app's settings changed behind the windows' backs (an approved `settings_propose`); each
-   * window pulls them again.
+   * The app's settings changed behind the windows' backs (an approved `settings_propose`), or a
+   * signed-in person changed one of their own (`PERSONAL_SETTINGS`), which only their connections
+   * are sent; each window pulls them again.
    */
   Schema.Struct({ type: Schema.Literal("settings.changed") }),
   /** Gateway profiles, or which ones have keys, changed; clients refetch profiles and models. */

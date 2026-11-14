@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import { useApi } from "@/api/context";
 import { isNotImplemented } from "@/api/errors";
 import { currentWindow } from "@/desktop/window-identity";
-import { useEmbedShell } from "@/embed/store";
+import { useHostHome } from "@/embed/store";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -19,10 +19,10 @@ const PERSIST_DEBOUNCE_MS = 500;
  * The primary window keeps its grid in `Settings.layout.grid`; another desktop window keeps its own
  * in the shell, restored with the window; another browser tab starts empty and saves nothing.
  *
- * Mounted by an app in front of Gram, every tab is such a tab. That server is shared by everyone
- * who opens the app, so its saved grid is no one viewer's: restoring it would open the thread the
- * last viewer focused, and saving would move where the next one lands. The embedding app's home
- * stays at `/` on a launch there.
+ * The grid is a person's own setting: on a server people sign in to through a proxy, each reads
+ * and saves their own, so a tab mounted by an app in front of Gram restores and saves it too. Where
+ * that app has its own home at `/`, a launch there stays home: the saved focus is not opened over
+ * it.
  */
 export function useGridSync() {
   const api = useApi();
@@ -36,14 +36,10 @@ export function useGridSync() {
   const restored = useRef(false);
   const persisted = useRef<string | undefined>(undefined);
   const { primary } = currentWindow();
-  const embedded = useEmbedShell((s) => s.hosted);
+  const hostHome = useHostHome();
 
   useEffect(() => {
     if (restored.current || !ready) return;
-    if (embedded) {
-      restored.current = true;
-      return;
-    }
     const apply = (saved: ReturnType<typeof restoreGrid>) => {
       const { grid: current, setGrid, openThread } = useLayoutStore.getState();
       // A layout picked while settings were loading wins over the saved one.
@@ -54,7 +50,7 @@ export function useGridSync() {
         return;
       }
       const focused = saved.panes[saved.focused];
-      if (pathname === "/" && focused)
+      if (pathname === "/" && focused && !hostHome)
         void navigate({ to: "/t/$threadId", params: { threadId: focused } });
     };
     const exists = (id: ThreadId) => id in useThreadsStore.getState().byId;
@@ -72,10 +68,10 @@ export function useGridSync() {
     const layout = settings.layout;
     persisted.current = layout?.grid ? JSON.stringify(layout.grid) : undefined;
     apply(restoreGrid(layout, exists));
-  }, [settings, ready, routeThread, pathname, navigate, primary, embedded]);
+  }, [settings, ready, routeThread, pathname, navigate, primary, hostHome]);
 
   useEffect(() => {
-    if (!restored.current || embedded) return;
+    if (!restored.current) return;
     const layout = gridLayout(grid);
     const key = JSON.stringify(layout);
     if (key === persisted.current) return;
@@ -90,5 +86,5 @@ export function useGridSync() {
       });
     }, PERSIST_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [api, grid, primary, embedded]);
+  }, [api, grid, primary]);
 }
