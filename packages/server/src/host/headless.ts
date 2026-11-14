@@ -63,8 +63,11 @@ export const START_A_MACHINE =
 export const defaultMachine = (
   machines: ReadonlyArray<PlaceableMachine>,
 ): { readonly id: HostId } | { readonly error: string } => {
-  // A host started for one person is theirs alone: never anyone's default.
-  const confirmed = machines.filter((machine) => machine.confirmed && machine.owner === undefined);
+  // A host started for one person is theirs alone, and one started for the threads placed on it
+  // by name takes nothing else: neither is anyone's default.
+  const confirmed = machines.filter(
+    (machine) => machine.confirmed && machine.owner === undefined && machine.onDemand === undefined,
+  );
   const online = confirmed
     .filter((machine) => machine.onlineSince !== undefined)
     .toSorted((a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id));
@@ -89,8 +92,9 @@ export interface HeadlessPlacement {
 
 /**
  * The machine for `person` (absent without fronted sign-in): their own on-demand machine that is
- * online, else the default one. With hosts provisioned on demand and none of their own running,
- * the reason says they can start one.
+ * online, else the default one. Where hosts are provisioned on demand, a signed-in person's work
+ * goes on their own machine alone: with none running, the reason says they can start one, and it
+ * is never put on a machine started for someone or something else.
  */
 export const machineFor = (
   machines: ReadonlyArray<PlaceableMachine>,
@@ -108,10 +112,9 @@ export const machineFor = (
       )
       .toSorted((a, b) => (b.onlineSince ?? 0) - (a.onlineSince ?? 0))[0];
     if (own !== undefined) return { id: own.id };
+    if (onDemand) return { error: START_A_MACHINE };
   }
-  const shared = defaultMachine(machines);
-  if ("error" in shared && onDemand && person !== undefined) return { error: START_A_MACHINE };
-  return shared;
+  return defaultMachine(machines);
 };
 
 /** Placement over the machines joined now; with no way for a machine to join, there is none. */
@@ -187,6 +190,8 @@ export const modelsFor = (
   }
   const last = person === undefined ? undefined : remembered.get(person);
   if (last !== undefined) return { models: last };
+  // Their work goes on their own machine alone (`machineFor`): another's list says nothing of it.
+  if (onDemand && person !== undefined && "error" in picked) return picked;
   const shared = defaultMachine(machines);
   const sharedMachine =
     "error" in shared ? undefined : machines.find((each) => each.id === shared.id);

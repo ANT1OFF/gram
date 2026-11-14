@@ -137,8 +137,10 @@ describe("modelsFor", () => {
       machine("m-shared", { onlineSince: 1, models: OTHER }),
     ];
     expect(modelsFor(machines, "ada", true, new Map())).toEqual({ models: MODELS });
-    // Grace has no machine of her own: Ada's is never hers, the shared one is.
-    expect(modelsFor(machines, "grace", true, new Map())).toEqual({ models: OTHER });
+    // Grace has no machine of her own: neither Ada's nor the shared one is hers to run on.
+    expect(modelsFor(machines, "grace", true, new Map())).toEqual({ error: START_A_MACHINE });
+    // Without hosts on demand, the shared machine is everyone's.
+    expect(modelsFor(machines, "grace", false, new Map())).toEqual({ models: OTHER });
     // Nor is it anyone's when it is the only one.
     expect(modelsFor([own({ onlineSince: 1, models: MODELS })], "grace", true, new Map())).toEqual({
       error: START_A_MACHINE,

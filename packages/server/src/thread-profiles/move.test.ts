@@ -323,6 +323,33 @@ describe("moving a profile thread keeps whose it is (REVIEW-477 1)", () => {
   );
 
   it.effect(
+    "moves a thread from a machine registered before kinds onto one for threads placed by name",
+    () =>
+      Effect.gen(function* () {
+        // An embedder's run host, kept from before it said its kind, restarted as one that says it.
+        const { starter, cleanup } = setup({
+          records: { [GONE]: { id: GONE }, [NEXT]: { onDemand: "thread" } },
+        });
+        yield* Effect.addFinalizer(() => Effect.sync(cleanup));
+        expect((yield* starter.moveOne(ID, NEXT)).moved).toBe(true);
+      }),
+  );
+
+  it.effect(
+    "never moves a thread from a machine for threads placed by name back to a shared one",
+    () =>
+      Effect.gen(function* () {
+        const { starter, cleanup } = setup({
+          records: { [GONE]: { onDemand: "thread" }, [NEXT]: { id: NEXT } },
+        });
+        yield* Effect.addFinalizer(() => Effect.sync(cleanup));
+        expect((yield* starter.moveOne(ID, NEXT).pipe(Effect.flip)).message).toBe(
+          NOT_THE_THREADS_OWNER,
+        );
+      }),
+  );
+
+  it.effect(
     "refuses when the old machine's record is gone, as whose the thread is can't be told",
     () =>
       Effect.gen(function* () {

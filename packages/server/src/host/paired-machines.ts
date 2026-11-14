@@ -75,7 +75,9 @@ export interface PairedMachine {
   readonly owner?: string;
   /**
    * What an on-demand host is for: `personal`, the person's own host for work in a folder or a
-   * repository, or `thread`, one thread's host with no disk of its own.
+   * repository, or `thread`, a host for the threads placed on it by name (and their workers),
+   * such as one an embedder started for a single run. Either is never anyone's default machine
+   * (`host/headless.ts`).
    */
   readonly onDemand?: OnDemandKind;
 }

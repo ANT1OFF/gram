@@ -451,14 +451,19 @@ export const machineManagement = (
           typeof platform !== "string"
         )
           return json({ message: "Give the host's name and its public key." }, 400);
-        // A host started on demand for one person: both, or neither.
+        // A host started on demand: for one person (`personal`, which names its owner), or for
+        // the threads placed on it by name (`thread`, with or without an owner). An owner always
+        // comes with a kind, and a person's own host always with its owner.
         if (
-          (owner !== undefined || onDemand !== undefined) &&
-          (typeof owner !== "string" ||
-            !OWNER.test(owner) ||
-            (onDemand !== "personal" && onDemand !== "thread"))
+          (owner !== undefined && (typeof owner !== "string" || !OWNER.test(owner))) ||
+          (onDemand !== undefined && onDemand !== "personal" && onDemand !== "thread") ||
+          (owner !== undefined && onDemand === undefined) ||
+          (onDemand === "personal" && owner === undefined)
         )
-          return json({ message: "An on-demand host names its owner and its kind." }, 400);
+          return json(
+            { message: "An on-demand host names its kind, and a person's its owner." },
+            400,
+          );
         const result = (() => {
           try {
             return hosts.machines.provision({

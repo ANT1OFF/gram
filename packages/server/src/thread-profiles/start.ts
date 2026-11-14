@@ -699,7 +699,7 @@ export const makeProfileStarter = ({
             target === undefined ||
             !keepsOwner(ownerOf, thread, { hostId: to }) ||
             !sameOwner(ownerOf, checkout, { hostId: to }) ||
-            stringField(source, "onDemand") !== stringField(target, "onDemand")
+            !sameKind(stringField(source, "onDemand"), stringField(target, "onDemand"))
           )
             return yield* refuse(NOT_THE_THREADS_OWNER);
           let files: ReadonlyArray<ProfileFile> = [];
@@ -767,6 +767,14 @@ const ownFolder = (checkout: Thread["checkout"], threadId: ThreadId): boolean =>
   const parts = checkout.path.split(/[\\/]/);
   return parts.at(-1) === threadId && parts.at(-2) === HOST_THREADS_DIR;
 };
+
+/**
+ * Whether a thread may move between machines of these kinds (`onDemand`): to one of the same
+ * kind, or from a machine registered before kinds were given to one started for the threads
+ * placed on it (`thread`), which takes nothing else.
+ */
+const sameKind = (from: string | undefined, to: string | undefined): boolean =>
+  from === to || (from === undefined && to === "thread");
 
 /** A record's string field, where it has one: a machine's `owner` or `onDemand`, say. */
 const stringField = (record: object, field: string): string | undefined => {

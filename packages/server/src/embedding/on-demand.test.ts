@@ -38,12 +38,23 @@ describe("hosts provisioned on demand: placement", () => {
   const grace = machine({ id: "m-grace", owner: "grace", onDemand: "personal" });
   const shared = machine({ id: "m-shared", joinedAt: 5 });
 
-  it("places a person's work on their own machine, and never on another person's", () => {
+  it("places a person's work on their own machine alone, never on another person's or a shared one", () => {
     expect(machineFor([grace, ada, shared], "ada", true)).toEqual({ id: "m-ada" });
-    expect(machineFor([grace, shared], "ada", true)).toEqual({ id: "m-shared" });
-    // Someone else's machine is nobody's default.
+    // With none of their own, they are told to start one: no other machine takes their work.
+    expect(machineFor([grace, shared], "ada", true)).toEqual({ error: START_A_MACHINE });
     expect(machineFor([grace], "ada", true)).toEqual({ error: START_A_MACHINE });
+    // Work for nobody in particular (the server's own) still takes the shared machine.
+    expect(machineFor([grace, shared], undefined, true)).toEqual({ id: "m-shared" });
     expect(machineFor([grace], undefined, true)).toEqual({ error: NO_MACHINE_JOINED });
+  });
+
+  it("never makes a host started for the threads placed on it anyone's default", () => {
+    // As an embedder registers a host for one run: no owner, kind `thread`.
+    const run = machine({ id: "m-run", onDemand: "thread", owner: undefined, joinedAt: 0 });
+    expect(machineFor([run, shared], undefined, true)).toEqual({ id: "m-shared" });
+    expect(machineFor([run], undefined, true)).toEqual({ error: NO_MACHINE_JOINED });
+    expect(machineFor([run], undefined, false)).toEqual({ error: NO_MACHINE_JOINED });
+    expect(machineFor([run], "ada", true)).toEqual({ error: START_A_MACHINE });
   });
 
   it("tells a person to start one only where hosts are provisioned on demand", () => {
