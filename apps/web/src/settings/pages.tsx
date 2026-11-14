@@ -123,7 +123,7 @@ export const settingsGroupOf = (page: Pick<SettingsPage, "group">): SettingsNavG
 
 /** Whether `page` opens from its group rather than being the group's own page. */
 export const isSubpage = (page: Pick<SettingsPage, "id" | "group">): boolean =>
-  page.id !== page.group;
+  page.id !== page.group && page.group !== `host:${page.id}`;
 
 /** The pages that open from `group`, in nav order. */
 export const subpagesOf = (

@@ -11,7 +11,7 @@ import { FakeAgentBadge } from "@/shell/fake-agent-badge";
 import { PhoneMenuButton } from "@/shell/phone-drawer";
 import { ROUND } from "@/shell/phone-menu";
 import { useHostAttention } from "@/embed/attention";
-import { useGramSettingKept, useHostPage, useRoomySidebar } from "@/embed/store";
+import { useEmbedShell, useGramSettingKept, useHostPage, useRoomySidebar } from "@/embed/store";
 import { PhoneTitle } from "@/shell/phone-title";
 import { ShellToggle } from "@/shell/shell-toggle";
 import { TitlebarOverflow } from "@/shell/titlebar-fold";
@@ -100,7 +100,11 @@ export function ShellTitlebar({
   const pathBar = usePathBar();
   // An app in front of Gram that leaves Usage out of Settings has its own idea of what is spent.
   const usageKept = useGramSettingKept("usage");
-  const hostPage = useHostPage();
+  // Settings an app in front of Gram has made its own holds none of the window's panes either.
+  const hostSettings = useEmbedShell(
+    (s) => s.settings.gram !== undefined || (s.settings.pages?.length ?? 0) > 0,
+  );
+  const hostPage = useHostPage() || (settings && hostSettings);
 
   // A phone's one bar: the drawer's menu, where you are, Needs you and "…" with the rest in words.
   // The thread's header and Board's controls still mount in the slot, out of sight: what they
