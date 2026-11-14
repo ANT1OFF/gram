@@ -101,6 +101,8 @@ const kept = (on: boolean) => {
       sweep: Effect.void,
       putStaged: (key, stamp, stage) =>
         Effect.gen(function* () {
+          // As the store does: what was sent under this stamp is not read again.
+          if (objects.get(key)?.stamp === stamp) return;
           const path = join(dir, `staged-${n++}`);
           if (yield* stage(path)) objects.set(key, { stamp, bytes: readFileSync(path) });
         }),
@@ -500,6 +502,12 @@ describe("WorkspaceOutputs", () => {
         const before = there.calls.length;
         yield* outputs.record(thread.id, { path: "docs/report.pdf", source: "written" });
         expect(there.calls.length).toBe(before + 1);
+
+        // A copy that did not arrive is made when the output is recorded again, though its row
+        // is there already and nothing about the file changed.
+        store.objects.delete(key);
+        yield* outputs.record(thread.id, { path: "docs/report.pdf", source: "written" });
+        expect(store.objects.get(key)?.bytes.equals(report)).toBe(true);
       }).pipe(
         Effect.provide(layers(tree.dataDir, there.layer, store.layer)),
         Effect.scoped,

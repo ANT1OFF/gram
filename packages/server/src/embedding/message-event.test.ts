@@ -127,6 +127,24 @@ describe("a stored message as the sink sends it", () => {
     expect(event.data["truncated"]).toBe(true);
   });
 
+  it("cuts plain text to fit, and keeps its start", () => {
+    // One byte a character: the kept start lands on the limit exactly, with no spare byte.
+    for (const length of [300_000, 300_001, 262_144]) {
+      const event = messageEvent(
+        where,
+        stored(message([{ type: "text", text: "a".repeat(length) }])),
+        0,
+      );
+      expect(bytesOf(event)).toBeLessThanOrEqual(SINK_MESSAGE_EVENT_MAX_BYTES);
+      const parts = (event.data["message"] as GramUIMessage).parts as ReadonlyArray<
+        Record<string, unknown>
+      >;
+      expect(parts[0]!["type"]).toBe("text");
+      expect((parts[0]!["text"] as string).startsWith("aaa")).toBe(true);
+      expect((parts[0]!["text"] as string).endsWith(TEXT_CUT_MARK)).toBe(true);
+    }
+  });
+
   it("is never over, even where nothing it can cut is what is large", () => {
     const one = message([{ type: "text", text: "hi" }], { toolTimes: { x: "t".repeat(400_000) } });
     const event = messageEvent(where, stored(one), 0);

@@ -33,6 +33,7 @@ import {
 import { isInside, tryRealPath } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -149,6 +150,11 @@ const toOutput = (row: Row): WorkspaceOutput => ({
   at: row.at,
 });
 
+/** How long another machine has to hand over one part of a file. */
+const HOST_PART_TIMEOUT = Duration.seconds(60);
+/** The longest path another machine may say a file is at. */
+const HOST_PATH_MAX = 4096;
+
 /**
  * The whole file written at `to`, a part at a time from the machine it is on, or `false`:
  * it changed under the read, a part didn't come, or it is over what the store takes.
@@ -169,10 +175,18 @@ const stageFrom =
       yield* Effect.promise(() => appendFile(to, Buffer.alloc(0)));
       while (offset < first.size) {
         const length = Math.min(HOST_FILE_PART_BYTES, first.size - offset);
-        const got = yield* part(path, roots, outside, offset, length);
-        if (got.size !== first.size || got.mtime !== first.mtime) return false;
-        const bytes = Buffer.from(got.data, "base64");
-        if (bytes.length === 0 || bytes.length > length) return false;
+        // The machine may be one that runs what an agent wrote. One that holds its answer back,
+        // or hands the file over a byte at a time, would hold up every other thread's outputs:
+        // they are copied one at a time. So a part comes in time and whole, or the copy is off.
+        const got = yield* part(path, roots, outside, offset, length).pipe(
+          Effect.timeoutOption(HOST_PART_TIMEOUT),
+        );
+        if (got._tag === "None") return false;
+        if (got.value.size !== first.size || got.value.mtime !== first.mtime) return false;
+        // Not decoded before its length is known to be the one asked for.
+        if (got.value.data.length > Math.ceil(length / 3) * 4) return false;
+        const bytes = Buffer.from(got.value.data, "base64");
+        if (bytes.length !== length) return false;
         yield* Effect.promise(() => appendFile(to, bytes));
         offset += bytes.length;
       }
@@ -304,16 +318,27 @@ export class WorkspaceOutputs extends Context.Service<WorkspaceOutputs, Workspac
             allowed: output.source === "sent" || output.source === "written",
             refusal: "isn't in this thread's folders",
           };
-          const first = yield* part(spelled, roots, outside, 0, 1).pipe(Effect.option);
+          // In time, or not at all: this runs in the one queue every thread's outputs go through.
+          const first = Option.flatten(
+            yield* part(spelled, roots, outside, 0, 1).pipe(
+              Effect.timeoutOption(HOST_PART_TIMEOUT),
+              Effect.option,
+            ),
+          );
           if (first._tag === "None" || isCredentialPath(first.value.path)) return;
           const { path, size, mtime } = first.value;
-          if (!(yield* keep(thread, output.source, { path, size, mtime }))) return;
+          // What the machine says of its own file is its word, and it goes into a row and a key.
+          if (size < 0 || path.length > HOST_PATH_MAX) return;
+          const fresh = yield* keep(thread, output.source, { path, size, mtime });
+          // Asked for again when the row was there already: a copy that failed (the machine went
+          // away, the store was down, the server restarted) is made the next time the output is
+          // recorded. One that was sent is not sent twice: the store remembers its stamp.
           yield* objects.putStaged(
             outputKey(thread.id, path),
             `${size}:${mtime}`,
             stageFrom(part, path, roots, outside, { size, mtime }),
           );
-          yield* changed(thread);
+          if (fresh) yield* changed(thread);
         });
 
       const recordNow = (threadId: ThreadId, output: ObservedOutput) =>
