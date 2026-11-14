@@ -3915,6 +3915,15 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "board-no-ci",
+    title: "Board: a repo that runs no CI, one calm note under the header instead of a mark per PR",
+    open: async (page) => {
+      await openOrchestratorOf(page, () => window.gramMock!.simulateNoCi());
+      await openBoardView(page);
+      await page.waitForTimeout(800);
+    },
+  },
+  {
     name: "board-failing",
     title:
       "Board: the failure card above the lines, a stopped worker with its step; a worker's red CI stays on its line",

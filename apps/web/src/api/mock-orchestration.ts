@@ -308,6 +308,8 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
   const overlaps = new Map<ThreadId, readonly ThreadId[]>();
   /** Workers the user typed into since their last report. */
   const intervened = new Set<ThreadId>();
+  /** Projects set to have no local check (`noLocalCheck`): their workers' rows say so. */
+  const noLocalCheck = new Set<string>();
   /** Workers started from New for their orchestrator, until their brief, the user's words, is sent. */
   const briefed = new Set<ThreadId>();
   /** Workers started from New, held or not, until their first turn begins (`takeNewBrief`). */
@@ -429,26 +431,27 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       .filter((t) => orchestrator !== undefined && t.spawnedBy?.threadId === orchestrator.id)
       .flatMap((t) => {
         const summary = host.summary(t.id);
+        const projectName = host.projects().find((p) => p.id === t.projectId)?.name ?? t.projectId;
         return summary === undefined || t.spawnedBy === undefined
           ? []
           : [
-              ledgerEntry(
-                summary,
-                t.spawnedBy.feature,
-                host.projects().find((p) => p.id === t.projectId)?.name ?? t.projectId,
-                {
-                  lastReport: reports.get(t.id),
-                  started: started.has(t.id),
-                  askedAt,
-                  overlapsWith: (overlaps.get(t.id) ?? []).filter((other) =>
-                    host.threads().some((open) => open.id === other),
-                  ),
-                  userIntervened: intervened.has(t.id),
-                  alsoIn: alsoIn.get(t.id),
-                  wakes: wakesOf.get(t.id),
-                  now: Date.now(),
-                },
-              ),
+              ledgerEntry(summary, t.spawnedBy.feature, projectName, {
+                ...(noLocalCheck.has(t.projectId)
+                  ? {
+                      localGate: `no local check configured for ${projectName}; local gate OFF — CI and GitHub rules apply`,
+                    }
+                  : {}),
+                lastReport: reports.get(t.id),
+                started: started.has(t.id),
+                askedAt,
+                overlapsWith: (overlaps.get(t.id) ?? []).filter((other) =>
+                  host.threads().some((open) => open.id === other),
+                ),
+                userIntervened: intervened.has(t.id),
+                alsoIn: alsoIn.get(t.id),
+                wakes: wakesOf.get(t.id),
+                now: Date.now(),
+              }),
             ];
       });
     const budget: BudgetMeters = {
@@ -1421,6 +1424,15 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     addFinished(detail: FinishedWorkerDetail): void {
       closedWorkers.set(detail.worker.threadId, detail);
       host.emit({ type: "orchestration.changed", workspaceId: detail.worker.workspaceId });
+    },
+
+    /**
+     * A project with no local check configured, as the server's ledger words it (`localGateOf`), so
+     * its workers' rows carry `localGate`. The mock's projects otherwise say nothing of one.
+     */
+    noLocalCheck(projectId: string, workspaceId: WorkspaceId): void {
+      noLocalCheck.add(projectId);
+      host.emit({ type: "orchestration.changed", workspaceId });
     },
 
     /** "Take over": the hold `userTyped` puts on a worker, by the same path, sending nothing. */
