@@ -425,24 +425,20 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
           className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border px-3 py-1.5 text-meta text-muted-foreground"
         >
           {state === "reconnecting" ? (
-            <span data-testid="server-preview-reconnecting" className="flex items-center gap-1.5">
+            <span
+              data-testid="server-preview-reconnecting"
+              className="flex flex-wrap items-center gap-x-1.5"
+            >
               <LoaderCircle aria-hidden ref={spin} className="size-icon-row" />
-              Reconnecting to the server's browser…
+              <span>
+                Reconnecting<span className="hidden @lg:inline"> to the server's browser</span>…
+              </span>
+              <span data-testid="server-preview-was-driving" className="shrink-0">
+                {yours ? "You were driving" : "The agent was driving"}
+              </span>
             </span>
           ) : (
             <>
-              {page.recording === true && (
-                <span
-                  data-testid="preview-recording"
-                  className="flex shrink-0 items-center gap-1 text-destructive"
-                >
-                  <Circle aria-hidden className="size-2.5 fill-current" />
-                  <span className="@lg:hidden" aria-hidden>
-                    Rec
-                  </span>
-                  <span className="sr-only @lg:not-sr-only">Recording</span>
-                </span>
-              )}
               <span
                 data-testid="preview-driver"
                 data-driver={yours ? "user" : "agent"}
@@ -455,6 +451,20 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
                 )}
                 {yours ? "You're driving" : "Agent driving"}
               </span>
+              {/* After who drives, so a narrow panel's first line keeps the driver and the action. */}
+              {page.recording === true && (
+                <span
+                  data-testid="preview-recording"
+                  className="order-2 flex shrink-0 items-center gap-1 text-destructive @lg:order-first"
+                >
+                  <Circle aria-hidden className="size-2.5 fill-current" />
+                  Recording
+                </span>
+              )}
+              {/* In a narrow panel a recording starts the second line, beside how to take over. */}
+              {!yours && page.recording === true && (
+                <span aria-hidden className="order-1 basis-full @lg:hidden" />
+              )}
               {yours ? (
                 <>
                   {/* In a narrow panel the button ends the first line and the rest takes the next. */}
@@ -504,8 +514,16 @@ export function ServerPreview({ threadId, view }: { threadId: ThreadId; view: Se
                     </span>
                   )}
                   {live && (
-                    <span data-testid="server-preview-hint" className="shrink-0">
-                      Click or type in the page to take over
+                    <span
+                      data-testid="server-preview-hint"
+                      className="order-3 shrink-0 @lg:order-none"
+                    >
+                      Click or type
+                      <span className={page.recording === true ? "hidden @lg:inline" : undefined}>
+                        {" "}
+                        in the page
+                      </span>{" "}
+                      to take over
                     </span>
                   )}
                 </>

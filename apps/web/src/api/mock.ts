@@ -1842,7 +1842,19 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       !workerBrowserOn(settings)
     )
       return { state: "held", why: "Workers' browser is off in Settings → Workspaces." };
-    return { state: "on" };
+    const notReady = this.#browserNotReady.get(threadId);
+    return notReady === undefined ? { state: "on" } : { state: "on", notReady };
+  }
+
+  readonly #browserNotReady = new Map<ThreadId, string>();
+
+  /**
+   * Dev and e2e hook: what the thread's running session still lacks to use the browser it was
+   * given, as its own MCP servers report; `undefined` once it has it.
+   */
+  simulateBrowserNotReady(threadId: ThreadId, why: string | undefined) {
+    if (why === undefined) this.#browserNotReady.delete(threadId);
+    else this.#browserNotReady.set(threadId, why);
   }
 
   /** Per thread, the timer that ends its snooze, as the server's wakes do. */

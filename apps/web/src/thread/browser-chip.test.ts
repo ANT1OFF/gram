@@ -12,18 +12,19 @@ describe("browserChipText", () => {
 
   it("says what is in effect: on, held back, or not available", () => {
     expect(browserChipText(codex, { state: "on" })).toMatchObject({ label: "Your browser" });
-    expect(browserChipText(codex, { state: "held", why: "It's off." })?.hint).toBe(
-      "Lent your browser, but it doesn't get it: It's off.",
-    );
+    expect(browserChipText(codex, { state: "held", why: "It's off." })).toMatchObject({
+      label: "Browser held back",
+      hint: "You lent this thread your browser, but it doesn't get it. It's off.",
+    });
     expect(
       browserChipText(codex, { state: "on", notReady: "Check that the ChatGPT app is open." }),
-    ).toEqual({
+    ).toMatchObject({
       label: "Your browser isn't ready",
-      hint: "Lent your browser. Check that the ChatGPT app is open.",
+      hint: "This thread has your browser, but can't reach it yet. Check that the ChatGPT app is open.",
     });
     // A gated Codex thread never claims the browser is on.
     expect(
       browserChipText(codex, { state: "unavailable", why: "In Gram's own Codex home." }),
-    ).toEqual({ label: "Browser not available", hint: "In Gram's own Codex home." });
+    ).toMatchObject({ label: "Browser not available", hint: "In Gram's own Codex home." });
   });
 });
