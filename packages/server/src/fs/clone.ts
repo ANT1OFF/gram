@@ -219,9 +219,7 @@ export const cloneRepo = (
               ),
             );
             if (out.status !== 0) {
-              return yield* new GitError({
-                message: cloneFailureMessage(label, out),
-              });
+              return yield* new GitError({ message: cloneFailureMessage(label, out) });
             }
             if (!stillReserved(reservation)) return false;
             // POSIX `rename` replaces an empty folder (the reservation) and refuses any other.

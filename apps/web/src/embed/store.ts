@@ -283,6 +283,10 @@ export const useMachineNoun = () =>
     return noun !== undefined && /^[a-z][a-z -]{0,30}$/.test(noun) ? noun : "machine";
   });
 
+/** Whether a machine started on demand reaches every repository of the person's, unasked. */
+export const useMachineReachesTheirs = () =>
+  useEmbedShell((s) => s.machines.repositories === "theirs");
+
 /** The deployment's lines about a machine started on demand, at most five, each kept short. */
 export const useMachineFacts = () =>
   useEmbedShell((s) => s.machines.facts)

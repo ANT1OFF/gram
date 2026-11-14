@@ -1,9 +1,5 @@
 // @vitest-environment happy-dom
-import {
-  DEFAULT_SETTINGS,
-  linkedCheckoutMessage,
-  notARepositoryMessage,
-} from "@gram/contracts";
+import { DEFAULT_SETTINGS, linkedCheckoutMessage, notARepositoryMessage } from "@gram/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -19,10 +15,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiProvider } from "@/api/context";
-import {
-  prefillDraftProject,
-  useDraftProjectRoot,
-} from "@/composer/draft-prefill";
+import { prefillDraftProject, useDraftProjectRoot } from "@/composer/draft-prefill";
 import { createMockApi, type MockApi } from "@/api/mock";
 import type { ShellRepositoryPage } from "@/embed/contract";
 import { useEmbedShell } from "@/embed/store";
@@ -38,22 +31,13 @@ import { useFolderStatus } from "./use-folder";
 function Harness({ initial }: { initial: string }) {
   const [value, setValue] = useState(initial);
   const status = useFolderStatus(value, 0);
-  return (
-    <ProjectPicker
-      value={value}
-      onChange={setValue}
-      status={status}
-      debounceMs={0}
-    />
-  );
+  return <ProjectPicker value={value} onChange={setValue} status={status} debounceMs={0} />;
 }
 
 let api: MockApi;
 
 function renderPicker(initial = "") {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   api = createMockApi({ speed: 0, autoplay: false });
   render(
     <QueryClientProvider client={client}>
@@ -62,9 +46,7 @@ function renderPicker(initial = "") {
       </ApiProvider>
     </QueryClientProvider>,
   );
-  return screen.getByRole<HTMLInputElement>("combobox", {
-    name: "Project path",
-  });
+  return screen.getByRole<HTMLInputElement>("combobox", { name: "Project path" });
 }
 
 const type = (input: HTMLInputElement, value: string) => {
@@ -73,9 +55,7 @@ const type = (input: HTMLInputElement, value: string) => {
 };
 
 const optionNames = async () => {
-  const list = await screen.findByRole("listbox", {
-    name: "Folder suggestions",
-  });
+  const list = await screen.findByRole("listbox", { name: "Folder suggestions" });
   return within(list)
     .getAllByRole("option")
     .map((option) => option.textContent);
@@ -110,20 +90,12 @@ describe("default folder", () => {
     useServerSettings.setState({ settings: DEFAULT_SETTINGS });
     const input = renderPicker();
     type(input, "~/Documents/code/gram");
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Set as default folder" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "Set as default folder" }));
     await waitFor(() =>
-      expect(screen.getByTestId("folder-status").textContent).toContain(
-        "Default folder",
-      ),
+      expect(screen.getByTestId("folder-status").textContent).toContain("Default folder"),
     );
-    expect((await api.getSettings()).agents.defaultFolder).toBe(
-      "~/Documents/code/gram",
-    );
-    expect(
-      screen.queryByRole("button", { name: "Set as default folder" }),
-    ).toBeNull();
+    expect((await api.getSettings()).agents.defaultFolder).toBe("~/Documents/code/gram");
+    expect(screen.queryByRole("button", { name: "Set as default folder" })).toBeNull();
   });
 });
 
@@ -132,10 +104,7 @@ describe("PathField autocomplete", () => {
     const input = renderPicker();
     type(input, "~/Documents/code/gra");
     await waitFor(async () =>
-      expect((await optionNames()).toSorted()).toEqual([
-        "gramgit",
-        "graph-tools",
-      ]),
+      expect((await optionNames()).toSorted()).toEqual(["gramgit", "graph-tools"]),
     );
     expect(input.getAttribute("aria-expanded")).toBe("true");
   });
@@ -158,9 +127,7 @@ describe("PathField autocomplete", () => {
     type(input, "~/Documents/code/gram");
     await waitFor(async () => expect(await optionNames()).toEqual(["gramgit"]));
     fireEvent.keyDown(input, { key: "ArrowDown" });
-    expect(screen.getByRole("option", { selected: true }).textContent).toBe(
-      "gramgit",
-    );
+    expect(screen.getByRole("option", { selected: true }).textContent).toBe("gramgit");
     fireEvent.keyDown(input, { key: "Enter" });
     expect(input.value).toBe("~/Documents/code/gram/");
   });
@@ -169,16 +136,11 @@ describe("PathField autocomplete", () => {
 describe("validation", () => {
   it.each([
     ["~/Documents/nope", "Folder not found: /Users/dev/Documents/nope"],
-    [
-      "~/Documents/code/README.md",
-      "Not a folder: /Users/dev/Documents/code/README.md",
-    ],
+    ["~/Documents/code/README.md", "Not a folder: /Users/dev/Documents/code/README.md"],
   ])("explains why %s can't be used", async (path, message) => {
     const input = renderPicker();
     type(input, path);
-    expect((await screen.findByTestId("folder-problem")).textContent).toContain(
-      message,
-    );
+    expect((await screen.findByTestId("folder-problem")).textContent).toContain(message);
   });
 
   it("offers recovery for a folder the system won't let it read, and retries the check", async () => {
@@ -191,9 +153,7 @@ describe("validation", () => {
 
     const browse = vi.spyOn(api, "browse");
     fireEvent.click(within(card).getByRole("button", { name: "Retry" }));
-    await waitFor(() =>
-      expect(browse).toHaveBeenCalledWith("~/Documents/Private/"),
-    );
+    await waitFor(() => expect(browse).toHaveBeenCalledWith("~/Documents/Private/"));
     expect(await screen.findByTestId("folder-access-recovery")).toBeTruthy();
   });
 
@@ -233,9 +193,7 @@ describe("FolderBrowser", () => {
     fireEvent.click(screen.getByRole("button", { name: "Choose this folder" }));
     expect(input.value).toBe("~/Documents/code");
     await waitFor(() =>
-      expect(screen.getByTestId("folder-status").textContent).toContain(
-        "Not a git repository",
-      ),
+      expect(screen.getByTestId("folder-status").textContent).toContain("Not a git repository"),
     );
   });
 
@@ -248,9 +206,7 @@ describe("FolderBrowser", () => {
 });
 
 const renderAdd = (adjust: (mock: typeof api) => void = () => {}) => {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   api = createMockApi({ speed: 0, autoplay: false });
   adjust(api);
   const onAdded = vi.fn();
@@ -272,9 +228,7 @@ describe("adding a repository", () => {
   it("suggests GitHub repositories, clones the one picked, and says where", async () => {
     const { input, onAdded } = renderAdd();
     type(input, "example-device");
-    const list = await screen.findByRole("listbox", {
-      name: "Repository suggestions",
-    });
+    const list = await screen.findByRole("listbox", { name: "Repository suggestions" });
     expect(
       within(list)
         .getAllByRole("option")
@@ -285,9 +239,7 @@ describe("adding a repository", () => {
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(input.value).toBe("EXAMPLE/example-device-apps");
-    expect(
-      screen.getByText(/^Clones into ~\/Documents\/code\/example-device-apps/),
-    ).toBeTruthy();
+    expect(screen.getByText(/^Clones into ~\/Documents\/code\/example-device-apps/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Clone" }));
     expect(screen.getByRole("status").textContent).toBe(
@@ -313,18 +265,12 @@ describe("adding a repository", () => {
   it("asks for suggestions before the field is focused, and says while they load", async () => {
     const answer = Promise.withResolvers<{ repos: string[] }>();
     const cloneSuggestions = vi.fn(() => answer.promise);
-    const { input } = renderAdd((mock) =>
-      Object.assign(mock, { cloneSuggestions }),
-    );
+    const { input } = renderAdd((mock) => Object.assign(mock, { cloneSuggestions }));
     expect(cloneSuggestions).toHaveBeenCalledTimes(1);
     type(input, "example");
-    expect(screen.getByRole("status").textContent).toBe(
-      "Loading your GitHub repositories…",
-    );
+    expect(screen.getByRole("status").textContent).toBe("Loading your GitHub repositories…");
     answer.resolve({ repos: ["EXAMPLE/example-device-apps"] });
-    const list = await screen.findByRole("listbox", {
-      name: "Repository suggestions",
-    });
+    const list = await screen.findByRole("listbox", { name: "Repository suggestions" });
     expect(within(list).getByRole("option").getAttribute("aria-label")).toBe(
       "EXAMPLE/example-device-apps",
     );
@@ -343,38 +289,24 @@ describe("adding a repository", () => {
         next: "2",
         notice: {
           text: "Only repositories the app can reach are listed.",
-          link: {
-            label: "Change access",
-            href: "https://example.test/install",
-          },
+          link: { label: "Change access", href: "https://example.test/install" },
         },
       },
       ":2": { repositories: [{ fullName: "me/site" }] },
       "web:": { repositories: [{ fullName: "acme/web" }] },
     };
-    const list = vi.fn(
-      async ({ query, cursor }: { query: string; cursor?: string }) => {
-        const page = pages[`${query}:${cursor ?? ""}`];
-        if (page === undefined)
-          throw new Error(`no page for ${query}:${cursor}`);
-        return page;
-      },
-    );
-    const cloneSuggestions = vi.fn(async () => ({
-      repos: ["EXAMPLE/own-listing"],
-    }));
+    const list = vi.fn(async ({ query, cursor }: { query: string; cursor?: string }) => {
+      const page = pages[`${query}:${cursor ?? ""}`];
+      if (page === undefined) throw new Error(`no page for ${query}:${cursor}`);
+      return page;
+    });
+    const cloneSuggestions = vi.fn(async () => ({ repos: ["EXAMPLE/own-listing"] }));
     useEmbedShell.setState({ repositories: { list } });
     try {
-      const { input } = renderAdd((mock) =>
-        Object.assign(mock, { cloneSuggestions }),
-      );
+      const { input } = renderAdd((mock) => Object.assign(mock, { cloneSuggestions }));
       fireEvent.focus(input);
-      const listbox = await screen.findByRole("listbox", {
-        name: "Repository suggestions",
-      });
-      await waitFor(() =>
-        expect(within(listbox).getAllByRole("option")).toHaveLength(3),
-      );
+      const listbox = await screen.findByRole("listbox", { name: "Repository suggestions" });
+      await waitFor(() => expect(within(listbox).getAllByRole("option")).toHaveLength(3));
       const names = () =>
         within(listbox)
           .getAllByRole("option")
@@ -382,29 +314,22 @@ describe("adding a repository", () => {
       // The person's own first, then the organisations by name.
       expect(names()).toEqual(["me/notes", "acme/web", "zeta-org/api"]);
       expect(within(listbox).getByLabelText("Private")).toBeTruthy();
-      expect(
-        within(listbox).getByRole("link", { name: "Change access" }),
-      ).toHaveProperty("href", "https://example.test/install");
+      expect(within(listbox).getByRole("link", { name: "Change access" })).toHaveProperty(
+        "href",
+        "https://example.test/install",
+      );
       expect(cloneSuggestions).not.toHaveBeenCalled();
 
       // Going down to the end asks for the next page.
-      for (let i = 0; i < 3; i++)
-        fireEvent.keyDown(input, { key: "ArrowDown" });
+      for (let i = 0; i < 3; i++) fireEvent.keyDown(input, { key: "ArrowDown" });
       await waitFor(() =>
-        expect(names()).toEqual([
-          "me/notes",
-          "me/site",
-          "acme/web",
-          "zeta-org/api",
-        ]),
+        expect(names()).toEqual(["me/notes", "me/site", "acme/web", "zeta-org/api"]),
       );
 
       // Typing searches the source.
       type(input, "web");
       await waitFor(() => expect(names()).toEqual(["acme/web"]));
-      expect(list).toHaveBeenCalledWith(
-        expect.objectContaining({ query: "web" }),
-      );
+      expect(list).toHaveBeenCalledWith(expect.objectContaining({ query: "web" }));
     } finally {
       useEmbedShell.setState({ repositories: undefined });
     }
@@ -412,19 +337,13 @@ describe("adding a repository", () => {
 
   it("shows why the embedding app's repositories couldn't be listed", async () => {
     useEmbedShell.setState({
-      repositories: {
-        list: async () => Promise.reject(new Error("Connect GitHub first.")),
-      },
+      repositories: { list: async () => Promise.reject(new Error("Connect GitHub first.")) },
     });
     try {
       const { input } = renderAdd();
       fireEvent.focus(input);
-      const listbox = await screen.findByRole("listbox", {
-        name: "Repository suggestions",
-      });
-      await waitFor(() =>
-        expect(listbox.textContent).toBe("Connect GitHub first."),
-      );
+      const listbox = await screen.findByRole("listbox", { name: "Repository suggestions" });
+      await waitFor(() => expect(listbox.textContent).toBe("Connect GitHub first."));
     } finally {
       useEmbedShell.setState({ repositories: undefined });
     }
@@ -470,18 +389,14 @@ describe("adding a repository", () => {
       // A dialog opened before the clone began answers during it, and is ignored.
       dialog.resolve("/Users/dev/code/web");
       await waitFor(() => expect(onAdded).toHaveBeenCalledTimes(1));
-      expect(onAdded.mock.calls[0]![0]).toMatchObject({
-        name: "example-infra",
-      });
+      expect(onAdded.mock.calls[0]![0]).toMatchObject({ name: "example-infra" });
     } finally {
       Reflect.deleteProperty(window, "gram");
     }
   });
 
   it("stops a clone when it is closed, and does nothing it would have done", async () => {
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     api = createMockApi({ speed: 0, autoplay: false });
     const onAdded = vi.fn();
     const view = render(
@@ -499,9 +414,7 @@ describe("adding a repository", () => {
     view.unmount();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(onAdded).not.toHaveBeenCalled();
-    expect((await api.listProjects()).map((p) => p.name)).not.toContain(
-      "closed-early",
-    );
+    expect((await api.listProjects()).map((p) => p.name)).not.toContain("closed-early");
   });
 
   it("keeps an open draft on whichever came last, a prefill or what was typed", () => {
@@ -521,9 +434,7 @@ describe("adding a repository", () => {
   });
 
   it("ports the suggestion list out of a clipping expand, above the path hint", async () => {
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     api = createMockApi({ speed: 0, autoplay: false });
     useServerSettings.setState({ settings: DEFAULT_SETTINGS });
     render(
@@ -539,9 +450,7 @@ describe("adding a repository", () => {
       name: "Folder, GitHub repo or URL",
     });
     type(input, "~/code/w");
-    const list = await screen.findByRole("listbox", {
-      name: "Folder suggestions",
-    });
+    const list = await screen.findByRole("listbox", { name: "Folder suggestions" });
     const root = screen.getByTestId("add-repository");
     // Out of `.gram-expand` (overflow: clip) and out of the field, so the hint can keep its gap.
     expect(list.closest(".gram-expand")).toBeNull();
@@ -557,20 +466,14 @@ describe("adding a repository", () => {
   });
 
   it("keeps portaled suggestions usable inside a dialog, and Escape closes only the list", async () => {
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     api = createMockApi({ speed: 0, autoplay: false });
     useServerSettings.setState({ settings: DEFAULT_SETTINGS });
     const onClose = vi.fn();
     render(
       <QueryClientProvider client={client}>
         <ApiProvider api={api}>
-          <DialogShell
-            testId="add-repo-dialog"
-            title="Add repository"
-            onClose={onClose}
-          >
+          <DialogShell testId="add-repo-dialog" title="Add repository" onClose={onClose}>
             <AddRepository onAdded={() => {}} />
           </DialogShell>
         </ApiProvider>
@@ -580,13 +483,9 @@ describe("adding a repository", () => {
       name: "Folder, GitHub repo or URL",
     });
     type(input, "example-device");
-    const list = await screen.findByRole("listbox", {
-      name: "Repository suggestions",
-    });
+    const list = await screen.findByRole("listbox", { name: "Repository suggestions" });
     expect(screen.getByTestId("add-repo-dialog").contains(list)).toBe(false);
-    fireEvent.mouseDown(
-      within(list).getByRole("option", { name: "EXAMPLE/example-device-apps" }),
-    );
+    fireEvent.mouseDown(within(list).getByRole("option", { name: "EXAMPLE/example-device-apps" }));
     expect(input.value).toBe("EXAMPLE/example-device-apps");
     expect(document.activeElement).toBe(input);
 
@@ -594,9 +493,7 @@ describe("adding a repository", () => {
     await screen.findByRole("listbox", { name: "Repository suggestions" });
     fireEvent.keyDown(input, { key: "Escape" });
     await waitFor(() =>
-      expect(
-        screen.queryByRole("listbox", { name: "Repository suggestions" }),
-      ).toBeNull(),
+      expect(screen.queryByRole("listbox", { name: "Repository suggestions" })).toBeNull(),
     );
     expect(screen.getByTestId("add-repo-dialog")).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
@@ -605,9 +502,7 @@ describe("adding a repository", () => {
   it("adds a folder typed with completion", async () => {
     const { input, onAdded } = renderAdd();
     type(input, "~/code/w");
-    const list = await screen.findByRole("listbox", {
-      name: "Folder suggestions",
-    });
+    const list = await screen.findByRole("listbox", { name: "Folder suggestions" });
     fireEvent.mouseDown(within(list).getByRole("option", { name: "web" }));
     expect(input.value).toBe("~/code/web/");
     // Add waits for the check to say it is a repository.
@@ -623,26 +518,16 @@ describe("adding a repository", () => {
   });
 
   it("refuses a linked worktree or submodule as adding it would, and leaves an unreadable one to it", () => {
-    const folder = {
-      path: "/Users/dev/code/web-b",
-      entries: [],
-      truncated: false,
-    };
-    expect(
-      typedFolder({ state: "valid", folder: { ...folder, git: "linked" } }),
-    ).toEqual({
+    const folder = { path: "/Users/dev/code/web-b", entries: [], truncated: false };
+    expect(typedFolder({ state: "valid", folder: { ...folder, git: "linked" } })).toEqual({
       kind: "refused",
       message: linkedCheckoutMessage(folder.path),
     });
-    expect(
-      typedFolder({ state: "valid", folder: { ...folder, git: "repository" } }),
-    ).toEqual({
+    expect(typedFolder({ state: "valid", folder: { ...folder, git: "repository" } })).toEqual({
       kind: "repo",
       path: folder.path,
     });
-    expect(
-      typedFolder({ state: "valid", folder: { ...folder, git: "unreadable" } }),
-    ).toEqual({
+    expect(typedFolder({ state: "valid", folder: { ...folder, git: "unreadable" } })).toEqual({
       kind: "unchecked",
     });
     expect(typedFolder({ state: "checking" })).toBeUndefined();
@@ -656,29 +541,19 @@ describe("adding a repository", () => {
         notARepositoryMessage("/Users/dev/Documents/code/sandbox"),
       ),
     );
-    expect(
-      screen.getByRole("button", { name: "Add" }).hasAttribute("disabled"),
-    ).toBe(true);
+    expect(screen.getByRole("button", { name: "Add" }).hasAttribute("disabled")).toBe(true);
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(screen.getByRole("alert").textContent).toContain(
-      "isn't the top folder",
-    );
+    expect(screen.getByRole("alert").textContent).toContain("isn't the top folder");
 
     type(input, "~/Documents/code/nowhere");
     await waitFor(() =>
-      expect(screen.getByTestId("folder-check").textContent).toContain(
-        "Folder not found",
-      ),
+      expect(screen.getByTestId("folder-check").textContent).toContain("Folder not found"),
     );
-    expect(
-      screen.getByRole("button", { name: "Add" }).hasAttribute("disabled"),
-    ).toBe(true);
+    expect(screen.getByRole("button", { name: "Add" }).hasAttribute("disabled")).toBe(true);
 
     type(input, "~/Documents/code/infra");
     await waitFor(() =>
-      expect(screen.getByTestId("folder-check").textContent).toBe(
-        "~/Documents/code/infragit",
-      ),
+      expect(screen.getByTestId("folder-check").textContent).toBe("~/Documents/code/infragit"),
     );
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     await waitFor(() =>
@@ -693,17 +568,9 @@ describe("adding a repository", () => {
     const input = renderPicker();
     type(input, "EXAMPLE/agent-factory");
     const offer = await screen.findByTestId("clone-offer");
-    expect(offer.textContent).toContain(
-      "Clones into ~/Documents/code/agent-factory",
-    );
-    fireEvent.click(
-      within(offer).getByRole("button", {
-        name: "Clone EXAMPLE/agent-factory",
-      }),
-    );
-    await waitFor(() =>
-      expect(input.value).toBe("/Users/dev/Documents/code/agent-factory"),
-    );
+    expect(offer.textContent).toContain("Clones into ~/Documents/code/agent-factory");
+    fireEvent.click(within(offer).getByRole("button", { name: "Clone EXAMPLE/agent-factory" }));
+    await waitFor(() => expect(input.value).toBe("/Users/dev/Documents/code/agent-factory"));
     expect(await screen.findByTestId("folder-status")).toBeTruthy();
   });
 });

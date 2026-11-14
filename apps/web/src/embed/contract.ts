@@ -25,10 +25,7 @@ export interface ShellSlotProps {
 }
 
 /** An icon for a destination: any component that draws at the size its `className` sets. */
-export type ShellIcon = ComponentType<{
-  className?: string;
-  "aria-hidden"?: boolean;
-}>;
+export type ShellIcon = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
 
 /** A page of the embedding app's, shown in the conversation's place with Gram's shell around it. */
 export interface ShellRoute {
@@ -202,6 +199,12 @@ export interface ShellMachines {
    * before it stops, how long its files are kept, what it costs. None when left out.
    */
   readonly facts?: readonly string[];
+  /**
+   * Which repositories one may use: `chosen` (the default) asks the person to pick them as they
+   * start it; `theirs` is any they can reach, as them, so the start card asks nothing and starts
+   * it at once.
+   */
+  readonly repositories?: "chosen" | "theirs";
 }
 
 /**
@@ -514,10 +517,7 @@ export interface GramServer {
    * true to retry; return false only for an ended session, or throw for a temporary outage.
    * `expired` takes over the page with the app's own sign-in. No credentials enter Gram.
    */
-  readonly session?: {
-    readonly refresh: () => Promise<boolean>;
-    readonly expired: () => void;
-  };
+  readonly session?: { readonly refresh: () => Promise<boolean>; readonly expired: () => void };
 }
 
 /**
@@ -528,10 +528,7 @@ export interface MockThread {
   readonly id: string;
   readonly title: string;
   /** Its conversation so far, as plain text, oldest first. */
-  readonly messages?: readonly {
-    readonly role: "user" | "assistant";
-    readonly text: string;
-  }[];
+  readonly messages?: readonly { readonly role: "user" | "assistant"; readonly text: string }[];
   /**
    * Makes it a worker of the named workspace's orchestrator, started with `brief` for `feature`,
    * when the mock has that workspace. `askedBy` is the id of another of these threads whose message
@@ -564,10 +561,7 @@ export interface HostTheme {
   /** The name the palette goes by in Settings, in place of "Neutral". */
   readonly name?: string;
   /** Seeds for each mode. Either may be left out; with both, they pair. */
-  readonly palettes?: {
-    readonly dark?: ThemeSeeds;
-    readonly light?: ThemeSeeds;
-  };
+  readonly palettes?: { readonly dark?: ThemeSeeds; readonly light?: ThemeSeeds };
   /**
    * Colours set over what the seeds derive, per mode, by the theme's names without `--`
    * (`accent`, `on-accent`, `accent-text`, `status-needs`, …): an accent apart from the links, say.
@@ -577,20 +571,13 @@ export interface HostTheme {
     readonly light?: Readonly<Record<string, string>>;
   };
   /** Font stacks for text, code and display. */
-  readonly fonts?: {
-    readonly ui?: string;
-    readonly mono?: string;
-    readonly display?: string;
-  };
+  readonly fonts?: { readonly ui?: string; readonly mono?: string; readonly display?: string };
   /** Corner radii in pixels, by the theme's step names. */
   readonly radii?: Partial<Record<"2xs" | "xs" | "sm" | "md" | "lg" | "xl", number>>;
   /** `"none"`: raised cards and menus are drawn by their edge, with no shadow. */
   readonly shadows?: "none";
   /** Colours for charts in order, per mode, as `--chart-1` onwards. */
-  readonly chart?: {
-    readonly dark?: readonly string[];
-    readonly light?: readonly string[];
-  };
+  readonly chart?: { readonly dark?: readonly string[]; readonly light?: readonly string[] };
 }
 
 export interface MountOptions {
