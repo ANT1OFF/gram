@@ -1,6 +1,6 @@
 import { GramRpcs } from "@gram/contracts";
 import { describe, expect, test } from "vitest";
-import { actorEventsOf, UNRECORDED_RPCS, VIEWER_RPCS } from "./actor-guard.ts";
+import { actorEventsOf, setsOnlyOwnView, UNRECORDED_RPCS, VIEWER_RPCS } from "./actor-guard.ts";
 
 const ada = { id: "user-ada", name: "Ada", role: "member" as const };
 
@@ -28,6 +28,26 @@ describe("what a viewer may call", () => {
       "thread.suggestions",
     ])
       expect(VIEWER_RPCS.has(tag)).toBe(false);
+  });
+});
+
+describe("a person's own view", () => {
+  test("is a settings change of personal settings and nothing else", () => {
+    const grid = { preset: "1", panes: [null] };
+    expect(setsOnlyOwnView("settings.set", { patch: { layout: { grid } } })).toBe(true);
+    expect(setsOnlyOwnView("settings.set", { patch: { layout: { grid: null } } })).toBe(true);
+    for (const patch of [
+      {},
+      { logLevel: "debug" },
+      { layout: {} },
+      { layout: { focusMode: true } },
+      { layout: { grid, focusMode: true } },
+      { layout: { grid }, logLevel: "debug" },
+      { grid },
+    ])
+      expect(setsOnlyOwnView("settings.set", { patch })).toBe(false);
+    expect(setsOnlyOwnView("settings.set", {})).toBe(false);
+    expect(setsOnlyOwnView("keybindings.set", { patch: { layout: { grid } } })).toBe(false);
   });
 });
 

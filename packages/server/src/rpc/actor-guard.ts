@@ -1,4 +1,10 @@
-import type { ThreadId, WorkspaceId } from "@gram/contracts";
+import {
+  isPersonalSetting,
+  settingsPatchPaths,
+  type SettingsPatch,
+  type ThreadId,
+  type WorkspaceId,
+} from "@gram/contracts";
 import { ANSWER_OVER_HTTP } from "../embedding/answer-proof.ts";
 import { ActingPerson } from "../embedding/person.ts";
 import { mayReachThread, NOT_YOUR_MACHINE, ownersOf, RoutedFor } from "../host/ownership.ts";
@@ -192,6 +198,18 @@ const workspacesNamed = (payload: unknown): ReadonlyArray<WorkspaceId> => {
   ].filter((id): id is WorkspaceId => typeof id === "string");
 };
 
+/**
+ * Whether a call is `settings.set` of nothing but the caller's own view (`PERSONAL_SETTINGS`):
+ * written to their own rows, so a viewer may make it, and nobody's is recorded.
+ */
+export const setsOnlyOwnView = (action: string, payload: unknown): boolean => {
+  if (action !== "settings.set" || typeof payload !== "object" || payload === null) return false;
+  const patch = (payload as Record<string, unknown>)["patch"];
+  if (typeof patch !== "object" || patch === null) return false;
+  const paths = settingsPatchPaths(patch as SettingsPatch);
+  return paths.length > 0 && paths.every(isPersonalSetting);
+};
+
 export const VIEWER_REFUSAL = "read-only: a viewer can't change anything here";
 export const NO_ACTOR_REFUSAL = "unauthorized: no signed-in person on this call";
 
@@ -348,7 +366,7 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
             Effect.provideService(RoutedFor, { person: actor.id }),
           );
           const action = rpc._tag;
-          if (VIEWER_RPCS.has(action)) return yield* effect;
+          if (VIEWER_RPCS.has(action) || setsOnlyOwnView(action, payload)) return yield* effect;
           if (actor.role !== "member") return yield* Effect.die(new Error(VIEWER_REFUSAL));
           // A socket can't carry what the proxy signs for one answer: those come over HTTP.
           if (action === "thread.respond" || action === "thread.respondMany")

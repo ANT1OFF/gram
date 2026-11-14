@@ -136,9 +136,17 @@ sent. The claims:
 - `iss` and `aud`, as configured.
 - `sub`, an id for the person that never changes, and optionally `name` to show.
 - `role`: `member`, who can do everything, or `viewer`, who can read threads, diffs, docs,
-  memory and settings, and change nothing. A viewer can read any file in a thread's folders,
-  including ones that hold secrets, such as `.env`.
+  memory and settings, and change nothing but their own view (below). A viewer can read any file
+  in a thread's folders, including ones that hold secrets, such as `.env`.
 - `iat` and `exp`, at most five minutes apart. Make a new statement per request.
+
+Each person keeps their own view. The pane grid and which pane has the focus are saved under the
+person's `sub`, beside the settings everyone shares: a person reads the shared settings with their
+own laid over them, a change to their own is written for them alone, and only their own
+connections are told of it. So two people in one server each come back to their own panes, and
+one changing focus moves nobody else. A viewer may save their own view; it is the one thing a
+viewer changes, and it is not put on the record of changes. Every other setting is shared, and a
+[supplied setting](EMBEDDING.md#settings-supplied-from-outside) still wins over both.
 
 What sits in front can also speak for itself. A statement whose header has `typ`
 `gram-service+jwt`, with `role` `service` and a `path` claim, names no person: it is the

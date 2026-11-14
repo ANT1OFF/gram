@@ -14,6 +14,7 @@ import {
   PROFILE_MOVE_PATH,
   PROFILE_START_PATH,
   RequestId,
+  ThreadId,
   WorkspaceId,
 } from "@gram/contracts";
 import * as Cause from "effect/Cause";
@@ -21,7 +22,9 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import { ServerConfig } from "../config.ts";
+import { EventHub } from "../events/event-hub.ts";
 import { gitPlatformTest } from "../git/platform.ts";
 import { makeRepo, removeDir } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -251,6 +254,13 @@ const lineageFolder = (dirs: Array<string>) => {
 const ada = { sub: "user-ada", name: "Ada", role: "member" };
 const grace = { sub: "user-grace", name: "Grace", role: "member" };
 const vera = { sub: "user-vera", name: "Vera", role: "viewer" };
+
+/** A saved grid of two panes side by side, the right one focused. */
+const grid = (...panes: ReadonlyArray<string>) => ({
+  preset: "2c" as const,
+  panes: panes.map((id) => ThreadId.make(id)),
+  focused: 1,
+});
 
 describe("sign-in through a fronting proxy", () => {
   const dirs: string[] = [];
@@ -675,6 +685,138 @@ describe("sign-in through a fronting proxy", () => {
         expect(said).toContain("hello from Ada");
         expect(said).not.toContain("hello from Vera");
       }),
+    );
+
+    it.effect(
+      "keeps each person's own layout, tells only them, and lets a viewer keep theirs",
+      () =>
+        Effect.gen(function* () {
+          const { port } = yield* info;
+          const store = yield* ThreadStore;
+          const hub = yield* EventHub;
+          const before = (yield* store.listActorEvents()).at(-1)?.seq ?? 0;
+          const adaClient = yield* as(port, ada);
+          const adaOtherTab = yield* as(port, ada);
+          const graceClient = yield* as(port, grace);
+          const veraClient = yield* as(port, vera);
+
+          /** The types of the events a connection is sent, as they arrive. */
+          const listen = (who: typeof adaClient) =>
+            Effect.gen(function* () {
+              const types: Array<string> = [];
+              yield* Effect.forkScoped(
+                Stream.runForEach(who["events.subscribe"](), (event) =>
+                  Effect.sync(() => types.push(event.type)),
+                ),
+              );
+              yield* waitFor(
+                "the first snapshot",
+                Effect.sync(() => types.includes("threads.snapshot")),
+              );
+              return types;
+            });
+          const adaHears = yield* listen(adaOtherTab);
+          const graceHears = yield* listen(graceClient);
+          const veraHears = yield* listen(veraClient);
+
+          // Ada arranges her panes: her other tab is told, and nobody else's connection is.
+          const adas = yield* adaClient["settings.set"]({
+            patch: { layout: { grid: grid("ada-left", "ada-right") } },
+          });
+          expect(adas.layout?.grid).toEqual(grid("ada-left", "ada-right"));
+          yield* waitFor(
+            "Ada's other tab to hear",
+            Effect.sync(() => adaHears.includes("settings.changed")),
+          );
+          // What everyone is sent arrives after it, so anything sent before it would be here.
+          yield* hub.publish({ type: "profiles.changed" });
+          yield* waitFor(
+            "the others to hear what everyone is sent",
+            Effect.sync(
+              () =>
+                graceHears.includes("profiles.changed") && veraHears.includes("profiles.changed"),
+            ),
+          );
+          expect(graceHears).not.toContain("settings.changed");
+          expect(veraHears).not.toContain("settings.changed");
+
+          // Grace has none yet, arranges her own, and each reads their own back.
+          expect((yield* graceClient["settings.get"]()).layout?.grid).toBeUndefined();
+          yield* graceClient["settings.set"]({
+            patch: { layout: { grid: grid("grace-left", "grace-right") } },
+          });
+          expect((yield* adaOtherTab["settings.get"]()).layout?.grid).toEqual(
+            grid("ada-left", "ada-right"),
+          );
+          expect((yield* graceClient["settings.get"]()).layout?.grid).toEqual(
+            grid("grace-left", "grace-right"),
+          );
+
+          // A viewer's layout is saved too, and a shared setting is still not theirs to change,
+          // alone or beside their own.
+          yield* veraClient["settings.set"]({
+            patch: { layout: { grid: grid("vera-left", "vera-right") } },
+          });
+          expect((yield* veraClient["settings.get"]()).layout?.grid).toEqual(
+            grid("vera-left", "vera-right"),
+          );
+          const level = (yield* veraClient["settings.get"]()).logLevel;
+          expect(
+            yield* refusal(veraClient["settings.set"]({ patch: { logLevel: "trace" } })),
+          ).toContain(VIEWER_REFUSAL);
+          expect(
+            yield* refusal(
+              veraClient["settings.set"]({
+                patch: { layout: { grid: grid("vera-a", "vera-b"), focusMode: true } },
+              }),
+            ),
+          ).toContain(VIEWER_REFUSAL);
+          const veras = yield* veraClient["settings.get"]();
+          expect(veras.logLevel).toBe(level);
+          expect(veras.layout).toEqual({ grid: grid("vera-left", "vera-right") });
+
+          // A member's change to both is written to each place: the shared part for everyone.
+          yield* graceClient["settings.set"]({
+            patch: { layout: { grid: grid("grace-a", "grace-b"), focusMode: true } },
+          });
+          expect((yield* adaClient["settings.get"]()).layout).toEqual({
+            grid: grid("ada-left", "ada-right"),
+            focusMode: true,
+          });
+          yield* graceClient["settings.set"]({ patch: { layout: { focusMode: null } } });
+
+          // Clearing is a person's own as well.
+          yield* adaClient["settings.set"]({ patch: { layout: { grid: null } } });
+          expect((yield* adaClient["settings.get"]()).layout?.grid).toBeUndefined();
+          expect((yield* graceClient["settings.get"]()).layout?.grid).toEqual(
+            grid("grace-a", "grace-b"),
+          );
+
+          // The shared row holds none of it, and a person's own view is not on the record of
+          // changes: only the two that changed a shared setting are.
+          expect((yield* store.getSettings).layout?.grid).toBeUndefined();
+          expect(
+            (yield* store.listActorEvents({ afterSeq: before })).map((event) => [
+              event.actor.id,
+              event.action,
+              event.data,
+            ]),
+          ).toEqual([
+            [
+              "user-grace",
+              "settings.set",
+              {
+                settings: [
+                  "layout.grid.preset",
+                  "layout.grid.panes",
+                  "layout.grid.focused",
+                  "layout.focusMode",
+                ],
+              },
+            ],
+            ["user-grace", "settings.set", { settings: ["layout.focusMode"] }],
+          ]);
+        }),
     );
   });
 

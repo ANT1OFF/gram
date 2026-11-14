@@ -1,6 +1,11 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 import {
+  PERSONAL_SETTINGS,
+  isPersonalSetting,
+  personalSettingKey,
+  splitSettingsPatch,
+  withoutPersonalSettings,
   customModelsOf,
   DEFAULT_SETTINGS,
   GRID_SHAPES,
@@ -938,5 +943,37 @@ describe("Diagnostics", () => {
 
   it("round-trips", () => {
     expectRoundTrip(Diagnostics, diagnostics);
+  });
+});
+
+describe("personal settings", () => {
+  const grid = { preset: "1" as const, panes: [null] };
+
+  it("names the pane grid, and nothing the server acts on", () => {
+    expect(PERSONAL_SETTINGS.map(personalSettingKey)).toEqual(["layout.grid"]);
+    expect(isPersonalSetting(["layout", "grid"])).toBe(true);
+    for (const path of [["layout"], ["layout", "settleAfterDays"], ["grid"], ["logLevel"]])
+      expect(isPersonalSetting(path)).toBe(false);
+  });
+
+  it("splits a patch into a person's own part and the shared part", () => {
+    expect(splitSettingsPatch({ layout: { grid, focusMode: true }, logLevel: "debug" })).toEqual({
+      personal: { layout: { grid } },
+      shared: { layout: { focusMode: true }, logLevel: "debug" },
+    });
+    expect(splitSettingsPatch({ layout: { grid: null } })).toEqual({
+      personal: { layout: { grid: null } },
+      shared: {},
+    });
+    expect(splitSettingsPatch({ logLevel: "debug" })).toEqual({
+      personal: {},
+      shared: { logLevel: "debug" },
+    });
+  });
+
+  it("drops the personal settings from what is shared, and keeps the rest", () => {
+    const settings = applySettingsPatch(DEFAULT_SETTINGS, { layout: { grid, focusMode: true } });
+    expect(withoutPersonalSettings(settings).layout).toEqual({ focusMode: true });
+    expect(withoutPersonalSettings(DEFAULT_SETTINGS)).toEqual(DEFAULT_SETTINGS);
   });
 });
