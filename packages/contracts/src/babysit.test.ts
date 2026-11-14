@@ -59,6 +59,33 @@ describe("serializeReviewNotice", () => {
     ).toBe("Review update on #7: no bot verdict on head yet.");
   });
 
+  it("omits bot status when no review bot is configured", () => {
+    for (const mergeState of ["UNSTABLE", "UNKNOWN"]) {
+      const input: ReviewNoticeType = {
+        kind: "review",
+        number: 616,
+        headRefOid: "d6d2452",
+        mergeState,
+        blockers: [],
+        suggestions: [],
+        ciFailed: [],
+      };
+      expect(serializeReviewNotice(input)).toBe(
+        `Review update on #616 (head d6d2452): no bot verdict on head yet; merge state ${mergeState}.`,
+      );
+      expect(serializeReviewNotice(input, false)).toBe(
+        `Review update on #616 (head d6d2452): merge state ${mergeState}.`,
+      );
+    }
+    expect(
+      serializeReviewNotice(
+        { kind: "review", number: 7, blockers: [], suggestions: [], ciFailed: ["build"] },
+        false,
+      ),
+    ).toBe("Review update on #7.\nCI failed: build");
+    expect(serializeReviewNotice(notice, false)).not.toContain("bot verdict");
+  });
+
   it("round-trips through the schema", () => {
     const encoded = Schema.encodeSync(ReviewNotice)(notice);
     expect(Schema.decodeUnknownSync(ReviewNotice)(encoded)).toEqual(notice);

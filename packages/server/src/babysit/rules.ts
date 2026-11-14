@@ -71,7 +71,9 @@ const ACTIONABLE_MERGE_STATES: ReadonlySet<string> = new Set([
   "CLEAN",
   "UNSTABLE",
   "DIRTY",
+  "CONFLICTING",
   "BEHIND",
+  "BLOCKED",
 ]);
 
 /** UNSTABLE is CLEAN with a check nobody requires still red or running: no news between them. */
@@ -85,8 +87,8 @@ export const noticeReasons = (
 ): ReadonlyArray<NoticeReason> => {
   const reasons: Array<NoticeReason> = [];
   if (
-    previous.checks === "pending" &&
-    (current.checks === "passing" || current.checks === "failing")
+    (previous.checks === "pending" && current.checks === "passing") ||
+    (previous.checks !== "failing" && current.checks === "failing")
   )
     reasons.push("ci");
   // A verdict first read is a baseline, as the monitor's first look is.
@@ -96,7 +98,8 @@ export const noticeReasons = (
     current.mergeState !== undefined &&
     previous.mergeState !== undefined &&
     mergeClass(current.mergeState) !== mergeClass(previous.mergeState) &&
-    ACTIONABLE_MERGE_STATES.has(current.mergeState)
+    ACTIONABLE_MERGE_STATES.has(current.mergeState) &&
+    (current.mergeState !== "UNSTABLE" || current.checks !== "pending")
   )
     reasons.push("merge");
   return reasons;

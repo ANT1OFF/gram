@@ -452,10 +452,36 @@ export const BabysitLive = Layer.effect(
         yield* forgetTimers(threadId);
       });
 
+    /** A terminal PR has no review work left, including notices already queued for it. */
+    const stopTerminalMonitor = (threadId: ThreadId, bound: BoundPr) =>
+      Effect.gen(function* () {
+        watchedPrs.delete(threadId);
+        yield* forgetMonitor(threadId);
+        yield* runtimes
+          .updateThread(threadId, (thread) =>
+            thread.boundPr?.repo === bound.repo && thread.boundPr.number === bound.number
+              ? { ...thread, boundPr: { ...unmarked(thread.boundPr), reviewMonitor: false } }
+              : thread,
+          )
+          .pipe(Effect.ignore);
+        yield* runtimes.dropNotices(threadId, (key) =>
+          [reviewNoticeKey(bound), humanReviewKey(bound), kickoffKey(bound)].includes(key),
+        );
+      });
+
     const onState = (thread: Thread, state: GitState) =>
       Effect.gen(function* () {
         const bound = thread.boundPr;
         const badge = state.pr;
+        if (
+          bound?.reviewMonitor === true &&
+          badge !== undefined &&
+          isBadgeOf(badge, bound) &&
+          badge.state !== "OPEN"
+        ) {
+          yield* watch({ thread, bound, cwd: effectiveCheckout(thread).path, badge }, badge);
+          return yield* stopTerminalMonitor(thread.id, bound);
+        }
         // An archived thread's badge is still published, but its agent isn't woken over it.
         if (
           thread.parked ||
@@ -620,6 +646,7 @@ export const BabysitLive = Layer.effect(
         if (found?.badge === undefined || bound?.reviewMonitor !== true) return;
         // Archived since it was scheduled: its agent isn't woken.
         if (found.thread.parked) return;
+        if (found.badge.state !== "OPEN") return yield* stopTerminalMonitor(threadId, bound);
         // A badge that read no reviews can't tell a dismissed review from one it didn't see: the
         // pending ones stay for the next badge that did.
         if (found.badge.reviewUnread === true) return;
@@ -717,6 +744,13 @@ export const BabysitLive = Layer.effect(
           return yield* dropped(threadId, "review monitor off", taken);
         if (found.thread.parked) return yield* dropped(threadId, "thread archived", taken);
         const { thread, bound, cwd, badge } = found;
+        if (badge.state !== "OPEN") return yield* stopTerminalMonitor(threadId, bound);
+        const hasBot = reviewBotsOf(yield* store.getSettings).length > 0;
+        if (!hasBot) {
+          taken.delete("round");
+          taken.delete("verdict");
+          if (taken.size === 0) return yield* dropped(threadId, "no review bot configured", taken);
+        }
         // What this notice tells, taken with the badge it is built from, before any lookup: a look
         // that lands meanwhile is owed its own notice.
         const told = seen.get(threadId);
@@ -734,11 +768,27 @@ export const BabysitLive = Layer.effect(
           heldForReviews.add(threadId);
           return yield* dropped(threadId, "held for a badge that read the reviews", taken);
         }
-        const review = yield* fetchReview(cwd, bound);
+        const review = hasBot ? yield* fetchReview(cwd, bound) : undefined;
         const { blockers, suggestions } =
           review === undefined ? { blockers: [], suggestions: [] } : openFindings(review);
         const failing =
           requiredChecksOf(badge) === "failing" ? yield* failingChecks(cwd, bound, badge) : [];
+        // Recheck the current causes at delivery: a previously useful merge state can turn
+        // UNKNOWN, or become UNSTABLE while checks restart, during the debounce window.
+        if (taken.has("merge")) {
+          const actionable =
+            ["DIRTY", "CONFLICTING", "BEHIND"].includes(badge.mergeState ?? "") ||
+            (["CLEAN", "UNSTABLE"].includes(badge.mergeState ?? "") &&
+              requiredChecksOf(badge) === "passing") ||
+            (badge.mergeState === "BLOCKED" &&
+              (failing.length > 0 ||
+                blockers.length > 0 ||
+                (hasBot && badge.review?.verdictOnHead === "changesRequested")));
+          if (!actionable) taken.delete("merge");
+        }
+        if (isCiOnly(taken) && requiredChecksOf(badge) === "failing" && failing.length === 0)
+          return yield* dropped(threadId, "no failing required checks", taken);
+        if (taken.size === 0) return yield* dropped(threadId, "no actionable change", taken);
         const key = `${bound.repo}#${bound.number}`;
         let round = taken.has("round") ? (roundCounts.get(key) ?? 0) + 1 : roundCounts.get(key);
         if (round !== undefined) roundCounts.set(key, round);
@@ -802,8 +852,11 @@ export const BabysitLive = Layer.effect(
           }
         }
         // A CI notice over a badge that didn't read the reviews carries the verdict last read.
-        const verdict =
-          badge.reviewUnread === true ? seen.get(threadId)?.verdict : badge.review?.verdictOnHead;
+        const verdict = hasBot
+          ? badge.reviewUnread === true
+            ? seen.get(threadId)?.verdict
+            : badge.review?.verdictOnHead
+          : undefined;
         const notice: ReviewNotice = {
           kind: "review",
           number: bound.number,
@@ -824,6 +877,15 @@ export const BabysitLive = Layer.effect(
             ...(round === undefined ? {} : { round }),
           }),
         );
+        // A merge or close may have arrived while the review/check lookup was in flight.
+        const latest = yield* target(threadId).pipe(Effect.orElseSucceed(() => undefined));
+        if (
+          latest?.badge?.state !== "OPEN" ||
+          latest.thread.boundPr?.reviewMonitor !== true ||
+          latest.bound.repo !== bound.repo ||
+          latest.bound.number !== bound.number
+        )
+          return yield* dropped(threadId, "PR no longer monitored and open", taken);
         // An agent that can't start fails the send with the notice already in the thread's queue,
         // which is delivered; sending it again would say it twice. Any other failure is a thread that
         // has ended or gone, with no one to tell.
@@ -831,7 +893,7 @@ export const BabysitLive = Layer.effect(
         // nothing of a queued older one worth keeping.
         const delivered = yield* runtimes
           .sendNotice(threadId, reviewNoticeKey(bound), {
-            text: serializeReviewNotice(notice),
+            text: serializeReviewNotice(notice, hasBot),
             notice,
           })
           .pipe(
