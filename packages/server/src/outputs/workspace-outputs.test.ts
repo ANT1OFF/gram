@@ -1,20 +1,36 @@
 import { describe, expect, it } from "@effect/vitest";
-import type {
-  GramUIMessageChunk,
-  ServerEvent,
-  ThreadId,
-  WorkspaceId,
-  WorkspaceOutput,
+import {
+  HOST_FILE_PART_BYTES,
+  HostUnavailable,
+  type GramUIMessageChunk,
+  type HostId,
+  type ServerEvent,
+  type ThreadId,
+  type WorkspaceId,
+  type WorkspaceOutput,
 } from "@gram/contracts";
+import type { ProcShape } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { OBJECT_MAX_BYTES, ObjectStore, outputKey } from "../embedding/object-store.ts";
 import { EventHub } from "../events/event-hub.ts";
+import { fileReadsOn, type HostFileReads } from "../host/file-reads.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { SqlClient } from "../platform/unstable.ts";
 import { makeRuntimeTestLayer, TEST_CONFIG, waitFor } from "../runtime/test-harness.ts";
@@ -70,6 +86,35 @@ const listed = (query?: Parameters<WorkspaceOutputs["Service"]["list"]>[1]) =>
   });
 
 const paths = (outputs: ReadonlyArray<WorkspaceOutput>) => outputs.map((output) => output.path);
+
+/** An object store that keeps what it is handed, staged files read at once. */
+const kept = (on: boolean) => {
+  const objects = new Map<string, { readonly stamp: string; readonly bytes: Buffer }>();
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "gram-outputs-staged-")));
+  let n = 0;
+  return {
+    objects,
+    layer: Layer.succeed(ObjectStore, {
+      on: Effect.succeed(on),
+      put: () => Effect.void,
+      fetch: () => Effect.succeed(false),
+      sweep: Effect.void,
+      putStaged: (key, stamp, stage) =>
+        Effect.gen(function* () {
+          // As the store does: what was sent under this stamp is not read again.
+          if (objects.get(key)?.stamp === stamp) return;
+          const path = join(dir, `staged-${n++}`);
+          if (yield* stage(path)) objects.set(key, { stamp, bytes: readFileSync(path) });
+        }),
+    }),
+  };
+};
+
+const layers = (dataDir: string, ...more: ReadonlyArray<Layer.Layer<never>>) =>
+  WorkspaceOutputs.layer.pipe(
+    Layer.provide(Layer.mergeAll(...(more as [Layer.Layer<never>]))),
+    Layer.provideMerge(makeRuntimeTestLayer(undefined, undefined, { ...TEST_CONFIG, dataDir })),
+  );
 
 describe("chunkOutput", () => {
   const parts: Record<string, Record<string, unknown> & { type: string }> = {
@@ -366,5 +411,151 @@ describe("WorkspaceOutputs", () => {
       Effect.scoped,
       Effect.ensuring(Effect.sync(tree.done)),
     );
+  });
+
+  describe("a thread on another machine", () => {
+    const MACHINE = "m-elsewhere" as HostId;
+    /** Where the other machine's disk says its files are; nothing is there on this one. */
+    const THERE = "/gram-test-other-machine";
+
+    /** The other machine's disk, kept under `root` here, read as its host reads it. */
+    const machine = (root: string, parts: boolean) => {
+      const reads = fileReadsOn({} as ProcShape);
+      const here = (path: string) =>
+        path.startsWith(THERE) ? root + path.slice(THERE.length) : path;
+      const calls: Array<string> = [];
+      const part: NonNullable<HostFileReads["part"]> = (path, roots, outside, offset, length) =>
+        Effect.sync(() => void calls.push(path)).pipe(
+          Effect.andThen(reads.part!(here(path), roots.map(here), outside, offset, length)),
+          Effect.map((got) => ({ ...got, path: THERE + got.path.slice(root.length) })),
+        );
+      const host = { reads: parts ? { ...reads, part } : { ...reads, part: undefined } };
+      return {
+        calls,
+        layer: Layer.succeed(WorkerHosts, {
+          get: (id: HostId) =>
+            id === MACHINE
+              ? Effect.succeed(host)
+              : Effect.fail(new HostUnavailable({ hostId: id, message: "away" })),
+        } as unknown as WorkerHosts["Service"]),
+      };
+    };
+
+    const elsewhere = Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const path = `${THERE}/repo`;
+      return yield* runtimes.create({
+        projectRoot: path,
+        checkout: { kind: "main", path, hostId: MACHINE },
+        title: "Elsewhere",
+        workspaceId: WORKSPACE,
+      });
+    });
+
+    it.effect("records a file that is only there and copies it to the object store", () => {
+      const tree = tempTree();
+      const there = machine(tree.root, true);
+      const store = kept(true);
+      return Effect.gen(function* () {
+        const outputs = yield* WorkspaceOutputs;
+        const thread = yield* elsewhere;
+        // Larger than one part, so it is read in several.
+        const report = Buffer.alloc(HOST_FILE_PART_BYTES + 1234, "r");
+        write(join(tree.checkout, "docs/report.pdf"), report);
+        write(join(tree.outside, "notes.md"), "written outside");
+        write(join(tree.outside, "stray.png"));
+        write(join(tree.checkout, ".env"), "SYNTHETIC=1");
+
+        yield* outputs.record(thread.id, { path: "docs/report.pdf", source: "written" });
+        yield* outputs.record(thread.id, {
+          path: `${THERE}/elsewhere/notes.md`,
+          source: "written",
+        });
+        // Outside its folders and neither sent nor written, a credential file, and a missing one.
+        yield* outputs.record(thread.id, {
+          path: `${THERE}/elsewhere/stray.png`,
+          source: "evidence",
+        });
+        yield* outputs.record(thread.id, { path: ".env", source: "written" });
+        yield* outputs.record(thread.id, { path: "docs/gone.pdf", source: "written" });
+
+        const page = yield* listed();
+        expect(paths(page.outputs).toSorted()).toEqual([
+          `${THERE}/elsewhere/notes.md`,
+          `${THERE}/repo/docs/report.pdf`,
+        ]);
+        expect(page.outputs.find((output) => output.path.endsWith("report.pdf"))).toMatchObject({
+          threadId: thread.id,
+          source: "written",
+          size: report.length,
+        });
+        const key = outputKey(thread.id, `${THERE}/repo/docs/report.pdf`);
+        expect(key.startsWith(`outputs/${thread.id}/`)).toBe(true);
+        expect(store.objects.get(key)?.bytes.equals(report)).toBe(true);
+        expect(store.objects.get(key)?.stamp).toMatch(new RegExp(`^${report.length}:\\d+$`));
+        expect(
+          store.objects.get(outputKey(thread.id, `${THERE}/elsewhere/notes.md`))?.bytes.toString(),
+        ).toBe("written outside");
+        expect(store.objects.size).toBe(2);
+
+        // Seen again unchanged, nothing is read but its first byte.
+        const before = there.calls.length;
+        yield* outputs.record(thread.id, { path: "docs/report.pdf", source: "written" });
+        expect(there.calls.length).toBe(before + 1);
+
+        // A copy that did not arrive is made when the output is recorded again, though its row
+        // is there already and nothing about the file changed.
+        store.objects.delete(key);
+        yield* outputs.record(thread.id, { path: "docs/report.pdf", source: "written" });
+        expect(store.objects.get(key)?.bytes.equals(report)).toBe(true);
+      }).pipe(
+        Effect.provide(layers(tree.dataDir, there.layer, store.layer)),
+        Effect.scoped,
+        Effect.ensuring(Effect.sync(tree.done)),
+      );
+    });
+
+    it.effect("records a file over the store's limit and leaves it where it is", () => {
+      const tree = tempTree();
+      const there = machine(tree.root, true);
+      const store = kept(true);
+      return Effect.gen(function* () {
+        const outputs = yield* WorkspaceOutputs;
+        const thread = yield* elsewhere;
+        const big = join(tree.checkout, "big.pdf");
+        write(big, "");
+        truncateSync(big, OBJECT_MAX_BYTES + 1);
+        yield* outputs.record(thread.id, { path: "big.pdf", source: "written" });
+        expect(paths((yield* listed()).outputs)).toEqual([`${THERE}/repo/big.pdf`]);
+        expect(store.objects.size).toBe(0);
+      }).pipe(
+        Effect.provide(layers(tree.dataDir, there.layer, store.layer)),
+        Effect.scoped,
+        Effect.ensuring(Effect.sync(tree.done)),
+      );
+    });
+
+    for (const [name, parts, on] of [
+      ["a host that reads no file in parts", false, true],
+      ["no object store", true, false],
+    ] as const)
+      it.effect(`records nothing of it with ${name}, as before`, () => {
+        const tree = tempTree();
+        const there = machine(tree.root, parts);
+        const store = kept(on);
+        return Effect.gen(function* () {
+          const outputs = yield* WorkspaceOutputs;
+          const thread = yield* elsewhere;
+          write(join(tree.checkout, "docs/report.pdf"), "pdf");
+          yield* outputs.record(thread.id, { path: "docs/report.pdf", source: "written" });
+          expect((yield* listed()).outputs).toEqual([]);
+          expect(store.objects.size).toBe(0);
+          expect(there.calls).toEqual([]);
+        }).pipe(
+          Effect.provide(layers(tree.dataDir, there.layer, store.layer)),
+          Effect.scoped,
+          Effect.ensuring(Effect.sync(tree.done)),
+        );
+      });
   });
 });

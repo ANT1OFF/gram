@@ -68,6 +68,7 @@ import {
 } from "../outbox.ts";
 import { admittedForRole, budgetVerdict, featureSlug, refusal } from "../rules.ts";
 import { workerModel, toolError, type OrchestrationKit, underKeysOf } from "./kit.ts";
+import { threadOwner } from "../../host/ownership.ts";
 import {
   type SpawnWorkerInput,
   type HeldSpawn,
@@ -133,6 +134,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
     findThread,
     heldLock,
     authorityKeys,
+    ownerOf,
   } = kit;
   const { wake, lookupProject, spawnFor, survey, spawnBreaker } = deps;
 
@@ -524,6 +526,10 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
         return undefined;
       }
       const { thread: caller, state } = authority;
+      // An orchestrator on a machine started for one person holds nothing in this version: a
+      // held brief is kept to be spawned later with no one's call to place it, so it is never
+      // offered there (`host/ownership.ts`). Its spawn goes now, or is refused, as any other.
+      if (threadOwner(ownerOf, caller) !== undefined) return undefined;
       const workspaceId = state.workspace.id;
       const outbox = yield* readOutbox(workspaceId);
       if (input.clientRequestId !== undefined) {

@@ -12,6 +12,7 @@ import { useParams } from "@tanstack/react-router";
 import {
   Bot,
   ChevronDown,
+  ChevronsLeft,
   FoldHorizontal,
   Gauge,
   Hourglass,
@@ -40,8 +41,9 @@ import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { keyLabel } from "@/keyboard/registry";
-import { EmbedNavigation, EmbedSwitcher } from "@/embed/slots";
-import { useThreadsListed } from "@/embed/store";
+import { EmbedAccount, EmbedNavigation, EmbedSidebarHeader, EmbedSwitcher } from "@/embed/slots";
+import { useScrollFade } from "@/embed/scroll-fade";
+import { useEmbedShell, useRoomySidebar, useThreadsListed } from "@/embed/store";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { formatRelative, formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
@@ -91,6 +93,7 @@ import {
   OverviewHistory,
   OverviewPullRequests,
   OverviewSearch,
+  RoomyFoot,
   useOverviewDone,
   useOverviewPrRows,
 } from "./overview-extras";
@@ -148,6 +151,7 @@ import { useFeatureCards } from "./use-feature-cards";
 import { NeedsYouEntry } from "./needs-you-entry";
 import { useNeedsYouCounts } from "./use-needs-you";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
+import { accentStyle, useWorkspaceAccent } from "./workspace-accent";
 import { WorkspaceMenuItems } from "./workspace-menu-items";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { useOrchestratorWaiting, useWorkerWaitings } from "./use-waiting-on";
@@ -345,8 +349,14 @@ export function OverviewSidebar({
   const hidden = useLayoutStore((s) => s.overviewHidden);
   // An app in front of Gram may leave the workspaces and threads out of the sidebar.
   const threadsListed = useThreadsListed();
+  const hasHeader = useEmbedShell((s) => s.sidebar.header !== undefined);
   // Before any setup the welcome is the one thing to look at: no usage beside it.
   const beforeSetup = useBeforeSetup();
+  // An app in front of Gram may draw it roomy: taller rows, labelled rows at its foot. A phone's
+  // drawer keeps its own head, search and New, and takes the look below it.
+  const roomyLook = useRoomySidebar();
+  const roomy = roomyLook && !phone;
+  const scroller = useScrollFade(roomyLook);
   return (
     <aside
       aria-label="Overview"
@@ -354,11 +364,56 @@ export function OverviewSidebar({
       data-surface="chrome"
       {...{ [OVERVIEW_ROOT]: "open" }}
       data-overlay={onPin === undefined ? undefined : ""}
+      data-look={roomy ? "roomy" : undefined}
       className="flex min-h-0 flex-1 flex-col border-r border-sidebar-divider bg-sidebar text-sidebar-foreground"
     >
-      {phone ? (
+      {roomy ? (
+        // The embedding app's mark and name, with New beside it; the toggles are at the foot.
+        <div className="flex min-h-(--titlebar-height) shrink-0 items-center gap-1 px-inset pt-2.5 pb-1.5">
+          <EmbedSidebarHeader />
+          {!hasHeader && <span className="flex-1" />}
+          {onPin !== undefined && (
+            <Hint
+              label="Keep sidebar open"
+              side="bottom"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Keep sidebar open"
+                  data-testid="overview-pin"
+                  className="text-muted-foreground"
+                  onClick={onPin}
+                />
+              }
+            >
+              <PanelLeft />
+            </Hint>
+          )}
+          {onPin === undefined && (
+            <Hint
+              label={withHint("Collapse sidebar to a strip", hideHint)}
+              side="bottom"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Collapse sidebar"
+                  data-testid="overview-compact"
+                  className="text-muted-foreground"
+                  onClick={() => switchOverview("compact")}
+                />
+              }
+            >
+              <ChevronsLeft />
+            </Hint>
+          )}
+          <UpdatePill size="xs" />
+          <NewEntryMenu />
+        </div>
+      ) : phone ? (
         <div className="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2">
-          <OverviewSearch />
+          <OverviewSearch phone />
           <NewEntryMenu />
         </div>
       ) : (
@@ -405,9 +460,9 @@ export function OverviewSidebar({
                   <PanelLeftClose />
                 </Hint>
                 {/* The sidebar's own two, side by side and drawn apart: Hide folds it away, Compact
-            narrows it to tiles. Settings is at the foot, beside History. */}
+            narrows it to a strip. Settings is at the foot, beside History. */}
                 <Hint
-                  label="Compact sidebar: workspaces as tiles"
+                  label="Compact sidebar: a strip that opens on hover"
                   side="bottom"
                   render={
                     <Button
@@ -429,28 +484,58 @@ export function OverviewSidebar({
           </div>
         </>
       )}
-      {/* An app in front of Gram puts its own switcher here; nothing on Gram's own. */}
+      {/* An app in front of Gram puts its own head and switcher here; nothing on Gram's own. */}
+      {!roomy && (
+        <EmbedSidebarHeader className={cn("flex-none px-inset pb-tight", roomyLook && "pt-1")} />
+      )}
       <EmbedSwitcher placement="sidebar" className="px-inset pb-tight" />
+      {/* Roomy: Search stays put under the switcher while the list scrolls. */}
+      {roomy && (
+        <div className="shrink-0 px-inset pb-tight">
+          <OverviewSearch roomy />
+        </div>
+      )}
       {/* The spacing scale's named steps: sections a list's step apart (12 px), as a list's
           headings are, so the column reads as one even list rather than blocks with gaps. */}
       <div
+        ref={scroller}
         onKeyDown={overviewKeys}
-        className="flex min-h-0 flex-1 flex-col gap-list overflow-y-auto overscroll-contain px-inset pt-tight pb-list text-body"
+        className={cn(
+          "flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-inset pt-tight pb-list text-body",
+          // Roomy: its headings bring their own air, and the list fades out where more of it
+          // lies past an edge, rather than cutting a row in half.
+          roomyLook
+            ? "gap-0 [scrollbar-width:thin] [mask-image:linear-gradient(to_bottom,transparent,black_var(--fade-top,0px),black_calc(100%-var(--fade-bottom,0px)),transparent)]"
+            : "gap-list",
+        )}
       >
         {/* What needs you, and the way to find anything else, as one block at the top. */}
         <div className="flex flex-col gap-tight">
           <NeedsYou />
-          {!phone && <OverviewSearch />}
+          {!phone && !roomy && <OverviewSearch />}
         </div>
         {/* The places an app in front of Gram puts first, above the workspaces and threads. */}
         <EmbedNavigation placement="main" />
         {threadsListed && <Orchestrators />}
       </div>
-      {/* The places an app in front of Gram added, with the others you go to. */}
-      <EmbedNavigation />
-      {/* History and Settings share the foot: the places you go to rather than work in. */}
-      <OverviewHistory showHistory={!hidden.includes("doneToday")} />
-      {!phone && !beforeSetup && !hidden.includes("usage") && <OverviewFoot />}
+      {/* The places an app in front of Gram added, with the others you go to: roomy has them in
+          its foot's block. */}
+      {!roomyLook && <EmbedNavigation />}
+      {roomyLook ? (
+        <>
+          {!phone && !beforeSetup && !hidden.includes("usage") && <OverviewFoot />}
+          {/* History, Settings, the account and Collapse, each a labelled row. */}
+          <RoomyFoot showHistory={!hidden.includes("doneToday")} />
+        </>
+      ) : (
+        <>
+          {/* The embedding app's account, above the foot's own places. */}
+          <EmbedAccount className="border-t border-border px-inset py-tight" />
+          {/* History and Settings share the foot: the places you go to rather than work in. */}
+          <OverviewHistory showHistory={!hidden.includes("doneToday")} />
+          {!phone && !beforeSetup && !hidden.includes("usage") && <OverviewFoot />}
+        </>
+      )}
     </aside>
   );
 }
@@ -466,7 +551,7 @@ export const switchOverview = (mode: "open" | "compact") => {
   requestAnimationFrame(() =>
     document
       .querySelector<HTMLElement>(
-        mode === "compact" ? '[data-testid="overview-expand"]' : '[data-testid="overview-compact"]',
+        mode === "compact" ? '[data-testid="overview-hide"]' : '[data-testid="overview-compact"]',
       )
       ?.focus(),
   );
@@ -661,6 +746,8 @@ function WorkspaceRow({
   const hover = waiting === undefined ? summary : `${summary}\nOrchestrator: ${waiting.hint}`;
   const line = orchestratorLine(word, { working, asks });
   const name = state.workspace.name;
+  // The colour the user gave it: a bar beside its line, carried on by its workers' guide.
+  const accent = useWorkspaceAccent(id);
   // Nothing under it, not even its orchestrator at work: one line, its name and the word every
   // surface says of a thread at rest (`STATUS_WORDS`), so the palette and this row agree.
   const orchestratorBusy = useThreadsStore(
@@ -695,7 +782,10 @@ function WorkspaceRow({
               className={cn(
                 "flex min-w-0 items-center gap-0.5 rounded-(--radius-sm)",
                 here && "bg-sidebar-row-active",
+                accent !== undefined && "gram-accent-row",
               )}
+              data-accent={accent}
+              style={accentStyle(accent)}
             />
           }
         >
@@ -796,7 +886,12 @@ function WorkspaceRow({
           <WorkspaceMenuItems state={state} />
         </ContextMenuContent>
       </ContextMenu>
-      <div id={bodyId} hidden={folded} className="flex flex-col">
+      <div
+        id={bodyId}
+        hidden={folded}
+        className={cn("flex flex-col", accent !== undefined && "gram-accent-rail")}
+        style={accentStyle(accent)}
+      >
         {/* The current one's are there folded too, for ⌘J to open it on its first worker. */}
         {(here || !folded) && <WorkspaceBody workspaceId={id} empty={empty} />}
       </div>
@@ -852,6 +947,7 @@ function WorkspaceFeatures({
   return (
     <div
       data-testid="overview-workers"
+      data-accent-guide=""
       className="mb-1 ml-3 flex flex-col gap-px border-l border-sidebar-divider pl-2"
     >
       <PresenceList>
@@ -1671,7 +1767,18 @@ export function SoloRow({
   const need = useDerivedAsks((s) => threadNeed(s.needsYou.groups, thread.id));
   const display = soloDisplay(threadStatusOf(summary, detail), need);
   const title = threadDisplayTitle(thread);
-  const lastActive = display.working ? `Last activity ${formatStamp(thread.lastActivityAt)}` : "";
+  // Started before its machine: its hover says what waits and since when, or that none came.
+  const waiting = thread.awaitingMachine;
+  const state =
+    waiting === undefined
+      ? display.label
+      : waiting.failed === undefined
+        ? `${display.title} · since ${formatStamp(waiting.since)}`
+        : display.title;
+  const lastActive =
+    display.working && waiting === undefined
+      ? `Last activity ${formatStamp(thread.lastActivityAt)}`
+      : "";
   const faded = settled || settledRow(summary.status, display, thread.lastActivityAt, now);
   // What needs you, or a failure: said in words at the row's edge, in its colour.
   const alarm = display.tone === "text-status-needs" || display.tone === "text-destructive";
@@ -1692,7 +1799,7 @@ export function SoloRow({
         data-settled={faded || undefined}
         data-unread={thread.unread || undefined}
         aria-label={`${title}${thread.unread ? ", unread" : ""}, ${display.label}${where}${lastActive === "" ? "" : `, ${lastActive}`}`}
-        title={`${title}\n${display.label}${lastActive === "" ? "" : ` · ${lastActive}`}${machine === undefined ? "" : `\n${machine.hint}`}`}
+        title={`${title}\n${state}${lastActive === "" ? "" : ` · ${lastActive}`}${machine === undefined ? "" : `\n${machine.hint}`}`}
         aria-keyshortcuts="Shift+F10"
         onClick={() => openThread(thread.id)}
         onKeyDown={rowMenuKeys}

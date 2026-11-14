@@ -9,6 +9,9 @@ import { cn } from "@/lib/utils";
 import { TitlebarPause } from "@/orchestration/workspace-pause-button";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
 import { PhoneMenuButton } from "@/shell/phone-drawer";
+import { ROUND } from "@/shell/phone-menu";
+import { useHostAttention } from "@/embed/attention";
+import { useRoomySidebar } from "@/embed/store";
 import { PhoneTitle } from "@/shell/phone-title";
 import { ShellToggle } from "@/shell/shell-toggle";
 import { TitlebarOverflow } from "@/shell/titlebar-fold";
@@ -21,6 +24,7 @@ import {
 } from "@/shell/titlebar-slot";
 import { SettingsTitle } from "@/shell/settings-title";
 import { EmbedPageTitle, EmbedSwitcher, useEmbedPageTitle } from "@/embed/slots";
+import { TitlebarPath, TitlebarPathViews, usePathBar } from "@/shell/titlebar-path";
 import { TopLeftNav } from "@/shell/top-left-nav";
 import { UsageMeter } from "@/shell/usage-meter";
 import { WorkspaceSwitcher } from "@/shell/workspace-switcher";
@@ -50,6 +54,7 @@ export function ShellTitlebar({
   settings,
   compactRail,
   panelShown,
+  panelOffered,
   panelLeft,
 }: {
   /** The overview, open or compact, is to the bar's left. */
@@ -62,6 +67,8 @@ export function ShellTitlebar({
   compactRail: boolean;
   /** The right panel is shown. */
   panelShown: boolean;
+  /** The app in front of Gram offers the right panel on this page: its toggle shows. */
+  panelOffered: boolean;
   /** `panel.side` puts the panel on the left. */
   panelLeft: boolean;
 }) {
@@ -88,10 +95,56 @@ export function ShellTitlebar({
   const titlebarAtEdge = panelLeft || !panelShown;
   const phone = usePhone();
   const embedTitle = useEmbedPageTitle();
+  const roomy = useRoomySidebar();
+  const host = useHostAttention();
+  const pathBar = usePathBar();
 
   // A phone's one bar: the drawer's menu, where you are, Needs you and "…" with the rest in words.
   // The thread's header and Board's controls still mount in the slot, out of sight: what they
   // carry is in "…", folded all the way at this width.
+  if (phone && roomy) {
+    // The roomy look's phone header: round buttons either side of where you are, on the page's own
+    // ground with no rule under it. The Inbox is the menu's dot and its row, while the app in front
+    // counts what needs someone.
+    return (
+      <div
+        ref={setTitlebar}
+        data-surface="titlebar"
+        data-testid="shell-titlebar"
+        data-phone=""
+        data-look="roomy"
+        data-solo-thread={soloBar || undefined}
+        data-carries={barThread ? "thread" : board ? "board" : undefined}
+        data-folded={folded || undefined}
+        data-fold={fold || undefined}
+        className="relative flex h-17 shrink-0 items-center gap-2 bg-transparent! px-3 [backdrop-filter:none]!"
+      >
+        {settings ? (
+          <div className="flex min-w-0 flex-1 items-center [&_button]:size-11">
+            <SettingsTitle />
+          </div>
+        ) : (
+          <>
+            <PhoneMenuButton />
+            <PhoneTitle centred />
+          </>
+        )}
+        <div ref={setTitlebarSlot} data-testid="titlebar-slot" hidden />
+        {host === undefined && (
+          <div
+            role="group"
+            aria-label="Attention"
+            data-testid="titlebar-attention"
+            className="flex shrink-0 items-center [&_[data-testid=inbox-button-dot]]:top-2.5 [&_[data-testid=inbox-button-dot]]:right-2.5 [&_button]:size-11"
+          >
+            <InboxButton />
+          </div>
+        )}
+        <TitlebarOverflow orchestration={!soloBar} className={ROUND} />
+      </div>
+    );
+  }
+
   if (phone) {
     return (
       <div
@@ -170,7 +223,11 @@ export function ShellTitlebar({
           {/* A page an app in front of Gram added says its own name here; it is in no workspace
               and has no views to switch between. */}
           {embedTitle !== undefined && <EmbedPageTitle key={embedTitle} title={embedTitle} />}
-          {embedTitle === undefined && (
+          {/* An app whose own pages say where they are as a path has the bar start as one. */}
+          {embedTitle === undefined && pathBar && (
+            <TitlebarPath solo={soloBar} narrow={carried && folded} />
+          )}
+          {embedTitle === undefined && !pathBar && (
             <WorkspaceSwitcher
               className={cn(
                 "shrink-0 [-webkit-app-region:no-drag]",
@@ -180,7 +237,7 @@ export function ShellTitlebar({
             />
           )}
           {/* Chat · Board are the workspace's views: a solo thread in Chat is no part of it. */}
-          {embedTitle === undefined && !soloBar && (
+          {embedTitle === undefined && !soloBar && !pathBar && (
             <>
               <ViewSwitcher className="shrink-0 [-webkit-app-region:no-drag]" />
               <FakeAgentBadge className="[-webkit-app-region:no-drag]" />
@@ -195,6 +252,7 @@ export function ShellTitlebar({
           />
         </div>
       )}
+      {embedTitle === undefined && pathBar && !settings && <TitlebarPathViews solo={soloBar} />}
       {carried && !settings && (
         <span
           aria-hidden
@@ -255,21 +313,23 @@ export function ShellTitlebar({
         className="ml-1 flex shrink-0 items-center gap-0.5"
       >
         {!settings && <TitlebarOpenBeside threadId={barThreadId} />}
-        <ShellToggle
-          icon={
-            panelShown
-              ? panelLeft
-                ? PanelLeftClose
-                : PanelRightClose
-              : panelLeft
-                ? PanelLeftOpen
-                : PanelRightOpen
-          }
-          label={panelShown ? "Hide right panel" : "Show right panel"}
-          shortcutId="panel.toggle"
-          pressed={panelShown}
-          onClick={togglePanel}
-        />
+        {panelOffered && (
+          <ShellToggle
+            icon={
+              panelShown
+                ? panelLeft
+                  ? PanelLeftClose
+                  : PanelRightClose
+                : panelLeft
+                  ? PanelLeftOpen
+                  : PanelRightOpen
+            }
+            label={panelShown ? "Hide right panel" : "Show right panel"}
+            shortcutId="panel.toggle"
+            pressed={panelShown}
+            onClick={togglePanel}
+          />
+        )}
       </div>
     </div>
   );

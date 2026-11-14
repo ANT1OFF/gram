@@ -29,7 +29,7 @@ vi.mock("@tanstack/react-router", () => ({
 
 const FOCUSED = "t-last-focused" as ThreadId;
 
-/** A server whose saved grid has one pane, the thread someone last focused. */
+/** Settings whose saved grid has one pane, the thread this person last focused. */
 const savedSettings: Settings = {
   ...DEFAULT_SETTINGS,
   layout: { ...DEFAULT_SETTINGS.layout, grid: { preset: "1", panes: [FOCUSED], focused: 0 } },
@@ -96,30 +96,42 @@ describe("useGridSync", () => {
     });
   });
 
-  it("under an embedding app's home, a launch at / stays home and opens no saved thread", () => {
+  it("under an embedding app's home, a launch at / restores the grid and stays home", () => {
     embedWithHome();
     launch();
 
     expect(router.navigate).not.toHaveBeenCalled();
-    expect(useLayoutStore.getState().grid.panes).not.toContain(FOCUSED);
+    expect(useLayoutStore.getState().grid.panes).toEqual([FOCUSED]);
   });
 
-  it("under an embedding app, a thread's address opens that thread alone, not the saved grid", () => {
+  it("under an embedding app with no home of its own, a launch at / opens the saved focus", () => {
+    useEmbedShell.setState({ hosted: true });
+    launch();
+
+    expect(router.navigate).toHaveBeenCalledWith({
+      to: "/t/$threadId",
+      params: { threadId: FOCUSED },
+    });
+  });
+
+  it("under an embedding app, a thread's address opens that thread in the restored grid", () => {
     embedWithHome();
     router.pathname = "/t/t-linked";
     router.params = { threadId: "t-linked" };
     launch();
 
     expect(router.navigate).not.toHaveBeenCalled();
-    expect(useLayoutStore.getState().grid.panes).not.toContain(FOCUSED);
+    expect(useLayoutStore.getState().grid.panes).toEqual(["t-linked"]);
   });
 
-  it("under an embedding app, a viewer's grid is not saved over the shared server's", () => {
+  it("under an embedding app, a changed grid is saved as the person's own", () => {
     embedWithHome();
     launch();
     act(() => useLayoutStore.getState().openThread("t-mine" as ThreadId));
     act(() => vi.advanceTimersByTime(1_000));
 
-    expect(updateSettings).not.toHaveBeenCalled();
+    expect(updateSettings).toHaveBeenCalledWith({
+      layout: { grid: expect.objectContaining({ panes: ["t-mine"] }) },
+    });
   });
 });

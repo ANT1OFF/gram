@@ -378,6 +378,8 @@ describe.skipIf(!hasGit)("stopping a machine and resuming on a new host", () => 
           working: [],
           kept: [{ threadId: thread.id, cwd: volume.repo, ref: wipRef(thread.id), pushed: true }],
         });
+        const keptThen = (prepared.body as { kept: ReadonlyArray<Record<string, unknown>> }).kept;
+        expect(keptThen[0]).toMatchObject({ commit: expect.stringMatching(/^[0-9a-f]{40}$/) });
         expect(run(volume.origin, "show", `${wipRef(thread.id)}:feature.ts`)).toBe(
           "export const feature = 1;\n",
         );
@@ -407,10 +409,14 @@ describe.skipIf(!hasGit)("stopping a machine and resuming on a new host", () => 
         const hostB = yield* startHost(volume);
         expect(hostB.pid).not.toBe(hostA.pid);
         expect(hostB.hostId).toBe(hostId);
-        const resumed = yield* post(MACHINES_STOP_RESUME_PATH, { id: hostId });
+        // The stop's answer can be given back with the resume, for a Gram that restarted since;
+        // anything that isn't one is refused before the machine is asked.
+        for (const kept of ["all", [{ threadId: thread.id }], [{ ...keptThen[0], commit: "HEAD" }]])
+          expect((yield* post(MACHINES_STOP_RESUME_PATH, { id: hostId, kept })).status).toBe(400);
+        const resumed = yield* post(MACHINES_STOP_RESUME_PATH, { id: hostId, kept: keptThen });
         expect(resumed).toEqual({
           status: 200,
-          body: { reopened: [thread.id], left: [], missing: [] },
+          body: { reopened: [thread.id], left: [], missing: [], restored: [] },
         });
         expect((yield* post(MACHINES_STOP_STATUS_PATH, {})).body).toEqual({
           machines: [{ id: hostId, name: NAME, online: true, wanted: false }],
@@ -539,6 +545,7 @@ describe.skipIf(!hasGit)("stopping a machine and resuming on a new host", () => 
           reopened: [],
           left: [],
           missing: [],
+          restored: [],
         });
         expect(yield* runtimes.status(other.thread.id)).toBe("cold");
         yield* hostA.end;

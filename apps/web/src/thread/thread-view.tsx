@@ -27,6 +27,7 @@ import { turnEndMessages } from "@/panels/turn-diff";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
 import { useTitlebarOutline } from "@/shell/titlebar-outline";
 import { useTitlebarSlot, useTitlebarThread } from "@/shell/titlebar-slot";
+import { usePhone } from "@/lib/use-phone";
 import { useStable } from "@/lib/use-stable";
 import { cn } from "@/lib/utils";
 import { AttentionPulse, Swap, TurnCompleteSheen } from "@/motion";
@@ -65,6 +66,8 @@ import { copyMarkdown } from "./message-actions";
 import { forkedFromText } from "./fork-text";
 import { trackWrappedChips } from "./header-chips";
 import { LabelChip, useThreadLabel } from "./label-chip";
+import { AwaitingMachine, useMachineWait } from "./awaiting-machine";
+import { WAIT_WORDS } from "./awaiting-machine-model";
 import { MachineChip } from "./machine-chip";
 import { FolderMissingNotice } from "./folder-missing-notice";
 import { LapsedConnectorsNotice } from "./lapsed-connectors-notice";
@@ -94,6 +97,8 @@ import {
 import { TableOfContents } from "./table-of-contents";
 import { ConversationOnlyButton } from "./conversation-only-toggle";
 import { ThreadMenu } from "./thread-menu";
+import { TraceView } from "./trace-view";
+import { useTraceViewStore } from "./trace-view-store";
 import { Transcript, transcriptScroller, type JumpRequest, type ScrollRestore } from "./transcript";
 import { turnUndos } from "./turn-undo-marker";
 import { useUnseenFrom } from "./unread";
@@ -126,9 +131,10 @@ export function ThreadView({
   focused: boolean;
   /**
    * Shown in the right panel's Thread tab beside the chat: `header` in place of the thread's own,
-   * and a composer that says it steers the thread. What it sends is the same as typing in the view.
+   * and a composer that says it steers the thread (or `placeholder`, the words of an app that shows
+   * it). What it sends is the same as typing in the view.
    */
-  beside?: { header: ReactNode } | undefined;
+  beside?: { header: ReactNode; placeholder?: string } | undefined;
   /** Pane controls at the end of the header. */
   actions?: ReactNode;
   /** Runs on a double-click on the header outside its controls; the grid maximizes or restores. */
@@ -159,6 +165,8 @@ export function ThreadView({
     );
 
   const { top, children, subagentUsage } = useSplitSubagents(messages);
+  // The thread's trace, in place of its conversation. Beside the chat there is no room for one.
+  const tracing = useTraceViewStore((s) => (beside === undefined ? s.open[threadId] : undefined));
   // An orchestrator's calm stream: its silent digests left out, its feature cards placed.
   const stream = useOrchestratorStream(summary?.thread, top);
   // What the transcript renders, which every index handed to it counts in: an orchestrator's
@@ -403,6 +411,8 @@ export function ThreadView({
   }
 
   const { thread, status } = summary;
+  // Started before its machine, which isn't named yet (`Thread.awaitingMachine`).
+  const awaiting = thread.awaitingMachine !== undefined;
   // A worker's link in its orchestrator's chat, or in a sibling's beside it, opens beside the chat.
   const linkScope =
     thread.role === "orchestrator" ? thread.id : beside ? thread.spawnedBy?.threadId : undefined;
@@ -665,101 +675,135 @@ export function ThreadView({
             {detail}
           </p>
         )}
-        <StatusHeader thread={thread} digests={stream?.plan.digests} />
-        <WaitingTray threadId={threadId} />
-        <PlanStrip threadId={threadId} />
-        <WorkerBanner thread={thread} inTitlebar={inTitlebar} />
-        {/* A helper's summary isn't the conversation, which is all "Conversation only" shows. */}
-        {!conversationOnly && <CatchUpCard thread={thread} />}
-        <StuckCard thread={thread} />
-        <OrchestratorBanner thread={thread} loaded={phase !== "loading"} />
-        {thread.role === "orchestrator" && thread.workspaceId !== undefined && (
-          <FailuresCard
-            workspaceId={thread.workspaceId}
-            className="w-full thread-column shrink-0 px-6 pt-2 pb-2"
-          />
-        )}
-        {finding && (
-          <FindBar
+        {tracing !== undefined && (
+          <TraceView
             threadId={threadId}
-            // Every loaded message, a reply a quiet update folded away included: a step to one
-            // reveals it, which shows all activity.
             messages={top}
-            earlier={earlier}
-            getScroller={() => transcriptScroller(threadId)}
-            onReveal={reveal}
-            onClose={(anchor) => {
-              setFinding(false);
-              if (anchor !== undefined) setRestore({ anchor, nonce: Date.now() });
+            subagents={children}
+            subagentUsage={subagentUsage}
+            turn={tracing.turn}
+            working={status === "running" || status === "needsApproval" || status === "needsInput"}
+            onTurn={(turn) => useTraceViewStore.getState().show(threadId, turn)}
+            onClose={() => useTraceViewStore.getState().close(threadId)}
+            onReveal={(messageId) => {
+              useTraceViewStore.getState().close(threadId);
+              reveal(messageId);
             }}
           />
         )}
-        {/* The transcript's waiting rows hold the approval cards the requests below draw. */}
-        <ApprovalSlotsProvider threadId={threadId}>
-          <OrchestratorStreamProvider stream={stream}>
-            <Transcript
+        {/* The conversation stays mounted under its trace, so it is where it was left. */}
+        <div className={tracing === undefined ? "contents" : "hidden"}>
+          <StatusHeader thread={thread} digests={stream?.plan.digests} />
+          <WaitingTray threadId={threadId} />
+          <PlanStrip threadId={threadId} />
+          <WorkerBanner thread={thread} inTitlebar={inTitlebar} />
+          {/* A helper's summary isn't the conversation, which is all "Conversation only" shows. */}
+          {!conversationOnly && <CatchUpCard thread={thread} />}
+          <StuckCard thread={thread} />
+          <OrchestratorBanner thread={thread} loaded={phase !== "loading"} />
+          {thread.role === "orchestrator" && thread.workspaceId !== undefined && (
+            <FailuresCard
+              workspaceId={thread.workspaceId}
+              className="w-full thread-column shrink-0 px-6 pt-2 pb-2"
+            />
+          )}
+          {finding && (
+            <FindBar
               threadId={threadId}
-              loading={phase === "loading"}
-              messages={shown}
-              subagents={children}
-              subagentUsage={subagentUsage}
-              streamingIds={streamingSet}
-              turnEnds={turnEnds}
-              turnUndos={undos}
-              animate={focused}
-              jump={chapterJump}
-              chapters={chapters}
-              onChapterJump={jumpToChapter}
-              reveal={revealJump}
-              restore={restore}
-              flashId={flashId}
+              // Every loaded message, a reply a quiet update folded away included: a step to one
+              // reveals it, which shows all activity.
+              messages={top}
               earlier={earlier}
-              loadingEarlier={loadingEarlier}
-              earlierFailed={earlierFailed}
-              onLoadEarlier={(retry) => void pageEarlier(retry)}
-              live={thread.spawnedBy !== undefined}
-              unreadFrom={unreadFrom}
+              getScroller={() => transcriptScroller(threadId)}
+              onReveal={reveal}
+              onClose={(anchor) => {
+                setFinding(false);
+                if (anchor !== undefined) setRestore({ anchor, nonce: Date.now() });
+              }}
             />
-          </OrchestratorStreamProvider>
-          <div className="w-full thread-column shrink-0 px-6">
-            {/* A worker opens on its catch-up instead, whose words send nothing to it. */}
-            {thread.role === "orchestrator" && <BriefingPlaceholder thread={thread} />}
-            {thread.spawnedBy === undefined && !conversationOnly && (
-              <RecapCard threadId={threadId} focused={focused} />
+          )}
+          {/* The transcript's waiting rows hold the approval cards the requests below draw. */}
+          <ApprovalSlotsProvider threadId={threadId}>
+            {/* Started before its machine: nothing is said yet, so the conversation is the
+                message that waits and how the wait stands. */}
+            {awaiting && shown.length === 0 && (
+              <div
+                data-testid="machine-wait-scroll"
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+              >
+                <AwaitingMachine thread={thread} />
+              </div>
             )}
-            <RequestCards
-              threadId={threadId}
-              requests={summary.pendingRequests}
-              focused={focused}
-              thread={thread}
-            />
-            {/* With turns to follow, the transcript's last line says it, under the last turn. */}
-            {shown.length === 0 && <LimitWaitLine thread={thread} />}
-            <QueueList threadId={threadId} />
-          </div>
-        </ApprovalSlotsProvider>
-        <FolderMissingNotice threadId={threadId} />
-        <MergedCleanupNotice threadId={threadId} />
-        <LapsedConnectorsNotice threadId={threadId} />
-        <EditBanner threadId={threadId} />
-        <PinnedDocChip threadId={threadId} />
-        <PrStrip threadId={threadId} focused={focused} />
-        {/* Subagents at work are work, which "Conversation only" leaves out. */}
-        <SubagentStrip
-          rows={conversationOnly ? NO_STRIP_LINES : stripLines}
-          shownRow={shownRow}
-          onJump={jumpToSubagent}
-          onOpen={openCommand}
-          onStop={stopTask}
-        />
-        {thread.role === "orchestrator" && <UndoLine />}
-        <TurnCompleteSheen key={threadId} status={status}>
-          <ThreadComposer
-            thread={thread}
-            focused={focused}
-            {...(beside === undefined ? {} : { placeholder: "Steer this thread…" })}
+            <OrchestratorStreamProvider stream={stream}>
+              {!(awaiting && shown.length === 0) && (
+                <Transcript
+                  threadId={threadId}
+                  loading={phase === "loading"}
+                  messages={shown}
+                  subagents={children}
+                  subagentUsage={subagentUsage}
+                  streamingIds={streamingSet}
+                  turnEnds={turnEnds}
+                  turnUndos={undos}
+                  animate={focused}
+                  jump={chapterJump}
+                  chapters={chapters}
+                  onChapterJump={jumpToChapter}
+                  reveal={revealJump}
+                  restore={restore}
+                  flashId={flashId}
+                  earlier={earlier}
+                  loadingEarlier={loadingEarlier}
+                  earlierFailed={earlierFailed}
+                  onLoadEarlier={(retry) => void pageEarlier(retry)}
+                  live={thread.spawnedBy !== undefined}
+                  unreadFrom={unreadFrom}
+                />
+              )}
+            </OrchestratorStreamProvider>
+            {awaiting && shown.length > 0 && <AwaitingMachine thread={thread} />}
+            <div className="w-full thread-column shrink-0 px-6">
+              {/* A worker opens on its catch-up instead, whose words send nothing to it. */}
+              {thread.role === "orchestrator" && <BriefingPlaceholder thread={thread} />}
+              {thread.spawnedBy === undefined && !conversationOnly && (
+                <RecapCard threadId={threadId} focused={focused} />
+              )}
+              <RequestCards
+                threadId={threadId}
+                requests={summary.pendingRequests}
+                focused={focused}
+                thread={thread}
+              />
+              {/* With turns to follow, the transcript's last line says it, under the last turn. */}
+              {shown.length === 0 && <LimitWaitLine thread={thread} />}
+              <QueueList threadId={threadId} />
+            </div>
+          </ApprovalSlotsProvider>
+          <FolderMissingNotice threadId={threadId} />
+          <MergedCleanupNotice threadId={threadId} />
+          <LapsedConnectorsNotice threadId={threadId} />
+          <EditBanner threadId={threadId} />
+          <PinnedDocChip threadId={threadId} />
+          <PrStrip threadId={threadId} focused={focused} />
+          {/* Subagents at work are work, which "Conversation only" leaves out. */}
+          <SubagentStrip
+            rows={conversationOnly ? NO_STRIP_LINES : stripLines}
+            shownRow={shownRow}
+            onJump={jumpToSubagent}
+            onOpen={openCommand}
+            onStop={stopTask}
           />
-        </TurnCompleteSheen>
+          {thread.role === "orchestrator" && <UndoLine />}
+          <TurnCompleteSheen key={threadId} status={status}>
+            <ThreadComposer
+              thread={thread}
+              focused={focused}
+              {...(beside === undefined
+                ? {}
+                : { placeholder: beside.placeholder ?? "Steer this thread…" })}
+            />
+          </TurnCompleteSheen>
+        </div>
       </div>
     </BesideLinkScope.Provider>
   );
@@ -767,7 +811,8 @@ export function ThreadView({
 
 /**
  * The thread's composer. Into a worker the orchestrator still directs, a message takes it over, as
- * Take over does: the composer says so where the message is written.
+ * Take over does: the composer says so where the message is written. On a thread that waits for
+ * its machine it says the message waits too.
  */
 function ThreadComposer({
   thread,
@@ -779,12 +824,23 @@ function ThreadComposer({
   placeholder?: string;
 }) {
   const takesControl = useSendTakesControl(thread);
+  // Started before its machine: the box says where a message goes now, which is into the wait.
+  const wait = useMachineWait(thread);
+  const phone = usePhone();
+  const words =
+    wait === undefined
+      ? placeholder
+      : phone
+        ? WAIT_WORDS.composePhone
+        : wait.state === "failed"
+          ? WAIT_WORDS.composeFailed
+          : WAIT_WORDS.composeStarting;
   return (
     <Composer
       threadId={thread.id}
       focused={focused}
       takesControl={takesControl}
-      {...(placeholder === undefined ? {} : { placeholder })}
+      {...(words === undefined ? {} : { placeholder: words })}
     />
   );
 }

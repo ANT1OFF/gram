@@ -1,0 +1,15 @@
+{
+  "title": "A thread whose machine is starting",
+  "slug": "thread-machine-starting",
+  "status": "approved",
+  "template": "app-screen",
+  "current": 1,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-14"
+    }
+  ]
+}

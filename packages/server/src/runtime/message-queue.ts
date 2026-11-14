@@ -1,6 +1,7 @@
 // What a thread is sent: the user's queue, kept in the store, and the system deliveries waiting
 // for the thread to be free, each sent as a turn or steered into the running one.
 
+import { storedActor } from "../host/ownership.ts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Cause from "effect/Cause";
@@ -32,13 +33,20 @@ import {
   type Thread,
   type ThreadStatus,
 } from "@gram/contracts";
-import { typedText, userMessage, userParts, authored, typedInput } from "./user-input.ts";
+import {
+  typedText,
+  userMessage,
+  userParts,
+  authored,
+  typedInput,
+  withSender,
+} from "./user-input.ts";
 import type { AgentSession, SteerOptions } from "@gram/agents";
 import { randomUUID } from "node:crypto";
 import type { JoinQueued, JoinResult, ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 import { missingThreadFolder } from "../fs/folders.ts";
 import type { RuntimeObserver, NotifyObservers, Dispatch } from "./runtime-observer.ts";
-import type { ThreadStoreShape } from "../persistence/thread-store.ts";
+import type { StoredQueuedInput, ThreadStoreShape } from "../persistence/thread-store.ts";
 import type { EventHubShape } from "../events/event-hub.ts";
 import type { CheckoutServiceShape } from "./hooks.ts";
 import type { ThreadWaitsShape } from "../waits/service.ts";
@@ -114,24 +122,35 @@ export const makeMessageQueue = ({
   forkStopInMissing,
   becomeIdle,
 }: MessageQueueDeps) => {
+  /** Whether the thread waits for a machine to be named for it (`Thread.awaitingMachine`). */
+  const awaitsMachine = (rt: Runtime) =>
+    store.getThread(rt.threadId).pipe(
+      Effect.map((thread) => thread.awaitingMachine !== undefined),
+      Effect.orElseSucceed(() => false),
+    );
+
   /** Called with the runtime lock held. Stores the queue with the launch, if any, at its head. */
   const persistQueue = (rt: Runtime) =>
     Effect.suspend(() => {
       // Each notice keeps its key in the store, so a restart can't take it for the user's word.
-      const queue = rt.queue.map((item): QueuedInput => {
+      const withActor = <I extends QueuedInput>(item: I): StoredQueuedInput => {
+        const actor = rt.actors.get(item.id);
+        return actor === undefined ? item : { ...item, actor };
+      };
+      const queue = rt.queue.map((item): StoredQueuedInput => {
         const noticeKey = rt.noticeKeys.get(item.id);
-        return noticeKey === undefined ? item : { ...item, noticeKey };
+        return withActor(noticeKey === undefined ? item : { ...item, noticeKey });
       });
-      const head = [rt.launch, rt.inFlight].flatMap((item): ReadonlyArray<QueuedInput> => {
+      const head = [rt.launch, rt.inFlight].flatMap((item): ReadonlyArray<StoredQueuedInput> => {
         if (item === undefined) return [];
         const noticeKey = rt.noticeKeys.get(item.id);
         return [
-          {
+          withActor({
             id: item.id,
             input: item.input,
             turnId: item.turnId,
             ...(noticeKey === undefined ? {} : { noticeKey }),
-          },
+          }),
         ];
       });
       return store.putQueue(rt.threadId, [...head, ...queue]);
@@ -233,7 +252,11 @@ export const makeMessageQueue = ({
       // The id doubles as the agent transcript id, so a rewind can resume just before this message.
       const messageId = ids.messageId ?? randomUUID();
       if (ids.published !== true) {
-        yield* publishMessage(rt, userMessage(input, messageId, turn.id, now), turn.id);
+        yield* publishMessage(
+          rt,
+          yield* withSender(userMessage(input, messageId, turn.id, now)),
+          turn.id,
+        );
       }
       yield* markRunning(rt, turn);
       yield* markSessionUsed(rt);
@@ -245,14 +268,25 @@ export const makeMessageQueue = ({
           queueLength: rt.queue.length,
         }),
       );
-      const read = yield* forAgent(rt, input);
+      // A session that opened without the agent's own conversation reads the thread's recent
+      // turns ahead of its first input, kept until an input carrying them reaches it. Never ahead
+      // of a slash command, which the text before it would break: the next input takes them.
+      const seed = rt.lostSession;
+      const forAgentInput = yield* forAgent(rt, input);
+      const read =
+        seed === undefined || forAgentInput.text.trimStart().startsWith("/")
+          ? forAgentInput
+          : { ...forAgentInput, text: `${seed}\n${forAgentInput.text}` };
       const lost = yield* session.send(read, { messageId }).pipe(
         Effect.as(undefined),
         Effect.catchDefect((defect) =>
           isUndelivered(defect) ? Effect.succeed(defect) : Effect.die(defect),
         ),
       );
-      if (lost === undefined) return;
+      if (lost === undefined) {
+        if (read !== forAgentInput && rt.lostSession === seed) rt.lostSession = undefined;
+        return;
+      }
       // The agent never took it, or can't be said to have. A delivery's own failure settles it,
       // so only the queue's input is kept here: out of the feed, at the queue's head, under its id,
       // so a host that did take it knows it again rather than take it twice.
@@ -262,7 +296,11 @@ export const makeMessageQueue = ({
       ).pipe(Effect.annotateLogs({ threadId: rt.threadId, turnId: turn.id }));
       yield* withdrawMessage(rt, messageId);
       if (rt.inFlight?.id === messageId) rt.inFlight = undefined;
-      rt.queue.unshift({ id: QueueItemId.make(messageId), input: sent });
+      const kept = QueueItemId.make(messageId);
+      rt.queue.unshift({ id: kept, input: sent });
+      // Kept to be sent again, so it keeps who sent it (`host/ownership.ts`): an input that came
+      // off the queue has its writer already; one sent straight to an idle session is this call's.
+      if (!rt.actors.has(kept)) rt.actors.set(kept, yield* storedActor);
       yield* finishTurn(rt, "interrupted", "sendFailed");
       yield* syncQueue(rt);
       yield* setStatus(rt, "error", `${lost.message} Your message waits at the top of the queue.`);
@@ -293,7 +331,7 @@ export const makeMessageQueue = ({
       const input = yield* withWaitNote(rt, sent, turn.id);
       const messageId = randomUUID();
       const now = yield* Clock.currentTimeMillis;
-      const message = {
+      const message = yield* withSender({
         id: messageId,
         role: "user",
         parts: userParts(input, messageId),
@@ -303,7 +341,7 @@ export const makeMessageQueue = ({
           ...(input.author === undefined ? {} : { author: input.author }),
           delivery: options?.interrupt === true ? "interrupt" : "steer",
         },
-      } as unknown as GramUIMessage;
+      } as unknown as GramUIMessage);
       const read = yield* forAgent(rt, input);
       const taken = yield* (
         options?.interrupt === true ? session.steer(read, options) : session.steer(read)
@@ -507,6 +545,8 @@ export const makeMessageQueue = ({
       if (rt.closing) return yield* failPendingDeliveries(rt, "ended");
       // Held for `whileAtRest`, which pumps again once it lets go.
       if (rt.reserved) return;
+      // Held until the thread's machine is named: the placement pumps again (`relocate`).
+      if (yield* awaitsMachine(rt)) return;
       // Held for the limit's resume, which pumps again.
       if (yield* waitWithAccount(rt)) return;
       switch (rt.status) {
@@ -555,8 +595,13 @@ export const makeMessageQueue = ({
       const turnId = makeTurnId();
       const input = yield* withWaitNote(rt, typed, turnId);
       rt.launch = { id, input, turnId };
+      rt.actors.set(id, yield* storedActor);
       yield* persistQueue(rt);
-      yield* publishMessage(rt, userMessage(input, id, turnId, createdAt), turnId);
+      yield* publishMessage(
+        rt,
+        yield* withSender(userMessage(input, id, turnId, createdAt)),
+        turnId,
+      );
     });
 
   /**
@@ -614,8 +659,11 @@ export const makeMessageQueue = ({
               status: rt.status,
             });
           }
+          // A thread whose machine isn't named yet has no folder to miss, and starts nothing:
+          // whatever is sent waits in its queue, which the placement sends (`relocate`).
+          const awaiting = yield* awaitsMachine(rt);
           // Rather than start an agent that fails to spawn or fails every tool.
-          yield* refuseMissingFolder(rt);
+          if (!awaiting) yield* refuseMissingFolder(rt);
           // A monitor's notice never wakes an archived thread. Read under the lock, so an archive
           // written while the notice waited its turn stops it before any send, steer or open.
           if (noticeKey !== undefined && (yield* store.getThread(threadId)).parked) {
@@ -634,6 +682,8 @@ export const makeMessageQueue = ({
                 if (stale >= 0) {
                   const id = rt.queue[stale]!.id;
                   rt.queue[stale] = { id, input };
+                  // New text, new writer: it goes as who wrote it now, not as the one it replaced.
+                  rt.actors.set(id, yield* storedActor);
                   rt.queuedAt.set(id, { at: now, messages: 1 });
                   yield* syncQueue(rt);
                   return { queued: true, replaced: true };
@@ -657,16 +707,22 @@ export const makeMessageQueue = ({
                   input: join({ input: last.input, queuedAt, messages }, input, now),
                 };
                 rt.queuedAt.set(last.id, { at: queuedAt, messages: messages + 1 });
+                // Two writers in one input: if they differ, it is no one's in particular.
+                const joiner = yield* storedActor;
+                if (JSON.stringify(rt.actors.get(last.id)) !== JSON.stringify(joiner))
+                  rt.actors.set(last.id, {});
                 yield* syncQueue(rt);
                 return { queued: true, joined: { queuedAt } };
               }
               const id = makeQueueItemId();
               rt.queue.push({ id, input });
+              rt.actors.set(id, yield* storedActor);
               rt.queuedAt.set(id, { at: now, messages: 1 });
               if (noticeKey !== undefined) rt.noticeKeys.set(id, noticeKey);
               yield* syncQueue(rt);
               return { queued: true };
             });
+          if (awaiting) return yield* enqueue();
           if ((yield* switchHold(rt)) !== undefined) return yield* enqueue();
           // While the thread waits out a limit, only the user's own word starts a turn, and it
           // ends the wait; anything else waits in the queue for the resume. A thread at rest
@@ -836,7 +892,8 @@ export const makeMessageQueue = ({
         rt.reserved ||
         rt.limitWait !== undefined ||
         (yield* switchHold(rt)) !== undefined ||
-        (yield* queueHeld(rt))
+        (yield* queueHeld(rt)) ||
+        (yield* awaitsMachine(rt))
       )
         return;
       switch (rt.status) {
@@ -1058,14 +1115,17 @@ export const makeQueueMethods = ({
   editQueued: (threadId, itemId, input) =>
     withQueue(threadId, (rt) =>
       queueIndex(rt, itemId).pipe(
-        Effect.map((index) => {
-          // Whoever wrote the item still did: an edited notice never becomes the user's words.
+        Effect.flatMap((index) => Effect.map(storedActor, (actor) => ({ index, actor }))),
+        Effect.map(({ index, actor }) => {
+          // Whoever wrote the item is still shown as having written it (an edited notice never
+          // becomes the user's words), but it goes as whoever edited it: the whole text is theirs.
           const { author: _, ...edited } = input;
           const author = rt.queue[index]!.input.author;
           rt.queue[index] = {
             id: itemId,
             input: author === undefined ? edited : { ...edited, author },
           };
+          rt.actors.set(itemId, actor);
           rt.noticeKeys.delete(itemId);
           // The edit is the whole text now: a join after it starts the numbering again.
           const known = rt.queuedAt.get(itemId);

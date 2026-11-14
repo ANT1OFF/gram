@@ -47,6 +47,7 @@ beforeEach(() =>
     sidebarPeek: false,
     windowWidth: 1440,
     threadInView: true,
+    panelBarred: false,
     page: "/t/t-a",
     reviewRequestsPlacement: "sidebar",
     overviewSidebar: undefined,
@@ -267,6 +268,31 @@ describe("review width", () => {
 });
 
 describe("panel toggle", () => {
+  it("shows no panel and does nothing on a page the embedding app offers none on", () => {
+    s().setShellContext({ windowWidth: 1440, threadInView: false, panelBarred: true, page: "/" });
+    expect(fitShell(s()).panel).toBe("none");
+    // Opened anyway (a request, a stored peek), it stays hidden; the toggle changes nothing.
+    useLayoutStore.setState({ panelPeek: true, panelTab: "reviews" });
+    expect(fitShell(s()).panel).toBe("none");
+    const panels = () => {
+      const { panelOpen, panelPeek, panelExpanded, focusMode } = s();
+      return { panelOpen, panelPeek, panelExpanded, focusMode };
+    };
+    const before = panels();
+    s().togglePanel();
+    expect(panels()).toEqual(before);
+    // A thread it is offered on shows the stored panel as before.
+    s().setShellContext({
+      windowWidth: 1440,
+      threadInView: true,
+      panelBarred: false,
+      page: "/t/a",
+    });
+    useLayoutStore.setState({ panelTab: "diff" });
+    expect(fitShell(s())).toMatchObject({ panel: "side" });
+    expect(s().panelOpen).toBe(true);
+  });
+
   it("keeps the Diff tab closed on a thread with nothing to diff, until opened there", () => {
     s().setShellContext({ windowWidth: 1440, threadInView: true, threadQuiet: true, page: "/t/q" });
     expect(fitShell(s()).panel).toBe("none");
@@ -881,7 +907,9 @@ describe("side panels", () => {
     });
     expect(sanitizeBoardFilters({ boardArchivedShown: "w-1" })).toEqual({});
     expect(sanitizeBoardFilters(undefined)).toEqual({});
-    // The lanes' layout is no more: a stored one is left out, as the grid is the only one.
+  });
+
+  it("drops a stored board layout: every board is the grid", () => {
     expect(sanitizeBoardFilters({ boardLayout: "lanes" })).toEqual({});
   });
 });

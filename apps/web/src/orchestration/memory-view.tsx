@@ -22,9 +22,11 @@ import { EXPLAIN } from "@/lib/explain";
 import { seeTerm } from "@/lib/first-use";
 import { agoText } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
+import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { Expand, ExpandPresence, NumberTicker, PresenceItem, PresenceList, Swap } from "@/motion";
 import { PanelMessage } from "@/panels/panel-message";
+import { usePathBar, useWorkspacePlaces } from "@/shell/titlebar-path";
 import { useThreadsStore } from "@/stores/threads";
 import { formatBytes } from "@/thread/orchestration-model";
 
@@ -46,7 +48,7 @@ import { useWorkspacesQuery } from "./use-orchestration";
 
 const SECTION = "flex flex-col gap-3 rounded-(--radius-md) border border-edge bg-card/40 p-3";
 /** A tab's one line on what it is for, beside its action. */
-const LEAD = "min-w-0 flex-1 text-meta text-muted-foreground";
+const LEAD = "min-w-0 flex-1 text-meta text-pretty text-muted-foreground";
 /** A size beside its cap, the cap as short as it reads: 32 KB, not 32.0 KB. */
 const capText = (cap: number): string => `${cap / 1024} KB`;
 const INPUT =
@@ -80,8 +82,8 @@ function Questions({ state }: { state: WorkspaceState }) {
       <p className={LEAD}>
         {open.length === 0 ? (
           <>
-            None. The orchestrator asks with <code>ask_user</code>, keeps its questions in{" "}
-            {QUESTIONS_FILE}, and open ones show here.
+            No open questions. When the orchestrator needs a decision from you, it asks here and
+            keeps the question in {QUESTIONS_FILE}.
           </>
         ) : (
           <>
@@ -643,6 +645,12 @@ export function MemoryView({
   const api = useApi();
   const { workspaces, settled, error } = useWorkspacesQuery();
   const state = workspaces.find((candidate) => candidate.workspace.id === workspaceId);
+  // Whether the window already names Memory right above: the bar's path with the workspace's
+  // places beside it, or a phone's row of them.
+  const pathBar = usePathBar();
+  const phone = usePhone();
+  const placed = useWorkspacePlaces(false)?.some((place) => place.current) === true;
+  const named = pathBar || (phone && placed);
   const files = useQuery({
     queryKey: ["memory", workspaceId, "files"],
     queryFn: () => api.listMemory(workspaceId),
@@ -707,8 +715,15 @@ export function MemoryView({
       )}
     >
       {/* Its title alone: the way to the chat and the Board is the title bar's Chat · Board,
-          right above it, which two buttons here only repeated. */}
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-3">
+          right above it, which two buttons here only repeated. Where the bar is a path with the
+          workspace's places beside it, or a phone has their row, Memory is already named and
+          selected right above: the title is kept for a screen reader only. */}
+      <header
+        className={cn(
+          "flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-3",
+          named && "sr-only",
+        )}
+      >
         <h1 className="flex min-w-0 items-center gap-2 text-title">
           <BookOpenText aria-hidden className="size-icon-row shrink-0 text-primary" />
           <span className="truncate">Memory · {state.workspace.name}</span>
@@ -723,8 +738,10 @@ export function MemoryView({
         <TabsList
           aria-label="Memory"
           data-testid="memory-tabs"
-          // On a phone the tabs keep one line each and the row scrolls sideways.
-          className="sticky top-0 z-10 bg-thread px-4 phone:overflow-x-auto phone:[scrollbar-width:none] phone:[&_[data-slot=tabs-indicator]]:bottom-0 phone:whitespace-nowrap phone:[&>button]:h-11 phone:[&>button]:shrink-0"
+          // On a phone the tabs keep one line each and the row scrolls sideways. Its right edge
+          // fades, so a tab cut by the window reads as more to scroll to, with room after the
+          // last for it to clear the fade.
+          className="sticky top-0 z-10 bg-thread px-4 phone:overflow-x-auto phone:pe-10 phone:[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] phone:[scrollbar-width:none] phone:[&_[data-slot=tabs-indicator]]:bottom-0 phone:whitespace-nowrap phone:[&>button]:h-11 phone:[&>button]:shrink-0"
         >
           <TabsTrigger value="overview" data-testid="memory-tab-overview">
             Current memory
@@ -818,10 +835,11 @@ export function MemoryView({
               />
             )}
           </TabsContent>
-          <TabsContent value="decisions">
+          {/* Decisions and History sit in the column Current memory reads in, not edge to edge. */}
+          <TabsContent value="decisions" className="thread-column">
             <Questions state={state} />
           </TabsContent>
-          <TabsContent value="history">
+          <TabsContent value="history" className="thread-column">
             <Versions workspaceId={workspaceId} />
           </TabsContent>
           <TabsContent value="update">

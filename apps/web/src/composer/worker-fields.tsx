@@ -66,7 +66,7 @@ export function WorkerFields({
               const usable = firstWorkerChoiceOf(choices, item.value) !== undefined;
               return (
                 <SelectItem key={item.value} value={item.value} disabled={!usable}>
-                  <AgentIcon agent={item.value} className="size-icon-row text-muted-foreground" />
+                  <AgentIcon agent={item.value} className="size-icon-row" />
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate">{item.label}</span>
                     {!usable && (

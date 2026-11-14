@@ -603,6 +603,14 @@ describe("cloneRepo", () => {
       "Couldn't clone EXAMPLE/x: fatal: early EOF",
     );
   });
+
+  it("says where to sign in when gh has no login, not gh's own advice", () => {
+    const signedOut =
+      "To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.";
+    expect(cloneFailureMessage("EXAMPLE/x", said(signedOut))).toBe(
+      "Couldn't clone EXAMPLE/x: the GitHub CLI on the machine running Gram's server isn't signed in. Run `gh auth login` there, or paste the repository's git URL to clone with git's own credentials.",
+    );
+  });
 });
 
 /** `gh api --include` output for a page of `names`, whose `Link` names `last` as the last page. */

@@ -3,10 +3,19 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { makeDurableWork } from "./durable-work.ts";
+import {
+  callerPerson,
+  currentCaller,
+  recordActor,
+  RoutedFor,
+  type RecordedActor,
+} from "./host/ownership.ts";
 
 interface Job {
   readonly id: string;
   readonly owed: boolean;
+  /** Who it was saved for (`recordActor`). */
+  readonly actor?: RecordedActor;
   readonly result?: string;
 }
 
@@ -18,6 +27,7 @@ const harness = (perform: (job: Job, retry: boolean) => Effect.Effect<string | u
     lockKey: (id) => id,
     read: (id) => Effect.sync(() => saved.get(id)),
     owed: (job) => job.owed,
+    actor: (job) => Effect.succeed(job.actor),
     perform: (job, retry) =>
       Effect.suspend(() => {
         calls.push({ id: job.id, retry });
@@ -30,7 +40,8 @@ const harness = (perform: (job: Job, retry: boolean) => Effect.Effect<string | u
         return done;
       }),
   });
-  const save = (id: string) => saved.set(id, { id, owed: true });
+  const save = (id: string, actor?: RecordedActor) =>
+    saved.set(id, { id, owed: true, ...(actor === undefined ? {} : { actor }) });
   return { work, saved, calls, save };
 };
 
@@ -90,4 +101,28 @@ it.effect("runs one attempt per key at a time, so a retry never repeats the one 
     expect((yield* Fiber.join(second))?.owed).toBe(false);
     expect(calls).toHaveLength(1);
   }).pipe(Effect.scoped),
+);
+
+// The durable-intent choke point (`host/ownership.ts`): an attempt runs as who the work was saved
+// for, whichever fiber makes it. A retry at start, with no caller, is never the server's own.
+it.effect("runs every attempt as the actor the intent was saved with, a retry included", () =>
+  Effect.gen(function* () {
+    const seen: Array<string | undefined | "server"> = [];
+    const { work, save } = harness(() =>
+      Effect.gen(function* () {
+        seen.push((yield* currentCaller) === undefined ? "server" : yield* callerPerson);
+        return "done";
+      }),
+    );
+    // Saved in Ada's call, attempted in Grace's, and resumed at start with no caller at all.
+    save("ada-job", yield* recordActor.pipe(Effect.provideService(RoutedFor, { person: "ada" })));
+    yield* work
+      .attempt("ada-job", false)
+      .pipe(Effect.provideService(RoutedFor, { person: "grace" }));
+    save("ada-retry", { person: "ada" });
+    save("unsigned", {});
+    save("server", yield* recordActor);
+    yield* work.resume(["ada-retry", "unsigned", "server"]);
+    expect(seen).toEqual(["ada", "ada", undefined, "server"]);
+  }),
 );

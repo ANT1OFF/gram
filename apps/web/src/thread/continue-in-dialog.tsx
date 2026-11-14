@@ -235,7 +235,7 @@ export function ContinueInDialog({
                   data-testid="continue-in-model"
                   className="min-w-44"
                 >
-                  <AgentIcon agent={to} className="size-icon-row text-muted-foreground" />
+                  <AgentIcon agent={to} className="size-icon-row" />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

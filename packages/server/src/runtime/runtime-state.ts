@@ -1,5 +1,6 @@
 // One thread's live runtime state, and the small helpers every part of `ThreadRuntimes` reads it with.
 
+import type { StoredActor } from "../host/ownership.ts";
 import {
   type AgentUnavailable,
   type MessageId,
@@ -170,6 +171,11 @@ export interface Runtime {
   >;
   /** The key of each queued notice `sendNotice` may replace, since the server started. */
   readonly noticeKeys: Map<QueueItemId, string>;
+  /**
+   * Who each input was written for, by its id (`recordActor`): kept with it in the store, and
+   * every attempt to send it, after a restart too, runs as them (`host/ownership.ts`).
+   */
+  readonly actors: Map<QueueItemId, StoredActor>;
   turn: Turn | undefined;
   /** Messages still streaming (or finished this turn), by id; subagent transcripts can interleave. */
   readonly open: Map<MessageId, InFlight>;
@@ -204,6 +210,12 @@ export interface Runtime {
    * one stopped to reopen.
    */
   restartMarker: "asked" | SessionRestartReason | undefined;
+  /**
+   * The thread's recent turns, as the agent reads them ahead of the next input it is sent, because
+   * the session that opened could not resume the agent's own conversation and opened without it
+   * (`lostSessionContext`). Cleared once an input carrying it reaches the agent.
+   */
+  lostSession: string | undefined;
   /** `mcpConfigChanged` reached the session, which restarts at its next point of rest. */
   pendingRestart: SessionRestartReason | undefined;
   /** When the last background task ended, while a pending restart waits `BACKGROUND_SETTLE`. */
@@ -473,3 +485,7 @@ export const atRest = (rt: Runtime, afterError = false): boolean =>
 
 /** A thread's runtime, made cold from the store the first time it is asked for. */
 export type GetRuntime = (threadId: ThreadId) => Effect.Effect<Runtime, ThreadNotFound>;
+
+/** What a session asked to open for a thread whose machine isn't named yet is told. */
+export const AWAITS_MACHINE =
+  "The thread's machine hasn't started yet. What is sent to it waits until it has.";

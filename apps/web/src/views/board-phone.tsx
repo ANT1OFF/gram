@@ -85,6 +85,17 @@ function StageBar({ station }: { station: FeatureStation }) {
 export const phoneCardLine = (worker: Pick<RailWorker, "now">, station: FeatureStation): string =>
   nowSaysMore(worker.now) ? waitShort(worker.now) : STATION_LABELS[station];
 
+/**
+ * What a finished card says: how it ended. "Merged as #136" beside the chip of #136 said the
+ * number twice, so with its PR's chip on the card the line is the word alone.
+ */
+export const doneCardLine = (worker: Pick<RailWorker, "now" | "prs">): string =>
+  worker.prs.length > 0 && /^merged as #\d+$/i.test(worker.now)
+    ? "Merged"
+    : worker.now === ""
+      ? "Done"
+      : worker.now;
+
 function TaskCard({
   card,
   asking,
@@ -103,6 +114,8 @@ function TaskCard({
   // A card that waits on you or failed says why, in place of a stage bar that would read as
   // progress under "Failed".
   const stuck = worker.tone === "needs" || worker.tone === "error";
+  // A finished card has no stage left to show: five full segments under "Done" said nothing.
+  const finished = phoneSegmentOf(card) === "done";
   return (
     <li
       data-testid="phone-board-card"
@@ -137,14 +150,14 @@ function TaskCard({
           {tone.label}
         </span>
       </button>
-      {!stuck && <StageBar station={station} />}
+      {!stuck && !finished && <StageBar station={station} />}
       <span className="flex min-w-0 items-center gap-2 text-meta text-muted-foreground">
         <span data-testid="phone-board-line" className="min-w-0 truncate first-letter:uppercase">
           {stuck && worker.now !== "" ? (
             worker.now
           ) : (
             <>
-              {phoneCardLine(worker, station)}
+              {finished ? doneCardLine(worker) : phoneCardLine(worker, station)}
               {showAgent && agent !== undefined && ` · ${agentLabel(agent)}`}
             </>
           )}
@@ -194,7 +207,8 @@ export function PhoneBoard({
   const [picked, setPicked] = useState<PhoneBoardSegment | undefined>(undefined);
   // Until one is picked, the first with anything in it.
   const segment = picked ?? SEGMENTS.find(({ id }) => counts[id] > 0)?.id ?? "now";
-  const shown = by(segment);
+  // Done reads newest first, as the desktop's Done band does.
+  const shown = segment === "done" ? by(segment).toReversed() : by(segment);
   return (
     <div data-testid="phone-board" className="flex flex-col gap-2 px-4 pt-2">
       <div

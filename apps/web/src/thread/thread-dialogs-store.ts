@@ -25,6 +25,8 @@ export type ThreadDialog =
   /** Without a workspace, the repository added opens on New thread. */
   | { kind: "addRepo"; workspaceId?: WorkspaceId }
   | { kind: "removeWorkspace"; workspaceId: WorkspaceId }
+  /** Its move to a server signed in to, where the desktop app can move one. */
+  | { kind: "moveWorkspace"; workspaceId: WorkspaceId }
   /** The project's scripts to add and edit, opened from the thread it was asked from. */
   | { kind: "projectScripts"; projectId: ProjectId; threadId?: ThreadId };
 

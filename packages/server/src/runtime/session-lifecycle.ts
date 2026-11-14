@@ -13,7 +13,14 @@ import * as Clock from "effect/Clock";
 import * as Stream from "effect/Stream";
 import * as Fiber from "effect/Fiber";
 import * as Scope from "effect/Scope";
-import { type Runtime, locked, feedLocked, replyOf, makeQueueItemId } from "./runtime-state.ts";
+import {
+  AWAITS_MACHINE,
+  type Runtime,
+  locked,
+  feedLocked,
+  replyOf,
+  makeQueueItemId,
+} from "./runtime-state.ts";
 import {
   type AfterMachineRestart,
   afterMachineRestart,
@@ -24,12 +31,21 @@ import {
 import { missingThreadFolder } from "../fs/folders.ts";
 import {
   type AgentEvent,
+  type AgentKind,
   AgentUnavailable,
   type Thread,
   type TurnId,
   type ThreadId,
 } from "@gram/contracts";
 import { UNKNOWN_FAILURE } from "./thread-error.ts";
+import { HANDOFF_TURNS_TOKENS, renderLostSession, renderRecentTurns } from "./switch-handoff.ts";
+import { fromStoredMessages } from "../orchestration/transcripts.ts";
+
+/** How many of a thread's last messages a session that lost its conversation is given from. */
+export const LOST_SESSION_MESSAGES = 200;
+
+/** What the user calls each agent, in a notice. */
+const agentName = (agent: AgentKind): string => (agent === "codex" ? "Codex" : "Claude");
 import { dreamSupportFor, sequenceEvents, type AppToolRegistryPort } from "@gram/agents";
 import type { ResumeOptions, ResumePlans } from "./history-plans.ts";
 import { dreamRolePromptFor } from "../orchestration/dream-prompt.ts";
@@ -155,6 +171,40 @@ export const makeSessionLifecycle = ({
   markShutdownFailed,
   currentAppTools,
 }: SessionLifecycleDeps) => {
+  /**
+   * The thread's recent turns as a new session reads them when the agent's own conversation was
+   * lost (`renderLostSession`), or `undefined` when there are none to give or they can't be read.
+   * Input not yet sent to an agent (the queue, a launch, an input on its way) is left out: it
+   * follows as itself. Reads the last `LOST_SESSION_MESSAGES` messages and the first, never all.
+   */
+  const lostSessionContext = (rt: Runtime, agent: AgentKind) =>
+    Effect.gen(function* () {
+      const unsent = new Set<string>(
+        (yield* store.listQueue(rt.threadId)).map((item) => item.id as string),
+      );
+      for (const item of [rt.launch, rt.inFlight]) if (item !== undefined) unsent.add(item.id);
+      const last = yield* store.lastMessages(rt.threadId, LOST_SESSION_MESSAGES);
+      const first = yield* store.firstMessages(rt.threadId, 1);
+      const messages = [
+        ...first.filter((message) => !last.some((each) => each.id === message.id)),
+        ...last,
+      ].filter((message) => !unsent.has(message.id));
+      const turns = renderRecentTurns(
+        fromStoredMessages(messages.map((message, seq) => ({ seq, message }))),
+        HANDOFF_TURNS_TOKENS,
+        "this thread",
+      );
+      return turns.kept === 0 ? undefined : renderLostSession(agent, turns.text);
+    }).pipe(
+      // The session opens either way: without the turns, as it did before there were any.
+      Effect.catchCause((cause) =>
+        Effect.logWarning("couldn't read a thread's recent turns for its new session").pipe(
+          Effect.annotateLogs({ threadId: rt.threadId, cause: Cause.pretty(cause) }),
+          Effect.as(undefined),
+        ),
+      ),
+    );
+
   /** When each thread's work was carried on after a machine restart, this run, oldest first. */
   const machineContinuations = new Map<ThreadId, ReadonlyArray<number>>();
 
@@ -429,6 +479,7 @@ export const makeSessionLifecycle = ({
                 });
                 // Gram's, not the user's word: a hold holds it, across a restart too.
                 rt.noticeKeys.set(id, MACHINE_RESTART_KEY);
+                rt.actors.set(id, "server");
                 yield* syncQueue(rt);
               }
               rt.machineRestart = { machine: restart.machine, continued: restart.continued };
@@ -454,6 +505,13 @@ export const makeSessionLifecycle = ({
   const openSession = (rt: Runtime, thread: Thread, resumeAt?: string, switchAttempt?: string) =>
     Effect.gen(function* () {
       if (isShuttingDown()) return;
+      // The one door every session opens through: none does before the thread's machine is named.
+      if (thread.awaitingMachine !== undefined)
+        return yield* new AgentUnavailable({
+          agent: thread.model.agent,
+          reason: "startup-failed",
+          message: AWAITS_MACHINE,
+        });
       if (
         thread.sessionSwitch !== undefined &&
         thread.sessionSwitch.phase !== "checkpoint" &&
@@ -558,6 +616,7 @@ export const makeSessionLifecycle = ({
               recordSeen(seenConnectors.record(seen));
             },
           });
+        let lost: string | undefined;
         const session = yield* open(resume).pipe(
           Effect.catchTag("AgentUnavailable", (error) => {
             const ownResume =
@@ -573,14 +632,22 @@ export const makeSessionLifecycle = ({
                 .pipe(Effect.orDie);
               yield* publishUpsert(marked);
               const fresh = yield* open(yield* resumeOptions(marked, resumeAt));
-              // A thread with a conversation (e.g. a transcript Claude Code cleaned up) continues
-              // without the agent's memory of it, so say so.
+              // A thread with a conversation (a transcript the agent cleaned up, or one on a
+              // machine that is gone) continues without the agent's memory of it. The new session
+              // reads the thread's recent turns ahead of its first input, so it doesn't start
+              // empty, and the user is told.
               if (yield* store.hasMessages(rt.threadId)) {
+                lost = yield* lostSessionContext(rt, thread.model.agent);
+                yield* Effect.logWarning("an agent's conversation couldn't be resumed").pipe(
+                  Effect.annotateLogs({ threadId: rt.threadId, seeded: lost !== undefined }),
+                );
                 yield* hub.publish({
                   type: "notify",
                   kind: "info",
                   title:
-                    "The previous Claude conversation couldn't be found, so this thread continues in a fresh session.",
+                    lost === undefined
+                      ? `The previous ${agentName(thread.model.agent)} conversation couldn't be found, so this thread continues in a fresh session.`
+                      : `The previous ${agentName(thread.model.agent)} conversation couldn't be found, so this thread continues in a new session given its recent turns.`,
                   threadId: rt.threadId,
                 });
               }
@@ -592,6 +659,7 @@ export const makeSessionLifecycle = ({
           rt,
           Effect.gen(function* () {
             rt.session = session;
+            if (lost !== undefined) rt.lostSession = lost;
             rt.sessionBrowser = policy.browser === true && thread.role !== "dream";
             rt.reopening = false;
             // An MCP edit can arrive while a restart waits for its former child to exit. The

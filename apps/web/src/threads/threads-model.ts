@@ -11,8 +11,17 @@ export interface ThreadListing {
   readonly place: string;
   /** What started it, where that is known: an orchestrator, a routine. */
   readonly startedBy: string | undefined;
+  /** The thread that asked its orchestrator for it, by its place's name or its title. */
+  readonly sentFrom?: string | undefined;
   /** It asks you something, or the Inbox lists it: such threads come first. */
   readonly needsYou: boolean;
+}
+
+/** The words for a thread's kind, each Gram's own when left out (an embedding app may give its own). */
+export interface ThreadKindWords {
+  readonly solo?: string | undefined;
+  readonly orchestrator?: string | undefined;
+  readonly worker?: string | undefined;
 }
 
 export interface ThreadsSources {
@@ -21,6 +30,12 @@ export interface ThreadsSources {
   readonly workspaceNames: ReadonlyMap<string, string>;
   /** Which threads need you, as the Inbox counts them. */
   readonly needsYou: (summary: ThreadSummary) => boolean;
+  /** How a thread's kind is worded. */
+  readonly kinds?: ThreadKindWords | undefined;
+  /** Threads the page leaves out, by id: ones an app in front of Gram lists in a place of its own. */
+  readonly elsewhere?: ReadonlySet<string> | undefined;
+  /** The name of the place an app in front of Gram shows a thread in, by the thread's id. */
+  readonly placeOf?: ((threadId: string) => string | undefined) | undefined;
 }
 
 const titleOf = (summary: ThreadSummary): string =>
@@ -32,14 +47,46 @@ const titleOf = (summary: ThreadSummary): string =>
 export const startedByOf = (
   summary: ThreadSummary,
   titles: ReadonlyMap<string, string>,
+  kinds: ThreadKindWords = {},
 ): string | undefined => {
   const { thread } = summary;
-  if (thread.role === "orchestrator") return "Orchestrator";
+  if (thread.role === "orchestrator") return kinds.orchestrator ?? "Orchestrator";
   const by = thread.spawnedBy;
   if (by === undefined) return undefined;
   if (by.routine !== undefined) return `Routine: ${by.routine.name}`;
   const parent = titles.get(by.threadId);
-  return parent === undefined ? "Worker" : `Worker of ${parent}`;
+  const worker = kinds.worker ?? "Worker";
+  return parent === undefined ? worker : `${worker} of ${parent}`;
+};
+
+/** The thread that asked a worker's orchestrator for it: its place's name, else its title. */
+export const sentFromOf = (
+  summary: ThreadSummary,
+  titles: ReadonlyMap<string, string>,
+  placeOf?: (threadId: string) => string | undefined,
+): string | undefined => {
+  const asked = summary.thread.spawnedBy?.askedBy;
+  if (asked === undefined) return undefined;
+  return placeOf?.(asked.threadId) ?? titles.get(asked.threadId) ?? asked.title;
+};
+
+/**
+ * Where a row says its thread is: its place, then what started it. A starter that already names the
+ * place ("Worker of api" in api), or an orchestrator titled as its workspace, says it once.
+ */
+export const whereOf = ({
+  title,
+  place,
+  startedBy,
+  sentFrom,
+}: Pick<ThreadListing, "title" | "place" | "startedBy" | "sentFrom">): string => {
+  const where =
+    startedBy === undefined
+      ? place
+      : startedBy.endsWith(` of ${place}`) || title === place
+        ? startedBy
+        : `${place} · ${startedBy}`;
+  return sentFrom === undefined ? where : `${where} · sent from ${sentFrom}`;
 };
 
 /**
@@ -48,7 +95,9 @@ export const startedByOf = (
  * title, place or starter has it, any case.
  */
 export const threadListings = (sources: ThreadsSources, query = ""): ThreadListing[] => {
-  const all = [...sources.summaries].filter((summary) => !summary.thread.parked);
+  const all = [...sources.summaries].filter(
+    (summary) => !summary.thread.parked && sources.elsewhere?.has(summary.thread.id) !== true,
+  );
   const titles = new Map(all.map((summary) => [summary.thread.id as string, titleOf(summary)]));
   const wanted = query.trim().toLowerCase();
   return all
@@ -59,17 +108,18 @@ export const threadListings = (sources: ThreadsSources, query = ""): ThreadListi
         title: titles.get(summary.thread.id) ?? titleOf(summary),
         place:
           workspaceId === undefined
-            ? "Solo"
+            ? (sources.kinds?.solo ?? "Solo")
             : (sources.workspaceNames.get(workspaceId) ?? "Workspace"),
-        startedBy: startedByOf(summary, titles),
+        startedBy: startedByOf(summary, titles, sources.kinds),
+        sentFrom: sentFromOf(summary, titles, sources.placeOf),
         needsYou: sources.needsYou(summary),
       };
     })
     .filter(
       (listing) =>
         wanted === "" ||
-        [listing.title, listing.place, listing.startedBy ?? ""].some((words) =>
-          words.toLowerCase().includes(wanted),
+        [listing.title, listing.place, listing.startedBy ?? "", listing.sentFrom ?? ""].some(
+          (words) => words.toLowerCase().includes(wanted),
         ),
     )
     .toSorted(
@@ -78,3 +128,30 @@ export const threadListings = (sources: ThreadsSources, query = ""): ThreadListi
         b.summary.thread.lastActivityAt - a.summary.thread.lastActivityAt,
     );
 };
+
+/** What the Threads page narrows to: every thread, those that need you, or those at work now. */
+export type ThreadsFilter = "all" | "needsYou" | "running";
+
+export const THREADS_FILTERS: readonly { readonly value: ThreadsFilter; readonly label: string }[] =
+  [
+    { value: "all", label: "All" },
+    { value: "needsYou", label: "Needs you" },
+    { value: "running", label: "Running" },
+  ];
+
+const atWork = (listing: ThreadListing): boolean =>
+  listing.summary.status === "running" || listing.summary.status === "starting";
+
+/** Whether `filter` keeps `listing`. A thread that needs you is not also counted as at work. */
+export const inThreadsFilter = (listing: ThreadListing, filter: ThreadsFilter): boolean =>
+  filter === "all" ||
+  (filter === "needsYou" ? listing.needsYou : !listing.needsYou && atWork(listing));
+
+/** How many of `listings` each filter keeps, for the count beside its name. */
+export const threadsFilterCounts = (
+  listings: readonly ThreadListing[],
+): Readonly<Record<ThreadsFilter, number>> => ({
+  all: listings.length,
+  needsYou: listings.filter((listing) => inThreadsFilter(listing, "needsYou")).length,
+  running: listings.filter((listing) => inThreadsFilter(listing, "running")).length,
+});

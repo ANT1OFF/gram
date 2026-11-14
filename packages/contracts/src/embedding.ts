@@ -120,7 +120,18 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  * - `thread.upsert` `{id, title?, role?, status?, spawnedByThreadId?, model?, createdBy?}`
  *   (`createdBy` is the id of the signed-in person who started the thread, where known),
  *   `thread.removed` `{id}`, `thread.status` `{id, status, idle}`.
- * - `ask.opened` `{id, kind, title, decisionId?, assignees?}`.
+ * - `ask.opened` `{id, kind, title, toolName?, questions?, plan?, planTruncated?, decisionId?,
+ *   assignees?}`. A question carries `questions`, each `{question, header?, options: [{label,
+ *   description?}], multiSelect}`, what a receiver needs to answer it through `asks/answer`: the
+ *   answer is keyed by each `question` and names choices by `label`, exactly as given here. A
+ *   question ask too large to carry whole carries none. A plan carries `plan`, its Markdown, cut
+ *   and marked `planTruncated` past 50,000 characters. A worker's own question (`WQ7`, an
+ *   orchestrator's worker asking the user a decision) opens as a question ask once it waits on the
+ *   user, with the id `wq:<workspaceId>:<WQ id>`, `workerQuestion` naming it, and the worker's
+ *   `context` and `recommended` pick where it gave them; it is answered through `asks/answer` like
+ *   any question, and resolved however it closed: `answered` only for a person's answer, wherever
+ *   they gave it, and `withdrawn` for one dismissed, withdrawn or settled by its orchestrator.
+ *   `sink.started`'s `openAsks` lists those still waiting.
  * - `ask.resolved` `{id, how, decision?, answeredBy?, proof?}`: `how` is `answered` when a person
  *   answered it and `withdrawn` when it went unanswered (the turn stopped, the session went, the
  *   agent took it back). `decision` is the person's `approve` or `reject` of an approval or a
@@ -131,6 +142,16 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  * - `featureCard.upsert` `{id: "<workspaceId>/<feature>", title, status, version}`.
  * - `usage` `{turnId?, model?, inputTokens, outputTokens, cacheReadTokens?, cacheWriteTokens?, costUsd?}`.
  * - `decision` `{id, action, decision, reason?}`: each call to the decision hook and its outcome.
+ * - `message` `{id, rev, role, turnId?, at, seq, message, truncated?}`: a thread's stored message,
+ *   sent only when the deployment asks for messages. Once when the message settles (a person's
+ *   message as it is stored, a reply when it has finished streaming), and again each time the
+ *   stored message changes afterwards; never while it streams. `rev` is the stored revision: a
+ *   receiver keeps the highest it has seen for an `id`. `at` is when the message was written,
+ *   epoch ms, and `seq` its place in its thread. `message` is the stored message as the server
+ *   gives it to its own web app. One event is at most `SINK_MESSAGE_EVENT_MAX_BYTES`: a message
+ *   over that keeps its text and has its largest tool results cut first, each cut marked, and
+ *   `truncated` is then true. The event's `actor` is the signed-in person, on a message a person
+ *   sent. A thread's `thread.removed` takes its messages with it.
  */
 export const SinkEventType = Schema.Literals([
   "sink.started",
@@ -142,8 +163,25 @@ export const SinkEventType = Schema.Literals([
   "featureCard.upsert",
   "usage",
   "decision",
+  "message",
 ]);
 export type SinkEventType = typeof SinkEventType.Type;
+
+/** The most one `message` event is, in bytes of its JSON. */
+export const SINK_MESSAGE_EVENT_MAX_BYTES = 256 * 1024;
+
+/**
+ * What stands where a `message` event cut something to fit: in place of a tool's `output` or
+ * `input`, or as the `data` of the `data-truncated` part that replaces any other part. `bytes` is
+ * the JSON size of what was cut.
+ */
+export const SinkTruncated = Schema.Struct({
+  truncated: Schema.Literal(true),
+  bytes: Schema.Int,
+  /** The type of a part replaced whole. */
+  part: Schema.optionalKey(Schema.String),
+});
+export type SinkTruncated = typeof SinkTruncated.Type;
 
 /** One event of the sink's sequence. */
 export const SinkEvent = Schema.Struct({

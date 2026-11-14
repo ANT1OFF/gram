@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { EMPTY_SHELL, useEmbedShell } from "@/embed/store";
 import { useHistoryStore } from "@/history/history-view";
 import { useInboxStore } from "@/inbox/inbox-store";
 import { useLayoutStore } from "@/stores/layout";
@@ -16,6 +17,11 @@ const route = vi.hoisted(() => ({ pathname: "/t/a" }));
 vi.mock("@tanstack/react-router", () => ({
   useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) =>
     select({ location: { pathname: route.pathname } }),
+}));
+
+vi.mock("@/shell/phone-menu", () => ({
+  ROUND: "round",
+  PhoneMenu: () => <aside data-testid="phone-menu-stub" />,
 }));
 
 vi.mock("@/orchestration/overview-sidebar", () => ({
@@ -42,7 +48,16 @@ afterEach(() => {
   useLayoutStore.setState({ paletteOpen: false });
   useHistoryStore.setState({ open: false });
   useInboxStore.setState({ open: false });
+  useEmbedShell.setState(EMPTY_SHELL);
 });
+
+/** The roomy look, with one place that counts `count`. */
+const roomy = (count: number) =>
+  useEmbedShell.setState({
+    sidebar: { look: "roomy" },
+    threads: "hidden",
+    navigation: [{ id: "home", items: [{ id: "inbox", label: "Inbox", to: "/inbox", count }] }],
+  });
 
 describe("PhoneDrawer", () => {
   it("opens from the menu button with the overview in its phone form", () => {
@@ -106,5 +121,28 @@ describe("PhoneDrawer", () => {
     openDrawer();
     rerender(<Shell />);
     expect(usePhoneDrawer.getState().open).toBe(true);
+  });
+
+  describe("in the roomy look", () => {
+    it("holds the plain menu in place of the overview", () => {
+      roomy(0);
+      render(<Shell />);
+      fireEvent.click(screen.getByRole("button", { name: "Menu" }));
+      expect(screen.getByTestId("phone-menu-stub")).not.toBeNull();
+      expect(screen.queryByTestId("overview-stub")).toBeNull();
+    });
+
+    it("marks its button while a place in it counts something, and says what", () => {
+      roomy(5);
+      render(<PhoneMenuButton />);
+      expect(screen.getByTestId("phone-menu-dot")).not.toBeNull();
+      expect(screen.getByRole("button", { name: "Menu, Inbox 5" })).not.toBeNull();
+    });
+
+    it("has no dot while nothing is counted", () => {
+      roomy(0);
+      render(<PhoneMenuButton />);
+      expect(screen.queryByTestId("phone-menu-dot")).toBeNull();
+    });
   });
 });

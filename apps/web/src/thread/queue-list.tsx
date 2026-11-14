@@ -10,7 +10,7 @@ import {
   Send,
   X,
 } from "lucide-react";
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { agentLabel } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { PresenceItem, PresenceList } from "@/motion";
 import { queueOps, useThreadsStore } from "@/stores/threads";
 
+import { WAIT_WORDS } from "./awaiting-machine-model";
 import { ROLE_ICON } from "./role-chip";
 
 const EMPTY: readonly QueuedInput[] = [];
@@ -160,10 +161,17 @@ function ScrollFade({
   );
 }
 
-/** Messages waiting for the current turn to end; editable until they're sent. */
+/**
+ * Messages waiting for the current turn to end; editable until they're sent. On a thread that
+ * waits for its machine (`Thread.awaitingMachine`) they wait for that instead: the first is drawn
+ * in the conversation (`AwaitingMachine`), the rest are listed here under words that say so, and
+ * none can be sent now, since there is nothing to send it to.
+ */
 export function QueueList({ threadId }: { threadId: ThreadId }) {
   const api = useApi();
-  const queue = useThreadsStore((s) => s.byId[threadId]?.queue ?? EMPTY);
+  const held = useThreadsStore((s) => s.byId[threadId]?.thread.awaitingMachine !== undefined);
+  const all = useThreadsStore((s) => s.byId[threadId]?.queue ?? EMPTY);
+  const queue = useMemo(() => (held ? all.slice(1) : all), [all, held]);
   // Agents that buffer mid-turn input until the turn ends are doing what the queue already does.
   const blocked = useThreadsStore((s) => {
     const summary = s.byId[threadId];
@@ -182,12 +190,13 @@ export function QueueList({ threadId }: { threadId: ThreadId }) {
         <PresenceItem key="queue" className="my-2">
           <section
             data-testid="queue"
+            data-held={held || undefined}
             aria-label="Queued messages"
             className="space-y-1 text-reading"
           >
             <h3 className="flex items-center gap-1.5 text-meta text-muted-foreground">
               <ListOrdered aria-hidden className="size-icon-row" />
-              Queued · sent when the turn ends
+              {held ? WAIT_WORDS.queue : "Queued · sent when the turn ends"}
             </h3>
             <ScrollFade
               data-testid="queue-scroll"
@@ -253,27 +262,29 @@ export function QueueList({ threadId }: { threadId: ThreadId }) {
                               </ScrollFade>
                             </div>
                             <div className="flex shrink-0 flex-wrap items-center justify-end">
-                              <Hint
-                                label={blocked ?? sendLabel}
-                                render={
-                                  <Button
-                                    size="icon-xs"
-                                    variant="ghost"
-                                    data-testid="queue-steer"
-                                    aria-label={
-                                      blocked === undefined ? sendLabel : `Steer now (${blocked})`
-                                    }
-                                    disabled={blocked !== undefined}
-                                    focusableWhenDisabled
-                                    className={cn(blocked !== undefined && "opacity-50")}
-                                    onClick={() =>
-                                      run(queueOps.steer(api, getState, threadId, item.id))
-                                    }
-                                  />
-                                }
-                              >
-                                <Send />
-                              </Hint>
+                              {!held && (
+                                <Hint
+                                  label={blocked ?? sendLabel}
+                                  render={
+                                    <Button
+                                      size="icon-xs"
+                                      variant="ghost"
+                                      data-testid="queue-steer"
+                                      aria-label={
+                                        blocked === undefined ? sendLabel : `Steer now (${blocked})`
+                                      }
+                                      disabled={blocked !== undefined}
+                                      focusableWhenDisabled
+                                      className={cn(blocked !== undefined && "opacity-50")}
+                                      onClick={() =>
+                                        run(queueOps.steer(api, getState, threadId, item.id))
+                                      }
+                                    />
+                                  }
+                                >
+                                  <Send />
+                                </Hint>
+                              )}
                               <Hint
                                 label="Move up"
                                 render={

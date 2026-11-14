@@ -5,7 +5,7 @@ import {
   type GramUIMessage,
 } from "@gram/contracts";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useId, useState, type ReactNode } from "react";
+import { createElement, useId, useState, type ReactNode } from "react";
 
 import { Tool } from "@/components/ai-elements/tool";
 import { HighlightedCode } from "@/components/ai-elements/code-block";
@@ -14,6 +14,7 @@ import { CollapsibleTrigger } from "@/components/ui/collapsible";
 import { formatCount } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Expand, isMarkPhase, StatusMark, Swap } from "@/motion";
+import { useHostToolCard } from "@/embed/store";
 import { useOrchestratorStreamContext } from "@/orchestration/stream-context";
 
 import { ApprovalSlot, ApprovalSlotsOpen } from "./approval-slots";
@@ -54,7 +55,42 @@ export function ToolCard(props: ToolCardProps) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <ToolCardRow {...props} />
+      <HostToolCard part={props.part} />
       <ApprovalSlot toolCallId={props.part.toolCallId} />
+    </div>
+  );
+}
+
+/** A tool's answer as a value: JSON a tool sent as text is parsed, anything else is as it came. */
+const answered = (output: unknown): unknown => {
+  const text =
+    typeof output === "string"
+      ? output
+      : Array.isArray(output) &&
+          output.length === 1 &&
+          record(output[0])["type"] === "text" &&
+          typeof record(output[0])["text"] === "string"
+        ? (record(output[0])["text"] as string)
+        : undefined;
+  if (text === undefined) return output;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return output;
+  }
+};
+
+/**
+ * The embedding app's own card for this tool, under its row, once the call has answered: nothing
+ * on Gram's own, or for a tool no card is for.
+ */
+function HostToolCard({ part }: { part: AnyToolPart }) {
+  const name = toolNameOf(part);
+  const Card = useHostToolCard(name);
+  if (!Card || part.state !== "output-available" || part.preliminary === true) return null;
+  return (
+    <div data-testid="host-tool-card" data-tool={name} className="min-w-0">
+      {createElement(Card, { name, input: part.input, output: answered(part.output) })}
     </div>
   );
 }
@@ -209,8 +245,10 @@ function ToolShell({
               </Swap>
             </span>
             <span className="shrink-0 font-medium">{words.label}</span>
+            {/* Waiting on an approval, the card right under the row says what is asked in full:
+                the row names the tool and the wait, and does not say the command a second time. */}
             <span className="min-w-0 flex-1 truncate font-mono text-meta text-muted-foreground">
-              {summary}
+              {phase === "awaiting" ? null : summary}
             </span>
             {meta}
             {/* A finished row is the common case: its check says so, and the word is for a reader.

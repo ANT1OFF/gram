@@ -80,13 +80,15 @@ export function SwitchOrchestratorAction({
     </Button>
   );
   return (
+    // A row of the card like the settings under it: a frame of its own inside the card read as a
+    // different kind of thing, in smaller type than the names below.
     <div
-      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-3"
+      className="flex flex-wrap items-center justify-between gap-2"
       data-testid="orchestrator-switch-action"
     >
-      <div className="text-meta">
+      <div>
         <p className="font-medium">Current orchestrator</p>
-        <p data-testid="orchestrator-current" className="mt-1 text-muted-foreground">
+        <p data-testid="orchestrator-current" className="text-meta text-description">
           {switchCurrentText(current, identity?.model)}
         </p>
       </div>

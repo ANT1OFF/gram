@@ -32,12 +32,14 @@ export function AuthorityExplainer({ className }: { className?: string }) {
       className={cn("flex flex-col gap-2", className)}
     >
       {ROWS.map(({ icon: Icon, term, line }) => (
-        <div key={term} className="flex items-start gap-2">
-          <Icon aria-hidden className="mt-0.5 size-icon-row shrink-0 text-muted-foreground" />
-          <div className="flex min-w-0 flex-col">
-            <dt className="text-body font-medium text-foreground">{term}</dt>
-            <dd className="text-meta text-description">{line}</dd>
-          </div>
+        // The term and its line are the row's own children, as a list of terms is read.
+        <div key={term} className="relative flex min-w-0 flex-col pl-6">
+          <Icon
+            aria-hidden
+            className="absolute top-0.5 left-0 size-icon-row shrink-0 text-muted-foreground"
+          />
+          <dt className="text-body font-medium text-foreground">{term}</dt>
+          <dd className="text-meta text-description">{line}</dd>
         </div>
       ))}
     </dl>

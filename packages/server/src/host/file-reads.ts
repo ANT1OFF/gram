@@ -2,7 +2,9 @@ import {
   type FileImage,
   type FsFile,
   type FsResolveResult,
+  HOST_FILE_PART_BYTES,
   type HostFetchedFile,
+  type HostFilePart,
   InvalidState,
   isCredentialPath,
   MAX_ATTACHMENT_BYTES,
@@ -21,6 +23,7 @@ import { sanitizeAttachmentName } from "../attachments/attachments.ts";
 import { expandHome } from "../fs/folders.ts";
 import {
   openOutside,
+  previewTarget,
   readFilePreview,
   readPreview,
   readUpTo,
@@ -82,6 +85,18 @@ export interface HostFileReads {
     cwd: string,
     maxBytes: number,
   ) => Effect.Effect<HostFetchedFile, NotFound | InvalidState>;
+  /**
+   * Up to `length` bytes of a file from `offset`, with its size and modification time, for a
+   * control plane copying a thread's output off the machine. Absent from a host whose build
+   * doesn't read one (`file-parts`).
+   */
+  readonly part?: (
+    path: string,
+    roots: ReadonlyArray<string>,
+    outside: OutsideAllowed,
+    offset: number,
+    length: number,
+  ) => Effect.Effect<HostFilePart, NotFound | InvalidState>;
 }
 
 const gateOf = (outside: OutsideAllowed) => ({
@@ -121,6 +136,42 @@ const fetchFile = (
     return { path: target, size: bytes.length, data: bytes.toString("base64") };
   }).pipe(Effect.scoped);
 
+/**
+ * A part of a file a thread produced: scoped as a preview is (`previewTarget`), then opened as a
+ * file outside the folders is, whichever it was, so it is a regular file reached through no link
+ * swapped in since, and never a credential file, in a checkout or out of it.
+ */
+const filePart = (
+  path: string,
+  roots: ReadonlyArray<string>,
+  outside: OutsideAllowed,
+  offset: number,
+  length: number,
+): Effect.Effect<HostFilePart, NotFound | InvalidState> =>
+  Effect.gen(function* () {
+    const { target } = yield* previewTarget(path, roots, gateOf(outside));
+    const handle = yield* openOutside(target, {}, () => true, { regularFile: true });
+    const cant = new InvalidState({ message: `Can't read ${path}` });
+    const info = yield* Effect.tryPromise({ try: () => handle.stat(), catch: () => cant });
+    const wanted = Math.max(0, Math.min(length, HOST_FILE_PART_BYTES, info.size - offset));
+    const bytes = Buffer.alloc(wanted);
+    let filled = 0;
+    while (filled < wanted) {
+      const { bytesRead } = yield* Effect.tryPromise({
+        try: () => handle.read(bytes, filled, wanted - filled, offset + filled),
+        catch: () => cant,
+      });
+      if (bytesRead === 0) break;
+      filled += bytesRead;
+    }
+    return {
+      path: target,
+      size: info.size,
+      mtime: Math.trunc(info.mtimeMs),
+      data: bytes.subarray(0, filled).toString("base64"),
+    };
+  }).pipe(Effect.scoped);
+
 /** The file reads of the machine this runs on, its git run through `proc`. */
 export const fileReadsOn = (proc: ProcShape): HostFileReads => {
   const on = Effect.provideService(Proc, proc);
@@ -152,6 +203,7 @@ export const fileReadsOn = (proc: ProcShape): HostFileReads => {
       }),
     vocabulary: (root) => on(sources(root)),
     fetch: fetchFile,
+    part: filePart,
   };
 };
 

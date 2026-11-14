@@ -2,7 +2,7 @@
 // types and a manifest. See docs/EMBEDDED_WEB_APP.md.
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -86,13 +86,17 @@ try {
 writeFileSync(
   join(outDir, "gram-web.d.ts"),
   [
-    'import type { MountGram, ShellLinkComponent, UseShellLocation } from "./types/embed/contract.js";',
+    'import type { MountGram, ShellLinkComponent, ShellThreadComponent, ShellThreadPanelComponent, UseShellLocation } from "./types/embed/contract.js";',
     "",
     'export type * from "./types/embed/contract.js";',
     "/** Mounts Gram's web app, whole, in `options.element`. */",
     "export declare const mountGram: MountGram;",
     "/** A link to a path under the app that moves the window without loading the page again. */",
     "export declare const ShellLink: ShellLinkComponent;",
+    "/** One thread inside a page of the embedding app's. */",
+    "export declare const ShellThread: ShellThreadComponent;",
+    "/** One thread's diff, pull request, files and terminal inside a page of the embedding app's. */",
+    "export declare const ShellThreadPanel: ShellThreadPanelComponent;",
     "/** Where the window is under the app, and a way to move it. */",
     "export declare const useShellLocation: UseShellLocation;",
     "",
@@ -100,7 +104,63 @@ writeFileSync(
 );
 writeFileSync(join(outDir, "gram-web-kit.d.ts"), 'export * from "./types/embed/kit.js";\n');
 // The theme's names for an embedding app's own Tailwind build; the values come with the app.
-copyFileSync(join(webDir, "src/styles/theme.css"), join(outDir, "theme.css"));
+// The variants and utilities of the two Tailwind add-ons the app's classes use go in front, so
+// that build can write every class of the package's (docs/EMBEDDED_WEB_APP.md, "One utilities
+// layer") without installing the add-ons at the same versions itself.
+// tw-animate-css exports its stylesheet under the "style" condition only, which Node's resolver
+// does not take, so it is found in the folders a package resolves from.
+const styleOf = (name, file) => {
+  for (const folder of require.resolve.paths(name) ?? []) {
+    const path = join(folder, name, file);
+    if (existsSync(path)) return path;
+  }
+  throw new Error(`build-embed: ${name} is not installed`);
+};
+const ADD_ONS = [
+  ["tw-animate-css", styleOf("tw-animate-css", "dist/tw-animate.css")],
+  ["shadcn/tailwind.css", require.resolve("shadcn/tailwind.css")],
+];
+writeFileSync(
+  join(outDir, "theme.css"),
+  [
+    ...ADD_ONS.map(([name, path]) => `/* ${name} */\n${readFileSync(path, "utf8")}`),
+    readFileSync(join(webDir, "src/styles/theme.css"), "utf8"),
+  ].join("\n"),
+);
+
+// The classes of the package's stylesheet, for that build to write again: exactly the utilities
+// the app's own build wrote, by name. Scanning the bundle instead would also find the class names
+// inside the libraries it carries, which the app's build never wrote and its screens are not
+// drawn with (a markdown renderer's list classes). No class is named here: this file is scanned too.
+const utilityClasses = (css) => {
+  const start = css.indexOf("@layer utilities{");
+  if (start === -1) throw new Error("build-embed: the stylesheet has no utilities layer");
+  let depth = 0;
+  let end = start;
+  for (let at = css.indexOf("{", start); at < css.length; at += 1) {
+    if (css[at] === "{") depth += 1;
+    else if (css[at] === "}" && (depth -= 1) === 0) {
+      end = at;
+      break;
+    }
+  }
+  const names = new Set();
+  // Selectors only: what stands before each `{`, after the last `{`, `}` or `;`.
+  for (const [, selector] of css.slice(start, end).matchAll(/(?:^|[{};])([^{};]*)(?={)/g))
+    for (const [, name] of selector.matchAll(
+      /\.(-?(?:[a-zA-Z_]|\\[0-9a-f]{1,6} ?|\\.)(?:[\w-]|[^\0-\x7f]|\\[0-9a-f]{1,6} ?|\\.)*)/g,
+    ))
+      names.add(
+        name
+          .replace(/\\([0-9a-f]{1,6}) ?/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+          .replace(/\\(.)/g, "$1"),
+      );
+  return [...names].toSorted();
+};
+writeFileSync(
+  join(outDir, "classes.txt"),
+  `${utilityClasses(readFileSync(join(outDir, "gram-web.css"), "utf8")).join("\n")}\n`,
+);
 
 // The catalog's exact versions: the app is built and tested against these and no others.
 const root = JSON.parse(readFileSync(join(webDir, "../../package.json"), "utf8"));
@@ -124,6 +184,7 @@ writeFileSync(
         "./kit": { types: "./gram-web-kit.d.ts", default: "./gram-web-kit.js" },
         "./style.css": "./gram-web.css",
         "./theme.css": "./theme.css",
+        "./classes.txt": "./classes.txt",
       },
       // Named by the kit's declarations only: the code is in the bundle.
       dependencies: Object.fromEntries(TYPE_LIBRARIES.map((name) => [name, peer(name)])),

@@ -4,6 +4,8 @@
 import {
   mountGram,
   ShellLink,
+  ShellThread,
+  ShellThreadPanel,
   useShellLocation,
   type GramHandle,
   type ShellPageProps,
@@ -31,6 +33,8 @@ declare global {
   interface Window {
     /** The mount's handle, for the specs. */
     embed?: GramHandle;
+    /** The threads whose Try again asked this page for another machine, in order. */
+    embedStartedAgain?: string[];
   }
 }
 
@@ -169,6 +173,47 @@ function Switcher({ placement }: ShellSlotProps) {
   );
 }
 
+/** The sidebar's head: a mark and the app's name. */
+function Brand() {
+  return (
+    <span data-testid="fixture-brand" className="flex min-w-0 items-center gap-2.5 px-1">
+      <span
+        aria-hidden
+        className="grid size-8 shrink-0 place-items-center rounded-(--radius-sm) border border-border text-meta font-semibold"
+      >
+        F
+      </span>
+      <span className="truncate text-title font-semibold">Fixture</span>
+    </span>
+  );
+}
+
+/** The person signed in, at the sidebar's foot. */
+function Account() {
+  return (
+    <span data-testid="fixture-account" className="flex min-w-0 items-center gap-3 px-1">
+      <span
+        aria-hidden
+        className="grid size-8 shrink-0 place-items-center rounded-full bg-foreground text-meta font-semibold text-background"
+      >
+        I
+      </span>
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate text-body-strong">Ingrid Example</span>
+        <span className="truncate text-caption text-muted-foreground">Signed in</span>
+      </span>
+    </span>
+  );
+}
+
+/** The roomy look with both slots, for the run to put on through `update`. */
+(window as unknown as { fixtureSidebar: unknown }).fixtureSidebar = {
+  look: "roomy",
+  header: Brand,
+  account: Account,
+  accountName: "Ingrid",
+};
+
 const pathUnder =
   location.pathname === "/w/acme" || location.pathname.startsWith("/w/acme/")
     ? "/w/acme"
@@ -199,15 +244,85 @@ const BUILD = {
   ],
 };
 
+/** A page of the app's with one of Gram's threads beside its own content. */
+function Beside({ params }: ShellPageProps) {
+  return (
+    <div className="flex h-full min-h-0">
+      <p className="flex-1 p-6" data-testid="beside-own">
+        The app's own page
+      </p>
+      <aside className="flex w-96 min-w-0 flex-col border-l border-border">
+        <ShellThread threadId={params["threadId"] ?? ""} />
+      </aside>
+    </div>
+  );
+}
+
+/** A page of the app's with a thread's working panels beside the thread. */
+function Changes({ params }: ShellPageProps) {
+  const threadId = params["threadId"] ?? "";
+  return (
+    <div className="flex h-full min-h-0">
+      <div className="flex w-96 min-w-0 flex-col border-r border-border">
+        <ShellThread threadId={threadId} placeholder="Message this worker…" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <ShellThreadPanel threadId={threadId} />
+      </div>
+    </div>
+  );
+}
+
 mountGram({
   element,
-  server: "mock",
+  // A conversation of the page's own, at an id the page chose.
+  mockThreads: [
+    {
+      id: "page-notes",
+      title: "Notes from the page",
+      messages: [
+        { role: "user", text: "What did the nightly sweep close?" },
+        { role: "assistant", text: "Three stale issues, all older than ninety days." },
+      ],
+    },
+    // Started before its machine, and none came: its Try again asks this page for another. Only
+    // for the spec that asks, since a thread that needs someone leads every list.
+    ...(new URLSearchParams(location.search).has("waiting-thread")
+      ? [
+          {
+            id: "page-waiting",
+            title: "Release notes",
+            messages: [{ role: "user" as const, text: "Draft the release notes for 2.4." }],
+            awaitingMachine: { failed: "The machine couldn't be started: no capacity." },
+          },
+        ]
+      : []),
+  ],
+  server: new URLSearchParams(location.search).has("session-test")
+    ? {
+        base: "/cell/",
+        session: {
+          refresh: async () => (await fetch("/renew", { method: "POST" })).ok,
+          expired: () => {
+            document.body.textContent = "Sign in to the host app";
+          },
+        },
+      }
+    : "mock",
   ...(pathUnder === undefined ? {} : { basePath: pathUnder }),
   shell: {
+    machines: {
+      // What a real app hands to its own service, which begins the wait again and starts a machine.
+      startAgain: ({ threadId }) => {
+        window.embedStartedAgain = [...(window.embedStartedAgain ?? []), threadId];
+      },
+    },
     routes: [
       { path: "/govern/policies", title: "Policies", component: Policies },
       { path: "/govern/limits", title: "Limits", component: Limits },
       { path: "/govern/agents/$agentId", component: Agent },
+      { path: "/govern/beside/$threadId", title: "Beside", component: Beside },
+      { path: "/govern/changes/$threadId", title: "Changes", component: Changes },
     ],
     home: { title: "Home", component: Home },
     navigation: [BUILD, GOVERN],

@@ -1,5 +1,5 @@
 import { Outlet } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useAutoReviewFocus } from "@/components/review-room";
 import { RightPanel, useShowPanelRequests } from "@/components/right-panel";
@@ -9,11 +9,11 @@ import { LaunchChecksBanner } from "@/launch-checks/banner";
 import { cn } from "@/lib/utils";
 import { useMotionLevel } from "@/motion";
 import { OverviewRail } from "@/orchestration/overview-rail";
-import { HostedRail } from "@/embed/hosted-rail";
-import { useEmbedShell } from "@/embed/store";
 import { OverviewSidebar, useCarryOverviewFocus } from "@/orchestration/overview-sidebar";
 import { ConnectionBanner } from "@/shell/connection-banner";
 import { PhoneDrawer } from "@/shell/phone-drawer";
+import { PhonePanelRow, PhoneWorkspaceRow } from "@/shell/phone-panels";
+import { useWorkspacePlaces } from "@/shell/titlebar-path";
 import { ReviewStrip } from "@/shell/review-strip";
 import { ShellTitlebar } from "@/shell/shell-titlebar";
 import { SideResizeHandle } from "@/shell/side-resize";
@@ -38,7 +38,9 @@ export function AppShell() {
   const reviewTab = useLayoutStore(reviewSized);
   const level = useMotionLevel();
   const [resizing, setResizing] = useState(false);
+  const content = useRef<HTMLElement>(null);
   const quiet = useViewStore((s) => s.quiet);
+  const board = useViewStore((s) => s.view === "board");
   const {
     fit,
     focusMode,
@@ -46,6 +48,7 @@ export function AppShell() {
     phone,
     panelLeft,
     hasThread,
+    panelBarred,
     windowResizing,
     sidebarShown,
     panelShown,
@@ -57,10 +60,10 @@ export function AppShell() {
     chatWidth,
   } = useShellLayout();
   useWorkspaceKeys();
+  // On a phone, a workspace's place (its orchestrator, Board, Memory) has the row of the three.
+  const atPlace = useWorkspacePlaces(false)?.some((place) => place.current) === true;
   // Settings has no overview: entering or leaving it swaps nothing to carry.
   useCarryOverviewFocus(settings ? "none" : fit.sidebar);
-  // Mounted by an app in front of Gram: its compact sidebar is the quiet strip that opens on hover.
-  const hostedRail = useEmbedShell((s) => s.hosted);
   // A review that runs too narrow to read beside the conversation takes the window on its own.
   useAutoReviewFocus();
 
@@ -92,6 +95,18 @@ export function AppShell() {
   // nothing while the chat keeps its width under the panel, so the transcript isn't laid out anew.
   return (
     <>
+      {/* The keyboard's first stop: past the sidebar to the page. Seen only while it has focus. */}
+      <a
+        href="#content"
+        data-testid="skip-to-content"
+        className="fixed top-2 left-2 z-50 -translate-y-16 rounded-lg border border-edge bg-background px-3 py-2 text-body text-foreground shadow-overlay outline-none focus:translate-y-0 focus-visible:focus-ring"
+        onClick={(event) => {
+          event.preventDefault();
+          content.current?.focus();
+        }}
+      >
+        Skip to content
+      </a>
       <div
         data-testid="app-shell"
         inert={quiet}
@@ -113,14 +128,7 @@ export function AppShell() {
         }}
       >
         <div className="group/side relative order-1 flex min-h-0 min-w-0 flex-col overflow-hidden">
-          {sidebarShown &&
-            (fit.sidebar !== "compact" ? (
-              <OverviewSidebar />
-            ) : hostedRail ? (
-              <HostedRail />
-            ) : (
-              <OverviewRail />
-            ))}
+          {sidebarShown && (fit.sidebar !== "compact" ? <OverviewSidebar /> : <OverviewRail />)}
           {fit.sidebar === "full" && (
             <SideResizeHandle
               side="left"
@@ -133,10 +141,13 @@ export function AppShell() {
           )}
         </div>
         <main
+          id="content"
+          ref={content}
+          tabIndex={-1}
           inert={chatCovered}
           // Its own stacking context, so nothing layered inside the chat rises over the panel above it.
           className={cn(
-            "isolate flex min-h-0 min-w-0 flex-col bg-thread",
+            "isolate flex min-h-0 min-w-0 flex-col bg-thread outline-none",
             panelLeft ? "order-3" : "order-2",
           )}
           style={chatCovered ? { width: chatWidth } : undefined}
@@ -148,8 +159,13 @@ export function AppShell() {
             settings={settings}
             compactRail={fit.sidebar === "compact"}
             panelShown={panelShown}
+            panelOffered={!panelBarred}
             panelLeft={panelLeft}
           />
+          {phone && !panelShown && <PhoneWorkspaceRow />}
+          {phone && hasThread && !panelBarred && !panelShown && !board && !atPlace && (
+            <PhonePanelRow />
+          )}
           <ConnectionBanner />
           <UpdateNotice />
           <LaunchChecksBanner />

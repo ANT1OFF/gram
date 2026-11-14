@@ -32,6 +32,57 @@ test("the whole app mounts from the built package, with its styles and theme", a
   expect(errors).toEqual([]);
 });
 
+test("a responsive class of Gram's holds beside the app's own utilities", async ({ page }) => {
+  await mounted(page);
+  // The fixture's own pages use `flex`, so its build writes `.flex` after the package's
+  // stylesheet, in the same layer. Unless that build also writes the package's classes, in one
+  // order, its `.flex` comes after Gram's `@max-md:hidden` and a narrow container keeps the item.
+  const display = await page.evaluate(() => {
+    const box = document.createElement("div");
+    box.style.containerType = "inline-size";
+    box.style.width = "200px";
+    const item = document.createElement("div");
+    item.className = "flex @max-md:hidden";
+    box.append(item);
+    document.body.append(box);
+    const drawn = getComputedStyle(item).display;
+    box.remove();
+    return drawn;
+  });
+  expect(display).toBe("none");
+});
+
+test("a thread the page gave the in-memory server opens at its own id", async ({ page }) => {
+  const errors = await mounted(page);
+  await page.goto("/t/page-notes");
+  await expect(page.getByText("What did the nightly sweep close?")).toBeVisible();
+  await expect(page.getByText("Three stale issues, all older than ninety days.")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("a thread no machine came for asks the embedding app for another on Try again", async ({
+  page,
+}) => {
+  const errors = await mounted(page, "/t/page-waiting?waiting-thread");
+  await expect(page.getByTestId("pane-machine")).toHaveText("no machine");
+  await expect(page.getByTestId("machine-wait-message")).toContainText(
+    "Draft the release notes for 2.4.",
+  );
+  await expect(page.getByTestId("machine-wait-sentence")).toHaveText(
+    "The machine couldn't be started: no capacity.",
+  );
+  await expect(page.getByTestId("machine-wait-failed")).toContainText(
+    "What you sent is kept, and goes once a machine has started.",
+  );
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByTestId("machine-wait-starting")).toContainText(
+    "Starting a machine again · the first didn't start",
+  );
+  await expect(page.getByTestId("pane-machine")).toHaveText("machine starting");
+  expect(await page.evaluate(() => window.embedStartedAgain)).toEqual(["page-waiting"]);
+  expect(errors).toEqual([]);
+});
+
 test("the sidebar lists the added group, and its page opens inside Gram's shell", async ({
   page,
 }) => {
@@ -113,7 +164,12 @@ test("the switcher is the embedding app's, in the sidebar and then in the title 
   expect(errors).toEqual([]);
 });
 
-type Update = { embed: { update: (next: object) => void } };
+type Update = {
+  embed: {
+    update: (next: object) => void;
+    navigate: (to: string) => Promise<void>;
+  };
+};
 
 test("the navigation and the switcher can be replaced after mounting", async ({ page }) => {
   await mounted(page);
@@ -141,7 +197,9 @@ test("the navigation and the switcher can be replaced after mounting", async ({ 
 
   // Named as undefined, it is taken away.
   await page.evaluate(() => {
-    (window as unknown as Update).embed.update({ workspaceSwitcher: undefined });
+    (window as unknown as Update).embed.update({
+      workspaceSwitcher: undefined,
+    });
   });
   await expect(page.getByTestId("embed-switcher")).toHaveCount(0);
   await expect(navigation.getByRole("heading", { name: "Build" })).toBeVisible();
@@ -192,7 +250,7 @@ test("a group can lead the sidebar, above the threads, with counts", async ({ pa
   const railMain = page.getByTestId("embed-rail-navigation-main");
   const tile = railMain.getByRole("link", { name: "Build: Runs, 12" });
   await expect(tile.getByTestId("embed-navigation-dot")).toBeVisible();
-  expect(await top("embed-rail-navigation-main")).toBeLessThan(await top("hosted-rail-history"));
+  expect(await top("embed-rail-navigation-main")).toBeLessThan(await top("overview-rail-history"));
   expect(errors).toEqual([]);
 });
 
@@ -214,6 +272,348 @@ test("the sidebar can leave Gram's workspaces and threads out", async ({ page })
   expect(errors).toEqual([]);
 });
 
+test("a thread can sit inside a page of the embedding app's", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await mounted(page);
+  await page.evaluate(() => (window as unknown as Update).embed.navigate("/threads"));
+  const id = await page.getByTestId("threads-row").first().getAttribute("data-thread-id");
+  await page.evaluate(
+    (to) => (window as unknown as Update).embed.navigate(to),
+    `/govern/beside/${id}`,
+  );
+  // The app's page and the thread side by side: its transcript, no header of its own.
+  await expect(page.getByTestId("beside-own")).toBeVisible();
+  const thread = page.getByTestId("shell-thread");
+  await expect(thread.getByTestId("thread-view")).toBeVisible();
+  await expect(thread.getByRole("button", { name: "Copy message" }).first()).toBeVisible();
+  await expect(thread.getByTestId("pane-header")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("a thread's working panels can sit inside a page of the embedding app's", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await mounted(page);
+  await page.evaluate(() => (window as unknown as Update).embed.navigate("/threads"));
+  const id = await page.getByTestId("threads-row").first().getAttribute("data-thread-id");
+  await page.evaluate(
+    (to) => (window as unknown as Update).embed.navigate(to),
+    `/govern/changes/${id}`,
+  );
+  // The four panels under their tabs, the diff first, beside the same thread.
+  // The app's own words in the thread's empty prompt box.
+  await expect(
+    page.getByTestId("shell-thread").getByPlaceholder("Message this worker…"),
+  ).toBeVisible();
+  const panel = page.getByTestId("shell-thread-panel");
+  await expect(panel.getByRole("tab")).toHaveText(["Diff", "Pull request", "Files", "Terminal"]);
+  await expect(panel.getByRole("tab", { name: "Diff" })).toHaveAttribute("aria-selected", "true");
+  await expect(panel.getByTestId("diff-panel")).toBeVisible();
+  await panel.getByRole("tab", { name: "Files" }).click();
+  await expect(panel.getByTestId("files-panel")).toBeVisible();
+  await expect(page.getByTestId("shell-thread").getByTestId("thread-view")).toBeVisible();
+  // A thread the server doesn't have says so in place of the panels.
+  await page.evaluate(
+    (to) => (window as unknown as Update).embed.navigate(to),
+    "/govern/changes/no-such-thread",
+  );
+  await expect(panel).toContainText("This thread no longer exists.");
+  expect(errors).toEqual([]);
+});
+
+test("the page of every thread and New take the embedding app's words", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await mounted(page);
+  // Gram's own: New is its menu, and the page is Threads with New task.
+  await expect(page.getByTestId("new-entry").first()).toHaveAttribute("aria-haspopup", "menu");
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      threadsPage: {
+        title: "Chat",
+        newLabel: "New chat",
+        kinds: {
+          solo: "One agent",
+          orchestrator: "Team lead",
+          worker: "Team member",
+        },
+      },
+      newEntry: { label: "New policy", to: "/govern/policies" },
+    });
+  });
+  // New is one plain button to the app's own page.
+  const add = page.getByTestId("new-entry").first();
+  await expect(add).toHaveAccessibleName("New policy");
+  await expect(add).not.toHaveAttribute("aria-haspopup", "menu");
+  await add.click();
+  await expect(page.getByTestId("fixture-policies")).toBeVisible();
+  // The page of every thread, in the app's words; its button starts a chat.
+  await page.evaluate(() => (window as unknown as Update).embed.navigate("/threads"));
+  await expect(page.getByTestId("threads-page").getByRole("heading")).toHaveText("Chat");
+  await expect(page.getByTestId("threads-new")).toHaveText("New chat");
+  // The list narrows to what needs someone or what is at work, each with its count.
+  const filter = page.getByTestId("threads-filter");
+  await expect(filter.getByRole("radio", { name: /^All/ })).toBeChecked();
+  const all = await page.getByTestId("threads-row").count();
+  const running = filter.getByRole("radio", { name: /^Running/ });
+  if (await running.isEnabled()) {
+    await running.click();
+    await expect(running).toBeChecked();
+    expect(await page.getByTestId("threads-row").count()).toBeLessThan(all);
+    await filter.getByRole("radio", { name: /^All/ }).click();
+  }
+  // A thread's kind is in the app's words too.
+  const rows = page.getByTestId("threads-page");
+  await expect(rows).toContainText("One agent");
+  await expect(rows).not.toContainText("Solo");
+  await page.getByTestId("threads-new").click();
+  await expect(page).toHaveURL(/\/new$/);
+  // The New form's choice for one agent carries the app's word, not "Chat".
+  await expect(page.getByRole("radio", { name: /^One agent/ })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /^Chat/ })).toHaveCount(0);
+  await page.getByRole("radio", { name: /^One agent/ }).click();
+  await expect(page.getByRole("button", { name: /^Start chat/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Start agent", exact: true })).toBeVisible();
+  // The app narrows Who does it to two choices in its own words, and words the button.
+  await expect(page.getByTestId("new-who-worker")).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      threadsPage: {
+        kinds: { solo: "One agent" },
+        newForm: {
+          task: "hidden",
+          team: { label: "Crew", line: "A lead splits it up." },
+          solo: { label: "Alone", start: "Start alone" },
+        },
+      },
+    });
+  });
+  await expect(page.getByTestId("new-who-worker")).toHaveCount(0);
+  await expect(page.getByTestId("new-who-orchestrator")).toBeVisible();
+  await expect(page.getByRole("radio", { name: /^Crew/ })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /^Alone/ })).toBeChecked();
+  await expect(page.getByRole("button", { name: "Start alone", exact: true })).toBeVisible();
+  // The bar is Gram's own until the app asks for a path: then it starts at the page of every
+  // thread, names the New form, and leaves out the workspace's switcher and Chat · Board.
+  await expect(page.getByTestId("titlebar-path")).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      threadsPage: { title: "Chat", bar: "path" },
+    });
+  });
+  const path = page.getByTestId("titlebar-path");
+  await expect(path.getByRole("link", { name: "Chat" })).toBeVisible();
+  await expect(path).toContainText("New task");
+  await expect(page.getByTestId("view-switcher")).toHaveCount(0);
+  await expect(page.getByTestId("workspace-switcher-button")).toHaveCount(0);
+  await path.getByRole("link", { name: "Chat" }).click();
+  await expect(page).toHaveURL(/\/threads$/);
+  // Taken away again, Gram's own words return.
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      threadsPage: undefined,
+      newEntry: undefined,
+    });
+    void (window as unknown as Update).embed.navigate("/threads");
+  });
+  await expect(page.getByTestId("threads-page").getByRole("heading")).toHaveText("Threads");
+  await expect(page.getByTestId("threads-new")).toHaveText("New task");
+  await expect(page.getByTestId("new-entry").first()).toHaveAttribute("aria-haspopup", "menu");
+  expect(errors).toEqual([]);
+});
+
+test("the page of every thread can open on the workspaces, in the app's word for one", async ({
+  page,
+}) => {
+  const errors = await mounted(page);
+  await page.evaluate(() => {
+    const embed = (window as unknown as Update).embed;
+    embed.update({
+      threadsPage: {
+        title: "Coding",
+        kinds: { solo: "Standalone agent" },
+        workspaces: { noun: "Project", plural: "Projects" },
+      },
+    });
+    void embed.navigate("/threads");
+  });
+  // The page opens on the list of workspaces, named as the app names them, with both counted.
+  const view = page.getByTestId("threads-view");
+  await expect(view.getByRole("radio", { name: /^Projects \d+/ })).toBeChecked();
+  await expect(view.getByRole("radio", { name: /^Threads \d+/ })).not.toBeChecked();
+  await expect(page.getByTestId("threads-new-workspace")).toHaveText("New project");
+  await expect(page.getByTestId("threads-new")).toHaveText("New task");
+  await expect(page.getByTestId("threads-search")).toHaveCount(0);
+  // With no workspace yet the list says what one is, and starts one or a thread in none.
+  const empty = page.getByTestId("workspaces-empty");
+  await expect(empty).toContainText("No project yet");
+  await expect(empty).toContainText("A project is an orchestrator and its workers");
+  await expect(page.getByTestId("workspaces-empty-new")).toHaveText("New project");
+  await expect(page.getByTestId("workspaces-empty-solo")).toHaveText("Start a standalone agent");
+  await expect(page.getByTestId("workspaces-outside")).toHaveCount(0);
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        gramMock: { simulateOrchestration: () => Promise<unknown> };
+      }
+    ).gramMock.simulateOrchestration(),
+  );
+  // The threads in no workspace are counted under the list, a click from where they are listed.
+  await expect(page.getByTestId("workspaces-outside")).toContainText(
+    /\d+ threads outside a project/,
+  );
+  // A workspace's row: its name, what runs or that nothing does, its autonomy and its actions.
+  const row = page.getByTestId("workspaces-row").first();
+  await expect(row.getByTestId("workspaces-row-open")).not.toBeEmpty();
+  await expect(row.getByTestId("workspaces-row-facts")).toContainText(/running|Paused/);
+  await expect(row.getByTestId("workspaces-row-autonomy")).toBeVisible();
+  await expect(row.getByTestId("workspaces-row-board")).toBeVisible();
+  await expect(row.getByTestId("workspaces-row-settings")).toBeVisible();
+  // Pausing it turns its task into Resume, and resuming brings the task back.
+  const id = await row.getAttribute("data-workspace-id");
+  const same = page.locator(`[data-testid="workspaces-row"][data-workspace-id="${id}"]`);
+  await same.getByTestId("workspaces-row-pause").click();
+  await expect(same).toHaveAttribute("data-paused", "true");
+  await expect(same.getByTestId("workspaces-row-facts")).toContainText("Paused");
+  await expect(same.getByTestId("workspaces-row-new")).toHaveCount(0);
+  await same.getByTestId("workspaces-row-resume").click();
+  await expect(same).not.toHaveAttribute("data-paused", "true");
+  // The threads are one click away, and the list comes back as it was left.
+  await view.getByRole("radio", { name: /^Threads/ }).click();
+  await expect(page.getByTestId("threads-search")).toBeVisible();
+  await expect(page.getByTestId("workspaces-row")).toHaveCount(0);
+  await view.getByRole("radio", { name: /^Projects/ }).click();
+  // A task for one workspace starts on it.
+  await same.getByTestId("workspaces-row-new").click();
+  await expect(page).toHaveURL(new RegExp(`/new-task\\?.*workspace=${id}`));
+  // New project opens the form that starts one.
+  await page.evaluate(() => (window as unknown as Update).embed.navigate("/threads"));
+  await page.getByTestId("threads-new-workspace").click();
+  await expect(page).toHaveURL(/\/new-workspace$/);
+  // Left out again, the page lists the threads alone.
+  await page.evaluate(() => {
+    const embed = (window as unknown as Update).embed;
+    embed.update({ threadsPage: undefined });
+    void embed.navigate("/threads");
+  });
+  await expect(page.getByTestId("threads-view")).toHaveCount(0);
+  await expect(page.getByTestId("threads-new-workspace")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("the browser tab takes the embedding app's title, with the page and the count", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await mounted(page);
+  // Gram's own, until the app names the tab.
+  await expect(page).toHaveTitle(/Gram$/);
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      document: {
+        title: ({ name, needsYou }: { name: string | undefined; needsYou: number }) =>
+          `${needsYou > 0 ? `(${needsYou}) ` : ""}${name ?? "Fixture"} · Fixture`,
+      },
+    });
+  });
+  await expect(page).toHaveTitle(/^(\(\d+\) )?Home · Fixture$/);
+  await page.evaluate(() => (window as unknown as Update).embed.navigate("/govern/policies"));
+  await expect(page).toHaveTitle(/^(\(\d+\) )?Policies · Fixture$/);
+  // Taken away again, Gram's own returns.
+  await page.evaluate(() => (window as unknown as Update).embed.update({ document: undefined }));
+  await expect(page).toHaveTitle(/Gram$/);
+  expect(errors).toEqual([]);
+});
+
+test("the right panel can be kept to threads in a repository", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Mounted at `path`, then kept to threads in a repository.
+  const codeOnly = async (path: string) => {
+    await page.goto(path);
+    await page.waitForFunction(() => (window as unknown as Partial<Update>).embed !== undefined);
+    await page.evaluate(() => {
+      (window as unknown as Update).embed.update({ panel: "code" });
+    });
+  };
+  const toggle = page.getByTestId("titlebar-panels").getByRole("button", { name: /right panel/ });
+  // Gram's own default: the toggle on every page.
+  await mounted(page);
+  await expect(toggle).toBeVisible();
+  // Home and an added page: no panel and no toggle, and the key does nothing.
+  await codeOnly("/");
+  await expect(toggle).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+Alt+b");
+  await expect(page.getByTestId("right-panel")).toHaveCount(0);
+  await page.getByTestId("embed-navigation").getByRole("link", { name: "Policies" }).click();
+  await expect(page.getByTestId("fixture-policies")).toBeVisible();
+  await expect(toggle).toHaveCount(0);
+  await expect(page.getByTestId("right-panel")).toHaveCount(0);
+  // A thread outside a repository has neither; one in a worktree keeps both.
+  await codeOnly("/t/t-background");
+  await expect(page.getByTestId("thread-view")).toBeVisible();
+  await expect(toggle).toHaveCount(0);
+  await codeOnly("/t/t-flaky");
+  await expect(toggle).toBeVisible();
+  await expect(page.getByTestId("right-panel")).toBeVisible();
+  // Back to Gram's own: the toggle is everywhere again.
+  await mounted(page);
+  await expect(toggle).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("a headless server reports no setup problems of its own machine", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // What a headless server answers: it looked for nothing, so no tool and no sign-in. One from
+  // before `headless` lists no tool either; a server that looked lists each, found or not.
+  const answer = async (from: "headless" | "older" | "looked") => {
+    await page.evaluate(
+      ([key, value]) => sessionStorage.setItem(key!, value!),
+      [
+        "gram.mock.launchChecks",
+        JSON.stringify({
+          tools:
+            from === "looked"
+              ? ["claude", "codex", "git", "gh"].map((tool) => ({
+                  tool,
+                  found: false,
+                }))
+              : [],
+          claudeSignIn: "unknown",
+          ghSignedIn: false,
+          ...(from === "headless" ? { headless: true } : {}),
+        }),
+      ],
+    );
+    await page.reload();
+    await expect(page.getByTestId("app-shell")).toBeVisible();
+  };
+  const banner = page.getByTestId("launch-checks-banner");
+  const chip = page.getByTestId("launch-issues-chip");
+  await mounted(page, "/t/t-flaky");
+  await answer("headless");
+  // Neither the banner nor its title-bar chip, on a thread in a repository or on home.
+  await expect(page.getByTestId("thread-view")).toBeVisible();
+  await expect(banner).toHaveCount(0);
+  await expect(chip).toHaveCount(0);
+  await page.goto("/");
+  await expect(page.getByTestId("app-shell")).toBeVisible();
+  await expect(banner).toHaveCount(0);
+  await expect(chip).toHaveCount(0);
+  await page.goto("/t/t-flaky");
+  await answer("older");
+  await expect(page.getByTestId("thread-view")).toBeVisible();
+  await expect(banner).toHaveCount(0);
+  await expect(chip).toHaveCount(0);
+  // A server that looked and found nothing: that is what's missing there.
+  await answer("looked");
+  await expect(banner).toContainText("Neither Claude Code nor Codex is installed");
+  expect(errors).toEqual([]);
+});
+
 test("compact, the sidebar is a quiet strip that opens over the page on hover", async ({
   page,
 }) => {
@@ -223,20 +623,20 @@ test("compact, the sidebar is a quiet strip that opens over the page on hover", 
   await expect(strip).toHaveAttribute("data-hosted", "");
   // What the open sidebar holds, in its order, and no workspace or thread tiles.
   await expect(strip.getByTestId("embed-switcher")).toBeVisible();
-  await expect(strip.getByTestId("hosted-rail-needs-you-dot")).toBeVisible();
-  await expect(strip.getByTestId("hosted-rail-search")).toBeVisible();
+  await expect(strip.getByTestId("overview-rail-needs-you-dot")).toBeVisible();
+  await expect(strip.getByTestId("overview-rail-search")).toBeVisible();
   await expect(strip.getByRole("link", { name: "Govern: Policies" })).toHaveAttribute(
     "aria-current",
     "page",
   );
-  await expect(strip.getByTestId("hosted-rail-history")).toBeVisible();
+  await expect(strip.getByTestId("overview-rail-history")).toBeVisible();
   await expect(page.getByTestId("overview-tile")).toHaveCount(0);
   // Once the column has finished narrowing.
   await expect.poll(async () => (await strip.boundingBox())?.width).toBe(60);
   const mainBox = await page.locator("main").boundingBox();
 
   // Resting on it opens the sidebar beside it, over the page: the page doesn't move.
-  const overlay = page.getByTestId("hosted-rail-overlay");
+  const overlay = page.getByTestId("overview-rail-overlay");
   await strip.hover({ position: { x: 20, y: 400 } });
   await expect(overlay).toBeVisible();
   await expect
@@ -268,7 +668,7 @@ test("compact, the sidebar is a quiet strip that opens over the page on hover", 
 
   // The keyboard opens it too, and its pin keeps the sidebar open.
   await page.mouse.move(900, 400);
-  await strip.getByTestId("hosted-rail-search").focus();
+  await strip.getByTestId("overview-rail-search").focus();
   await page.keyboard.press("Tab");
   await page.keyboard.press("Shift+Tab");
   await expect(overlay).toBeVisible();
@@ -373,26 +773,189 @@ test("the embedding app can count what needs someone itself", async ({ page }) =
 
   // The compact strip's tile follows the same count, and goes to the same place.
   await page.getByTestId("overview-compact").click();
-  const tile = page.getByTestId("hosted-rail-needs-you");
+  const tile = page.getByTestId("overview-rail-needs-you");
   await expect(tile).toHaveAccessibleName("5 to review");
-  await expect(page.getByTestId("hosted-rail-needs-you-dot")).toBeVisible();
+  await expect(page.getByTestId("overview-rail-needs-you-dot")).toBeVisible();
   await page.evaluate(() => {
     (window as unknown as Update).embed.update({ attention: { count: 0 } });
   });
-  await expect(page.getByTestId("hosted-rail-needs-you-dot")).toHaveCount(0);
+  await expect(page.getByTestId("overview-rail-needs-you-dot")).toHaveCount(0);
   await page.getByTestId("overview-rail").hover({ position: { x: 20, y: 400 } });
-  await expect(page.getByTestId("hosted-rail-overlay")).toBeVisible();
+  await expect(page.getByTestId("overview-rail-overlay")).toBeVisible();
   // At 0 the pill hides.
   await expect(
-    page.getByTestId("hosted-rail-overlay").getByTestId("overview-needs-you"),
+    page.getByTestId("overview-rail-overlay").getByTestId("overview-needs-you"),
   ).toHaveCount(0);
   // Taken away, Gram's own count is back.
   await page.evaluate(() => {
     (window as unknown as Update).embed.update({ attention: undefined });
   });
   await expect(
-    page.getByTestId("hosted-rail-overlay").getByTestId("overview-needs-you"),
+    page.getByTestId("overview-rail-overlay").getByTestId("overview-needs-you"),
   ).toContainText("need you");
+  expect(errors).toEqual([]);
+});
+
+test("the sidebar can be drawn roomy, with the app's head and account", async ({ page }) => {
+  const errors = await mounted(page, "/govern/agents/a-1");
+  await page.evaluate(() => {
+    const w = window as unknown as Update & { fixtureSidebar: object };
+    w.embed.update({ sidebar: w.fixtureSidebar });
+  });
+  const sidebar = page.getByTestId("overview-sidebar");
+  await expect(sidebar).toHaveAttribute("data-look", "roomy");
+  // Edge to edge, on Gram's own surface: no inset card.
+  const box = await sidebar.boundingBox();
+  expect(box?.x).toBe(0);
+  expect(box?.y).toBe(0);
+  await expect(sidebar).toHaveCSS("border-top-left-radius", "0px");
+  // The app's head, with Collapse and New beside it; Hide is not at the head.
+  await expect(sidebar.getByTestId("fixture-brand")).toBeVisible();
+  await expect(sidebar.getByTestId("overview-hide")).toHaveCount(0);
+  // Headings in small capitals, rows 40 px tall.
+  const heading = sidebar.getByTestId("embed-navigation-heading").first();
+  await expect(heading).toHaveCSS("text-transform", "uppercase");
+  const limits = sidebar.getByTestId("embed-navigation-main").getByRole("link", { name: /Runs/ });
+  expect((await limits.boundingBox())?.height).toBe(40);
+  // The current row: a bold label on the glide, which fills the whole row as a hover does.
+  await expect(limits).toHaveAttribute("aria-current", "page");
+  await expect(limits).toHaveCSS("font-weight", "600");
+  const glide = page.getByTestId("embed-navigation-main").getByTestId("embed-navigation-glide");
+  const row = await limits.boundingBox();
+  await expect.poll(async () => (await glide.boundingBox())?.width).toBe(row?.width);
+  // Search's shortcut as key caps, above the list rather than in it: it stays as the list scrolls.
+  await expect(sidebar.getByTestId("key-caps").locator("kbd")).toHaveCount(2);
+  expect(
+    await sidebar
+      .getByTestId("overview-search")
+      .evaluate((search) => search.closest(".overflow-y-auto") === null),
+  ).toBe(true);
+  // The foot: one row of icons, each named, and the account under it.
+  const foot = sidebar.getByTestId("overview-roomy-foot");
+  const icons = foot.getByTestId("overview-roomy-foot-icons");
+  await expect(icons.getByRole("link", { name: /Limits/ })).toBeVisible();
+  await expect(icons.getByTestId("overview-history")).toHaveAccessibleName("History");
+  await expect(icons.getByTestId("overview-settings")).toHaveAccessibleName("Settings");
+  await expect(foot.getByTestId("fixture-account")).toBeVisible();
+  // Collapse is an icon at the head.
+  await expect(foot.getByTestId("overview-compact")).toHaveCount(0);
+  await sidebar.getByTestId("overview-compact").click();
+  await expect(page.getByTestId("overview-rail")).toBeVisible();
+  // Over the page from the strip it keeps the look, with no Collapse of its own.
+  await page.getByTestId("overview-rail").hover({ position: { x: 20, y: 400 } });
+  const overlay = page.getByTestId("overview-rail-overlay");
+  await expect(overlay.getByTestId("overview-sidebar")).toHaveAttribute("data-look", "roomy");
+  await expect(overlay.getByTestId("overview-compact")).toHaveCount(0);
+  // The current place's fill is drawn there too, from the overlay's first frame.
+  await expect(
+    overlay.getByTestId("embed-navigation-main").getByTestId("embed-navigation-glide"),
+  ).toBeVisible();
+  await expect(overlay.getByTestId("overview-pin")).toBeVisible();
+  await overlay.getByTestId("overview-pin").click();
+  // Back to the standard look: the toggles at the head again, the account above History.
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({ sidebar: undefined });
+  });
+  await expect(sidebar).not.toHaveAttribute("data-look", "roomy");
+  await expect(sidebar.getByTestId("overview-hide")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("a collapsible group starts closed, keeps its place in view, and stays as it was left", async ({
+  page,
+}) => {
+  const errors = await mounted(page);
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      navigation: [
+        {
+          id: "manage",
+          label: "Manage",
+          placement: "main",
+          collapsible: true,
+          collapsed: true,
+          items: [
+            {
+              id: "agents",
+              label: "Agents",
+              to: "/govern/agents/a-1",
+              count: 2,
+            },
+            { id: "policies", label: "Policies", to: "/govern/policies" },
+          ],
+        },
+      ],
+    });
+  });
+  const main = page.getByTestId("embed-navigation-main");
+  const toggle = main.getByTestId("embed-navigation-toggle");
+  // Closed: the heading is a button, says it is closed, and counts what it hides.
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(main.getByRole("heading", { name: /Manage/ })).toBeVisible();
+  await expect(main.getByTestId("embed-navigation-item")).toHaveCount(0);
+  await expect(toggle.getByTestId("embed-navigation-hidden-count")).toHaveText("2");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(main.getByTestId("embed-navigation-item")).toHaveCount(2);
+  await expect(toggle.getByTestId("embed-navigation-hidden-count")).toHaveCount(0);
+  // Closed again, the row the window is at stays, and the count leaves its own out.
+  await main.getByRole("link", { name: /Policies/ }).click();
+  await toggle.click();
+  await expect(main.getByTestId("embed-navigation-item")).toHaveCount(1);
+  await expect(main.getByRole("link", { name: /Policies/ })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  // The person's choice outlives a reload; the compact strip lists every row either way.
+  await toggle.click();
+  await page.reload();
+  await expect(page.getByTestId("app-shell")).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      navigation: [
+        {
+          id: "manage",
+          label: "Manage",
+          placement: "main",
+          collapsible: true,
+          collapsed: true,
+          items: [{ id: "agents", label: "Agents", to: "/govern/agents/a-1" }],
+        },
+      ],
+    });
+  });
+  await expect(main.getByTestId("embed-navigation-toggle")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(errors).toEqual([]);
+});
+
+test("with the peek off, a resting pointer leaves the strip alone and its Expand tile opens it", async ({
+  page,
+}) => {
+  const errors = await mounted(page);
+  await page.evaluate(() => {
+    const own = window as unknown as Update & { fixtureSidebar: object };
+    own.embed.update({ sidebar: { ...own.fixtureSidebar, peek: false } });
+  });
+  await page.getByTestId("overview-sidebar").getByTestId("overview-compact").click();
+  const rail = page.getByTestId("overview-rail");
+  await expect(rail).toBeVisible();
+  await rail.hover({ position: { x: 20, y: 400 } });
+  // Longer than the strip waits before it opens under a resting pointer.
+  await page.waitForTimeout(800);
+  await expect(page.getByTestId("overview-rail-overlay")).toHaveCount(0);
+  await rail.getByTestId("overview-expand").click();
+  await expect(rail).toHaveCount(0);
+  await expect(page.getByTestId("overview-sidebar")).toBeVisible();
+  // With the peek on (the default), the strip has no Expand tile.
+  await page.evaluate(() => {
+    const own = window as unknown as Update & { fixtureSidebar: object };
+    own.embed.update({ sidebar: own.fixtureSidebar });
+  });
+  await page.getByTestId("overview-sidebar").getByTestId("overview-compact").click();
+  await expect(page.getByTestId("overview-rail").getByTestId("overview-expand")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -509,7 +1072,11 @@ test("an added page is a page of settings, from the kit's pieces", async ({ page
 
 test.describe("on a phone", () => {
   // A phone is a narrow window with a touch screen as its pointer.
-  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  test.use({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
 
   test("the header names the added page and the group it is listed in", async ({ page }) => {
     const errors = await mounted(page, "/govern/limits");
@@ -529,6 +1096,33 @@ test.describe("on a phone", () => {
     await expect(page.getByTestId("phone-drawer").getByTestId("overview-search")).not.toContainText(
       "Search threads",
     );
+    expect(errors).toEqual([]);
+  });
+
+  test("the roomy menu's foot names the person and says Settings is behind their button", async ({
+    page,
+  }) => {
+    const errors = await mounted(page, "/govern/limits");
+    await page.evaluate(() => {
+      const w = window as unknown as Update & { fixtureSidebar: object };
+      w.embed.update({ sidebar: w.fixtureSidebar });
+    });
+    await page.getByTestId("phone-menu").click();
+    const you = page.getByTestId("phone-menu-you");
+    await expect(you).toHaveAccessibleName("Ingrid: Settings and more");
+    await expect(you).toContainText("Ingrid");
+    await expect(you).toContainText("Settings");
+    // The button and the New pill share the foot's one line, and neither is cut by the menu's edge.
+    const foot = await page.getByTestId("phone-menu-foot").boundingBox();
+    const button = await you.boundingBox();
+    expect(button?.height).toBeGreaterThanOrEqual(44);
+    expect((button?.x ?? 0) + (button?.width ?? 0)).toBeLessThan(
+      (foot?.x ?? 0) + (foot?.width ?? 0),
+    );
+    await you.click();
+    await expect(
+      page.getByTestId("phone-menu-you-sheet").getByTestId("overview-settings"),
+    ).toBeVisible();
     expect(errors).toEqual([]);
   });
 });

@@ -74,6 +74,7 @@ import { useDiffComments, useDiffCommentsStore, withDiffComments } from "@/store
 import { useDraftStore } from "@/stores/drafts";
 import { useSuggestionsStore } from "@/stores/suggestions";
 import { useThreadsStore } from "@/stores/threads";
+import { WAIT_WORDS } from "@/thread/awaiting-machine-model";
 import { continueHint, SWITCH_PREFIX } from "@/thread/agent-switch-model";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 import { useSwitchOffer } from "@/thread/use-switch-offer";
@@ -545,7 +546,12 @@ export function Composer({
       }
       const result = await api.send(threadId, input);
       if (!active()) return;
-      if (result.queued) flash("Queued — sends when the turn ends");
+      if (result.queued) {
+        // A thread that waits for its machine has no turn to end.
+        const waits =
+          useThreadsStore.getState().byId[threadId]?.thread.awaitingMachine !== undefined;
+        flash(waits ? WAIT_WORDS.queued : "Queued — sends when the turn ends");
+      }
     } catch (error) {
       // Give the text and diff comments back rather than lose them; a failed rewind keeps the edit.
       giveBack();

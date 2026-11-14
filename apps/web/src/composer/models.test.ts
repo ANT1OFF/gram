@@ -22,7 +22,10 @@ import {
   modelDisplayName,
   modelGroups,
   modelOptions,
+  modelRuns,
   NOT_LISTED_BY_ACCOUNT,
+  offeredModels,
+  offeredReplacement,
   NOT_LISTED_BY_CODEX,
   NOT_LISTED_BY_GATEWAY,
   pickerModelId,
@@ -268,6 +271,66 @@ describe("modelDisplayName", () => {
     expect(modelDisplayName(undefined, "claude", "opus")).toBe("Claude Opus");
     // An id nothing names stays as it is.
     expect(modelDisplayName(listed, "codex", "synthetic-codex")).toBe("synthetic-codex");
+  });
+});
+
+/** A row of a Claude Code or Codex catalogue, named as the CLI names it. */
+const catalogueRow = (id: string, displayName: string, resolvedId?: string): AgentModel => ({
+  id,
+  displayName,
+  supportsEffort: true,
+  ...(resolvedId === undefined ? {} : { resolvedId }),
+});
+
+describe("modelRuns", () => {
+  const row = catalogueRow;
+
+  it("is the pinned id a row runs, as the model catalogue reads it", () => {
+    expect(modelRuns("claude", row("opus", "Opus", "claude-opus-5-5"))).toBe("claude-opus-5-5");
+    expect(modelRuns("claude", row("sonnet", "Sonnet 5.5 · Best for everyday tasks"))).toBe(
+      "claude-sonnet-5-5",
+    );
+    expect(modelRuns("claude", row("sonnet[1m]", "Sonnet 5.5 (1M context)"))).toBe(
+      "claude-sonnet-5-5[1m]",
+    );
+    expect(modelRuns("claude", row("claude-haiku-5-5", "Haiku"))).toBe("claude-haiku-5-5");
+    expect(modelRuns("codex", row("gpt-5.5", "GPT-5.5"))).toBe("gpt-5.5");
+  });
+
+  it("is unknown for a row that names no model, such as the CLI's default", () => {
+    expect(modelRuns("claude", row("default", "Default (recommended)"))).toBeUndefined();
+  });
+});
+
+describe("offeredModels", () => {
+  it("asks the app with the id, what it runs and the gateway", () => {
+    const asked: unknown[] = [];
+    offeredModels(
+      [{ id: "opus", displayName: "Opus 5.5", supportsEffort: true }],
+      "claude",
+      (model) => {
+        asked.push(model);
+        return true;
+      },
+      ProfileId.make("p-1"),
+    );
+    expect(asked).toEqual([
+      { agent: "claude", id: "opus", runs: "claude-opus-5-5", profile: "p-1" },
+    ]);
+  });
+});
+
+describe("offeredReplacement", () => {
+  const listed: AgentModel[] = [
+    { id: "haiku", displayName: "Haiku", supportsEffort: false },
+    { id: "sonnet", displayName: "Sonnet", supportsEffort: true, isDefault: true },
+  ];
+  it("moves a draft to the offered default, and leaves it while there is nothing to move to", () => {
+    expect(offeredReplacement(listed, true, "opus")).toBe("sonnet");
+    expect(offeredReplacement(listed, true, "haiku")).toBeUndefined();
+    expect(offeredReplacement(listed, false, "opus")).toBeUndefined();
+    expect(offeredReplacement([], true, "opus")).toBeUndefined();
+    expect(offeredReplacement(undefined, true, "opus")).toBeUndefined();
   });
 });
 

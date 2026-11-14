@@ -1,3 +1,4 @@
+import { useNewForm, useSoloWord } from "@/embed/store";
 import { MessageSquare, Network, User, type LucideIcon } from "lucide-react";
 import { useId, type ReactNode } from "react";
 
@@ -5,6 +6,7 @@ import { ChoiceCheck } from "@/components/choice-check";
 import { Hint } from "@/components/hint";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { CHOICE_CARD } from "@/lib/selection";
+import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
 import { SegmentSlab } from "@/motion";
 import type { NewEntry } from "@/orchestration/new-entry";
@@ -35,6 +37,8 @@ export const WHO_CHOICES: readonly {
   readonly spoken?: string;
   readonly line: string;
   readonly icon: LucideIcon;
+  /** Its glyph's colour, where the choice has one: the orchestrator's accent on Team. */
+  readonly tone?: string;
   readonly shortcut: string;
 }[] = [
   {
@@ -49,6 +53,7 @@ export const WHO_CHOICES: readonly {
     label: "Team",
     line: "An orchestrator splits it up, runs workers and sees their pull requests merged.",
     icon: Network,
+    tone: "text-orchestrator",
     shortcut: "thread.new",
   },
   {
@@ -97,7 +102,7 @@ function Choice({
     >
       {checked && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
       <span className="relative flex w-full items-center gap-1.5 text-reading font-medium">
-        <Icon aria-hidden className="size-icon-row shrink-0" />
+        <Icon aria-hidden className={cn("size-icon-row shrink-0", choice.tone)} />
         {choice.label}
         <ChoiceCheck checked={checked} className="ml-auto" />
       </span>
@@ -171,8 +176,27 @@ export function NewFormHeader({
 }) {
   const slab = useId();
   const labelId = useId();
+  const soloWord = useSoloWord();
+  const newForm = useNewForm();
+  // An embedding app narrows the choices and gives them its words; a choice it left out that is
+  // the one in use stays, so the form never shows nothing picked.
+  const choices = WHO_CHOICES.filter(
+    (choice) => choice.value !== "worker" || newForm?.task !== "hidden" || who === "worker",
+  ).map((choice) => {
+    if (choice.value === "me") {
+      const label = newForm?.solo?.label ?? soloWord;
+      if (label === undefined) return choice;
+      return { ...choice, label, line: newForm?.solo?.line ?? "You and one agent in a folder." };
+    }
+    const words = choice.value === "orchestrator" ? newForm?.team : undefined;
+    return words === undefined
+      ? choice
+      : { ...choice, label: words.label, line: words.line ?? choice.line };
+  });
   const whereId = useId();
-  const title = (
+  // A phone's title bar names the page already, as its one top heading: not said twice.
+  const phone = usePhone();
+  const title = phone ? null : (
     <header>
       <h1 className="font-heading text-title">New task</h1>
     </header>
@@ -216,9 +240,13 @@ export function NewFormHeader({
         <div
           role="radiogroup"
           aria-labelledby={labelId}
-          className={cn(SEGMENT_TRACK, "grid grid-cols-1 sm:grid-cols-3")}
+          className={cn(
+            SEGMENT_TRACK,
+            "grid grid-cols-1",
+            choices.length === 2 ? "sm:grid-cols-2" : "sm:grid-cols-3",
+          )}
         >
-          {WHO_CHOICES.map((choice) => (
+          {choices.map((choice) => (
             <Choice
               key={choice.value}
               choice={choice}

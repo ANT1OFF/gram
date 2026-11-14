@@ -45,9 +45,13 @@ export const firstRunCovers = (issue: LaunchIssue): boolean => FIRST_RUN_COVERS.
 
 /**
  * What to tell the user about the launch checks, most important first. An unreadable Claude sign-in
- * status isn't reported: Diagnostics shows it, and a wrong alarm would be worse.
+ * status isn't reported: Diagnostics shows it, and a wrong alarm would be worse. A headless server
+ * looked for nothing on its machine, so it has nothing to report: its tools are its joined
+ * machines', whose problems the machine picker and Settings → Machines name. One from before
+ * `headless` says it by listing no tool at all, where a server that looked lists every one.
  */
 export function launchIssues(checks: LaunchChecks): LaunchIssue[] {
+  if (checks.headless === true || checks.tools.length === 0) return [];
   const found = (tool: LaunchTool) => checks.tools.find((t) => t.tool === tool)?.found === true;
   const issues: LaunchIssue[] = [];
   const claudeUnusable = checks.tools.find((t) => t.tool === "claude")?.unusable;

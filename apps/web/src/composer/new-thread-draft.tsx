@@ -1,3 +1,5 @@
+import { usePhone } from "@/lib/use-phone";
+import { useNewForm, useSoloWord } from "@/embed/store";
 import {
   DEFAULT_SETTINGS,
   HostId,
@@ -81,6 +83,7 @@ import {
 } from "./draft-prefill";
 import { MentionMenu } from "./mention-menu";
 import { useSlabHandoff } from "./slab-handoff";
+import { needsMachine, StartMachineCard, useOnDemandMachine } from "./start-machine-card";
 import { SLAB, SLAB_TEXTAREA } from "./styles";
 import { useAttachments } from "./use-attachments";
 import { useMentions } from "./use-mentions";
@@ -168,6 +171,8 @@ export function NewThreadDraft() {
 }
 
 function ConfiguredNewThreadDraft() {
+  const phone = usePhone();
+  const startMachine = needsMachine(useOnDemandMachine().status);
   const api = useApi();
   const navigate = useNavigate();
   const workspaces = useWorkspaces();
@@ -447,15 +452,22 @@ function ConfiguredNewThreadDraft() {
   const browse = () => focusOption('[aria-label="Project path"]');
   const browseMachine = () => focusOption(`[aria-label="Folder on ${pickedMachine?.name ?? ""}"]`);
 
+  const soloWord = useSoloWord();
+  const newForm = useNewForm();
   useShortcut({
     id: "draft.create",
     keys: "mod+enter",
-    label: "Start chat",
+    label: soloWord === undefined ? "Start chat" : "Start agent",
     group: "Composer",
     run: () => void create(),
   });
 
-  const createLabel = stage === "failed" ? "Retry" : "Start chat";
+  // An embedding app with its own word for this kind of thread has a Chat of its own: the button
+  // then names what it starts without that word, as Start task does beside it.
+  const createLabel =
+    stage === "failed"
+      ? "Retry"
+      : (newForm?.solo?.start ?? (soloWord === undefined ? "Start chat" : "Start agent"));
   const modeChoice = modeSection({ value: mode, onChange: setMode });
   // A pick is confirmed in words beside the chip for a moment, as in a thread's composer.
   const [picked, setPicked] = useState<string>();
@@ -593,7 +605,11 @@ function ConfiguredNewThreadDraft() {
                       placeholder={
                         dictation.active
                           ? ""
-                          : "Describe the task. Type @ to mention a file, or paste or drop files to attach them. Or leave it empty to start the agent now and write to it in the thread."
+                          : phone
+                            ? // A phone has no files to drop, and four lines of grey before one is typed;
+                              // @ still reaches a file, and nothing else on the form says so.
+                              "Describe the task, with @ for a file. Or leave it empty and write in the thread."
+                            : "Describe the task. Type @ to mention a file, or paste or drop files to attach them. Or leave it empty to start the agent now and write to it in the thread."
                       }
                       value={prompt}
                       onFocus={(event) => {
@@ -779,10 +795,15 @@ function ConfiguredNewThreadDraft() {
               ))}
             </ol>
           )}
-          {error && (
-            <p ref={errorRef} role="alert" className="text-reading text-destructive">
-              {error}
-            </p>
+          {/* Where the deployment starts machines on demand, the person's own, in place of the error. */}
+          {startMachine ? (
+            <StartMachineCard />
+          ) : (
+            error && (
+              <p ref={errorRef} role="alert" className="text-reading text-destructive">
+                {error}
+              </p>
+            )
           )}
         </section>
 

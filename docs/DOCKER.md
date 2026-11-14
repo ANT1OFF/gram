@@ -150,9 +150,17 @@ sent. The claims:
 - `iss` and `aud`, as configured.
 - `sub`, an id for the person that never changes, and optionally `name` to show.
 - `role`: `member`, who can do everything, or `viewer`, who can read threads, diffs, docs,
-  memory and settings, and change nothing. A viewer can read any file in a thread's folders,
-  including ones that hold secrets, such as `.env`.
+  memory and settings, and change nothing but their own view (below). A viewer can read any file
+  in a thread's folders, including ones that hold secrets, such as `.env`.
 - `iat` and `exp`, at most five minutes apart. Make a new statement per request.
+
+Each person keeps their own view. The pane grid and which pane has the focus are saved under the
+person's `sub`, beside the settings everyone shares: a person reads the shared settings with their
+own laid over them, a change to their own is written for them alone, and only their own
+connections are told of it. So two people in one server each come back to their own panes, and
+one changing focus moves nobody else. A viewer may save their own view; it is the one thing a
+viewer changes, and it is not put on the record of changes. Every other setting is shared, and a
+[supplied setting](EMBEDDING.md#settings-supplied-from-outside) still wins over both.
 
 What sits in front can also speak for itself. A statement whose header has `typ`
 `gram-service+jwt`, with `role` `service` and a `path` claim, names no person: it is the
@@ -251,6 +259,37 @@ each turn's usage, and every decision the hook made.
   in the POST it answers is not believed, and the same events are sent again.
 - If the receiver takes nothing while 200,000 events wait, the backlog is given up and a new
   `source` id starts at 1 with `sink.started`.
+- With `GRAM_EVENT_SINK_MESSAGES=1` the sink is sent each thread's messages too, as `message`
+  events. Unset, it sends none, and nothing else about the sink changes. A message is sent once
+  when it settles (a person's message as it is stored, a reply when it has finished streaming or
+  its turn ends) and again each time the stored message changes afterwards, never while it
+  streams. `data` holds its `id`, its stored revision `rev` (a receiver keeps the highest it has
+  seen), `role`, `turnId` where it belongs to a turn, `at` (when it was written, epoch ms), `seq`
+  (its place in its thread) and `message`, the stored message as the server gives it to its own
+  web app. With sign-in through a fronting proxy, a message a person sent names them as the
+  event's `actor`. One event is at most 256 KB: a larger message keeps its text and has its
+  largest tool results cut first, each cut marked `{"truncated": true, "bytes": n}`, and
+  `truncated` is then true; the whole message stays in the server's own store. A fork's copied
+  messages and a reopened thread's history are sent when they are put there. A thread's
+  `thread.removed` takes its messages with it: a receiver deletes them then.
+- Messages stored before the setting was on are sent too, once: the first time the sink runs with
+  it on, each open thread's stored messages go as the same `message` events, the oldest thread
+  first and each thread's in order. They go a page at a time (up to 50 messages or 1 MB), at
+  most one page every half second, and a page is recorded only once the receiver has confirmed
+  everything before it. So what happens meanwhile waits behind one page at most, and a receiver
+  that is down is owed no more until it is back. Which threads are left, and how far the current
+  one has got, is kept in `event-sink.db`: a restart goes on from there and sends nothing
+  confirmed again. A message that settles or changes meanwhile is sent as it does, so a receiver
+  may get one of these twice with the same `rev`. Closed threads' messages are not sent. With the
+  setting off, or once it is done, nothing of this runs. Hosted features turned off stop it, like
+  the rest of the sink, and messages stored while they or the setting were off after it was done
+  are not sent.
+- A new `source` id does not send every message again by itself, since the receiver still holds
+  the messages it confirmed. After a backlog is given up, each thread that had messages in it is
+  sent again from the first of those. After the receiver asked for events older than the ones
+  kept, it has said it lost events it had confirmed, any of which may have been a message, so
+  every open thread's stored messages are sent again, the same way. A lost `event-sink.db` is a
+  first run.
 - A card's closing says how: `answered`, with the person's `approve` or `reject` and (with
   sign-in through a fronting proxy) who they are, or `withdrawn` when it went unanswered.
 - With sign-in through a fronting proxy, a card is answered as its own request,
@@ -285,8 +324,17 @@ services:
   terminal here, or a thread in a worktree of this machine, is always refused.
 - A thread started from a [profile](THREAD_PROFILES.md#on-a-headless-control-plane) goes on the
   same machine, in a folder its host makes for it.
-- The models offered are the ones the default machine's Claude Code lists. The launch checks for
-  local tools don't run.
+- The models offered are the first list of: the person's own machine's Claude Code, where the
+  deployment started one for them ([Hosts on demand](EMBEDDING.md#hosts-on-demand)); the list that
+  machine last reported, while it is stopped or has not reported yet (kept until this server
+  restarts); the default machine's. A step with no list falls through to the next. A new thread
+  still goes where placement puts it: the person's own machine while it is online. Where hosts are
+  started on demand, a signed-in person with none of theirs online is asked to start one rather
+  than placed elsewhere, and is offered no other machine's models; otherwise it goes on the
+  default machine, which is never one started for a person or for the threads placed on it. The launch checks for
+  local tools don't run, and their answer says so (`headless: true`, and no tool listed), so the web app shows no setup
+  banner or title-bar chip for tools this container was never asked to have. Each machine's own
+  tools and sign-in show in the Machine select and Settings → Machines.
 - Not on a machine yet, so not available headless: Codex sessions, sessions through a gateway
   profile, memory updates, and handing an orchestrator over to a new session.
 - The server still keeps a folder for each project (added or cloned in the container), which it

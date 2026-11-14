@@ -55,6 +55,7 @@ export * from "./browser-view.ts";
 export * from "./link-trust.ts";
 export * from "./model-catalogue.ts";
 export * from "./models.ts";
+export * from "./model-catalogue.ts";
 export * from "./recommended.ts";
 export * from "./issues.ts";
 export * from "./orchestration.ts";

@@ -416,7 +416,7 @@ export function OrchestrationDigestCard({
       className={cn(CARD, "flex w-full max-w-2xl flex-col gap-2.5", arriving && "gram-arrive")}
     >
       <header className="flex flex-wrap items-center gap-x-2">
-        <Network aria-hidden className="size-icon-row text-muted-foreground" />
+        <Network aria-hidden className="size-icon-row text-orchestrator" />
         <h3 className="font-medium">{title}</h3>
         <span className="text-meta text-muted-foreground">{digest.workspaceName}</span>
       </header>

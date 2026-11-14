@@ -7,6 +7,7 @@ import { renderWithApi } from "@/panels/test-utils";
 import { EMPTY_GRID, useLayoutStore } from "@/stores/layout";
 
 import { newEntryRoute } from "./new-entry";
+import { useEmbedShell } from "@/embed/store";
 import { NewEntryMenu, newEntryOf } from "./new-entry-menu";
 import { useTaskDraftStore } from "./task-draft-store";
 
@@ -81,6 +82,21 @@ describe("NewEntryMenu", () => {
       fireEvent.click(within(menu).getByRole("menuitem", { name: new RegExp(`^${who}`) }));
       expect(navigate).toHaveBeenCalledWith(route);
       cleanup();
+    }
+  });
+
+  it("is one plain button of the embedding app's when it names what New starts", () => {
+    useEmbedShell.setState({ newEntry: { label: "New agent", to: "/agents" } });
+    try {
+      renderWithApi(<NewEntryMenu />, {});
+      const add = screen.getByRole("button", { name: "New agent" });
+      expect(add.getAttribute("aria-haspopup")).toBeNull();
+      expect(add.textContent).toBe("New agent");
+      fireEvent.click(add);
+      expect(navigate).toHaveBeenCalledWith({ to: "/agents" });
+      expect(screen.queryByRole("menu")).toBeNull();
+    } finally {
+      useEmbedShell.setState({ newEntry: undefined });
     }
   });
 });

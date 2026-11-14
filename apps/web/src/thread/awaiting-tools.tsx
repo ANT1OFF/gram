@@ -14,13 +14,8 @@ const AwaitingToolsContext = createContext<ReadonlySet<string>>(new Set());
 
 const NONE: ReadonlySet<string> = new Set();
 
-export function AwaitingToolsProvider({
-  threadId,
-  children,
-}: {
-  threadId: ThreadId;
-  children: ReactNode;
-}) {
+/** The ids of a thread's calls held at an approval card, for a view outside its transcript. */
+export function useAwaitingToolIds(threadId: ThreadId): ReadonlySet<string> {
   // Keyed by the ids alone, so a card's other changes don't re-render every tool row.
   const key = useThreadsStore((s) =>
     (s.byId[threadId]?.pendingRequests ?? [])
@@ -29,7 +24,17 @@ export function AwaitingToolsProvider({
       )
       .join("\n"),
   );
-  const ids = useMemo(() => (key === "" ? NONE : new Set(key.split("\n"))), [key]);
+  return useMemo(() => (key === "" ? NONE : new Set(key.split("\n"))), [key]);
+}
+
+export function AwaitingToolsProvider({
+  threadId,
+  children,
+}: {
+  threadId: ThreadId;
+  children: ReactNode;
+}) {
+  const ids = useAwaitingToolIds(threadId);
   return <AwaitingToolsContext value={ids}>{children}</AwaitingToolsContext>;
 }
 

@@ -53,6 +53,18 @@ describe("ServerConfig.fromEnv", () => {
     ).toBe("unusable");
   });
 
+  it("sends the sink messages only for GRAM_EVENT_SINK_MESSAGES=1", () => {
+    const sink = { GRAM_EVENT_SINK_URL: "https://sink.example.test/events" };
+    expect(ServerConfig.fromEnv(sink).eventSinkMessages).toBeUndefined();
+    expect("eventSinkMessages" in ServerConfig.fromEnv(sink)).toBe(false);
+    expect(
+      ServerConfig.fromEnv({ ...sink, GRAM_EVENT_SINK_MESSAGES: "true" }).eventSinkMessages,
+    ).toBeUndefined();
+    expect(ServerConfig.fromEnv({ ...sink, GRAM_EVENT_SINK_MESSAGES: "1" }).eventSinkMessages).toBe(
+      true,
+    );
+  });
+
   it("is headless only for GRAM_HEADLESS=1", () => {
     expect(ServerConfig.fromEnv({ GRAM_HEADLESS: "1" }).headless).toBe(true);
     expect(ServerConfig.fromEnv({ GRAM_HEADLESS: "0" })).not.toHaveProperty("headless");

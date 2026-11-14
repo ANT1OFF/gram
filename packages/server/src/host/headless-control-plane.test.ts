@@ -49,6 +49,7 @@ import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { FakeAgentControl, makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
+import { PROFILE_ORIGINS_DIR } from "../thread-profiles/repositories.ts";
 import { hostStatusOf } from "./claude-sign-in.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
@@ -272,6 +273,18 @@ describe.skipIf(!hasGit)("a headless control plane", () => {
 
         const added = yield* app["projects.add"]({ root: project.root });
 
+        // Cloning by remote files the origin alone, reaching nothing (the remote's host doesn't
+        // answer), for the machine a thread is placed on to clone with its own credentials.
+        const filed = yield* app["projects.clone"]({ remote: REMOTE });
+        expect(filed.name).toBe("widgets");
+        expect(filed.root.startsWith(join(dir, "data", PROFILE_ORIGINS_DIR))).toBe(true);
+        expect(
+          execFileSync("git", ["-C", filed.root, "config", "--get", "remote.origin.url"], {
+            encoding: "utf8",
+          }).trim(),
+        ).toBe(REMOTE);
+        expect((yield* app["projects.clone"]({ remote: REMOTE })).id).toBe(filed.id);
+
         // With no machine joined, nothing can run: the server says so rather than run it here.
         const noMachine = yield* app["orchestrator.open"]({ projectId: added.id }).pipe(
           Effect.flip,
@@ -428,6 +441,72 @@ describe.skipIf(!hasGit)("a headless control plane", () => {
             ? readdirSync(join(dir, "data", "worktrees"))
             : [],
         ).toEqual([]);
+
+        // A second machine joins and is confirmed, as another run's would be: started for other
+        // work, it says no kind. A worker is never put there by naming it; "local", on a Gram that
+        // runs nothing itself, is the orchestrator's own machine and never the default one.
+        const otherCode = new URLSearchParams(
+          new URL(
+            JSON.parse(
+              (yield* raw(port, { path: "/machines/join-link", method: "POST", headers: local }))
+                .body,
+            ).url,
+          ).hash.slice(1),
+        ).get("code")!;
+        const otherKey = generateHostKey();
+        const otherJoined = yield* raw(port, {
+          path: "/host/join",
+          method: "POST",
+          headers: { host: HOST, "content-type": "application/json" },
+          body: JSON.stringify({
+            code: otherCode,
+            name: "other run",
+            platform: process.platform,
+            publicKey: otherKey.publicKey,
+          }),
+        });
+        const otherId = JSON.parse(otherJoined.body).hostId;
+        expect(
+          (yield* raw(port, {
+            path: "/machines/confirm",
+            method: "POST",
+            headers: local,
+            body: JSON.stringify({ id: otherId }),
+          })).status,
+        ).toBe(200);
+        for (const otherName of ["other run", otherId]) {
+          const named = yield* Effect.promise(() =>
+            orchestratorTools.call("spawn_worker", {
+              project: added.name,
+              feature: "elsewhere",
+              title: "On another run's machine",
+              brief: "Synthetic work.",
+              machine: otherName,
+            }),
+          );
+          expect(named.isError).toBe(true);
+          expect(JSON.stringify(named.content)).toContain(
+            "A worker goes on its orchestrator's own machine",
+          );
+        }
+        const localWorker = yield* Effect.promise(() =>
+          orchestratorTools.call("spawn_worker", {
+            project: added.name,
+            feature: "here",
+            title: "Here",
+            brief: "Synthetic work.",
+            machine: "local",
+          }),
+        );
+        expect(localWorker.isError, JSON.stringify(localWorker.content)).not.toBe(true);
+        const hereSession = yield* eventually(
+          "the local worker's session on the orchestrator's machine",
+          Effect.sync(() =>
+            machineFake.sessions.length === 3 ? machineFake.sessions[2] : undefined,
+          ),
+        );
+        expect(hereSession.options.cwd.startsWith(machine.repos)).toBe(true);
+        expect(serverFake.sessions).toHaveLength(0);
 
         // A thread started from a profile names no machine either: its folder is made on the
         // machine, by the machine's host, with the profile's files in it, and it runs there.

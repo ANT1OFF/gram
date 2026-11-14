@@ -7,20 +7,22 @@ import { cn } from "@/lib/utils";
 /**
  * One disabled look for every button: never a faded copy of its enabled fill, which reads as live
  * (a dim accent still looks pressable). A filled button turns to the neutral raised fill with
- * subtle text, an outlined one keeps its edge on no fill, and a quiet one dims its words.
+ * its words dimmed, an outlined one keeps its edge on no fill, and a quiet one dims its words.
+ * The words take the disabled colour, a step under subtle text: subtle text on a light page read
+ * as a live quiet button.
  */
 const DISABLED_FILL =
   "disabled:border-border disabled:bg-muted data-disabled:border-border data-disabled:bg-muted";
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-body font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:focus-ring motion-safe:active:not-aria-[haspopup]:scale-[0.97] disabled:pointer-events-none disabled:text-subtle disabled:shadow-none data-disabled:text-subtle aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-icon-row",
+  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-body font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:focus-ring motion-safe:active:not-aria-[haspopup]:scale-[0.97] disabled:pointer-events-none disabled:text-disabled disabled:shadow-none data-disabled:text-disabled aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-icon-row",
   {
     variants: {
       variant: {
         default: `bg-primary text-primary-foreground hover:bg-primary/80 ${DISABLED_FILL}`,
         outline:
           "border-border bg-background text-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-transparent dark:hover:bg-muted disabled:bg-transparent data-disabled:bg-transparent",
-        secondary: `bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--surface-3),var(--fg)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground ${DISABLED_FILL}`,
+        secondary: `bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--surface-fill),var(--fg)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground ${DISABLED_FILL}`,
         // The row hover's fill (surface-hover), so an icon button shows its 28 px target in dark too.
         ghost:
           "hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground",

@@ -186,7 +186,9 @@ function PromptBoxChoices({
   return (
     <>
       {!needsKey && model.status !== undefined && (
-        <div className="flex shrink-0 items-center">{model.status}</div>
+        // It may be a sentence (an embedding app's words for nothing to pick): in a narrow prompt
+        // box it wraps within the box's width and is not cut at its edge.
+        <div className="flex max-w-full min-w-0 items-center">{model.status}</div>
       )}
       {sections.length > 0 && (
         <ComposerChoices
@@ -304,7 +306,7 @@ export function AgentFields({
           <SelectContent>
             {agentItems.map((o) => (
               <SelectItem key={o.value} value={o.value}>
-                <AgentIcon agent={o.value} className="size-icon-row text-muted-foreground" />
+                <AgentIcon agent={o.value} className="size-icon-row" />
                 {o.label}
               </SelectItem>
             ))}
@@ -328,10 +330,7 @@ export function AgentFields({
         </Hint>
       ) : (
         <span className="flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-reading">
-          <AgentIcon
-            agent={agents[0] ?? value.agent}
-            className="size-icon-row text-muted-foreground"
-          />
+          <AgentIcon agent={agents[0] ?? value.agent} className="size-icon-row" />
           {agentLabel(agents[0] ?? value.agent)}
         </span>
       )}

@@ -1157,7 +1157,7 @@ function UnreadDivider() {
       role="separator"
       aria-label="New since you last looked"
       data-testid="unread-divider"
-      className="flex items-center gap-2 pb-2 text-meta font-medium text-primary"
+      className="flex items-center gap-2 pb-2 text-meta font-medium text-link"
     >
       New
       <span aria-hidden className="h-px flex-1 bg-primary/50" />

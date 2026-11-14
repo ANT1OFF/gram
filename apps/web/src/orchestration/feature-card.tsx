@@ -76,7 +76,7 @@ export function WorkerLink({
       params={{ threadId }}
       data-testid="worker-link"
       className={cn(
-        "min-w-0 truncate font-medium text-foreground underline-offset-4 outline-none hover:underline focus-visible:underline",
+        "min-w-0 truncate rounded-sm font-medium text-foreground underline-offset-4 outline-none hover:underline focus-visible:focus-ring-inset focus-visible:underline",
         className,
       )}
       onClick={(event) => {
@@ -210,6 +210,8 @@ function StageLine({ card }: { card: FeatureCard }) {
             <span
               title={state === "current" ? undefined : STATION_LABELS[station]}
               aria-label={state === "current" ? undefined : STATION_LABELS[station]}
+              // A named span needs a role to be read: the dot stands for the station's word.
+              role={state === "current" ? undefined : "img"}
               className={cn(
                 "inline-flex items-center gap-0.5",
                 state === "current"

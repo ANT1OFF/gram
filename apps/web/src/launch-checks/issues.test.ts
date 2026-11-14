@@ -55,6 +55,19 @@ describe("launchIssues", () => {
     expect(launchIssues(checks())).toEqual([]);
   });
 
+  it("reports nothing from a headless server, which looked for nothing on its machine", () => {
+    const none = checks({ tools: [], claudeSignIn: "unknown", ghSignedIn: false });
+    expect(launchIssues({ ...none, headless: true })).toEqual([]);
+    // One from before `headless` lists no tool, where a server that looked lists every one.
+    expect(launchIssues(none)).toEqual([]);
+    const missing = checks({
+      tools: (["claude", "codex", "git", "gh"] as const).map((tool) => ({ tool, found: false })),
+      claudeSignIn: "unknown",
+      ghSignedIn: false,
+    });
+    expect(ids(missing)).toEqual(["agents-missing", "git-missing", "gh-missing"]);
+  });
+
   it("reports a signed-out Claude with the command, and a missing gh", () => {
     const issues = launchIssues(
       checks({

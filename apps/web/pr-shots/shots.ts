@@ -52,7 +52,10 @@ export const seedMockSettings = (page: Page, patch: Record<string, unknown>) =>
     const key = "gram.mock.settings";
     const saved = JSON.parse(sessionStorage.getItem(key) ?? "{}") as Record<string, unknown>;
     for (const [field, value] of Object.entries(seed)) {
-      saved[field] = { ...(saved[field] as object | undefined), ...(value as object) };
+      saved[field] = {
+        ...(saved[field] as object | undefined),
+        ...(value as object),
+      };
     }
     sessionStorage.setItem(key, JSON.stringify(saved));
   }, patch);
@@ -107,7 +110,11 @@ const openOrchestrators = async (page: Page, folded: boolean) => {
     const mock = window.gramMock!;
     const seeded = await mock.simulateOneThread();
     const home = mock.world.projects()[0]!;
-    await mock.saveWorkspace({ name: "docs", projectIds: [home.id], homeProjectId: home.id });
+    await mock.saveWorkspace({
+      name: "docs",
+      projectIds: [home.id],
+      homeProjectId: home.id,
+    });
     return seeded;
   });
   await pressFirstWorkspaceKey(page);
@@ -132,7 +139,11 @@ const openSwitchWorkspace = async (page: Page) => {
     sessionStorage.setItem("gram.mock.agents", "claude,codex");
     sessionStorage.setItem(
       "gram.mock.launchChecks",
-      JSON.stringify({ claudeSignIn: "signedIn", codexSignIn: "signedIn", ghSignedIn: false }),
+      JSON.stringify({
+        claudeSignIn: "signedIn",
+        codexSignIn: "signedIn",
+        ghSignedIn: false,
+      }),
     );
   });
   await page.goto("/settings/workspaces");
@@ -144,7 +155,10 @@ const openSwitchWorkspace = async (page: Page) => {
       (each) => each.workspace.id === made.workspaceId,
     )!;
     // An explicit invented Full workspace can admit the local-Codex target shown below.
-    await api.setOrchestratorCharter(made.workspaceId, { ...state.charter, autonomy: "full" });
+    await api.setOrchestratorCharter(made.workspaceId, {
+      ...state.charter,
+      autonomy: "full",
+    });
   });
   await page
     .getByRole("listitem", { name: "Workspace agent-platform" })
@@ -163,7 +177,11 @@ const openModelsWorkspace = async (page: Page, width: number) => {
     sessionStorage.setItem("gram.mock.agents", "claude,codex");
     sessionStorage.setItem(
       "gram.mock.launchChecks",
-      JSON.stringify({ claudeSignIn: "signedIn", codexSignIn: "signedIn", ghSignedIn: false }),
+      JSON.stringify({
+        claudeSignIn: "signedIn",
+        codexSignIn: "signedIn",
+        ghSignedIn: false,
+      }),
     );
   });
   await page.goto("/settings/workspaces");
@@ -178,7 +196,12 @@ const openModelsWorkspace = async (page: Page, width: number) => {
     await api.setOrchestratorCharter(made.workspaceId, {
       ...state.charter,
       autonomy: "full",
-      orchestratorModel: { agent: "claude", model: "opus", speed: "standard", variant: "high" },
+      orchestratorModel: {
+        agent: "claude",
+        model: "opus",
+        speed: "standard",
+        variant: "high",
+      },
       workerModels: [
         {
           agent: "claude",
@@ -187,7 +210,12 @@ const openModelsWorkspace = async (page: Page, width: number) => {
           useFor: "implementation",
           default: true,
         },
-        { agent: "codex", model: codex, speed: "standard", useFor: "reviews and audits" },
+        {
+          agent: "codex",
+          model: codex,
+          speed: "standard",
+          useFor: "reviews and audits",
+        },
       ],
     });
   });
@@ -468,7 +496,10 @@ const followColorScheme = (page: Page) =>
     const key = "gram.mock.settings";
     const saved = JSON.parse(sessionStorage.getItem(key) ?? "{}") as Record<string, unknown>;
     const mode = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-    saved["appearance"] = { ...(saved["appearance"] as object | undefined), mode };
+    saved["appearance"] = {
+      ...(saved["appearance"] as object | undefined),
+      mode,
+    };
     sessionStorage.setItem(key, JSON.stringify(saved));
   });
 
@@ -750,7 +781,9 @@ const composerSurface = (page: Page) => page.locator('[data-surface="composer"]'
 /** t-flaky stopped at its approval, with what the turn has done so far above it. */
 async function openFlakyAtApproval(page: Page) {
   await page.goto("/t/t-flaky");
-  await expect(page.getByTestId("approval-card")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("approval-card")).toBeVisible({
+    timeout: 20_000,
+  });
 }
 
 /** t-deps's finished turn, scrolled to its footer: the files it changed, under its last reply. */
@@ -831,7 +864,11 @@ const seedProjectScripts = async (page: Page) => {
     await mock.saveProjectScripts(projectId, [
       { name: "dev", command: "pnpm run dev" },
       { name: "test", command: "pnpm run test", shortcut: "mod+alt+t" },
-      { name: "lint", command: "pnpm run lint --max-warnings 0; exit 1", cwd: "src" },
+      {
+        name: "lint",
+        command: "pnpm run lint --max-warnings 0; exit 1",
+        cwd: "src",
+      },
     ]);
     return true;
   });
@@ -864,7 +901,9 @@ const panelTabsShot = (
   title,
   open: async (page) => {
     await page.setViewportSize({ width: windowWidth, height: 900 });
-    await seedMockSettings(page, { panel: { side: "right", open: true, width, tab } });
+    await seedMockSettings(page, {
+      panel: { side: "right", open: true, width, tab },
+    });
     await page.goto("/t/t-deps");
     const label = tab === "diff" ? "Diff" : "Files";
     await page
@@ -1293,13 +1332,25 @@ const SNOOZE_SHOTS: readonly Shot[] = [
   {
     name: "sidebar-realistic-900",
     title:
-      "The realistic morning at 900 px, where the overview is its compact rail: a monogram per workspace, a glyph for the solo threads",
+      "The realistic morning at 900 px, where the overview is its compact strip: a monogram per workspace, a glyph for the solo threads",
     open: async (page) => {
       await openRealisticMorning(page);
       await page.setViewportSize({ width: 900, height: 900 });
       await page.getByTestId("overview-rail").waitFor();
       await page.mouse.move(700, 500);
       await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "sidebar-realistic-900-hover",
+    title:
+      "The same compact overview with the pointer resting on a workspace's tile in it, as a hand reaches for it",
+    open: async (page) => {
+      await openRealisticMorning(page);
+      await page.setViewportSize({ width: 900, height: 900 });
+      const tile = page.getByTestId("overview-rail").getByTestId("overview-tile").nth(1);
+      await tile.hover();
+      await page.waitForTimeout(800);
     },
   },
 ];
@@ -1640,7 +1691,11 @@ const ROUTINES_POLISH_SHOTS: readonly Shot[] = [
       await page.evaluate(() =>
         window.gramMock!.simulateTurnError(
           "t-docs" as never,
-          { kind: "rateLimit", retryable: true, text: "Synthetic rate limit. Try again." },
+          {
+            kind: "rateLimit",
+            retryable: true,
+            text: "Synthetic rate limit. Try again.",
+          },
           "Run the e2e suite",
         ),
       );
@@ -1947,7 +2002,10 @@ const PHONE_ACCESS_SHOTS: readonly Shot[] = [
         tailscale: { state: "ready", dnsName: PHONE_DNS },
         origin: PHONE_ORIGIN,
         devices: PHONE_DEVICES,
-        pairing: { state: "waiting", expiresAt: CLOCK.getTime() + 14 * 60_000 + 32_000 },
+        pairing: {
+          state: "waiting",
+          expiresAt: CLOCK.getTime() + 14 * 60_000 + 32_000,
+        },
       });
       await page.getByTestId("phone-access-pair").click();
       await page.getByTestId("phone-access-qr").waitFor();
@@ -2182,9 +2240,24 @@ const openMachineMarkers = async (page: Page) => {
     const sandbox = "m-456789abcdef012301234567";
     const now = Date.now();
     mock.setMachines([
-      { id: atlas, name: "atlas", kind: "joined", onlineSince: now - 2 * 3_600_000 },
-      { id: studio, name: "studio", kind: "joined", offline: { kind: "lost", at: now - 420_000 } },
-      { id: sandbox, name: "sandbox-1", kind: "provisioned", onlineSince: now - 720_000 },
+      {
+        id: atlas,
+        name: "atlas",
+        kind: "joined",
+        onlineSince: now - 2 * 3_600_000,
+      },
+      {
+        id: studio,
+        name: "studio",
+        kind: "joined",
+        offline: { kind: "lost", at: now - 420_000 },
+      },
+      {
+        id: sandbox,
+        name: "sandbox-1",
+        kind: "provisioned",
+        onlineSince: now - 720_000,
+      },
     ] as never);
     mock.placeOnMachine(ids.working, atlas);
     mock.placeOnMachine(ids.waiting[0], atlas);
@@ -2466,7 +2539,12 @@ const limitT_deps = (page: Page) =>
     at.setHours(15, 0, 0, 0);
     window.gramMock!.simulateLimitWait(
       "t-deps" as never,
-      { kind: "limit", resetsAt: at.getTime(), resumeAt: at.getTime(), attempt: 0 },
+      {
+        kind: "limit",
+        resetsAt: at.getTime(),
+        resumeAt: at.getTime(),
+        attempt: 0,
+      },
       "Carry on with the lockfile.",
     );
   }, CLOCK.getTime());
@@ -2747,7 +2825,10 @@ export const SHOTS: readonly Shot[] = [
           mock.simulateMessage(created!, {
             id: messageId,
             role,
-            metadata: { createdAt: at + Number(messageId.slice(-1)) * 60_000, ...extra },
+            metadata: {
+              createdAt: at + Number(messageId.slice(-1)) * 60_000,
+              ...extra,
+            },
             parts: [{ type: "text", text }],
           } as never);
         said("shot-d1", "user", "Run the tests and fix what fails.");
@@ -2817,6 +2898,24 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "trace",
+    title:
+      "A finished turn's trace, opened from its run timeline: the turn's steps as a tree with a bar each on one time axis, the model's time between its tool calls, and a step's detail beside them",
+    open: async (page) => {
+      await openFlakyAtApproval(page);
+      await elapse(page, FLAKY_DONE_MS);
+      await page.getByTestId("approval-allow").click();
+      await page.getByText("Done. Summary:").waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Stop", exact: true }).waitFor({ state: "hidden" });
+      await page.getByTestId("turn-timeline-open").last().click();
+      await page.getByTestId("turn-timeline-trace").click();
+      await page.getByTestId("trace-view").waitFor();
+      await page.getByTestId("trace-step").and(page.locator('[data-kind="tool"]')).first().click();
+      await page.mouse.move(1400, 1300);
+      await page.waitForTimeout(300);
+    },
+  },
+  {
     name: "new-entry-header",
     title: "The overview header with its New control, at the 180 px minimum width",
     open: async (page) => {
@@ -2880,7 +2979,11 @@ export const SHOTS: readonly Shot[] = [
       await seedDesktopShell(page, {
         notificationStatus: {
           supported: true,
-          last: { outcome: "shown", at: new Date(2026, 9, 25, 14, 2).getTime(), test: true },
+          last: {
+            outcome: "shown",
+            at: new Date(2026, 9, 25, 14, 2).getTime(),
+            test: true,
+          },
         },
       });
       await page.setViewportSize({ width: 1280, height: 900 });
@@ -2935,7 +3038,10 @@ export const SHOTS: readonly Shot[] = [
           vocabulary: [
             { term: "Parakeet", soundsLike: ["para keet", "parakit"] },
             { term: "Nemotron" },
-            { term: "createSpeechService", soundsLike: ["create speech service"] },
+            {
+              term: "createSpeechService",
+              soundsLike: ["create speech service"],
+            },
           ],
         },
       });
@@ -3061,7 +3167,10 @@ export const SHOTS: readonly Shot[] = [
       await page.evaluate(() => window.gramMock!.startedRealistic());
       await page.getByRole("button", { name: /^Release notes for 0.9, Gram, merged/ }).click();
       await page
-        .getByRole("heading", { name: "Worker: Release notes for 0.9", exact: true })
+        .getByRole("heading", {
+          name: "Worker: Release notes for 0.9",
+          exact: true,
+        })
         .waitFor();
       await page.waitForTimeout(400);
     },
@@ -3076,7 +3185,10 @@ export const SHOTS: readonly Shot[] = [
         const mock = window.gramMock as unknown as {
           simulateRoutineState?: (workspaceId: string, id: string, state: unknown) => void;
           listWorkspaces: () => Promise<
-            ReadonlyArray<{ workspace: { id: string }; charter: Record<string, unknown> }>
+            ReadonlyArray<{
+              workspace: { id: string };
+              charter: Record<string, unknown>;
+            }>
           >;
           setOrchestratorCharter: (id: string, charter: unknown) => Promise<unknown>;
         };
@@ -3123,7 +3235,11 @@ export const SHOTS: readonly Shot[] = [
           mock.simulateRoutineState(made.workspaceId, "routine-ci", {
             nextRunAt: at("09:00", 1),
             scheduleKey: JSON.stringify({ every: "weekday", at: "09:00" }),
-            lastRun: { at: at("09:00"), outcome: "started", threadId: made.working },
+            lastRun: {
+              at: at("09:00"),
+              outcome: "started",
+              threadId: made.working,
+            },
             lastWorker: made.working,
           });
           mock.simulateRoutineState(made.workspaceId, "routine-deps", {
@@ -3159,7 +3275,10 @@ export const SHOTS: readonly Shot[] = [
         const mock = window.gramMock as unknown as {
           simulateRoutineWorker?: (threadId: string, routine: { id: string; name: string }) => void;
         };
-        mock.simulateRoutineWorker?.(made.briefed, { id: "routine-ci", name: "Daily CI triage" });
+        mock.simulateRoutineWorker?.(made.briefed, {
+          id: "routine-ci",
+          name: "Daily CI triage",
+        });
         sessionStorage.setItem("gram.shots.worker", made.briefed);
         return made;
       });
@@ -3221,7 +3340,10 @@ export const SHOTS: readonly Shot[] = [
                 message: undefined,
               });
             };
-            Object.defineProperty(window, "gramMock", { configurable: true, value: mock });
+            Object.defineProperty(window, "gramMock", {
+              configurable: true,
+              value: mock,
+            });
           },
         });
       });
@@ -3331,7 +3453,10 @@ export const SHOTS: readonly Shot[] = [
       await page.addInitScript(() => {
         localStorage.setItem(
           "gram.theme",
-          JSON.stringify({ state: { palette: "neutral-dark", mode: "light" }, version: 1 }),
+          JSON.stringify({
+            state: { palette: "neutral-dark", mode: "light" },
+            version: 1,
+          }),
         );
       });
       // The inline boot script and the stylesheets alone: the app itself is held back, so nothing
@@ -3665,9 +3790,24 @@ export const SHOTS: readonly Shot[] = [
           "gram.mock.launchChecks",
           JSON.stringify({
             tools: [
-              { tool: "claude", found: true, path: "/mock/bin/claude", version: "2.1.273" },
-              { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.159.2" },
-              { tool: "git", found: true, path: "/mock/bin/git", version: "2.47.1" },
+              {
+                tool: "claude",
+                found: true,
+                path: "/mock/bin/claude",
+                version: "2.1.273",
+              },
+              {
+                tool: "codex",
+                found: true,
+                path: "/mock/bin/codex",
+                version: "0.159.2",
+              },
+              {
+                tool: "git",
+                found: true,
+                path: "/mock/bin/git",
+                version: "2.47.1",
+              },
               { tool: "gh", found: false },
             ],
             claudeSignIn: "notSignedIn",
@@ -4036,8 +4176,18 @@ export const SHOTS: readonly Shot[] = [
           "gram.mock.launchChecks",
           JSON.stringify({
             tools: [
-              { tool: "claude", found: true, path: "/mock/bin/claude", version: "2.1.296" },
-              { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.166.0" },
+              {
+                tool: "claude",
+                found: true,
+                path: "/mock/bin/claude",
+                version: "2.1.296",
+              },
+              {
+                tool: "codex",
+                found: true,
+                path: "/mock/bin/codex",
+                version: "0.166.0",
+              },
               { tool: "git", found: true },
               { tool: "gh", found: true },
             ],
@@ -4074,8 +4224,18 @@ export const SHOTS: readonly Shot[] = [
           "gram.mock.launchChecks",
           JSON.stringify({
             tools: [
-              { tool: "claude", found: true, path: "/mock/bin/claude", version: "2.1.296" },
-              { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.166.0" },
+              {
+                tool: "claude",
+                found: true,
+                path: "/mock/bin/claude",
+                version: "2.1.296",
+              },
+              {
+                tool: "codex",
+                found: true,
+                path: "/mock/bin/codex",
+                version: "0.166.0",
+              },
               { tool: "git", found: true },
               { tool: "gh", found: true },
             ],
@@ -4118,7 +4278,10 @@ export const SHOTS: readonly Shot[] = [
           .filter((id): id is string => id !== null);
         for (const id of workers.filter((_, index) => index % 2 === 1)) {
           const { thread } = mock.world.summary(id as never);
-          mock.world.replaceThread({ ...thread, model: { agent: "codex", model: "gpt-5-codex" } });
+          mock.world.replaceThread({
+            ...thread,
+            model: { agent: "codex", model: "gpt-5-codex" },
+          });
         }
       });
       await expect(page.getByTestId("overview-worker").first()).toHaveAttribute(
@@ -4183,7 +4346,9 @@ export const SHOTS: readonly Shot[] = [
     name: "sidebar-catppuccin",
     title: "The overview sidebar in Catppuccin (Latte light, Mocha dark)",
     open: async (page) => {
-      await seedMockSettings(page, { appearance: { paletteId: "catppuccin-latte" } });
+      await seedMockSettings(page, {
+        appearance: { paletteId: "catppuccin-latte" },
+      });
       await openSidebar(page);
     },
     element: (page) => page.getByTestId("overview-sidebar"),
@@ -4490,7 +4655,7 @@ export const SHOTS: readonly Shot[] = [
           "<h1>Hi</h1>",
         );
       });
-      await page.getByRole("button", { name: "Open REPORT.md" }).click();
+      await page.getByRole("button", { name: "Preview REPORT.md" }).click();
       await page.getByTestId("preview-markdown").getByRole("heading").first().waitFor();
     },
   },
@@ -4623,7 +4788,12 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       await seedMockSettings(page, {
         agents: {
-          defaultModel: { agent: "claude", model: "fixture-fast", variant: "high", speed: "fast" },
+          defaultModel: {
+            agent: "claude",
+            model: "fixture-fast",
+            variant: "high",
+            speed: "fast",
+          },
           defaultMode: "bypassPermissions",
         },
       });
@@ -4673,7 +4843,9 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       await seedNativeUpdate(page, {});
       await page.addInitScript(() => {
-        Object.assign(window.gram ?? {}, { openAcknowledgements: async () => true });
+        Object.assign(window.gram ?? {}, {
+          openAcknowledgements: async () => true,
+        });
       });
       await page.setViewportSize({ width: 1180, height: 700 });
       await page.goto("/settings/help");
@@ -4693,7 +4865,9 @@ export const SHOTS: readonly Shot[] = [
     title: "Settings → Appearance → Reading: transcript text size and width over a live sample",
     open: async (page) => {
       await page.setViewportSize({ width: 1440, height: 2400 });
-      await seedMockSettings(page, { reading: { textSize: 16, width: "wide" } });
+      await seedMockSettings(page, {
+        reading: { textSize: 16, width: "wide" },
+      });
       await page.goto("/settings/appearance");
       await page.getByRole("heading", { name: "Fonts", exact: true }).waitFor();
     },
@@ -4703,7 +4877,9 @@ export const SHOTS: readonly Shot[] = [
     name: "thread-reading-small-narrow",
     title: "A thread with the transcript at 13px in the Narrow column",
     open: async (page) => {
-      await seedMockSettings(page, { reading: { textSize: 13, width: "narrow" } });
+      await seedMockSettings(page, {
+        reading: { textSize: 13, width: "narrow" },
+      });
       await openThread(page);
     },
   },
@@ -4711,7 +4887,9 @@ export const SHOTS: readonly Shot[] = [
     name: "thread-reading-large-wide",
     title: "A thread with the transcript at 18px in the Wide column",
     open: async (page) => {
-      await seedMockSettings(page, { reading: { textSize: 18, width: "wide" } });
+      await seedMockSettings(page, {
+        reading: { textSize: 18, width: "wide" },
+      });
       await openThread(page);
     },
   },
@@ -4885,9 +5063,24 @@ export const SHOTS: readonly Shot[] = [
           "gram.mock.launchChecks",
           JSON.stringify({
             tools: [
-              { tool: "claude", found: true, path: "/mock/bin/claude", version: "2.1.273" },
-              { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.159.2" },
-              { tool: "git", found: true, path: "/mock/bin/git", version: "2.47.1" },
+              {
+                tool: "claude",
+                found: true,
+                path: "/mock/bin/claude",
+                version: "2.1.273",
+              },
+              {
+                tool: "codex",
+                found: true,
+                path: "/mock/bin/codex",
+                version: "0.159.2",
+              },
+              {
+                tool: "git",
+                found: true,
+                path: "/mock/bin/git",
+                version: "2.47.1",
+              },
               { tool: "gh", found: false },
             ],
             ghSignedIn: false,
@@ -5382,7 +5575,10 @@ export const SHOTS: readonly Shot[] = [
           titles.forEach((title, i) =>
             window.gramMock!.simulatePublishDoc(
               thread as never,
-              { title, content: `# ${title}\n\nWhat was checked, and what is left.` } as never,
+              {
+                title,
+                content: `# ${title}\n\nWhat was checked, and what is left.`,
+              } as never,
               Date.now() - (titles.length - i) * 9 * minute,
             ),
           );
@@ -5508,7 +5704,11 @@ export const SHOTS: readonly Shot[] = [
         window.gramMock!.simulateChunks(id as never, "shot-live" as never, [
           { type: "start", messageId: "shot-live" },
           { type: "text-start", id: "shot-live-text" },
-          { type: "text-delta", id: "shot-live-text", delta: "40 of 52 pass so far." },
+          {
+            type: "text-delta",
+            id: "shot-live-text",
+            delta: "40 of 52 pass so far.",
+          },
         ]);
       }, made.live);
       await expect(page.getByTestId("worker-catch-up")).toHaveAttribute("data-source", "helper");
@@ -5656,7 +5856,9 @@ export const SHOTS: readonly Shot[] = [
         });
         const thread = await mock.startTask({
           target: { workspaceId: state.workspace.id },
-          input: { text: "Add paging to the registry list in web. Wait for the API first." },
+          input: {
+            text: "Add paging to the registry list in web. Wait for the API first.",
+          },
         });
         return { orchestratorThreadId: thread.id };
       });
@@ -5789,7 +5991,9 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       await page.setViewportSize({ width: 1024, height: 860 });
       await page.goto("/t/t-flaky");
-      const handle = page.getByRole("separator", { name: "Resize right panel" });
+      const handle = page.getByRole("separator", {
+        name: "Resize right panel",
+      });
       await handle.waitFor();
       const box = (await handle.boundingBox())!;
       const x = box.x + box.width / 2;

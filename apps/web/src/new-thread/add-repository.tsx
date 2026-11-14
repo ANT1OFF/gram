@@ -8,8 +8,8 @@ import {
   remoteLabel,
   type Project,
 } from "@gram/contracts";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookMarked, Folder, FolderCheck, FolderGit2, TriangleAlert } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { BookMarked, Folder, FolderCheck, FolderGit2, Lock, TriangleAlert } from "lucide-react";
 import {
   useEffect,
   useId,
@@ -30,9 +30,8 @@ import { useServerSettings } from "@/settings-sync/store";
 import { ChooseFolderButton } from "./choose-folder-button";
 import { GitBadge } from "./git-badge";
 import { splitForCompletion, tildify } from "./path";
+import { useRepoSuggestions } from "./repository-suggestions";
 import { useCompletions, useFolderStatus, useHome, type FolderStatus } from "./use-folder";
-
-const SUGGESTION_LIMIT = 8;
 
 /**
  * The field owns open state (focus, blur, Escape, Enter). A portaled popup also dismisses on
@@ -62,7 +61,12 @@ export const readRepositoryInput = (text: string): RepositoryInput => {
   const remote = parseRepoRemote(trimmed);
   return "error" in remote
     ? { kind: "invalid", message: remote.error }
-    : { kind: "clone", remote: trimmed, label: remoteLabel(remote), repo: remote.repo };
+    : {
+        kind: "clone",
+        remote: trimmed,
+        label: remoteLabel(remote),
+        repo: remote.repo,
+      };
 };
 
 /**
@@ -88,29 +92,14 @@ export const typedFolder = (status: FolderStatus): TypedFolder | undefined => {
       };
 };
 
-/** Suggested `owner/repo` names containing `text`, prefix matches first. */
-const matchRepos = (repos: readonly string[], text: string): string[] => {
-  const q = text.trim().toLowerCase();
-  if (q === "") return repos.slice(0, SUGGESTION_LIMIT);
-  const scored = repos.flatMap((repo) => {
-    const name = repo.toLowerCase();
-    if (name === q) return [];
-    const short = name.slice(name.indexOf("/") + 1);
-    const score = name.startsWith(q) || short.startsWith(q) ? 0 : name.includes(q) ? 1 : -1;
-    return score === -1 ? [] : [{ repo, score }];
-  });
-  return scored
-    .toSorted((a, b) => a.score - b.score)
-    .slice(0, SUGGESTION_LIMIT)
-    .map((s) => s.repo);
-};
-
 interface Suggestion {
   readonly key: string;
   readonly label: string;
   readonly kind: "repo" | "folder" | "gitFolder";
   /** The field's text once taken; a folder keeps the list open for the next level. */
   readonly value: string;
+  /** The owner a repository is listed under. */
+  readonly group?: string;
 }
 
 const cloneHint = (folder: string, repo: string) =>
@@ -277,7 +266,6 @@ export function AddRepository({
   disabled,
   onPendingChange,
 }: AddRepositoryProps) {
-  const api = useApi();
   const listId = useId();
   const hintId = useId();
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -297,14 +285,7 @@ export function AddRepository({
   useEffect(() => onPendingChange?.(pending !== undefined), [pending, onPendingChange]);
   const busy = pending !== undefined || disabled === true;
 
-  // Asked for on mount, not on focus: a large organisation's first list takes seconds, and the
-  // new-workspace sheet mounts this before its repository list is opened.
-  const { data: suggested, isPending: suggesting } = useQuery({
-    queryKey: ["clone-suggestions"],
-    queryFn: () => api.cloneSuggestions(),
-    staleTime: 10 * 60_000,
-    retry: false,
-  });
+  const repos = useRepoSuggestions(text, open && !busy && input.kind !== "folder");
   const folders = useCompletions(text, open && input.kind === "folder");
   const { dir } = splitForCompletion(text);
   const suggestions: Suggestion[] =
@@ -315,13 +296,17 @@ export function AddRepository({
           kind: entry.isGitRepo ? "gitFolder" : "folder",
           value: `${dir}${entry.name}/`,
         }))
-      : matchRepos(suggested?.repos ?? [], text).map((repo) => ({
-          key: repo,
-          label: repo,
-          kind: "repo",
-          value: repo,
-        }));
-  const showList = open && !busy && suggestions.length > 0;
+      : repos.groups.flatMap((group) =>
+          group.repos.map((repo) => ({
+            key: repo,
+            label: repo.slice(group.owner.length + 1),
+            kind: "repo" as const,
+            value: repo,
+            group: group.owner,
+          })),
+        );
+  const notice = input.kind === "folder" ? undefined : repos.notice;
+  const showList = open && !busy && (suggestions.length > 0 || notice !== undefined);
 
   const submit = (): Promise<boolean> | undefined => {
     if (input.kind === "empty") return;
@@ -353,6 +338,7 @@ export function AddRepository({
         event.preventDefault();
         setOpen(true);
         const step = event.key === "ArrowDown" ? 1 : -1;
+        if (step === 1 && active >= suggestions.length - 2) repos.more?.();
         setActive((i) => (i + step + suggestions.length) % suggestions.length);
         return;
       }
@@ -373,7 +359,7 @@ export function AddRepository({
     }
   };
 
-  const loadingRepos = open && suggesting && input.kind !== "folder";
+  const loadingRepos = open && repos.loading && input.kind !== "folder";
   const hint =
     input.kind === "clone" && cloneFolder !== undefined
       ? cloneHint(cloneFolder, input.repo)
@@ -435,6 +421,12 @@ export function AddRepository({
                       input.kind === "folder" ? "Folder suggestions" : "Repository suggestions"
                     }
                     onMouseDown={(event) => event.preventDefault()}
+                    // Near the end of what is listed, the next page is asked for.
+                    onScroll={(event) => {
+                      const list = event.currentTarget;
+                      if (list.scrollTop + list.clientHeight >= list.scrollHeight - 32)
+                        repos.more?.();
+                    }}
                     className="max-h-[min(16rem,var(--available-height))] overflow-y-auto overscroll-contain rounded-lg border border-edge bg-popover p-1 text-popover-foreground shadow-overlay"
                   >
                     {suggestions.map((suggestion, i) => {
@@ -444,17 +436,33 @@ export function AddRepository({
                           : suggestion.kind === "gitFolder"
                             ? FolderGit2
                             : Folder;
-                      return (
+                      const heading =
+                        suggestion.group !== undefined &&
+                        suggestion.group !== suggestions[i - 1]?.group;
+                      return [
+                        heading && (
+                          <li
+                            key={`owner:${suggestion.group}`}
+                            role="presentation"
+                            className="truncate px-2 pt-1.5 pb-0.5 text-meta text-muted-foreground first:pt-0.5"
+                          >
+                            {suggestion.group}
+                          </li>
+                        ),
                         <li
                           key={suggestion.key}
                           id={`${listId}-${i}`}
                           role="option"
                           aria-selected={i === active}
+                          aria-label={suggestion.kind === "repo" ? suggestion.value : undefined}
                           onMouseDown={(event) => {
                             event.preventDefault();
                             accept(suggestion);
                           }}
-                          onMouseEnter={() => setActive(i)}
+                          onMouseEnter={() => {
+                            setActive(i);
+                            if (i === suggestions.length - 1) repos.more?.();
+                          }}
                           className="flex h-7 cursor-default items-center gap-2 rounded-md px-2 aria-selected:bg-accent"
                         >
                           <Icon
@@ -464,9 +472,36 @@ export function AddRepository({
                           <span className="min-w-0 flex-1 truncate font-mono text-meta">
                             {suggestion.label}
                           </span>
-                        </li>
-                      );
+                          {suggestion.kind === "repo" && repos.private.has(suggestion.value) && (
+                            <Lock
+                              aria-label="Private"
+                              className="size-icon-row shrink-0 text-muted-foreground"
+                            />
+                          )}
+                        </li>,
+                      ];
                     })}
+                    {notice !== undefined && (
+                      <li
+                        role="presentation"
+                        className="px-2 pt-1.5 pb-1 text-meta text-muted-foreground"
+                      >
+                        {notice.text}
+                        {notice.link !== undefined && (
+                          <>
+                            {" "}
+                            <a
+                              href={notice.link.href}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-link underline-offset-2 hover:underline"
+                            >
+                              {notice.link.label}
+                            </a>
+                          </>
+                        )}
+                      </li>
+                    )}
                   </ul>
                 </Popover.Popup>
               </Popover.Positioner>

@@ -101,7 +101,9 @@ describe("resubscribing", () => {
     const states = new Set<string>();
     monitor.subscribe(() => states.add(monitor.get().status));
     const consume = (async () => {
-      for await (const value of resubscribing(open, monitor, abort.signal, { baseMs: 1 })) {
+      for await (const value of resubscribing(open, monitor, abort.signal, {
+        baseMs: 1,
+      })) {
         seen.push(value);
         if (seen.length === 3) abort.abort();
       }
@@ -138,7 +140,9 @@ describe("resubscribing", () => {
 
     const seen: number[] = [];
     const consume = (async () => {
-      for await (const value of resubscribing(open, monitor, abort.signal, { baseMs: 60_000 })) {
+      for await (const value of resubscribing(open, monitor, abort.signal, {
+        baseMs: 60_000,
+      })) {
         seen.push(value);
       }
     })();
@@ -263,13 +267,32 @@ class StallSocket implements Socket.WebSocketLike {
     if (frame._tag === "Request") {
       this.requests++;
       this.emit("message", {
-        data: JSON.stringify({ _tag: "Chunk", requestId: frame.id, values: [String(this.number)] }),
+        data: JSON.stringify({
+          _tag: "Chunk",
+          requestId: frame.id,
+          values: [String(this.number)],
+        }),
       });
     }
   }
 }
 
-async function stalledServer(feeds = 1, wake?: WakeSource) {
+/** A page whose visibility a test sets, as a browser tab's `document`. */
+class FakePage extends EventTarget {
+  visibilityState: DocumentVisibilityState;
+
+  constructor(state: DocumentVisibilityState) {
+    super();
+    this.visibilityState = state;
+  }
+
+  show(state: DocumentVisibilityState) {
+    this.visibilityState = state;
+    this.dispatchEvent(new Event("visibilitychange"));
+  }
+}
+
+async function stalledServer(feeds = 1, page?: FakePage, wake?: WakeSource) {
   let answering = true;
   const sockets: StallSocket[] = [];
   const connection = createConnectionMonitor();
@@ -286,7 +309,7 @@ async function stalledServer(feeds = 1, wake?: WakeSource) {
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   const scope = await Effect.runPromise(Scope.make());
   const context = await Effect.runPromise(
-    Layer.buildWithScope(rpcProtocolLayer(socket, connection, wake), scope),
+    Layer.buildWithScope(rpcProtocolLayer(socket, connection, wake, page), scope),
   );
   const client = await Effect.runPromise(
     RpcClient.make(Events).pipe(
@@ -405,6 +428,66 @@ describe("RPC transport recovery", () => {
     }
   });
 
+  it("keeps a hidden tab's socket open while its timers run a minute late", async () => {
+    vi.useFakeTimers();
+    const page = new FakePage("hidden");
+    const server = await stalledServer(1, page);
+    try {
+      const states: string[] = [];
+      server.connection.subscribe(() => states.push(server.connection.get().status));
+      // A browser runs a hidden tab's chained timers once a minute: each Pong is handled at the
+      // next wake-up, long after the 5 s a shown tab allows.
+      server.sockets[0]!.pongDelayMs = 60_000;
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(server.sockets).toHaveLength(1);
+      expect(server.sockets[0]!.readyState).toBe(1);
+      expect(states).toEqual([]);
+      expect(server.drops()).toEqual([]);
+    } finally {
+      await server.close();
+      vi.useRealTimers();
+    }
+    expect(getEventListeners(page, "visibilitychange")).toHaveLength(0);
+  });
+
+  it("reports a server that went silent while hidden within 10 s of the tab being shown", async () => {
+    vi.useFakeTimers();
+    const page = new FakePage("hidden");
+    const server = await stalledServer(1, page);
+    try {
+      server.stall();
+      await vi.advanceTimersByTimeAsync(2 * 60_000);
+      expect(server.connection.get().status).toBe("open");
+      expect(server.drops()).toEqual([]);
+      page.show("visible");
+      await vi.advanceTimersByTimeAsync(10_010);
+      expect(server.connection.get().status).toBe("reconnecting");
+      server.resume();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(server.connection.get().status).toBe("open");
+      expect(server.seen.at(-1)).toBe("2");
+      expect(new Set(server.drops())).toEqual(new Set(["SocketReadError"]));
+    } finally {
+      await server.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports a silent server within 10 s on a shown page, as without one", async () => {
+    vi.useFakeTimers();
+    const server = await stalledServer(1, new FakePage("visible"));
+    try {
+      await vi.advanceTimersByTimeAsync(4998);
+      server.stall();
+      await vi.advanceTimersByTimeAsync(5010);
+      expect(server.connection.get().status).toBe("reconnecting");
+      expect(server.drops()).toEqual(["SocketReadError"]);
+    } finally {
+      await server.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("wakes every feed after repeated failures instead of inheriting either backoff", async () => {
     vi.useFakeTimers();
     const server = await stalledServer(2);
@@ -418,7 +501,10 @@ describe("RPC transport recovery", () => {
       server.sockets.at(-1)!.close(1006);
       // Failed upgrade handshakes take up to 10 s; feed retries meanwhile reach the 8 s step.
       await vi.advanceTimersByTimeAsync(12_000);
-      expect(server.connection.get()).toMatchObject({ status: "reconnecting", attempt: 5 });
+      expect(server.connection.get()).toMatchObject({
+        status: "reconnecting",
+        attempt: 5,
+      });
       server.resume();
       await vi.advanceTimersByTimeAsync(0);
       expect(server.seen).toHaveLength(11);
@@ -441,7 +527,7 @@ describe("RPC transport recovery", () => {
         back = undefined;
       };
     };
-    const server = await stalledServer(1, wake);
+    const server = await stalledServer(1, undefined, wake);
     try {
       server.stall();
       for (const delay of [50, 500, 500, 1000, 2000, 4000]) {

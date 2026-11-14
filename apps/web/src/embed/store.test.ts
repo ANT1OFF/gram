@@ -2,13 +2,21 @@ import { applySettingsPatch, DEFAULT_SETTINGS } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
 import {
+  foldable,
+  groupOpen,
+  hiddenCount,
   itemName,
   navigationAt,
+  currentDestination,
   navigationCurrent,
+  panelOffered,
   routeProblem,
   shellFor,
   shownCount,
   shownNavigation,
+  shownRows,
+  toolCardFor,
+  toolMatches,
 } from "./store";
 
 describe("what a mount takes of the embedding app's additions", () => {
@@ -63,6 +71,16 @@ describe("navigation groups", () => {
     expect(navigationCurrent("/usage", "/")).toBe(false);
   });
 
+  it("marks the row whose own path matches before one that only lists the path", () => {
+    const threads = { to: "/threads", alsoAt: ["/t", "/new"] };
+    const start = { to: "/new" };
+    expect(currentDestination("/t/th_1", [threads, start])).toBe("/threads");
+    expect(currentDestination("/new", [threads, start])).toBe("/new");
+    expect(currentDestination("/new", [threads])).toBe("/threads");
+    expect(currentDestination("/threads", [threads, start])).toBe("/threads");
+    expect(currentDestination("/usage", [threads, start])).toBeUndefined();
+  });
+
   it("leave out empty and repeated groups, and destinations that are no path", () => {
     expect(
       shownNavigation([
@@ -95,5 +113,89 @@ describe("navigation groups", () => {
   it("name a destination with its group's heading, where it has one", () => {
     expect(itemName({ id: "g", label: "Govern", items: [] }, "Policies")).toBe("Govern: Policies");
     expect(itemName({ id: "g", items: [] }, "Policies")).toBe("Policies");
+  });
+});
+
+describe("where the right panel is offered", () => {
+  const home = { threadInView: false, threadInRepo: false };
+  const chat = { threadInView: true, threadInRepo: false };
+  const code = { threadInView: true, threadInRepo: true };
+
+  it("is everywhere by default, as on Gram's own", () => {
+    for (const page of [home, chat, code]) expect(panelOffered("shown", page)).toBe(true);
+  });
+
+  it("is only a thread in a repository under `code`", () => {
+    expect(panelOffered("code", home)).toBe(false);
+    expect(panelOffered("code", chat)).toBe(false);
+    expect(panelOffered("code", code)).toBe(true);
+  });
+});
+
+const First = () => null;
+const Second = () => null;
+
+describe("an embedding app's tool cards", () => {
+  it("matches a tool by its name, or by a pattern where * is any run of characters", () => {
+    expect(toolMatches("Bash", "Bash")).toBe(true);
+    expect(toolMatches("Bash", "BashOutput")).toBe(false);
+    expect(toolMatches("mcp__*__create_order", "mcp__acme__create_order")).toBe(true);
+    expect(toolMatches("mcp__*__create_order", "mcp__acme__create_orders")).toBe(false);
+    expect(toolMatches("*create_order", "create_order")).toBe(true);
+    expect(toolMatches("mcp__acme__*", "mcp__acme__refund")).toBe(true);
+    expect(toolMatches("mcp__acme__*", "mcp__other__refund")).toBe(false);
+    expect(toolMatches("a*b*c", "a-b-c")).toBe(true);
+    expect(toolMatches("a*b*c", "a-c-b")).toBe(false);
+    // The two ends may not share characters.
+    expect(toolMatches("ab*ba", "aba")).toBe(false);
+  });
+
+  it("uses the first card that matches, and none where none does", () => {
+    const cards = [
+      { tool: "mcp__acme__create_order", component: First },
+      { tool: "mcp__acme__*", component: Second },
+    ];
+    expect(toolCardFor(cards, "mcp__acme__create_order")).toBe(First);
+    expect(toolCardFor(cards, "mcp__acme__refund")).toBe(Second);
+    expect(toolCardFor(cards, "Bash")).toBeUndefined();
+    expect(toolCardFor([], "Bash")).toBeUndefined();
+  });
+});
+
+describe("a collapsible navigation group", () => {
+  const items = [
+    { id: "connections", label: "Connections", to: "/connections", count: 2 },
+    { id: "servers", label: "MCP servers", to: "/mcp-servers" },
+    { id: "access", label: "Access", to: "/access", count: 1 },
+  ];
+  const govern = { id: "govern", label: "Govern", collapsible: true, collapsed: true, items };
+
+  it("folds only when asked and when it has a heading to fold under", () => {
+    expect(foldable(govern)).toBe(true);
+    expect(foldable({ id: "govern", label: "Govern", items })).toBe(false);
+    expect(foldable({ id: "govern", collapsible: true, items })).toBe(false);
+    expect(foldable({ ...govern, label: "  " })).toBe(false);
+  });
+
+  it("starts as the embedding app says, then as the person left it", () => {
+    expect(groupOpen(govern, undefined)).toBe(false);
+    expect(groupOpen({ id: "govern", label: "Govern", collapsible: true, items }, undefined)).toBe(
+      true,
+    );
+    expect(groupOpen(govern, true)).toBe(true);
+    expect(groupOpen({ ...govern, collapsed: false }, false)).toBe(false);
+    // A group that does not fold is always open, whatever was kept for its id.
+    expect(groupOpen({ ...govern, collapsible: false }, false)).toBe(true);
+  });
+
+  it("closed, keeps the row the window is at and counts what it hides", () => {
+    expect(shownRows(govern, true, "/access")).toEqual(items);
+    expect(shownRows(govern, false, undefined)).toEqual([]);
+    expect(shownRows(govern, false, "/access").map((row) => row.id)).toEqual(["access"]);
+    expect(hiddenCount(govern, false, undefined)).toBe(3);
+    expect(hiddenCount(govern, false, "/access")).toBe(2);
+    expect(hiddenCount(govern, false, "/connections")).toBe(1);
+    expect(hiddenCount(govern, true, undefined)).toBeUndefined();
+    expect(hiddenCount({ ...govern, items: [items[1]!] }, false, undefined)).toBeUndefined();
   });
 });

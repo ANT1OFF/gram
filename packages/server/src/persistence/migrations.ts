@@ -544,13 +544,54 @@ const actorEvents = Effect.gen(function* () {
 });
 
 /**
+ * Who each queued input was written for (`host/ownership.ts`): `"server"`, or `{ person? }` for a
+ * caller. A restart sends it as them, and only where they may still reach its thread. Null in
+ * rows from before, which are taken as a caller with no signed-in person.
+ */
+const queueActor = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE queue_items ADD COLUMN actor TEXT`;
+});
+
+/**
+ * Each person's own settings (`PERSONAL_SETTINGS` in the contracts), a row per person and setting,
+ * beside the settings everyone shares: `person` is who a fronting proxy named, or `local` for the
+ * one person of a server with no such sign-in (`embedding/person.ts`), `key` the setting's dotted
+ * path and `value` its JSON. The pane grid saved so far was the local person's, so it becomes
+ * theirs; the shared row keeps its copy, which nothing reads any more.
+ */
+const personSettings = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE TABLE person_settings (
+    person TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (person, key)
+  ) WITHOUT ROWID`;
+  yield* sql`INSERT INTO person_settings (person, key, value)
+    SELECT 'local', 'layout.grid', json_extract(value, '$.layout.grid') FROM settings
+    WHERE key = 'app' AND json_valid(value)
+      AND json_type(value, '$.layout.grid') = 'object'`;
+});
+
+/**
+ * Who a Waiting on you item waits on: the signed-in person it was added for, as the item's own
+ * `person` says, or NULL for anyone. Every item so far is for anyone, and so is every item of a
+ * server nobody signs in to.
+ */
+const waitPerson = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE wait_items ADD COLUMN person TEXT`;
+});
+
+/**
  * The user-role rows of a thread in seq order, without the replies between them: what
  * `userMessagePage` and a role-filtered `messagesWith` walk. A worker's few prompts sit among
  * thousands of replies, and an orchestrator's newest prompt is found without reading its history.
  */
 const userMessages = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  yield* sql`CREATE INDEX messages_thread_user ON messages(thread_id, seq) WHERE role = 'user'`;
+  yield* sql`CREATE INDEX IF NOT EXISTS messages_thread_user ON messages(thread_id, seq) WHERE role = 'user'`;
 });
 
 export const migrations = {
@@ -562,8 +603,23 @@ export const migrations = {
   "0006_message_parts": messageParts,
   "0007_hosts": hosts,
   "0008_actor_events": actorEvents,
-  "0009_user_messages": userMessages,
+  "0009_queue_actor": queueActor,
+  "0010_person_settings": personSettings,
+  "0011_wait_person": waitPerson,
+  "0012_user_messages": userMessages,
 };
+
+/**
+ * Migrations that shipped under another id on one line of releases and were renumbered when the
+ * lines met. A database that recorded one under its old id forgets that
+ * row and runs the migrations from there, the moved one included, so it must be safe to run again.
+ *
+ * - `user_messages` shipped as 0009 in 1.24.0, while the embedding branch had shipped its own
+ *   0009–0011; it is 0012 here, and its index is created only if it is missing.
+ */
+const MOVED: ReadonlyArray<{ readonly from: number; readonly name: string }> = [
+  { from: 9, name: "user_messages" },
+];
 
 /**
  * Validate in Effect's loader, inside its migration transaction and before it chooses pending ids.
@@ -604,8 +660,50 @@ export const migrationLoader = (
           }),
       ),
     );
-    const latest = applied.at(-1)?.migration_id ?? 0;
-    const names = new Map(applied.map((row) => [row.migration_id, row.name]));
+    const moved = applied.filter((row) =>
+      MOVED.some((each) => each.from === row.migration_id && each.name === row.name),
+    );
+    for (const row of moved) {
+      yield* sql`DELETE FROM ${sql(MIGRATIONS_TABLE)} WHERE migration_id = ${row.migration_id} AND name = ${row.name}`.pipe(
+        Effect.mapError(
+          (cause) =>
+            new SqliteMigrator.MigrationError({
+              kind: "BadState",
+              message: `Could not move migration ${row.migration_id}_${row.name}`,
+              cause,
+            }),
+        ),
+      );
+    }
+    const kept = applied.filter((row) => !moved.includes(row));
+    // The migrator read the newest id before this loader ran, and skips everything up to it: run
+    // and record here what lies between what is kept and that id.
+    const keptLatest = kept.at(-1)?.migration_id ?? 0;
+    const readLatest = applied.at(-1)?.migration_id ?? 0;
+    if (moved.length > 0) {
+      for (const [id, name, load] of resolved) {
+        if (id <= keptLatest || id > readLatest) continue;
+        yield* load.pipe(
+          Effect.flatMap(
+            (migration) => migration as Effect.Effect<unknown, unknown, SqlClient.SqlClient>,
+          ),
+          Effect.andThen(
+            sql`INSERT INTO ${sql(MIGRATIONS_TABLE)} (migration_id, name) VALUES (${id}, ${name})`,
+          ),
+          Effect.mapError(
+            (cause) =>
+              new SqliteMigrator.MigrationError({
+                kind: "Failed",
+                message: `Migration ${id}_${name} failed while moving an earlier one`,
+                cause,
+              }),
+          ),
+        );
+        kept.push({ migration_id: id, name });
+      }
+    }
+    const latest = kept.at(-1)?.migration_id ?? 0;
+    const names = new Map(kept.map((row) => [row.migration_id, row.name]));
     for (const [id, name] of resolved) {
       if (id > latest) continue;
       const recorded = names.get(id);

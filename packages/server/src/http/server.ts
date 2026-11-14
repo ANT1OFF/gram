@@ -2,12 +2,12 @@ import { join } from "node:path";
 import { KeptSessions } from "../runtime/kept-sessions.ts";
 import { answerAsk, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
 import { DecisionHook } from "../embedding/decision-hook.ts";
-import { EventSink } from "../embedding/event-sink.ts";
+import { type AnswerNote, EventSink } from "../embedding/event-sink.ts";
 import { UsageLimitPoller } from "../usage/limit-poller.ts";
 import { PlanKeeperLive } from "../plans/keeper.ts";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
-import { GramRpcs } from "@gram/contracts";
+import { GramRpcs, type RequestId } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Cause from "effect/Cause";
@@ -49,7 +49,7 @@ import { ThreadArchive, ThreadArchiverLive } from "../orchestration/archive.ts";
 import { DreamFiles } from "../orchestration/dream-files.ts";
 import { DreamsLive } from "../orchestration/dreams.ts";
 import { OrchestrationMemory } from "../orchestration/memory.ts";
-import { OrchestrationLive } from "../orchestration/service.ts";
+import { Orchestration, OrchestrationLive } from "../orchestration/service.ts";
 import { RoutineEventSourcesLive } from "../routines/events.ts";
 import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
@@ -59,6 +59,12 @@ import { LOOPBACK_HOST, ServerConfig } from "../config.ts";
 import { Embedding } from "../embedding/embedding.ts";
 import { EmbedInbound, EMBED_PREFIX } from "../embedding/inbound.ts";
 import { RepoEventsInboundLive } from "../embedding/repo-events.ts";
+import {
+  OnDemand,
+  OnDemandLive,
+  ON_DEMAND_PATHS,
+  onDemandRequest,
+} from "../embedding/on-demand.ts";
 import { ThreadNotesInboundLive } from "../embedding/thread-notes.ts";
 import { ObjectStoreLive } from "../embedding/object-store.ts";
 import { TimersLive } from "../embedding/timers.ts";
@@ -106,6 +112,7 @@ import { agentHostsOrHeadless, withHeadlessCheck } from "../host/headless.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
+import { mayReachThread, ownersOf } from "../host/ownership.ts";
 import { compressedStatic } from "./compressed-static.ts";
 import { markLocalApp, unmarkLocalApp } from "./local-app.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
@@ -145,7 +152,9 @@ import { closedOnRevoke, REMOTE_MANAGEMENT_PATHS, remoteManagement } from "./rem
 import { RemoteControl } from "./remote-control.ts";
 import { WORKSPACE_TRANSFER_PATHS, WorkspaceTransferRoutes } from "../transfer/routes.ts";
 import {
+  PROFILE_MOVE_PATH,
   PROFILE_START_PATH,
+  PROFILE_WAIT_PATH,
   PROFILE_START_RECORD,
   ProfileStartRoutes,
 } from "../thread-profiles/routes.ts";
@@ -195,6 +204,8 @@ export const SERVICE_PATHS: ReadonlySet<string> = new Set([
   ...HOST_STOP_PATHS,
   ...WORKSPACE_TRANSFER_PATHS,
   PROFILE_START_PATH,
+  PROFILE_MOVE_PATH,
+  PROFILE_WAIT_PATH,
 ]);
 
 /** What a service call's answer adds to its record: the thread a profile start made or found. */
@@ -202,9 +213,12 @@ const recordOf = (response: HttpServerResponse.HttpServerResponse): Record<strin
   const thread = response.headers[PROFILE_START_RECORD.thread];
   if (thread === undefined) return {};
   const host = response.headers[PROFILE_START_RECORD.host];
+  const moved = response.headers[PROFILE_START_RECORD.moved];
   return {
     threadId: thread,
-    created: response.headers[PROFILE_START_RECORD.created] === "true",
+    ...(moved === undefined
+      ? { created: response.headers[PROFILE_START_RECORD.created] === "true" }
+      : { moved: moved === "true" }),
     ...(host === undefined ? {} : { hostId: host }),
   };
 };
@@ -246,6 +260,8 @@ export const AuthMiddleware = HttpRouter.middleware(
     const store = Option.getOrUndefined(yield* Effect.serviceOption(ThreadStore));
     // Absent in tests that serve the middleware alone.
     const embedInbound = Option.getOrUndefined(yield* Effect.serviceOption(EmbedInbound));
+    // Hosts provisioned on demand for one person each, when the deployment provides them.
+    const onDemand = Option.getOrUndefined(yield* Effect.serviceOption(OnDemand));
     /**
      * Whether provisioned hosts are on: one of the hosted features, read at each dial and each
      * registration so the switch holds at once.
@@ -269,6 +285,8 @@ export const AuthMiddleware = HttpRouter.middleware(
       );
     // Stopping a joined machine and resuming its threads: a hosted feature, local app only.
     const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
+    const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
+    const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
     const stopDeps =
       remoteHosts === undefined || store === undefined || runtimes === undefined
         ? undefined
@@ -449,11 +467,71 @@ export const AuthMiddleware = HttpRouter.middleware(
             );
             return secureResponse(answered);
           }
+          // A person's own machine, started on demand: what the proxy signed for the request is
+          // the provider's proof that this person asked.
+          if (
+            ON_DEMAND_PATHS.has(target.path) &&
+            onDemand !== undefined &&
+            remoteHosts !== undefined
+          )
+            return secureResponse(
+              yield* onDemandRequest(
+                onDemand,
+                () => remoteHosts.list(),
+                request,
+                target.path,
+                stated.actor,
+                request.headers[IDENTITY_HEADER] ?? "",
+              ),
+            );
           // An answer to a card, as its own request: what the proxy signed for it goes with it.
           if (target.path === ASK_ANSWER_PATH && runtimes !== undefined && store !== undefined)
             return secureResponse(
               yield* answerAsk(
-                { runtimes, store },
+                {
+                  runtimes,
+                  store,
+                  ...(eventSink === undefined
+                    ? {}
+                    : {
+                        noteAnswer: (askId: string, note: AnswerNote | undefined) =>
+                          eventSink.noteAnswer(askId as RequestId, note),
+                      }),
+                  ...(orchestration === undefined
+                    ? {}
+                    : {
+                        workerQuestions: {
+                          find: (workspaceId, questionId) =>
+                            orchestration.ledger(workspaceId).pipe(
+                              Effect.map((ledger) =>
+                                (ledger.questions ?? []).find(
+                                  (question) => question.id === questionId,
+                                ),
+                              ),
+                              Effect.orElseSucceed(() => undefined),
+                            ),
+                          answer: orchestration.answerQuestionAsUser,
+                          mayReach: (workspaceId, threadId) =>
+                            Effect.gen(function* () {
+                              const ownerOf = ownersOf(remoteHosts?.machines);
+                              const state = yield* store
+                                .getWorkspace(workspaceId)
+                                .pipe(Effect.option);
+                              const holder =
+                                state._tag === "Some"
+                                  ? state.value.workspace.orchestratorThreadId
+                                  : undefined;
+                              for (const id of holder === undefined
+                                ? [threadId]
+                                : [threadId, holder]) {
+                                if (!(yield* mayReachThread(store.getThread, ownerOf, id)))
+                                  return false;
+                              }
+                              return true;
+                            }),
+                        },
+                      }),
+                },
                 request,
                 stated.actor,
                 request.headers[IDENTITY_HEADER] ?? "",
@@ -469,6 +547,8 @@ export const AuthMiddleware = HttpRouter.middleware(
             HOST_STOP_PATHS.has(target.path) ||
             WORKSPACE_TRANSFER_PATHS.has(target.path) ||
             target.path === PROFILE_START_PATH ||
+            target.path === PROFILE_MOVE_PATH ||
+            target.path === PROFILE_WAIT_PATH ||
             HOST_PATHS.has(target.path) ||
             target.path === MCP_PATH ||
             target.path === HOST_MCP_PATH
@@ -809,6 +889,7 @@ export const ServerCore = Layer.unwrap(
         DevServerAppToolsLive,
         ThreadAssistLive,
         RepoEventsInboundLive,
+        OnDemandLive,
         ThreadNotesInboundLive,
         SuppliedSettingsLive,
       )

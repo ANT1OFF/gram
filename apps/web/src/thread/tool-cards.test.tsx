@@ -3,6 +3,8 @@ import type { SubagentUsageData, GramUIMessage } from "@gram/contracts";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { EMPTY_SHELL, useEmbedShell } from "@/embed/store";
+
 import {
   OrchestratorStreamProvider,
   type OrchestratorStream,
@@ -448,5 +450,46 @@ describe("Gram's own events in the orchestrator's chat", () => {
   it("keeps the card outside the orchestrator's chat", () => {
     inChat(part("mcp__gram__spawn_worker", "output-available", { output: {} }), false);
     expect(screen.getByTestId("tool-card").dataset["quiet"]).toBeUndefined();
+  });
+});
+
+const made = (state: "input-available" | "output-available") =>
+  ({
+    type: "dynamic-tool",
+    toolName: "mcp__acme__create_order",
+    toolCallId: "order1",
+    state,
+    input: { item: "Lamp" },
+    ...(state === "output-available"
+      ? { output: [{ type: "text", text: JSON.stringify({ id: "ord_7", item: "Lamp" }) }] }
+      : {}),
+  }) as unknown as AnyToolPart;
+const Order = ({ name, input, output }: { name: string; input: unknown; output: unknown }) => (
+  <p>
+    {name} made {(output as { id: string }).id} of {(input as { item: string }).item}
+  </p>
+);
+
+describe("an embedding app's card under its own tool's call", () => {
+  afterEach(() => useEmbedShell.setState(EMPTY_SHELL));
+
+  it("is drawn under Gram's row once the call has answered, with the answer parsed", () => {
+    useEmbedShell.setState({ toolCards: [{ tool: "mcp__*__create_order", component: Order }] });
+    const waiting = card(new Set(), { part: made("input-available"), messages: [] });
+    expect(screen.queryByTestId("host-tool-card")).toBeNull();
+    waiting.unmount();
+    card(new Set(), { part: made("output-available"), messages: [] });
+    expect(screen.getByTestId("host-tool-card").textContent).toBe(
+      "mcp__acme__create_order made ord_7 of Lamp",
+    );
+  });
+
+  it("is not drawn on Gram's own, or for a tool no card is for", () => {
+    card(new Set(), { part: made("output-available"), messages: [] });
+    expect(screen.queryByTestId("host-tool-card")).toBeNull();
+    cleanup();
+    useEmbedShell.setState({ toolCards: [{ tool: "mcp__acme__refund", component: Order }] });
+    card(new Set(), { part: made("output-available"), messages: [] });
+    expect(screen.queryByTestId("host-tool-card")).toBeNull();
   });
 });

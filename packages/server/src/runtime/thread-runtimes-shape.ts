@@ -81,6 +81,12 @@ export interface CreateThreadInput {
    * `thread.createFromProfile` gives one.
    */
   readonly profile?: NonNullable<Thread["profile"]>;
+  /**
+   * The thread waits for a machine to be named for it (`Thread.awaitingMachine`): no session opens
+   * and its `input` waits in the queue until `relocate` places it. Server-only: only a start from
+   * a profile gives one.
+   */
+  readonly awaitingMachine?: NonNullable<Thread["awaitingMachine"]>;
   /** Worktrees in other repos the thread holds beside `checkout` (`Thread.extraCheckouts`). */
   readonly extraCheckouts?: ReadonlyArray<Checkout>;
   /** Given the user's browser at spawn (`Thread.browser`); its session policy still decides. */
@@ -504,6 +510,31 @@ export interface ThreadRuntimesShape {
    * work, waits on the user, is starting or has something waiting to go, which is left as it is.
    */
   restSession(threadId: ThreadId): Effect.Effect<"rested" | "none" | "working">;
+  /**
+   * Places the thread on the checkout `prepare` makes, its old placement being `from`, with
+   * nothing of it running on the old one: claimed under the thread's lock first, so no send,
+   * delivery, turn or session starts until it lets go (a send meanwhile is refused); then any
+   * session stops, an idle one or one only opening for a message (which goes back to the queue);
+   * then `prepare` runs; then, under the lock again, the checkout changes only if nothing started
+   * meanwhile and the thread is still at `from`. Refused for a thread at work, closing or claimed
+   * already. Once it lets go, deliveries and the queue go on, where the thread is placed now.
+   *
+   * A thread waiting for its machine (`Thread.awaitingMachine`) is placed for the first time this
+   * way: the wait ends as the checkout is written, in one write, and what waited in its queue is
+   * sent from the placement it now has.
+   */
+  relocate<E>(
+    threadId: ThreadId,
+    plan: {
+      readonly from: Checkout;
+      readonly prepare: Effect.Effect<Checkout, E>;
+      /**
+       * The old placement is gone for good: a thread at work there is not refused, and its turn
+       * ends as interrupted when its session stops.
+       */
+      readonly endWork?: boolean;
+    },
+  ): Effect.Effect<Thread, ThreadNotFound | InvalidState | E>;
   /**
    * Opens a cold or evicted thread's agent session with no turn and no prompt, by the path creating
    * a thread takes, so what the session reports can be shown: the Connectors tab asks when it is

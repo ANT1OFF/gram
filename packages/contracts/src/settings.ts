@@ -1299,6 +1299,58 @@ export const applySettingsPatch = (settings: Settings, patch: SettingsPatch): Se
   return next as Settings;
 };
 
+/**
+ * The settings that are a person's own view of the app, each named by its path (a section and a
+ * field). The server keeps one value of each per person, beside the settings everyone shares: a
+ * person reads the shared settings with their own laid over them, and a change to one of these is
+ * written for that person alone. Without sign-in through a proxy there is one person, so nothing
+ * differs. A setting the server itself acts on is never one of these.
+ */
+export const PERSONAL_SETTINGS: ReadonlyArray<readonly [section: string, field: string]> = [
+  // The pane grid and which pane has the focus.
+  ["layout", "grid"],
+];
+
+/** The name a personal setting's value is kept under: its path, dotted. */
+export const personalSettingKey = (path: ReadonlyArray<string>): string => path.join(".");
+
+/** Whether `path`, as `settingsPatchPaths` gives it, is one of `PERSONAL_SETTINGS`. */
+export const isPersonalSetting = (path: ReadonlyArray<string>): boolean =>
+  PERSONAL_SETTINGS.some(
+    (personal) => personal.length === path.length && personal.every((key, at) => key === path[at]),
+  );
+
+/** `patch` as its two parts: what it sets of a person's own view, and what it sets for everyone. */
+export const splitSettingsPatch = (
+  patch: SettingsPatch,
+): { readonly personal: SettingsPatch; readonly shared: SettingsPatch } => {
+  const personal: Record<string, Record<string, unknown>> = {};
+  const shared: Record<string, unknown> = { ...patch };
+  for (const [section, field] of PERSONAL_SETTINGS) {
+    const given = shared[section];
+    if (typeof given !== "object" || given === null || Array.isArray(given) || !(field in given))
+      continue;
+    const { [field]: value, ...rest } = given as Record<string, unknown>;
+    (personal[section] ??= {})[field] = value;
+    if (Object.keys(rest).length === 0) delete shared[section];
+    else shared[section] = rest;
+  }
+  return { personal: personal as SettingsPatch, shared: shared as SettingsPatch };
+};
+
+/** `settings` with every personal setting absent: what is shared, before a person's own is laid over. */
+export const withoutPersonalSettings = (settings: Settings): Settings => {
+  const next: Record<string, unknown> = { ...settings };
+  for (const [section, field] of PERSONAL_SETTINGS) {
+    const held = next[section];
+    if (typeof held !== "object" || held === null || !(field in held)) continue;
+    const { [field]: _dropped, ...rest } = held as Record<string, unknown>;
+    void _dropped;
+    next[section] = rest;
+  }
+  return next as Settings;
+};
+
 export const DEFAULT_SETTINGS: Settings = Schema.decodeSync(Settings)({
   appearance: {
     look: "glass",

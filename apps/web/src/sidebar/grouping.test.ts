@@ -10,7 +10,7 @@ import {
 } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { livesInTree, nextNeedsYou, sectionOf, splitForTree } from "./grouping";
+import { livesInTree, needsYou, nextNeedsYou, sectionOf, splitForTree } from "./grouping";
 import { selectListed } from "./listed";
 
 const summary = (
@@ -45,6 +45,17 @@ describe("sectionOf", () => {
     expect(sectionOf(summary("a", "error"))).toBe("needsYou");
     expect(sectionOf(summary("a", "starting"))).toBe("working");
     expect(sectionOf(summary("a", "cold"))).toBe("idle");
+  });
+
+  it("puts a thread that waits for its machine with the working ones, and under Needs you once none came", () => {
+    const starting = summary("a", "cold", { awaitingMachine: { since: 1 } });
+    expect(sectionOf(starting)).toBe("working");
+    expect(needsYou(starting)).toBe(false);
+    const failed = summary("a", "cold", {
+      awaitingMachine: { since: 1, failed: { at: 2, message: "No capacity." } },
+    });
+    expect(sectionOf(failed)).toBe("needsYou");
+    expect(needsYou(failed)).toBe(true);
   });
 
   it("lets pinned and parked outrank status", () => {

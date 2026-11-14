@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import { needsYou } from "@/sidebar/grouping";
 
-import { soloFailures, standingFailures } from "./needs-you-model";
+import { soloFailures, standingFailures, threadNeedsItems } from "./needs-you-model";
 
 const W1 = "w-platform" as WorkspaceId;
 
@@ -185,5 +185,24 @@ describe("soloFailures", () => {
     // Failing again is another occurrence, which the dismiss doesn't hold.
     const again = solo("t-limit", "error", { lastError: { ...limit, at: 12_000 } });
     expect(soloFailures([again], new Set(["failure:error:t-limit:9000"]))).toHaveLength(1);
+  });
+});
+
+describe("threadNeedsItems", () => {
+  it("lists a thread whose machine never came, by that failure", () => {
+    const failed = (at: number) =>
+      solo("t-wait", "cold", {
+        awaitingMachine: { since: 1, failed: { at, message: "No capacity." } },
+      });
+    const [item] = threadNeedsItems([failed(5_000)], new Set(), new Set());
+    expect(item?.failure).toMatchObject({ kind: "thread", tag: "No machine started" });
+    expect(item?.ids).toEqual(["failure:thread:t-wait:machine:5000"]);
+    // Dismissed, it stays away until the next try fails.
+    const hidden = new Set(["failure:thread:t-wait:machine:5000"]);
+    expect(threadNeedsItems([failed(5_000)], new Set(), hidden)).toEqual([]);
+    expect(threadNeedsItems([failed(9_000)], new Set(), hidden)).toHaveLength(1);
+    // While its machine starts it needs no one.
+    const starting = solo("t-wait", "cold", { awaitingMachine: { since: 1 } });
+    expect(threadNeedsItems([starting], new Set(), new Set())).toEqual([]);
   });
 });

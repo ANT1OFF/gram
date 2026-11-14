@@ -1,7 +1,13 @@
 import type { ThreadSummary } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { startedByOf, threadListings } from "./threads-model";
+import {
+  whereOf,
+  inThreadsFilter,
+  startedByOf,
+  threadListings,
+  threadsFilterCounts,
+} from "./threads-model";
 
 const summary = (
   id: string,
@@ -31,6 +37,40 @@ describe("threadListings", () => {
     );
     expect(listed.map((listing) => listing.summary.thread.id)).toEqual(["a", "b", "c"]);
     expect(listed[0]?.needsYou).toBe(true);
+  });
+
+  it("says which thread asked a worker's orchestrator for it, by its place where it has one", () => {
+    const asked = { threadId: "c", title: "Why exports fail" };
+    const listed = threadListings({
+      ...sources([
+        summary("o", 3, { role: "orchestrator", workspaceId: "w1", title: "api" }),
+        summary("w", 2, {
+          workspaceId: "w1",
+          spawnedBy: { threadId: "o", feature: "x", askedBy: asked },
+        }),
+        summary("c", 1),
+      ]),
+      elsewhere: new Set(["c"]),
+      placeOf: (id: string) => (id === "c" ? "Chat" : undefined),
+    });
+    const worker = listed.find((listing) => listing.summary.thread.id === "w");
+    expect(worker?.sentFrom).toBe("Chat");
+    expect(whereOf(worker!)).toBe("Worker of api · sent from Chat");
+    // With no place, the asker's title, as it is now or as it was.
+    expect(
+      threadListings(
+        sources([summary("w", 2, { spawnedBy: { threadId: "o", feature: "x", askedBy: asked } })]),
+        "exports",
+      )[0]?.sentFrom,
+    ).toBe("Why exports fail");
+  });
+
+  it("leaves out the threads an app in front lists in a place of its own", () => {
+    const listed = threadListings({
+      ...sources([summary("a", 1), summary("b", 3), summary("c", 2)], []),
+      elsewhere: new Set(["b"]),
+    });
+    expect(listed.map((listing) => listing.summary.thread.id)).toEqual(["c", "a"]);
   });
 
   it("names each one's place and what started it", () => {
@@ -69,5 +109,58 @@ describe("startedByOf", () => {
     expect(
       startedByOf(summary("w", 1, { spawnedBy: { threadId: "x", feature: "f" } }), new Map()),
     ).toBe("Worker");
+  });
+
+  it("takes an embedding app's words for a thread's kind", () => {
+    const kinds = { orchestrator: "Team lead", worker: "Team member", solo: "One agent" };
+    const worker = summary("w", 1, { spawnedBy: { threadId: "x", feature: "f" } });
+    expect(startedByOf(worker, new Map(), kinds)).toBe("Team member");
+    expect(startedByOf(worker, new Map([["x", "Billing"]]), kinds)).toBe("Team member of Billing");
+    expect(
+      threadListings({
+        summaries: [summary("a", 1)],
+        workspaceNames: new Map(),
+        needsYou: () => false,
+        kinds,
+      })[0]?.place,
+    ).toBe("One agent");
+  });
+});
+
+describe("the Threads page's filters", () => {
+  it("counts every thread, those that need you and those at work, never one in both", () => {
+    const listed = threadListings(
+      sources(
+        [
+          summary("a", 1, {}, "running"),
+          summary("b", 2, {}, "running"),
+          summary("c", 3),
+          summary("d", 4, {}, "starting"),
+        ],
+        ["a"],
+      ),
+    );
+    expect(threadsFilterCounts(listed)).toEqual({ all: 4, needsYou: 1, running: 2 });
+    expect(
+      listed
+        .filter((each) => inThreadsFilter(each, "running"))
+        .map((each) => each.summary.thread.id),
+    ).toEqual(["d", "b"]);
+  });
+});
+
+describe("whereOf", () => {
+  it("says the place once", () => {
+    expect(whereOf({ title: "Fix", place: "Solo", startedBy: undefined })).toBe("Solo");
+    expect(whereOf({ title: "Fix", place: "api", startedBy: "Worker of api" })).toBe(
+      "Worker of api",
+    );
+    expect(whereOf({ title: "api", place: "api", startedBy: "Orchestrator" })).toBe("Orchestrator");
+    expect(whereOf({ title: "Fix", place: "api", startedBy: "Worker of Billing" })).toBe(
+      "api · Worker of Billing",
+    );
+    expect(whereOf({ title: "Nightly", place: "api", startedBy: "Routine: nightly" })).toBe(
+      "api · Routine: nightly",
+    );
   });
 });

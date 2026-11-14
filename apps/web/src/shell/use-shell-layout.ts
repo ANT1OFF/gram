@@ -2,6 +2,7 @@ import type { ThreadId } from "@gram/contracts";
 import { useParams, useRouterState } from "@tanstack/react-router";
 import { useLayoutEffect } from "react";
 
+import { panelOffered, useEmbedShell } from "@/embed/store";
 import { usePhone } from "@/lib/use-phone";
 import { useServerSettings } from "@/settings-sync/store";
 import { useWindowWidth } from "@/shell/side-resize";
@@ -44,6 +45,19 @@ export function useShellLayout() {
     const git = threadId === undefined ? undefined : s.byId[threadId]?.git;
     return git !== undefined && (!git.repo || (git.changedFiles === 0 && git.aheadBase === 0));
   });
+  // The app in front of Gram may offer the panel on a thread in a repository alone: its git state
+  // says, and until that arrives a worktree is one.
+  const threadInRepo = useThreadsStore((s) => {
+    const summary = threadId === undefined ? undefined : s.byId[threadId];
+    return summary?.git?.repo ?? summary?.thread.checkout.kind === "worktree";
+  });
+  const panelBarred = !panelOffered(
+    useEmbedShell((s) => s.panel),
+    {
+      threadInView: hasThread,
+      threadInRepo,
+    },
+  );
   const board = useViewStore((s) => s.view === "board");
   const orchestrator = useThreadsStore(
     (s) => threadId !== undefined && s.byId[threadId]?.thread.role === "orchestrator",
@@ -66,6 +80,7 @@ export function useShellLayout() {
     windowWidth,
     threadInView: hasThread,
     threadQuiet,
+    panelBarred,
     focusMode,
     sidebarWidth,
     sidebarPeek: settings || phone ? false : sidebarPeek,
@@ -86,8 +101,15 @@ export function useShellLayout() {
   // under, so the transcript isn't laid out anew.
   const unfocused = fit.reviewFocus ? fitShell({ ...input, reviewFocus: false }) : fit;
   useLayoutEffect(() => {
-    setShellContext({ windowWidth, threadInView: hasThread, threadQuiet, page, chatBusy });
-  }, [windowWidth, hasThread, threadQuiet, page, chatBusy, setShellContext]);
+    setShellContext({
+      windowWidth,
+      threadInView: hasThread,
+      threadQuiet,
+      panelBarred,
+      page,
+      chatBusy,
+    });
+  }, [windowWidth, hasThread, threadQuiet, panelBarred, page, chatBusy, setShellContext]);
 
   const left = fit.sidebarWidth;
   // Beside a review the chat keeps more room, so the drag stops there too.
@@ -107,6 +129,8 @@ export function useShellLayout() {
     phone,
     panelLeft,
     hasThread,
+    /** The app in front of Gram offers no right panel here: neither it nor its toggle shows. */
+    panelBarred,
     windowResizing,
     sidebarShown: fit.sidebar !== "none",
     panelShown: fit.panel !== "none",

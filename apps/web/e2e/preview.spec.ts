@@ -293,7 +293,7 @@ test("a Markdown or HTML file the agent wrote gets a card that renders it in the
   await expect(cards.last()).toContainText("HTML page");
 
   // Markdown renders in the app itself, with no page of the shell's over it.
-  await page.getByRole("button", { name: "Open REPORT.md" }).click();
+  await page.getByRole("button", { name: "Preview REPORT.md" }).click();
   await expect(page.getByRole("tab", { name: "Preview", exact: true })).toHaveAttribute(
     "aria-selected",
     "true",
@@ -304,7 +304,7 @@ test("a Markdown or HTML file the agent wrote gets a card that renders it in the
   await expect(view(page, "t-deps")).toHaveCount(0);
 
   // HTML loads as a page, in the shell's view, from where the server serves it.
-  await page.getByRole("button", { name: "Open dashboard.html" }).click();
+  await page.getByRole("button", { name: "Preview dashboard.html" }).click();
   await expect(view(page, "t-deps")).toBeVisible();
   await expect(
     page.frameLocator('[data-thread="t-deps"]').getByRole("heading", { level: 1 }),
@@ -313,7 +313,7 @@ test("a Markdown or HTML file the agent wrote gets a card that renders it in the
   await expect(markdown).toHaveCount(0);
 
   // Back on the Markdown, the page goes out of sight again.
-  await page.getByRole("button", { name: "Open REPORT.md" }).click();
+  await page.getByRole("button", { name: "Preview REPORT.md" }).click();
   await expect(markdown).toBeVisible();
   await expect(view(page, "t-deps")).toBeHidden();
 });

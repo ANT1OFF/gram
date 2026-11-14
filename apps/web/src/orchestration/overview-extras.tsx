@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "@tanstack/react-router";
-import { History, Search } from "lucide-react";
+import { Link, useParams, useRouterState } from "@tanstack/react-router";
+import { History, Search, Settings } from "lucide-react";
 import { Fragment, useMemo } from "react";
 
 import { useApi } from "@/api/context";
@@ -13,6 +13,7 @@ import {
   type RecentDone,
 } from "@/history/history-model";
 import { useHistoryStore } from "@/history/history-view";
+import { Hint } from "@/components/hint";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { openExternalUrl } from "@/api/open-external";
 import { PrMarkIcon } from "@/components/pr-marks";
@@ -53,6 +54,15 @@ import { StatusDot, type DotState } from "./status-dot";
 import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { useThreadsListed } from "@/embed/store";
+import {
+  EmbedAccount,
+  EmbedFootIcons,
+  KeyCaps,
+  RAIL_TILE,
+  ROOMY_ROW,
+  RoomyTile,
+} from "@/embed/slots";
+import { useLaunchIssues } from "@/launch-checks/banner";
 
 // The overview sidebar's extras: At rest's Pull requests and Done, each gone with nothing in it, the
 // way into History, and the usage meters and worker slots at its foot, off by default. Each reads
@@ -183,11 +193,37 @@ function PrRow({ row }: { row: OverviewPrRow }) {
  * Search, written out under the Needs you pill so it is found without knowing its shortcut: it
  * opens the command palette, which finds threads, workers and commands.
  */
-export function OverviewSearch() {
+export function OverviewSearch({
+  roomy = false,
+  phone = false,
+}: {
+  roomy?: boolean;
+  /** In a phone's drawer, where it is a field and says what it finds. */
+  phone?: boolean;
+}) {
   const hint = useShortcutHint("palette.open");
   // Where an app in front of Gram leaves the threads out of the sidebar, search finds more than them.
   const threadsListed = useThreadsListed();
   const open = useLayoutStore((s) => s.paletteOpen);
+  if (roomy)
+    return (
+      <button
+        type="button"
+        data-testid="overview-search"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-keyshortcuts={hint === "" ? undefined : hint}
+        title={withHint("Search", hint)}
+        onClick={() => useLayoutStore.getState().openPalette()}
+        className={cn(ROOMY_ROW, "w-full shrink-0 font-normal")}
+      >
+        <RoomyTile>
+          <Search aria-hidden />
+        </RoomyTile>
+        <span className="flex-1 truncate">Search</span>
+        <KeyCaps hint={hint} />
+      </button>
+    );
   return (
     <button
       type="button"
@@ -200,9 +236,8 @@ export function OverviewSearch() {
       className="flex h-8 w-full shrink-0 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground in-data-phone-drawer:h-11 in-data-phone-drawer:min-w-0 in-data-phone-drawer:flex-1 in-data-phone-drawer:gap-2 in-data-phone-drawer:rounded-(--radius-md) in-data-phone-drawer:border in-data-phone-drawer:border-border in-data-phone-drawer:px-3"
     >
       <Search aria-hidden className="size-icon-row shrink-0" />
-      <span className="flex-1 in-data-phone-drawer:hidden">Search</span>
-      <span className="hidden flex-1 truncate in-data-phone-drawer:inline">
-        {threadsListed ? "Search threads" : "Search"}
+      <span className="min-w-0 flex-1 truncate">
+        {phone && threadsListed ? "Search threads" : "Search"}
       </span>
       {hint !== "" && (
         <kbd className="font-sans text-meta tabular-nums in-data-phone-drawer:hidden">{hint}</kbd>
@@ -378,6 +413,78 @@ export function OverviewHistory({ showHistory = true }: { showHistory?: boolean 
       )}
       {/* Settings beside History, the sidebar's places to go, clear of its header's toggles. */}
       <TopLeftNav update={false} hintSide="top" className="shrink-0" />
+    </div>
+  );
+}
+
+/**
+ * The `roomy` sidebar's foot, an app in front of Gram's look: one row of icons, the embedding
+ * app's other places, then History and Settings, each named on hover, and under it the app's
+ * account. Short, so the list above keeps the window's height.
+ */
+export function RoomyFoot({ showHistory = true }: { showHistory?: boolean }) {
+  const historyHint = useShortcutHint("history.open");
+  const historyOpen = useHistoryStore((s) => s.open);
+  const settingsHint = useShortcutHint("settings.open");
+  const setup = useLaunchIssues().dismissed;
+  const inSettings = useRouterState({
+    select: (state) => state.location.pathname.startsWith("/settings"),
+  });
+  const settingsLabel =
+    setup.length === 0
+      ? "Settings"
+      : `Settings, ${setup.length === 1 ? "1 setup problem" : `${setup.length} setup problems`}`;
+  return (
+    <div
+      data-testid="overview-roomy-foot"
+      className="flex shrink-0 flex-col gap-tight border-t border-border px-inset py-tight"
+    >
+      <div data-testid="overview-roomy-foot-icons" className="flex items-center gap-1 px-1">
+        <EmbedFootIcons />
+        {showHistory && (
+          <Hint
+            label={withHint("History", historyHint)}
+            side="top"
+            render={
+              <button
+                type="button"
+                data-testid="overview-history"
+                aria-label="History"
+                aria-haspopup="dialog"
+                aria-expanded={historyOpen}
+                aria-keyshortcuts={historyHint === "" ? undefined : historyHint}
+                onClick={() => useHistoryStore.getState().show()}
+                className={RAIL_TILE}
+              />
+            }
+          >
+            <History aria-hidden className="size-4.5" />
+          </Hint>
+        )}
+        <Hint
+          label={withHint(settingsLabel, settingsHint)}
+          side="top"
+          render={
+            <Link
+              to={setup.length === 0 ? "/settings" : "/settings/diagnostics"}
+              data-testid="overview-settings"
+              aria-label={settingsLabel}
+              aria-current={inSettings ? "page" : undefined}
+              className={RAIL_TILE}
+            />
+          }
+        >
+          <Settings aria-hidden className="size-4.5" />
+          {setup.length > 0 && (
+            <span
+              aria-hidden
+              data-testid="top-left-settings-dot"
+              className="absolute top-1 right-1 size-1.5 rounded-full bg-foreground"
+            />
+          )}
+        </Hint>
+      </div>
+      <EmbedAccount />
     </div>
   );
 }

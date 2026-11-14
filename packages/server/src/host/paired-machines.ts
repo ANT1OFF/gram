@@ -67,7 +67,23 @@ export interface PairedMachine {
    * differently.
    */
   readonly kind?: MachineKind;
+  /**
+   * A provisioned host started for one person, by an embedder that provisions hosts on demand:
+   * the stable subject that person signs in with (fronted sign-in). Only that person's threads are
+   * placed on it, and only they see it. Absent: any work may go on it, as before.
+   */
+  readonly owner?: string;
+  /**
+   * What an on-demand host is for: `personal`, the person's own host for work in a folder or a
+   * repository, or `thread`, a host for the threads placed on it by name (and their workers),
+   * such as one an embedder started for a single run. Either is never anyone's default machine
+   * (`host/headless.ts`).
+   */
+  readonly onDemand?: OnDemandKind;
 }
+
+/** What an embedder started a host on demand for. */
+export type OnDemandKind = "personal" | "thread";
 
 /** How a machine other than a joined one came to be registered. */
 export type MachineKind = "provisioned";
@@ -141,6 +157,9 @@ export interface ProvisionRequest {
   readonly name: string;
   readonly platform: string;
   readonly publicKey: string;
+  /** The person the host is for, when an embedder started it on demand for one. */
+  readonly owner?: string;
+  readonly onDemand?: OnDemandKind;
 }
 
 export type ProvisionResult =
@@ -572,7 +591,10 @@ export const createPairedMachines = (
           };
         // The same registration again changes nothing; another name or platform for the key is a
         // mistake to say so about, not to settle silently either way.
-        return existing.name === request.name && existing.platform === request.platform
+        return existing.name === request.name &&
+          existing.platform === request.platform &&
+          existing.owner === request.owner &&
+          existing.onDemand === request.onDemand
           ? { kind: "provisioned", machine: existing, created: false }
           : {
               kind: "refused",
@@ -607,6 +629,8 @@ export const createPairedMachines = (
         joinedAt: at,
         confirmedAt: at,
         kind: "provisioned",
+        ...(request.owner === undefined ? {} : { owner: request.owner }),
+        ...(request.onDemand === undefined ? {} : { onDemand: request.onDemand }),
       };
       save([...machines, machine]);
       return { kind: "provisioned", machine, created: true };
@@ -801,6 +825,8 @@ export const machineView = (
     ...(release === undefined ? {} : { release }),
     ...(machine.sshTarget === undefined ? {} : { sshTarget: machine.sshTarget }),
     ...(machine.kind === undefined ? {} : { kind: machine.kind }),
+    ...(machine.owner === undefined ? {} : { owner: machine.owner }),
+    ...(machine.onDemand === undefined ? {} : { onDemand: machine.onDemand }),
     ...(online?.selfUpdate === true ? { selfUpdate: true } : {}),
     ...(status.update === undefined ? {} : { update: status.update }),
   };

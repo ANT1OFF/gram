@@ -2,7 +2,9 @@ import { join } from "node:path";
 import type { Diagnostics, ServerEvent, ThreadStatus, ThreadSummary } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import { ServerConfig } from "../../config.ts";
+import { ActingPerson, personKey } from "../../embedding/person.ts";
 import { EventHub } from "../../events/event-hub.ts";
 import { GitStatePublisher } from "../../git/publisher.ts";
 import { publishMachineStates } from "../../host/machine-events.ts";
@@ -118,6 +120,23 @@ export const appHandlers = Effect.gen(function* () {
           ),
     });
 
+  /** What a subscriber is sent first, and again after falling too far behind. */
+  const snapshot = Effect.gen(function* () {
+    const threads = yield* runtimes.snapshot.pipe(
+      Effect.flatMap((all) => Effect.forEach(all, withGit)),
+    );
+    const events: Array<ServerEvent> = [
+      { type: "threads.snapshot", threads: threads.map(withPorts) },
+    ];
+    // The machines its threads run on, so a row names one before any of them changes.
+    if (Option.isSome(machines))
+      events.push({ type: "machines.snapshot", machines: machines.value.states() });
+    // The limit readings the server kept, so the meter shows them before any agent reports.
+    if (Option.isSome(limits))
+      events.push({ type: "usageLimits.snapshot", limits: yield* limits.value.current });
+    return events;
+  });
+
   return {
     "app.diagnostics": () => makeDiagnostics({ runtimes, config, log, ports, serverBrowser }),
 
@@ -125,23 +144,12 @@ export const appHandlers = Effect.gen(function* () {
     "app.openExternal": ({ url }) => openExternal(url, config.shellOpensLinks === true),
 
     "events.subscribe": () =>
-      hub.serverEvents(
+      // Whose connection it is, read as the stream starts: what is one person's own reaches only
+      // their connections (`EventHub.publishTo`).
+      Stream.unwrap(
         Effect.gen(function* () {
-          const threads = yield* runtimes.snapshot.pipe(
-            Effect.flatMap((all) => Effect.forEach(all, withGit)),
-          );
-          const snapshot: ServerEvent = {
-            type: "threads.snapshot",
-            threads: threads.map(withPorts),
-          };
-          const events: Array<ServerEvent> = [snapshot];
-          // The machines its threads run on, so a row names one before any of them changes.
-          if (Option.isSome(machines))
-            events.push({ type: "machines.snapshot", machines: machines.value.states() });
-          // The limit readings the server kept, so the meter shows them before any agent reports.
-          if (Option.isSome(limits))
-            events.push({ type: "usageLimits.snapshot", limits: yield* limits.value.current });
-          return events;
+          const person = personKey(yield* ActingPerson);
+          return hub.serverEvents(snapshot, person);
         }),
       ),
   } satisfies Partial<Handlers>;

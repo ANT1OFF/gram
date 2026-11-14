@@ -8,28 +8,45 @@ import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, layer } from "@effect/vitest";
-import { GramRpcs, PROFILE_START_PATH, RequestId } from "@gram/contracts";
+import {
+  DEFAULT_CHARTER,
+  GramRpcs,
+  PROFILE_MOVE_PATH,
+  PROFILE_START_PATH,
+  PROFILE_WAIT_PATH,
+  RequestId,
+  ThreadId,
+  WorkspaceId,
+} from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import { ServerConfig } from "../config.ts";
+import { EventHub } from "../events/event-hub.ts";
 import { gitPlatformTest } from "../git/platform.ts";
-import { removeDir } from "../git/test-repo.ts";
+import { makeRepo, removeDir } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { HttpServer, RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
 import { NO_ACTOR_REFUSAL, VIEWER_REFUSAL } from "../rpc/actor-guard.ts";
+import { NOT_YOUR_MACHINE, OWNERS_DIFFER, RoutedFor } from "../host/ownership.ts";
+import { Orchestration } from "../orchestration/service.ts";
+import { RemoteHosts } from "../host/remote-hosts.ts";
 import { ANSWER_OVER_HTTP, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
+import { ON_DEMAND_START_PATH, ON_DEMAND_STATUS_PATH } from "../embedding/on-demand.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG, waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ACTOR_HEADER, actorHeadersForTests } from "./actor.ts";
 import { tokenCookieName } from "./auth.ts";
 import { SERVICE_TYP, IDENTITY_HEADER } from "./fronted-identity.ts";
 import { makeTestProxy } from "./fronted-identity.testing.ts";
 import { LOCAL_APP_HEADER } from "./local-app.ts";
-import { HOST_MCP_PATH } from "../host/machine-keys.ts";
+import { generateHostKey, HOST_MCP_PATH } from "../host/machine-keys.ts";
 import { HOST_PATHS, MACHINES_LIST_PATH } from "./machine-routes.ts";
 import { REMOTE_STATUS_PATH } from "./remote-access.ts";
 import { WORKSPACE_TRANSFER_PATHS } from "../transfer/routes.ts";
@@ -39,6 +56,7 @@ const proxy = makeTestProxy();
 
 const PROFILE_THREAD = "6b1d2a90-3c4e-4f5a-8b6c-7d8e9f0a1b2c";
 const OTHER_PROFILE_THREAD = "6b1d2a90-3c4e-4f5a-8b6c-7d8e9f0a1b2d";
+const WAITING_PROFILE_THREAD = "6b1d2a90-3c4e-4f5a-8b6c-7d8e9f0a1b2e";
 
 /** The event sink's receiver: every event the server sends it, in order. */
 const sunk: Array<{ type: string; data: Record<string, unknown> }> = [];
@@ -60,7 +78,23 @@ const sinkPort = await new Promise<number>((resolve) => {
 /** Each server's own data folder, removed when the file's tests end. */
 const dataDirs: string[] = [];
 
-const server = (embedding: boolean, socketLifetimeMs?: number) => {
+/** A host provider: every start or stop the server asks of it, in order. */
+const provided: Array<{ path: string; body: Record<string, unknown> }> = [];
+const providerPort = await new Promise<number>((resolve) => {
+  const receiver = createServer((req, res) => {
+    let text = "";
+    req.on("data", (chunk: Buffer) => (text += chunk.toString("utf8")));
+    req.on("end", () => {
+      provided.push({ path: req.url ?? "", body: JSON.parse(text) as Record<string, unknown> });
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ hostKey: "personal:ws:user-ada" }));
+    });
+  });
+  receiver.unref();
+  receiver.listen(0, "127.0.0.1", () => resolve((receiver.address() as { port: number }).port));
+});
+
+const server = (embedding: boolean, socketLifetimeMs?: number, onDemand = false) => {
   const dataDir = mkdtempSync(join(tmpdir(), "gram-fronted-data-"));
   dataDirs.push(dataDir);
   return ServerLayer.pipe(
@@ -79,6 +113,15 @@ const server = (embedding: boolean, socketLifetimeMs?: number) => {
         },
         embedding,
         eventSink: { url: `http://127.0.0.1:${sinkPort}/events` },
+        ...(onDemand
+          ? {
+              embed: {
+                repoEvents: "poll" as const,
+                inboundToken: "i".repeat(40),
+                hostProvider: { url: `http://127.0.0.1:${providerPort}`, token: "p".repeat(40) },
+              },
+            }
+          : {}),
       }),
     ),
     Layer.orDie,
@@ -204,9 +247,23 @@ const refusal = <A, E, R>(call: Effect.Effect<A, E, R>) =>
     Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "the call went through",
   );
 
+/** A folder of its own for a thread, removed when the file's tests end. */
+const lineageFolder = (dirs: Array<string>) => {
+  const made = mkdtempSync(join(tmpdir(), "gram-fronted-lineage-"));
+  dirs.push(made);
+  return made;
+};
+
 const ada = { sub: "user-ada", name: "Ada", role: "member" };
 const grace = { sub: "user-grace", name: "Grace", role: "member" };
 const vera = { sub: "user-vera", name: "Vera", role: "viewer" };
+
+/** A saved grid of two panes side by side, the right one focused. */
+const grid = (...panes: ReadonlyArray<string>) => ({
+  preset: "2c" as const,
+  panes: panes.map((id) => ThreadId.make(id)),
+  focused: 1,
+});
 
 describe("sign-in through a fronting proxy", () => {
   const dirs: string[] = [];
@@ -370,6 +427,142 @@ describe("sign-in through a fronting proxy", () => {
         expect(
           (yield* post(port, PROFILE_START_PATH, startBody(), platform(MACHINES_LIST_PATH))).status,
         ).toBe(403);
+
+        // Moving a thread to another machine is the platform's too, and a person's never. This
+        // one isn't on a joined machine, so it doesn't move, and the answer says so.
+        const moveBody = (extra: Record<string, unknown> = {}) =>
+          JSON.stringify({ threadId: PROFILE_THREAD, hostId: "machine-next", ...extra });
+        const unmoved = yield* post(
+          port,
+          PROFILE_MOVE_PATH,
+          moveBody(),
+          platform(PROFILE_MOVE_PATH),
+        );
+        expect(unmoved.status, unmoved.body).toBe(409);
+        expect(unmoved.body).toContain("Only a thread started from a profile");
+        expect(
+          (yield* (yield* ThreadStore).listActorEvents())
+            .filter((event) => event.action === PROFILE_MOVE_PATH)
+            .map((event) => event.data),
+        ).toEqual([{ status: 409 }]);
+        expect(
+          (yield* post(
+            port,
+            PROFILE_MOVE_PATH,
+            moveBody({ sudo: true }),
+            platform(PROFILE_MOVE_PATH),
+          )).status,
+        ).toBe(400);
+        expect(
+          (yield* post(port, PROFILE_MOVE_PATH, moveBody(), { ...host, ...signedIn })).status,
+        ).toBe(403);
+        expect(
+          (yield* post(port, PROFILE_MOVE_PATH, moveBody(), platform(PROFILE_START_PATH))).status,
+        ).toBe(403);
+        expect(
+          (yield* post(port, `${PROFILE_MOVE_PATH}/`, moveBody(), platform(PROFILE_MOVE_PATH)))
+            .status,
+        ).toBeGreaterThanOrEqual(400);
+
+        // A thread may be started before its machine: it is there at once, waiting, and its
+        // record names no machine. How its wait stands is the platform's to say, never a
+        // person's.
+        const waiting = yield* post(
+          port,
+          PROFILE_START_PATH,
+          startBody({ threadId: WAITING_PROFILE_THREAD, machine: "later", startedBy: "ada" }),
+          platform(PROFILE_START_PATH),
+        );
+        expect(waiting.status, waiting.body).toBe(200);
+        expect(JSON.parse(waiting.body)).toEqual({
+          threadId: WAITING_PROFILE_THREAD,
+          created: true,
+          awaitingMachine: true,
+        });
+        expect(
+          (yield* (yield* ThreadStore).listActorEvents())
+            .filter((event) => event.action === PROFILE_START_PATH)
+            .map((event) => event.data)
+            .at(-1),
+        ).toEqual({ status: 200, threadId: WAITING_PROFILE_THREAD, created: true });
+        const stored = yield* (yield* ThreadStore).getThread(ThreadId.make(WAITING_PROFILE_THREAD));
+        expect(stored.awaitingMachine?.startedBy).toBe("ada");
+        expect(
+          (yield* post(
+            port,
+            PROFILE_START_PATH,
+            startBody({
+              threadId: OTHER_PROFILE_THREAD,
+              machine: "later",
+              hostId: "machine-next",
+            }),
+            platform(PROFILE_START_PATH),
+          )).status,
+        ).toBe(409);
+        expect(
+          (yield* post(
+            port,
+            PROFILE_START_PATH,
+            startBody({ threadId: OTHER_PROFILE_THREAD, machine: "soon" }),
+            platform(PROFILE_START_PATH),
+          )).status,
+        ).toBe(400);
+        const waitBody = (extra: Record<string, unknown> = {}) =>
+          JSON.stringify({ threadId: WAITING_PROFILE_THREAD, ...extra });
+        const failed = yield* post(
+          port,
+          PROFILE_WAIT_PATH,
+          waitBody({ failed: "The machine couldn't be started." }),
+          platform(PROFILE_WAIT_PATH),
+        );
+        expect(failed.status, failed.body).toBe(200);
+        expect(JSON.parse(failed.body)).toMatchObject({
+          threadId: WAITING_PROFILE_THREAD,
+          awaitingMachine: {
+            startedBy: "ada",
+            failed: { message: "The machine couldn't be started." },
+          },
+        });
+        const begun = yield* post(port, PROFILE_WAIT_PATH, waitBody(), platform(PROFILE_WAIT_PATH));
+        expect(JSON.parse(begun.body).awaitingMachine.failed).toBeUndefined();
+        // A thread that doesn't wait has no wait to change.
+        const notWaiting = yield* post(
+          port,
+          PROFILE_WAIT_PATH,
+          JSON.stringify({ threadId: PROFILE_THREAD }),
+          platform(PROFILE_WAIT_PATH),
+        );
+        expect(notWaiting.status).toBe(409);
+        expect(
+          (yield* post(
+            port,
+            PROFILE_WAIT_PATH,
+            waitBody({ sudo: true }),
+            platform(PROFILE_WAIT_PATH),
+          )).status,
+        ).toBe(400);
+        expect(
+          (yield* post(port, PROFILE_WAIT_PATH, waitBody(), { ...host, ...signedIn })).status,
+        ).toBe(403);
+        expect(
+          (yield* post(port, PROFILE_WAIT_PATH, waitBody(), platform(PROFILE_START_PATH))).status,
+        ).toBe(403);
+        expect(
+          (yield* post(port, `${PROFILE_WAIT_PATH}/`, waitBody(), platform(PROFILE_WAIT_PATH)))
+            .status,
+        ).toBeGreaterThanOrEqual(400);
+        // Named for a machine that isn't there, it goes on waiting.
+        const unnamed = yield* post(
+          port,
+          PROFILE_MOVE_PATH,
+          JSON.stringify({ threadId: WAITING_PROFILE_THREAD, hostId: "machine-next" }),
+          platform(PROFILE_MOVE_PATH),
+        );
+        expect(unnamed.status, unnamed.body).toBe(409);
+        expect(
+          (yield* (yield* ThreadStore).getThread(ThreadId.make(WAITING_PROFILE_THREAD)))
+            .awaitingMachine,
+        ).toBeDefined();
 
         // A thread's agent on this machine still needs its own token for its app tools.
         const mcp = yield* get(port, "/mcp", { ...host, authorization: "Bearer nope" });
@@ -596,6 +789,287 @@ describe("sign-in through a fronting proxy", () => {
         expect(said).not.toContain("hello from Vera");
       }),
     );
+
+    it.effect(
+      "keeps each person's own layout, tells only them, and lets a viewer keep theirs",
+      () =>
+        Effect.gen(function* () {
+          const { port } = yield* info;
+          const store = yield* ThreadStore;
+          const hub = yield* EventHub;
+          const before = (yield* store.listActorEvents()).at(-1)?.seq ?? 0;
+          const adaClient = yield* as(port, ada);
+          const adaOtherTab = yield* as(port, ada);
+          const graceClient = yield* as(port, grace);
+          const veraClient = yield* as(port, vera);
+
+          /** The types of the events a connection is sent, as they arrive. */
+          const listen = (who: typeof adaClient) =>
+            Effect.gen(function* () {
+              const types: Array<string> = [];
+              yield* Effect.forkScoped(
+                Stream.runForEach(who["events.subscribe"](), (event) =>
+                  Effect.sync(() => types.push(event.type)),
+                ),
+              );
+              yield* waitFor(
+                "the first snapshot",
+                Effect.sync(() => types.includes("threads.snapshot")),
+              );
+              return types;
+            });
+          const adaHears = yield* listen(adaOtherTab);
+          const graceHears = yield* listen(graceClient);
+          const veraHears = yield* listen(veraClient);
+
+          // Ada arranges her panes: her other tab is told, and nobody else's connection is.
+          const adas = yield* adaClient["settings.set"]({
+            patch: { layout: { grid: grid("ada-left", "ada-right") } },
+          });
+          expect(adas.layout?.grid).toEqual(grid("ada-left", "ada-right"));
+          yield* waitFor(
+            "Ada's other tab to hear",
+            Effect.sync(() => adaHears.includes("settings.changed")),
+          );
+          // What everyone is sent arrives after it, so anything sent before it would be here.
+          yield* hub.publish({ type: "profiles.changed" });
+          yield* waitFor(
+            "the others to hear what everyone is sent",
+            Effect.sync(
+              () =>
+                graceHears.includes("profiles.changed") && veraHears.includes("profiles.changed"),
+            ),
+          );
+          expect(graceHears).not.toContain("settings.changed");
+          expect(veraHears).not.toContain("settings.changed");
+
+          // Grace has none yet, arranges her own, and each reads their own back.
+          expect((yield* graceClient["settings.get"]()).layout?.grid).toBeUndefined();
+          yield* graceClient["settings.set"]({
+            patch: { layout: { grid: grid("grace-left", "grace-right") } },
+          });
+          expect((yield* adaOtherTab["settings.get"]()).layout?.grid).toEqual(
+            grid("ada-left", "ada-right"),
+          );
+          expect((yield* graceClient["settings.get"]()).layout?.grid).toEqual(
+            grid("grace-left", "grace-right"),
+          );
+
+          // A viewer's layout is saved too, and a shared setting is still not theirs to change,
+          // alone or beside their own.
+          yield* veraClient["settings.set"]({
+            patch: { layout: { grid: grid("vera-left", "vera-right") } },
+          });
+          expect((yield* veraClient["settings.get"]()).layout?.grid).toEqual(
+            grid("vera-left", "vera-right"),
+          );
+          const level = (yield* veraClient["settings.get"]()).logLevel;
+          expect(
+            yield* refusal(veraClient["settings.set"]({ patch: { logLevel: "trace" } })),
+          ).toContain(VIEWER_REFUSAL);
+          expect(
+            yield* refusal(
+              veraClient["settings.set"]({
+                patch: { layout: { grid: grid("vera-a", "vera-b"), focusMode: true } },
+              }),
+            ),
+          ).toContain(VIEWER_REFUSAL);
+          const veras = yield* veraClient["settings.get"]();
+          expect(veras.logLevel).toBe(level);
+          expect(veras.layout).toEqual({ grid: grid("vera-left", "vera-right") });
+
+          // A member's change to both is written to each place: the shared part for everyone.
+          yield* graceClient["settings.set"]({
+            patch: { layout: { grid: grid("grace-a", "grace-b"), focusMode: true } },
+          });
+          expect((yield* adaClient["settings.get"]()).layout).toEqual({
+            grid: grid("ada-left", "ada-right"),
+            focusMode: true,
+          });
+          yield* graceClient["settings.set"]({ patch: { layout: { focusMode: null } } });
+
+          // Clearing is a person's own as well.
+          yield* adaClient["settings.set"]({ patch: { layout: { grid: null } } });
+          expect((yield* adaClient["settings.get"]()).layout?.grid).toBeUndefined();
+          expect((yield* graceClient["settings.get"]()).layout?.grid).toEqual(
+            grid("grace-a", "grace-b"),
+          );
+
+          // The shared row holds none of it, and a person's own view is not on the record of
+          // changes: only the two that changed a shared setting are.
+          expect((yield* store.getSettings).layout?.grid).toBeUndefined();
+          expect(
+            (yield* store.listActorEvents({ afterSeq: before })).map((event) => [
+              event.actor.id,
+              event.action,
+              event.data,
+            ]),
+          ).toEqual([
+            [
+              "user-grace",
+              "settings.set",
+              {
+                settings: [
+                  "layout.grid.preset",
+                  "layout.grid.panes",
+                  "layout.grid.focused",
+                  "layout.focusMode",
+                ],
+              },
+            ],
+            ["user-grace", "settings.set", { settings: ["layout.focusMode"] }],
+          ]);
+        }),
+    );
+
+    it.effect("lists each person the items that wait on them, and the ones for anyone", () =>
+      Effect.gen(function* () {
+        const { port } = yield* info;
+        const store = yield* ThreadStore;
+        const runtimes = yield* ThreadRuntimes;
+        const registry = yield* AppToolRegistry;
+        const folder = mkdtempSync(join(tmpdir(), "gram-fronted-"));
+        dirs.push(folder);
+        const adaClient = yield* as(port, ada);
+        const graceClient = yield* as(port, grace);
+
+        const thread = yield* adaClient["thread.create"]({
+          projectRoot: folder,
+          checkout: { kind: "current" },
+        });
+        const threadId = thread.id;
+        yield* waitFor(
+          "the session",
+          runtimes.session(threadId).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          ),
+        );
+        const idle = waitFor(
+          "the turn to end",
+          runtimes.status(threadId).pipe(Effect.map((status) => status === "idle")),
+        );
+
+        /** The titles of this thread's items as a connection is sent them, latest last. */
+        const listen = (who: typeof adaClient) =>
+          Effect.gen(function* () {
+            const heard: Array<ReadonlyArray<string>> = [];
+            let snapshots = 0;
+            yield* Effect.forkScoped(
+              Stream.runForEach(who["events.subscribe"](), (event) =>
+                Effect.sync(() => {
+                  if (event.type === "threads.snapshot") {
+                    snapshots++;
+                    const summary = event.threads.find((one) => one.thread.id === threadId);
+                    heard.push((summary?.waits ?? []).map((item) => item.title));
+                  }
+                  if (event.type === "thread.waits" && event.threadId === threadId) {
+                    heard.push(event.waits.map((item) => item.title));
+                  }
+                }),
+              ),
+            );
+            yield* waitFor(
+              "the first snapshot",
+              Effect.sync(() => snapshots > 0),
+            );
+            return heard;
+          });
+        const titles = (who: typeof adaClient) =>
+          Effect.map(who["thread.listWaits"]({ threadId }), (items) =>
+            items.map((item) => item.title),
+          );
+        /** The agent's `wait_on_user`, and the item it stored. */
+        const agentAdds = (input: { kind: string; title: string; id?: string }) =>
+          Effect.gen(function* () {
+            const tool = registry
+              .forThread(threadId)
+              .find((one) => one.descriptor.name === "wait_on_user")!;
+            const { id } = (yield* tool.run(input)) as { id: string };
+            return (yield* store.listWaits(threadId)).find((item) => item.id === id)!;
+          });
+        const adaHears = yield* listen(adaClient);
+        const graceHears = yield* listen(graceClient);
+
+        // An item from before anyone was named waits on anyone.
+        yield* store.putWait(threadId, {
+          id: "w-anyone" as never,
+          kind: "action",
+          title: "For anyone",
+          source: "agent",
+          createdAt: 1,
+        });
+
+        // Ada writes, and what the agent then adds waits on her.
+        yield* adaClient["thread.send"]({
+          threadId,
+          input: { text: "hello from Ada" },
+          clientMessageId: "ada-waits-1",
+        });
+        yield* idle;
+        const adas = yield* agentAdds({ kind: "draft", title: "For Ada" });
+        expect(adas.person).toBe("user-ada");
+
+        // Grace writes next: the agent's next item is hers, and so is the one she adds herself.
+        yield* graceClient["thread.send"]({
+          threadId,
+          input: { text: "hello from Grace" },
+          clientMessageId: "grace-waits-1",
+        });
+        yield* idle;
+        const graces = yield* agentAdds({ kind: "review", title: "For Grace" });
+        expect(graces.person).toBe("user-grace");
+        const reply = (yield* store.listMessages(threadId)).findLast(
+          (message) => message.role === "assistant",
+        )!;
+        const added = yield* graceClient["thread.addWait"]({
+          threadId,
+          messageId: reply.id as never,
+          title: "Grace's own",
+        });
+        expect(added.person).toBe("user-grace");
+        // An update in place leaves an item with whom it waits on, whoever wrote last.
+        const updated = yield* agentAdds({
+          kind: "draft",
+          title: "For Ada, revised",
+          id: adas.id,
+        });
+        expect(updated.person).toBe("user-ada");
+
+        // Each reads their own and the one for anyone, and the server's own list holds all four.
+        expect(yield* titles(adaClient)).toEqual(["For anyone", "For Ada, revised"]);
+        expect(yield* titles(graceClient)).toEqual(["For anyone", "For Grace", "Grace's own"]);
+        expect((yield* store.listWaits(threadId)).map((item) => item.title)).toEqual([
+          "For anyone",
+          "For Ada, revised",
+          "For Grace",
+          "Grace's own",
+        ]);
+        expect((yield* store.listWaits(threadId)).map((item) => item.person ?? null)).toEqual([
+          null,
+          "user-ada",
+          "user-grace",
+          "user-grace",
+        ]);
+
+        // The same over each one's events, as they changed and on a connection opened now.
+        yield* waitFor(
+          "the last change to arrive",
+          Effect.sync(
+            () =>
+              adaHears.at(-1)?.includes("For Ada, revised") === true &&
+              graceHears.at(-1)?.includes("Grace's own") === true,
+          ),
+        );
+        expect(adaHears.at(-1)).toEqual(["For anyone", "For Ada, revised"]);
+        expect(graceHears.at(-1)).toEqual(["For anyone", "For Grace", "Grace's own"]);
+        expect(adaHears.flat()).not.toContain("For Grace");
+        expect(adaHears.flat()).not.toContain("Grace's own");
+        expect(graceHears.flat().some((title) => title.startsWith("For Ada"))).toBe(false);
+        const adaLater = yield* listen(yield* as(port, ada));
+        expect(adaLater[0]).toEqual(["For anyone", "For Ada, revised"]);
+      }),
+    );
   });
 
   layer(server(true, 300), { excludeTestServices: true })("with a short socket lifetime", (it) => {
@@ -624,6 +1098,272 @@ describe("sign-in through a fronting proxy", () => {
     );
   });
 
+  layer(server(true, undefined, true), { excludeTestServices: true })(
+    "with hosts provisioned on demand",
+    (it) => {
+      it.effect(
+        "asks the provider for a person's machine with the proxy's proof, and never for a viewer",
+        () =>
+          Effect.gen(function* () {
+            const { port } = yield* info;
+            provided.length = 0;
+            const body = JSON.stringify({ repositories: ["acme/web"] });
+            const adaStatement = proxy.statement(ada);
+            const started = yield* post(port, ON_DEMAND_START_PATH, body, {
+              [IDENTITY_HEADER]: adaStatement,
+            });
+            expect(started.status).toBe(202);
+            expect(provided).toEqual([
+              {
+                path: "/hosts/start",
+                body: {
+                  kind: "personal",
+                  owner: "user-ada",
+                  options: { repositories: ["acme/web"] },
+                  proof: {
+                    statement: adaStatement,
+                    method: "POST",
+                    path: ON_DEMAND_START_PATH,
+                    body,
+                  },
+                },
+              },
+            ]);
+            // Her status shows the start; Grace's shows nothing of hers.
+            const mine = yield* get(port, ON_DEMAND_STATUS_PATH, {
+              [IDENTITY_HEADER]: proxy.statement(ada),
+            });
+            expect(JSON.parse(mine.body)).toMatchObject({
+              available: true,
+              progress: { hostKey: "personal:ws:user-ada", phase: "starting" },
+            });
+            const hers = yield* get(port, ON_DEMAND_STATUS_PATH, {
+              [IDENTITY_HEADER]: proxy.statement(grace),
+            });
+            expect(JSON.parse(hers.body)).toEqual({ available: true });
+            // A viewer can't, and nobody unsigned can: the provider is asked nothing more.
+            expect(
+              (yield* post(port, ON_DEMAND_START_PATH, "{}", {
+                [IDENTITY_HEADER]: proxy.statement(vera),
+              })).status,
+            ).toBe(403);
+            expect((yield* post(port, ON_DEMAND_START_PATH, "{}")).status).toBe(401);
+            expect(provided).toHaveLength(1);
+          }),
+      );
+
+      // The review's case: Ada knows the id of Grace's machine and of a thread on it.
+      it.effect("keeps every route onto a person's machine to them, and lets others read", () =>
+        Effect.gen(function* () {
+          const { port } = yield* info;
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          // Provided by the server layer, which doesn't name it among what it gives.
+          const remote = Option.getOrThrow(yield* Effect.serviceOption(RemoteHosts));
+          const folder = mkdtempSync(join(tmpdir(), "gram-fronted-own-"));
+          dirs.push(folder);
+          const provisioned = remote.machines.provision({
+            name: "grace-box",
+            platform: "linux",
+            publicKey: generateHostKey().publicKey,
+            owner: grace.sub,
+            onDemand: "personal",
+          });
+          if (provisioned.kind !== "provisioned") throw new Error("not provisioned");
+          const hostId = provisioned.machine.id;
+          const graceClient = yield* as(port, grace);
+          const adaClient = yield* as(port, ada);
+          const created = yield* graceClient["thread.create"]({
+            projectRoot: folder,
+            checkout: { kind: "current" },
+          });
+          const threadId = created.id;
+          yield* waitFor(
+            "the session",
+            runtimes.session(threadId).pipe(
+              Effect.as(true),
+              Effect.orElseSucceed(() => false),
+            ),
+          );
+          // Her thread, as it is once placed on her machine.
+          yield* store.updateThread(threadId, (thread) => ({
+            ...thread,
+            checkout: { ...thread.checkout, hostId },
+          }));
+          const send = { threadId, input: { text: "from Ada" }, clientMessageId: "own-1" };
+          const tries = {
+            send: adaClient["thread.send"](send),
+            fork: adaClient["thread.fork"]({ threadId, fromMessageId: "m-0" as never }),
+            restart: adaClient["thread.restartSession"]({ threadId }),
+            threadTerminal: adaClient["terminal.open"]({ threadId, cols: 80, rows: 24 }),
+            signIn: adaClient["terminal.open"]({ signIn: hostId, cols: 80, rows: 24 }),
+          };
+          for (const [name, call] of Object.entries(tries))
+            expect([name, yield* refusal(call as Effect.Effect<unknown, unknown>)]).toEqual([
+              name,
+              expect.stringContaining(NOT_YOUR_MACHINE),
+            ]);
+          // What the workspace shows of it is still a read for anyone.
+          expect(yield* refusal(adaClient["thread.listWaits"]({ threadId }))).toBe(
+            "the call went through",
+          );
+          // Grace gets past the owner's check: her machine is just not online here.
+          for (const call of [
+            graceClient["terminal.open"]({ signIn: hostId, cols: 80, rows: 24 }),
+            graceClient["thread.fork"]({ threadId, fromMessageId: "m-0" as never }),
+          ] as ReadonlyArray<Effect.Effect<unknown, unknown>>)
+            expect(yield* refusal(call)).not.toContain(NOT_YOUR_MACHINE);
+          expect(
+            yield* refusal(graceClient["thread.send"]({ ...send, clientMessageId: "own-2" })),
+          ).toBe("the call went through");
+        }),
+      );
+
+      // The re-review's cases: a join that would hand Ada's thread Grace's lineage, a task for
+      // Grace's workspace, an answer over HTTP, and a worker on a shared machine under Grace.
+      it.effect("keeps a person's orchestrator, its workers and its answers to them", () =>
+        Effect.gen(function* () {
+          const { port } = yield* info;
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          const remote = Option.getOrThrow(yield* Effect.serviceOption(RemoteHosts));
+          const orchestration = Option.getOrThrow(yield* Effect.serviceOption(Orchestration));
+          const provisioned = remote.machines.provision({
+            name: "grace-box-2",
+            platform: "linux",
+            publicKey: generateHostKey().publicKey,
+            owner: grace.sub,
+            onDemand: "personal",
+          });
+          if (provisioned.kind !== "provisioned") throw new Error("not provisioned");
+          const hostId = provisioned.machine.id;
+          const graceClient = yield* as(port, grace);
+          const adaClient = yield* as(port, ada);
+          const opened = (root: string, person: typeof graceClient, branch?: string) =>
+            Effect.gen(function* () {
+              const created = yield* person["thread.create"]({
+                projectRoot: root,
+                checkout:
+                  branch === undefined ? { kind: "current" } : { kind: "newWorktree", branch },
+              });
+              yield* waitFor(
+                "the session",
+                runtimes.session(created.id).pipe(
+                  Effect.as(true),
+                  Effect.orElseSucceed(() => false),
+                ),
+              );
+              return created;
+            });
+          // Grace's orchestrator, running on her machine, and her workspace.
+          const orchestrator = yield* opened(lineageFolder(dirs), graceClient);
+          const workspaceId = WorkspaceId.make("w-grace");
+          yield* store.updateThread(orchestrator.id, (thread) => ({
+            ...thread,
+            role: "orchestrator",
+            workspaceId,
+            checkout: { ...thread.checkout, hostId },
+          }));
+          yield* store.putWorkspace({
+            workspace: {
+              id: workspaceId,
+              name: "Grace's",
+              projectIds: [orchestrator.projectId],
+              homeProjectId: orchestrator.projectId,
+              orchestratorThreadId: orchestrator.id,
+              createdAt: 1,
+            },
+            charter: DEFAULT_CHARTER,
+          });
+          // Her worker, on her machine too: an orchestration has one owner (`host/ownership.ts`).
+          const worker = yield* opened(lineageFolder(dirs), graceClient);
+          yield* store.updateThread(worker.id, (thread) => ({
+            ...thread,
+            workspaceId,
+            spawnedBy: { threadId: orchestrator.id, feature: "hers" },
+            checkout: { ...thread.checkout, hostId },
+          }));
+          // Ada's own thread, on no one's machine, in a repository of hers: a thread that can join.
+          const own = yield* opened(makeRepo(lineageFolder(dirs)), adaClient, "ada-work");
+          const before = (yield* store.listMessages(orchestrator.id)).length;
+
+          const tries = {
+            join: adaClient["thread.joinWorkspace"]({
+              threadId: own.id,
+              workspaceId,
+              feature: "ada",
+              addRepos: true,
+            }),
+            taskByWorkspace: adaClient["workspace.startTask"]({
+              target: { workspaceId },
+              input: { text: "Ada's instructions" },
+            }),
+            taskByProject: adaClient["workspace.startTask"]({
+              target: { projectId: orchestrator.projectId },
+              input: { text: "Ada's instructions" },
+            }),
+            workerSend: adaClient["thread.send"]({
+              threadId: worker.id,
+              input: { text: "Ada's instructions" },
+              clientMessageId: "lineage-1",
+            }),
+          };
+          for (const [name, call] of Object.entries(tries))
+            expect([name, yield* refusal(call as Effect.Effect<unknown, unknown>)]).toEqual([
+              name,
+              expect.stringContaining(NOT_YOUR_MACHINE),
+            ]);
+          // A join an agent of Ada's thread asks for, where no RPC is: a thread on no one's machine
+          // never joins a person's orchestration, whoever asks.
+          const joined = yield* orchestration
+            .joinWorkspace(own.id, workspaceId, { feature: "ada", addRepos: true })
+            .pipe(Effect.provideService(RoutedFor, { person: undefined }), Effect.flip);
+          expect(joined.message).toContain(OWNERS_DIFFER);
+          expect((yield* store.getThread(own.id)).spawnedBy).toBeUndefined();
+          // Nothing of Ada's reached the orchestrator.
+          expect((yield* store.listMessages(orchestrator.id)).length).toBe(before);
+
+          // An answer over HTTP, of any kind, refused before the request is looked up.
+          for (const answer of [
+            { kind: "approval", decision: "allow", scope: "once" },
+            { kind: "approval", decision: "deny", scope: "once" },
+            { kind: "question", answers: { "Which?": ["Ada's"] } },
+          ]) {
+            const body = JSON.stringify({
+              threadId: orchestrator.id,
+              requestId: RequestId.make("pending-of-grace"),
+              answer,
+            });
+            expect(
+              yield* post(port, ASK_ANSWER_PATH, body, { [IDENTITY_HEADER]: proxy.statement(ada) }),
+            ).toMatchObject({ status: 403, body: expect.stringContaining(NOT_YOUR_MACHINE) });
+          }
+          // Grace gets past it: there is just no such request.
+          const hers = JSON.stringify({
+            threadId: orchestrator.id,
+            requestId: RequestId.make("pending-of-grace"),
+            answer: { kind: "approval", decision: "allow", scope: "once" },
+          });
+          expect(
+            (yield* post(port, ASK_ANSWER_PATH, hers, {
+              [IDENTITY_HEADER]: proxy.statement(grace),
+            })).status,
+          ).toBe(404);
+          // And her worker still takes her word.
+          expect(
+            yield* refusal(
+              graceClient["thread.send"]({
+                threadId: worker.id,
+                input: { text: "from Grace" },
+                clientMessageId: "lineage-2",
+              }),
+            ),
+          ).toBe("the call went through");
+        }),
+      );
+    },
+  );
+
   layer(server(false), { excludeTestServices: true })("with the hosted features off", (it) => {
     it.effect("takes the launch token as before, and no proxy's word", () =>
       Effect.gen(function* () {
@@ -648,6 +1388,8 @@ describe("sign-in through a fronting proxy", () => {
         // Starting a thread from a profile is a hosted feature: here, a path that isn't there.
         const local = { ...host, cookie, origin: `http://127.0.0.1:${port}` };
         expect((yield* post(port, PROFILE_START_PATH, "{}", local)).status).toBe(404);
+        expect((yield* post(port, PROFILE_MOVE_PATH, "{}", local)).status).toBe(404);
+        expect((yield* post(port, PROFILE_WAIT_PATH, "{}", local)).status).toBe(404);
       }),
     );
   });

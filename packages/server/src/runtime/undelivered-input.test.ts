@@ -1,8 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { ThreadId } from "@gram/contracts";
+import { LOCAL_HOST_ID, type ThreadId } from "@gram/contracts";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import { RoutedFor } from "../host/ownership.ts";
+import { MachineOwnersForTests } from "../host/worker-host.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { FakeAgentControl, type FakeSession } from "./fake-agent.ts";
+import { AgentHosts } from "./agent-hosts.ts";
+import { FakeAgentAdapter, FakeAgentControl, type FakeSession } from "./fake-agent.ts";
 import { CheckoutService, TurnHooks } from "./hooks.ts";
 import {
   fakeAgentWithFailingSend,
@@ -97,5 +102,87 @@ describe("input the agent's host didn't take", () => {
       expect(yield* queued(thread.id)).toEqual(["lost at launch"]);
       expect(yield* userTexts(thread.id)).toEqual([]);
     }).pipe(Effect.provide(layer)),
+  );
+});
+
+/** The host doesn't take the first "flaky" input, then takes everything: a healthy retry. */
+let refusedOnce = false;
+const flakyOnce = Layer.effectContext(
+  Effect.gen(function* () {
+    const hosts = yield* AgentHosts;
+    const control = yield* FakeAgentControl;
+    return Context.make(
+      AgentHosts,
+      AgentHosts.of({
+        get: (kind) =>
+          hosts.get(kind).pipe(
+            Effect.map((host) => ({
+              ...host,
+              open: (options) =>
+                host.open(options).pipe(
+                  Effect.map((session) => ({
+                    ...session,
+                    send: (input, sendOptions) => {
+                      if (!input.text.includes("flaky") || refusedOnce)
+                        return session.send(input, sendOptions);
+                      refusedOnce = true;
+                      return Effect.die(
+                        new InputUndelivered({ message: "The agent's machine didn't take it." }),
+                      );
+                    },
+                  })),
+                ),
+            })),
+          ),
+      }),
+    ).pipe(Context.add(FakeAgentControl, control));
+  }),
+).pipe(Layer.provide(FakeAgentAdapter));
+
+/** This machine started for Grace (`host/ownership.ts`), with a host that drops one input. */
+const ownedLayer = makeRuntimeTestLayer(
+  TurnHooks.layerNoop,
+  CheckoutService.layerNoGit,
+  TEST_CONFIG,
+  flakyOnce,
+).pipe(
+  Layer.provide(
+    Layer.succeed(MachineOwnersForTests)({
+      ownerOf: (id) => (id === LOCAL_HOST_ID ? "grace" : undefined),
+    }),
+  ),
+);
+
+const asGrace = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.provideService(effect, RoutedFor, { person: "grace" });
+
+describe("input put back on a person's own machine", () => {
+  // A send straight to an idle session that the host didn't take is kept as its sender's: the
+  // retry is admitted as them and goes, rather than being dropped as no one's.
+  it.effect("is sent again as its owner's when the host takes it", () =>
+    Effect.gen(function* () {
+      refusedOnce = false;
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const fake = yield* FakeAgentControl;
+      const thread = yield* asGrace(
+        runtimes.create({
+          projectRoot: "/work/repo",
+          checkout: { kind: "main", path: "/work/repo" },
+        }),
+      );
+      yield* statusOf(thread.id, "idle");
+      const session = yield* fake.latest(thread.id);
+      yield* asGrace(runtimes.send(thread.id, { text: "flaky on the way" }));
+      expect(yield* queued(thread.id)).toEqual(["flaky on the way"]);
+      expect((yield* store.listQueue(thread.id))[0]?.actor).toEqual({ person: "grace" });
+      // Her next message tries the kept one first; the host takes both now.
+      yield* asGrace(runtimes.send(thread.id, { text: "then this" }));
+      yield* waitFor(
+        "the kept input sent",
+        Effect.sync(() => sentTexts(session).some((text) => text.includes("flaky on the way"))),
+      );
+      expect(sentTexts(session)[0]).toContain("flaky on the way");
+    }).pipe(Effect.provide(ownedLayer)),
   );
 });

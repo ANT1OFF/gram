@@ -66,6 +66,122 @@ Content-Type: application/json
   may call it with its own sign-in. Each service call is on the record with the thread it made or
   found, whether it made it, and its machine.
 
+## Before its machine
+
+A platform that starts a machine for each new thread can show the thread while the machine
+boots: it starts the thread with its machine named later, starts the machine, and names it once
+it is online.
+
+```http
+POST /threads/from-profile
+Content-Type: application/json
+
+{ "profile": { "version": 1, ... }, "threadId": "<lowercase UUID>", "machine": "later", "startedBy": "<person id>" }
+```
+
+- **What is made.** The thread, at once, and nothing else: no folder, no session. The answer is
+  `{ "threadId": "...", "created": true, "awaitingMachine": true }`. The profile's `input` waits
+  in the thread's queue, which is stored and survives a restart, and so does anything sent to the
+  thread while it waits. Asked again under the same id, the answer is the same thread, as it is.
+- **How it reads.** The thread carries `awaitingMachine` (`AwaitingMachine` in `@gram/contracts`)
+  wherever a thread is read, its summary included: `since`, `startedBy` when one was given, and
+  `failed` once no machine came. Its checkout is on the machine `awaited`, which is no machine's
+  id, so a client that doesn't know the state shows it as a thread whose machine is away.
+- **How it looks.** Gram's web app shows the wait on the thread's own page: the first message as
+  the person's own and not yet sent, that the machine is starting and for how long, and once none
+  came the failure's sentence with Try again, which the app Gram is mounted in answers
+  ([A thread started before its machine](EMBEDDED_WEB_APP.md#a-thread-started-before-its-machine)).
+- **Whose it is.** `startedBy` is the id the fronting proxy states for the signed-in person. The
+  first message is sent as theirs (`sentBy`), and until the thread is placed only they reach it.
+  It is placed only on a machine started for them or for nobody. Without `startedBy` it is
+  anyone's, as a thread on a machine started for nobody is. Leave it out where nobody signs in
+  through a proxy: no call there is made as a person, so none would reach the thread.
+- **What is refused.** A workplace of repositories: its checkouts are made on the machine, so
+  start that thread once the machine is online, with `hostId`. `machine` together with `hostId`,
+  and `startedBy` without `machine`. Each is `409` with nothing made.
+- **Naming the machine.** `POST /threads/move-to-machine` with the thread's id, the machine's and
+  the profile, as for a move (below). The machine's host makes the thread's folder with the
+  profile's files, the thread is placed there, its session opens and the queue is sent; with
+  nothing queued the session opens and waits. The answer is
+  `{ "threadId": "...", "hostId": "...", "moved": true }`. Named again, at once or after a
+  restart cut the first call short, it answers `moved: false` or places the thread then: the
+  folder is made anew, and each queued message is sent once, as the same message. A naming that
+  is refused (a machine that isn't online, one started for someone else, another profile than
+  the thread's) leaves the thread waiting with its queue.
+- **When no machine comes.** Nothing is dropped. A thread that has waited five minutes, as long
+  as a session waits for a stopped machine, says so: `awaitingMachine.failed` gets when and a
+  sentence for the person, and stays across a restart. The platform can say it sooner and in its
+  own words, or that it is trying again:
+
+  ```http
+  POST /threads/machine-wait
+  Content-Type: application/json
+
+  { "threadId": "<lowercase UUID>", "failed": "The machine couldn't be started: no capacity." }
+  ```
+
+  With `failed` (at most 500 characters) the thread says that; without it the failure is cleared
+  and the five minutes begin again. The answer is `{ "threadId": "...", "awaitingMachine": { ... } }`,
+  and `409` for a thread that doesn't wait. Either way the thread keeps its queue, and naming a
+  machine, however much later, places it and sends what waited. The shapes are
+  `ProfileWaitRequest` and `ProfileWaitResponse`, the path `PROFILE_WAIT_PATH`; who may call it
+  is as for a start.
+
+- **In order.** Start the thread with `machine: "later"`; start the machine and
+  [register it](PROVISIONED_HOSTS.md) with the same person as its `owner`, or with none; once it
+  is online, name it. If it fails to start, say so on `/threads/machine-wait`; to try again, call
+  that without `failed`, start another machine and name it. The person asks for that with the
+  page's Try again, which reaches your service through the mount's `machines.startAgain`.
+- **With the hosted features off** all three paths answer `404`, and `thread.createFromProfile`
+  takes no `machine`: it places the thread now, as before.
+
+## Moving a thread to another machine
+
+A machine started for one thread may go away for good: one with no disk of its own is gone once
+it stops. The platform moves the thread onto another joined machine, with its own statement for
+the path, as it starts one:
+
+```http
+POST /threads/move-to-machine
+Content-Type: application/json
+
+{ "threadId": "<lowercase UUID>", "hostId": "<machine id>", "profile": { "version": 1, ... } }
+```
+
+- **What moves.** A thread started from a profile whose workplace is a folder of its own (`none`
+  or `scratch`) on a joined machine. A thread still waiting for its first machine is placed by
+  the same call ([before its machine](#before-its-machine)), with none of the conditions below
+  about the machine it is leaving: it is on none. A thread in repositories has work only its machine holds,
+  and stays.
+- **When it moves.** Only while its machine is away: it is asked before anything is made, and
+  again just before the thread moves, so a machine that dials in meanwhile keeps its thread and
+  what was made for it on the target is removed. `hostId` must be a joined machine, online now.
+- **Whose it stays.** A thread is for the person its machine was started for. It moves only to a
+  machine started for the same person and the same purpose (`owner` and `onDemand` as the machine
+  records them), or from one machine started for nobody to another. A thread on a machine
+  registered before machines said their kind may move to one started for the threads placed on
+  it (`onDemand: "thread"`), never the other way. Its owner and its lineage's
+  stay what they were. A thread whose machine is no longer on record doesn't move: who it is for
+  can't be told. Being the platform's service doesn't change this.
+- **Nothing left behind.** The move claims the thread in its runtime before anything is made on
+  the target, and holds the claim until the thread is placed (`ThreadRuntimes.relocate`). While
+  it is held, a send to the thread is refused, and no delivery, turn or session starts. Any
+  session of the thread stops first: an idle one, or one only opening for a message waiting on
+  the old machine, whose message goes back to the queue. A thread at work doesn't move. The
+  thread is placed only if nothing started meanwhile and it is still where it was. Once the claim
+  lets go, the queue goes on, on the new machine, so a message sent while the old machine was away
+  opens a fresh session there.
+- **A machine gone for good.** With `"lost": true` the platform says the machine's compute is
+  deleted, not away for a while. A turn still counted as running there (the machine took it with
+  it) is ended as interrupted, and the thread moves; what was queued behind it goes on the new
+  machine. Without it, a thread at work stays.
+- **The answer.** `{ "threadId": "...", "hostId": "...", "moved": true }`. `moved` is false for a
+  thread on that machine already. Refusals are as for a start: `409` with `{ "error": "..." }`,
+  `400` for a body that isn't the shape, `404` with the hosted features off.
+- **Who may call it.** A person signed in through the proxy is refused it, and so is a paired
+  phone. Each service call is on the record with the thread, the machine and whether it moved.
+  The shapes are `ProfileMoveRequest` and `ProfileMoveResponse`, the path `PROFILE_MOVE_PATH`.
+
 ## A workplace of repositories
 
 Each repository is an https or ssh remote with no credential in its address. Gram clones it once
@@ -144,6 +260,12 @@ composer.
   in the data folder, or under `.threads` in a joined machine's clones.
 - A profile names no machine. Only a headless control plane places these threads on a joined
   machine, and always on its default one.
+- A thread waiting for its machine shows the first message as queued, not yet in the
+  conversation: it is in the transcript once it is sent. A message of another thread, or a
+  notice, sent to it while it waits is queued as well.
+- Nothing in Gram starts a machine for a waiting thread, or tells whoever does that one is
+  wanted: the platform that started the thread knows, and reads `awaitingMachine.failed` from the
+  thread if it wants to know that the five minutes ran out.
 - A headless control plane still clones a workplace's repositories itself, to read their remote
   and branches, so it needs credentials for them as well as the machine does.
 - What a headless control plane can't run yet, a profile can't ask for there: Codex, and a model

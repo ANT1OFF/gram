@@ -89,6 +89,23 @@ describe("useAutoReviewFocus", () => {
     expect(screen.getByTestId("review-room-offer")).toBeTruthy();
   });
 
+  it("leaves a thread come to in a cramped window on its conversation, with the offer", () => {
+    useLayoutStore.setState({ ...cramped, threadInView: false });
+    render(<Room />);
+    act(() => useLayoutStore.setState({ threadInView: true }));
+    settle();
+    expect(useLayoutStore.getState().reviewFocus).toBe(false);
+    expect(screen.getByTestId("review-room-offer")).toBeTruthy();
+  });
+
+  it("leaves a page that comes to offer the panel in a cramped window as it is", () => {
+    useLayoutStore.setState({ ...cramped, panelBarred: true });
+    render(<Room />);
+    act(() => useLayoutStore.setState({ panelBarred: false }));
+    settle();
+    expect(useLayoutStore.getState().reviewFocus).toBe(false);
+  });
+
   it("waits while a drag holds the pointer down, and takes it once let go", () => {
     render(<Room />);
     fireEvent.pointerDown(window);

@@ -1,7 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { useRouterState } from "@tanstack/react-router";
 import { Menu as MenuIcon } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { create } from "zustand";
 
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,16 @@ import { useHistoryStore } from "@/history/history-view";
 import { useInboxStore } from "@/inbox/inbox-store";
 import { OverviewSidebar } from "@/orchestration/overview-sidebar";
 import { useLayoutStore } from "@/stores/layout";
-import { useThreadsListed } from "@/embed/store";
+import {
+  shownCount,
+  shownNavigation,
+  useEmbedShell,
+  useRoomySidebar,
+  useThreadsListed,
+} from "@/embed/store";
+import { attentionWords } from "@/embed/attention";
+import { cn } from "@/lib/utils";
+import { PhoneMenu, ROUND } from "@/shell/phone-menu";
 
 interface PhoneDrawerState {
   readonly open: boolean;
@@ -21,6 +30,21 @@ export const usePhoneDrawer = create<PhoneDrawerState>()((set) => ({
   open: false,
   setOpen: (open) => set({ open }),
 }));
+
+/** The places in the menu with a count above 0, which its button marks with a dot. */
+function useMenuCounts(): readonly { label: string; count: number }[] {
+  const groups = useEmbedShell((s) => s.navigation);
+  return useMemo(
+    () =>
+      shownNavigation(groups).flatMap((group) =>
+        group.items.flatMap((item) => {
+          const count = shownCount(item.count);
+          return count === undefined ? [] : [{ label: item.label, count }];
+        }),
+      ),
+    [groups],
+  );
+}
 
 /** The data attribute the drawer's column carries, which the overview's rows take their phone shape from. */
 export const PHONE_DRAWER = "data-phone-drawer";
@@ -35,6 +59,38 @@ const useDrawerName = () => (useThreadsListed() ? "Threads" : "Menu");
 export function PhoneMenuButton() {
   const open = usePhoneDrawer((s) => s.open);
   const name = useDrawerName();
+  const roomy = useRoomySidebar();
+  // In the roomy look the button is round, and carries the Inbox's dot: what needs you is a row
+  // of the menu behind it, not a button of its own in the header.
+  const attention = useEmbedShell((s) => s.attention);
+  const counted = useMenuCounts();
+  const hostCount = shownCount(attention?.count);
+  const words =
+    hostCount !== undefined
+      ? attentionWords(hostCount, attention?.label)
+      : counted.map((item) => `${item.label} ${item.count}`).join(", ");
+  const waiting = roomy && words !== "";
+  if (roomy)
+    return (
+      <button
+        type="button"
+        aria-label={waiting ? `${name}, ${words}` : name}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        data-testid="phone-menu"
+        className={ROUND}
+        onClick={() => usePhoneDrawer.getState().setOpen(true)}
+      >
+        <MenuIcon aria-hidden />
+        {waiting && (
+          <span
+            aria-hidden
+            data-testid="phone-menu-dot"
+            className="absolute top-2 right-2 size-2.5 rounded-full bg-status-needs-mark ring-2 ring-card"
+          />
+        )}
+      </button>
+    );
   return (
     <Button
       variant="ghost"
@@ -82,6 +138,7 @@ export function PhoneDrawer() {
   const open = usePhoneDrawer((s) => s.open);
   const setOpen = usePhoneDrawer((s) => s.setOpen);
   const name = useDrawerName();
+  const roomy = useRoomySidebar();
   useCloseOnPick(open);
   // Leaving the phone layout (a tablet turned to landscape) closes it, so it doesn't come back open.
   useEffect(() => () => usePhoneDrawer.getState().setOpen(false), []);
@@ -96,9 +153,12 @@ export function PhoneDrawer() {
           aria-label={name}
           data-testid="phone-drawer"
           {...{ [PHONE_DRAWER]: "" }}
-          className="fixed inset-y-0 left-0 z-50 flex w-[min(21.25rem,88vw)] flex-col shadow-overlay outline-none transition-[translate] duration-(--dur-move-base) ease-(--ease-out) data-[ending-style]:-translate-x-full data-[starting-style]:-translate-x-full"
+          className={cn(
+            "fixed inset-y-0 left-0 z-50 flex w-[min(21.25rem,88vw)] flex-col shadow-overlay outline-none transition-[translate] duration-(--dur-move-base) ease-(--ease-out) data-[ending-style]:-translate-x-full data-[starting-style]:-translate-x-full",
+            roomy && "w-[min(22.5rem,86vw)]",
+          )}
         >
-          <OverviewSidebar phone />
+          {roomy ? <PhoneMenu /> : <OverviewSidebar phone />}
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>

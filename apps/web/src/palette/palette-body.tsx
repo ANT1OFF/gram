@@ -18,7 +18,7 @@ import { createElement, useEffect, useMemo, useRef, useState, type KeyboardEvent
 import { useApi } from "@/api/context";
 import { errorMessage, isNotImplemented } from "@/api/errors";
 import { openExternalUrl } from "@/api/open-external";
-import { shownNavigation, useEmbedShell } from "@/embed/store";
+import { shownNavigation, useEmbedShell, useThreadsTitle } from "@/embed/store";
 import { showInbox } from "@/inbox/inbox-store";
 import { boardWorkspaceFor } from "@/orchestration/board-model";
 import { useOpenBoard } from "@/orchestration/open-board";
@@ -114,6 +114,9 @@ const PANE_ACTIONS = new Set([
   "action:maximize",
 ]);
 
+/** The right panel's commands, left out where the app in front of Gram offers no panel. */
+const PANEL_ACTIONS = new Set(["action:panel", "action:panelExpand", "action:reviewFocus"]);
+
 const KEEPS_OPEN = /^(pick:|action:openInPane$|action:resume$)/;
 const MESSAGE_LIMIT = 20;
 /** Claude Code on the web, opened as a plain page: Gram reads no session list from it. */
@@ -165,6 +168,7 @@ export function PaletteBody({
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const embedNavigation = shownNavigation(useEmbedShell((s) => s.navigation));
+  const threadsTitle = useThreadsTitle();
   const params = useParams({ strict: false });
   const currentId = params.threadId as ThreadId | undefined;
   const byId = useThreadsStore((s) => s.byId);
@@ -549,7 +553,7 @@ export function PaletteBody({
     },
     {
       id: "go:threads",
-      label: "Threads",
+      label: threadsTitle,
       keywords: "all threads list",
       run: go("go:threads", () => void navigate({ to: "/threads" })),
     },
@@ -570,6 +574,7 @@ export function PaletteBody({
 
   // A touch screen shows one pane at a time: no splits, layouts or panes to open into.
   const touch = isTouch();
+  const panelBarred = useLayoutStore((s) => s.panelBarred === true);
   const actions: PaletteItem[] = [
     ...(scriptThread === undefined
       ? []
@@ -896,7 +901,10 @@ export function PaletteBody({
       keywords: "bug feedback feature request github question",
       run: () => useReportIssueDialog.getState().show(currentId),
     },
-  ].filter((item) => !touch || !PANE_ACTIONS.has(item.id));
+  ].filter(
+    (item) =>
+      (!touch || !PANE_ACTIONS.has(item.id)) && (!panelBarred || !PANEL_ACTIONS.has(item.id)),
+  );
   // The workspace's own verbs, and its orchestrator's thread verbs only on the orchestrator itself;
   // the same command can come from the thread and from its workspace, so it is listed once.
   const inView = [

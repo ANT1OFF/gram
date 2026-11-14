@@ -153,6 +153,8 @@ const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body
 const refuse = (message: string, status = 403) => HttpServerResponse.text(message, { status });
 
 const JOIN_BODY_MAX = 512;
+/** A person's stable subject, as fronted sign-in names them: printable, at most 128 characters. */
+const OWNER = /^[\x21-\x7e]{1,128}$/;
 /** A folder request's body: a machine's id, a path and a limit. */
 const FOLDER_BODY_MAX = 8_192;
 
@@ -442,16 +444,35 @@ export const machineManagement = (
             409,
           );
         const body = yield* jsonBody(JOIN_BODY_MAX);
-        const { name, publicKey, platform = "linux" } = body ?? {};
+        const { name, publicKey, platform = "linux", owner, onDemand } = body ?? {};
         if (
           typeof name !== "string" ||
           typeof publicKey !== "string" ||
           typeof platform !== "string"
         )
           return json({ message: "Give the host's name and its public key." }, 400);
+        // A host started on demand: for one person (`personal`, which names its owner), or for
+        // the threads placed on it by name (`thread`, with or without an owner). An owner always
+        // comes with a kind, and a person's own host always with its owner.
+        if (
+          (owner !== undefined && (typeof owner !== "string" || !OWNER.test(owner))) ||
+          (onDemand !== undefined && onDemand !== "personal" && onDemand !== "thread") ||
+          (owner !== undefined && onDemand === undefined) ||
+          (onDemand === "personal" && owner === undefined)
+        )
+          return json(
+            { message: "An on-demand host names its kind, and a person's its owner." },
+            400,
+          );
         const result = (() => {
           try {
-            return hosts.machines.provision({ name, publicKey, platform });
+            return hosts.machines.provision({
+              name,
+              publicKey,
+              platform,
+              ...(typeof owner === "string" ? { owner } : {}),
+              ...(onDemand === "personal" || onDemand === "thread" ? { onDemand } : {}),
+            });
           } catch {
             return undefined;
           }

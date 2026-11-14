@@ -29,6 +29,7 @@ import {
   hostListing,
   workerBrowserOn,
 } from "@gram/contracts";
+import { OWNERS_DIFFER, sameOwner } from "../../host/ownership.ts";
 import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -39,6 +40,8 @@ import { limitQueuedNote } from "../../runtime/limit-wait.ts";
 import { finishedWorkers } from "../ledger.ts";
 import { LOCAL_MACHINE_NAMES, namesThisMachine } from "../../host/paired-machines.ts";
 import { type RouteOffer } from "../limit-pause.ts";
+import { ASKED_BY_LOOK_BACK, askedByOf } from "../asked-by.ts";
+import { findUserMessages } from "../../persistence/thread-store.ts";
 import { withBriefFooter } from "../user-words.ts";
 import { emptyWorkerMemo, withNotes, workerThreadId, type WorkerMemo } from "../outbox.ts";
 import {
@@ -106,6 +109,102 @@ const spawnedResult = (
 };
 
 /** What spawning takes from the rest of the service. */
+
+/**
+ * Where a headless Gram puts a worker that names no machine: on its orchestrator's machine, so an
+ * orchestration never spreads to a machine started for other work (another run's, say). None
+ * when the orchestrator runs on this machine.
+ */
+export const orchestratorsMachine = (under: Pick<Thread, "checkout" | "currentCheckout">) => {
+  const own = hostOf(effectiveCheckout(under));
+  return own === LOCAL_HOST_ID ? undefined : own;
+};
+
+/**
+ * Why a worker found again by its `clientRequestId` (a spawn a crash cut short, or a retry) may
+ * not be used, or nothing: each machine it works on must be one `workerMachine` allows its
+ * orchestrator now. On a headless Gram, this machine runs nothing, so a worker here is refused.
+ */
+export const recoveredMachineProblem = (
+  worker: Pick<Thread, "checkout" | "currentCheckout" | "extraCheckouts">,
+  context: {
+    readonly own: HostId | undefined;
+    readonly ownerOf: (hostId: HostId) => string | undefined;
+    readonly headless: boolean;
+    readonly machines: ReadonlyArray<NamedMachine>;
+  },
+): string | undefined => {
+  const hosts = [
+    ...new Set(
+      [effectiveCheckout(worker), worker.checkout, ...(worker.extraCheckouts ?? [])].map(hostOf),
+    ),
+  ];
+  for (const host of hosts) {
+    const placed = workerMachine(
+      host === LOCAL_HOST_ID
+        ? "here"
+        : (context.machines.find((machine) => machine.id === host) ?? { id: host }),
+      {
+        own: context.own,
+        ownOwner: context.own === undefined ? undefined : context.ownerOf(context.own),
+        headless: context.headless,
+      },
+    );
+    if ("error" in placed) return placed.error;
+    if ((placed.hostId ?? LOCAL_HOST_ID) !== host) return NOT_THIS_ORCHESTRATIONS_MACHINE;
+  }
+  return undefined;
+};
+
+/** A joined machine as a worker's placement reads it. */
+export interface NamedMachine {
+  readonly id: HostId;
+  readonly owner?: string | undefined;
+  readonly onDemand?: "personal" | "thread" | undefined;
+}
+
+/** Why a worker can't go on a machine its orchestrator named. */
+export const NOT_THIS_ORCHESTRATIONS_MACHINE =
+  "A worker goes on its orchestrator's own machine, or on another machine of the same person's own. That one was started for other work.";
+/** Why a worker named for this machine can't run here. */
+export const RUNS_ON_ITS_ORCHESTRATORS_MACHINE =
+  "This Gram runs no work itself: a worker runs on its orchestrator's machine. Omit machine.";
+
+/**
+ * Where a worker its orchestrator placed goes, or why not. `named` is the joined machine the
+ * orchestrator named, `"here"` for this machine (`LOCAL_MACHINE_NAMES`), or nothing.
+ *
+ * - Its orchestrator's own machine always.
+ * - Another machine only if it is the orchestrator's person's own (`onDemand: "personal"`, the
+ *   same `owner`), or, on a Gram that runs work itself, a machine started for nothing in particular
+ *   (no owner, no kind). Never a machine started for other work (`onDemand: "thread"`, another
+ *   run's), and on a headless Gram never an unmarked one either, which may be another run's from
+ *   before machines said their kind.
+ * - On a headless Gram, which runs no work itself, "here" is its orchestrator's machine.
+ *
+ * `undefined` keeps today's meaning: this machine, where it runs work.
+ */
+export const workerMachine = (
+  named: NamedMachine | "here" | undefined,
+  context: {
+    readonly own: HostId | undefined;
+    readonly ownOwner: string | undefined;
+    readonly headless: boolean;
+  },
+): { readonly hostId: HostId | undefined } | { readonly error: string } => {
+  const { own, ownOwner, headless } = context;
+  if (named === undefined || named === "here") {
+    if (!headless) return { hostId: undefined };
+    return own === undefined ? { error: RUNS_ON_ITS_ORCHESTRATORS_MACHINE } : { hostId: own };
+  }
+  if (named.id === own) return { hostId: named.id };
+  const personsOwn =
+    named.onDemand === "personal" && named.owner !== undefined && named.owner === ownOwner;
+  const unmarked = named.onDemand === undefined && named.owner === undefined;
+  if (personsOwn || (unmarked && !headless)) return { hostId: named.id };
+  return { error: NOT_THIS_ORCHESTRATIONS_MACHINE };
+};
+
 export interface SpawningDeps {
   readonly outsideWorkspace: Projects["outsideWorkspace"];
   readonly survey: LedgerWatch["survey"];
@@ -157,6 +256,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     briefedByUser,
     joinedMachines,
     headless,
+    ownerOf,
   } = kit;
   /**
    * The joined machine `named` (its name, any case, or its id), for `spawn_worker`'s `machine`;
@@ -205,17 +305,42 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       );
     });
   /**
-   * The machine a worker is placed on: the one `named`, else this one (`undefined`), which a
-   * headless Gram, running no work itself, replaces with its default machine. With none that can
-   * take it there, the spawn is refused with why.
+   * The machine a worker is placed on: the one `named`, else this one (`undefined`). A headless
+   * Gram, running no work itself, puts it on its orchestrator's machine, so an orchestration stays
+   * on one machine and never spreads to a machine started for other work; an orchestrator with
+   * none of its own takes the placement's machine. With none that can take it, the spawn is
+   * refused with why.
    */
-  const placedMachine = (tool: string, named: string | undefined) =>
+  const placedMachine = (tool: string, named: string | undefined, under: Thread) =>
     Effect.gen(function* () {
-      const hostId = named === undefined ? undefined : yield* machineNamed(tool, named);
-      if (hostId !== undefined || headless === undefined) return hostId;
-      return yield* headless.machine.pipe(
-        Effect.mapError((error) => toolError(tool, refusal("unknown_machine", error.message))),
-      );
+      const own = orchestratorsMachine(under);
+      // What was named, as a machine's record or this machine, before the rule decides.
+      const resolved = named === undefined ? undefined : yield* machineNamed(tool, named);
+      const record =
+        resolved === undefined
+          ? named === undefined
+            ? undefined
+            : ("here" as const)
+          : (joinedMachines().find((machine) => machine.id === resolved) ?? { id: resolved });
+      // An orchestrator on this machine of a headless Gram names nothing: placement decides.
+      if (headless !== undefined && own === undefined && record === undefined) {
+        return yield* headless.machine.pipe(
+          Effect.mapError((error) => toolError(tool, refusal("unknown_machine", error.message))),
+        );
+      }
+      const placed = workerMachine(record, {
+        own,
+        ownOwner: own === undefined ? undefined : ownerOf(own),
+        headless: headless !== undefined,
+      });
+      if ("error" in placed) return yield* toolError(tool, refusal("not_admitted", placed.error));
+      const hostId = placed.hostId;
+      // A worker goes on a machine of its orchestrator's person's, or of no one's under no one's
+      // (`host/ownership.ts`): an orchestration never spans two people, so nothing that reaches
+      // its workers has to ask whose each one is.
+      if (!sameOwner(ownerOf, effectiveCheckout(under), { hostId }))
+        return yield* toolError(tool, refusal("not_admitted", OWNERS_DIFFER));
+      return hostId;
     });
   const admitMachineModel = (tool: string, hostId: HostId | undefined, chosen: ModelRef) =>
     Effect.gen(function* () {
@@ -260,9 +385,9 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
   // because a roster or machine may change while a card is awaiting its answer.
   const checkSpawnMachine: OrchestrationShape["checkSpawnMachine"] = (callerId, input) =>
     Effect.gen(function* () {
-      const hostId = yield* placedMachine("spawn_worker", input.machine);
-      if (hostId === undefined) return;
       const { thread, state } = yield* requireAuthority("spawn_worker", callerId);
+      const hostId = yield* placedMachine("spawn_worker", input.machine, thread);
+      if (hostId === undefined) return;
       // A tier resolves against what that machine lists, as the spawn itself will.
       const chosen = yield* workerModel(
         "spawn_worker",
@@ -431,9 +556,25 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               ? undefined
               : ((yield* readOutbox(workspaceId)).requests[input.clientRequestId] ??
                 workerThreadId(workspaceId, input.clientRequestId));
+          // Only the orchestrator's own spawn answers an ask; the user's and a routine's are theirs.
+          const askedBy =
+            byUser === undefined && input.routine === undefined
+              ? askedByOf(
+                  yield* findUserMessages(store, caller.id, {
+                    from: "newest",
+                    count: ASKED_BY_LOOK_BACK,
+                  }),
+                )
+              : undefined;
           const brief: UserInput = {
             text: input.brief,
-            origin: { threadId: caller.id, title: caller.title, depth: 1, role: "orchestrator" },
+            origin: {
+              threadId: caller.id,
+              title: caller.title,
+              depth: 1,
+              role: "orchestrator",
+              ...(askedBy === undefined ? {} : { askedBy }),
+            },
           };
           const existing = requestedId === undefined ? undefined : yield* findThread(requestedId);
           if (existing !== undefined) {
@@ -457,6 +598,20 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 event.kind === "spawn" &&
                 (event.data as { readonly threadId?: unknown } | null)?.threadId === existing.id,
             );
+            // The worker found again is held to the same rule as a new one (`workerMachine`), on the
+            // machines it really works on, before anything reaches it: a brief is never delivered to
+            // a worker that sits on a machine its orchestrator may not use. A half-made one there is
+            // closed, and the next call with a new id places a fresh one.
+            const misplaced = recoveredMachineProblem(existing, {
+              own: orchestratorsMachine(caller),
+              ownerOf,
+              headless: headless !== undefined,
+              machines: joinedMachines(),
+            });
+            if (misplaced !== undefined) {
+              if (!finished) yield* runtimes.close(existing.id).pipe(Effect.ignore);
+              return yield* toolError(tool, refusal("not_admitted", misplaced));
+            }
             // A routine's half-made worker is finished only as it was made: in the project it was made
             // in. One whose routine moved since is closed instead, and the next run admits a fresh one.
             if (!finished && input.routine !== undefined && existing.projectId !== input.project) {
@@ -660,7 +815,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           // else about a spawn is rationed.
           const settings = yield* store.getSettings;
           // Where it runs, first: a tier resolves against what that machine lists.
-          const hostId = yield* placedMachine(tool, input.machine);
+          const hostId = yield* placedMachine(tool, input.machine, caller);
           // Without a roster the one model is the orchestrator's own, which it runs on.
           const picked =
             byUser === undefined
@@ -898,6 +1053,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                     ...(input.routine === undefined
                       ? {}
                       : { routine: { id: input.routine.id, name: input.routine.name } }),
+                    ...(askedBy === undefined ? {} : { askedBy }),
                   },
                   extraCheckouts,
                   ...(browser ? { browser: true } : {}),

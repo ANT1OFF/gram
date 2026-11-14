@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { MessageId, ServerEvent, ThreadId } from "@gram/contracts";
+import type { MessageId, ServerEvent, ThreadId, WaitItem } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -58,6 +58,17 @@ describe("EventHub.threadFeed", () => {
   );
 });
 
+/** A stored item of Waiting on you, for `person` or for anyone. */
+const waitItem = (title: string, person?: string) =>
+  ({
+    id: title,
+    kind: "draft",
+    title,
+    source: "agent",
+    createdAt: 1,
+    ...(person === undefined ? {} : { person }),
+  }) as unknown as WaitItem;
+
 describe("EventHub.serverEvents", () => {
   it.effect("keeps events published while the snapshot is built", () =>
     Effect.gen(function* () {
@@ -69,6 +80,56 @@ describe("EventHub.serverEvents", () => {
       const events = yield* hub.serverEvents(snapshot).pipe(Stream.take(2), Stream.runCollect);
       expect(events).toEqual([{ type: "threads.snapshot", threads: [] }, status]);
     }).pipe(Effect.provide(EventHub.layer)),
+  );
+
+  it.effect(
+    "sends a signed-in person their own Waiting on you, and the local person all of it",
+    () =>
+      Effect.gen(function* () {
+        const hub = yield* EventHub;
+        const all = [waitItem("anyone"), waitItem("ada's", "ada"), waitItem("grace's", "grace")];
+        const waits: ServerEvent = {
+          type: "thread.waits",
+          threadId: T1,
+          waits: all,
+          helperResolved: [waitItem("done for grace", "grace")],
+        };
+        const snapshot = hub.publish(waits).pipe(
+          Effect.as<ServerEvent>({
+            type: "threads.snapshot",
+            threads: [{ thread: { id: T1 }, waits: all } as never],
+          }),
+        );
+        const titles = (person?: string) =>
+          hub.serverEvents(snapshot, person).pipe(
+            Stream.take(2),
+            Stream.runCollect,
+            Effect.map((events) =>
+              [...events].map((event) =>
+                event.type === "threads.snapshot"
+                  ? event.threads[0]!.waits?.map((one) => one.title)
+                  : event.type === "thread.waits"
+                    ? [event.waits.map((one) => one.title), event.helperResolved?.length ?? 0]
+                    : event.type,
+              ),
+            ),
+          );
+        expect(yield* titles("id:ada")).toEqual([
+          ["anyone", "ada's"],
+          [["anyone", "ada's"], 0],
+        ]);
+        expect(yield* titles("id:grace")).toEqual([
+          ["anyone", "grace's"],
+          [["anyone", "grace's"], 1],
+        ]);
+        // Nobody signs in to this server, or the subscriber didn't say who: every item.
+        for (const person of ["local", undefined]) {
+          expect(yield* titles(person)).toEqual([
+            ["anyone", "ada's", "grace's"],
+            [["anyone", "ada's", "grace's"], 1],
+          ]);
+        }
+      }).pipe(Effect.provide(EventHub.layer)),
   );
 });
 
@@ -136,6 +197,41 @@ describe("EventHub per-client buffers", () => {
       const ids = (yield* Fiber.join(removed)).map((e) => e.threadId);
       expect(ids).toEqual(["t0", "t50", "t100", "t150"]);
     }).pipe(Effect.scoped, Effect.provide(SmallHub)),
+  );
+
+  it.live("own events reach `ownEvents` in order with the rest, and nothing else", () =>
+    Effect.gen(function* () {
+      const hub = yield* EventHub;
+      const own = yield* hub
+        .ownEvents((event) => event.type !== "notify")
+        .pipe(Stream.take(3), Stream.runCollect, Effect.forkScoped);
+      const internal: Array<string> = [];
+      yield* hub
+        .internalEvents(() => true)
+        .pipe(
+          Stream.runForEach((event) => Effect.sync(() => void internal.push(event.type))),
+          Effect.forkScoped,
+        );
+      yield* Effect.yieldNow;
+      const ui = yield* Stream.toPull(hub.serverEvents(Effect.succeed(SNAPSHOT)));
+      yield* pullUntil(ui, (e) => e.type === "threads.snapshot");
+      const threadId = "t1" as ThreadId;
+      yield* hub.publish({ type: "thread.removed", threadId: "t0" as ThreadId });
+      yield* hub.publishOwn({ type: "message.settled", threadId, messageId: "m1" });
+      yield* hub.publish({ type: "notify", kind: "info", title: "skipped" });
+      yield* hub.publishOwn({ type: "messages.replaced", threadId });
+      yield* hub.publish({ type: "notify", kind: "info", title: "last" });
+      expect([...(yield* Fiber.join(own))]).toEqual([
+        { type: "thread.removed", threadId: "t0" },
+        { type: "message.settled", threadId, messageId: "m1" },
+        { type: "messages.replaced", threadId },
+      ]);
+      // No window hears of them, and neither does an `internalEvents` stream that keeps everything.
+      const seen = yield* pullUntil(ui, (e) => e.type === "notify" && e.title === "last");
+      expect(seen.map((e) => e.type)).toEqual(["thread.removed", "notify", "notify"]);
+      yield* Effect.sleep("10 millis");
+      expect(internal).toEqual(["thread.removed", "notify", "notify"]);
+    }).pipe(Effect.scoped, Effect.provide(EventHub.layer)),
   );
 
   it.live("resumes with `resumed`, and resyncs a stalled client in full", () =>

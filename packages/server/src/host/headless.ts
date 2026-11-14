@@ -19,8 +19,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { ServerConfig } from "../config.ts";
+import { Embedding } from "../embedding/embedding.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
+import { callerPerson, NOT_YOUR_MACHINE, ownersOf } from "./ownership.ts";
 import { RemoteHosts, type RemoteHostsShape } from "./remote-hosts.ts";
 import type { WorkerHost } from "./worker-host.ts";
 
@@ -44,7 +46,14 @@ export interface PlaceableMachine {
   readonly joinedAt: number;
   readonly onlineSince?: number | undefined;
   readonly models?: ReadonlyArray<AgentModel> | undefined;
+  /** A host an embedder started on demand for one person (`embedding/on-demand.ts`). */
+  readonly owner?: string | undefined;
+  readonly onDemand?: "personal" | "thread" | undefined;
 }
+
+/** With hosts provisioned on demand, a person with no machine of their own can start one. */
+export const START_A_MACHINE =
+  "You have no machine running, and this Gram runs no work itself. Start a machine to run this.";
 
 /**
  * The machine a thread goes on when its request names none: the confirmed machine online now that
@@ -54,7 +63,11 @@ export interface PlaceableMachine {
 export const defaultMachine = (
   machines: ReadonlyArray<PlaceableMachine>,
 ): { readonly id: HostId } | { readonly error: string } => {
-  const confirmed = machines.filter((machine) => machine.confirmed);
+  // A host started for one person is theirs alone, and one started for the threads placed on it
+  // by name takes nothing else: neither is anyone's default.
+  const confirmed = machines.filter(
+    (machine) => machine.confirmed && machine.owner === undefined && machine.onDemand === undefined,
+  );
   const online = confirmed
     .filter((machine) => machine.onlineSince !== undefined)
     .toSorted((a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id));
@@ -68,67 +81,152 @@ export const defaultMachine = (
 
 /** Where a headless Gram places what names no machine. */
 export interface HeadlessPlacement {
-  /** The machine a new thread goes on (`defaultMachine`), or why none can take it. */
+  /**
+   * The machine a new thread goes on, or why none can take it: the acting person's own machine
+   * when an embedder started one for them, else the default one (`defaultMachine`).
+   */
   readonly machine: Effect.Effect<HostId, InvalidState>;
+  /** The person a host was started for, when it was started for one. */
+  readonly ownerOf: (hostId: HostId) => string | undefined;
 }
+
+/**
+ * The machine for `person` (absent without fronted sign-in): their own on-demand machine that is
+ * online, else the default one. Where hosts are provisioned on demand, a signed-in person's work
+ * goes on their own machine alone: with none running, the reason says they can start one, and it
+ * is never put on a machine started for someone or something else.
+ */
+export const machineFor = (
+  machines: ReadonlyArray<PlaceableMachine>,
+  person: string | undefined,
+  onDemand: boolean,
+): { readonly id: HostId } | { readonly error: string } => {
+  if (person !== undefined) {
+    const own = machines
+      .filter(
+        (machine) =>
+          machine.owner === person &&
+          machine.onDemand === "personal" &&
+          machine.confirmed &&
+          machine.onlineSince !== undefined,
+      )
+      .toSorted((a, b) => (b.onlineSince ?? 0) - (a.onlineSince ?? 0))[0];
+    if (own !== undefined) return { id: own.id };
+    if (onDemand) return { error: START_A_MACHINE };
+  }
+  return defaultMachine(machines);
+};
 
 /** Placement over the machines joined now; with no way for a machine to join, there is none. */
 export const headlessPlacement = (
   remote: Pick<RemoteHostsShape, "list"> | undefined,
+  onDemand = false,
 ): HeadlessPlacement => ({
-  machine: Effect.suspend(() => {
-    const picked = defaultMachine(remote?.list() ?? []);
+  machine: Effect.gen(function* () {
+    // The signed-in person's, or the person an agent's lineage is for (`host/ownership.ts`).
+    const person = yield* callerPerson;
+    const picked = machineFor(remote?.list() ?? [], person, onDemand);
     return "error" in picked
-      ? Effect.fail(new InvalidState({ message: picked.error }))
-      : Effect.succeed(picked.id);
+      ? yield* Effect.fail(new InvalidState({ message: picked.error }))
+      : picked.id;
   }),
+  ownerOf: ownersOf(remote === undefined ? undefined : { list: () => remote.list() }),
 });
+
+export { NOT_YOUR_MACHINE };
 
 /**
  * `request` as a headless Gram places it: on the machine it names, else on the default one. An
- * existing worktree is a folder of this machine, where nothing runs, so it is refused.
+ * existing worktree is a folder of this machine, where nothing runs, so it is refused. A machine
+ * started on demand for one person takes only that person's work.
  */
 export const placeRequest = (
   placement: HeadlessPlacement,
   request: CheckoutRequest,
-): Effect.Effect<CheckoutRequest, InvalidState> => {
-  if (request.kind === "existingWorktree")
-    return Effect.fail(new InvalidState({ message: RUNS_NOTHING_HERE }));
-  if (checkoutRequestHost(request) !== undefined) return Effect.succeed(request);
-  return Effect.map(placement.machine, (hostId) => ({ ...request, hostId }));
-};
+): Effect.Effect<CheckoutRequest, InvalidState> =>
+  Effect.gen(function* () {
+    if (request.kind === "existingWorktree")
+      return yield* Effect.fail(new InvalidState({ message: RUNS_NOTHING_HERE }));
+    const named = checkoutRequestHost(request);
+    if (named !== undefined) {
+      const owner = placement.ownerOf(named);
+      // Placement is strict: new work goes on an owned machine only for its owner, never for
+      // the server's own work with nobody to say who it is for.
+      if (owner !== undefined && owner !== (yield* callerPerson))
+        return yield* Effect.fail(new InvalidState({ message: NOT_YOUR_MACHINE }));
+      return request;
+    }
+    const hostId = yield* placement.machine;
+    return { ...request, hostId };
+  });
 
 const unavailable = (agent: AgentKind, message: string) =>
   new AgentUnavailable({ agent, reason: "startup-failed", message });
 
 /**
+ * The models a headless Gram offers `person`, the first of these that has a list:
+ *
+ * 1. their own machine's, where an embedder started one for them and it has reported;
+ * 2. the list their own machine last reported (`remembered`), while it is stopped, starting or
+ *    has not reported yet: a person's machine stays theirs while it is down;
+ * 3. the default machine's (`defaultMachine`, which never picks a machine started for someone).
+ *
+ * A step with no list falls through to the next. With none, the reason says what to do.
+ */
+export const modelsFor = (
+  machines: ReadonlyArray<PlaceableMachine>,
+  person: string | undefined,
+  onDemand: boolean,
+  remembered: Map<string, ReadonlyArray<AgentModel>>,
+): { readonly models: ReadonlyArray<AgentModel> } | { readonly error: string } => {
+  const picked = machineFor(machines, person, onDemand);
+  const own =
+    "error" in picked || person === undefined
+      ? undefined
+      : machines.find((each) => each.id === picked.id && each.owner === person);
+  if (own?.models !== undefined && person !== undefined) {
+    remembered.set(person, own.models);
+    return { models: own.models };
+  }
+  const last = person === undefined ? undefined : remembered.get(person);
+  if (last !== undefined) return { models: last };
+  // Their work goes on their own machine alone (`machineFor`): another's list says nothing of it.
+  if (onDemand && person !== undefined && "error" in picked) return picked;
+  const shared = defaultMachine(machines);
+  const sharedMachine =
+    "error" in shared ? undefined : machines.find((each) => each.id === shared.id);
+  if (sharedMachine?.models !== undefined) return { models: sharedMachine.models };
+  // Nothing to list: say why, about the machine the person's work would go to.
+  const waiting = own ?? sharedMachine;
+  if (waiting !== undefined)
+    return { error: `${waiting.name} hasn't said which models its Claude Code offers yet.` };
+  if ("error" in picked) return picked;
+  return "error" in shared ? shared : { error: NO_MACHINE_JOINED };
+};
+
+/**
  * The agents of a headless Gram: no CLI is looked for or started here. Claude Code is offered as
- * the joined machines list it, and a session opens only where a thread is placed (`placedHost`), so
- * one asked for here (a thread of this machine, a helper, a memory update) is refused. Codex has
- * no session on a joined machine yet, so it isn't offered.
+ * the joined machines list it (`modelsFor`), and a session opens only where a thread is placed
+ * (`placedHost`), so one asked for here (a thread of this machine, a helper, a memory update) is
+ * refused. Codex has no session on a joined machine yet, so it isn't offered.
  */
 export const headlessAgentHosts = (
   remote: Pick<RemoteHostsShape, "list"> | undefined,
+  onDemand = false,
 ): AgentHosts["Service"] => {
+  // Each person's own machine's last list, kept while this server runs.
+  const remembered = new Map<string, ReadonlyArray<AgentModel>>();
   const claude: AgentHost = {
     kind: "claude",
     capabilities: CLAUDE_CAPABILITIES,
     open: () => Effect.fail(unavailable("claude", RUNS_NOTHING_HERE)),
-    // What the default machine's Claude Code lists, as its host last reported it.
     listModels: () =>
-      Effect.suspend(() => {
-        const machines: ReadonlyArray<PlaceableMachine> = remote?.list() ?? [];
-        const picked = defaultMachine(machines);
-        if ("error" in picked) return Effect.fail(unavailable("claude", picked.error));
-        const machine = machines.find((each) => each.id === picked.id);
-        return machine?.models === undefined
-          ? Effect.fail(
-              unavailable(
-                "claude",
-                `${machine?.name ?? picked.id} hasn't said which models its Claude Code offers yet.`,
-              ),
-            )
-          : Effect.succeed(machine.models);
+      Effect.gen(function* () {
+        const person = yield* callerPerson;
+        const listed = modelsFor(remote?.list() ?? [], person, onDemand, remembered);
+        return "error" in listed
+          ? yield* Effect.fail(unavailable("claude", listed.error))
+          : listed.models;
       }),
   };
   return AgentHosts.of({
@@ -156,7 +254,12 @@ export const agentHostsOrHeadless = <E, R>(
     Effect.gen(function* () {
       if ((yield* ServerConfig).headless !== true) return otherwise;
       const remote = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
-      return Layer.succeed(AgentHosts, headlessAgentHosts(remote));
+      const embedding = Option.getOrUndefined(yield* Effect.serviceOption(Embedding));
+      // With hosts provisioned on demand, a person with no machine is told to start one.
+      return Layer.succeed(
+        AgentHosts,
+        headlessAgentHosts(remote, embedding?.config.hostProvider !== undefined),
+      );
     }),
   );
 

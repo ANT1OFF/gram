@@ -6,11 +6,14 @@ import {
   headlessAgentHosts,
   headlessLocal,
   headlessPlacement,
+  modelsFor,
   NO_MACHINE_JOINED,
   placeRequest,
   type PlaceableMachine,
   RUNS_NOTHING_HERE,
+  START_A_MACHINE,
 } from "./headless.ts";
+import { RoutedFor } from "./ownership.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import type { WorkerHost } from "./worker-host.ts";
 
@@ -118,6 +121,101 @@ describe("headlessAgentHosts", () => {
       expect(yield* Effect.flip(quiet.listModels())).toMatchObject({
         message: expect.stringContaining("build box hasn't said which models"),
       });
+    }),
+  );
+});
+
+const OTHER = [{ id: "fake-sonnet", displayName: "Fake Sonnet", supportsEffort: false }];
+/** Ada's own machine, which a deployment started for her alone. */
+const own = (fields: Partial<Omit<PlaceableMachine, "id">> = {}) =>
+  machine("m-ada", { owner: "ada", onDemand: "personal", ...fields });
+
+describe("modelsFor", () => {
+  it("lists the person's own machine's models, and no one else's own machine", () => {
+    const machines = [
+      own({ onlineSince: 1, models: MODELS }),
+      machine("m-shared", { onlineSince: 1, models: OTHER }),
+    ];
+    expect(modelsFor(machines, "ada", true, new Map())).toEqual({ models: MODELS });
+    // Grace has no machine of her own: neither Ada's nor the shared one is hers to run on.
+    expect(modelsFor(machines, "grace", true, new Map())).toEqual({ error: START_A_MACHINE });
+    // Without hosts on demand, the shared machine is everyone's.
+    expect(modelsFor(machines, "grace", false, new Map())).toEqual({ models: OTHER });
+    // Nor is it anyone's when it is the only one.
+    expect(modelsFor([own({ onlineSince: 1, models: MODELS })], "grace", true, new Map())).toEqual({
+      error: START_A_MACHINE,
+    });
+  });
+
+  it("keeps the list a person's own machine last reported while it is stopped or starting", () => {
+    const remembered = new Map();
+    expect(modelsFor([own({ onlineSince: 1, models: MODELS })], "ada", true, remembered)).toEqual({
+      models: MODELS,
+    });
+    expect(modelsFor([own()], "ada", true, remembered)).toEqual({ models: MODELS });
+    expect(modelsFor([own({ onlineSince: 2 })], "ada", true, remembered)).toEqual({
+      models: MODELS,
+    });
+    // Before it ever reported, the person is told to start one.
+    expect(modelsFor([own()], "ada", true, new Map())).toEqual({ error: START_A_MACHINE });
+    expect(modelsFor([own({ onlineSince: 2, name: "ada's" })], "ada", true, new Map())).toEqual({
+      error: expect.stringContaining("ada's hasn't said which models"),
+    });
+  });
+
+  it("falls through to the shared machine while the person's own has not reported (R5)", () => {
+    const shared = machine("m-shared", { onlineSince: 1, models: OTHER });
+    // Online, confirmed, theirs, and silent so far; nothing remembered.
+    expect(modelsFor([own({ onlineSince: 2 }), shared], "ada", true, new Map())).toEqual({
+      models: OTHER,
+    });
+    // A remembered list still comes before the shared machine's: the order holds.
+    const remembered = new Map([["ada", MODELS]]);
+    expect(modelsFor([own({ onlineSince: 2 }), shared], "ada", true, remembered)).toEqual({
+      models: MODELS,
+    });
+    // With nothing anywhere, the reason names the person's own machine.
+    expect(
+      modelsFor(
+        [own({ onlineSince: 2, name: "ada's" }), machine("m-quiet", { onlineSince: 1 })],
+        "ada",
+        true,
+        new Map(),
+      ),
+    ).toEqual({ error: expect.stringContaining("ada's hasn't said which models") });
+  });
+
+  it("is the default machine's list for nobody in particular", () => {
+    const machines = [
+      own({ onlineSince: 1, models: MODELS }),
+      machine("m-shared", { onlineSince: 1, models: OTHER }),
+    ];
+    expect(modelsFor(machines, undefined, true, new Map())).toEqual({ models: OTHER });
+    expect(
+      modelsFor([own({ onlineSince: 1, models: MODELS })], undefined, true, new Map()),
+    ).toEqual({
+      error: NO_MACHINE_JOINED,
+    });
+  });
+});
+
+describe("headlessAgentHosts for a person", () => {
+  it.effect("lists the calling person's own machine's models", () =>
+    Effect.gen(function* () {
+      const claude = yield* headlessAgentHosts(
+        remote([
+          machine("m-ada", { owner: "ada", onDemand: "personal", onlineSince: 1, models: MODELS }),
+        ]),
+        true,
+      ).get("claude");
+      expect(
+        yield* claude.listModels().pipe(Effect.provideService(RoutedFor, { person: "ada" })),
+      ).toEqual(MODELS);
+      expect(
+        yield* Effect.flip(
+          claude.listModels().pipe(Effect.provideService(RoutedFor, { person: "grace" })),
+        ),
+      ).toMatchObject({ _tag: "AgentUnavailable", message: START_A_MACHINE });
     }),
   );
 });

@@ -91,6 +91,16 @@ with a browser's `Origin`.
    { "name": "sandbox-1", "publicKey": "…", "platform": "linux" }
    ```
 
+   A host started on demand says what for, in `onDemand`:
+
+   - `"personal"`: one person's own host ([Hosts on demand](EMBEDDING.md#hosts-on-demand)), which
+     also names them in `"owner"`;
+   - `"thread"`: a host for the threads placed on it by name and their workers, such as one an
+     embedder starts for a single automated run. It names an `owner` only if it is one person's.
+
+   Either kind is never anyone's default machine, so no thread that names no machine lands on it.
+   An `owner` always comes with a kind. The same key registered again must name the same ones.
+
    It answers `{ "hostId", "fingerprint", "created", "origin" }`. Registering the same key again
    with the same name changes nothing and answers `created: false`. These are refused with `409`:
 

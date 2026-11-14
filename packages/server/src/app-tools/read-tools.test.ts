@@ -370,6 +370,21 @@ describe.skipIf(!hasGit)("read app tools", () => {
       yield* idle(worker.id);
       const stranger = yield* createThread(repo());
 
+      // The list says which thread is a worker and whose, so work for a workspace finds its
+      // orchestrator; a thread of its own carries no role.
+      yield* runtimes.updateThread(orchestrator.id, (t) => ({ ...t, role: "orchestrator" }));
+      const listed = (yield* run(stranger.id, "list_threads", {})) as {
+        readonly threads: ReadonlyArray<Record<string, unknown>>;
+      };
+      expect(listed.threads.find((t) => t["threadId"] === worker.id)).toMatchObject({
+        role: "worker",
+        orchestratorThreadId: orchestrator.id,
+      });
+      expect(listed.threads.find((t) => t["threadId"] === orchestrator.id)).toMatchObject({
+        role: "orchestrator",
+      });
+      expect(listed.threads.find((t) => t["threadId"] === stranger.id)).not.toHaveProperty("role");
+
       type Read = { readonly messages: ReadonlyArray<{ role: string; text: string }> };
       const read = (reader: ThreadId) =>
         run(reader, "get_thread", { threadId: worker.id }) as Effect.Effect<Read, unknown>;

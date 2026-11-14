@@ -1,4 +1,4 @@
-import { embeddingOn } from "@gram/contracts";
+import { embeddingOn, type ThreadId } from "@gram/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createRoute,
@@ -18,6 +18,7 @@ import type { Api } from "@/api/types";
 import { installKeyboard } from "@/keyboard/registry";
 import { setAppBasePath, appBasePath } from "@/lib/app-path";
 import { createAppRouter } from "@/router";
+import { ThreadView } from "@/thread/thread-view";
 import { routeTree } from "@/routeTree.gen";
 
 import type {
@@ -25,10 +26,13 @@ import type {
   MountGram,
   ShellContributions,
   ShellLinkComponent,
+  ShellThreadComponent,
   ShellRoute,
   UseShellLocation,
 } from "./contract";
 import { EMPTY_SHELL, routeProblem, shellFor, useEmbedShell } from "./store";
+import { installHostTheme } from "@/theme/host-theme";
+
 import { bootTheme } from "./theme-boot";
 
 /** An added page, in the conversation's place: it scrolls on its own, as Usage does. */
@@ -80,10 +84,19 @@ export const mountGram: MountGram = async (options) => {
     const mock = options.server === "mock";
     setServerBase(mock ? undefined : (options.server as { base?: string } | undefined)?.base);
     setAppBasePath(options.basePath);
-    bootTheme(document.documentElement, window.localStorage);
+    // The host's look first, so the boot attributes already name its palette.
+    installHostTheme(document, options.theme);
+    bootTheme(document.documentElement, window.localStorage, undefined, options.theme);
 
-    const api = await createApi(mock ? "mock" : "rpc");
-    if (mock) await withHostedMock(api);
+    const api = await createApi(
+      mock ? "mock" : "rpc",
+      typeof options.server === "object" ? options.server.session : undefined,
+    );
+    if (mock) {
+      await withHostedMock(api);
+      // Before the router is built, so a page that opens on one of them finds it.
+      for (const thread of options.mockThreads ?? []) await window.gramMock?.simulateThread(thread);
+    }
     // One answer, before the router is built: a page added to a server that has the features off
     // would otherwise exist and lead nowhere.
     const settings = await api.getSettings();
@@ -99,9 +112,18 @@ export const mountGram: MountGram = async (options) => {
       navigation: shell.navigation ?? [],
       workspaceSwitcher: shell.workspaceSwitcher,
       threads: shell.threads ?? "shown",
+      panel: shell.panel ?? "shown",
       hosted,
       attention: shell.attention,
+      threadsPage: shell.threadsPage ?? {},
+      machines: shell.machines ?? {},
+      models: shell.models ?? {},
+      newEntry: shell.newEntry,
+      toolCards: shell.toolCards ?? [],
       home: shell.home?.component,
+      sidebar: shell.sidebar ?? {},
+      document: shell.document ?? {},
+      repositories: shell.repositories,
       titles: Object.fromEntries([
         ...(shell.routes ?? []).flatMap((route) =>
           route.title === undefined ? [] : [[route.path, route.title] as const],
@@ -131,7 +153,13 @@ export const mountGram: MountGram = async (options) => {
           ...("navigation" in next ? { navigation: next.navigation ?? [] } : {}),
           ...("workspaceSwitcher" in next ? { workspaceSwitcher: next.workspaceSwitcher } : {}),
           ...("threads" in next ? { threads: next.threads ?? "shown" } : {}),
+          ...("panel" in next ? { panel: next.panel ?? "shown" } : {}),
           ...("attention" in next ? { attention: next.attention } : {}),
+          ...("threadsPage" in next ? { threadsPage: next.threadsPage ?? {} } : {}),
+          ...("newEntry" in next ? { newEntry: next.newEntry } : {}),
+          ...("sidebar" in next ? { sidebar: next.sidebar ?? {} } : {}),
+          ...("document" in next ? { document: next.document ?? {} } : {}),
+          ...("models" in next ? { models: next.models ?? {} } : {}),
         });
       },
       navigate: (to) => router.navigate({ to: to as "/" }),
@@ -153,6 +181,18 @@ export const ShellLink: ShellLinkComponent = ({ to, className, children }) => (
   <Link {...({ to } as unknown as { to: "/" })} {...(className === undefined ? {} : { className })}>
     {children}
   </Link>
+);
+
+/** A thread for the embedding app's pages: beside what the page shows, as a worker's is in a dock. */
+export const ShellThread: ShellThreadComponent = ({ threadId, placeholder }) => (
+  <div className="flex h-full min-h-0 flex-col" data-testid="shell-thread">
+    <ThreadView
+      key={threadId}
+      threadId={threadId as ThreadId}
+      focused
+      beside={{ header: null, ...(placeholder === undefined ? {} : { placeholder }) }}
+    />
+  </div>
 );
 
 /** Where the window is under the app, and a way to move it, for the embedding app's components. */

@@ -3,4 +3,5 @@
 import "../styles/globals.css";
 
 export type * from "./contract";
-export { mountGram, ShellLink, useShellLocation } from "./mount";
+export { mountGram, ShellLink, ShellThread, useShellLocation } from "./mount";
+export { ShellThreadPanel } from "./thread-panel";

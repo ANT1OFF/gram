@@ -57,6 +57,7 @@ import type {
   TurnUndoData,
 } from "@gram/contracts";
 import {
+  AWAITED_HOST_ID,
   browserUseAllowed,
   orchestratorBrowserOn,
   workerBrowserOn,
@@ -1298,7 +1299,8 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     if (input.origin === undefined && input.notice === undefined) {
       this.#orchestration.userTyped(threadId);
     }
-    if (runtime.running) {
+    // As the server: what is sent to a thread that waits for its machine waits in its queue.
+    if (runtime.running || runtime.summary.thread.awaitingMachine !== undefined) {
       this.#setQueue(runtime, [
         ...runtime.summary.queue,
         { id: this.#ids() as QueueItemId, input },
@@ -1466,6 +1468,178 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   /** `simulateBackgroundOutput` (`mock-thread-sims.ts`). */
   simulateBackgroundOutput(threadId: ThreadId, output: BackgroundOutput) {
     return simulateBackgroundOutput(this.#scenes, threadId, output);
+  }
+
+  /**
+   * Dev, e2e and embedding hook: a thread at a chosen id, with a plain-text conversation so far.
+   * It sits idle in the first project's own checkout; one already there by that id is left as is.
+   * With `worker`, once the mock's starting scenario is in, it is instead a worker of the named
+   * workspace's orchestrator in a worktree of its own, its brief first, and the thread that asked
+   * for it named on both; a workspace the mock doesn't have leaves it a thread of its own.
+   */
+  async simulateThread(seed: {
+    readonly id: string;
+    readonly title: string;
+    readonly messages?: readonly { readonly role: "user" | "assistant"; readonly text: string }[];
+    readonly worker?: {
+      readonly workspace: string;
+      readonly feature: string;
+      readonly brief: string;
+      readonly askedBy?: string;
+    };
+    readonly awaitingMachine?: { readonly failed?: string };
+  }): Promise<void> {
+    const id = seed.id as ThreadId;
+    if (this.#threads.has(id)) return;
+    const project = this.#projects[0];
+    if (project === undefined) return;
+    if (seed.worker !== undefined) await this.#starting;
+    if (this.#threads.has(id)) return;
+    const state =
+      seed.worker === undefined
+        ? undefined
+        : this.#orchestration.peek().find((each) => each.workspace.name === seed.worker!.workspace);
+    const orchestratorId = state?.workspace.orchestratorThreadId;
+    const orchestrator =
+      orchestratorId === undefined ? undefined : this.#threads.get(orchestratorId)?.summary.thread;
+    const asker =
+      seed.worker?.askedBy === undefined
+        ? undefined
+        : this.#threads.get(seed.worker.askedBy as ThreadId)?.summary.thread;
+    const askedBy = asker === undefined ? undefined : { threadId: asker.id, title: asker.title };
+    const home =
+      state === undefined
+        ? project
+        : (this.#projects.find((each) => each.id === state.workspace.homeProjectId) ?? project);
+    const at = Date.now();
+    const worker =
+      seed.worker !== undefined && state !== undefined && orchestrator !== undefined
+        ? { ...seed.worker, orchestrator }
+        : undefined;
+    // Started before its machine: on no machine, its messages in its queue, nothing said yet.
+    const awaiting = seed.worker === undefined ? seed.awaitingMachine : undefined;
+    const thread: Thread = {
+      id,
+      projectId: home.id,
+      title: seed.title,
+      userNamed: true,
+      model: { agent: "claude", model: "opus" },
+      mode: "default",
+      checkout:
+        awaiting !== undefined
+          ? { kind: "main", path: `/.threads/${seed.id}`, hostId: AWAITED_HOST_ID }
+          : worker === undefined
+            ? { kind: "main", path: home.root, branch: "main", base: "main" }
+            : {
+                kind: "worktree",
+                path: `${home.root}/.worktrees/${worker.feature}`,
+                branch: `feat/${worker.feature}`,
+                base: "main",
+              },
+      labels: [],
+      pinned: false,
+      parked: false,
+      unread: false,
+      createdAt: at,
+      lastActivityAt: at,
+      ...(awaiting === undefined
+        ? {}
+        : {
+            awaitingMachine: {
+              since: at,
+              ...(awaiting.failed === undefined
+                ? {}
+                : { failed: { at, message: awaiting.failed } }),
+            },
+          }),
+      ...(worker === undefined
+        ? {}
+        : {
+            workspaceId: state!.workspace.id,
+            spawnedBy: {
+              threadId: worker.orchestrator.id,
+              feature: worker.feature,
+              ...(askedBy === undefined ? {} : { askedBy }),
+            },
+          }),
+    };
+    const said = awaiting === undefined ? (seed.messages ?? []) : [];
+    const runtime = this.#add({
+      thread,
+      status: awaiting === undefined ? "idle" : "cold",
+      pendingRequests: [],
+      queue:
+        awaiting === undefined
+          ? []
+          : (seed.messages ?? [])
+              .filter((message) => message.role === "user")
+              .map((message) => ({
+                id: this.#ids() as QueueItemId,
+                input: { text: message.text },
+              })),
+      capabilities: MOCK_CAPABILITIES,
+    });
+    const brief: readonly GramUIMessage[] =
+      worker === undefined
+        ? []
+        : [
+            {
+              id: `${seed.id}-brief`,
+              role: "user",
+              metadata: { createdAt: at },
+              parts: [
+                {
+                  type: "data-thread-origin",
+                  data: {
+                    threadId: worker.orchestrator.id,
+                    title: worker.orchestrator.title,
+                    depth: 1,
+                    role: "orchestrator",
+                    mode: "queue",
+                    ...(askedBy === undefined ? {} : { askedBy }),
+                  },
+                },
+                { type: "text", text: worker.brief },
+              ],
+            },
+          ];
+    runtime.fold.apply({
+      type: "messages",
+      messages: [
+        ...brief,
+        ...said.map((message, index): GramUIMessage => ({
+          id: `${seed.id}-m${index}`,
+          role: message.role,
+          metadata: { createdAt: at },
+          parts: [{ type: "text", text: message.text }],
+        })),
+      ],
+    });
+    runtime.fold.apply({ type: "caughtUp", rev: this.#rev });
+    this.#emit({ type: "thread.upsert", thread });
+    this.#emit({ type: "thread.status", threadId: id, status: runtime.summary.status });
+    if (state !== undefined && worker !== undefined) {
+      this.#emit({ type: "orchestration.changed", workspaceId: state.workspace.id });
+    }
+  }
+
+  /**
+   * Dev and e2e hook: how the wait of a thread started before its machine stands, as the server's
+   * `POST /threads/machine-wait` and its own five minutes leave it. With `failed`, no machine came
+   * and that is its sentence; without, the wait begins again from now. A thread that doesn't wait
+   * is left as it is.
+   */
+  simulateMachineWait(threadId: ThreadId, change: { readonly failed?: string } = {}) {
+    const runtime = this.#runtime(threadId);
+    const waiting = runtime.summary.thread.awaitingMachine;
+    if (waiting === undefined) return;
+    const now = Date.now();
+    this.#update(runtime, {
+      awaitingMachine:
+        change.failed === undefined
+          ? { since: now }
+          : { since: waiting.since, failed: { at: now, message: change.failed } },
+    });
   }
 
   /** `simulateMessage` (`mock-thread-sims.ts`). */
@@ -2469,6 +2643,8 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     // As the server: refused as a send there would be, into a running turn too.
     this.#refuseMissingFolder(runtime);
     const item = runtime.summary.queue.find((q) => q.id === itemId);
+    // As the server: a thread that waits for its machine holds its queue until it is placed.
+    if (runtime.summary.thread.awaitingMachine !== undefined) return;
     // As the server: with nothing running there is nothing to steer into, so it goes now.
     if (!runtime.running) {
       this.#setQueue(

@@ -17,6 +17,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiProvider } from "@/api/context";
 import { prefillDraftProject, useDraftProjectRoot } from "@/composer/draft-prefill";
 import { createMockApi, type MockApi } from "@/api/mock";
+import type { ShellRepositoryPage } from "@/embed/contract";
+import { useEmbedShell } from "@/embed/store";
 import { Expand } from "@/motion";
 import { useServerSettings } from "@/settings-sync/store";
 import { DialogShell } from "@/thread/dialog-shell";
@@ -35,7 +37,9 @@ function Harness({ initial }: { initial: string }) {
 let api: MockApi;
 
 function renderPicker(initial = "") {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   api = createMockApi({ speed: 0, autoplay: false });
   render(
     <QueryClientProvider client={client}>
@@ -44,7 +48,9 @@ function renderPicker(initial = "") {
       </ApiProvider>
     </QueryClientProvider>,
   );
-  return screen.getByRole<HTMLInputElement>("combobox", { name: "Project path" });
+  return screen.getByRole<HTMLInputElement>("combobox", {
+    name: "Project path",
+  });
 }
 
 const type = (input: HTMLInputElement, value: string) => {
@@ -53,7 +59,9 @@ const type = (input: HTMLInputElement, value: string) => {
 };
 
 const optionNames = async () => {
-  const list = await screen.findByRole("listbox", { name: "Folder suggestions" });
+  const list = await screen.findByRole("listbox", {
+    name: "Folder suggestions",
+  });
   return within(list)
     .getAllByRole("option")
     .map((option) => option.textContent);
@@ -204,7 +212,9 @@ describe("FolderBrowser", () => {
 });
 
 const renderAdd = (adjust: (mock: typeof api) => void = () => {}) => {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   api = createMockApi({ speed: 0, autoplay: false });
   adjust(api);
   const onAdded = vi.fn();
@@ -226,12 +236,16 @@ describe("adding a repository", () => {
   it("suggests GitHub repositories, clones the one picked, and says where", async () => {
     const { input, onAdded } = renderAdd();
     type(input, "example-device");
-    const list = await screen.findByRole("listbox", { name: "Repository suggestions" });
+    const list = await screen.findByRole("listbox", {
+      name: "Repository suggestions",
+    });
     expect(
       within(list)
         .getAllByRole("option")
-        .map((o) => o.textContent),
+        .map((o) => o.getAttribute("aria-label")),
     ).toEqual(["EXAMPLE/example-device-apps"]);
+    // Listed under its owner, by its name.
+    expect(list.textContent).toBe("EXAMPLEexample-device-apps");
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(input.value).toBe("EXAMPLE/example-device-apps");
@@ -266,9 +280,96 @@ describe("adding a repository", () => {
     type(input, "example");
     expect(screen.getByRole("status").textContent).toBe("Loading your GitHub repositories…");
     answer.resolve({ repos: ["EXAMPLE/example-device-apps"] });
-    const list = await screen.findByRole("listbox", { name: "Repository suggestions" });
-    expect(within(list).getByRole("option").textContent).toBe("EXAMPLE/example-device-apps");
+    const list = await screen.findByRole("listbox", {
+      name: "Repository suggestions",
+    });
+    expect(within(list).getByRole("option").getAttribute("aria-label")).toBe(
+      "EXAMPLE/example-device-apps",
+    );
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("lists the embedding app's repositories by owner, searched as typed and a page at a time", async () => {
+    const pages: Record<string, ShellRepositoryPage> = {
+      ":": {
+        account: "me",
+        repositories: [
+          { fullName: "zeta-org/api" },
+          { fullName: "me/notes", private: true },
+          { fullName: "acme/web" },
+        ],
+        next: "2",
+        notice: {
+          text: "Only repositories the app can reach are listed.",
+          link: {
+            label: "Change access",
+            href: "https://example.test/install",
+          },
+        },
+      },
+      ":2": { repositories: [{ fullName: "me/site" }] },
+      "web:": { repositories: [{ fullName: "acme/web" }] },
+    };
+    const list = vi.fn(async ({ query, cursor }: { query: string; cursor?: string }) => {
+      const page = pages[`${query}:${cursor ?? ""}`];
+      if (page === undefined) throw new Error(`no page for ${query}:${cursor}`);
+      return page;
+    });
+    const cloneSuggestions = vi.fn(async () => ({
+      repos: ["EXAMPLE/own-listing"],
+    }));
+    useEmbedShell.setState({ repositories: { list } });
+    try {
+      const { input } = renderAdd((mock) => Object.assign(mock, { cloneSuggestions }));
+      fireEvent.focus(input);
+      const listbox = await screen.findByRole("listbox", {
+        name: "Repository suggestions",
+      });
+      await waitFor(() => expect(within(listbox).getAllByRole("option")).toHaveLength(3));
+      const names = () =>
+        within(listbox)
+          .getAllByRole("option")
+          .map((o) => o.getAttribute("aria-label"));
+      // The person's own first, then the organisations by name.
+      expect(names()).toEqual(["me/notes", "acme/web", "zeta-org/api"]);
+      expect(within(listbox).getByLabelText("Private")).toBeTruthy();
+      expect(within(listbox).getByRole("link", { name: "Change access" })).toHaveProperty(
+        "href",
+        "https://example.test/install",
+      );
+      expect(cloneSuggestions).not.toHaveBeenCalled();
+
+      // Going down to the end asks for the next page.
+      for (let i = 0; i < 3; i++) fireEvent.keyDown(input, { key: "ArrowDown" });
+      await waitFor(() =>
+        expect(names()).toEqual(["me/notes", "me/site", "acme/web", "zeta-org/api"]),
+      );
+
+      // Typing searches the source.
+      type(input, "web");
+      await waitFor(() => expect(names()).toEqual(["acme/web"]));
+      expect(list).toHaveBeenCalledWith(expect.objectContaining({ query: "web" }));
+    } finally {
+      useEmbedShell.setState({ repositories: undefined });
+    }
+  });
+
+  it("shows why the embedding app's repositories couldn't be listed", async () => {
+    useEmbedShell.setState({
+      repositories: {
+        list: async () => Promise.reject(new Error("Connect GitHub first.")),
+      },
+    });
+    try {
+      const { input } = renderAdd();
+      fireEvent.focus(input);
+      const listbox = await screen.findByRole("listbox", {
+        name: "Repository suggestions",
+      });
+      await waitFor(() => expect(listbox.textContent).toBe("Connect GitHub first."));
+    } finally {
+      useEmbedShell.setState({ repositories: undefined });
+    }
   });
 
   it("shows why a remote is refused or a clone failed, and adds nothing", async () => {
@@ -311,14 +412,18 @@ describe("adding a repository", () => {
       // A dialog opened before the clone began answers during it, and is ignored.
       dialog.resolve("/Users/dev/code/web");
       await waitFor(() => expect(onAdded).toHaveBeenCalledTimes(1));
-      expect(onAdded.mock.calls[0]![0]).toMatchObject({ name: "example-infra" });
+      expect(onAdded.mock.calls[0]![0]).toMatchObject({
+        name: "example-infra",
+      });
     } finally {
       Reflect.deleteProperty(window, "gram");
     }
   });
 
   it("stops a clone when it is closed, and does nothing it would have done", async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     api = createMockApi({ speed: 0, autoplay: false });
     const onAdded = vi.fn();
     const view = render(
@@ -356,7 +461,9 @@ describe("adding a repository", () => {
   });
 
   it("ports the suggestion list out of a clipping expand, above the path hint", async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     api = createMockApi({ speed: 0, autoplay: false });
     useServerSettings.setState({ settings: DEFAULT_SETTINGS });
     render(
@@ -372,7 +479,9 @@ describe("adding a repository", () => {
       name: "Folder, GitHub repo or URL",
     });
     type(input, "~/code/w");
-    const list = await screen.findByRole("listbox", { name: "Folder suggestions" });
+    const list = await screen.findByRole("listbox", {
+      name: "Folder suggestions",
+    });
     const root = screen.getByTestId("add-repository");
     // Out of `.gram-expand` (overflow: clip) and out of the field, so the hint can keep its gap.
     expect(list.closest(".gram-expand")).toBeNull();
@@ -388,7 +497,9 @@ describe("adding a repository", () => {
   });
 
   it("keeps portaled suggestions usable inside a dialog, and Escape closes only the list", async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     api = createMockApi({ speed: 0, autoplay: false });
     useServerSettings.setState({ settings: DEFAULT_SETTINGS });
     const onClose = vi.fn();
@@ -405,7 +516,9 @@ describe("adding a repository", () => {
       name: "Folder, GitHub repo or URL",
     });
     type(input, "example-device");
-    const list = await screen.findByRole("listbox", { name: "Repository suggestions" });
+    const list = await screen.findByRole("listbox", {
+      name: "Repository suggestions",
+    });
     expect(screen.getByTestId("add-repo-dialog").contains(list)).toBe(false);
     fireEvent.mouseDown(within(list).getByRole("option", { name: "EXAMPLE/example-device-apps" }));
     expect(input.value).toBe("EXAMPLE/example-device-apps");
@@ -424,7 +537,9 @@ describe("adding a repository", () => {
   it("adds a folder typed with completion", async () => {
     const { input, onAdded } = renderAdd();
     type(input, "~/code/w");
-    const list = await screen.findByRole("listbox", { name: "Folder suggestions" });
+    const list = await screen.findByRole("listbox", {
+      name: "Folder suggestions",
+    });
     fireEvent.mouseDown(within(list).getByRole("option", { name: "web" }));
     expect(input.value).toBe("~/code/web/");
     // Add waits for the check to say it is a repository.
@@ -440,7 +555,11 @@ describe("adding a repository", () => {
   });
 
   it("refuses a linked worktree or submodule as adding it would, and leaves an unreadable one to it", () => {
-    const folder = { path: "/Users/dev/code/web-b", entries: [], truncated: false };
+    const folder = {
+      path: "/Users/dev/code/web-b",
+      entries: [],
+      truncated: false,
+    };
     expect(typedFolder({ state: "valid", folder: { ...folder, git: "linked" } })).toEqual({
       kind: "refused",
       message: linkedCheckoutMessage(folder.path),
@@ -491,7 +610,11 @@ describe("adding a repository", () => {
     type(input, "EXAMPLE/agent-factory");
     const offer = await screen.findByTestId("clone-offer");
     expect(offer.textContent).toContain("Clones into ~/Documents/code/agent-factory");
-    fireEvent.click(within(offer).getByRole("button", { name: "Clone EXAMPLE/agent-factory" }));
+    fireEvent.click(
+      within(offer).getByRole("button", {
+        name: "Clone EXAMPLE/agent-factory",
+      }),
+    );
     await waitFor(() => expect(input.value).toBe("/Users/dev/Documents/code/agent-factory"));
     expect(await screen.findByTestId("folder-status")).toBeTruthy();
   });

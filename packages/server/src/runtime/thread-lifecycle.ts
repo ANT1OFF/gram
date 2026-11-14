@@ -268,6 +268,7 @@ export const makeThreadLifecycle = ({
         ...(input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }),
         ...(input.spawnedBy === undefined ? {} : { spawnedBy: input.spawnedBy }),
         ...(input.profile === undefined ? {} : { profile: input.profile }),
+        ...(input.awaitingMachine === undefined ? {} : { awaitingMachine: input.awaitingMachine }),
         ...(input.additionalDirectories === undefined || input.additionalDirectories.length === 0
           ? {}
           : { additionalDirectories: [...input.additionalDirectories] }),
@@ -287,10 +288,18 @@ export const makeThreadLifecycle = ({
       }
       yield* publishUpsert(stored);
       // Clients dropped the plan with the thread when it closed; the upsert carries only the thread.
-      if (input.restoreClosedHistory === true) yield* plans.publish(thread.id);
+      if (input.restoreClosedHistory === true) {
+        yield* plans.publish(thread.id);
+        yield* hub.publishOwn({ type: "messages.replaced", threadId: thread.id });
+      }
       if (input.input !== undefined) {
         yield* send(thread.id, input.input).pipe(Effect.catchTag("ThreadNotFound", Effect.die));
-      } else if (input.resumeSessionId === undefined && input.deferOpen !== true) {
+      } else if (
+        input.resumeSessionId === undefined &&
+        input.deferOpen !== true &&
+        // Nothing opens for a thread whose machine isn't named yet.
+        input.awaitingMachine === undefined
+      ) {
         const rt = yield* getRuntime(thread.id).pipe(Effect.orDie);
         yield* locked(rt, openSession(rt, stored));
       }

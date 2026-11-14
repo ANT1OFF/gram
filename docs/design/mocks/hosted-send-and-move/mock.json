@@ -1,0 +1,15 @@
+{
+  "title": "Send work to a hosted workspace, and move a workspace there",
+  "slug": "hosted-send-and-move",
+  "status": "approved",
+  "template": "flow",
+  "current": 1,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-13"
+    }
+  ]
+}

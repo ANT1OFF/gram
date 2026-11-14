@@ -665,6 +665,7 @@ export const makeLimitResume = ({
             });
             // Gram's, not the user's word: a hold holds it, across a restart too.
             rt.noticeKeys.set(id, LIMIT_RESUME_KEY);
+            rt.actors.set(id, "server");
             yield* syncQueue(rt);
           }
           if (!isShuttingDown()) {

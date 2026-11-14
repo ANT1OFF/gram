@@ -835,21 +835,22 @@ describe("ThreadRuntimes", () => {
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
-  it.effect("tells the user when a thread with a conversation continues in a fresh session", () =>
+  it.effect("gives a thread's new session its recent turns when its conversation is gone", () =>
     Effect.gen(function* () {
       const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
       const fake = yield* FakeAgentControl;
       yield* fake.setResumeNeedsTranscript(true);
       const notices = yield* collectNotices;
-      const { thread, session } = yield* createRunning();
+      const { thread, session } = yield* createRunning("remember the word heron");
       yield* session.completeTurn();
       yield* waitStatus(thread.id, "idle");
       yield* TestClock.adjust("15 minutes");
       yield* waitStatus(thread.id, "cold");
 
-      // As when Claude Code cleans up an old transcript.
+      // As when Claude Code cleans up an old transcript, or the machine it was on is gone.
       yield* fake.forgetTranscript(session.agentSessionId);
-      yield* runtimes.send(thread.id, { text: "again" });
+      yield* runtimes.send(thread.id, { text: "which word?" });
       const fresh = yield* waitFor(
         "the fresh session's send",
         Effect.sync(
@@ -859,6 +860,18 @@ describe("ThreadRuntimes", () => {
       );
       expect(fresh.options.resumeId).toBeUndefined();
       expect(fresh.options.sessionId).toBe(session.agentSessionId);
+      // The agent reads the recent turns, fenced, then the message; the transcript keeps the message.
+      const read = fresh.sent[0]!.text;
+      expect(read).toContain("earlier Claude Code conversation couldn't be resumed");
+      expect(read).toMatch(
+        /<gram-handoff from="claude" to="claude">[\s\S]*heron[\s\S]*<\/gram-handoff>/,
+      );
+      expect(read.endsWith("\nwhich word?")).toBe(true);
+      expect(read.match(/which word\?/g)).toHaveLength(1);
+      const stored = (yield* store.lastMessages(thread.id, 10)).filter((m) => m.role === "user");
+      expect(stored.at(-1)?.parts).toContainEqual(
+        expect.objectContaining({ type: "text", text: "which word?" }),
+      );
       yield* waitFor(
         "the notice",
         Effect.sync(() => notices.length > 0),
@@ -868,10 +881,20 @@ describe("ThreadRuntimes", () => {
           type: "notify",
           kind: "info",
           title:
-            "The previous Claude conversation couldn't be found, so this thread continues in a fresh session.",
+            "The previous Claude conversation couldn't be found, so this thread continues in a new session given its recent turns.",
           threadId: thread.id,
         },
       ]);
+
+      // Given once: the session's own transcript holds it from then on.
+      yield* fresh.completeTurn();
+      yield* waitStatus(thread.id, "idle");
+      yield* runtimes.send(thread.id, { text: "and again" });
+      yield* waitFor(
+        "the second send",
+        Effect.sync(() => fresh.sent.length === 2),
+      );
+      expect(fresh.sent[1]!.text).toBe("and again");
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
@@ -1117,6 +1140,133 @@ describe("ThreadRuntimes", () => {
           }),
         ).toBe("ran");
         yield* runtimes.close(idle.id, { expectedCheckout: "/work/other" });
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect(
+    "relocates a thread with nothing of it left on the old placement, turning sends away meanwhile",
+    () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const fake = yield* FakeAgentControl;
+        const from = { kind: "main" as const, path: "/work/moving" };
+        const to = { ...from, path: "/work/moved" };
+
+        // At work: refused, and left where it is.
+        const { thread: working } = yield* createRunning();
+        const atWork = yield* runtimes
+          .relocate(working.id, { from: working.checkout, prepare: Effect.succeed(to) })
+          .pipe(Effect.flip);
+        expect(atWork).toMatchObject({ _tag: "InvalidState", message: "the thread is at work" });
+        expect((yield* store.getThread(working.id)).checkout).toEqual(working.checkout);
+
+        // Idle with a live session: the session stops before the new placement is made, and a
+        // send while it is made is turned away rather than start work on the old placement.
+        const idle = yield* runtimes.create({ projectRoot: "/work/repo", checkout: from });
+        yield* waitStatus(idle.id, "idle");
+        const old = yield* fake.latest(idle.id);
+        const seen: Array<unknown> = [];
+        const placed = yield* runtimes.relocate(idle.id, {
+          from,
+          prepare: Effect.gen(function* () {
+            seen.push(old.closed);
+            seen.push(
+              (yield* runtimes.send(idle.id, { text: "meanwhile" }).pipe(Effect.flip))._tag,
+            );
+            return to;
+          }),
+        });
+        expect(seen).toEqual([true, "InvalidState"]);
+        expect(placed.checkout).toEqual(to);
+        expect((yield* store.getThread(idle.id)).checkout).toEqual(to);
+        // Let go: the thread takes work again, on its new placement.
+        yield* runtimes.send(idle.id, { text: "now" });
+        const next = yield* waitFor(
+          "a session on the new placement",
+          fake.latest(idle.id).pipe(Effect.map((s) => s !== old && s)),
+        );
+        expect(next.options.cwd).toBe(to.path);
+
+        // Placed elsewhere while the new placement was made: nothing changes.
+        const cold = yield* runtimes.create({
+          projectRoot: "/work/repo",
+          checkout: { kind: "main", path: "/work/cold" },
+          deferOpen: true,
+        });
+        const raced = yield* runtimes
+          .relocate(cold.id, {
+            from: cold.checkout,
+            prepare: store
+              .updateThread(cold.id, (t) => ({ ...t, checkout: { ...t.checkout, path: "/x" } }))
+              .pipe(Effect.as(to)),
+          })
+          .pipe(Effect.flip);
+        expect(raced).toMatchObject({ _tag: "InvalidState" });
+        expect((yield* store.getThread(cold.id)).checkout.path).toBe("/x");
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect(
+    "relocates a thread whose session is still opening for a message, which goes on the new placement",
+    () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const fake = yield* FakeAgentControl;
+        const from = { kind: "main" as const, path: "/work/waiting" };
+        const to = { ...from, path: "/work/new" };
+        const thread = yield* runtimes.create({
+          projectRoot: "/work/repo",
+          checkout: from,
+          deferOpen: true,
+        });
+        // The session opens for the message as one waits for a machine that is away.
+        yield* fake.setOpenDelay("1 hour");
+        yield* runtimes.send(thread.id, { text: "held" });
+        yield* waitStatus(thread.id, "starting");
+        yield* runtimes.relocate(thread.id, {
+          from,
+          prepare: fake.setOpenDelay(undefined).pipe(Effect.as(to)),
+        });
+        const session = yield* waitFor(
+          "the held message on the new placement",
+          fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
+        );
+        expect(session.options.cwd).toBe(to.path);
+        expect(JSON.stringify(session.sent[0])).toContain("held");
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect(
+    "relocates a thread at work off a placement gone for good, ending its turn, and its queue goes on",
+    () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const fake = yield* FakeAgentControl;
+        const { thread, session } = yield* createRunning();
+        // Sent behind the turn the gone machine never ends: queued.
+        yield* runtimes.send(thread.id, { text: "after" });
+        const to = { ...thread.checkout, path: "/work/after-loss" };
+        // Not gone for good: a thread at work stays.
+        expect(
+          yield* runtimes
+            .relocate(thread.id, { from: thread.checkout, prepare: Effect.succeed(to) })
+            .pipe(Effect.flip),
+        ).toMatchObject({ _tag: "InvalidState", message: "the thread is at work" });
+        yield* runtimes.relocate(thread.id, {
+          from: thread.checkout,
+          prepare: Effect.succeed(to),
+          endWork: true,
+        });
+        expect(session.closed).toBe(true);
+        expect((yield* store.getThread(thread.id)).checkout).toEqual(to);
+        const next = yield* waitFor(
+          "the queued message on the new placement",
+          fake.latest(thread.id).pipe(Effect.map((s) => s !== session && s.sent.length === 1 && s)),
+        );
+        expect(next.options.cwd).toBe(to.path);
+        expect(JSON.stringify(next.sent[0])).toContain("after");
       }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 

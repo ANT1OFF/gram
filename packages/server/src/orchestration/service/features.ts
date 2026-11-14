@@ -28,6 +28,7 @@ import {
   type PendingReason,
   type RefusalCode,
 } from "../rules.ts";
+import { threadOwner } from "../../host/ownership.ts";
 import { workersOf, toolError, type OrchestrationKit } from "./kit.ts";
 import {
   type StageInput,
@@ -104,8 +105,27 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
     cardsLock,
     outboxLock,
     requireAuthority,
+    ownerOf,
   } = kit;
   const { wake, armAlarms, armLimitResume } = deps;
+
+  /**
+   * A workspace whose orchestration runs on a machine started for one person keeps no stages or
+   * groups in this version: refused outright, for the user and the orchestrator alike, rather
+   * than checked for each worker a stage or a group reaches (`host/ownership.ts`).
+   */
+  const onPersonsMachine = (state: WorkspaceState) =>
+    Effect.gen(function* () {
+      const threads = yield* store.listThreads;
+      const holder = threads.find((thread) => thread.id === state.workspace.orchestratorThreadId);
+      return [...(holder === undefined ? [] : [holder]), ...workersOf(threads, state)].some(
+        (thread) => threadOwner(ownerOf, thread) !== undefined,
+      );
+    });
+  const PERSONAL_STAGES: Refused = {
+    code: "not_admitted",
+    reason: "A workspace on a person's own machine keeps no stages or groups yet.",
+  };
 
   // ---------------------------------------------------------------------------------------
   // Stages and groups
@@ -138,6 +158,7 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
   > =>
     Effect.gen(function* () {
       const state = yield* store.getWorkspace(workspaceId);
+      if (yield* onPersonsMachine(state)) return PERSONAL_STAGES;
       if ((input.feature === undefined) === (input.group === undefined)) {
         return {
           code: "invalid_stage",
@@ -215,6 +236,7 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
   > =>
     Effect.gen(function* () {
       const state = yield* store.getWorkspace(workspaceId);
+      if (yield* onPersonsMachine(state)) return PERSONAL_STAGES;
       const feature = featureSlug(input.feature);
       if (feature === undefined) {
         return {

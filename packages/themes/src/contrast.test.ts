@@ -119,6 +119,21 @@ function failures(vars: CssVariables, mode: Mode, contrast: Contrast): string[] 
       );
     }
   }
+  // Warning words on a tint of themselves (a badge, a notice), composited as the browser does.
+  if (contrast === "standard") {
+    for (const tint of [0.1, 0.15]) {
+      check(
+        "warning-text",
+        Object.fromEntries(
+          ["surface-1", "surface-2", "surface-3", "surface-hover"].map((bg) => [
+            `warning-text ${tint * 100}% tint over ${bg}`,
+            composite(v("warning-text"), tint, v(bg)),
+          ]),
+        ),
+        target.text,
+      );
+    }
+  }
   // Sidebar section counts (web sidebar/section-header.tsx): the section's hue as text on its own
   // tint (palette.ts SECTION_TINT), over the sidebar and the head's hover; dropped at
   // more contrast.

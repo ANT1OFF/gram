@@ -66,14 +66,14 @@ export function GridHeads() {
 }
 
 /**
- * The stage bar: five joined segments, one per station, filled up to where the work stands, under
- * the Stage head. It is the cell's one way of saying it, the station's name and step being its
- * hover and accessible name, so a column of rows reads as bars rather than the same words on every
- * line (the Now cell beside it already says "Working"). It says progress, not state: steps behind
- * are grey, the one it stands on is the accent (the current place) and stands taller than the
- * rest, and the worker's state stays with its dot and words in the Now cell, so the bar never adds
- * a second amber or red (DESIGN.md: one meaning per status colour). Steps ahead take border-strong
- * in full, so each segment holds the 3:1 a graphic needs on a light page.
+ * The stage bar: five joined segments, one per station, filled up to where the work stands, with
+ * the station's name under it. The bar alone read as a graphic with no legend: the Now cell says
+ * what the worker does ("Running · tests"), not how far the work has come. The name is quiet, in
+ * the row's second line, so a column of rows still reads as bars first. It says progress, not
+ * state: steps behind are grey, the one it stands on is the accent (the current place) and stands
+ * taller than the rest, and the worker's state stays with its dot and words in the Now cell, so
+ * the bar never adds a second amber or red (DESIGN.md: one meaning per status colour). Steps ahead
+ * take border-strong in full, so each segment holds the 3:1 a graphic needs on a light page.
  */
 export function StationSteps({ station }: { station: FeatureStation }) {
   const at = FEATURE_STATIONS.indexOf(station);
@@ -88,30 +88,38 @@ export function StationSteps({ station }: { station: FeatureStation }) {
           aria-label={name}
           data-testid="grid-stage"
           data-station={station}
-          // The first line's height, so the bar sits level with the task's name beside it.
-          className="flex h-lh min-w-0 items-center text-reading"
+          className="flex min-w-0 flex-col"
         />
       }
     >
+      {/* The first line's height, so the bar sits level with the task's name beside it. */}
+      <span aria-hidden className="flex h-lh items-center text-reading">
+        <span
+          data-testid="grid-stage-bar"
+          className="flex h-2.5 w-full max-w-32 items-center gap-0.5"
+        >
+          {FEATURE_STATIONS.map((each, index) => (
+            <i
+              key={each}
+              data-step={index < at ? "done" : index === at ? "current" : "upcoming"}
+              className={cn(
+                "h-1.5 flex-1 transition-colors duration-(--dur-base) first:rounded-s-full last:rounded-e-full",
+                index < at
+                  ? "bg-muted-foreground"
+                  : index === at
+                    ? "h-2.5 rounded-full bg-primary"
+                    : "bg-border-strong",
+              )}
+            />
+          ))}
+        </span>
+      </span>
       <span
         aria-hidden
-        data-testid="grid-stage-bar"
-        className="flex h-2.5 w-full max-w-32 items-center gap-0.5"
+        data-testid="grid-stage-name"
+        className="truncate text-meta text-muted-foreground"
       >
-        {FEATURE_STATIONS.map((each, index) => (
-          <i
-            key={each}
-            data-step={index < at ? "done" : index === at ? "current" : "upcoming"}
-            className={cn(
-              "h-1.5 flex-1 transition-colors duration-(--dur-base) first:rounded-s-full last:rounded-e-full",
-              index < at
-                ? "bg-muted-foreground"
-                : index === at
-                  ? "h-2.5 rounded-full bg-primary"
-                  : "bg-border-strong",
-            )}
-          />
-        ))}
+        {STATION_LABELS[station]}
       </span>
     </Hint>
   );

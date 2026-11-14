@@ -402,6 +402,10 @@ describe("PrPanel", () => {
     expect(
       checkDuration({ ...run, status: "pending", startedAt }, Date.parse(startedAt) + 3_723_000),
     ).toBe("1h 2m");
+    // Left running for days, it counts days.
+    expect(
+      checkDuration({ ...run, status: "pending", startedAt }, Date.parse(startedAt) + 200_000_000),
+    ).toBe("2d 7h");
   });
 
   it("reruns failed checks and shows them queued", async () => {

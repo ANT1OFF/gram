@@ -176,6 +176,11 @@ interface ShellContext {
    * stored panel then stays closed on the Diff tab, which would say only that, until opened here.
    */
   threadQuiet?: boolean | undefined;
+  /**
+   * The app in front of Gram offers no right panel on this page (`ShellContributions.panel`): it
+   * stays hidden whatever is stored, and its toggle does nothing.
+   */
+  panelBarred?: boolean | undefined;
   /** Which page the route is, so `panelPeek` is cleared on leaving it; see `shellPage`. */
   page: string;
   /**
@@ -248,9 +253,12 @@ export function fitShell(input: ShellFitInput): ShellFit {
   const room = input.windowWidth - CHAT_MIN_WIDTH;
   const reviewsTab = input.panelTab === "reviews" && reviewsTabShown(input);
   // A thread's page shows the stored panel; any other only the one opened there, or Reviews.
-  const open = input.threadInView
-    ? input.panelPeek || (input.panelOpen && !quietDiff(input))
-    : input.panelPeek || (reviewsTab && input.panelOpen);
+  // A page the app in front of Gram offers no panel on shows none.
+  const open =
+    input.panelBarred !== true &&
+    (input.threadInView
+      ? input.panelPeek || (input.panelOpen && !quietDiff(input))
+      : input.panelPeek || (reviewsTab && input.panelOpen));
   const sidebarRoom = SIDEBAR_WIDTH.min <= room;
 
   // The sidebar is the overview: open, its compact rail, or hidden, with automatic open on wide
@@ -1217,11 +1225,19 @@ export const useLayoutStore = create<LayoutState>()(
             panelExpanded: !focusMode && s.panelExpanded,
             reviewFocus: !focusMode && s.reviewFocus,
           })),
-        setShellContext: ({ windowWidth, threadInView, threadQuiet, page, chatBusy }) =>
+        setShellContext: ({
+          windowWidth,
+          threadInView,
+          threadQuiet,
+          panelBarred,
+          page,
+          chatBusy,
+        }) =>
           set((s) =>
             s.windowWidth === windowWidth &&
             s.threadInView === threadInView &&
             s.threadQuiet === threadQuiet &&
+            s.panelBarred === panelBarred &&
             s.page === page &&
             s.chatBusy === chatBusy
               ? {}
@@ -1229,6 +1245,7 @@ export const useLayoutStore = create<LayoutState>()(
                   windowWidth,
                   threadInView,
                   threadQuiet,
+                  panelBarred,
                   page,
                   chatBusy,
                   // A panel opened on the page left goes with it, expanded or not.
@@ -1323,6 +1340,7 @@ export const useLayoutStore = create<LayoutState>()(
           }),
         togglePanel: () =>
           set((s) => {
+            if (s.panelBarred === true) return {};
             if (s.focusMode) return showPanelPatch({ ...s, focusMode: false });
             const fit = fitShell(s);
             if (fit.panel === "none") return showPanelPatch(s);

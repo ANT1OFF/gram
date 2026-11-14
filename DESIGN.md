@@ -17,6 +17,14 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   `fg-muted`, `fg-subtle`, borders `border-subtle` and `border-strong`, one `accent` for the
   primary action and the current place, and status colours (`danger`, `success`, `warning`,
   `info`, `status-needs`, `status-working`, `merged`) only where they mean that status.
+- **Colour that says whose it is.** Beside the status colours, two marks carry a colour of their
+  own, on the glyph alone, never a fill, a pill or a row:
+  - An agent's mark wears its provider's brand colour wherever it is drawn (`AgentIcon`):
+    `provider-anthropic`, Claude's orange, and `provider-openai`, white on dark and near-black on
+    light. No palette seeds them, so a provider looks the same in every theme.
+  - The orchestrator's glyph (`Network`) takes `orchestrator`, the palette's second accent
+    (`highlight`), on its role glyph and chip, its update's card, a workspace in a picker and the
+    New form's Team (`ROLE_TONE`). A worker's glyph stays in the colour around it.
 - **One meaning per status colour.**
   - Amber is "needs you" (an approval, a question, an ask) and nothing else: `status-needs` for its
     words, `status-needs-mark` for its dots, icons and borders. It outlines on a neutral fill,
@@ -145,7 +153,10 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   (`text-meta`), never smaller. `text-caption` is only for what is never read for meaning: a key
   cap, a count badge, a footer's key legend. A third, quieter level (a hint, a step's evidence, a
   pending line) is `text-subtle` (`fg-subtle`), which holds the text floor like `fg-muted`; never
-  fade muted text with opacity (`text-muted-foreground/70`), which the drift check flags. A title wraps
+  fade muted text with opacity (`text-muted-foreground/70`), which the drift check flags. A
+  disabled control's words are the one level under the floor, `text-disabled` (`fg-disabled`):
+  subtle text on a button read as a live quiet one. Words in the accent's hue (a link, a current
+  step's name) are `text-link` (`accent-text`); `text-primary` is a mark's colour, for glyphs. A title wraps
   to two lines before it is cut short at its end, and its hover says the whole of it; a sidebar
   row's title keeps to one line, so its rows stay even. Metadata a heading or the whole list already says is left out: no repo on each
   row when every row has the same one, no workspace under its own heading.
@@ -179,7 +190,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     accessible name says the same; a `title` on an icon `Button` becomes that tooltip. Its hover
     and open fill is `bg-accent` (`surface-hover`), the row hover's, so the target shows in dark.
   - Chrome glyphs are `fg-muted` until hovered, focused or open, in the title bar's slot too (a
-    thread's role glyph, Open beside); colour on a glyph is a status it means, never decoration.
+    thread's role glyph, Open beside); colour on a glyph is a status it means or whose it is (a
+    provider's mark, the orchestrator's glyph), never decoration.
   - The open tab, view or toggle shows a background or an underline, never colour alone.
   - One meaning per glyph, and one glyph per meaning: the Inbox (everything that needs you) is
     `Inbox`, a needs-you mark or count `Hand`, review `Eye`, take over `HandGrab`, a setup problem

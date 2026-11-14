@@ -1,3 +1,4 @@
+import type { StoredActor } from "../host/ownership.ts";
 import { AutomaticDreamState, completionBaseline } from "./automatic-dream-state.ts";
 import {
   type PrWakeFired,
@@ -26,8 +27,12 @@ import {
   ProjectLocalCheck,
   applyProjectSettingsWrites,
   type SettingsWrite,
+  PERSONAL_SETTINGS,
   SettingsPatch,
   applySettingsPatch,
+  personalSettingKey,
+  splitSettingsPatch,
+  withoutPersonalSettings,
   embeddingOn,
   settingsPatchPaths,
   ProjectId,
@@ -265,6 +270,13 @@ export interface SeqMessage {
   readonly message: GramUIMessage;
 }
 
+/** A message with what its row says of it: its place in the thread, revision, role and turn. */
+export interface StoredMessage extends SeqMessage {
+  readonly rev: number;
+  readonly role: string;
+  readonly turnId?: string;
+}
+
 /** Which page of a thread's user messages `userMessagePage` reads. */
 export interface UserMessagePage {
   readonly from: "newest" | "oldest";
@@ -443,6 +455,17 @@ export interface HistoryRewind {
   readonly resumeAt: string | undefined;
 }
 
+/**
+ * A queued input as the store keeps it: with who it was written for (`host/ownership.ts`), which
+ * stays on the server; clients see the `QueuedInput` alone. Absent in rows written before.
+ */
+export type StoredQueuedInput = QueuedInput & { readonly actor?: StoredActor };
+
+const StoredActorJson = Schema.Union([
+  Schema.Literal("server"),
+  Schema.Struct({ person: Schema.optionalKey(Schema.String) }),
+]);
+
 export interface ThreadStoreShape {
   readonly messageReceipt: ReturnType<typeof makeMessageReceipts>;
   usageOverview(
@@ -510,9 +533,9 @@ export interface ThreadStoreShape {
   ): Effect.Effect<{ readonly thread: Thread; readonly changed: boolean }, ThreadNotFound>;
   getCompletedReason(id: ThreadId): Effect.Effect<CompletedReason | undefined>;
 
-  listQueue(threadId: ThreadId): Effect.Effect<ReadonlyArray<QueuedInput>>;
+  listQueue(threadId: ThreadId): Effect.Effect<ReadonlyArray<StoredQueuedInput>>;
   /** Replaces the thread's persisted queue, in order. */
-  putQueue(threadId: ThreadId, queue: ReadonlyArray<QueuedInput>): Effect.Effect<void>;
+  putQueue(threadId: ThreadId, queue: ReadonlyArray<StoredQueuedInput>): Effect.Effect<void>;
   /**
    * Deletes a thread with everything it owns, conversation included. An orchestrator's workspace
    * slot is emptied and its workers lose `spawnedBy` (they keep `workspaceId`); a worker's reports
@@ -618,12 +641,25 @@ export interface ThreadStoreShape {
     closed?: boolean,
   ): Effect.Effect<ReadonlyArray<SeqMessage>>;
   getMessage(threadId: ThreadId, messageId: string): Effect.Effect<GramUIMessage | undefined>;
+  /**
+   * The thread's stored messages with their rows' own columns, in thread order: the one
+   * `messageId` names, or else up to `limit` of those after place `afterSeq`.
+   */
+  storedMessages(
+    threadId: ThreadId,
+    select: { readonly messageId: string } | { readonly afterSeq: number; readonly limit: number },
+  ): Effect.Effect<ReadonlyArray<StoredMessage>>;
   getMessageTurn(
     threadId: ThreadId,
     messageId: string,
   ): Effect.Effect<
     { readonly role: GramUIMessage["role"]; readonly turnId: TurnId | undefined } | undefined
   >;
+  /**
+   * Who typed the thread's latest message a person typed (`metadata.sentBy`): `undefined` where
+   * nobody was signed in to say, or no person has written in the thread.
+   */
+  lastSender(threadId: ThreadId): Effect.Effect<string | undefined>;
   /** The message stored just before `messageId`, if any. */
   previousMessage(threadId: ThreadId, messageId: string): Effect.Effect<GramUIMessage | undefined>;
   /** One transaction: admission, history truncation, session reset and final provenance check.
@@ -833,6 +869,17 @@ export interface ThreadStoreShape {
   getSuppliedSettings: Effect.Effect<SettingsPatch | undefined>;
   /** Replaces what is supplied, `undefined` for nothing; answers the settings as they now read. */
   putSuppliedSettings(patch: SettingsPatch | undefined): Effect.Effect<Settings>;
+  /**
+   * The settings as `person` reads them: the shared settings, their own view laid over them
+   * (`PERSONAL_SETTINGS`, kept per person in `person_settings`), and what is supplied over both.
+   * A personal setting is read from the person's own rows only, never from the shared row.
+   */
+  getSettingsFor(person: string): Effect.Effect<Settings>;
+  /**
+   * Writes the personal settings `patch` names for `person`, `null` clearing one, and nothing
+   * else of it; answers the settings as that person now reads them.
+   */
+  putPersonSettings(person: string, patch: SettingsPatch): Effect.Effect<Settings>;
   /** Read-modify-write in one transaction; `f` answering `undefined` writes nothing. */
   updateSeenConnectors(
     f: (seen: ReadonlyArray<SeenConnector>) => ReadonlyArray<SeenConnector> | undefined,
@@ -1280,6 +1327,15 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       );
       yield* pruneHistory(sql, Date.now());
 
+      interface StoredMessageRow {
+        readonly id: string;
+        readonly seq: number;
+        readonly rev: number;
+        readonly role: string;
+        readonly turn_id: string | null;
+        readonly message: string;
+      }
+
       /** A thread's messages in the order given, without those that don't decode. */
       const messageRows = (
         table: "messages" | "closed_messages",
@@ -1317,15 +1373,17 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       /** `toldAt`: `null` for news to the agent, `undefined` to leave what was stored. */
       const writeWait = (threadId: ThreadId, item: WaitItem, toldAt: number | null | undefined) =>
         (toldAt === undefined
-          ? sql`INSERT INTO wait_items (thread_id, id, message_id, created_at, resolved_at, item)
+          ? sql`INSERT INTO wait_items
+                (thread_id, id, message_id, created_at, resolved_at, person, item)
               VALUES (${threadId}, ${item.id}, ${item.messageId ?? null}, ${item.createdAt},
-                ${item.resolvedAt ?? null}, ${toJson(WaitItem, item)})
+                ${item.resolvedAt ?? null}, ${item.person ?? null}, ${toJson(WaitItem, item)})
               ON CONFLICT (thread_id, id) DO UPDATE SET message_id = excluded.message_id,
                 resolved_at = excluded.resolved_at, item = excluded.item`
           : sql`INSERT INTO wait_items
-                (thread_id, id, message_id, created_at, resolved_at, told_at, item)
+                (thread_id, id, message_id, created_at, resolved_at, told_at, person, item)
               VALUES (${threadId}, ${item.id}, ${item.messageId ?? null}, ${item.createdAt},
-                ${item.resolvedAt ?? null}, ${toldAt}, ${toJson(WaitItem, item)})
+                ${item.resolvedAt ?? null}, ${toldAt}, ${item.person ?? null},
+                ${toJson(WaitItem, item)})
               ON CONFLICT (thread_id, id) DO UPDATE SET message_id = excluded.message_id,
                 resolved_at = excluded.resolved_at, told_at = excluded.told_at,
                 item = excluded.item`
@@ -1718,6 +1776,40 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const readSettings = Effect.gen(function* () {
         return yield* withSupplied(yield* readStoredSettings);
       });
+      /** `person`'s own settings, a patch for each; a value this build can't read is left out. */
+      const readPersonPatches = (person: string) =>
+        Effect.gen(function* () {
+          const rows = yield* sql<{
+            key: string;
+            value: string;
+          }>`SELECT key, value FROM person_settings WHERE person = ${person}`;
+          const held = new Map(rows.map((row) => [row.key, row.value]));
+          const patches: Array<SettingsPatch> = [];
+          for (const path of PERSONAL_SETTINGS) {
+            const stored = held.get(personalSettingKey(path));
+            if (stored === undefined) continue;
+            try {
+              patches.push(
+                Schema.decodeUnknownSync(SettingsPatch)({
+                  [path[0]]: { [path[1]]: JSON.parse(stored) },
+                }),
+              );
+            } catch {
+              // Written by a build that knew another shape: absent until it is set again.
+              yield* Effect.logWarning("a person's setting is unreadable; ignored").pipe(
+                Effect.annotateLogs({ key: personalSettingKey(path) }),
+              );
+            }
+          }
+          return patches;
+        });
+      const readSettingsFor = (person: string) =>
+        Effect.gen(function* () {
+          const shared = withoutPersonalSettings(yield* readStoredSettings);
+          return yield* withSupplied(
+            (yield* readPersonPatches(person)).reduce(applySettingsPatch, shared),
+          );
+        });
       /** Field by field: a part that doesn't decode reads as its default, and the rest is kept. */
       const readStoredSettings = Effect.gen(function* () {
         const stored = yield* storedSettings;
@@ -1980,7 +2072,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               input: string;
               notice_key: string | null;
               turn_id: string | null;
-            }>`SELECT id, input, notice_key, turn_id FROM queue_items
+              actor: string | null;
+            }>`SELECT id, input, notice_key, turn_id, actor FROM queue_items
               WHERE thread_id = ${threadId} ORDER BY position`.pipe(
               Effect.flatMap((rows) =>
                 readableRows(
@@ -1989,12 +2082,18 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   rows,
                   (r) => `${threadId}/${r.id}`,
                   (r) =>
-                    mapDecoded(decodeStored(UserInput, r.input), (input): QueuedInput => ({
-                      id: r.id as QueueItemId,
-                      input,
-                      ...(r.notice_key === null ? {} : { noticeKey: r.notice_key }),
-                      ...(r.turn_id === null ? {} : { turnId: r.turn_id as TurnId }),
-                    })),
+                    mapDecoded(decodeStored(UserInput, r.input), (input): StoredQueuedInput => {
+                      // One that won't decode is no one's in particular, as an old row is.
+                      const actor =
+                        r.actor === null ? undefined : decodeStored(StoredActorJson, r.actor);
+                      return {
+                        id: r.id as QueueItemId,
+                        input,
+                        ...(r.notice_key === null ? {} : { noticeKey: r.notice_key }),
+                        ...(r.turn_id === null ? {} : { turnId: r.turn_id as TurnId }),
+                        ...(actor === undefined ? {} : { actor: actor.ok ? actor.value : {} }),
+                      };
+                    }),
                 ),
               ),
             ),
@@ -2011,9 +2110,10 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               }
               for (const [position, item] of queue.entries()) {
                 yield* sql`INSERT OR REPLACE INTO queue_items
-                  (thread_id, id, position, input, notice_key, turn_id)
+                  (thread_id, id, position, input, notice_key, turn_id, actor)
                   VALUES (${threadId}, ${item.id}, ${position}, ${toJson(UserInput, item.input)},
-                    ${item.noticeKey ?? null}, ${item.turnId ?? null})`;
+                    ${item.noticeKey ?? null}, ${item.turnId ?? null},
+                    ${item.actor === undefined ? null : toJson(StoredActorJson, item.actor)})`;
               }
             }),
           ),
@@ -2044,6 +2144,20 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                       role: rows[0].role as GramUIMessage["role"],
                       turnId: (rows[0].turn_id ?? undefined) as TurnId | undefined,
                     },
+              ),
+            ),
+          ),
+        lastSender: (threadId) =>
+          run(
+            sql<{
+              person: string | null;
+            }>`SELECT json_extract(message, '$.metadata.sentBy') AS person
+              FROM messages
+              WHERE thread_id = ${threadId} AND role = 'user' AND json_valid(message)
+                AND json_extract(message, '$.metadata.author') = 'user'
+              ORDER BY seq DESC LIMIT 1`.pipe(
+              Effect.map((rows) =>
+                typeof rows[0]?.person === "string" ? rows[0].person : undefined,
               ),
             ),
           ),
@@ -2585,6 +2699,36 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               ),
             ),
           ),
+        storedMessages: (threadId, select) =>
+          run(
+            ("messageId" in select
+              ? sql<StoredMessageRow>`SELECT id, seq, rev, role, turn_id, message FROM messages
+                  WHERE thread_id = ${threadId} AND id = ${select.messageId}`
+              : sql<StoredMessageRow>`SELECT id, seq, rev, role, turn_id, message FROM messages
+                  WHERE thread_id = ${threadId} AND seq > ${select.afterSeq}
+                  ORDER BY seq LIMIT ${select.limit}`
+            ).pipe(
+              Effect.flatMap((rows) =>
+                readableRows(
+                  unreadable,
+                  "messages",
+                  rows,
+                  (r) => `${threadId}/${r.id}`,
+                  (r) =>
+                    mapDecoded(
+                      decodeStored(UIMessageSchema, r.message),
+                      (message): StoredMessage => ({
+                        seq: Number(r.seq),
+                        rev: Number(r.rev),
+                        role: r.role,
+                        ...(r.turn_id === null ? {} : { turnId: r.turn_id }),
+                        message,
+                      }),
+                    ),
+                ),
+              ),
+            ),
+          ),
         listClosedMessages: (threadId) =>
           run(
             sql<{ id: string; message: string }>`SELECT id, message FROM closed_messages
@@ -3100,6 +3244,28 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
 
         getSettings: run(readSettings),
         putSettings: (settings) => tx(writeSettings(settings)),
+        getSettingsFor: (person) => run(readSettingsFor(person)),
+        putPersonSettings: (person, patch) =>
+          tx(
+            Effect.gen(function* () {
+              const encoded = Schema.encodeSync(SettingsPatch)(splitSettingsPatch(patch).personal);
+              for (const path of PERSONAL_SETTINGS) {
+                const section = (encoded as Record<string, unknown>)[path[0]];
+                if (typeof section !== "object" || section === null || !(path[1] in section))
+                  continue;
+                const value = (section as Record<string, unknown>)[path[1]];
+                const key = personalSettingKey(path);
+                if (value === null || value === undefined) {
+                  yield* sql`DELETE FROM person_settings WHERE person = ${person} AND key = ${key}`;
+                } else {
+                  yield* sql`INSERT INTO person_settings (person, key, value)
+                    VALUES (${person}, ${key}, ${JSON.stringify(value)})
+                    ON CONFLICT (person, key) DO UPDATE SET value = excluded.value`;
+                }
+              }
+              return yield* readSettingsFor(person);
+            }),
+          ),
         getSuppliedSettings: run(readSupplied),
         putSuppliedSettings: (patch) =>
           tx(

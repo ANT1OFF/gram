@@ -52,6 +52,7 @@ import { type OrchestrationShape } from "./shape.ts";
 import { USER_ANSWERS_MAX, userMessagesOf } from "../user-words.ts";
 import { findUserMessages } from "../../persistence/thread-store.ts";
 import { toolError, pausedFeatureOf, clipped, type OrchestrationKit } from "./kit.ts";
+import { NOT_YOUR_MACHINE, recordActor } from "../../host/ownership.ts";
 
 /** A worker's own words for a question, trimmed and scrubbed like everything a worker writes. */
 const questionWords = (text: string): string => redactText(text.trim());
@@ -107,6 +108,12 @@ export interface WorkerQuestionsDeps {
   ) => Effect.Effect<void>;
 }
 
+/** `moved` as made for `closedFor`, when it moved and was made for a caller. */
+const withClosedFor = (
+  moved: StoredWorkerQuestion | QuestionRefusal,
+  closedFor: StoredWorkerQuestion["closedFor"],
+) => (isRefusal(moved) || closedFor === undefined ? moved : { ...moved, closedFor });
+
 /** The worker-question tools and the timers and deliveries behind them. */
 export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestionsDeps) => {
   const {
@@ -125,6 +132,9 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
     authorityOf,
   } = kit;
   const { recordReport, wake } = deps;
+
+  /** Who a decision made now is for (`closedFor`): kept with it, for its owed notice. */
+  const decidedFor = recordActor;
 
   const answerWorker: OrchestrationShape["answerWorker"] = (callerId, input) =>
     Effect.gen(function* () {
@@ -387,6 +397,8 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
     read: ({ workspaceId, questionId }) =>
       readOutbox(workspaceId).pipe(Effect.map((outbox) => findStoredQuestion(outbox, questionId))),
     owed: (question) => question.deliveryOwed === true,
+    // Delivered as the caller the decision was made in, a retry included (`durable-work.ts`).
+    actor: (question) => Effect.succeed(question.closedFor),
     perform: (current, retry, { workspaceId }) =>
       Effect.gen(function* () {
         const worker = yield* findThread(current.threadId);
@@ -403,11 +415,16 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
           (yield* store.messagesWith(worker.id, [text], "user")).some((message) =>
             message.parts.some((part) => part.type === "text" && part.text === text),
           );
-        const delivered: QuestionDelivery | undefined = queued
+        const delivered: QuestionDelivery | "refused" | undefined = queued
           ? "queued"
           : recorded
             ? "sent"
             : yield* deliverToWorker(current, text).pipe(
+                // Made for someone this worker isn't theirs to change: settled, never sent.
+                Effect.catchIf(
+                  (error) => error._tag === "InvalidState" && error.message === NOT_YOUR_MACHINE,
+                  () => Effect.succeed("refused" as const),
+                ),
                 Effect.catch((error) =>
                   Effect.logWarning("closed worker question notice not delivered").pipe(
                     Effect.annotateLogs({ workspaceId, questionId: current.id, kind: error._tag }),
@@ -415,6 +432,7 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
                   ),
                 ),
               );
+        if (delivered === "refused") return { delivered: undefined };
         return delivered === undefined ? undefined : { delivered };
       }),
     markDone: (current, { delivered }, { workspaceId }) =>
@@ -603,10 +621,14 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       }
       const answer = clipped(redactText(input.answer.trim()), WORKER_QUESTION_ANSWER_MAX);
       const at = yield* Clock.currentTimeMillis;
+      const closedFor = yield* decidedFor;
       let before: StoredWorkerQuestion | undefined;
       const claimed = yield* moveQuestion(workspaceId, input.questionId, (question) => {
         before = question;
-        return answeredByOrchestrator(question, answer, redactText(source), at);
+        return withClosedFor(
+          answeredByOrchestrator(question, answer, redactText(source), at),
+          closedFor,
+        );
       });
       if (isRefusal(claimed)) return yield* toolError(tool, refusal(claimed.code, claimed.refused));
       const delivered = yield* deliverToWorker(
@@ -642,6 +664,7 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
   ) =>
     Effect.gen(function* () {
       yield* store.getWorkspace(workspaceId);
+      const closedFor = yield* decidedFor;
       const at = yield* Clock.currentTimeMillis;
       const scrubbed =
         "answer" in close
@@ -654,7 +677,7 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       const claimed = yield* moveQuestion(workspaceId, questionId, (question) => {
         // Retries and concurrent user replies preserve the first committed decision.
         if (!isOpenQuestion(question) && question.closedBy === "user") return question;
-        const moved = closedByUser(question, scrubbed, at);
+        const moved = withClosedFor(closedByUser(question, scrubbed, at), closedFor);
         newlyClosed = !isRefusal(moved);
         return moved;
       });

@@ -86,6 +86,36 @@ beforeEach(() => seed());
 afterEach(cleanup);
 
 describe("QueueList", () => {
+  it("on a thread that waits for its machine, lists what waits after the first and sends none now", () => {
+    seed({
+      status: "cold",
+      queue: [
+        { id: "q1" as QueueItemId, input: { text: "one" } },
+        { id: "q2" as QueueItemId, input: { text: "two" } },
+        { id: "q3" as QueueItemId, input: { text: "three" } },
+      ],
+      thread: { ...summary.thread, awaitingMachine: { since: 1 } },
+    });
+    renderQueue(fakeApi().api);
+    // The first is drawn in the conversation as the person's message.
+    expect(itemTexts()).toEqual(["two", "three"]);
+    expect(screen.getByTestId("queue").textContent).toContain("Queued · waits for the machine");
+    expect(screen.queryByTestId("queue-steer")).toBeNull();
+    const first = within(screen.getAllByTestId("queue-item")[0]!);
+    expect(first.getByRole("button", { name: "Move up" }).hasAttribute("disabled")).toBe(true);
+    expect(first.getByRole("button", { name: "Remove" })).toBeTruthy();
+  });
+
+  it("shows no queue for a waiting thread whose only message is the one in the conversation", () => {
+    seed({
+      status: "cold",
+      queue: [{ id: "q1" as QueueItemId, input: { text: "one" } }],
+      thread: { ...summary.thread, awaitingMachine: { since: 1 } },
+    });
+    renderQueue(fakeApi().api);
+    expect(screen.queryByTestId("queue")).toBeNull();
+  });
+
   it("renders nothing when the queue is empty", () => {
     useThreadsStore.getState().applyEvent({ type: "thread.queue", threadId: T, queue: [] });
     renderQueue(fakeApi().api);

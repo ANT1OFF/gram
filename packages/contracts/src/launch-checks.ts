@@ -78,6 +78,12 @@ export const LaunchChecks = Schema.Struct({
   /** `gh auth status` succeeded. */
   ghSignedIn: Schema.Boolean,
   /**
+   * `true` from a headless server, which runs no work itself and looks for nothing on its machine:
+   * `tools` is empty because nothing was looked for, not because nothing is installed. Its
+   * agents and tools are its joined machines', each checked there. Absent on any other server.
+   */
+  headless: Schema.optionalKey(Schema.Boolean),
+  /**
    * Version-checked agents this user selected as a default or used in threads. Read fresh
    * on every request; a saved gateway key alone selects no agent.
    */

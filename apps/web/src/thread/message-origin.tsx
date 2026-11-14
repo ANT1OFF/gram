@@ -1,4 +1,5 @@
-import type { MessageOrigin } from "@gram/contracts";
+import { useEmbedShell } from "@/embed/store";
+import type { AskedBy, MessageOrigin } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, MessagesSquare } from "lucide-react";
 import { useEffect, useId, type ReactNode } from "react";
@@ -53,7 +54,11 @@ export function MessageOriginLabel({ origin }: { origin: MessageOrigin }) {
   const sender = useThreadsStore((s) => s.byId[origin.threadId]?.thread);
   const ready = useThreadsStore((s) => s.ready);
   const gone = ready && sender === undefined;
-  const role = senderRole(origin, sender?.spawnedBy !== undefined);
+  // A sender the embedding app shows in a place of its own is named by that place, and opens there.
+  const place = useEmbedShell((s) =>
+    s.threadsPage.places?.find((each) => each.ids.includes(origin.threadId)),
+  );
+  const role = place?.name ?? senderRole(origin, sender?.spawnedBy !== undefined);
   // Absent only on a message sent before every send carried its mode, when the default queued.
   const delivery = DELIVERY[origin.mode ?? "queue"];
   const body = (
@@ -88,6 +93,19 @@ export function MessageOriginLabel({ origin }: { origin: MessageOrigin }) {
       </p>
     );
   }
+  if (place !== undefined) {
+    const to = place.path.replace("$threadId", encodeURIComponent(origin.threadId));
+    return (
+      <Link
+        {...({ to } as unknown as { to: "/" })}
+        data-testid="message-origin"
+        data-place={place.name}
+        className={`group/origin ${row} rounded-sm hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&:hover>span.truncate]:underline`}
+      >
+        {body}
+      </Link>
+    );
+  }
   return (
     <Link
       to="/t/$threadId"
@@ -97,6 +115,62 @@ export function MessageOriginLabel({ origin }: { origin: MessageOrigin }) {
     >
       {body}
     </Link>
+  );
+}
+
+/**
+ * "sent from Chat": the thread outside the workspace that asked for a worker, on the orchestrator's
+ * brief. Named and opened as the place the embedding app shows it in, if any; else under its
+ * current title. Once that thread is gone, its title then, not a link.
+ */
+export function AskedByLink({ askedBy }: { askedBy: AskedBy }) {
+  const asker = useThreadsStore((s) => s.byId[askedBy.threadId]?.thread);
+  const ready = useThreadsStore((s) => s.ready);
+  const place = useEmbedShell((s) =>
+    s.threadsPage.places?.find((each) => each.ids.includes(askedBy.threadId)),
+  );
+  const name = place?.name ?? asker?.title ?? askedBy.title;
+  const words = (
+    <>
+      sent from <span className="font-medium text-foreground">{name}</span>
+    </>
+  );
+  // No dot before it: on a line of its own a leading dot hangs, and beside the toggle the cut-off
+  // words already part them. Under the toggle it lines up with the words, past the avatar.
+  const tone = "shrink-0 text-meta text-muted-foreground";
+  const quiet = `${tone} max-sm:pl-6.5`;
+  if (place === undefined && ready && asker === undefined) {
+    return (
+      <span data-testid="message-asked-by" title="Thread not found" className={quiet}>
+        {words}
+      </span>
+    );
+  }
+  const link = `${tone} rounded-sm underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring`;
+  return (
+    <span className={quiet}>
+      {place === undefined ? (
+        <Link
+          to="/t/$threadId"
+          params={{ threadId: askedBy.threadId }}
+          data-testid="message-asked-by"
+          className={link}
+        >
+          {words}
+        </Link>
+      ) : (
+        <Link
+          {...({
+            to: place.path.replace("$threadId", encodeURIComponent(askedBy.threadId)),
+          } as unknown as { to: "/" })}
+          data-testid="message-asked-by"
+          data-place={place.name}
+          className={link}
+        >
+          {words}
+        </Link>
+      )}
+    </span>
   );
 }
 
@@ -195,28 +269,32 @@ function OrchestratorMessage({
       data-folded={open ? undefined : ""}
       className="flex w-full max-w-full min-w-0 flex-col gap-1"
     >
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={body}
-        data-testid="orchestrator-message-toggle"
-        onClick={() => toggle(messageId)}
-        className="group/brief flex w-full min-w-0 items-center gap-1.5 rounded-sm text-left text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-      >
-        <SenderAvatar agent={sender?.model.agent} />
-        <span className="shrink-0 font-medium text-foreground">Message from orchestrator</span>
-        <span className="shrink-0" title={delivery.hint}>
-          · {delivery.label}
-        </span>
-        <ChevronRight
-          aria-hidden
-          className={cn(
-            "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
-            open && "rotate-90",
-          )}
-        />
-        {!open && <span className="min-w-0 truncate">{firstLine(text)}</span>}
-      </button>
+      {/* Too narrow for both (a phone), the asker takes a line of its own under the toggle. */}
+      <div className="flex w-full min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={body}
+          data-testid="orchestrator-message-toggle"
+          onClick={() => toggle(messageId)}
+          className="group/brief flex min-w-0 shrink grow basis-72 items-center gap-1.5 rounded-sm text-left text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          <SenderAvatar agent={sender?.model.agent} />
+          <span className="shrink-0 font-medium text-foreground">Message from orchestrator</span>
+          <span className="shrink-0" title={delivery.hint}>
+            · {delivery.label}
+          </span>
+          <ChevronRight
+            aria-hidden
+            className={cn(
+              "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
+              open && "rotate-90",
+            )}
+          />
+          {!open && <span className="min-w-0 truncate">{firstLine(text)}</span>}
+        </button>
+        {origin.askedBy !== undefined && <AskedByLink askedBy={origin.askedBy} />}
+      </div>
       {open && (
         <MessageContent
           id={body}

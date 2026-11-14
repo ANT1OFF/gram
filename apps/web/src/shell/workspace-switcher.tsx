@@ -1,3 +1,4 @@
+import { useSoloWord } from "@/embed/store";
 import type { ThreadId, ThreadSummary, Workspace } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -116,6 +117,7 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
   const workspaces = useWorkspaces();
   // A solo thread in view is in no workspace, whichever one the Board would show.
   const inSolo = useViewSolo();
+  const soloWord = useSoloWord();
   const viewed = useViewWorkspace();
   const current = inSolo ? undefined : viewed;
   const byId = useThreadsStore((s) => s.byId);
@@ -149,7 +151,7 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
     useLayoutStore.getState().openThread(threadId);
     void navigate({ to: "/t/$threadId", params: { threadId } });
   };
-  const name = inSolo ? "Solo" : (current?.workspace.name ?? "Threads");
+  const name = inSolo ? (soloWord ?? "Solo") : (current?.workspace.name ?? "Threads");
   // Its keys, as far as there are workspaces to take them: "⌘1–⌘3".
   const keyed = Math.min(workspaces.length, WORKSPACE_KEYS.length);
   const firstKey = shortcutHint("workspace.switch1", overrides);
@@ -255,7 +257,9 @@ function SoloThreads({
   // Ages to the minute, while the popover is open.
   const now = useNow(true, undefined, 60_000);
   return (
-    <section aria-label="Solo threads" data-testid="solo-threads">
+    // A column, so each row is the menu's width: a button on its own takes its words' width, and a
+    // long title then ran past the menu's edge with its age.
+    <section aria-label="Solo threads" data-testid="solo-threads" className="flex flex-col">
       <h2
         className={cn(
           "flex items-center justify-between px-2 pt-1.5 pb-1 text-caption font-medium text-muted-foreground",

@@ -24,6 +24,7 @@ import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-pref
 import { HarnessSupportDetails } from "@/agents/support-details";
 import { agentLabel } from "@/agents/agent-display";
 import { errorMessage } from "@/api/errors";
+import { needsMachine, StartMachineCard, useOnDemandMachine } from "./start-machine-card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -67,6 +68,7 @@ import { TaskAuthorityLine } from "@/new-thread/authority-line";
 import { AutonomyChoice } from "@/new-thread/autonomy-choice";
 import { ControlDetails } from "@/new-thread/control-details";
 import { useWorkspaceMergeApproval } from "@/new-thread/merge-approval";
+import { useNewForm } from "@/embed/store";
 import { NewFormHeader, WHO_ENTRY, WhereFact, WhereStop, type Who } from "@/new-thread/who-does-it";
 import { WorkspaceAutonomy } from "@/new-thread/workspace-autonomy";
 import { readCameFrom, type CameFrom } from "@/shell/came-from";
@@ -138,7 +140,10 @@ export function NewTaskDraft({
   const rememberedWorkers = useTaskDraftStore((s) => s.workers);
   const sendKey = useServerSettings((s) => (s.settings ? sendKeyOf(s.settings) : undefined));
 
-  const way: TaskWay = initialWay ?? "plan";
+  // An embedding app that leaves the one-worker choice out has the form on the orchestrator's,
+  // whichever shortcut or link opened it.
+  const newForm = useNewForm();
+  const way: TaskWay = newForm?.task === "hidden" ? "plan" : (initialWay ?? "plan");
   // A pick in the "in" chip holds until a shortcut or the palette names another workspace.
   // Switching who does it keeps the workspace in the route, and so the pick.
   const [picked, setPicked] = useRoutePick<TaskTarget>(initialWorkspace ?? "", pendingTaskTarget);
@@ -205,6 +210,14 @@ export function NewTaskDraft({
     staleTime: 30_000,
   });
   const orchestratorModel = selection.data?.orchestrator;
+  const onDemand = useOnDemandMachine();
+  const startMachine = needsMachine(onDemand.status);
+  const machineOnline = onDemand.status?.machine?.online === true;
+  // Once their machine is up, the check that failed for want of one is asked again.
+  const recheck = selection.refetch;
+  useEffect(() => {
+    if (machineOnline) void recheck();
+  }, [machineOnline, recheck]);
   const preflight = useHarnessPreflight(
     orchestratorModel,
     "orchestrator",
@@ -425,7 +438,7 @@ export function NewTaskDraft({
     way === "plan"
       ? makesOne
         ? "Start workspace and send"
-        : "Send to team"
+        : (newForm?.team?.start ?? "Send to team")
       : makesOne
         ? "Start workspace and task"
         : "Start task";
@@ -733,7 +746,9 @@ export function NewTaskDraft({
               }}
             />
           )}
-          {selection.isError && (
+          {/* Where the deployment starts machines on demand, the person's own, in place of the error. */}
+          {startMachine && <StartMachineCard />}
+          {selection.isError && !startMachine && (
             <p role="alert" className="text-meta text-destructive">
               {errorMessage(selection.error)}{" "}
               <Button

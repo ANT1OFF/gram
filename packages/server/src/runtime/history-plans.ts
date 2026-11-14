@@ -12,6 +12,7 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
+import type { EventHubShape } from "../events/event-hub.ts";
 import * as Clock from "effect/Clock";
 import {
   locked,
@@ -154,6 +155,7 @@ export const forkHostRefusal = (
 /** What rewinding and forking read and change beside the stored history. */
 export interface HistoryMethodsDeps {
   readonly store: ThreadStoreShape;
+  readonly hub: EventHubShape;
   readonly runtimes: ReadonlyMap<ThreadId, Runtime>;
   readonly config: ServerConfigShape;
   readonly getRuntime: GetRuntime;
@@ -172,6 +174,7 @@ export interface HistoryMethodsDeps {
 /** The `ThreadRuntimes` methods that rewind a thread or fork it at a message. */
 export const makeHistoryMethods = ({
   store,
+  hub,
   runtimes,
   config,
   getRuntime,
@@ -356,6 +359,7 @@ export const makeHistoryMethods = ({
       );
       for (const message of owned) yield* store.upsertMessage(thread.id, message);
       yield* publishUpsert(stored);
+      yield* hub.publishOwn({ type: "messages.replaced", threadId: thread.id });
       return stored;
     }),
 });
