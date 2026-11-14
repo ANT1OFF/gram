@@ -766,7 +766,7 @@ export interface HostConnection {
     readonly restore?: (
       request: RestoreRequest,
     ) => Effect.Effect<HostStopRestored, HostFailed | HostUnavailable>;
-    /** Deletes a closed thread's kept work; absent as `restore` is. */
+    /** Deletes the kept work of a thread that is gone for good; absent as `restore` is. */
     readonly drop?: (
       request: DropRequest,
     ) => Effect.Effect<{ readonly dropped: boolean }, HostFailed | HostUnavailable>;
@@ -1541,6 +1541,8 @@ export const connectHost = (
                       url: request.url,
                       branch: request.branch,
                       remote: request.remote,
+                      commit: request.commit,
+                      caughtUp: request.caughtUp,
                     }),
                   ).pipe(
                     Effect.timeoutOrElse({

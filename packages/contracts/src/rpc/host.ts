@@ -257,10 +257,13 @@ export const HostStopKept = Schema.Struct({
   pushed: Schema.Boolean,
   /**
    * The branch at the remote is at `commit` and nothing was uncommitted: the remote holds all of
-   * it already, so no ref is kept there, and one kept before was deleted. Absent from a host
-   * built before it was said, which pushes the ref regardless.
+   * it already, so no ref is written for this folder, and one this folder left before was
+   * deleted. A ref that holds other work of the thread (another folder's) is left there. Absent
+   * from a host built before it was said, which pushes the ref regardless.
    */
   caughtUp: Schema.optionalKey(Schema.Boolean),
+  /** The branch the folder was on; absent on a detached HEAD, and from a host that doesn't say. */
+  branch: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
   /** Why it wasn't committed or pushed, in the host's words. */
   note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
 });
@@ -288,10 +291,15 @@ export type HostStopPrepared = typeof HostStopPrepared.Type;
  */
 export const HostStopRestored = Schema.Struct({
   restored: Schema.Boolean,
-  /** The commit the remote kept under the thread's ref. */
+  /** The commit put back: the one the remote kept under the thread's ref, or its branch's tip. */
   commit: Schema.optionalKey(Schema.String),
   /** Whether files that weren't committed were put back with the branch. */
   uncommitted: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Where the folder came from: the thread's hidden ref, or the branch at the remote for a thread
+   * no ref was kept of. Absent from a host that restores only from the ref.
+   */
+  source: Schema.optionalKey(Schema.Literals(["ref", "branch"])),
   /** Why nothing was put back, or what to know of what was, in the host's words. */
   note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
 });
@@ -838,8 +846,13 @@ export const HostRpcs = RpcGroup.make(
    * clone of the repository at `url` is made or fetched, `refs/gram/wip/<thread>` is fetched from
    * `remote` (`origin` when absent), and `cwd` is made again as it was, a worktree of that clone
    * or the clone itself, on `branch` at the tip the work was on, with the uncommitted files
-   * uncommitted. A folder that is there with work of its own is never written over. Served by a
-   * host that names `wip-restore`.
+   * uncommitted. A folder that is there with work of its own is never written over, and a branch
+   * that is there with commits the kept work doesn't hold is never moved. Served by a host that
+   * names `wip-restore`.
+   *
+   * `commit` is the commit the stop said it kept: the ref must name exactly it, or nothing is put
+   * back. `caughtUp` says the stop kept no ref because the branch at the remote held everything:
+   * the folder is made from `branch` there. So is one whose ref the remote doesn't have.
    */
   Rpc.make("host.stop.restore", {
     payload: {
@@ -848,14 +861,17 @@ export const HostRpcs = RpcGroup.make(
       url: Schema.String.check(Schema.isMaxLength(2048)),
       branch: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
       remote: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
+      commit: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
+      caughtUp: Schema.optionalKey(Schema.Boolean),
     },
     success: HostStopRestored,
     error: HostFailed,
   }),
   /**
-   * Deletes a closed thread's `refs/gram/wip/<thread>` at `remote` and in the repository at `cwd`,
-   * when that repository has the ref; otherwise nothing is asked of any remote. Served by a host
-   * that names `wip-restore`.
+   * Deletes `refs/gram/wip/<thread>` at `remote` and in the repository at `cwd`, whatever it
+   * names, when that repository has the ref; otherwise nothing is asked of any remote. For a
+   * thread that is gone for good: closing one doesn't ask it, since a closed thread can be
+   * reopened. Served by a host that names `wip-restore`.
    */
   Rpc.make("host.stop.drop", {
     payload: {
