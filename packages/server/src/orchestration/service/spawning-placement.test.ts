@@ -1,8 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
 import { HostId, LOCAL_HOST_ID, type Thread } from "@gram/contracts";
 import {
+  type NamedMachine,
   NOT_THIS_ORCHESTRATIONS_MACHINE,
   orchestratorsMachine,
+  recoveredMachineProblem,
   RUNS_ON_ITS_ORCHESTRATORS_MACHINE,
   workerMachine,
 } from "./spawning.ts";
@@ -72,5 +74,36 @@ describe("the machine an orchestrator names for a worker", () => {
     expect(workerMachine(oldRunB, desktop)).toEqual({ hostId: oldRunB.id });
     expect(workerMachine(runB, desktop)).toEqual({ error: NOT_THIS_ORCHESTRATIONS_MACHINE });
     expect(workerMachine(graceOwn, desktop)).toEqual({ error: NOT_THIS_ORCHESTRATIONS_MACHINE });
+  });
+});
+
+const machines: ReadonlyArray<NamedMachine> = [runB, oldRunB, adaOwn, adaSecond, graceOwn];
+const ownerOf = (host: HostId) => machines.find((m) => m.id === host)?.owner;
+const worker = (host: string, extra?: string) =>
+  ({
+    checkout: { kind: "worktree", path: "/w", hostId: HostId.make(host) },
+    ...(extra === undefined
+      ? {}
+      : { extraCheckouts: [{ kind: "worktree", path: "/x", hostId: HostId.make(extra) }] }),
+  }) as unknown as Pick<Thread, "checkout" | "currentCheckout" | "extraCheckouts">;
+
+describe("a worker found again after a crash", () => {
+  it("is used only on machines its orchestrator may use, every checkout of it", () => {
+    const run = { own: runA, ownerOf, headless: true, machines };
+    expect(recoveredMachineProblem(worker(runA), run)).toBeUndefined();
+    expect(recoveredMachineProblem(worker("m-run-b"), run)).toBe(NOT_THIS_ORCHESTRATIONS_MACHINE);
+    expect(recoveredMachineProblem(worker("m-run-b-old"), run)).toBe(
+      NOT_THIS_ORCHESTRATIONS_MACHINE,
+    );
+    expect(recoveredMachineProblem(worker(runA, "m-run-b"), run)).toBe(
+      NOT_THIS_ORCHESTRATIONS_MACHINE,
+    );
+    // On a headless Gram, a worker on this machine is on none its orchestrator may use.
+    expect(recoveredMachineProblem(worker(LOCAL_HOST_ID), run)).toBe(
+      NOT_THIS_ORCHESTRATIONS_MACHINE,
+    );
+    const ada = { own: adaOwn.id, ownerOf, headless: true, machines };
+    expect(recoveredMachineProblem(worker("m-ada-2"), ada)).toBeUndefined();
+    expect(recoveredMachineProblem(worker("m-grace"), ada)).toBe(NOT_THIS_ORCHESTRATIONS_MACHINE);
   });
 });

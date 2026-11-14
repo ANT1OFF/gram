@@ -119,6 +119,42 @@ export const orchestratorsMachine = (under: Pick<Thread, "checkout" | "currentCh
   return own === LOCAL_HOST_ID ? undefined : own;
 };
 
+/**
+ * Why a worker found again by its `clientRequestId` (a spawn a crash cut short, or a retry) may
+ * not be used, or nothing: each machine it works on must be one `workerMachine` allows its
+ * orchestrator now. On a headless Gram, this machine runs nothing, so a worker here is refused.
+ */
+export const recoveredMachineProblem = (
+  worker: Pick<Thread, "checkout" | "currentCheckout" | "extraCheckouts">,
+  context: {
+    readonly own: HostId | undefined;
+    readonly ownerOf: (hostId: HostId) => string | undefined;
+    readonly headless: boolean;
+    readonly machines: ReadonlyArray<NamedMachine>;
+  },
+): string | undefined => {
+  const hosts = [
+    ...new Set(
+      [effectiveCheckout(worker), worker.checkout, ...(worker.extraCheckouts ?? [])].map(hostOf),
+    ),
+  ];
+  for (const host of hosts) {
+    const placed = workerMachine(
+      host === LOCAL_HOST_ID
+        ? "here"
+        : (context.machines.find((machine) => machine.id === host) ?? { id: host }),
+      {
+        own: context.own,
+        ownOwner: context.own === undefined ? undefined : context.ownerOf(context.own),
+        headless: context.headless,
+      },
+    );
+    if ("error" in placed) return placed.error;
+    if ((placed.hostId ?? LOCAL_HOST_ID) !== host) return NOT_THIS_ORCHESTRATIONS_MACHINE;
+  }
+  return undefined;
+};
+
 /** A joined machine as a worker's placement reads it. */
 export interface NamedMachine {
   readonly id: HostId;
@@ -556,6 +592,20 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 event.kind === "spawn" &&
                 (event.data as { readonly threadId?: unknown } | null)?.threadId === existing.id,
             );
+            // The worker found again is held to the same rule as a new one (`workerMachine`), on the
+            // machines it really works on, before anything reaches it: a brief is never delivered to
+            // a worker that sits on a machine its orchestrator may not use. A half-made one there is
+            // closed, and the next call with a new id places a fresh one.
+            const misplaced = recoveredMachineProblem(existing, {
+              own: orchestratorsMachine(caller),
+              ownerOf,
+              headless: headless !== undefined,
+              machines: joinedMachines(),
+            });
+            if (misplaced !== undefined) {
+              if (!finished) yield* runtimes.close(existing.id).pipe(Effect.ignore);
+              return yield* toolError(tool, refusal("not_admitted", misplaced));
+            }
             // A routine's half-made worker is finished only as it was made: in the project it was made
             // in. One whose routine moved since is closed instead, and the next run admits a fresh one.
             if (!finished && input.routine !== undefined && existing.projectId !== input.project) {

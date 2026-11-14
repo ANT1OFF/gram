@@ -9,6 +9,8 @@ import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { FakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { AppToolRegistry, bindAppTools } from "../app-tools/registry.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { workerThreadId } from "./outbox.ts";
 import { Orchestration } from "./service.ts";
 import { makeWorld, openOrchestrator, serverLayer, spawn } from "./test-harness.ts";
 
@@ -258,6 +260,66 @@ describe("spawn admission on a joined machine", () => {
             expect(existsSync(join(world.repo, ".worktrees"))).toBe(false);
           }).pipe(Effect.provide(context));
         }
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "never briefs a half-made worker found again on another run's machine, and closes it",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        // A machine started for other work: another run's.
+        const machines = Layer.succeed(RemoteHosts, {
+          ...NO_LINKS,
+          list: () => [{ ...MACHINE, onDemand: "thread" }],
+        } as unknown as RemoteHostsShape);
+        const context = yield* Layer.build(
+          serverLayer(world, {}, agents).pipe(Layer.provide(machines)),
+        );
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          const { session, thread, workspaceId, project } = yield* openOrchestrator(world);
+          // What a call cut short by a crash left: its worker's thread, on that machine, never
+          // briefed (no spawn entry). However it came to be there, it is not this run's machine.
+          const id = workerThreadId(workspaceId, "req-elsewhere");
+          yield* runtimes.create({
+            id,
+            projectRoot: project.root,
+            checkout: {
+              kind: "worktree",
+              path: "/elsewhere/.worktrees/cut",
+              branch: "feat/cut",
+              repoRoot: "/elsewhere",
+              hostId: MACHINE.id,
+            },
+            workspaceId,
+            spawnedBy: { threadId: thread.id, feature: "cut" },
+            title: "Build cut",
+            deferOpen: true,
+          });
+          const refused = yield* session
+            .callTool("spawn_worker", {
+              project: "shop",
+              feature: "cut",
+              title: "Build cut",
+              brief: "Do the cut work.",
+              clientRequestId: "req-elsewhere",
+            })
+            .pipe(
+              Effect.flip,
+              Effect.map((error) => error.message),
+            );
+          expect(refused).toMatch(/^not_admitted: A worker goes on its orchestrator's own machine/);
+          // Never briefed, and closed: the next call with a new id places a fresh one.
+          expect(
+            (yield* store.listOrchestrationEvents(workspaceId, 0)).filter(
+              (e) => e.kind === "spawn",
+            ),
+          ).toEqual([]);
+          expect((yield* store.listClosed).some((closed) => closed.thread.id === id)).toBe(true);
+          expect((yield* store.listThreads).some((each) => each.id === id)).toBe(false);
+        }).pipe(Effect.provide(context));
       }).pipe(Effect.scoped),
   );
 
