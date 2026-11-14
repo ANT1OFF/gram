@@ -120,7 +120,12 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  * - `thread.upsert` `{id, title?, role?, status?, spawnedByThreadId?, model?, createdBy?}`
  *   (`createdBy` is the id of the signed-in person who started the thread, where known),
  *   `thread.removed` `{id}`, `thread.status` `{id, status, idle}`.
- * - `ask.opened` `{id, kind, title, decisionId?, assignees?}`.
+ * - `ask.opened` `{id, kind, title, toolName?, questions?, plan?, planTruncated?, decisionId?,
+ *   assignees?}`. A question carries `questions`, each `{question, header?, options: [{label,
+ *   description?}], multiSelect}`, what a receiver needs to answer it through `asks/answer`: the
+ *   answer is keyed by each `question` and names choices by `label`, exactly as given here. A
+ *   question ask too large to carry whole carries none. A plan carries `plan`, its Markdown, cut
+ *   and marked `planTruncated` past 50,000 characters.
  * - `ask.resolved` `{id, how, decision?, answeredBy?, proof?}`: `how` is `answered` when a person
  *   answered it and `withdrawn` when it went unanswered (the turn stopped, the session went, the
  *   agent took it back). `decision` is the person's `approve` or `reject` of an approval or a

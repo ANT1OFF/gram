@@ -179,6 +179,63 @@ const askTitle = (request: PendingRequest): string => {
   return "Plan";
 };
 
+/** The most of a question ask `ask.opened` carries; past any of these it carries none of it. */
+export const ASK_QUESTIONS_MAX = 8;
+export const ASK_QUESTION_MAX_CHARS = 4000;
+export const ASK_OPTIONS_MAX = 20;
+export const ASK_OPTION_LABEL_MAX_CHARS = 200;
+const ASK_OPTION_DESCRIPTION_MAX_CHARS = 2000;
+/** The most of a plan `ask.opened` carries; a longer plan is cut and marked `planTruncated`. */
+export const ASK_PLAN_MAX_CHARS = 50_000;
+
+/**
+ * What a receiver needs to show a question or a plan and answer it through `asks/answer`: the
+ * questions with their choices, or the plan. An answer is keyed by each question's text and names
+ * choices by their labels, so neither is ever cut: a question ask that doesn't fit whole is sent
+ * without its questions, and a receiver sends the person to the thread. An approval has neither.
+ */
+export const askContent = (
+  request: PendingRequest,
+): {
+  readonly questions?: ReadonlyArray<unknown>;
+  readonly plan?: string;
+  readonly planTruncated?: true;
+} => {
+  if (request.kind === "plan") {
+    return request.plan.length > ASK_PLAN_MAX_CHARS
+      ? { plan: request.plan.slice(0, ASK_PLAN_MAX_CHARS), planTruncated: true }
+      : { plan: request.plan };
+  }
+  if (request.kind !== "question") return {};
+  const { questions } = request;
+  const fits =
+    questions.length > 0 &&
+    questions.length <= ASK_QUESTIONS_MAX &&
+    questions.every(
+      (each) =>
+        each.question.length > 0 &&
+        each.question.length <= ASK_QUESTION_MAX_CHARS &&
+        each.options.length <= ASK_OPTIONS_MAX &&
+        each.options.every(
+          (option) => option.label.length > 0 && option.label.length <= ASK_OPTION_LABEL_MAX_CHARS,
+        ),
+    );
+  if (!fits) return {};
+  return {
+    questions: questions.map((each) => ({
+      question: each.question,
+      ...(each.header === "" ? {} : { header: each.header.slice(0, 200) }),
+      options: each.options.map((option) => ({
+        label: option.label,
+        ...(option.description === ""
+          ? {}
+          : { description: option.description.slice(0, ASK_OPTION_DESCRIPTION_MAX_CHARS) }),
+      })),
+      multiSelect: each.multiSelect,
+    })),
+  };
+};
+
 /** Statuses in which a thread has no turn running: what `thread.status` calls idle. */
 const IDLE_STATUSES: ReadonlySet<string> = new Set(["idle", "cold"]);
 
@@ -389,6 +446,7 @@ export const makeEventSink = (
                 kind: request.kind,
                 title: note?.title ?? askTitle(request),
                 ...(request.kind === "approval" ? { toolName: request.toolName } : {}),
+                ...askContent(request),
                 ...(note === undefined ? {} : { decisionId: note.decisionId }),
                 ...(note?.assignees === undefined ? {} : { assignees: note.assignees }),
               },
