@@ -67,7 +67,7 @@ test("the user pins a drafted page, and an agent's newer version waits for Show 
     },
     { thread: made.workerThreadId, html: DRAFT, url: `http://127.0.0.1:${port}/` },
   );
-  await page.getByRole("button", { name: "Open index.html" }).click();
+  await page.getByRole("button", { name: "Preview index.html" }).click();
   await expect(page.getByTestId("preview-address")).toHaveValue(DRAFT);
   const pin = page.getByRole("button", { name: PIN });
   await expect(pin).toBeVisible();
@@ -128,7 +128,7 @@ test("a thread outside a workspace offers no pin", async ({ page }) => {
     },
     { html: dashboard, url: `http://127.0.0.1:${port}/` },
   );
-  await page.getByRole("button", { name: "Open dashboard.html" }).click();
+  await page.getByRole("button", { name: "Preview dashboard.html" }).click();
   await expect(page.getByTestId("preview-address")).toHaveValue(dashboard);
   await expect(page.locator('[data-testid="mock-preview-view"]')).toBeVisible();
   await expect(page.getByRole("button", { name: PIN })).toHaveCount(0);

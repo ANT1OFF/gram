@@ -344,7 +344,7 @@ test("a Markdown preview's link to another kind of file opens it in Files", asyn
     mock.simulateWrittenFile("t-deps" as never, md, "# Links\n\nSee [the script](build.ts).\n");
     mock.simulateWrittenFile("t-deps" as never, "/tmp/gram-report/build.ts", "export {};\n");
   }, report);
-  await page.getByRole("button", { name: "Open LINKS.md" }).click();
+  await page.getByRole("button", { name: "Preview LINKS.md" }).click();
   await page.getByTestId("preview-markdown").getByRole("link", { name: "the script" }).click();
   await expect(page.getByRole("tab", { name: "Files", exact: true })).toHaveAttribute(
     "aria-selected",

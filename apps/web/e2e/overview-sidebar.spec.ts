@@ -1187,12 +1187,13 @@ test("⌘B hides an automatic compact overview, the focus going to the composer,
   await page.setViewportSize({ width: 1100, height: 900 });
   await expect(rail(page)).toBeVisible();
   await expect(current).toBeFocused();
-  // Left by a click on plain text, the focus drops to the page and stays there.
+  // Left by a click on plain text, focus goes to the page's main (the skip-link target) and stays.
   await page.keyboard.press("Escape");
   await page.mouse.move(800, 450);
   await expect(overlay(page)).toHaveCount(0);
   await page.getByTestId("shell-titlebar").click({ position: { x: 600, y: 10 } });
-  const onPage = () => page.evaluate(() => document.activeElement === document.body);
+  const onPage = () =>
+    page.evaluate(() => document.activeElement === document.getElementById("content"));
   await expect.poll(onPage).toBe(true);
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(overview(page)).toBeVisible();
