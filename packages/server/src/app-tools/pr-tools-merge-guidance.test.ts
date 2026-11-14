@@ -2,10 +2,13 @@
 // never put to the user; dropping an intent and a merged PR need neither ownership nor a card.
 import { describe, expect, it } from "@effect/vitest";
 import { HostId } from "@gram/contracts";
+import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
+import { spawnSync } from "node:child_process";
 import * as Fiber from "effect/Fiber";
 import { hasGit, run } from "../git/test-repo.ts";
 import { cloneIdentityOf } from "../host/repos.ts";
+import { workerPrOwnership } from "../git/worker-pr.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import {
@@ -132,26 +135,69 @@ describe("merge_when_ready guidance at full autonomy", () => {
     );
   }
 
-  for (const origin of [
-    "https://github.com/acme/app.git",
-    "https://github.com/elsewhere/other.git",
-  ] as const) {
-    const same = origin.includes("acme/app");
+  /**
+   * What a worker on a joined machine holds `feat/remote-held` under, as Gram recorded its clone:
+   * the project's own origin, its aliases (which name the same repository), an identity that names
+   * none, and another repository. Only the last claims nothing.
+   */
+  const REMOTE_IDENTITIES = [
+    { label: "the project's origin", identity: cloneIdentityOf("https://github.com/acme/app.git") },
+    { label: "it without .git", identity: cloneIdentityOf("https://github.com/acme/app") },
+    { label: "its scp form", identity: cloneIdentityOf("git@github.com:acme/app.git") },
+    {
+      label: "its ssh form in other case",
+      identity: cloneIdentityOf("ssh://git@github.com/ACME/App.git"),
+    },
+    { label: "an identity naming no repository", identity: "not-an-identity" },
+    {
+      label: "another repository",
+      identity: cloneIdentityOf("https://github.com/elsewhere/other.git"),
+    },
+  ] as const;
+  const MACHINE = HostId.make("m-0123456789abcdef01234567");
+  const REMOTE_BRANCH = "feat/remote-held";
+  /** A sibling that only follows `number` and holds `branch` in a worktree on the joined machine. */
+  const remoteHolder = (
+    runtimes: ThreadRuntimes["Service"],
+    id: Parameters<ThreadRuntimes["Service"]["updateThread"]>[0],
+    identity: string,
+    branch: string,
+    number: number,
+  ) =>
+    runtimes.updateThread(id, (t) => ({
+      ...t,
+      extraPrs: [{ repo: "acme/app", number, monitor: true }],
+      checkout: {
+        kind: "worktree" as const,
+        path: "/synthetic/worktree",
+        repoRoot: "/synthetic/clone",
+        branch,
+        hostId: MACHINE,
+        cloneIdentity: identity,
+      },
+    }));
+
+  for (const { label, identity } of REMOTE_IDENTITIES) {
+    const claims = label !== "another repository";
     it.effect.skipIf(!hasGit)(
-      same
-        ? "a branch a live worker holds on another machine stays that worker's"
-        : "the same branch name in another repository on another machine claims nothing",
+      `a branch a live worker holds on another machine under ${label} ${claims ? "stays that worker's" : "claims nothing"}`,
       () =>
         Effect.gen(function* () {
+          expect(identity).toBeDefined();
           const world = yield* makeWorld;
-          const machine = HostId.make("m-0123456789abcdef01234567");
-          const remoteBranch = "feat/remote-held";
-          const remoteRoot = "/synthetic/clone";
-          const remotePath = "/synthetic/worktree";
           world.joinedMachine = {
-            id: machine,
+            id: MACHINE,
             online: true,
-            worktrees: new Map([[remotePath, { clone: remoteRoot, origin, branch: remoteBranch }]]),
+            worktrees: new Map([
+              [
+                "/synthetic/worktree",
+                {
+                  clone: "/synthetic/clone",
+                  origin: "https://github.com/acme/app.git",
+                  branch: REMOTE_BRANCH,
+                },
+              ],
+            ]),
           };
           yield* withServer(
             world,
@@ -165,26 +211,14 @@ describe("merge_when_ready guidance at full autonomy", () => {
               yield* completeTurn(worker.session);
               yield* completeTurn(sibling.session);
               yield* atAutonomy(thread, "full");
-              // The sibling only follows the PR, and holds its branch in its worktree there.
-              yield* runtimes.updateThread(sibling.thread.id, (t) => ({
-                ...t,
-                extraPrs: [{ repo: "acme/app", number: 21, monitor: true }],
-                checkout: {
-                  kind: "worktree" as const,
-                  path: remotePath,
-                  repoRoot: remoteRoot,
-                  branch: remoteBranch,
-                  hostId: machine,
-                  cloneIdentity: cloneIdentityOf(origin)!,
-                },
-              }));
-              world.prHeads.set(21, { headRefName: remoteBranch });
-              run(worker.thread.checkout.path, "switch", "-q", "-c", remoteBranch);
+              yield* remoteHolder(runtimes, sibling.thread.id, identity!, REMOTE_BRANCH, 21);
+              world.prHeads.set(21, { headRefName: REMOTE_BRANCH });
+              run(worker.thread.checkout.path, "switch", "-q", "-c", REMOTE_BRANCH);
               const merge = registry
                 .forTransport(worker.thread.id, "worker")
                 .find((t) => t.descriptor.name === "merge_when_ready")!;
-              expect(yield* merge.delegatedAtFullAutonomy!({ pr: 21 })).toBe(!same);
-              if (!same) return;
+              expect(yield* merge.delegatedAtFullAutonomy!({ pr: 21 })).toBe(!claims);
+              if (!claims) return;
               const call = yield* Effect.forkScoped(merge.run({ pr: 21 }).pipe(Effect.flip));
               const card = yield* waitReal(
                 "the approval card",
@@ -201,6 +235,142 @@ describe("merge_when_ready guidance at full autonomy", () => {
               expect(
                 (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
               ).toBeUndefined();
+            }),
+          );
+        }).pipe(Effect.scoped),
+    );
+  }
+
+  it.effect.skipIf(!hasGit)(
+    "renaming the shared origin to an alias of its repository keeps a remote holder's claim",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const projectOrigin = "https://github.com/acme/app.git";
+        run(world.repo, "remote", "add", "origin", projectOrigin);
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            const runtimes = yield* ThreadRuntimes;
+            const { session, thread } = yield* openOrchestrator(world);
+            const worker = yield* spawn(session, { feature: "local-adopter-real" });
+            const sibling = yield* spawn(session, { feature: "remote-holder-real" });
+            yield* completeTurn(worker.session);
+            yield* completeTurn(sibling.session);
+            yield* atAutonomy(thread, "full");
+            yield* remoteHolder(
+              runtimes,
+              sibling.thread.id,
+              cloneIdentityOf(projectOrigin)!,
+              REMOTE_BRANCH,
+              21,
+            );
+            run(worker.thread.checkout.path, "switch", "-q", "-c", REMOTE_BRANCH);
+            // Real git for origins and branches; gh describes the PR, and nothing else runs.
+            const proc = {
+              run: (bin: string, args: ReadonlyArray<string>, options: { readonly cwd: string }) =>
+                Effect.sync(() => {
+                  if (bin === "git") {
+                    const out = spawnSync("git", [...args], { cwd: options.cwd, encoding: "utf8" });
+                    return {
+                      status: out.status ?? 1,
+                      stdout: out.stdout,
+                      stderr: out.stderr,
+                      truncated: false,
+                    };
+                  }
+                  if (bin === "gh" && args[0] === "pr" && args[1] === "view")
+                    return {
+                      status: 0,
+                      stdout: JSON.stringify({
+                        number: 21,
+                        url: "https://github.com/acme/app/pull/21",
+                        title: "t",
+                        headRefName: REMOTE_BRANCH,
+                        isCrossRepository: false,
+                        state: "OPEN",
+                        headRefOid: "h1",
+                      }),
+                      stderr: "",
+                      truncated: false,
+                    };
+                  throw new Error(`unexpected ${bin} ${args.join(" ")}`);
+                }),
+            };
+            const ownership = (origin: string) =>
+              Effect.gen(function* () {
+                run(worker.thread.checkout.path, "remote", "set-url", "origin", origin);
+                const local = yield* store.getThread(worker.thread.id);
+                return yield* workerPrOwnership(local, "acme/app", 21).pipe(
+                  Effect.provideService(Proc, proc as never),
+                );
+              });
+            for (const origin of [
+              projectOrigin,
+              "https://github.com/acme/app",
+              "git@github.com:acme/app.git",
+              "https://github.com/ACME/App.git",
+            ])
+              expect(yield* ownership(origin)).toBe("another thread binds it or holds its branch");
+          }),
+        );
+      }).pipe(Effect.scoped),
+  );
+
+  for (const { label, identity } of REMOTE_IDENTITIES.filter(
+    (each) => each.label === "it without .git" || each.label === "its scp form",
+  )) {
+    it.effect.skipIf(!hasGit)(
+      `a worker on another machine taking the armed PR's branch under ${label} during the fresh read stops its merge`,
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const store = yield* ThreadStore;
+              const runtimes = yield* ThreadRuntimes;
+              const registry = yield* AppToolRegistry;
+              const { session, thread } = yield* openOrchestrator(world);
+              const worker = yield* spawn(session, { feature: "armed" });
+              const sibling = yield* spawn(session, { feature: "late-holder" });
+              yield* completeTurn(worker.session);
+              yield* completeTurn(sibling.session);
+              yield* atAutonomy(thread, "full");
+              const branch = worker.thread.checkout.branch!;
+              world.prHeads.set(12, { headRefName: branch });
+              const tools = registry.forTransport(worker.thread.id, "worker");
+              yield* tools
+                .find((t) => t.descriptor.name === "pr_bind")!
+                .run({ repo: "acme/app", number: 12 });
+              const publish = (approved: boolean) =>
+                store
+                  .getThread(worker.thread.id)
+                  .pipe(
+                    Effect.flatMap((t) => publishGit(world, t, { pr: armedWorkerBadge(approved) })),
+                  );
+              yield* publish(false);
+              yield* tools.find((t) => t.descriptor.name === "merge_when_ready")!.run({});
+              expect(
+                (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
+              ).toMatchObject({ allowedBy: "autonomy" });
+              let claimed = false;
+              world.freshPrRead = Effect.suspend(() => {
+                world.freshPrRead = undefined;
+                return remoteHolder(runtimes, sibling.thread.id, identity!, branch, 12).pipe(
+                  Effect.tap(() => Effect.sync(() => void (claimed = true))),
+                  Effect.asVoid,
+                  Effect.orDie,
+                );
+              });
+              yield* publish(true);
+              yield* waitReal(
+                "the claim",
+                Effect.sync(() => claimed || undefined),
+              );
+              yield* settle;
+              expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
             }),
           );
         }).pipe(Effect.scoped),

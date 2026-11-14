@@ -10,11 +10,19 @@ import {
   type Project,
   type Thread,
 } from "@gram/contracts";
-import { git, originOwnerRepo, prHead, type Proc, realPathOrOwned, samePath } from "@gram/git";
+import {
+  git,
+  originOwnerRepo,
+  parseOwnerRepo,
+  prHead,
+  type Proc,
+  realPathOrOwned,
+  samePath,
+} from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { folderExists, ghFolderOf } from "../fs/folders.ts";
-import { cloneIdentityOf } from "../host/repos.ts";
+import { cloneIdentityOf, cloneUrlOf } from "../host/repos.ts";
 import { WorkerHosts, type WorkerHostsShape } from "../host/worker-host.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 
@@ -318,12 +326,15 @@ const machineConfirms = (
       );
 
 /**
- * Whether `checkout`, a folder of another thread's, is a clone of `repo`, by what this machine can
- * trust: here, its origin; on another machine, the identity of the origin Gram recorded as it made
- * it there, matched to a project's origin here (`projectOfClone`), never the path that machine
- * reports. A doubt is a yes, so a branch it may hold still counts as held.
+ * Whether `checkout`, a folder of another thread's, may be a clone of `repo`, by what this machine
+ * can trust: here, its origin; on another machine, the origin Gram recorded as it made it there
+ * (`cloneIdentity`), never the path that machine reports. Both are read as the GitHub repository
+ * they name, so the aliases of one (`.git` or not, https, ssh or scp, any case) are one. Only a
+ * repository positively named as another one is a no: a folder, origin or identity that is
+ * missing, unreadable or names no repository may hold the branch, so it counts as holding it.
+ * For the strict match that grants a worker its own folder there, see `projectOfClone`.
  */
-const holdsRepo = (checkout: Checkout, repo: string, projects: ReadonlyArray<Project>) =>
+const mayHoldRepo = (checkout: Checkout, repo: string) =>
   Effect.gen(function* () {
     if (isLocalHost(checkout)) {
       const at = (yield* folderExists(checkout.path)) ? checkout.path : checkout.repoRoot;
@@ -332,7 +343,9 @@ const holdsRepo = (checkout: Checkout, repo: string, projects: ReadonlyArray<Pro
       return origin === undefined || sameRepo(origin, repo);
     }
     if (checkout.cloneIdentity === undefined) return true;
-    return (yield* projectOfClone(checkout, projects, repo)) !== undefined;
+    const url = cloneUrlOf(checkout.cloneIdentity);
+    const named = url === undefined ? undefined : parseOwnerRepo(url);
+    return named === undefined || sameRepo(named, repo);
   }).pipe(Effect.orElseSucceed(() => true));
 
 /**
@@ -351,7 +364,6 @@ const claimedByAnother = (
 ) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore;
-    const projects = yield* store.listProjects;
     for (const other of yield* store.listThreads) {
       if (other.id === thread.id || other.parked) continue;
       const bound = other.boundPr;
@@ -368,7 +380,7 @@ const claimedByAnother = (
                 (owned.hostId === undefined || owned.hostId === LOCAL_HOST_ID) &&
                 owned.branch === branch,
             ));
-        if (holds && (yield* holdsRepo(checkout, repo, projects))) return true;
+        if (holds && (yield* mayHoldRepo(checkout, repo))) return true;
       }
     }
     return false;
