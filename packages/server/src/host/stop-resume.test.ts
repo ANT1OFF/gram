@@ -14,7 +14,7 @@ import * as Effect from "effect/Effect";
 import { makeStopMarks } from "./stop-marks.ts";
 import type { RestoreRequest } from "./stop.ts";
 import { cloneIdentityOf, cloneUrlOf } from "./repos.ts";
-import { resumeHost, type StopResumeDeps } from "./stop-resume.ts";
+import { prepareStop, resumeHost, type StopResumeDeps } from "./stop-resume.ts";
 
 const MACHINE = "m-1" as HostId;
 const URL = "https://git.example.test/acme/widgets.git";
@@ -124,6 +124,140 @@ describe("resuming a machine on another disk", () => {
       expect(resumed.left).toEqual([
         { threadId: "t-folder", reason: "Its folder isn't on the machine." },
       ]);
+    }),
+  );
+
+  it.effect("holds the machine to what the stop said it kept, remembered or given back", () =>
+    Effect.gen(function* () {
+      const { deps, asked } = machine(["/clones/widgets-trees/here"], true);
+      const stops = (deps.hosts as unknown as { stops: ReturnType<typeof makeStopMarks> }).stops;
+      // This Gram's own stop: a ref for the worker's folder, pushed to a mirror.
+      stops.keep(MACHINE, "t-worker" as ThreadId, "/clones/widgets-trees/worker", {
+        commit: COMMIT,
+        caughtUp: false,
+        remote: "mirror",
+        branch: "gram/moved",
+      });
+      const other = "b".repeat(40);
+      yield* resumeHost(deps, MACHINE, {
+        kept: [
+          // The caller's word for a folder: its branch at the remote held everything.
+          {
+            threadId: "t-nothing" as ThreadId,
+            cwd: "/clones/widgets-trees/nothing",
+            commit: other,
+            caughtUp: true,
+          },
+          // Not a commit: nothing to hold the machine to.
+          { threadId: "t-refused" as ThreadId, cwd: "/clones/widgets-trees/refused", commit: "x" },
+        ],
+      });
+      expect(asked).toEqual([
+        {
+          threadId: "t-worker",
+          cwd: "/clones/widgets-trees/worker",
+          url: URL,
+          branch: "gram/moved",
+          remote: "mirror",
+          commit: COMMIT,
+        },
+        {
+          threadId: "t-nothing",
+          cwd: "/clones/widgets-trees/nothing",
+          url: URL,
+          branch: "gram/nothing",
+          commit: other,
+          caughtUp: true,
+        },
+        { threadId: "t-refused", cwd: "/clones/widgets-trees/refused", url: URL },
+      ]);
+      // Forgotten with the machine.
+      stops.forget(MACHINE);
+      expect(
+        stops.keptOf(MACHINE, "t-worker" as ThreadId, "/clones/widgets-trees/worker"),
+      ).toBeUndefined();
+    }),
+  );
+
+  it.effect("remembers what a stop said it kept, with where and on which branch", () =>
+    Effect.gen(function* () {
+      const stops = makeStopMarks();
+      const worker = "/clones/widgets-trees/worker";
+      const nothing = "/clones/widgets-trees/nothing";
+      const deps = {
+        hosts: {
+          connection: () =>
+            Effect.succeed({
+              stop: {
+                cancel: Effect.void,
+                prepare: () =>
+                  Effect.succeed({
+                    idle: true,
+                    busy: { turns: 0, terminals: 0, clones: 0, checks: 0 },
+                    kept: [
+                      {
+                        threadId: "t-worker",
+                        cwd: worker,
+                        ref: "refs/gram/wip/t-worker",
+                        commit: COMMIT,
+                        branch: "gram/worker",
+                        pushed: true,
+                      },
+                      {
+                        threadId: "t-nothing",
+                        cwd: nothing,
+                        commit: COMMIT,
+                        branch: "gram/nothing",
+                        pushed: true,
+                        caughtUp: true,
+                      },
+                      // Not pushed: the remote was never said to have it.
+                      {
+                        threadId: "t-refused",
+                        cwd: "/clones/widgets-trees/refused",
+                        ref: "refs/gram/wip/t-refused",
+                        commit: COMMIT,
+                        pushed: false,
+                      },
+                    ],
+                  }),
+              },
+            }),
+          stops,
+        },
+        store: { listThreads: Effect.succeed(THREADS) },
+        runtimes: { restSession: () => Effect.succeed("cold") },
+      } as unknown as StopResumeDeps;
+      const prepared = yield* prepareStop(deps, MACHINE, { remote: "mirror" });
+      expect(prepared.kept.find((kept) => kept.cwd === worker)).toEqual({
+        threadId: "t-worker",
+        cwd: worker,
+        ref: "refs/gram/wip/t-worker",
+        commit: COMMIT,
+        branch: "gram/worker",
+        remote: "mirror",
+        pushed: true,
+      });
+      expect(stops.keptOf(MACHINE, "t-worker" as ThreadId, worker)).toEqual({
+        commit: COMMIT,
+        caughtUp: false,
+        remote: "mirror",
+        branch: "gram/worker",
+      });
+      expect(stops.keptOf(MACHINE, "t-nothing" as ThreadId, nothing)).toEqual({
+        commit: COMMIT,
+        caughtUp: true,
+        remote: "mirror",
+        branch: "gram/nothing",
+      });
+      expect(
+        stops.keptOf(MACHINE, "t-refused" as ThreadId, "/clones/widgets-trees/refused"),
+      ).toBeUndefined();
+      // Taken back, the remote still has it.
+      stops.cancel(MACHINE);
+      expect(stops.keptOf(MACHINE, "t-worker" as ThreadId, worker)).toMatchObject({
+        commit: COMMIT,
+      });
     }),
   );
 

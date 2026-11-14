@@ -2,14 +2,22 @@
 // (`host/stop-resume.ts`), for whoever runs the machines. Part of the hosted features: with the
 // setting off, none of them is there.
 
-import { embeddingOn, type HostFailed, HostId, type HostUnavailable } from "@gram/contracts";
+import {
+  embeddingOn,
+  type HostFailed,
+  HostId,
+  type HostUnavailable,
+  ThreadId,
+} from "@gram/contracts";
 import { isPushRemote } from "@gram/git";
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import {
   cancelStop,
+  type KeptBefore,
   prepareStop,
   resumeHost,
+  STOP_FOLDERS_MAX,
   type StopResumeDeps,
   stopStatus,
 } from "../host/stop-resume.ts";
@@ -22,7 +30,10 @@ export const MACHINES_STOP_STATUS_PATH = "/machines/stop/status";
 export const MACHINES_STOP_PREPARE_PATH = "/machines/stop/prepare";
 /** Takes a stop back: `{ id }`. */
 export const MACHINES_STOP_CANCEL_PATH = "/machines/stop/cancel";
-/** Resumes a machine's threads on the host that dialled in as it: `{ id, remote? }`. */
+/**
+ * Resumes a machine's threads on the host that dialled in as it: `{ id, remote?, kept? }`, where
+ * `kept` is the `kept` of the stop's answer, given back.
+ */
 export const MACHINES_STOP_RESUME_PATH = "/machines/stop/resume";
 
 /** Local only, as every `/machines/*` route: never a paired browser, never a machine. */
@@ -34,19 +45,63 @@ export const HOST_STOP_PATHS: ReadonlySet<string> = new Set([
 ]);
 
 const BODY_MAX = 4_096;
+/** A resume can carry what a stop kept of each of its folders. */
+const RESUME_BODY_MAX = 512 * 1024;
+
+/**
+ * What a stop kept, as a resume's caller gives it back: the entries a restore can be held to
+ * (a folder with a commit that was pushed), or undefined for anything that isn't such a list.
+ */
+const keptBefore = (value: unknown): ReadonlyArray<KeptBefore> | undefined => {
+  if (!Array.isArray(value) || value.length > STOP_FOLDERS_MAX) return undefined;
+  const kept: Array<KeptBefore> = [];
+  for (const entry of value as ReadonlyArray<unknown>) {
+    if (typeof entry !== "object" || entry === null) return undefined;
+    const { threadId, cwd, commit, caughtUp, branch, remote, pushed } = entry as Record<
+      string,
+      unknown
+    >;
+    if (
+      typeof threadId !== "string" ||
+      typeof cwd !== "string" ||
+      (commit !== undefined && typeof commit !== "string") ||
+      (caughtUp !== undefined && typeof caughtUp !== "boolean") ||
+      (branch !== undefined && (typeof branch !== "string" || branch.length > 1024)) ||
+      (remote !== undefined && (typeof remote !== "string" || !isPushRemote(remote)))
+    )
+      return undefined;
+    // Not pushed, or nothing committed: the remote was never said to have it.
+    if (pushed === false || commit === undefined) continue;
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(commit)) return undefined;
+    kept.push({
+      threadId: ThreadId.make(threadId),
+      cwd,
+      commit,
+      ...(caughtUp === true ? { caughtUp } : {}),
+      ...(branch === undefined ? {} : { branch }),
+      ...(remote === undefined ? {} : { remote }),
+    });
+  }
+  return kept;
+};
 
 const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 const refuse = (message: string, status: number) => json({ message }, status);
 
 /** A small JSON object body, or undefined for anything else. */
-const jsonBody = Effect.gen(function* () {
-  const request = yield* HttpServerRequest.HttpServerRequest;
-  if (Number(request.headers["content-length"] ?? BODY_MAX + 1) > BODY_MAX) return undefined;
-  const text = yield* request.text.pipe(
-    Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(BODY_MAX)),
-    Effect.catch(() => Effect.succeed(undefined)),
-  );
-  if (text === undefined) return undefined;
+const jsonBody = (max: number) =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    if (Number(request.headers["content-length"] ?? max + 1) > max) return undefined;
+    const text = yield* request.text.pipe(
+      Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(max)),
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+    if (text === undefined) return undefined;
+    return parsed(text);
+  });
+
+const parsed = (text: string): Record<string, unknown> | undefined => {
   try {
     const value: unknown = JSON.parse(text);
     return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -55,7 +110,7 @@ const jsonBody = Effect.gen(function* () {
   } catch {
     return undefined;
   }
-});
+};
 
 /** A machine that is away is a conflict with what was asked; one that refused is its own answer. */
 const failed = (error: HostFailed | HostUnavailable) =>
@@ -79,7 +134,7 @@ export const hostStopRoute = (
       !/^application\/json(?:\s*;|$)/i.test(request.headers["content-type"] ?? "")
     )
       return refuse("forbidden", 403);
-    const body = yield* jsonBody;
+    const body = yield* jsonBody(path === MACHINES_STOP_RESUME_PATH ? RESUME_BODY_MAX : BODY_MAX);
     if (body === undefined) return refuse("bad request", 400);
     if (path === MACHINES_STOP_STATUS_PATH) return json({ machines: yield* stopStatus(deps) });
     const { id, force, remote } = body;
@@ -100,10 +155,13 @@ export const hostStopRoute = (
         return yield* cancelStop(deps, hostId).pipe(
           Effect.match({ onFailure: failed, onSuccess: () => json({ ok: true }) }),
         );
-      case MACHINES_STOP_RESUME_PATH:
-        return yield* resumeHost(deps, hostId, { remote }).pipe(
+      case MACHINES_STOP_RESUME_PATH: {
+        const kept = body["kept"] === undefined ? undefined : keptBefore(body["kept"]);
+        if (body["kept"] !== undefined && kept === undefined) return refuse("bad request", 400);
+        return yield* resumeHost(deps, hostId, { remote, kept }).pipe(
           Effect.match({ onFailure: failed, onSuccess: (resumed) => json(resumed) }),
         );
+      }
       default:
         return refuse("not found", 404);
     }

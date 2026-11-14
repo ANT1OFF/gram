@@ -8,6 +8,8 @@
 // one missing that Gram made from a clone there, `resumeHost` asks the host to make it again from
 // what the stop kept (`host.stop.restore`): a thread's work in progress follows it to a replaced
 // machine. A host that can't, or a folder Gram didn't make from a clone, is reported missing.
+// The host is held to the commit the stop said it kept, as this Gram remembers it or as the
+// resume's caller names it: the hidden ref can be written by whoever can push to the remote.
 //
 // Nothing here stops or starts a machine: that is the caller's to do.
 
@@ -68,6 +70,8 @@ const placedOn = (threads: ReadonlyArray<Thread>, id: HostId) =>
         ];
   });
 
+const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
 /** The most folders one stop is asked to keep (`host.stop.prepare`'s limit). */
 export const STOP_FOLDERS_MAX = 512;
 /** How long a machine gets to say it takes work again. */
@@ -82,8 +86,17 @@ export interface KeptWork {
   readonly pushed: boolean;
   /** The branch at the remote already held all of it, so no ref is kept there. */
   readonly caughtUp?: boolean;
+  /** The branch the folder was on, when the machine said. */
+  readonly branch?: string;
+  /** Where it was pushed, when the stop named a remote: where a resume fetches it from. */
+  readonly remote?: string;
   readonly note?: string;
 }
+
+/** What a resume's caller says a stop kept of a folder: the stop's own answer, given back. */
+export type KeptBefore = Pick<KeptWork, "threadId" | "cwd" | "commit" | "caughtUp" | "branch"> & {
+  readonly remote?: string | undefined;
+};
 
 export interface StopPrepared {
   /** Whether the machine can be stopped now with nothing cut off. */
@@ -103,13 +116,17 @@ export interface StopPrepared {
 const keptOf = (
   asked: ReadonlyArray<{ readonly threadId: ThreadId; readonly cwd: string }>,
   said: ReadonlyArray<HostStopKept>,
+  remote?: string,
 ): ReadonlyArray<KeptWork> =>
   asked.map(({ threadId, cwd }) => {
     const answer = said.find((kept) => kept.threadId === threadId && kept.cwd === cwd);
     if (answer === undefined)
       return { threadId, cwd, pushed: false, note: "The machine didn't say." };
-    const commit =
-      answer.commit !== undefined && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(answer.commit);
+    const commit = answer.commit !== undefined && OID.test(answer.commit);
+    const where = {
+      ...(answer.branch === undefined || answer.branch === "" ? {} : { branch: answer.branch }),
+      ...(remote === undefined ? {} : { remote }),
+    };
     // The remote's branch holds it all, the host says: no ref is kept, and none is named.
     if (commit && answer.caughtUp === true && answer.ref === undefined)
       return {
@@ -118,13 +135,14 @@ const keptOf = (
         commit: answer.commit,
         pushed: answer.pushed,
         caughtUp: true,
+        ...where,
         ...(answer.note === undefined ? {} : { note: answer.note }),
       };
     const sound = answer.ref === wipRef(threadId) && commit;
     return {
       threadId,
       cwd,
-      ...(sound ? { ref: answer.ref, commit: answer.commit } : {}),
+      ...(sound ? { ref: answer.ref, commit: answer.commit, ...where } : {}),
       pushed: sound && answer.pushed,
       ...(answer.note === undefined ? {} : { note: answer.note }),
     };
@@ -170,7 +188,16 @@ export const prepareStop = (
         Effect.tapError((error) => (error._tag === "HostFailed" ? takeBack : Effect.void)),
         Effect.onInterrupt(() => takeBack),
       );
-    const kept = keptOf(asked, prepared.kept);
+    const kept = keptOf(asked, prepared.kept, options.remote);
+    // Remembered whether or not the stop holds: the remote has it now, and a resume is held to it.
+    for (const work of kept)
+      if (work.pushed && work.commit !== undefined)
+        deps.hosts.stops.keep(id, work.threadId, work.cwd, {
+          commit: work.commit,
+          caughtUp: work.caughtUp === true,
+          ...(work.remote === undefined ? {} : { remote: work.remote }),
+          ...(work.branch === undefined ? {} : { branch: work.branch }),
+        });
     const left = folders.length - asked.length;
     const note =
       prepared.note ??
@@ -251,6 +278,8 @@ export interface HostResumed {
     readonly commit?: string;
     /** Whether files that weren't committed came back with the branch. */
     readonly uncommitted?: boolean;
+    /** Made from the thread's hidden ref, or from its branch at the remote when none was kept. */
+    readonly source?: "ref" | "branch";
     readonly note?: string;
   }>;
 }
@@ -278,11 +307,18 @@ const madeFrom = (thread: Thread, id: HostId, cwd: string) => {
  * are on its disk, and opens again the sessions the stop put to rest, each on its own
  * conversation. A turn a forced stop cut off needs nothing from here: it goes on by itself once
  * the host is back (`machine-restart.ts`). Fails while the machine is away.
+ *
+ * A folder made again is held to what the stop said it kept of it: `options.kept` (a stop's
+ * answer, given back by whoever asks) before what this Gram remembers of its own stops. With
+ * neither, as after this Gram restarted, the remote's ref is taken as it is.
  */
 export const resumeHost = (
   deps: StopResumeDeps,
   id: HostId,
-  options: { readonly remote?: string | undefined } = {},
+  options: {
+    readonly remote?: string | undefined;
+    readonly kept?: ReadonlyArray<KeptBefore> | undefined;
+  } = {},
 ): Effect.Effect<HostResumed, HostUnavailable> =>
   Effect.gen(function* () {
     const connection = yield* deps.hosts.connection(id);
@@ -299,12 +335,23 @@ export const resumeHost = (
           missing.push(entry);
           continue;
         }
+        const before =
+          options.kept?.find((kept) => kept.threadId === thread.id && kept.cwd === cwd) ??
+          deps.hosts.stops.keptOf(id, thread.id, cwd);
+        const commit =
+          before?.commit !== undefined && OID.test(before.commit) ? before.commit : undefined;
+        // The branch the machine said the folder was on at the stop, before the one recorded here.
+        const branch = (commit === undefined ? undefined : before?.branch) ?? made.branch;
+        // Where the stop pushed, unless this resume names somewhere else.
+        const remote = options.remote ?? (commit === undefined ? undefined : before?.remote);
         const answer = yield* restore({
           threadId: thread.id,
           cwd,
           url: made.url,
-          ...(made.branch === undefined ? {} : { branch: made.branch }),
-          ...(options.remote === undefined ? {} : { remote: options.remote }),
+          ...(branch === undefined ? {} : { branch }),
+          ...(remote === undefined ? {} : { remote }),
+          ...(commit === undefined ? {} : { commit }),
+          ...(commit !== undefined && before?.caughtUp === true ? { caughtUp: true } : {}),
         }).pipe(
           Effect.timeoutOrElse({
             duration: RESTORE_WITHIN,
@@ -317,18 +364,17 @@ export const resumeHost = (
           missing.push({ ...entry, ...note });
           continue;
         }
-        const commit =
-          "commit" in answer &&
-          answer.commit !== undefined &&
-          /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(answer.commit)
+        const put =
+          "commit" in answer && answer.commit !== undefined && OID.test(answer.commit)
             ? { commit: answer.commit }
             : {};
         restored.push({
           ...entry,
-          ...commit,
+          ...put,
           ...("uncommitted" in answer && answer.uncommitted !== undefined
             ? { uncommitted: answer.uncommitted }
             : {}),
+          ...("source" in answer && answer.source !== undefined ? { source: answer.source } : {}),
           ...note,
         });
       }
