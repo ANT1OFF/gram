@@ -196,26 +196,29 @@ function WorkspaceRow({
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="font-medium">{workspace.name}</span>
               <AutonomyChip autonomy={autonomyOf(charter)} testId="workspace-autonomy" />
+            </span>
+            {/* Its state, how many work and its repositories on one line under the name. Beside
+                the name they wrapped on a phone, the count starting a line with its dot. */}
+            <span className="flex min-w-0 items-center gap-x-1.5 text-meta text-muted-foreground">
               {paused !== undefined ? (
                 <span
                   data-testid="workspace-paused"
-                  className="inline-flex items-center gap-1 text-meta text-muted-foreground"
+                  className="inline-flex shrink-0 items-center gap-1"
                 >
                   <CirclePause aria-hidden className="size-icon-chip" />
                   Paused
                 </span>
               ) : (
-                <span className="text-meta text-muted-foreground">Active</span>
+                <span className="shrink-0">Active</span>
               )}
-              <span data-testid="workspace-working" className="text-meta text-muted-foreground">
-                · {working} working
+              <span aria-hidden>·</span>
+              <span data-testid="workspace-working" className="shrink-0">
+                {working} working
               </span>
-            </span>
-            <span
-              className="truncate text-meta text-muted-foreground"
-              data-testid="workspace-projects"
-            >
-              {repos.join(", ")}
+              {repos.length > 0 && <span aria-hidden>·</span>}
+              <span className="min-w-0 truncate" data-testid="workspace-projects">
+                {repos.join(", ")}
+              </span>
             </span>
           </Link>
           <div className="flex shrink-0 items-center gap-1">
@@ -224,8 +227,12 @@ function WorkspaceRow({
               variant="outline"
               disabled={changes.busy}
               onClick={() => void changes.openOrchestrator()}
+              // On a phone the button says Open, which leaves the row's line room for its words.
+              aria-label="Open orchestrator"
             >
-              Open orchestrator
+              <span>
+                Open<span className="phone:hidden"> orchestrator</span>
+              </span>
             </Button>
             <RowMenuButton label={`Workspace ${workspace.name} actions`} actions={actions} />
           </div>
