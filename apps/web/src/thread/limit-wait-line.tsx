@@ -77,27 +77,36 @@ export function LimitWaitLine({
       data-testid="limit-wait"
       data-kind={wait.kind}
       data-cleared={wait.cleared === undefined ? undefined : true}
-      className="mx-auto my-2 flex w-full max-w-3xl items-center gap-2 px-1 text-meta text-muted-foreground"
+      className="mx-auto my-2 flex w-full max-w-3xl flex-col gap-0.5 px-1 text-meta text-muted-foreground"
     >
-      <Hourglass aria-hidden className="size-icon-row shrink-0" />
-      <span className="min-w-0 flex-1 truncate">{limitWaitLabel(wait, now)}</span>
-      <Button
-        size="xs"
-        variant="ghost"
-        disabled={pending}
-        onClick={() => act(() => api.resumeLimitWait(thread.id))}
-      >
-        Resume now
-      </Button>
-      {wait.cancelled !== true && (
+      <div className="flex items-center gap-2">
+        <Hourglass aria-hidden className="size-icon-row shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{limitWaitLabel(wait, now)}</span>
         <Button
           size="xs"
           variant="ghost"
           disabled={pending}
-          onClick={() => act(() => api.cancelLimitWait(thread.id))}
+          onClick={() => act(() => api.resumeLimitWait(thread.id))}
         >
-          Cancel
+          Resume now
         </Button>
+        {wait.cancelled !== true && (
+          <Button
+            size="xs"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => act(() => api.cancelLimitWait(thread.id))}
+          >
+            Cancel
+          </Button>
+        )}
+      </div>
+      {wait.detail !== undefined && (
+        // What the provider said, under the line and in line with its words: the reply it came as
+        // is not shown.
+        <p data-testid="limit-wait-detail" className="line-clamp-2 pl-6">
+          {wait.detail}
+        </p>
       )}
     </div>
   );

@@ -769,7 +769,12 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         }),
       );
     }
-    const streamed = l.streamed.has(apiId);
+    // An API error Claude Code reports as a reply of its own (`API Error: Request rejected (429)
+    // ...`) is the turn's failure, which ends it and is shown as one: an error card, or the line of
+    // a limit waited out. Its words are not the agent's reply.
+    const failureReply =
+      key === MAIN && m.error !== undefined && m.message.model === SYNTHETIC_MODEL;
+    const streamed = l.streamed.has(apiId) || failureReply;
     for (const block of m.message.content) {
       if (block.type === "tool_use") {
         const call = tools.get(block.id) ?? registerTool(block.id, block.name, key);

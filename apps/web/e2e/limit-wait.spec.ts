@@ -92,6 +92,36 @@ for (const clock of [
       await expect(line).toBeHidden();
     });
 
+    test("a rate limit says what the provider said under its line, not as a reply", async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1100, height: 760 });
+      await page.goto("/t/t-release");
+      await expect(page.getByLabel("Message", { exact: true })).toBeVisible();
+      await page.evaluate(
+        (at) => {
+          window.gramMock!.simulateLimitWait(
+            "t-release" as never,
+            {
+              kind: "backoff",
+              resumeAt: at,
+              attempt: 1,
+              detail: "You have reached the usage limit of your Claude login.",
+            },
+            "Carry on with the brief",
+          );
+        },
+        now + 10 * 60_000,
+      );
+      const line = page.getByTestId("limit-wait");
+      await expect(line.locator("span").first()).toHaveText(/^Rate limited · retries /);
+      await expect(line.getByTestId("limit-wait-detail")).toHaveText(
+        "You have reached the usage limit of your Claude login.",
+      );
+      if (process.env["LIMIT_DETAIL_SHOTS"] !== undefined)
+        await page.screenshot({ path: `${process.env["LIMIT_DETAIL_SHOTS"]}/after.png` });
+    });
+
     test("a wait that resumes on another day names the day, as the meter does", async ({
       page,
     }) => {
