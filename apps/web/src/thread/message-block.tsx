@@ -412,11 +412,13 @@ export const MessageBlock = memo(function MessageBlock({
         </div>
       )}
       {/* A reply's parts (a tool row, its prose, a diff card) 12 px apart, a list's rhythm, so its
-          blocks read as separate steps by space rather than run together at 8 px. */}
+          blocks read as separate steps by space rather than run together at 8 px. It clips 16 px
+          out, so a raised card's shadow (14 px at most, below) keeps the card's rounded shape
+          instead of being cut square at the reply's edges. */}
       <MessageContent
         data-testid="message-time"
         title={actions ? undefined : sentAt}
-        className="w-full gap-3"
+        className="w-full gap-3 overflow-clip [overflow-clip-margin:1rem]"
       >
         <ToolImagesContext value={toolImages}>
           {message.parts.map((part, i) => {
