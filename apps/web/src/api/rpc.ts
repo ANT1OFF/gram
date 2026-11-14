@@ -29,6 +29,7 @@ import { sessionsRpc } from "./sessions/rpc";
 import { settingsRpc } from "./settings/rpc";
 import { speechRpc } from "./speech/rpc";
 import { terminalRpc } from "./terminal/rpc";
+import { browserViewRpc } from "./browser-view/rpc";
 import { threadsRpc } from "./threads/rpc";
 import { waitsRpc } from "./waits/rpc";
 import { docsRpc } from "./docs/rpc";
@@ -103,6 +104,7 @@ export async function createRpcApi(url: string, session?: GramServer["session"])
     ...settingsRpc(domain),
     ...speechRpc(),
     ...terminalRpc(domain),
+    ...browserViewRpc(domain),
     ...threadsRpc(domain),
     ...waitsRpc(domain),
     ...worktreesRpc(domain),

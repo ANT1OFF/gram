@@ -8,8 +8,8 @@ import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 import { Socket } from "../platform/unstable.ts";
 import { HOST_CONNECT_PATH, signedConnectHeaders } from "./machine-keys.ts";
-import { type HostService, serveHost } from "./protocol.ts";
-import { watchedSocket } from "./socket-end.ts";
+import { HOST_PING_EVERY_MS, HOST_PINGS_MISSED, type HostService, serveHost } from "./protocol.ts";
+import { socketEndText, watchedSocket } from "./socket-end.ts";
 
 /** The first wait after a dial ends, doubled each time up to the last. */
 const RETRY_FIRST_MS = 2_000;
@@ -23,11 +23,12 @@ const JOIN_POLL_MS = 1_000;
 const STEADY_MS = 60_000;
 /**
  * How long a dial may go with nothing from the main Gram before it counts as gone: the main Gram's
- * RPC client pings every five seconds (`connectHost`), so this is four pings missed. A link that
- * broke without a word (the main Gram's tailnet went down, a sleep, a NAT forgot it) never fails a
- * read, and its socket would wait on it for good, the host never dialling again.
+ * RPC client pings every five seconds (`connectHost`), so this is four pings missed, as long as the
+ * main Gram waits on a silent host. A link that broke without a word (the main Gram's tailnet went
+ * down, a sleep, a NAT forgot it) never fails a read, and its socket would wait on it for good, the
+ * host never dialling again.
  */
-export const READ_IDLE_MS = 20_000;
+export const READ_IDLE_MS = HOST_PING_EVERY_MS * HOST_PINGS_MISSED;
 
 export interface DialOptions {
   /** The main Gram's origin, which every dial is signed for. */
@@ -51,7 +52,7 @@ export const connectUrl = (origin: string) =>
 /**
  * One dial: a WebSocket to the main Gram, signed afresh, serving the host until the socket closes,
  * the dial is refused, or the main Gram has said nothing for `idleMs`. What `service` builds in the dial's scope ends with it; `dialForever`
- * hands it one it keeps across dials.
+ * hands it one it keeps across dials. It comes back with why it ended, in a few words for the log.
  */
 export const dialOnce = <R>(
   options: DialOptions,
@@ -59,10 +60,12 @@ export const dialOnce = <R>(
   /** Runs on each message the main Gram sends: the dial got through and is being served. */
   served: Effect.Effect<void> = Effect.void,
   idleMs: number = READ_IDLE_MS,
-): Effect.Effect<void, never, R> =>
+): Effect.Effect<string, never, R> =>
   Effect.gen(function* () {
     const now = options.now ?? Date.now;
     const ended = yield* Deferred.make<void>();
+    /** Why the dial ended, the first way it was found. */
+    let why: string | undefined;
     /** Set as the socket ends, before `ended` stops the serving: a stop then closes nothing. */
     let socketEnded = false;
     /** When the main Gram last sent anything, or when the dial started. */
@@ -76,18 +79,21 @@ export const dialOnce = <R>(
     const joined = options.joined ?? (() => true);
     // Ends a dial the main Gram has gone silent on, so the next one is made, and one of a
     // machine that has left since, so none is.
-    yield* Effect.suspend(() =>
-      !joined()
-        ? Deferred.succeed(ended, undefined)
-        : now() - heard < idleMs
-          ? Effect.void
-          : Effect.logWarning(
-              "gram-host: nothing from the main Gram for too long; dialling again",
-            ).pipe(
-              Effect.annotateLogs({ silentSeconds: Math.round((now() - heard) / 1000) }),
-              Effect.andThen(Deferred.succeed(ended, undefined)),
-            ),
-    ).pipe(
+    yield* Effect.suspend(() => {
+      if (!joined()) {
+        why ??= "this machine left its Gram";
+        return Deferred.succeed(ended, undefined);
+      }
+      if (now() - heard < idleMs) return Effect.void;
+      const silentSeconds = Math.round((now() - heard) / 1000);
+      why ??= `nothing from the main Gram for ${silentSeconds} seconds`;
+      return Effect.logWarning(
+        "gram-host: nothing from the main Gram for too long; dialling again",
+      ).pipe(
+        Effect.annotateLogs({ silentSeconds }),
+        Effect.andThen(Deferred.succeed(ended, undefined)),
+      );
+    }).pipe(
       Effect.repeat(Schedule.spaced(Duration.millis(Math.max(10, Math.floor(idleMs / 4))))),
       Effect.forkScoped,
     );
@@ -101,12 +107,14 @@ export const dialOnce = <R>(
       serveHost(
         watchedSocket(
           socket,
-          Effect.andThen(
-            Effect.sync(() => {
-              socketEnded = true;
-            }),
-            Deferred.succeed(ended, undefined),
-          ),
+          (error) =>
+            Effect.andThen(
+              Effect.sync(() => {
+                socketEnded = true;
+                why ??= socketEndText(error);
+              }),
+              Deferred.succeed(ended, undefined),
+            ),
           received,
         ),
         host,
@@ -120,6 +128,7 @@ export const dialOnce = <R>(
       ),
       Deferred.await(ended),
     );
+    return why ?? "the main Gram ended the connection";
   }).pipe(Effect.scoped, Effect.provide(NodeSocket.layerWebSocketConstructor));
 
 /**
@@ -199,12 +208,12 @@ export const dialForever = <R>(
         detachedSince = undefined;
       }
       const started = now();
-      yield* dialOnce(options, keptService, served, timing.idleMs);
+      const why = yield* dialOnce(options, keptService, served, timing.idleMs);
       detachedSince ??= now();
       if (!joined()) continue;
       if (now() - started >= STEADY_MS) wait = retryFirstMs;
       yield* Effect.logInfo("gram-host: not connected; dialling again").pipe(
-        Effect.annotateLogs({ inSeconds: Math.round(wait / 1000) }),
+        Effect.annotateLogs({ inSeconds: Math.round(wait / 1000), why }),
       );
       // The wait ends early on a leave: the loop's top then stops the host at once.
       yield* Effect.raceFirst(Effect.sleep(wait), untilLeft());

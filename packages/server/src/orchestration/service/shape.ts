@@ -27,6 +27,7 @@ import {
   type UserInput,
   type WorkerAnswer,
   type WorkerQuestion,
+  type WithdrawnHow,
   type AskQuestionInput,
   type AnswerWorkerQuestionInput,
   type DismissWorkerQuestionInput,
@@ -623,7 +624,7 @@ export interface OrchestrationShape {
     },
     AppToolError
   >;
-  /** Message-only worker delegation to the bound parent or siblings at full autonomy; reads only. */
+  /** Message-only worker delegation to the bound parent or siblings, at every level of autonomy; reads only. */
   isWorkerSend(callerId: ThreadId, targetId: string): Effect.Effect<boolean>;
   /** Rechecks current worker relationships, workspace pause and user holds before delivery. */
   checkWorkerMessage(callerId: ThreadId, targetId: ThreadId): Effect.Effect<void, AppToolError>;
@@ -707,6 +708,11 @@ export interface OrchestrationShape {
    * only, since a gate may ask twice, and anything that goes wrong answers `false`.
    */
   fullAutonomyAllows(callerId: ThreadId, targetId: string): Effect.Effect<boolean>;
+  /**
+   * Whether `callerId` restarts `targetId`'s session without a card: an orchestrator on its own
+   * worker, unpaused, at every level of autonomy (`coordinationAllows`). Reads only.
+   */
+  coordinationAllows(callerId: ThreadId, targetId: string): Effect.Effect<boolean>;
   /** The ledger as `list_workers` shows it to the orchestrator, and the worker models it may name. */
   listWorkers(
     callerId: ThreadId,
@@ -781,6 +787,54 @@ export interface OrchestrationShape {
     callerId: ThreadId,
     input: { readonly questionId: string; readonly answer: string; readonly source: string },
   ): Effect.Effect<WorkerQuestion, AppToolError>;
+  /**
+   * `ask_question` with `withdraw`: the worker closes its own open question without an answer,
+   * `superseded` by its newer one when `supersededBy` names it, `withdrawn` otherwise.
+   */
+  withdrawQuestion(
+    workerId: ThreadId,
+    input: {
+      readonly questionId: string;
+      readonly reason: string;
+      readonly supersededBy?: string | undefined;
+    },
+  ): Effect.Effect<WorkerQuestion, AppToolError>;
+  /**
+   * `close_question` on a `WQ` id: the orchestrator closes one of its workers' open questions, in
+   * triage or forwarded, without answering it; the worker is told.
+   */
+  closeWorkerQuestion(
+    callerId: ThreadId,
+    input: { readonly questionId: string; readonly how: WithdrawnHow; readonly reason: string },
+  ): Effect.Effect<WorkerQuestion, AppToolError>;
+  /**
+   * `record_user_answer`: the worker that asked an open question, or its orchestrator, records that
+   * the user answered it in a message to the caller. The answer is that message, copied word for
+   * word from the caller's transcript.
+   */
+  recordUserAnswer(
+    callerId: ThreadId,
+    input: { readonly questionId: string },
+  ): Effect.Effect<WorkerQuestion, AppToolError>;
+  /**
+   * The open questions `threadId` asked in `workspaceId`, withdrawn because its thread left:
+   * archived, deleted, detached or moved. Never fails.
+   */
+  withdrawQuestionsOf(
+    workspaceId: WorkspaceId,
+    threadId: ThreadId,
+    why: "archived" | "deleted" | "detached" | "moved",
+  ): Effect.Effect<void>;
+  /**
+   * The questions `questionIds` name, for `userAnswers` on `tool`: each one of the caller's
+   * workspace that the user closed with words of their own (an answer, or a dismissal's reason).
+   * Refused for one that is open, was answered by an orchestrator or isn't on record.
+   */
+  userAnswers(
+    callerId: ThreadId,
+    tool: string,
+    questionIds: ReadonlyArray<string>,
+  ): Effect.Effect<ReadonlyArray<WorkerQuestion>, AppToolError>;
   /** `workerQuestion.answer`: the user's answer, to the worker now and to the orchestrator's next digest. */
   answerQuestionAsUser(
     input: AnswerWorkerQuestionInput,

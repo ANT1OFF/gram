@@ -1,6 +1,6 @@
 import { autonomyOf, type Thread, type ThreadBrowserStatus, type ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { Globe } from "lucide-react";
+import { Globe, GlobeLock, GlobeOff, TriangleAlert, type LucideIcon } from "lucide-react";
 
 import { useApi } from "@/api/context";
 import { Hint } from "@/components/hint";
@@ -54,38 +54,47 @@ export function useThreadBrowser(threadId: ThreadId | undefined): ThreadBrowserS
   return data;
 }
 
-/** The chip's words for `status`, or `undefined` when there is nothing to show. */
+/** The chip's words and mark for `status`, or `undefined` when there is nothing to show. */
 export const browserChipText = (
   thread: Pick<Thread, "model">,
   status: ThreadBrowserStatus | undefined,
-): { readonly label: string; readonly hint: string } | undefined => {
+): { readonly label: string; readonly hint: string; readonly Icon: LucideIcon } | undefined => {
   if (status === undefined || status.state === "off") return undefined;
   const name = browserName(thread);
   switch (status.state) {
     case "on":
       if (status.notReady !== undefined)
-        return { label: "Your browser isn't ready", hint: `Lent your browser. ${status.notReady}` };
+        return {
+          label: "Your browser isn't ready",
+          hint: `This thread has your browser, but can't reach it yet. ${status.notReady}`,
+          Icon: TriangleAlert,
+        };
       return {
         label: "Your browser",
-        hint: `It can use your browser through ${name}, signed in as you. A change applies from its next session.`,
+        hint: `This thread can use your browser through ${name}, signed in as you. A change applies from its next session.`,
+        Icon: Globe,
       };
     case "held":
       return {
-        label: "Your browser",
-        hint: `Lent your browser, but it doesn't get it: ${status.why ?? "a setting holds it back."}`,
+        label: "Browser held back",
+        hint: `You lent this thread your browser, but it doesn't get it. ${status.why ?? "A setting holds it back."}`,
+        Icon: GlobeLock,
       };
     case "unavailable":
       return {
         label: "Browser not available",
         hint: status.why ?? `${name} isn't available to this thread.`,
+        Icon: GlobeOff,
       };
   }
 };
 
 /**
  * "Your browser" in the pane header while the thread's sessions get your real browser, signed in
- * as you; struck through while a consent in Settings holds it back, and "Browser not available"
- * where its session can't have it at all (a Codex thread in Gram's own Codex home, say).
+ * as you; "Your browser isn't ready" in the warning tone while its session can't reach it;
+ * "Browser held back" while a consent in Settings holds it back, and "Browser not available"
+ * where its session can't have it at all (a Codex thread in Gram's own Codex home, say). The hint
+ * says why in each case.
  */
 export function BrowserChip({ threadId, className }: { threadId: ThreadId; className?: string }) {
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
@@ -93,6 +102,7 @@ export function BrowserChip({ threadId, className }: { threadId: ThreadId; class
   if (thread === undefined) return null;
   const text = browserChipText(thread, status);
   if (text === undefined || status === undefined) return null;
+  const { Icon } = text;
   return (
     <Hint
       label={text.hint}
@@ -104,14 +114,13 @@ export function BrowserChip({ threadId, className }: { threadId: ThreadId; class
           data-ready={status.state === "on" && status.notReady === undefined}
           className={cn(
             "inline-flex shrink-0 items-center gap-1 text-meta text-muted-foreground",
-            status.state !== "on" && "line-through",
             status.state === "on" && status.notReady !== undefined && "text-warning",
             className,
           )}
         />
       }
     >
-      <Globe aria-hidden className="size-icon-row" />
+      <Icon aria-hidden className="size-icon-row" />
       {text.label}
     </Hint>
   );

@@ -1,4 +1,10 @@
-import { type ToolAudience, type OutwardGate, dreamSupportFor } from "@gram/agents";
+import {
+  type BrowserScope,
+  type BrowserSurfaces,
+  type ToolAudience,
+  type OutwardGate,
+  dreamSupportFor,
+} from "@gram/agents";
 import type { PermissionMode, Thread } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -46,6 +52,12 @@ export interface SessionPolicy {
    * orchestrator where `workspaces.orchestratorBrowser` is on, and its agent's consent allows.
    */
   readonly browser?: boolean | undefined;
+  /** With `browser`, the surfaces it keeps (`OpenSessionOptions.browserSurfaces`); absent, all. */
+  readonly browserSurfaces?: BrowserSurfaces | undefined;
+  /** With `browser`, what it is limited to (`OpenSessionOptions.browserScope`); absent, no limit. */
+  readonly browserScope?: BrowserScope | undefined;
+  /** With `browser`, each action asks first (`OpenSessionOptions.browserAsk`). */
+  readonly browserAsk?: boolean | undefined;
 }
 
 /**

@@ -44,6 +44,8 @@ import {
   type AgentSession,
   type ConnectorStatus,
   type ListModelsOptions,
+  type BrowserScope,
+  type BrowserSurfaces,
   type OpenSessionOptions,
   type OutwardGate,
 } from "../host.ts";
@@ -532,6 +534,81 @@ export const computerUseOff = (
 };
 
 /**
+ * What a thread given the browser turns off for the surfaces it wasn't given
+ * (`OpenSessionOptions.browserSurfaces`): each one's skills plugin, and Codex's own access policy
+ * where it has one. Mac apps are denied by default (`computer_use.default_app_access`), and with
+ * neither browser, every site is (`browser_use.default_origin_policy`). `cua_repl` itself serves
+ * every surface, so with one browser kept the other loses only its skills. Not verified live.
+ */
+export const surfacesOff = (
+  surfaces: BrowserSurfaces,
+): {
+  readonly plugins: Record<string, { enabled: false }>;
+  readonly config: {
+    readonly computer_use?: { readonly default_app_access: "deny" };
+    readonly browser_use?: { readonly default_origin_policy: { readonly access: "deny" } };
+  };
+} => ({
+  plugins: Object.fromEntries(
+    [
+      ...(surfaces.chrome ? [] : ["chrome@openai-bundled"]),
+      ...(surfaces.inApp ? [] : ["browser@openai-bundled"]),
+      ...(surfaces.apps ? [] : ["computer-use@openai-bundled"]),
+    ].map((id) => [id, { enabled: false }]),
+  ),
+  config: {
+    ...(surfaces.apps ? {} : { computer_use: { default_app_access: "deny" } }),
+    ...(surfaces.chrome || surfaces.inApp
+      ? {}
+      : { browser_use: { default_origin_policy: { access: "deny" } } }),
+  },
+});
+
+/**
+ * Codex's own access policy for a thread whose browser is limited
+ * (`OpenSessionOptions.browserScope`): every site but the listed ones denied
+ * (`browser_use.origins`, each host as its `https://` origin, a local one as `http://` too), and
+ * every Mac app but the listed bundle ids (`computer_use.macos.bundle_ids`). Not verified live.
+ */
+export const scopeConfig = (
+  scope: BrowserScope,
+): {
+  readonly browser_use?: {
+    readonly default_origin_policy: { readonly access: "deny" };
+    readonly origins: Record<string, { access: "allow" }>;
+  };
+  readonly computer_use?: {
+    readonly default_app_access: "deny";
+    readonly macos: { readonly bundle_ids: Record<string, "allow"> };
+  };
+} => ({
+  ...(scope.sites === undefined || scope.sites.length === 0
+    ? {}
+    : {
+        browser_use: {
+          default_origin_policy: { access: "deny" },
+          origins: Object.fromEntries(
+            scope.sites
+              .flatMap((site) =>
+                /^(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(site)
+                  ? [`https://${site}`, `http://${site}`]
+                  : [`https://${site}`],
+              )
+              .map((origin) => [origin, { access: "allow" }]),
+          ),
+        },
+      }),
+  ...(scope.apps === undefined || scope.apps.length === 0
+    ? {}
+    : {
+        computer_use: {
+          default_app_access: "deny",
+          macos: { bundle_ids: Object.fromEntries(scope.apps.map((id) => [id, "allow"])) },
+        },
+      }),
+});
+
+/**
  * The servers a confined thread still has running that aren't Gram's own, by name: a
  * plugin's, or anything else `confinedConfig` couldn't name beforehand.
  */
@@ -875,8 +952,21 @@ export const makeCodexHost = (
       // Computer use only for a thread given the browser, and only in the user's own CODEX_HOME,
       // where the user installed it: Gram's homes run with plugins off (`home === "owned"`).
       // `false`, or `true` where it can't be had, turns it off; absent leaves the user's config.
+      // A thread given the browser with every surface turned off isn't given it.
+      const noSurface =
+        o.browserSurfaces !== undefined &&
+        !o.browserSurfaces.chrome &&
+        !o.browserSurfaces.inApp &&
+        !o.browserSurfaces.apps;
       const browserOff =
-        confined === undefined && o.browser !== undefined && !(o.browser && home === "user");
+        confined === undefined &&
+        o.browser !== undefined &&
+        !(o.browser && home === "user" && !noSurface);
+      const lent = confined === undefined && !browserOff && o.browser === true;
+      // With the browser lent to ask each time, a computer-use prompt offers no lasting "yes".
+      const promptsOnce = lent && o.browserAsk === true;
+      const narrowedSurfaces =
+        lent && o.browserSurfaces !== undefined ? surfacesOff(o.browserSurfaces) : undefined;
       // Confinement already switches every server off; otherwise the workspace's lists might, and
       // a thread without the browser turns computer use's servers off by name.
       const narrowedRead =
@@ -958,6 +1048,12 @@ export const makeCodexHost = (
         ...(Object.keys(mcpServers).length === 0 ? {} : { mcp_servers: mcpServers }),
         // Merged into the user's `[plugins]`, so their other plugins stay as they are.
         ...(noComputerUse === undefined ? {} : { plugins: noComputerUse.plugins }),
+        ...(narrowedSurfaces === undefined || Object.keys(narrowedSurfaces.plugins).length === 0
+          ? {}
+          : { plugins: narrowedSurfaces.plugins }),
+        // A surface turned off denies the whole of it, whatever the lists allow.
+        ...(lent && o.browserScope !== undefined ? scopeConfig(o.browserScope) : {}),
+        ...narrowedSurfaces?.config,
         ...(confined === undefined ? {} : { apps: confined.apps, features: confined.features }),
         ...(roots.length === 0 ? {} : { sandbox_workspace_write: { writable_roots: [...roots] } }),
       };
@@ -1105,7 +1201,7 @@ export const makeCodexHost = (
           );
           return;
         }
-        const card = toPendingRequest(request, mapper.changes, level ?? false);
+        const card = toPendingRequest(request, mapper.changes, level ?? false, promptsOnce);
         if (card === undefined) {
           emit({
             type: "notice",
@@ -1434,16 +1530,18 @@ export const makeCodexHost = (
           Effect.suspend(() => {
             const request = pending.get(requestId);
             if (request === undefined) return Effect.void;
-            return rpc.respond(request.id, responseFor(request, answer, level ?? false)).pipe(
-              Effect.catchDefect(() =>
-                Effect.fail(
-                  new AnswerUndelivered({
-                    message: "Codex did not receive the answer. Try again.",
-                  }),
+            return rpc
+              .respond(request.id, responseFor(request, answer, level ?? false, promptsOnce))
+              .pipe(
+                Effect.catchDefect(() =>
+                  Effect.fail(
+                    new AnswerUndelivered({
+                      message: "Codex did not receive the answer. Try again.",
+                    }),
+                  ),
                 ),
-              ),
-              Effect.tap(() => Effect.sync(() => pending.delete(requestId))),
-            );
+                Effect.tap(() => Effect.sync(() => pending.delete(requestId))),
+              );
           }),
         setMode: (next) =>
           Effect.sync(() => {

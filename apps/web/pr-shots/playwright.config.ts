@@ -32,5 +32,9 @@ export default defineConfig({
     reducedMotion: "reduce",
     actionTimeout: 15_000,
     navigationTimeout: 60_000,
+    // The same override the e2e config takes, for a machine with its own Chromium.
+    launchOptions: process.env["GRAM_E2E_CHROMIUM"]
+      ? { executablePath: process.env["GRAM_E2E_CHROMIUM"] }
+      : {},
   },
 });

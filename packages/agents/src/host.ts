@@ -35,6 +35,24 @@ import type * as Scope from "effect/Scope";
 import type * as Stream from "effect/Stream";
 import type { HelperAdapter } from "./helper.ts";
 
+/** The surfaces a session opened with the browser keeps (`OpenSessionOptions.browserSurfaces`). */
+export interface BrowserSurfaces {
+  /** The user's own Chrome, through the agent's extension. */
+  readonly chrome: boolean;
+  /** The agent's own app's browser. */
+  readonly inApp: boolean;
+  /** Apps on the user's desktop. */
+  readonly apps: boolean;
+}
+
+/** What a session opened with the browser is limited to (`OpenSessionOptions.browserScope`). */
+export interface BrowserScope {
+  /** The only sites it may act on, each a host in lower case (`github.com`, `localhost:3000`). */
+  readonly sites?: ReadonlyArray<string>;
+  /** The only desktop apps it may act on, each a macOS bundle id. */
+  readonly apps?: ReadonlyArray<string>;
+}
+
 export interface OpenSessionOptions {
   readonly threadId: ThreadId;
   readonly cwd: string;
@@ -165,6 +183,25 @@ export interface OpenSessionOptions {
    * host without either ignores it.
    */
   readonly browser?: boolean;
+  /**
+   * With `browser`, which of the agent's surfaces the session keeps, where the agent has more than
+   * one: Codex computer use reaches the user's Chrome (the ChatGPT extension), the ChatGPT app's
+   * own browser, and Mac apps. Absent keeps them all; all `false` is the browser not given. A
+   * host without separate surfaces ignores it.
+   */
+  readonly browserSurfaces?: BrowserSurfaces;
+  /**
+   * With `browser`, the only sites and desktop apps the session may act on; a list left out is
+   * not limited. Codex holds both through its own access policy (`browser_use`, `computer_use`).
+   * Claude refuses to open an address on another site, and has no desktop apps to limit.
+   */
+  readonly browserScope?: BrowserScope;
+  /**
+   * With `browser`, every action in it asks the user first, whatever the outward gate: Claude
+   * asks before each Claude in Chrome call that acts, and a computer-use prompt (Codex's or the
+   * extension's) offers only a one-time yes. A host without it ignores it.
+   */
+  readonly browserAsk?: boolean;
   /**
    * Told each time the session reports its MCP servers, so a view with no session open can show
    * the last word. Called synchronously from the agent's message loop: it mustn't block or throw.

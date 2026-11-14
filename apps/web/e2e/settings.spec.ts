@@ -503,3 +503,31 @@ test("opening Settings never shows its title bar beside the thread it is leaving
     ),
   ).toBe(0);
 });
+
+test("Your browser: what Codex computer use reaches sits under it, set in, before Ask before each action", async ({
+  page,
+}) => {
+  await page.goto("/settings/agents");
+  const group = page.getByTestId("your-browser-settings");
+  await expect(group.getByText("Allowed Mac apps", { exact: true })).toBeVisible();
+  const names = await group
+    .locator("[data-setting]")
+    .evaluateAll((rows) => rows.map((row) => row.querySelector("label")?.textContent?.trim()));
+  expect(names).toEqual([
+    "Claude in Chrome",
+    "Codex computer use",
+    "Codex in your Chrome",
+    "Codex in ChatGPT's browser",
+    "Codex in Mac apps",
+    "Ask before each action",
+    "Allowed sites",
+    "Allowed Mac apps",
+  ]);
+  const left = (name: string) =>
+    group.getByText(name, { exact: true }).evaluate((label) => label.getBoundingClientRect().left);
+  const parent = await left("Codex computer use");
+  for (const part of ["Codex in your Chrome", "Codex in ChatGPT's browser", "Codex in Mac apps"]) {
+    expect(await left(part)).toBeGreaterThan(parent + 8);
+  }
+  expect(await left("Ask before each action")).toBe(parent);
+});

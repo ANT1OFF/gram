@@ -59,6 +59,7 @@ describe("migration ordering gate", () => {
         [9, "queue_actor"],
         [10, "person_settings"],
         [11, "wait_person"],
+        [12, "user_messages"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -145,6 +146,7 @@ describe("the baseline", () => {
         "index messages_search_pending",
         "index messages_thread_rev",
         "index messages_thread_seq",
+        "index messages_thread_user",
         "index messages_turn",
         "index orchestration_events_workspace",
         "index session_leases_host",
@@ -238,6 +240,7 @@ describe("the baseline", () => {
         [9, "queue_actor"],
         [10, "person_settings"],
         [11, "wait_person"],
+        [12, "user_messages"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -269,6 +272,7 @@ describe("the baseline", () => {
           "queue_actor",
           "person_settings",
           "wait_person",
+          "user_messages",
         ]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
     }),
@@ -311,6 +315,7 @@ describe("the baseline", () => {
             [9, "queue_actor"],
             [10, "person_settings"],
             [11, "wait_person"],
+            [12, "user_messages"],
           ]);
           // A closed thread has no live row, but must retain its permanent safety identity.
           if (reopen === 0) {
@@ -471,7 +476,7 @@ describe("the baseline", () => {
       for (let reopen = 0; reopen < 2; reopen++) {
         yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
-          expect((yield* applied).map((row) => row.name).slice(-8)).toEqual([
+          expect((yield* applied).map((row) => row.name).slice(-9)).toEqual([
             "merge_fences",
             "usage_limit_history",
             "message_parts",
@@ -480,6 +485,7 @@ describe("the baseline", () => {
             "queue_actor",
             "person_settings",
             "wait_person",
+            "user_messages",
           ]);
           expect(yield* sql`SELECT key, data FROM usage_limits`).toEqual([
             { key: "codex//five_hour", data: '{"synthetic":true}' },

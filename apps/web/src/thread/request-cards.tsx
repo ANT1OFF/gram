@@ -73,6 +73,8 @@ import {
   appToolSummary,
   limitPauseAsk,
   approvalDetails,
+  browserAsk,
+  type BrowserAsk,
   approvalExtras,
   approvalSubject,
   mcpServerProposal,
@@ -753,13 +755,20 @@ function CardShell({
   );
 }
 
-function DetailFields({ fields }: { fields: readonly ApprovalDetailField[] }) {
+function DetailFields({
+  fields,
+  mono = false,
+}: {
+  fields: readonly ApprovalDetailField[];
+  /** Values an agent wrote to be read exactly: an address, a point, typed text. */
+  mono?: boolean;
+}) {
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
       {fields.map((field) => (
         <div key={field.label} className="contents">
           <dt className="text-muted-foreground">{field.label}</dt>
-          <dd className="min-w-0 break-words">{field.value}</dd>
+          <dd className={cn("min-w-0 break-words", mono && "font-mono")}>{field.value}</dd>
         </div>
       ))}
     </dl>
@@ -1196,6 +1205,36 @@ export function ApprovalInput({ request }: { request: ApprovalRequest }) {
   );
 }
 
+/**
+ * An ask to act in the person's browser or on their computer: what it acts on as labelled lines,
+ * what the prompt said, and the whole call under Details.
+ */
+function BrowserAskBody({ request, ask }: { request: ApprovalRequest; ask: BrowserAsk }) {
+  const compact = useContext(CompactContext);
+  return (
+    <>
+      {ask.message !== undefined && (
+        <p data-testid="approval-summary" className={cn("break-words", compact && "text-meta")}>
+          {ask.message}
+        </p>
+      )}
+      {ask.fields.length > 0 && (
+        <div
+          data-testid="approval-browser-fields"
+          className={cn("text-meta", ask.message !== undefined && "mt-1")}
+        >
+          <DetailFields fields={ask.fields} mono />
+        </div>
+      )}
+      {/* Why it asks, before the fold: the reason is read, the raw call rarely. */}
+      {request.decisionReason && (
+        <p className="mt-2 text-meta text-muted-foreground">{request.decisionReason}</p>
+      )}
+      {!compact && <ApprovalDetailsFold details={approvalDetails(request)} />}
+    </>
+  );
+}
+
 export function ApprovalCard({
   threadId,
   request,
@@ -1223,10 +1262,17 @@ export function ApprovalCard({
   const workspace = pause === undefined ? workspaceProposal(request) : undefined;
   // An MCP server proposed by chat: the server whole, and where it is written.
   const mcpServer = pause === undefined ? mcpServerProposal(request) : undefined;
+  const plainTool =
+    pause === undefined &&
+    settings === undefined &&
+    workspace === undefined &&
+    mcpServer === undefined;
   // Outward app tools restrict scopes to `["once"]`; absent means every scope is allowed. A browse
   // card's "always" is the host's place in Settings → Agent may browse, not a permission rule.
   // "Always allow this rule…" never saves on its first press: it shows exactly what it would keep, and where,
   // and saves only from there. A card with nothing to show offers no "always" at all.
+  // An act in the person's own browser or on their computer reads in words, not as a tool call.
+  const browser = plainTool ? browserAsk(request) : undefined;
   const rules = alwaysRules(request);
   const canAlways = canAlwaysAllow(request);
   // Opened from the Inbox's "Always allow this rule…", the card starts on what it would keep.
@@ -1234,11 +1280,7 @@ export function ApprovalCard({
   const [confirming, setConfirming] = useState(preview && canAlways);
   // The receipt says what was chosen, in its scope, where the card was. A limit pause, a settings
   // change and a workspace say their own outcome, so only a tool's approval has one.
-  const plain =
-    pause === undefined &&
-    settings === undefined &&
-    workspace === undefined &&
-    mcpServer === undefined;
+  const plain = plainTool;
   const allow = (scope: "once" | "always") =>
     void respond(
       { kind: "approval", decision: "allow", scope },
@@ -1324,7 +1366,7 @@ export function ApprovalCard({
                 : `Change workspace “${workspace.workspace.name}”?`
               : mcpServer !== undefined
                 ? `${mcpServer.action === "replace" ? "Replace" : "Add"} MCP server “${mcpServer.name}”?`
-                : `Allow ${request.displayName}?`
+                : (browser?.title ?? `Allow ${request.displayName}?`)
       }
       footer={
         pause !== undefined ? (
@@ -1412,6 +1454,8 @@ export function ApprovalCard({
         <WorkspaceDiff card={workspace} summary={summary} />
       ) : mcpServer !== undefined ? (
         <McpServerDiff card={mcpServer} summary={summary} />
+      ) : browser !== undefined ? (
+        <BrowserAskBody request={request} ask={browser} />
       ) : summary === undefined ? (
         <ApprovalInput request={request} />
       ) : (
@@ -1428,7 +1472,7 @@ export function ApprovalCard({
           )}
         </>
       )}
-      {request.decisionReason && (
+      {request.decisionReason && browser === undefined && (
         <p className="mt-1 text-meta text-muted-foreground">{request.decisionReason}</p>
       )}
       {request.blockedPath && (

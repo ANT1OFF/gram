@@ -196,7 +196,7 @@ describe.skipIf(!hasGit)("message target validation", () => {
   );
 
   it.effect.each(["supervised", "publish"] as const)(
-    "message_orchestrator at %s asks in Bypass and pins the described parent",
+    "message_orchestrator at %s reaches the parent without a card in Bypass",
     (autonomy) =>
       inServer((world) =>
         Effect.gen(function* () {
@@ -215,25 +215,12 @@ describe.skipIf(!hasGit)("message target validation", () => {
             .forTransport(worker.thread.id, "worker")
             .find((t) => t.descriptor.name === "message_orchestrator")!;
           const input = { text: "Clarify the contract." };
-          expect(approvalFor(tool.descriptor.class, yield* tool.needsApproval!(input))).toBe(
-            "forced",
-          );
-          const pending = yield* tool.run(input).pipe(Effect.forkScoped);
-          const [card] = yield* waitReal(
-            "parent coordination approval",
-            store.listRequests(worker.thread.id).pipe(Effect.map((all) => all.length === 1 && all)),
-          );
-          expect(card).toMatchObject({ displayName: "message_orchestrator", scopes: ["once"] });
-          expect(card?.kind === "approval" ? card.description : "").toContain(thread.id);
-          yield* runtimes.respond(worker.thread.id, card!.id, {
-            kind: "approval",
-            decision: "allow",
-            scope: "once",
-          });
-          expect(yield* Fiber.join(pending)).toMatchObject({
+          expect(yield* tool.needsApproval!(input)).toBe(false);
+          expect(yield* tool.run(input)).toMatchObject({
             threadId: thread.id,
             delivered: "steered",
           });
+          expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
         }),
       ),
   );
@@ -291,57 +278,6 @@ describe.skipIf(!hasGit)("message target validation", () => {
           }));
           yield* store.removeThread(thread.id);
           yield* fails(/^no_authority:/);
-        }),
-      ),
-  );
-
-  it.effect(
-    "message_orchestrator rejects rebinds after lower-autonomy approval instead of rerouting",
-    () =>
-      inServer((world) =>
-        Effect.gen(function* () {
-          const { thread, workspaceId, worker, registry } = yield* setup(world);
-          const store = yield* ThreadStore;
-          const orchestration = yield* Orchestration;
-          const runtimes = yield* ThreadRuntimes;
-          yield* orchestration.setCharter(workspaceId, { ...DEFAULT_CHARTER, autonomy: "publish" });
-          const tool = registry
-            .forTransport(worker.thread.id, "worker")
-            .find((t) => t.descriptor.name === "message_orchestrator")!;
-          const pending = yield* tool
-            .run({ text: "Coordinate." })
-            .pipe(Effect.flip, Effect.forkScoped);
-          const [card] = yield* waitReal(
-            "pinned old parent approval",
-            store.listRequests(worker.thread.id).pipe(Effect.map((all) => all.length === 1 && all)),
-          );
-          expect(card?.kind === "approval" ? card.description : "").toContain(thread.id);
-          const replacement = yield* runtimes.create({
-            projectRoot: world.repo,
-            checkout: { kind: "main", path: world.repo },
-            workspaceId,
-            role: "orchestrator",
-            title: "Replacement parent",
-          });
-          yield* store.updateWorkspace(workspaceId, (s) => ({
-            ...s,
-            workspace: { ...s.workspace, orchestratorThreadId: replacement.id },
-          }));
-          yield* store.updateThread(worker.thread.id, (t) => ({
-            ...t,
-            spawnedBy: { ...t.spawnedBy!, threadId: replacement.id },
-          }));
-          yield* runtimes.respond(worker.thread.id, card!.id, {
-            kind: "approval",
-            decision: "allow",
-            scope: "once",
-          });
-          expect((yield* Fiber.join(pending)).message).toContain("bound orchestrator changed");
-          expect(
-            (yield* runtimes.snapshot)
-              .filter((s) => s.thread.id === thread.id || s.thread.id === replacement.id)
-              .flatMap((s) => s.queue),
-          ).toEqual([]);
         }),
       ),
   );

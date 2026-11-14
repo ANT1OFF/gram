@@ -117,6 +117,15 @@ const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): H
     noBlockingAsk: o.noBlockingAsk,
     peerMessaging: o.peerMessaging,
     browser: o.browser,
+    browserSurfaces: o.browserSurfaces === undefined ? undefined : { ...o.browserSurfaces },
+    browserAsk: o.browserAsk,
+    browserScope:
+      o.browserScope === undefined
+        ? undefined
+        : {
+            ...(o.browserScope.sites === undefined ? {} : { sites: [...o.browserScope.sites] }),
+            ...(o.browserScope.apps === undefined ? {} : { apps: [...o.browserScope.apps] }),
+          },
   }) as HostSessionOpen;
 
 /**

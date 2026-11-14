@@ -56,6 +56,7 @@ import {
 } from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Redacted from "effect/Redacted";
@@ -907,6 +908,16 @@ const DROP_TIMEOUT = "3 minutes";
 /** How long a host gets to say hello before it counts as not answering. */
 const HELLO_TIMEOUT = "5 seconds";
 
+/** How often a connection pings its host, so a silent link is found and the host hears this side. */
+export const HOST_PING_EVERY_MS = 5_000;
+/**
+ * How many pings in a row a host may leave unanswered before its connection counts as gone. A
+ * host under load (swapping, its disk saturated) can stall for several seconds and then carry on;
+ * its connection survives that, as the host's own dial does this side's silence
+ * (`READ_IDLE_MS`, the same four pings).
+ */
+export const HOST_PINGS_MISSED = 4;
+
 export interface ConnectOptions {
   /** The host this connection should reach; a hello from any other is refused. */
   readonly hostId: HostId;
@@ -919,6 +930,8 @@ export interface ConnectOptions {
   readonly onEnded?: (reason: string) => Effect.Effect<void>;
   /** Told the host's hello as soon as it is read, before it is checked. */
   readonly onHello?: (hello: HostHello) => void;
+  /** How often it pings the host: `HOST_PING_EVERY_MS` unless a test says otherwise. */
+  readonly pingEveryMs?: number;
 }
 
 /**
@@ -1000,8 +1013,19 @@ export const connectHost = (
             ),
       );
 
-    // Pings every five seconds. No retries: reopening would hand back the same closed stream.
-    const protocol = yield* RpcClient.makeProtocolSocket({ retryPolicy: Schedule.recurs(0) }).pipe(
+    // Pings every five seconds, and gives up on a host only after `HOST_PINGS_MISSED` of them
+    // went unanswered: left to itself the client gives up after one, which a host stalled for a
+    // few seconds under load misses, and its connection then flapped every minute or so. A host
+    // given up on is gone at once, its owner told, rather than left looking connected until it
+    // dials again. No retries: reopening would hand back the same closed stream.
+    const pingEveryMs = options.pingEveryMs ?? HOST_PING_EVERY_MS;
+    const silentMs = pingEveryMs * HOST_PINGS_MISSED;
+    const protocol = yield* RpcClient.makeProtocolSocket({
+      retryPolicy: Schedule.recurs(0),
+      pingInterval: Duration.millis(pingEveryMs),
+      pingTimeout: Duration.millis(silentMs),
+      onPingTimeout: markEnded(`Nothing from the host for ${Math.round(silentMs / 1000)} seconds.`),
+    }).pipe(
       Effect.provideService(Socket.Socket, socket),
       Effect.provide(RpcSerialization.layerNdjson),
     );

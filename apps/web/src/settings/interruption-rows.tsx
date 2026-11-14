@@ -1,4 +1,4 @@
-import { notifyAboutOf, type SettingsPatch } from "@gram/contracts";
+import { gatherAsksOn, notifyAboutOf, type SettingsPatch } from "@gram/contracts";
 import { useState } from "react";
 
 import { errorMessage } from "@/api/errors";
@@ -14,7 +14,7 @@ const NOTIFY_ABOUT = [
   { value: "asks", label: "Asks only" },
 ] as const;
 
-type InterruptionKey = "quietWhenIdle" | "notifyAbout";
+type InterruptionKey = "quietWhenIdle" | "notifyAbout" | "gatherAsks";
 
 /**
  * Settings → Notifications → Interruptions: how much Gram asks for your attention while you work
@@ -61,6 +61,17 @@ export function InterruptionRows() {
           }
         />
       </SettingRow>
+      <Toggle
+        label="Gather waiting asks"
+        description="Asks that wait together in the background share one notification."
+        keywords={["notifications", "batch", "together", "away", "asks", "group"]}
+        checked={gatherAsksOn(settings)}
+        onReset={resetOf("gatherAsks")}
+        error={errorOf("gatherAsks")}
+        onChange={(gatherAsks) =>
+          applyTo("gatherAsks")({ notifications: { gatherAsks: gatherAsks ? null : false } })
+        }
+      />
       <Toggle
         label="Focus when idle"
         description="After five idle minutes, switch to Focus: only what needs you."

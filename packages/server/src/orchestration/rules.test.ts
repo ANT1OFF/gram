@@ -45,6 +45,7 @@ import {
 import { bootContext, plainPrompt, rolePrompt, workerPrompt } from "./prompt.ts";
 import {
   browserFor,
+  browserGrant,
   ADMITTED,
   admittedForRole,
   budgetVerdict,
@@ -128,6 +129,7 @@ import {
   joinedFeature,
   joinRefusal,
   userAwayMinutes,
+  userWroteMinutesAgo,
 } from "./rules.ts";
 
 /** A kind outside the contract, for the guards that must refuse one. */
@@ -1880,59 +1882,44 @@ describe("wakeWorthy", () => {
       '"Runner" has waited 10 min on the user (approval)',
     ],
     [
-      "a question a minute old at publish",
-      {
-        type: "requestPending",
-        worker: "Runner",
-        kind: "question",
-        pendingMs: QUESTION_WAKE_MS + 1,
-        autonomy: "publish",
-      },
-      undefined,
-    ],
-    [
-      "a question exactly a minute old at full",
+      "a question exactly a minute old",
       {
         type: "requestPending",
         worker: "Runner",
         kind: "question",
         pendingMs: QUESTION_WAKE_MS,
-        autonomy: "full",
       },
       undefined,
     ],
     [
-      "a question older than a minute at full",
+      "a question older than a minute",
       {
         type: "requestPending",
         worker: "Runner",
         kind: "question",
         pendingMs: QUESTION_WAKE_MS + 1,
-        autonomy: "full",
       },
       '"Runner" has had a question open for 1 min; answer_worker can answer it',
     ],
     [
-      "an approval a minute old at full",
+      "an approval a minute old",
       {
         type: "requestPending",
         worker: "Runner",
         kind: "approval",
         pendingMs: QUESTION_WAKE_MS + 1,
-        autonomy: "full",
       },
       undefined,
     ],
     [
-      "a question ten minutes old at supervised",
+      "a question ten minutes old",
       {
         type: "requestPending",
         worker: "Runner",
         kind: "question",
         pendingMs: REQUEST_PENDING_WAKE_MS + 1,
-        autonomy: "supervised",
       },
-      '"Runner" has waited 10 min on the user (question)',
+      '"Runner" has had a question open for 10 min; answer_worker can answer it',
     ],
     ["a worker error", { type: "workerError", worker: "Runner" }, '"Runner" is in error'],
     [
@@ -2112,19 +2099,21 @@ describe("prompts", () => {
     expect(roleAt("publish")).not.toContain("owner/repo#N");
   });
 
-  it("tells an orchestrator what is the user's at each level, and only at full what is its own", () => {
+  it("tells an orchestrator what leaves the machine at each level, and that answering workers is its own at all of them", () => {
     const at = roleAt;
     for (const level of ["supervised", "publish"] as const) {
       expect(at(level)).toContain(`autonomy is \`${level}\``);
       expect(at(level)).toContain("Merging is the user's decision");
-      expect(at(level)).toContain("You cannot answer a worker's waiting request of any kind");
+      expect(at(level)).toContain("You cannot merge, close a pull request or delete anything");
       // Its workers' `ask_question` questions are its to triage at every level.
       expect(at(level)).toContain("## Your workers' questions");
       expect(at(level)).toContain(
         "Answer it with `answer_worker` (`questionId`, `answer`, `source`)",
       );
-      // A request a worker waits on the user for stays the user's below `full`.
-      expect(at(level)).not.toContain("`answer_worker` and its `requestId`");
+      // A question a worker waits on the user for is its to answer at every level; an approval
+      // or a plan never is.
+      expect(at(level)).toContain("`answer_worker` and its `requestId`");
+      expect(at(level)).toContain("Approval and plan requests stay the user's");
       expect(at(level)).not.toContain("`merge_when_ready`");
     }
     expect(at("supervised")).toContain("ask the user before they push");
@@ -2148,6 +2137,23 @@ describe("prompts", () => {
     );
     expect(full).toContain("Approval and plan requests stay the user's");
     expect(full).not.toContain("Merging is the user's decision");
+  });
+
+  it("tells an orchestrator how to talk to the user: answer, back the claim, one catch-up shape, ask once", () => {
+    for (const autonomy of ["supervised", "publish", "full"] as const) {
+      const prompt = roleAt(autonomy);
+      expect(prompt).toContain(
+        "Answer every message the user writes to you in the turn it arrives",
+      );
+      expect(prompt).toContain("Back each claim with what you checked");
+      expect(prompt).toContain("A worker's report is its word until you have looked");
+      expect(prompt).toContain("Before you tell the user where things stand, call `list_workers`");
+      expect(prompt).toContain("**Needs you**, **Done**, **Failed**, **Still working**");
+      expect(prompt).toContain("Ask a decision once, with the option you recommend and why");
+    }
+    expect(workerAt("publish")).toContain(
+      "say what you ran to verify it and what you did not check",
+    );
   });
 
   it("sends an orchestrator's work to spawn_worker, and spawn_task only outside the workspace, with a reason", () => {
@@ -2262,10 +2268,10 @@ describe("prompts", () => {
 
   it("names a Codex thread's tools, which it would otherwise have to search for", () => {
     expect(workerOn("codex")).toContain(
-      "Your Gram tools are on the MCP server named `gram`: `report`, `ask_question`, `mark_completed`, `pr_bind`, `set_title`, `pr_status`, `pr_review_monitor`, `run_monitor`, `merge_when_ready`, `local_check`, `schedule_wake`, `depends_on`, `message_orchestrator`, `memory_list`, `memory_read`, `wrap_up`, `publish_doc`. Search for them by those names if they aren't listed.",
+      "Your Gram tools are on the MCP server named `gram`: `report`, `ask_question`, `record_user_answer`, `mark_completed`, `pr_bind`, `set_title`, `pr_status`, `pr_review_monitor`, `run_monitor`, `merge_when_ready`, `local_check`, `schedule_wake`, `depends_on`, `message_orchestrator`, `memory_list`, `memory_read`, `wrap_up`, `publish_doc`. Search for them by those names if they aren't listed.",
     );
     expect(roleOn("codex")).toContain(
-      "Your Gram tools are on the MCP server named `gram`: `spawn_worker`, `adopt_thread`, `list_workers`, `send_message`, `broadcast_message`, `archive_thread`, `set_stage`, `set_group`, `memory_read`, `memory_append`, `memory_edit`, `memory_write`, `ask_user`, `close_question`, `forward_question`, `answer_worker`, `wait_on_user`, `notify_user`, `schedule_wake`, `depends_on`. Search for them",
+      "Your Gram tools are on the MCP server named `gram`: `spawn_worker`, `adopt_thread`, `list_workers`, `send_message`, `broadcast_message`, `archive_thread`, `set_stage`, `set_group`, `memory_read`, `memory_append`, `memory_edit`, `memory_write`, `ask_user`, `close_question`, `forward_question`, `answer_worker`, `record_user_answer`, `wait_on_user`, `notify_user`, `schedule_wake`, `depends_on`. Search for them",
     );
     for (const agent of ["claude", UNADMITTED] as const) {
       expect(workerOn(agent)).not.toContain("MCP server named");
@@ -2304,7 +2310,9 @@ describe("prompts", () => {
     expect(prompt).toContain('"Platform"');
     expect(prompt).toContain("`report` tool");
     expect(prompt).toContain("`interface`");
-    expect(prompt).toContain("say what you tried and ruled out, not only what worked");
+    expect(prompt).toContain(
+      "say what you ran to verify it and what you did not check, and what you tried and ruled out, not only what worked",
+    );
     expect(prompt).toContain(
       "After a restart or a turn that was cut off, check your worktree, git history and GitHub before you repeat a push, a pull request or a comment",
     );
@@ -2768,13 +2776,10 @@ describe("retried requests", () => {
 });
 
 describe("request wake timing", () => {
-  it("is a minute for a question at full, and ten for everything else", () => {
-    expect(requestWakeMs("question", "full")).toBe(QUESTION_WAKE_MS);
-    for (const autonomy of ["supervised", "publish", undefined] as const) {
-      expect(requestWakeMs("question", autonomy)).toBe(REQUEST_PENDING_WAKE_MS);
-    }
+  it("is a minute for a question at every level, and ten for everything else", () => {
+    expect(requestWakeMs("question")).toBe(QUESTION_WAKE_MS);
     for (const kind of ["approval", "plan"]) {
-      expect(requestWakeMs(kind, "full")).toBe(REQUEST_PENDING_WAKE_MS);
+      expect(requestWakeMs(kind)).toBe(REQUEST_PENDING_WAKE_MS);
     }
   });
 });
@@ -3732,6 +3737,19 @@ describe("actionable historical digests", () => {
   });
 });
 
+describe("userWroteMinutesAgo", () => {
+  it("says the user is in the conversation for three minutes after they wrote, and never while away", () => {
+    const at = 10 * 60_000;
+    expect(userWroteMinutesAgo(undefined, at, undefined)).toBeUndefined();
+    expect(userWroteMinutesAgo(at, at + 20_000, undefined)).toBe(0);
+    expect(userWroteMinutesAgo(at, at + 2 * 60_000 + 59_999, undefined)).toBe(2);
+    expect(userWroteMinutesAgo(at, at + 3 * 60_000, undefined)).toBeUndefined();
+    expect(userWroteMinutesAgo(at, at + 60_000, 45)).toBeUndefined();
+    // A clock that went backwards says nothing rather than a negative time.
+    expect(userWroteMinutesAgo(at, at - 1, undefined)).toBeUndefined();
+  });
+});
+
 describe("userAwayMinutes", () => {
   it("counts whole minutes once the user has been away half an hour, and nothing before", () => {
     expect(userAwayMinutes(undefined, 10 * 60 * 60_000)).toBeUndefined();
@@ -3782,6 +3800,58 @@ describe("a roster whose entries follow tiers", () => {
       ok: true,
       model: pinned,
       follows: false,
+    });
+  });
+});
+
+describe("browserGrant", () => {
+  const codex = { model: { agent: "codex" as const, model: "gpt" }, browser: true };
+  const on = {
+    ...DEFAULT_SETTINGS,
+    agents: { ...DEFAULT_SETTINGS.agents, codexComputerUse: true },
+  };
+
+  it("names Codex's surfaces only when one is turned off", () => {
+    expect(browserGrant(codex, "plain", on)).toEqual({ browser: true });
+    expect(
+      browserGrant(codex, "plain", { ...on, agents: { ...on.agents, codexMacApps: false } }),
+    ).toEqual({ browser: true, browserSurfaces: { chrome: true, inApp: true, apps: false } });
+    expect(browserGrant({ ...codex, browser: false }, "plain", on)).toEqual({});
+  });
+
+  it("carries the sites and apps the user limits the browser to", () => {
+    const limited = {
+      ...on,
+      agents: { ...on.agents, browserSites: [" GitHub.com ", "github.com"], browserApps: [] },
+    };
+    expect(browserGrant(codex, "plain", limited)).toEqual({
+      browser: true,
+      browserScope: { sites: ["github.com"] },
+    });
+    expect(browserGrant({ ...codex, browser: false }, "plain", limited)).toEqual({});
+  });
+
+  it("asks before each action where the user said so", () => {
+    expect(
+      browserGrant(codex, "plain", { ...on, agents: { ...on.agents, browserAskEachAction: true } }),
+    ).toEqual({ browser: true, browserAsk: true });
+  });
+
+  it("takes a workspace's own list in place of the user-wide one", () => {
+    const limited = {
+      ...on,
+      agents: { ...on.agents, browserSites: ["github.com"], browserApps: ["com.apple.Safari"] },
+    };
+    expect(
+      browserGrant(codex, "plain", limited, { browserSites: ["linear.app", "not a host"] }),
+    ).toEqual({
+      browser: true,
+      browserScope: { sites: ["linear.app"], apps: ["com.apple.Safari"] },
+    });
+    // An empty list of its own leaves the user-wide one.
+    expect(browserGrant(codex, "plain", limited, { browserSites: [] })).toEqual({
+      browser: true,
+      browserScope: { sites: ["github.com"], apps: ["com.apple.Safari"] },
     });
   });
 });

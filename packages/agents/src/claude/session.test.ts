@@ -2625,10 +2625,14 @@ const preToolUse = (q: FakeQuery) => {
 };
 
 /** The `PreToolUse` gate of a session given the browser under `outwardGate`. */
-const browserHookFor = (outwardGate: "all" | "irreversible") =>
+const browserHookFor = (outwardGate: "all" | "irreversible" | undefined, browserAsk = false) =>
   Effect.gen(function* () {
     const h = harness();
-    yield* openSession({ outwardGate, browser: true }).pipe(Effect.provide(h.layer));
+    yield* openSession({
+      ...(outwardGate === undefined ? {} : { outwardGate }),
+      browser: true,
+      ...(browserAsk ? { browserAsk: true } : {}),
+    }).pipe(Effect.provide(h.layer));
     const pre = query(h).options.hooks!.PreToolUse![0]!.hooks[0]!;
     return (tool_name: string) =>
       Effect.promise((): Promise<HookJSONOutput> =>
@@ -2780,6 +2784,65 @@ describe("app tools bridge", () => {
       // The publish gate can't tell a click that merges from one that doesn't; the mode decides.
       const publish = yield* browserHookFor("irreversible");
       expect(yield* publish("mcp__claude-in-chrome__computer")).toEqual({});
+      // Lent to ask each time, it asks under any gate or none.
+      for (const gate of ["irreversible", undefined] as const) {
+        const asks = yield* browserHookFor(gate, true);
+        expect(yield* asks("mcp__claude-in-chrome__computer")).toMatchObject({
+          hookSpecificOutput: { permissionDecision: "ask" },
+        });
+        expect(yield* asks("mcp__claude-in-chrome__read_page")).toEqual({});
+      }
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("refuses an address outside the sites the browser is limited to", () =>
+    Effect.gen(function* () {
+      const h = harness();
+      yield* openSession({ browser: true, browserScope: { sites: ["github.com"] } }).pipe(
+        Effect.provide(h.layer),
+      );
+      const pre = query(h).options.hooks!.PreToolUse![0]!.hooks[0]!;
+      const call = (tool_name: string, tool_input: unknown, id: string) =>
+        Effect.promise((): Promise<HookJSONOutput> =>
+          pre(
+            {
+              hook_event_name: "PreToolUse",
+              session_id: "s",
+              transcript_path: "/t",
+              cwd: "/repo",
+              tool_name,
+              tool_input,
+              tool_use_id: id,
+            } as HookInput,
+            id,
+            { signal: signal() },
+          ),
+        );
+      const refused = yield* call(
+        "mcp__claude-in-chrome__navigate",
+        { url: "https://example.com/x", tabId: 1 },
+        "toolu_1",
+      );
+      expect(refused).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+      expect(
+        yield* call(
+          "mcp__claude-in-chrome__navigate",
+          { url: "https://github.com/pulls", tabId: 1 },
+          "toolu_2",
+        ),
+      ).toEqual({});
+      expect(
+        yield* call("mcp__claude-in-chrome__computer", { action: "left_click" }, "toolu_3"),
+      ).toEqual({});
+      // Another server's `url` isn't the browser's.
+      expect(yield* call("mcp__docs__fetch", { url: "https://example.com" }, "toolu_4")).toEqual(
+        {},
+      );
+
+      // Without a list, a session given the browser has no such hook to run.
+      const open = harness();
+      yield* openSession({ browser: true }).pipe(Effect.provide(open.layer));
+      expect(query(open).options.hooks?.PreToolUse).toBeUndefined();
     }).pipe(Effect.scoped),
   );
 

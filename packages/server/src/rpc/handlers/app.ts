@@ -12,6 +12,7 @@ import { RemoteHosts } from "../../host/remote-hosts.ts";
 import { logFileName } from "../../logging/daily-file.ts";
 import { ServerLog, type ServerLogShape } from "../../logging/service.ts";
 import { openExternal } from "../../ports/open-external.ts";
+import { PanePort } from "../../browser/pane-port.ts";
 import { ThreadPorts, type ThreadPortsShape } from "../../ports/service.ts";
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
 import { UsageLimitReadings } from "../../usage/limit-readings.ts";
@@ -34,12 +35,15 @@ export const makeDiagnostics = ({
   config,
   log,
   ports,
+  serverBrowser,
 }: {
   readonly runtimes: ThreadRuntimes["Service"];
   readonly config: ServerConfig["Service"];
   readonly log: ServerLogShape;
   /** Counts threads whose terminal runs a command as working; without it, `working` is left out. */
   readonly ports?: Pick<ThreadPortsShape, "busyTerminalsNow">;
+  /** Whether agents browse in a browser this server runs for itself. */
+  readonly serverBrowser?: boolean;
 }): Effect.Effect<Diagnostics> =>
   Effect.gen(function* () {
     const threads = yield* runtimes.snapshot;
@@ -67,6 +71,7 @@ export const makeDiagnostics = ({
         ...(working === undefined ? {} : { working }),
       },
       ...(config.fakeAgent ? { fakeAgent: true } : {}),
+      ...(serverBrowser === true ? { serverBrowser: true } : {}),
     };
   });
 
@@ -83,6 +88,9 @@ export const appHandlers = Effect.gen(function* () {
   const limits = yield* Effect.serviceOption(UsageLimitReadings);
   // Absent where no machine can join: every thread is then this machine's.
   const machines = yield* Effect.serviceOption(RemoteHosts);
+  // Absent in handler-only test layers; only the headless browser host is watched from a client.
+  const serverBrowser =
+    Option.getOrUndefined(yield* Effect.serviceOption(PanePort))?.view !== undefined;
   if (Option.isSome(machines)) yield* publishMachineStates(hub, machines.value);
 
   const withPorts = (summary: ThreadSummary): ThreadSummary => {
@@ -130,7 +138,7 @@ export const appHandlers = Effect.gen(function* () {
   });
 
   return {
-    "app.diagnostics": () => makeDiagnostics({ runtimes, config, log, ports }),
+    "app.diagnostics": () => makeDiagnostics({ runtimes, config, log, ports, serverBrowser }),
 
     // The native shell owns the link dialog when present.
     "app.openExternal": ({ url }) => openExternal(url, config.shellOpensLinks === true),

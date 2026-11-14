@@ -29,7 +29,7 @@ import {
   type AskedDespiteAutonomy,
 } from "./definition.ts";
 import { inputLengthProblem } from "./input.ts";
-import { DecisionHook } from "../embedding/decision-hook.ts";
+import { DecisionHook, REFUSAL_FOR_AGENT } from "../embedding/decision-hook.ts";
 import { RoutedFor, threadOwner } from "../host/ownership.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { makeActionGuard, type ActionGuard } from "../embedding/guard.ts";
@@ -373,7 +373,10 @@ export const bindAppTools = (
               ).pipe(
                 Effect.mapError(
                   (refused) =>
-                    new AppToolError({ tool: descriptor.name, message: refused.message }),
+                    new AppToolError({
+                      tool: descriptor.name,
+                      message: `${refused.message} ${REFUSAL_FOR_AGENT}`,
+                    }),
                 ),
               );
             }

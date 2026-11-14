@@ -52,6 +52,7 @@ import { SETTINGS_CARD, SETTINGS_STACK, SettingsGroup } from "./settings-group";
 import { WorkerBriefFooterField } from "./worker-brief-footer-field";
 import { WorkerModeField } from "./worker-mode-field";
 import { useWorkspaceChanges } from "./workspace-actions";
+import { WorkspaceBrowserFields } from "./workspace-browser-field";
 import { WorkspaceConnectorsField } from "./workspace-connectors-field";
 import {
   autonomyLevel,
@@ -498,7 +499,7 @@ function AutonomySection({ state, changes }: { state: WorkspaceState; changes: C
   return (
     <SettingsGroup
       label="Autonomy"
-      description="How far the orchestrator and its workers go on their own."
+      description="What may leave your machine without asking you."
       keywords={["worker mode", "workers at once", "permission", "usage limit"]}
     >
       <AutonomyField
@@ -588,6 +589,19 @@ function MoreOptions({ state, changes }: { state: WorkspaceState; changes: Chang
               new Promise<void>((resolve, reject) => {
                 void changes
                   .saveCharter(next, "Connectors saved", (message) => reject(new Error(message)))
+                  .then(resolve);
+              })
+            }
+          />
+          <WorkspaceBrowserFields
+            charter={charter}
+            disabled={changes.busy}
+            onChange={(next) =>
+              new Promise<void>((resolve, reject) => {
+                void changes
+                  .saveCharter(next, "Browser limits saved", (message) =>
+                    reject(new Error(message)),
+                  )
                   .then(resolve);
               })
             }

@@ -13,7 +13,7 @@ import { digestDiff } from "../orchestration/rules.ts";
 import { compactWorkerRow } from "../orchestration/ledger.ts";
 import { decodeOutbox } from "../orchestration/outbox.ts";
 import { makeWorld, prBadge, serverLayer, waitReal } from "../orchestration/test-harness.ts";
-import { ThreadStore } from "../persistence/thread-store.ts";
+import { findUserMessages, ThreadStore } from "../persistence/thread-store.ts";
 import * as ReadWorker from "../persistence/read-worker.ts";
 import * as WalCheckpointer from "../persistence/wal-checkpointer.ts";
 import { SqlClient } from "../platform/unstable.ts";
@@ -240,7 +240,11 @@ describe.skipIf(!PERF)("synthetic large SQLite workload", () => {
                   "orchestratorAttachmentParts",
                   store.messagesWithParts(threadId(0), ["file", "data-tool-image"]),
                 );
-                yield* measure("orchestratorUserMessages", store.listUserMessages(threadId(0)));
+                // What an attachment of the user's latest message and the send guard read of it.
+                yield* measure(
+                  "orchestratorUserMessages",
+                  findUserMessages(store, threadId(0), { from: "newest", count: 5 }),
+                );
                 yield* measure("orchestratorLastTen", store.lastMessages(threadId(0), 10));
                 // What the title watcher reads of a thread on each of its turn's status moments.
                 yield* measure("titleOpening", store.firstMessages(threadId(0), 64));

@@ -116,6 +116,9 @@ export function Field({
   );
 }
 
+/** Wins over the card's own padding and hairline for its rows, which a child selector sets. */
+const NESTED_ROW = "border-t-0! ps-9! pt-0!";
+
 /**
  * One setting on one line of a `SettingsGroup` card: its name and one line of description on the
  * left, its control on the right, dropping below when the two don't fit side by side. `onReset` is
@@ -135,12 +138,18 @@ export function SettingRow({
   learnMore,
   hint,
   undoKey,
+  nested = false,
   children,
 }: {
   label: string;
   description?: string;
   /** Extra words Settings search finds this by. */
   keywords?: readonly string[];
+  /**
+   * A part of the row above it: set in from the card's edge under that row's name, with no hairline
+   * between the two.
+   */
+  nested?: boolean;
   /** The control's id, when it's a single form element the label should name. */
   htmlFor?: string;
   /** What the one line leaves out, behind the ⓘ beside the name. */
@@ -169,7 +178,7 @@ export function SettingRow({
       {...search}
       {...touchHandlers(row)}
       data-setting=""
-      className="@container/row flex flex-col gap-2"
+      className={cn("@container/row flex flex-col gap-2", nested && NESTED_ROW)}
     >
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <div className="flex min-w-0 flex-[1_1_14rem]">
@@ -371,11 +380,14 @@ export function Toggle({
   error,
   detail,
   learnMore,
+  nested = false,
 }: {
   label: string;
   description?: string;
   /** Extra words Settings search finds this by. */
   keywords?: readonly string[];
+  /** A part of the switch above it; see `SettingRow`. */
+  nested?: boolean;
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
@@ -400,6 +412,7 @@ export function Toggle({
       disabledReason={disabled ? disabledReason : undefined}
       detail={detail}
       learnMore={learnMore}
+      nested={nested}
     >
       <Switch
         id={id}

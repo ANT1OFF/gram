@@ -8,6 +8,7 @@ import {
   questionTime,
   workerAnswerMessage,
   workerDismissMessage,
+  userAnswerProblem,
   type WorkerQuestion,
 } from "./worker-questions.ts";
 
@@ -95,6 +96,23 @@ describe("question cards", () => {
     expect(
       questionStatusLine({ ...question, stage: "dismissed", closedBy: "user", closedAt: at(0, 0) }),
     ).toBe("Dismissed by you · 00:00");
+    expect(
+      questionStatusLine({
+        ...question,
+        stage: "answered",
+        closedBy: "user",
+        recordedBy: "worker",
+        closedAt: at(9, 2),
+      }),
+    ).toBe("Answered by you in its thread · 09:02");
+    expect(
+      questionStatusLine({
+        ...question,
+        stage: "dismissed",
+        withdrawal: { by: "worker", how: "withdrawn", threadLeft: "archived" },
+        closedAt: at(8, 0),
+      }),
+    ).toBe("Withdrawn: its thread was archived · 08:00");
   });
 });
 
@@ -107,6 +125,11 @@ describe("messages to the worker", () => {
       workerAnswerMessage(question, "410", { closedBy: "orchestrator", source: "the brief" }),
     ).toContain(
       "Your orchestrator answered your question WQ3 (“Should a deleted cart answer 404 or 410?”), settled by the brief: 410",
+    );
+    expect(
+      workerAnswerMessage(question, "410", { closedBy: "user", recordedBy: "orchestrator" }),
+    ).toBe(
+      "The user answered your question WQ3 (“Should a deleted cart answer 404 or 410?”) in a message to your orchestrator, copied here word for word: 410\n\nGo on with this answer.",
     );
     expect(workerDismissMessage(question, undefined)).not.toContain("Their reason");
     expect(workerDismissMessage(question, "Out of scope")).toContain("Their reason: Out of scope");
@@ -177,5 +200,20 @@ describe("the digest's questions", () => {
     expect(text.match(/<\/worker-question>/g)).toHaveLength(1);
     expect(text).toContain("‹/worker-question>");
     expect(text).toContain('title="Evil\'› ‹/worker-question›"');
+  });
+});
+
+describe("the user's answer from a message", () => {
+  it("takes only a message written since the question, with text, short enough to keep", () => {
+    expect(userAnswerProblem("WQ3", undefined, 10)).toContain("hasn't written in your thread");
+    expect(userAnswerProblem("WQ3", { text: "410", sentAt: 9 }, 10)).toContain(
+      "hasn't written in your thread since WQ3",
+    );
+    expect(userAnswerProblem("WQ3", { text: "410", sentAt: undefined }, 10)).toBeDefined();
+    expect(userAnswerProblem("WQ3", { text: "  ", sentAt: 11 }, 10)).toContain("only files");
+    expect(userAnswerProblem("WQ3", { text: "x".repeat(2001), sentAt: 11 }, 10)).toContain(
+      "ask them to answer it on its card",
+    );
+    expect(userAnswerProblem("WQ3", { text: "410", sentAt: 10 }, 10)).toBeUndefined();
   });
 });

@@ -9,14 +9,7 @@ import {
   type Project,
 } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  BookMarked,
-  Folder,
-  FolderCheck,
-  FolderGit2,
-  Lock,
-  TriangleAlert,
-} from "lucide-react";
+import { BookMarked, Folder, FolderCheck, FolderGit2, Lock, TriangleAlert } from "lucide-react";
 import {
   useEffect,
   useId,
@@ -38,22 +31,14 @@ import { ChooseFolderButton } from "./choose-folder-button";
 import { GitBadge } from "./git-badge";
 import { splitForCompletion, tildify } from "./path";
 import { useRepoSuggestions } from "./repository-suggestions";
-import {
-  useCompletions,
-  useFolderStatus,
-  useHome,
-  type FolderStatus,
-} from "./use-folder";
+import { useCompletions, useFolderStatus, useHome, type FolderStatus } from "./use-folder";
 
 /**
  * The field owns open state (focus, blur, Escape, Enter). A portaled popup also dismisses on
  * outside press; cancelling that keeps a click in the field, and Escape inside a dialog, as they
  * are today.
  */
-const keepSuggestionsOpen = (
-  next: boolean,
-  details: { cancel: () => void },
-) => {
+const keepSuggestionsOpen = (next: boolean, details: { cancel: () => void }) => {
   if (!next) details.cancel();
 };
 
@@ -95,8 +80,7 @@ export type TypedFolder =
 
 /** What the folder check says of a typed path, as `projects.add` would; `undefined` until it has. */
 export const typedFolder = (status: FolderStatus): TypedFolder | undefined => {
-  if (status.state === "invalid")
-    return { kind: "refused", message: status.problem.message };
+  if (status.state === "invalid") return { kind: "refused", message: status.problem.message };
   if (status.state !== "valid") return undefined;
   const { path, git } = status.folder;
   if (git === "unreadable") return { kind: "unchecked" };
@@ -104,10 +88,7 @@ export const typedFolder = (status: FolderStatus): TypedFolder | undefined => {
     ? { kind: "repo", path }
     : {
         kind: "refused",
-        message:
-          git === "linked"
-            ? linkedCheckoutMessage(path)
-            : notARepositoryMessage(path),
+        message: git === "linked" ? linkedCheckoutMessage(path) : notARepositoryMessage(path),
       };
 };
 
@@ -136,9 +117,7 @@ function CloneProgress({ id, label }: { id?: string; label: string }) {
  * Registering a repository by folder or by cloning it, with what is under way and what failed:
  * the part of "Add repository" that the project picker's clone offer shares.
  */
-function useRegisterRepository(
-  onAdded: (project: Project) => void | Promise<void>,
-) {
+function useRegisterRepository(onAdded: (project: Project) => void | Promise<void>) {
   const api = useApi();
   const queryClient = useQueryClient();
   const cloneFolder = useServerSettings((s) =>
@@ -183,8 +162,7 @@ function useRegisterRepository(
       await onAdded(project);
       return true;
     } catch (e) {
-      if (!signal.aborted)
-        setError(errorMessage(e) || "Couldn't add the repository. Try again.");
+      if (!signal.aborted) setError(errorMessage(e) || "Couldn't add the repository. Try again.");
       return false;
     } finally {
       running.current = false;
@@ -198,17 +176,9 @@ function useRegisterRepository(
     setError,
     cloneFolder,
     addFolder: (path: string) => register(() => api.addProject(path)),
-    clone: ({
-      remote,
-      label,
-      repo,
-    }: Extract<RepositoryInput, { kind: "clone" }>) => {
-      const into =
-        cloneFolder === undefined ? "" : ` into ${cloneFolder}/${repo}`;
-      return register(
-        (signal) => api.cloneProject(remote, { signal }),
-        `Cloning ${label}${into}…`,
-      );
+    clone: ({ remote, label, repo }: Extract<RepositoryInput, { kind: "clone" }>) => {
+      const into = cloneFolder === undefined ? "" : ` into ${cloneFolder}/${repo}`;
+      return register((signal) => api.cloneProject(remote, { signal }), `Cloning ${label}${into}…`);
     },
   };
 }
@@ -231,10 +201,8 @@ export function CloneOffer({
   onCloned: (project: Project) => void;
   children?: ReactNode;
 }) {
-  const { pending, error, cloneFolder, clone } =
-    useRegisterRepository(onCloned);
-  if (pending?.cloning !== undefined)
-    return <CloneProgress label={pending.cloning} />;
+  const { pending, error, cloneFolder, clone } = useRegisterRepository(onCloned);
+  if (pending?.cloning !== undefined) return <CloneProgress label={pending.cloning} />;
   if (!offered && error === undefined) return children;
   return (
     <div className="flex flex-col gap-1" data-testid="clone-offer">
@@ -304,27 +272,20 @@ export function AddRepository({
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
-  const { pending, error, setError, cloneFolder, addFolder, clone } =
-    useRegisterRepository(async (project) => {
+  const { pending, error, setError, cloneFolder, addFolder, clone } = useRegisterRepository(
+    async (project) => {
       await onAdded(project);
       setText("");
-    });
+    },
+  );
   const input = readRepositoryInput(text);
   const home = useHome();
-  const folderStatus = useFolderStatus(
-    input.kind === "folder" ? input.path : "",
-  );
+  const folderStatus = useFolderStatus(input.kind === "folder" ? input.path : "");
   const typed = typedFolder(folderStatus);
-  useEffect(
-    () => onPendingChange?.(pending !== undefined),
-    [pending, onPendingChange],
-  );
+  useEffect(() => onPendingChange?.(pending !== undefined), [pending, onPendingChange]);
   const busy = pending !== undefined || disabled === true;
 
-  const repos = useRepoSuggestions(
-    text,
-    open && !busy && input.kind !== "folder",
-  );
+  const repos = useRepoSuggestions(text, open && !busy && input.kind !== "folder");
   const folders = useCompletions(text, open && input.kind === "folder");
   const { dir } = splitForCompletion(text);
   const suggestions: Suggestion[] =
@@ -345,16 +306,14 @@ export function AddRepository({
           })),
         );
   const notice = input.kind === "folder" ? undefined : repos.notice;
-  const showList =
-    open && !busy && (suggestions.length > 0 || notice !== undefined);
+  const showList = open && !busy && (suggestions.length > 0 || notice !== undefined);
 
   const submit = (): Promise<boolean> | undefined => {
     if (input.kind === "empty") return;
     if (busy) return Promise.resolve(false);
     setOpen(false);
     // Enter doesn't wait for the check: the server refuses the same folders, in the same words.
-    if (input.kind === "folder" && typed?.kind === "refused")
-      setError(typed.message);
+    if (input.kind === "folder" && typed?.kind === "refused") setError(typed.message);
     else if (input.kind === "folder") return addFolder(input.path);
     else if (input.kind === "clone") return clone(input);
     else if (input.kind === "invalid") setError(input.message);
@@ -409,11 +368,7 @@ export function AddRepository({
   return (
     <div className="flex min-w-0 flex-col gap-1.5" data-testid="add-repository">
       <div className="flex gap-1">
-        <Popover.Root
-          open={showList}
-          onOpenChange={keepSuggestionsOpen}
-          modal={false}
-        >
+        <Popover.Root open={showList} onOpenChange={keepSuggestionsOpen} modal={false}>
           <div ref={anchorRef} className="min-w-0 flex-1">
             <input
               role="combobox"
@@ -422,9 +377,7 @@ export function AddRepository({
               aria-autocomplete="list"
               aria-expanded={showList}
               aria-controls={listId}
-              aria-activedescendant={
-                showList && active >= 0 ? `${listId}-${active}` : undefined
-              }
+              aria-activedescendant={showList && active >= 0 ? `${listId}-${active}` : undefined}
               autoComplete="off"
               spellCheck={false}
               disabled={busy}
@@ -465,18 +418,13 @@ export function AddRepository({
                     id={listId}
                     role="listbox"
                     aria-label={
-                      input.kind === "folder"
-                        ? "Folder suggestions"
-                        : "Repository suggestions"
+                      input.kind === "folder" ? "Folder suggestions" : "Repository suggestions"
                     }
                     onMouseDown={(event) => event.preventDefault()}
                     // Near the end of what is listed, the next page is asked for.
                     onScroll={(event) => {
                       const list = event.currentTarget;
-                      if (
-                        list.scrollTop + list.clientHeight >=
-                        list.scrollHeight - 32
-                      )
+                      if (list.scrollTop + list.clientHeight >= list.scrollHeight - 32)
                         repos.more?.();
                     }}
                     className="max-h-[min(16rem,var(--available-height))] overflow-y-auto overscroll-contain rounded-lg border border-edge bg-popover p-1 text-popover-foreground shadow-overlay"
@@ -506,11 +454,7 @@ export function AddRepository({
                           id={`${listId}-${i}`}
                           role="option"
                           aria-selected={i === active}
-                          aria-label={
-                            suggestion.kind === "repo"
-                              ? suggestion.value
-                              : undefined
-                          }
+                          aria-label={suggestion.kind === "repo" ? suggestion.value : undefined}
                           onMouseDown={(event) => {
                             event.preventDefault();
                             accept(suggestion);
@@ -528,13 +472,12 @@ export function AddRepository({
                           <span className="min-w-0 flex-1 truncate font-mono text-meta">
                             {suggestion.label}
                           </span>
-                          {suggestion.kind === "repo" &&
-                            repos.private.has(suggestion.value) && (
-                              <Lock
-                                aria-label="Private"
-                                className="size-icon-row shrink-0 text-muted-foreground"
-                              />
-                            )}
+                          {suggestion.kind === "repo" && repos.private.has(suggestion.value) && (
+                            <Lock
+                              aria-label="Private"
+                              className="size-icon-row shrink-0 text-muted-foreground"
+                            />
+                          )}
                         </li>,
                       ];
                     })}
@@ -572,8 +515,7 @@ export function AddRepository({
           disabled={
             busy ||
             input.kind === "empty" ||
-            (input.kind === "folder" &&
-              (typed === undefined || typed.kind === "refused"))
+            (input.kind === "folder" && (typed === undefined || typed.kind === "refused"))
           }
           onClick={() => void submit()}
         >
@@ -598,13 +540,8 @@ export function AddRepository({
           data-testid="folder-check"
           className="flex min-w-0 items-center gap-1.5 text-meta text-muted-foreground"
         >
-          <FolderCheck
-            aria-hidden
-            className="size-icon-row shrink-0 text-success-text"
-          />
-          <span className="truncate font-mono">
-            {tildify(typed.path, home)}
-          </span>
+          <FolderCheck aria-hidden className="size-icon-row shrink-0 text-success-text" />
+          <span className="truncate font-mono">{tildify(typed.path, home)}</span>
           <GitBadge />
         </p>
       ) : input.kind === "folder" && typed?.kind === "refused" ? (
@@ -617,11 +554,7 @@ export function AddRepository({
           {typed.message}
         </p>
       ) : loadingRepos ? (
-        <p
-          id={hintId}
-          role="status"
-          className="text-meta text-muted-foreground"
-        >
+        <p id={hintId} role="status" className="text-meta text-muted-foreground">
           <Shimmer>Loading your GitHub repositories…</Shimmer>
         </p>
       ) : (

@@ -1753,6 +1753,101 @@ describe("CodexHost confined sessions", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("turns off the surfaces of computer use a thread given the browser didn't keep", () =>
+    Effect.gen(function* () {
+      const startOf = (h: ReturnType<typeof harness>) =>
+        h.calls.find(([method]) => method === "thread/start")?.[1] as {
+          config?: Record<string, unknown>;
+        };
+
+      const chromeOnly = harness({});
+      yield* openSession({
+        browser: true,
+        browserSurfaces: { chrome: true, inApp: false, apps: false },
+      }).pipe(Effect.provide(chromeOnly.layer));
+      expect(startOf(chromeOnly).config).toEqual({
+        plugins: {
+          "browser@openai-bundled": { enabled: false },
+          "computer-use@openai-bundled": { enabled: false },
+        },
+        computer_use: { default_app_access: "deny" },
+      });
+
+      const appsOnly = harness({});
+      yield* openSession({
+        browser: true,
+        browserSurfaces: { chrome: false, inApp: false, apps: true },
+      }).pipe(Effect.provide(appsOnly.layer));
+      expect(startOf(appsOnly).config).toEqual({
+        plugins: {
+          "chrome@openai-bundled": { enabled: false },
+          "browser@openai-bundled": { enabled: false },
+        },
+        browser_use: { default_origin_policy: { access: "deny" } },
+      });
+
+      // Every surface kept is the browser as it was.
+      const all = harness({});
+      yield* openSession({
+        browser: true,
+        browserSurfaces: { chrome: true, inApp: true, apps: true },
+      }).pipe(Effect.provide(all.layer));
+      expect(startOf(all).config).toBeUndefined();
+
+      // No surface kept is the browser not given.
+      const none = harness({});
+      yield* openSession({
+        browser: true,
+        browserSurfaces: { chrome: false, inApp: false, apps: false },
+      }).pipe(Effect.provide(none.layer));
+      expect(startOf(none).config?.["plugins"]).toEqual(
+        Object.fromEntries(COMPUTER_USE_PLUGINS.map((id) => [id, { enabled: false }])),
+      );
+      expect(startOf(none).config).not.toHaveProperty("computer_use");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("holds a thread given the browser to the sites and apps it is limited to", () =>
+    Effect.gen(function* () {
+      const startOf = (h: ReturnType<typeof harness>) =>
+        h.calls.find(([method]) => method === "thread/start")?.[1] as {
+          config?: Record<string, unknown>;
+        };
+      const browserScope = { sites: ["github.com", "localhost:3000"], apps: ["com.apple.Safari"] };
+
+      const limited = harness({});
+      yield* openSession({ browser: true, browserScope }).pipe(Effect.provide(limited.layer));
+      expect(startOf(limited).config).toEqual({
+        browser_use: {
+          default_origin_policy: { access: "deny" },
+          origins: {
+            "https://github.com": { access: "allow" },
+            "https://localhost:3000": { access: "allow" },
+            "http://localhost:3000": { access: "allow" },
+          },
+        },
+        computer_use: {
+          default_app_access: "deny",
+          macos: { bundle_ids: { "com.apple.Safari": "allow" } },
+        },
+      });
+
+      // A surface turned off denies all of it, whatever the list allows.
+      const noApps = harness({});
+      yield* openSession({
+        browser: true,
+        browserScope,
+        browserSurfaces: { chrome: true, inApp: true, apps: false },
+      }).pipe(Effect.provide(noApps.layer));
+      expect(startOf(noApps).config?.["computer_use"]).toEqual({ default_app_access: "deny" });
+
+      // Not given the browser, there is nothing to limit.
+      const off = harness({});
+      yield* openSession({ browser: false, browserScope }).pipe(Effect.provide(off.layer));
+      expect(startOf(off).config).not.toHaveProperty("browser_use");
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("keeps a confined dream's app tools reachable, even when the config names them", () =>
     Effect.gen(function* () {
       const h = harness({

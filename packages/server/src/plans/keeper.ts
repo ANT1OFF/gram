@@ -28,7 +28,11 @@ import {
   type HelperLane,
   type HelperSchedulerShape,
 } from "../helper/scheduler.ts";
-import { ThreadStore, type ThreadStoreShape } from "../persistence/thread-store.ts";
+import {
+  findUserMessages,
+  ThreadStore,
+  type ThreadStoreShape,
+} from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import {
   applyPrFacts,
@@ -129,7 +133,7 @@ const materialFor = (
       const since = yield* store.messagesSince(threadId, from.rev, DELTA_MESSAGES);
       if (since !== undefined) return { messages: since, full: false };
     }
-    const [first] = yield* store.listUserMessages(threadId);
+    const [first] = yield* findUserMessages(store, threadId, { from: "oldest", count: 1 });
     const { messages } = yield* store.recentMessages(threadId, REBUILD_TURNS);
     const opener = first === undefined || messages.some((m) => m.id === first.id) ? [] : [first];
     return { messages: [...opener, ...messages], full: true };

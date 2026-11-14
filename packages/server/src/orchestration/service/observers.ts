@@ -4,7 +4,6 @@
 // threads that come and go.
 import {
   isOpenQuestion,
-  autonomyOf,
   effectiveCheckout,
   isLocalHost,
   type BackgroundTask,
@@ -76,6 +75,7 @@ import type { HandoffPart } from "./handoff.ts";
 import type { Workers } from "./workers.ts";
 import type { Pauses } from "./pauses.ts";
 import type { Adoption } from "./adoption.ts";
+import type { OrchestrationShape } from "./shape.ts";
 
 /** The wake an orchestrator's limit wait leaves, which the digest its resume delivers carries. */
 const LIMIT_REASON = "your usage limit has reset";
@@ -97,6 +97,7 @@ export interface ObserversDeps {
   readonly wakeFor: Digests["wakeFor"];
   readonly wake: Digests["wake"];
   readonly survey: LedgerWatch["survey"];
+  readonly withdrawQuestionsOf: OrchestrationShape["withdrawQuestionsOf"];
   readonly dependencyBadgesOf: LedgerWatch["dependencyBadgesOf"];
   readonly followPark: Pauses["followPark"];
   readonly workerRemoved: Adoption["workerRemoved"];
@@ -145,7 +146,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
     workspacesChanged,
     requestTimers,
     requestSeen,
-    findWorkspace,
   } = kit;
   const {
     updateHeld,
@@ -160,6 +160,7 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
     workerRemoved,
     clearHandoff,
     forgetReasons,
+    withdrawQuestionsOf,
   } = deps;
 
   // ---------------------------------------------------------------------------------------
@@ -731,8 +732,11 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       if (holding !== undefined) yield* followPark(holding, thread);
       const workspaceId = workerWorkspaces.get(thread.id);
       if (workspaceId === undefined) return;
+      const newlyParked = thread.parked && !parkedWorkers.has(thread.id);
       if (thread.parked) parkedWorkers.add(thread.id);
       else parkedWorkers.delete(thread.id);
+      // An archived worker answers nothing: its open questions are withdrawn, not left waiting.
+      if (newlyParked) yield* withdrawQuestionsOf(workspaceId, thread.id, "archived");
       if (thread.parked) return;
       if (thread.completedAt === undefined) {
         completedSeen.delete(thread.id);
@@ -816,9 +820,7 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       const workspaceId = workerWorkspaces.get(threadId);
       if (workspaceId === undefined) return;
       requestSeen.set(requestId, { threadId, at: yield* Clock.currentTimeMillis });
-      const state = yield* findWorkspace(workspaceId);
-      const autonomy = state === undefined ? undefined : autonomyOf(state.charter);
-      yield* armRequestTimer(threadId, requestId, requestWakeMs(kind, autonomy));
+      yield* armRequestTimer(threadId, requestId, requestWakeMs(kind));
     });
 
   const onRequestAged = (threadId: ThreadId, requestId: RequestId) =>
@@ -829,12 +831,9 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       const request = pending.find((each) => each.id === requestId);
       const thread = yield* findThread(threadId);
       if (seen === undefined || workspaceId === undefined || request === undefined) return;
-      const state = yield* findWorkspace(workspaceId);
-      const autonomy = state === undefined ? undefined : autonomyOf(state.charter);
       const pendingMs = (yield* Clock.currentTimeMillis) - seen.at;
-      const dueAfter = requestWakeMs(request.kind, autonomy);
-      // The level was lowered while a question's one-minute timer ran: it is the user's again,
-      // and waits the ten minutes every other request does.
+      const dueAfter = requestWakeMs(request.kind);
+      // A timer that ran short of its time (a restart re-arms from what is left) waits out the rest.
       if (pendingMs <= dueAfter) {
         return yield* armRequestTimer(threadId, requestId, dueAfter - pendingMs);
       }
@@ -845,7 +844,6 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
           worker: thread?.title ?? threadId,
           kind: request.kind,
           pendingMs,
-          autonomy,
         },
         thread,
       );

@@ -584,6 +584,16 @@ const waitPerson = Effect.gen(function* () {
   yield* sql`ALTER TABLE wait_items ADD COLUMN person TEXT`;
 });
 
+/**
+ * The user-role rows of a thread in seq order, without the replies between them: what
+ * `userMessagePage` and a role-filtered `messagesWith` walk. A worker's few prompts sit among
+ * thousands of replies, and an orchestrator's newest prompt is found without reading its history.
+ */
+const userMessages = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE INDEX IF NOT EXISTS messages_thread_user ON messages(thread_id, seq) WHERE role = 'user'`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
@@ -596,6 +606,7 @@ export const migrations = {
   "0009_queue_actor": queueActor,
   "0010_person_settings": personSettings,
   "0011_wait_person": waitPerson,
+  "0012_user_messages": userMessages,
 };
 
 /**

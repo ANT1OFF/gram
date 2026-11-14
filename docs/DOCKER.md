@@ -60,15 +60,29 @@ are much slower across that boundary.
 - Phone access, the desktop app's tray and native notifications aren't part of the container.
 - Sign-ins that return to `localhost`, such as connectors' and Codex's browser login, can't reach
   the container. Previews of an agent's dev server run on the container's loopback and don't open
-  from your browser yet.
+  from your browser yet, but agents can browse them ([below](#the-agent-browser)).
 
-| Build argument        | Default                       | What it sets                                  |
-| --------------------- | ----------------------------- | --------------------------------------------- |
-| `CLAUDE_CODE_VERSION` | the version in the Dockerfile | Claude Code from npm                          |
-| `CODEX_VERSION`       | unset                         | Codex from npm, when set                      |
-| `GH_VERSION`          | `2.103.3`                     | The GitHub CLI's release; empty leaves it out |
-| `NODE_IMAGE`          | `node:26.13.0-bookworm-slim`  | The image it runs on                          |
-| `BUILD_IMAGE`         | `node:26.13.0-bookworm`       | The image it builds in                        |
+| Build argument        | Default                       | What it sets                                        |
+| --------------------- | ----------------------------- | --------------------------------------------------- |
+| `CLAUDE_CODE_VERSION` | the version in the Dockerfile | Claude Code from npm                                |
+| `CODEX_VERSION`       | unset                         | Codex from npm, when set                            |
+| `GH_VERSION`          | `2.103.3`                     | The GitHub CLI's release; empty leaves it out       |
+| `CHROMIUM`            | `1`                           | Chromium for the agent browser; empty leaves it out |
+| `NODE_IMAGE`          | `node:26.13.0-bookworm-slim`  | The image it runs on                                |
+| `BUILD_IMAGE`         | `node:26.13.0-bookworm`       | The image it builds in                              |
+
+## The agent browser
+
+Agents' `browser_*` tools work in the container: the image has Debian's Chromium, and the server
+runs it headless for them ([how](AGENTS_AND_FEATURES.md#the-agent-browser-without-the-desktop-app)).
+It reaches the container's loopback only, so an agent can open and test the dev server it started
+there, and nothing on the internet or your network. The thread's Preview tab shows its page live
+in your browser, and a click or a key in it takes the page over until you hand it back.
+
+Chromium runs without its own sandbox here (`GRAM_BROWSER_SANDBOX=0`), since the container's user
+can't make the namespaces it needs. The container is the boundary, as it is for the agents, which
+run as the same user. Build with `--build-arg CHROMIUM=` to leave Chromium out; the tools then say
+the server's browser couldn't open a page.
 
 ## Hosted features
 

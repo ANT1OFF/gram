@@ -3,6 +3,7 @@ import { AgentRuntimeHandlersLive } from "../../agent-runtime/handler.ts";
 import { DreamHandlersLive } from "../../orchestration/dream-handler.ts";
 import { OrchestrationHandlersLive } from "../../orchestration/handler.ts";
 import { AppHandlersLive } from "./app-layer.ts";
+import { BrowserViewHandlersLive } from "./browser-view.ts";
 import { ConnectorHandlersLive } from "./connectors.ts";
 import { ComposerHandlersLive } from "./composer-layer.ts";
 import { FileHandlersLive } from "./fs.ts";
@@ -21,6 +22,7 @@ import { ThreadHandlersLive } from "./threads-layer.ts";
 export const RpcHandlersLayer = Layer.mergeAll(
   AgentRuntimeHandlersLive,
   AppHandlersLive,
+  BrowserViewHandlersLive,
   ComposerHandlersLive,
   ConnectorHandlersLive,
   DreamHandlersLive,

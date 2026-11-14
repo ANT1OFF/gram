@@ -120,6 +120,7 @@ export interface AdoptionDeps {
     from?: Thread,
   ) => Effect.Effect<void>;
   readonly survey: LedgerWatch["survey"];
+  readonly withdrawQuestionsOf: OrchestrationShape["withdrawQuestionsOf"];
   readonly syncPrWatches: (workspaceId: WorkspaceId) => Effect.Effect<void>;
   readonly armAlarm: (
     workspaceId: WorkspaceId,
@@ -177,8 +178,17 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
     workspacesChanged,
     ownerOf,
   } = kit;
-  const { wakeFor, survey, syncPrWatches, armAlarm, armHold, joinWorkspace, joinGroup, wake } =
-    deps;
+  const {
+    wakeFor,
+    survey,
+    syncPrWatches,
+    armAlarm,
+    armHold,
+    joinWorkspace,
+    joinGroup,
+    wake,
+    withdrawQuestionsOf,
+  } = deps;
 
   const forgetWorker = (workspaceId: WorkspaceId, threadId: ThreadId) =>
     Effect.gen(function* () {
@@ -223,6 +233,8 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
         },
         undefined,
       ]);
+      // A thread that left answers nothing: its open questions are withdrawn, not left waiting.
+      yield* withdrawQuestionsOf(workspaceId, threadId, action === "closed" ? "deleted" : action);
       yield* forgetWorker(workspaceId, threadId);
       yield* orchestrationChanged(workspaceId);
       yield* wakeFor(workspaceId, { type: "workerRemoved", worker: threadId, parked, action });

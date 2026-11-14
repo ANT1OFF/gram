@@ -1,11 +1,7 @@
 // The repositories "Add repository" offers as `owner/repo` is typed: from the embedding app's
 // source when it gave one (searched as the person types, a page at a time), else the server's own
 // `gh` listing, matched here. Either way they are grouped by owner.
-import {
-  keepPreviousData,
-  useInfiniteQuery,
-  useQuery,
-} from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -19,18 +15,14 @@ const SUGGESTION_LIMIT = 8;
 const SEARCH_DEBOUNCE_MS = 250;
 
 /** Suggested `owner/repo` names containing `text`, prefix matches first. */
-export const matchRepos = (
-  repos: readonly string[],
-  text: string,
-): string[] => {
+export const matchRepos = (repos: readonly string[], text: string): string[] => {
   const q = text.trim().toLowerCase();
   if (q === "") return repos.slice(0, SUGGESTION_LIMIT);
   const scored = repos.flatMap((repo) => {
     const name = repo.toLowerCase();
     if (name === q) return [];
     const short = name.slice(name.indexOf("/") + 1);
-    const score =
-      name.startsWith(q) || short.startsWith(q) ? 0 : name.includes(q) ? 1 : -1;
+    const score = name.startsWith(q) || short.startsWith(q) ? 0 : name.includes(q) ? 1 : -1;
     return score === -1 ? [] : [{ repo, score }];
   });
   return scored
@@ -48,10 +40,7 @@ export interface RepoGroup {
  * `repos` by owner, each owner's in the order given: `account`'s first, then the others by name.
  * Without `account`, owners keep the order they first appear in.
  */
-export const groupByOwner = (
-  repos: readonly string[],
-  account?: string,
-): RepoGroup[] => {
+export const groupByOwner = (repos: readonly string[], account?: string): RepoGroup[] => {
   const groups = new Map<string, string[]>();
   for (const repo of repos) {
     const owner = repo.slice(0, Math.max(0, repo.indexOf("/")));
@@ -63,12 +52,8 @@ export const groupByOwner = (
   if (account === undefined) return all;
   const own = account.toLowerCase();
   return all.toSorted((a, b) => {
-    const mine =
-      Number(b.owner.toLowerCase() === own) -
-      Number(a.owner.toLowerCase() === own);
-    return mine !== 0
-      ? mine
-      : a.owner.localeCompare(b.owner, undefined, { sensitivity: "base" });
+    const mine = Number(b.owner.toLowerCase() === own) - Number(a.owner.toLowerCase() === own);
+    return mine !== 0 ? mine : a.owner.localeCompare(b.owner, undefined, { sensitivity: "base" });
   });
 };
 
@@ -96,10 +81,7 @@ const useDebounced = (value: string, ms: number) => {
 };
 
 /** The repositories to offer for `text`; `active` is false while the list can't be shown. */
-export function useRepoSuggestions(
-  text: string,
-  active: boolean,
-): RepoSuggestions {
+export function useRepoSuggestions(text: string, active: boolean): RepoSuggestions {
   const api = useApi();
   const source = useEmbedShell((s) => s.repositories);
   const query = useDebounced(text.trim(), SEARCH_DEBOUNCE_MS);
@@ -141,9 +123,7 @@ export function useRepoSuggestions(
   const pages = hosted.data?.pages ?? [];
   const typed = text.trim().toLowerCase();
   const listed = pages.flatMap((page) => page.repositories);
-  const names = listed
-    .map((repo) => repo.fullName)
-    .filter((name) => name.toLowerCase() !== typed);
+  const names = listed.map((repo) => repo.fullName).filter((name) => name.toLowerCase() !== typed);
   return {
     groups: groupByOwner(names, pages[0]?.account),
     loading: hosted.isPending && active,
@@ -153,12 +133,9 @@ export function useRepoSuggestions(
         : undefined,
     notice: hosted.isError
       ? {
-          text:
-            errorMessage(hosted.error) || "Couldn't list your repositories.",
+          text: errorMessage(hosted.error) || "Couldn't list your repositories.",
         }
       : pages[0]?.notice,
-    private: new Set(
-      listed.flatMap((repo) => (repo.private === true ? [repo.fullName] : [])),
-    ),
+    private: new Set(listed.flatMap((repo) => (repo.private === true ? [repo.fullName] : []))),
   };
 }

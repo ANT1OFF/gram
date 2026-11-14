@@ -182,7 +182,8 @@ export const rosterModelHere = (
  * How far an orchestrator and its workers go without asking. `supervised` asks before anything
  * leaves the machine: a push, a PR, a merge. `publish` lets them push branches and open PRs, and
  * asks before what can't be taken back: merging or closing a PR, a release, a workflow run.
- * `full` asks about nothing, and lets the orchestrator merge and answer its workers' questions.
+ * `full` asks about nothing, and lets the orchestrator merge. The level decides only what leaves
+ * the machine: answering workers' questions, their messages and restarts are the same at each.
  */
 export const Autonomy = Schema.Literals(["supervised", "publish", "full"]);
 export type Autonomy = typeof Autonomy.Type;
@@ -340,6 +341,14 @@ export const OrchestratorCharter = Schema.Struct({
    * gives each what its agent is configured with. Read it through `connectorSetOf`.
    */
   connectors: Schema.optionalKey(ConnectorSet),
+  /**
+   * The only sites, and the only Mac apps, this workspace's threads may act on with the user's
+   * browser, in place of the user-wide lists (`agents.browserSites`, `agents.browserApps`); a list
+   * absent or empty leaves the user-wide one. Plain strings, so a charter with an entry today's
+   * rules refuse still loads; read them through `browserScope`, which drops those.
+   */
+  browserSites: Schema.optionalKey(Schema.Array(Schema.String)),
+  browserApps: Schema.optionalKey(Schema.Array(Schema.String)),
   /** Absent in migrated workspaces keeps the bot approval gate. */
   mergeReviewPolicy: Schema.optionalKey(MergeReviewPolicy),
   /** Advisory overlap exclusions: exact repo-relative paths, or basenames at any depth.

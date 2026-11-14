@@ -15,10 +15,13 @@ checkout stays as it was. Workers report progress, ask questions and open pull r
 orchestrator answers what it can, passes the rest to you, and merges once the checks you
 configured pass.
 
-- **Adjustable autonomy.** **Supervised** asks before anything leaves your machine (a push, a pull
-  request, a merge); **Publish** pushes branches and opens pull requests but asks before merging,
-  closing a pull request, releasing or running a workflow; **Full** asks about nothing and lets
-  the orchestrator merge and answer its workers' questions. Only you can
+- **Adjustable autonomy.** The level decides one thing: what leaves your machine without asking
+  you. **Supervised** asks before a push, a pull request or a merge; **Publish** pushes branches
+  and opens pull requests but asks before merging, closing a pull request, releasing or running a
+  workflow; **Full** asks about nothing and lets the orchestrator merge. How the orchestrator
+  works with its workers is the same at every level: it answers a worker's waiting question when
+  your brief, its memory or your own words settle it, workers message it and each other, and it
+  restarts a worker's session. Approvals and plan requests stay yours. Only you can
   [pause a workspace](#pausing-a-workspace).
 - **Hands-off or hands-on.** Every worker is a normal thread: open it to read the transcript,
   send it a message mid-turn, answer its question or stop it.
@@ -35,8 +38,8 @@ configured pass.
   decisions and your standing rulings, which you can edit. An optional
   [memory update](#memory-updates-and-selected-harness-support) run consolidates it into a candidate you review.
 - **Messaging.** The orchestrator sends briefs and messages to workers; workers send back reports
-  and questions, and can message each other and their orchestrator directly. Below Full autonomy
-  each such message asks you first. Messages between threads are labelled with their sender and
+  and questions, and can message each other and their orchestrator directly, at every level of
+  autonomy. Messages between threads are labelled with their sender and
   never shown as yours.
 - **Models by assignment.** Each workspace lists the models its workers may use, with a note in
   your own words on what each is for, and the orchestrator picks by those notes: for example,
@@ -1415,6 +1418,66 @@ the Preview header and transcript show. `preview_start`, `preview_list`,
 `.gram/launch.json` (or `.claude/launch.json`): each start names the exact command
 on a card first, takes the next free port, and stops with its thread.
 
+### The agent browser without the desktop app
+
+Where Gram runs as a server alone, as [in Docker](DOCKER.md#the-agent-browser), the same
+`browser_*` tools drive a headless Chromium on the server instead of the Preview pane. The server
+forks a browser host (`GRAM_HEADLESS_BROWSER`, the path to
+`packages/shell/src/modules/agent-browser/headless-host.ts`), which runs the pane's own code and
+rules over Chromium's DevTools Protocol, so approvals, takeover, the per-submission card and
+evidence work as in the app. Without that variable the tools answer that there is no pane, as
+before.
+
+That browser reaches the server's loopback only: an agent's dev server there, never the internet
+or a private network. Chromium starts with every connection sent to a closed proxy, with loopback
+alone exempt (its usual exemption for link-local addresses, where a cloud's metadata service
+lives, is taken away), so `127.0.0.1`, `[::1]` and `localhost` load and no other loopback
+spelling does. No name but `localhost` resolves, so nothing a page writes leaves in a DNS query.
+A page here gets no WebRTC, and if it found some, WebRTC may use that proxy or nothing, so it
+sends no UDP. Each of the
+page's requests is also paused and put to the pane's rules, then to the Preview's local-session
+rules; a worker's requests get the local-session rules. A page's script can't open a window, and a window that opens all the same (a link, a shifted click) is closed at once, since no command drives it; its first request may still reach loopback, and nothing else. A `browser_navigate` anywhere else is refused
+before any card, and a navigation the page itself starts off loopback ends where it began.
+
+Each thread's page is a browser context of its own, sharing no cookies or storage. Four threads
+keep a page at once; the one whose last command is oldest closes for the next, never one with a
+command running. The profile is a fresh temp
+folder, removed when the browser stops. The browser starts on the first command and starts again
+on the next command after it stops. Neither the browser host nor Chromium gets the server's
+environment: only the paths, locale and font settings, and the variables below. A load whose server doesn't answer in 30 seconds is stopped. A page's `alert`, `confirm` or `prompt` is dismissed, since nobody is there to answer it. A page that stops answering for 40 seconds, such as one whose script loops, is closed, and the next command opens a fresh one. One multicast DNS query can still leave the machine when a page hands WebRTC a `.local` name, carrying a fixed name and nothing of the page's. Recording (`browser_record`) needs the desktop
+app's image decoder and doesn't work here.
+
+You watch that page in the thread's Preview tab, in a browser tab or any window with no Preview
+pane of its own: the tab shows the page live from the server, with the agent's latest action above
+it, and comes up by itself when the agent browses. A click, a key or a scroll in the page takes it
+over, as in the desktop app: your input goes to the page, and the agent's next input is refused
+until it has the page again. It gets the page back when you press **Hand back**, when you have sent
+nothing for 20 seconds, or when you close the tab. Back, forward and reload in the strip are yours
+too. The address is shown, not typed: the tab shows the page the agent opened, and opens none of
+its own. File uploads and sound don't cross.
+
+Keys reach the page as you type them, with two limits. Only a keyboard's ordinary keys are sent,
+so the browser's own shortcuts never are: no function, media or browser key, nothing with Alt that
+types no character, and Ctrl or Cmd with no key but the editing ones (select all, undo, redo,
+moving and deleting by a word or a line). Nothing you press opens a window, the developer tools or
+a print dialog on the server, and a window of the browser's own that opens all the same is closed
+at once. And copy, cut and paste aren't sent, by their shortcuts, their own keys or the middle
+mouse button: the server's browser has one clipboard and one selection that every thread's page
+shares, and yours stay on your machine. Shift+Esc puts the keyboard back in the strip, so the page never traps it; a mouse button
+or a key still held when the page goes back to the agent is let go first.
+
+The frames are JPEGs of the page as it repaints, twelve a second at most, sent only while someone
+watches (`browserView.subscribe`); input goes back as `browserView.input`, which the browser host
+checks before it reaches Chromium. Only a member calls these, never a viewer. A desktop app
+connected to a server that runs its own browser still shows its own Preview pane, not the server's
+page.
+
+| Variable                  | What it sets                                                                 |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| `GRAM_HEADLESS_BROWSER`   | The browser host the server forks; unset, there is no browser                |
+| `GRAM_BROWSER_EXECUTABLE` | The Chromium or Chrome the host starts                                       |
+| `GRAM_BROWSER_SANDBOX`    | `0` starts it without Chromium's sandbox, which a container's user can't use |
+
 ### Pinned pages
 
 An HTML page an agent drafts in its folder and shows in the Preview tab (`show_panel`) can be
@@ -1482,8 +1545,9 @@ failed. It says nothing before such a session runs, or when Claude Code doesn't 
 These are user-only settings: no agent can turn one on through `settings_propose`. Gram reads them
 again at each session open, so a change applies from a thread's next session. Giving or taking it
 with ⌘K reopens the session once it is idle. The pane header shows what the server says the
-thread's next session gets (`thread.browserStatus`): **Your browser** while it has it, struck
-through while a consent holds it back, and **Browser not available** where its session can't have
+thread's next session gets (`thread.browserStatus`): **Your browser** while it has it, **Your
+browser isn't ready** while its session can't reach it, **Browser held back** while a consent
+holds it back, and **Browser not available** where its session can't have
 it at all: a Codex thread in Gram's own Codex home, a thread on a gateway, or one started from a
 profile. The home is the one the thread's next session actually opens in, from the same resume
 plan: a fork that hasn't run yet resumes its source session in the source's home. There ⌘K's lend command is dimmed with the reason, and `thread.setBrowser` refuses it. A
@@ -1511,6 +1575,38 @@ thread's config, along with each computer-use server your config has. Your other
 servers are left as they are. It works only in threads that run in your own `CODEX_HOME`: threads
 under an outward gate run in Gram's own Codex setup, where plugins are off. Codex computer use
 also needs the ChatGPT app.
+
+**What Codex reaches.** Under the Codex switch, three more choose what a Codex thread given the
+browser keeps: **Codex in your Chrome** (the ChatGPT extension), **Codex in ChatGPT's browser**
+(the browser inside the ChatGPT app) and **Codex in Mac apps** (`agents.codexChrome`,
+`agents.codexInAppBrowser`, `agents.codexMacApps`). Each is kept unless you turn it off, and all
+three off is the browser not given. For one turned off, Gram turns off its skills plugin in the
+thread's config (`chrome@openai-bundled`, `browser@openai-bundled`, `computer-use@openai-bundled`).
+Without Mac apps it also sets Codex's own `computer_use.default_app_access` to deny, and with
+neither browser, `browser_use.default_origin_policy` to deny. One runtime (`cua_repl`) serves all
+three, so with one browser kept, turning the other off takes away its skills and not the runtime.
+
+**Sites and apps.** Two lists in the same group limit what a lent browser may act on: **Allowed
+sites** (`agents.browserSites`, each a host such as `github.com`, matched exactly) and **Allowed
+Mac apps** (`agents.browserApps`, each a bundle id such as `com.apple.Safari`). Empty means no
+limit. For a Codex thread, Gram sets Codex's own policy in the thread's config: every site denied
+but the listed ones (`browser_use.default_origin_policy` and `browser_use.origins`), and every app
+but the listed ones (`computer_use.default_app_access` and `computer_use.macos.bundle_ids`). A
+Claude thread is refused when a Claude in Chrome call opens an address on another site. A link it
+clicks on a listed site can still lead elsewhere, so the extension's own site permissions remain
+the backstop there. Claude in Chrome reaches no Mac apps.
+
+A workspace can carry lists of its own, under its settings' **More options** (`browserSites` and
+`browserApps` in its charter). For that workspace's orchestrator and workers, a list of its own
+takes the place of the user-wide one, sites and apps each on their own; left empty, the user-wide
+list applies. Only the user edits them: no agent can change either through `settings_propose` or
+`workspace_update`.
+
+**Ask before each action.** With **Ask before each action** on (`agents.browserAskEachAction`),
+a thread given the browser asks first whatever its workspace's gate. A Claude thread asks before
+each Claude in Chrome call that acts (reads such as `read_page` don't ask), as it already does
+under a workspace that asks before anything leaves the machine. For Codex, and for the extension's
+own prompts on Claude, a permission prompt card then offers only a one-time yes.
 
 **Permission prompts.** When a computer-use or other MCP server asks a yes-or-no question
 before it acts ("Allow ChatGPT to use Safari?"), the thread shows it as an approval card. A Codex

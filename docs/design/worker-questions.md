@@ -19,6 +19,11 @@ ask_question ──► triage ──answer_worker(questionId, source)──► a
                    ├─forward_question(id, context?)──► forwarded ──user answers──► answered (by you)
                    ├─10 min with no triage ──────────► forwarded      └─user dismisses─► dismissed
                    └─workspace or feature paused ────► forwarded
+
+triage or forwarded ──ask_question(withdraw, reason)──► withdrawn (by the worker)
+                    ├─close_question(WQ id, how, why)──► withdrawn (by the orchestrator)
+                    ├─record_user_answer(WQ id)────────► answered (your message, word for word)
+                    └─its thread archived, deleted, detached or moved──► withdrawn
 ```
 
 - **Ask.** A worker calls `ask_question` with its question, optional `context`, 2–4
@@ -61,6 +66,36 @@ ask_question ──► triage ──answer_worker(questionId, source)──► a
   on its button and rebindable in Settings → Keyboard. From the Inbox and Focus they wait out
   Undo. The user can also dismiss the question, optionally
   with a reason.
+- **Withdrawal.** A question can stop needing an answer before anyone gives one: a corrected
+  question replaces it, or it was settled some other way. The worker withdraws its own open
+  question with `ask_question`, `withdraw` naming it and a `reason`. Given a new `question` in
+  the same call, the new one is asked first and the old one is `superseded` by it. The
+  orchestrator closes one of its workers' open questions, in triage or forwarded, with
+  `close_question` on its `WQ` id, `how` `withdrawn`, `superseded` or `answered` (recorded as
+  `answered elsewhere`), and why in `answer`. `decided` is refused there: a settled answer in
+  triage is `answer_worker`'s, with its `source`. Either way the question leaves the user's
+  board and the needs-you count at once, and its card and history show the reason in place of an
+  answer ("Withdrawn by the worker · 14:05", "Superseded by WQ9 · 14:05", "Answered elsewhere,
+  says the orchestrator · 14:05"). The worker is sent a notice only when its orchestrator
+  closed it; nobody gets a digest copy, since the user decided nothing. On the wire it stays a
+  `dismissed` question with an optional `withdrawal` record (`by`, `how`, `supersededBy`), so a
+  build that predates withdrawals still reads it as closed: the stage and `closedBy` values are a
+  released protocol.
+- **Answered in a message.** The user doesn't have to find the card. When they answer an open
+  question in a message to the worker that asked it, or to that worker's orchestrator, the agent
+  records it with `record_user_answer` on its `WQ` id. The agent only judges that the message
+  answers the question: Gram copies the user's latest message in the caller's thread, word for
+  word, as the answer (`closedBy: "user"`, with `recordedBy` naming the agent), so the record
+  never holds an agent's retelling. It is refused when the user hasn't written there since the
+  question was asked, when that message has only files, and when it is longer than an answer
+  keeps. Recorded by the worker, the orchestrator gets the digest copy as for any answer of the
+  user's; recorded by the orchestrator, the worker gets the answer. The card reads "Answered by
+  you in its thread" or "Answered by you to the orchestrator".
+- **A worker that leaves.** When a worker's thread is archived, deleted, detached from its
+  orchestrator or moved to another workspace, Gram withdraws its open questions in its name
+  (`withdrawal.threadLeft`), since nobody would act on an answer. They leave the board at once,
+  nobody is woken, and the card reads "Withdrawn: its thread was archived". A worker brought back
+  asks again if it still needs to.
 - **Delivery.** An answer or a dismissal goes to the worker as a server notice
   (`sendNotice`, key `question:<id>`). It is steered into a running turn at the next tool
   boundary, or queued and sent when the worker is idle. It is not counted as the user
@@ -75,6 +110,13 @@ ask_question ──► triage ──answer_worker(questionId, source)──► a
   it affects. The digest distinguishes recorded worker notification from closure alone.
   A copy is acknowledged with the digest that
   carried it, like due wakes, so the 10-note cap can't drop it.
+- **Passing it on.** The orchestrator passes a ruling to another worker without retelling it:
+  `userAnswers` on `send_message` takes up to five question ids, and Gram
+  appends what the user answered to each (or the reason they dismissed it), copied from the
+  record under a line saying so, with the worker's question kept to one quoted line. A question that is
+  open, that an orchestrator answered, or that the user dismissed without a reason has no words
+  of the user's, so the call is refused and nothing is sent. The user's messages from
+  `userMessages` still come last.
 
 ## Refusals
 
@@ -86,6 +128,9 @@ ask_question ──► triage ──answer_worker(questionId, source)──► a
   `answer_worker` is refused (`forwarded`): it is the user's now.
 - Both tools are refused while the workspace or the feature is paused, and for a worker
   the user holds (`user_intervened`). In that case the question is the user's anyway.
+- A worker withdraws only its own questions (`not_yours`); an orchestrator closes only its own
+  workers' (`not_your_worker`), and not while the workspace or feature is paused or the user
+  holds the worker. Neither can withdraw a closed question, so the user's answer stands.
 - An orchestrator cannot change a closed question. Repeated or concurrent user replies
   to a question already closed by the user return the first saved decision, without
   overwriting it or notifying the worker twice. A user reply to a question already
@@ -93,9 +138,11 @@ ask_question ──► triage ──answer_worker(questionId, source)──► a
 - A worker with no orchestrator listening gets `asked: false` and is told to carry on, as
   `report` does.
 
-Unlike `answer_worker` on a pending request, which only `full` autonomy allows, triage
-works at every autonomy level. A worker's `ask_question` is addressed to its orchestrator
-first, so a settled answer from the orchestrator takes nothing from the user.
+Triage works at every autonomy level, and so does `answer_worker` on a worker's pending
+question (its harness's own ask): the level decides what leaves the machine, not who answers a
+worker. A worker's `ask_question` is addressed to its orchestrator first, so a settled answer
+from the orchestrator takes nothing from the user. Approval and plan requests are never the
+orchestrator's to answer.
 
 ## Model and storage
 
@@ -117,7 +164,7 @@ Dismiss.
 
 ## History
 
-Every change (asked, forwarded, answered, dismissed) is emitted as a `worker-question`
+Every change (asked, forwarded, answered, dismissed, withdrawn) is emitted as a `worker-question`
 data part, keyed by the question's id. The worker's transcript therefore shows one card
 that moves through its states: who answered and when, in 24-hour time. The orchestrator's
 transcript gets the same card for the answers it gave. The feature card on the Board lists

@@ -44,6 +44,7 @@ import type { SessionsApi } from "./sessions/types";
 import type { SettingsApi } from "./settings/types";
 import type { SpeechApi } from "./speech/types";
 import type { TerminalApi } from "./terminal/types";
+import type { BrowserViewApi } from "./browser-view/types";
 import type { ThreadsApi } from "./threads/types";
 import type { WaitsApi } from "./waits/types";
 import type { WorktreesApi } from "./worktrees/types";
@@ -257,6 +258,7 @@ export interface Api
     SessionsApi,
     SettingsApi,
     SpeechApi,
+    BrowserViewApi,
     TerminalApi,
     ThreadsApi,
     ThreadWakesApi,

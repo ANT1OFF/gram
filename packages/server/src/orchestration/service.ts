@@ -413,6 +413,7 @@ export const OrchestrationLive = Layer.effect(
       armHolds,
       onHoldDue,
       allowsAtFull,
+      allowsCoordination,
       workerMergesOwn,
     } = makeWorkers(kit, { survey, wakeFor, wake });
 
@@ -547,8 +548,13 @@ export const OrchestrationLive = Layer.effect(
       askQuestion,
       forwardQuestion,
       answerWorkerQuestion,
+      withdrawQuestion,
+      closeWorkerQuestion,
+      recordUserAnswer,
+      withdrawQuestionsOf,
       answerQuestionAsUser,
       dismissQuestionAsUser,
+      userAnswers,
       onQuestionDue,
     } = makeWorkerQuestions(kit, { recordReport, wake });
 
@@ -581,6 +587,7 @@ export const OrchestrationLive = Layer.effect(
       joinWorkspace,
       joinGroup,
       wake,
+      withdrawQuestionsOf,
     });
 
     const {
@@ -610,6 +617,7 @@ export const OrchestrationLive = Layer.effect(
       workerRemoved,
       clearHandoff,
       forgetReasons,
+      withdrawQuestionsOf,
     });
 
     const { onBoot } = makeBoot(kit, {
@@ -862,6 +870,7 @@ export const OrchestrationLive = Layer.effect(
       describeAddRepo,
       addWorkerRepo,
       fullAutonomyAllows: allowsAtFull,
+      coordinationAllows: allowsCoordination,
       workerMergesOwn,
       listWorkers,
       setStageAs,
@@ -870,8 +879,13 @@ export const OrchestrationLive = Layer.effect(
       askQuestion,
       forwardQuestion,
       answerWorkerQuestion,
+      withdrawQuestion,
+      closeWorkerQuestion,
+      recordUserAnswer,
+      withdrawQuestionsOf,
       answerQuestionAsUser,
       dismissQuestionAsUser,
+      userAnswers,
       keepsWakesOf,
       pendingWakesOf,
       scheduleWake,

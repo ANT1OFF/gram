@@ -26,6 +26,7 @@ import {
 } from "./recommended.ts";
 import {
   noticeActionsOn,
+  gatherAsksOn,
   notifyAboutOf,
   openAtLaunchOf,
   overviewSidebarOf,
@@ -307,6 +308,7 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
   pref("notifications.sounds", "Sounds"),
   pref("notifications.chime", "Chime", (s) => chimeOf(s.notifications)),
   pref("notifications.notifyAbout", "Notify about", notifyAboutOf),
+  pref("notifications.gatherAsks", "Gather waiting asks", gatherAsksOn),
   pref("notifications.reviewRequests", "Review request notifications", reviewRequestsOn),
   pref(
     "notifications.reviewRequestsDirectOnly",
@@ -399,6 +401,32 @@ export const USER_ONLY_SETTINGS: ReadonlyArray<UserOnlyKey> = [
     key: "agents.codexComputerUse",
     reason: "it lets Codex threads drive your browsers and Mac apps",
     read: (w) => w.settings.agents.codexComputerUse === true,
+  },
+  {
+    key: "workspace.browserSites",
+    reason: "it widens the sites agents may act on in your browser",
+  },
+  { key: "workspace.browserApps", reason: "it widens the Mac apps agents may act on" },
+  {
+    key: "agents.browserAskEachAction",
+    reason: "it decides whether agents ask before acting in your browser",
+  },
+  { key: "agents.browserSites", reason: "it widens the sites agents may act on in your browser" },
+  { key: "agents.browserApps", reason: "it widens the Mac apps agents may act on" },
+  {
+    key: "agents.codexChrome",
+    reason: "it lets Codex threads drive your own Chrome, signed in as you",
+    read: (w) => w.settings.agents.codexChrome !== false,
+  },
+  {
+    key: "agents.codexInAppBrowser",
+    reason: "it lets Codex threads drive the ChatGPT app's browser",
+    read: (w) => w.settings.agents.codexInAppBrowser !== false,
+  },
+  {
+    key: "agents.codexMacApps",
+    reason: "it lets Codex threads drive your Mac apps",
+    read: (w) => w.settings.agents.codexMacApps !== false,
   },
   {
     key: "workspaces.orchestratorBrowser",

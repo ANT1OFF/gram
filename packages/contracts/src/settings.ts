@@ -216,6 +216,32 @@ export const RecommendedSetup = Schema.Struct({
 });
 export type RecommendedSetup = typeof RecommendedSetup.Type;
 
+/**
+ * Why `entry` can't be a site a lent browser is limited to: a host alone (`github.com`,
+ * `localhost:3000`), matched exactly, so neither a path nor a wildcard means anything.
+ */
+export const browserSiteProblem = (entry: string): string | undefined => {
+  const trimmed = entry.trim();
+  if (trimmed === "") return "Name a site.";
+  return /^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::\d{1,5})?$/i.test(trimmed)
+    ? undefined
+    : "Give the site's host alone, such as github.com: no https://, path or wildcard.";
+};
+/** Why `entry` can't be a Mac app a lent desktop is limited to: a bundle id (`com.apple.Safari`). */
+export const browserAppProblem = (entry: string): string | undefined => {
+  const trimmed = entry.trim();
+  if (trimmed === "") return "Name an app by its bundle id.";
+  return /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(trimmed) && trimmed.length <= 155
+    ? undefined
+    : "Give the app's bundle id, such as com.apple.Safari.";
+};
+const BrowserSite = Schema.String.check(
+  Schema.makeFilter((entry: string) => browserSiteProblem(entry) ?? true),
+);
+const BrowserApp = Schema.String.check(
+  Schema.makeFilter((entry: string) => browserAppProblem(entry) ?? true),
+);
+
 export const AgentSettings = Schema.Struct({
   /** Absent: off, as every install before it; a new install's welcome turns it on. */
   recommendedSetup: Schema.optionalKey(RecommendedSetup),
@@ -258,6 +284,27 @@ export const AgentSettings = Schema.Struct({
    * absent, no Codex thread gets it.
    */
   codexComputerUse: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Which of computer use's surfaces a Codex thread given the browser keeps: the user's Chrome
+   * through the ChatGPT extension, the ChatGPT app's own browser, and Mac apps. Read through
+   * `codexSurfaces`; each is kept unless turned off, and none reaches a thread without
+   * `codexComputerUse`.
+   */
+  codexChrome: Schema.optionalKey(Schema.Boolean),
+  codexInAppBrowser: Schema.optionalKey(Schema.Boolean),
+  codexMacApps: Schema.optionalKey(Schema.Boolean),
+  /**
+   * The only sites, and the only Mac apps, a thread given the browser may act on, each a host
+   * (`browserSiteProblem`) or a bundle id (`browserAppProblem`). Read through `browserScope`; with
+   * none listed there is no limit beyond the agent's own.
+   */
+  browserSites: Schema.optionalKey(Schema.Array(BrowserSite)),
+  browserApps: Schema.optionalKey(Schema.Array(BrowserApp)),
+  /**
+   * A thread given the browser asks before each action in it, whatever its workspace's gate:
+   * `OpenSessionOptions.browserAsk`. Absent, it asks only under the strictest gate.
+   */
+  browserAskEachAction: Schema.optionalKey(Schema.Boolean),
   /**
    * The worker model roster a new workspace's charter starts with; absent or empty starts it with
    * none, so its workers run on the orchestrator's model.
@@ -331,6 +378,11 @@ export const NotificationSettings = Schema.Struct({
   mutedWorkspaces: Schema.optionalKey(Schema.Array(Schema.String)),
   /** What may raise a desktop notification while the window isn't in front; read through `notifyAboutOf`. */
   notifyAbout: Schema.optionalKey(NotifyAbout),
+  /**
+   * Asks that wait together while the window isn't in front share one desktop notification, in
+   * place of one each. Absent means on; read through `gatherAsksOn`.
+   */
+  gatherAsks: Schema.optionalKey(Schema.Boolean),
 });
 
 export const UpdateSettings = Schema.Struct({
@@ -716,6 +768,68 @@ export const browserUseAllowed = (settings: Pick<Settings, "agents">, agent: Age
   agent === "claude"
     ? settings.agents.claudeInChrome === true
     : settings.agents.codexComputerUse === true;
+/**
+ * The surfaces of Codex computer use a session opened with the browser keeps: the user's Chrome
+ * (the ChatGPT extension), the ChatGPT app's own browser, and Mac apps.
+ */
+export const CodexSurfaces = Schema.Struct({
+  chrome: Schema.Boolean,
+  inApp: Schema.Boolean,
+  apps: Schema.Boolean,
+});
+export type CodexSurfaces = typeof CodexSurfaces.Type;
+/** Which surfaces Codex threads given the browser keep; each one unless turned off. */
+export const codexSurfaces = (settings: Pick<Settings, "agents">): CodexSurfaces => ({
+  chrome: settings.agents.codexChrome !== false,
+  inApp: settings.agents.codexInAppBrowser !== false,
+  apps: settings.agents.codexMacApps !== false,
+});
+/**
+ * What a session opened with the browser is limited to: the only sites (hosts, lower case) and
+ * the only Mac apps (bundle ids) it may act on. A list left out is not limited.
+ */
+export const BrowserScope = Schema.Struct({
+  sites: Schema.optionalKey(Schema.Array(Schema.String)),
+  apps: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+export type BrowserScope = typeof BrowserScope.Type;
+const scopeEntries = (
+  entries: ReadonlyArray<string> | undefined,
+  problemOf: (entry: string) => string | undefined,
+  lower: boolean,
+): Array<string> => [
+  ...new Set(
+    (entries ?? [])
+      .filter((entry) => problemOf(entry) === undefined)
+      .map((entry) => (lower ? entry.trim().toLowerCase() : entry.trim())),
+  ),
+];
+/**
+ * The limits on a lent browser: a workspace's own list (`charter`) where it has one, otherwise
+ * the user-wide one, sites and apps each on their own. Absent when neither is listed anywhere.
+ */
+export const browserScope = (
+  settings: Pick<Settings, "agents">,
+  charter?: {
+    readonly browserSites?: ReadonlyArray<string>;
+    readonly browserApps?: ReadonlyArray<string>;
+  },
+): BrowserScope | undefined => {
+  const own = {
+    sites: scopeEntries(charter?.browserSites, browserSiteProblem, true),
+    apps: scopeEntries(charter?.browserApps, browserAppProblem, false),
+  };
+  const sites =
+    own.sites.length > 0
+      ? own.sites
+      : scopeEntries(settings.agents.browserSites, browserSiteProblem, true);
+  const apps =
+    own.apps.length > 0
+      ? own.apps
+      : scopeEntries(settings.agents.browserApps, browserAppProblem, false);
+  if (sites.length === 0 && apps.length === 0) return undefined;
+  return { ...(sites.length === 0 ? {} : { sites }), ...(apps.length === 0 ? {} : { apps }) };
+};
 /** Whether orchestrators get the browser, where their agent's consent allows; off unless turned on. */
 export const orchestratorBrowserOn = (settings: Settings): boolean =>
   settings.workspaces?.orchestratorBrowser === true;
@@ -901,6 +1015,10 @@ export const reviewRequestsAwaitBot = (settings: Settings): boolean =>
 export const noticeActionsOn = (settings: Settings): boolean =>
   settings.notifications.actions !== false;
 
+/** Whether asks waiting together share one desktop notification; on unless turned off. */
+export const gatherAsksOn = (settings: Settings): boolean =>
+  settings.notifications.gatherAsks !== false;
+
 /** What may raise a desktop notification; asks and failures unless the user chose asks only. */
 export const notifyAboutOf = (settings: Settings): NotifyAbout =>
   settings.notifications.notifyAbout ?? "asksAndFailures";
@@ -1027,6 +1145,13 @@ export const SettingsPatch = Schema.Struct({
       restartOnMcpChange: Schema.optionalKey(Schema.Boolean),
       claudeInChrome: Schema.optionalKey(Schema.Boolean),
       codexComputerUse: Schema.optionalKey(Schema.Boolean),
+      codexChrome: Schema.optionalKey(Schema.Boolean),
+      codexInAppBrowser: Schema.optionalKey(Schema.Boolean),
+      codexMacApps: Schema.optionalKey(Schema.Boolean),
+      /** Each replaces its whole list. */
+      browserSites: Schema.optionalKey(Schema.Array(BrowserSite)),
+      browserApps: Schema.optionalKey(Schema.Array(BrowserApp)),
+      browserAskEachAction: Schema.optionalKey(Schema.Boolean),
       /** Replaces the whole list. */
       workerModels: clearable(Schema.Array(WorkerModel)),
     }),
@@ -1048,6 +1173,7 @@ export const SettingsPatch = Schema.Struct({
       /** Replaces the whole list. */
       mutedWorkspaces: Schema.optionalKey(Schema.Array(Schema.String)),
       notifyAbout: clearable(NotifyAbout),
+      gatherAsks: clearable(Schema.Boolean),
     }),
   ),
   updates: Schema.optionalKey(

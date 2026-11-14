@@ -33,7 +33,7 @@ import { cn } from "@/lib/utils";
 import { useNotificationHistory, unreadNotifications } from "@/stores/notifications";
 import { PreviewSuggestionNotice } from "@/panels/preview-suggestion";
 import { useReviewRequests } from "@/reviews/review-requests";
-import { useFeature } from "@/settings/use-diagnostics";
+import { useFeature, useServerBrowser } from "@/settings/use-diagnostics";
 import { useRoomySidebar } from "@/embed/store";
 import { usePhone } from "@/lib/use-phone";
 import { PHONE_SEGMENT, PhonePanelHeader } from "@/shell/phone-panels";
@@ -133,15 +133,16 @@ export function useShowPanelRequests() {
   const threadId = params.threadId as ThreadId | undefined;
   const requestPanel = useLayoutStore((s) => s.requestPanel);
   const previewPane = useFeature("previewPane");
+  const serverPage = useServerBrowser();
 
   useEffect(
     () =>
       useThreadsStore.subscribe((s, prev) => {
         if (s.showPanel && s.showPanel !== prev.showPanel) {
-          requestPanel(s.showPanel, threadId, { previewPane });
+          requestPanel(s.showPanel, threadId, { previewPane, serverPage });
         }
       }),
-    [threadId, requestPanel, previewPane],
+    [threadId, requestPanel, previewPane, serverPage],
   );
 }
 
@@ -150,7 +151,9 @@ export function RightPanel() {
   const reviewsHere = useLayoutStore(reviewsTabShown);
   const requestsHere = useLayoutStore((s) => s.reviewRequestsPlacement === "panel");
   const openPrsHere = useLayoutStore((s) => s.openPrsPlacement === "panel");
-  const previewHere = useFeature("previewPane");
+  // The shell's pane, or with no shell the agents' pages in the server's own browser.
+  const shellPreview = useFeature("previewPane");
+  const previewHere = useServerBrowser() || shellPreview;
   const workspaceId = useRouteWorkspace();
   const workersHere = workspaceId !== undefined;
   // Pages, only while the workspace has one pinned or the tab is open: pinning opens it, and an

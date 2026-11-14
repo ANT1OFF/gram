@@ -34,7 +34,10 @@ const recorded = (page: Page) =>
 const act = (page: Page, action: DesktopNotificationAction) =>
   page.evaluate((a) => (window as unknown as { away: Recorded }).away.act(a), action);
 
-const start = async (page: Page, settings: Record<string, unknown> = {}) => {
+/** Each ask with a banner of its own, which is what most of these tests press. */
+const SEPARATE = { notifications: { gatherAsks: false } };
+
+const start = async (page: Page, settings: Record<string, unknown> = SEPARATE) => {
   await page.addInitScript(
     ([key, more]) => {
       sessionStorage.setItem(key, JSON.stringify(more));
@@ -116,7 +119,7 @@ const noteWith = async (page: Page, body: string, title?: string) => {
 test("Allow on a notification answers the ask through the one path, and it is gone everywhere", async ({
   page,
 }) => {
-  const made = await start(page, { helpers: { enabled: false } });
+  const made = await start(page, { ...SEPARATE, helpers: { enabled: false } });
   // The seed's push grows to three workers: its first, smaller notification is taken back.
   const note = await noteWith(page, PUSH, "Allow git push × 3?");
   const earlier = (await recorded(page)).notes.filter((n) => n.body === PUSH && n.id !== note.id);
@@ -162,7 +165,7 @@ test("Allow on a notification answers the ask through the one path, and it is go
 test("a command the banner would cut offers Open only, which shows it whole in the Inbox", async ({
   page,
 }) => {
-  const made = await start(page, { helpers: { enabled: false } });
+  const made = await start(page, { ...SEPARATE, helpers: { enabled: false } });
   await page.evaluate(
     ([threadId, command]) =>
       window.gramMock!.simulateRequest(threadId, {
@@ -223,4 +226,22 @@ test("titles come from the template with helpers off, and from the helper with t
   );
   const off = await noteWith(page, "npm run build:r-off");
   expect(off.title).toBe("Allow npm run?");
+});
+
+test("asks that wait together share one notification, which opens the Inbox", async ({ page }) => {
+  const made = await start(page, {});
+  await expect
+    .poll(async () => (await recorded(page)).notes.some((n) => n.id === "gram-asks-waiting"))
+    .toBe(true);
+  const { notes, withdrawn } = await recorded(page);
+  const summary = notes.findLast((n) => n.id === "gram-asks-waiting")!;
+  expect(summary.title).toMatch(/^\d+ asks are waiting for you$/);
+  expect(summary.actions).toBeUndefined();
+  // Every ask's own banner raised before the second arrived is taken back.
+  for (const n of notes.filter((each) => each.id?.startsWith("ask-")))
+    expect(withdrawn).toContain(n.id);
+
+  await act(page, { id: summary.id!, action: "open" });
+  await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
+  await expect(page.getByTestId("inbox")).toBeVisible();
 });

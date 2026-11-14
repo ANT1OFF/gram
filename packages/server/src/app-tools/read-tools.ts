@@ -26,7 +26,7 @@ import { GitStatePublisher } from "../git/publisher.ts";
 import { turnDiff } from "../git/turn-diff.ts";
 import { endCheckpointId } from "../git/turn-hooks.ts";
 import { redactText } from "../logging/redact.ts";
-import { ThreadStore } from "../persistence/thread-store.ts";
+import { findUserMessages, ThreadStore } from "../persistence/thread-store.ts";
 import { SqlClient } from "../platform/unstable.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { captureReadWorker, withReadWorker } from "../persistence/read-worker.ts";
@@ -414,8 +414,25 @@ export const ReadAppToolsLive = Layer.effectDiscard(
           const cwd = checkout.path;
           const all = yield* store.listTurns(threadId);
           const turns = all.slice(-clamp(limit, 1, 100));
-          // Only prompts are named; a long thread's replies are most of its history.
-          const messages = yield* store.listUserMessages(threadId);
+          // Only prompts are named; a long thread's replies are most of its history. Read from the
+          // newest, keeping the listed turns' messages, until one of an earlier turn shows each
+          // listed turn's first prompt was passed: turns run one at a time, so theirs are contiguous.
+          const listed = new Set<string>(turns.map((turn) => turn.id));
+          const unseen = new Set(listed);
+          const messages = yield* findUserMessages(store, threadId, {
+            from: "newest",
+            count: Number.POSITIVE_INFINITY,
+            until: (message) => {
+              const turnId = message.metadata?.turnId;
+              return unseen.size === 0 && turnId !== undefined && !listed.has(turnId);
+            },
+            keep: (message) => {
+              const turnId = message.metadata?.turnId;
+              if (turnId === undefined || !listed.has(turnId)) return false;
+              unseen.delete(turnId);
+              return true;
+            },
+          });
           // A thread on another machine has no checkpoints here (`REMOTE_CHECKPOINTS`).
           const top =
             isLocalHost(checkout) && (yield* folderExists(cwd))

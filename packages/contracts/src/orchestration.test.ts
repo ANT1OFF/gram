@@ -626,7 +626,7 @@ describe("serializeDigest", () => {
     const lines = text.split("\n");
     const woken = lines.findIndex((line) => line.startsWith("Woken by:"));
     expect(lines[woken + 1]).toBe(
-      "The user has been away from Gram for 1 h 35 min. Your next message to them is what they read first when they're back: keep it to a few lines, what changed and what waits on them.",
+      "The user has been away from Gram for 1 h 35 min. Your next message to them is what they read first when they're back: open with whether anything needs them, then Needs you, Done, Failed and Still working, one sentence each.",
     );
     expect(serializeDigest({ ...digest, userAwayMinutes: 120 })).toContain(
       "away from Gram for 2 h.",
@@ -635,6 +635,17 @@ describe("serializeDigest", () => {
       "away from Gram for 45 min.",
     );
     expect(serializeDigest(digest)).not.toContain("away from Gram");
+  });
+
+  it("says when it lands in the middle of the user's conversation, and what may still be said", () => {
+    const text = serializeDigest({ ...digest, userWroteMinutesAgo: 2 });
+    expect(text).toContain(
+      "The user wrote to you 2 min ago and may still be in this conversation. Don't break in with a routine update: write now only for a blocker, a decision that is theirs, or what answers something they asked.",
+    );
+    expect(serializeDigest({ ...digest, userWroteMinutesAgo: 0 })).toContain(
+      "The user wrote to you less than a minute ago",
+    );
+    expect(serializeDigest(digest)).not.toContain("The user wrote to you");
   });
 
   it("renders a boot digest's notes whole, and says when it is paused", () => {

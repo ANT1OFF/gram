@@ -131,6 +131,7 @@ import { createPagesMock } from "./pages/mock";
 import { createLabelsMock } from "./labels/mock";
 import { createKeybindingsMock } from "./keybindings/mock";
 import { createTerminalMock } from "./terminal/mock";
+import { createBrowserViewMock } from "./browser-view/mock";
 import { createRoutinesMock } from "./routines/mock";
 import { createThreadWakesMock } from "./thread-wakes/mock";
 import { createWaitsMock } from "./mock-waits";
@@ -224,6 +225,7 @@ import {
   mockStartsWithBoard,
   mockStartsRealistic,
   mockStartsAtScale,
+  mockServerBrowser,
 } from "./mock-overrides";
 import { mockDiff, mockGitState, mockPrDetail } from "./mock-git";
 import { searchMessages } from "./mock-search";
@@ -2014,7 +2016,19 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       !workerBrowserOn(settings)
     )
       return { state: "held", why: "Workers' browser is off in Settings → Workspaces." };
-    return { state: "on" };
+    const notReady = this.#browserNotReady.get(threadId);
+    return notReady === undefined ? { state: "on" } : { state: "on", notReady };
+  }
+
+  readonly #browserNotReady = new Map<ThreadId, string>();
+
+  /**
+   * Dev and e2e hook: what the thread's running session still lacks to use the browser it was
+   * given, as its own MCP servers report; `undefined` once it has it.
+   */
+  simulateBrowserNotReady(threadId: ThreadId, why: string | undefined) {
+    if (why === undefined) this.#browserNotReady.delete(threadId);
+    else this.#browserNotReady.set(threadId, why);
   }
 
   /** Per thread, the timer that ends its snooze, as the server's wakes do. */
@@ -2955,12 +2969,15 @@ export function createMockApi(options: MockApiOptions = {}) {
     /** Local browser-shell stand-ins; hosted flags never change available bridge members. */
     shell: {
       ...agentBrowse.shell,
-      preview: new MockPreview(),
+      // A browser tab on a server that runs its own browser has no shell to draw a page. Typed as
+      // there, since every spec but that scene's reads it.
+      preview: (mockServerBrowser() ? undefined : new MockPreview()) as MockPreview,
       pages: new MockPages(),
     },
     agentBrowseHosts: agentBrowse.agentBrowseHosts,
     simulateBrowseApproval: agentBrowse.simulateBrowseApproval,
     ...createTerminalMock(world),
+    ...createBrowserViewMock(),
     ...createThreadWakesMock(world),
     ...createRoutinesMock(world, () => owned.listWorkspaces()),
   };

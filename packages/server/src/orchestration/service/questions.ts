@@ -4,20 +4,24 @@
 // asked. Also `answer_worker`, the orchestrator's answer to what a worker waits on.
 
 import {
-  autonomyOf,
   InvalidState,
   NotFound,
   WORKER_ANSWER_MAX,
   WORKER_REPORT_SUMMARY_MAX,
   type ThreadId,
   type QuestionDelivery,
+  type WorkerQuestion,
   askQuestionProblem,
   forwardContextProblem,
   isOpenQuestion,
   workerAnswerMessage,
   workerDismissMessage,
+  workerWithdrawnMessage,
+  userAnswerProblem,
   ANSWER_SOURCE_MAX,
+  DISMISS_REASON_MAX,
   WORKER_QUESTION_ANSWER_MAX,
+  WORKER_QUESTIONS_KEPT_CLOSED,
   WORKER_QUESTION_TRIAGE_MS,
   type WorkspaceId,
 } from "@gram/contracts";
@@ -31,6 +35,7 @@ import { type OutboxState, type StoredWorkerQuestion } from "../outbox.ts";
 import {
   addQuestion,
   answeredByOrchestrator,
+  answeredFromMessage,
   closedByUser,
   findQuestion as findStoredQuestion,
   forwarded,
@@ -39,10 +44,13 @@ import {
   questionsOf,
   replaceQuestion,
   withDelivery,
+  withdrawn,
   type QuestionRefusal,
 } from "../worker-questions.ts";
 import { refusal, userHoldReason, type PendingReason } from "../rules.ts";
 import { type OrchestrationShape } from "./shape.ts";
+import { USER_ANSWERS_MAX, userMessagesOf } from "../user-words.ts";
+import { findUserMessages } from "../../persistence/thread-store.ts";
 import { toolError, pausedFeatureOf, clipped, type OrchestrationKit } from "./kit.ts";
 import { NOT_YOUR_MACHINE, recordActor } from "../../host/ownership.ts";
 
@@ -51,15 +59,39 @@ const questionWords = (text: string): string => redactText(text.trim());
 
 /** What the worker is told of a closed question, from what was stored with the decision. */
 const closedQuestionText = (question: StoredWorkerQuestion) =>
-  question.stage === "dismissed"
-    ? workerDismissMessage(question, question.reason)
-    : workerAnswerMessage(
-        question,
-        question.answer ?? "",
-        question.closedBy === "orchestrator"
-          ? { closedBy: "orchestrator", source: question.source ?? "" }
-          : { closedBy: "user" },
-      );
+  question.withdrawal !== undefined
+    ? workerWithdrawnMessage(question, question.withdrawal.how, question.reason ?? "")
+    : question.stage === "dismissed"
+      ? workerDismissMessage(question, question.reason)
+      : workerAnswerMessage(
+          question,
+          question.answer ?? "",
+          question.closedBy === "orchestrator"
+            ? { closedBy: "orchestrator", source: question.source ?? "" }
+            : { closedBy: "user", recordedBy: question.recordedBy },
+        );
+
+/** Why each way a worker's thread leaves withdraws its open questions, as their history says. */
+const LEFT_REASON = {
+  archived: "Its thread was archived.",
+  deleted: "Its thread was deleted.",
+  detached: "Its thread left its orchestrator.",
+  moved: "Its thread moved to another workspace.",
+} as const;
+
+/** A withdrawal's reason, scrubbed; or why it's refused. */
+const withdrawReason = (tool: string, reason: string | undefined) => {
+  const words = redactText((reason ?? "").trim());
+  if (words === "") {
+    return Effect.fail(
+      toolError(tool, "Say why it no longer needs an answer: the user reads it in its history."),
+    );
+  }
+  if (words.length > DISMISS_REASON_MAX) {
+    return Effect.fail(toolError(tool, `Keep the reason to ${DISMISS_REASON_MAX} characters.`));
+  }
+  return Effect.succeed(words);
+};
 
 /** A worker question's timer key: its workspace and its id there, since ids restart at WQ1 in each. */
 const questionTimerKey = (workspaceId: WorkspaceId, questionId: string) =>
@@ -97,6 +129,7 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
     updateMemo,
     updateOutbox,
     listeningWorkspace,
+    authorityOf,
   } = kit;
   const { recordReport, wake } = deps;
 
@@ -114,16 +147,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
           refusal(
             "paused",
             `Orchestration is paused (${state.paused.reason}), so you answer nothing for the user. Only the user can resume it; end your turn.`,
-          ),
-        );
-      }
-      const autonomy = autonomyOf(state.charter);
-      if (autonomy !== "full") {
-        return yield* toolError(
-          tool,
-          refusal(
-            "not_allowed",
-            `This workspace's autonomy is ${autonomy}; only the user answers a worker's questions. Tell them with notify_user if it has waited long.`,
           ),
         );
       }
@@ -388,7 +411,8 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         const recorded =
           retry &&
           !queued &&
-          (yield* store.listUserMessages(worker.id)).some((message) =>
+          // Only the user messages whose stored form holds the text are read and decoded.
+          (yield* store.messagesWith(worker.id, [text], "user")).some((message) =>
             message.parts.some((part) => part.type === "text" && part.text === text),
           );
         const delivered: QuestionDelivery | "refused" | undefined = queued
@@ -690,6 +714,255 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       ...(input.reason === undefined ? {} : { reason: input.reason }),
     });
 
+  /**
+   * `record_user_answer`: the user answered an open question in a message to the caller, the worker
+   * that asked it or its orchestrator, rather than on its card. The caller only judges that the
+   * message answers it; the answer is the user's latest message in the caller's thread, copied word
+   * for word. The worker is told what its orchestrator recorded; the orchestrator gets a copy of
+   * what its worker recorded.
+   */
+  const recordUserAnswer: OrchestrationShape["recordUserAnswer"] = (callerId, input) =>
+    Effect.gen(function* () {
+      const tool = "record_user_answer";
+      const authority = yield* authorityOf(callerId);
+      const asWorker = authority === undefined;
+      const workspaceId = asWorker
+        ? (yield* findThread(callerId))?.workspaceId
+        : authority.state.workspace.id;
+      const found =
+        workspaceId === undefined
+          ? undefined
+          : findStoredQuestion(yield* readOutbox(workspaceId), input.questionId);
+      if (workspaceId === undefined || found === undefined) {
+        return yield* toolError(
+          tool,
+          refusal("unknown_question", `There is no question ${input.questionId} on record.`),
+        );
+      }
+      if (asWorker ? found.threadId !== callerId : !(yield* delegated(callerId, found.threadId))) {
+        return yield* toolError(
+          tool,
+          asWorker
+            ? refusal("not_yours", `${found.id} isn't your question; record only your own.`)
+            : refusal(
+                "not_your_worker",
+                `${found.id} was asked by a thread that isn't one of your workers, so it isn't yours to record.`,
+              ),
+        );
+      }
+      const [message] = yield* findUserMessages(store, callerId, {
+        from: "newest",
+        count: 1,
+        keep: (each) => userMessagesOf([each]).length > 0,
+      });
+      const words = message === undefined ? undefined : userMessagesOf([message])[0];
+      const latest =
+        words === undefined
+          ? undefined
+          : { text: words.text, sentAt: message?.metadata?.createdAt };
+      const problem = userAnswerProblem(found.id, latest, found.askedAt);
+      if (problem !== undefined || latest === undefined) {
+        return yield* toolError(tool, problem ?? "There is no message of the user's to record.");
+      }
+      const answer = redactText(latest.text.trim());
+      const by = asWorker ? ("worker" as const) : ("orchestrator" as const);
+      const at = yield* Clock.currentTimeMillis;
+      const moved = yield* moveQuestion(workspaceId, found.id, (question) =>
+        answeredFromMessage(question, answer, by, at),
+      );
+      if (isRefusal(moved)) return yield* toolError(tool, refusal(moved.code, moved.refused));
+      yield* store.appendOrchestrationEvent(workspaceId, {
+        at,
+        kind: "answer",
+        data: { threadId: moved.threadId, questionId: moved.id },
+      });
+      const final = yield* afterClose(
+        workspaceId,
+        moved.deliveryOwed === true
+          ? ((yield* deliverOwed(workspaceId, moved.id, false)) ?? moved)
+          : moved,
+      );
+      if (asWorker) {
+        yield* wake(workspaceId, "a worker recorded the user's answer to its question", true);
+      } else {
+        yield* showQuestionToOrchestrator(callerId, final);
+      }
+      return publicQuestion(final);
+    });
+
+  /**
+   * A worker's thread left (archived, deleted, detached or moved): its open questions are withdrawn
+   * in its name, since nobody would act on an answer, and leave the user's board. Nobody is woken.
+   */
+  const withdrawQuestionsOf: OrchestrationShape["withdrawQuestionsOf"] = (
+    workspaceId,
+    threadId,
+    why,
+  ) =>
+    Effect.gen(function* () {
+      const open = questionsOf(yield* readOutbox(workspaceId)).filter(
+        (question) => question.threadId === threadId && isOpenQuestion(question),
+      );
+      if (open.length === 0) return;
+      const at = yield* Clock.currentTimeMillis;
+      for (const question of open) {
+        const moved = yield* moveQuestion(workspaceId, question.id, (current) =>
+          withdrawn(
+            current,
+            { by: "worker", how: "withdrawn", threadLeft: why },
+            LEFT_REASON[why],
+            at,
+          ),
+        );
+        if (!isRefusal(moved)) yield* afterClose(workspaceId, moved);
+      }
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("a departed worker's questions weren't withdrawn").pipe(
+          Effect.annotateLogs({ workspaceId, threadId, cause: String(cause) }),
+        ),
+      ),
+    );
+
+  /**
+   * `ask_question` with `withdraw`: the worker closes its own open question, in triage or with the
+   * user, because it no longer needs an answer or a newer one of its own (`supersededBy`) replaces
+   * it. Off the user's board at once; nobody is sent a notice.
+   */
+  const withdrawQuestion: OrchestrationShape["withdrawQuestion"] = (workerId, input) =>
+    Effect.gen(function* () {
+      const tool = "ask_question";
+      const reason = yield* withdrawReason(tool, input.reason);
+      // Its own questions stay its own to withdraw, with its orchestrator listening or not.
+      const workspaceId = (yield* findThread(workerId))?.workspaceId;
+      if (workspaceId === undefined) {
+        return yield* toolError(tool, `You have no question ${input.questionId} to withdraw.`);
+      }
+      const at = yield* Clock.currentTimeMillis;
+      const moved = yield* moveQuestion(workspaceId, input.questionId, (question) =>
+        question.threadId !== workerId
+          ? {
+              code: "not_yours",
+              refused: `${question.id} isn't your question; you can withdraw only your own.`,
+            }
+          : withdrawn(
+              question,
+              {
+                by: "worker",
+                how: input.supersededBy === undefined ? "withdrawn" : "superseded",
+                ...(input.supersededBy === undefined ? {} : { supersededBy: input.supersededBy }),
+              },
+              reason,
+              at,
+            ),
+      );
+      if (isRefusal(moved)) return yield* toolError(tool, refusal(moved.code, moved.refused));
+      return publicQuestion(yield* afterClose(workspaceId, moved));
+    });
+
+  /**
+   * `close_question` on a `WQ` id: the orchestrator closes one of its workers' open questions, in
+   * triage or forwarded, without answering it. Off the user's board at once; the worker is told.
+   */
+  const closeWorkerQuestion: OrchestrationShape["closeWorkerQuestion"] = (callerId, input) =>
+    Effect.gen(function* () {
+      const tool = "close_question";
+      const { state } = yield* requireAuthority(tool, callerId);
+      const workspaceId = state.workspace.id;
+      if (state.paused !== undefined) {
+        return yield* toolError(
+          tool,
+          refusal(
+            "paused",
+            `Orchestration is paused (${state.paused.reason}), so its questions are the user's. Only the user can resume it; end your turn.`,
+          ),
+        );
+      }
+      const reason = yield* withdrawReason(tool, input.reason);
+      const found = findStoredQuestion(yield* readOutbox(workspaceId), input.questionId);
+      const target = found === undefined ? undefined : yield* findThread(found.threadId);
+      if (
+        found !== undefined &&
+        (target === undefined || !(yield* delegated(callerId, target.id)))
+      ) {
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_your_worker",
+            `${found.id} was asked by a thread that isn't one of your workers, so it isn't yours to close.`,
+          ),
+        );
+      }
+      if (target !== undefined) {
+        const pausedFeature = pausedFeatureOf(state, target);
+        if (pausedFeature !== undefined) {
+          return yield* toolError(
+            tool,
+            refusal(
+              "feature_paused",
+              `The user paused feature ${pausedFeature}, so its workers' questions are theirs. Leave it until a digest says they resumed it.`,
+            ),
+          );
+        }
+        if ((yield* readOutbox(workspaceId)).workers[target.id]?.userIntervened === true) {
+          return yield* toolError(
+            tool,
+            refusal("user_intervened", userHoldReason("so is its question")),
+          );
+        }
+      }
+      const at = yield* Clock.currentTimeMillis;
+      const claimed = yield* moveQuestion(workspaceId, input.questionId, (question) =>
+        withdrawn(question, { by: "orchestrator", how: input.how }, reason, at),
+      );
+      if (isRefusal(claimed)) return yield* toolError(tool, refusal(claimed.code, claimed.refused));
+      // Written with the decision, the notice is owed until the worker has it, as a user's is.
+      const final = yield* afterClose(
+        workspaceId,
+        (yield* deliverOwed(workspaceId, claimed.id, false)) ?? claimed,
+      );
+      yield* showQuestionToOrchestrator(callerId, final);
+      return publicQuestion(final);
+    });
+
+  const userAnswers: OrchestrationShape["userAnswers"] = (callerId, tool, questionIds) =>
+    Effect.gen(function* () {
+      const { state } = yield* requireAuthority(tool, callerId);
+      const outbox = yield* readOutbox(state.workspace.id);
+      const ids = [...new Set(questionIds.map((id) => id.trim()))];
+      if (ids.length === 0 || ids.length > USER_ANSWERS_MAX || ids.includes("")) {
+        return yield* toolError(
+          tool,
+          `\`userAnswers\` names 1 to ${USER_ANSWERS_MAX} worker questions by id, such as WQ7. Nothing was sent.`,
+        );
+      }
+      const answers: Array<WorkerQuestion> = [];
+      for (const id of ids) {
+        const found = findStoredQuestion(outbox, id);
+        if (found === undefined) {
+          return yield* toolError(
+            tool,
+            `There is no question ${id} on record in this workspace, so nothing of the user's was attached and nothing was sent. Closed questions are kept ${WORKER_QUESTIONS_KEPT_CLOSED} deep.`,
+          );
+        }
+        const words = found.stage === "answered" ? found.answer : found.reason;
+        if (found.closedBy !== "user" || words === undefined || words.trim() === "") {
+          return yield* toolError(
+            tool,
+            found.withdrawal !== undefined
+              ? `${found.id} was closed as ${found.withdrawal.how} by ${found.withdrawal.by === "worker" ? "its worker" : "an orchestrator"}, not the user, so there are no words of the user's to attach. Nothing was sent.`
+              : found.closedBy === "orchestrator"
+                ? `${found.id} was answered by an orchestrator, not the user, so there are no words of the user's to attach. Nothing was sent.`
+                : found.closedBy === "user"
+                  ? `The user dismissed ${found.id} without a reason, so there are no words of theirs to attach. Nothing was sent.`
+                  : `${found.id} is still open, so the user hasn't answered it. Nothing was sent.`,
+          );
+        }
+        answers.push(publicQuestion(found));
+      }
+      return answers;
+    });
+
   /** A question's triage time is up: to the user, with no context line. */
   const onQuestionDue = (workspaceId: WorkspaceId, questionId: string) =>
     Effect.gen(function* () {
@@ -712,8 +985,13 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
     askQuestion,
     forwardQuestion,
     answerWorkerQuestion,
+    withdrawQuestion,
+    closeWorkerQuestion,
+    recordUserAnswer,
+    withdrawQuestionsOf,
     answerQuestionAsUser,
     dismissQuestionAsUser,
+    userAnswers,
     onQuestionDue,
   };
 };

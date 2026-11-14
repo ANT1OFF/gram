@@ -58,6 +58,7 @@ import {
   stopChildForSwitch,
 } from "../child-process.ts";
 import type { AgentHost, AgentSession, ConnectorStatus, OpenSessionOptions } from "../host.ts";
+import { offSiteAddress } from "../browser-scope.ts";
 import { narrowsMcp, reportedLists, type McpLists } from "../mcp-lists.ts";
 import { gateAsks, gateLevel } from "../outward.ts";
 import { PAUSE_STOP_TEXT } from "../pause.ts";
@@ -451,6 +452,15 @@ const reachesPeer = (toolName: string, toolInput: unknown, switchFailed: boolean
 };
 
 /** A `PreToolUse` hook's answer for a call that would reach another session past Gram. */
+/** A `PreToolUse` hook's refusal of an address outside the sites the browser is limited to. */
+const offSiteDenied = (address: string, sites: ReadonlyArray<string>) => ({
+  hookSpecificOutput: {
+    hookEventName: "PreToolUse" as const,
+    permissionDecision: "deny" as const,
+    permissionDecisionReason: `The user limits this browser to ${sites.join(", ")}, and ${address} is not on that list. Ask them to add the site in Settings if the task needs it.`,
+  },
+});
+
 const PEER_DENIED = {
   hookSpecificOutput: {
     hookEventName: "PreToolUse" as const,
@@ -850,6 +860,13 @@ export const makeClaudeHost = (
       const peerSwitchSet =
         (env as Record<string, string | undefined>)[PEER_MESSAGING_SWITCH] === "0";
       let peerSwitchFailed = false;
+      // The sites a session given the browser may open (`browserScope.sites`); absent, any.
+      const limitedSites =
+        o.browser === true && o.browserScope?.sites !== undefined && o.browserScope.sites.length > 0
+          ? o.browserScope.sites
+          : undefined;
+      // Each browser action asks, whatever the gate (`browserAsk`).
+      const browserAsks = o.browser === true && o.browserAsk === true;
       const gateCalls: HookCallbackMatcher["hooks"][number] = async (hookInput, toolUseId) => {
         if (hookInput.hook_event_name !== "PreToolUse") return {};
         // Before every other answer: a closed gate refuses even Gram's own tools.
@@ -876,10 +893,17 @@ export const makeClaudeHost = (
             },
           };
         }
+        if (limitedSites !== undefined && hookInput.tool_name.startsWith(CHROME_TOOL_PREFIX)) {
+          const address = offSiteAddress(hookInput.tool_input, limitedSites);
+          if (address !== undefined) {
+            toolGate.finished(toolUseId ?? hookInput.tool_use_id);
+            return offSiteDenied(address, limitedSites);
+          }
+        }
         if (gateAsksAbout(hookInput.tool_name, hookInput.tool_input)) {
           return askFirst(level === "all" ? OUTWARD_GATE_REASON : IRREVERSIBLE_GATE_REASON);
         }
-        if (level === "all" && actsInBrowser(hookInput.tool_name)) {
+        if ((level === "all" || browserAsks) && actsInBrowser(hookInput.tool_name)) {
           return askFirst(BROWSER_GATE_REASON);
         }
         if (asksAboutConnector(hookInput.tool_name)) return askFirst(CONNECTOR_GATE_REASON);
@@ -887,6 +911,8 @@ export const makeClaudeHost = (
       };
       const gated =
         level !== undefined ||
+        limitedSites !== undefined ||
+        browserAsks ||
         appServer !== undefined ||
         o.dreamFilesOnly === true ||
         o.gateConnectors === true;
@@ -950,7 +976,7 @@ export const makeClaudeHost = (
         new Promise<ElicitationResult>((resolve) => {
           if (signal.aborted || closed || o.dreamFilesOnly === true)
             return resolve(ELICITATION_DECLINED);
-          const promptGated = level === "all";
+          const promptGated = level === "all" || browserAsks;
           if (!promptGated && granted.has(elicitationKey(prompt)))
             return resolve(elicitationGranted(prompt));
           const request = elicitationCard(prompt, requestId, promptGated);
@@ -1649,7 +1675,11 @@ export const makeClaudeHost = (
           Effect.gen(function* () {
             const asked = prompts.get(requestId);
             if (asked !== undefined) {
-              const { result, remember } = elicitationResult(asked.prompt, answer, level === "all");
+              const { result, remember } = elicitationResult(
+                asked.prompt,
+                answer,
+                level === "all" || browserAsks,
+              );
               asked.settle(result, remember);
               return;
             }

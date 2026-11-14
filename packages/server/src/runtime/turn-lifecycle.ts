@@ -650,9 +650,15 @@ export const makeTurnLifecycle = ({
     Effect.gen(function* () {
       const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
       if (thread.agentSessionUnused !== true) return;
-      const { agentSessionUnused, ...used } = thread;
-      void agentSessionUnused;
-      yield* publishUpsert(yield* store.updateThread(rt.threadId, () => used).pipe(Effect.orDie));
+      // Cleared on the row the update reads, not on `thread`: an edit committed since (a rename)
+      // would be written back over.
+      const updated = yield* store
+        .updateThread(rt.threadId, (current) => {
+          const { agentSessionUnused: _, ...used } = current;
+          return used;
+        })
+        .pipe(Effect.orDie);
+      yield* publishUpsert(updated);
     });
 
   return {

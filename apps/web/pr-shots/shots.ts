@@ -1815,6 +1815,85 @@ const REVIEW_SHOTS: readonly Shot[] = [
     },
     element: (page) => page.getByTestId("right-panel"),
   },
+  {
+    name: "your-browser-settings",
+    title:
+      "Settings → Agents → Your browser: both agents on, asking first, with listed sites and apps",
+    open: async (page) => {
+      await seedMockSettings(page, {
+        agents: {
+          claudeInChrome: true,
+          codexComputerUse: true,
+          codexInAppBrowser: false,
+          browserAskEachAction: true,
+          browserSites: ["github.com", "linear.app", "localhost:3000"],
+          browserApps: ["com.apple.Safari"],
+        },
+      });
+      await page.setViewportSize({ width: 1180, height: 1000 });
+      await page.goto("/settings/agents");
+      const group = page.getByTestId("your-browser-settings");
+      await group.waitFor();
+      await group.evaluate((element) => element.scrollIntoView({ block: "center" }));
+      await page.waitForTimeout(300);
+    },
+    element: (page) =>
+      page.locator("section", { has: page.getByTestId("your-browser-settings") }).last(),
+  },
+  {
+    name: "your-browser-settings-narrow",
+    title: "Settings → Agents → Your browser: the same in a narrow window",
+    open: async (page) => {
+      await seedMockSettings(page, {
+        agents: {
+          claudeInChrome: true,
+          codexComputerUse: true,
+          codexInAppBrowser: false,
+          browserAskEachAction: true,
+          browserSites: ["github.com", "linear.app", "localhost:3000"],
+          browserApps: ["com.apple.Safari"],
+        },
+      });
+      await page.setViewportSize({ width: 430, height: 1400 });
+      await page.goto("/settings/agents");
+      const group = page.getByTestId("your-browser-settings");
+      await group.waitFor();
+      await group.evaluate((element) => element.scrollIntoView({ block: "center" }));
+      await page.waitForTimeout(300);
+    },
+    element: (page) =>
+      page.locator("section", { has: page.getByTestId("your-browser-settings") }).last(),
+  },
+  {
+    name: "workspace-browser-settings",
+    title: "A workspace's settings → More options: its own allowed sites and Mac apps",
+    open: async (page) => {
+      await page.setViewportSize({ width: 1180, height: 1000 });
+      await page.goto("/settings/workspaces");
+      await page.getByTestId("workspace-settings").waitFor();
+      await page.evaluate(async () => {
+        const api = window.gramMock!;
+        const made = await api.simulateOrchestration("board");
+        const state = (await api.listWorkspaces()).find(
+          (each) => each.workspace.id === made.workspaceId,
+        )!;
+        await api.setOrchestratorCharter(made.workspaceId, {
+          ...state.charter,
+          browserSites: ["github.com", "staging.example.com"],
+        });
+      });
+      await page
+        .getByRole("listitem", { name: "Workspace agent-platform" })
+        .getByTestId("workspace-link")
+        .click();
+      const more = page.getByRole("region", { name: "More options" });
+      await more.getByText("More options").click();
+      await more.getByText("Allowed Mac apps").waitFor();
+      await more.evaluate((element) => element.scrollIntoView({ block: "end" }));
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.getByRole("region", { name: "More options" }),
+  },
 ];
 
 /** A synthetic tailnet name: no real machine or tailnet. */

@@ -690,8 +690,15 @@ export const makeLimitResume = ({
       if (wait === undefined) {
         const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
         if (thread.limitCleared === undefined) return;
-        const { limitCleared: _, ...rest } = thread;
-        yield* publishUpsert(yield* store.updateThread(rt.threadId, () => rest).pipe(Effect.orDie));
+        // Dropped from the row the update reads, not from `thread`: an edit committed since (a
+        // rename) would be written back over.
+        const updated = yield* store
+          .updateThread(rt.threadId, (current) => {
+            const { limitCleared: _, ...rest } = current;
+            return rest;
+          })
+          .pipe(Effect.orDie);
+        yield* publishUpsert(updated);
         return;
       }
       yield* FiberMap.remove(limitTimers, rt.threadId);

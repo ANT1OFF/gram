@@ -40,7 +40,8 @@ import { limitQueuedNote } from "../../runtime/limit-wait.ts";
 import { finishedWorkers } from "../ledger.ts";
 import { LOCAL_MACHINE_NAMES, namesThisMachine } from "../../host/paired-machines.ts";
 import { type RouteOffer } from "../limit-pause.ts";
-import { askedByOf } from "../asked-by.ts";
+import { ASKED_BY_LOOK_BACK, askedByOf } from "../asked-by.ts";
+import { findUserMessages } from "../../persistence/thread-store.ts";
 import { withBriefFooter } from "../user-words.ts";
 import { emptyWorkerMemo, withNotes, workerThreadId, type WorkerMemo } from "../outbox.ts";
 import {
@@ -558,7 +559,12 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           // Only the orchestrator's own spawn answers an ask; the user's and a routine's are theirs.
           const askedBy =
             byUser === undefined && input.routine === undefined
-              ? askedByOf(yield* store.listUserMessages(caller.id))
+              ? askedByOf(
+                  yield* findUserMessages(store, caller.id, {
+                    from: "newest",
+                    count: ASKED_BY_LOOK_BACK,
+                  }),
+                )
               : undefined;
           const brief: UserInput = {
             text: input.brief,

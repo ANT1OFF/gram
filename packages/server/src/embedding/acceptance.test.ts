@@ -32,7 +32,7 @@ import { CheckoutService, TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
-import { DecisionHook } from "./decision-hook.ts";
+import { DecisionHook, REFUSAL_FOR_AGENT } from "./decision-hook.ts";
 import { EventSink, makeEventSink, type EventSinkShape } from "./event-sink.ts";
 import { ActingPerson } from "./person.ts";
 import { makeActionGuard } from "./guard.ts";
@@ -226,7 +226,7 @@ describe("decision hook: an agent's outward command", () => {
           kind: "approval",
           decision: "deny",
           scope: "once",
-          message: "Refused by policy (push): Pushes to main are closed this week.",
+          message: `Refused by policy (push): Pushes to main are closed this week. ${REFUSAL_FOR_AGENT}`,
         });
         // The command never ran: the fake's turn reports the denial.
         const runtimes = yield* ThreadRuntimes;
@@ -293,8 +293,7 @@ describe("decision hook: an agent's outward command", () => {
         );
         expect(session.responses[0]!.answer).toMatchObject({
           decision: "deny",
-          message:
-            "Refused by policy (pr.merge): The decision endpoint could not be asked, so this was refused.",
+          message: `Refused by policy (pr.merge): The decision endpoint could not be asked, so this was refused. ${REFUSAL_FOR_AGENT}`,
         });
       }).pipe(Effect.provide(serverLayer(hook.url)));
     }),
@@ -311,8 +310,7 @@ describe("decision hook: an agent's outward command", () => {
       );
       expect(session.responses[0]!.answer).toMatchObject({
         decision: "deny",
-        message:
-          "Refused by policy (push): The decision endpoint could not be asked, so this was refused.",
+        message: `Refused by policy (push): The decision endpoint could not be asked, so this was refused. ${REFUSAL_FOR_AGENT}`,
       });
     }).pipe(Effect.provide(serverLayer("unusable"))),
   );

@@ -1,0 +1,266 @@
+// The agent browser on a server with no desktop app: a Node process the server forks, which runs
+// the same pane module (`pane.ts`) over a headless Chromium (`headless.ts`) and answers the
+// server's `pane.request` messages on its IPC channel, as the desktop shell answers them on
+// Electron's port.
+//
+//   GRAM_BROWSER_EXECUTABLE  the Chromium (or Chrome) to start; required
+//   GRAM_BROWSER_SANDBOX     `0` starts it without Chromium's sandbox, as root in a container needs
+//
+// The browser starts on the first request and reaches loopback only: the server's own addresses,
+// where an agent's dev server runs. A navigation anywhere else is refused before it asks anyone.
+
+import { lookup } from "node:dns/promises";
+import { pathToFileURL } from "node:url";
+
+import {
+  PANE_COMMAND_TIMEOUT_MS,
+  browseTarget,
+  paneRequestMessage,
+  type PaneResult,
+  type PaneResponseMessage,
+  type ViewHostMessage,
+  type ViewStatus,
+} from "@gram/contracts/link-trust";
+
+import { createBrowseHostList } from "../../core/browse-rules.ts";
+import type { ShellLog } from "../../core/log.ts";
+import { headlessPage, headlessViews, launchHeadless, type HeadlessBrowser } from "./headless.ts";
+import { createAgentPanes, type AgentPanes } from "./pane.ts";
+import { servePaneMessage } from "./serve.ts";
+import { createViews, type Views } from "./view.ts";
+
+/** What a navigation off loopback answers here, before the pane would raise a card for it. */
+export const OFF_LOOPBACK: PaneResult = {
+  ok: false,
+  code: "refused",
+  message:
+    "This browser runs on the Gram server and reaches only the server's own loopback addresses, such as a dev server there. It can't open other sites.",
+};
+
+/** What a command answers when the browser couldn't start or make the thread's page. */
+export const NO_BROWSER: PaneResult = {
+  ok: false,
+  code: "failed",
+  message:
+    "The browser on the Gram server couldn't open a page. Its log says why; the next command tries again.",
+};
+
+/** How long one command may run here: under the server's own wait, so this answer reaches it. */
+export const COMMAND_DEADLINE_MS = PANE_COMMAND_TIMEOUT_MS - 5_000;
+
+/** What a command answers when its page never did. */
+export const STOPPED_ANSWERING: PaneResult = {
+  ok: false,
+  code: "failed",
+  message:
+    "The page stopped answering, so it was closed. Navigate again to open it afresh; if it happens again, the page's own script is likely looping.",
+};
+
+/** Whether `raw` is a navigation this browser refuses outright: anything that isn't loopback. */
+export const offLoopback = (raw: unknown): boolean => {
+  const request = paneRequestMessage(raw)?.request as
+    | { command?: { op?: unknown; url?: unknown } }
+    | undefined;
+  const command = request?.command;
+  return (
+    command?.op === "navigate" &&
+    typeof command.url === "string" &&
+    browseTarget(command.url).kind !== "loopback"
+  );
+};
+
+const stderrLog: ShellLog = {
+  info: () => {},
+  warn: (fields, message) => console.warn(JSON.stringify({ level: "warn", message, ...fields })),
+  error: (fields, message) => console.error(JSON.stringify({ level: "error", message, ...fields })),
+};
+
+/**
+ * The pane over a headless browser started from `executable` when first needed. `close` ends the
+ * browser; the next request starts another. `view` takes the server's messages about watching a
+ * thread's page, and answers them through `send`.
+ */
+export const headlessPanes = (options: {
+  readonly executable: string;
+  readonly sandbox: boolean;
+  readonly log?: ShellLog;
+  /** How long one command may take; `COMMAND_DEADLINE_MS` unless a test says otherwise. */
+  readonly deadlineMs?: number;
+  /** Where a watched page's state and frames go; without it nothing is watched. */
+  readonly send?: (message: ViewHostMessage) => void;
+  /** How long a person keeps a page after their last input, when a test says otherwise. */
+  readonly idleMs?: number;
+}): { readonly panes: AgentPanes; readonly view: Views["message"]; close(): Promise<void> } => {
+  const log = options.log ?? stderrLog;
+  /** When each thread's latest command is answered. */
+  const tails = new Map<string, Promise<void>>();
+  /** The commands running on each thread's page. */
+  const running = new Map<string, number>();
+  /** Why a thread has no page yet: its first command is making one, or couldn't. */
+  const phases = new Map<string, ViewStatus>();
+  let browser: HeadlessBrowser | undefined;
+  let views: ReturnType<typeof headlessViews> | undefined;
+  const viewsNow = () => {
+    if (views !== undefined) return views;
+    const started = launchHeadless(options);
+    browser = started;
+    const made = headlessViews(
+      started.connection,
+      () => panes,
+      (error) => log.warn({ source: "headless-browser", error: String(error) }, "no page"),
+      (threadId) => panes.closed(threadId),
+      (threadId) => (running.get(threadId) ?? 0) > 0,
+    );
+    views = made;
+    started.connection.onClose(() => {
+      if (views === made) {
+        views = undefined;
+        browser = undefined;
+      }
+    });
+    return made;
+  };
+  // Approvals hold for this process only; off loopback nothing loads here whatever the list says.
+  const hosts = createBrowseHostList({ load: () => [], save: () => {}, changed: () => {} });
+  const panes: AgentPanes = createAgentPanes({
+    hosts,
+    views: { contentsFor: (threadId, create) => viewsNow().contentsFor(threadId, create) },
+    log,
+    driverChanged: (threadId) => watching.changed(threadId),
+    resolveHost: async (host) => ({
+      endpoints: (await lookup(host, { all: true })).map(({ address, family }) => ({
+        address,
+        family: family === 6 ? ("ipv6" as const) : ("ipv4" as const),
+      })),
+    }),
+  });
+  const watching = createViews({
+    panes,
+    pageOf: async (threadId) => views?.peek(threadId),
+    watch: headlessPage,
+    statusOf: (threadId) => phases.get(threadId),
+    send: options.send ?? (() => {}),
+    ...(options.idleMs === undefined ? {} : { idleMs: options.idleMs }),
+  });
+  const served: AgentPanes = {
+    ...panes,
+    serve: async (raw, requestId) => {
+      const threadId = (raw as { threadId?: unknown } | null)?.threadId;
+      const thread = typeof threadId === "string" ? threadId : undefined;
+      if (thread !== undefined) {
+        running.set(thread, (running.get(thread) ?? 0) + 1);
+        views?.touch(thread);
+        if ((await views?.peek(thread)) === undefined) {
+          phases.set(thread, { kind: "starting" });
+          watching.changed(thread);
+        }
+      }
+      // The clock starts when the thread's earlier commands are done, so one waiting its turn
+      // behind a long command isn't taken for a page that stopped answering.
+      const before = (thread === undefined ? undefined : tails.get(thread)) ?? Promise.resolve();
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      let finished = false;
+      const late = new Promise<PaneResult>((resolve) => {
+        void before.then(() => {
+          if (finished) return;
+          deadline = setTimeout(() => {
+            // A page whose script never yields answers nothing, and would hold the thread's
+            // commands for good: it is closed, and the next command opens a fresh one. The page
+            // ends before the pane hears, so the pane sends nothing more to it.
+            if (requestId !== undefined) panes.cancel(requestId);
+            const closing = thread === undefined ? undefined : views?.close(thread);
+            void Promise.resolve(closing)
+              .catch(() => {})
+              .then(() => {
+                if (thread !== undefined) panes.closed(thread);
+                resolve(STOPPED_ANSWERING);
+              });
+          }, options.deadlineMs ?? COMMAND_DEADLINE_MS);
+        });
+      });
+      const answered = Promise.race([panes.serve(raw, requestId), late]);
+      if (thread !== undefined) {
+        const tail = answered.then(
+          () => {},
+          () => {},
+        );
+        tails.set(thread, tail);
+        void tail.then(() => {
+          if (tails.get(thread) === tail) tails.delete(thread);
+        });
+      }
+      try {
+        const result = await answered;
+        const none = !result.ok && result.code === "noPane";
+        if (thread !== undefined) {
+          if (none) phases.set(thread, { kind: "failed", message: NO_BROWSER.message });
+          else phases.delete(thread);
+        }
+        return none ? NO_BROWSER : result;
+      } finally {
+        clearTimeout(deadline);
+        finished = true;
+        if (thread !== undefined) {
+          const left = (running.get(thread) ?? 1) - 1;
+          if (left > 0) running.set(thread, left);
+          else running.delete(thread);
+          if (phases.get(thread)?.kind === "starting") phases.delete(thread);
+          watching.changed(thread);
+        }
+      }
+    },
+  };
+  return {
+    panes: served,
+    view: watching.message,
+    close: async () => {
+      watching.close();
+      const stopping = browser?.close();
+      browser = undefined;
+      views = undefined;
+      await stopping;
+    },
+  };
+};
+
+/** Serves `pane.request` messages on this process's IPC channel until the server goes away. */
+const main = () => {
+  const executable = process.env["GRAM_BROWSER_EXECUTABLE"];
+  const send = process.send?.bind(process);
+  if (send === undefined) {
+    console.error("The headless browser host runs as a child of the Gram server.");
+    process.exit(2);
+  }
+  if (executable === undefined || executable === "") {
+    console.error("GRAM_BROWSER_EXECUTABLE names no browser.");
+    process.exit(2);
+  }
+  const { panes, view, close } = headlessPanes({
+    executable,
+    sandbox: process.env["GRAM_BROWSER_SANDBOX"] !== "0",
+    send: (message) => send(message),
+  });
+  const reply = (response: PaneResponseMessage) => send(response);
+  process.on("message", (message) => {
+    if (view(message)) return;
+    const request = paneRequestMessage(message);
+    if (request !== undefined && offLoopback(message)) {
+      reply({ type: "pane.response", id: request.id, result: OFF_LOOPBACK });
+      return;
+    }
+    servePaneMessage(message, panes, reply);
+  });
+  const stop = () => {
+    // The browser gets a few seconds to stop, so its profile goes with it.
+    const deadline = setTimeout(() => process.exit(0), 5_000);
+    void close().finally(() => {
+      clearTimeout(deadline);
+      process.exit(0);
+    });
+  };
+  process.on("disconnect", stop);
+  process.on("SIGTERM", stop);
+};
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href)
+  main();

@@ -277,6 +277,70 @@ export interface StoredMessage extends SeqMessage {
   readonly turnId?: string;
 }
 
+/** Which page of a thread's user messages `userMessagePage` reads. */
+export interface UserMessagePage {
+  readonly from: "newest" | "oldest";
+  readonly limit: number;
+  /** The `next` of the page before; the first page leaves it out. */
+  readonly after?: number | undefined;
+}
+
+/** One page of a thread's user messages, in the order read. */
+export interface UserMessagesRead {
+  readonly messages: ReadonlyArray<SeqMessage>;
+  /** Where the next page starts; `undefined` when this one reached the end. */
+  readonly next: number | undefined;
+}
+
+/** What `findUserMessages` looks for. */
+export interface UserMessageQuery {
+  /** Which end it reads from. */
+  readonly from: "newest" | "oldest";
+  /** How many it wants; it stops reading once it has them. */
+  readonly count: number;
+  /** Which count, called in reading order; every message when left out. */
+  readonly keep?: ((message: GramUIMessage) => boolean) | undefined;
+  /** Where to stop short of `count`, called in reading order: that message and the rest are left. */
+  readonly until?: ((message: GramUIMessage) => boolean) | undefined;
+}
+
+const USER_PAGE_FIRST = 16;
+const USER_PAGE_FIRST_MAX = 64;
+const USER_PAGE_MAX = 512;
+
+/**
+ * The first `count` of a thread's user messages that `keep` takes, read from its newest or its
+ * oldest, in seq order. It reads pages of growing size and stops once it has them, so the newest of
+ * a long orchestrator's thousands is found without decoding the rest.
+ */
+export const findUserMessages = (
+  store: Pick<ThreadStoreShape, "userMessagePage">,
+  threadId: ThreadId,
+  query: UserMessageQuery,
+): Effect.Effect<ReadonlyArray<GramUIMessage>> =>
+  Effect.gen(function* () {
+    const found: Array<GramUIMessage> = [];
+    let after: number | undefined;
+    let limit = Math.min(Math.max(query.count, USER_PAGE_FIRST), USER_PAGE_FIRST_MAX);
+    let done = false;
+    while (!done && found.length < query.count) {
+      const page = yield* store.userMessagePage(threadId, { from: query.from, limit, after });
+      for (const { message } of page.messages) {
+        if (query.until !== undefined && query.until(message)) {
+          done = true;
+          break;
+        }
+        if (query.keep !== undefined && !query.keep(message)) continue;
+        found.push(message);
+        if (found.length >= query.count) break;
+      }
+      if (page.next === undefined) break;
+      after = page.next;
+      limit = Math.min(limit * 2, USER_PAGE_MAX);
+    }
+    return query.from === "newest" ? found.toReversed() : found;
+  });
+
 /**
  * Prunes the append-only history tables to what they keep (`ORCHESTRATION_EVENTS_KEPT_MS` and the
  * rest), as of `now`. Run by the store's start.
@@ -523,15 +587,21 @@ export interface ThreadStoreShape {
   >;
 
   listMessages(threadId: ThreadId): Effect.Effect<ReadonlyArray<GramUIMessage>>;
-  /** The thread's user messages in order, without reading or decoding the replies between them. */
-  listUserMessages(threadId: ThreadId): Effect.Effect<ReadonlyArray<GramUIMessage>>;
+  /**
+   * Up to `limit` of the thread's user messages from its newest or its oldest, past `after` (the
+   * `next` of the page before), with their seqs, in the order read. None of the replies between
+   * them is read. `next` is `undefined` once nothing is left; `findUserMessages` walks the pages.
+   */
+  userMessagePage(threadId: ThreadId, page: UserMessagePage): Effect.Effect<UserMessagesRead>;
   /**
    * The thread's messages whose stored form holds any of `needles`, in order; only those messages
-   * are decoded. For checking that a path was written in the conversation.
+   * are decoded, and with `role` only those in it are read. For checking that a path, or a text Gram
+   * sent, is in the conversation.
    */
   messagesWith(
     threadId: ThreadId,
     needles: ReadonlyArray<string>,
+    role?: "user",
   ): Effect.Effect<ReadonlyArray<GramUIMessage>>;
   /**
    * The thread's messages with a part of one of `types`, in order; only those messages are read and
@@ -1963,24 +2033,32 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         });
 
       /** The thread's messages whose stored text holds any of `needles` as written, in order. */
-      const messagesHolding = (threadId: ThreadId, needles: ReadonlyArray<string>) =>
+      const messagesHolding = (
+        threadId: ThreadId,
+        needles: ReadonlyArray<string>,
+        role: "user" | undefined,
+      ) =>
         needles.length === 0
           ? Effect.succeed([])
           : run(
-              // One pass over the thread's rows, however many needles.
+              // One pass over the thread's rows, however many needles; with `role`, over the user
+              // rows `messages_thread_user` lists, written out so the partial index serves it.
               sql<{ id: string; message: string }>`SELECT id, message FROM messages
-                WHERE thread_id = ${threadId} AND ${sql.or(
-                  [...new Set(needles)].map((needle) => sql`instr(message, ${needle}) > 0`),
-                )}
+                WHERE thread_id = ${threadId}
+                  AND ${role === undefined ? sql`1` : sql`role = 'user'`}
+                  AND ${sql.or(
+                    [...new Set(needles)].map((needle) => sql`instr(message, ${needle}) > 0`),
+                  )}
                 ORDER BY seq`.pipe(
                 Effect.flatMap((rows) => messageRows("messages", threadId, rows)),
               ),
             );
-      const messagesWith: ThreadStoreShape["messagesWith"] = (threadId, needles) =>
+      const messagesWith: ThreadStoreShape["messagesWith"] = (threadId, needles, role) =>
         // As `upsertMessage` stored it: a needle's quotes and backslashes are escaped there.
         messagesHolding(
           threadId,
           needles.map((needle) => JSON.stringify(needle).slice(1, -1)),
+          role,
         );
 
       return ThreadStore.of({
@@ -2455,13 +2533,49 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               Effect.flatMap((rows) => messageRows("messages", threadId, rows)),
             ),
           ),
-        listUserMessages: (threadId) =>
-          run(
-            sql<{ id: string; message: string }>`SELECT id, message FROM messages
-              WHERE thread_id = ${threadId} AND role = 'user' ORDER BY seq`.pipe(
-              Effect.flatMap((rows) => messageRows("messages", threadId, rows)),
+        userMessagePage: (threadId, { from, limit, after }) => {
+          const take = Math.max(1, Math.floor(Math.min(limit, Number.MAX_SAFE_INTEGER)));
+          // `role = 'user'` is written out so the partial index `messages_thread_user` serves it.
+          const rows =
+            from === "newest"
+              ? after === undefined
+                ? sql<{ id: string; seq: number; message: string }>`SELECT id, seq, message
+                    FROM messages WHERE thread_id = ${threadId} AND role = 'user'
+                    ORDER BY seq DESC LIMIT ${take}`
+                : sql<{ id: string; seq: number; message: string }>`SELECT id, seq, message
+                    FROM messages WHERE thread_id = ${threadId} AND role = 'user' AND seq < ${after}
+                    ORDER BY seq DESC LIMIT ${take}`
+              : after === undefined
+                ? sql<{ id: string; seq: number; message: string }>`SELECT id, seq, message
+                    FROM messages WHERE thread_id = ${threadId} AND role = 'user'
+                    ORDER BY seq LIMIT ${take}`
+                : sql<{ id: string; seq: number; message: string }>`SELECT id, seq, message
+                    FROM messages WHERE thread_id = ${threadId} AND role = 'user' AND seq > ${after}
+                    ORDER BY seq LIMIT ${take}`;
+          return run(
+            rows.pipe(
+              Effect.flatMap((page) =>
+                readableRows(
+                  unreadable,
+                  "messages",
+                  page,
+                  (r) => `${threadId}/${r.id}`,
+                  (r) =>
+                    mapDecoded(decodeStored(UIMessageSchema, r.message), (message): SeqMessage => ({
+                      seq: Number(r.seq),
+                      message,
+                    })),
+                ).pipe(
+                  // From the rows read, not the ones that decoded: an unreadable page still moves on.
+                  Effect.map((messages): UserMessagesRead => ({
+                    messages,
+                    next: page.length < take ? undefined : Number(page.at(-1)!.seq),
+                  })),
+                ),
+              ),
             ),
-          ),
+          );
+        },
         messagesWith,
         messagesWithParts: (threadId, types) =>
           types.length === 0

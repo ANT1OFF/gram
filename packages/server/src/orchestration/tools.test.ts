@@ -1196,12 +1196,14 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           else
             expect(yield* tool.needsApproval!({ ...input, threadId: "no-such-thread" })).toBe(true);
         }
-        // The worker has no such standing over its orchestrator, nor a plain thread over anyone.
+        // The worker writes to its own orchestrator without a card at every autonomy level, and
+        // to the user's own thread only with one.
         const registry = yield* AppToolRegistry;
         const fromWorker = registry
           .forThread(worker.thread.id, "worker")
           .find((tool) => tool.descriptor.name === "send_message")!;
-        expect(yield* fromWorker.needsApproval!({ threadId: thread.id, text: "hi" })).toBe(true);
+        expect(yield* fromWorker.needsApproval!({ threadId: thread.id, text: "hi" })).toBe(false);
+        expect(yield* fromWorker.needsApproval!({ threadId: stranger.id, text: "hi" })).toBe(true);
 
         // Back-to-back follow-ups to a brief are fine, carry depth 1, and are counted; the one to
         // a running worker is steered.
@@ -1824,7 +1826,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
   );
 
   it.effect(
-    "restart_session asks for another thread unless it is the orchestrator's own worker at full, never for its own",
+    "restart_session asks for another thread unless it is the orchestrator's own worker, never for its own",
     () =>
       inServer((world) =>
         Effect.gen(function* () {
@@ -1849,7 +1851,8 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             );
           expect(yield* asks()).toBe(false);
           expect(yield* asks(thread.id)).toBe(false);
-          expect(yield* asks(worker.thread.id)).toBe(true);
+          // Coordination is not an autonomy matter: its own worker needs no card at any level.
+          expect(yield* asks(worker.thread.id)).toBe(false);
           expect(yield* asks(stranger.id)).toBe(true);
           const full = yield* atAutonomy(thread, "full");
           expect(yield* asks(worker.thread.id)).toBe(false);
@@ -2154,7 +2157,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
   );
 
   it.effect(
-    "answers a worker's question at full autonomy only, and shows the answer in both threads",
+    "answers a worker's question at any autonomy level, and shows the answer in both threads",
     () =>
       inServer((world) =>
         Effect.gen(function* () {
@@ -2213,12 +2216,8 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             summary: "Bash: rm -rf build",
           });
 
-          const atPublish = yield* opened.session
-            .callTool("answer_worker", answer)
-            .pipe(Effect.flip);
-          expect(atPublish.message).toMatch(/^not_allowed: This workspace's autonomy is publish/);
-
-          const session = yield* atAutonomy(thread, "full");
+          // The workspace is at publish, the default: answering is not an autonomy matter.
+          const session = opened.session;
           const tool = yield* orchestratorTool(thread.id, "answer_worker");
           expect(yield* tool.needsApproval!(answer)).toBe(false);
 
@@ -2530,7 +2529,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             model: viaGateway,
           });
           expect(codex.options.instructions).toContain(
-            "MCP server named `gram`: `report`, `ask_question`, `mark_completed`, `pr_bind`, `set_title`, `pr_status`, `pr_review_monitor`",
+            "MCP server named `gram`: `report`, `ask_question`, `record_user_answer`, `mark_completed`, `pr_bind`, `set_title`, `pr_status`, `pr_review_monitor`",
           );
           expect(codex.options.instructions).toContain(
             "Pushing, opening a pull request and merging ask the user first.",
@@ -2775,15 +2774,14 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
   );
 
   it.effect.each(["supervised", "publish"] as const)(
-    "sibling messages at %s still force a card in Bypass; becoming Full leaves a pending card alone",
+    "sibling messages at %s need no card: coordination is not an autonomy matter",
     (autonomy) =>
       inServer((world) =>
         Effect.gen(function* () {
           const store = yield* ThreadStore;
           const registry = yield* AppToolRegistry;
-          const runtimes = yield* ThreadRuntimes;
           const orchestration = yield* Orchestration;
-          const { session, thread, workspaceId } = yield* openOrchestrator(world);
+          const { session, workspaceId } = yield* openOrchestrator(world);
           // Set the charter directly: no new sessions are needed to test the current server gate.
           yield* orchestration.setCharter(workspaceId, {
             ...DEFAULT_CHARTER,
@@ -2795,31 +2793,15 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           const hosted = registry
             .forTransport(a.thread.id, "worker")
             .find((tool) => tool.descriptor.name === "send_message")!;
-          const pending = yield* hosted
-            .run({ threadId: b.thread.id, text: "Coordinate." })
-            .pipe(Effect.flip, Effect.forkScoped);
-          const [card] = yield* waitReal(
-            "the sibling message card",
-            store.listRequests(a.thread.id).pipe(Effect.map((all) => all.length === 1 && all)),
-          );
-          expect(card).toMatchObject({
-            kind: "approval",
-            displayName: "send_message",
-            scopes: ["once"],
+          expect(yield* hosted.run({ threadId: b.thread.id, text: "Coordinate." })).toMatchObject({
+            delivered: expect.any(String),
           });
-          yield* orchestration.setCharter(workspaceId, { ...DEFAULT_CHARTER, autonomy: "full" });
-          yield* settle;
-          expect((yield* store.listRequests(a.thread.id)).map((request) => request.id)).toEqual([
-            card!.id,
-          ]);
-          yield* runtimes.respond(a.thread.id, card!.id, {
-            kind: "approval",
-            decision: "deny",
-            scope: "once",
-          });
-          expect((yield* Fiber.join(pending)).message).toContain("declined send_message");
-          expect(b.session.steered).toEqual([]);
-          expect(yield* orchestration.authorityOf(thread.id)).toBeDefined();
+          expect(yield* store.listRequests(a.thread.id)).toEqual([]);
+          // Sibling standing still grants no stop or archive.
+          const stop = registry
+            .forTransport(a.thread.id, "worker")
+            .find((tool) => tool.descriptor.name === "stop_thread")!;
+          expect(yield* stop.needsApproval!({ threadId: b.thread.id })).toBe(true);
         }),
       ),
   );

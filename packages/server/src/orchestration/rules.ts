@@ -9,10 +9,15 @@
 
 import { dreamSupportFor, type OutwardGate, type ToolAudience } from "@gram/agents";
 import {
+  browserScope,
+  type BrowserScope,
   browserUseAllowed,
+  codexSurfaces,
+  type CodexSurfaces,
   orchestratorBrowserOn,
   workerBrowserOn,
   USER_AWAY_AFTER_MINUTES,
+  USER_IN_CONVERSATION_MINUTES,
   USER_HOLD_IDLE_MS,
   autonomyOf,
   connectorSetOf,
@@ -283,6 +288,18 @@ export const mcpListsFor = (input: {
   if (set === undefined) return lean;
   return "allow" in set ? { mcpAllowlist: set.allow, ...lean } : { ...deny, ...lean };
 };
+
+/**
+ * What an orchestrator does to a worker it spawned itself without a card, at every level of
+ * autonomy, because it moves nothing off the machine: restarting its session. It is `isDelegated`,
+ * and a pause takes it away like everything else an orchestrator does on its own.
+ */
+export const coordinationAllows = (input: {
+  readonly caller: RuleThread;
+  readonly target: RuleThread;
+  readonly workspace: RuleWorkspace | undefined;
+  readonly paused?: boolean | undefined;
+}): boolean => input.workspace !== undefined && input.paused !== true && isDelegated(input);
 
 /**
  * The one delegation of an *outward* action: at `full` autonomy an orchestrator with
@@ -850,6 +867,7 @@ export type RefusalCode =
   | "unknown_question"
   | "closed"
   | "forwarded"
+  | "not_yours"
   | "unknown_machine"
   | "ambiguous_machine";
 
@@ -1698,16 +1716,16 @@ export const digestGroups = (
 
 /** How long a worker's request waits on the user before its orchestrator hears of it. */
 export const REQUEST_PENDING_WAKE_MS = 600_000;
-/** How long a worker's question waits before an orchestrator that may answer it hears of it. */
+/** How long a worker's question waits before its orchestrator, which may answer it, hears of it. */
 export const QUESTION_WAKE_MS = 60_000;
 
 /**
- * How long a request of `kind` waits before it is a wake reason. At `full` autonomy a question is
- * the orchestrator's to answer (`answer_worker`), so it hears within a minute, which still leaves
- * the user the first go at it; everything else is the user's alone and keeps the ten minutes.
+ * How long a request of `kind` waits before it is a wake reason. A question is the orchestrator's
+ * to answer (`answer_worker`) at every level of autonomy, so it hears within a minute, which still
+ * leaves the user the first go at it; everything else is the user's alone and keeps the ten minutes.
  */
-export const requestWakeMs = (kind: string, autonomy: Autonomy | undefined): number =>
-  kind === "question" && autonomy === "full" ? QUESTION_WAKE_MS : REQUEST_PENDING_WAKE_MS;
+export const requestWakeMs = (kind: string): number =>
+  kind === "question" ? QUESTION_WAKE_MS : REQUEST_PENDING_WAKE_MS;
 
 /** A PR badge reduced to what a wake turns on. */
 export interface PrMark {
@@ -1734,8 +1752,6 @@ export type WakeEvent =
       /** `approval`, `question` or `plan`. */
       readonly kind: string;
       readonly pendingMs: number;
-      /** The workspace's level, which decides how soon a question is worth a wake; absent reads as not `full`. */
-      readonly autonomy?: Autonomy | undefined;
     }
   | {
       readonly type: "workerError";
@@ -1818,9 +1834,9 @@ export const wakeWorthy = (event: WakeEvent): string | undefined => {
     case "workerRemoved":
       return event.parked ? undefined : `a worker was ${event.action}`;
     case "requestPending": {
-      if (event.pendingMs <= requestWakeMs(event.kind, event.autonomy)) return undefined;
+      if (event.pendingMs <= requestWakeMs(event.kind)) return undefined;
       const minutes = Math.floor(event.pendingMs / 60_000);
-      return event.kind === "question" && event.autonomy === "full"
+      return event.kind === "question"
         ? `${label(event.worker)} has had a question open for ${minutes} min; answer_worker can answer it`
         : `${label(event.worker)} has waited ${minutes} min on the user (${event.kind.replaceAll(/[^a-z]/gi, "")})`;
     }
@@ -2795,6 +2811,22 @@ export const userAwayMinutes = (
 };
 
 /**
+ * Whole minutes since the user last wrote in the orchestrator's conversation, for a digest to say
+ * they may still be in it; `undefined` when they never wrote, wrote
+ * `USER_IN_CONVERSATION_MINUTES` or more ago, or are away from the app, which the digest says
+ * instead.
+ */
+export const userWroteMinutesAgo = (
+  lastWroteAt: number | undefined,
+  now: number,
+  awayMinutes: number | undefined,
+): number | undefined => {
+  if (lastWroteAt === undefined || awayMinutes !== undefined || lastWroteAt > now) return undefined;
+  const minutes = Math.floor((now - lastWroteAt) / 60_000);
+  return minutes < USER_IN_CONVERSATION_MINUTES ? minutes : undefined;
+};
+
+/**
  * Whether a session of `thread` drives the user's browser. Each scope has its own consent, and
  * its agent's consent (`browserUseAllowed`, one per agent) has to allow it as well: an
  * orchestrator by `workspaces.orchestratorBrowser`, a worker given it at spawn or by the user
@@ -2810,4 +2842,33 @@ export const browserFor = (
   if (audience === "orchestrator") return orchestratorBrowserOn(settings);
   if (thread.browser !== true) return false;
   return thread.spawnedBy === undefined || workerBrowserOn(settings);
+};
+
+/**
+ * `browserFor` as the session policy's fields: `browser`, the sites and apps it is limited to
+ * (`browserScope`: its workspace's lists in `charter`, otherwise the user-wide ones), and for a Codex thread the surfaces of computer use the user kept
+ * (`codexSurfaces`), left out while they are all kept.
+ */
+export const browserGrant = (
+  thread: Pick<Thread, "role" | "spawnedBy" | "browser" | "model">,
+  audience: ToolAudience,
+  settings: Settings,
+  charter?: Pick<OrchestratorCharter, "browserSites" | "browserApps">,
+): {
+  readonly browser?: true;
+  readonly browserSurfaces?: CodexSurfaces;
+  readonly browserScope?: BrowserScope;
+  readonly browserAsk?: true;
+} => {
+  if (!browserFor(thread, audience, settings)) return {};
+  const scope = browserScope(settings, charter);
+  const limited = {
+    ...(scope === undefined ? {} : { browserScope: scope }),
+    ...(settings.agents.browserAskEachAction === true ? { browserAsk: true as const } : {}),
+  };
+  if (thread.model.agent !== "codex") return { browser: true, ...limited };
+  const surfaces = codexSurfaces(settings);
+  return surfaces.chrome && surfaces.inApp && surfaces.apps
+    ? { browser: true, ...limited }
+    : { browser: true, browserSurfaces: surfaces, ...limited };
 };

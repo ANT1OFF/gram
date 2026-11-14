@@ -120,6 +120,8 @@ export const toPendingRequest = (
   request: ServerRequest,
   changes: (itemId: string) => ReadonlyArray<FileUpdateChange> | undefined,
   gate: boolean | OutwardGate = false,
+  /** A server's permission prompt is answered once each time (`OpenSessionOptions.browserAsk`). */
+  promptsOnce = false,
 ): PendingRequest | undefined => {
   const level = gateLevel(gate);
   const id = requestIdOf(request);
@@ -195,7 +197,7 @@ export const toPendingRequest = (
       // One that isn't a plain yes or no has no scopes, and is declined like any unknown request.
       const p = request.params;
       const prompt = promptOf(p);
-      const scopes = promptScopes(prompt, level !== undefined);
+      const scopes = promptScopes(prompt, level !== undefined || promptsOnce);
       if (scopes.length === 0) return undefined;
       const subject = promptSubject(prompt);
       const message = prompt.message.trim();
@@ -227,6 +229,7 @@ export const responseFor = (
   request: ServerRequest,
   answer: RequestAnswer,
   gate: boolean | OutwardGate = false,
+  promptsOnce = false,
 ): unknown => {
   const level = gateLevel(gate);
   const gated = level !== undefined;
@@ -283,7 +286,7 @@ export const responseFor = (
         promptOf(request.params),
         allow,
         scope,
-        gated,
+        gated || promptsOnce,
       );
       return {
         action,

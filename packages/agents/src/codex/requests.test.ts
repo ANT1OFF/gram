@@ -284,6 +284,17 @@ describe("an MCP server's permission prompt", () => {
     });
   });
 
+  it("offers only the one use when the browser was lent to ask each time", () => {
+    expect(toPendingRequest(appAccess, () => undefined, false, true)).toMatchObject({
+      scopes: ["once"],
+    });
+    expect(responseFor(appAccess, allow("always"), false, true)).toEqual({
+      action: "accept",
+      content: {},
+      _meta: null,
+    });
+  });
+
   it("fills a form that only asks how long the grant lasts", () => {
     const choice = prompt({
       mode: "openai/form",

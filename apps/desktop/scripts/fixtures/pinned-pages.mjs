@@ -227,8 +227,11 @@ const input = (contents, method, params) => {
   return contents.debugger.sendCommand(method, params);
 };
 
-/** Clicks `id` in `contents`, so the page has the user's activation. */
+/** Clicks `id` in `contents`, so the page has the user's activation. `id` must be a plain element id. */
 async function clickAt(contents, id) {
+  if (typeof id !== "string" || !/^[A-Za-z][\w-]*$/.test(id)) {
+    throw new Error(`clickAt: not a plain element id: ${String(id)}`);
+  }
   const box = await contents.executeJavaScript(
     `(() => { const r = document.getElementById(${JSON.stringify(id)}).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`,
   );

@@ -139,9 +139,10 @@ export const originsOn = (proc: ProcShape, root: string) => {
  * placed on to clone with its own credentials. The project's name is the repository's.
  */
 export const fileOrigin = (proc: ProcShape, dataDir: string, url: string) =>
-  originsOn(proc, join(dataDir, PROFILE_ORIGINS_DIR))(url).pipe(
-    Effect.map(({ path }) => ({ path, name: originName(path) })),
-  );
+  originsOn(
+    proc,
+    join(dataDir, PROFILE_ORIGINS_DIR),
+  )(url).pipe(Effect.map(({ path }) => ({ path, name: originName(path) })));
 
 /** The project name of a clone or origin kept at a `<host>/<owner>/<name>+<identity>` folder. */
 export const originName = (path: string): string => basename(path).split("+")[0] || path;

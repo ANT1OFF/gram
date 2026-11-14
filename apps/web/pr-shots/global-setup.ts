@@ -38,7 +38,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   });
   process.env["GRAM_PR_SHOTS_PORT"] = String(server.port);
   try {
-    const browser = await chromium.launch();
+    const executablePath = process.env["GRAM_E2E_CHROMIUM"];
+    const browser = await chromium.launch(executablePath ? { executablePath } : {});
     try {
       const page = await browser.newPage();
       await page.goto(server.origin, { timeout: WARM_UP_TIMEOUT_MS });

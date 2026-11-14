@@ -2,6 +2,7 @@ import { GRAM_REPO, type ComposedIssue } from "@gram/contracts";
 
 import { composeMockIssue } from "../mock-issues";
 import { mockLaunchChecks } from "../mock-launch-checks";
+import { mockServerBrowser } from "../mock-overrides";
 import { MockWindows } from "../mock-windows";
 import type { MockWorld } from "../mock-world";
 import type { AppApi } from "./types";
@@ -38,6 +39,7 @@ export function createAppMock(world: MockWorld): AppApi & AppMockControls {
       working: world.threads().filter(({ status }) => status === "running" || status === "starting")
         .length,
     },
+    ...(mockServerBrowser() ? { serverBrowser: true } : {}),
   });
   const previewIssue: AppApi["previewIssue"] = async (draft) =>
     composeMockIssue(draft, (await diagnostics()).version);

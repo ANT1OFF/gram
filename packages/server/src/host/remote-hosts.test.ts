@@ -64,9 +64,12 @@ const service = (
  * The machines' two routes on loopback, answering as if over the tailnet address. `duringUpgrade`
  * runs as a dial's WebSocket upgrade does, after the route let it through and before it attaches.
  */
-const servedWith = (duringUpgrade?: (hosts: RemoteHosts["Service"]) => void) =>
+const servedWith = (
+  duringUpgrade?: (hosts: RemoteHosts["Service"]) => void,
+  options: { readonly pingEveryMs?: number } = {},
+) =>
   Effect.gen(function* () {
-    const hosts = yield* RemoteHosts.make(memoryMachineStore());
+    const hosts = yield* RemoteHosts.make(memoryMachineStore(), undefined, undefined, options);
     /** How many dials the route has finished with. */
     let finished = 0;
     const context = yield* Layer.build(
@@ -129,6 +132,36 @@ const slowHello = (dial: DialOptions, hostId: string, delay: Duration.Input) =>
     };
     yield* serveHost(held, yield* service(hostId));
   }).pipe(Effect.scoped, Effect.provide(NodeSocket.layerWebSocketConstructor));
+
+/**
+ * A host that can be stalled: while it is, it reads nothing, so it answers no ping, as a host does
+ * whose machine is swapping or whose disk is saturated. `stall` holds it for `ms` from now.
+ */
+const stallingHost = (dial: DialOptions, hostId: string) => {
+  let until = 0;
+  const run = Effect.gen(function* () {
+    const socket = yield* Socket.makeWebSocket(dial.url!, {
+      headers: signedConnectHeaders(dial.key, dial.origin, dial.hostId),
+    });
+    const held: Socket.Socket = {
+      ...socket,
+      reader: Effect.map(socket.reader, (reader) => ({
+        ...reader,
+        pull: Effect.suspend(() => {
+          const wait = until - Date.now();
+          return wait > 0 ? Effect.andThen(Effect.sleep(wait), reader.pull) : reader.pull;
+        }),
+      })),
+    };
+    yield* serveHost(held, yield* service(hostId));
+  }).pipe(Effect.scoped, Effect.provide(NodeSocket.layerWebSocketConstructor));
+  return {
+    run,
+    stall: (ms: number) => {
+      until = Date.now() + ms;
+    },
+  };
+};
 
 /** The machine's connection, once it has dialled in. */
 const online = (hosts: RemoteHosts["Service"], hostId: string) =>
@@ -569,6 +602,52 @@ describe("joined machines over the network", () => {
       hosts.remove(HostId.make(hostId));
       yield* Effect.sleep("200 millis");
       expect(hosts.machines.problemOf(hostId)).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("a joined machine that stalls", () => {
+  // Pings every 300 ms here, so the host may miss four (1.2 s) before it counts as gone.
+  const PING_EVERY_MS = 300;
+
+  it.live("stays online through a stall of a few missed pings", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* servedWith(undefined, { pingEveryMs: PING_EVERY_MS });
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      const host = stallingHost(dial, hostId);
+      yield* Effect.forkScoped(host.run);
+      const before = yield* online(hosts, hostId);
+      // Three and a half pings unanswered. Before, the connection ended once one ping went
+      // unanswered past the next, and a machine under load dropped every minute or so.
+      host.stall(PING_EVERY_MS * 3.5);
+      yield* Effect.sleep(PING_EVERY_MS * 4.5);
+      // It still answers: a call over the same connection gets through.
+      const scanned = yield* before.scan.pipe(Effect.timeout("2 seconds"), Effect.exit);
+      expect(scanned._tag).toBe("Success");
+      expect(before.gone()).toBe(false);
+      expect(yield* online(hosts, hostId)).toBe(before);
+      expect(hosts.list("on")[0]?.offline).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("goes offline as lost once it stops answering, without waiting for a redial", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* servedWith(undefined, { pingEveryMs: PING_EVERY_MS });
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      const host = stallingHost(dial, hostId);
+      yield* Effect.forkScoped(host.run);
+      const connection = yield* online(hosts, hostId);
+      host.stall(60_000);
+      // Before, it stayed listed online, every call failing, until the machine dialled again.
+      const offline = yield* Effect.gen(function* () {
+        while (
+          Effect.runSync(Effect.exit(hosts.connection(HostId.make(hostId))))._tag === "Success"
+        )
+          yield* Effect.sleep("50 millis");
+      }).pipe(Effect.timeout("5 seconds"), Effect.exit);
+      expect(offline._tag).toBe("Success");
+      expect(connection.gone()).toBe(true);
+      expect(hosts.list("on")[0]?.offline).toMatchObject({ kind: "lost" });
     }).pipe(Effect.scoped),
   );
 });
