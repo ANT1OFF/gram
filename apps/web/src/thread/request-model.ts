@@ -132,6 +132,122 @@ export const mustReadDetails = (request: ApprovalRequest): boolean =>
   (request.toolName.startsWith(`${APP_TOOL_PREFIX}browser_`) &&
     typeof request.input["control"] === "string");
 
+/** Claude in Chrome's tools, as an approval names them (`mcp__claude-in-chrome__<tool>`). */
+const CHROME_TOOL = /^mcp__claude-in-chrome__(.+)$/;
+
+/** A server's own permission prompt (`mcp__<server>__elicitation`), as computer use raises. */
+const SERVER_PROMPT = /^mcp__(.+)__elicitation$/;
+
+/**
+ * An agent asking to act in the person's own browser or on their computer, in words: what it would
+ * do as the card's title, and what it would do it to as labelled lines. The whole input stays under
+ * Details. `undefined` for every other approval.
+ */
+export interface BrowserAsk {
+  readonly title: string;
+  readonly fields: readonly ApprovalDetailField[];
+  /** What the prompt itself says, for a server's own prompt. */
+  readonly message?: string | undefined;
+}
+
+const hostOf = (url: string): string | undefined => {
+  try {
+    return new URL(url).host || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const point = (value: unknown): string | undefined =>
+  Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === "number")
+    ? `${value[0]}, ${value[1]}`
+    : undefined;
+
+/** What each of `computer`'s actions is, as a title's verb phrase. */
+const COMPUTER_ACTIONS: Readonly<Record<string, string>> = {
+  left_click: "Click",
+  right_click: "Right-click",
+  double_click: "Double-click",
+  triple_click: "Triple-click",
+  left_click_drag: "Drag",
+  type: "Type",
+  key: "Press a key",
+  scroll: "Scroll",
+  hover: "Point at something",
+};
+
+/** A Claude in Chrome tool's name in words, for one this list doesn't know yet. */
+const CHROME_TOOLS: Readonly<Record<string, string>> = {
+  form_input: "Fill in a field",
+  javascript_tool: "Run a script",
+  tabs_create_mcp: "Open a new tab",
+  tabs_close_mcp: "Close a tab",
+  upload_image: "Upload an image",
+  file_upload: "Upload a file",
+  resize_window: "Resize the window",
+};
+
+export const browserAsk = (request: ApprovalRequest): BrowserAsk | undefined => {
+  const { input } = request;
+  const prompt = SERVER_PROMPT.exec(request.toolName);
+  if (prompt !== null) {
+    const app = text(input["app"]);
+    const server = text(input["server"]) ?? prompt[1]!;
+    const fields = [{ label: "Asked by", value: server }];
+    // A prompt that is one short question is the card's title, said once.
+    const message = request.description?.trim();
+    if (
+      message !== undefined &&
+      message.endsWith("?") &&
+      message.length <= 80 &&
+      !message.includes("\n")
+    )
+      return { title: message, fields };
+    return {
+      title: app === undefined ? `Allow ${request.displayName}?` : `Let it use ${app}?`,
+      fields,
+      message: message === "" ? undefined : message,
+    };
+  }
+  const tool = CHROME_TOOL.exec(request.toolName)?.[1];
+  if (tool === undefined) return undefined;
+  const fields: ApprovalDetailField[] = [];
+  const add = (label: string, value: string | undefined) => {
+    if (value !== undefined) fields.push({ label, value });
+  };
+  let verb: string;
+  if (tool === "navigate") {
+    const url = text(input["url"]);
+    const host = url === undefined ? undefined : hostOf(url);
+    verb = host === undefined ? "Open a page" : `Open ${host}`;
+    add("Address", url);
+  } else if (tool === "computer") {
+    const action = text(input["action"]);
+    verb = (action && COMPUTER_ACTIONS[action]) ?? (action ? `Do “${action}”` : "Act");
+    add("At", point(input["coordinate"]));
+    add("From", point(input["start_coordinate"]));
+    add(action === "key" ? "Keys" : "Text", text(input["text"]));
+    add("Direction", text(input["scroll_direction"]));
+  } else {
+    verb = CHROME_TOOLS[tool] ?? `Use ${tool.replace(/_mcp$/, "").replaceAll("_", " ")}`;
+    add("Address", text(input["url"]));
+    add(
+      tool === "javascript_tool" ? "Script" : "Text",
+      text(input["value"]) ?? text(input["text"]),
+    );
+  }
+  return { title: `${verb} in your browser?`, fields };
+};
+
+/** A browser ask on one line, for a list's row: "Click in your browser: 912, 418". */
+export const browserAskLine = (request: ApprovalRequest): string | undefined => {
+  const ask = browserAsk(request);
+  if (ask === undefined) return undefined;
+  const what = ask.title.replace(/\?$/, "");
+  const first = ask.message === undefined ? ask.fields[0]?.value : undefined;
+  return first === undefined ? what : `${what}: ${first.replace(/\s+/g, " ")}`;
+};
+
 export interface ApprovalDetailField {
   readonly label: string;
   readonly value: string;
@@ -430,7 +546,8 @@ export const approvalReceipt = (
   decision: ApprovalReceipt["decision"],
 ): ApprovalReceipt => {
   const command = request.input["command"];
-  const call = typeof command === "string" ? command : request.displayName;
+  const call =
+    typeof command === "string" ? command : (browserAskLine(request) ?? request.displayName);
   if (decision === "deny") return { decision, label: "Denied", subject: call };
   if (decision === "once") return { decision, label: "Allowed once", subject: call };
   const rules = alwaysRules(request);
