@@ -42,8 +42,35 @@ export interface Outbox {
    * can answer.
    */
   readonly confirm: (ack: number) => boolean;
-  /** A new source at 1, dropping what the old one hadn't sent: for when `confirm` says `false`. */
-  readonly restart: () => void;
+  /**
+   * A new source at 1, dropping what the old one hadn't sent: for when `confirm` says `false`, or
+   * the backlog is given up. What it does for the messages the receiver is then without is
+   * `forget`'s to say: `"unsent"` puts each thread that had a `message` unsent back on the
+   * backfill from the first of those (the receiver holds everything confirmed, so nothing else
+   * is owed); `"all"` forgets the backfill was ever planned, for a receiver that says it no
+   * longer holds what was confirmed.
+   */
+  readonly restart: (forget: "unsent" | "all") => void;
+  // The backfill: stored messages owed to the receiver from before it was sent any, thread by
+  // thread, kept here so a restart goes on from where the last one stopped.
+  /** Whether the backfill was ever planned for this receiver. */
+  readonly backfillPlanned: () => boolean;
+  /**
+   * Plans it: `threadIds` in the order they are to be sent, each from its first message.
+   */
+  readonly planBackfill: (threadIds: ReadonlyArray<string>) => void;
+  /** The thread to send next and the place in it (a message's `seq`) sent up to; none when done. */
+  readonly backfillNext: () => { readonly threadId: string; readonly afterSeq: number } | undefined;
+  /**
+   * Records `events`, a thread's next messages, and in the same transaction moves the thread's
+   * place to `afterSeq`, or with `"done"` takes the thread off: what is recorded is never read
+   * for again, and what isn't recorded is.
+   */
+  readonly appendBackfill: (
+    threadId: string,
+    events: ReadonlyArray<SinkEventInput>,
+    afterSeq: number | "done",
+  ) => void;
   /**
    * Who started each thread, kept here because nothing else the sink reads says so after a
    * restart. `undefined` forgets a thread's.
@@ -62,6 +89,7 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
     CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY, at INTEGER NOT NULL, body TEXT NOT NULL) STRICT;
     CREATE TABLE IF NOT EXISTS creators (thread_id TEXT PRIMARY KEY, person TEXT NOT NULL) STRICT;
+    CREATE TABLE IF NOT EXISTS backfill (position INTEGER PRIMARY KEY, thread_id TEXT NOT NULL UNIQUE, after_seq INTEGER NOT NULL) STRICT;
   `);
   const getMeta = db.prepare("SELECT value FROM meta WHERE key = ?");
   const setMeta = db.prepare(
@@ -77,6 +105,26 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
   );
   const dropCreator = db.prepare("DELETE FROM creators WHERE thread_id = ?");
   const allCreators = db.prepare("SELECT thread_id, person FROM creators");
+  const dropMeta = db.prepare("DELETE FROM meta WHERE key = ?");
+  // A thread already waiting keeps the earlier of the two places.
+  const queueBackfill = db.prepare(
+    `INSERT INTO backfill (position, thread_id, after_seq)
+       VALUES ((SELECT COALESCE(MAX(position), 0) + 1 FROM backfill), ?, ?)
+       ON CONFLICT (thread_id) DO UPDATE SET after_seq = MIN(after_seq, excluded.after_seq)`,
+  );
+  const nextBackfill = db.prepare(
+    "SELECT thread_id, after_seq FROM backfill ORDER BY position LIMIT 1",
+  );
+  const moveBackfill = db.prepare("UPDATE backfill SET after_seq = ? WHERE thread_id = ?");
+  const dropBackfill = db.prepare("DELETE FROM backfill WHERE thread_id = ?");
+  const clearBackfill = db.prepare("DELETE FROM backfill");
+  // Each thread's first unconfirmed message, by its place in the thread.
+  const unsentMessages = db.prepare(
+    `SELECT json_extract(body, '$.threadId') AS thread_id, MIN(json_extract(body, '$.data.seq')) AS first
+       FROM events
+       WHERE seq > ? AND json_extract(body, '$.type') = 'message'
+       GROUP BY thread_id ORDER BY MIN(events.seq)`,
+  );
 
   const read = (key: string): string | undefined =>
     (getMeta.get(key) as { value: string } | undefined)?.value;
@@ -99,18 +147,19 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
   };
   if (read("source") === undefined) transaction(begin);
 
+  const append = (events: ReadonlyArray<SinkEventInput>): number => {
+    let seq = number("last");
+    for (const event of events) {
+      seq++;
+      insert.run(seq, event.at, JSON.stringify({ ...event, seq } satisfies SinkEvent));
+    }
+    setMeta.run("last", String(seq));
+    return seq;
+  };
+
   return {
     source: () => read("source")!,
-    append: (events) =>
-      transaction(() => {
-        let seq = number("last");
-        for (const event of events) {
-          seq++;
-          insert.run(seq, event.at, JSON.stringify({ ...event, seq } satisfies SinkEvent));
-        }
-        setMeta.run("last", String(seq));
-        return seq;
-      }),
+    append: (events) => transaction(() => append(events)),
     last: () => number("last"),
     confirmed: () => number("confirmed"),
     after: (seq, limit) =>
@@ -127,10 +176,39 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
         prune.run(ack - keepsConfirmed);
         return true;
       }),
-    restart: () =>
+    restart: (forget) =>
       transaction(() => {
+        if (forget === "all") {
+          clearBackfill.run();
+          dropMeta.run("backfill");
+        } else {
+          const unsent = unsentMessages.all(number("confirmed")) as Array<{
+            thread_id: string | null;
+            first: number | null;
+          }>;
+          for (const { thread_id, first } of unsent) {
+            if (thread_id === null) continue;
+            queueBackfill.run(thread_id, typeof first === "number" ? Math.max(0, first - 1) : 0);
+          }
+        }
         clear.run();
         begin();
+      }),
+    backfillPlanned: () => read("backfill") !== undefined,
+    planBackfill: (threadIds) =>
+      transaction(() => {
+        for (const threadId of threadIds) queueBackfill.run(threadId, 0);
+        setMeta.run("backfill", "planned");
+      }),
+    backfillNext: () => {
+      const row = nextBackfill.get() as { thread_id: string; after_seq: number } | undefined;
+      return row === undefined ? undefined : { threadId: row.thread_id, afterSeq: row.after_seq };
+    },
+    appendBackfill: (threadId, events, afterSeq) =>
+      transaction(() => {
+        append(events);
+        if (afterSeq === "done") dropBackfill.run(threadId);
+        else moveBackfill.run(afterSeq, threadId);
       }),
     setCreator: (threadId, person) => {
       if (person === undefined) dropCreator.run(threadId);

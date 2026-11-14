@@ -36,6 +36,7 @@ import { DecisionHook } from "./decision-hook.ts";
 import { EventSink, makeEventSink, type EventSinkShape } from "./event-sink.ts";
 import { ActingPerson } from "./person.ts";
 import { makeActionGuard } from "./guard.ts";
+import { openOutbox } from "./outbox.ts";
 
 /** A JSON endpoint on loopback that answers each POST with what `answer` makes of its body. */
 const endpoint = <Body>(answer: (body: Body) => { status?: number; json: unknown }) =>
@@ -88,19 +89,28 @@ const eventually = <A, E, R>(label: string, check: Effect.Effect<A | undefined |
     return yield* Effect.die(new Error(`timed out waiting for ${label}`));
   });
 
-const serverLayer = (decisionUrl: string | undefined, sinkUrl?: string, sinkMessages = false) =>
+const serverLayer = (
+  decisionUrl: string | undefined,
+  sinkUrl?: string,
+  sinkMessages = false,
+  /** A data folder for a server that is started again; absent, nothing outlives the layer. */
+  dir?: string,
+) =>
   AppToolRegistry.layer.pipe(
     Layer.provideMerge(ThreadRuntimes.layerOnLocalHost),
     Layer.provideMerge(UsageLimitReadings.layer),
     Layer.provideMerge(DecisionHook.layer.pipe(Layer.provideMerge(EventSink.layer))),
     Layer.provideMerge(EventHub.layer),
-    Layer.provideMerge(ThreadStore.layerSqlite(":memory:")),
+    Layer.provideMerge(
+      ThreadStore.layerSqlite(dir === undefined ? ":memory:" : join(dir, "gram.db")),
+    ),
     Layer.provideMerge(makeFakeAgentAdapter({ reply: "echo", toolStepDelay: "20 millis" })),
     Layer.provideMerge(TurnHooks.layerNoop),
     Layer.provideMerge(CheckoutService.layerNoGit),
     Layer.provideMerge(
       ServerConfig.layer({
         ...TEST_CONFIG,
+        ...(dir === undefined ? {} : { dataDir: dir, databaseFile: join(dir, "gram.db") }),
         ...(decisionUrl === undefined
           ? {}
           : {
@@ -504,6 +514,43 @@ const recordStatuses = (sink: EventSinkShape, from: number, to: number) =>
       }),
     { discard: true },
   );
+
+/** A thread as far as the sink reads one. */
+const sinkThread = (id: string, createdAt: number) =>
+  ({ id, title: id, model: { agent: "claude", model: "m" }, createdAt }) as unknown as Thread;
+
+/** Threads with stored messages, for a sink made by hand: `rows` is what its store holds. */
+const storedThreads = () => {
+  const rows = new Map<string, Array<StoredMessage>>();
+  const put = (threadId: string, seq: number, text = `${threadId} ${seq}`) => {
+    const id = `${threadId}-m${seq}`;
+    const row: StoredMessage = {
+      seq,
+      rev: 1,
+      role: "assistant",
+      message: { id, role: "assistant", parts: [{ type: "text", text }] } as never,
+    };
+    const held = (rows.get(threadId) ?? []).filter((one) => one.seq !== seq);
+    rows.set(
+      threadId,
+      [...held, row].toSorted((a, b) => a.seq - b.seq),
+    );
+    return id;
+  };
+  const read: NonNullable<Parameters<typeof makeEventSink>[0]["messages"]> = (threadId, select) =>
+    Effect.sync(() =>
+      "messageId" in select
+        ? (rows.get(threadId) ?? []).filter((row) => row.message.id === select.messageId)
+        : (rows.get(threadId) ?? [])
+            .filter((row) => row.seq > select.afterSeq)
+            .slice(0, select.limit),
+    );
+  return { rows, put, thread: sinkThread, read };
+};
+
+/** The ids of the messages among `events`, in order. */
+const messageIds = (events: ReadonlyArray<SinkEvent>) =>
+  events.filter((event) => event.type === "message").map((event) => event.data["id"]);
 
 describe("event sink", () => {
   /** A receiver that keeps what it is sent in order, and can be told to stop taking it. */
@@ -957,6 +1004,277 @@ describe("event sink", () => {
         Effect.sync(() => batches.reduce((sum, count) => sum + count, 0) === 5),
       );
       expect(Math.max(...batches)).toBeLessThanOrEqual(2);
+    }),
+  );
+
+  it.live(
+    "a server that starts sending messages sends the stored ones once, oldest thread first",
+    () =>
+      Effect.gen(function* () {
+        const dir = mkdtempSync(join(tmpdir(), "gram-sink-"));
+        yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+        const to = yield* receiver;
+        const messages = () => to.held.filter((event) => event.type === "message");
+
+        // Messages not asked for: two threads' turns are stored, and none of it is sent.
+        const stored = yield* Effect.gen(function* () {
+          const first = yield* streamedTurn("look around /tool");
+          const second = yield* streamedTurn("say a little /stream{20}");
+          const store = yield* ThreadStore;
+          const all: Array<readonly [string, string, number]> = [];
+          for (const thread of [first, second]) {
+            for (const one of yield* store.storedMessages(thread.id, { afterSeq: 0, limit: 100 })) {
+              all.push([thread.id, one.message.id, one.rev]);
+            }
+          }
+          yield* settledAt(to);
+          return all;
+        }).pipe(Effect.provide(serverLayer(undefined, to.url, false, dir)));
+        expect(stored.length).toBeGreaterThanOrEqual(5);
+        expect(messages()).toEqual([]);
+        const before = to.held.length;
+
+        // The same data folder with messages asked for: every stored one, once, in order.
+        yield* eventually(
+          "every stored message",
+          Effect.sync(() => messages().length >= stored.length),
+        ).pipe(
+          Effect.andThen(settledAt(to)),
+          Effect.provide(serverLayer(undefined, to.url, true, dir)),
+        );
+        expect(
+          messages().map((event) => [event.threadId, event.data["id"], event.data["rev"]]),
+        ).toEqual(stored);
+        // After the start that lists their threads.
+        expect(to.held[before]).toMatchObject({ type: "sink.started", data: { restarted: true } });
+        expect(to.held.findIndex((event) => event.type === "message")).toBeGreaterThan(before);
+
+        // Started again: it was done for this receiver, and nothing is sent twice.
+        yield* eventually(
+          "the next start",
+          Effect.sync(() => to.held.filter((event) => event.type === "sink.started").length === 3),
+        ).pipe(
+          Effect.andThen(Effect.sleep("700 millis")),
+          Effect.andThen(settledAt(to)),
+          Effect.provide(serverLayer(undefined, to.url, true, dir)),
+        );
+        expect(messages()).toHaveLength(stored.length);
+        expect(to.sources.size).toBe(1);
+      }),
+  );
+
+  /**
+   * A receiver that keeps each source's events apart, lists every event it was posted (taken or
+   * not), and takes no more once it holds `stopAt` messages.
+   */
+  const countingReceiver = Effect.gen(function* () {
+    const bySource = new Map<string, Array<SinkEvent>>();
+    const posted: Array<SinkEvent> = [];
+    const state = { stopAt: Number.POSITIVE_INFINITY, down: false, refused: 0 };
+    const held = () => [...bySource.values()].flat();
+    const messages = () => held().filter((event) => event.type === "message");
+    const server = yield* endpoint<SinkBatch>((batch) => {
+      if (state.down || messages().length >= state.stopAt) {
+        state.refused++;
+        return { status: 503, json: {} };
+      }
+      posted.push(...batch.events);
+      const mine = bySource.get(batch.source) ?? [];
+      bySource.set(batch.source, mine);
+      for (const event of batch.events) if (event.seq === mine.length + 1) mine.push(event);
+      return { json: { ack: mine.length } };
+    });
+    return { bySource, posted, state, held, messages, url: server.url };
+  });
+
+  it.live(
+    "stored messages are sent a page at a time, go on after a restart, and hold nothing up",
+    () =>
+      Effect.gen(function* () {
+        const dir = mkdtempSync(join(tmpdir(), "gram-sink-"));
+        yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+        const file = join(dir, "event-sink.db");
+        const to = yield* countingReceiver;
+        const { put, thread, read } = storedThreads();
+        // Three threads of five messages, listed newest first.
+        const threads = [thread("c", 300), thread("a", 100), thread("b", 200)];
+        const expected: Array<string> = [];
+        for (const id of ["a", "b", "c"]) for (let n = 1; n <= 5; n++) expected.push(put(id, n));
+        const sinkOn = (events: Queue.Queue<OwnEvent>) =>
+          makeEventSink({
+            endpoint: { url: to.url, token: "sink-token" },
+            file,
+            on: Effect.succeed(true),
+            threads: Effect.succeed(threads),
+            events: Stream.fromQueue(events),
+            messages: read,
+            // Two of these messages to a page.
+            batchBytes: 500,
+            backfillPause: Duration.millis(30),
+            retryBase: Duration.millis(5),
+            retryMax: Duration.millis(20),
+            recheck: Duration.millis(5),
+          });
+
+        // The receiver stops taking them after the first two pages.
+        to.state.stopAt = 4;
+        const first = yield* Scope.make();
+        yield* sinkOn(yield* Queue.unbounded<OwnEvent>()).pipe(Scope.provide(first));
+        yield* eventually(
+          "a refused page",
+          Effect.sync(() => to.state.refused >= 2),
+        );
+        // Nothing more was read while the receiver was owed a page: one waits, and no more.
+        yield* Effect.sleep("100 millis");
+        yield* Scope.close(first, { _tag: "Success", value: undefined } as never);
+        expect(messageIds(to.held())).toEqual(expected.slice(0, 4));
+        const kept = openOutbox(file);
+        expect(kept.last() - kept.confirmed()).toBe(1);
+        expect(kept.backfillNext()).toEqual({ threadId: "b", afterSeq: 0 });
+        kept.close();
+        const confirmed = to.held().length;
+        const postedBefore = to.posted.length;
+
+        // Started again on the same file, and a message settles in the last thread meanwhile.
+        to.state.stopAt = Number.POSITIVE_INFINITY;
+        const events = yield* Queue.unbounded<OwnEvent>();
+        yield* sinkOn(events);
+        const live = put("c", 6);
+        yield* Queue.offer(events, {
+          type: "message.settled",
+          threadId: "c" as ThreadId,
+          messageId: live,
+        });
+        yield* eventually(
+          "every message",
+          Effect.sync(() => to.messages().length >= expected.length + 1),
+        );
+        yield* Effect.sleep("150 millis");
+
+        // Every stored message once, each thread's in order, the oldest thread first; the one
+        // that settled meanwhile went when it settled, ahead of the pages still to come, and
+        // was not sent again when its thread's turn came.
+        const got = messageIds(to.held());
+        expect(got.filter((id) => id !== live)).toEqual(expected);
+        expect(got.filter((id) => id === live)).toHaveLength(1);
+        expect(got.indexOf(live)).toBeLessThan(got.indexOf("b-m1"));
+        // Nothing the receiver had confirmed was posted again.
+        const again = to.posted.slice(postedBefore);
+        expect(Math.min(...again.map((event) => event.seq))).toBe(confirmed + 1);
+        expect(
+          messageIds(again).filter((id) => expected.slice(0, 4).includes(id as string)),
+        ).toEqual([]);
+        expect(to.bySource.size).toBe(1);
+        expect(to.held().map((event) => event.seq)).toEqual(to.held().map((_, i) => i + 1));
+      }),
+  );
+
+  it.live("a backlog given up owes only the messages that were in it", () =>
+    Effect.gen(function* () {
+      const to = yield* countingReceiver;
+      const { put, thread, read } = storedThreads();
+      const threads = [thread("a", 100), thread("b", 200)];
+      for (const id of ["a", "b"]) for (let n = 1; n <= 2; n++) put(id, n);
+      const events = yield* Queue.unbounded<OwnEvent>();
+      const sink = yield* makeEventSink({
+        endpoint: { url: to.url, token: "sink-token" },
+        file: ":memory:",
+        on: Effect.succeed(true),
+        threads: Effect.succeed(threads),
+        events: Stream.fromQueue(events),
+        messages: read,
+        maxUnsent: 5,
+        backfillPause: Duration.millis(10),
+        retryBase: Duration.millis(5),
+        retryMax: Duration.millis(20),
+        recheck: Duration.millis(5),
+      });
+      yield* eventually(
+        "the stored messages",
+        Effect.sync(() => to.messages().length === 4),
+      );
+      // The receiver goes away; a message settles in one thread, and more than may wait follows.
+      to.state.down = true;
+      const late = put("b", 3);
+      yield* Queue.offer(events, {
+        type: "message.settled",
+        threadId: "b" as ThreadId,
+        messageId: late,
+      });
+      yield* eventually(
+        "a refused send",
+        Effect.sync(() => to.state.refused >= 1),
+      );
+      yield* recordStatuses(sink, 1, 6);
+      to.state.down = false;
+      yield* eventually(
+        "the message that was given up",
+        Effect.sync(() => to.bySource.size === 2 && to.messages().length === 5),
+      );
+      yield* Effect.sleep("100 millis");
+      // The new source opens with the threads, and is sent the one message the receiver never
+      // got: what it holds of the others is whole, and is not sent again.
+      const [, second] = [...to.bySource.values()];
+      expect(second![0]!.type).toBe("sink.started");
+      expect(
+        second!.filter((event) => event.type === "message").map((event) => event.data["id"]),
+      ).toEqual([late]);
+    }),
+  );
+
+  it.live("a receiver that fell back past what is kept is sent every stored message again", () =>
+    Effect.gen(function* () {
+      const { put, thread, read } = storedThreads();
+      put("a", 1);
+      put("a", 2);
+      // It takes everything, then answers as if it held nothing of this source.
+      const state = { lost: false };
+      const sent: Array<readonly [string, string]> = [];
+      const held = new Map<string, number>();
+      const server = yield* endpoint<SinkBatch>((batch) => {
+        if (state.lost) {
+          state.lost = false;
+          return { json: { ack: 0 } };
+        }
+        let ack = held.get(batch.source) ?? 0;
+        for (const event of batch.events) {
+          if (event.seq !== ack + 1) continue;
+          ack++;
+          if (event.type === "message") sent.push([batch.source, event.data["id"] as string]);
+        }
+        held.set(batch.source, ack);
+        return { json: { ack } };
+      });
+      const sink = yield* makeEventSink({
+        endpoint: { url: server.url, token: "sink-token" },
+        file: ":memory:",
+        on: Effect.succeed(true),
+        threads: Effect.succeed([thread("a", 100)]),
+        messages: read,
+        backfillPause: Duration.millis(10),
+        retryBase: Duration.millis(5),
+        retryMax: Duration.millis(20),
+        recheck: Duration.millis(5),
+        keepsConfirmed: 2,
+      });
+      yield* eventually(
+        "the stored messages",
+        Effect.sync(() => sent.length === 2),
+      );
+      // Enough is confirmed after them that they are no longer kept, then the receiver falls back.
+      yield* recordStatuses(sink, 1, 6);
+      yield* eventually(
+        "the statuses",
+        Effect.sync(() => [...held.values()][0] === 9),
+      );
+      state.lost = true;
+      yield* recordStatuses(sink, 7, 7);
+      yield* eventually(
+        "the messages again",
+        Effect.sync(() => sent.length === 4),
+      );
+      expect(new Set(sent.map(([source]) => source)).size).toBe(2);
+      expect(sent.map(([, id]) => id)).toEqual(["a-m1", "a-m2", "a-m1", "a-m2"]);
     }),
   );
 

@@ -9,6 +9,8 @@
 // back. What the outbox holds is never skipped. What a crash kept from reaching the outbox is
 // not: each start, and each time the feature is turned on, opens with `sink.started` and every
 // open thread, which a receiver reconciles against.
+//
+// With messages sent, the ones stored before they were are sent too, once: the backfill, below.
 
 import type { AnswerProof } from "./answer-proof.ts";
 import {
@@ -126,6 +128,10 @@ export interface EventSinkOptions {
   readonly timeoutMs?: number;
   /** How many recorded events may wait unconfirmed before the oldest are given up. */
   readonly maxUnsent?: number;
+  /** How many confirmed events the outbox keeps (`OUTBOX_KEEPS_CONFIRMED`). */
+  readonly keepsConfirmed?: number;
+  /** With `messages`: the wait between two pages of the backfill. */
+  readonly backfillPause?: Duration.Duration;
 }
 
 /**
@@ -143,6 +149,13 @@ export const SINK_BATCH_BYTES = 1024 * 1024;
 
 /** How many messages a thread's stored messages are read and recorded at a time. */
 const MESSAGES_PAGE = 50;
+
+/**
+ * The backfill's pace: one page of a thread's stored messages (`MESSAGES_PAGE` of them, or one
+ * batch's bytes if that is fewer) each time this has passed and the receiver holds everything
+ * recorded so far.
+ */
+export const SINK_BACKFILL_PAUSE = Duration.millis(500);
 
 /** How many messages' last-sent content is remembered, to leave an unchanged rewrite unsent. */
 const SENT_MESSAGES_KEPT = 5000;
@@ -186,8 +199,9 @@ export const makeEventSink = (
     const cardsSettle = Duration.seconds(1);
     const maxUnsent = options.maxUnsent ?? SINK_MAX_UNSENT;
     const batchBytes = options.batchBytes ?? SINK_BATCH_BYTES;
+    const backfillPause = options.backfillPause ?? SINK_BACKFILL_PAUSE;
     const outbox: Outbox = yield* Effect.acquireRelease(
-      Effect.sync(() => openOutbox(options.file)),
+      Effect.sync(() => openOutbox(options.file, options.keepsConfirmed)),
       (opened) => Effect.sync(() => opened.close()),
     );
     /** One permit: a recorded event wakes the sender, and any number of them wake it once. */
@@ -237,7 +251,7 @@ export const makeEventSink = (
           yield* Effect.logError("event sink: too many events unsent; new source").pipe(
             Effect.annotateLogs({ unsent }),
           );
-          yield* newSource;
+          yield* newSource("unsent");
         }
         yield* Queue.offer(wake, true);
       });
@@ -265,20 +279,29 @@ export const makeEventSink = (
       } satisfies SinkRecord;
     });
 
-    /** Drops what the outbox holds and starts a source at 1 with the opening snapshot. */
-    const newSource: Effect.Effect<void> = Effect.gen(function* () {
-      // Cleared first, then the snapshot: what is recorded while the threads are read is kept.
-      const cleared = yield* Effect.try(() => outbox.restart()).pipe(
-        Effect.as(true),
-        Effect.catch((error) =>
-          Effect.logError("event sink: a new source could not be started").pipe(
-            Effect.annotateLogs({ reason: String(error.cause) }),
-            Effect.as(false),
+    /**
+     * Drops what the outbox holds and starts a source at 1 with the opening snapshot. The
+     * snapshot puts the threads and cards right; the messages are the backfill's to put right,
+     * and `forget` says how many are owed (`Outbox.restart`).
+     */
+    const newSource = (forget: "unsent" | "all"): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        // Cleared first, then the snapshot: what is recorded while the threads are read is kept.
+        const cleared = yield* Effect.try(() => {
+          outbox.restart(forget);
+          // What was sent under the old source may not have arrived: nothing counts as sent.
+          sentMessages.clear();
+        }).pipe(
+          Effect.as(true),
+          Effect.catch((error) =>
+            Effect.logError("event sink: a new source could not be started").pipe(
+              Effect.annotateLogs({ reason: String(error.cause) }),
+              Effect.as(false),
+            ),
           ),
-        ),
-      );
-      if (cleared) yield* append([yield* started]);
-    });
+        );
+        if (cleared) yield* append([yield* started]);
+      });
 
     /** Whether the sink is on; turning on opens with a snapshot. */
     const isOn = Effect.gen(function* () {
@@ -313,6 +336,7 @@ export const makeEventSink = (
         for (const key of sentMessages.keys()) {
           if (key.startsWith(`${event.threadId} `)) sentMessages.delete(key);
         }
+        if (backfilling) removed.add(event.threadId);
       }
       switch (event.type) {
         case "thread.upsert": {
@@ -421,26 +445,32 @@ export const makeEventSink = (
       }
     };
 
+    /** True while the backfill has threads left; `removed` is kept only then. */
+    let backfilling = false;
+    /** Threads removed while the backfill ran: it sends nothing of them after their removal. */
+    const removed = new Set<string>();
     /** What each message last sent held, so a save that changed nothing isn't sent again. */
     const sentMessages = new Map<string, string>();
-    const messageRecord = (
-      threadId: ThreadId,
-      stored: StoredMessage,
-      now: number,
-      again: boolean,
-    ) => {
+    /** Whether `stored` is to be sent: it is, unless it last went holding what it holds now. */
+    const owed = (threadId: ThreadId, stored: StoredMessage, again: boolean): boolean => {
       const key = `${threadId} ${stored.message.id}`;
       const held = createHash("sha256")
         .update(JSON.stringify([stored.role, stored.turnId ?? null, stored.message]))
         .digest("base64");
-      if (!again && sentMessages.get(key) === held) return [];
+      if (!again && sentMessages.get(key) === held) return false;
       sentMessages.delete(key);
       sentMessages.set(key, held);
       if (sentMessages.size > SENT_MESSAGES_KEPT) {
         sentMessages.delete(sentMessages.keys().next().value!);
       }
-      return [messageEvent(scoped(threadId), stored, now)];
+      return true;
     };
+    const messageRecord = (
+      threadId: ThreadId,
+      stored: StoredMessage,
+      now: number,
+      again: boolean,
+    ) => (owed(threadId, stored, again) ? [messageEvent(scoped(threadId), stored, now)] : []);
 
     /** Records what a stored message, or a thread's every stored message, is now. */
     const recordMessages = (event: OwnEvent): Effect.Effect<void> =>
@@ -553,7 +583,9 @@ export const makeEventSink = (
         yield* Effect.logError("event sink: the receiver's ack can't be answered; new source").pipe(
           Effect.annotateLogs({ ack, last: outbox.last(), confirmed }),
         );
-        yield* newSource;
+        // By its own word it no longer holds events it had confirmed, and those are no longer
+        // here to send again. Any of them may have been a message, so every message is owed.
+        yield* newSource("all");
         return "failed" as const;
       }
       return ack > confirmed ? ("sent" as const) : ("failed" as const);
@@ -592,6 +624,82 @@ export const makeEventSink = (
       Effect.catchCause((cause) => Effect.logError("event sink: the sender stopped", cause)),
       Effect.forkScoped,
     );
+
+    // The backfill: the messages stored before any were sent, each open thread's once, oldest
+    // thread first. The outbox keeps which threads are left and how far the first has got, moved
+    // in the transaction that records a page, so a restart reads on from the last page recorded.
+    // A page is recorded only once the receiver holds everything before it, so what happens
+    // meanwhile waits behind one page at most, and a receiver that is down is owed no more.
+    const read = options.messages;
+    if (read !== undefined) {
+      const step = Effect.gen(function* () {
+        if (!(yield* isOn)) return "wait" as const;
+        if (!outbox.backfillPlanned()) {
+          const threads = yield* options.threads;
+          outbox.planBackfill(
+            threads
+              // A thread this sink has yet to hear of is new, and its messages are sent as they
+              // settle, after its `thread.upsert`.
+              .filter((thread) => models.has(thread.id))
+              .toSorted((a, b) => a.createdAt - b.createdAt)
+              .map((thread) => thread.id),
+          );
+        }
+        const next = outbox.backfillNext();
+        backfilling = next !== undefined;
+        if (next === undefined) {
+          removed.clear();
+          return "done" as const;
+        }
+        if (outbox.last() > outbox.confirmed()) return "wait" as const;
+        const threadId = next.threadId as ThreadId;
+        const page = yield* read(threadId, { afterSeq: next.afterSeq, limit: MESSAGES_PAGE });
+        const now = yield* Clock.currentTimeMillis;
+        yield* Effect.sync(() => {
+          // Removed since the page was read: its `thread.removed` is recorded or about to be,
+          // and a receiver that deleted its messages is sent none after.
+          if (removed.has(threadId)) return outbox.appendBackfill(threadId, [], "done");
+          // As many as one batch carries, and one at least.
+          let bytes = 0;
+          let taken = 0;
+          const events: Array<SinkEventInput> = [];
+          for (const stored of page) {
+            const event = messageEvent(scoped(threadId), stored, now);
+            bytes += JSON.stringify(event).length;
+            if (taken > 0 && bytes > batchBytes) break;
+            taken++;
+            // One that went as it changed, while this waited its turn, is at the receiver as it
+            // is now.
+            if (owed(threadId, stored, false)) events.push({ ...event, at: now });
+          }
+          outbox.appendBackfill(
+            threadId,
+            events,
+            taken === page.length && page.length < MESSAGES_PAGE ? "done" : page[taken - 1]!.seq,
+          );
+        });
+        yield* Queue.offer(wake, true);
+        return "wait" as const;
+      });
+      yield* Effect.gen(function* () {
+        while (true) {
+          const outcome = yield* step.pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.failCause(cause)
+                : Effect.logError("event sink: stored messages could not be sent", cause).pipe(
+                    Effect.as("failed" as const),
+                  ),
+            ),
+          );
+          // Done until a new source owes the receiver messages again, which is rare: asked at
+          // the pace the setting is.
+          yield* Effect.sleep(
+            outcome === "done" ? recheck : outcome === "failed" ? retryMax : backfillPause,
+          );
+        }
+      }).pipe(Effect.forkScoped);
+    }
 
     return {
       record,

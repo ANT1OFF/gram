@@ -257,8 +257,25 @@ each turn's usage, and every decision the hook made.
   largest tool results cut first, each cut marked `{"truncated": true, "bytes": n}`, and
   `truncated` is then true; the whole message stays in the server's own store. A fork's copied
   messages and a reopened thread's history are sent when they are put there. A thread's
-  `thread.removed` takes its messages with it: a receiver deletes them then. Messages stored
-  before the setting was on are not sent.
+  `thread.removed` takes its messages with it: a receiver deletes them then.
+- Messages stored before the setting was on are sent too, once: the first time the sink runs with
+  it on, each open thread's stored messages go as the same `message` events, the oldest thread
+  first and each thread's in order. They go a page at a time (up to 50 messages or 1 MB), at
+  most one page every half second, and a page is recorded only once the receiver has confirmed
+  everything before it. So what happens meanwhile waits behind one page at most, and a receiver
+  that is down is owed no more until it is back. Which threads are left, and how far the current
+  one has got, is kept in `event-sink.db`: a restart goes on from there and sends nothing
+  confirmed again. A message that settles or changes meanwhile is sent as it does, so a receiver
+  may get one of these twice with the same `rev`. Closed threads' messages are not sent. With the
+  setting off, or once it is done, nothing of this runs. Hosted features turned off stop it, like
+  the rest of the sink, and messages stored while they or the setting were off after it was done
+  are not sent.
+- A new `source` id does not send every message again by itself, since the receiver still holds
+  the messages it confirmed. After a backlog is given up, each thread that had messages in it is
+  sent again from the first of those. After the receiver asked for events older than the ones
+  kept, it has said it lost events it had confirmed, any of which may have been a message, so
+  every open thread's stored messages are sent again, the same way. A lost `event-sink.db` is a
+  first run.
 - A card's closing says how: `answered`, with the person's `approve` or `reject` and (with
   sign-in through a fronting proxy) who they are, or `withdrawn` when it went unanswered.
 - With sign-in through a fronting proxy, a card is answered as its own request,
