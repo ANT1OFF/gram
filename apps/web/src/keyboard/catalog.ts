@@ -177,6 +177,12 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
   { id: "inbox.open", keys: "mod+shift+i", label: "Inbox", group: "Navigation" },
   { id: "view.needsYou", keys: "mod+alt+3", label: "Inbox", group: "Navigation" },
   { id: "view.quiet", keys: "mod+alt+4", label: "Focus", group: "Navigation" },
+  {
+    id: "view.conversationOnly",
+    keys: "mod+alt+5",
+    label: "Conversation only",
+    group: "Navigation",
+  },
   { id: "view.back", keys: "escape", label: "Back to Chat", group: "Navigation" },
   { id: "quiet.leave", keys: "escape", label: "Leave Focus", group: "Navigation" },
   { id: "worker.back", keys: "escape", label: "Back to the orchestrator", group: "Navigation" },
