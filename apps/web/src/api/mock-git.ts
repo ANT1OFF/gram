@@ -590,7 +590,8 @@ export function mockPrDetail(
           link: `${RUNS}/9103/job/4`,
           runId: "9103",
           phase: "running",
-          startedAt: "2026-09-16T10:41:30Z",
+          // Still running, so its start counts back from now: a fixed date read as weeks of e2e.
+          startedAt: new Date(Date.now() - 298_000).toISOString(),
         },
       ],
       commitList: [
