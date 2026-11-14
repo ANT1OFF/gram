@@ -28,6 +28,12 @@ describe("ownership blockers", () => {
     ]);
     for (const blocker of Object.values(OWNERSHIP_BLOCKERS))
       expect(explainOwnershipBlocker(blocker).fix).toMatch(/\.$/);
+    // A blocker spelled like an inherited key is explained as any unknown one, never by the key.
+    for (const inherited of ["constructor", "__proto__", "toString", "hasOwnProperty"])
+      expect(explainOwnershipBlocker(inherited)).toEqual({
+        reason: inherited,
+        fix: "Call again in a minute; if it keeps happening, the user has to approve it.",
+      });
     expect(explainOwnershipBlocker("it is merged")).toEqual({
       reason: "it is merged, not open",
       fix: "There is nothing to merge; check it with pr_status.",
@@ -108,6 +114,17 @@ describe("plainGitHubRepoOf", () => {
       "https://github.com/acme\\app.git",
       "https://github.com/acme/ app.git",
       "file:///srv/acme/app.git",
+      // Hosts spelled like keys every object inherits: no table lookup may find them.
+      "https://constructor/elsewhere/other.git",
+      "https://__proto__/elsewhere/other.git",
+      "https://Constructor/elsewhere/other.git",
+      "ssh://git@__proto__/elsewhere/other.git",
+      "ssh://git@constructor:22/elsewhere/other.git",
+      "git@constructor:elsewhere/other.git",
+      "git@__proto__:elsewhere/other.git",
+      "https://toString/elsewhere/other.git",
+      "https://hasOwnProperty/elsewhere/other.git",
+      "https://valueOf/elsewhere/other.git",
       "/srv/acme/app.git",
       "",
     ])

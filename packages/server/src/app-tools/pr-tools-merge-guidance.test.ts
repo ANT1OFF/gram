@@ -176,6 +176,15 @@ describe("merge_when_ready guidance at full autonomy", () => {
       label: "an enterprise host",
       identity: cloneIdentityOf("https://ghe.example.test/elsewhere/other.git"),
     },
+    // Hosts spelled like inherited object keys, naming another repository.
+    {
+      label: "a constructor host",
+      identity: cloneIdentityOf("https://constructor/elsewhere/other.git"),
+    },
+    {
+      label: "a __proto__ host",
+      identity: cloneIdentityOf("https://__proto__/elsewhere/other.git"),
+    },
     {
       label: "another repository",
       identity: cloneIdentityOf("https://github.com/elsewhere/other.git"),
@@ -269,6 +278,44 @@ describe("merge_when_ready guidance at full autonomy", () => {
   }
 
   it.effect.skipIf(!hasGit)(
+    "a branch recorded for a sibling's folder under another machine's id still claims it",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            const runtimes = yield* ThreadRuntimes;
+            const registry = yield* AppToolRegistry;
+            const { session, thread } = yield* openOrchestrator(world);
+            const worker = yield* spawn(session, { feature: "taker" });
+            const sibling = yield* spawn(session, { feature: "recorded-holder" });
+            yield* completeTurn(worker.session);
+            yield* completeTurn(sibling.session);
+            yield* atAutonomy(thread, "full");
+            const recorded = "feat/recorded-elsewhere";
+            // The sibling's folder is on its own branch; the record of the PR's branch names a
+            // machine, as no record Gram writes does, and must still count.
+            yield* runtimes.updateThread(sibling.thread.id, (t) => ({
+              ...t,
+              ownedBranches: [
+                { path: sibling.thread.checkout.path, branch: recorded, hostId: MACHINE },
+              ],
+            }));
+            world.prHeads.set(31, { headRefName: recorded });
+            run(worker.thread.checkout.path, "switch", "-q", "-c", recorded);
+            const merge = registry
+              .forTransport(worker.thread.id, "worker")
+              .find((t) => t.descriptor.name === "merge_when_ready")!;
+            expect(yield* merge.delegatedAtFullAutonomy!({ pr: 31 })).toBe(false);
+            expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
+          }),
+        );
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect.skipIf(!hasGit)(
     "renaming the shared origin to an alias of its repository keeps a remote holder's claim",
     () =>
       Effect.gen(function* () {
@@ -354,6 +401,8 @@ describe("merge_when_ready guidance at full autonomy", () => {
       "a lookalike character",
       "a subpath",
       "an extra segment",
+      "a constructor host",
+      "a __proto__ host",
     ].includes(each.label),
   )) {
     it.effect.skipIf(!hasGit)(

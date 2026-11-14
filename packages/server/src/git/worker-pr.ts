@@ -140,7 +140,8 @@ const EXPLANATIONS: Record<string, OwnershipExplanation> = {
 
 /** A blocker `checkWorkerPr` returned, in plain words and with what an agent can do about it. */
 export const explainOwnershipBlocker = (blocker: string): OwnershipExplanation => {
-  const known = EXPLANATIONS[blocker];
+  // Own keys only: a blocker spelled like an inherited key (`constructor`) has no explanation.
+  const known = Object.hasOwn(EXPLANATIONS, blocker) ? EXPLANATIONS[blocker] : undefined;
   if (known !== undefined) return known;
   const state = /^it is (\w+)$/.exec(blocker)?.[1];
   if (state !== undefined)
@@ -317,12 +318,17 @@ const machineConfirms = (
         Effect.orElseSucceed(() => false),
       );
 
-/** GitHub's own hosts, and the port each transport may name on them (none, or its default). */
-const GITHUB_HOSTS: Readonly<Record<string, { readonly https: string; readonly ssh: string }>> = {
-  "github.com": { https: "443", ssh: "22" },
-  "www.github.com": { https: "443", ssh: "22" },
-  "ssh.github.com": { https: "443", ssh: "443" },
-};
+/**
+ * GitHub's own hosts, and the port each transport may name on them (none, or its default). A
+ * `Map`, so a host spelled like an inherited object key (`constructor`, `__proto__`) is none.
+ */
+const GITHUB_HOSTS: ReadonlyMap<string, { readonly https: string; readonly ssh: string }> = new Map(
+  [
+    ["github.com", { https: "443", ssh: "22" }],
+    ["www.github.com", { https: "443", ssh: "22" }],
+    ["ssh.github.com", { https: "443", ssh: "443" }],
+  ],
+);
 /** An account or repository name as GitHub spells one: plain ASCII, nothing encoded. */
 const PLAIN_NAME = /^[A-Za-z0-9._-]+$/;
 
@@ -343,7 +349,7 @@ export const plainGitHubRepoOf = (url: string): string | undefined => {
     /^(?:[A-Za-z0-9._-]+@)?([^/@:]+):()([^/]+)\/([^/]+?)\/?$/.exec(url);
   if (parts === null) return undefined;
   const [, rawHost = "", port = "", owner = "", rawName = ""] = parts;
-  const host = GITHUB_HOSTS[rawHost.toLowerCase()];
+  const host = GITHUB_HOSTS.get(rawHost.toLowerCase());
   if (host === undefined) return undefined;
   const transport = url.startsWith("https://") ? "https" : "ssh";
   if (port !== "" && port !== host[transport]) return undefined;
@@ -413,16 +419,13 @@ const claimedByAnother = (
       if (bound !== undefined && sameRepo(bound.repo, repo) && bound.number === number) return true;
       for (const checkout of [other.checkout, ...(other.extraCheckouts ?? [])]) {
         if (sameCheckout(checkout, where)) continue;
-        // On another machine only the branch Gram recorded for the folder there counts.
+        // A branch recorded for the folder counts whichever machine the record names: a record
+        // that can't say where it was seen still says the thread held the branch.
         const holds =
           checkout.branch === branch ||
-          (isLocalHost(checkout) &&
-            (other.ownedBranches ?? []).some(
-              (owned) =>
-                samePath(owned.path, checkout.path) &&
-                (owned.hostId === undefined || owned.hostId === LOCAL_HOST_ID) &&
-                owned.branch === branch,
-            ));
+          (other.ownedBranches ?? []).some(
+            (owned) => samePath(owned.path, checkout.path) && owned.branch === branch,
+          );
         if (holds && (yield* mayHoldRepo(checkout, repo))) return true;
       }
     }
