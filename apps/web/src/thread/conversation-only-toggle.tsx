@@ -19,12 +19,19 @@ const HINT = {
  * while on, so a transcript without its tool calls says why. `hideClass` drops the name where the
  * header is short of room.
  */
-export function ConversationOnlyButton({ hideClass }: { hideClass?: string }) {
+export function ConversationOnlyButton({
+  hideClass,
+  inTitlebar = false,
+}: {
+  hideClass?: string;
+  /** In the window's title bar, whose glyphs are a toolbar's 18 px rather than a row's 16. */
+  inTitlebar?: boolean;
+}) {
   const on = useConversationOnly((s) => s.on);
   return (
     <Button
       variant="ghost"
-      size={on ? "xs" : "icon-xs"}
+      size={on ? "xs" : inTitlebar ? "icon-sm" : "icon-xs"}
       data-testid="conversation-only"
       aria-pressed={on}
       aria-label={CONVERSATION_ONLY}
