@@ -412,8 +412,11 @@ still receives every digest.
 **Conversation only** (the thread header's speech-bubble button, the same menus, or ⌘⌥5) takes the
 agent's tool calls, commands and reasoning out of every transcript and leaves what was said, the
 plan, questions, approvals, errors, images (attached ones, and the screenshots and pictures a tool
-call returned, as thumbnails) and the pages and files it published. A running
-turn shows one "Working" line with its time. It is one switch for every thread, kept across
+call returned, as thumbnails) and the pages and files it published. It is a focused mode, so it
+also leaves out what Gram writes around the conversation: the orchestrator's digests, review
+monitor notices, a turn's changed-files card, recaps and catch-ups, compaction, restart, undo and
+wait markers, monitor and dream reports, handoffs, and the strip of running subagents. A running
+turn shows one "Working" line with its time, in place of a compaction's or a start's steps. It is one switch for every thread, kept across
 launches, and it only changes the view: the trace and the side panels still show the work.
 
 Workers may add `evidence: { headSha, gate, pr?, nextStep }` to `report`. These

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithRouter } from "@/panels/test-utils";
 import { useConversationOnly } from "@/stores/conversation-only";
 
-import { isWork, showsInConversation } from "./conversation-only";
+import { isNotice, isWork, leavesOut, showsInConversation } from "./conversation-only";
 import { ConversationOnlyButton } from "./conversation-only-toggle";
 import { MessageBlock } from "./message-block";
 import { WorkingLine } from "./working-line";
@@ -147,6 +147,60 @@ describe("an image a tool call returned", () => {
     expect(thumbnail.getAttribute("aria-label")).toBe("Open shot.png");
     expect(screen.getByTestId("tool-images").dataset["size"]).toBe("thumbnail");
     expect(screen.queryByTestId("tool-card")).toBeNull();
+  });
+});
+
+/** A data part of a type, its data left empty: only its type is read here. */
+const part = (type: string) => ({ type, data: {} }) as unknown as GramUIMessage["parts"][number];
+
+describe("what a focused transcript leaves around the conversation", () => {
+  const digest: GramUIMessage = {
+    id: "u-digest",
+    role: "user",
+    parts: [{ type: "text", text: "3 threads changed" }, part("data-orchestration-digest")],
+  };
+
+  it("leaves out Gram's bookkeeping and keeps failures, questions and cards", () => {
+    for (const type of [
+      "data-compaction",
+      "data-session-restart",
+      "data-turn-undo",
+      "data-wait",
+      "data-babysit-report",
+      "data-dream-report",
+      "data-handoff",
+    ]) {
+      expect(leavesOut(part(type)), type).toBe(true);
+    }
+    for (const type of [
+      "data-agent-error",
+      "data-task-chip",
+      "data-widget",
+      "data-worker-question",
+      "data-mock",
+      "data-doc",
+    ]) {
+      expect(leavesOut(part(type)), type).toBe(false);
+    }
+  });
+
+  it("draws no row for a digest, a review monitor's notice or a reply of only a compaction", () => {
+    expect(isNotice(digest)).toBe(true);
+    expect(showsInConversation(digest)).toBe(false);
+    expect(
+      showsInConversation({ id: "u-review", role: "user", parts: [part("data-review-notice")] }),
+    ).toBe(false);
+    expect(showsInConversation(reply("m-compact", [part("data-compaction")]))).toBe(false);
+    expect(
+      showsInConversation({ id: "u-said", role: "user", parts: [{ type: "text", text: "Hi" }] }),
+    ).toBe(true);
+  });
+
+  it("renders nothing for the digest while the mode is on", () => {
+    useConversationOnly.setState({ on: true });
+    render(digest);
+    expect(screen.queryByTestId("message-user")).toBeNull();
+    expect(screen.queryByText("3 threads changed")).toBeNull();
   });
 });
 
