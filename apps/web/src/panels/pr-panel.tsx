@@ -57,6 +57,11 @@ const reviewWord = (decision: string): string | undefined =>
   reviewMarkOf({ reviewDecision: decision })?.word;
 
 /** The checks failing in `next` that `prev` knew and had in another state. */
+/** What a person acts on first: failing checks, then those still running, then the rest. */
+const CHECK_ORDER: Record<string, number> = { failing: 0, pending: 1 };
+export const checksInOrder = (runs: readonly CheckRun[]): CheckRun[] =>
+  runs.toSorted((a, b) => (CHECK_ORDER[a.status] ?? 2) - (CHECK_ORDER[b.status] ?? 2));
+
 export const newlyFailing = (prev: readonly CheckRun[], next: readonly CheckRun[]): string[] => {
   const before = new Map(prev.map((run) => [run.name, run.status]));
   return next
@@ -491,7 +496,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
         }
       >
         <ul className="flex flex-col">
-          {detail.checkRuns.map((run) => {
+          {checksInOrder(detail.checkRuns).map((run) => {
             const drawn = checkState(run);
             const duration = checkDuration(run, now);
             // Still red or amber, so the user sees it, but dimmed: GitHub merges past it.
@@ -509,37 +514,44 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
                   flashes[run.name] !== undefined && "gram-flash",
                 )}
               >
-                <div className="flex w-full items-center gap-2">
-                  <CheckIcon check={check} />
-                  <span className="min-w-0 flex-1 truncate">{run.name}</span>
-                  {duration && (
-                    <span className="shrink-0 text-muted-foreground tabular-nums">{duration}</span>
-                  )}
-                  {unrequired && (
-                    <span
-                      data-testid="check-not-required"
-                      className="shrink-0 text-muted-foreground"
-                    >
-                      not required
-                    </span>
-                  )}
-                  <span className={cn("shrink-0", check.tone)}>{check.label}</span>
-                  {run.link && (
-                    <OutboundLink
-                      href={run.link}
-                      className="shrink-0 text-muted-foreground hover:text-foreground"
-                    >
-                      <ExternalLink aria-label={`Open ${run.name}`} className="size-icon-row" />
-                    </OutboundLink>
-                  )}
-                </div>
+                {/* A check with a job to inspect offers it in its own row, before its time. */}
                 <CiCheckDetail
                   threadId={threadId}
                   prUrl={detail.url}
                   prNumber={detail.number}
                   headOid={detail.headRefOid}
                   check={run}
-                />
+                >
+                  {(inspect) => (
+                    <div className="flex w-full items-center gap-2">
+                      <CheckIcon check={check} />
+                      <span className="min-w-0 flex-1 truncate">{run.name}</span>
+                      {inspect}
+                      {duration && (
+                        <span className="shrink-0 text-muted-foreground tabular-nums">
+                          {duration}
+                        </span>
+                      )}
+                      {unrequired && (
+                        <span
+                          data-testid="check-not-required"
+                          className="shrink-0 text-muted-foreground"
+                        >
+                          not required
+                        </span>
+                      )}
+                      <span className={cn("shrink-0", check.tone)}>{check.label}</span>
+                      {run.link && (
+                        <OutboundLink
+                          href={run.link}
+                          className="shrink-0 text-muted-foreground hover:text-foreground"
+                        >
+                          <ExternalLink aria-label={`Open ${run.name}`} className="size-icon-row" />
+                        </OutboundLink>
+                      )}
+                    </div>
+                  )}
+                </CiCheckDetail>
               </li>
             );
           })}

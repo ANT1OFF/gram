@@ -7,24 +7,32 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useApi } from "@/api/context";
 import { openExternalUrl } from "@/api/open-external";
 import { formatMessageTime } from "@/lib/time";
 
-/** Expansion is the only fetch trigger; evidence has no persisted cache or automatic retries. */
+/**
+ * Expansion is the only fetch trigger; evidence has no persisted cache or automatic retries.
+ *
+ * Given `children`, it draws the check's row with them: they get the Inspect button (or nothing,
+ * for a check with no job to inspect) to place in that row, and the job opens under it. Without,
+ * the button takes a line of its own under whatever row the caller drew.
+ */
 export function CiCheckDetail({
   threadId,
   prUrl,
   prNumber,
   headOid,
   check,
+  children,
 }: {
   threadId: ThreadId;
   prUrl: string;
   prNumber: number;
   headOid?: string | undefined;
   check: PrCheckRun;
+  children?: (inspect: ReactNode) => ReactNode;
 }) {
   const repo = repoFromPrUrl(prUrl);
   const job = repo ? actionsJobSelection(check.link, repo) : undefined;
@@ -37,33 +45,45 @@ export function CiCheckDetail({
     !headOid ||
     !/^[a-f0-9]{40}$/i.test(headOid)
   )
-    return null;
+    return children === undefined ? null : children(null);
+  const evidence = open && (
+    <JobEvidence
+      key={`${threadId}:${prUrl}:${headOid}:${check.link}`}
+      threadId={threadId}
+      repo={repo!}
+      selection={{
+        repo: repo!,
+        number: prNumber,
+        headOid,
+        ...job,
+      }}
+    />
+  );
+  // The check's own row names it: the words are "Inspect job" or, in that row, "Inspect", and
+  // the name stays in the button's accessible name.
+  const inspect = (words: [string, string]) => (
+    <button
+      type="button"
+      data-testid="check-inspect"
+      aria-expanded={open}
+      aria-label={`${open ? "Hide" : "Inspect"} ${check.name} job`}
+      className="shrink-0 text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      onClick={() => setOpen(!open)}
+    >
+      {open ? words[1] : words[0]}
+    </button>
+  );
+  if (children !== undefined)
+    return (
+      <>
+        {children(inspect(["Inspect", "Hide"]))}
+        {evidence && <div className="w-full ps-5 text-meta">{evidence}</div>}
+      </>
+    );
   return (
     <div className="w-full ps-5 text-meta">
-      {/* Under its check's own row, which names it: the words are "Inspect job", and the name
-          stays in the button's accessible name. */}
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-label={`${open ? "Hide" : "Inspect"} ${check.name} job`}
-        className="text-muted-foreground hover:text-foreground underline underline-offset-2"
-        onClick={() => setOpen(!open)}
-      >
-        {open ? "Hide job" : "Inspect job"}
-      </button>
-      {open && (
-        <JobEvidence
-          key={`${threadId}:${prUrl}:${headOid}:${check.link}`}
-          threadId={threadId}
-          repo={repo!}
-          selection={{
-            repo: repo!,
-            number: prNumber,
-            headOid,
-            ...job,
-          }}
-        />
-      )}
+      {inspect(["Inspect job", "Hide job"])}
+      {evidence}
     </div>
   );
 }
