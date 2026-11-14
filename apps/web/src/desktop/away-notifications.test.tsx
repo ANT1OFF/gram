@@ -108,6 +108,14 @@ afterEach(() => {
   Reflect.deleteProperty(window, "gram");
 });
 
+/** `all` become the asks, and the title asked for the newest settles to the template's. */
+const arrive = async (all: readonly WorkspaceAsks[], titleIndex: number) => {
+  act(() => asks.setState({ all }));
+  await flush();
+  await act(async () => titles[titleIndex]!(null));
+  await flush();
+};
+
 describe("asks' desktop notifications", () => {
   it("never shows a reused request id's command under the ask its title was asked for", async () => {
     renderWithRouter(<AwayNotifications graceMs={0} />, api);
@@ -177,5 +185,60 @@ describe("asks' desktop notifications", () => {
         answer: { kind: "approval", decision: "allow", scope: "once" },
       },
     ]);
+  });
+
+  it("gathers a second ask with the first into one notification, which opens and answers nothing", async () => {
+    renderWithRouter(<AwayNotifications graceMs={0} />, api);
+    await flush();
+    const a = workspaceAsking("w-a", "t-a", "1", "npm test");
+    const b = workspaceAsking("w-b", "t-b", "2", "rm -rf build");
+    const c = workspaceAsking("w-c", "t-c", "3", "git push");
+    await arrive([a], 0);
+    expect(notes).toHaveLength(1);
+    const single = notes[0]!;
+    expect(single).toMatchObject({ body: "npm test", actions: ["Allow once"] });
+
+    await arrive([a, b], 1);
+    // The first gives way: one notification lists both, with no Allow.
+    expect(withdrawn).toContain(single.id);
+    expect(notes).toHaveLength(2);
+    expect(notes[1]).toMatchObject({
+      title: "2 asks are waiting for you",
+      subtitle: "2 workspaces",
+      body: "Allow npm test?\nAllow rm?",
+    });
+    expect(notes[1]!.actions).toBeUndefined();
+
+    await arrive([a, b, c], 2);
+    expect(notes).toHaveLength(3);
+    expect(notes[2]).toMatchObject({ id: notes[1]!.id, title: "3 asks are waiting for you" });
+
+    // One answered elsewhere: it stays up, unraised, until the last is gone.
+    const before = withdrawn.length;
+    act(() => asks.setState({ all: [b, c] }));
+    await flush();
+    expect(notes).toHaveLength(3);
+    expect(withdrawn).toHaveLength(before);
+    act(() => asks.setState({ all: [] }));
+    await flush();
+    expect(withdrawn.at(-1)).toBe(notes[1]!.id);
+    expect(respondMany).not.toHaveBeenCalled();
+  });
+
+  it("raises one each with gathering turned off", async () => {
+    useServerSettings.setState({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        notifications: { ...DEFAULT_SETTINGS.notifications, gatherAsks: false },
+      },
+    });
+    renderWithRouter(<AwayNotifications graceMs={0} />, api);
+    await flush();
+    const a = workspaceAsking("w-a", "t-a", "1", "npm test");
+    const b = workspaceAsking("w-b", "t-b", "2", "rm -rf build");
+    await arrive([a], 0);
+    await arrive([a, b], 1);
+    expect(notes.map((n) => n.body)).toEqual(["npm test", "rm -rf build"]);
+    expect(withdrawn).toEqual([]);
   });
 });
