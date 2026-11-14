@@ -7,6 +7,7 @@ import {
   WORKER_QUESTIONS_KEPT_CLOSED,
   type ForwardedBy,
   type QuestionDelivery,
+  type QuestionWithdrawal,
   type WorkerQuestion,
 } from "@gram/contracts";
 import type { OutboxState, StoredWorkerQuestion } from "./outbox.ts";
@@ -72,16 +73,21 @@ export const replaceQuestion = (outbox: OutboxState, question: StoredWorkerQuest
 export interface QuestionRefusal {
   readonly refused: string;
   /** `refusal()`'s code, for a tool's message. */
-  readonly code: "unknown_question" | "closed" | "forwarded";
+  readonly code: "unknown_question" | "closed" | "forwarded" | "not_yours";
 }
 
 const closedRefusal = (question: StoredWorkerQuestion): QuestionRefusal => ({
   code: "closed",
-  refused: `${question.id} is ${question.stage} already${
-    question.closedBy === undefined
-      ? ""
-      : ` by ${question.closedBy === "user" ? "the user" : "the orchestrator"}`
-  }.`,
+  refused:
+    question.withdrawal !== undefined
+      ? `${question.id} is closed already: ${question.withdrawal.how}, says ${
+          question.withdrawal.by === "worker" ? "the worker" : "the orchestrator"
+        }.`
+      : `${question.id} is ${question.stage} already${
+          question.closedBy === undefined
+            ? ""
+            : ` by ${question.closedBy === "user" ? "the user" : "the orchestrator"}`
+        }.`,
 });
 
 /** The question moved to the user: by the orchestrator with its line, by the timeout or a pause. */
@@ -150,6 +156,30 @@ export const closedByUser = (
     closedAt: at,
     copyOwed: true,
     deliveryOwed: true,
+  };
+};
+
+/**
+ * The question withdrawn by its worker or its orchestrator, in triage or forwarded: off the user's
+ * board at once, with the reason in its history. A closed one, the user's answer above all, stays
+ * as it is. Only the orchestrator's withdrawal owes the worker a notice; the worker made its own.
+ */
+export const withdrawn = (
+  question: StoredWorkerQuestion,
+  withdrawal: QuestionWithdrawal,
+  reason: string,
+  at: number,
+): StoredWorkerQuestion | QuestionRefusal => {
+  if (!isOpenQuestion(question)) return closedRefusal(question);
+  return {
+    ...question,
+    stage: "dismissed",
+    reason,
+    withdrawal,
+    ...(withdrawal.by === "orchestrator"
+      ? { closedBy: "orchestrator" as const, deliveryOwed: true as const }
+      : {}),
+    closedAt: at,
   };
 };
 

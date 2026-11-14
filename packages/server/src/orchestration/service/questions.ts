@@ -16,7 +16,9 @@ import {
   isOpenQuestion,
   workerAnswerMessage,
   workerDismissMessage,
+  workerWithdrawnMessage,
   ANSWER_SOURCE_MAX,
+  DISMISS_REASON_MAX,
   WORKER_QUESTION_ANSWER_MAX,
   WORKER_QUESTIONS_KEPT_CLOSED,
   WORKER_QUESTION_TRIAGE_MS,
@@ -40,6 +42,7 @@ import {
   questionsOf,
   replaceQuestion,
   withDelivery,
+  withdrawn,
   type QuestionRefusal,
 } from "../worker-questions.ts";
 import { refusal, userHoldReason, type PendingReason } from "../rules.ts";
@@ -52,15 +55,31 @@ const questionWords = (text: string): string => redactText(text.trim());
 
 /** What the worker is told of a closed question, from what was stored with the decision. */
 const closedQuestionText = (question: StoredWorkerQuestion) =>
-  question.stage === "dismissed"
-    ? workerDismissMessage(question, question.reason)
-    : workerAnswerMessage(
-        question,
-        question.answer ?? "",
-        question.closedBy === "orchestrator"
-          ? { closedBy: "orchestrator", source: question.source ?? "" }
-          : { closedBy: "user" },
-      );
+  question.withdrawal !== undefined
+    ? workerWithdrawnMessage(question, question.withdrawal.how, question.reason ?? "")
+    : question.stage === "dismissed"
+      ? workerDismissMessage(question, question.reason)
+      : workerAnswerMessage(
+          question,
+          question.answer ?? "",
+          question.closedBy === "orchestrator"
+            ? { closedBy: "orchestrator", source: question.source ?? "" }
+            : { closedBy: "user" },
+        );
+
+/** A withdrawal's reason, scrubbed; or why it's refused. */
+const withdrawReason = (tool: string, reason: string | undefined) => {
+  const words = redactText((reason ?? "").trim());
+  if (words === "") {
+    return Effect.fail(
+      toolError(tool, "Say why it no longer needs an answer: the user reads it in its history."),
+    );
+  }
+  if (words.length > DISMISS_REASON_MAX) {
+    return Effect.fail(toolError(tool, `Keep the reason to ${DISMISS_REASON_MAX} characters.`));
+  }
+  return Effect.succeed(words);
+};
 
 /** A worker question's timer key: its workspace and its id there, since ids restart at WQ1 in each. */
 const questionTimerKey = (workspaceId: WorkspaceId, questionId: string) =>
@@ -660,6 +679,107 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       ...(input.reason === undefined ? {} : { reason: input.reason }),
     });
 
+  /**
+   * `ask_question` with `withdraw`: the worker closes its own open question, in triage or with the
+   * user, because it no longer needs an answer or a newer one of its own (`supersededBy`) replaces
+   * it. Off the user's board at once; nobody is sent a notice.
+   */
+  const withdrawQuestion: OrchestrationShape["withdrawQuestion"] = (workerId, input) =>
+    Effect.gen(function* () {
+      const tool = "ask_question";
+      const reason = yield* withdrawReason(tool, input.reason);
+      // Its own questions stay its own to withdraw, with its orchestrator listening or not.
+      const workspaceId = (yield* findThread(workerId))?.workspaceId;
+      if (workspaceId === undefined) {
+        return yield* toolError(tool, `You have no question ${input.questionId} to withdraw.`);
+      }
+      const at = yield* Clock.currentTimeMillis;
+      const moved = yield* moveQuestion(workspaceId, input.questionId, (question) =>
+        question.threadId !== workerId
+          ? {
+              code: "not_yours",
+              refused: `${question.id} isn't your question; you can withdraw only your own.`,
+            }
+          : withdrawn(
+              question,
+              {
+                by: "worker",
+                how: input.supersededBy === undefined ? "withdrawn" : "superseded",
+                ...(input.supersededBy === undefined ? {} : { supersededBy: input.supersededBy }),
+              },
+              reason,
+              at,
+            ),
+      );
+      if (isRefusal(moved)) return yield* toolError(tool, refusal(moved.code, moved.refused));
+      return publicQuestion(yield* afterClose(workspaceId, moved));
+    });
+
+  /**
+   * `close_question` on a `WQ` id: the orchestrator closes one of its workers' open questions, in
+   * triage or forwarded, without answering it. Off the user's board at once; the worker is told.
+   */
+  const closeWorkerQuestion: OrchestrationShape["closeWorkerQuestion"] = (callerId, input) =>
+    Effect.gen(function* () {
+      const tool = "close_question";
+      const { state } = yield* requireAuthority(tool, callerId);
+      const workspaceId = state.workspace.id;
+      if (state.paused !== undefined) {
+        return yield* toolError(
+          tool,
+          refusal(
+            "paused",
+            `Orchestration is paused (${state.paused.reason}), so its questions are the user's. Only the user can resume it; end your turn.`,
+          ),
+        );
+      }
+      const reason = yield* withdrawReason(tool, input.reason);
+      const found = findStoredQuestion(yield* readOutbox(workspaceId), input.questionId);
+      const target = found === undefined ? undefined : yield* findThread(found.threadId);
+      if (
+        found !== undefined &&
+        (target === undefined || !(yield* delegated(callerId, target.id)))
+      ) {
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_your_worker",
+            `${found.id} was asked by a thread that isn't one of your workers, so it isn't yours to close.`,
+          ),
+        );
+      }
+      if (target !== undefined) {
+        const pausedFeature = pausedFeatureOf(state, target);
+        if (pausedFeature !== undefined) {
+          return yield* toolError(
+            tool,
+            refusal(
+              "feature_paused",
+              `The user paused feature ${pausedFeature}, so its workers' questions are theirs. Leave it until a digest says they resumed it.`,
+            ),
+          );
+        }
+        if ((yield* readOutbox(workspaceId)).workers[target.id]?.userIntervened === true) {
+          return yield* toolError(
+            tool,
+            refusal("user_intervened", userHoldReason("so is its question")),
+          );
+        }
+      }
+      const at = yield* Clock.currentTimeMillis;
+      const claimed = yield* moveQuestion(workspaceId, input.questionId, (question) =>
+        withdrawn(question, { by: "orchestrator", how: input.how }, reason, at),
+      );
+      if (isRefusal(claimed)) return yield* toolError(tool, refusal(claimed.code, claimed.refused));
+      // Written with the decision, the notice is owed until the worker has it, as a user's is.
+      const final = yield* afterClose(
+        workspaceId,
+        (yield* deliverOwed(workspaceId, claimed.id, false)) ?? claimed,
+      );
+      yield* showQuestionToOrchestrator(callerId, final);
+      return publicQuestion(final);
+    });
+
   const userAnswers: OrchestrationShape["userAnswers"] = (callerId, tool, questionIds) =>
     Effect.gen(function* () {
       const { state } = yield* requireAuthority(tool, callerId);
@@ -684,11 +804,13 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
         if (found.closedBy !== "user" || words === undefined || words.trim() === "") {
           return yield* toolError(
             tool,
-            found.closedBy === "orchestrator"
-              ? `${found.id} was answered by an orchestrator, not the user, so there are no words of the user's to attach. Nothing was sent.`
-              : found.closedBy === "user"
-                ? `The user dismissed ${found.id} without a reason, so there are no words of theirs to attach. Nothing was sent.`
-                : `${found.id} is still open, so the user hasn't answered it. Nothing was sent.`,
+            found.withdrawal !== undefined
+              ? `${found.id} was closed as ${found.withdrawal.how} by ${found.withdrawal.by === "worker" ? "its worker" : "an orchestrator"}, not the user, so there are no words of the user's to attach. Nothing was sent.`
+              : found.closedBy === "orchestrator"
+                ? `${found.id} was answered by an orchestrator, not the user, so there are no words of the user's to attach. Nothing was sent.`
+                : found.closedBy === "user"
+                  ? `The user dismissed ${found.id} without a reason, so there are no words of theirs to attach. Nothing was sent.`
+                  : `${found.id} is still open, so the user hasn't answered it. Nothing was sent.`,
           );
         }
         answers.push(publicQuestion(found));
@@ -718,6 +840,8 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
     askQuestion,
     forwardQuestion,
     answerWorkerQuestion,
+    withdrawQuestion,
+    closeWorkerQuestion,
     answerQuestionAsUser,
     dismissQuestionAsUser,
     userAnswers,

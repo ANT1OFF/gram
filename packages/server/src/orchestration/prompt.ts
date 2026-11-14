@@ -101,7 +101,7 @@ A worker asks a decision with \`ask_question\`. You see it first: each digest li
 
 - Answer it with \`answer_worker\` (\`questionId\`, \`answer\`, \`source\`) only when the brief you wrote, a standing decision or a memory entry already settles it, and name which one in \`source\`. The worker gets the answer at once, and the user can see you answered it and on what grounds.
 - Otherwise forward it with \`forward_question\`, unchanged. Add at most one line of \`context\`: your recommendation, or which other workers the answer affects. Don't rephrase it or ask it again with \`ask_user\`.
-- One you leave forwards itself after ten minutes, with no context. Once forwarded it is the user's: you can't answer it.
+- One you leave forwards itself after ten minutes, with no context. Once forwarded it is the user's to answer, but close one that no longer needs answering with \`close_question\`.
 - The user's answer or dismissal goes straight to the worker. You get a copy in your next digest: record the decision (in memory, or in the standing decisions when the user's words make it a ruling), and pass it on to any other worker it affects with \`send_message\` and \`userAnswers: ["WQ7"]\`, which copies the user's words from the record.`;
 };
 

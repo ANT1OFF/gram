@@ -1,5 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  isOpenQuestion,
+  questionStatusLine,
   type GramUIMessage,
   type OrchestratorLedger,
   type ThreadId,
@@ -1096,5 +1098,284 @@ describe.skipIf(!hasGit)("worker questions", () => {
           expect((yield* orchestration.ledger(workspaceId)).questions).toHaveLength(1);
         }),
       ),
+  );
+  it.effect("a worker withdraws its own question, off the user's board, and nobody else's", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const orchestration = yield* Orchestration;
+        const { session, workspaceId, worker } = yield* withWorker(world);
+        const sibling = yield* spawn(session, { feature: "cart-client", title: "Cart client" });
+        yield* completeTurn(session);
+        yield* asked(worker.session);
+        yield* session.callTool("forward_question", { questionId: "WQ1" });
+        yield* asked(worker.session, { question: "Rename the table?" });
+        yield* settle;
+
+        // Without a reason, or with nothing at all, it is refused and nothing moves.
+        const bare = yield* worker.session
+          .callTool("ask_question", { withdraw: "WQ1" })
+          .pipe(Effect.flip);
+        expect(bare.message).toContain("Say why it no longer needs an answer");
+        const empty = yield* worker.session.callTool("ask_question", {}).pipe(Effect.flip);
+        expect(empty.message).toContain("Give the `question`, or `withdraw` and a `reason`");
+        // Another worker's question isn't its to withdraw.
+        const notYours = yield* sibling.session
+          .callTool("ask_question", { withdraw: "WQ1", reason: "Settled." })
+          .pipe(Effect.flip);
+        expect(notYours.message).toMatch(/^not_yours: WQ1 isn't your question/);
+        expect((yield* stored(workspaceId, "WQ1"))?.stage).toBe("forwarded");
+
+        const steered = worker.session.steered.length;
+        expect(
+          yield* worker.session.callTool("ask_question", {
+            withdraw: "wq1",
+            reason: "The API team settled it in the spec.",
+          }),
+        ).toEqual({ withdrawn: "WQ1" });
+        yield* settle;
+        const record = yield* stored(workspaceId, "WQ1");
+        expect(record).toMatchObject({
+          stage: "dismissed",
+          reason: "The API team settled it in the spec.",
+          withdrawal: { by: "worker", how: "withdrawn" },
+        });
+        // The worker closed it itself: no `closedBy` a released build would read as the user, no
+        // notice to the worker, no copy for the orchestrator.
+        expect(record?.closedBy).toBeUndefined();
+        expect(record?.deliveryOwed).toBeUndefined();
+        expect(record?.copyOwed).toBeUndefined();
+        expect(worker.session.steered).toHaveLength(steered);
+        expect(questionStatusLine(record!)).toMatch(/^Withdrawn by the worker · \d\d:\d\d$/);
+        // Off the board and the needs-you count at once; the card says why.
+        const ledger = yield* orchestration.ledger(workspaceId);
+        expect(ledger.questions?.filter(isOpenQuestion).map((q) => q.id)).toEqual(["WQ2"]);
+        expect((yield* questionCards(worker.thread.id)).find((q) => q.id === "WQ1")).toMatchObject({
+          stage: "dismissed",
+          withdrawal: { by: "worker", how: "withdrawn" },
+        });
+
+        // Closed stays closed: the user, the worker and the orchestrator alike.
+        const late = yield* orchestration
+          .answerQuestionAsUser({ workspaceId, questionId: "WQ1", answer: "410" })
+          .pipe(Effect.flip);
+        expect(late).toMatchObject({ _tag: "InvalidState" });
+        expect(late.message).toContain("WQ1 is closed already: withdrawn, says the worker.");
+        const twice = yield* worker.session
+          .callTool("ask_question", { withdraw: "WQ1", reason: "Again." })
+          .pipe(Effect.flip);
+        expect(twice.message).toMatch(/^closed: /);
+        const relay = yield* session
+          .callTool("send_message", {
+            threadId: worker.thread.id,
+            text: "Follow this.",
+            userAnswers: ["WQ1"],
+          })
+          .pipe(Effect.flip);
+        expect(String((relay as { message?: string }).message)).toContain(
+          "closed as withdrawn by its worker",
+        );
+
+        // The user's answer, once given, can't be withdrawn over.
+        yield* orchestration.answerQuestionAsUser({ workspaceId, questionId: "WQ2", answer: "No" });
+        const answered = yield* worker.session
+          .callTool("ask_question", { withdraw: "WQ2", reason: "Moot." })
+          .pipe(Effect.flip);
+        expect(answered.message).toMatch(/^closed: WQ2 is answered already by the user\./);
+        expect(yield* stored(workspaceId, "WQ2")).toMatchObject({
+          stage: "answered",
+          answer: "No",
+          closedBy: "user",
+        });
+      }),
+    ),
+  );
+
+  it.effect("a worker's corrected question supersedes its old one in one call", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const orchestration = yield* Orchestration;
+        const { session, workspaceId, worker } = yield* withWorker(world);
+        yield* asked(worker.session);
+        yield* session.callTool("forward_question", { questionId: "WQ1" });
+        yield* settle;
+
+        const result = yield* worker.session.callTool("ask_question", {
+          question: "Should a deleted cart answer 404 or 410? The link is now right.",
+          withdraw: "WQ1",
+        });
+        expect(result).toMatchObject({ asked: true, id: "WQ2", withdrawn: "WQ1" });
+        yield* settle;
+        const old = yield* stored(workspaceId, "WQ1");
+        expect(old).toMatchObject({
+          stage: "dismissed",
+          reason: "Asked again as WQ2.",
+          withdrawal: { by: "worker", how: "superseded", supersededBy: "WQ2" },
+        });
+        expect(questionStatusLine(old!)).toMatch(/^Superseded by WQ2 · /);
+        const ledger = yield* orchestration.ledger(workspaceId);
+        expect(ledger.questions?.filter(isOpenQuestion).map((q) => q.id)).toEqual(["WQ2"]);
+
+        // One that can't be withdrawn any more still lets the new question through, and says so.
+        yield* orchestration.dismissQuestionAsUser({ workspaceId, questionId: "WQ2" });
+        const partial = yield* worker.session.callTool("ask_question", {
+          question: "Third try?",
+          withdraw: "WQ2",
+          reason: "Clearer wording.",
+        });
+        expect(partial).toMatchObject({ asked: true, id: "WQ3" });
+        expect(String((partial as { notWithdrawn?: string }).notWithdrawn)).toMatch(/^closed: /);
+        expect((yield* stored(workspaceId, "WQ2"))?.closedBy).toBe("user");
+      }),
+    ),
+  );
+
+  it.effect("the orchestrator closes its workers' questions, in triage or forwarded", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const orchestration = yield* Orchestration;
+        const { session, thread, workspaceId, worker } = yield* withWorker(world);
+        yield* asked(worker.session);
+        yield* asked(worker.session, { question: "Rename the table?" });
+        yield* asked(worker.session, { question: "Keep the old cart route?" });
+        yield* session.callTool("forward_question", { questionId: "WQ2" });
+        yield* settle;
+
+        // `decided` is `answer_worker`'s, with its source; nothing moves.
+        const decided = yield* session
+          .callTool("close_question", { id: "WQ1", answer: "410", how: "decided" })
+          .pipe(Effect.flip);
+        expect(decided.message).toContain("answer one in triage with `answer_worker`");
+        expect((yield* stored(workspaceId, "WQ1"))?.stage).toBe("triage");
+
+        // In triage: withdrawn, its timer gone with it, the worker told.
+        expect(
+          yield* session.callTool("close_question", {
+            id: "wq1",
+            answer: "The cart worker it was for was closed.",
+            how: "withdrawn",
+          }),
+        ).toEqual({ id: "WQ1", closed: true });
+        const withdrawnText = worker.session.steered.at(-1)?.text ?? "";
+        expect(withdrawnText).toContain(
+          "Your orchestrator closed your question WQ1 (“Should a deleted cart answer 404 or 410?”) as withdrawn: The cart worker it was for was closed.",
+        );
+        expect(withdrawnText).toContain("Don't wait for an answer to it");
+        expect(yield* stored(workspaceId, "WQ1")).toMatchObject({
+          stage: "dismissed",
+          closedBy: "orchestrator",
+          reason: "The cart worker it was for was closed.",
+          withdrawal: { by: "orchestrator", how: "withdrawn" },
+          delivered: "steered",
+        });
+        yield* TestClock.adjust("15 minutes");
+        yield* settle;
+        expect((yield* stored(workspaceId, "WQ1"))?.stage).toBe("dismissed");
+
+        // Forwarded: answered elsewhere, off the user's board, the card in both transcripts.
+        yield* session.callTool("close_question", {
+          id: "WQ2",
+          answer: "The user said keep the name, in our chat.",
+          how: "answered",
+        });
+        expect(worker.session.steered.at(-1)?.text).toContain(
+          "as answered elsewhere: The user said keep the name, in our chat.\n\nGo on with that answer",
+        );
+        const second = yield* stored(workspaceId, "WQ2");
+        expect(second).toMatchObject({
+          withdrawal: { by: "orchestrator", how: "answered elsewhere" },
+        });
+        expect(questionStatusLine(second!)).toMatch(
+          /^Answered elsewhere, says the orchestrator · /,
+        );
+        expect((yield* questionCards(thread.id)).map((q) => q.id)).toEqual(["WQ2", "WQ1", "WQ2"]);
+        const ledger = yield* orchestration.ledger(workspaceId);
+        expect(ledger.questions?.filter(isOpenQuestion).map((q) => q.id)).toEqual(["WQ3"]);
+        // No copy for the orchestrator of its own decision; questions.md is left alone.
+        expect(second?.copyOwed).toBeUndefined();
+
+        // The user's answer, once given, isn't the orchestrator's to close over.
+        yield* orchestration.answerQuestionAsUser({
+          workspaceId,
+          questionId: "WQ3",
+          answer: "Yes",
+        });
+        const over = yield* session
+          .callTool("close_question", { id: "WQ3", answer: "Moot.", how: "superseded" })
+          .pipe(Effect.flip);
+        expect(over.message).toMatch(/^closed: WQ3 is answered already by the user\./);
+        expect(yield* stored(workspaceId, "WQ3")).toMatchObject({
+          answer: "Yes",
+          closedBy: "user",
+        });
+        const unknown = yield* session
+          .callTool("close_question", { id: "WQ9", answer: "x", how: "withdrawn" })
+          .pipe(Effect.flip);
+        expect(unknown.message).toMatch(/^unknown_question: There is no question WQ9/);
+      }),
+    ),
+  );
+
+  it.effect("refuses to close a question for whoever it isn't", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const orchestration = yield* Orchestration;
+        const { session, workspaceId, worker } = yield* withWorker(world);
+        yield* asked(worker.session);
+        yield* settle;
+
+        // A worker has no `close_question`, and the service refuses one that gets there anyway.
+        const tool = yield* worker.session
+          .callTool("close_question", { id: "WQ1", answer: "x", how: "withdrawn" })
+          .pipe(Effect.flip);
+        expect(tool.message).toBe("unknown tool close_question");
+        const byWorker = yield* orchestration
+          .closeWorkerQuestion(worker.thread.id, {
+            questionId: "WQ1",
+            how: "withdrawn",
+            reason: "x",
+          })
+          .pipe(Effect.flip);
+        expect(byWorker.message).toMatch(/^no_authority: /);
+
+        // Paused: the question is the user's.
+        yield* orchestration.setPaused(workspaceId, true);
+        const paused = yield* session
+          .callTool("close_question", { id: "WQ1", answer: "x", how: "withdrawn" })
+          .pipe(Effect.flip);
+        expect(paused.message).toMatch(/^paused: /);
+        yield* orchestration.setPaused(workspaceId, false);
+        yield* settle;
+
+        // Another orchestrator's worker, or a thread no longer its worker: not its to close.
+        yield* orchestration.detach(worker.thread.id);
+        yield* settle;
+        const detached = yield* session
+          .callTool("close_question", { id: "WQ1", answer: "x", how: "withdrawn" })
+          .pipe(Effect.flip);
+        expect(detached.message).toMatch(/^not_your_worker: /);
+        expect((yield* stored(workspaceId, "WQ1"))?.withdrawal).toBeUndefined();
+      }),
+    ),
+  );
+
+  it.effect("each orchestrator closes only its own workspace's WQ ids", () =>
+    inTwoWorkspaces((a, b) =>
+      Effect.gen(function* () {
+        yield* asked(a.worker.session);
+        yield* asked(b.worker.session);
+        yield* settle;
+        yield* b.session.callTool("close_question", {
+          id: "WQ1",
+          answer: "Not needed.",
+          how: "withdrawn",
+        });
+        expect((yield* stored(a.workspaceId, "WQ1"))?.stage).toBe("triage");
+        expect((yield* stored(b.workspaceId, "WQ1"))?.stage).toBe("dismissed");
+        // A worker's withdrawal reaches only its own workspace's question too.
+        yield* a.worker.session.callTool("ask_question", { withdraw: "WQ1", reason: "Moot." });
+        expect((yield* stored(a.workspaceId, "WQ1"))?.withdrawal?.by).toBe("worker");
+        expect((yield* stored(b.workspaceId, "WQ1"))?.withdrawal?.by).toBe("orchestrator");
+      }),
+    ),
   );
 });
