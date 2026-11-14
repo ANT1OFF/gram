@@ -249,7 +249,7 @@ function WorkHint({
               ) : (
                 <span className="min-w-0 truncate">{KIND_WORD[row.kind]}</span>
               )}
-              {elapsed && <span className="shrink-0 tabular-nums opacity-70">{elapsed}</span>}
+              {elapsed && <span className="shrink-0 text-subtle tabular-nums">{elapsed}</span>}
             </span>
             {title && command && code(command)}
           </li>

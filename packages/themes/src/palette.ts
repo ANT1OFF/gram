@@ -249,6 +249,15 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
       .map((strength) => mix(surface2, s.accent, strength))
       .find((tint) => contrastRatio(fg, tint) >= target.text) ?? surface2;
 
+  // Warning words sit on a tint of themselves too (a badge, a notice: 10% and 15%), over a page, a
+  // card or a hovered row.
+  const warningText = tintedText(
+    s.yellow,
+    [0.1, 0.15],
+    [surface1, surface2, surface3, surfaceHover],
+    (bg, color, strength) => composite(color, strength, bg),
+  );
+
   const colors: SemanticColors = {
     "surface-1": surface1,
     "surface-2": surface2,
@@ -276,7 +285,7 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
     info: ui(s.cyan),
     "danger-text": dangerText(s.red),
     "success-text": sectionText(s.green),
-    "warning-text": text(s.yellow),
+    "warning-text": warningText,
     "info-text": sectionText(s.cyan),
     // Statuses label rows, notices and count badges as text, so they're text-grade. Amber means
     // "needs you" and nothing else: status-needs is its text, status-needs-mark its dots, icons and

@@ -154,7 +154,7 @@ export function ThreadsPage() {
                   className="flex h-6 items-center gap-1.5 rounded-md px-2.5 text-meta text-muted-foreground outline-none transition-colors duration-(--dur-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-checked:bg-secondary aria-checked:text-foreground phone:h-9"
                 >
                   {label}
-                  <span className="tabular-nums opacity-70">{count}</span>
+                  <span className="text-subtle tabular-nums">{count}</span>
                 </button>
               ))}
             </div>
@@ -236,7 +236,7 @@ export function ThreadsPage() {
                     className="flex h-7 items-center gap-1.5 rounded-full border border-border px-3 text-meta text-muted-foreground outline-none transition-colors duration-(--dur-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 aria-checked:border-transparent aria-checked:bg-secondary aria-checked:text-foreground phone:h-9"
                   >
                     {label}
-                    <span className="tabular-nums opacity-70">{counts[value]}</span>
+                    <span className="text-subtle tabular-nums">{counts[value]}</span>
                   </button>
                 ))}
               </div>
