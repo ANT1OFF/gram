@@ -637,6 +637,17 @@ describe("serializeDigest", () => {
     expect(serializeDigest(digest)).not.toContain("away from Gram");
   });
 
+  it("says when it lands in the middle of the user's conversation, and what may still be said", () => {
+    const text = serializeDigest({ ...digest, userWroteMinutesAgo: 2 });
+    expect(text).toContain(
+      "The user wrote to you 2 min ago and may still be in this conversation. Don't break in with a routine update: write now only for a blocker, a decision that is theirs, or what answers something they asked.",
+    );
+    expect(serializeDigest({ ...digest, userWroteMinutesAgo: 0 })).toContain(
+      "The user wrote to you less than a minute ago",
+    );
+    expect(serializeDigest(digest)).not.toContain("The user wrote to you");
+  });
+
   it("renders a boot digest's notes whole, and says when it is paused", () => {
     const bootContext = `Your memory index:\n${"- a long line of memory\n".repeat(400)}Charter: 4 workers.`;
     const boot: OrchestrationDigest = {

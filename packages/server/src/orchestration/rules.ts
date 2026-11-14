@@ -17,6 +17,7 @@ import {
   orchestratorBrowserOn,
   workerBrowserOn,
   USER_AWAY_AFTER_MINUTES,
+  USER_IN_CONVERSATION_MINUTES,
   USER_HOLD_IDLE_MS,
   autonomyOf,
   connectorSetOf,
@@ -2806,6 +2807,22 @@ export const userAwayMinutes = (
   if (inactiveSince === undefined) return undefined;
   const minutes = Math.floor((now - inactiveSince) / 60_000);
   return minutes >= USER_AWAY_AFTER_MINUTES ? minutes : undefined;
+};
+
+/**
+ * Whole minutes since the user last wrote in the orchestrator's conversation, for a digest to say
+ * they may still be in it; `undefined` when they never wrote, wrote
+ * `USER_IN_CONVERSATION_MINUTES` or more ago, or are away from the app, which the digest says
+ * instead.
+ */
+export const userWroteMinutesAgo = (
+  lastWroteAt: number | undefined,
+  now: number,
+  awayMinutes: number | undefined,
+): number | undefined => {
+  if (lastWroteAt === undefined || awayMinutes !== undefined || lastWroteAt > now) return undefined;
+  const minutes = Math.floor((now - lastWroteAt) / 60_000);
+  return minutes < USER_IN_CONVERSATION_MINUTES ? minutes : undefined;
 };
 
 /**

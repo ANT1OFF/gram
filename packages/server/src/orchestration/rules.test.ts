@@ -129,6 +129,7 @@ import {
   joinedFeature,
   joinRefusal,
   userAwayMinutes,
+  userWroteMinutesAgo,
 } from "./rules.ts";
 
 /** A kind outside the contract, for the guards that must refuse one. */
@@ -3733,6 +3734,19 @@ describe("actionable historical digests", () => {
       pr: { ...base.pr!, checks: "passing", botOnHead: "reviewing" as const },
     };
     expect(digest([base], [reviewing]).changes[0]!.note).toContain("review in flight");
+  });
+});
+
+describe("userWroteMinutesAgo", () => {
+  it("says the user is in the conversation for three minutes after they wrote, and never while away", () => {
+    const at = 10 * 60_000;
+    expect(userWroteMinutesAgo(undefined, at, undefined)).toBeUndefined();
+    expect(userWroteMinutesAgo(at, at + 20_000, undefined)).toBe(0);
+    expect(userWroteMinutesAgo(at, at + 2 * 60_000 + 59_999, undefined)).toBe(2);
+    expect(userWroteMinutesAgo(at, at + 3 * 60_000, undefined)).toBeUndefined();
+    expect(userWroteMinutesAgo(at, at + 60_000, 45)).toBeUndefined();
+    // A clock that went backwards says nothing rather than a negative time.
+    expect(userWroteMinutesAgo(at, at - 1, undefined)).toBeUndefined();
   });
 });
 

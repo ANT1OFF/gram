@@ -833,6 +833,12 @@ export const OrchestrationDigest = Schema.Struct({
    */
   userAwayMinutes: Schema.optionalKey(Schema.Int),
   /**
+   * Whole minutes since the user last wrote in the orchestrator's own conversation, as the digest
+   * was built; absent once that is `USER_IN_CONVERSATION_MINUTES` or more ago, and while they are
+   * away. A digest that lands then lands in the middle of their conversation.
+   */
+  userWroteMinutesAgo: Schema.optionalKey(Schema.Int),
+  /**
    * Workers' questions for the orchestrator: those in triage, its to answer or forward, and those
    * the user closed since the last acknowledged digest, its copy. Absent with neither.
    */
@@ -847,6 +853,12 @@ export type OrchestrationDigest = typeof OrchestrationDigest.Type;
 
 /** How long no Gram window has been in use before a digest tells the orchestrator the user is away. */
 export const USER_AWAY_AFTER_MINUTES = 30;
+
+/**
+ * How recently the user wrote in an orchestrator's conversation for a digest to count them as
+ * still in it (`OrchestrationDigest.userWroteMinutesAgo`).
+ */
+export const USER_IN_CONVERSATION_MINUTES = 3;
 
 /** `95` as `1 h 35 min`. */
 const awayFor = (minutes: number): string => {
@@ -1473,6 +1485,11 @@ export const serializeDigest = (digest: OrchestrationDigest): string => {
   if (digest.userAwayMinutes !== undefined) {
     lines.push(
       `The user has been away from Gram for ${awayFor(digest.userAwayMinutes)}. Your next message to them is what they read first when they're back: open with whether anything needs them, then Needs you, Done, Failed and Still working, one sentence each.`,
+    );
+  }
+  if (digest.userWroteMinutesAgo !== undefined) {
+    lines.push(
+      `The user wrote to you ${digest.userWroteMinutesAgo === 0 ? "less than a minute" : `${digest.userWroteMinutesAgo} min`} ago and may still be in this conversation. Don't break in with a routine update: write now only for a blocker, a decision that is theirs, or what answers something they asked. The rest keeps for your next message.`,
     );
   }
   if (digest.changes.length > 0) {
