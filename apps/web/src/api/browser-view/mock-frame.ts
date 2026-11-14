@@ -22,6 +22,8 @@ const STATE_COLOURS: Record<string, readonly [string, string]> = {
   Draft: ["#e5e7eb", "#374151"],
 };
 
+const sans = (size: number, weight = 400) => `${weight} ${size}px system-ui, sans-serif`;
+
 let cached: Frame | undefined;
 
 /**
@@ -48,7 +50,6 @@ export const mockPageFrame = (): Frame => {
     g.fillStyle = fill;
     g.fill();
   };
-  const sans = (size: number, weight = 400) => `${weight} ${size}px system-ui, sans-serif`;
   g.fillStyle = "#f8fafc";
   g.fillRect(0, 0, WIDTH, HEIGHT);
   // The site's own bar.

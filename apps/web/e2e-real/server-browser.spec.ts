@@ -66,7 +66,7 @@ test("the Preview tab shows the agent's page from the server, and a click takes 
   const panel = page.getByTestId("right-panel");
   const preview = panel.getByTestId("server-preview");
   await expect(preview).toHaveAttribute("data-state", "agent", { timeout: 30_000 });
-  await expect(preview.getByTestId("preview-address")).toHaveValue(appUrl);
+  await expect(preview.getByTestId("preview-address")).toHaveValue(appUrl.replace("http://", ""));
   const frame = preview.getByTestId("server-preview-frame");
   await expect(frame).toHaveAttribute("src", /^data:image\/jpeg;base64,/);
   await expect(preview.getByTestId("server-preview-hint")).toBeVisible();
@@ -85,8 +85,6 @@ test("the Preview tab shows the agent's page from the server, and a click takes 
   await composer.fill(`/call browser_click ${JSON.stringify({ coordinate: [10, 10] })}`);
   await composer.press("Enter");
   await expect(page.getByText(/user has control/i).first()).toBeVisible();
-  await preview
-    .getByRole("button", { name: "You have control. Hand the page back to the agent" })
-    .click();
+  await preview.getByRole("button", { name: "Hand back" }).click();
   await expect(preview).toHaveAttribute("data-state", "agent");
 });

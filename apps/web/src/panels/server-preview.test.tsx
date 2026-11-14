@@ -120,7 +120,16 @@ describe("ServerPreview", () => {
     expect(screen.getByTestId("server-preview").dataset["state"]).toBe("agent");
     const frame = screen.getByTestId("server-preview-frame") as HTMLImageElement;
     expect(frame.src).toBe("data:image/jpeg;base64,/9j/AA==");
-    expect((screen.getByTestId("preview-address") as HTMLInputElement).value).toBe(PAGE.url);
+    // At rest the address reads as a browser's bar does; focused, it is the whole address.
+    const address = screen.getByTestId("preview-address") as HTMLInputElement;
+    expect(PAGE.url).toMatch(/^http:/);
+    expect(address.value).toBe(PAGE.url.replace("http://", ""));
+    fireEvent.focus(address);
+    expect(address.value).toBe(PAGE.url);
+    fireEvent.blur(address);
+    expect(screen.getByTestId("server-preview-where").getAttribute("aria-label")).toContain(
+      "on the server only",
+    );
     expect(screen.getByTestId("preview-action").textContent).toBe("Opens the Filters menu");
     expect(screen.getByTestId("server-preview-hint").textContent).toContain("take over");
     expect(screen.getByTestId("preview-driver").dataset["driver"]).toBe("agent");
@@ -187,7 +196,7 @@ describe("ServerPreview", () => {
     await say(server, { type: "page", page: { ...PAGE, driver: "user" } }, FRAME);
     expect(screen.getByTestId("server-preview").dataset["state"]).toBe("yours");
     expect(screen.getByTestId("server-preview-yours").textContent).toContain(
-      "returns to the agent after 20 s",
+      "Agent resumes after 20 s idle",
     );
     expect(screen.queryByTestId("server-preview-hint")).toBeNull();
     const stage = place();
@@ -215,7 +224,7 @@ describe("ServerPreview", () => {
       modifiers: 0,
       text: "a",
     });
-    fireEvent.click(screen.getByLabelText("You have control. Hand the page back to the agent"));
+    fireEvent.click(screen.getByRole("button", { name: "Hand back" }));
     fireEvent.click(screen.getByLabelText("Back"));
     await waitFor(() => expect(server.controls).toEqual(["handBack", "back"]));
   });
