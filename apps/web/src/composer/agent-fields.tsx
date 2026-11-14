@@ -58,13 +58,8 @@ const withVariant = (choice: AgentChoice, variant: ReasoningVariant | undefined)
 /** The `ModelRef` a choice starts a thread on. */
 export const choiceModel = (choice: AgentChoice): ModelRef => withVariant(choice, choice.variant);
 
-/**
- * The harnesses the pickers offer, each including when signed out. OpenCode joins once its
- * adapter is in this build; until then a thread can't start on it.
- */
-export const OFFERED_AGENTS: readonly AgentKind[] = AgentKind.literals.filter(
-  (agent) => agent !== "opencode",
-);
+/** The harnesses the pickers offer, each including when signed out. */
+export const OFFERED_AGENTS: readonly AgentKind[] = AgentKind.literals;
 
 export function useAvailableAgents(): readonly AgentKind[] {
   return OFFERED_AGENTS;
