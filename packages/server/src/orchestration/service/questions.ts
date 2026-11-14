@@ -661,6 +661,7 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
     workspaceId: WorkspaceId,
     questionId: string,
     close: { readonly answer: string } | { readonly dismissed: true; readonly reason?: string },
+    onlyIfOpen = false,
   ) =>
     Effect.gen(function* () {
       yield* store.getWorkspace(workspaceId);
@@ -676,7 +677,9 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       let newlyClosed = false;
       const claimed = yield* moveQuestion(workspaceId, questionId, (question) => {
         // Retries and concurrent user replies preserve the first committed decision.
-        if (!isOpenQuestion(question) && question.closedBy === "user") return question;
+        // Unless the caller must know its answer is the one taken (`onlyIfOpen`).
+        if (!onlyIfOpen && !isOpenQuestion(question) && question.closedBy === "user")
+          return question;
         const moved = withClosedFor(closedByUser(question, scrubbed, at), closedFor);
         newlyClosed = !isRefusal(moved);
         return moved;
@@ -705,8 +708,13 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
       return publicQuestion(final);
     });
 
-  const answerQuestionAsUser: OrchestrationShape["answerQuestionAsUser"] = (input) =>
-    closeAsUser(input.workspaceId, input.questionId, { answer: input.answer });
+  const answerQuestionAsUser: OrchestrationShape["answerQuestionAsUser"] = (input, options) =>
+    closeAsUser(
+      input.workspaceId,
+      input.questionId,
+      { answer: input.answer },
+      options?.onlyIfOpen === true,
+    );
 
   const dismissQuestionAsUser: OrchestrationShape["dismissQuestionAsUser"] = (input) =>
     closeAsUser(input.workspaceId, input.questionId, {

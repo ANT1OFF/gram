@@ -812,6 +812,17 @@ describe.skipIf(!hasGit)("worker questions", () => {
           answer: "410",
         });
         expect(delivery.sent).toBe(1);
+
+        // One that must be the answer that closes it is refused, and changes nothing.
+        const late = yield* orchestration
+          .answerQuestionAsUser(
+            { workspaceId, questionId: "WQ1", answer: "404" },
+            { onlyIfOpen: true },
+          )
+          .pipe(Effect.flip);
+        expect(late._tag).toBe("InvalidState");
+        expect(yield* stored(workspaceId, "WQ1")).toMatchObject({ answer: "410" });
+        expect(delivery.sent).toBe(1);
       }),
     ),
   );
