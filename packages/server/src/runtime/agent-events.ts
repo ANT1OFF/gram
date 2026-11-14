@@ -537,8 +537,12 @@ export const makeAgentEvents = ({
           }
           const status = agentStatus(event.status);
           rt.agentRunning = status === "running" && rt.turn === undefined;
+          const errorAtRest = rt.errorAtRest;
+          rt.errorAtRest = undefined;
           if (status === "idle") {
-            // `idle` after `turnEnd` is the previous turn's tail; `turnEnd` already settled it.
+            // `idle` after `turnEnd` is the previous turn's tail; `turnEnd` already settled it. So
+            // is one after a deadline's stop that already failed the turn: the error stays.
+            if (errorAtRest?.session === rt.session && rt.status === "error") return;
             if (rt.turn === undefined && rt.status !== "idle") yield* becomeIdle(rt);
             return;
           }

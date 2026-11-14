@@ -741,12 +741,17 @@ const make = Effect.gen(function* () {
           // Only over the very state the stop left: the same session at rest, with no turn since.
           // A watchdog's fresh session is still starting, and input queued meanwhile may have
           // run; either is a newer state the error must not replace. `lastError` stands anyway.
+          // The agent's `idle` after the stopped turn may come before this or after it; after, it
+          // is that turn's tail and leaves the error standing (`errorAtRest`).
           const settled =
             rt.turn === undefined &&
             rt.session === stuck.session &&
             rt.status === "idle" &&
             (yield* store.lastTurn(rt.threadId))?.id === turnId;
-          if (settled) yield* setStatus(rt, "error", stuck.failed.text);
+          if (settled) {
+            rt.errorAtRest = { session: stuck.session, turnId };
+            yield* setStatus(rt, "error", stuck.failed.text);
+          }
         }),
       );
     });
