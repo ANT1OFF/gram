@@ -1,7 +1,8 @@
 // `POST /threads/from-profile`: a thread started from a profile by a fronting platform's own
 // service (its statement for this path), or by the local app; never by a person signed in through
 // the proxy, nor by a paired phone. While the hosted features setting is off it answers as a path
-// that isn't there.
+// that isn't there. Beside it, `POST /threads/move-to-machine` places such a thread on a machine,
+// and `POST /threads/machine-wait` says how the wait of one started before its machine stands.
 import {
   embeddingOn,
   PROFILE_MOVE_PATH,
@@ -10,6 +11,10 @@ import {
   type ProfileMoveResponse,
   ProfileStartRequest,
   type ProfileStartResponse,
+  PROFILE_WAIT_MESSAGE_MAX,
+  PROFILE_WAIT_PATH,
+  ProfileWaitRequest,
+  type ProfileWaitResponse,
 } from "@gram/contracts";
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
@@ -21,7 +26,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "../platform/u
 import { ProfileStarters } from "./service.ts";
 import type { ProfileStarter } from "./start.ts";
 
-export { PROFILE_MOVE_PATH, PROFILE_START_PATH };
+export { PROFILE_MOVE_PATH, PROFILE_START_PATH, PROFILE_WAIT_PATH };
 
 /** A profile's files hold at most 1 MB; the rest of a body is small beside them. */
 const BODY_MAX = 2_000_000;
@@ -33,6 +38,7 @@ const notThere = HttpServerResponse.text("not found", { status: 404 });
 
 const decodeRequest = Schema.decodeUnknownEffect(ProfileStartRequest);
 const decodeMove = Schema.decodeUnknownEffect(ProfileMoveRequest);
+const decodeWait = Schema.decodeUnknownEffect(ProfileWaitRequest);
 
 /**
  * Headers the answer carries for the service-call record (`server.ts`): which thread, where, and
@@ -109,16 +115,21 @@ export const profileStartRoute = (
     const input = yield* decodeRequest(value, { onExcessProperty: "error" }).pipe(Effect.option);
     if (input._tag === "None")
       return refuse("Give the profile and the thread's id, and the machine's if it has one.", 400);
-    const { profile, threadId, hostId } = input.value;
-    return yield* starter.startOne(profile, { threadId, on: hostId }).pipe(
+    const { profile, threadId, hostId, machine, startedBy } = input.value;
+    return yield* starter.startOne(profile, { threadId, on: hostId, machine, startedBy }).pipe(
       Effect.map(({ thread, created }) =>
         HttpServerResponse.jsonUnsafe(
-          { threadId: thread.id, created } satisfies ProfileStartResponse,
+          {
+            threadId: thread.id,
+            created,
+            ...(thread.awaitingMachine === undefined ? {} : { awaitingMachine: true }),
+          } satisfies ProfileStartResponse,
           {
             headers: {
               [PROFILE_START_RECORD.thread]: thread.id,
               [PROFILE_START_RECORD.created]: String(created),
-              ...(thread.checkout.hostId === undefined
+              // A thread that waits for its machine is on none, and its record names none.
+              ...(thread.checkout.hostId === undefined || thread.awaitingMachine !== undefined
                 ? {}
                 : { [PROFILE_START_RECORD.host]: thread.checkout.hostId }),
             },
@@ -166,6 +177,38 @@ export const profileMoveRoute = (
     );
   });
 
+/** Answers the wait path. `on` is the hosted features setting, read per request. */
+export const profileWaitRoute = (
+  starter: Pick<ProfileStarter, "waitOne">,
+  on: Effect.Effect<boolean>,
+): Effect.Effect<
+  HttpServerResponse.HttpServerResponse,
+  never,
+  HttpServerRequest.HttpServerRequest
+> =>
+  Effect.gen(function* () {
+    const body = yield* jsonBodyAt(PROFILE_WAIT_PATH, on);
+    if (body.answer !== undefined) return body.answer;
+    const input = yield* decodeWait(body.value, { onExcessProperty: "error" }).pipe(Effect.option);
+    if (
+      input._tag === "None" ||
+      (input.value.failed !== undefined && input.value.failed.length > PROFILE_WAIT_MESSAGE_MAX)
+    )
+      return refuse(
+        `Give the thread's id, and why no machine is coming in at most ${PROFILE_WAIT_MESSAGE_MAX} characters, or nothing to begin the wait again.`,
+        400,
+      );
+    const { threadId, failed } = input.value;
+    return yield* starter.waitOne(threadId, { failed }).pipe(
+      Effect.map((awaitingMachine) =>
+        HttpServerResponse.jsonUnsafe({ threadId, awaitingMachine } satisfies ProfileWaitResponse, {
+          headers: { [PROFILE_START_RECORD.thread]: threadId },
+        }),
+      ),
+      Effect.catch((error) => Effect.succeed(refuse(error.message, 409))),
+    );
+  });
+
 /** The routes on the server's router, under its auth middleware. */
 export const ProfileStartRoutes = Layer.unwrap(
   Effect.gen(function* () {
@@ -178,6 +221,7 @@ export const ProfileStartRoutes = Layer.unwrap(
     return Layer.mergeAll(
       HttpRouter.add("*", PROFILE_START_PATH, () => profileStartRoute(starter, on)),
       HttpRouter.add("*", PROFILE_MOVE_PATH, () => profileMoveRoute(starter, on)),
+      HttpRouter.add("*", PROFILE_WAIT_PATH, () => profileWaitRoute(starter, on)),
     );
   }),
 );

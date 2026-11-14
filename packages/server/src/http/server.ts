@@ -152,6 +152,7 @@ import { WORKSPACE_TRANSFER_PATHS, WorkspaceTransferRoutes } from "../transfer/r
 import {
   PROFILE_MOVE_PATH,
   PROFILE_START_PATH,
+  PROFILE_WAIT_PATH,
   PROFILE_START_RECORD,
   ProfileStartRoutes,
 } from "../thread-profiles/routes.ts";
@@ -202,6 +203,7 @@ export const SERVICE_PATHS: ReadonlySet<string> = new Set([
   ...WORKSPACE_TRANSFER_PATHS,
   PROFILE_START_PATH,
   PROFILE_MOVE_PATH,
+  PROFILE_WAIT_PATH,
 ]);
 
 /** What a service call's answer adds to its record: the thread a profile start made or found. */
@@ -502,6 +504,7 @@ export const AuthMiddleware = HttpRouter.middleware(
             WORKSPACE_TRANSFER_PATHS.has(target.path) ||
             target.path === PROFILE_START_PATH ||
             target.path === PROFILE_MOVE_PATH ||
+            target.path === PROFILE_WAIT_PATH ||
             HOST_PATHS.has(target.path) ||
             target.path === MCP_PATH ||
             target.path === HOST_MCP_PATH
