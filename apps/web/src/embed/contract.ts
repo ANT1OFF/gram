@@ -410,6 +410,43 @@ export interface ShellDocument {
   readonly title?: (page: ShellDocumentPage) => string;
 }
 
+/** A repository the embedding app offers to clone. */
+export interface ShellRepository {
+  /** `owner/name`, as typed into the field when it is chosen. */
+  readonly fullName: string;
+  readonly private?: boolean;
+}
+
+/** One page of the repositories the embedding app offers, for a search. */
+export interface ShellRepositoryPage {
+  readonly repositories: readonly ShellRepository[];
+  /** Asks for the next page of the same search; absent on the last. */
+  readonly next?: string;
+  /** The person's own account: its repositories are listed first, the organisations' after. */
+  readonly account?: string;
+  /**
+   * A line under the list: why some repositories may be missing, with where to change that,
+   * opened in a new tab.
+   */
+  readonly notice?: {
+    readonly text: string;
+    readonly link?: { readonly label: string; readonly href: string };
+  };
+}
+
+/**
+ * Where the repositories offered in "Add repository" come from, in place of the server's own
+ * `gh` listing: asked as the person types, a page at a time. A rejection's message is shown in
+ * the list. Typing any other `owner/repo` or URL still clones it.
+ */
+export interface ShellRepositories {
+  readonly list: (request: {
+    readonly query: string;
+    readonly cursor?: string;
+    readonly signal: AbortSignal;
+  }) => Promise<ShellRepositoryPage>;
+}
+
 /** What the embedding app adds to Gram's shell. Everything is optional. */
 export interface ShellContributions {
   /** Pages beside Gram's own. Read once, when the app mounts. */
@@ -452,6 +489,8 @@ export interface ShellContributions {
   readonly toolCards?: readonly ShellToolCard[];
   /** The browser tab's title. Replaceable through `GramHandle.update`. */
   readonly document?: ShellDocument;
+  /** The repositories "Add repository" offers. Read once, when the app mounts. */
+  readonly repositories?: ShellRepositories;
 }
 
 /** The server one mount talks to. */
@@ -517,7 +556,10 @@ export interface HostTheme {
   /** The name the palette goes by in Settings, in place of "Neutral". */
   readonly name?: string;
   /** Seeds for each mode. Either may be left out; with both, they pair. */
-  readonly palettes?: { readonly dark?: ThemeSeeds; readonly light?: ThemeSeeds };
+  readonly palettes?: {
+    readonly dark?: ThemeSeeds;
+    readonly light?: ThemeSeeds;
+  };
   /**
    * Colours set over what the seeds derive, per mode, by the theme's names without `--`
    * (`accent`, `on-accent`, `accent-text`, `status-needs`, …): an accent apart from the links, say.
@@ -527,13 +569,22 @@ export interface HostTheme {
     readonly light?: Readonly<Record<string, string>>;
   };
   /** Font stacks for text, code and display. */
-  readonly fonts?: { readonly ui?: string; readonly mono?: string; readonly display?: string };
+  readonly fonts?: {
+    readonly ui?: string;
+    readonly mono?: string;
+    readonly display?: string;
+  };
   /** Corner radii in pixels, by the theme's step names. */
-  readonly radii?: Partial<Record<"2xs" | "xs" | "sm" | "md" | "lg" | "xl", number>>;
+  readonly radii?: Partial<
+    Record<"2xs" | "xs" | "sm" | "md" | "lg" | "xl", number>
+  >;
   /** `"none"`: raised cards and menus are drawn by their edge, with no shadow. */
   readonly shadows?: "none";
   /** Colours for charts in order, per mode, as `--chart-1` onwards. */
-  readonly chart?: { readonly dark?: readonly string[]; readonly light?: readonly string[] };
+  readonly chart?: {
+    readonly dark?: readonly string[];
+    readonly light?: readonly string[];
+  };
 }
 
 export interface MountOptions {
