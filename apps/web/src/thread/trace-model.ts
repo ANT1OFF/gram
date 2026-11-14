@@ -69,6 +69,8 @@ export interface Trace {
 /** The model's time shorter than this between two calls is not a step: it is the hand-over. */
 export const MODEL_STEP_MIN_MS = 300;
 
+const NO_CALLS: ReadonlySet<string> = new Set();
+
 const SUBAGENT_TOOLS = new Set(["Task", "Agent"]);
 
 interface RawStep extends Omit<TraceStep, "left" | "width" | "took"> {}
@@ -97,6 +99,7 @@ function laneSteps(
   to: number | undefined,
   running: boolean,
   now: number,
+  awaiting: ReadonlySet<string>,
 ): RawStep[] {
   const steps: RawStep[] = [];
   let cursor = from;
@@ -122,7 +125,12 @@ function laneSteps(
     lastMessage = message.id;
     for (const part of message.parts) {
       if (!isToolPart(part)) continue;
-      const phase = phaseOf(part);
+      // A call held at its approval card waits on the person, though the agent reports it started.
+      const own = phaseOf(part);
+      const phase: ToolPhase =
+        (own === "running" || own === "pending") && awaiting.has(part.toolCallId)
+          ? "awaiting"
+          : own;
       const tone = TONE[phase];
       const time = message.metadata?.toolTimes?.[part.toolCallId];
       const start = time?.startedAt;
@@ -151,6 +159,7 @@ function laneSteps(
               end,
               tone === "running",
               now,
+              awaiting,
             );
       steps.push({
         id: part.toolCallId,
@@ -215,9 +224,22 @@ export function turnTrace(
   startedAt: number | undefined,
   endedAt: number | undefined,
   now: number,
+  /** The calls held at an approval card: they wait on the person. */
+  awaiting: ReadonlySet<string> = NO_CALLS,
 ): Trace | undefined {
   const running = endedAt === undefined;
-  const probe = laneSteps("turn", replies, children, usage, 0, undefined, undefined, false, now);
+  const probe = laneSteps(
+    "turn",
+    replies,
+    children,
+    usage,
+    0,
+    undefined,
+    undefined,
+    false,
+    now,
+    awaiting,
+  );
   const timed = probe.filter((step) => step.kind !== "model" && step.startedAt !== undefined);
   if (timed.length === 0) return undefined;
   const first = Math.min(...timed.map((step) => step.startedAt!));
@@ -225,7 +247,7 @@ export function turnTrace(
   const start = Math.min(startedAt ?? first, first);
   const end = Math.max(endedAt ?? now, last, start + 1);
   const span = end - start;
-  const raw = laneSteps("turn", replies, children, usage, 0, start, end, running, now);
+  const raw = laneSteps("turn", replies, children, usage, 0, start, end, running, now, awaiting);
   const steps: TraceStep[] = raw.map((step) => {
     if (step.startedAt === undefined) return { ...step, took: undefined };
     const live = step.tone === "running";
