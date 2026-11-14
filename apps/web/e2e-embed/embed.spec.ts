@@ -1126,3 +1126,16 @@ test.describe("on a phone", () => {
     expect(errors).toEqual([]);
   });
 });
+
+test("Back and a link out of Settings leave it for an added page", async ({ page }) => {
+  const errors = await mounted(page, "/w/acme/govern/policies");
+  await page.getByTestId("fixture-button").click();
+  await expect(page).toHaveURL(/\/w\/acme\/settings\/about$/);
+  // Back returns to the added page it came from, and stays there.
+  await page.getByTestId("settings-back").click();
+  await expect(page).toHaveURL(/\/w\/acme\/govern\/policies$/);
+  await expect(page.getByTestId("fixture-policies")).toBeVisible();
+  await page.waitForTimeout(300);
+  await expect(page).toHaveURL(/\/w\/acme\/govern\/policies$/);
+  expect(errors).toEqual([]);
+});
