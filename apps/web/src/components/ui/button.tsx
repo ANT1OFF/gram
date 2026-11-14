@@ -22,7 +22,7 @@ const buttonVariants = cva(
         default: `bg-primary text-primary-foreground hover:bg-primary/80 ${DISABLED_FILL}`,
         outline:
           "border-border bg-background text-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-transparent dark:hover:bg-muted disabled:bg-transparent data-disabled:bg-transparent",
-        secondary: `bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--surface-3),var(--fg)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground ${DISABLED_FILL}`,
+        secondary: `bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--surface-fill),var(--fg)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground ${DISABLED_FILL}`,
         // The row hover's fill (surface-hover), so an icon button shows its 28 px target in dark too.
         ghost:
           "hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground",
