@@ -12,6 +12,7 @@ import type {
   ShellNewEntry,
   ShellPageProps,
   ShellPanel,
+  ShellRepositories,
   ShellSidebar,
   ShellSlotProps,
   ShellMachines,
@@ -53,6 +54,8 @@ export interface EmbedShellState {
   readonly toolCards: readonly ShellToolCard[];
   /** The browser tab's title; Gram's own while empty. */
   readonly document: ShellDocument;
+  /** Where "Add repository" lists repositories; the server's `gh` listing while undefined. */
+  readonly repositories: ShellRepositories | undefined;
 }
 
 export const useEmbedShell = create<EmbedShellState>()(() => ({
@@ -71,6 +74,7 @@ export const useEmbedShell = create<EmbedShellState>()(() => ({
   sidebar: {},
   toolCards: [],
   document: {},
+  repositories: undefined,
 }));
 
 /** What the store holds before anything is added, and again after `unmount`. */
@@ -90,6 +94,7 @@ export const EMPTY_SHELL: EmbedShellState = {
   sidebar: {},
   toolCards: [],
   document: {},
+  repositories: undefined,
 };
 
 /** Whether the open sidebar is drawn in the embedding app's `roomy` look: never on Gram's own. */

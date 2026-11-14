@@ -186,6 +186,16 @@ pattern where `*` is any run of characters, and the first card that matches is u
 given the tool's `name`, its `input` and its `output` (JSON a tool sent as text arrives parsed),
 and returns null when it has nothing to show. Gram's row stays above it. Read once, at mount.
 
+**The repositories to clone.** `repositories: { list }` lists what "Add repository" (in a new
+workspace and a workspace's settings) offers as the person types, in place of the server's own
+`gh` listing, which a server with no GitHub login of its own can't give. `list({ query, cursor,
+signal })` answers a page: `repositories` (`fullName` as `owner/name`, and `private`), `next` for
+the page after, `account` (the person's own, listed first, then each organisation by name) and
+an optional `notice` with a link, shown under the list, say for where to grant access to more. It
+is asked again, from the first page, a moment after typing rests, and for the next page as the
+list is scrolled or walked to its end. A rejection's message is shown in the list. Any other
+`owner/repo` or URL can still be typed and cloned. Read once, at mount.
+
 **The compact sidebar.** Mounted on a server with hosted features on, the compact sidebar is a
 quiet strip of what the open one holds, in its order: your switcher, Needs you (a dot while
 anything waits), Search, your `main` groups' icons a gap apart, then at the foot your `foot`
