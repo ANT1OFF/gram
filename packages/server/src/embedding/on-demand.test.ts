@@ -17,7 +17,15 @@ import {
   type PlaceableMachine,
 } from "../host/headless.ts";
 import { embedFromEnv, scrubEmbedSecrets } from "./config.ts";
-import { makeOnDemandHosts, ownMachine, parseStart, statusFor, takeProgress } from "./on-demand.ts";
+import {
+  choicesFor,
+  makeOnDemandHosts,
+  ownMachine,
+  parseChoices,
+  parseStart,
+  statusFor,
+  takeProgress,
+} from "./on-demand.ts";
 import { ActingPerson } from "./person.ts";
 
 const id = (value: string) => value as HostId;
@@ -183,15 +191,81 @@ describe("hosts provisioned on demand: a background worker's person", () => {
 
 describe("hosts provisioned on demand: requests and progress", () => {
   it("takes a short list of repositories, or none", () => {
-    expect(parseStart("")).toEqual({ repositories: [] });
+    expect(parseStart("")).toEqual({ repositories: [], choices: {} });
     expect(parseStart('{"repositories":["acme/web","acme/web","acme/api"]}')).toEqual({
       repositories: ["acme/web", "acme/api"],
+      choices: {},
     });
     expect(parseStart('{"repositories":["../etc"]}')).toEqual(expect.any(String));
     expect(parseStart('{"repositories":["acme/.."]}')).toEqual(expect.any(String));
     expect(parseStart('{"repositories":"acme/web"}')).toEqual(expect.any(String));
     expect(parseStart("[]")).toEqual(expect.any(String));
     expect(parseStart("{")).toEqual(expect.any(String));
+  });
+
+  it("takes what a person picked, by short ids only", () => {
+    expect(parseStart('{"choices":{"size":"large","architecture":"arm64"}}')).toEqual({
+      repositories: [],
+      choices: { size: "large", architecture: "arm64" },
+    });
+    expect(parseStart('{"choices":{"size":"Large; rm -rf"}}')).toEqual(expect.any(String));
+    expect(parseStart('{"choices":{"../x":"a"}}')).toEqual(expect.any(String));
+    expect(parseStart('{"choices":["size"]}')).toEqual(expect.any(String));
+    expect(parseStart('{"choices":{"size":3}}')).toEqual(expect.any(String));
+  });
+
+  it("reads the provider's choices field by field, keeping only those with an option to pick", () => {
+    expect(
+      parseChoices({
+        note: "Acme allows up to Large.",
+        choices: [
+          {
+            id: "size",
+            label: "Size",
+            default: "xlarge",
+            options: [
+              { id: "small", label: "Small", detail: "1 CPU · 2 GB" },
+              { id: "large", label: "Large", available: true },
+              { id: "xlarge", label: "Extra large", available: false, note: "Above the limit" },
+              { id: "Bad Id", label: "Nope" },
+            ],
+          },
+          { id: "empty", label: "Nothing", options: [{ id: "x", label: "X", available: false }] },
+          { id: "no-options", label: "No options" },
+        ],
+      }),
+    ).toEqual({
+      note: "Acme allows up to Large.",
+      choices: [
+        {
+          id: "size",
+          label: "Size",
+          // The provider's default can't be picked, so the first that can is.
+          default: "small",
+          options: [
+            { id: "small", label: "Small", detail: "1 CPU · 2 GB", available: true },
+            { id: "large", label: "Large", available: true },
+            { id: "xlarge", label: "Extra large", available: false, note: "Above the limit" },
+          ],
+        },
+      ],
+    });
+    expect(parseChoices({ choices: [] })).toBeUndefined();
+    expect(parseChoices("size")).toBeUndefined();
+  });
+
+  it("asks the provider for a person's choices once in a while, and offers none it can't read", async () => {
+    const hosts = makeOnDemandHosts({ url: "https://provider.test" });
+    hosts.choices.set("ada", {
+      at: 1_000,
+      value: { choices: [{ id: "size", label: "Size", default: "small", options: [] }] },
+    });
+    // Still fresh: the provider is not asked.
+    expect((await Effect.runPromise(choicesFor(hosts, "ada", 2_000)))?.choices[0]?.id).toBe("size");
+    // A provider that can't be reached offers nothing, and that is kept a while too.
+    const none = await Effect.runPromise(choicesFor(hosts, "grace", 2_000));
+    expect(none).toBeUndefined();
+    expect(hosts.choices.get("grace")).toEqual({ at: 2_000 });
   });
 
   it("shows a person their own machine and progress, and no one else's", () => {
