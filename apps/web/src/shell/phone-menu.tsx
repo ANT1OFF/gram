@@ -1,6 +1,6 @@
 import { Drawer } from "@base-ui/react/drawer";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ChevronDown, History, Search, Settings } from "lucide-react";
+import { ChevronDown, History, Search, Settings, SunMoon } from "lucide-react";
 import { createElement, useEffect, useId, useRef, useState } from "react";
 
 import { EmbedSwitcher, ItemIcon, linkTo, useCurrentDestination } from "@/embed/slots";
@@ -332,12 +332,13 @@ function YouButton() {
                   )}
                 </Link>
                 <div className={cn(ROW, "hover:bg-transparent motion-safe:active:scale-100")}>
+                  <SunMoon aria-hidden />
                   <span className="flex-1 truncate">Theme</span>
                   <div
                     role="radiogroup"
                     aria-label="Theme"
                     data-testid="phone-menu-theme"
-                    className="flex shrink-0 gap-0.5 rounded-full bg-sidebar-row-active p-1"
+                    className="flex shrink-0 gap-0.5 rounded-full border border-border bg-background p-1"
                   >
                     {MODE_PREFS.map((choice) => (
                       <button
@@ -346,7 +347,7 @@ function YouButton() {
                         role="radio"
                         aria-checked={mode === choice}
                         onClick={() => switchTheme({ mode: choice })}
-                        className="h-9 rounded-full px-3.5 text-body text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring aria-checked:bg-background aria-checked:font-medium aria-checked:text-foreground aria-checked:shadow-raised"
+                        className="h-9 rounded-full px-3.5 text-body text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring aria-checked:bg-popover aria-checked:font-medium aria-checked:text-foreground aria-checked:shadow-raised"
                       >
                         {MODE_WORDS[choice]}
                       </button>
