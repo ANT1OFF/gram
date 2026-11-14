@@ -557,8 +557,9 @@ export const makeAgentEvents = ({
           const compactionChanged = !sameCompaction(rt.compaction, compaction);
           const compactionStartedAt = compaction?.startedAt ?? rt.compaction?.startedAt;
           // Compacting is the agent at work, however little it streams: its start and end count as
-          // progress, so the silent-tool watch measures from them.
-          if (compactionChanged) {
+          // progress, so the silent-tool watch measures from them. So does the agent saying again
+          // that its turn runs, as Claude does while a long hook holds a tool call.
+          if (compactionChanged || (event.status === "running" && rt.status === "running")) {
             rt.lastProgressAt = yield* Clock.currentTimeMillis;
             yield* clearQuiet(rt);
           }

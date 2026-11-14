@@ -1237,12 +1237,39 @@ const make = Effect.gen(function* () {
   /** Set once the switch is made: a thread back from the archive gets what its switch owes it. */
   let switchUnarchived: ((threadId: ThreadId) => Effect.Effect<void>) | undefined;
 
+  /**
+   * Archives a thread's own agent session in the agent's list as Gram archives the thread, and
+   * takes the mark off as it comes back, so the agent's resume list agrees. This machine's
+   * sessions only, in the background, and best effort: a session the agent no longer has is no
+   * failure of the archive.
+   */
+  const markAgentSession = (thread: Thread) =>
+    Effect.gen(function* () {
+      const agentSessionId = thread.agentSessionId;
+      if (agentSessionId === undefined || thread.checkout.hostId !== undefined) return;
+      const host = yield* hosts.get(thread.model.agent).pipe(Effect.option);
+      const mark = Option.getOrUndefined(host)?.setSessionArchived;
+      if (mark === undefined) return;
+      yield* dispatch(
+        thread.id,
+        "agent session archive mark",
+        mark({ cwd: thread.checkout.path, agentSessionId, archived: thread.parked }).pipe(
+          Effect.catch((error) =>
+            Effect.logDebug("agent session archive mark skipped").pipe(
+              Effect.annotateLogs({ threadId: thread.id, message: error.message }),
+            ),
+          ),
+        ),
+      );
+    });
+
   const updateThread: ThreadRuntimesShape["updateThread"] = (threadId, f, authorityCaller) =>
     Effect.gen(function* () {
       const before = yield* store.getThread(threadId);
       const thread = yield* store.updateThread(threadId, f, authorityCaller);
       yield* publishUpsert(thread);
       const unarchived = before.parked && !thread.parked;
+      if (before.parked !== thread.parked) yield* markAgentSession(thread);
       // A switch that waited for the thread to come back gives it what it owes, ahead of its queue.
       if (unarchived && switchUnarchived !== undefined) yield* switchUnarchived(threadId);
       const rt =

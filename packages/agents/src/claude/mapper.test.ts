@@ -2089,6 +2089,60 @@ describe("running shell output", () => {
     expect(other.runningShells()).toEqual([]);
   });
 
+  it("says a hook's heartbeat as the turn still running, and only while it runs", () => {
+    const beat = {
+      type: "tool_progress",
+      tool_use_id: "hook-PreToolUse-t1-heartbeat-0",
+      tool_name: "PreToolUse",
+      parent_tool_use_id: "t1",
+      elapsed_time_seconds: 30,
+      heartbeat: true,
+      ...base,
+    } as unknown as SDKMessage;
+    const mapper = newMapper();
+    mapper.map(system("session_state_changed", { state: "running" }));
+    mapper.map(bashCall("t1"));
+    expect(mapper.map(beat)).toEqual([{ type: "status", status: "running" }]);
+    expect(mapper.runningShells()).toEqual([]);
+    // Between turns a late beat says nothing.
+    mapper.map(system("session_state_changed", { state: "idle" }));
+    expect(mapper.map(beat)).toEqual([]);
+  });
+
+  it("warns when a tool hook gave no verdict, and leaves other informational lines out", () => {
+    const mapper = newMapper();
+    expect(
+      mapper.map(
+        system("informational", {
+          level: "warning",
+          tag: "hook_no_verdict",
+          content: "PreToolUse hook timed out",
+          hook_no_verdict: { hook_event: "PreToolUse", tool_use_id: "t1", timed_out: true },
+        }),
+      ),
+    ).toEqual([
+      {
+        type: "notice",
+        level: "warning",
+        message:
+          "A tool check timed out without an answer, so Claude went ahead with the call. Other checks and rules still applied.",
+      },
+    ]);
+    expect(
+      mapper.map(
+        system("informational", {
+          level: "warning",
+          tag: "hook_no_verdict",
+          content: "PreToolUse hook failed",
+          hook_no_verdict: { hook_event: "PreToolUse", tool_use_id: "t2", timed_out: false },
+        }),
+      ),
+    ).toMatchObject([{ type: "notice", message: expect.stringContaining("failed without") }]);
+    expect(
+      mapper.map(system("informational", { level: "notice", content: "Hook output" })),
+    ).toEqual([]);
+  });
+
   it("follows backgrounded shells and a move to the background apart, and leaves out other tools", () => {
     const mapper = newMapper();
     mapper.map(
