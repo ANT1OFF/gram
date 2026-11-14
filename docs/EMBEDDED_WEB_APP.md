@@ -332,7 +332,9 @@ how the wait stands. Nothing is mounted for it: the thread carries the state.
     shell: {
       machines: {
         startAgain: async ({ threadId }) => {
-          await fetch(`/api/threads/${threadId}/machine`, { method: "POST" });
+          const res = await fetch(`/api/threads/${threadId}/machine`, { method: "POST" });
+          // `fetch` resolves on an error status too: reject, or the page reads it as asked.
+          if (!res.ok) throw new Error("The machine could not be asked for.");
         },
       },
     },
@@ -345,8 +347,13 @@ how the wait stands. Nothing is mounted for it: the thread carries the state.
   page then reads "Starting a machine again · the first didn't start", counted from the new try;
   it reads so at once in the window that asked, and everywhere once the wait has begun again on the
   server. Reject (or throw) when you can't ask: the failure stays, with "Couldn't ask for another
-  machine." and your error's message under it. It is called once per press, never while an earlier
-  call is still out. Read once, at mount.
+  machine." and your error's message under it. Within one window it is called once per press, never
+  while an earlier call for the same thread is still out, however many panes show the thread. A
+  second window, or the page loaded again, knows nothing of a call still out and offers Try again
+  until the wait has begun again on the server: so begin the wait before anything slow, and make
+  the call safe to repeat for a thread (one machine, not two). If the wait has not begun again a
+  minute after you resolved, the window that asked shows the failure and Try again once more. Read
+  once, at mount.
 
   Without `startAgain` the failure has no button and says "What you sent is kept. To try again,
   start the thread again."

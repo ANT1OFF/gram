@@ -9,6 +9,7 @@ import { formatClockTime } from "@/lib/time";
 import { useThreadsStore } from "@/stores/threads";
 
 import { AwaitingMachine, AwaitingMachineChip, resetAskedAgain } from "./awaiting-machine";
+import { ASKED_LAPSE_MS } from "./awaiting-machine-model";
 import { MachineChip } from "./machine-chip";
 
 const T = "t-wait" as ThreadId;
@@ -182,6 +183,62 @@ describe("a waiting thread's conversation", () => {
       "Couldn't ask for another machine. You have reached your limit of machines.",
     );
     expect(screen.getByTestId("machine-wait-failed")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("asks once for a thread however many of its cards are drawn, and across leaving and coming back", async () => {
+    let asked!: () => void;
+    const startAgain = vi.fn(() => new Promise<void>((resolve) => (asked = resolve)));
+    useEmbedShell.setState({ machines: { startAgain } });
+    const thread = failed();
+    // The same thread in two panes: each draws its own card.
+    const first = render(<AwaitingMachine thread={thread} />);
+    render(<AwaitingMachine thread={thread} />);
+    const [one, two] = screen.getAllByRole("button", { name: "Try again" });
+    fireEvent.click(one!);
+    await waitFor(() => expect(startAgain).toHaveBeenCalledTimes(1));
+    expect(two!.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(two!);
+    // Left and come back to while the call is out: the card drawn anew still waits for it.
+    first.unmount();
+    render(<AwaitingMachine thread={thread} />);
+    for (const button of screen.getAllByRole("button", { name: "Try again" })) {
+      expect(button.hasAttribute("disabled")).toBe(true);
+      fireEvent.click(button);
+    }
+    expect(startAgain).toHaveBeenCalledTimes(1);
+    await act(async () => asked());
+    expect(screen.getAllByTestId("machine-wait-starting")).toHaveLength(2);
+  });
+
+  it("says why the ask was refused on a card drawn after the refusal", async () => {
+    let refuse!: (error: Error) => void;
+    const startAgain = vi.fn(() => new Promise<void>((_, reject) => (refuse = reject)));
+    useEmbedShell.setState({ machines: { startAgain } });
+    const thread = failed();
+    const first = render(<AwaitingMachine thread={thread} />);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(startAgain).toHaveBeenCalledTimes(1));
+    first.unmount();
+    await act(async () => refuse(new Error("No capacity.")));
+    render(<AwaitingMachine thread={thread} />);
+    expect(screen.getByTestId("machine-wait-retry-failed").textContent).toBe(
+      "Couldn't ask for another machine. No capacity.",
+    );
+    expect(screen.getByRole("button", { name: "Try again" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("brings the failure and Try again back when the wait never begins again", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const startAgain = vi.fn(async () => {});
+    useEmbedShell.setState({ machines: { startAgain } });
+    render(<AwaitingMachine thread={failed()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(screen.getByTestId("machine-wait-starting")).toBeTruthy();
+    await act(async () => vi.advanceTimersByTimeAsync(ASKED_LAPSE_MS));
+    expect(screen.queryByTestId("machine-wait-starting")).toBeNull();
     expect(screen.getByRole("button", { name: "Try again" }).hasAttribute("disabled")).toBe(false);
   });
 

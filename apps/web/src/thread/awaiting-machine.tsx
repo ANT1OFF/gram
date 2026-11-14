@@ -1,6 +1,6 @@
 import type { QueuedInput, Thread, ThreadId } from "@gram/contracts";
 import { CircleAlert, CircleX, Clock } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { create } from "zustand";
 
 import { errorMessage } from "@/api/errors";
@@ -16,6 +16,7 @@ import { Spinner } from "@/motion/spinner";
 import { useThreadsStore } from "@/stores/threads";
 
 import {
+  ASKED_LAPSE_MS,
   elapsedClock,
   machineWait,
   startingHint,
@@ -30,19 +31,51 @@ import {
 
 const EMPTY: readonly QueuedInput[] = [];
 
-/** The tries the person asked for in this window, by thread, until each thread says its own. */
-const useAskedAgain = create<{ readonly byThread: Readonly<Record<string, AskedAgain>> }>()(() => ({
-  byThread: {},
-}));
+/**
+ * The tries the person asked for in this window, by thread, until each thread says its own. Held
+ * here and not in the card, which is drawn again whenever its pane is (a thread left and come back
+ * to, or shown twice): a call still out, or its refusal, is the thread's and not one card's.
+ */
+const useAskedAgain = create<{
+  readonly byThread: Readonly<Record<string, AskedAgain>>;
+  /** Threads whose call to ask for another machine is still out. */
+  readonly pending: Readonly<Record<string, true>>;
+  /** Why the last call was refused, with the failure it was asked after. */
+  readonly refused: Readonly<Record<string, { readonly after: number; readonly words: string }>>;
+}>()(() => ({ byThread: {}, pending: {}, refused: {} }));
+
+const without = <T,>(
+  all: Readonly<Record<string, T>>,
+  key: string,
+): Readonly<Record<string, T>> => {
+  const { [key]: _gone, ...rest } = all;
+  return rest;
+};
 
 /** Forgets every try asked for here. For tests. */
-export const resetAskedAgain = () => useAskedAgain.setState({ byThread: {} });
+export const resetAskedAgain = () =>
+  useAskedAgain.setState({ byThread: {}, pending: {}, refused: {} });
 
-/** A thread's wait as this window knows it: the thread's own, with a try just asked for here. */
+/**
+ * A thread's wait as this window knows it: the thread's own, with a try just asked for here. A try
+ * the thread never took up (its wait didn't begin again within `ASKED_LAPSE_MS`) is forgotten, so
+ * the failure and Try again come back instead of a clock that runs for good.
+ */
 export function useMachineWait(
   thread: Pick<Thread, "id" | "awaitingMachine" | "createdAt">,
 ): MachineWait | undefined {
   const asked = useAskedAgain((s) => s.byThread[thread.id]);
+  const threadId = thread.id;
+  const askedAt = asked?.at;
+  useEffect(() => {
+    if (askedAt === undefined) return;
+    const forget = () =>
+      useAskedAgain.setState((s) =>
+        s.byThread[threadId]?.at === askedAt ? { byThread: without(s.byThread, threadId) } : s,
+      );
+    const timer = setTimeout(forget, Math.max(0, askedAt + ASKED_LAPSE_MS - Date.now()));
+    return () => clearTimeout(timer);
+  }, [threadId, askedAt]);
   return machineWait(thread, asked);
 }
 
@@ -159,12 +192,18 @@ function FailedCard({
   failedAt: number;
 }) {
   const startAgain = useEmbedShell((s) => s.machines.startAgain);
-  const [pending, setPending] = useState(false);
-  const [refused, setRefused] = useState<string>();
+  const pending = useAskedAgain((s) => s.pending[threadId] === true);
+  // A refusal is of the failure it was asked after: a newer failure starts clean.
+  const refused = useAskedAgain((s) =>
+    s.refused[threadId]?.after === failedAt ? s.refused[threadId]?.words : undefined,
+  );
   const retry = () => {
-    if (startAgain === undefined || pending) return;
-    setPending(true);
-    setRefused(undefined);
+    // Read from the store, not this drawing: another card of the same thread may have asked.
+    if (startAgain === undefined || useAskedAgain.getState().pending[threadId] === true) return;
+    useAskedAgain.setState((s) => ({
+      pending: { ...s.pending, [threadId]: true },
+      refused: without(s.refused, threadId),
+    }));
     // A handler that throws at once is a refusal like one that rejects.
     void Promise.resolve()
       .then(() => startAgain({ threadId }))
@@ -175,10 +214,13 @@ function FailedCard({
           })),
         (error: unknown) => {
           const why = errorMessage(error).trim();
-          setRefused(why === "" ? WAIT_WORDS.retryFailed : `${WAIT_WORDS.retryFailed} ${why}`);
+          const words = why === "" ? WAIT_WORDS.retryFailed : `${WAIT_WORDS.retryFailed} ${why}`;
+          useAskedAgain.setState((s) => ({
+            refused: { ...s.refused, [threadId]: { after: failedAt, words } },
+          }));
         },
       )
-      .finally(() => setPending(false));
+      .finally(() => useAskedAgain.setState((s) => ({ pending: without(s.pending, threadId) })));
   };
   return (
     <Alert
@@ -208,6 +250,7 @@ function FailedCard({
             variant="outline"
             data-testid="machine-wait-retry"
             disabled={pending}
+            aria-busy={pending || undefined}
             onClick={retry}
             className="shrink-0"
           >
