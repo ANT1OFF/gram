@@ -29,9 +29,8 @@ import { CompactionActivity, ThreadStatus } from "./thread-status.ts";
 // ---------------------------------------------------------------------------------------------
 // Agents, models, profiles
 
-/** The agent CLIs Gram runs. */
-export const AgentKind = Schema.Literals(["claude", "codex"]);
-export type AgentKind = typeof AgentKind.Type;
+import { AgentKind } from "./agent-kind.ts";
+export { AgentKind };
 
 /** Claude's permission modes. `dontAsk` is SDK-only but can arrive in a `setMode` suggestion. */
 export const PermissionMode = Schema.Literals([
@@ -181,21 +180,26 @@ export const gatewayModelUsable = (model: GatewayModel): boolean => {
 /** OpenRouter's OpenAI-style root: Codex appends `/responses`, Claude Code drops `/v1`. */
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
-/** The maker whose models each agent runs on an `openrouter` gateway; the others it runs poorly. */
-const OPENROUTER_MAKERS: Readonly<Record<AgentKind, string>> = {
-  claude: "anthropic/",
-  codex: "openai/",
-};
-
 /**
- * Whether `agent` is offered `model` on `profile`: always on a LiteLLM-style gateway, only its
- * own maker's models on OpenRouter.
+ * Whether `agent` is offered `model` on `profile`: always on a LiteLLM-style gateway. On
+ * OpenRouter, Claude Code gets Anthropic's models and Codex OpenAI's, the ones each runs well, and
+ * OpenCode every other maker's: never Anthropic's, which stay with Claude Code.
  */
 export const gatewayModelForAgent = (
   profile: Pick<GatewayProfile, "kind">,
   model: Pick<GatewayModel, "id">,
   agent: AgentKind,
-): boolean => profile.kind !== "openrouter" || model.id.startsWith(OPENROUTER_MAKERS[agent]);
+): boolean => {
+  if (profile.kind !== "openrouter") return true;
+  switch (agent) {
+    case "claude":
+      return model.id.startsWith("anthropic/");
+    case "codex":
+      return model.id.startsWith("openai/");
+    case "opencode":
+      return !model.id.startsWith("anthropic/") && !model.id.startsWith("~anthropic/");
+  }
+};
 
 /** A synthetic gateway profile on a reserved host, for tests and examples. */
 export const EXAMPLE_GATEWAY = {

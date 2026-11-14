@@ -199,7 +199,36 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "session-retarget",
   "file-parts",
   "wip-restore",
+  "agent-opencode",
 ];
+
+/** Why an OpenCode session isn't opened on a host that doesn't name `agent-opencode`. */
+export const HOST_OPENCODE_MISSING =
+  "Its gram-host is older than this Gram and doesn't know OpenCode. Update Gram there (Settings → Machines), then try again.";
+
+/**
+ * `input` as a host that doesn't know OpenCode can read it: an orchestration digest names each
+ * worker's agent, and an OpenCode worker's is left out, as a ledger from before agents were named.
+ */
+export const withoutOpenCodeAgents = (input: UserInput): UserInput => {
+  const notice = input.notice;
+  if (notice?.kind !== "orchestration") return input;
+  if (!notice.features.some((f) => f.workers.some((w) => w.agent === "opencode"))) return input;
+  return {
+    ...input,
+    notice: {
+      ...notice,
+      features: notice.features.map((feature) => ({
+        ...feature,
+        workers: feature.workers.map((worker) => {
+          if (worker.agent !== "opencode") return worker;
+          const { agent: _agent, ...rest } = worker;
+          return rest;
+        }),
+      })),
+    },
+  };
+};
 
 const pairs = (map: ReadonlyMap<number, ReadonlyArray<number>>) =>
   [...map].map(([pid, values]) => [pid, [...values]] as const);
@@ -1326,19 +1355,30 @@ export const connectHost = (
         ),
       );
     const browserPolicy = hostServes(hello, "browser-policy");
+    const knowsOpenCode = hostServes(hello, "agent-opencode");
+    const readable = (input: UserInput) => (knowsOpenCode ? input : withoutOpenCodeAgents(input));
     const sessions: HostSessionsConnection = {
       browserPolicy,
-      // Refused before it reaches a host that can't hold the browser off, whoever routed it here.
+      // Refused before it reaches a host that can't hold the browser off, or doesn't know the
+      // agent, whoever routed it here.
       open: (request) =>
-        browserPolicy
-          ? sessionCall(client["host.sessions.open"](request), isAgentUnavailable)
-          : Effect.fail(
+        !browserPolicy
+          ? Effect.fail(
               new AgentUnavailable({
                 agent: request.agent,
                 reason: "startup-failed",
                 message: HOST_BROWSER_POLICY_MISSING,
               }),
-            ),
+            )
+          : request.agent === "opencode" && !knowsOpenCode
+            ? Effect.fail(
+                new AgentUnavailable({
+                  agent: request.agent,
+                  reason: "startup-failed",
+                  message: HOST_OPENCODE_MISSING,
+                }),
+              )
+            : sessionCall(client["host.sessions.open"](request), isAgentUnavailable),
       events: (handle, afterSeq) =>
         hostStream(client["host.sessions.events"]({ handle, afterSeq })),
       ack: (handle, seq) =>
@@ -1352,7 +1392,7 @@ export const connectHost = (
           client["host.sessions.send"](
             defined({
               handle,
-              input,
+              input: readable(input),
               messageId: sendOptions?.messageId,
               deliveryId: sendOptions?.deliveryId,
             }),
@@ -1362,7 +1402,7 @@ export const connectHost = (
       steer: (handle, input, steerOptions) =>
         sessionCall(
           client["host.sessions.steer"](
-            defined({ handle, input, deliveryId: steerOptions?.deliveryId }),
+            defined({ handle, input: readable(input), deliveryId: steerOptions?.deliveryId }),
           ),
           none,
         ),
@@ -1432,8 +1472,11 @@ export const connectHost = (
       },
       // A host that went took its sessions with it, so there is nothing left to close.
       close: (handle) => guarded(client["host.sessions.close"]({ handle })).pipe(Effect.ignore),
+      // A host that doesn't know OpenCode keeps no OpenCode config to drop.
       reload: (agent, reload) =>
-        guarded(client["host.sessions.reload"]({ agent, reload })).pipe(Effect.ignore),
+        agent === "opencode" && !knowsOpenCode
+          ? Effect.void
+          : guarded(client["host.sessions.reload"]({ agent, reload })).pipe(Effect.ignore),
     };
     /**
      * A token call: the host's own refusal passes as it is; anything else (an older host's

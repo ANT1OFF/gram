@@ -33,6 +33,7 @@ const AGENT_NAMES = AGENT_LABEL;
 export const AGENT_SHORT: Readonly<Record<AgentKind, string>> = {
   claude: "Claude",
   codex: "Codex",
+  opencode: "OpenCode",
 };
 
 export const otherAgent = (agent: AgentKind): AgentKind =>
@@ -254,9 +255,14 @@ export const defaultTarget = (input: {
     const row = findListed(current.agent, input.currentModels ?? [], id);
     return row !== undefined && (row.id === current.model || row.resolvedId === current.model);
   };
-  const tier = TIERS.find((each) => RECOMMENDED.tiers[each][current.agent].models.some(runs));
+  // The table names no OpenCode models, so a switch to or from it starts at the target's default.
+  const from = current.agent;
+  const tier =
+    from === "opencode"
+      ? undefined
+      : TIERS.find((each) => RECOMMENDED.tiers[each][from].models.some(runs));
   const resolved =
-    tier === undefined
+    tier === undefined || to === "opencode"
       ? undefined
       : resolveTier(RECOMMENDED, { tier, agent: to }, { [to]: models });
   const chosen = input.picked === undefined ? undefined : models.find((m) => m.id === input.picked);

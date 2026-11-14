@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { AgentKind, ModelRef, type ReasoningVariant } from "./domain.ts";
+import { type AgentKind, ModelRef, type ReasoningVariant } from "./domain.ts";
 import { claudeLabel } from "./model-catalogue.ts";
 import type { AgentModel } from "./models.ts";
 import data from "./recommended/table.json" with { type: "json" };
@@ -23,9 +23,13 @@ export const aboveHigh = (effort: ReasoningVariant): boolean =>
  * A slot that follows the recommendation: resolved through the table each time it's used, on the
  * machine it runs on. `agent` keeps it on one harness, `variant` at one effort, still following.
  */
+/** The harnesses the recommendation table covers; OpenCode runs the models neither of them does. */
+export const TierAgent = Schema.Literals(["claude", "codex"]);
+export type TierAgent = typeof TierAgent.Type;
+
 export const TierRef = Schema.Struct({
   tier: Tier,
-  agent: Schema.optionalKey(AgentKind),
+  agent: Schema.optionalKey(TierAgent),
   variant: Schema.optionalKey(FollowEffort),
 });
 export type TierRef = typeof TierRef.Type;
@@ -101,7 +105,7 @@ export const RecommendationTable = Schema.Struct({
   version: Schema.NonEmptyString,
   tiers: Schema.Struct({ cheap: TierPick, scoped: TierPick, lead: TierPick, top: TierPick }),
   /** With both harnesses signed in, which one fills each tier first. */
-  both: Schema.Struct({ cheap: AgentKind, scoped: AgentKind, lead: AgentKind, top: AgentKind }),
+  both: Schema.Struct({ cheap: TierAgent, scoped: TierAgent, lead: TierAgent, top: TierAgent }),
 });
 export type RecommendationTable = typeof RecommendationTable.Type;
 
@@ -136,6 +140,7 @@ export const recommendedChanges = (
 export interface AvailableModels {
   readonly claude?: ReadonlyArray<AgentModel> | undefined;
   readonly codex?: ReadonlyArray<AgentModel> | undefined;
+  readonly opencode?: ReadonlyArray<AgentModel> | undefined;
 }
 
 export type Setup = "claude" | "codex" | "both" | "none";
@@ -150,15 +155,15 @@ export const setupOf = (available: AvailableModels): Setup => {
   return claude && codex ? "both" : claude ? "claude" : codex ? "codex" : "none";
 };
 
-const other = (agent: AgentKind): AgentKind => (agent === "claude" ? "codex" : "claude");
+const other = (agent: TierAgent): TierAgent => (agent === "claude" ? "codex" : "claude");
 
 /** The harnesses a tier tries, in order, for this setup (or only the slot's own harness). */
 export const tierAgents = (
   table: RecommendationTable,
   tier: Tier,
   setup: Setup,
-  agent?: AgentKind,
-): ReadonlyArray<AgentKind> => {
+  agent?: TierAgent,
+): ReadonlyArray<TierAgent> => {
   if (agent !== undefined) return [agent];
   if (setup === "both") return [table.both[tier], other(table.both[tier])];
   return setup === "none" ? [] : [setup];
@@ -205,7 +210,7 @@ export const clampEffort = (
 
 export interface ResolvedTier {
   readonly tier: Tier;
-  readonly agent: AgentKind;
+  readonly agent: TierAgent;
   /** The listed row it runs on, for its label. */
   readonly listed: AgentModel;
   /** What a thread records: concrete, so a running thread never changes under itself. */
@@ -213,7 +218,7 @@ export interface ResolvedTier {
 }
 
 /** The tier's starting effort on `agent`, before the slot's own and the model's clamp. */
-export const tierEffort = (table: RecommendationTable, tier: Tier, agent: AgentKind) =>
+export const tierEffort = (table: RecommendationTable, tier: Tier, agent: TierAgent) =>
   table.tiers[tier][agent].effort ?? table.tiers[tier].effort;
 
 /**
@@ -253,7 +258,7 @@ const TIER_NAMES: Record<Tier, string> = {
   lead: "Lead",
   top: "Top",
 };
-const AGENT_NAMES: Record<AgentKind, string> = { claude: "Claude", codex: "Codex" };
+const AGENT_NAMES: Record<TierAgent, string> = { claude: "Claude", codex: "Codex" };
 
 export const tierName = (tier: Tier): string => TIER_NAMES[tier];
 
@@ -267,7 +272,7 @@ export const tableDiff = (
 ): ReadonlyArray<string> => {
   const lines: Array<string> = [];
   for (const tier of TIERS) {
-    for (const agent of AgentKind.literals) {
+    for (const agent of TierAgent.literals) {
       const was = `${before.tiers[tier][agent].models[0]} · ${tierEffort(before, tier, agent)}`;
       const now = `${after.tiers[tier][agent].models[0]} · ${tierEffort(after, tier, agent)}`;
       if (was !== now) lines.push(`${TIER_NAMES[tier]} on ${AGENT_NAMES[agent]}: ${was} → ${now}`);

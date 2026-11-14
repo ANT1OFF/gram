@@ -234,7 +234,11 @@ describe("ThreadProfile", () => {
       },
     ];
     const files = [{ path: "AGENTS.md", content: "Rules.\n" }];
-    expect(PROFILE_SKILLS_DIR).toEqual({ claude: ".claude/skills", codex: ".agents/skills" });
+    expect(PROFILE_SKILLS_DIR).toEqual({
+      claude: ".claude/skills",
+      codex: ".agents/skills",
+      opencode: ".opencode/skills",
+    });
     expect(profileFilesOf({ agent: "claude", files, skills })).toEqual([
       { path: "AGENTS.md", content: "Rules.\n" },
       {
