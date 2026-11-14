@@ -570,6 +570,209 @@ describe("merge_when_ready guidance at full autonomy", () => {
     );
   }
 
+  /**
+   * A worker's own PR, its branch held in the worktree Gram gave it, where only the origin its
+   * checkout names (`origin`) and the host its PR is on (`prHost`) vary.
+   */
+  const HOSTS = [
+    {
+      label: "a lookalike host",
+      origin: "https://github.com.evil.example/acme/app.git",
+      owned: false,
+    },
+    {
+      label: "a hyphenated lookalike",
+      origin: "https://github-com.example/acme/app.git",
+      owned: false,
+    },
+    { label: "an scp lookalike", origin: "git@github.com.evil.example:acme/app.git", owned: false },
+    {
+      label: "an Enterprise origin for a GitHub PR",
+      origin: "https://ghe.example.test/acme/app.git",
+      owned: false,
+    },
+    {
+      label: "a GitHub origin for an Enterprise PR",
+      origin: "https://github.com/acme/app.git",
+      prHost: "ghe.example.test",
+      owned: false,
+    },
+    {
+      label: "a neighbouring Enterprise host",
+      origin: "https://other-ghe.example.test/acme/app.git",
+      prHost: "ghe.example.test",
+      owned: false,
+    },
+    { label: "GitHub's www alias", origin: "https://www.github.com/acme/app", owned: true },
+    {
+      label: "GitHub's ssh alias",
+      origin: "ssh://git@ssh.github.com:443/acme/app.git",
+      owned: true,
+    },
+    {
+      label: "the Enterprise PR's own host",
+      origin: "git@ghe.example.test:acme/app.git",
+      prHost: "ghe.example.test",
+      owned: true,
+    },
+  ] as const;
+
+  for (const each of HOSTS) {
+    it.effect.skipIf(!hasGit)(
+      `${each.owned ? "arms" : "asks before arming"} a worker's own PR from ${each.label}`,
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          world.origin = each.origin;
+          world.prHost = "prHost" in each ? each.prHost : undefined;
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const store = yield* ThreadStore;
+              const runtimes = yield* ThreadRuntimes;
+              const registry = yield* AppToolRegistry;
+              const { session, thread } = yield* openOrchestrator(world);
+              const worker = yield* spawn(session, { feature: "hosted" });
+              yield* completeTurn(worker.session);
+              yield* atAutonomy(thread, "full");
+              world.prHeads.set(12, { headRefName: worker.thread.checkout.branch! });
+              const tools = registry.forTransport(worker.thread.id, "worker");
+              yield* tools
+                .find((t) => t.descriptor.name === "pr_bind")!
+                .run({ repo: "acme/app", number: 12 });
+              const merge = tools.find((t) => t.descriptor.name === "merge_when_ready")!;
+              expect(yield* merge.delegatedAtFullAutonomy!({})).toBe(each.owned);
+              if (each.owned) {
+                yield* merge.run({});
+                expect(
+                  (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
+                ).toMatchObject({ allowedBy: "autonomy" });
+                expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
+                return;
+              }
+              const call = yield* Effect.forkScoped(merge.run({}).pipe(Effect.flip));
+              const card = yield* waitReal(
+                "the approval card",
+                store.listRequests(worker.thread.id).pipe(Effect.map((all) => all[0])),
+              );
+              if (card.kind !== "approval") throw new Error("not an approval");
+              expect(card.autonomyNote).toBe(
+                "full auto, PR ownership unverified: it is in another repository than the worktree Gram gave the worker",
+              );
+              yield* runtimes.respond(worker.thread.id, card.id, {
+                kind: "approval",
+                decision: "deny",
+                scope: "once",
+              });
+              yield* Fiber.join(call);
+              expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
+            }),
+          );
+        }).pipe(Effect.scoped),
+    );
+  }
+
+  /**
+   * An armed merge of a worker's own PR whose checkout's origin turns into `to` before its launch
+   * looks again, or during GitHub's fresh read; `prHost` is where the PR is.
+   */
+  const SWITCHES = [
+    {
+      label: "a lookalike host",
+      from: "https://github.com/acme/app.git",
+      to: "https://github.com.evil.example/acme/app.git",
+    },
+    {
+      label: "an Enterprise origin for a GitHub PR",
+      from: "https://github.com/acme/app.git",
+      to: "https://ghe.example.test/acme/app.git",
+    },
+    {
+      label: "a GitHub origin for an Enterprise PR",
+      from: "https://ghe.example.test/acme/app.git",
+      to: "https://github.com/acme/app.git",
+      prHost: "ghe.example.test",
+    },
+    {
+      label: "nothing, on the Enterprise PR's own host",
+      from: "https://ghe.example.test/acme/app.git",
+      to: "https://ghe.example.test/acme/app.git",
+      prHost: "ghe.example.test",
+    },
+  ] as const;
+
+  for (const each of SWITCHES)
+    for (const when of ["before the launch", "during the fresh read"] as const) {
+      const merges = each.from === each.to;
+      it.effect.skipIf(!hasGit)(
+        `an armed merge whose origin turns to ${each.label} ${when} ${merges ? "merges" : "doesn't launch"}`,
+        () =>
+          Effect.gen(function* () {
+            const world = yield* makeWorld;
+            world.origin = each.from;
+            const prHost = "prHost" in each ? each.prHost : "github.com";
+            world.prHost = prHost;
+            yield* withServer(
+              world,
+              Effect.gen(function* () {
+                const store = yield* ThreadStore;
+                const registry = yield* AppToolRegistry;
+                const { session, thread } = yield* openOrchestrator(world);
+                const worker = yield* spawn(session, { feature: "switched" });
+                yield* completeTurn(worker.session);
+                yield* atAutonomy(thread, "full");
+                world.prHeads.set(12, { headRefName: worker.thread.checkout.branch! });
+                const tools = registry.forTransport(worker.thread.id, "worker");
+                yield* tools
+                  .find((t) => t.descriptor.name === "pr_bind")!
+                  .run({ repo: "acme/app", number: 12 });
+                const publish = (approved: boolean) =>
+                  store.getThread(worker.thread.id).pipe(
+                    Effect.flatMap((t) =>
+                      publishGit(world, t, {
+                        pr: {
+                          ...armedWorkerBadge(approved),
+                          url: `https://${prHost}/acme/app/pull/12`,
+                        },
+                      }),
+                    ),
+                  );
+                yield* publish(false);
+                yield* tools.find((t) => t.descriptor.name === "merge_when_ready")!.run({});
+                expect(
+                  (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
+                ).toMatchObject({ allowedBy: "autonomy" });
+                let switched = false;
+                if (when === "before the launch") {
+                  world.origin = each.to;
+                  switched = true;
+                } else
+                  world.freshPrRead = Effect.sync(() => {
+                    world.freshPrRead = undefined;
+                    world.origin = each.to;
+                    switched = true;
+                  });
+                yield* publish(true);
+                yield* waitReal(
+                  "the switch",
+                  Effect.sync(() => switched || undefined),
+                );
+                if (merges)
+                  yield* waitReal(
+                    "the merge",
+                    Effect.sync(
+                      () =>
+                        world.ghCalls.some((c) => c[2] === "merge" && c[3] === "12") || undefined,
+                    ),
+                  );
+                yield* settle;
+                expect(world.ghCalls.filter((c) => c[2] === "merge")).toHaveLength(merges ? 1 : 0);
+              }),
+            );
+          }).pipe(Effect.scoped),
+      );
+    }
+
   it.effect.skipIf(!hasGit)("tells an orchestrator how its worker can hold the branch", () =>
     Effect.gen(function* () {
       const world = yield* makeWorld;

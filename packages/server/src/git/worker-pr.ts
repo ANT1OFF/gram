@@ -282,7 +282,7 @@ const projectOfClone = (
     if (checkout.cloneIdentity === undefined) return undefined;
     for (const project of projects) {
       const origin = yield* originUrlOf(project.repoRoot ?? project.root);
-      if (origin === undefined || !remoteNamesRepo(origin, repo)) continue;
+      if (origin === undefined || !mayNameRepo(origin, repo)) continue;
       if (cloneIdentityOf(origin) === checkout.cloneIdentity) return project;
     }
     return undefined;
@@ -401,8 +401,44 @@ export const remoteRepoOf = (url: string): RemoteRepo | undefined => {
   };
 };
 
-/** Whether the remote `url` names `repo`: what ownership asks of a worker's folder. */
-export const remoteNamesRepo = (url: string | undefined, repo: string): boolean => {
+/**
+ * The host a pull request's URL (as `gh` gives it) is on, lowercased: `github.com`, or the
+ * Enterprise host `gh` is configured for. `undefined` for a URL it can't plainly read.
+ */
+export const prHostOf = (url: string): string | undefined => {
+  const host = /^https:\/\/([A-Za-z0-9.-]+)(?::\d+)?\//.exec(url)?.[1];
+  return host === undefined || host.startsWith(".") || host.endsWith(".")
+    ? undefined
+    : host.toLowerCase();
+};
+
+/**
+ * Whether a remote on `remoteHost` is on the host of a PR on `prHost`: GitHub's own hosts
+ * (`github.com` and its explicit aliases `www.` and `ssh.`) for a PR on GitHub, and exactly the PR's
+ * host for an Enterprise one. A lookalike (`github.com.example`, `github-com.example`) is neither.
+ */
+const onPrHost = (remoteHost: string, prHost: string): boolean =>
+  GITHUB_HOSTS.has(prHost) ? GITHUB_HOSTS.has(remoteHost) : remoteHost === prHost;
+
+/**
+ * Whether the remote `url` is `repo` on the host of its PR (`prHost`, `prHostOf`'s): what
+ * ownership asks of a worker's folder. The owner, the repository and the host must all match.
+ */
+export const remoteNamesRepo = (url: string | undefined, repo: string, prHost: string): boolean => {
+  const named = url === undefined ? undefined : remoteRepoOf(url);
+  return (
+    named !== undefined &&
+    sameRepo(`${named.owner}/${named.name}`, repo) &&
+    onPrHost(named.host, prHost)
+  );
+};
+
+/**
+ * Whether the remote `url` spells `repo`'s owner and name, on whatever host: only to pick the
+ * folders worth asking GitHub about. It grants nothing; ownership is `remoteNamesRepo`, once the
+ * PR's host is known.
+ */
+const mayNameRepo = (url: string | undefined, repo: string): boolean => {
   const named = url === undefined ? undefined : remoteRepoOf(url);
   return named !== undefined && sameRepo(`${named.owner}/${named.name}`, repo);
 };
@@ -424,6 +460,19 @@ export const remoteNamesOtherRepo = (url: string | undefined, repo: string): boo
 };
 
 /**
+ * The remote a folder is a clone of, by what this machine can trust: here, its origin (its repo's
+ * main checkout's, once the folder is gone); on another machine, the URL of the origin Gram
+ * recorded as it made it there (`cloneIdentity`), never what that machine reports.
+ */
+const remoteUrlOf = (checkout: Checkout) =>
+  Effect.gen(function* () {
+    if (!isLocalHost(checkout))
+      return checkout.cloneIdentity === undefined ? undefined : cloneUrlOf(checkout.cloneIdentity);
+    const at = (yield* folderExists(checkout.path)) ? checkout.path : checkout.repoRoot;
+    return at === undefined ? undefined : yield* originUrlOf(at);
+  });
+
+/**
  * Whether `checkout`, a folder of another thread's, may be a clone of `repo`, by what this machine
  * can trust: here, its origin; on another machine, the origin Gram recorded as it made it there
  * (`cloneIdentity`), never the path that machine reports. Only a remote that plainly names
@@ -431,15 +480,10 @@ export const remoteNamesOtherRepo = (url: string | undefined, repo: string): boo
  * missing, unreadable, malformed or ambiguous may hold the branch, so it counts as holding it.
  */
 const mayHoldRepo = (checkout: Checkout, repo: string) =>
-  Effect.gen(function* () {
-    let url: string | undefined;
-    if (isLocalHost(checkout)) {
-      const at = (yield* folderExists(checkout.path)) ? checkout.path : checkout.repoRoot;
-      url = at === undefined ? undefined : yield* originUrlOf(at);
-    } else
-      url = checkout.cloneIdentity === undefined ? undefined : cloneUrlOf(checkout.cloneIdentity);
-    return !remoteNamesOtherRepo(url, repo);
-  }).pipe(Effect.orElseSucceed(() => true));
+  remoteUrlOf(checkout).pipe(
+    Effect.map((url) => !remoteNamesOtherRepo(url, repo)),
+    Effect.orElseSucceed(() => true),
+  );
 
 /**
  * Whether another live (unarchived) thread claims `repo#number`: it is that thread's main PR, or
@@ -547,7 +591,7 @@ const checkWorkerPr = (
         continue;
       }
       if (!roots.has(yield* canonical(checkout.repoRoot ?? checkout.path))) continue;
-      if (!remoteNamesRepo(yield* originUrlOf(at), repo)) continue;
+      if (!mayNameRepo(yield* originUrlOf(at), repo)) continue;
       if (checkout.branch !== undefined) branches.set(checkout.branch, checkout);
       for (const owned of ownedIn(thread, checkout)) branches.set(owned, checkout);
       if (present) {
@@ -588,6 +632,12 @@ const checkWorkerPr = (
         ? OWNERSHIP_BLOCKERS.headUnknown
         : OWNERSHIP_BLOCKERS.headMoved;
     const where = branches.get(head.headRefName) ?? held;
+    // The folder's remote must be the PR's repository on the PR's own host, not a lookalike or
+    // another provider's repository of the same name.
+    const prHost = prHostOf(head.url);
+    if (prHost === undefined) return OWNERSHIP_BLOCKERS.unverified;
+    if (!remoteNamesRepo(yield* remoteUrlOf(where), repo, prHost))
+      return OWNERSHIP_BLOCKERS.otherRepo;
     if (
       requireOwnedBranch &&
       (yield* claimedByAnother(thread, repo, number, head.headRefName, where))
@@ -629,23 +679,27 @@ export const workerPrIdentity = (
   );
 
 /**
- * Whether another thread claims the PR the worker owns as `owned` (`workerPrOwnership`'s answer):
- * the store's threads and local origins, no GitHub read, for a recheck after a provider read. A
- * doubt is a claim.
+ * Whether the PR the worker owned as `owned` (`workerPrOwnership`'s answer) no longer stands as
+ * its own, for a recheck after a provider read: the folder is no longer held, its remote no longer
+ * names the PR's repository on the PR's host (`prHost`), or another thread now claims it. Local
+ * git and the store only, no GitHub read. A doubt is a yes.
  */
-export const ownedPrClaimedElsewhere = (
+export const ownedPrNoLongerStands = (
   thread: Thread,
   repo: string,
   number: number,
   owned: { readonly path: string; readonly hostId?: string | undefined; readonly branch: string },
+  prHost: string | undefined,
 ) =>
   Effect.gen(function* () {
+    if (prHost === undefined) return true;
     const where = heldWorktrees(thread).find(
       (checkout) =>
         samePath(checkout.path, owned.path) &&
         (owned.hostId === undefined ? isLocalHost(checkout) : hostOf(checkout) === owned.hostId),
     );
     if (where === undefined) return true;
+    if (!remoteNamesRepo(yield* remoteUrlOf(where), repo, prHost)) return true;
     return yield* claimedByAnother(thread, repo, number, owned.branch, where);
   }).pipe(Effect.catchCause(() => Effect.succeed(true)));
 

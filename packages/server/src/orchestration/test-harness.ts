@@ -88,6 +88,10 @@ export interface World {
   readonly ghDirs: Array<string>;
   /** What `gh pr list --head` finds open, by head branch, in whichever repo it is asked about. */
   readonly openPrs: Map<string, number>;
+  /** The origin URL every checkout's git reports to the PR tools; acme/app on GitHub when unset. */
+  origin?: string | undefined;
+  /** The host `gh pr view` puts in a PR's URL; `github.com` when unset. */
+  prHost?: string | undefined;
   /** What `gh pr view` says of a PR by number, in whichever repo it is asked about; unknown fails. */
   readonly prHeads: Map<
     number,
@@ -334,7 +338,7 @@ const fakeGh = (world: World) => {
       }
       return {
         status: 0,
-        stdout: "https://github.com/acme/app.git\n",
+        stdout: `${world.origin ?? "https://github.com/acme/app.git"}\n`,
         stderr: "",
         truncated: false,
       };
@@ -355,7 +359,7 @@ const fakeGh = (world: World) => {
       }
       const view = {
         number: Number(args[2]),
-        url: `https://github.com/${repo}/pull/${args[2]}`,
+        url: `https://${world.prHost ?? "github.com"}/${repo}/pull/${args[2]}`,
         title: "t",
         headRefName: head.headRefName,
         isCrossRepository: head.fork === true,

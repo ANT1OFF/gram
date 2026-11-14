@@ -4,6 +4,7 @@ import {
   OWNERSHIP_BLOCKERS,
   ownershipAsk,
   ownershipForAgent,
+  prHostOf,
   remoteNamesOtherRepo,
   remoteNamesRepo,
   remoteRepoOf,
@@ -180,7 +181,62 @@ describe("remoteRepoOf", () => {
     ])
       expect(remoteNamesOtherRepo(url, "acme/app"), url).toBe(false);
     expect(remoteNamesOtherRepo(undefined, "acme/app")).toBe(false);
-    expect(remoteNamesRepo(undefined, "acme/app")).toBe(false);
+    expect(remoteNamesRepo(undefined, "acme/app", "github.com")).toBe(false);
+  });
+
+  it("owns a remote only on its PR's own host", () => {
+    // A PR on GitHub: GitHub's own hosts and their explicit aliases, nothing that only looks so.
+    for (const url of [
+      "https://github.com/acme/app.git",
+      "https://www.github.com/acme/app.git",
+      "ssh://git@ssh.github.com:443/acme/app.git",
+      "git@github.com:acme/app.git",
+    ])
+      expect(remoteNamesRepo(url, "acme/app", "github.com"), url).toBe(true);
+    for (const url of [
+      "https://github.com.evil.example/acme/app.git",
+      "https://github-com.example/acme/app.git",
+      "https://evil.example/acme/app.git",
+      "git@github.com.evil.example:acme/app.git",
+      "https://api.github.com/acme/app.git",
+      "https://ghe.example.test/acme/app.git",
+      "https://constructor/acme/app.git",
+      "https://__proto__/acme/app.git",
+    ])
+      expect(remoteNamesRepo(url, "acme/app", "github.com"), url).toBe(false);
+    // An Enterprise PR: its own host exactly, never GitHub's or a neighbour's.
+    expect(
+      remoteNamesRepo("https://ghe.example.test/acme/app.git", "acme/app", "ghe.example.test"),
+    ).toBe(true);
+    expect(
+      remoteNamesRepo("git@GHE.example.test:acme/app.git", "acme/app", "ghe.example.test"),
+    ).toBe(true);
+    for (const url of [
+      "https://github.com/acme/app.git",
+      "git@github.com:acme/app.git",
+      "https://ghe.example.test.evil.example/acme/app.git",
+      "https://other-ghe.example.test/acme/app.git",
+      "https://www.ghe.example.test/acme/app.git",
+    ])
+      expect(remoteNamesRepo(url, "acme/app", "ghe.example.test"), url).toBe(false);
+    // The right host, the wrong repository.
+    expect(remoteNamesRepo("https://github.com/acme/other.git", "acme/app", "github.com")).toBe(
+      false,
+    );
+  });
+
+  it("reads the host a PR's URL is on", () => {
+    expect(prHostOf("https://github.com/acme/app/pull/12")).toBe("github.com");
+    expect(prHostOf("https://GHE.example.test/acme/app/pull/12")).toBe("ghe.example.test");
+    expect(prHostOf("https://ghe.example.test:8443/acme/app/pull/12")).toBe("ghe.example.test");
+    for (const url of [
+      "",
+      "http://github.com/acme/app/pull/12",
+      "https://.github.com/x",
+      "github.com/acme/app/pull/1",
+      "https://git\u0068ub.com\u2024/x",
+    ])
+      expect(prHostOf(url), url).toBeUndefined();
   });
 
   it("never lets ownership and conflict detection disagree on a remote", () => {
@@ -214,10 +270,15 @@ describe("remoteRepoOf", () => {
           for (const suffix of suffixes)
             for (const url of forms(host, `${owner}/${name}${suffix}`)) {
               checked++;
-              const owns = remoteNamesRepo(url, "acme/app");
+              const owns = remoteNamesRepo(url, "acme/app", "github.com");
               const other = remoteNamesOtherRepo(url, "acme/app");
               // A remote ownership takes for the repository is never plainly another one.
               expect(owns && other, url).toBe(false);
+              // Ownership of a PR on GitHub takes only GitHub's own hosts.
+              if (owns)
+                expect(["github.com", "www.github.com", "ssh.github.com"]).toContain(
+                  remoteRepoOf(url)!.host,
+                );
               // A remote that spells the repository with any .git case is never plainly another.
               if (isTarget(owner, name)) expect(other, url).toBe(false);
               // Plainly another needs a plain parse on GitHub's own host and default port.

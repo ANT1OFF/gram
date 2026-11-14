@@ -62,7 +62,8 @@ import {
   explainOwnershipBlocker,
   OWNERSHIP_BLOCKERS,
   ownershipFix,
-  ownedPrClaimedElsewhere,
+  ownedPrNoLongerStands,
+  prHostOf,
   workerPrBlocker,
   workerPrIdentity,
   workerPrOwnership,
@@ -975,12 +976,14 @@ export const MergeWhenReadyLive = Layer.effect(
                         featurePaused(workspace, latest) ||
                         orchestration === undefined ||
                         !(yield* orchestration.workerMergesOwn(threadId)) ||
-                        // Another thread bound the PR or took its branch during the read.
-                        (yield* ownedPrClaimedElsewhere(
+                        // Its folder's remote changed, or another thread bound the PR or took its
+                        // branch, during the read.
+                        (yield* ownedPrNoLongerStands(
                           latest,
                           bound.repo,
                           bound.number,
                           owned.at,
+                          prHostOf(fresh.url),
                         ).pipe(
                           Effect.provideService(ThreadStore, store),
                           Effect.provideService(Proc, proc),
