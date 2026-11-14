@@ -14,6 +14,7 @@ import {
   History,
   ListTree,
   type LucideIcon,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
@@ -263,120 +264,133 @@ export function DiffPanel({
       className="flex min-h-0 flex-1 flex-col"
     >
       {/* The review's one toolbar: the scope, on a track with its pick on the selected slab, how
-          much it holds and on which branch, then the turn, the display choices and Refresh. */}
-      <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-border px-2 py-1.5 text-meta">
-        <div
-          role="radiogroup"
-          aria-label="Diff scope"
-          className={SEGMENT_TRACK}
-          onKeyDown={(event) =>
-            radioGroupKeyDown(
-              event,
-              SCOPES.map((option) => option.kind),
-              scope,
-              setScope,
-            )
-          }
-        >
-          {SCOPES.map((option) => (
-            <button
-              key={option.kind}
-              type="button"
-              role="radio"
-              aria-checked={scope === option.kind}
-              tabIndex={scope === option.kind ? 0 : -1}
-              onClick={() => setScope(option.kind)}
-              className="relative flex h-6 items-center rounded-md px-2 text-body text-muted-foreground transition-colors duration-(--dur-fast) outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-checked:text-foreground"
-            >
-              {scope === option.kind && <SegmentSlab group={scopeSlab} className={SEGMENT_SLAB} />}
-              {option.label}
-            </button>
-          ))}
-        </div>
-        {summary !== undefined && (
-          <span
-            data-testid="diff-summary"
-            data-files={summary.files}
-            className="flex items-baseline gap-1.5 text-body whitespace-nowrap tabular-nums"
-          >
-            <span className="font-medium">
-              <NumberTicker value={summary.files} /> {summary.files === 1 ? "file" : "files"}
-            </span>
-            <span className="font-mono text-meta text-success">
-              +<NumberTicker value={summary.additions} />
-            </span>
-            <span className="font-mono text-meta text-destructive">
-              −<NumberTicker value={summary.deletions} />
-            </span>
-          </span>
-        )}
-        {branch !== undefined && (
-          <Hint
-            label={compared === undefined ? branch : `${branch}, comparing to ${compared}`}
-            side="bottom"
-            render={
-              <span
-                data-testid="diff-branch"
-                className="flex min-w-0 items-center gap-1 font-mono text-meta text-muted-foreground"
-              />
+          much it holds and on which branch, then the turn, the display choices and Refresh. In a
+          narrow panel it is two rows that stay put: the controls, then what the diff holds. Left
+          to wrap where it would, the display choices fell to a row of their own. */}
+      <div className="@container/diffbar shrink-0 border-b border-border px-2 py-1.5 text-meta">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <div
+            role="radiogroup"
+            aria-label="Diff scope"
+            className={SEGMENT_TRACK}
+            onKeyDown={(event) =>
+              radioGroupKeyDown(
+                event,
+                SCOPES.map((option) => option.kind),
+                scope,
+                setScope,
+              )
             }
           >
-            <GitBranch aria-hidden className="size-icon-chip shrink-0" />
-            <span className="truncate">{branch}</span>
-            {compared !== undefined && <span className="shrink-0 font-sans">vs {compared}</span>}
-          </Hint>
-        )}
-        <div className="ml-auto flex min-w-0 items-center gap-1">
-          {scope === "turn" && turnId !== undefined && (
-            // The app's dropdown, as every other picker in the panel; its value is the turn's prompt.
-            <Select
-              value={turnId}
-              onValueChange={(value) => {
-                if (value !== null) setPicked(value as TurnId);
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                aria-label="Turn"
-                title={turns.find((turn) => turn.turnId === turnId)?.label}
-                className="max-w-56 min-w-0 text-meta"
+            {SCOPES.map((option) => (
+              <button
+                key={option.kind}
+                type="button"
+                role="radio"
+                aria-checked={scope === option.kind}
+                tabIndex={scope === option.kind ? 0 : -1}
+                onClick={() => setScope(option.kind)}
+                className="relative flex h-6 items-center rounded-md px-2 text-body text-muted-foreground transition-colors duration-(--dur-fast) outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-checked:text-foreground"
               >
-                <SelectValue>
-                  {turns.find((turn) => turn.turnId === turnId)?.label ?? "Turn"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent align="end">
-                {turns.map((turn) => (
-                  <SelectItem key={turn.turnId} value={turn.turnId} className="text-meta">
-                    {turn.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <DiffViewControls
-            layout={layout}
-            onLayout={setLayout}
-            splitFits={splitFits}
-            wrap={wrap}
-            onWrap={toggleWrap}
-            ignoreWhitespace={ignoreWhitespace}
-            onIgnoreWhitespace={toggleIgnoreWhitespace}
-            tree={
-              treeFits && fileCount > 1
-                ? {
-                    open: treeOpen,
-                    toggle: smallPatch ? () => setSmallTreeOpen((open) => !open) : toggleTree,
-                  }
-                : undefined
-            }
-          />
-          <RefreshButton
-            threadId={threadId}
-            label="Refresh diff"
-            fetching={query.isFetching}
-            refetch={refetch}
-          />
+                {scope === option.kind && (
+                  <SegmentSlab group={scopeSlab} className={SEGMENT_SLAB} />
+                )}
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <div
+            data-testid="diff-holds"
+            className="order-last flex min-w-0 basis-full items-center gap-x-2 empty:hidden @2xl/diffbar:order-none @2xl/diffbar:flex-1 @2xl/diffbar:basis-0"
+          >
+            {summary !== undefined && (
+              <span
+                data-testid="diff-summary"
+                data-files={summary.files}
+                className="flex items-baseline gap-1.5 text-body whitespace-nowrap tabular-nums"
+              >
+                <span className="font-medium">
+                  <NumberTicker value={summary.files} /> {summary.files === 1 ? "file" : "files"}
+                </span>
+                <span className="font-mono text-meta text-success">
+                  +<NumberTicker value={summary.additions} />
+                </span>
+                <span className="font-mono text-meta text-destructive">
+                  −<NumberTicker value={summary.deletions} />
+                </span>
+              </span>
+            )}
+            {branch !== undefined && (
+              <Hint
+                label={compared === undefined ? branch : `${branch}, comparing to ${compared}`}
+                side="bottom"
+                render={
+                  <span
+                    data-testid="diff-branch"
+                    className="flex min-w-0 items-center gap-1 font-mono text-meta text-muted-foreground"
+                  />
+                }
+              >
+                <GitBranch aria-hidden className="size-icon-chip shrink-0" />
+                <span className="truncate">{branch}</span>
+                {compared !== undefined && (
+                  <span className="shrink-0 font-sans">vs {compared}</span>
+                )}
+              </Hint>
+            )}
+          </div>
+          <div className="ml-auto flex min-w-0 items-center gap-1">
+            {scope === "turn" && turnId !== undefined && (
+              // The app's dropdown, as every other picker in the panel; its value is the turn's prompt.
+              <Select
+                value={turnId}
+                onValueChange={(value) => {
+                  if (value !== null) setPicked(value as TurnId);
+                }}
+              >
+                <SelectTrigger
+                  size="sm"
+                  aria-label="Turn"
+                  title={turns.find((turn) => turn.turnId === turnId)?.label}
+                  className="max-w-56 min-w-0 text-meta"
+                >
+                  <SelectValue>
+                    {turns.find((turn) => turn.turnId === turnId)?.label ?? "Turn"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {turns.map((turn) => (
+                    <SelectItem key={turn.turnId} value={turn.turnId} className="text-meta">
+                      {turn.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <DiffViewControls
+              layout={layout}
+              onLayout={setLayout}
+              splitFits={splitFits}
+              wrap={wrap}
+              onWrap={toggleWrap}
+              ignoreWhitespace={ignoreWhitespace}
+              onIgnoreWhitespace={toggleIgnoreWhitespace}
+              tree={
+                treeFits && fileCount > 1
+                  ? {
+                      open: treeOpen,
+                      toggle: smallPatch ? () => setSmallTreeOpen((open) => !open) : toggleTree,
+                    }
+                  : undefined
+              }
+            />
+            <RefreshButton
+              threadId={threadId}
+              label="Refresh diff"
+              fetching={query.isFetching}
+              refetch={refetch}
+            />
+          </div>
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
@@ -462,13 +476,19 @@ function DiffViewControls({
         <Menu.Trigger
           data-testid="diff-view-menu"
           aria-label="View options"
+          title="View options"
           className={cn(
             buttonVariants({ variant: "ghost", size: "sm" }),
             "px-2 data-popup-open:bg-accent data-popup-open:text-foreground",
           )}
         >
-          View
-          <ChevronDown aria-hidden className="size-icon-chip text-muted-foreground" />
+          {/* The word where the toolbar has room for it beside the scope; the glyph alone below. */}
+          <SlidersHorizontal aria-hidden className="size-icon-row @[21rem]/diffbar:hidden" />
+          <span className="@max-[21rem]/diffbar:hidden">View</span>
+          <ChevronDown
+            aria-hidden
+            className="size-icon-chip text-muted-foreground @max-[21rem]/diffbar:hidden"
+          />
         </Menu.Trigger>
         <Menu.Portal>
           <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
