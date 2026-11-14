@@ -6,7 +6,7 @@ import { useShortcut } from "@/keyboard/registry";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
-import { useSettingsKeyboard } from "@/settings/leave-settings";
+import { isSettingsPath, useSettingsKeyboard } from "@/settings/leave-settings";
 import {
   isSubpage,
   rememberSettingsPage,
@@ -94,9 +94,16 @@ function SettingsLayout() {
   const phone = usePhone();
   const navigate = useNavigate();
   // A page the embedding app left out (a link from a menu, or an old address) opens the first.
+  // Only while the window is still in Settings: on a step out, the location moves before this
+  // layout unmounts, and sending it back here would undo Back and every link out of Settings.
   const first = pages[0];
   useEffect(() => {
-    if (current === undefined && first !== undefined && pathname !== "/settings")
+    if (
+      current === undefined &&
+      first !== undefined &&
+      isSettingsPath(pathname) &&
+      pathname !== "/settings"
+    )
       void navigate({ to: first.path as "/settings/general", replace: true });
   }, [current, first, pathname, navigate]);
   const resultsRef = useRef<HTMLDivElement>(null);
