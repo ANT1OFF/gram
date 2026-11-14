@@ -17,12 +17,14 @@ import type { OpenCodeEvent, OpenCodeModel } from "./protocol.ts";
 import type { OpenCodeServer, StartOpenCodeServer } from "./server.ts";
 import {
   agentModels,
+  gateAllows,
   gatewayConfig,
   GATEWAY_KEY_ENV,
   isAnthropic,
   makeOpenCodeHost,
   modelRefFor,
   rulesFor,
+  sessionRules,
 } from "./session.ts";
 
 const THREAD = "thr_1" as ThreadId;
@@ -33,6 +35,7 @@ const standIn = () => {
   const started: Array<StartOpenCodeServer> = [];
   let emit: ((event: OpenCodeEvent) => void) | undefined;
   const stopped: Array<number> = [];
+  const failPermissions = { on: false };
   const client: OpenCodeClient = {
     createSession: async (input) => {
       calls.push(["createSession", input]);
@@ -45,7 +48,10 @@ const standIn = () => {
     listSessions: async () => [{ id: "ses_1", title: "Fix it", updated: 7, directory: "/w" }],
     prompt: async (...args) => void calls.push(["prompt", ...args]),
     interrupt: async (...args) => void calls.push(["interrupt", ...args]),
-    setPermissions: async (...args) => void calls.push(["setPermissions", ...args]),
+    setPermissions: async (...args) => {
+      calls.push(["setPermissions", ...args]);
+      if (failPermissions.on) throw new Error("PATCH refused");
+    },
     setAgent: async (...args) => void calls.push(["setAgent", ...args]),
     setModel: async (...args) => void calls.push(["setModel", ...args]),
     permissions: async () => [],
@@ -69,7 +75,14 @@ const standIn = () => {
       stop: async () => void stopped.push(n),
     };
   };
-  return { calls, started, stopped, start, emit: (event: OpenCodeEvent) => emit?.(event) };
+  return {
+    calls,
+    started,
+    stopped,
+    start,
+    failPermissions,
+    emit: (event: OpenCodeEvent) => emit?.(event),
+  };
 };
 
 const PROFILE: GatewayProfile = {
@@ -193,6 +206,79 @@ describe("the OpenCode host", () => {
       }).pipe(Effect.scoped),
   );
 
+  it.live("starts one server for opens at once", () =>
+    Effect.gen(function* () {
+      const stand = standIn();
+      const host = yield* hostWith(stand);
+      yield* Effect.all(
+        [host.open({ threadId: THREAD, cwd: "/w" }), host.open({ threadId: THREAD, cwd: "/v" })],
+        { concurrency: "unbounded" },
+      );
+      expect(stand.started).toHaveLength(1);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("refuses a mode OpenCode didn't take, saying so, and answers a session grant once", () =>
+    Effect.gen(function* () {
+      const stand = standIn();
+      const host = yield* hostWith(stand);
+      const session = yield* host.open({ threadId: THREAD, cwd: "/w" });
+      stand.failPermissions.on = true;
+      const error = yield* session.setMode("bypassPermissions").pipe(Effect.flip);
+      expect(error).toMatchObject({ _tag: "ModeRefused", mode: "bypassPermissions" });
+      expect(stand.calls.map(([name]) => name)).not.toContain("setAgent");
+      yield* session.respond("per_1" as never, {
+        kind: "approval",
+        decision: "allow",
+        scope: "session",
+      });
+      expect(stand.calls.at(-1)).toEqual(["reply", "ses_1", "per_1", "once", undefined]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("refuses a session whose writes and shell it would have to bound", () =>
+    Effect.gen(function* () {
+      const stand = standIn();
+      const host = yield* hostWith(stand);
+      const error = yield* host
+        .open({ threadId: THREAD, cwd: "/w", confineWrites: true })
+        .pipe(Effect.flip);
+      expect(error).toMatchObject({ _tag: "AgentUnavailable", agent: "opencode" });
+      expect(stand.started).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("answers a command the gate lets through itself, and shows a push", () =>
+    Effect.gen(function* () {
+      const stand = standIn();
+      const host = yield* hostWith(stand);
+      const session = yield* host.open({
+        threadId: THREAD,
+        cwd: "/w",
+        permissionMode: "bypassPermissions",
+        outwardGate: "all",
+      });
+      const seen: Array<AgentEvent> = [];
+      yield* session.events.pipe(
+        Stream.runForEach((event) => Effect.sync(() => seen.push(event))),
+        Effect.forkScoped,
+      );
+      const ask = (id: string, command: string) =>
+        stand.emit({
+          type: "permission.asked",
+          data: { id, sessionID: "ses_1", action: "shell", resources: [command] },
+        });
+      ask("per_a", "npm test");
+      ask("per_b", "git push origin main");
+      yield* Effect.sleep("20 millis");
+      expect(stand.calls).toContainEqual(["reply", "ses_1", "per_a", "once"]);
+      const requests = seen.flatMap((event) =>
+        event.type === "request" ? [event.request.id] : [],
+      );
+      expect(requests).toEqual(["per_b"]);
+    }).pipe(Effect.scoped),
+  );
+
   it.live("says OpenCode is unavailable when it isn't installed", () =>
     Effect.gen(function* () {
       const host = yield* makeOpenCodeHost({
@@ -215,6 +301,44 @@ describe("the OpenCode host", () => {
 
 const model = (id: string, providerID: string, rest: Partial<OpenCodeModel> = {}) =>
   ({ id, providerID, name: id, ...rest }) as OpenCodeModel;
+
+type Mode = Parameters<typeof rulesFor>[0];
+const gatedShell = (mode: Mode) =>
+  sessionRules(mode, "all").findLast((each) => each.action === "shell")?.effect;
+const asked = (command: string, mode: Mode = "bypassPermissions") =>
+  gateAllows(mode, "all", { action: "shell", resources: [command] });
+
+const effect = (mode: Mode, action: string) =>
+  rulesFor(mode).findLast((each) => each.action === action)?.effect ?? "ask";
+
+describe("OpenCode's rules", () => {
+  it("runs commands unasked only when permissions are bypassed", () => {
+    expect(effect("bypassPermissions", "shell")).toBe("allow");
+    for (const mode of ["default", "auto", "acceptEdits"] as const)
+      expect(effect(mode, "shell")).toBe("ask");
+    expect(effect("dontAsk", "shell")).toBe("deny");
+    expect(effect("dontAsk", "edit")).toBe("deny");
+    expect(effect("dontAsk", "read")).toBe("allow");
+  });
+
+  it("lets plan read and nothing else", () => {
+    for (const action of ["edit", "write", "shell", "subagent"])
+      expect(effect("plan", action)).toBe("deny");
+    expect(effect("plan", "read")).toBe("allow");
+    expect(effect("acceptEdits", "edit")).toBe("allow");
+  });
+
+  it("asks about every command while a push gate is on, and lets through what it doesn't ask about", () => {
+    expect(gatedShell("bypassPermissions")).toBe("ask");
+    expect(gatedShell("dontAsk")).toBe("deny");
+    expect(asked("npm test")).toBe(true);
+    expect(asked("git push origin main")).toBe(false);
+    expect(asked("npm test", "default")).toBe(false);
+    expect(gateAllows("bypassPermissions", undefined, { action: "shell", resources: ["ls"] })).toBe(
+      false,
+    );
+  });
+});
 
 describe("OpenCode's models and config", () => {
   it("offers every maker's tool-using models but Anthropic's", () => {

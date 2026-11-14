@@ -11,3 +11,4 @@ export {
   rulesFor,
   type OpenCodeHostConfig,
 } from "./session.ts";
+export { OpenCodeHost, OpenCodeHostLive, type OpenCodeHostLiveConfig } from "./live.ts";

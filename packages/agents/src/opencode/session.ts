@@ -1,6 +1,7 @@
 import {
   AgentUnavailable,
   AnswerUndelivered,
+  ModeRefused,
   GATEWAY_PROVIDER_ID,
   gatewayModelForAgent,
   gatewayModelUsable,
@@ -23,11 +24,14 @@ import * as Stream from "effect/Stream";
 import { homedir } from "node:os";
 
 import type { GatewayCredentials } from "../gateway.ts";
-import type { AgentHost, AgentSession, OpenSessionOptions } from "../host.ts";
+import type { AgentHost, AgentSession, OpenSessionOptions, OutwardGate } from "../host.ts";
+import { gateAsks, gateLevel, outwardKind } from "../outward.ts";
 import type { OpenCodeClient } from "./client.ts";
 import { makeOpenCodeMapper } from "./mapper.ts";
+import { permissionOf } from "./protocol.ts";
 import type {
   OpenCodeModel,
+  OpenCodePermission,
   OpenCodeModelRef,
   OpenCodePermissionReply,
   OpenCodePermissionRule,
@@ -69,44 +73,75 @@ const rule = (
   effect: OpenCodePermissionRule["effect"],
 ): OpenCodePermissionRule => ({ action, resource: "*", effect });
 
+const READS = ["read", "glob", "grep", "skill", "websearch"];
+const ACTS = ["edit", "write", "shell", "webfetch", "subagent", "external_directory"];
+
 /**
  * The permission rules for a Gram mode, which the session holds and OpenCode's own `deny`
- * policies still outrank: the last matching rule wins, and no match asks.
+ * policies still outrank: the last matching rule wins, and no match asks. OpenCode runs no
+ * sandbox, so only `bypassPermissions` runs commands unasked: `auto` asks as `default` does, and
+ * `dontAsk` refuses whatever isn't a read, as Claude Code's does with nothing allowed beforehand.
+ * `plan` reads and proposes; it can't edit, write or run anything.
  */
 export const rulesFor = (mode: PermissionMode): ReadonlyArray<OpenCodePermissionRule> => {
-  const reads = ["read", "glob", "grep", "skill", "websearch"].map((action) =>
-    rule(action, "allow"),
-  );
+  const reads = READS.map((action) => rule(action, "allow"));
   switch (mode) {
     case "bypassPermissions":
+      return [...reads, ...ACTS.map((action) => rule(action, "allow"))];
     case "dontAsk":
-    case "auto":
+      return [...reads, ...ACTS.map((action) => rule(action, "deny"))];
+    case "plan":
       return [
         ...reads,
-        ...["shell", "edit", "write", "webfetch", "subagent", "external_directory"].map((action) =>
-          rule(action, "allow"),
-        ),
+        ...["edit", "write", "shell", "subagent"].map((action) => rule(action, "deny")),
+        rule("webfetch", "ask"),
+        rule("external_directory", "ask"),
       ];
     case "acceptEdits":
       return [
         ...reads,
         rule("edit", "allow"),
         rule("write", "allow"),
-        rule("shell", "ask"),
-        rule("webfetch", "ask"),
-        rule("external_directory", "ask"),
+        ...["shell", "webfetch", "subagent", "external_directory"].map((action) =>
+          rule(action, "ask"),
+        ),
       ];
-    case "plan":
+    case "auto":
     case "default":
-      return [
-        ...reads,
-        rule("edit", "ask"),
-        rule("write", "ask"),
-        rule("shell", "ask"),
-        rule("webfetch", "ask"),
-        rule("external_directory", "ask"),
-      ];
+      return [...reads, ...ACTS.map((action) => rule(action, "ask"))];
   }
+};
+
+/**
+ * The rules a session holds: its mode's, with the shell asking where the mode would run it unasked
+ * while an outward gate is on, so that the adapter sees each command and lets through the ones the
+ * gate doesn't ask about (`gateAllows`).
+ */
+export const sessionRules = (
+  mode: PermissionMode,
+  gate: OutwardGate | undefined,
+): ReadonlyArray<OpenCodePermissionRule> => {
+  const rules = rulesFor(mode);
+  if (gate === undefined) return rules;
+  return rules.map((each) =>
+    each.action === "shell" && each.effect === "allow" ? rule("shell", "ask") : each,
+  );
+};
+
+/**
+ * Whether the adapter answers a shell request itself: the mode would have run the command unasked,
+ * and the gate doesn't ask about it.
+ */
+export const gateAllows = (
+  mode: PermissionMode,
+  gate: OutwardGate | undefined,
+  permission: Pick<OpenCodePermission, "action" | "resources">,
+): boolean => {
+  if (gate === undefined || permission.action !== "shell") return false;
+  if (!rulesFor(mode).some((each) => each.action === "shell" && each.effect === "allow"))
+    return false;
+  const commands = permission.resources;
+  return commands.length > 0 && commands.every((command) => !gateAsks(gate, outwardKind(command)));
 };
 
 /** OpenCode's own agents: `plan` reads and proposes, `build` does the work. */
@@ -208,8 +243,32 @@ const textOf = (input: UserInput): string => {
 const replyFor = (answer: RequestAnswer): OpenCodePermissionReply | undefined => {
   if (answer.kind !== "approval") return undefined;
   if (answer.decision === "deny") return "reject";
-  return answer.scope === "once" ? "once" : "always";
+  // OpenCode's `always` is saved for the project; only an answer that says so gets it.
+  return answer.scope === "always" ? "always" : "once";
 };
+
+/** A server's start: its binary, env and key, then the process, read only once a key. */
+const startFor = (config: OpenCodeHostConfig, profileId: ProfileId | undefined) =>
+  Effect.gen(function* () {
+    const binary = yield* config.binary;
+    const base = yield* config.env;
+    let env: Record<string, string | undefined> = { ...base };
+    if (profileId !== undefined) {
+      const credentials = yield* config.credentials(profileId);
+      env = {
+        ...env,
+        OPENCODE_CONFIG_CONTENT: gatewayConfig(credentials),
+        [GATEWAY_KEY_ENV]: Redacted.value(credentials.key),
+      };
+    }
+    return yield* Effect.tryPromise({
+      try: () => config.start({ binary, env }),
+      catch: (error) =>
+        unavailable(
+          `OpenCode didn't start: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+    });
+  });
 
 /**
  * The OpenCode host: one `opencode serve` per gateway profile (and one on the user's own
@@ -231,6 +290,10 @@ export const makeOpenCodeHost = (
       }),
     );
 
+    /**
+     * The server for a profile, started once: the start is kept before it runs, so two opens at
+     * once share it, and a profile invalidated while it starts stops what it started.
+     */
     const serverFor = (profileId: ProfileId | undefined) =>
       Effect.gen(function* () {
         const key = profileId ?? "";
@@ -238,37 +301,37 @@ export const makeOpenCodeHost = (
         if (existing !== undefined) {
           const running = yield* Effect.promise(() => existing.catch(() => undefined));
           if (running?.alive() === true) return running;
-          servers.delete(key);
+          if (servers.get(key) === existing) servers.delete(key);
         }
-        const binary = yield* config.binary;
-        const base = yield* config.env;
-        let env: Record<string, string | undefined> = { ...base };
-        if (profileId !== undefined) {
-          const credentials = yield* config.credentials(profileId);
-          env = {
-            ...env,
-            OPENCODE_CONFIG_CONTENT: gatewayConfig(credentials),
-            [GATEWAY_KEY_ENV]: Redacted.value(credentials.key),
-          };
+        let starting = servers.get(key);
+        if (starting === undefined) {
+          starting = Effect.runPromise(startFor(config, profileId));
+          servers.set(key, starting);
         }
-        const starting = config.start({ binary, env });
-        servers.set(key, starting);
+        const current = starting;
         return yield* Effect.tryPromise({
-          try: () => starting,
+          try: () => current,
           catch: (error) => {
-            servers.delete(key);
-            return unavailable(
-              `OpenCode didn't start: ${error instanceof Error ? error.message : String(error)}`,
-            );
+            if (servers.get(key) === current) servers.delete(key);
+            return error instanceof AgentUnavailable
+              ? error
+              : unavailable(
+                  `OpenCode didn't start: ${error instanceof Error ? error.message : String(error)}`,
+                );
           },
         });
       });
 
     const open = (options: OpenSessionOptions) =>
       Effect.gen(function* () {
+        if (options.dreamFilesOnly === true || options.confineWrites === true)
+          return yield* Effect.fail(
+            unavailable("OpenCode can't keep a session's writes, shell and network bounded."),
+          );
         const server = yield* serverFor(options.model?.profileId);
         const client: OpenCodeClient = server.client;
-        const mode = options.permissionMode ?? "default";
+        let mode = options.permissionMode ?? "default";
+        const gate = gateLevel(options.outwardGate);
         const model = modelRefFor(options.model);
         const resumed =
           options.resumeId === undefined
@@ -282,13 +345,13 @@ export const makeOpenCodeHost = (
             client.createSession({
               directory: options.cwd,
               agent: agentFor(mode),
-              permissions: rulesFor(mode),
+              permissions: sessionRules(mode, gate),
               ...(model === undefined ? {} : { model }),
             }),
           ));
         if (resumed !== undefined) {
           yield* attempt("Couldn't set the session's permissions", () =>
-            client.setPermissions(session.id, rulesFor(mode)),
+            client.setPermissions(session.id, sessionRules(mode, gate)),
           );
           if (model !== undefined)
             yield* attempt("Couldn't set the session's model", () =>
@@ -313,18 +376,34 @@ export const makeOpenCodeHost = (
         const subscribed = client
           .subscribe((event) => {
             if (event.type === "server.connected") ready.resolve();
+            if (event.type === "permission.asked") {
+              const permission = permissionOf(event.data);
+              // A command the mode runs unasked and the gate doesn't ask about: let it through.
+              if (permission?.sessionID === session.id && gateAllows(mode, gate, permission)) {
+                void client.reply(session.id, permission.id, "once").catch((error: unknown) => {
+                  Queue.offerUnsafe(events, {
+                    type: "notice",
+                    level: "error",
+                    message: `OpenCode didn't take Gram's answer: ${error instanceof Error ? error.message : String(error)}`,
+                  });
+                });
+                return;
+              }
+            }
             for (const out of mapper.map(event)) Queue.offerUnsafe(events, out);
           }, abort.signal)
           .then(
             () => {
-              if (!abort.signal.aborted)
-                Queue.offerUnsafe(events, {
-                  type: "ended",
-                  reason: "OpenCode closed its event stream",
-                });
+              if (abort.signal.aborted) return;
+              for (const out of mapper.interrupted()) Queue.offerUnsafe(events, out);
+              Queue.offerUnsafe(events, {
+                type: "ended",
+                reason: "OpenCode closed its event stream",
+              });
             },
             (error: unknown) => {
               ready.resolve();
+              for (const out of mapper.interrupted()) Queue.offerUnsafe(events, out);
               Queue.offerUnsafe(events, {
                 type: "ended",
                 reason: `OpenCode's events stopped: ${error instanceof Error ? error.message : String(error)}`,
@@ -345,9 +424,16 @@ export const makeOpenCodeHost = (
         const waiting = yield* attempt("Couldn't read the session's requests", () =>
           client.permissions(session.id),
         ).pipe(Effect.orElseSucceed(() => []));
-        for (const permission of waiting)
+        for (const permission of waiting) {
+          if (gateAllows(mode, gate, permission)) {
+            yield* Effect.promise(() =>
+              client.reply(session.id, permission.id, "once").catch(() => undefined),
+            );
+            continue;
+          }
           for (const out of mapper.map({ type: "permission.asked", data: { ...permission } }))
             Queue.offerUnsafe(events, out);
+        }
 
         const quietly = (what: string, run: () => Promise<unknown>) =>
           Effect.promise(() =>
@@ -395,11 +481,24 @@ export const makeOpenCodeHost = (
                 }),
             });
           },
+          // The mode is reported only once OpenCode holds its rules, never on a failed change.
           setMode: (next) =>
-            quietly("OpenCode didn't change mode", async () => {
-              await client.setPermissions(session.id, rulesFor(next));
-              await client.setAgent(session.id, agentFor(next));
-            }).pipe(Effect.tap(() => Queue.offer(events, { type: "mode", mode: next }))),
+            Effect.tryPromise({
+              try: async () => {
+                await client.setPermissions(session.id, sessionRules(next, gate));
+                await client.setAgent(session.id, agentFor(next));
+              },
+              catch: (error) =>
+                new ModeRefused({
+                  mode: next,
+                  message: `OpenCode didn't change mode: ${error instanceof Error ? error.message : String(error)}`,
+                }),
+            }).pipe(
+              Effect.tap(() => {
+                mode = next;
+                return Queue.offer(events, { type: "mode", mode: next });
+              }),
+            ),
           setModel: (next) => {
             const ref = modelRefFor(next);
             return ref === undefined
