@@ -406,6 +406,12 @@ ask you something. **Show all activity** (the title bar's "…", under View) sho
 everything, and so does finding a folded reply with ⌘F. Only the view changes: the orchestrator
 still receives every digest.
 
+**Conversation only** (the thread header's speech-bubble button, or the same menus) takes the
+agent's tool calls, commands and reasoning out of every transcript and leaves what was said, the
+plan, questions, approvals, errors, attached images and the pages and files it published. A running
+turn shows one "Working" line with its time. It is one switch for every thread, kept across
+launches, and it only changes the view: the trace and the side panels still show the work.
+
 Workers may add `evidence: { headSha, gate, pr?, nextStep }` to `report`. These
 bounded, worker-authored claims appear in full before the prose excerpt and in
 compact ledger rows; they do not qualify a server merge gate. The SHA accepts

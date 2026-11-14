@@ -22,6 +22,7 @@ import { checkoutRelative } from "@/panels/files/files-store";
 import { formatMessageTime } from "@/lib/time";
 import { imageDataUrl, useAttachmentImage } from "@/panels/files/image-preview";
 import { copyText } from "@/settings/copy-text";
+import { useConversationOnly } from "@/stores/conversation-only";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { useTurnFolds } from "@/stores/turn-folds";
@@ -52,6 +53,7 @@ import {
   OrchestrationDigestCard,
   WorkerReportCard,
 } from "./orchestration-cards";
+import { isWork, showsInConversation } from "./conversation-only";
 import { isToolPart } from "./parts";
 import { HumanReviewNoticeCard, ReviewNoticeCard } from "./review-notice-card";
 import { TaskChip } from "./task-chip";
@@ -260,6 +262,9 @@ export const MessageBlock = memo(function MessageBlock({
   // it, where it has room and the pointer hovers (`float-actions`), so the step from a reply to the
   // update after it is the step from the update to the next reply.
   const floating = useOrchestratorStreamContext() !== undefined && topLevel;
+  // "Conversation only": the reply without its tool calls and reasoning, and no row for one that
+  // was nothing else.
+  const conversationOnly = useConversationOnly((s) => s.on);
 
   if (message.role === "user") {
     const notice = message.parts.find((p) => p.type === "data-review-notice");
@@ -360,6 +365,7 @@ export const MessageBlock = memo(function MessageBlock({
     );
   }
 
+  if (conversationOnly && !showsInConversation(message)) return null;
   const streaming = streamingIds.has(message.id);
   const folded = fold !== undefined && !foldOpen;
   const actions = topLevel && !streaming && !(folded && fold.empty) && !isUndoReceipt(message);
@@ -409,6 +415,7 @@ export const MessageBlock = memo(function MessageBlock({
         <ToolImagesContext value={toolImages}>
           {message.parts.map((part, i) => {
             const key = `${message.id}:${i}`;
+            if (conversationOnly && isWork(part)) return null;
             if (runs.absorbed.has(i) || fold?.under.has(i)) return null;
             if (folded && fold.hidden.has(i)) return null;
             const run = runs.starts.get(i);

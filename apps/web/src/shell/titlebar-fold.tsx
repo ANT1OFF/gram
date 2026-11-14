@@ -47,6 +47,7 @@ import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { GRID_PRESETS, PRESET_LABELS, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { pauseClock } from "@/thread/orchestration-model";
+import { ConversationOnlyItem } from "@/thread/conversation-only-toggle";
 import { AllActivityItem, useThreadMenu } from "@/thread/thread-menu";
 import { chatRoute, switcherChecked, useViewStore, type AppView } from "@/views/view-store";
 import { useViewWorkspace } from "@/views/view-workspace";
@@ -426,6 +427,7 @@ function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
     >
       {threadId !== undefined && <ContentsSubmenu threadId={threadId} />}
       {threadId !== undefined && <AllActivityItem threadId={threadId} className={MENU_ITEM} />}
+      <ConversationOnlyItem className={MENU_ITEM} />
       <Menu.Item
         data-testid="folded-quiet"
         aria-description={EXPLAIN.quiet}
