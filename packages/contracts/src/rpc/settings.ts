@@ -4,7 +4,12 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import { KeybindingOverrides, KeybindingsState } from "../depth.ts";
 import { AgentKind, GatewayModel, GatewayProfile, Label } from "../domain.ts";
 import { AgentUnavailable, GatewayError, InvalidState, NotFound } from "../errors.ts";
-import { SeedProfilesResult, SetKeyResult, VaultInfo } from "../gateway-keys.ts";
+import {
+  OpenRouterSignInResult,
+  SeedProfilesResult,
+  SetKeyResult,
+  VaultInfo,
+} from "../gateway-keys.ts";
 import { HelperPresenceFields, HelperStatus } from "../helper.ts";
 import { LabelId, PaletteId, ProfileId, ThreadId } from "../ids.ts";
 import { ModelList, ModelSuggestions } from "../models.ts";
@@ -81,6 +86,24 @@ export const SettingsRpcs = RpcGroup.make(
   Rpc.make("profiles.importKey", {
     payload: { profileId: ProfileId, source: Schema.Literals(["opencode"]) },
     success: Schema.Struct({ imported: Schema.Boolean }),
+    error: errors(NotFound, GatewayError),
+  }),
+  /**
+   * Starts signing in with OpenRouter: the server listens on `localhost` for OpenRouter to send the
+   * person back, and answers with the consent page to open in their browser.
+   */
+  Rpc.make("profiles.openRouterSignIn", {
+    success: Schema.Struct({ attemptId: Schema.String, url: Schema.String }),
+    error: errors(GatewayError),
+  }),
+  /**
+   * Waits (up to 10 minutes) for the person to come back from OpenRouter, exchanges the code for a
+   * key in their OpenRouter account, and saves it on the OpenRouter profile, made if there is none.
+   * The key never reaches the client.
+   */
+  Rpc.make("profiles.openRouterFinish", {
+    payload: { attemptId: Schema.String },
+    success: OpenRouterSignInResult,
     error: errors(NotFound, GatewayError),
   }),
   Rpc.make("palettes.list", { success: Schema.Array(Palette), error: errors() }),

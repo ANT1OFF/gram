@@ -2,12 +2,14 @@ import {
   gatewayAgentModel,
   gatewayModelForAgent,
   gatewayModelUsable,
+  OPENROUTER_BASE_URL,
   type AgentKind,
   type AgentModel,
   type GatewayModel,
   type GatewayProfile,
   type HelperStatus,
   type ModelList,
+  type OpenRouterSignInResult,
   type ProfileId,
   type SeedProfilesResult,
   type SetKeyResult,
@@ -53,6 +55,43 @@ const DISCOVERED: GatewayModel[] = [
   },
   { id: "claude-sonnet", name: "Claude Sonnet (gateway)" },
 ];
+
+/** What OpenRouter's `/models` answers in the mock: every maker's, some without tools. */
+const OPENROUTER_DISCOVERED: GatewayModel[] = [
+  {
+    id: "anthropic/claude-sonnet-5.5",
+    name: "Anthropic: Claude Sonnet 5.5",
+    contextWindow: 1_000_000,
+    info: { mode: "chat", tools: true, reasoning: true },
+  },
+  {
+    id: "anthropic/claude-haiku-5.5",
+    name: "Anthropic: Claude Haiku 5.5",
+    contextWindow: 200_000,
+    info: { mode: "chat", tools: true, reasoning: true },
+  },
+  {
+    id: "openai/gpt-6.1-sol",
+    name: "OpenAI: GPT-6.1 Sol",
+    contextWindow: 400_000,
+    info: { mode: "chat", tools: true, reasoning: true },
+  },
+  {
+    id: "moonshotai/kimi-k3",
+    name: "MoonshotAI: Kimi K3",
+    contextWindow: 256_000,
+    info: { mode: "chat", tools: true, reasoning: true },
+  },
+  {
+    id: "example/pictures",
+    name: "Example: Pictures",
+    info: { mode: "chat", tools: false, reasoning: false },
+  },
+];
+
+/** What the mock's discovery finds for `profile`. */
+const discoveredFor = (profile: GatewayProfile): GatewayModel[] =>
+  profile.kind === "openrouter" ? OPENROUTER_DISCOVERED : DISCOVERED;
 
 /** A morning's helper use in the mock: titles and plans on Haiku 5.5, one Luna fallback. */
 const HELPER_STATUS: HelperStatus = {
@@ -198,11 +237,14 @@ export function createMockGateways(
       profiles.set(profileId, {
         ...profile,
         keyRef: `profile:${profileId}`,
-        models: DISCOVERED,
+        models: discoveredFor(profile),
         ...(madeDefault ? { default: true } : {}),
       });
       changed();
-      return { discovered: DISCOVERED.length, ...(madeDefault ? { madeDefault } : {}) };
+      return {
+        discovered: discoveredFor(profile).length,
+        ...(madeDefault ? { madeDefault } : {}),
+      };
     },
     vaultInfo: async (): Promise<VaultInfo> => VAULT,
     seedProfiles: async (): Promise<SeedProfilesResult> => {
@@ -221,15 +263,53 @@ export function createMockGateways(
       if (profile.keyRef === "") {
         throw tagged("GatewayError", { profileId, message: `No API key set for ${profile.name}` });
       }
-      profiles.set(profileId, { ...profile, models: DISCOVERED });
+      profiles.set(profileId, { ...profile, models: discoveredFor(profile) });
       changed();
-      return DISCOVERED;
+      return discoveredFor(profile);
     },
     importProfileKey: async (profileId: ProfileId) => {
       const profile = find(profileId);
       profiles.set(profileId, { ...profile, keyRef: `profile:${profileId}` });
       changed();
       return { imported: true };
+    },
+    /** The mock's consent page is never opened; finishing signs in at once. */
+    startOpenRouterSignIn: async () => ({
+      attemptId: "mock-attempt",
+      url: "https://openrouter.ai/auth?callback_url=http%3A%2F%2Flocalhost%3A51423%2Fcallback%2Fmock",
+    }),
+    finishOpenRouterSignIn: async (attemptId: string): Promise<OpenRouterSignInResult> => {
+      if (attemptId !== "mock-attempt") {
+        throw tagged("GatewayError", {
+          profileId: "openrouter",
+          message: "This sign-in has ended. Start again.",
+        });
+      }
+      const existing = [...profiles.values()].find((profile) => profile.kind === "openrouter");
+      const id = existing?.id ?? ("openrouter" as ProfileId);
+      if (existing === undefined) {
+        profiles.set(id, {
+          id,
+          name: "OpenRouter",
+          baseURL: OPENROUTER_BASE_URL,
+          kind: "openrouter",
+          keyRef: "",
+          models: [],
+        });
+      }
+      const madeDefault = ![...profiles.values()].some((p) => p.default);
+      profiles.set(id, {
+        ...profiles.get(id)!,
+        keyRef: `profile:${id}`,
+        models: OPENROUTER_DISCOVERED,
+        ...(madeDefault ? { default: true } : {}),
+      });
+      changed();
+      return {
+        profileId: id,
+        discovered: OPENROUTER_DISCOVERED.length,
+        ...(madeDefault ? { madeDefault } : {}),
+      };
     },
     helperStatus: async (): Promise<HelperStatus> => HELPER_STATUS,
     /** How many times a composer said the user is typing, for specs. */
