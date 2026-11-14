@@ -2138,6 +2138,22 @@ describe("prompts", () => {
     expect(full).not.toContain("Merging is the user's decision");
   });
 
+  it("tells an orchestrator how to talk to the user: answer, back the claim, one catch-up shape, ask once", () => {
+    for (const autonomy of ["supervised", "publish", "full"] as const) {
+      const prompt = roleAt(autonomy);
+      expect(prompt).toContain(
+        "Answer every message the user writes to you in the turn it arrives",
+      );
+      expect(prompt).toContain("Back each claim with what you checked");
+      expect(prompt).toContain("A worker's report is its word until you have looked");
+      expect(prompt).toContain("**Needs you**, **Done**, **Failed**, **Still working**");
+      expect(prompt).toContain("Ask a decision once, with the option you recommend and why");
+    }
+    expect(workerAt("publish")).toContain(
+      "say what you ran to verify it and what you did not check",
+    );
+  });
+
   it("sends an orchestrator's work to spawn_worker, and spawn_task only outside the workspace, with a reason", () => {
     for (const autonomy of ["supervised", "publish", "full"] as const) {
       const prompt = roleAt(autonomy);
@@ -2292,7 +2308,9 @@ describe("prompts", () => {
     expect(prompt).toContain('"Platform"');
     expect(prompt).toContain("`report` tool");
     expect(prompt).toContain("`interface`");
-    expect(prompt).toContain("say what you tried and ruled out, not only what worked");
+    expect(prompt).toContain(
+      "say what you ran to verify it and what you did not check, and what you tried and ruled out, not only what worked",
+    );
     expect(prompt).toContain(
       "After a restart or a turn that was cut off, check your worktree, git history and GitHub before you repeat a push, a pull request or a comment",
     );

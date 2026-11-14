@@ -41,9 +41,14 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * clause in the prompt and the parameter itself, with the rest told by the digest that
  * carries the answer; measured then at 61,998. The worker's held: `send_message` is every
  * thread's, so its text lost two words to make room for the parameter.
+ * The orchestrator's raised again on 2026-11-14, on purpose and at the user's word, for how it
+ * talks to the user: it answers every message in its turn, backs a claim with what it checked,
+ * writes the catch-up after an absence in one fixed shape and asks a decision once with a
+ * recommendation; measured then at 62,634. The worker's held, at 36,827, with its report now
+ * saying what it ran and what it did not check.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 62_000,
+  orchestrator: 62_700,
   worker: 36_900,
   plain: 23_550,
 };

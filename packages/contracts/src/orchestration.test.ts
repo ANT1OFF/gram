@@ -626,7 +626,7 @@ describe("serializeDigest", () => {
     const lines = text.split("\n");
     const woken = lines.findIndex((line) => line.startsWith("Woken by:"));
     expect(lines[woken + 1]).toBe(
-      "The user has been away from Gram for 1 h 35 min. Your next message to them is what they read first when they're back: keep it to a few lines, what changed and what waits on them.",
+      "The user has been away from Gram for 1 h 35 min. Your next message to them is what they read first when they're back: open with whether anything needs them, then Needs you, Done, Failed and Still working, one sentence each.",
     );
     expect(serializeDigest({ ...digest, userAwayMinutes: 120 })).toContain(
       "away from Gram for 2 h.",
