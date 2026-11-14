@@ -30,8 +30,13 @@ test.describe("a thread's panels on a phone", () => {
     for (const tab of ["diff", "pr", "files", "terminal"]) {
       await expect(panel.locator(`[data-panel-tab="${tab}"]`)).toBeVisible();
     }
-    const more = await panel.getByTestId("panel-more").boundingBox();
-    expect(more!.x + more!.width).toBeLessThanOrEqual(390);
+    // The side column slides in as the panel opens; check where More ends once it has arrived.
+    await expect
+      .poll(async () => {
+        const more = (await panel.getByTestId("panel-more").boundingBox())!;
+        return more.x + more.width;
+      })
+      .toBeLessThanOrEqual(390);
     await panel.locator('[data-panel-tab="pr"]').tap();
     await expect(header.getByRole("heading")).toHaveText("PR");
 
