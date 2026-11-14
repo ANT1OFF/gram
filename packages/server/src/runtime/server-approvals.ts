@@ -30,6 +30,7 @@ import type { MessageQueue } from "./message-queue.ts";
 import * as Option from "effect/Option";
 import {
   DECISION_UNAVAILABLE,
+  refusalForAgent,
   refusalText,
   type Decided,
   type DecisionHookShape,
@@ -394,16 +395,18 @@ export const makeServerApprovals = ({
               },
             });
         if (decided.decision === "allow") continue;
-        const refusal = refusalText(
-          each.action,
-          decided.reason ?? "The approval was not accepted.",
-        );
-        yield* hub.publish({ type: "notify", kind: "info", title: refusal, threadId });
+        const reason = decided.reason ?? "The approval was not accepted.";
+        yield* hub.publish({
+          type: "notify",
+          kind: "info",
+          title: refusalText(each.action, reason),
+          threadId,
+        });
         return {
           kind: "approval",
           decision: "deny",
           scope: "once",
-          message: refusal,
+          message: refusalForAgent(each.action, reason),
         } satisfies RequestAnswer;
       }
       return { ...answer, scope: "once" } satisfies RequestAnswer;

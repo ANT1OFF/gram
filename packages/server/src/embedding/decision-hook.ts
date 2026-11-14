@@ -75,6 +75,18 @@ export const DECISION_UNAVAILABLE =
 export const refusalText = (action: DecisionAction, reason: string | undefined): string =>
   `Refused by policy (${action})${reason === undefined || reason.trim() === "" ? "." : `: ${reason.trim()}`}`;
 
+/**
+ * What the agent is told after a refusal, beside its text. The host's reason is about its own
+ * workspaces and rules, so the agent passes it on as given rather than reading a cause into it
+ * and handing the user a workaround.
+ */
+export const REFUSAL_FOR_AGENT =
+  "The host's policy decided this, not a rule of Gram's, and nothing was done. Tell the user what was refused and the reason as given. Don't guess at another cause or ask the user to work around it; if the reason looks wrong, say it may be a fault on the host's side.";
+
+/** A refusal as the agent that asked reads it. */
+export const refusalForAgent = (action: DecisionAction, reason: string | undefined): string =>
+  `${refusalText(action, reason)} ${REFUSAL_FOR_AGENT}`;
+
 const threadOf = (thread: DecisionSubject): DecisionRequest["thread"] => ({
   id: thread.id,
   ...(thread.workspaceId === undefined ? {} : { workspaceId: thread.workspaceId }),
