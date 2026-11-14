@@ -147,6 +147,14 @@ export const HostFeature = Schema.Literals([
    * that is on this machine. A host without it keeps such a file to itself.
    */
   "file-parts",
+  /**
+   * Puts a thread's work in progress back where a stop kept it from (`host.stop.restore`): on a
+   * machine whose disk no longer has the thread's folder, the repository is cloned again, the
+   * hidden ref fetched, and the branch and the uncommitted files put back at the same path. And
+   * deletes the ref of a thread that is closed (`host.stop.drop`). A host without it leaves such
+   * a folder missing, as before.
+   */
+  "wip-restore",
 ]);
 export type HostFeature = typeof HostFeature.Type;
 
@@ -247,6 +255,12 @@ export const HostStopKept = Schema.Struct({
   commit: Schema.optionalKey(Schema.String),
   /** Whether the remote now has that commit under the ref. */
   pushed: Schema.Boolean,
+  /**
+   * The branch at the remote is at `commit` and nothing was uncommitted: the remote holds all of
+   * it already, so no ref is kept there, and one kept before was deleted. Absent from a host
+   * built before it was said, which pushes the ref regardless.
+   */
+  caughtUp: Schema.optionalKey(Schema.Boolean),
   /** Why it wasn't committed or pushed, in the host's words. */
   note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
 });
@@ -267,6 +281,21 @@ export const HostStopPrepared = Schema.Struct({
   released: Schema.optionalKey(Schema.Boolean),
 });
 export type HostStopPrepared = typeof HostStopPrepared.Type;
+
+/**
+ * A host's answer to `host.stop.restore`: whether the thread's folder is there again with the work
+ * a stop kept of it, and what was put back.
+ */
+export const HostStopRestored = Schema.Struct({
+  restored: Schema.Boolean,
+  /** The commit the remote kept under the thread's ref. */
+  commit: Schema.optionalKey(Schema.String),
+  /** Whether files that weren't committed were put back with the branch. */
+  uncommitted: Schema.optionalKey(Schema.Boolean),
+  /** Why nothing was put back, or what to know of what was, in the host's words. */
+  note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+});
+export type HostStopRestored = typeof HostStopRestored.Type;
 
 /** How a host's last update ended, as it keeps it across the restart. */
 export const HostUpdateOutcome = Schema.Struct({
@@ -804,6 +833,39 @@ export const HostRpcs = RpcGroup.make(
   }),
   /** Takes new work again after a `host.stop.prepare` that no stop followed. */
   Rpc.make("host.stop.cancel", {}),
+  /**
+   * Puts back what a stop kept of a thread whose folder `cwd` is not on this disk: the host's
+   * clone of the repository at `url` is made or fetched, `refs/gram/wip/<thread>` is fetched from
+   * `remote` (`origin` when absent), and `cwd` is made again as it was, a worktree of that clone
+   * or the clone itself, on `branch` at the tip the work was on, with the uncommitted files
+   * uncommitted. A folder that is there with work of its own is never written over. Served by a
+   * host that names `wip-restore`.
+   */
+  Rpc.make("host.stop.restore", {
+    payload: {
+      threadId: ThreadId,
+      cwd: Schema.String.check(Schema.isMaxLength(4096)),
+      url: Schema.String.check(Schema.isMaxLength(2048)),
+      branch: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+      remote: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
+    },
+    success: HostStopRestored,
+    error: HostFailed,
+  }),
+  /**
+   * Deletes a closed thread's `refs/gram/wip/<thread>` at `remote` and in the repository at `cwd`,
+   * when that repository has the ref; otherwise nothing is asked of any remote. Served by a host
+   * that names `wip-restore`.
+   */
+  Rpc.make("host.stop.drop", {
+    payload: {
+      threadId: ThreadId,
+      cwd: Schema.String.check(Schema.isMaxLength(4096)),
+      remote: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
+    },
+    success: Schema.Struct({ dropped: Schema.Boolean }),
+    error: HostFailed,
+  }),
   /**
    * The host's own clone of the repository at `url`, in the folder it keeps clones in: cloned when
    * it has none, fetched when it has. What a worker placed on this machine makes its worktree from.

@@ -115,6 +115,33 @@ export const cloneIdentityOf = (url: string): string | undefined => {
   return "error" in remote ? undefined : remote.identity;
 };
 
+/**
+ * A URL for the repository `identity` names (`cloneIdentityOf`'s), which a clone made from it is
+ * told apart by the same identity; `undefined` for anything that isn't one, or doesn't read back
+ * as itself. Names no secret, as the identity names none.
+ */
+export const cloneUrlOf = (identity: string): string | undefined => {
+  let parts: unknown;
+  try {
+    parts = JSON.parse(identity);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(parts) || parts.length !== 5 || !parts.every((p) => typeof p === "string"))
+    return undefined;
+  const [transport, host, port, user, path] = parts as Array<string>;
+  const account = user === "" ? "" : `${user}@`;
+  const url =
+    transport === "https:"
+      ? `https://${host}${port === "443" ? "" : `:${port}`}${path}`
+      : transport === "ssh:"
+        ? `ssh://${account}${host}${port === "22" ? "" : `:${port}`}${path}`
+        : transport === "scp"
+          ? `${account}${host}:${path}`
+          : undefined;
+  return url !== undefined && cloneIdentityOf(url) === identity ? url : undefined;
+};
+
 /** `cloneIdentityOf`, of a URL that may not be there. */
 const identityOf = (url: string | undefined) =>
   url === undefined ? undefined : cloneIdentityOf(url);

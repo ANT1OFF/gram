@@ -410,7 +410,7 @@ describe.skipIf(!hasGit)("stopping a machine and resuming on a new host", () => 
         const resumed = yield* post(MACHINES_STOP_RESUME_PATH, { id: hostId });
         expect(resumed).toEqual({
           status: 200,
-          body: { reopened: [thread.id], left: [], missing: [] },
+          body: { reopened: [thread.id], left: [], missing: [], restored: [] },
         });
         expect((yield* post(MACHINES_STOP_STATUS_PATH, {})).body).toEqual({
           machines: [{ id: hostId, name: NAME, online: true, wanted: false }],
@@ -539,6 +539,7 @@ describe.skipIf(!hasGit)("stopping a machine and resuming on a new host", () => 
           reopened: [],
           left: [],
           missing: [],
+          restored: [],
         });
         expect(yield* runtimes.status(other.thread.id)).toBe("cold");
         yield* hostA.end;

@@ -22,7 +22,7 @@ export const MACHINES_STOP_STATUS_PATH = "/machines/stop/status";
 export const MACHINES_STOP_PREPARE_PATH = "/machines/stop/prepare";
 /** Takes a stop back: `{ id }`. */
 export const MACHINES_STOP_CANCEL_PATH = "/machines/stop/cancel";
-/** Resumes a machine's threads on the host that dialled in as it: `{ id }`. */
+/** Resumes a machine's threads on the host that dialled in as it: `{ id, remote? }`. */
 export const MACHINES_STOP_RESUME_PATH = "/machines/stop/resume";
 
 /** Local only, as every `/machines/*` route: never a paired browser, never a machine. */
@@ -101,7 +101,7 @@ export const hostStopRoute = (
           Effect.match({ onFailure: failed, onSuccess: () => json({ ok: true }) }),
         );
       case MACHINES_STOP_RESUME_PATH:
-        return yield* resumeHost(deps, hostId).pipe(
+        return yield* resumeHost(deps, hostId, { remote }).pipe(
           Effect.match({ onFailure: failed, onSuccess: (resumed) => json(resumed) }),
         );
       default:

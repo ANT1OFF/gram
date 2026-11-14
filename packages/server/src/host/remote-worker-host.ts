@@ -263,6 +263,13 @@ export const machineCheckouts = (
           }),
     release: (thread, options) =>
       Effect.gen(function* () {
+        // What a stop kept of the thread goes with it, while its folders are still there to
+        // delete it from. A repository that kept nothing asks no remote; a failure holds
+        // nothing back.
+        const drop = connection.stop.drop;
+        if (drop !== undefined)
+          for (const target of ownCheckouts(thread, machine))
+            yield* drop({ threadId: thread.id, cwd: target.path }).pipe(Effect.ignore);
         const removal = options.removeWorktree;
         if (removal === undefined) return;
         const used = yield* others(thread);

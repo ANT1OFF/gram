@@ -4,6 +4,11 @@
 // disk again when it is wanted (`stopStatus` says when); that host dials in as the same machine,
 // since its key is on the disk, and `resumeHost` opens the threads' sessions on it again.
 //
+// A host that dials in as the machine on another disk has none of the threads' folders. For each
+// one missing that Gram made from a clone there, `resumeHost` asks the host to make it again from
+// what the stop kept (`host.stop.restore`): a thread's work in progress follows it to a replaced
+// machine. A host that can't, or a folder Gram didn't make from a clone, is reported missing.
+//
 // Nothing here stops or starts a machine: that is the caller's to do.
 
 import {
@@ -23,6 +28,7 @@ import * as Effect from "effect/Effect";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
+import { cloneUrlOf } from "./repos.ts";
 
 export interface StopResumeDeps {
   readonly hosts: Pick<RemoteHostsShape, "connection" | "machines" | "stops">;
@@ -74,6 +80,8 @@ export interface KeptWork {
   readonly ref?: string;
   readonly commit?: string;
   readonly pushed: boolean;
+  /** The branch at the remote already held all of it, so no ref is kept there. */
+  readonly caughtUp?: boolean;
   readonly note?: string;
 }
 
@@ -100,10 +108,19 @@ const keptOf = (
     const answer = said.find((kept) => kept.threadId === threadId && kept.cwd === cwd);
     if (answer === undefined)
       return { threadId, cwd, pushed: false, note: "The machine didn't say." };
-    const sound =
-      answer.ref === wipRef(threadId) &&
-      answer.commit !== undefined &&
-      /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(answer.commit);
+    const commit =
+      answer.commit !== undefined && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(answer.commit);
+    // The remote's branch holds it all, the host says: no ref is kept, and none is named.
+    if (commit && answer.caughtUp === true && answer.ref === undefined)
+      return {
+        threadId,
+        cwd,
+        commit: answer.commit,
+        pushed: answer.pushed,
+        caughtUp: true,
+        ...(answer.note === undefined ? {} : { note: answer.note }),
+      };
+    const sound = answer.ref === wipRef(threadId) && commit;
     return {
       threadId,
       cwd,
@@ -218,9 +235,43 @@ export interface HostResumed {
   readonly reopened: ReadonlyArray<ThreadId>;
   /** Those left to open with their next message, and why. */
   readonly left: ReadonlyArray<{ readonly threadId: ThreadId; readonly reason: string }>;
-  /** Threads with a folder there whose folder the machine doesn't have: its disk isn't the one. */
-  readonly missing: ReadonlyArray<{ readonly threadId: ThreadId; readonly cwd: string }>;
+  /**
+   * Threads with a folder there whose folder the machine doesn't have: its disk isn't the one, and
+   * the folder wasn't made again, with why when the machine was asked to.
+   */
+  readonly missing: ReadonlyArray<{
+    readonly threadId: ThreadId;
+    readonly cwd: string;
+    readonly note?: string;
+  }>;
+  /** Folders that weren't on its disk and were made again from what a stop kept of them. */
+  readonly restored: ReadonlyArray<{
+    readonly threadId: ThreadId;
+    readonly cwd: string;
+    readonly commit?: string;
+    /** Whether files that weren't committed came back with the branch. */
+    readonly uncommitted?: boolean;
+    readonly note?: string;
+  }>;
 }
+
+/** How long a machine gets to clone a repository again and put one folder's work back. */
+const RESTORE_WITHIN = "20 minutes";
+
+/**
+ * How the thread's folder `cwd` on the machine was made, when Gram made it from the machine's
+ * clone of a repository: that repository's URL, rebuilt from the identity recorded as it was
+ * cloned, and the folder's branch. `undefined` for any other folder.
+ */
+const madeFrom = (thread: Thread, id: HostId, cwd: string) => {
+  for (const checkout of checkoutsOf(thread)) {
+    if (hostOf(checkout) !== id || checkout.path !== cwd) continue;
+    const url =
+      checkout.cloneIdentity === undefined ? undefined : cloneUrlOf(checkout.cloneIdentity);
+    if (url !== undefined) return { url, branch: checkout.branch };
+  }
+  return undefined;
+};
 
 /**
  * Resumes the machine's threads on the host that dialled in as it: checks each thread's folders
@@ -231,14 +282,56 @@ export interface HostResumed {
 export const resumeHost = (
   deps: StopResumeDeps,
   id: HostId,
+  options: { readonly remote?: string | undefined } = {},
 ): Effect.Effect<HostResumed, HostUnavailable> =>
   Effect.gen(function* () {
     const connection = yield* deps.hosts.connection(id);
     const placed = placedOn(yield* deps.store.listThreads, id);
-    const missing: Array<{ readonly threadId: ThreadId; readonly cwd: string }> = [];
+    const missing: Array<HostResumed["missing"][number]> = [];
+    const restored: Array<HostResumed["restored"][number]> = [];
+    const restore = connection.stop.restore;
     for (const { thread, cwds } of placed)
-      for (const cwd of cwds)
-        if (!(yield* connection.git.present(cwd))) missing.push({ threadId: thread.id, cwd });
+      for (const cwd of cwds) {
+        if (yield* connection.git.present(cwd)) continue;
+        const entry = { threadId: thread.id, cwd };
+        const made = madeFrom(thread, id, cwd);
+        if (restore === undefined || made === undefined) {
+          missing.push(entry);
+          continue;
+        }
+        const answer = yield* restore({
+          threadId: thread.id,
+          cwd,
+          url: made.url,
+          ...(made.branch === undefined ? {} : { branch: made.branch }),
+          ...(options.remote === undefined ? {} : { remote: options.remote }),
+        }).pipe(
+          Effect.timeoutOrElse({
+            duration: RESTORE_WITHIN,
+            orElse: () => Effect.succeed({ restored: false, note: "The machine didn't answer." }),
+          }),
+          Effect.catch((error) => Effect.succeed({ restored: false, note: error.message })),
+        );
+        const note = answer.note === undefined ? {} : { note: answer.note };
+        if (!answer.restored) {
+          missing.push({ ...entry, ...note });
+          continue;
+        }
+        const commit =
+          "commit" in answer &&
+          answer.commit !== undefined &&
+          /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(answer.commit)
+            ? { commit: answer.commit }
+            : {};
+        restored.push({
+          ...entry,
+          ...commit,
+          ...("uncommitted" in answer && answer.uncommitted !== undefined
+            ? { uncommitted: answer.uncommitted }
+            : {}),
+          ...note,
+        });
+      }
     const gone = new Set(missing.map((entry) => entry.threadId));
     const live = new Set(placed.filter(({ session }) => session).map(({ thread }) => thread.id));
     const reopened: Array<ThreadId> = [];
@@ -260,9 +353,14 @@ export const resumeHost = (
       else left.push({ threadId, reason: started });
     }
     yield* Effect.logInfo("a machine's threads were resumed").pipe(
-      Effect.annotateLogs({ hostId: id, reopened: reopened.length, missing: missing.length }),
+      Effect.annotateLogs({
+        hostId: id,
+        reopened: reopened.length,
+        missing: missing.length,
+        restored: restored.length,
+      }),
     );
-    return { reopened, left, missing };
+    return { reopened, left, missing, restored };
   });
 
 export interface StopState {

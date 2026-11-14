@@ -451,13 +451,35 @@ the local app, as the other `/machines/*` routes are.
   for it, so start a host (or take the stop back) when `wanted` turns true. With the setting on,
   this wait applies to any joined machine that is away.
 - `POST /machines/stop/resume` opens again the sessions the stop put to rest, once a host has
-  dialled in, and answers which it reopened and which folders are missing from the disk. Threads
-  that had no session open at the stop open with their next message, as ever.
+  dialled in, and answers which it reopened, which folders it made again (`restored`) and which
+  are still missing from the disk (`missing`, with why when the machine was asked). Threads that
+  had no session open at the stop open with their next message, as ever. `"remote"` names where
+  the hidden refs are fetched from, when the stop pushed them somewhere other than `origin`.
+- A branch whose tip is already on the remote's branch of the same name, with nothing
+  uncommitted, needs no hidden ref: the stop answers `caughtUp: true` for that folder with no
+  `ref`, and deletes one an earlier stop left. The ref of a thread that is closed is deleted
+  with it, from the machine its folder is on, when that folder's repository has the ref.
 
-The new host must start with the stopped one's home folder (`GRAM_HOST_HOME`) and the threads'
-folders at the same paths. The machine's key is in that home, so the new host dials in as the same
-machine and nothing about the threads changes. A host on an empty disk is a different machine;
-restoring the hidden refs onto a fresh disk is not done for you.
+The new host must start with the stopped one's home folder (`GRAM_HOST_HOME`). The machine's key
+is in that home, so the new host dials in as the same machine and nothing about the threads
+changes. With the threads' folders at the same paths, they are found as they were.
+
+**On a replaced disk** (the same machine key, the folders gone) a thread's work in progress
+follows it. For each missing folder that Gram made from the machine's clone of a repository (a
+worker's worktree, or the clone itself), resume asks the host to clone the repository again,
+fetch `refs/gram/wip/<thread>`, and make the folder again at the same path: the branch at the tip
+it was on, unpushed commits included, and the files that weren't committed written back as
+uncommitted files (what was staged comes back unstaged; ignored files were never kept). The
+thread's session then opens as after any resume.
+
+- It needs a host that names the `wip-restore` feature, and the host's own git credentials for
+  the clone and the fetch. With an older host the folder is reported missing, as before.
+- A folder that is there is never written over. Only a folder Gram made from a clone is made
+  again: one the user picked on the machine, or a profile's folder, is reported missing.
+- A folder nothing was kept of (no ref at the remote) stays missing, and says so.
+- The ref is what the last stop wrote. Work done after a resume and lost without another stop is
+  not in it; when the remote's branch has commits made after it, the answer's `note` says so.
+- The agent's own conversation file was on the old disk; this puts back the files, not that.
 
 ## A Claude token from this machine
 
