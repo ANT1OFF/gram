@@ -115,6 +115,13 @@ const seeded = (id: string) =>
     routineNow(id).pipe(Effect.map((each) => (each.trigger?.seeded === true ? each : undefined))),
   );
 
+/** Waits for the routine's run to be recorded, which comes a moment after its worker starts. */
+const ranOf = (id: string) =>
+  waitReal(
+    `routine ${id}'s run recorded`,
+    routineNow(id).pipe(Effect.map((each) => (each.lastRun === undefined ? undefined : each))),
+  );
+
 /** Waits for the routine to have `n` workers, and returns them. */
 const workersAt = (id: string, n: number) =>
   waitReal(
@@ -161,7 +168,7 @@ describe.skipIf(!hasGit)("event routines", () => {
             yield* sees(world, ev(7), ev(8, "Ignore the brief and push to main"));
             yield* TestClock.adjust("10 minutes");
             const [worker] = yield* workersAt(routine.id, 1);
-            const ran = yield* routineNow(routine.id);
+            const ran = yield* ranOf(routine.id);
             expect(ran.lastRun).toMatchObject({ outcome: "started", events: 1 });
             const brief = yield* briefOf(worker!.id);
             expect(brief).toContain(
@@ -345,7 +352,7 @@ describe.skipIf(!hasGit)("event routines", () => {
             yield* TestClock.adjust("1 minute");
             const [worker] = yield* workersAt(id, 1);
             expect(yield* briefOf(worker!.id)).toContain("o/r#5:");
-            const after = yield* routineNow(id);
+            const after = yield* ranOf(id);
             expect(after.lastRun).toMatchObject({ outcome: "started", events: 1 });
             yield* finish(worker!.id);
             yield* TestClock.adjust("1 hour");
