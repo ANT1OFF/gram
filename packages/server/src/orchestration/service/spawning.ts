@@ -108,6 +108,17 @@ const spawnedResult = (
 };
 
 /** What spawning takes from the rest of the service. */
+
+/**
+ * Where a headless Gram puts a worker that names no machine: on its orchestrator's machine, so an
+ * orchestration never spreads to a machine started for other work (another run's, say). None
+ * when the orchestrator runs on this machine.
+ */
+export const orchestratorsMachine = (under: Pick<Thread, "checkout" | "currentCheckout">) => {
+  const own = hostOf(effectiveCheckout(under));
+  return own === LOCAL_HOST_ID ? undefined : own;
+};
+
 export interface SpawningDeps {
   readonly outsideWorkspace: Projects["outsideWorkspace"];
   readonly survey: LedgerWatch["survey"];
@@ -208,22 +219,27 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       );
     });
   /**
-   * The machine a worker is placed on: the one `named`, else this one (`undefined`), which a
-   * headless Gram, running no work itself, replaces with its default machine. With none that can
-   * take it there, the spawn is refused with why.
+   * The machine a worker is placed on: the one `named`, else this one (`undefined`). A headless
+   * Gram, running no work itself, puts it on its orchestrator's machine, so an orchestration stays
+   * on one machine and never spreads to a machine started for other work; an orchestrator with
+   * none of its own takes the placement's machine. With none that can take it, the spawn is
+   * refused with why.
    */
   const placedMachine = (tool: string, named: string | undefined, under: Thread) =>
     Effect.gen(function* () {
+      const own = orchestratorsMachine(under);
       const hostId =
         named !== undefined || headless === undefined
           ? named === undefined
             ? undefined
             : yield* machineNamed(tool, named)
-          : yield* headless.machine.pipe(
-              Effect.mapError((error) =>
-                toolError(tool, refusal("unknown_machine", error.message)),
-              ),
-            );
+          : own !== undefined
+            ? own
+            : yield* headless.machine.pipe(
+                Effect.mapError((error) =>
+                  toolError(tool, refusal("unknown_machine", error.message)),
+                ),
+              );
       // A worker goes on a machine of its orchestrator's person's, or of no one's under no one's
       // (`host/ownership.ts`): an orchestration never spans two people, so nothing that reaches
       // its workers has to ask whose each one is.

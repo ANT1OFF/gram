@@ -210,7 +210,12 @@ Nothing else starts one: an agent, a skill or a repository's instructions have n
 **The provider registers the host** as any provisioned host ([Provisioned hosts](PROVISIONED_HOSTS.md)),
 naming the person in `owner` and `onDemand: "personal"`. From then on:
 
-- a thread that person starts with no machine named goes on their own machine while it is online;
+- a thread that person starts with no machine named goes on their own machine while it is online,
+  and on no other machine: with none of theirs online they are asked to start it (the composer's
+  start card), never placed on a shared host or one started for something else;
+- a host started for the threads placed on it by name (`onDemand: "thread"`, an automated run's,
+  say, with or without an `owner`) takes only those threads and their workers;
+- a worker spawned with no machine named goes on its orchestrator's machine;
 - a host started for one person is never anyone's default, and work that names it for anyone else
   is refused;
 - a thread is its host's owner's, and nothing else makes it anyone's. Threads that work together

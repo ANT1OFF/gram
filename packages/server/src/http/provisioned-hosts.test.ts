@@ -534,6 +534,27 @@ layer(TestServer, { excludeTestServices: true })("provisioned hosts over TLS", (
           body: "unauthorized: machine not joined",
         });
         expect((yield* machines).map((one) => one.id)).toEqual([probeId]);
+
+        // A host for the threads placed on it by name (one run's, say) needs no owner; a person's
+        // own host does, and an owner always comes with a kind.
+        const forRun = provisionHost("run-1");
+        const run = (body: Record<string, unknown>) =>
+          local(MACHINES_PROVISION_PATH, {
+            name: forRun.name,
+            publicKey: forRun.publicKey,
+            platform: process.platform,
+            ...body,
+          });
+        expect((yield* run({ onDemand: "personal" })).status).toBe(400);
+        expect((yield* run({ owner: "ada" })).status).toBe(400);
+        expect((yield* run({ onDemand: "elsewhere" })).status).toBe(400);
+        expect((yield* run({ onDemand: "thread" })).status).toBe(200);
+        const stored = JSON.parse(kept("provisioned-hosts.json")) as {
+          machines: Array<{ name: string; onDemand?: string; owner?: string }>;
+        };
+        const runsOwn = stored.machines.find((each) => each.name === forRun.name);
+        expect(runsOwn?.onDemand).toBe("thread");
+        expect(runsOwn?.owner).toBeUndefined();
       }).pipe(Effect.scoped),
     180_000,
   );
