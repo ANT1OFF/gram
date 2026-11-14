@@ -608,6 +608,31 @@ describe.skipIf(!hasGit)("orchestration service", () => {
     ),
   );
 
+  it.effect("says in a digest that the user wrote to the orchestrator a moment ago", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const { session, thread } = yield* openOrchestrator(world);
+        const worker = yield* spawn(session, { feature: "mail-trigger", title: "Mail trigger" });
+        yield* runtimes.send(thread.id, { text: "How is the mail trigger going?" });
+        yield* waitSent(thread.id, 2);
+        yield* completeTurn(session);
+        yield* worker.session.emit({
+          type: "request",
+          request: { kind: "question", id: "req-1" as RequestId, questions: [] },
+        });
+        yield* waitStatus(worker.thread.id, "needsInput");
+        yield* settle;
+        yield* TestClock.adjust("61 seconds");
+        yield* settle;
+        yield* TestClock.adjust("60 seconds");
+        yield* waitSent(thread.id, 3);
+        expect(session.sent[2]?.text).toContain("The user wrote to you");
+        expect(session.sent[2]?.text).toContain("Don't break in with a routine update");
+      }),
+    ),
+  );
+
   it.effect(
     "holds a worker for what the user typed, not for a notice, until they hand it back",
     () =>

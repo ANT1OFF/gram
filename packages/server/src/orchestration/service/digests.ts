@@ -31,6 +31,7 @@ import * as FiberMap from "effect/FiberMap";
 import * as Option from "effect/Option";
 import { clockText, resumeText, spanText } from "../../runtime/limit-wait.ts";
 import { type SystemDelivery, type SystemDeliveryFailure } from "../../runtime/thread-runtimes.ts";
+import { findUserMessages } from "../../persistence/thread-store.ts";
 import { visibleFeatures } from "../ledger.ts";
 import { DECISIONS_FILE } from "../memory.ts";
 import {
@@ -65,6 +66,7 @@ import {
   type RosterUnavailable,
   type WakeEvent,
   userAwayMinutes,
+  userWroteMinutesAgo,
 } from "../rules.ts";
 import {
   DIGEST_KEY,
@@ -435,6 +437,22 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
         Option.isSome(appActivity) ? yield* appActivity.value.inactiveSince : undefined,
         readAt,
       );
+      // The newest message the user typed into the orchestrator's own conversation, to say when
+      // this digest lands in the middle of it. A boot digest opens a session; nothing to break in on.
+      const orchestratorId = state.workspace.orchestratorThreadId;
+      const [lastTyped] =
+        variant === "boot" || orchestratorId === undefined
+          ? []
+          : yield* findUserMessages(store, orchestratorId, {
+              from: "newest",
+              count: 1,
+              keep: (message) => message.metadata?.author === "user",
+            });
+      const wroteMinutesAgo = userWroteMinutesAgo(
+        lastTyped?.metadata?.createdAt,
+        readAt,
+        awayMinutes,
+      );
       const digest: OrchestrationDigest = {
         kind: "orchestration",
         variant,
@@ -476,6 +494,7 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
         ...(state.paused === undefined ? {} : { paused: state.paused }),
         ...(waiting === undefined ? {} : { waiting }),
         ...(awayMinutes === undefined ? {} : { userAwayMinutes: awayMinutes }),
+        ...(wroteMinutesAgo === undefined ? {} : { userWroteMinutesAgo: wroteMinutesAgo }),
         ...(questions === undefined ? {} : { questions }),
       };
       yield* updateOutbox(workspaceId, (current) => [
