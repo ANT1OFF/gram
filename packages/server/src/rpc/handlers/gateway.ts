@@ -6,6 +6,7 @@ import {
   NotFound,
   customModelsOf,
   gatewayAgentModel,
+  gatewayModelForAgent,
   gatewayModelUsable,
   GATEWAY_UNLISTED_WARNING,
   withCustomModels,
@@ -432,7 +433,12 @@ export const makeGateway = ({
         const preferred = agent === "codex" ? yield* codexModel(profile.baseURL) : undefined;
         const added = new Set(custom.map((model) => model.id));
         const listed = withCustomModels(
-          profileModels(profile.models, agent, preferred, added),
+          profileModels(
+            profile.models.filter((model) => gatewayModelForAgent(profile, model, agent)),
+            agent,
+            preferred,
+            added,
+          ),
           custom,
         );
         return { models: yield* warnUnknown(host, profile, listed) };

@@ -1,5 +1,6 @@
 import {
   gatewayAgentModel,
+  gatewayModelForAgent,
   gatewayModelUsable,
   type AgentKind,
   type AgentModel,
@@ -275,7 +276,10 @@ export function createMockGateways(
           ],
         };
       const profile = profiles.get(profileId);
-      const usable = profile?.models.filter(gatewayModelUsable) ?? [];
+      const usable =
+        profile?.models.filter(
+          (model) => gatewayModelUsable(model) && gatewayModelForAgent(profile, model, agent),
+        ) ?? [];
       return { models: usable.map((m, i) => toAgentModel(m, agent, i === 0)) };
     },
   };
