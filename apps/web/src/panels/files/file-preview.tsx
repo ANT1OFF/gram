@@ -1,6 +1,6 @@
 import type { ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { FileCode, FolderOpen, SquareArrowOutUpRight, X } from "lucide-react";
+import { FileCode, FolderOpen, SquareArrowUpRightExit, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { BundledLanguage } from "shiki";
 
@@ -181,7 +181,7 @@ export function FilePreview({
                 void openInEditor(path, line === undefined ? scope : { ...scope, line })
               }
             >
-              <SquareArrowOutUpRight />
+              <SquareArrowUpRightExit />
             </Button>
             <Button
               type="button"

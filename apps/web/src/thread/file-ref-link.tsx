@@ -1,6 +1,6 @@
 import { Popover } from "@base-ui/react/popover";
 import { checkoutRoots, isCredentialPath, type ThreadId } from "@gram/contracts";
-import { Copy, Eye, FolderOpen, SquareArrowOutUpRight } from "lucide-react";
+import { Copy, Eye, FolderOpen, SquareArrowUpRightExit } from "lucide-react";
 import {
   createContext,
   use,
@@ -266,7 +266,7 @@ function FileLink({
             )}
             {!secret && local && (
               <MenuAction label="Open in editor" onClick={act(editor)}>
-                <SquareArrowOutUpRight />
+                <SquareArrowUpRightExit />
               </MenuAction>
             )}
             {reveals && (
