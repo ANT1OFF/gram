@@ -485,3 +485,7 @@ export const atRest = (rt: Runtime, afterError = false): boolean =>
 
 /** A thread's runtime, made cold from the store the first time it is asked for. */
 export type GetRuntime = (threadId: ThreadId) => Effect.Effect<Runtime, ThreadNotFound>;
+
+/** What a session asked to open for a thread whose machine isn't named yet is told. */
+export const AWAITS_MACHINE =
+  "The thread's machine hasn't started yet. What is sent to it waits until it has.";

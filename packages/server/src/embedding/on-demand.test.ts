@@ -99,6 +99,10 @@ const threads = [
   stored("ada-worker", "m-ada", "ada-orchestrator"),
   stored("shared-orchestrator", "m-shared"),
   stored("shared-worker", undefined, "ada-orchestrator"),
+  // Started before their machines: on none yet, each by the person named.
+  { ...stored("waiting-ada", "awaited"), awaitingMachine: { since: 0, startedBy: "ada" } },
+  { ...stored("waiting-grace", "awaited"), awaitingMachine: { since: 0, startedBy: "grace" } },
+  { ...stored("waiting-anyone", "awaited"), awaitingMachine: { since: 0 } },
 ];
 const getThread = (threadId: ThreadId) => {
   const found = threads.find((thread) => thread.id === threadId);
@@ -363,5 +367,38 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
     );
     expect(refused._tag).toBe("ThreadNotFound");
     expect(reached).toEqual([`relocate:${orchestrator}`]);
+  });
+
+  // A thread started before its machine has no owner to keep: it has who it was started by.
+  it("places a thread that waits for its machine only on its starter's machine, or no one's", async () => {
+    const { reached, owned } = recording();
+    const plan = (hostId: string) => ({
+      from: onto("awaited"),
+      prepare: Effect.succeed(onto(hostId)),
+    });
+    const [ada, grace, anyone] = ["waiting-ada", "waiting-grace", "waiting-anyone"].map((id) =>
+      ThreadId.make(id),
+    ) as [ThreadId, ThreadId, ThreadId];
+    await Effect.runPromise(owned.relocate(ada, plan("m-ada")));
+    await Effect.runPromise(owned.relocate(ada, plan("m-shared")));
+    await Effect.runPromise(owned.relocate(anyone, plan("m-ada")));
+    // Never onto a machine started for someone else than its starter.
+    const changed = await Effect.runPromiseExit(owned.relocate(grace, plan("m-ada")));
+    expect(String(changed)).toContain(MOVE_CHANGES_OWNER);
+    // And while it waits, nobody else reaches it: to them it isn't there.
+    const refused = await Effect.runPromise(
+      as("grace")(owned.relocate(ada, plan("m-ada"))).pipe(Effect.flip),
+    );
+    expect(refused._tag).toBe("ThreadNotFound");
+    expect(await outcome(as("grace")(owned.send(ada, { text: "Grace's" }) as never))).toBe(
+      NOT_YOUR_MACHINE,
+    );
+    await Effect.runPromise(as("ada")(owned.send(ada, { text: "Ada's" })));
+    expect(reached).toEqual([
+      `relocate:${ada}`,
+      `relocate:${ada}`,
+      `relocate:${anyone}`,
+      `send:${ada}`,
+    ]);
   });
 });

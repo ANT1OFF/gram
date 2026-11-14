@@ -122,6 +122,13 @@ export const makeMessageQueue = ({
   forkStopInMissing,
   becomeIdle,
 }: MessageQueueDeps) => {
+  /** Whether the thread waits for a machine to be named for it (`Thread.awaitingMachine`). */
+  const awaitsMachine = (rt: Runtime) =>
+    store.getThread(rt.threadId).pipe(
+      Effect.map((thread) => thread.awaitingMachine !== undefined),
+      Effect.orElseSucceed(() => false),
+    );
+
   /** Called with the runtime lock held. Stores the queue with the launch, if any, at its head. */
   const persistQueue = (rt: Runtime) =>
     Effect.suspend(() => {
@@ -538,6 +545,8 @@ export const makeMessageQueue = ({
       if (rt.closing) return yield* failPendingDeliveries(rt, "ended");
       // Held for `whileAtRest`, which pumps again once it lets go.
       if (rt.reserved) return;
+      // Held until the thread's machine is named: the placement pumps again (`relocate`).
+      if (yield* awaitsMachine(rt)) return;
       // Held for the limit's resume, which pumps again.
       if (yield* waitWithAccount(rt)) return;
       switch (rt.status) {
@@ -650,8 +659,11 @@ export const makeMessageQueue = ({
               status: rt.status,
             });
           }
+          // A thread whose machine isn't named yet has no folder to miss, and starts nothing:
+          // whatever is sent waits in its queue, which the placement sends (`relocate`).
+          const awaiting = yield* awaitsMachine(rt);
           // Rather than start an agent that fails to spawn or fails every tool.
-          yield* refuseMissingFolder(rt);
+          if (!awaiting) yield* refuseMissingFolder(rt);
           // A monitor's notice never wakes an archived thread. Read under the lock, so an archive
           // written while the notice waited its turn stops it before any send, steer or open.
           if (noticeKey !== undefined && (yield* store.getThread(threadId)).parked) {
@@ -710,6 +722,7 @@ export const makeMessageQueue = ({
               yield* syncQueue(rt);
               return { queued: true };
             });
+          if (awaiting) return yield* enqueue();
           if ((yield* switchHold(rt)) !== undefined) return yield* enqueue();
           // While the thread waits out a limit, only the user's own word starts a turn, and it
           // ends the wait; anything else waits in the queue for the resume. A thread at rest
@@ -879,7 +892,8 @@ export const makeMessageQueue = ({
         rt.reserved ||
         rt.limitWait !== undefined ||
         (yield* switchHold(rt)) !== undefined ||
-        (yield* queueHeld(rt))
+        (yield* queueHeld(rt)) ||
+        (yield* awaitsMachine(rt))
       )
         return;
       switch (rt.status) {
