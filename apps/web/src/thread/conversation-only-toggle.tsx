@@ -2,6 +2,7 @@ import { Menu } from "@base-ui/react/menu";
 import { Check, MessageSquareText } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
 import { useConversationOnly } from "@/stores/conversation-only";
 
@@ -28,6 +29,7 @@ export function ConversationOnlyButton({
   inTitlebar?: boolean;
 }) {
   const on = useConversationOnly((s) => s.on);
+  const keys = useShortcutHint("view.conversationOnly");
   return (
     <Button
       variant="ghost"
@@ -35,7 +37,7 @@ export function ConversationOnlyButton({
       data-testid="conversation-only"
       aria-pressed={on}
       aria-label={CONVERSATION_ONLY}
-      title={on ? HINT.on : HINT.off}
+      title={withHint(on ? HINT.on : HINT.off, keys)}
       className={cn(
         "shrink-0 text-muted-foreground",
         on && "bg-accent text-foreground @max-sm:size-7 @max-sm:px-0",
@@ -51,6 +53,7 @@ export function ConversationOnlyButton({
 /** The same switch as a menu's checked item: the title bar's View and a pane's "…". */
 export function ConversationOnlyItem({ className }: { className: string }) {
   const on = useConversationOnly((s) => s.on);
+  const keys = useShortcutHint("view.conversationOnly");
   return (
     <Menu.CheckboxItem
       data-testid="menu-conversation-only"
@@ -66,6 +69,9 @@ export function ConversationOnlyItem({ className }: { className: string }) {
         </Menu.CheckboxItemIndicator>
       </span>
       {CONVERSATION_ONLY}
+      {keys && (
+        <span className="ml-auto pl-4 text-meta text-muted-foreground phone:hidden">{keys}</span>
+      )}
     </Menu.CheckboxItem>
   );
 }

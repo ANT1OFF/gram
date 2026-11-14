@@ -34,3 +34,23 @@ test("the header's switch hides the agent's tool calls and brings them back", as
   await page.getByTestId("conversation-only").click();
   await expect(work.first()).toBeVisible();
 });
+
+test("its shortcut switches it from the keyboard, and the View menu names the keys", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1680, height: 900 });
+  await page.goto("/t/t-flaky");
+  await expect(threadRow(page, "t-flaky")).toBeVisible();
+  const toggle = page.getByTestId("conversation-only");
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await page.keyboard.press("ControlOrMeta+Alt+5");
+  await expect(page.getByTestId("conversation-only")).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-view").click();
+  const item = page.getByTestId("menu-conversation-only");
+  await expect(item).toHaveAttribute("aria-checked", "true");
+  await expect(item).toContainText(/5/);
+  await item.click();
+  await expect(page.getByTestId("conversation-only")).toHaveAttribute("aria-pressed", "false");
+});
