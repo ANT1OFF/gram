@@ -6,6 +6,7 @@ import { ProcLive } from "./proc.ts";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-utils.ts";
 import {
   dropWip,
+  fetchBranchTip,
   fetchWip,
   isPushRemote,
   pushWip,
@@ -207,13 +208,17 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
         expect(yield* fetchWip(clone, "thread-none", "origin", FILE)).toBeUndefined();
         const kept = yield* fetchWip(clone, "thread-1", "origin", FILE);
         expect(kept).toMatchObject({ commit: head, head, uncommitted: false });
-        // The clone's own checkout holds `main`, so a second worktree can't take it.
+        // The clone's own checkout holds `main` with changes of its own, so a second worktree
+        // can't take it.
+        write(nodePath.join(clone, "mine.txt"), "mine\n");
         const taken = nodePath.join(dir, "taken");
         expect(
           (yield* Effect.flip(restoreWipWorktree(clone, taken, kept!, "main"))).message,
-        ).toMatch(/main/);
+        ).toMatch(/main is checked out/);
         expect(fs.existsSync(taken)).toBe(false);
         expect(run(clone, "worktree", "list").trim().split("\n")).toHaveLength(1);
+        expect(run(clone, "symbolic-ref", "--short", "HEAD").trim()).toBe("main");
+        fs.rmSync(nodePath.join(clone, "mine.txt"));
         const tree = nodePath.join(dir, "tree");
         yield* restoreWipWorktree(clone, tree, kept!, "mine");
         expect(run(tree, "rev-parse", "HEAD").trim()).toBe(head);
@@ -252,5 +257,202 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
           (yield* Effect.flip(dropWip(repo, "../heads/main", "origin", FILE))).message,
         ).toContain("invalid thread id");
       }).pipe(provide),
+  );
+
+  it.live("never moves a branch that is here already back, and loses none of its commits", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = withOrigin();
+      const tree = nodePath.join(nodePath.dirname(repo), "tree");
+      run(repo, "worktree", "add", "--quiet", "-b", "feature/work", tree);
+      write(nodePath.join(tree, "a.txt"), "one\n");
+      run(tree, "add", "-A");
+      run(tree, "commit", "--quiet", "-m", "first");
+      const first = run(tree, "rev-parse", "HEAD").trim();
+      yield* pushWip(tree, yield* snapshotWip(tree, "thread-1"), "origin", FILE);
+      // Work went on on the same disk and was never pushed; then the folder alone was lost.
+      write(nodePath.join(tree, "a.txt"), "two\n");
+      run(tree, "commit", "--quiet", "-am", "second");
+      const second = run(tree, "rev-parse", "HEAD").trim();
+      fs.rmSync(tree, { recursive: true, force: true });
+
+      // The ref is behind the branch: the branch stays where it is, and is what is checked out.
+      const stale = yield* fetchWip(repo, "thread-1", "origin", FILE);
+      expect(stale).toMatchObject({ head: first, uncommitted: false });
+      expect(yield* restoreWipWorktree(repo, tree, stale!, "feature/work")).toEqual({
+        ahead: true,
+      });
+      expect(run(repo, "rev-parse", "feature/work").trim()).toBe(second);
+      expect(run(tree, "symbolic-ref", "--short", "HEAD").trim()).toBe("feature/work");
+      expect(fs.readFileSync(nodePath.join(tree, "a.txt"), "utf8")).toBe("two\n");
+
+      // Kept with files uncommitted on top of the older tip: there is no place for them that
+      // loses nothing, so nothing is put back and the branch is not moved.
+      run(tree, "checkout", "--quiet", "--detach", first);
+      write(nodePath.join(tree, "b.txt"), "uncommitted\n");
+      yield* pushWip(tree, yield* snapshotWip(tree, "thread-1"), "origin", FILE);
+      fs.rmSync(tree, { recursive: true, force: true });
+      const dirty = yield* fetchWip(repo, "thread-1", "origin", FILE);
+      expect(dirty).toMatchObject({ head: first, uncommitted: true });
+      expect(
+        (yield* Effect.flip(restoreWipWorktree(repo, tree, dirty!, "feature/work"))).message,
+      ).toContain("was not moved");
+      expect(run(repo, "rev-parse", "feature/work").trim()).toBe(second);
+      expect(fs.existsSync(tree)).toBe(false);
+
+      // A branch that went another way is not moved either.
+      run(repo, "checkout", "--quiet", "--detach");
+      run(repo, "commit", "--quiet", "--allow-empty", "-m", "elsewhere");
+      run(repo, "branch", "--quiet", "-f", "feature/work", "HEAD");
+      const elsewhere = run(repo, "rev-parse", "feature/work").trim();
+      expect(
+        (yield* Effect.flip(restoreWipWorktree(repo, tree, stale!, "feature/work"))).message,
+      ).toContain("was not moved");
+      expect(run(repo, "rev-parse", "feature/work").trim()).toBe(elsewhere);
+
+      // One behind the kept tip is moved forward to it.
+      run(repo, "branch", "--quiet", "-f", "feature/work", "main");
+      expect(yield* restoreWipWorktree(repo, tree, stale!, "feature/work")).toEqual({
+        ahead: false,
+      });
+      expect(run(repo, "rev-parse", "feature/work").trim()).toBe(first);
+      expect(run(origin, "rev-parse", wipRef("thread-1")).trim()).toBe(dirty!.commit);
+    }).pipe(provide),
+  );
+
+  it.live("takes the clone's default branch for a thread that worked on it", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = withOrigin();
+      // The thread's worktree was on `main`, the clone it was made from somewhere else.
+      run(repo, "checkout", "--quiet", "--detach");
+      const work = nodePath.join(nodePath.dirname(repo), "work");
+      run(repo, "worktree", "add", "--quiet", work, "main");
+      write(nodePath.join(work, "new.txt"), "uncommitted\n");
+      const head = run(work, "rev-parse", "HEAD").trim();
+      yield* pushWip(work, yield* snapshotWip(work, "thread-1"), "origin", FILE);
+
+      // A fresh clone is on `main` itself: it gives the branch up, and nothing in it changes.
+      const { dir, clone } = cloneOf(origin);
+      const kept = yield* fetchWip(clone, "thread-1", "origin", FILE);
+      const tree = nodePath.join(dir, "tree");
+      fs.mkdirSync(tree);
+      yield* restoreWipWorktree(clone, tree, kept!, "main");
+      expect(run(tree, "symbolic-ref", "--short", "HEAD").trim()).toBe("main");
+      expect(run(tree, "rev-parse", "HEAD").trim()).toBe(head);
+      expect(fs.readFileSync(nodePath.join(tree, "new.txt"), "utf8")).toBe("uncommitted\n");
+      expect(run(clone, "rev-parse", "HEAD").trim()).toBe(head);
+      expect(run(clone, "status", "--porcelain")).toBe("");
+      expect(run(clone, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("HEAD");
+    }).pipe(provide),
+  );
+
+  it.live("refuses a ref that isn't the commit the stop kept", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = withOrigin();
+      write(nodePath.join(repo, "tracked.txt"), "edited\n");
+      const snapshot = yield* snapshotWip(repo, "thread-1");
+      yield* pushWip(repo, snapshot, "origin", FILE);
+      const { clone } = cloneOf(origin);
+      expect(yield* fetchWip(clone, "thread-1", "origin", FILE, snapshot.commit)).toMatchObject({
+        commit: snapshot.commit,
+        uncommitted: true,
+      });
+      run(clone, "update-ref", "-d", wipRef("thread-1"));
+
+      // Somebody who can push writes the ref, made to read as this module's own.
+      const forger = cloneOf(origin).clone;
+      run(forger, "checkout", "--quiet", "--orphan", "forged");
+      write(nodePath.join(forger, "tracked.txt"), "forged\n");
+      run(forger, "add", "-A");
+      run(forger, "commit", "--quiet", "-m", "base");
+      write(nodePath.join(forger, "planted.sh"), "#!/bin/sh\n");
+      run(forger, "add", "-A");
+      run(
+        forger,
+        "-c",
+        "user.email=gram@localhost",
+        "-c",
+        "user.name=Gram",
+        "commit",
+        "--quiet",
+        "-m",
+        "work in progress thread-1",
+      );
+      run(forger, "push", "--quiet", "--force", "origin", `HEAD:${wipRef("thread-1")}`);
+      expect(
+        (yield* Effect.flip(fetchWip(clone, "thread-1", "origin", FILE, snapshot.commit))).message,
+      ).toContain("isn't the commit the stop kept");
+      // Nothing of it arrived.
+      expect(run(clone, "for-each-ref", "--format=%(refname)", "refs/gram/wip").trim()).toBe("");
+      expect(
+        (yield* Effect.flip(fetchWip(clone, "thread-1", "origin", FILE, "not-a-commit"))).message,
+      ).toContain("invalid commit");
+    }).pipe(provide),
+  );
+
+  it.live("leaves a ref another folder of the thread wrote, and deletes its own", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = withOrigin();
+      const other = cloneOf(origin).clone;
+      // Another clone keeps uncommitted work of the same thread under the thread's one ref.
+      write(nodePath.join(other, "tracked.txt"), "only here\n");
+      const theirs = yield* snapshotWip(other, "thread-1");
+      yield* pushWip(other, theirs, "origin", FILE);
+
+      // This one is caught up: what the ref holds is not its own, so it stays.
+      const clean = yield* snapshotWip(repo, "thread-1");
+      expect(yield* wipCaughtUp(repo, clean, "origin", FILE)).toBe(true);
+      expect(yield* dropWip(repo, "thread-1", "origin", FILE, { by: clean.commit })).toBe("left");
+      expect(run(origin, "rev-parse", wipRef("thread-1")).trim()).toBe(theirs.commit);
+
+      // Its own earlier snapshot, which its working tree moved on from, goes.
+      write(nodePath.join(repo, "tracked.txt"), "edited\n");
+      const dirty = yield* snapshotWip(repo, "thread-1");
+      yield* pushWip(repo, dirty, "origin", FILE);
+      run(repo, "commit", "--quiet", "-am", "done");
+      run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+      const done = yield* snapshotWip(repo, "thread-1");
+      expect(done.previous).toBe(dirty.commit);
+      expect(
+        yield* dropWip(repo, "thread-1", "origin", FILE, {
+          by: done.commit,
+          also: [done.previous!],
+        }),
+      ).toBe("dropped");
+      expect(run(origin, "for-each-ref", "--format=%(refname)").trim()).toBe("refs/heads/main");
+      expect(yield* dropWip(repo, "thread-1", "origin", FILE, { by: done.commit })).toBe("absent");
+
+      // A ref at a commit the branch contains goes too.
+      run(repo, "push", "--quiet", "origin", `HEAD~1:${wipRef("thread-1")}`);
+      expect(yield* dropWip(repo, "thread-1", "origin", FILE, { by: done.commit })).toBe("dropped");
+    }).pipe(provide),
+  );
+
+  it.live("reads a branch's tip from the remote, for a thread whose branch held everything", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = withOrigin();
+      run(repo, "checkout", "--quiet", "-b", "feature/done");
+      write(nodePath.join(repo, "done.txt"), "pushed\n");
+      run(repo, "add", "-A");
+      run(repo, "commit", "--quiet", "-m", "done");
+      run(repo, "push", "--quiet", "origin", "feature/done");
+      const head = run(repo, "rev-parse", "HEAD").trim();
+
+      const { dir, clone } = cloneOf(origin);
+      expect(yield* fetchBranchTip(clone, "feature/none", "origin", FILE)).toBeUndefined();
+      expect((yield* Effect.flip(fetchBranchTip(clone, "-x", "origin", FILE))).message).toContain(
+        "invalid branch",
+      );
+      const tip = yield* fetchBranchTip(clone, "feature/done", "origin", FILE);
+      expect(tip).toEqual({
+        ref: "refs/heads/feature/done",
+        commit: head,
+        head,
+        uncommitted: false,
+      });
+      const tree = nodePath.join(dir, "tree");
+      yield* restoreWipWorktree(clone, tree, tip!, "feature/done");
+      expect(run(tree, "symbolic-ref", "--short", "HEAD").trim()).toBe("feature/done");
+      expect(fs.readFileSync(nodePath.join(tree, "done.txt"), "utf8")).toBe("pushed\n");
+    }).pipe(provide),
   );
 });
