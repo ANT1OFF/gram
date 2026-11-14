@@ -83,6 +83,13 @@ export interface AppToolDefinition<S extends Schema.Top = Schema.Top, T = S["Typ
    */
   whyAsked?(threadId: ThreadId, target: T): Effect.Effect<AskedDespiteAutonomy | undefined>;
   /**
+   * When `delegatedAtFullAutonomy` said no and its class's card would go up: a refusal for the
+   * calling agent instead, when it can make the call go through without the user itself (check the
+   * PR's branch out in its worktree), or there is nothing to act on (a merged PR). It only ever
+   * refuses: `undefined`, a failure or a slow answer raise the card as before.
+   */
+  refuseInsteadOfAsking?(threadId: ThreadId, target: T): Effect.Effect<string | undefined>;
+  /**
    * Every call raises a card for that call alone, in every mode, for every audience and at every
    * autonomy: `bypassPermissions`, an earlier answer and `delegatedAtFullAutonomy` don't lift it,
    * and `needsApproval` isn't read. For a call that publishes what only the user can vouch for,

@@ -103,7 +103,11 @@ const soloPr = (world: World, configured = true) =>
       run(world.repo, "commit", "-q", "-m", name);
       return run(world.repo, "rev-parse", "HEAD").trim();
     };
-    const publish = (base: string, at = head, checks: "passing" | "pending" = "pending") =>
+    const publish = (
+      base: string,
+      at = head,
+      checks: "passing" | "pending" | "failing" | "none" = "pending",
+    ) =>
       store.getThread(worker.thread.id).pipe(
         Effect.flatMap((workerState) =>
           publishGit(world, workerState, {
@@ -720,13 +724,16 @@ describe("merge_when_ready", () => {
             const pr = yield* soloPr(world, false);
             const base = pr.moveBase("base.txt");
             yield* pr.publish(base);
-            expect(yield* pr.tool("merge_when_ready").run({})).toMatchObject({
+            const armed = yield* pr.tool("merge_when_ready").run({});
+            expect(armed).toMatchObject({
               localGate: {
                 status: "off",
                 reason: expect.stringContaining("no local check configured for"),
               },
               waiting: expect.any(String),
             });
+            // Pending CI may yet pass: nothing to warn about.
+            expect(armed).not.toHaveProperty("gateWarning");
             expect(yield* pr.tool("pr_status").run({})).toMatchObject({
               localGate: { status: "off" },
             });
@@ -750,6 +757,93 @@ describe("merge_when_ready", () => {
             yield* pr.told("Local gate OFF: no local check configured for");
             expect(runs).toBe(0);
             expect(pr.merges()).toHaveLength(1);
+          }),
+        );
+      }).pipe(Effect.scoped),
+  );
+
+  for (const checks of ["none", "failing"] as const) {
+    it.effect.skipIf(!hasGit)(
+      `no local check and ${checks === "none" ? "no CI" : "failing CI"} on the head: arming says the merge can't fire`,
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          world.localCheckRunner = () => Effect.succeed({ ok: true });
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const pr = yield* soloPr(world, false);
+              const base = pr.moveBase("base.txt");
+              yield* pr.publish(base, pr.head, checks);
+              const armed = yield* pr.tool("merge_when_ready").run({});
+              expect(armed).toMatchObject({
+                mergeWhenReady: true,
+                localGate: { status: "off" },
+                gateWarning: expect.stringContaining(
+                  checks === "none"
+                    ? `${pr.head.slice(0, 7)} has reported no CI checks`
+                    : `CI on ${pr.head.slice(0, 7)} is failing`,
+                ),
+              });
+              const warning = (armed as { gateWarning: string }).gateWarning;
+              expect(warning).toContain("no local check configured for");
+              expect(warning).toContain("project.localCheck.command");
+              if (checks === "failing") expect(warning).toContain("never for failing CI");
+              const store = yield* ThreadStore;
+              const events = yield* store.listOrchestrationEvents(pr.workspaceId, 0);
+              expect(
+                events.some(
+                  (e) =>
+                    e.kind === "localGateOff" && JSON.stringify(e.data).includes("gateWarning"),
+                ),
+              ).toBe(true);
+              // The gate itself is unchanged: nothing merges.
+              yield* settle;
+              expect(pr.merges()).toEqual([]);
+            }),
+          );
+        }).pipe(Effect.scoped),
+    );
+  }
+
+  it.effect.skipIf(!hasGit)(
+    "a project removed from the workspace during the fresh GitHub read stops the launch",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        world.localCheckRunner = () => Effect.succeed({ ok: true });
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const pr = yield* soloPr(world, false);
+            const store = yield* ThreadStore;
+            const other = yield* store.ensureProject({ root: world.dir, name: "other" });
+            const base = pr.moveBase("base.txt");
+            let removed = false;
+            world.freshPrRead = Effect.gen(function* () {
+              world.freshPrRead = undefined;
+              yield* store
+                .updateWorkspace(pr.workspaceId, (state) => ({
+                  ...state,
+                  workspace: {
+                    ...state.workspace,
+                    projectIds: [other.id],
+                    homeProjectId: other.id,
+                  },
+                }))
+                .pipe(Effect.orDie);
+              removed = true;
+            });
+            yield* pr.publish(base, pr.head, "passing");
+            expect(yield* pr.tool("merge_when_ready").run({})).toMatchObject({
+              mergeWhenReady: true,
+            });
+            yield* waitReal(
+              "the project removed",
+              Effect.sync(() => removed),
+            );
+            yield* settle;
+            expect(pr.merges()).toEqual([]);
           }),
         );
       }).pipe(Effect.scoped),

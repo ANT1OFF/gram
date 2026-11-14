@@ -18,7 +18,11 @@ configured pass.
 - **Adjustable autonomy.** The level decides one thing: what leaves your machine without asking
   you. **Supervised** asks before a push, a pull request or a merge; **Publish** pushes branches
   and opens pull requests but asks before merging, closing a pull request, releasing or running a
-  workflow; **Full** asks about nothing and lets the orchestrator merge. How the orchestrator
+  workflow; **Full** asks about nothing and lets the orchestrator merge. A merge under Full covers
+  a worker's own pull request, one whose head branch is checked out in its worktree; for one
+  opened elsewhere, such as a release script's deploy PR, the agent is told to check the branch out
+  instead of you being asked. A fork, another thread's pull request or a repository outside the
+  workspace still asks you. How the orchestrator
   works with its workers is the same at every level: it answers a worker's waiting question when
   your brief, its memory or your own words settle it, workers message it and each other, and it
   restarts a worker's session. Approvals and plan requests stay yours. Only you can
@@ -799,7 +803,10 @@ A solo workspace can use a local check for each project. It is **off by default*
 with neither profile nor command, `merge_when_ready` uses its other policies, including CI and GitHub
 rules. Its result, `pr_status`, merge notice and workspace ledger explicitly say
 “no local check configured for <project>” and “local gate OFF”; this is not a passed
-check.
+check. When CI on the head has reported no checks, or is failing, `merge_when_ready`'s result
+also carries a `gateWarning`: the merge can't fire as things stand, and how to configure a local
+check. Without a local check, absent CI never clears the gate, and a local check never stands in
+for failing CI.
 
 Read the current project's settings with `settings_read`. Ask the orchestrator or
 a plain thread to propose these keys through `settings_propose`; the user must

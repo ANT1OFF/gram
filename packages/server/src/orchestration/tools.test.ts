@@ -2046,10 +2046,15 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             { threadId: stranger.id, number: 13 },
             "Merge acme/app#13 (squash) once GitHub allows it, on “The user's own thread”",
           );
-          yield* decline(
-            { threadId: worker.thread.id, number: 13 },
-            `Merge acme/app#13 (squash) once GitHub allows it, on “${worker.thread.title}”`,
+          // A branch nobody holds, here or in any worktree: the orchestrator is told how its
+          // worker can hold it, and the user isn't asked.
+          const unheld = yield* gated
+            .run({ threadId: worker.thread.id, number: 13 })
+            .pipe(Effect.flip);
+          expect(unheld.message).toContain(
+            "Have the worker check it out in the worktree Gram gave it (`git fetch origin somebody-else` then `git switch somebody-else`), then call set_auto_merge again",
           );
+          expect(yield* store.listRequests(thread.id)).toEqual([]);
           yield* runtimes.updateThread(worker.thread.id, (t) => ({
             ...t,
             boundPr: { repo: "elsewhere/tools", number: 12, monitor: false },

@@ -16,6 +16,7 @@ import {
   samePr,
   mergePolicyReady,
   mergeReviewPolicyOf,
+  requiredChecksOf,
   reviewBotsOf,
   autonomyOf,
   mergeAfterDependencies,
@@ -61,8 +62,11 @@ import {
   explainOwnershipBlocker,
   OWNERSHIP_BLOCKERS,
   ownershipFix,
+  ownedPrNoLongerStands,
+  prHostOf,
   workerPrBlocker,
   workerPrIdentity,
+  workerPrOwnership,
   withMachines,
 } from "./worker-pr.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
@@ -129,6 +133,25 @@ export const mergeBlocker = (
           : "locally checked, but not fresh, free of failing checks and allowed by GitHub yet"
         : "not fresh, green (or locally checked on its head) and allowed by GitHub yet";
   return undefined;
+};
+
+/**
+ * Why a solo merge whose local gate is off (`localGate`, "no local check configured for …") can't go
+ * through as things stand: with no local check, the gate needs green CI on the head, and the head
+ * has reported no CI checks or failing ones. Said when the merge is armed, so an agent isn't left
+ * waiting on CI that never runs. The gate itself is unchanged; `undefined` when CI may yet pass.
+ */
+export const soloGateCantPass = (badge: PrStatus, localGate: string): string | undefined => {
+  if (badge.state !== "OPEN" || badge.headRefOid === undefined) return undefined;
+  const checks = requiredChecksOf(badge);
+  const failing = checks === "failing" || badge.mergeChecks === "failing";
+  if (checks !== "none" && !failing) return undefined;
+  const head = badge.headRefOid.slice(0, 7);
+  const configure =
+    "the user configures a local check for the project (`project.localCheck.command`, with an optional `project.localCheck.setup`), proposed by the orchestrator or a plain thread through settings_propose and approved by the user";
+  return failing
+    ? `This merge can't go through yet: ${localGate}, so the solo gate needs green CI on its head, and CI on ${head} is failing. Gram merges it only once CI passes on its head: re-run it or push a fix. If CI fails because it can't run in this repository (Actions disabled, out of minutes or billing), fix that on GitHub; a local check stands in for pending or absent CI once ${configure}, but never for failing CI.`
+    : `This merge can't go through as things stand: ${localGate}, so the solo gate needs green CI on its head, and ${head} has reported no CI checks. If CI never runs for this repository or branch, it never will: tell your orchestrator, so ${configure}. Gram's check of the head then stands in for the missing CI.`;
 };
 
 /** Why nothing merges in a paused workspace; its intents stay armed until the resume. */
@@ -764,6 +787,22 @@ export const MergeWhenReadyLive = Layer.effect(
             const reusedScope = yield* reusedIdentityScope(now.value, bound, intent, head);
             if (intent.userAuthorization?.reused === true && reusedScope === undefined)
               return undefined;
+            /**
+             * What the ownership check below established: the workspace's projects and the
+             * worker's held folders it read, and the branch it found owned. A launch after GitHub's
+             * read goes only while these stand and no other thread has claimed the PR meanwhile.
+             */
+            let owned:
+              | {
+                  readonly projects: string;
+                  readonly folders: string;
+                  readonly at: {
+                    readonly path: string;
+                    readonly hostId?: string;
+                    readonly branch: string;
+                  };
+                }
+              | undefined;
             // No card was raised for this intent, so the autonomy that waived it is asked again now,
             // and the PR must belong to a recorded worktree branch in a workspace project. The
             // live checkout can already be on the next stacked PR's branch.
@@ -789,7 +828,7 @@ export const MergeWhenReadyLive = Layer.effect(
               )
                 why = "orchestration no longer delegates merges to this worker";
               else {
-                const ownership = yield* workerPrBlocker(
+                const found = yield* workerPrOwnership(
                   now.value,
                   bound.repo,
                   bound.number,
@@ -799,6 +838,13 @@ export const MergeWhenReadyLive = Layer.effect(
                   Effect.provideService(Proc, proc),
                   withMachines(machines),
                 );
+                const ownership = typeof found === "string" ? found : undefined;
+                if (typeof found === "object")
+                  owned = {
+                    projects: JSON.stringify(workspace.workspace.projectIds),
+                    folders: JSON.stringify([now.value.checkout, now.value.extraCheckouts]),
+                    at: found,
+                  };
                 if (ownership !== undefined) {
                   why = `the pull request is no longer this worker's own: ${explainOwnershipBlocker(ownership).reason}`;
                   fix = ownershipFix(ownership, "worker");
@@ -919,11 +965,29 @@ export const MergeWhenReadyLive = Layer.effect(
                               .pipe(Effect.orElseSucceed(() => undefined));
                       if (
                         workspace === undefined ||
+                        // A project removed or a folder changed during the read: the PR may be out
+                        // of the worker's scope now, and the next look checks ownership afresh.
+                        owned === undefined ||
+                        JSON.stringify(workspace.workspace.projectIds) !== owned.projects ||
+                        JSON.stringify([latest.checkout, latest.extraCheckouts]) !==
+                          owned.folders ||
                         autonomyOf(workspace.charter) !== "full" ||
                         workspace.paused !== undefined ||
                         featurePaused(workspace, latest) ||
                         orchestration === undefined ||
-                        !(yield* orchestration.workerMergesOwn(threadId))
+                        !(yield* orchestration.workerMergesOwn(threadId)) ||
+                        // Its folder's remote changed, or another thread bound the PR or took its
+                        // branch, during the read.
+                        (yield* ownedPrNoLongerStands(
+                          latest,
+                          bound.repo,
+                          bound.number,
+                          owned.at,
+                          prHostOf(fresh.url),
+                        ).pipe(
+                          Effect.provideService(ThreadStore, store),
+                          Effect.provideService(Proc, proc),
+                        ))
                       )
                         return undefined;
                     }
