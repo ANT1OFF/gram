@@ -131,7 +131,7 @@ writeFileSync(
 // The classes of the package's stylesheet, for that build to write again: exactly the utilities
 // the app's own build wrote, by name. Scanning the bundle instead would also find the class names
 // inside the libraries it carries, which the app's build never wrote and its screens are not
-// drawn with (a markdown renderer's `list-inside`).
+// drawn with (a markdown renderer's list classes). No class is named here: this file is scanned too.
 const utilityClasses = (css) => {
   const start = css.indexOf("@layer utilities{");
   if (start === -1) throw new Error("build-embed: the stylesheet has no utilities layer");
