@@ -24,6 +24,7 @@ import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-pref
 import { HarnessSupportDetails } from "@/agents/support-details";
 import { agentLabel } from "@/agents/agent-display";
 import { errorMessage } from "@/api/errors";
+import { RunsOnStop } from "./runs-on-chip";
 import { needsMachine, StartMachineCard, useOnDemandMachine } from "./start-machine-card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -685,6 +686,7 @@ export function NewTaskDraft({
                   </WhereFact>
                 </WhereStop>
               )}
+              <RunsOnStop />
               {way === "direct" && repo !== undefined && (joined?.length ?? 0) > 0 && (
                 <WhereStop label="Machine">
                   <MachinePicker machines={joined} value={machineId} onChange={setMachineId} />

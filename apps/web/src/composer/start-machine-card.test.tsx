@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isComing, parseStatus } from "@/api/on-demand";
 import { EMPTY_SHELL, useEmbedShell } from "@/embed/store";
 
+import { useOnDemandPicks } from "./on-demand-picks";
+import { RunsOnChip } from "./runs-on-chip";
 import { StartMachineCard } from "./start-machine-card";
 
 // The spinner's animation isn't what is tested.
@@ -48,6 +50,25 @@ const show = () =>
       <StartMachineCard repositories={["acme/web"]} />
     </QueryClientProvider>,
   );
+
+const showWithChip = () =>
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <RunsOnChip />
+      <StartMachineCard repositories={["acme/web"]} />
+    </QueryClientProvider>,
+  );
+
+const KIND = {
+  id: "isolation",
+  label: "Kind",
+  default: "vm",
+  fallback: "container",
+  options: [
+    { id: "container", label: "Container", detail: "Starts in seconds", available: true },
+    { id: "vm", label: "Virtual machine", short: "VM", available: true },
+  ],
+};
 
 beforeEach(() => {
   useEmbedShell.setState({
@@ -117,9 +138,9 @@ describe("the start card", () => {
     });
   });
 
-  it("offers the deployment's choices, locks what the person may not pick, and starts with theirs", async () => {
+  it("offers the deployment's choices on Runs on, locks what the person may not pick, and starts with theirs", async () => {
     useEmbedShell.setState({ machines: { noun: "sandbox", repositories: "theirs" } });
-    localStorage.removeItem("gram:on-demand-picks");
+    useOnDemandPicks.setState({ picks: {}, keep: true });
     const calls = serve([
       {
         available: true,
@@ -140,61 +161,55 @@ describe("the start card", () => {
         },
       },
     ]);
-    show();
+    showWithChip();
+    fireEvent.click(await screen.findByTestId("runs-on"));
     expect(await screen.findByText("Your team allows up to Large.")).toBeTruthy();
-    expect(screen.getByRole("radio", { name: /Extra large/ }).hasAttribute("disabled")).toBe(true);
-    fireEvent.click(screen.getByRole("radio", { name: /Large 4 CPU/ }));
+    expect(screen.getByRole("radio", { name: "Extra large" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("radio", { name: "Large" }));
+    expect(screen.getByTestId("on-demand-choices").textContent).toContain("Large");
     fireEvent.click(screen.getByRole("button", { name: /Start a sandbox/ }));
     await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
+    // This deployment keeps no picks: none is asked to be kept.
     expect(calls.find((call) => call.method === "POST")?.body).toBe(
       JSON.stringify({ repositories: [], choices: { size: "large" } }),
     );
-    // Kept for the next start.
-    expect(localStorage.getItem("gram:on-demand-picks")).toBe(JSON.stringify({ size: "large" }));
   });
 
-  it("sends only what the person changed, so a choice left alone follows the default", async () => {
-    useEmbedShell.setState({ machines: { noun: "sandbox", repositories: "theirs" } });
-    // Kept from before: a pick that is now the default, and one of a choice no longer offered.
-    localStorage.setItem("gram:on-demand-picks", JSON.stringify({ kind: "fast", gone: "x" }));
+  it("says which picks are the person's own, and goes back to the default", async () => {
+    useOnDemandPicks.setState({ picks: {}, keep: true });
+    serve([{ available: true, choices: { keeps: true, choices: [KIND] } }]);
+    showWithChip();
+    expect((await screen.findByTestId("runs-on")).textContent).toContain("VM");
+    fireEvent.click(screen.getByTestId("runs-on"));
+    expect(await screen.findByText("Yours")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Use default" }));
+    expect(screen.getByText("Default")).toBeTruthy();
+    expect(useOnDemandPicks.getState().picks).toEqual({ isolation: "container" });
+  });
+
+  it("starts a running machine again with a change, keeping it as the person's own", async () => {
+    useOnDemandPicks.setState({ picks: {}, keep: true });
     const calls = serve([
       {
         available: true,
+        machine: { id: "m", name: "s", online: true },
         choices: {
-          choices: [
-            {
-              id: "kind",
-              label: "Kind",
-              default: "fast",
-              options: [
-                { id: "fast", label: "Fast", available: true },
-                { id: "strong", label: "Strong", available: true },
-              ],
-            },
-            {
-              id: "size",
-              label: "Size",
-              default: "small",
-              options: [
-                { id: "small", label: "Small", available: true },
-                { id: "large", label: "Large", available: true },
-              ],
-            },
-          ],
+          keeps: true,
+          choices: [{ ...KIND, default: "container", current: "container" }],
         },
       },
     ]);
-    show();
-    await screen.findByRole("radio", { name: /Strong/ });
-    // Changed and changed back: left alone.
-    fireEvent.click(screen.getByRole("radio", { name: /Large/ }));
-    fireEvent.click(screen.getByRole("radio", { name: /Small/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Start a sandbox/ }));
+    showWithChip();
+    fireEvent.click(await screen.findByTestId("runs-on"));
+    // Nothing changed: no start again offered.
+    expect(screen.queryByRole("button", { name: /Start again/ })).toBeNull();
+    fireEvent.click(await screen.findByRole("radio", { name: "Virtual machine" }));
+    fireEvent.click(screen.getByRole("button", { name: /Start again with these/ }));
     await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
     expect(calls.find((call) => call.method === "POST")?.body).toBe(
-      JSON.stringify({ repositories: [] }),
+      JSON.stringify({ repositories: [], choices: { isolation: "vm" }, keep: true, restart: true }),
     );
-    expect(localStorage.getItem("gram:on-demand-picks")).toBe(JSON.stringify({}));
+    expect(useOnDemandPicks.getState().picks).toEqual({});
   });
 
   it("shows the start step by step, and nothing once the machine is up", async () => {

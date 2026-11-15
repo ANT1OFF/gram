@@ -28,10 +28,12 @@ import { callOutside } from "./outside.ts";
 export const ON_DEMAND_START_PATH = "/machines/on-demand/start";
 export const ON_DEMAND_STOP_PATH = "/machines/on-demand/stop";
 export const ON_DEMAND_STATUS_PATH = "/machines/on-demand/status";
+export const ON_DEMAND_PREFERENCES_PATH = "/machines/on-demand/preferences";
 export const ON_DEMAND_PATHS: ReadonlySet<string> = new Set([
   ON_DEMAND_START_PATH,
   ON_DEMAND_STOP_PATH,
   ON_DEMAND_STATUS_PATH,
+  ON_DEMAND_PREFERENCES_PATH,
 ]);
 
 /** The largest start body: a few repository names. */
@@ -77,6 +79,8 @@ export interface OnDemandOption {
   /** Whether this person may pick it. One they may not is shown, with `note` saying why. */
   readonly available: boolean;
   readonly note?: string;
+  /** A shorter label, for a chip or a narrow row: "VM", "XL". */
+  readonly short?: string;
 }
 
 /** Something a person picks before their machine starts, such as its size. */
@@ -87,12 +91,21 @@ export interface OnDemandChoice {
   readonly options: ReadonlyArray<OnDemandOption>;
   /** What is picked when the person picks nothing: an available option. */
   readonly default: string;
+  /**
+   * What `default` would be if the person kept no pick of their own: the deployment's default.
+   * Given, `default` differing from it is the person's own pick, which they can go back from.
+   */
+  readonly fallback?: string;
+  /** What their machine has now, when it has one. */
+  readonly current?: string;
 }
 
 /** The provider's choices for one person, and a line on whose limits they are. */
 export interface OnDemandChoices {
   readonly choices: ReadonlyArray<OnDemandChoice>;
   readonly note?: string;
+  /** Whether the provider keeps a person's picks as theirs (`keep` on a start, preferences). */
+  readonly keeps?: boolean;
 }
 
 /** What the server knows of on-demand hosts: the provider, and each person's latest progress. */
@@ -122,40 +135,75 @@ const refusal = (status: number, tag: string, message: string) =>
 /** What a person picked, by choice id: short ids only. */
 export type Picked = Readonly<Record<string, string>>;
 
-/** The start body, or why not. */
-export const parseStart = (
-  body: string,
-): { readonly repositories: ReadonlyArray<string>; readonly choices: Picked } | string => {
+/** A body's `choices`, or why not. */
+const pickedIn = (picked: unknown): Picked | string =>
+  picked === undefined
+    ? {}
+    : typeof picked !== "object" ||
+        picked === null ||
+        Array.isArray(picked) ||
+        Object.keys(picked).length > MAX_CHOICES ||
+        !Object.entries(picked).every(
+          ([key, each]) => CHOICE_ID.test(key) && typeof each === "string" && CHOICE_ID.test(each),
+        )
+      ? `\`choices\` names at most ${MAX_CHOICES} choices by short id, each with an option's id`
+      : { ...(picked as Record<string, string>) };
+
+const objectIn = (body: string): Record<string, unknown> | string => {
   let value: unknown;
   try {
     value = body === "" ? {} : JSON.parse(body);
   } catch {
     return "the body is not JSON";
   }
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    return "expected {repositories?, choices?}";
-  const picked = "choices" in value ? value.choices : undefined;
-  if (
-    picked !== undefined &&
-    (typeof picked !== "object" ||
-      picked === null ||
-      Array.isArray(picked) ||
-      Object.keys(picked).length > MAX_CHOICES ||
-      !Object.entries(picked).every(
-        ([key, each]) => CHOICE_ID.test(key) && typeof each === "string" && CHOICE_ID.test(each),
-      ))
-  )
-    return `\`choices\` names at most ${MAX_CHOICES} choices by short id, each with an option's id`;
-  const choices: Picked = picked === undefined ? {} : { ...(picked as Record<string, string>) };
-  const listed = "repositories" in value ? value.repositories : undefined;
-  if (listed === undefined) return { repositories: [], choices };
+  return typeof value !== "object" || value === null || Array.isArray(value)
+    ? "expected an object"
+    : (value as Record<string, unknown>);
+};
+
+/** The start body, or why not. */
+export const parseStart = (
+  body: string,
+):
+  | {
+      readonly repositories: ReadonlyArray<string>;
+      readonly choices: Picked;
+      /** Keep these picks as the person's own, where the provider keeps them. */
+      readonly keep?: true;
+      /** Their machine is online: start it again with these picks. */
+      readonly restart?: true;
+    }
+  | string => {
+  const value = objectIn(body);
+  if (typeof value === "string")
+    return value === "expected an object" ? "expected {repositories?, choices?}" : value;
+  const choices = pickedIn(value["choices"]);
+  if (typeof choices === "string") return choices;
+  for (const flag of ["keep", "restart"] as const)
+    if (value[flag] !== undefined && typeof value[flag] !== "boolean")
+      return `\`${flag}\` is true or false`;
+  const flags = {
+    ...(value["keep"] === true ? { keep: true as const } : {}),
+    ...(value["restart"] === true ? { restart: true as const } : {}),
+  };
+  const listed = value["repositories"];
+  if (listed === undefined) return { repositories: [], choices, ...flags };
   if (
     !Array.isArray(listed) ||
     listed.length > MAX_REPOSITORIES ||
     !listed.every((each) => typeof each === "string" && REPOSITORY.test(each))
   )
     return `\`repositories\` is a list of at most ${MAX_REPOSITORIES} owner/name`;
-  return { repositories: [...new Set(listed as string[])], choices };
+  return { repositories: [...new Set(listed as string[])], choices, ...flags };
+};
+
+/** The preferences body, `{choices}`: the picks to keep as the person's own. Or why not. */
+export const parsePreferences = (body: string): { readonly choices: Picked } | string => {
+  const value = objectIn(body);
+  if (typeof value === "string")
+    return value === "expected an object" ? "expected {choices}" : value;
+  const choices = pickedIn(value["choices"]);
+  return typeof choices === "string" ? choices : { choices };
 };
 
 const text = (value: unknown, max: number) =>
@@ -186,29 +234,42 @@ export const parseChoices = (value: unknown): OnDemandChoices | undefined => {
         continue;
       const detail = text(option["detail"], 80);
       const note = text(option["note"], 160);
+      const short = text(option["short"], 24);
       options.push({
         id: optionId,
         label: optionLabel,
         ...(detail === undefined ? {} : { detail }),
         available: option["available"] !== false,
         ...(note === undefined ? {} : { note }),
+        ...(short === undefined ? {} : { short }),
       });
     }
     const usable = options.filter((option) => option.available);
     if (usable.length === 0) continue;
     const asked = entry["default"];
     const description = text(entry["description"], 200);
+    const offered = (key: string) => {
+      const named = entry[key];
+      return typeof named === "string" && options.some((option) => option.id === named)
+        ? named
+        : undefined;
+    };
+    const fallback = offered("fallback");
+    const current = offered("current");
     choices.push({
       id,
       label,
       ...(description === undefined ? {} : { description }),
       options,
       default: usable.some((option) => option.id === asked) ? (asked as string) : usable[0]!.id,
+      ...(fallback === undefined ? {} : { fallback }),
+      ...(current === undefined ? {} : { current }),
     });
   }
   if (choices.length === 0) return undefined;
   const note = text((value as { note?: unknown }).note, 200);
-  return { choices, ...(note === undefined ? {} : { note }) };
+  const keeps = (value as { keeps?: unknown }).keeps === true;
+  return { choices, ...(note === undefined ? {} : { note }), ...(keeps ? { keeps } : {}) };
 };
 
 /**
@@ -344,10 +405,28 @@ export const onDemandRequest = (
       return json(202, { stopping: true });
     }
 
+    if (path === ON_DEMAND_PREFERENCES_PATH) {
+      const parsed = parsePreferences(body);
+      if (typeof parsed === "string") return refusal(400, "BadRequest", parsed);
+      const answered = yield* callOutside("host provider", hosts.provider, {
+        method: "POST",
+        path: "/hosts/preferences",
+        json: { owner: actor.id, choices: parsed.choices, proof },
+        accept: [404],
+      }).pipe(Effect.result);
+      if (answered._tag === "Failure")
+        return refusal(502, "ProviderFailed", answered.failure.message);
+      if (answered.success.status === 404)
+        return refusal(404, "NotFound", "this deployment keeps no picks of yours");
+      hosts.choices.delete(actor.id);
+      return json(200, { kept: true });
+    }
+
     const parsed = parseStart(body);
     if (typeof parsed === "string") return refusal(400, "BadRequest", parsed);
     const mine = ownMachine(machines(), actor.id);
-    if (mine?.onlineSince !== undefined)
+    // Online already: nothing to start, unless they asked for it again with other picks.
+    if (mine?.onlineSince !== undefined && parsed.restart !== true)
       return json(200, { machine: { id: mine.id, name: mine.name, online: true } });
     const answered = yield* callOutside("host provider", hosts.provider, {
       method: "POST",
@@ -358,6 +437,8 @@ export const onDemandRequest = (
         options: {
           repositories: parsed.repositories,
           ...(Object.keys(parsed.choices).length === 0 ? {} : { choices: parsed.choices }),
+          ...(parsed.keep ? { keep: true } : {}),
+          ...(parsed.restart && mine?.onlineSince !== undefined ? { restart: true } : {}),
         },
         proof,
       },
@@ -374,6 +455,8 @@ export const onDemandRequest = (
       return refusal(502, "ProviderFailed", "the host provider gave no host key");
     const progress: OnDemandProgress = { hostKey, phase: "starting", at: Date.now() };
     hosts.progress.set(actor.id, progress);
+    // What it has, and what is theirs, may have changed with this start: asked again next read.
+    hosts.choices.delete(actor.id);
     return json(202, { progress });
   });
 

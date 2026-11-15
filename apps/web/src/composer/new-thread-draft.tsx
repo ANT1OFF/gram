@@ -84,6 +84,7 @@ import {
 } from "./draft-prefill";
 import { MentionMenu } from "./mention-menu";
 import { useSlabHandoff } from "./slab-handoff";
+import { RunsOnStop } from "./runs-on-chip";
 import { needsMachine, StartMachineCard, useOnDemandMachine } from "./start-machine-card";
 import { SLAB, SLAB_TEXTAREA } from "./styles";
 import { useAttachments } from "./use-attachments";
@@ -543,6 +544,7 @@ function ConfiguredNewThreadDraft() {
                     />
                   )}
                 </WhereStop>
+                <RunsOnStop />
                 {/* More repositories, beside the one it works in, on this machine's folders. */}
                 {!onMachine && repoPath !== "" && (
                   <WhereStop label="Also uses">
