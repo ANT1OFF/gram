@@ -39,6 +39,9 @@ import { ON_DEMAND_START_PATH, ON_DEMAND_STATUS_PATH } from "../embedding/on-dem
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG, waitFor } from "../runtime/test-harness.ts";
+// Events over a real socket arrive after real I/O, which a count of scheduler yields doesn't bound
+// on a loaded runner; those waits are bounded by real time instead.
+import { waitReal } from "../orchestration/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ACTOR_HEADER, actorHeadersForTests } from "./actor.ts";
@@ -640,7 +643,7 @@ describe("sign-in through a fronting proxy", () => {
         expect(
           yield* post(port, ASK_ANSWER_PATH, answerBody, { [IDENTITY_HEADER]: adaStatement }),
         ).toMatchObject({ status: 200 });
-        const resolved = yield* waitFor(
+        const resolved = yield* waitReal(
           "the answer at the sink",
           Effect.sync(() =>
             sunk.find((event) => event.type === "ask.resolved" && event.data["id"] === request.id),
@@ -812,7 +815,7 @@ describe("sign-in through a fronting proxy", () => {
                   Effect.sync(() => types.push(event.type)),
                 ),
               );
-              yield* waitFor(
+              yield* waitReal(
                 "the first snapshot",
                 Effect.sync(() => types.includes("threads.snapshot")),
               );
@@ -827,13 +830,13 @@ describe("sign-in through a fronting proxy", () => {
             patch: { layout: { grid: grid("ada-left", "ada-right") } },
           });
           expect(adas.layout?.grid).toEqual(grid("ada-left", "ada-right"));
-          yield* waitFor(
+          yield* waitReal(
             "Ada's other tab to hear",
             Effect.sync(() => adaHears.includes("settings.changed")),
           );
           // What everyone is sent arrives after it, so anything sent before it would be here.
           yield* hub.publish({ type: "profiles.changed" });
-          yield* waitFor(
+          yield* waitReal(
             "the others to hear what everyone is sent",
             Effect.sync(
               () =>
@@ -969,7 +972,7 @@ describe("sign-in through a fronting proxy", () => {
                 }),
               ),
             );
-            yield* waitFor(
+            yield* waitReal(
               "the first snapshot",
               Effect.sync(() => snapshots > 0),
             );
@@ -1053,7 +1056,7 @@ describe("sign-in through a fronting proxy", () => {
         ]);
 
         // The same over each one's events, as they changed and on a connection opened now.
-        yield* waitFor(
+        yield* waitReal(
           "the last change to arrive",
           Effect.sync(
             () =>

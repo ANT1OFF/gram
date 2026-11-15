@@ -626,6 +626,17 @@ export const gitHandlers = Effect.gen(function* () {
             threadId,
           });
         }
+        // The store refuses a new main binding of a PR another thread's launch has reserved, and
+        // leaves this thread's bindings as they were: say so rather than return the old main PR.
+        if (
+          thread.boundPr.number !== number ||
+          thread.boundPr.repo.toLowerCase() !== repo.toLowerCase()
+        ) {
+          return yield* new InvalidState({
+            message: `${repo}#${number} is being merged by another thread right now, so it can't become this thread's pull request; it is still followed. Promote it again once that merge settles.`,
+            threadId,
+          });
+        }
         yield* refreshes.request(effectiveCheckout(thread).path, true);
         return thread.boundPr;
       }),

@@ -6,6 +6,11 @@ export const PendingMerge = Schema.Struct({
   pr: Schema.Struct({ repo: Schema.String, number: Schema.Number }),
   threadId: ThreadId,
   head: Schema.String,
+  /**
+   * The PR's head branch, as GitHub named it at the reservation: a thread brought back from the
+   * archive while the launch is outstanding must not come back holding it. Absent in older records.
+   */
+  branch: Schema.optionalKey(Schema.String),
   tip: Schema.optionalKey(Schema.String),
   at: Schema.Number,
   /** Only a definitive provider rejection, never a timeout or an arbitrary nonzero exit. */
