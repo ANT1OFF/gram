@@ -49,9 +49,10 @@ export const cloneProjectOf = (
     );
     for (const project of projects) {
       const root = project.repoRoot ?? project.root;
-      const out = yield* git(root, ["remote", "get-url", "origin"], { timeoutMs: 2_000 }).pipe(
-        Effect.orElseSucceed(() => undefined),
-      );
+      // As stored, not as `insteadOf` rewrites it.
+      const out = yield* git(root, ["config", "--get", "remote.origin.url"], {
+        timeoutMs: 2_000,
+      }).pipe(Effect.orElseSucceed(() => undefined));
       if (out === undefined || out.status !== 0) continue;
       if (cloneIdentityOf(out.stdout.trim()) !== identity) continue;
       const repo = yield* originOwnerRepo(root);

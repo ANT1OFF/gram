@@ -261,9 +261,12 @@ const ownedIn = (thread: Thread, checkout: Checkout): ReadonlyArray<string> => {
     .map((owned) => owned.branch);
 };
 
-/** A local folder's `origin` URL, unread when its config can't be read. */
+/**
+ * A local folder's `origin` URL as stored, not as `insteadOf` rewrites it; unread when its config
+ * can't be read.
+ */
 const originUrlOf = (at: string) =>
-  git(at, ["remote", "get-url", "origin"], { timeoutMs: 2_000 }).pipe(
+  git(at, ["config", "--get", "remote.origin.url"], { timeoutMs: 2_000 }).pipe(
     Effect.map((out) => (out.status === 0 ? out.stdout.trim() || undefined : undefined)),
     Effect.orElseSucceed(() => undefined),
   );
