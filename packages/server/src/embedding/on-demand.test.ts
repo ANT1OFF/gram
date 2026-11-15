@@ -23,6 +23,7 @@ import {
   ownMachine,
   parseChoices,
   parseStart,
+  READY_GRACE_MS,
   statusFor,
   takeProgress,
 } from "./on-demand.ts";
@@ -280,6 +281,34 @@ describe("hosts provisioned on demand: requests and progress", () => {
       machine: { id: "m-ada", name: "ada-1", online: true },
     });
     expect(statusFor(hosts, machines, "someone")).toEqual({ available: true });
+  });
+
+  it("ends a ready start whose machine went offline or never came, so a new one can be asked for", () => {
+    const hosts = makeOnDemandHosts({ url: "https://provider.test" });
+    const offline = [{ id: "m-ada", name: "ada-1", owner: "ada", onDemand: "personal" as const }];
+    hosts.progress.set("ada", { hostKey: "personal:ws:ada", phase: "ready", at: 1_000 });
+    // Just ready, its machine not online yet: still coming.
+    expect(statusFor(hosts, offline, "ada", undefined, 1_000 + READY_GRACE_MS).progress).toEqual({
+      hostKey: "personal:ws:ada",
+      phase: "ready",
+      at: 1_000,
+    });
+    // Long after, with the machine stopped: no start is shown, and none is kept.
+    expect(statusFor(hosts, offline, "ada", undefined, 2_000 + READY_GRACE_MS)).toEqual({
+      available: true,
+      machine: { id: "m-ada", name: "ada-1", online: false },
+    });
+    expect(hosts.progress.has("ada")).toBe(false);
+    // The same with no machine at all.
+    hosts.progress.set("ada", { hostKey: "personal:ws:ada", phase: "ready", at: 1_000 });
+    expect(statusFor(hosts, [], "ada", undefined, 2_000 + READY_GRACE_MS)).toEqual({
+      available: true,
+    });
+    // A start still under way is kept however long it takes.
+    hosts.progress.set("ada", { hostKey: "personal:ws:ada", phase: "booting", at: 1_000 });
+    expect(statusFor(hosts, [], "ada", undefined, 10 * READY_GRACE_MS).progress?.phase).toBe(
+      "booting",
+    );
   });
 
   it("takes progress only for a start it asked for, for that person", () => {

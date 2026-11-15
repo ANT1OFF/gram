@@ -249,15 +249,27 @@ export const ownMachine = (
     .filter((machine) => machine.owner === person && machine.onDemand === "personal")
     .toSorted((a, b) => (b.onlineSince ?? 0) - (a.onlineSince ?? 0))[0];
 
+/**
+ * How long a start the provider called ready may wait for its machine to come online. Past it,
+ * with the machine offline or gone (stopped once idle, or never joined), that start is over: the
+ * person is offered a new one instead of a start that looks finished and never arrives.
+ */
+export const READY_GRACE_MS = 120_000;
+
 /** What `/machines/on-demand/status` answers a person. */
 export const statusFor = (
   hosts: OnDemandHosts,
   machines: ReadonlyArray<OwnedMachine>,
   person: string,
   choices?: OnDemandChoices,
+  now: number = Date.now(),
 ) => {
   const mine = ownMachine(machines, person);
-  const progress = hosts.progress.get(person);
+  const kept = hosts.progress.get(person);
+  const over =
+    kept?.phase === "ready" && mine?.onlineSince === undefined && now - kept.at > READY_GRACE_MS;
+  if (over) hosts.progress.delete(person);
+  const progress = over ? undefined : kept;
   return {
     available: true,
     ...(choices === undefined ? {} : { choices }),
