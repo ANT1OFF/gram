@@ -5,7 +5,7 @@
     "default": 140,
     "t/$threadId": 920,
     "settings.agents": 260,
-    "new": 380,
+    "new": 385,
     "w/$workspaceId.memory": 320,
     "settings.workspaces_.$workspaceId": 310,
     "index": 220,
