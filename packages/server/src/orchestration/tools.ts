@@ -41,6 +41,8 @@ import {
   WorkerReportEvidence,
   WorkerState,
   checkoutRoots,
+  effectiveCheckout,
+  hostOf,
   type MemoryWrite,
   seedOrchestratorPlan,
   type ThreadId,
@@ -60,6 +62,16 @@ import { AppToolRegistry } from "../app-tools/registry.ts";
 import { parsePrRef } from "../git/merge-when-ready.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { OnDemand } from "../embedding/on-demand.ts";
+import { RemoteHosts } from "../host/remote-hosts.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
+import {
+  awaitWorkerMachine,
+  isWorkerMachineName,
+  overTotalWords,
+  startWorkerMachine,
+  workerMachineName,
+} from "../embedding/worker-machines.ts";
 import { confineQuestionVisuals } from "../preview/mocks.ts";
 import { ThreadPlans } from "../plans/service.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -112,6 +124,19 @@ const decodeWakeCondition = Schema.decodeUnknownEffect(WakeCondition);
  * them out of every other thread's context, and it is only the first line: a session keeps the tool
  * list it opened with, so each handler asks the service for authority again.
  */
+/**
+ * Where a worker runs: on a machine of its own (`own`, with the size and processor its work needs,
+ * as the host provider offers them), on one its orchestrator already has (`shareWith`, by its name
+ * or a worker's thread id on it), or on its orchestrator's own (left out, or `own: false`).
+ */
+const WorkerSandbox = Schema.Struct({
+  own: Schema.optionalKey(Schema.Boolean),
+  size: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
+  architecture: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
+  shareWith: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(200))),
+});
+type WorkerSandbox = typeof WorkerSandbox.Type;
+
 const newStepId = () => Schema.decodeSync(PlanStepId)(randomUUID().slice(0, 8));
 
 export const OrchestratorAppToolsLive = Layer.effectDiscard(
@@ -127,6 +152,109 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     const dependencies = yield* PrDependencies;
     const publisher = yield* GitStatePublisher;
     const store = yield* ThreadStore;
+    // Absent unless an embedder's host provider is set: workers then can't ask for own machines.
+    const onDemand = Option.getOrUndefined(yield* Effect.serviceOption(OnDemand));
+    const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
+    const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
+    const joined = () => (remoteHosts === undefined ? [] : remoteHosts.list());
+    /**
+     * Where `sandbox` puts a worker: the name of a machine of its own, started now, or of one its
+     * orchestrator already has; or nothing, for the orchestrator's own machine.
+     */
+    const workerSandbox = (
+      caller: ThreadId,
+      input: {
+        readonly title: string;
+        readonly feature: string;
+        readonly project: string;
+        readonly clientRequestId?: string | undefined;
+      },
+      sandbox: WorkerSandbox,
+    ) =>
+      Effect.gen(function* () {
+        const tool = "spawn_worker";
+        const fail = (message: string) => new AppToolError({ tool, message });
+        if (sandbox.shareWith === undefined && sandbox.own !== true) {
+          if (sandbox.size !== undefined || sandbox.architecture !== undefined)
+            return yield* fail(
+              'size and architecture are for a machine of its own: add "own": true.',
+            );
+          return undefined;
+        }
+        const orchestrator = yield* store
+          .getThread(caller)
+          .pipe(Effect.mapError(() => fail("Your thread can't be read now.")));
+        const ownHost = hostOf(effectiveCheckout(orchestrator));
+        const owner = workerHosts?.ownerOf(ownHost);
+        if (onDemand === undefined || owner === undefined)
+          return yield* fail(
+            "Workers can't have machines of their own here: leave out sandbox, and the worker runs on your machine.",
+          );
+        const theirs = (machine: {
+          readonly owner?: string | undefined;
+          readonly onDemand?: string | undefined;
+        }) => machine.onDemand === "worker" && machine.owner === owner;
+        if (sandbox.shareWith !== undefined) {
+          const named = sandbox.shareWith.trim();
+          if (isWorkerMachineName(named)) {
+            const machine = joined().find((each) => each.name === named && theirs(each));
+            if (machine === undefined)
+              return yield* fail(`No machine of your workers is named ${named}.`);
+            return machine.name;
+          }
+          const worker = yield* store
+            .getThread(named as ThreadId)
+            .pipe(Effect.mapError(() => fail(`shareWith names no worker or machine: ${named}.`)));
+          if (worker.spawnedBy?.threadId !== caller)
+            return yield* fail(`${worker.title} is not one of your workers.`);
+          const host = hostOf(effectiveCheckout(worker));
+          const machine = joined().find((each) => each.id === host && theirs(each));
+          if (machine === undefined)
+            return yield* fail(
+              `${worker.title} runs on your machine, not one of its own: leave out sandbox to put this worker there too.`,
+            );
+          return machine.name;
+        }
+        const name = workerMachineName(
+          caller,
+          input.clientRequestId ?? `${input.project}\n${input.feature}\n${input.title}`,
+        );
+        // Asked for already (a retry, or the approval's read of this call): wait for that one.
+        const asked = joined().some((each) => each.name === name && theirs(each))
+          ? ({ kind: "started", name } as const)
+          : yield* startWorkerMachine(onDemand, {
+              owner,
+              name,
+              orchestrator: caller,
+              title: input.title,
+              size: sandbox.size,
+              architecture: sandbox.architecture,
+            });
+        if (asked.kind === "refused") return yield* fail(asked.message);
+        if (asked.kind === "over-total") {
+          const threads = yield* store.listThreads;
+          const workersOn = (machineName: string) => {
+            const machine = joined().find((each) => each.name === machineName);
+            return machine === undefined
+              ? []
+              : threads
+                  .filter(
+                    (thread) =>
+                      thread.spawnedBy?.threadId === caller &&
+                      !thread.parked &&
+                      hostOf(effectiveCheckout(thread)) === machine.id,
+                  )
+                  .map((thread) => `${thread.title} [thread ${thread.id}]`);
+          };
+          return yield* fail(refusal("over_total", overTotalWords(asked, workersOn)));
+        }
+        const id = yield* awaitWorkerMachine(joined, { name, owner });
+        if (id === undefined)
+          return yield* fail(
+            `The machine ${name} was asked for but hasn't come online yet. Spawn again with the same clientRequestId in a minute, or put the worker on your machine.`,
+          );
+        return name;
+      });
     /**
      * A question's pictures and mock, confined to the asking thread's folders and made absolute
      * before the question is kept, so a card reads only what is in its worktree or repo.
@@ -158,7 +286,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "spawn_worker",
         class: "crossThread",
         description:
-          "Start a worker thread on a brief, in a new git worktree of one of this workspace's projects. This, not `spawn_task`, is how work for this workspace starts: a worker gets a worktree, a pull request and a place on the board, and reports back to you. For a change that spans repos, name the repo where most of the work happens as `project` and the others in `alsoIn`: the worker gets a worktree in each, all on the same branch, and opens one pull request per repo; if any can't give it a worktree, no worker starts. Workers sharing a `feature` are one group in the ledger and share its branch (feat/<feature>) unless `branch` says otherwise. The worker sees only `brief`, so make it stand alone, with procedure and full scope. Give `title` a concise, task-specific sidebar name, usually 2–5 words (about 24–40 characters), keeping the key bug, system or feature identifier and telling review from implementation (“Review browser safety”, “Fix browser safety”); never a truncated or vague label. `group` puts the feature in a group run as one effort (a release, say), making it if need be. `model` names one of the charter's worker models as `list_workers` lists them (`agent:model`, or the bare id when only one entry has it): pick it by what the user said each is for; without it, the default one, else your model. `scope` is an advisory list of paths it will touch (overlaps with a live worker come back as a warning); `readAlso` lists your own workers whose worktrees it may read; `clientRequestId` makes a retried call return the worker or held brief it already made (a retry without one holds a second copy). `machine` puts it on a joined machine (list_workers' `machines`; `local` means here); only when the user asks. `plan` is the brief's checklist, if any, as the worker's first plan, which the board counts (2 of 3). `userMessages` (1–5) attaches the user's latest messages in your conversation after the brief, word for word: for a paste the worker needs exactly (a log, a spec, an error). Inside the charter this needs no approval; a project outside the workspace (in `project` or `alsoIn`), or one worker more than the charter allows at once, asks the user. When a subscription limit the worker would run on stands at the workspace's pause threshold, the user is asked once whether to pause new workers until it resets; while paused, the call is refused and running workers carry on. `priority: \"low\"` marks a brief that can wait (chores, follow-ups, nice-to-haves; never what the user is waiting on): when its agent refuses turns at a subscription limit, or the limit is at the user's pause threshold, it is held instead (`held: true`, and in list_workers' `held`) and starts by itself when the limit resets or a turn on that agent goes through, or when the user starts it; a share alone, even 100%, never holds it. A recent auth, model-unavailable or network failure before any output also holds spawns on that model, at either priority; the result names the failure and the models clear of it. `manage_held_spawn` cancels or retargets a held brief. When the workspace offers another model at a limit, a spawn a limit stops lists the models clear of it in `alternatives`, with their notes: one not made returns `routeOffer: true` (call again with a `model` whose note fits, or `atLimit: \"stay\"`). A repo Gram doesn't know yet is named by the absolute path of its top folder, and the user is asked to add it to the workspace; a folder without git can't be one. Refused while orchestration is paused. `browser: true` lends it the user's signed-in browser, if Settings allow. Link a thread for the user as [title](#threadId).",
+          "Start a worker thread on a brief, in a new git worktree of one of this workspace's projects. This, not `spawn_task`, is how work for this workspace starts: a worker gets a worktree, a pull request and a place on the board, and reports back to you. For a change that spans repos, name the repo where most of the work happens as `project` and the others in `alsoIn`: the worker gets a worktree in each, all on the same branch, and opens one pull request per repo; if any can't give it a worktree, no worker starts. Workers sharing a `feature` are one group in the ledger and share its branch (feat/<feature>) unless `branch` says otherwise. The worker sees only `brief`, so make it stand alone, with procedure and full scope. Give `title` a concise, task-specific sidebar name, usually 2–5 words (about 24–40 characters), keeping the key bug, system or feature identifier and telling review from implementation (“Review browser safety”, “Fix browser safety”); never a truncated or vague label. `group` puts the feature in a group run as one effort (a release, say), making it if need be. `model` names one of the charter's worker models as `list_workers` lists them (`agent:model`, or the bare id when only one entry has it): pick it by what the user said each is for; without it, the default one, else your model. `scope` is an advisory list of paths it will touch (overlaps with a live worker come back as a warning); `readAlso` lists your own workers whose worktrees it may read; `clientRequestId` makes a retried call return the worker or held brief it already made (a retry without one holds a second copy). `machine` puts it on a joined machine (list_workers' `machines`; `local` means here); only when the user asks. Where the deployment offers it, `sandbox` gives a worker a machine of its own: `{own: true, size, architecture}` (sizes and processors as your workspace allows) for heavy work, such as a large build or tests on the other processor; `{shareWith}` puts it on one your workers already have (its name, or a worker's threadId on it); left out, it runs on your own machine. Light work shares yours. A machine of its own pauses when idle and wakes when the worker is messaged. Over your total the call is refused with `over_total`, what is in use and your workers' machines: you decide whether to wait, share one, run it on yours or ask for a smaller size. `plan` is the brief's checklist, if any, as the worker's first plan, which the board counts (2 of 3). `userMessages` (1–5) attaches the user's latest messages in your conversation after the brief, word for word: for a paste the worker needs exactly (a log, a spec, an error). Inside the charter this needs no approval; a project outside the workspace (in `project` or `alsoIn`), or one worker more than the charter allows at once, asks the user. When a subscription limit the worker would run on stands at the workspace's pause threshold, the user is asked once whether to pause new workers until it resets; while paused, the call is refused and running workers carry on. `priority: \"low\"` marks a brief that can wait (chores, follow-ups, nice-to-haves; never what the user is waiting on): when its agent refuses turns at a subscription limit, or the limit is at the user's pause threshold, it is held instead (`held: true`, and in list_workers' `held`) and starts by itself when the limit resets or a turn on that agent goes through, or when the user starts it; a share alone, even 100%, never holds it. A recent auth, model-unavailable or network failure before any output also holds spawns on that model, at either priority; the result names the failure and the models clear of it. `manage_held_spawn` cancels or retargets a held brief. When the workspace offers another model at a limit, a spawn a limit stops lists the models clear of it in `alternatives`, with their notes: one not made returns `routeOffer: true` (call again with a `model` whose note fits, or `atLimit: \"stay\"`). A repo Gram doesn't know yet is named by the absolute path of its top folder, and the user is asked to add it to the workspace; a folder without git can't be one. Refused while orchestration is paused. `browser: true` lends it the user's signed-in browser, if Settings allow. Link a thread for the user as [title](#threadId).",
       },
       audience: ["orchestrator"],
       input: Schema.Struct({
@@ -187,11 +315,21 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         priority: Schema.optionalKey(BriefPriority),
         atLimit: Schema.optionalKey(Schema.Literal("stay")),
         browser: Schema.optionalKey(Schema.Boolean),
+        sandbox: Schema.optionalKey(WorkerSandbox),
       }),
       // Each repo as it resolves now, and the brief with the user's words in it: what the approval
       // check, the card and the handler all see.
-      resolve: (caller, { userMessages, ...input }) =>
+      resolve: (caller, { userMessages, sandbox, ...asked }) =>
         Effect.gen(function* () {
+          if (sandbox !== undefined && asked.machine !== undefined)
+            return yield* new AppToolError({
+              tool: "spawn_worker",
+              message: "Give machine or sandbox, not both.",
+            });
+          // A machine of its own, or one its orchestrator already has, by name from here on.
+          const placed =
+            sandbox === undefined ? undefined : yield* workerSandbox(caller, asked, sandbox);
+          const input = placed === undefined ? asked : { ...asked, machine: placed };
           yield* orchestration.checkSpawnMachine(caller, input);
           // The workspace's standing instructions, then the user's words, which stay last.
           const brief = yield* attachUserWords(

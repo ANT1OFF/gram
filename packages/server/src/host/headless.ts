@@ -48,7 +48,7 @@ export interface PlaceableMachine {
   readonly models?: ReadonlyArray<AgentModel> | undefined;
   /** A host an embedder started on demand for one person (`embedding/on-demand.ts`). */
   readonly owner?: string | undefined;
-  readonly onDemand?: "personal" | "thread" | undefined;
+  readonly onDemand?: "personal" | "thread" | "worker" | undefined;
 }
 
 /** With hosts provisioned on demand, a person with no machine of their own can start one. */
