@@ -78,6 +78,7 @@ import { GitCheckoutLive, GitStatePublisherLive } from "../git/index.ts";
 import { LocalCheckRunner, LocalChecksLive } from "../git/local-checks.ts";
 import { MergeWhenReadyLive } from "../git/merge-when-ready.ts";
 import { RunMonitorLive } from "../git/run-monitor.ts";
+import { MainWatchLive } from "../wakes/main-watch.ts";
 import { IssueReporter } from "../issues/reporter.ts";
 import { IssueAppToolsLive } from "../issues/tools.ts";
 import { LaunchChecksCache } from "../launch-checks/handler.ts";
@@ -925,6 +926,8 @@ export const ServerCore = Layer.unwrap(
               WorktreeSweepLive,
               // Tells the host provider when a worker's own machine has no work left.
               WorkerMachineReleaseLive,
+              // Tells an orchestrator when a workspace repo's default branch turns red.
+              MainWatchLive.pipe(Layer.provide(BranchHeadsLive)),
             ),
           ),
           Layer.provideMerge(Layer.mergeAll(DreamFiles.layer, ThreadArchive.layer)),

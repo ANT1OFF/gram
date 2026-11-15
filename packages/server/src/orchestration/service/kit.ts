@@ -217,6 +217,9 @@ export const AUTONOMY_LINES: Record<Autonomy, string> = {
 export const ROUTE_AT_LIMIT_LINE =
   "another worker model at a limit: when a subscription limit stops a spawn (its account is at its limit, or the limit gates hold or refuse it) and another worker model is clear of it, spawn_worker's result lists those `alternatives` with the user's notes: a spawn not made returns `routeOffer: true`, a held brief carries them. Pick one whose note fits the brief, never one whose note rules that work out, and spawn again with `model` (or retarget the held brief); or pass `atLimit: \"stay\"` to keep the model you named";
 
+export const WATCH_DEFAULT_BRANCH_LINE =
+  "the default branch of each workspace repo is watched after merges: when one turns red, a digest names the failed runs and the pull requests merged since it was green, with their workers. Don't hold other merges for it. Have a worker rerun the failed jobs once; if they pass, it was flaky. If not and one PR is named, have a worker open a revert PR and merge it with merge_when_ready, then have the PR's owner re-land the change with a fix in a new PR. When merged PRs in other repos depend on it (`depends_on`, or a version pinned to it), revert those first, in reverse order of merging. With several, have a worker bisect them (the failing job or the project's check at each midpoint) first. A merge someone else made is the user's to revert";
+
 /** The charter's line for the worker brief footer, which quotes it. */
 export const footerLine = (footer: string): string =>
   `worker brief footer: Gram appends the user's standing instructions below to every worker brief, marked as theirs, so don't repeat them in a brief:\n${footer

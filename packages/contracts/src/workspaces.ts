@@ -369,6 +369,12 @@ export const OrchestratorCharter = Schema.Struct({
    */
   routeAtLimit: Schema.optionalKey(Schema.Boolean),
   /**
+   * Watch the Actions runs of each workspace repo's default branch, and tell the orchestrator in its
+   * digest when the branch turns red (with the pull requests merged since it was green) and when it
+   * is green again (`packages/server/src/wakes/main-watch.ts`). Absent is off.
+   */
+  watchDefaultBranch: Schema.optionalKey(Schema.Boolean),
+  /**
    * Compact a large idle thread's context just before its prompt cache expires, so the next wake
    * starts from a summary rather than rewriting the whole conversation. Absent is on, by the user's
    * decision; read it through `idleCompactOf`.

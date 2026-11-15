@@ -759,6 +759,32 @@ describe("settings by chat: the worker brief footer and routing at a limit", () 
       "expected true",
     );
   });
+
+  it("turns watching the default branch on and off, stored only while on", () => {
+    expect(readSettingsRows(world, "workspace")).toContainEqual(
+      expect.objectContaining({ key: "workspace.watchDefaultBranch", value: false }),
+    );
+    const on = plan([{ op: "set", key: "workspace.watchDefaultBranch", value: true }]);
+    expect(on.ok && on.plan.rows).toEqual([
+      {
+        key: "workspace.watchDefaultBranch",
+        label: "Watch the default branch after merges",
+        before: "off (default)",
+        after: "on",
+      },
+    ]);
+    expect(charterAfter(on)).toMatchObject({ watchDefaultBranch: true });
+    const watching = { ...world, workspace: { ...workspace, charter: charterAfter(on)! } };
+    expect(
+      charterAfter(
+        plan([{ op: "set", key: "workspace.watchDefaultBranch", value: false }], watching),
+        watching,
+      ),
+    ).not.toHaveProperty("watchDefaultBranch");
+    expect(errorsOf([{ op: "set", key: "workspace.watchDefaultBranch", value: "yes" }])).toContain(
+      "expected true",
+    );
+  });
 });
 
 describe("settings by chat: idle compaction", () => {
