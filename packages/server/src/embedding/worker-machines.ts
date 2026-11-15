@@ -29,6 +29,8 @@ export interface WorkerMachineAsk {
   readonly title: string;
   readonly size?: string | undefined;
   readonly architecture?: string | undefined;
+  /** What the machine installs, sets and may reach as it starts, by the provider's id for it. */
+  readonly environment?: string | undefined;
 }
 
 /** A machine an orchestrator already has for its workers, as the provider reports it. */
@@ -141,9 +143,13 @@ export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) 
     if (
       !NAME.test(ask.name) ||
       (ask.size !== undefined && !SHORT.test(ask.size)) ||
-      (ask.architecture !== undefined && !SHORT.test(ask.architecture))
+      (ask.architecture !== undefined && !SHORT.test(ask.architecture)) ||
+      (ask.environment !== undefined && !SHORT.test(ask.environment))
     )
-      return { kind: "refused", message: "That size or processor isn't one there is." } as const;
+      return {
+        kind: "refused",
+        message: "That size, processor or environment isn't one there is.",
+      } as const;
     const answered = yield* callOutside("host provider", hosts.provider, {
       method: "POST",
       path: "/hosts/start",
@@ -157,6 +163,7 @@ export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) 
           choices: {
             ...(ask.size === undefined ? {} : { size: ask.size }),
             ...(ask.architecture === undefined ? {} : { architecture: ask.architecture }),
+            ...(ask.environment === undefined ? {} : { environment: ask.environment }),
           },
         },
       },
