@@ -100,9 +100,16 @@ const sessionPath = (sessionId: string) => `/api/session/${encodeURIComponent(se
 /** `{ data }`, the envelope every `/api` answer comes in. */
 const dataOf = (body: unknown): unknown => (isRecord(body) ? body["data"] : undefined);
 
+/** `url` without its trailing slashes, in one pass: `/\/+$/` backtracks on a long run of them. */
+const withoutTrailingSlashes = (url: string): string => {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === "/") end--;
+  return url.slice(0, end);
+};
+
 export const makeOpenCodeClient = (options: OpenCodeClientOptions): OpenCodeClient => {
   const send = options.fetch ?? ((url, init) => fetch(url, init));
-  const base = options.baseUrl.replace(/\/+$/, "");
+  const base = withoutTrailingSlashes(options.baseUrl);
   const auth = `Basic ${Buffer.from(`opencode:${options.password}`).toString("base64")}`;
 
   const call = async (
