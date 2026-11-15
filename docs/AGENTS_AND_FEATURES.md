@@ -121,10 +121,11 @@ changes into events that wake the thread that cares:
   gets a new push.
 - **Merges.** `merge_when_ready` waits for the workspace's merge review policy, required checks or
   a passing [local merge check](#project-local-merge-checks), and GitHub's rules, then merges
-  pinned to the head it checked. A merge that needs the user asks once: while its card waits, the
-  same merge (same PR, thread, method and scope) from the worker or its orchestrator raises no
-  second card and returns `askedElsewhere` at once, and the card is withdrawn if the PR merges or
-  closes first.
+  pinned to the head it checked. An approval stands for the call it was given on: the same call
+  again from the same caller joins its waiting card (`askedElsewhere`). A worker's plain arm and its
+  orchestrator's each keep a card, and your answer to either takes the other down
+  (`settledElsewhere`). A hold, `after`, release or cleared hold is the caller's own decision. A
+  card is withdrawn if its PR merges or closes first.
 - **Digests.** Worker reports, finished turns, errors, long-open requests and pull request changes
   wake the orchestrator with one digest built from the current ledger.
 - **Routines.** A workspace's [routines](#routines) start a fresh worker (or brief the orchestrator)

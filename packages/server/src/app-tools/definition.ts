@@ -38,10 +38,19 @@ export interface AskedDespiteAutonomy {
  */
 export interface SharedCard {
   /**
-   * Calls of the same tool with equal keys, from any thread, put the same decision to the user: the
-   * same pull request, target thread, method and scope, whoever calls.
+   * Calls of the same tool with equal keys put the same decision to the user: while one's card
+   * waits, the other raises none and does nothing. The key must name everything the decision
+   * covers, the caller's authority and the approval's provenance included, so that one call's
+   * answer can never stand for a different call's.
    */
   readonly key: string;
+  /**
+   * Calls whose keys differ but whose effects are the same but for who approved them (a plain
+   * merge arm from a worker and from its orchestrator). Each keeps its own card, and the user's
+   * answer to one takes the others down, their calls doing nothing: an approval stands only for
+   * the call it was given on. Absent, a card settles only by its own answer.
+   */
+  readonly family?: string;
   /**
    * Completes once the call has nothing left to act on (its pull request merged or closed), with
    * what the waiting agent is told. Its card is then withdrawn and the call refused; absent, a card
@@ -108,11 +117,11 @@ export interface AppToolDefinition<S extends Schema.Top = Schema.Top, T = S["Typ
    */
   refuseInsteadOfAsking?(threadId: ThreadId, target: T): Effect.Effect<string | undefined>;
   /**
-   * When a card would go up: what makes it the same decision as another call's. While one call's
-   * card with this key waits, another such call, from any thread, raises no card of its own and
-   * returns at once without acting (`askedElsewhere` in its result): one decision is one card, and
-   * no thread is held on a card answered somewhere else. It never lets a call through without a
-   * card: the first call's answer applies to that call alone. A failure shares nothing.
+   * When a card would go up: what makes it the same decision as another call's (`SharedCard`). An
+   * identical call joins the waiting card and returns at once without acting (`askedElsewhere`); a
+   * call of the same family keeps its card until the user answers one of them, which takes the
+   * others down (`settledElsewhere`, or a refusal on a decline). It never lets a call through
+   * without a card: an answer applies to the call it was given on alone. A failure shares nothing.
    */
   sharedCard?(threadId: ThreadId, target: T): Effect.Effect<SharedCard | undefined>;
   /**
