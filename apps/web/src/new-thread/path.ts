@@ -77,3 +77,42 @@ export function breadcrumbs(
   }
   return crumbs;
 }
+
+/**
+ * A folder as a list shows it beside its name: a clone (`…/<host>/<owner>/<repo>+<hash>`) by where
+ * it was cloned from, `host/owner/repo`, and any other folder by its path with home as `~`.
+ */
+export const folderPlace = (path: string, home: string | undefined): string => {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  const clone = CLONE_FOLDER.exec(parts.at(-1) ?? "");
+  if (clone === null || parts.length < 3) return tildify(path, home);
+  return `${parts.at(-3)}/${parts.at(-2)}/${clone[1]!.replaceAll("+", "/")}`;
+};
+
+/** A message's plain text, or an absolute path in it with how a person names that folder. */
+export type MessagePart =
+  | { readonly text: string }
+  | { readonly path: string; readonly label: string };
+
+/** An absolute or home-relative path, up to the next space or quote. */
+const PATH_IN_TEXT = /(?<=^|[\s("'`])~?\/[^\s"'`()]+/g;
+
+/**
+ * `message` split around the paths it names, each path shown as `folderLabel` names a clone
+ * (`owner/repo`) or with home as `~`, so a server's own folders read as the repositories they hold.
+ * A sentence's closing punctuation stays text.
+ */
+export const messageParts = (message: string, home: string | undefined): MessagePart[] => {
+  const parts: MessagePart[] = [];
+  let at = 0;
+  for (const match of message.matchAll(PATH_IN_TEXT)) {
+    const path = match[0].replace(/[.,;:!?]+$/, "");
+    if (path.length < 2) continue;
+    if (match.index > at) parts.push({ text: message.slice(at, match.index) });
+    const leaf = path.split("/").filter(Boolean).at(-1) ?? "";
+    parts.push({ path, label: CLONE_FOLDER.test(leaf) ? folderLabel(path) : tildify(path, home) });
+    at = match.index + path.length;
+  }
+  if (at < message.length) parts.push({ text: message.slice(at) });
+  return parts;
+};

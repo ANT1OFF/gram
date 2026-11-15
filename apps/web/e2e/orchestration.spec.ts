@@ -530,7 +530,7 @@ test("the new-workspace sheet adds a typed folder, checked as it is typed", asyn
   await sheet
     .getByTestId("new-workspace-checklist")
     .getByRole("checkbox", { name: /^api/ })
-    .check();
+    .click();
 
   const field = sheet.getByRole("combobox", { name: "Folder, GitHub repo or URL" });
   const check = sheet.getByTestId("folder-check");
@@ -547,8 +547,9 @@ test("the new-workspace sheet adds a typed folder, checked as it is typed", asyn
   await field.fill("/Users/dev/Documents/code/infra");
   await expect(check).toContainText("~/Documents/code/infra");
   await add.click();
-  await expect(sheet.getByRole("checkbox", { name: /^infra/ })).toBeChecked();
+  // Picked, it is a chip and leaves the list, which offers only the rest.
   await expect(sheet.getByTestId("new-workspace-repo")).toHaveText(["api", "infra"]);
+  await expect(sheet.getByRole("checkbox", { name: /^infra/ })).toHaveCount(0);
   await expect(field).toHaveValue("");
   await expect(field).toBeEnabled();
   await page.keyboard.press("ControlOrMeta+Enter");
@@ -582,8 +583,9 @@ test("a new workspace is one sheet, and what it should work on is briefed into a
   await page.keyboard.press("ControlOrMeta+Enter");
   await expect(sheet.getByRole("alert")).toHaveText("Pick at least one repository.");
   const list = sheet.getByTestId("new-workspace-checklist");
-  await list.getByRole("checkbox", { name: /^api/ }).check();
-  await list.getByRole("checkbox", { name: /^web/ }).check();
+  // A ticked row becomes a chip and leaves the list, so it is clicked rather than checked.
+  await list.getByRole("checkbox", { name: /^api/ }).click();
+  await list.getByRole("checkbox", { name: /^web/ }).click();
   await expect(sheet.getByTestId("new-workspace-repo")).toHaveText(["api", "web"]);
   await sheet
     .getByLabel("What should it work on?")

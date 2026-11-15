@@ -21,6 +21,7 @@ import {
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
+import { FormError } from "@/components/form-error";
 import { Button } from "@/components/ui/button";
 import { useModelsSettled } from "@/composer/models";
 import { useShortcut } from "@/keyboard/registry";
@@ -377,11 +378,7 @@ function SheetForm({
           }}
         />
       </Field>
-      {issue !== undefined && (
-        <p role="alert" className="text-destructive">
-          {issue}
-        </p>
-      )}
+      {issue !== undefined && <FormError message={issue} />}
       <div className="flex flex-wrap items-center gap-2">
         <PressScale>
           <Button type="submit" data-testid="new-workspace-start" disabled={busy}>
@@ -408,7 +405,7 @@ function SheetForm({
 
 /**
  * The workspace's repositories as chips, removed with ×; Add opens the known and found
- * repositories to tick, and a field for a folder or a GitHub repo to clone. The first is home.
+ * repositories not picked yet, to tick, and a field for a folder or a GitHub repo to clone. The first is home.
  */
 function ReposField({
   draft,
@@ -435,7 +432,9 @@ function ReposField({
   useEffect(() => onPendingChange(ticking || typing), [ticking, typing, onPendingChange]);
   const anyRoot = projects.find((project) => project.id === draft.homeProjectId)?.root;
   return (
-    <fieldset className="flex flex-col gap-2">
+    // `min-w-0`: a fieldset is as wide as its widest content by default, so one long row would
+    // push the field past the sheet.
+    <fieldset className="flex min-w-0 flex-col gap-2">
       <legend className="mb-2 font-medium">Repositories</legend>
       <div className="flex flex-wrap items-center gap-1.5" data-testid="new-workspace-repos">
         {draft.projectIds.map((projectId) => {
@@ -483,6 +482,8 @@ function ReposField({
             }
             onPendingChange={setTicking}
             empty={null}
+            // The chips above are the picks; the list offers the rest.
+            hidePicked
           />
           <AddRepository
             ref={repositoryRef}
