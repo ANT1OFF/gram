@@ -29,6 +29,8 @@ export interface WorkerMachineAsk {
   readonly title: string;
   readonly size?: string | undefined;
   readonly architecture?: string | undefined;
+  /** How strongly it is kept from other machines, by the provider's id for it (a VM, say). */
+  readonly isolation?: string | undefined;
   /** What the machine installs, sets and may reach as it starts, by the provider's id for it. */
   readonly environment?: string | undefined;
 }
@@ -144,11 +146,12 @@ export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) 
       !NAME.test(ask.name) ||
       (ask.size !== undefined && !SHORT.test(ask.size)) ||
       (ask.architecture !== undefined && !SHORT.test(ask.architecture)) ||
+      (ask.isolation !== undefined && !SHORT.test(ask.isolation)) ||
       (ask.environment !== undefined && !SHORT.test(ask.environment))
     )
       return {
         kind: "refused",
-        message: "That size, processor or environment isn't one there is.",
+        message: "That size, processor, kind or environment isn't one there is.",
       } as const;
     const answered = yield* callOutside("host provider", hosts.provider, {
       method: "POST",
@@ -163,6 +166,7 @@ export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) 
           choices: {
             ...(ask.size === undefined ? {} : { size: ask.size }),
             ...(ask.architecture === undefined ? {} : { architecture: ask.architecture }),
+            ...(ask.isolation === undefined ? {} : { isolation: ask.isolation }),
             ...(ask.environment === undefined ? {} : { environment: ask.environment }),
           },
         },

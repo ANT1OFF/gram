@@ -43,6 +43,7 @@ import {
 } from "@/new-thread/machine-folder";
 import { ProjectPicker } from "@/new-thread/project-picker";
 import { useFolderStatus, useIsGitRepo, useMachineFolderStatus } from "@/new-thread/use-folder";
+import { AlsoRepositories } from "@/new-thread/also-repositories";
 import { FolderPicker } from "@/new-thread/where-chips";
 import { ChatAuthorityLine } from "@/new-thread/authority-line";
 import { NewFormHeader, WHO_ENTRY, WhereStop, type Who } from "@/new-thread/who-does-it";
@@ -221,6 +222,9 @@ function ConfiguredNewThreadDraft() {
   const project = projects.find((p) => p.root === projectRoot);
   const isGitRepo = useIsGitRepo(folder);
   const repoPath = project?.repoRoot ?? (isGitRepo ? projectRoot : "");
+  // Other repositories it also uses, beside the one it works in: given to it as folders.
+  const [alsoPicked, setAlso] = useState<readonly string[]>([]);
+  const also = alsoPicked.filter((root) => root !== projectRoot);
   // Without git there are no worktrees, so the thread runs in the folder itself.
   const notRepo = folder !== undefined && project?.repoRoot === undefined && isGitRepo === false;
 
@@ -392,13 +396,17 @@ function ConfiguredNewThreadDraft() {
     setStage("creating");
     setError(undefined);
     try {
+      // With repositories it also uses, its folders are given before its first turn: the turn
+      // then starts knowing them. Attachments staged for the draft go with the create itself.
+      const extra = onMachine ? [] : also;
+      const firstAfter = extra.length > 0 && attachments.ready.length === 0 && prompt.trim() !== "";
       const thread = await api.createThread({
         // A folder on another machine: the server files it under that machine, never this disk.
         projectRoot: onMachine ? (checkedOnMachine?.path ?? "") : projectRoot,
         checkout: checkoutRequest(),
         model: choiceModel(choice),
         mode,
-        ...(prompt.trim() || attachments.ready.length > 0
+        ...(!firstAfter && (prompt.trim() || attachments.ready.length > 0)
           ? {
               input: {
                 text: prompt.trim(),
@@ -408,6 +416,8 @@ function ConfiguredNewThreadDraft() {
           : {}),
         ...(attachments.ready.length > 0 ? { draftId } : {}),
       });
+      for (const root of extra) await api.addDirectory(thread.id, root);
+      if (firstAfter) await api.send(thread.id, { text: prompt.trim() });
       prefillDraftProject(undefined);
       // The prompt box moves down into the new thread's composer.
       const box = slabRef.current?.getBoundingClientRect();
@@ -508,7 +518,7 @@ function ConfiguredNewThreadDraft() {
                     />
                   </WhereStop>
                 )}
-                <WhereStop label="Folder">
+                <WhereStop label={repoPath === "" ? "Folder" : "Repository"}>
                   {pickedMachine === undefined ? (
                     <FolderPicker
                       folder={projectRoot}
@@ -535,6 +545,17 @@ function ConfiguredNewThreadDraft() {
                     />
                   )}
                 </WhereStop>
+                {/* More repositories, beside the one it works in, on this machine's folders. */}
+                {!onMachine && repoPath !== "" && (
+                  <WhereStop label="Also uses">
+                    <AlsoRepositories
+                      primary={projectRoot}
+                      roots={also}
+                      projects={recents}
+                      onChange={setAlso}
+                    />
+                  </WhereStop>
+                )}
               </>
             }
             line={

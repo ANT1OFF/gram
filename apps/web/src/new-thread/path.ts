@@ -44,6 +44,23 @@ export function tildify(path: string, home: string | undefined): string {
 export const baseName = (path: string): string =>
   path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
+/** A clone folder's name: `<repo>+<16 hex>`, the repo with a group's subgroups joined by `+`. */
+const CLONE_FOLDER = /^(.+)\+[0-9a-f]{16}$/;
+
+/**
+ * A folder as a person names it: a clone (`…/<host>/<owner>/<repo>+<hash>`, as Gram clones into)
+ * as `owner/repo`, and any other folder by its name.
+ */
+export const folderLabel = (path: string): string => {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  const leaf = parts.at(-1) ?? path;
+  const clone = CLONE_FOLDER.exec(leaf);
+  if (clone === null) return leaf;
+  const repo = clone[1]!.replaceAll("+", "/");
+  const owner = parts.at(-2);
+  return owner === undefined ? repo : `${owner}/${repo}`;
+};
+
 /** Breadcrumb segments for `path`, rooted at `~` when it's inside home. */
 export function breadcrumbs(
   path: string,
