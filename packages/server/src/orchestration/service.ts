@@ -35,6 +35,7 @@ import { withOwnedBranch } from "../git/worker-pr.ts";
 import { contextPct, workerErrorOf } from "./ledger.ts";
 import { makeIdleCompactor } from "./idle-compact.ts";
 import { contextNote, rosterOf, userHoldLapsesAt } from "./rules.ts";
+import { sameTaskModel } from "./task-selection.ts";
 import { type OrchestrationShape } from "./service/shape.ts";
 import {
   makeOrchestrationKit,
@@ -510,6 +511,35 @@ export const OrchestrationLive = Layer.effect(
       cancelDelivery,
     });
 
+    const prepareTaskOrchestrator: OrchestrationShape["prepareTaskOrchestrator"] = (input) =>
+      Effect.gen(function* () {
+        const picked = input.orchestrator;
+        if (picked === undefined) return;
+        const target = input.target;
+        const state =
+          "workspaceId" in target
+            ? yield* store.getWorkspace(target.workspaceId)
+            : (yield* store.listWorkspaces).find(
+                (row) =>
+                  row.workspace.projectIds.length === 1 &&
+                  row.workspace.projectIds[0] === target.projectId,
+              );
+        // Not made yet: the task makes it with the pick as its orchestrator model.
+        if (state === undefined) return;
+        const holderId = state.workspace.orchestratorThreadId;
+        const holder = holderId === undefined ? undefined : yield* findThread(holderId);
+        if (holder === undefined) {
+          const own = state.charter.orchestratorModel;
+          if (own !== undefined && !("tier" in own) && sameTaskModel(own, picked)) return;
+          yield* setCharter(state.workspace.id, { ...state.charter, orchestratorModel: picked });
+          return;
+        }
+        const switching = holder.sessionSwitch?.target;
+        if (sameTaskModel(holder.model, picked)) return;
+        if (switching !== undefined && sameTaskModel(switching, picked)) return;
+        yield* handoff(state.workspace.id, "user", picked);
+      });
+
     const {
       quarantineOutbox,
       pause,
@@ -869,6 +899,7 @@ export const OrchestrationLive = Layer.effect(
       briefFooter,
       startWorker,
       taskPreflight,
+      prepareTaskOrchestrator,
       withTaskStartup,
       addRepoNeedsApproval,
       describeAddRepo,

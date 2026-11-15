@@ -354,11 +354,19 @@ export interface OrchestrationShape {
     requireNew?: boolean,
   ): Effect.Effect<Thread, NotFound | InvalidState | AgentUnavailable>;
   taskPreflight(
-    input: Pick<StartTaskInput, "target" | "direct" | "autonomy">,
+    input: Pick<StartTaskInput, "target" | "direct" | "autonomy" | "orchestrator">,
   ): Effect.Effect<TaskModelSelection, NotFound | InvalidState | AgentUnavailable>;
+  /**
+   * Carries out a task's orchestrator pick before the task starts: a running orchestrator on
+   * another model starts moving to it (`handoff`), and a workspace with none keeps it as its
+   * orchestrator model. A workspace not made yet takes it when the task makes it.
+   */
+  prepareTaskOrchestrator(
+    input: Pick<StartTaskInput, "target" | "orchestrator">,
+  ): Effect.Effect<void, NotFound | InvalidState>;
   /** Resolve outside the edit lock, then refuse stale evidence before startup side effects. */
   withTaskStartup<A, E>(
-    input: Pick<StartTaskInput, "target" | "direct" | "autonomy">,
+    input: Pick<StartTaskInput, "target" | "direct" | "autonomy" | "orchestrator">,
     selected: TaskModelSelection | undefined,
     run: (current: TaskModelSelection) => Effect.Effect<A, E>,
   ): Effect.Effect<A, E | NotFound | InvalidState | AgentUnavailable>;

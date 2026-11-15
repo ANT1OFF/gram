@@ -8,9 +8,11 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
+import type { ServerConfig } from "../config.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { orchestrationHandlers } from "./handler.ts";
 import { Orchestration } from "./service.ts";
 import {
   completeTurn,
@@ -59,7 +61,7 @@ const runCase = (
   body: () => Effect.Effect<
     void,
     unknown,
-    ThreadStore | ThreadRuntimes | Orchestration | FakeAgentControl
+    ThreadStore | ThreadRuntimes | Orchestration | FakeAgentControl | ServerConfig
   >,
 ) => body();
 
@@ -164,6 +166,119 @@ describe("explicit workspace orchestrator switch", () => {
         ),
     );
   }
+
+  it.effect("a task that picks another orchestrator moves the running one and waits for it", () =>
+    inServer((world) =>
+      runCase(() =>
+        Effect.gen(function* () {
+          const { thread, session, workspaceId } = yield* setup(world, "claude");
+          const store = yield* ThreadStore;
+          const handlers = yield* orchestrationHandlers;
+          const target = { workspaceId };
+          const picked = { agent: "codex", model: "fake-opus" } as const;
+          // The preview says it moves, from what it runs on now, and starts nothing.
+          const selection = yield* handlers["workspace.taskPreflight"]({
+            target,
+            orchestrator: picked,
+          });
+          expect(selection.orchestrator).toEqual(picked);
+          expect(selection.orchestratorFrom).toEqual(thread.model);
+          expect((yield* store.getThread(thread.id)).sessionSwitch).toBeUndefined();
+          const started = yield* handlers["workspace.startTask"]({
+            target,
+            orchestrator: picked,
+            selection,
+            input: { text: "Synthetic task for the new orchestrator" },
+          });
+          expect(started.id).toBe(thread.id);
+          expect((yield* store.getThread(thread.id)).sessionSwitch).toMatchObject({
+            previous: thread.model,
+            target: picked,
+          });
+          // The task waits in the queue: the old session only writes its checkpoint.
+          yield* waitSent(thread.id, 2);
+          expect(session.sent.map((sent) => sent.text ?? "").join("\n")).not.toContain(
+            "Synthetic task for the new orchestrator",
+          );
+          yield* session.completeTurn("ready");
+          const fresh = yield* waitReal(
+            "target boot",
+            Effect.gen(function* () {
+              const all = yield* sessionsFor(thread.id);
+              return all.length === 2 && all[1]!.sent.length > 0 ? all[1] : undefined;
+            }),
+          );
+          expect(fresh.options.model).toEqual(picked);
+          yield* fresh.completeTurn();
+          yield* waitReal(
+            "task on the new session",
+            Effect.sync(() =>
+              fresh.sent.some((sent) =>
+                (sent.text ?? "").includes("Synthetic task for the new orchestrator"),
+              )
+                ? true
+                : undefined,
+            ),
+          );
+          expect((yield* store.getWorkspace(workspaceId)).charter.orchestratorModel).toEqual(
+            picked,
+          );
+          // Picking what it runs on now moves nothing.
+          const same = yield* handlers["workspace.taskPreflight"]({
+            target,
+            orchestrator: picked,
+          });
+          expect(same.orchestratorFrom).toBeUndefined();
+        }),
+      ),
+    ),
+  );
+
+  it.effect("a task's orchestrator pick opens a workspace's first orchestrator on it", () =>
+    inServer((world) =>
+      runCase(() =>
+        Effect.gen(function* () {
+          const project = yield* openProject(world);
+          const orchestration = yield* Orchestration;
+          const store = yield* ThreadStore;
+          const state = yield* orchestration.saveWorkspace({
+            name: "Synthetic unopened",
+            projectIds: [project.id],
+            homeProjectId: project.id,
+            charter: {
+              ...DEFAULT_CHARTER,
+              orchestratorModel: { agent: "claude", model: "fake-opus" },
+            },
+          });
+          const handlers = yield* orchestrationHandlers;
+          const target = { workspaceId: state.workspace.id };
+          const picked = { agent: "codex", model: "fake-haiku" } as const;
+          const selection = yield* handlers["workspace.taskPreflight"]({
+            target,
+            orchestrator: picked,
+          });
+          expect(selection.orchestrator).toMatchObject(picked);
+          expect(selection.orchestratorFrom).toBeUndefined();
+          const thread = yield* handlers["workspace.startTask"]({
+            target,
+            orchestrator: picked,
+            selection,
+            input: { text: "Synthetic first task" },
+          });
+          expect(thread.model).toMatchObject(picked);
+          expect((yield* store.getWorkspace(state.workspace.id)).charter.orchestratorModel).toEqual(
+            picked,
+          );
+          // An agent that can't orchestrate is refused before anything starts.
+          const refused = yield* handlers["workspace.taskPreflight"]({
+            target,
+            orchestrator: { agent: "opencode", model: "openai/fake" },
+          }).pipe(Effect.flip);
+          expect(refused).toMatchObject({ _tag: "InvalidState" });
+        }),
+      ),
+    ),
+  );
 
   it.effect("sends the boot digest and queued input in Bypass once Codex reports Ask", () =>
     inServer((world) =>

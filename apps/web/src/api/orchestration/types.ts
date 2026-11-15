@@ -48,7 +48,7 @@ export interface OrchestrationApi {
    */
   startTask(input: StartTaskInput): Promise<Thread>;
   taskPreflight(
-    input: Pick<StartTaskInput, "target" | "direct" | "autonomy">,
+    input: Pick<StartTaskInput, "target" | "direct" | "autonomy" | "orchestrator">,
   ): Promise<TaskModelSelection>;
   /** Replaces the budgets the workspace's orchestrator works inside. */
   setOrchestratorCharter(
