@@ -39,6 +39,7 @@ import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 
 import { useApi } from "@/api/context";
+import { HighlightedCommand } from "@/components/ai-elements/code-block";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { RecommendedTag } from "@/components/recommended-tag";
 import { Button } from "@/components/ui/button";
@@ -1185,7 +1186,12 @@ export function ApprovalInput({ request }: { request: ApprovalRequest }) {
         </p>
       )}
       <pre className="overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-meta whitespace-pre-wrap">
-        {approvalSubject(request)}
+        {/* A shell command in colour, its embedded scripts in theirs; the text is exactly the input. */}
+        {typeof request.input["command"] === "string" ? (
+          <HighlightedCommand code={request.input["command"]} />
+        ) : (
+          approvalSubject(request)
+        )}
       </pre>
       {extras.length > 0 && (
         <p

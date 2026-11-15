@@ -18,7 +18,7 @@ import { createElement, useEffect, useMemo, useRef, useState, type KeyboardEvent
 import { useApi } from "@/api/context";
 import { errorMessage, isNotImplemented } from "@/api/errors";
 import { openExternalUrl } from "@/api/open-external";
-import { shownNavigation, useEmbedShell, useThreadsTitle } from "@/embed/store";
+import { gramSettingKept, shownNavigation, useEmbedShell, useThreadsTitle } from "@/embed/store";
 import { showInbox } from "@/inbox/inbox-store";
 import { boardWorkspaceFor } from "@/orchestration/board-model";
 import { useOpenBoard } from "@/orchestration/open-board";
@@ -168,6 +168,8 @@ export function PaletteBody({
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const embedNavigation = shownNavigation(useEmbedShell((s) => s.navigation));
+  const hostAttention = useEmbedShell((s) => s.attention !== undefined);
+  const hostSettings = useEmbedShell((s) => s.settings);
   const threadsTitle = useThreadsTitle();
   const params = useParams({ strict: false });
   const currentId = params.threadId as ThreadId | undefined;
@@ -468,7 +470,7 @@ export function PaletteBody({
   }));
 
   // The places the window goes, each with its key: first-class here, rather than only in "…".
-  const destinations: PaletteItem[] = [
+  const gramDestinations: PaletteItem[] = [
     ...(boardWorkspace === undefined
       ? []
       : [
@@ -557,20 +559,37 @@ export function PaletteBody({
       keywords: "all threads list",
       run: go("go:threads", () => void navigate({ to: "/threads" })),
     },
-    // The places an app in front of Gram added, each under its group's name; none on Gram's own.
-    ...embedNavigation.flatMap((group) =>
-      group.items.map((item) => {
-        const id = `go:embed:${group.id}/${item.id}`;
-        return {
-          id,
-          label: item.label,
-          ...(group.label === undefined ? {} : { hint: group.label, keywords: group.label }),
-          icon: "command" as const,
-          run: go(id, () => void navigate({ to: item.to as "/" })),
-        };
-      }),
-    ),
   ];
+  // The places an app in front of Gram added, each under its group's name; none on Gram's own.
+  const embedDestinations: PaletteItem[] = embedNavigation.flatMap((group) =>
+    group.items.map((item) => {
+      const id = `go:embed:${group.id}/${item.id}`;
+      return {
+        id,
+        label: item.label,
+        ...(group.label === undefined ? {} : { hint: group.label, keywords: group.label }),
+        icon: "command" as const,
+        run: go(id, () => void navigate({ to: item.to as "/" })),
+      };
+    }),
+  );
+  // In front of an app with places of its own, those lead, and Gram's that it replaces or leaves
+  // out go: its Inbox when it counts what needs someone, a page its navigation already lists, Focus
+  // (a calm view of Gram's own threads), and the Settings pages it does not keep.
+  const embedPaths = new Set(
+    embedNavigation.flatMap((group) => group.items.map((item) => item.to)),
+  );
+  const replaced = new Set([
+    "go:quiet",
+    ...(hostAttention ? ["go:inbox"] : []),
+    ...(embedPaths.has("/threads") ? ["go:threads"] : []),
+    ...(gramSettingKept(hostSettings, "routines") ? [] : ["go:routines"]),
+    ...(gramSettingKept(hostSettings, "usage") ? [] : ["go:usage"]),
+  ]);
+  const destinations: PaletteItem[] =
+    embedDestinations.length === 0
+      ? gramDestinations
+      : [...embedDestinations, ...gramDestinations.filter((item) => !replaced.has(item.id))];
 
   // A touch screen shows one pane at a time: no splits, layouts or panes to open into.
   const touch = isTouch();
@@ -1247,8 +1266,8 @@ export function PaletteBody({
               ? picker.placeholder
               : scope === undefined
                 ? phone
-                  ? "Go to a thread, worker or PR…"
-                  : "Go to a thread, worker or PR… (> for commands)"
+                  ? `Go to a ${embedNavigation.length > 0 ? "page or thread" : "thread, worker or PR"}…`
+                  : `Go to a ${embedNavigation.length > 0 ? "page or thread" : "thread, worker or PR"}… (> for commands)`
                 : scope.kind === "thread"
                   ? "Thread commands…"
                   : "Workspace commands…"

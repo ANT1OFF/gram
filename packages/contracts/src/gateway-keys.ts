@@ -53,6 +53,13 @@ export const SetKeyResult = Schema.Struct({
 });
 export type SetKeyResult = typeof SetKeyResult.Type;
 
+/** A finished sign-in with OpenRouter: the profile it made or updated, and what saving its key did. */
+export const OpenRouterSignInResult = Schema.Struct({
+  ...SetKeyResult.fields,
+  profileId: Schema.String,
+});
+export type OpenRouterSignInResult = typeof OpenRouterSignInResult.Type;
+
 export const SeedProfilesResult = Schema.Struct({
   /** Profiles added from the OpenCode and Codex configs; 0 when some already existed. */
   added: Schema.Int,

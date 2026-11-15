@@ -11,7 +11,7 @@ import { FakeAgentBadge } from "@/shell/fake-agent-badge";
 import { PhoneMenuButton } from "@/shell/phone-drawer";
 import { ROUND } from "@/shell/phone-button-style";
 import { useHostAttention } from "@/embed/attention";
-import { useRoomySidebar } from "@/embed/store";
+import { useEmbedShell, useGramSettingKept, useHostPage, useRoomySidebar } from "@/embed/store";
 import { PhoneTitle } from "@/shell/phone-title";
 import { ShellToggle } from "@/shell/shell-toggle";
 import { TitlebarOverflow } from "@/shell/titlebar-fold";
@@ -98,6 +98,13 @@ export function ShellTitlebar({
   const roomy = useRoomySidebar();
   const host = useHostAttention();
   const pathBar = usePathBar();
+  // An app in front of Gram that leaves Usage out of Settings has its own idea of what is spent.
+  const usageKept = useGramSettingKept("usage");
+  // Settings an app in front of Gram has made its own holds none of the window's panes either.
+  const hostSettings = useEmbedShell(
+    (s) => s.settings.gram !== undefined || (s.settings.pages?.length ?? 0) > 0,
+  );
+  const hostPage = useHostPage() || (settings && hostSettings);
 
   // A phone's one bar: the drawer's menu, where you are, Needs you and "…" with the rest in words.
   // The thread's header and Board's controls still mount in the slot, out of sight: what they
@@ -140,7 +147,7 @@ export function ShellTitlebar({
             <InboxButton />
           </div>
         )}
-        <TitlebarOverflow orchestration={!soloBar} className={ROUND} />
+        <TitlebarOverflow orchestration={!soloBar} hostPage={hostPage} className={ROUND} />
       </div>
     );
   }
@@ -177,7 +184,11 @@ export function ShellTitlebar({
         >
           <InboxButton />
         </div>
-        <TitlebarOverflow orchestration={!soloBar} className="size-11 shrink-0" />
+        <TitlebarOverflow
+          orchestration={!soloBar}
+          hostPage={hostPage}
+          className="size-11 shrink-0"
+        />
       </div>
     );
   }
@@ -286,7 +297,7 @@ export function ShellTitlebar({
         {/* Before any setup there is no work of Gram's to meter. Icon-only like the rest of the
             bar: usage's glyph, with a dot on it once a limit is near or reached; the reading is its
             hover's and its name's. */}
-        {!beforeSetup && (
+        {!beforeSetup && usageKept && (
           <UsageMeter
             agent={settings ? undefined : agent}
             className="[-webkit-app-region:no-drag]"
@@ -302,7 +313,11 @@ export function ShellTitlebar({
       >
         {/* The thread's menu, the workspace's controls and the window's, and what a narrow bar
             folds: a worker's Take over and Board's layout. */}
-        <TitlebarOverflow orchestration={!soloBar} className="[-webkit-app-region:no-drag]" />
+        <TitlebarOverflow
+          orchestration={!soloBar}
+          hostPage={hostPage}
+          className="[-webkit-app-region:no-drag]"
+        />
       </div>
       {/* What goes in the right panel, together at the bar's end: a worker's Open beside, then the
           panel's own toggle, each drawn apart, its words and key on hover. */}

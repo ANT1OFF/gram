@@ -24,6 +24,7 @@ import {
   discoverModels,
   mergeModels,
   parseModelIds,
+  parseInlineModels,
   parseModelInfo,
   type Fetcher,
 } from "./discovery.ts";
@@ -162,6 +163,45 @@ describe("model discovery", () => {
     ).toEqual([
       { id: "a", name: "Model A", contextWindow: 200_000, variants: ["low"] },
       { id: "c", name: "c" },
+    ]);
+  });
+
+  it("reads the descriptions OpenRouter's /models carries in each entry", () => {
+    const body = {
+      data: [
+        {
+          id: "anthropic/claude-sonnet-5.5",
+          name: "Anthropic: Claude Sonnet 5.5",
+          context_length: 1_000_000,
+          supported_parameters: ["tools", "reasoning", "max_tokens"],
+        },
+        { id: "some/image-model", name: "Pictures", supported_parameters: ["max_tokens"] },
+        { id: "litellm-style" },
+      ],
+    };
+    const inline = parseInlineModels(body);
+    expect([...inline.keys()]).toEqual(["anthropic/claude-sonnet-5.5", "some/image-model"]);
+    expect(
+      mergeModels(
+        [{ id: "some/image-model", name: "My name" }],
+        parseModelIds(body)!,
+        undefined,
+        inline,
+      ),
+    ).toEqual([
+      {
+        id: "anthropic/claude-sonnet-5.5",
+        name: "Anthropic: Claude Sonnet 5.5",
+        contextWindow: 1_000_000,
+        info: { mode: "chat", tools: true, reasoning: true },
+      },
+      // The user's own name stays; no tools, so the pickers leave it out.
+      {
+        id: "some/image-model",
+        name: "My name",
+        info: { mode: "chat", tools: false, reasoning: false },
+      },
+      { id: "litellm-style", name: "litellm-style" },
     ]);
   });
 

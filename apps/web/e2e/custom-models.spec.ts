@@ -84,7 +84,8 @@ test("a thread on a model its Claude account no longer lists says so", async ({ 
   await composer.fill("/model claude-mythos-5-1");
   await composer.press("Enter");
   const picker = page.getByTestId("composer-toolbar").getByTestId("composer-choices");
-  await expect(picker).toHaveAccessibleName(/claude-mythos-5-1/);
+  // A pinned Claude id reads as Claude Code names it (#622): `claude-mythos-5-1` is "Mythos 5.1".
+  await expect(picker).toHaveAccessibleName(/^Mythos 5\.1 \(/);
   await expect(picker).toHaveAttribute("data-warning", "true");
   // Said the moment it's hovered, as every toolbar picker says its warning.
   await picker.hover();

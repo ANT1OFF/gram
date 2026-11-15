@@ -769,7 +769,12 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         }),
       );
     }
-    const streamed = l.streamed.has(apiId);
+    // An API error Claude Code reports as a reply of its own (`API Error: Request rejected (429)
+    // ...`) is the turn's failure, which ends it and is shown as one: an error card, or the line of
+    // a limit waited out. Its words are not the agent's reply.
+    const failureReply =
+      key === MAIN && m.error !== undefined && m.message.model === SYNTHETIC_MODEL;
+    const streamed = l.streamed.has(apiId) || failureReply;
     for (const block of m.message.content) {
       if (block.type === "tool_use") {
         const call = tools.get(block.id) ?? registerTool(block.id, block.name, key);
@@ -950,6 +955,22 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
           // hands over to it without a gap (CLI 2.1.285 sends an `init` in between).
         }
         return;
+      case "informational": {
+        // CLI 2.1.325: a `PreToolUse` hook gave no verdict on a call, once per hook in a session,
+        // and its failure didn't refuse the call. Gram's own gates are such hooks, so this is said.
+        if (m.tag !== "hook_no_verdict") return;
+        const detail = (m as { readonly hook_no_verdict?: { readonly timed_out?: boolean } })
+          .hook_no_verdict;
+        out.push(
+          notice(
+            "warning",
+            detail?.timed_out === true
+              ? "A tool check timed out without an answer, so Claude went ahead with the call. Other checks and rules still applied."
+              : "A tool check failed without an answer, so Claude went ahead with the call. Other checks and rules still applied.",
+          ),
+        );
+        return;
+      }
       case "api_retry":
         out.push(
           status(
@@ -1170,6 +1191,12 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         break;
       }
       case "tool_progress":
+        // A hook that runs long beats (CLI 2.1.323): the turn is waiting on it, not stuck. Said as
+        // the turn still running, which counts as progress, so the silent-tool watch keeps quiet.
+        if (message.heartbeat === true) {
+          if (lastStatus === "running") out.push(status("running"));
+          break;
+        }
         // Only elapsed time, no output, but it names the task a running shell writes to. CLI
         // 2.1.296 didn't send it on a local lane; `task_started` names the task there.
         if (message.task_id !== undefined) followShell(message.task_id, message.tool_use_id);

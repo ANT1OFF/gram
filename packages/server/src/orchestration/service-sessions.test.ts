@@ -83,13 +83,19 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           }).pipe(Effect.flip);
           expect(stale).toMatchObject({ _tag: "InvalidState" });
           expect(stale.message).toContain("at publish autonomy, which it keeps");
+          // The task and the boot digest race for the new session. Either may go first; a boot
+          // digest that does is answered, and the task follows it.
+          let bootAnswered = false;
           const session = yield* waitReal(
             "the task to reach the orchestrator",
             Effect.gen(function* () {
               const [latest] = yield* sessionsOf(orchestrator.id);
-              return latest?.sent.some((input) => input.text.includes("mail trigger"))
-                ? latest
-                : undefined;
+              if (latest?.sent.some((input) => input.text.includes("mail trigger"))) return latest;
+              if (latest !== undefined && latest.sent.length > 0 && !bootAnswered) {
+                bootAnswered = true;
+                yield* latest.completeTurn("Booted.");
+              }
+              return undefined;
             }),
           );
           const task = session.sent.find((input) => input.text.includes("mail trigger"));

@@ -203,8 +203,31 @@ Authorization: Bearer <GRAM_HOST_PROVIDER_TOKEN>
 → { "hostKey": "<the provider's name for this host>" }
 ```
 
+**Choices before it starts.** A provider may offer the person things to pick first, such as the
+machine's size or processor, within whatever limits it keeps. The server asks it, at most every 30
+seconds per person, when that person reads their status:
+
+```http
+POST <GRAM_HOST_PROVIDER_URL>/hosts/choices
+{ "owner": "<person>" }
+→ { "choices": [ { "id": "size", "label": "Size", "default": "small",
+                   "options": [ { "id": "small", "label": "Small", "detail": "1 CPU · 2 GB" },
+                                { "id": "xlarge", "label": "Extra large", "available": false,
+                                  "note": "Above your team's limit" } ] } ],
+    "note": "Your organisation allows up to Large." }
+```
+
+A 404, or no answer, offers nothing, and the machine starts as before. Ids are short
+(`[a-z0-9-]`, at most 40), at most 6 choices of at most 8 options each; an option the person may
+not pick is shown, locked, with its note. The start card shows them and remembers the person's
+picks in their browser. The person's start then says what they picked,
+`{ "repositories": [...], "choices": { "size": "large" } }`, and the provider gets it in
+`options.choices`. The proof binds the person's own body, so a provider reads the picks from
+`proof.body` and checks them against its limits again: the card's locks are only a courtesy.
+
 `POST /machines/on-demand/stop` asks `<url>/hosts/stop` the same way, and
-`GET /machines/on-demand/status` answers the person with their own machine and the start's progress.
+`GET /machines/on-demand/status` answers the person with their own machine, the start's progress
+and the provider's choices.
 Nothing else starts one: an agent, a skill or a repository's instructions have no path to these.
 
 **The provider registers the host** as any provisioned host ([Provisioned hosts](PROVISIONED_HOSTS.md)),

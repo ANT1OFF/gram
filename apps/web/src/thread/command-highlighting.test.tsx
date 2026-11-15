@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import * as highlighting from "@/lib/code-highlighting";
-import { HighlightedCode } from "@/components/ai-elements/code-block";
+import { HighlightedCode, HighlightedCommand } from "@/components/ai-elements/code-block";
 import type { AnyToolPart } from "./parts";
 import { ToolCard } from "./tool-cards";
 
@@ -137,4 +137,23 @@ it("falls back to exact source if grammar tokens cannot reproduce it", async () 
   range.selectNodeContents(container.querySelector("code")!);
   expect(range.toString()).toBe(source);
   expect(container.textContent).not.toContain("altered");
+});
+
+it("colours an embedded python here-doc in python, keeping the exact text", async () => {
+  const source = '/bin/zsh -lc "python3 - <<\'PY\'\nimport os\nprint(\\"hi\\")\nPY"\n';
+  const { container } = render(<HighlightedCommand code={source} />);
+  const code = container.querySelector("code")!;
+  // Shell alone reads the body as one string; python splits out the keyword.
+  await waitFor(
+    () =>
+      expect(
+        [...code.querySelectorAll("span[style]")].some((span) => span.textContent === "import"),
+      ).toBe(true),
+    { timeout: 5000 },
+  );
+  expect(code.textContent).toBe(source);
+  const color = (text: string) =>
+    [...code.querySelectorAll<HTMLElement>("span[style]")].find((span) => span.textContent === text)
+      ?.style.color;
+  expect(color("import")).not.toBe(color("os"));
 });

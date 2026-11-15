@@ -250,6 +250,7 @@ export const makeSessionRestarts = ({
       rt.reopening = true;
       // Sends queue while `starting`, and go out once the reopened session is idle.
       yield* setStatus(rt, "starting");
+      const stopped = rt.session;
       yield* FiberMap.run(
         reopens,
         rt.threadId,
@@ -260,6 +261,9 @@ export const makeSessionRestarts = ({
             Effect.gen(function* () {
               // A close that began meanwhile has the session; it would outlive the thread.
               if (rt.closing) return;
+              // The session ended by itself before the stop reached it: the thread is cold, and
+              // reads its config afresh when it next opens.
+              if (stopped !== undefined && rt.endedOnItsOwn === stopped) return;
               const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
               yield* openSession(rt, thread).pipe(
                 Effect.catchTag("AgentUnavailable", (e) => failUnavailable(rt, e)),

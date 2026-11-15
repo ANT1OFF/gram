@@ -32,6 +32,8 @@ export const YOUR_BROWSER_KEYWORDS = [
 const PATCH: Record<AgentKind, (on: boolean) => SettingsPatch> = {
   claude: (claudeInChrome) => ({ agents: { claudeInChrome } }),
   codex: (codexComputerUse) => ({ agents: { codexComputerUse } }),
+  // OpenCode has no browser of its own to turn on.
+  opencode: () => ({}),
 };
 
 type Surface = keyof CodexSurfaces;

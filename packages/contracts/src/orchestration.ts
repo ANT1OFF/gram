@@ -7,6 +7,7 @@
 
 import * as Schema from "effect/Schema";
 import { AgentFailureKind } from "./agent-failure.ts";
+import { AgentKind } from "./agent-kind.ts";
 import { ChecksRollup } from "./git.ts";
 import { HostId, ProjectId, RequestId, ThreadId, WorkspaceId } from "./ids.ts";
 import { PrReviewRequest } from "./pr-people.ts";
@@ -457,7 +458,7 @@ export const WorkerLedgerEntry = Schema.Struct({
   threadId: ThreadId,
   title: Schema.String,
   /** The agent it runs on now; the user may have moved it to the other one. */
-  agent: Schema.optionalKey(Schema.Literals(["claude", "codex"])),
+  agent: Schema.optionalKey(AgentKind),
   branch: Schema.optionalKey(Schema.String),
   state: WorkerState,
   /** What `state` was worked out from beside `status` and `pendingRequests`; absent in older ledgers. */
@@ -1586,7 +1587,7 @@ export type SwitchNoteMode = typeof SwitchNoteMode.Type;
 /** A switch's handoff note: its text, and the agent that wrote it. */
 export const HandoffNote = Schema.Struct({
   text: Schema.String.check(Schema.isMaxLength(HANDOFF_NOTE_MAX_CHARS)),
-  by: Schema.Literals(["claude", "codex"]),
+  by: AgentKind,
 });
 export type HandoffNote = typeof HandoffNote.Type;
 
@@ -1598,7 +1599,7 @@ export const Handoff = Schema.Struct({
   previousAgentSessionId: Schema.optionalKey(Schema.String),
   reason: Schema.Literals(["context", "compactions", "user", "switch"]),
   /** A switch's: the agent the thread left. */
-  previousAgent: Schema.optionalKey(Schema.Literals(["claude", "codex"])),
+  previousAgent: Schema.optionalKey(AgentKind),
   /** A switch's: the model id the thread left, and the one it continued on. */
   previousModel: Schema.optionalKey(Schema.String),
   model: Schema.optionalKey(Schema.String),

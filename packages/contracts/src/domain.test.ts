@@ -5,6 +5,7 @@ import {
   DEFAULT_HELPER,
   DEFAULT_HELPER_FALLBACK,
   GatewayProfile,
+  gatewayModelForAgent,
   helperChoice,
   helperContextAllowed,
   helperFallbackChoice,
@@ -161,6 +162,18 @@ describe("PendingRequest from recorded canUseTool payloads", () => {
 const model = (id: string) => ({ id, name: id });
 
 describe("gateway helpers", () => {
+  it("offers each agent only its maker's models on OpenRouter", () => {
+    const openRouter = { kind: "openrouter" as const };
+    expect(gatewayModelForAgent(openRouter, { id: "anthropic/claude-sonnet-5.5" }, "claude")).toBe(
+      true,
+    );
+    expect(gatewayModelForAgent(openRouter, { id: "openai/gpt-6.1" }, "claude")).toBe(false);
+    expect(gatewayModelForAgent(openRouter, { id: "openai/gpt-6.1" }, "codex")).toBe(true);
+    expect(gatewayModelForAgent(openRouter, { id: "moonshotai/kimi-k3" }, "codex")).toBe(false);
+    // A LiteLLM-style gateway offers everything to everyone.
+    expect(gatewayModelForAgent({}, { id: "gpt-6.1" }, "claude")).toBe(true);
+  });
+
   it("requires explicit context consent for the exact gateway endpoint", () => {
     const profile: GatewayProfile = { ...EXAMPLE_GATEWAY, keyRef: "profile:example", models: [] };
     expect(helperContextAllowed(profile, "title")).toBe(false);

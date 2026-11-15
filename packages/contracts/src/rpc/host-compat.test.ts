@@ -24,7 +24,7 @@ import { describeHostWire, type HostWire, hostWireBreaks, type WireBreak } from 
  * When it fails, change the protocol another way: add a call, an optional field or a feature a host
  * names in its hello, and leave what is there as it is. Where a released build is certain never to
  * meet the change (a value sent only to a peer that named a feature for it), list the break in
- * `ACCEPTED`, under each release it breaks, with that reason. A change no released build can live with is a new
+ * `ACCEPTED`, with that reason; it applies to each release that has the call. A change no released build can live with is a new
  * `HOST_PROTOCOL_VERSION`, decided on purpose.
  */
 
@@ -35,8 +35,56 @@ const ROOT_PACKAGE = join(import.meta.dirname, "../../../../package.json");
  * Breaks of a released protocol taken on purpose, by release, each with why no build of that
  * release meets it.
  */
-const ACCEPTED: Readonly<Record<string, ReadonlyArray<WireBreak & { readonly because: string }>>> =
-  {};
+type Accepted = WireBreak & { readonly because: string };
+
+const OPENCODE = 'it now also takes "opencode"';
+const OPENED_ELSEWHERE =
+  "A host sends it only for an OpenCode session, and a control plane of that release never opens one.";
+const GATED =
+  "A control plane sends it only to a host that names agent-opencode (host/protocol.ts), which no host of that release does.";
+const STRIPPED =
+  "An OpenCode worker's agent is left out of a digest sent to a host that doesn't name agent-opencode (withoutOpenCodeAgents).";
+const WORKERS = 'payload.input.notice(kind "orchestration").features[].workers[].agent';
+/** OpenCode, the third agent kind: each place `AgentKind` grew, and why no released peer meets it. */
+const OPENCODE_BREAKS: ReadonlyArray<
+  readonly [call: string, at: string, because: string, since?: string]
+> = [
+  ...[
+    "connectorsAuthenticate",
+    "connectorsReconnect",
+    "connectorsSetEnabled",
+    "connectorsStatus",
+  ].map(
+    (call) =>
+      [`host.sessions.${call}`, 'error(_tag "AgentUnavailable").agent', OPENED_ELSEWHERE] as const,
+  ),
+  ["host.sessions.open", "payload.agent", GATED],
+  ["host.sessions.open", "payload.model.agent", GATED],
+  ["host.sessions.open", 'error(_tag "AgentUnavailable").agent', OPENED_ELSEWHERE],
+  ["host.sessions.reload", "payload.agent", GATED],
+  // A digest names its workers' agents from 1.21.0 on.
+  ["host.sessions.send", WORKERS, STRIPPED, "1.21.0"],
+  [
+    "host.sessions.setModel",
+    "payload.model.agent",
+    "An OpenCode model goes only to an OpenCode session, and none is opened on a host of that release.",
+  ],
+  ["host.sessions.steer", WORKERS, STRIPPED, "1.21.0"],
+];
+
+/**
+ * Breaks of a released protocol taken on purpose, by release, each with why no build of that
+ * release meets it.
+ */
+const ACCEPTED = (released: Released): ReadonlyArray<Accepted> =>
+  OPENCODE_BREAKS.filter(
+    ([call, , , since]) =>
+      call in released.calls && (since === undefined || byRelease(released.release, since) >= 0),
+  ).map(([call, at, because]) => ({
+    at: `${call} ${at}`,
+    what: OPENCODE,
+    because,
+  }));
 
 interface Released extends HostWire {
   /** The Gram release whose protocol this is. */
@@ -93,7 +141,7 @@ const told = (breaks: ReadonlyArray<WireBreak>) => breaks.map((b) => `${b.at}: $
 if (process.env["GRAM_HOST_RELEASED"] === "write") {
   for (const each of spoken()) {
     const breaks = hostWireBreaks(each, current());
-    if (breaks.length > (ACCEPTED[each.release]?.length ?? 0))
+    if (breaks.length > ACCEPTED(each).length)
       throw new Error(`The protocol breaks ${each.release}'s; fix that before recording it.`);
   }
   const file = join(RELEASED, `${version()}.json`);
@@ -103,19 +151,14 @@ if (process.env["GRAM_HOST_RELEASED"] === "write") {
 describe("the host protocol as released", () => {
   it.each(spoken().map((each) => [each.release, each] as const))(
     "is still spoken to %s: nothing its host or control plane relies on changed",
-    (release, each) => {
+    (_release, each) => {
       const breaks = told(hostWireBreaks(each, current()));
-      const accepted = told(ACCEPTED[release] ?? []);
+      const accepted = told(ACCEPTED(each));
       expect(breaks.filter((b) => !accepted.includes(b))).toEqual([]);
       // An accepted break that is no longer one is taken off the list.
       expect(accepted.filter((b) => !breaks.includes(b))).toEqual([]);
     },
   );
-
-  it("names only releases it has a recorded protocol for in ACCEPTED", () => {
-    const recorded = releases().map((each) => each.release);
-    expect(Object.keys(ACCEPTED).filter((release) => !recorded.includes(release))).toEqual([]);
-  });
 
   it("is recorded for every release from the first, ending at this tree's or the one before", () => {
     // `bun run host-protocol:release` on a release's pull request records what that release

@@ -80,6 +80,22 @@ describe("gatewayModelEnv", () => {
     model("claude-4-sonnet-eu", { deprecated: true }),
   ];
 
+  it("maps Claude Code's aliases to OpenRouter's anthropic/ ids", () => {
+    const openRouter = [
+      model("anthropic/claude-sonnet-5.5"),
+      model("anthropic/claude-sonnet-5"),
+      model("anthropic/claude-haiku-5.5"),
+      model("openai/gpt-6.1"),
+    ];
+    expect(gatewayModelEnv(openRouter, "anthropic/claude-sonnet-5.5")).toEqual({
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "anthropic/claude-sonnet-5.5",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "anthropic/claude-sonnet-5.5",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "anthropic/claude-haiku-5.5",
+      ANTHROPIC_DEFAULT_FABLE_MODEL: "anthropic/claude-sonnet-5.5",
+      ANTHROPIC_SMALL_FAST_MODEL: "anthropic/claude-haiku-5.5",
+    });
+  });
+
   it("maps Claude Code's aliases to the gateway's aliases, then its newest native route", () => {
     expect(gatewayModelEnv(example, "opus-latest")).toEqual({
       ANTHROPIC_DEFAULT_OPUS_MODEL: "opus-latest",

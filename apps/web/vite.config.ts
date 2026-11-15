@@ -156,7 +156,7 @@ export default defineConfig({
       ...(previewTemp ? { enableRouteGeneration: false, tmpDir: join(previewTemp, "router") } : {}),
     }),
     react(),
-    babel({ presets: [reactCompilerPreset()] }),
+    babel({ parallel: true, presets: [reactCompilerPreset()] }),
     tailwindcss(),
     // For the packaged app's third-party notices; see tools/notices.
     bundledPackages("web"),

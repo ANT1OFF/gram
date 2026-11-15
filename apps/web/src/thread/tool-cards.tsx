@@ -8,7 +8,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { createElement, useId, useState, type ReactNode } from "react";
 
 import { Tool } from "@/components/ai-elements/tool";
-import { HighlightedCode } from "@/components/ai-elements/code-block";
+import { HighlightedCommand } from "@/components/ai-elements/code-block";
 import { JsonText } from "./json-text";
 import { CollapsibleTrigger } from "@/components/ui/collapsible";
 import { formatCount } from "@/lib/format";
@@ -327,7 +327,7 @@ function ShellCommand({ command, streaming }: { command: string; streaming: bool
   return (
     <Pre className="[overflow-wrap:anywhere]">
       {"$ "}
-      <HighlightedCode code={command} language="shellscript" enabled={!streaming} />
+      <HighlightedCommand code={command} enabled={!streaming} />
     </Pre>
   );
 }

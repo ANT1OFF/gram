@@ -1865,6 +1865,34 @@ describe("synthetic", () => {
     expect(last?.type === "usage" && last.contextWindow).toBe(200_000);
   });
 
+  it("shows an API error Claude Code reports as a reply as the turn's failure, not as its words", () => {
+    const refused = {
+      ...assistant("err-1", []),
+      error: "rate_limit",
+      message: {
+        id: "err-1",
+        role: "assistant",
+        model: "<synthetic>",
+        content: [{ type: "text", text: "API Error: Request rejected (429) · Usage limit" }],
+      },
+    } as unknown as SDKMessage;
+    const events = replay([refused]);
+    expect(events.some((e) => e.type === "chunk" && e.chunk.type === "text-delta")).toBe(false);
+    // A local command's synthetic reply carries no error, and is still shown.
+    const local = {
+      ...assistant("local-2", []),
+      message: {
+        id: "local-2",
+        role: "assistant",
+        model: "<synthetic>",
+        content: [{ type: "text", text: "## Context Usage" }],
+      },
+    } as unknown as SDKMessage;
+    expect(replay([local]).some((e) => e.type === "chunk" && e.chunk.type === "text-delta")).toBe(
+      true,
+    );
+  });
+
   it("flushes open messages when the query ends mid-turn", () => {
     const mapper = newMapper();
     mapper.map(assistant("msg_1", [{ type: "text", text: "partial" }]));
@@ -2059,6 +2087,60 @@ describe("running shell output", () => {
     other.map(bashCall("t1"));
     expect(other.map(withoutTask as unknown as SDKMessage)).toEqual([]);
     expect(other.runningShells()).toEqual([]);
+  });
+
+  it("says a hook's heartbeat as the turn still running, and only while it runs", () => {
+    const beat = {
+      type: "tool_progress",
+      tool_use_id: "hook-PreToolUse-t1-heartbeat-0",
+      tool_name: "PreToolUse",
+      parent_tool_use_id: "t1",
+      elapsed_time_seconds: 30,
+      heartbeat: true,
+      ...base,
+    } as unknown as SDKMessage;
+    const mapper = newMapper();
+    mapper.map(system("session_state_changed", { state: "running" }));
+    mapper.map(bashCall("t1"));
+    expect(mapper.map(beat)).toEqual([{ type: "status", status: "running" }]);
+    expect(mapper.runningShells()).toEqual([]);
+    // Between turns a late beat says nothing.
+    mapper.map(system("session_state_changed", { state: "idle" }));
+    expect(mapper.map(beat)).toEqual([]);
+  });
+
+  it("warns when a tool hook gave no verdict, and leaves other informational lines out", () => {
+    const mapper = newMapper();
+    expect(
+      mapper.map(
+        system("informational", {
+          level: "warning",
+          tag: "hook_no_verdict",
+          content: "PreToolUse hook timed out",
+          hook_no_verdict: { hook_event: "PreToolUse", tool_use_id: "t1", timed_out: true },
+        }),
+      ),
+    ).toEqual([
+      {
+        type: "notice",
+        level: "warning",
+        message:
+          "A tool check timed out without an answer, so Claude went ahead with the call. Other checks and rules still applied.",
+      },
+    ]);
+    expect(
+      mapper.map(
+        system("informational", {
+          level: "warning",
+          tag: "hook_no_verdict",
+          content: "PreToolUse hook failed",
+          hook_no_verdict: { hook_event: "PreToolUse", tool_use_id: "t2", timed_out: false },
+        }),
+      ),
+    ).toMatchObject([{ type: "notice", message: expect.stringContaining("failed without") }]);
+    expect(
+      mapper.map(system("informational", { level: "notice", content: "Hook output" })),
+    ).toEqual([]);
   });
 
   it("follows backgrounded shells and a move to the background apart, and leaves out other tools", () => {

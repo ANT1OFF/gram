@@ -226,7 +226,7 @@ export interface ShellMachines {
  * is offered; the deployment still has to refuse a model it does not allow.
  */
 /** The agents whose models the prompt box lists. */
-export type ShellAgent = "claude" | "codex";
+export type ShellAgent = "claude" | "codex" | "opencode";
 
 /** One model the prompt box lists, as the embedding app's `ShellModels.offered` is given it. */
 export interface ShellModelChoice {
@@ -244,6 +244,14 @@ export interface ShellModelChoice {
   readonly profile?: string;
 }
 
+/** One model the deployment serves an agent (`ShellModels.listed`). */
+export interface ShellListedModel {
+  /** The pinned id the agent is asked for: `claude-sonnet-5-5`. */
+  readonly id: string;
+  /** Its name in the list; Gram's own reading of the id when left out ("Sonnet 5.5"). */
+  readonly name?: string;
+}
+
 /**
  * The prompt box's model list as the embedding app narrows it: for a deployment whose own rules,
  * or a person's own accounts, leave only some of what an agent lists usable. It narrows what a new
@@ -256,6 +264,13 @@ export interface ShellModels {
    * draft whose model is not offered moves to one that is.
    */
   readonly offered?: (model: ShellModelChoice) => boolean;
+  /**
+   * The models the deployment serves each agent, the default first, for when the agent cannot say
+   * which it offers (its listing fails, as on a machine whose agent is set up for another
+   * provider). Gram lists these in its place, by their pinned ids, so a thread on `claude-sonnet-5-5`
+   * shows as that row and is never listed twice. The agent's own list wins whenever it answers.
+   */
+  readonly listed?: Partial<Record<ShellAgent, readonly ShellListedModel[]>>;
   /**
    * What the Model row says when the agent has no model to pick: none is offered, or the list could
    * not be read. Other agents' models stay pickable beside it. Gram's own words, and only them,
@@ -471,6 +486,43 @@ export interface ShellRepositories {
   }) => Promise<ShellRepositoryPage>;
 }
 
+/** One page of the embedding app's own in Settings, at `/settings/<id>`. */
+export interface ShellSettingsPage {
+  /** Lower-case words and dashes; its path is `/settings/<id>`. It may not be one of Gram's. */
+  readonly id: string;
+  /** Its name in Settings' list and as its heading. */
+  readonly label: string;
+  readonly icon: ShellIcon;
+  /** One line under the heading on what the page is for; Settings search reads it too. */
+  readonly description: string;
+  /** Words Settings search finds the page by, beyond its label and description. */
+  readonly keywords?: readonly string[];
+  readonly component: ComponentType;
+}
+
+/**
+ * Settings as the embedding app has it: its own pages first, then those of Gram's it keeps. Gram's
+ * pages are about the computer it runs on (agent CLIs, machines, the terminal, updates); a hosted
+ * app keeps the ones that still mean something to the person in front of it.
+ *
+ * A page left out is gone from Settings' list, its search and the menus that link to it, and its
+ * address opens Settings' first page. Leaving out `usage` also takes the title bar's usage meter
+ * away; leaving out `general` puts its Sending setting on Keyboard. On a hosted server Keyboard
+ * leaves out `keybindings.json`, which is a file on the server.
+ */
+export interface ShellSettings {
+  /**
+   * Gram's pages to keep, by id, in Gram's own order: `general`, `agents`, `ai-helpers`,
+   * `connectors`, `gateways`, `usage`, `workspaces`, `routines`, `review-bots`, `storage`,
+   * `machines`, `phones`, `appearance`, `terminal`, `notifications`, `keyboard`, `voice-input`,
+   * `about`, `diagnostics`, `help`. A page that opens from another (`terminal` from `appearance`)
+   * stays only with it. Left out, every page stays.
+   */
+  readonly gram?: readonly string[];
+  /** The app's own pages, listed before Gram's. */
+  readonly pages?: readonly ShellSettingsPage[];
+}
+
 /** What the embedding app adds to Gram's shell. Everything is optional. */
 export interface ShellContributions {
   /** Pages beside Gram's own. Read once, when the app mounts. */
@@ -515,6 +567,8 @@ export interface ShellContributions {
   readonly document?: ShellDocument;
   /** The repositories "Add repository" offers. Read once, when the app mounts. */
   readonly repositories?: ShellRepositories;
+  /** Which of Gram's Settings pages stay, and the app's own. Read once, when the app mounts. */
+  readonly settings?: ShellSettings;
 }
 
 /** The server one mount talks to. */
@@ -716,5 +770,10 @@ export type ShellThreadPanelComponent = ComponentType<{
 export type UseShellLocation = () => {
   /** The path under the app, without `basePath`. */
   readonly pathname: string;
-  navigate(to: string): Promise<void>;
+  /**
+   * Moves the window to `to`, a path under the app. `replace` takes the place of the current entry
+   * in the history instead of adding one: for a page that sends the window on (a redirect), so
+   * the browser's Back does not land on it and be sent on again.
+   */
+  navigate(to: string, options?: { readonly replace?: boolean }): Promise<void>;
 };

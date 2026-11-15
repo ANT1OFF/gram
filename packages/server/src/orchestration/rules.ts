@@ -1297,7 +1297,11 @@ const QUIET_STATES: ReadonlySet<WorkerState> = new Set<WorkerState>(["briefed", 
 const AT_REST: ReadonlySet<ThreadStatus> = new Set<ThreadStatus>(["idle", "cold"]);
 
 /** What the user calls each agent, for a digest's line on a worker the user switched. */
-const AGENT_WORDS: Readonly<Record<AgentKind, string>> = { claude: "Claude Code", codex: "Codex" };
+const AGENT_WORDS: Readonly<Record<AgentKind, string>> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  opencode: "OpenCode",
+};
 
 const WENT_QUIET = "ended its turn without reporting; read its last messages with get_thread";
 

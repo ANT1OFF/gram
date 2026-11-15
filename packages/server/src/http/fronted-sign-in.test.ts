@@ -1141,6 +1141,11 @@ describe("sign-in through a fronting proxy", () => {
               [IDENTITY_HEADER]: proxy.statement(grace),
             });
             expect(JSON.parse(hers.body)).toEqual({ available: true });
+            // Each status read asks the provider what that person may pick, as that person only.
+            expect(provided.slice(1)).toEqual([
+              { path: "/hosts/choices", body: { owner: "user-ada" } },
+              { path: "/hosts/choices", body: { owner: "user-grace" } },
+            ]);
             // A viewer can't, and nobody unsigned can: the provider is asked nothing more.
             expect(
               (yield* post(port, ON_DEMAND_START_PATH, "{}", {
@@ -1148,7 +1153,7 @@ describe("sign-in through a fronting proxy", () => {
               })).status,
             ).toBe(403);
             expect((yield* post(port, ON_DEMAND_START_PATH, "{}")).status).toBe(401);
-            expect(provided).toHaveLength(1);
+            expect(provided).toHaveLength(3);
           }),
       );
 

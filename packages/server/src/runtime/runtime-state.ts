@@ -120,7 +120,17 @@ export interface Runtime {
    */
   readonly feedLock: Semaphore.Semaphore;
   status: ThreadStatus;
+  /**
+   * A deadline's stop left this session's turn failed (`giveUpRetrying`): the agent's `idle` after
+   * that turn is its tail and keeps the error, whichever of the two the lock lets in first.
+   */
+  errorAtRest?: { readonly session: AgentSession; readonly turnId: TurnId } | undefined;
   session: AgentSession | undefined;
+  /**
+   * The last session that ended by itself, its events run out, rather than by a stop: a reopen
+   * that asked to stop it after that finds the thread cold and leaves it so.
+   */
+  endedOnItsOwn?: AgentSession | undefined;
   /** Whether `session` was opened with the user's browser (`OpenSessionOptions.browser`). */
   sessionBrowser: boolean;
   /**
@@ -356,26 +366,12 @@ export const makeThreadId = () => Schema.decodeSync(ThreadId)(randomUUID());
 export const makeQueueItemId = () => Schema.decodeSync(QueueItemId)(randomUUID());
 
 /**
- * Runs `effect` holding `lock`, taking it at once whenever it is free, even with fibers queued.
- *
- * Effect's `Semaphore` worked so through 4.0.6. From 4.0.7 it is first in, first out: a fiber
- * that releases and asks again queues behind the waiters woken by its release. The runtime
- * depends on the old order. Its event loop handles each event in a section of its own, and a
- * turn's end and the agent's `idle` after it, or a turn's end and the session's exit, must not
- * have a waiter's section (a deadline's stop, a reopen) in between. Waiters still go in turn;
- * only a fiber that finds the lock free goes first.
+ * Runs `effect` holding the thread's lock. Effect's `Semaphore` is first in, first out, so a
+ * section another fiber queued can land between two of the event loop's: the sections must not
+ * count on running back to back (see `errorAtRest`, `endedOnItsOwn`).
  */
-export const lockedAhead = <A, E, R>(lock: Semaphore.Semaphore, effect: Effect.Effect<A, E, R>) =>
-  Effect.uninterruptibleMask((restore) =>
-    Effect.flatMap(lock.takeIfAvailable(1), (taken) =>
-      taken
-        ? Effect.ensuring(restore(effect), lock.release(1))
-        : restore(lock.withPermits(1)(effect)),
-    ),
-  );
-
 export const locked = <A, E, R>(rt: Runtime, effect: Effect.Effect<A, E, R>) =>
-  lockedAhead(rt.lock, effect);
+  rt.lock.withPermits(1)(effect);
 
 /**
  * Idle with a session and no background subagent, which stopping the session would kill; the last
