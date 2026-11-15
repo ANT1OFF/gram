@@ -20,7 +20,6 @@ import {
   Label,
   NotFound,
   normalizeThreadPrs,
-  MAX_EXTRA_PRS,
   Palette,
   PendingRequest,
   PlanItem,
@@ -446,6 +445,19 @@ const samePrRef = (
   b: { readonly repo: string; readonly number: number },
 ) => a.number === b.number && a.repo.toLowerCase() === b.repo.toLowerCase();
 
+/**
+ * Whether `thread`'s record claims the PR `pending` reserved: it binds it as its main PR, or a
+ * folder it holds, or a branch recorded for one, is the PR's head branch. A branch name alone
+ * counts, whichever repository: this can't read a folder's origin, so a doubt is a claim.
+ */
+const recordClaims = (thread: Thread, pending: PendingMerge) =>
+  (thread.boundPr !== undefined && samePrRef(thread.boundPr, pending.pr)) ||
+  (pending.branch !== undefined &&
+    ([thread.checkout, ...(thread.extraCheckouts ?? [])].some(
+      (checkout) => checkout.branch === pending.branch,
+    ) ||
+      (thread.ownedBranches ?? []).some((owned) => owned.branch === pending.branch)));
+
 /** Authority facts read in the same transaction as a guarded thread edit. */
 export interface ThreadUpdateContext {
   readonly caller: Thread | undefined;
@@ -504,8 +516,9 @@ export interface ThreadStoreShape {
   forgetProject(id: ProjectId): Effect.Effect<void, NotFound | InvalidState>;
 
   /**
-   * Stores a new thread; returns it as stamped, which is the one to publish. A main binding of a PR
-   * another thread's launch has reserved is kept as a followed PR instead (`keepReservationOwned`).
+   * Stores a new thread; returns it as stamped, which is the one to publish. One that would claim a
+   * PR another thread's launch has reserved is stored archived until it settles
+   * (`holdForReservations`).
    */
   insertThread(thread: Thread): Effect.Effect<Thread>;
   getThread(id: ThreadId): Effect.Effect<Thread, ThreadNotFound>;
@@ -1687,8 +1700,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               claimScan === undefined
                 ? base
                 : { ...base!, prClaimedByOther: yield* otherThreadBindsPr(id, claimScan.pr) };
-            const next = stampParked(thread, normalizeThreadPrs(f(thread, context)), Date.now());
-            return yield* writeThread(yield* keepReservationOwned(thread, next));
+            const next = yield* holdForReservations(thread, normalizeThreadPrs(f(thread, context)));
+            return yield* writeThread(stampParked(thread, next, Date.now()));
           }),
         );
 
@@ -2141,84 +2154,82 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         );
 
       /**
-       * The thread whose outstanding launch reservation (a pending merge fence) names `pr`, other
-       * than `excludeId`, read in the caller's transaction. A fence row that doesn't decode fails
-       * the read, as every merge-fence read does: a safety record is never skipped.
+       * The outstanding launch reservations (pending merge fences) of threads other than
+       * `excludeId`, read in the caller's transaction. A fence row that doesn't decode fails the
+       * read, as every merge-fence read does: a safety record is never skipped.
        */
-      const reservedByOther = (
-        excludeId: ThreadId,
-        pr: { readonly repo: string; readonly number: number },
-      ) =>
+      const reservationsOfOthers = (excludeId: ThreadId) =>
         sql<{ data: string }>`SELECT data FROM merge_fences`.pipe(
           Effect.map((rows) =>
-            rows
-              .map((row) => Schema.decodeUnknownSync(MergeFence)(JSON.parse(row.data)).pending)
-              .find(
-                (pending) =>
-                  pending !== undefined &&
-                  pending.threadId !== excludeId &&
-                  samePrRef(pending.pr, pr),
-              ),
+            rows.flatMap((row) => {
+              const pending = Schema.decodeUnknownSync(MergeFence)(JSON.parse(row.data)).pending;
+              return pending === undefined || pending.threadId === excludeId ? [] : [pending];
+            }),
           ),
         );
 
       /**
        * `next` as it may be stored while another thread's launch has reserved a PR (a pending merge
-       * fence): a write never newly makes a thread the PR's main owner then, by binding it or by
-       * bringing back from the archive a thread bound to it. Such a binding is kept as a followed PR
-       * (which claims nothing) and the thread keeps the main binding it had, so the reservation and
-       * a claim of one PR are ordered in this transaction: whichever commits first, the other gives
-       * way. An edit that keeps an existing unparked binding introduces no claim and is untouched.
-       * The tool that asked for the binding sees it didn't take and says why (`pr_bind`).
+       * fence), decided in the write's own transaction, so a reservation and a claim of one PR are
+       * ordered: whichever commits first, the other gives way.
+       *
+       * - Coming back from the archive (unparked, or inserted unparked, as a closed thread's
+       *   restoration is) defers: the thread stays archived until the launch settles when its record
+       *   claims the PR (`recordClaims`), or, on an unpark, when it is in the reserving thread's
+       *   project, since its folder's live HEAD can't be read here and may hold the branch.
+       * - A live thread that would newly bind the reserved PR as its main one keeps its bindings as
+       *   they were before the edit, followed PRs and all; the tool that asked says why.
+       *
+       * An edit that keeps an existing claim, or touches nothing reserved, is untouched. A live
+       * thread's recorded or checked-out branch changing to a reserved one isn't held back: that
+       * records what git already did, and the reservation was the merge's decision point.
        */
-      const keepReservationOwned = (before: Thread | undefined, next: Thread) =>
+      const holdForReservations = (before: Thread | undefined, next: Thread) =>
         Effect.gen(function* () {
+          if (next.parked) return next;
+          const reserved = yield* reservationsOfOthers(next.id);
+          if (reserved.length === 0) return next;
+          if (before === undefined || before.parked) {
+            for (const pending of reserved) {
+              const sameProject =
+                before !== undefined &&
+                (yield* readThread(pending.threadId).pipe(Effect.option)).pipe(
+                  Option.match({
+                    onNone: () => true,
+                    onSome: (owner) => owner.projectId === next.projectId,
+                  }),
+                );
+              if (recordClaims(next, pending) || sameProject) {
+                yield* Effect.logWarning("restoration deferred by a reserved merge").pipe(
+                  Effect.annotateLogs({
+                    threadId: next.id,
+                    pr: `${pending.pr.repo}#${pending.pr.number}`,
+                    reservedBy: pending.threadId,
+                  }),
+                );
+                return { ...next, parked: true };
+              }
+            }
+            return next;
+          }
           const bound = next.boundPr;
-          if (next.parked || bound === undefined) return next;
-          const claimedBefore =
-            before !== undefined &&
-            !before.parked &&
-            before.boundPr !== undefined &&
-            samePrRef(before.boundPr, bound);
-          if (claimedBefore) return next;
-          const pending = yield* reservedByOther(next.id, bound);
+          if (bound === undefined) return next;
+          if (before.boundPr !== undefined && samePrRef(before.boundPr, bound)) return next;
+          const pending = reserved.find((each) => samePrRef(each.pr, bound));
           if (pending === undefined) return next;
-          const kept =
-            before !== undefined &&
-            !before.parked &&
-            before.boundPr !== undefined &&
-            !samePrRef(before.boundPr, bound)
-              ? before.boundPr
-              : undefined;
-          const extras = next.extraPrs ?? [];
-          const followed = extras.some((extra) => samePrRef(extra, bound))
-            ? extras
-            : extras.length < MAX_EXTRA_PRS
-              ? [
-                  ...extras,
-                  {
-                    repo: bound.repo,
-                    number: bound.number,
-                    monitor: bound.monitor,
-                    ...(bound.reviewMonitor === undefined
-                      ? {}
-                      : { reviewMonitor: bound.reviewMonitor }),
-                  },
-                ]
-              : extras;
-          const { boundPr: _, extraPrs: __, ...rest } = next;
-          yield* Effect.logWarning("binding of a reserved PR kept as followed").pipe(
+          yield* Effect.logWarning("binding of a reserved PR refused").pipe(
             Effect.annotateLogs({
               threadId: next.id,
               pr: `${bound.repo}#${bound.number}`,
               reservedBy: pending.threadId,
             }),
           );
-          return normalizeThreadPrs({
+          const { boundPr: _, extraPrs: __, ...rest } = next;
+          return {
             ...rest,
-            ...(kept === undefined ? {} : { boundPr: kept }),
-            ...(followed.length === 0 ? {} : { extraPrs: followed }),
-          });
+            ...(before.boundPr === undefined ? {} : { boundPr: before.boundPr }),
+            ...(before.extraPrs === undefined ? {} : { extraPrs: before.extraPrs }),
+          };
         });
 
       /** The thread's messages whose stored text holds any of `needles` as written, in order. */
@@ -2481,7 +2492,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             Effect.gen(function* () {
               const before = yield* readThread(thread.id).pipe(Effect.option);
               return yield* writeThread(
-                yield* keepReservationOwned(Option.getOrUndefined(before), thread),
+                yield* holdForReservations(Option.getOrUndefined(before), thread),
               );
             }),
           ),

@@ -159,7 +159,7 @@ const refuseInBabysit = (thread: Thread) =>
  */
 /** Why a binding of `pr` didn't take: another thread's launch of it is outstanding. */
 const reservedRefusal = (pr: { readonly repo: string; readonly number: number }) =>
-  `${pr.repo}#${pr.number} is being merged by another thread right now, so it can't become this thread's pull request; it is followed here instead. Check it with pr_status once that merge settles, and bind it again if it is still open.`;
+  `${pr.repo}#${pr.number} is being merged by another thread right now, so it can't become this thread's pull request, and this thread's bindings were left as they were. Check it with pr_status once that merge settles, and bind it again if it is still open.`;
 
 export const PrAppToolsLive = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -307,8 +307,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
           });
         });
         if (held !== undefined) return yield* new AppToolError({ tool, message: held });
-        // The store keeps a PR another thread's launch has reserved off this thread's main binding
-        // (it is followed instead), in the binding's own transaction: the merge decided first.
+        // The store keeps a PR another thread's launch has reserved off this thread's main binding,
+        // in the binding's own transaction, leaving its bindings as they were: the merge decided first.
         if (
           (updated.boundPr === undefined || !samePr(updated.boundPr, { repo, number })) &&
           (yield* reservedElsewhere({ repo, number }, threadId))
@@ -1319,7 +1319,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
           if (refused !== undefined)
             return yield* new AppToolError({ tool: MERGE, message: refused });
           // The store keeps a PR another thread's launch has reserved off this thread's main
-          // binding (it is followed instead), so an arm on it didn't take.
+          // binding, leaving its bindings as they were, so an arm on it didn't take.
           if (
             enabled &&
             (updated.boundPr === undefined || !samePr(updated.boundPr, pr)) &&

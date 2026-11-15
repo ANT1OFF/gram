@@ -21,6 +21,7 @@ import {
   type World,
 } from "../orchestration/test-harness.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { armedWorkerBadge } from "./pr-tools-kit.ts";
 import { AppToolRegistry } from "./registry.ts";
 
@@ -200,7 +201,8 @@ describe("merge_when_ready fails closed", () => {
               expect(refusal).toContain("is being merged by another thread");
               const after = yield* store.getThread(sibling.thread.id);
               expect(after.boundPr).toBeUndefined();
-              expect(after.extraPrs?.map((pr) => pr.number)).toEqual([12]);
+              // Its bindings are as they were before the call: nothing bound, nothing followed.
+              expect(after.extraPrs).toBeUndefined();
               // The launch that reserved the PR first goes ahead, alone.
               yield* waitReal(
                 "the reserved merge",
@@ -276,6 +278,121 @@ describe("merge_when_ready fails closed", () => {
           }),
         );
       }).pipe(Effect.scoped),
+    );
+  }
+
+  for (const path of ["unpark", "insert", "unpark-unbound"] as const) {
+    it.effect.skipIf(!hasGit)(
+      `a ${path} restoration after the reservation is deferred, not brought back holding the branch`,
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const store = yield* ThreadStore;
+              const registry = yield* AppToolRegistry;
+              const runtimes = yield* ThreadRuntimes;
+              const { session, thread } = yield* openOrchestrator(world);
+              const worker = yield* spawn(session, { feature: "owner" });
+              const sibling = yield* spawn(session, { feature: "restored-holder" });
+              yield* completeTurn(worker.session);
+              yield* completeTurn(sibling.session);
+              yield* atAutonomy(thread, "full");
+              const branch = worker.thread.checkout.branch!;
+              world.prHeads.set(12, { headRefName: branch });
+              // An archived sibling has the PR's branch checked out in its own worktree, and for two
+              // of the schedules also binds the PR: archived, it claims nothing yet.
+              run(sibling.thread.checkout.path, "checkout", "--ignore-other-worktrees", branch);
+              expect(
+                run(sibling.thread.checkout.path, "symbolic-ref", "--short", "HEAD").trim(),
+              ).toBe(branch);
+              const parked = yield* runtimes.updateThread(sibling.thread.id, (t) => ({
+                ...t,
+                parked: true,
+                checkout: { ...t.checkout, branch },
+                ...(path === "unpark-unbound"
+                  ? {}
+                  : { boundPr: { repo: "acme/app", number: 12, monitor: false } }),
+              }));
+              if (path === "insert") yield* store.removeThread(parked.id);
+              const tools = registry.forTransport(worker.thread.id, "worker");
+              yield* tools
+                .find((t) => t.descriptor.name === "pr_bind")!
+                .run({ repo: "acme/app", number: 12 });
+              const publish = (approved: boolean) =>
+                store
+                  .getThread(worker.thread.id)
+                  .pipe(
+                    Effect.flatMap((t) => publishGit(world, t, { pr: armedWorkerBadge(approved) })),
+                  );
+              yield* publish(false);
+              const merge = tools.find((t) => t.descriptor.name === "merge_when_ready")!;
+              expect(yield* merge.delegatedAtFullAutonomy!({})).toBe(true);
+              yield* merge.run({});
+              const original = store.reserveMergeFence;
+              let restored:
+                | { readonly parked: boolean; readonly bound: number | undefined }
+                | undefined;
+              // After the reservation commits and before gh starts, the sibling comes back through
+              // the real paths: `thread.park`'s `updateThread`, or a closed thread's re-insertion.
+              store.reserveMergeFence = ((...args: Parameters<typeof original>) =>
+                original(...args).pipe(
+                  Effect.tap((reserved) =>
+                    Effect.gen(function* () {
+                      if (!reserved || restored !== undefined || args[2] !== worker.thread.id)
+                        return;
+                      expect(
+                        (yield* store.listMergeFences).some(
+                          (fence) =>
+                            fence.pending?.threadId === worker.thread.id &&
+                            fence.pending.branch === branch,
+                        ),
+                      ).toBe(true);
+                      expect(merges(world)).toHaveLength(0);
+                      const back =
+                        path === "insert"
+                          ? yield* store.insertThread({ ...parked, parked: false })
+                          : yield* runtimes.updateThread(parked.id, (t) => ({
+                              ...t,
+                              parked: false,
+                            }));
+                      restored = { parked: back.parked, bound: back.boundPr?.number };
+                      // Deferred: still archived, so its branch and binding claim nothing, and the
+                      // worker's own PR is still its own.
+                      expect(yield* merge.delegatedAtFullAutonomy!({})).toBe(true);
+                    }),
+                  ),
+                )) as typeof original;
+              yield* Effect.gen(function* () {
+                yield* publish(true);
+                yield* waitReal(
+                  "the restoration attempt",
+                  Effect.sync(() => restored),
+                );
+                expect(restored).toEqual({
+                  parked: true,
+                  bound: path === "unpark-unbound" ? undefined : 12,
+                });
+                // The launch reserved first, with no competing claim live: it goes ahead, alone.
+                yield* waitReal(
+                  "the reserved merge",
+                  Effect.sync(() => merges(world).length === 1 || undefined),
+                );
+                expect(merges(world)).toHaveLength(1);
+                expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
+                // Once the launch has settled, the same restoration goes through.
+                for (const fence of yield* store.listMergeFences)
+                  yield* store.putMergeFence({ key: fence.key, moved: [...fence.moved] });
+                const later = yield* runtimes.updateThread(parked.id, (t) => ({
+                  ...t,
+                  parked: false,
+                }));
+                expect(later.parked).toBe(false);
+              }).pipe(Effect.ensuring(Effect.sync(() => (store.reserveMergeFence = original))));
+            }),
+          );
+        }).pipe(Effect.scoped),
     );
   }
 

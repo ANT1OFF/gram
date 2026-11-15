@@ -1151,6 +1151,9 @@ export const MergeWhenReadyLive = Layer.effect(
                       }
                       return true;
                     };
+                    // The head branch the ownership check verified with GitHub, else the one the fresh
+                    // read names: a thread brought back while the launch is out mustn't hold it.
+                    const reservedBranch = owned?.at.branch ?? fresh.headRef;
                     const merge = Effect.gen(function* () {
                       // Before even starting gh: a process crash cannot skip the fence write, and
                       // the reservation refuses in-transaction if a sibling bound the PR since the
@@ -1161,6 +1164,7 @@ export const MergeWhenReadyLive = Layer.effect(
                           pr: { repo: bound.repo, number: bound.number },
                           threadId,
                           head,
+                          ...(reservedBranch === undefined ? {} : { branch: reservedBranch }),
                           ...(tip === undefined ? {} : { tip }),
                           at: yield* Clock.currentTimeMillis,
                         },
