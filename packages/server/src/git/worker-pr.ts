@@ -269,6 +269,21 @@ const originUrlOf = (at: string) =>
   );
 
 /**
+ * The branch a local folder has checked out right now, read from its HEAD; `undefined` when the
+ * folder is gone, is detached, or can't be read. A conflict check reads this so a branch a sibling
+ * switched or renamed to, which the publisher may not have sampled onto its recorded checkout, is
+ * still seen as held. Another machine's folder is never read live: there only the record counts.
+ */
+const liveBranchAt = (path: string) =>
+  Effect.gen(function* () {
+    if (!(yield* folderExists(path))) return undefined;
+    const out = yield* git(path, ["symbolic-ref", "--quiet", "--short", "HEAD"], {
+      timeoutMs: 2_000,
+    });
+    return out.status === 0 ? out.stdout.trim() || undefined : undefined;
+  }).pipe(Effect.orElseSucceed(() => undefined));
+
+/**
  * The workspace project a worktree on another machine was made for, from what this machine
  * recorded as it made it: the identity of the origin it cloned (`cloneIdentity`), which must be
  * the identity of the project's origin here, a project whose origin is the PR's repository.
@@ -509,11 +524,16 @@ const claimedByAnother = (
         if (sameCheckout(checkout, where)) continue;
         // A branch recorded for the folder counts whichever machine the record names: a record
         // that can't say where it was seen still says the thread held the branch.
-        const holds =
+        let holds =
           checkout.branch === branch ||
           (other.ownedBranches ?? []).some(
             (owned) => samePath(owned.path, checkout.path) && owned.branch === branch,
           );
+        // The record can lag: on this machine, read the folder's live HEAD too, so a branch the
+        // sibling just switched or renamed to is seen before the publisher samples it. A gone,
+        // detached or unreadable folder leaves the record to speak for it.
+        if (!holds && isLocalHost(checkout) && (yield* liveBranchAt(checkout.path)) === branch)
+          holds = true;
         if (holds && (yield* mayHoldRepo(checkout, repo))) return true;
       }
     }
@@ -638,10 +658,10 @@ const checkWorkerPr = (
     if (prHost === undefined) return OWNERSHIP_BLOCKERS.unverified;
     if (!remoteNamesRepo(yield* remoteUrlOf(where), repo, prHost))
       return OWNERSHIP_BLOCKERS.otherRepo;
-    if (
-      requireOwnedBranch &&
-      (yield* claimedByAnother(thread, repo, number, head.headRefName, where))
-    )
+    // Another thread's claim blocks even an identity-only check (the reused-authorization path): a
+    // sibling that bound the PR or took its branch is that thread's work, whether or not this worker
+    // still holds the branch. The reused approval never carries authority over a sibling's PR.
+    if (yield* claimedByAnother(thread, repo, number, head.headRefName, where))
       return OWNERSHIP_BLOCKERS.otherThread;
     return {
       path: where.path,

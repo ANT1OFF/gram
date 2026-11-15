@@ -517,6 +517,31 @@ export const MergeWhenReadyLive = Layer.effect(
         }),
       );
 
+    /**
+     * Reserves the base for a launch: writes `pending`'s fence only while no thread other than its
+     * own binds the PR, scanned in the fence write's own transaction. `false` (nothing reserved)
+     * when a sibling's `pr_bind` committed since the launch's last conflict scan, so the merge below
+     * is never launched onto a PR that is now another thread's. Memory follows the durable write.
+     */
+    const reserveFence = (key: string, pending: PendingMerge, moved = movedBases.get(key) ?? []) =>
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          const cutoff = verificationAfter.get(key);
+          const record: MergeFence = {
+            key,
+            moved,
+            ...(cutoff === undefined ? {} : { verifyAfter: cutoff }),
+            pending,
+          };
+          const reserved = yield* store.reserveMergeFence(record, pending.pr, pending.threadId);
+          if (reserved) {
+            movedBases.set(key, [...moved]);
+            unsettled.set(key, pending);
+          }
+          return reserved;
+        }),
+      );
+
     const observedMerge = Schema.Struct({ state: Schema.String, headRefOid: Schema.String });
     /** Under the base lock. Age and a lagging OPEN/CLOSED read never settle an unknown launch. */
     const settle = (key: string, cwd: string) =>
@@ -784,6 +809,19 @@ export const MergeWhenReadyLive = Layer.effect(
               (standing.mergeWhenReady.failedOn ?? "") !== (intent.failedOn ?? "")
             )
               return undefined;
+            // A dependency can be declared after the initial read above but before this lock, which
+            // leaves the intent's `setAt` untouched, so the stamp check can't see it. Recompute the
+            // effective `after` from the locked snapshot and wait on any that hasn't merged: a
+            // dependency committed before the lock is carried into ordering, never skipped.
+            const afterNow = [
+              ...(standing.mergeWhenReady.after ?? []),
+              ...mergeAfterDependencies(standing).filter(
+                (dependency) =>
+                  !(standing.mergeWhenReady?.after ?? []).some((each) => samePr(each, dependency)),
+              ),
+            ];
+            const waitingAfter = yield* unmerged(ghCwd, afterNow);
+            if (waitingAfter.length > 0) return { waitingAfter } as const;
             const reusedScope = yield* reusedIdentityScope(now.value, bound, intent, head);
             if (intent.userAuthorization?.reused === true && reusedScope === undefined)
               return undefined;
@@ -1040,14 +1078,17 @@ export const MergeWhenReadyLive = Layer.effect(
                     const frozenNow = yield* frozenFor(bound, fresh.baseRef);
                     if (frozenNow !== undefined) return { frozen: frozenNow } as const;
                     const merge = Effect.gen(function* () {
-                      // Before even starting gh: a process crash cannot skip the fence write.
-                      yield* writeFence(key, {
+                      // Before even starting gh: a process crash cannot skip the fence write, and
+                      // the reservation refuses in-transaction if a sibling bound the PR since the
+                      // conflict scans above, so no merge launches onto another thread's work.
+                      const reserved = yield* reserveFence(key, {
                         pr: { repo: bound.repo, number: bound.number },
                         threadId,
                         head,
                         ...(tip === undefined ? {} : { tip }),
                         at: yield* Clock.currentTimeMillis,
                       });
+                      if (!reserved) return { claimed: true } as const;
                       return yield* run(ghCwd, [
                         "pr",
                         "merge",
@@ -1120,6 +1161,30 @@ export const MergeWhenReadyLive = Layer.effect(
             onlyIfMissing: true,
           });
         if (launched === undefined) return yield* noteWait(thread.value, bound, undefined);
+        if ("waitingAfter" in launched) {
+          // A dependency the locked snapshot carried in hasn't merged: wait and look again, as the
+          // pre-lock `after` check does, so ordering holds for one declared just before the lock.
+          yield* Effect.logDebug("merge_when_ready waits").pipe(
+            Effect.annotateLogs({ threadId, after: launched.waitingAfter.map(prName).join(" ") }),
+          );
+          yield* noteWait(
+            thread.value,
+            bound,
+            `${launched.waitingAfter.map(prName).join(", ")} must merge first`,
+          );
+          return yield* recheck.pipe(Effect.andThen(Effect.suspend(() => attempt(threadId, head))));
+        }
+        if ("claimed" in launched) {
+          // A sibling bound the PR between the launch's last conflict scan and its reservation. Wait
+          // and look again: the next attempt's ownership recheck drops the intent and tells the
+          // worker (autonomy), or its identity recheck stands the merge down (a reused approval).
+          yield* noteWait(
+            thread.value,
+            bound,
+            "another thread bound it, so it is that thread's to merge",
+          );
+          return yield* recheck.pipe(Effect.andThen(Effect.suspend(() => attempt(threadId, head))));
+        }
         if ("frozen" in launched) return yield* noteWait(thread.value, bound, launched.frozen);
         if ("recheck" in launched) {
           // Its badge still names the old base until the publisher reads the new one.

@@ -1146,6 +1146,14 @@ export const PrAppToolsLive = Layer.effectDiscard(
                   "This thread is parked or watching its PR; call it again after that changes.";
                 return t;
               }
+              // A sibling's pr_bind that committed between the ownership check above and this write
+              // is seen here, in the write's own transaction (`claimScan`): an autonomous arm never
+              // lands on a PR another thread took meanwhile. The launch rechecks the same way.
+              if (allowedBy === "autonomy" && context?.prClaimedByOther === true) {
+                refused =
+                  "Another thread bound this pull request between the check and this write, so it is that thread's to merge now; call again if it should still be yours.";
+                return t;
+              }
               refused =
                 rebindBlocker(t, pr) ??
                 (!byOrchestrator && t.boundPr !== undefined && !samePr(t.boundPr, pr)
@@ -1238,6 +1246,9 @@ export const PrAppToolsLive = Layer.effectDiscard(
               return bindMainPr(owned, { ...rest, mergeWhenReady: intent });
             },
             reusing || (call.carded === true && byOrchestrator) ? caller : undefined,
+            // The autonomy arm asks the write to scan competing bindings in its own transaction, so
+            // a sibling's pr_bind can't slip in between the ownership check and this arm.
+            allowedBy === "autonomy" && enabled ? { pr } : undefined,
           );
           // With no attempt of the old intent between its last look and its launch meanwhile.
           const updated = yield* mergeWhenReady === undefined

@@ -444,6 +444,12 @@ export interface ThreadUpdateContext {
   readonly caller: Thread | undefined;
   readonly workspace: WorkspaceState | undefined;
   readonly settings: Settings;
+  /**
+   * Whether another unparked thread binds the PR `updateThread`'s `claimScan` named, read in the
+   * write's own transaction; absent when no `claimScan` was asked. The autonomy arm reads it to
+   * refuse an autonomous intent when a sibling's `pr_bind` committed since its ownership check.
+   */
+  readonly prClaimedByOther?: boolean;
 }
 
 /** Trusted server plan; mutation revalidates its stored target and checkout. */
@@ -503,6 +509,17 @@ export interface ThreadStoreShape {
   >;
   listMergeFences: Effect.Effect<ReadonlyArray<MergeFence>>;
   putMergeFence(fence: MergeFence): Effect.Effect<void>;
+  /**
+   * Writes the launch-reservation `fence` only while no thread other than `excluding` binds `pr`,
+   * scanned in the same transaction; `false` (nothing written) when one does. Closes the bind race
+   * at the launch fence: a competing `pr_bind` committed since the launch's last conflict scan is
+   * seen here, where a separate final scan would still race the commit.
+   */
+  reserveMergeFence(
+    fence: MergeFence,
+    pr: { readonly repo: string; readonly number: number },
+    excluding: ThreadId,
+  ): Effect.Effect<boolean>;
   /** Re-check authority and exact pending attempt atomically with its FULL commit. */
   reconcileMergeFence(
     fence: MergeFence,
@@ -516,6 +533,12 @@ export interface ThreadStoreShape {
     f: (thread: Thread, context?: ThreadUpdateContext) => Thread,
     /** Ask for caller/workspace/settings facts atomically with the write. */
     authorityCaller?: ThreadId,
+    /**
+     * Ask whether another unparked thread binds this PR, in the write's own transaction, and hand it
+     * to `f` as `context.prClaimedByOther`: the autonomy arm refuses when a sibling's `pr_bind`
+     * raced its ownership check. A context is always provided when this is set.
+     */
+    claimScan?: { readonly pr: { readonly repo: string; readonly number: number } },
   ): Effect.Effect<Thread, ThreadNotFound>;
   /** Sets `completedAt` with its reason, or clears both. */
   setCompletion(
@@ -1622,16 +1645,23 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           ),
         );
 
-      const updateThread: ThreadStoreShape["updateThread"] = (id, f, authorityCaller) =>
+      const updateThread: ThreadStoreShape["updateThread"] = (id, f, authorityCaller, claimScan) =>
         tx(
           Effect.gen(function* () {
             // The one door every thread edit takes, so the one-row-per-PR invariant holds whoever
             // wrote `boundPr`.
             const thread = yield* readThread(id);
-            const context =
-              authorityCaller === undefined
+            // A `claimScan` always gets a context; its authority facts are the caller's, else this
+            // thread's own. Both the facts and the competing-binding scan are read in this one
+            // transaction, so the write sees exactly the store the reducer decides against.
+            const base =
+              authorityCaller === undefined && claimScan === undefined
                 ? undefined
-                : yield* readThreadAuthority(thread, authorityCaller);
+                : yield* readThreadAuthority(thread, authorityCaller ?? id);
+            const context =
+              claimScan === undefined
+                ? base
+                : { ...base!, prClaimedByOther: yield* otherThreadBindsPr(id, claimScan.pr) };
             return yield* writeThread(
               stampParked(thread, normalizeThreadPrs(f(thread, context)), Date.now()),
             );
@@ -2032,6 +2062,39 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           };
         });
 
+      /**
+       * Whether a thread other than `excludeId` binds `pr` as its own, read in the caller's
+       * transaction: an unparked thread whose `boundPr` names it (GitHub compares `owner/repo`
+       * case-insensitively; a closed thread's row is gone, so it never counts). The arming write and
+       * the launch reservation run this scan atomically with their own commit, so a competing
+       * `pr_bind` that landed since the last ownership check is seen, never missed by a separate scan.
+       */
+      const otherThreadBindsPr = (
+        excludeId: ThreadId,
+        pr: { readonly repo: string; readonly number: number },
+      ) =>
+        sql<{ id: string; data: string }>`SELECT id, data FROM threads`.pipe(
+          Effect.flatMap((rows) =>
+            readableRows(
+              unreadable,
+              "threads",
+              rows,
+              (r) => r.id,
+              (r) => decodeStored(Thread, r.data),
+            ),
+          ),
+          Effect.map((threads) =>
+            threads.some(
+              (thread) =>
+                thread.id !== excludeId &&
+                !thread.parked &&
+                thread.boundPr !== undefined &&
+                thread.boundPr.number === pr.number &&
+                thread.boundPr.repo.toLowerCase() === pr.repo.toLowerCase(),
+            ),
+          ),
+        );
+
       /** The thread's messages whose stored text holds any of `needles` as written, in order. */
       const messagesHolding = (
         threadId: ThreadId,
@@ -2305,6 +2368,14 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           ),
         ),
         putMergeFence: (fence) => durableFence(writeMergeFence(fence)),
+        reserveMergeFence: (fence, pr, excluding) =>
+          durableFence(
+            Effect.gen(function* () {
+              if (yield* otherThreadBindsPr(excluding, pr)) return false;
+              yield* writeMergeFence(fence);
+              return true;
+            }),
+          ),
         reconcileMergeFence: (fence, expected, caller, authorized) =>
           durableFence(
             Effect.gen(function* () {
