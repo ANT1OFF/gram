@@ -90,16 +90,27 @@ const SEGMENT_MAX_LENGTH = 100;
 /** What a new workspace's `MEMORY.md` starts as. */
 export const MEMORY_INDEX_TEMPLATE = `# Memory index
 
-One line per file, plus the few facts worth having in every session. Keep this file under 8 KB.
-Date every entry and name its source (a feature, a PR, a thread): an undated fact can't be judged
-stale. Nothing derivable belongs here: worker states, PRs and budgets come from \`list_workers\`,
-and what a repo's CLAUDE.md already says stays there.
+Memory is a folder of short notes, one per subject, and this index, which every session starts
+from. Keep this file under 8 KB: one line per note, as \`- [[name]]: what it holds\`, plus the few
+facts worth having in every session.
+
+The orchestrator and its workers all read and write memory; the orchestrator keeps it tidy. Read a
+note before you change it and keep what you aren't changing. Add an entry with \`memory_append\`,
+change one with \`memory_edit\`, and rewrite a whole note with \`memory_write\` and the
+\`revision\` its read gave you.
+
+A note starts with front matter: \`name\` (the note's file name without \`.md\`), \`description\`
+(one line, what decides whether it is worth reading) and \`type\` (\`goal\`, \`decision\`,
+\`repo\`, \`project\`, \`feedback\` or \`reference\`). Date every entry and name its source (a
+feature, a PR, a thread): an undated fact can't be judged stale. Nothing derivable belongs here:
+worker states, PRs and budgets come from \`list_workers\`, and what a repo's CLAUDE.md already says
+stays there. Link related notes with \`[[name]]\`.
 
 New workspaces start with only this index. The names below are suggestions, not an inventory.
-Use \`memory_list\` to see which files exist. Create a topic file only when there is something
-to record, then add it to the index; a missing suggested file has no recorded content yet.
+Use \`memory_list\` to see which notes exist. Make a note only when there is something to record,
+then add it here; a missing suggested note has no recorded content yet.
 
-## Suggested files (created only when needed)
+## Suggested notes (made only when needed)
 
 - goals.md: what the user wants from this workspace, in priority order, dated
 - decisions.md: what was decided, why, and which feature or PR it came from
@@ -107,7 +118,7 @@ to record, then add it to the index; a missing suggested file has no recorded co
 - map.md: how the repos relate: who calls whom, where contracts live, merge and deploy order
 - questions.md: open questions for the user; each has an id and is closed, not deleted
 - repos/<name>.md: what was learned about working in one repo that its CLAUDE.md doesn't say
-- workers/<id>.md: optional notes on one worker
+- one note per other subject, such as a system, a trap or how the user likes something done
 `;
 
 /** One memory file, as `list` reports it. */
@@ -118,6 +129,25 @@ export interface MemoryFile {
   /** Epoch ms. */
   readonly modifiedAt: number;
 }
+
+/**
+ * How a change is made. `asWorker` holds a worker to what it can see: it may change only a file
+ * `workerMayRead` shows it, and only into text `workerMayRead` would still show every worker, so a
+ * worker's write never touches, or becomes, what is kept from workers.
+ */
+export interface MemoryChangeOptions {
+  readonly asWorker?: boolean;
+}
+
+/**
+ * A file's revision: the start of the SHA-256 of its text as `read` returns it. A write that names
+ * the revision it read is refused once the file has moved on (`memory_write`'s `revision`).
+ */
+export const memoryRevision = (text: string): string =>
+  createHash("sha256").update(text, "utf8").digest("hex").slice(0, 16);
+
+/** The revision a write names for a file that isn't there yet. */
+export const MEMORY_REVISION_NEW = "new";
 
 /** Why a memory operation was refused or failed. */
 export type MemoryError = InvalidState | NotFound | FsError;
@@ -187,9 +217,22 @@ export interface OrchestrationMemoryShape {
     change: (
       current: string | undefined,
     ) => Effect.Effect<{ readonly content: string; readonly result: A }, E>,
-  ): Effect.Effect<{ readonly write: MemoryWrite; readonly result: A }, MemoryError | E>;
-  /** Deletes a file, keeping its text in `.history`. */
-  remove(workspaceId: string, path: string): Effect.Effect<MemoryWrite, MemoryError>;
+    options?: MemoryChangeOptions,
+  ): Effect.Effect<
+    { readonly write: MemoryWrite; readonly result: A; readonly revision: string },
+    MemoryError | E
+  >;
+  /**
+   * Deletes a file, keeping its text in `.history`. `check` sees the file's scrubbed text under the
+   * same lock as the delete, and what it fails with stops the delete.
+   */
+  remove<E = never>(
+    workspaceId: string,
+    path: string,
+    options?: MemoryChangeOptions & {
+      readonly check?: (current: string) => Effect.Effect<void, E>;
+    },
+  ): Effect.Effect<MemoryWrite, MemoryError | E>;
   /** The adopted version `CURRENT` names, e.g. `0001`. */
   currentVersion(workspaceId: string): Effect.Effect<string, MemoryError>;
   /** Absolute path of the adopted version's folder: what a dream copies from and diffs against. */
@@ -236,6 +279,17 @@ export const memorySnapshotDigest = (snapshot: MemorySnapshot): string => {
 };
 
 const refuse = (message: string) => new InvalidState({ message });
+
+/** Why a worker can't change a file: it is one the worker can't see. */
+const keptFromWorkers = (path: string) =>
+  `kept_from_workers: ${path} is kept from workers, by its name or its text, so only the orchestrator can change it.`;
+
+const WORKER_WRITE_UNPLAIN =
+  "kept_from_workers: Every worker reads what a worker writes, so it has to be plain prose under plain front matter: no credential, token, encoded blob or `private` marker. Leave that out, or ask your orchestrator.";
+
+/** Refuses a worker's change to a file it may not see; `text` is the file's raw text, if any. */
+const workerMayChange = (path: string, text: string | undefined) =>
+  workerMayRead(path, text) ? Effect.void : Effect.fail(refuse(keptFromWorkers(path)));
 
 const codeOf = (error: unknown): unknown => (error as { code?: unknown } | undefined)?.code;
 
@@ -1203,34 +1257,45 @@ const make = (root: string): OrchestrationMemoryShape => {
         locked(workspaceId, writeLocked(workspaceId, path, content)),
       ),
 
-    modify: (workspaceId, path, change) =>
+    modify: (workspaceId, path, change, options) =>
       guarded(workspaceId, path, () =>
         locked(
           workspaceId,
           Effect.gen(function* () {
+            if (options?.asWorker === true) yield* workerMayChange(path, undefined);
             const version = yield* initLocked(workspaceId);
             const within = versionRel(version);
             const rel = `${within}/${path}`;
             const target = yield* resolveInTree(workspaceId, rel, within);
-            const current =
-              target.kind === "file"
-                ? redactText(yield* readText(workspaceId, rel, within, path))
-                : undefined;
+            const raw =
+              target.kind === "file" ? yield* readText(workspaceId, rel, within, path) : undefined;
+            if (options?.asWorker === true && raw !== undefined) {
+              yield* workerMayChange(path, raw);
+            }
+            const current = raw === undefined ? undefined : redactText(raw);
             const { content, result } = yield* change(current);
-            return { write: yield* writeLocked(workspaceId, path, content), result };
+            if (options?.asWorker === true && !workerMayRead(path, content)) {
+              return yield* refuse(WORKER_WRITE_UNPLAIN);
+            }
+            const write = yield* writeLocked(workspaceId, path, content);
+            // What `read` will give back: the scrubbed text, as it is on disk, scrubbed again.
+            return { write, result, revision: memoryRevision(redactText(redactText(content))) };
           }),
         ),
       ),
 
-    remove: (workspaceId, path) =>
+    remove: (workspaceId, path, options) =>
       guarded(workspaceId, path, () =>
         locked(
           workspaceId,
           Effect.gen(function* () {
+            if (options?.asWorker === true) yield* workerMayChange(path, undefined);
             const version = yield* requireAdopted(workspaceId);
             const within = versionRel(version);
             const rel = `${within}/${path}`;
             const before = yield* readText(workspaceId, rel, within, path);
+            if (options?.asWorker === true) yield* workerMayChange(path, before);
+            if (options?.check !== undefined) yield* options.check(redactText(before));
             yield* archive(workspaceId, version, path, before);
             const target = yield* resolveInTree(workspaceId, rel, within);
             if (target.kind === "file") yield* attempt(path, () => unlink(target.abs));

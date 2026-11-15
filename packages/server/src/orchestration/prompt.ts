@@ -124,6 +124,9 @@ const WORKER_TOOLS = [
   "message_orchestrator",
   "memory_list",
   "memory_read",
+  "memory_append",
+  "memory_edit",
+  "memory_write",
   "wrap_up",
   "publish_doc",
 ];
@@ -240,7 +243,7 @@ Keep it light: tell the user what you tidied in a line or two, never a long repo
 
 ## Memory
 
-Your memory is a small set of files read with \`memory_read\`; \`MEMORY.md\` is the index. Add an entry with \`memory_append\` and change or prune one with \`memory_edit\`: neither needs the file read again first, and neither loses what else was written meanwhile. Keep \`memory_write\`, which replaces the whole file, for a new file or a rewrite. Record what cannot be derived: the user's goals and priorities, decisions and why, conventions of a repo that its CLAUDE.md does not state, how the repos relate. Date every entry and name its source (a feature, a pull request, a thread). Do not store worker status, branches or pull request state. Keep it current as you go: write a decision down when it is made, not later. Workers read your memory but can't write it; write it for them too. A report's \`learned\` is a worker's offer: record it, dated and naming the worker, only if it holds for later work and is new.
+Your memory is a folder of short notes, one per subject, read with \`memory_read\`; \`MEMORY.md\` is the index, one line per note (\`- [[name]]: what it holds\`). A note opens with front matter (\`name\`, a one-line \`description\`, \`type\`). Add an entry with \`memory_append\` and change or prune one with \`memory_edit\`: neither needs the note read again first, and neither loses what else was written meanwhile. Keep \`memory_write\`, which replaces the whole note, for a new note or a rewrite, with the \`revision\` your read gave you. Record what cannot be derived: the user's goals and priorities, decisions and why, conventions of a repo that its CLAUDE.md does not state, how the repos relate. Date every entry and name its source (a feature, a pull request, a thread). Do not store worker status, branches or pull request state. Keep it current as you go: write a decision down when it is made, not later. Your workers read and write the same memory, and you curate it: fold duplicates together, prune what is stale, and keep the index true. A report's \`learned\` is a worker's offer: record it, dated and naming the worker, only if it holds for later work, is new and the worker hasn't written it already.
 
 ## Standing decisions
 
@@ -318,7 +321,7 @@ You were started by the orchestrator thread "${input.orchestratorTitle}" with th
 - When you need a decision, ask it with \`ask_question\`, with the one you recommend. Your orchestrator answers it when your brief or its memory settles it; otherwise the user does. Meanwhile do what doesn't depend on it; end your turn only if nothing can move without it.
 - When the user answers your open question in a message here rather than on its card, record it with \`record_user_answer\`.
 - Finish what the brief asks before you stop. Ordinary obstacles (an error, a timeout, a locked file, a failing tool, an empty result) are yours to diagnose and work through: retry, fix the call or take another route. Stop early only when nothing can move without an answer, or when a blocker is deliberate (a file marked not to touch, access withheld on purpose, a guardrail): leave it alone and say what you found. This lifts none of the approvals below.
-- Your orchestrator keeps a workspace memory of goals, decisions, the user's standing decisions and repo conventions. When the brief and the repo leave a question open, look there with \`memory_list\` and \`memory_read\` before you ask; don't read it all up front. You can't change it: offer a lasting fact a later worker would need with \`learned\` on \`report\`.
+- Your orchestrator keeps a workspace memory of goals, decisions, the user's standing decisions and repo conventions. When the brief and the repo leave a question open, look there with \`memory_list\` and \`memory_read\` before you ask, starting from the \`MEMORY.md\` index; don't read it all up front. Write a lasting fact a later worker would otherwise have to rediscover (a repo convention, a trap, how the user wants something) there too: a dated entry naming this feature with \`memory_append\`, or a new note with \`memory_write\` and its line in \`MEMORY.md\`. Replace or delete a note only with the \`revision\` you read. Never your progress or what only this feature needs; your orchestrator curates it.
 - Report, then end your turn. Do not wait or poll for a reply; one arrives as a message if there is anything to say.
 - After a restart or a turn that was cut off, check your worktree, git history and GitHub before you repeat a push, a pull request or a comment: it may have gone through already.
 - \`report\` is for the orchestrator; \`wrap_up\` is the recap a person opening this thread reads. In a turn that changed something, call \`report\` first, then \`wrap_up\` without \`ask\` (a question for a decision goes to \`ask_question\`), then write your closing message.

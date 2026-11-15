@@ -6,6 +6,7 @@ import { WrapUpInput } from "../app-tools/wrap-up-tool.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { hasGit } from "../git/test-repo.ts";
 import { makeWorld, openOrchestrator, withServer } from "./test-harness.ts";
+import { memoryRevision } from "./memory.ts";
 
 // Bound schemas are the source listed by both MCP transports and used before approval.
 describe.skipIf(!hasGit)("orchestration tool ergonomics", () => {
@@ -141,7 +142,7 @@ describe.skipIf(!hasGit)("orchestration tool ergonomics", () => {
           const { session } = yield* openOrchestrator(world);
           expect(
             yield* session.callTool("memory_write", { file: "notes.md", content: "first" }),
-          ).toEqual({ path: "notes.md", bytes: 5 });
+          ).toEqual({ path: "notes.md", bytes: 5, revision: memoryRevision("first") });
           yield* session.callTool("memory_append", { file: "notes.md", content: "second" });
           yield* session.callTool("memory_append", { path: "notes.md", text: "third" });
           const before = yield* session.callTool("memory_read", { file: "notes.md" });

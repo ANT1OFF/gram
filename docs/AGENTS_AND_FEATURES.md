@@ -932,22 +932,39 @@ GitHub status.
 
 ## Workspace memory
 
-An orchestrator's new workspace starts with only `MEMORY.md`, a seeded index with
-suggested topic names. Files such as `goals.md`, `decisions.md` and
+Memory is a folder of short notes, one per subject, and the `MEMORY.md` index, one line per
+note (`- [[name]]: what it holds`). A note opens with front matter: `name`, a one-line
+`description` that decides whether it is worth reading, and a `type` (goal, decision, repo,
+project, feedback or reference). An orchestrator's new workspace starts with only `MEMORY.md`, a
+seeded index with suggested note names. Notes such as `goals.md`, `decisions.md` and
 `standing-decisions.md` are created when there is something to record.
 `memory_list` reports actual files; `memory_read` returns a missing-file error for
 an unwritten topic. Suggested names do not establish recorded goals or decisions.
-The orchestrator should record actual information and update its index as it goes.
 
-Workers can read their orchestrator's memory with `memory_list` and `memory_read`, while that
-orchestrator holds the workspace, and can't change it: the orchestrator stays its one curator.
-A worker's reads go through the anchored tree, every folder below the data root opened without
+An orchestrator and its workers share one memory, while that orchestrator holds the workspace:
+every one of them reads it and writes it with `memory_append` (a dated entry, no read needed),
+`memory_edit` (one passage, which must appear once), `memory_write` (a whole note) and
+`memory_delete`. The orchestrator curates it by convention, folding duplicates together, pruning
+what is stale and keeping the index true; nothing locks writing to it.
+
+`memory_read` returns a note's `revision`, the start of the SHA-256 of its text as read.
+`memory_write` and `memory_delete` take it: when the note has changed since, nothing is written
+and the refusal (`stale_revision`) carries the note's current text and revision, so the caller
+merges its change in, keeping what it isn't changing, and writes again. `revision: "new"` only
+creates. A worker must pass a revision to replace or delete a note that exists; the orchestrator
+may leave it out, as before. Every write is scrubbed, size-capped, kept in the note's history and
+shown as a diff in the writer's transcript.
+
+A worker changes only what it can see, into what every worker can still see: a write, append,
+edit or delete of a file the read filter below keeps from workers, or a write whose text the
+filter would keep from them, is refused (`kept_from_workers`), so a worker's write never touches
+or creates orchestrator-only memory. A worker's reads go through the anchored tree, every folder below the data root opened without
 following a link, so no symlink anywhere in the path, standing or swapped in mid-read, leads into
 another workspace. What a worker reads of memory is an allow-list that fails closed
 (`orchestration/memory-filter.ts`). It lists only names of lowercase words joined by `-`, in
 folders named the same way, ending `.md`, with no credential word and no token shape in them (a
 known token prefix like `xoxb`, long digit runs, letter-and-digit alternation, random letters,
-base64 of text), so not the `MEMORY.md` index. It reads a file only when the file is plainly safe
+base64 of text), and the `MEMORY.md` index. It reads a file only when the file is plainly safe
 prose: printable ASCII, typographic punctuation and Latin-1 letters (folded to ASCII before any
 check); no escape or encoding syntax (`\u`, `\x`, `%XX`, `&#`, `&name;`) or delimiter left open;
 no URL or network-path userinfo (`//…@`, `user:pass@`), connection string (`Key=value;` fields),
@@ -964,8 +981,9 @@ token-like run once cited commit SHAs (a pure hex run after `at`, `head`, `commi
 before `…`, in a clause with no assignment or credential word) and plain paths are taken out. A
 header, if any, is one closed `---` block that is a flat map of plain scalars with no `private` in
 it. Anything else is dropped whole, never redacted or partly shown; the orchestrator sees it
-all. A worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the
-digest shows it to the orchestrator, which records it only when it holds for later work. Solo
+all. A worker can still offer a lasting fact with `learned` on `report` (up to 500 characters)
+instead of writing it; the digest shows it to the orchestrator, which records it only when it
+holds for later work. Solo
 threads have no workspace memory.
 
 ### Known limits of worker memory reads

@@ -427,8 +427,11 @@ const plainProse = (text: string): boolean => {
   return !splitEncoding(runs) && !tokenRun(runs);
 };
 
-/** What a worker's `memory_list` shows: lowercase words joined by `-`, in folders, ending `.md`. */
-const PLAIN_NAME = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*\.md$/;
+/**
+ * What a worker's `memory_list` shows: lowercase words joined by `-`, in folders, ending `.md`, and
+ * the `MEMORY.md` index, which a worker reads to find a note and updates when it adds one.
+ */
+const PLAIN_NAME = /^(?:MEMORY\.md|[a-z0-9-]+(?:\/[a-z0-9-]+)*\.md)$/;
 
 /** A folder a worker's `memory_list` goes into: lowercase words joined by `-`, nested. */
 const PLAIN_FOLDER = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*$/;

@@ -119,7 +119,7 @@ describe("OrchestrationMemory: layout", () => {
             message: `No memory file ${path}`,
           });
         }
-        expect(yield* f.memory.index(WS)).toContain("Suggested files (created only when needed)");
+        expect(yield* f.memory.index(WS)).toContain("Suggested notes (made only when needed)");
         expect(yield* f.memory.index(WS)).toContain("memory_list");
       }),
     ),
