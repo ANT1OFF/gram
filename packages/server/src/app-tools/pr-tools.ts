@@ -32,6 +32,7 @@ import {
   userMergeDelegationIsLive,
 } from "../git/user-merge-authorization.ts";
 import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -81,6 +82,12 @@ import { resolveMergeFenceTool } from "./resolve-merge-fence.ts";
 import { AppToolRegistry } from "./registry.ts";
 
 const REPO = /^[\w.-]+\/[\w.-]+$/;
+
+/**
+ * How often a waiting merge card reads its PR's badge, to be withdrawn once the PR has merged or
+ * closed: an in-memory read of what the badge sweep last saw, which costs no GitHub call.
+ */
+export const MERGE_CARD_ENDED_POLL = Duration.seconds(15);
 
 interface BindInput {
   readonly repo?: string;
@@ -836,10 +843,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
      * `undefined` keeps the card.
      */
     /** `pr`'s state from the badges Gram already has for `thread`, when they say it has ended. */
-    const endedFromBadges = (
-      thread: Thread,
-      pr: { readonly repo: string; readonly number: number },
-    ) =>
+    /** Whether the thread's badges show `pr` merged or closed; a doubt is neither. */
+    const endedState = (thread: Thread, pr: { readonly repo: string; readonly number: number }) =>
       Effect.gen(function* () {
         const badges = [
           yield* publisher.badgeFor(thread),
@@ -847,11 +852,41 @@ export const PrAppToolsLive = Layer.effectDiscard(
         ];
         const badge = badges.find((each) => each !== undefined && isBadgeOf(each, pr));
         return badge?.state === "MERGED"
-          ? endedPrText(pr.repo, pr.number, "merged")
+          ? ("merged" as const)
           : badge?.state === "CLOSED"
-            ? endedPrText(pr.repo, pr.number, "closed")
+            ? ("closed" as const)
             : undefined;
       }).pipe(Effect.catchCause(() => Effect.succeed(undefined)));
+
+    const endedFromBadges = (
+      thread: Thread,
+      pr: { readonly repo: string; readonly number: number },
+    ) =>
+      endedState(thread, pr).pipe(
+        Effect.map((state) =>
+          state === undefined ? undefined : endedPrText(pr.repo, pr.number, state),
+        ),
+      );
+
+    /**
+     * Completes once `pr` shows merged or closed on its thread's badges (Gram's cached gh state,
+     * read every `MERGE_CARD_ENDED_POLL`), with what the agent whose merge card waited is told.
+     */
+    const mergeCardEnded = (
+      threadId: ThreadId,
+      pr: { readonly repo: string; readonly number: number },
+    ) =>
+      Effect.gen(function* () {
+        for (;;) {
+          yield* Effect.sleep(MERGE_CARD_ENDED_POLL);
+          const latest = yield* store
+            .getThread(threadId)
+            .pipe(Effect.orElseSucceed(() => undefined));
+          const state = latest === undefined ? undefined : yield* endedState(latest, pr);
+          if (state !== undefined)
+            return `${prName(pr)} ${state} while the user was being asked, so there is nothing to merge: the card was withdrawn. Check it with pr_status.`;
+        }
+      });
 
     const refusalForAgent = (
       caller: ThreadId,
@@ -1039,6 +1074,31 @@ export const PrAppToolsLive = Layer.effectDiscard(
           : caller === thread.id && thread.boundPr?.mergeWhenReady?.heldBy === "orchestrator"
             ? endedFromBadges(thread, pr)
             : refusalForAgent(caller, thread, pr, MERGE, "merges it once its checks pass", true),
+      // A merge card is one caller's decision: who calls decides who holds the merge (`heldBy`),
+      // whether a worker's call is `locked` under its orchestrator's hold, and whether the approval
+      // carries the orchestrator's `userAuthorization`. So only the same caller's identical call
+      // joins a waiting card; a worker's and its orchestrator's are asked apart. Every card goes
+      // when its PR merges or closes.
+      sharedCard: (
+        caller,
+        { thread, pr, enabled = true, method, afterRefs, hold, holdWaitsOn, release, clearHold },
+      ) =>
+        Effect.succeed({
+          key: JSON.stringify([
+            pr.repo.toLowerCase(),
+            pr.number,
+            thread.id,
+            caller,
+            enabled,
+            method,
+            afterRefs.map((ref) => [ref.repo.toLowerCase(), ref.number]),
+            hold ?? null,
+            holdWaitsOn ?? null,
+            release === true,
+            clearHold,
+          ]),
+          moot: mergeCardEnded(thread.id, pr),
+        }),
       // Read once a card is up: full auto would have merged it, but for the PR's ownership.
       whyAsked: (caller, { thread, pr, enabled = true, method }) =>
         Effect.gen(function* () {
