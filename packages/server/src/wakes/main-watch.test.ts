@@ -121,7 +121,7 @@ const layerOf = (f: Fake) =>
         GhBudget.layer,
         Layer.succeed(MainWatchConfig, { interval: Duration.hours(24) }),
         Layer.succeed(Proc, {
-          run: (bin, args) =>
+          run: (bin: string, args: ReadonlyArray<string>) =>
             Effect.suspend(() => {
               if (bin === "git") {
                 return Effect.succeed({
