@@ -18,9 +18,9 @@ const ignore = () => {};
  * sheets and views made with `lazyPart`, one per idle moment, so none of them adds a long task to
  * the window's first seconds.
  *
- * Over a slow or metered link only the markdown is fetched: the rest is a hundred files and a third
- * of the launch's bytes, and there they hold up the transcript and the feed the person is waiting
- * for. Each part still loads when it is first opened.
+ * Over a slow or metered link nothing is fetched here: the rest is a hundred files and a third of
+ * the launch's bytes, and there they hold up the transcript and the feed the person is waiting for.
+ * The markdown comes once a transcript's messages are in, and each part when it is first opened.
  */
 export function usePreloadAfterPaint() {
   const router = useRouter();
@@ -45,8 +45,10 @@ export function usePreloadAfterPaint() {
         });
     };
     const frame = requestAnimationFrame(() => {
-      loadMarkdown().catch(ignore);
+      // Over a slow link not even the markdown: a transcript asks for it once its messages are in
+      // (see `useMarkdown`), since what is asked for first arrives first there.
       if (thisLinkIsConstrained()) return;
+      loadMarkdown().catch(ignore);
       whenIdle(() => {
         preloadRightPanel().catch(ignore);
         preloadWorkspaceSheet().catch(ignore);
