@@ -38,86 +38,138 @@ const remote = Layer.succeed(RemoteHosts, {
   list: () => [MACHINE],
 } as unknown as RemoteHostsShape);
 
+/** A machine whose host has said what it runs: Claude Code and git, and its Codex as given. */
+const reported = (codex?: object) => ({
+  ...MACHINE,
+  tools: [
+    { tool: "claude", found: true },
+    { tool: "git", found: true },
+  ],
+  claudeSignIn: "signedIn",
+  ...(codex === undefined ? {} : { codex }),
+});
+const CODEX = { found: true, signIn: "signedIn", gateReady: true, autoReview: false };
+
 describe("spawn admission on a joined machine", () => {
-  for (const model of [
-    { agent: "codex", model: "fake-opus" },
-    { agent: "claude", model: "fake-opus", profileId: ProfileId.make("synthetic-gateway") },
-  ] satisfies ModelRef[]) {
-    it.effect(
-      `refuses ${model.agent}${model.profileId ? " through a gateway" : ""} before making a checkout or thread`,
-      () =>
-        Effect.gen(function* () {
-          const world = yield* makeWorld;
-          const context = yield* Layer.build(
-            serverLayer(world, {}, agents).pipe(Layer.provide(remote)),
-          );
-          yield* Effect.gen(function* () {
-            const store = yield* ThreadStore;
-            const { session, thread, workspaceId } = yield* openOrchestrator(world);
-            if (model.profileId !== undefined)
-              yield* store.upsertProfile({
-                id: model.profileId,
-                name: "Synthetic gateway",
-                baseURL: "https://gateway.example.test",
-                keyRef: "vault:synthetic-unused",
-                models: [],
-              });
-            yield* (yield* Orchestration).setCharter(workspaceId, {
-              ...DEFAULT_CHARTER,
-              autonomy: "publish",
-              workerModels: [model],
+  for (const { model, why, machine, says } of [
+    {
+      model: {
+        agent: "claude",
+        model: "fake-opus",
+        profileId: ProfileId.make("synthetic-gateway"),
+      },
+      why: "through a gateway",
+      machine: MACHINE,
+      says: /build box.*direct Claude and Codex/,
+    },
+    {
+      model: { agent: "codex", model: "fake-opus" },
+      why: "on a host too old to run it",
+      machine: reported(),
+      says: /build box's Gram is older.*doesn't run Codex sessions/,
+    },
+    {
+      model: { agent: "codex", model: "fake-opus" },
+      why: "where Codex isn't installed",
+      machine: reported({ ...CODEX, found: false }),
+      says: /build box: Codex is not installed/,
+    },
+    {
+      model: { agent: "codex", model: "fake-opus" },
+      why: "on a model the machine's Codex doesn't list",
+      machine: reported({
+        ...CODEX,
+        models: [{ id: "fake-haiku", displayName: "Fake Haiku", supportsEffort: false }],
+      }),
+      says: /build box's Codex doesn't list fake-opus/,
+    },
+    {
+      model: { agent: "codex", model: "fake-opus" },
+      why: "where Codex isn't signed in",
+      machine: reported({ ...CODEX, signIn: "notSignedIn" }),
+      says: /build box is not signed in to Codex/,
+    },
+  ] satisfies ReadonlyArray<{
+    model: ModelRef;
+    why: string;
+    machine: object;
+    says: RegExp;
+  }>) {
+    it.effect(`refuses ${model.agent} ${why} before making a checkout or thread`, () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const machines = Layer.succeed(RemoteHosts, {
+          ...NO_LINKS,
+          list: () => [machine],
+        } as unknown as RemoteHostsShape);
+        const context = yield* Layer.build(
+          serverLayer(world, {}, agents).pipe(Layer.provide(machines)),
+        );
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const { session, thread, workspaceId } = yield* openOrchestrator(world);
+          if (model.profileId !== undefined)
+            yield* store.upsertProfile({
+              id: model.profileId,
+              name: "Synthetic gateway",
+              baseURL: "https://gateway.example.test",
+              keyRef: "vault:synthetic-unused",
+              models: [],
             });
-            const before = yield* store.listThreads;
-            const result = yield* session
-              .callTool("spawn_worker", {
-                project: "shop",
-                feature: "remote-test",
-                title: "Remote",
-                brief: "Synthetic work",
-                machine: "build box",
-              })
-              .pipe(Effect.result);
-            expect(result).toMatchObject({
-              _tag: "Failure",
-              failure: {
-                message: expect.stringMatching(/build box.*direct Claude/),
-              },
-            });
-            // Even a call whose class always asks must be refused before its card is raised.
-            let approvals = 0;
-            const registry = yield* AppToolRegistry;
-            const gated = bindAppTools(
-              registry.definitions.map((definition) =>
-                definition.descriptor.name === "spawn_worker"
-                  ? { ...definition, alwaysAsks: true }
-                  : definition,
-              ),
-              thread.id,
-              {
-                approve: () =>
-                  Effect.sync(() => {
-                    approvals++;
-                  }),
-              },
-            ).find((tool) => tool.descriptor.name === "spawn_worker")!;
-            const refused = yield* gated
-              .run({
-                project: "shop",
-                feature: "remote-card",
-                title: "Remote",
-                brief: "Synthetic",
-                machine: "build box",
-              })
-              .pipe(Effect.result);
-            expect(refused).toMatchObject({
-              _tag: "Failure",
-              failure: { message: expect.stringMatching(/build box.*direct Claude/) },
-            });
-            expect(approvals).toBe(0);
-            expect(yield* store.listThreads).toEqual(before);
-            expect(existsSync(join(world.repo, ".worktrees"))).toBe(false);
-          }).pipe(Effect.provide(context));
-        }).pipe(Effect.scoped),
+          yield* (yield* Orchestration).setCharter(workspaceId, {
+            ...DEFAULT_CHARTER,
+            autonomy: "publish",
+            workerModels: [model],
+          });
+          const before = yield* store.listThreads;
+          const result = yield* session
+            .callTool("spawn_worker", {
+              project: "shop",
+              feature: "remote-test",
+              title: "Remote",
+              brief: "Synthetic work",
+              machine: "build box",
+            })
+            .pipe(Effect.result);
+          expect(result).toMatchObject({
+            _tag: "Failure",
+            failure: { message: expect.stringMatching(says) },
+          });
+          // Even a call whose class always asks must be refused before its card is raised.
+          let approvals = 0;
+          const registry = yield* AppToolRegistry;
+          const gated = bindAppTools(
+            registry.definitions.map((definition) =>
+              definition.descriptor.name === "spawn_worker"
+                ? { ...definition, alwaysAsks: true }
+                : definition,
+            ),
+            thread.id,
+            {
+              approve: () =>
+                Effect.sync(() => {
+                  approvals++;
+                }),
+            },
+          ).find((tool) => tool.descriptor.name === "spawn_worker")!;
+          const refused = yield* gated
+            .run({
+              project: "shop",
+              feature: "remote-card",
+              title: "Remote",
+              brief: "Synthetic",
+              machine: "build box",
+            })
+            .pipe(Effect.result);
+          expect(refused).toMatchObject({
+            _tag: "Failure",
+            failure: { message: expect.stringMatching(says) },
+          });
+          expect(approvals).toBe(0);
+          expect(yield* store.listThreads).toEqual(before);
+          expect(existsSync(join(world.repo, ".worktrees"))).toBe(false);
+        }).pipe(Effect.provide(context));
+      }).pipe(Effect.scoped),
     );
   }
   for (const name of ["local", "this machine"]) {

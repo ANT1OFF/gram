@@ -4,6 +4,7 @@
 
 import type { AgentHost } from "@gram/agents";
 import { CLAUDE_CAPABILITIES } from "@gram/agents/claude";
+import { CODEX_CAPABILITIES } from "@gram/agents/codex";
 import {
   type AgentKind,
   type AgentModel,
@@ -46,10 +47,42 @@ export interface PlaceableMachine {
   readonly joinedAt: number;
   readonly onlineSince?: number | undefined;
   readonly models?: ReadonlyArray<AgentModel> | undefined;
+  /** Its Codex, from a host that runs Codex sessions (`HostStatus.codex`). */
+  readonly codex?: MachineCodex | undefined;
   /** A host an embedder started on demand for one person (`embedding/on-demand.ts`). */
   readonly owner?: string | undefined;
   readonly onDemand?: "personal" | "thread" | undefined;
 }
+
+/** A machine's Codex as placement reads it. */
+export interface MachineCodex {
+  readonly found: boolean;
+  readonly signIn: "signedIn" | "notSignedIn" | "apiKey" | "unknown";
+  readonly models?: ReadonlyArray<AgentModel> | undefined;
+  readonly gateReady: boolean;
+  readonly autoReview: boolean;
+}
+
+/** The agents a headless Gram offers as its machines run them. */
+export type MachineAgent = "claude" | "codex";
+
+/** What `machine` lists for `agent`, when it has said. */
+const listOf = (machine: PlaceableMachine, agent: MachineAgent) =>
+  agent === "claude" ? machine.models : machine.codex?.models;
+
+/** Why `machine` lists nothing for `agent`, in words about that machine. */
+const notListing = (machine: PlaceableMachine, agent: MachineAgent): string => {
+  if (agent === "claude")
+    return `${machine.name} hasn't said which models its Claude Code offers yet.`;
+  const codex = machine.codex;
+  if (codex === undefined)
+    return `${machine.name} hasn't said which models its Codex offers yet. If its Gram is older than this one, update it there (Settings → Machines).`;
+  if (!codex.found)
+    return `Codex isn't installed on ${machine.name}. Install it there, then re-check.`;
+  if (codex.signIn === "notSignedIn")
+    return `Codex isn't signed in on ${machine.name}. Run \`codex login\` there with your ChatGPT account.`;
+  return `${machine.name}'s Codex couldn't list its models. Check it there, then re-check.`;
+};
 
 /** With hosts provisioned on demand, a person with no machine of their own can start one. */
 export const START_A_MACHINE =
@@ -178,15 +211,18 @@ export const modelsFor = (
   person: string | undefined,
   onDemand: boolean,
   remembered: Map<string, ReadonlyArray<AgentModel>>,
+  /** Whose lists: Claude Code's, or the machines' Codex's. */
+  agent: MachineAgent = "claude",
 ): { readonly models: ReadonlyArray<AgentModel> } | { readonly error: string } => {
   const picked = machineFor(machines, person, onDemand);
   const own =
     "error" in picked || person === undefined
       ? undefined
       : machines.find((each) => each.id === picked.id && each.owner === person);
-  if (own?.models !== undefined && person !== undefined) {
-    remembered.set(person, own.models);
-    return { models: own.models };
+  const ownList = own === undefined ? undefined : listOf(own, agent);
+  if (ownList !== undefined && person !== undefined) {
+    remembered.set(person, ownList);
+    return { models: ownList };
   }
   const last = person === undefined ? undefined : remembered.get(person);
   if (last !== undefined) return { models: last };
@@ -195,53 +231,82 @@ export const modelsFor = (
   const shared = defaultMachine(machines);
   const sharedMachine =
     "error" in shared ? undefined : machines.find((each) => each.id === shared.id);
-  if (sharedMachine?.models !== undefined) return { models: sharedMachine.models };
+  const sharedList = sharedMachine === undefined ? undefined : listOf(sharedMachine, agent);
+  if (sharedList !== undefined) return { models: sharedList };
   // Nothing to list: say why, about the machine the person's work would go to.
   const waiting = own ?? sharedMachine;
-  if (waiting !== undefined)
-    return { error: `${waiting.name} hasn't said which models its Claude Code offers yet.` };
+  if (waiting !== undefined) return { error: notListing(waiting, agent) };
   if ("error" in picked) return picked;
   return "error" in shared ? shared : { error: NO_MACHINE_JOINED };
 };
 
 /**
- * The agents of a headless Gram: no CLI is looked for or started here. Claude Code is offered as
- * the joined machines list it (`modelsFor`), and a session opens only where a thread is placed
- * (`placedHost`), so one asked for here (a thread of this machine, a helper, a memory update) is
- * refused. Codex has no session on a joined machine yet, so it isn't offered.
+ * The agents of a headless Gram: no CLI is looked for or started here. Claude Code and Codex are
+ * offered as the joined machines list them (`modelsFor`), and a session opens only where a thread
+ * is placed (`placedHost`), so one asked for here (a thread of this machine, a helper, a memory
+ * update) is refused. Whether Codex holds Gram's outward gate, and has its own Auto reviewer, is
+ * what the machine a new thread goes on says of its Codex.
  */
 export const headlessAgentHosts = (
   remote: Pick<RemoteHostsShape, "list"> | undefined,
   onDemand = false,
 ): AgentHosts["Service"] => {
-  // Each person's own machine's last list, kept while this server runs.
-  const remembered = new Map<string, ReadonlyArray<AgentModel>>();
+  // Each person's own machine's last list, per agent, kept while this server runs.
+  const remembered = {
+    claude: new Map<string, ReadonlyArray<AgentModel>>(),
+    codex: new Map<string, ReadonlyArray<AgentModel>>(),
+  };
+  const listModels = (agent: MachineAgent) =>
+    Effect.gen(function* () {
+      const person = yield* callerPerson;
+      const listed = modelsFor(remote?.list() ?? [], person, onDemand, remembered[agent], agent);
+      return "error" in listed
+        ? yield* Effect.fail(unavailable(agent, listed.error))
+        : listed.models;
+    });
+  /** The Codex of the machine a new thread of the caller's goes on, if one can take it. */
+  const placedCodex = Effect.gen(function* () {
+    const machines = remote?.list() ?? [];
+    const picked = machineFor(machines, yield* callerPerson, onDemand);
+    return "error" in picked ? undefined : machines.find((each) => each.id === picked.id)?.codex;
+  });
   const claude: AgentHost = {
     kind: "claude",
     capabilities: CLAUDE_CAPABILITIES,
     open: () => Effect.fail(unavailable("claude", RUNS_NOTHING_HERE)),
-    listModels: () =>
-      Effect.gen(function* () {
-        const person = yield* callerPerson;
-        const listed = modelsFor(remote?.list() ?? [], person, onDemand, remembered);
-        return "error" in listed
-          ? yield* Effect.fail(unavailable("claude", listed.error))
-          : listed.models;
-      }),
+    listModels: () => listModels("claude"),
+  };
+  const codex: AgentHost = {
+    kind: "codex",
+    capabilities: CODEX_CAPABILITIES,
+    open: () => Effect.fail(unavailable("codex", RUNS_NOTHING_HERE)),
+    // A gateway profile's key stays here, and no session on it opens on a machine.
+    listModels: (options) =>
+      options?.profileId === undefined
+        ? listModels("codex")
+        : Effect.fail(unavailable("codex", GATEWAY_STAYS_HERE)),
+    nativeGateReady: Effect.map(placedCodex, (placed) => placed?.gateReady === true),
+    autoReviewReady: Effect.map(placedCodex, (placed) => placed?.autoReview === true),
   };
   return AgentHosts.of({
     elsewhere: true,
     get: (agent) =>
       agent === "claude"
         ? Effect.succeed(claude)
-        : Effect.fail(
-            new AgentUnavailable({
-              agent,
-              message: `${agent} sessions don't run on a joined machine yet, and this Gram runs none itself.`,
-            }),
-          ),
+        : agent === "codex"
+          ? Effect.succeed(codex)
+          : Effect.fail(
+              new AgentUnavailable({
+                agent,
+                message: `${agent} sessions don't run on a joined machine yet, and this Gram runs none itself.`,
+              }),
+            ),
   });
 };
+
+/** Why a headless Gram lists no models of a gateway profile. */
+export const GATEWAY_STAYS_HERE =
+  "Gateway profiles don't run on a joined machine, and this Gram runs no work itself. Choose a model the machine's own CLI lists.";
 
 /**
  * `AgentHosts` for the server: the headless ones when it is headless, whatever agents it was

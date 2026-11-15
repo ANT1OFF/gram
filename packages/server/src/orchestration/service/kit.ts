@@ -603,8 +603,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
    * was added. An entry that follows a tier is resolved against what this machine lists, never
    * onto a gateway; one nothing here fills is unavailable, so the default stands in for it. With
    * `hostId`, a joined machine a worker is placed on, a tier resolves against what that machine's
-   * Claude Code lists, as its host reports it; never onto Codex there, which it can't run. A host
-   * too old to report its models resolves against this machine's lists, as before.
+   * Claude Code and Codex list, as its host reports them; never onto Codex on a host too old to
+   * run it. A host too old to report its models resolves against this machine's lists, as before.
    */
   const rosterHere = (
     allowed: ReadonlyArray<WorkerModel>,
@@ -644,16 +644,21 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       const roster: Array<RosterModel> = [];
       const unavailable = new Map<number, string>();
       const following = allowed.some((entry) => "tier" in entry);
-      const placed =
-        hostId === undefined ? undefined : joinedMachines().find((m) => m.id === hostId)?.models;
-      // A machine's own list only narrows which of the table's candidates may run there.
+      const placedMachine =
+        hostId === undefined ? undefined : joinedMachines().find((m) => m.id === hostId);
+      const placed = placedMachine?.models;
+      const placedCodex = placedMachine?.codex?.models;
+      // A machine's own list only narrows which of the table's candidates may run there. Its
+      // Codex lists the way this machine's does, so its list stands as it is.
       const available = !following
         ? {}
         : placed !== undefined
-          ? { claude: hostCandidates(placed) }
+          ? {
+              claude: hostCandidates(placed),
+              ...(placedCodex === undefined ? {} : { codex: placedCodex }),
+            }
           : yield* availableHere(hosts);
-      const machineName =
-        hostId === undefined ? undefined : joinedMachines().find((m) => m.id === hostId)?.name;
+      const machineName = placedMachine?.name;
       for (const [index, stored] of allowed.entries()) {
         const { entry, missing } = rosterModelHere(stored, available);
         if (missing !== undefined) {
@@ -662,17 +667,19 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           continue;
         }
         // A pinned model the machine reports it lacks can't run there either.
+        const machineList =
+          entry.agent === "claude" ? placed : entry.agent === "codex" ? placedCodex : undefined;
         if (
-          placed !== undefined &&
+          machineList !== undefined &&
           !("tier" in stored) &&
           entry.profileId === undefined &&
-          entry.agent === "claude" &&
-          hostListing(placed, entry.model) === undefined
+          hostListing(machineList, entry.model) === undefined
         ) {
+          const cli = entry.agent === "claude" ? "Claude Code" : "Codex";
           roster.push(entry);
           unavailable.set(
             index,
-            `${machineName ?? "that machine"}'s Claude Code doesn't list ${entry.model}; pick another model, or update Claude Code there`,
+            `${machineName ?? "that machine"}'s ${cli} doesn't list ${entry.model}; pick another model, or update ${cli} there`,
           );
           continue;
         }

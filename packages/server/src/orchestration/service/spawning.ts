@@ -347,14 +347,15 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       if (hostId === undefined) return;
       const machine = joinedMachines().find((m) => m.id === hostId);
       const name = machine?.name ?? hostId;
-      if (chosen.agent !== "claude" || chosen.profileId !== undefined)
+      if ((chosen.agent !== "claude" && chosen.agent !== "codex") || chosen.profileId !== undefined)
         return yield* toolError(
           tool,
           refusal(
             "not_admitted",
-            `${name} runs direct Claude sessions only. Choose a direct Claude worker model, or spawn on this machine.`,
+            `${name} runs direct Claude and Codex sessions only. Choose a worker model on its own CLI, or spawn on this machine.`,
           ),
         );
+      if (chosen.agent === "codex") return yield* admitMachineCodex(tool, machine, name, chosen);
       if (machine?.tools?.some((entry) => entry.tool === "claude" && !entry.found))
         return yield* toolError(
           tool,
@@ -378,6 +379,53 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           refusal(
             "not_admitted",
             `${name} is not signed in to Claude Code. Use Settings → Machines → Sign in, or run claude /login on that machine, before spawning a worker.`,
+          ),
+        );
+    });
+  /**
+   * A direct Codex worker on a joined machine, as the machine says of its Codex. Where its status
+   * isn't in yet, nothing is refused on it: the open there says what is wrong, as for Claude.
+   */
+  const admitMachineCodex = (
+    tool: string,
+    machine: ReturnType<typeof joinedMachines>[number] | undefined,
+    name: string,
+    chosen: ModelRef,
+  ) =>
+    Effect.gen(function* () {
+      // A status without Codex comes from a host that doesn't run Codex sessions.
+      if (machine?.tools !== undefined && machine.codex === undefined)
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name}'s Gram is older than this one and doesn't run Codex sessions. Update Gram there (Settings → Machines), or choose a Claude worker model.`,
+          ),
+        );
+      const codex = machine?.codex;
+      if (codex === undefined) return;
+      if (!codex.found)
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name}: Codex is not installed. Install it there and run codex login before spawning a Codex worker.`,
+          ),
+        );
+      if (codex.models !== undefined && hostListing(codex.models, chosen.model) === undefined)
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name}'s Codex doesn't list ${chosen.model}. Pick a model it lists, or update Codex there.`,
+          ),
+        );
+      if (codex.signIn === "notSignedIn")
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name} is not signed in to Codex. Run codex login on that machine before spawning a Codex worker.`,
           ),
         );
     });
@@ -882,10 +930,10 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           if (!verdict.ok) return yield* toolError(tool, refusal(verdict.code, verdict.reason));
           // The efforts of the machine it runs on: a joined machine's own report where it gave
           // one, else this machine's list.
+          const machineRecord =
+            hostId === undefined ? undefined : joinedMachines().find((m) => m.id === hostId);
           const placedModels =
-            hostId === undefined
-              ? undefined
-              : joinedMachines().find((m) => m.id === hostId)?.models;
+            chosen.agent === "codex" ? machineRecord?.codex?.models : machineRecord?.models;
           const efforts =
             input.effort === undefined
               ? []
