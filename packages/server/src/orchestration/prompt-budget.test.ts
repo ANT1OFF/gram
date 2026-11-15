@@ -55,6 +55,11 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * never put to the user, and dropping an intent never asks. It was cut down first, with the rest
  * told by the refusal and the result's `gateWarning`, and `set_auto_merge` and `local_check` left
  * to their refusals; measured then at 63,617, 37,638 and 23,583.
+ * The orchestrator's held on 2026-11-15 after `spawn_worker`'s `sandbox` (a worker on a machine of
+ * its own, #659) came in at 64,590: its sentence was cut down, with what to do over the total left
+ * to the `over_total` refusal and idle pausing to docs/EMBEDDING.md, and `spawn_worker`,
+ * `add_worker_repo` and the prompt lost what the prompt, the held and route-offer results and the
+ * `ask_user` and `list_workers` descriptions already say; measured then at 63,329.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
   orchestrator: 63_700,
