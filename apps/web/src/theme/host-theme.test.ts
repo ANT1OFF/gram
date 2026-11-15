@@ -87,6 +87,42 @@ describe("a theme the mounting page gives Gram", () => {
     expect(css).not.toContain("data-palette");
   });
 
+  it("leaves the sidebar flush, square and in its rows' colours without a sidebar theme", () => {
+    const css = hostThemeCss(THEME);
+    expect(css).not.toContain("--sidebar-");
+    expect(hostThemeCss({ sidebar: {} })).toBe("");
+    expect(hostThemeCss({ sidebar: { mode: "flush" } })).toBe("");
+  });
+
+  it("draws an inset sidebar with a margin, the lg radius and an outline", () => {
+    const css = hostThemeCss({ sidebar: { mode: "inset" } });
+    expect(css).toMatch(/html\[data-look\] \{[^}]*--sidebar-inset: 8px;/);
+    expect(css).toMatch(/html\[data-look\] \{[^}]*--sidebar-radius: var\(--radius-lg\);/);
+    expect(css).toMatch(/html\[data-look\] \{[^}]*--sidebar-edge: 1px;/);
+    const own = hostThemeCss({ sidebar: { mode: "inset", margin: 12, radius: 14 } });
+    expect(own).toContain("--sidebar-inset: 12px;");
+    expect(own).toContain("--sidebar-radius: 14px;");
+    const flushRounded = hostThemeCss({ sidebar: { radius: 6 } });
+    expect(flushRounded).toContain("--sidebar-radius: 6px;");
+    expect(flushRounded).not.toContain("--sidebar-inset");
+  });
+
+  it("sets the sidebar's glyph and surface colours per mode", () => {
+    const sidebar = {
+      icon: { dark: "#c2a878", light: "#8c6d3a" },
+      background: { dark: "#101112" },
+    };
+    const onHost = hostThemeCss({ ...THEME, sidebar });
+    expect(onHost).toMatch(
+      /html\[data-palette="host-dark"\] \{[^}]*--sidebar-icon: #c2a878;[^}]*--sidebar-bg: #101112;/,
+    );
+    expect(onHost).toMatch(/html\[data-palette="host-light"\] \{[^}]*--sidebar-icon: #8c6d3a;/);
+    expect(onHost).not.toMatch(/html\[data-palette="host-light"\] \{[^}]*--sidebar-bg/);
+    const onGrams = hostThemeCss({ sidebar });
+    expect(onGrams).toMatch(/:root\[data-mode="dark"\] \{[^}]*--sidebar-icon: #c2a878;/);
+    expect(onGrams).toMatch(/:root\[data-mode="light"\] \{[^}]*--sidebar-icon: #8c6d3a;/);
+  });
+
   it("paints its palette from first paint, until the person picks another", () => {
     installHostTheme(document, THEME);
     expect(document.getElementById("gram-host-theme")?.textContent).toContain("host-dark");

@@ -441,6 +441,7 @@ await mountGram({
     radii: { sm: 4, md: 6, lg: 8 },
     shadows: "none",
     chart: { dark: ["#6f6d66", "#c2a878", "#d27a6e"], light: ["#b5b2a8", "#8c6d3a", "#c4685b"] },
+    sidebar: { mode: "inset", margin: 8, radius: 12, icon: { dark: "#c2a878", light: "#8c6d3a" } },
   },
 });
 ```
@@ -454,6 +455,14 @@ await mountGram({
   hold.
 - `fonts`, `radii` and `shadows: "none"` set the look's values. The Fonts setting still wins.
 - `chart` names colours for charts on your pages, `--chart-1` onwards. Gram's screens draw none.
+- `sidebar` shapes the open sidebar. `mode: "inset"` draws it as a panel apart from the window's
+  edges, `margin` pixels from them (8 by default), with its corners rounded and an outline all
+  round; `flush`, the default, runs it to the edges. `radius` sets its corners in pixels (0 when
+  flush, the `lg` radius when inset). `icon` colours the glyphs of its places and controls and
+  `background` its surface, the compact strip's too, per mode, on your palettes or, without them,
+  on Gram's. The current place's glyph keeps the accent and status marks keep their tones. The
+  compact strip, the sidebar shown over the page from it and a phone's drawer stay flush. For your
+  own markup, `theme.css` names the glyph colour `text-sidebar-icon`.
 
 Leave `theme` out and the app looks exactly as it does on its own.
 

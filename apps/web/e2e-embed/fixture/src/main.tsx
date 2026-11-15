@@ -362,6 +362,16 @@ mountGram({
       }
     : "mock",
   ...(pathUnder === undefined ? {} : { basePath: pathUnder }),
+  ...(new URLSearchParams(location.search).has("inset-sidebar")
+    ? {
+        theme: {
+          sidebar: {
+            mode: "inset" as const,
+            icon: { dark: "rgb(214, 160, 92)", light: "rgb(156, 92, 34)" },
+          },
+        },
+      }
+    : {}),
   shell: {
     machines: {
       // What a real app hands to its own service, which begins the wait again and starts a machine.

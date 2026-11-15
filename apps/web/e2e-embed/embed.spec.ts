@@ -860,6 +860,46 @@ test("the sidebar can be drawn roomy, with the app's head and account", async ({
   expect(errors).toEqual([]);
 });
 
+test("the theme can draw the sidebar inset, with glyphs of its colour; without it, it is flush", async ({
+  page,
+}) => {
+  const shape = () =>
+    page.getByTestId("overview-sidebar").evaluate((element) => {
+      const style = getComputedStyle(element);
+      const icon = (id: string) => {
+        const control = element.querySelector(`[data-testid="${id}"]`)!;
+        return {
+          control: getComputedStyle(control).color,
+          svg: getComputedStyle(control.querySelector("svg")!).color,
+        };
+      };
+      return {
+        margin: style.margin,
+        radius: style.borderTopLeftRadius,
+        edges: [style.borderTopWidth, style.borderRightWidth, style.borderLeftWidth],
+        hide: icon("overview-hide"),
+        search: icon("overview-search"),
+      };
+    });
+  const errors = await mounted(page);
+  const flush = await shape();
+  expect(flush.margin).toBe("0px");
+  expect(flush.radius).toBe("0px");
+  expect(flush.edges).toEqual(["0px", "1px", "0px"]);
+  expect(flush.hide.svg).toBe(flush.hide.control);
+  expect(flush.search.svg).toBe(flush.search.control);
+
+  errors.push(...(await mounted(page, "/?inset-sidebar")));
+  const inset = await shape();
+  expect(inset.margin).toBe("8px");
+  expect(inset.radius).not.toBe("0px");
+  expect(inset.edges).toEqual(["1px", "1px", "1px"]);
+  expect(inset.hide.svg).toBe("rgb(214, 160, 92)");
+  expect(inset.search.svg).toBe("rgb(214, 160, 92)");
+  expect(inset.search.control).toBe(flush.search.control);
+  expect(errors).toEqual([]);
+});
+
 test("a collapsible group starts closed, keeps its place in view, and stays as it was left", async ({
   page,
 }) => {

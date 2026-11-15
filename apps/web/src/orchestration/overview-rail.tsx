@@ -513,7 +513,11 @@ function StripFoot() {
       >
         <History aria-hidden className="size-icon-row" />
       </Tile>
-      <TopLeftNav update={false} hintSide="top" className="flex-col" />
+      <TopLeftNav
+        update={false}
+        hintSide="top"
+        className="flex-col [:where(&)_svg]:text-sidebar-icon"
+      />
     </div>
   );
 }

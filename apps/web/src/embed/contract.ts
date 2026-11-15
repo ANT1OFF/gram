@@ -658,6 +658,42 @@ export interface HostTheme {
     readonly dark?: readonly string[];
     readonly light?: readonly string[];
   };
+  /** How the open sidebar is drawn. Left out, it is Gram's own. */
+  readonly sidebar?: HostSidebarTheme;
+}
+
+/**
+ * The sidebar's part of a host theme. Each value left out keeps Gram's own: flush to the window's
+ * edge, square, its places' glyphs in their row's colour on the chrome surface.
+ */
+export interface HostSidebarTheme {
+  /**
+   * `flush` (the default) runs the open sidebar to the window's edges with a divider on its right.
+   * `inset` draws it as a panel apart from them: a margin round it, its corners rounded and an
+   * outline all round. The compact strip, the sidebar shown over the page from it and a phone's
+   * drawer stay flush.
+   */
+  readonly mode?: "flush" | "inset";
+  /** The `inset` sidebar's margin from the window's edges, in pixels. Defaults to 8. */
+  readonly margin?: number;
+  /**
+   * The open sidebar's corner radius in pixels. Defaults to 0 when `flush` and to the theme's `lg`
+   * radius when `inset`.
+   */
+  readonly radius?: number;
+  /**
+   * The glyphs of the sidebar's places and controls, per mode. The current place's glyph keeps the
+   * accent, and status marks keep their tones.
+   */
+  readonly icon?: {
+    readonly dark?: string;
+    readonly light?: string;
+  };
+  /** The sidebar's surface, per mode, the compact strip's too. */
+  readonly background?: {
+    readonly dark?: string;
+    readonly light?: string;
+  };
 }
 
 export interface MountOptions {
@@ -678,7 +714,8 @@ export interface MountOptions {
   readonly shell?: ShellContributions;
   /**
    * The app's look in this page: a palette for each mode that takes the place of Gram's default
-   * one, colours set over it, fonts, radii, shadows and chart colours (`--chart-1` onwards). A
+   * one, colours set over it, fonts, radii, shadows, chart colours (`--chart-1` onwards) and the
+   * sidebar's shape, glyph colour and surface. A
    * person's own palette and fonts, picked in Settings, still win. Left out, the look is Gram's.
    */
   readonly theme?: HostTheme;
