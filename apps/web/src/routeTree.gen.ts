@@ -17,6 +17,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ThreadsRouteImport } from './routes/threads'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
+import { Route as SettingsPageRouteImport } from './routes/settings.$page'
 import { Route as SettingsAboutRouteImport } from './routes/settings.about'
 import { Route as SettingsAdvancedRouteImport } from './routes/settings.advanced'
 import { Route as SettingsAgentsRouteImport } from './routes/settings.agents'
@@ -83,6 +84,11 @@ const UsageRoute = UsageRouteImport.update({
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsPageRoute = SettingsPageRouteImport.update({
+  id: '/$page',
+  path: '/$page',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsAboutRoute = SettingsAboutRouteImport.update({
@@ -230,6 +236,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRouteWithChildren
   '/threads': typeof ThreadsRoute
   '/usage': typeof UsageRoute
+  '/settings/$page': typeof SettingsPageRoute
   '/settings/about': typeof SettingsAboutRoute
   '/settings/advanced': typeof SettingsAdvancedRouteWithChildren
   '/settings/agents': typeof SettingsAgentsRoute
@@ -266,6 +273,7 @@ export interface FileRoutesByTo {
   '/new-workspace': typeof NewWorkspaceRoute
   '/threads': typeof ThreadsRoute
   '/usage': typeof UsageRoute
+  '/settings/$page': typeof SettingsPageRoute
   '/settings/about': typeof SettingsAboutRoute
   '/settings/advanced': typeof SettingsAdvancedRouteWithChildren
   '/settings/agents': typeof SettingsAgentsRoute
@@ -304,6 +312,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRouteWithChildren
   '/threads': typeof ThreadsRoute
   '/usage': typeof UsageRoute
+  '/settings/$page': typeof SettingsPageRoute
   '/settings/about': typeof SettingsAboutRoute
   '/settings/advanced': typeof SettingsAdvancedRouteWithChildren
   '/settings/agents': typeof SettingsAgentsRoute
@@ -343,6 +352,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/threads'
     | '/usage'
+    | '/settings/$page'
     | '/settings/about'
     | '/settings/advanced'
     | '/settings/agents'
@@ -379,6 +389,7 @@ export interface FileRouteTypes {
     | '/new-workspace'
     | '/threads'
     | '/usage'
+    | '/settings/$page'
     | '/settings/about'
     | '/settings/advanced'
     | '/settings/agents'
@@ -416,6 +427,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/threads'
     | '/usage'
+    | '/settings/$page'
     | '/settings/about'
     | '/settings/advanced'
     | '/settings/agents'
@@ -515,6 +527,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/settings/'
       preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/$page': {
+      id: '/settings/$page'
+      path: '/$page'
+      fullPath: '/settings/$page'
+      preLoaderRoute: typeof SettingsPageRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/about': {
@@ -721,6 +740,7 @@ const SettingsAdvancedRouteWithChildren =
   SettingsAdvancedRoute._addFileChildren(SettingsAdvancedRouteChildren)
 
 interface SettingsRouteChildren {
+  SettingsPageRoute: typeof SettingsPageRoute
   SettingsAboutRoute: typeof SettingsAboutRoute
   SettingsAdvancedRoute: typeof SettingsAdvancedRouteWithChildren
   SettingsAgentsRoute: typeof SettingsAgentsRoute
@@ -748,6 +768,7 @@ interface SettingsRouteChildren {
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsPageRoute: SettingsPageRoute,
   SettingsAboutRoute: SettingsAboutRoute,
   SettingsAdvancedRoute: SettingsAdvancedRouteWithChildren,
   SettingsAgentsRoute: SettingsAgentsRoute,

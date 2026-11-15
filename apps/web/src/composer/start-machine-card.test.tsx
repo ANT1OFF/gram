@@ -117,6 +117,42 @@ describe("the start card", () => {
     });
   });
 
+  it("offers the deployment's choices, locks what the person may not pick, and starts with theirs", async () => {
+    useEmbedShell.setState({ machines: { noun: "sandbox", repositories: "theirs" } });
+    localStorage.removeItem("gram:on-demand-choices");
+    const calls = serve([
+      {
+        available: true,
+        choices: {
+          note: "Your team allows up to Large.",
+          choices: [
+            {
+              id: "size",
+              label: "Size",
+              default: "small",
+              options: [
+                { id: "small", label: "Small", detail: "1 CPU · 2 GB", available: true },
+                { id: "large", label: "Large", detail: "4 CPU · 8 GB", available: true },
+                { id: "xlarge", label: "Extra large", available: false, note: "Above the limit" },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+    show();
+    expect(await screen.findByText("Your team allows up to Large.")).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /Extra large/ }).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("radio", { name: /Large 4 CPU/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Start a sandbox/ }));
+    await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
+    expect(calls.find((call) => call.method === "POST")?.body).toBe(
+      JSON.stringify({ repositories: [], choices: { size: "large" } }),
+    );
+    // Kept for the next start.
+    expect(localStorage.getItem("gram:on-demand-choices")).toBe(JSON.stringify({ size: "large" }));
+  });
+
   it("shows the start step by step, and nothing once the machine is up", async () => {
     serve([{ available: true, progress: { hostKey: "k", phase: "joining", at: 1 } }]);
     show();

@@ -514,6 +514,15 @@ export interface AgentHost {
     readonly cwd: string;
     readonly agentSessionId: string;
   }) => Effect.Effect<void, AgentUnavailable | NotFound>;
+  /**
+   * Marks one of `listSessions({ cwd })`'s sessions archived, or not, in the agent's own list, so
+   * its resume list agrees with Gram's. Absent when the agent keeps no such mark.
+   */
+  readonly setSessionArchived?: (options: {
+    readonly cwd: string;
+    readonly agentSessionId: string;
+    readonly archived: boolean;
+  }) => Effect.Effect<void, AgentUnavailable>;
   /** Present when Gram can write the agent's MCP config through this host. */
   readonly mcpConfig?: AgentMcpConfig;
   /**

@@ -1126,3 +1126,28 @@ test.describe("on a phone", () => {
     expect(errors).toEqual([]);
   });
 });
+
+test("Back and a link out of Settings leave it for an added page", async ({ page }) => {
+  const errors = await mounted(page, "/w/acme/govern/policies");
+  await page.getByTestId("fixture-button").click();
+  await expect(page).toHaveURL(/\/w\/acme\/settings\/about$/);
+  // Back returns to the added page it came from, and stays there.
+  await page.getByTestId("settings-back").click();
+  await expect(page).toHaveURL(/\/w\/acme\/govern\/policies$/);
+  await expect(page.getByTestId("fixture-policies")).toBeVisible();
+  await page.waitForTimeout(300);
+  await expect(page).toHaveURL(/\/w\/acme\/govern\/policies$/);
+  expect(errors).toEqual([]);
+});
+
+test("navigate with replace takes the current entry's place in the history", async ({ page }) => {
+  const errors = await mounted(page, "/w/acme/");
+  await page.getByTestId("embed-navigation").getByRole("link", { name: "Policies" }).click();
+  await expect(page).toHaveURL(/\/w\/acme\/govern\/policies$/);
+  await page.getByTestId("fixture-replace").click();
+  await expect(page).toHaveURL(/\/w\/acme\/govern\/limits$/);
+  // Back skips the page that sent the window on.
+  await page.goBack();
+  await expect(page).toHaveURL(/\/w\/acme\/$/);
+  expect(errors).toEqual([]);
+});

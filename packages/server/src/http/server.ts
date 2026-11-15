@@ -510,7 +510,8 @@ export const AuthMiddleware = HttpRouter.middleware(
                               ),
                               Effect.orElseSucceed(() => undefined),
                             ),
-                          answer: orchestration.answerQuestionAsUser,
+                          answer: (input, options) =>
+                            orchestration.answerQuestionAsUser(input, options),
                           mayReach: (workspaceId, threadId) =>
                             Effect.gen(function* () {
                               const ownerOf = ownersOf(remoteHosts?.machines);

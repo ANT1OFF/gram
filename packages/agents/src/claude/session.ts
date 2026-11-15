@@ -1901,6 +1901,8 @@ export const makeClaudeHost = (
 
     const sdkListSessions = sdk.listSessions;
     const sdkDeleteSession = sdk.deleteSession;
+    const sdkArchiveSession = sdk.archiveSession;
+    const sdkUnarchiveSession = sdk.unarchiveSession;
     const sdkSessionMessages = sdk.getSessionMessages;
 
     return {
@@ -2014,6 +2016,24 @@ export const makeClaudeHost = (
                       ),
                 ),
               ),
+          }),
+      ...(sdkArchiveSession === undefined || sdkUnarchiveSession === undefined
+        ? {}
+        : {
+            // Scoped to the folder's project, as `deleteSession`; the SDK throws for a session it
+            // doesn't find there.
+            setSessionArchived: ({ cwd, agentSessionId, archived }) =>
+              Effect.tryPromise({
+                try: () =>
+                  (archived ? sdkArchiveSession : sdkUnarchiveSession)(agentSessionId, {
+                    dir: cwd,
+                  }),
+                catch: (error) =>
+                  new AgentUnavailable({
+                    agent: "claude",
+                    message: `Couldn't ${archived ? "archive" : "unarchive"} the Claude session: ${describeError(error)}`,
+                  }),
+              }),
           }),
       ...(sdkSessionMessages === undefined
         ? {}

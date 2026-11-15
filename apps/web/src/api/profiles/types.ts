@@ -5,6 +5,7 @@ import type {
   HelperStatus,
   ModelList,
   ModelSuggestions,
+  OpenRouterSignInResult,
   ProfileId,
   SeedProfilesResult,
   SetKeyResult,
@@ -32,6 +33,13 @@ export interface ProfilesApi {
   discoverProfileModels(profileId: ProfileId): Promise<readonly GatewayModel[]>;
   /** The server reads the key from OpenCode's `auth.json`; call only after the user consents. */
   importProfileKey(profileId: ProfileId): Promise<{ readonly imported: boolean }>;
+  /**
+   * Starts signing in with OpenRouter: the consent page to open in the browser, and the attempt
+   * `finishOpenRouterSignIn` waits on.
+   */
+  startOpenRouterSignIn(): Promise<{ readonly attemptId: string; readonly url: string }>;
+  /** Waits for the person to come back from OpenRouter; the server saves the key it gets. */
+  finishOpenRouterSignIn(attemptId: string): Promise<OpenRouterSignInResult>;
   /** Today's helper-model usage against the budget, and why helpers are paused, if they are. */
   helperStatus(): Promise<HelperStatus>;
   /** The user is typing in a composer, so background helper jobs wait. */

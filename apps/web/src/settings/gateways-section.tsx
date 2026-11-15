@@ -2,6 +2,7 @@ import {
   gatewayModelUsable,
   helperChoice,
   NO_KEYRING_MESSAGE,
+  OPENROUTER_BASE_URL,
   type GatewayProfile,
   type ProfileId,
   type SetKeyResult,
@@ -9,11 +10,21 @@ import {
 } from "@gram/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { KeyRound, Pencil, ShieldCheck, Star, Trash2, TriangleAlert } from "lucide-react";
-import { useId, useState, type FormEvent } from "react";
+import {
+  ExternalLink,
+  KeyRound,
+  Pencil,
+  Route,
+  ShieldCheck,
+  Star,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react";
+import { useId, useRef, useState, type FormEvent } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
+import { openExternalUrl } from "@/api/open-external";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -113,6 +124,9 @@ export function GatewaysSettings() {
           ))}
         </ul>
       )}
+      {profiles !== undefined && !profiles.some((profile) => profile.kind === "openrouter") && (
+        <AddOpenRouter taken={taken} noKeyring={vault?.kind === "no-keyring"} onDone={setAdded} />
+      )}
       {adding ? (
         <ProfileForm
           taken={taken}
@@ -153,6 +167,181 @@ export function GatewaysSettings() {
       )}
       <ShowCostToggle />
     </div>
+  );
+}
+
+/** Where OpenRouter lets people keep providers from storing or training on their prompts. */
+export const OPENROUTER_PRIVACY_URL = "https://openrouter.ai/settings/privacy";
+
+/** Whether a pasted key looks like an OpenRouter one. */
+export const openRouterKeyLooksRight = (key: string): boolean => /^sk-or-\S+$/.test(key.trim());
+
+/**
+ * One card for OpenRouter above the custom gateways: sign in, which makes a key in the person's own
+ * OpenRouter account, or paste one. Either makes an OpenRouter profile, on which Claude Code is
+ * offered Anthropic's models and Codex OpenAI's.
+ */
+function AddOpenRouter({
+  taken,
+  noKeyring,
+  onDone,
+}: {
+  taken: ReadonlySet<string>;
+  noKeyring: boolean;
+  onDone: (outcome: AddOutcome) => void;
+}) {
+  const api = useApi();
+  const invalidate = useInvalidateProfiles();
+  const keyId = useId();
+  const [pasting, setPasting] = useState(false);
+  const [key, setKey] = useState("");
+  // A cancelled sign-in's late answer is ignored rather than shown.
+  const attempt = useRef(0);
+  const signIn = useMutation({
+    mutationFn: async (): Promise<AddOutcome | undefined> => {
+      const mine = ++attempt.current;
+      const started = await api.startOpenRouterSignIn();
+      await openExternalUrl(api, started.url);
+      const result = await api.finishOpenRouterSignIn(started.attemptId);
+      if (mine !== attempt.current) return undefined;
+      const { profileId, ...rest } = result;
+      return { profileId: profileId as ProfileId, result: rest };
+    },
+    onSuccess: async (outcome) => {
+      await invalidate();
+      if (outcome) onDone(outcome);
+    },
+  });
+  // The key is read from state, never passed as a mutation variable, so it stays out of the cache.
+  const paste = useMutation({
+    mutationFn: async (): Promise<AddOutcome> => {
+      const saved = await api.upsertProfile({
+        id: profileIdFor("OpenRouter", taken),
+        name: "OpenRouter",
+        baseURL: OPENROUTER_BASE_URL,
+        kind: "openrouter",
+        keyRef: "",
+        models: [],
+      });
+      return { profileId: saved.id, result: await api.setProfileKey(saved.id, key.trim()) };
+    },
+    onSuccess: async (outcome) => {
+      setKey("");
+      await invalidate();
+      onDone(outcome);
+    },
+    onError: invalidate,
+  });
+  const waiting = signIn.isPending;
+  const keyOk = openRouterKeyLooksRight(key);
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    if (keyOk) paste.mutate();
+  };
+  const error = signIn.error ?? paste.error;
+
+  return (
+    <section
+      aria-label="Add OpenRouter"
+      className="flex flex-col gap-3 rounded-lg border border-border p-3"
+    >
+      <header className="flex items-center gap-2">
+        <Route aria-hidden className="size-4 text-muted-foreground" />
+        <h3 className="text-reading font-medium">OpenRouter</h3>
+      </header>
+      <p className="text-reading text-muted-foreground">
+        One account for Claude Code and Codex: Claude Code runs Anthropic&apos;s models through it
+        and Codex OpenAI&apos;s, paid from your OpenRouter credits.
+      </p>
+      {noKeyring ? (
+        <p role="status" className={noteCls}>
+          <TriangleAlert aria-hidden className={noteIconCls} />
+          {NO_KEYRING_MESSAGE}
+        </p>
+      ) : waiting ? (
+        <div role="status" className="flex flex-wrap items-center gap-2">
+          <Spinner className="size-3.5" />
+          <span className="text-reading text-muted-foreground">
+            Approve Gram on OpenRouter&apos;s page in your browser…
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              attempt.current++;
+              signIn.reset();
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" onClick={() => signIn.mutate()}>
+            Sign in with OpenRouter
+          </Button>
+          {!pasting && (
+            <Button size="sm" variant="outline" onClick={() => setPasting(true)}>
+              <KeyRound aria-hidden />
+              Paste a key
+            </Button>
+          )}
+        </div>
+      )}
+      {pasting && !waiting && !noKeyring && (
+        <form
+          aria-label="Paste an OpenRouter key"
+          onSubmit={onSubmit}
+          className="flex flex-col gap-1"
+        >
+          <label htmlFor={keyId} className={labelCls}>
+            OpenRouter key
+          </label>
+          <div className="flex gap-2">
+            <input
+              id={keyId}
+              type="password"
+              autoComplete="off"
+              className={inputCls}
+              placeholder="sk-or-…"
+              value={key}
+              onChange={(event) => setKey(event.target.value)}
+            />
+            <WhyDisabled reason={keyOk ? undefined : "An OpenRouter key starts with sk-or-."}>
+              <Button type="submit" size="sm" disabled={!keyOk || paste.isPending}>
+                Save
+              </Button>
+            </WhyDisabled>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setPasting(false)}>
+              Cancel
+            </Button>
+          </div>
+          <span className="text-meta text-muted-foreground">
+            Gram stores it once and never shows it again.
+          </span>
+        </form>
+      )}
+      <p className={noteCls}>
+        <ShieldCheck aria-hidden className={noteIconCls} />
+        <span>
+          To keep providers from storing or training on your prompts, turn that off in{" "}
+          <button
+            type="button"
+            className="inline-flex items-center gap-0.5 underline underline-offset-2 hover:text-foreground"
+            onClick={() => void openExternalUrl(api, OPENROUTER_PRIVACY_URL)}
+          >
+            OpenRouter&apos;s privacy settings
+            <ExternalLink aria-hidden className="size-3" />
+          </button>
+          .
+        </span>
+      </p>
+      {error !== undefined && error !== null && (
+        <p role="alert" className="text-reading text-destructive">
+          {errorMessage(error)}
+        </p>
+      )}
+    </section>
   );
 }
 

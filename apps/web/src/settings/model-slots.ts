@@ -141,12 +141,14 @@ export const followOfPinned = (
   entry: PinnedWorkerModel,
   available: AvailableModels,
 ): WorkerModel | undefined => {
-  if (entry.profileId !== undefined) return undefined;
-  const listed = findListed(entry.agent, available[entry.agent] ?? [], entry.model);
+  // The table names no OpenCode models, so a pin there has no tier to follow.
+  const agent = entry.agent;
+  if (entry.profileId !== undefined || agent === "opencode") return undefined;
+  const listed = findListed(agent, available[agent] ?? [], entry.model);
   if (listed === undefined) return undefined;
-  const runs = TIERS.flatMap((tier): TierRef[] => [{ tier }, { tier, agent: entry.agent }])
+  const runs = TIERS.flatMap((tier): TierRef[] => [{ tier }, { tier, agent }])
     .map((ref) => ({ ref, resolved: resolveTier(RECOMMENDED, ref, available) }))
-    .filter(({ resolved }) => resolved?.agent === entry.agent && resolved.listed.id === listed.id);
+    .filter(({ resolved }) => resolved?.agent === agent && resolved.listed.id === listed.id);
   const pick = runs.find(({ resolved }) => resolved!.ref.variant === entry.variant) ?? runs[0];
   if (pick === undefined) return undefined;
   return {

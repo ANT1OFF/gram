@@ -537,8 +537,12 @@ export const makeAgentEvents = ({
           }
           const status = agentStatus(event.status);
           rt.agentRunning = status === "running" && rt.turn === undefined;
+          const errorAtRest = rt.errorAtRest;
+          rt.errorAtRest = undefined;
           if (status === "idle") {
-            // `idle` after `turnEnd` is the previous turn's tail; `turnEnd` already settled it.
+            // `idle` after `turnEnd` is the previous turn's tail; `turnEnd` already settled it. So
+            // is one after a deadline's stop that already failed the turn: the error stays.
+            if (errorAtRest?.session === rt.session && rt.status === "error") return;
             if (rt.turn === undefined && rt.status !== "idle") yield* becomeIdle(rt);
             return;
           }
@@ -553,8 +557,9 @@ export const makeAgentEvents = ({
           const compactionChanged = !sameCompaction(rt.compaction, compaction);
           const compactionStartedAt = compaction?.startedAt ?? rt.compaction?.startedAt;
           // Compacting is the agent at work, however little it streams: its start and end count as
-          // progress, so the silent-tool watch measures from them.
-          if (compactionChanged) {
+          // progress, so the silent-tool watch measures from them. So does the agent saying again
+          // that its turn runs, as Claude does while a long hook holds a tool call.
+          if (compactionChanged || (event.status === "running" && rt.status === "running")) {
             rt.lastProgressAt = yield* Clock.currentTimeMillis;
             yield* clearQuiet(rt);
           }

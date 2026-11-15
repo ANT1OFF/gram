@@ -58,9 +58,11 @@ const withVariant = (choice: AgentChoice, variant: ReasoningVariant | undefined)
 /** The `ModelRef` a choice starts a thread on. */
 export const choiceModel = (choice: AgentChoice): ModelRef => withVariant(choice, choice.variant);
 
-/** Every harness is offered, including when signed out. */
+/** The harnesses the pickers offer, each including when signed out. */
+export const OFFERED_AGENTS: readonly AgentKind[] = AgentKind.literals;
+
 export function useAvailableAgents(): readonly AgentKind[] {
-  return AgentKind.literals;
+  return OFFERED_AGENTS;
 }
 
 /** A profile choice meaning no gateway: the agent's own authentication. */

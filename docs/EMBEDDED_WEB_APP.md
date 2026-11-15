@@ -129,6 +129,22 @@ it closed. Once the person opens or closes it, their choice is kept on the devic
 `id`. Closed, it still shows the row the window is at, and its heading says the sum of its hidden
 rows' counts; the compact sidebar and the palette list its rows either way.
 
+**Settings.** Gram's Settings pages are about the computer Gram runs on: agent CLIs, machines,
+the terminal, review requests from `gh`, updates. `settings.gram` lists the ids of the pages of
+Gram's to keep (`["appearance", "keyboard"]`, in Gram's order); a page that opens from another,
+such as `terminal` from `appearance`, stays only with it. `settings.pages` adds pages of your own,
+listed first, each at `/settings/<id>` with a `label`, an `icon`, a one-line `description` (under
+its heading, and what Settings search reads with its `keywords`) and a `component`, drawn in
+Settings' column under that heading. An id of Gram's, one that isn't lower-case words and dashes,
+or one given twice is left out. A page that is not kept leaves Settings' list and search, and its
+address opens Settings' first page. Without `usage` the title bar has no usage meter and a phone's
+"…" no Usage; without `general` its Sending setting is on Keyboard. On a hosted server Keyboard
+leaves out `keybindings.json`, a file on the server. Read once, at mount.
+
+**The title bar's "…".** It holds the thread's, the workspace's and the window's controls (Workers,
+Tidy up, Pause, Memory, the layout), so on your own pages, the `home` among them, it is not shown.
+Where `threadsPage.workspaces` names Gram's workspace (a "Project"), the menu says that word.
+
 **The compact sidebar's peek.** Resting the pointer on the compact strip opens the sidebar over the
 page beside it. `sidebar.peek: false` turns that off: the strip then has an Expand sidebar tile at
 its head, which opens the sidebar again, and focus from the keyboard still opens it over the page.
@@ -263,7 +279,9 @@ the workspaces of the one server.
 
 Inside your pages and switcher, `ShellLink` is a link to a path under the app that doesn't load
 the page again, and `useShellLocation()` gives the path the window is on (without `basePath`) and
-a `navigate`.
+a `navigate`. A page that sends the window on by itself (a redirect, or dropping a query it has
+read) calls `navigate(to, { replace: true })`, so the browser's Back skips it instead of landing
+on it and being sent on again.
 
 `ShellThread` puts one thread inside a page of yours: `<ShellThread threadId={id} />` draws its
 transcript, cards and composer without the thread's own header, and fills the element you put it

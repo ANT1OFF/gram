@@ -6,13 +6,13 @@ import { useShortcut } from "@/keyboard/registry";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { usePhone } from "@/lib/use-phone";
 import { cn } from "@/lib/utils";
-import { useSettingsKeyboard } from "@/settings/leave-settings";
+import { isSettingsPath, useSettingsKeyboard } from "@/settings/leave-settings";
 import {
   isSubpage,
   rememberSettingsPage,
-  SETTINGS_GROUPS,
-  SETTINGS_PAGES,
   settingsGroupOf,
+  shownSettingsGroups,
+  shownSettingsPages,
   subpagesOf,
   type SettingsPage,
 } from "@/settings/pages";
@@ -71,7 +71,9 @@ function SettingsLayout() {
   });
   const pathname = useLocation({ select: (location) => location.pathname });
   // A page's own sub-pages, such as one workspace's settings, keep its tab selected.
-  const current = SETTINGS_PAGES.find(
+  // On Gram's own every page; in front of an embedding app its own and the ones of Gram's it keeps.
+  const pages = shownSettingsPages();
+  const current = pages.find(
     (page) => pathname === page.path || pathname.startsWith(`${page.path}/`),
   );
   const subpage = current !== undefined && pathname !== current.path;
@@ -91,11 +93,24 @@ function SettingsLayout() {
   const beforeSetup = useBeforeSetup();
   const phone = usePhone();
   const navigate = useNavigate();
+  // A page the embedding app left out (a link from a menu, or an old address) opens the first.
+  // Only while the window is still in Settings: on a step out, the location moves before this
+  // layout unmounts, and sending it back here would undo Back and every link out of Settings.
+  const first = pages[0];
+  useEffect(() => {
+    if (
+      current === undefined &&
+      first !== undefined &&
+      isSettingsPath(pathname) &&
+      pathname !== "/settings"
+    )
+      void navigate({ to: first.path as "/settings/general", replace: true });
+  }, [current, first, pathname, navigate]);
   const resultsRef = useRef<HTMLDivElement>(null);
   /** Opens the page of the first setting the search finds, with that setting marked. */
   const openFirstMatch = () => {
     const path = firstMatchedPage(resultsRef.current);
-    const page = SETTINGS_PAGES.find((each) => each.path === path);
+    const page = pages.find((each) => each.path === path);
     if (page === undefined) return;
     const words = query.trim();
     setQuery("");
@@ -106,7 +121,7 @@ function SettingsLayout() {
     <div className="@container/settings flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex min-h-0 flex-1 overflow-hidden @max-2xl/settings:flex-col!">
         <SettingsNav
-          groups={SETTINGS_GROUPS}
+          groups={shownSettingsGroups()}
           current={current === undefined ? undefined : current.group}
           sections={
             searching || subpage || current === undefined || isSubpage(current)
@@ -159,7 +174,7 @@ function SettingsLayout() {
                 "[--settings-column-width:var(--settings-column-wide)]",
             )}
           >
-            {SETTINGS_PAGES.map((page) => {
+            {pages.map((page) => {
               if (page.id === current?.id) {
                 return (
                   <PageSection

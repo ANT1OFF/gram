@@ -569,6 +569,7 @@ export const makeTurnLifecycle = ({
   ) =>
     Effect.gen(function* () {
       rt.admitted = false;
+      rt.errorAtRest = undefined;
       yield* cancelIdleTimer(rt);
       const now = yield* Clock.currentTimeMillis;
       const turn: Turn = {

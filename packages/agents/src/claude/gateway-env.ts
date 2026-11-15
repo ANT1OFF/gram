@@ -36,7 +36,8 @@ const newer = (a: ReadonlyArray<number>, b: ReadonlyArray<number>): boolean => {
 
 /**
  * The gateway model `family` should run on: the catalog's `<family>-latest` alias, else its newest
- * `a-claude-<family>-<version>` route, then `claude-<family>-<version>`. A thread on a `-eu` route
+ * `a-claude-<family>-<version>` route, then `claude-<family>-<version>` or OpenRouter's
+ * `anthropic/claude-<family>-<version>`. A thread on a `-eu` route
  * keeps its family aliases on that suffix convention. Names alone establish no privacy,
  * location, entitlement or hosted-tool guarantee; those belong to the configured provider.
  */
@@ -51,7 +52,7 @@ export const familyModel = (
   if (!eu && ids.includes(`${family}-latest`)) return `${family}-latest`;
   const pattern = eu
     ? new RegExp(`^claude-${family}-(\\d+(?:\\.\\d+)*)-eu$`)
-    : new RegExp(`^(?:a-)?claude-${family}-(\\d+(?:\\.\\d+)*)$`);
+    : new RegExp(`^(?:a-|anthropic\\/)?claude-${family}-(\\d+(?:\\.\\d+)*)$`);
   let best:
     | { readonly id: string; readonly version: ReadonlyArray<number>; readonly native: boolean }
     | undefined;

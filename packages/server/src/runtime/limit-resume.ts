@@ -39,6 +39,7 @@ import type {
   ThreadStatus,
   ThreadError,
 } from "@gram/contracts";
+import { limitDetail } from "@gram/contracts";
 import type { ResumeHold, QueueHold, TurnHold } from "./turn-holds.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import type { NotifyObservers } from "./runtime-observer.ts";
@@ -258,6 +259,9 @@ export const makeLimitResume = ({
       if (found === undefined) return undefined;
       const since = before?.since ?? now;
       const interrupted = before?.turnId ?? turnId;
+      // The provider's own words, shown under the wait's line in place of the raw error.
+      const words = limitDetail(detail);
+      const said = words === undefined ? {} : { detail: words };
       if (found.kind === "backoff") {
         const attempt = (before?.attempt ?? 0) + 1;
         if (attempt > BACKOFF_MAX_ATTEMPTS) {
@@ -275,6 +279,7 @@ export const makeLimitResume = ({
           since,
           attempt,
           ...(interrupted === undefined ? {} : { turnId: interrupted }),
+          ...said,
         } satisfies LimitWait;
       }
       const resetsAt = found.resetsAt ?? now + LIMIT_UNKNOWN_RESET_MS;
@@ -289,6 +294,7 @@ export const makeLimitResume = ({
         since,
         attempt: 0,
         ...(interrupted === undefined ? {} : { turnId: interrupted }),
+        ...said,
       } satisfies LimitWait;
     });
 

@@ -92,6 +92,45 @@ export const parseModelInfo = (body: unknown): Map<string, GatewayModelInfo> | n
   return infos;
 };
 
+/** What a `/models` entry says of itself, as OpenRouter's do: a name, a context, its parameters. */
+export interface InlineModel {
+  readonly name?: string;
+  readonly contextWindow?: number;
+  readonly info: GatewayModelInfo;
+}
+
+/**
+ * Descriptions carried in the `/models` body itself, for the entries that list their
+ * `supported_parameters` (OpenRouter's format): `tools` means it takes function tools, `reasoning`
+ * an effort. A LiteLLM body has none, so this is empty for it.
+ */
+export const parseInlineModels = (body: unknown): Map<string, InlineModel> => {
+  const list = Array.isArray(body) ? body : (body as { data?: unknown } | null)?.data;
+  const models = new Map<string, InlineModel>();
+  if (!Array.isArray(list)) return models;
+  for (const entry of list) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    const id = record["id"];
+    const parameters = record["supported_parameters"];
+    if (typeof id !== "string" || id === "" || !Array.isArray(parameters)) continue;
+    const name = record["name"];
+    const context = record["context_length"];
+    models.set(id, {
+      ...(typeof name === "string" && name !== "" ? { name } : {}),
+      ...(Number.isInteger(context) && (context as number) > 0
+        ? { contextWindow: context as number }
+        : {}),
+      info: {
+        mode: "chat",
+        tools: parameters.includes("tools"),
+        reasoning: parameters.includes("reasoning"),
+      },
+    });
+  }
+  return models;
+};
+
 /**
  * The discovered models, keeping any existing entry's name, context window and variants. `infos`
  * replaces each model's description, when the gateway's catalog could be read; otherwise the last
@@ -101,10 +140,24 @@ export const mergeModels = (
   existing: ReadonlyArray<GatewayModel>,
   discovered: ReadonlyArray<string>,
   infos?: ReadonlyMap<string, GatewayModelInfo>,
+  inline: ReadonlyMap<string, InlineModel> = new Map(),
 ): Array<GatewayModel> => {
   const byId = new Map(existing.map((model) => [model.id, model]));
   return discovered.map((id) => {
-    const model = byId.get(id) ?? { id, name: id };
+    const own = inline.get(id);
+    const kept = byId.get(id);
+    let model: GatewayModel = kept ?? { id, name: own?.name ?? id };
+    if (own !== undefined) {
+      // A name the user gave stays; the entry's own name replaces only the bare id.
+      model = {
+        ...model,
+        ...(own.name !== undefined && model.name === id ? { name: own.name } : {}),
+        ...(own.contextWindow !== undefined && model.contextWindow === undefined
+          ? { contextWindow: own.contextWindow }
+          : {}),
+        info: own.info,
+      };
+    }
     if (infos === undefined) return model;
     const { info: _stale, ...rest } = model;
     const info = infos.get(id);
@@ -166,5 +219,5 @@ export const discoverModels = (
     if (ids === null) return yield* fail(`${host}'s model list isn't in the OpenAI format`);
     const url = catalogUrl(profile);
     const infos = url === undefined ? undefined : yield* readCatalog(url, fetcher);
-    return mergeModels(profile.models, ids, infos);
+    return mergeModels(profile.models, ids, infos, parseInlineModels(body));
   });

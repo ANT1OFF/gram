@@ -741,12 +741,17 @@ const make = Effect.gen(function* () {
           // Only over the very state the stop left: the same session at rest, with no turn since.
           // A watchdog's fresh session is still starting, and input queued meanwhile may have
           // run; either is a newer state the error must not replace. `lastError` stands anyway.
+          // The agent's `idle` after the stopped turn may come before this or after it; after, it
+          // is that turn's tail and leaves the error standing (`errorAtRest`).
           const settled =
             rt.turn === undefined &&
             rt.session === stuck.session &&
             rt.status === "idle" &&
             (yield* store.lastTurn(rt.threadId))?.id === turnId;
-          if (settled) yield* setStatus(rt, "error", stuck.failed.text);
+          if (settled) {
+            rt.errorAtRest = { session: stuck.session, turnId };
+            yield* setStatus(rt, "error", stuck.failed.text);
+          }
         }),
       );
     });
@@ -1232,12 +1237,39 @@ const make = Effect.gen(function* () {
   /** Set once the switch is made: a thread back from the archive gets what its switch owes it. */
   let switchUnarchived: ((threadId: ThreadId) => Effect.Effect<void>) | undefined;
 
+  /**
+   * Archives a thread's own agent session in the agent's list as Gram archives the thread, and
+   * takes the mark off as it comes back, so the agent's resume list agrees. This machine's
+   * sessions only, in the background, and best effort: a session the agent no longer has is no
+   * failure of the archive.
+   */
+  const markAgentSession = (thread: Thread) =>
+    Effect.gen(function* () {
+      const agentSessionId = thread.agentSessionId;
+      if (agentSessionId === undefined || thread.checkout.hostId !== undefined) return;
+      const host = yield* hosts.get(thread.model.agent).pipe(Effect.option);
+      const mark = Option.getOrUndefined(host)?.setSessionArchived;
+      if (mark === undefined) return;
+      yield* dispatch(
+        thread.id,
+        "agent session archive mark",
+        mark({ cwd: thread.checkout.path, agentSessionId, archived: thread.parked }).pipe(
+          Effect.catch((error) =>
+            Effect.logDebug("agent session archive mark skipped").pipe(
+              Effect.annotateLogs({ threadId: thread.id, message: error.message }),
+            ),
+          ),
+        ),
+      );
+    });
+
   const updateThread: ThreadRuntimesShape["updateThread"] = (threadId, f, authorityCaller) =>
     Effect.gen(function* () {
       const before = yield* store.getThread(threadId);
       const thread = yield* store.updateThread(threadId, f, authorityCaller);
       yield* publishUpsert(thread);
       const unarchived = before.parked && !thread.parked;
+      if (before.parked !== thread.parked) yield* markAgentSession(thread);
       // A switch that waited for the thread to come back gives it what it owes, ahead of its queue.
       if (unarchived && switchUnarchived !== undefined) yield* switchUnarchived(threadId);
       const rt =

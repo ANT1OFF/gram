@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { useHistoryStore } from "@/history/history-view";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { MENU_ITEM, MENU_LABEL, MENU_POPUP } from "@/lib/selection";
+import { useGramSettingKept, useThreadsWorkspaceNoun } from "@/embed/store";
 import { EXPLAIN } from "@/lib/explain";
 import { seeTerm } from "@/lib/first-use";
 import { usePhone, useTouch } from "@/lib/use-phone";
@@ -237,6 +238,7 @@ export function TidyScope({ state, children }: { state: WorkspaceState; children
 
 export function DiscoverItem() {
   const discover = useContext(DiscoverContext);
+  const noun = useThreadsWorkspaceNoun().toLowerCase();
   if (discover === undefined) return null;
   return (
     <Menu.Item
@@ -253,13 +255,13 @@ export function DiscoverItem() {
       {/* A disabled item shows no tooltip, so it says why it is off. */}
       {discover.blocked === undefined ? (
         discover.sent === undefined ? (
-          <Described label="Discover workspace" line={EXPLAIN.discover} />
+          <Described label={`Discover ${noun}`} line={EXPLAIN.discover} />
         ) : (
           "Asked to discover"
         )
       ) : (
         <span className="flex min-w-0 flex-col">
-          Discover workspace
+          Discover {noun}
           <span className="text-meta text-muted-foreground">{discover.blocked}</span>
         </span>
       )}
@@ -305,6 +307,7 @@ export function TidyItem() {
  */
 export function PauseItem({ state }: { state: WorkspaceState }) {
   const { busy, confirm, run } = useWorkspacePause(state);
+  const noun = useThreadsWorkspaceNoun().toLowerCase();
   const [confirming, setConfirming] = useState(false);
   if (state.paused !== undefined) {
     return (
@@ -317,7 +320,7 @@ export function PauseItem({ state }: { state: WorkspaceState }) {
         onClick={() => run(false)}
       >
         <CirclePlay aria-hidden className="mt-0.5" />
-        <Described label="Resume workspace" line={EXPLAIN.resume} />
+        <Described label={`Resume ${noun}`} line={EXPLAIN.resume} />
         <Current>since {pauseClock(state.paused.at)}</Current>
       </Menu.Item>
     );
@@ -349,7 +352,7 @@ export function PauseItem({ state }: { state: WorkspaceState }) {
     >
       <CirclePause aria-hidden className="mt-0.5" />
       <Described
-        label={confirm === undefined ? "Pause workspace" : "Pause workspace…"}
+        label={confirm === undefined ? `Pause ${noun}` : `Pause ${noun}…`}
         line={EXPLAIN.pause}
       />
     </Menu.Item>
@@ -375,9 +378,11 @@ function WorkersItem() {
 function WorkspaceSubmenu({ state, opening }: { state: WorkspaceState; opening: number }) {
   const navigate = useNavigate();
   const workspaceId = state.workspace.id;
+  // In the embedding app's word for one, such as Project.
+  const noun = useThreadsWorkspaceNoun();
   return (
     <Submenu
-      label="Workspace"
+      label={noun}
       testId="menu-workspace"
       popupTestId="titlebar-menu-workspace"
       popupLabel={state.workspace.name}
@@ -402,7 +407,7 @@ function WorkspaceSubmenu({ state, opening }: { state: WorkspaceState; opening: 
         onClick={() => openWorkspaceSettings(workspaceId)}
       >
         <Settings2 aria-hidden />
-        Workspace settings
+        {noun} settings
       </Menu.Item>
     </Submenu>
   );
@@ -630,17 +635,21 @@ function PhonePlaces() {
 /** The window's own that a wide bar shows as icons: usage, the right panel and Settings. */
 function PhoneWindowItems() {
   const navigate = useNavigate();
+  // An app in front of Gram that leaves Usage out of Settings has no meter to link to.
+  const usage = useGramSettingKept("usage");
   return (
     <>
       {SEPARATOR}
-      <Menu.Item
-        data-testid="phone-menu-usage"
-        className={MENU_ITEM}
-        onClick={() => void navigate({ to: "/settings/usage" })}
-      >
-        <ChartNoAxesCombined aria-hidden />
-        Usage
-      </Menu.Item>
+      {usage && (
+        <Menu.Item
+          data-testid="phone-menu-usage"
+          className={MENU_ITEM}
+          onClick={() => void navigate({ to: "/settings/usage" })}
+        >
+          <ChartNoAxesCombined aria-hidden />
+          Usage
+        </Menu.Item>
+      )}
       <Menu.Item
         data-testid="phone-menu-settings"
         className={MENU_ITEM}
@@ -793,13 +802,20 @@ function ThreadOverflow({
  */
 export function TitlebarOverflow({
   orchestration,
+  hostPage = false,
   className,
 }: {
   /** The bar shows a workspace's work, so its controls (Workers, Tidy up, Pause…) are here. */
   orchestration: boolean;
+  /**
+   * The page in view is one an app in front of Gram added (its home among them): none of a
+   * workspace's, a thread's or the window's panes, so what this menu holds acts on none of it.
+   */
+  hostPage?: boolean;
   className?: string;
 }) {
   const carried = useTitlebarThread();
+  if (hostPage && carried === undefined) return null;
   return carried === undefined ? (
     <OverflowMenu orchestration={orchestration} className={className} />
   ) : (

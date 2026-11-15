@@ -345,6 +345,77 @@ describe("ThreadRuntimes", () => {
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
+  it.effect(
+    "archives the agent's own session with the thread, and unarchives it as it returns",
+    () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const fake = yield* FakeAgentControl;
+        const { thread, session } = yield* createRunning();
+        yield* session.completeTurn();
+        yield* waitStatus(thread.id, "idle");
+        const id = yield* waitFor(
+          "the session id",
+          store.getThread(thread.id).pipe(Effect.map((t) => t.agentSessionId ?? false)),
+        );
+        yield* runtimes.updateThread(thread.id, (t) => ({ ...t, parked: true }));
+        yield* waitFor(
+          "the archive mark",
+          Effect.sync(() => fake.archiveMarks.length === 1),
+        );
+        // Another change leaves the mark be.
+        yield* runtimes.updateThread(thread.id, (t) => ({ ...t, title: "Renamed" }));
+        yield* runtimes.updateThread(thread.id, (t) => ({ ...t, parked: false }));
+        yield* waitFor(
+          "the mark taken off",
+          Effect.sync(() => fake.archiveMarks.length === 2),
+        );
+        expect(fake.archiveMarks).toEqual([`archive:${id}`, `unarchive:${id}`]);
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("counts the agent saying again that its turn runs as progress on a held tool", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const { thread, session } = yield* createRunning();
+      const messageId = "hook-reply" as MessageId;
+      yield* session.emit({ type: "chunk", messageId, chunk: { type: "start", messageId } });
+      yield* session.emit({
+        type: "chunk",
+        messageId,
+        chunk: {
+          type: "tool-input-available",
+          toolName: "Bash",
+          toolCallId: "held-by-hook",
+          input: { command: "deploy" },
+        },
+      });
+      yield* waitFor(
+        "tool activity",
+        runtimes.snapshot.pipe(
+          Effect.map((rows) =>
+            rows.some((s) => s.thread.id === thread.id && s.activity !== undefined),
+          ),
+        ),
+      );
+      // A long hook on the call: Claude beats `running` while it waits, and says nothing else.
+      for (let minute = 0; minute < 15; minute++) {
+        yield* TestClock.adjust("1 minute");
+        yield* session.emit({ type: "status", status: "running" });
+        // Handled before the next minute's look.
+        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 10)));
+      }
+      expect(yield* runtimes.quiet(thread.id)).toBeUndefined();
+      // Once the beats stop, the watch measures from the last one.
+      yield* TestClock.adjust("11 minutes");
+      yield* waitFor(
+        "silent tool after the beats",
+        runtimes.quiet(thread.id).pipe(Effect.map((quiet) => quiet !== undefined)),
+      );
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
   it.effect("flags a silent running tool once and clears the flag on progress and turn end", () =>
     Effect.gen(function* () {
       const runtimes = yield* ThreadRuntimes;

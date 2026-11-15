@@ -10,9 +10,11 @@ import { useBindingsStore } from "@/keyboard/bindings-store";
 import { listedShortcuts, SHORTCUT_CATALOG } from "@/keyboard/catalog";
 import { formatKeys, isMac, type ShortcutGroup } from "@/keyboard/registry";
 import { useSaveBindings } from "@/keyboard/use-save-bindings";
+import { useEmbedShell, useGramSettingKept } from "@/embed/store";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { copyText } from "./copy-text";
+import { SendingGroup } from "./general-section";
 import { KeyCaptureDialog } from "./key-capture-dialog";
 import {
   bindingCounts,
@@ -34,6 +36,8 @@ export function KeyboardSection() {
   const settings = useServerSettings((s) => s.settings);
   const { save, error } = useSaveBindings();
   const [changing, setChanging] = useState<string>();
+  const hosted = useEmbedShell((s) => s.hosted);
+  const generalKept = useGramSettingKept("general");
 
   const [localFilter, setFilter] = useState<BindingFilter>(NO_BINDING_FILTER);
   const searchingSettings = useSettingsSearchOn();
@@ -61,35 +65,47 @@ export function KeyboardSection() {
 
   return (
     <div data-testid="keyboard-settings" className="flex flex-col gap-4">
-      <div
-        data-testid="keyboard-intro"
-        className="flex flex-wrap items-center gap-2 text-reading text-muted-foreground"
-      >
-        <span>
-          Or edit them all in <code className="font-mono text-meta">keybindings.json</code>.
-        </span>
-        {path && local && (
-          <Hint
-            label={`Opens ${path}`}
-            render={
-              <Button
-                size="sm"
-                variant="outline"
-                data-testid="keyboard-edit-file"
-                onClick={() => void openInEditor(path)}
-              />
-            }
-          >
-            Edit keybindings.json
-          </Hint>
-        )}
-        {path && <BindingsFileHelp path={path} />}
-        {Object.keys(overrides).length > 0 && (
+      {/* With General left out by an app in front of Gram, which keys send lives here. */}
+      {!generalKept && <SendingGroup />}
+      {/* keybindings.json is a file on the server: a hosted one is nobody's to edit. */}
+      {!hosted && (
+        <div
+          data-testid="keyboard-intro"
+          className="flex flex-wrap items-center gap-2 text-reading text-muted-foreground"
+        >
+          <span>
+            Or edit them all in <code className="font-mono text-meta">keybindings.json</code>.
+          </span>
+          {path && local && (
+            <Hint
+              label={`Opens ${path}`}
+              render={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="keyboard-edit-file"
+                  onClick={() => void openInEditor(path)}
+                />
+              }
+            >
+              Edit keybindings.json
+            </Hint>
+          )}
+          {path && <BindingsFileHelp path={path} />}
+          {Object.keys(overrides).length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => void save({})}>
+              Reset all
+            </Button>
+          )}
+        </div>
+      )}
+      {hosted && Object.keys(overrides).length > 0 && (
+        <div className="flex">
           <Button size="sm" variant="ghost" onClick={() => void save({})}>
             Reset all
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {!searchingSettings && (
         <BindingFilterBar

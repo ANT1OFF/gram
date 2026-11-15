@@ -28,7 +28,9 @@ import { actorEventsOf } from "../rpc/actor-guard.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import type { AnswerNote } from "./event-sink.ts";
 import { ActingPerson } from "./person.ts";
+import { makeKeyedLock } from "../git/keyed-lock.ts";
 import {
+  isUsersQuestion,
   parseWorkerQuestionAskId,
   workerQuestionAnswerText,
   workerQuestionAskId,
@@ -69,6 +71,7 @@ export interface AskAnswerDeps {
     ) => Effect.Effect<WorkerQuestion | undefined>;
     readonly answer: (
       input: AnswerWorkerQuestionInput,
+      options: { readonly onlyIfOpen: true },
     ) => Effect.Effect<WorkerQuestion, { readonly _tag: string; readonly message: string }>;
     /**
      * Whether this fiber's person may reach the asking thread and the workspace's orchestrator,
@@ -158,6 +161,13 @@ export const answerAsk = (
   });
 
 /**
+ * One answer to a worker question's ask at a time, so the note one answer keeps for its
+ * `ask.resolved` is never another's: a second answer finds the question closed, and its note is
+ * never written.
+ */
+const answering = makeKeyedLock<string>();
+
+/**
  * A person's answer to a worker question's ask: its words, from the question answer the receiver
  * sends, become the user's answer, as Gram's own card would give it, on record as theirs with the
  * request's proof. The ask must name the thread that asked it; `undefined` when it was taken.
@@ -170,51 +180,68 @@ export const answerWorkerQuestion = (
   person: string,
   proof: AnswerProof,
 ) =>
-  Effect.gen(function* () {
-    const questions = deps.workerQuestions;
-    if (questions === undefined) {
-      return { status: 404, tag: "NotFound", message: "no such question" } as const;
-    }
-    const question = yield* questions.find(asked.workspaceId, asked.questionId);
-    if (question === undefined || question.threadId !== threadId) {
-      return { status: 404, tag: "NotFound", message: "no such question" } as const;
-    }
-    if (answer.kind !== "question") {
-      return {
-        status: 400,
-        tag: "BadRequest",
-        message: "a question takes a question's answer",
-      } as const;
-    }
-    const text = workerQuestionAnswerText(question, answer);
-    if (text === undefined) {
-      return { status: 400, tag: "BadRequest", message: "the answer says nothing" } as const;
-    }
-    const reachable = yield* questions
-      .mayReach(asked.workspaceId, threadId)
-      .pipe(Effect.provideService(RoutedFor, { person }));
-    if (!reachable) return { status: 403, tag: "InvalidState", message: NOT_YOUR_MACHINE } as const;
-    const askId = workerQuestionAskId(asked.workspaceId, asked.questionId);
-    const note = deps.noteAnswer ?? (() => Effect.void);
-    yield* note(askId, { answeredBy: person, proof });
-    const failed = yield* questions
-      .answer({ workspaceId: asked.workspaceId, questionId: asked.questionId, answer: text })
-      .pipe(
-        Effect.provideService(ActingPerson, person),
-        Effect.provideService(RoutedFor, { person }),
-        Effect.as(undefined),
-        Effect.catch((error) => Effect.succeed(error)),
-        Effect.catchCause((cause) =>
-          Effect.logError("an answer to a worker question failed", cause).pipe(
-            Effect.as({ _tag: "Failed", message: "the answer could not be taken" }),
+  answering.withLock(
+    workerQuestionAskId(asked.workspaceId, asked.questionId),
+    Effect.gen(function* () {
+      const questions = deps.workerQuestions;
+      if (questions === undefined) {
+        return { status: 404, tag: "NotFound", message: "no such question" } as const;
+      }
+      const question = yield* questions.find(asked.workspaceId, asked.questionId);
+      if (question === undefined || question.threadId !== threadId) {
+        return { status: 404, tag: "NotFound", message: "no such question" } as const;
+      }
+      if (answer.kind !== "question") {
+        return {
+          status: 400,
+          tag: "BadRequest",
+          message: "a question takes a question's answer",
+        } as const;
+      }
+      const text = workerQuestionAnswerText(question, answer);
+      if (text === undefined) {
+        return { status: 400, tag: "BadRequest", message: "the answer says nothing" } as const;
+      }
+      const reachable = yield* questions
+        .mayReach(asked.workspaceId, threadId)
+        .pipe(Effect.provideService(RoutedFor, { person }));
+      if (!reachable)
+        return { status: 403, tag: "InvalidState", message: NOT_YOUR_MACHINE } as const;
+      // Only a question that waits on the user is an ask. One answered already, here or anywhere
+      // else, is not answered again: the answer that closed it, and who gave it, stand.
+      if (!isUsersQuestion(question)) {
+        return {
+          status: 409,
+          tag: "InvalidState",
+          message: `${question.id} no longer waits on an answer`,
+        } as const;
+      }
+      const askId = workerQuestionAskId(asked.workspaceId, asked.questionId);
+      const note = deps.noteAnswer ?? (() => Effect.void);
+      yield* note(askId, { answeredBy: person, proof });
+      const failed = yield* questions
+        .answer(
+          { workspaceId: asked.workspaceId, questionId: asked.questionId, answer: text },
+          // Refused when it closed meanwhile, so a success is always this answer's.
+          { onlyIfOpen: true },
+        )
+        .pipe(
+          Effect.provideService(ActingPerson, person),
+          Effect.provideService(RoutedFor, { person }),
+          Effect.as(undefined),
+          Effect.catch((error) => Effect.succeed(error)),
+          Effect.catchCause((cause) =>
+            Effect.logError("an answer to a worker question failed", cause).pipe(
+              Effect.as({ _tag: "Failed", message: "the answer could not be taken" }),
+            ),
           ),
-        ),
-      );
-    if (failed === undefined) return undefined;
-    yield* note(askId, undefined);
-    return failed._tag === "NotFound"
-      ? ({ status: 404, tag: failed._tag, message: failed.message } as const)
-      : failed._tag === "Failed"
-        ? ({ status: 500, tag: failed._tag, message: failed.message } as const)
-        : ({ status: 409, tag: failed._tag, message: failed.message } as const);
-  });
+        );
+      if (failed === undefined) return undefined;
+      yield* note(askId, undefined);
+      return failed._tag === "NotFound"
+        ? ({ status: 404, tag: failed._tag, message: failed.message } as const)
+        : failed._tag === "Failed"
+          ? ({ status: 500, tag: failed._tag, message: failed.message } as const)
+          : ({ status: 409, tag: failed._tag, message: failed.message } as const);
+    }),
+  );

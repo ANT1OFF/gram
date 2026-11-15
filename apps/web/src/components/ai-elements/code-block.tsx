@@ -18,7 +18,14 @@ import {
 } from "react";
 import type { BundledLanguage, ThemedToken } from "shiki";
 
-import { createRawTokens, highlightCode, type TokenizedCode } from "@/lib/code-highlighting";
+import {
+  canHighlightCode,
+  createRawTokens,
+  highlightCode,
+  type TokenizedCode,
+} from "@/lib/code-highlighting";
+import { paintEmbedded } from "@/lib/command-tokens";
+import { embeddedScripts, type EmbeddedScript } from "@/lib/embedded-scripts";
 
 export { highlightCode } from "@/lib/code-highlighting";
 
@@ -246,8 +253,77 @@ export const HighlightedCode = ({
   code: string;
   language: BundledLanguage;
   enabled?: boolean;
+}) => (
+  <InlineTokens
+    code={code}
+    language={language}
+    tokenized={useCodeTokens(code, language, enabled)}
+  />
+);
+
+/**
+ * A shell command's tokens, with each program inside it in its own language once both have
+ * loaded: the Python of a `python3 - <<'PY'` here-doc, the shell inside `zsh -lc "…"`.
+ */
+export const useCommandTokens = (code: string, enabled = true) => {
+  const outer = useCodeTokens(code, "shellscript", enabled);
+  const scripts = useMemo(
+    () => (enabled && canHighlightCode(code) ? embeddedScripts(code) : []),
+    [code, enabled],
+  );
+  const [layers, setLayers] = useState<{
+    scripts: EmbeddedScript[];
+    tokens: (TokenizedCode | undefined)[];
+  }>();
+
+  useEffect(() => {
+    if (scripts.length === 0) return;
+    let cancelled = false;
+    const tokens = Array.from<TokenizedCode | undefined>({ length: scripts.length });
+    for (const [index, script] of scripts.entries()) {
+      const receive = (result: TokenizedCode) => {
+        if (cancelled) return;
+        tokens[index] = result;
+        setLayers({ scripts, tokens: [...tokens] });
+      };
+      const cached = highlightCode(script.text, script.language as BundledLanguage, receive);
+      if (cached) receive(cached);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [scripts]);
+
+  return useMemo(() => {
+    if (!enabled || outer.fg === "inherit" || layers?.scripts !== scripts) return outer;
+    const ready = scripts.flatMap((script, index) => {
+      const tokens = layers.tokens[index];
+      return tokens ? [{ script, tokens }] : [];
+    });
+    return paintEmbedded(code, outer, ready);
+  }, [code, enabled, outer, scripts, layers]);
+};
+
+/** A shell command, coloured as `useCommandTokens` reads it; the text is exactly `code`. */
+export const HighlightedCommand = ({
+  code,
+  enabled = true,
+}: {
+  code: string;
+  enabled?: boolean;
+}) => (
+  <InlineTokens code={code} language="shellscript" tokenized={useCommandTokens(code, enabled)} />
+);
+
+const InlineTokens = ({
+  code,
+  language,
+  tokenized,
+}: {
+  code: string;
+  language: string;
+  tokenized: TokenizedCode;
 }) => {
-  const tokenized = useCodeTokens(code, language, enabled);
   // Shiki consumes CRLF separators. Use the source separators, and never display altered text
   // if a grammar's tokens cannot round-trip the source (including the initial raw fallback).
   const separators = useMemo(() => code.match(/\r?\n/gu) ?? [], [code]);

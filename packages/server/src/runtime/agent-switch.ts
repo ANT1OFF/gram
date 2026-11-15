@@ -62,6 +62,7 @@ import {
 export const AGENT_NAMES: Readonly<Record<AgentKind, string>> = {
   claude: "Claude Code",
   codex: "Codex",
+  opencode: "OpenCode",
 };
 
 /**

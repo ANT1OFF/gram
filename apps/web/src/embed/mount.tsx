@@ -124,6 +124,7 @@ export const mountGram: MountGram = async (options) => {
       sidebar: shell.sidebar ?? {},
       document: shell.document ?? {},
       repositories: shell.repositories,
+      settings: shell.settings ?? {},
       titles: Object.fromEntries([
         ...(shell.routes ?? []).flatMap((route) =>
           route.title === undefined ? [] : [[route.path, route.title] as const],
@@ -199,5 +200,9 @@ export const ShellThread: ShellThreadComponent = ({ threadId, placeholder }) => 
 export const useShellLocation: UseShellLocation = () => {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const navigate = useNavigate();
-  return { pathname, navigate: (to) => navigate({ to: to as "/" }) };
+  return {
+    pathname,
+    navigate: (to, options) =>
+      navigate({ to: to as "/", ...(options?.replace === true ? { replace: true } : {}) }),
+  };
 };

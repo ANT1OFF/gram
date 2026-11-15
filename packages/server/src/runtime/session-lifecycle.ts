@@ -334,7 +334,11 @@ export const makeSessionLifecycle = ({
               message: "The selected orchestrator failed to start. No fallback was started.",
             }),
           );
-        const stopping = rt.stopping;
+        // A session whose events ran out ended by itself, even if a reopen asked to stop it while
+        // this waited for the lock: it is no reopen's stop, and the thread is left cold.
+        const onItsOwn = Exit.isSuccess(exit) && rt.stopping === "recover";
+        if (Exit.isSuccess(exit)) rt.endedOnItsOwn = rt.session;
+        const stopping = onItsOwn ? undefined : rt.stopping;
         rt.stopping = undefined;
         rt.session = undefined;
         rt.sessionBrowser = false;

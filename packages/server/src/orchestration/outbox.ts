@@ -7,6 +7,7 @@
 // row this build can't read, which the service reports and doesn't overwrite.
 
 import {
+  AgentKind,
   AgentFailureKind,
   HandoffNote,
   ModelRef,
@@ -37,7 +38,7 @@ const SnapshotEntry = Schema.Struct({
   state: WorkerState,
   feature: Schema.String,
   title: Schema.String,
-  agent: Schema.optionalKey(Schema.Literals(["claude", "codex"])),
+  agent: Schema.optionalKey(AgentKind),
   interface: Schema.optionalKey(Schema.String),
   overlapsWith: Schema.Array(Schema.String),
   actionKey: Schema.optionalKey(Schema.String),
@@ -219,8 +220,8 @@ export type HandoffMarker = typeof HandoffMarker.Type;
  */
 export const SwitchBoot = Schema.Struct({
   at: Schema.Number,
-  from: Schema.Literals(["claude", "codex"]),
-  to: Schema.Literals(["claude", "codex"]),
+  from: AgentKind,
+  to: AgentKind,
   noteMode: SwitchNoteMode,
   note: Schema.optionalKey(HandoffNote),
   /** Limit mode's: why the old session wrote no note. `detail` is untrusted, for the fence only. */

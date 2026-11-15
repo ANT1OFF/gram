@@ -1,9 +1,11 @@
 import type {
+  archiveSession,
   deleteSession,
   getSessionMessages,
   importSessionToStore,
   listSessions,
   query,
+  unarchiveSession,
 } from "@anthropic-ai/claude-agent-sdk";
 import * as Context from "effect/Context";
 import type { McpServerFactory } from "./apptools.ts";
@@ -20,6 +22,10 @@ export interface ClaudeSdkShape extends McpServerFactory {
   readonly listSessions?: typeof listSessions;
   /** Removes a local session transcript; a host without it can't delete past sessions. */
   readonly deleteSession?: typeof deleteSession;
+  /** Marks a local session archived in Claude's own list; a host without it leaves the mark be. */
+  readonly archiveSession?: typeof archiveSession;
+  /** Takes that mark off again. */
+  readonly unarchiveSession?: typeof unarchiveSession;
   /** Reads one local session transcript; a host without it previews no past sessions. */
   readonly getSessionMessages?: typeof getSessionMessages;
   /** Streams a local session transcript's raw entries; a host without it reads no saved cost. */

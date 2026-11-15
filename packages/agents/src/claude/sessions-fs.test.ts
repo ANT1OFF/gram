@@ -1,3 +1,4 @@
+import { listSessions } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -116,6 +117,39 @@ describe("ClaudeHost session history", () => {
         expect(yield* host.listSessions({ cwd: other })).toHaveLength(1);
       }).pipe(Effect.provide(layer)),
     // Usually about a second on Windows CI, but a loaded runner has taken past 5 s.
+    60_000,
+  );
+
+  it.effect(
+    "marks a folder's session archived in Claude's own list, and takes the mark off",
+    () =>
+      Effect.gen(function* () {
+        const repo = join(root, "archived-repo");
+        mkdirSync(repo);
+        const id = "22222222-2222-4333-8444-555555555555";
+        writeSession(repo, id, "Tidy the docs");
+        const host = yield* ClaudeHost;
+        if (host.setSessionArchived === undefined) {
+          throw new Error("the live SDK archives sessions");
+        }
+        const archived = () =>
+          Effect.promise(() => listSessions({ dir: repo })).pipe(
+            Effect.map((infos) => infos.find((info) => info.sessionId === id)?.archived),
+          );
+        yield* host.setSessionArchived({ cwd: repo, agentSessionId: id, archived: true });
+        expect(yield* archived()).toBe(true);
+        yield* host.setSessionArchived({ cwd: repo, agentSessionId: id, archived: false });
+        expect(yield* archived()).toBe(false);
+        // A session the folder doesn't have is the agent's refusal, not a silent pass.
+        const error = yield* Effect.flip(
+          host.setSessionArchived({
+            cwd: repo,
+            agentSessionId: "33333333-2222-4333-8444-555555555555",
+            archived: true,
+          }),
+        );
+        expect(error).toMatchObject({ _tag: "AgentUnavailable" });
+      }).pipe(Effect.provide(layer)),
     60_000,
   );
 });
