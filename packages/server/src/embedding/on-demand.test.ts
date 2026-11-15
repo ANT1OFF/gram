@@ -22,6 +22,7 @@ import {
   makeOnDemandHosts,
   ownMachine,
   parseChoices,
+  parsePreferences,
   parseStart,
   READY_GRACE_MS,
   statusFor,
@@ -213,6 +214,77 @@ describe("hosts provisioned on demand: requests and progress", () => {
     expect(parseStart('{"choices":{"../x":"a"}}')).toEqual(expect.any(String));
     expect(parseStart('{"choices":["size"]}')).toEqual(expect.any(String));
     expect(parseStart('{"choices":{"size":3}}')).toEqual(expect.any(String));
+  });
+
+  it("takes a start again with other picks, and keeping them as the person's own", () => {
+    expect(parseStart('{"choices":{"isolation":"vm"},"restart":true,"keep":true}')).toEqual({
+      repositories: [],
+      choices: { isolation: "vm" },
+      keep: true,
+      restart: true,
+    });
+    expect(parseStart('{"restart":false}')).toEqual({ repositories: [], choices: {} });
+    expect(parseStart('{"keep":"yes"}')).toEqual(expect.any(String));
+  });
+
+  it("takes the picks a person keeps as theirs, by short ids only", () => {
+    expect(parsePreferences('{"choices":{"size":"medium"}}')).toEqual({
+      choices: { size: "medium" },
+    });
+    expect(parsePreferences("")).toEqual({ choices: {} });
+    expect(parsePreferences('{"choices":{"size":"Medium!"}}')).toEqual(expect.any(String));
+    expect(parsePreferences("[]")).toEqual(expect.any(String));
+  });
+
+  it("reads which pick is the person's own, what the machine has now, and short labels", () => {
+    expect(
+      parseChoices({
+        keeps: true,
+        choices: [
+          {
+            id: "isolation",
+            label: "Kind",
+            default: "vm",
+            fallback: "container",
+            current: "container",
+            options: [
+              { id: "container", label: "Container", short: "Container" },
+              { id: "vm", label: "Virtual machine", short: "VM" },
+            ],
+          },
+          {
+            id: "size",
+            label: "Size",
+            default: "small",
+            // Not one of its options: left out.
+            fallback: "huge",
+            current: "huge",
+            options: [{ id: "small", label: "Small", short: "a".repeat(25) }],
+          },
+        ],
+      }),
+    ).toEqual({
+      keeps: true,
+      choices: [
+        {
+          id: "isolation",
+          label: "Kind",
+          default: "vm",
+          fallback: "container",
+          current: "container",
+          options: [
+            { id: "container", label: "Container", available: true, short: "Container" },
+            { id: "vm", label: "Virtual machine", available: true, short: "VM" },
+          ],
+        },
+        {
+          id: "size",
+          label: "Size",
+          default: "small",
+          options: [{ id: "small", label: "Small", available: true }],
+        },
+      ],
+    });
   });
 
   it("reads the provider's choices field by field, keeping only those with an option to pick", () => {

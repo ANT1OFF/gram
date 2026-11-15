@@ -223,11 +223,32 @@ POST <GRAM_HOST_PROVIDER_URL>/hosts/choices
 
 A 404, or no answer, offers nothing, and the machine starts as before. Ids are short
 (`[a-z0-9-]`, at most 40), at most 6 choices of at most 8 options each; an option the person may
-not pick is shown, locked, with its note. The start card shows them and remembers the person's
-picks in their browser. The person's start then says what they picked,
+not pick is shown, locked, with its note. They are asked again after a start. The New forms show
+them on one **Runs on** chip, named by the first three choices (an option's `short` label where it
+has one), and its popover changes any of them, whether the machine runs or not. The person's
+start then says what they changed from each `default`,
 `{ "repositories": [...], "choices": { "size": "large" } }`, and the provider gets it in
-`options.choices`. The proof binds the person's own body, so a provider reads the picks from
-`proof.body` and checks them against its limits again: the card's locks are only a courtesy.
+`options.choices`; a choice left alone follows the provider's default. The proof binds the
+person's own body, so a provider reads the picks from `proof.body` and checks them against its
+limits again: the chip's locks are only a courtesy.
+
+A provider can also say, per choice, what the person's machine has now (`current`) and what the
+default is when the person keeps no pick of their own (`fallback`); `default` is then that person's
+own pick where they keep one. With `"keeps": true` on the answer, it keeps picks for people:
+
+- each choice says whether its value is the person's own or the default, with a way back to the
+  default, and "Reset all to defaults";
+- a start may carry `"keep": true` ("Keep as my default"), passed on in `options.keep`: the
+  provider keeps the picks in it as that person's own, and a pick equal to `fallback` drops theirs;
+- `POST /machines/on-demand/preferences` with `{ "choices": {...} }` keeps picks without a start.
+  It reaches `POST <url>/hosts/preferences` with `{ owner, choices, proof }`; a 404 there means
+  the provider keeps none.
+
+**Starting it again with other picks.** A person whose machine is online and who changes a choice
+it has (`current`) is offered to start it again with them: their start carries `"restart": true`,
+and reaches the provider with `options.restart` even though the machine is online. The provider
+decides how: readying the machine to stop (`/machines/stop/prepare`), keeping its disk, and
+reporting progress as for any start. Without `restart`, a start of an online machine asks nothing.
 
 `POST /machines/on-demand/stop` asks `<url>/hosts/stop` the same way, and
 `GET /machines/on-demand/status` answers the person with their own machine, the start's progress
