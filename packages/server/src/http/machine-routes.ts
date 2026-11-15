@@ -452,13 +452,17 @@ export const machineManagement = (
         )
           return json({ message: "Give the host's name and its public key." }, 400);
         // A host started on demand: for one person (`personal`, which names its owner), or for
-        // the threads placed on it by name (`thread`, with or without an owner). An owner always
-        // comes with a kind, and a person's own host always with its owner.
+        // the threads placed on it by name (`thread`, with or without an owner), or for an
+        // orchestrator's workers (`worker`, which names whose). An owner always comes with a kind,
+        // and a person's own host and a worker host always with their owner.
         if (
           (owner !== undefined && (typeof owner !== "string" || !OWNER.test(owner))) ||
-          (onDemand !== undefined && onDemand !== "personal" && onDemand !== "thread") ||
+          (onDemand !== undefined &&
+            onDemand !== "personal" &&
+            onDemand !== "thread" &&
+            onDemand !== "worker") ||
           (owner !== undefined && onDemand === undefined) ||
-          (onDemand === "personal" && owner === undefined)
+          ((onDemand === "personal" || onDemand === "worker") && owner === undefined)
         )
           return json(
             { message: "An on-demand host names its kind, and a person's its owner." },
@@ -471,7 +475,9 @@ export const machineManagement = (
               publicKey,
               platform,
               ...(typeof owner === "string" ? { owner } : {}),
-              ...(onDemand === "personal" || onDemand === "thread" ? { onDemand } : {}),
+              ...(onDemand === "personal" || onDemand === "thread" || onDemand === "worker"
+                ? { onDemand }
+                : {}),
             });
           } catch {
             return undefined;

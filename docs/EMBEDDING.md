@@ -282,6 +282,40 @@ with `{ owner, hostKey, phase, step?, message? }`. `phase` is one of `starting`,
 `joining`, `ready`, `stopping`, `stopped` or `failed`. Only a host key the server asked for, for that
 owner, is taken: anything else is `404`. Progress is kept in memory, for the person's status.
 
+### Workers' own machines
+
+An orchestrator on a person's host may ask for a machine of a worker's own, through `spawn_worker`'s
+`sandbox`: `{own: true, size?, architecture?}` asks for one, `{shareWith}` places the worker on one
+it already has (by machine name or a worker's thread id), and leaving it out keeps the worker on the
+orchestrator's machine. This is the one path by which an agent, not a person's own request, starts a
+host, so the provider holds it to what the person and their organisation allow:
+
+- the server asks `POST /hosts/start` with `{ kind: "worker", owner, name, options: { orchestrator,
+  title, choices: { size?, architecture? } } }` and no proof. `owner` is the owner of the
+  orchestrator's own host, never read from the call. `name` is `worker-` and 10 hex characters,
+  the same for a retry of the same spawn, so a provider should treat a second ask for a name it
+  holds as the same machine;
+- `200` starts it. The provider registers it on `/machines/provision` under that `name`, with
+  `owner` and `onDemand: "worker"`, and the server waits up to five minutes for it to come online;
+- `409` is over the person's total: `{ message, asked?, inUse?, total?, machines? }`, CPU and memory
+  as `{ cpu, memoryGb }`, and the worker machines the person has as `{ name, size?, architecture?,
+  running }`. Nothing starts: the orchestrator is refused with `over_total`, what is in use and
+  which of its workers are on which machine, and decides whether to wait, share one, run the worker
+  on its own machine or ask for less;
+- `403` or `404` is not allowed, with the provider's `message`.
+
+A worker host is placed on only by its owner's orchestrators, and is never anyone's default. Pausing
+it when idle, waking it when its worker is messaged and reclaiming it later are the provider's.
+
+When its work is over the server says so (`embedding/worker-machine-release.ts`). Every ten
+minutes it looks at each worker host online for half an hour or more: once no open thread placed on
+it is at work (every worker there is finished as the ledger reads it, with its pull requests merged
+or closed, delivered or archived, or closed with its worktree), it asks `POST /hosts/release` with
+`{ kind: "worker", owner, name, released: true, reason: "finished" }`. Should one be at work there
+again, a worker reopened, it asks the same with `released: false, reason: "working"`, so the
+provider keeps the disk. Each is told once; after a restart it may be told again, which a provider
+takes as the same word. `404` means the provider keeps none of this.
+
 ## A note for a thread
 
 The platform can give one thread a note, which its agent takes as a turn of its own once the thread is free, as it takes any input the server writes itself. It wakes a thread at rest for something that happened outside it, such as an answer given elsewhere to what the agent was waiting on.
@@ -298,6 +332,27 @@ POST /embed/v1/thread-notes
 - `key` names the note. Sent again while it waits, it is not queued twice; sent again after the agent took it, it answers `delivered` and is not sent again. So a caller that sends until it hears `delivered` delivers it once. Neither is kept past the process: a note still waiting when the server stops is lost, and the caller, which never heard `delivered`, sends it to the server that starts.
 - The agent reads the text after a line saying it comes from the app the workspace runs in and not from a person in the thread. It grants nothing.
 - `404` for a thread the server doesn't have, `409` when the thread couldn't take it (it ended, or its agent couldn't start), `400` for a body that isn't one. `text` is 1 to 4000 characters.
+
+## A person's message for a thread
+
+The platform can write in a thread for a person it signed in, and stop the thread's turn, so that a person's own API or MCP client can do what they would do in the web app without a browser.
+
+```
+POST /embed/v1/thread-messages
+{ "threadId": "...", "person": { "id": "user-7", "name": "Ada" }, "key": "m-1", "text": "Look at the tests.", "mode": "queue" }
+→ 200 { "queued": false }
+→ 200 { "queued": true }
+
+POST /embed/v1/thread-interrupt
+{ "threadId": "...", "person": { "id": "user-7" } }
+→ 200 { "interrupted": true }
+```
+
+- The message is the person's own, as one they typed: it is shown as theirs, recorded as their `thread.send` or `thread.steer`, and `person.id` is the id the proxy's statement gives them ([sign-in through a proxy](DOCKER.md#sign-in-through-a-proxy)). The platform decides that the person may write in the thread; the server trusts it to say who they are, as it does for a thread started for someone.
+- `mode` is `queue` (the default: sent now on a thread at rest, else after the running turn, `queued: true`), `steer` (into the running turn, cancelling nothing) or `interrupt` (the turn stops and the agent answers this). A steer the thread can't take now, with no turn running or an agent that can't, is sent as `queue` would send it.
+- `key` names the message, 1 to 128 letters, digits, `_` or `-`. Sent again, it is the same message and answers what the first answered, so a caller that retries delivers once. Unlike a note's, it is kept with the thread.
+- A thread on a machine started for one person is written in and stopped only for that person: anyone else gets `409` with why.
+- `404` for a thread the server doesn't have, `409` when it can't take the message now (it ended, or its agent couldn't start), `400` for a body that isn't one. `text` is 1 to 20,000 characters.
 
 ## Settings supplied from outside
 

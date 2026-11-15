@@ -160,7 +160,7 @@ export const recoveredMachineProblem = (
 export interface NamedMachine {
   readonly id: HostId;
   readonly owner?: string | undefined;
-  readonly onDemand?: "personal" | "thread" | undefined;
+  readonly onDemand?: "personal" | "thread" | "worker" | undefined;
 }
 
 /** Why a worker can't go on a machine its orchestrator named. */
@@ -176,7 +176,7 @@ export const RUNS_ON_ITS_ORCHESTRATORS_MACHINE =
  *
  * - Its orchestrator's own machine always.
  * - Another machine only if it is the orchestrator's person's own (`onDemand: "personal"`, the
- *   same `owner`), or, on a Gram that runs work itself, a machine started for nothing in particular
+ *   same `owner`), or one started for that person's workers (`onDemand: "worker"`), or, on a Gram that runs work itself, a machine started for nothing in particular
  *   (no owner, no kind). Never a machine started for other work (`onDemand: "thread"`, another
  *   run's), and on a headless Gram never an unmarked one either, which may be another run's from
  *   before machines said their kind.
@@ -198,8 +198,11 @@ export const workerMachine = (
     return own === undefined ? { error: RUNS_ON_ITS_ORCHESTRATORS_MACHINE } : { hostId: own };
   }
   if (named.id === own) return { hostId: named.id };
+  // The person's own machine, or one their orchestrator started for its workers.
   const personsOwn =
-    named.onDemand === "personal" && named.owner !== undefined && named.owner === ownOwner;
+    (named.onDemand === "personal" || named.onDemand === "worker") &&
+    named.owner !== undefined &&
+    named.owner === ownOwner;
   const unmarked = named.onDemand === undefined && named.owner === undefined;
   if (personsOwn || (unmarked && !headless)) return { hostId: named.id };
   return { error: NOT_THIS_ORCHESTRATIONS_MACHINE };

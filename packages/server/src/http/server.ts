@@ -50,6 +50,7 @@ import { DreamFiles } from "../orchestration/dream-files.ts";
 import { DreamsLive } from "../orchestration/dreams.ts";
 import { OrchestrationMemory } from "../orchestration/memory.ts";
 import { Orchestration, OrchestrationLive } from "../orchestration/service.ts";
+import { WorkerMachineReleaseLive } from "../embedding/worker-machine-release.ts";
 import { RoutineEventSourcesLive } from "../routines/events.ts";
 import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
@@ -65,6 +66,7 @@ import {
   ON_DEMAND_PATHS,
   onDemandRequest,
 } from "../embedding/on-demand.ts";
+import { ThreadMessagesInboundLive } from "../embedding/thread-messages.ts";
 import { ThreadNotesInboundLive } from "../embedding/thread-notes.ts";
 import { ObjectStoreLive } from "../embedding/object-store.ts";
 import { TimersLive } from "../embedding/timers.ts";
@@ -890,8 +892,8 @@ export const ServerCore = Layer.unwrap(
         DevServerAppToolsLive,
         ThreadAssistLive,
         RepoEventsInboundLive,
-        OnDemandLive,
         ThreadNotesInboundLive,
+        ThreadMessagesInboundLive,
         SuppliedSettingsLive,
       )
         // Above the merges, which it asks again when a dependency merges; a `pipe` takes twenty.
@@ -913,10 +915,14 @@ export const ServerCore = Layer.unwrap(
               ),
               ThreadArchiverLive,
               WorktreeSweepLive,
+              // Tells the host provider when a worker's own machine has no work left.
+              WorkerMachineReleaseLive,
             ),
           ),
           Layer.provideMerge(Layer.mergeAll(DreamFiles.layer, ThreadArchive.layer)),
-          Layer.provideMerge(OrchestrationLive),
+          // On-demand hosts under the orchestration, whose workers' own machines it starts
+          // (`worker-machines.ts`).
+          Layer.provideMerge(OrchestrationLive.pipe(Layer.provideMerge(OnDemandLive))),
           // Gram's own full checks, which the solo merge policy accepts in place of CI, under the
           // orchestration whose ledger shows them.
           Layer.provideMerge(LocalChecksLive.pipe(Layer.provide(LocalCheckRunner.layer))),

@@ -51,7 +51,7 @@ export interface PlaceableMachine {
   readonly codex?: MachineCodex | undefined;
   /** A host an embedder started on demand for one person (`embedding/on-demand.ts`). */
   readonly owner?: string | undefined;
-  readonly onDemand?: "personal" | "thread" | undefined;
+  readonly onDemand?: "personal" | "thread" | "worker" | undefined;
 }
 
 /** A machine's Codex as placement reads it. */
