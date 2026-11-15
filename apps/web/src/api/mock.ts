@@ -1211,6 +1211,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       lastActivityAt: Date.now(),
       ...(input.resumeSessionId ? { agentSessionId: input.resumeSessionId } : {}),
       ...(input.resumeSessionId && input.codexHome ? { codexHome: input.codexHome } : {}),
+      ...this.#alsoIn(input, branch),
     };
     this.#add({
       thread,
@@ -1227,6 +1228,21 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       void this.#turn(thread.id, adopted);
     }
     return thread;
+  }
+
+  /** The other repositories a thread also works in, as the server gives them (`alsoIn`). */
+  #alsoIn(input: CreateThreadInput, branch: string): Partial<Thread> {
+    const roots = (input.alsoIn ?? []).filter((root) => root !== input.projectRoot);
+    if (roots.length === 0) return {};
+    if (input.checkout.kind !== "newWorktree") return { additionalDirectories: [...roots] };
+    const extraCheckouts = roots.map((root) => ({
+      kind: "worktree" as const,
+      path: `${root}/.worktrees/${branch.replaceAll("/", "-")}`,
+      branch,
+      base: "main",
+      repoRoot: root,
+    }));
+    return { extraCheckouts, additionalDirectories: extraCheckouts.map((extra) => extra.path) };
   }
 
   /**

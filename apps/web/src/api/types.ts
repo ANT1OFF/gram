@@ -171,6 +171,11 @@ export interface CreateThreadInput {
   codexHome?: NonNullable<Thread["codexHome"]>;
   /** Adopts the attachments uploaded for this draft; `input.attachments` names their staged paths. */
   draftId?: DraftId;
+  /**
+   * Other repositories here it also works in, by folder: each gets a worktree on its branch when
+   * it has a new worktree, else is given as it is.
+   */
+  alsoIn?: readonly string[];
 }
 
 export interface ForkThreadOptions {
