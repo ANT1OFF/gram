@@ -820,6 +820,10 @@ export const machineView = (
           ...(online.status.status.models === undefined
             ? {}
             : { models: online.status.status.models }),
+          // Its Codex, from a host that runs Codex sessions; absent from one that doesn't.
+          ...(online.status.status.codex === undefined
+            ? {}
+            : { codex: online.status.status.codex }),
         }),
     ...(offline === undefined ? {} : { offline }),
     ...(release === undefined ? {} : { release }),

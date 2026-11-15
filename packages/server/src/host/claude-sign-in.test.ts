@@ -150,6 +150,8 @@ describe("a machine's status", () => {
           resolvedId: "claude-opus-5-5",
           supportsEffort: true,
           efforts: ["low", "medium", "high", "xhigh", "max"],
+          // Which one runs when none is named, as the picker marks it.
+          isDefault: true,
         },
         expect.objectContaining({ id: "x".repeat(128) }),
       ]);

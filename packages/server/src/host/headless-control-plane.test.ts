@@ -5,6 +5,7 @@
 // the machine.
 
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -22,10 +23,12 @@ import type { RemoteAppTools } from "@gram/agents";
 import { captureLogs } from "@gram/agents/testing/logs";
 import { afterAll, describe, expect, it } from "@effect/vitest";
 import {
+  DEFAULT_CHARTER,
   GramRpcs,
   HOST_PROTOCOL_VERSION,
   HostId,
   PROFILE_START_PATH,
+  RequestId,
   type Thread,
 } from "@gram/contracts";
 import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
@@ -51,6 +54,7 @@ import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { PROFILE_ORIGINS_DIR } from "../thread-profiles/repositories.ts";
 import { hostStatusOf } from "./claude-sign-in.ts";
+import { codexStatusOf } from "./codex-on-host.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
@@ -137,9 +141,9 @@ const appClient = <Rpcs extends Rpc.Any>(
   });
 
 /** The project as the control plane keeps it, and the bare repository its remote really is. */
-const makeProject = () => {
-  const root = makeRepo(join(dir, "control-plane"));
-  const bare = join(dir, "widgets.git");
+const makeProject = (name = "control-plane") => {
+  const root = makeRepo(join(dir, name));
+  const bare = join(dir, `${name}-widgets.git`);
   execFileSync("git", ["clone", "--quiet", "--bare", root, bare]);
   execFileSync("git", ["-C", root, "remote", "add", "origin", REMOTE]);
   return {
@@ -164,11 +168,12 @@ const machineService = (
   port: number,
   env: Readonly<Record<string, string>>,
   tools: Array<RemoteAppTools>,
+  name = "machine",
 ) =>
   Effect.gen(function* () {
     const proc = yield* Proc;
     const agents = yield* AgentHosts;
-    const home = join(dir, "machine");
+    const home = join(dir, name);
     const repos = join(home, "repos");
     mkdirSync(repos, { recursive: true });
     const folders = foldersOn(proc, { home, hostHome: home, hostRepos: repos, agentHomes: [] });
@@ -203,14 +208,86 @@ const machineService = (
       status: hostStatusOf(
         Effect.succeed("signedIn" as const),
         // Its tools are found whatever this machine has installed.
-        () => Promise.resolve({ code: 0, stdout: "1.0.0\n" }),
+        FOUND,
         agents.get("claude").pipe(
           Effect.flatMap((host) => host.listModels()),
           Effect.orElseSucceed(() => undefined),
         ),
+        // Its Codex, as `gram-host run` reports it, over the fake.
+        codexStatusOf(agents.get("codex"), FOUND),
       ),
     };
     return { service, repos };
+  });
+
+/** A login shell on the machine that finds every tool, whatever this machine has installed. */
+const FOUND = () => Promise.resolve({ code: 0, stdout: "1.0.0\n" });
+
+/** The server's machines as `/machines/list` gives them. */
+const listMachines = (port: number, headers: Record<string, string>) =>
+  Effect.map(
+    raw(port, { path: "/machines/list", method: "POST", headers }),
+    (
+      response,
+    ): ReadonlyArray<{
+      id: string;
+      name: string;
+      onlineSince?: number;
+      models?: unknown;
+      codex?: { signIn: string; models?: ReadonlyArray<{ id: string }> };
+    }> => JSON.parse(response.body).machines ?? [],
+  );
+
+/**
+ * A machine joining the server at `port` as `gram-host join` does, the user confirming its key,
+ * and its host dialling in as `gram-host run` does, over `agents`.
+ */
+const joinMachine = (
+  port: number,
+  local: Record<string, string>,
+  project: { readonly env: Readonly<Record<string, string>> },
+  agents: Context.Context<AgentHosts | FakeAgentControl>,
+  name: string,
+) =>
+  Effect.gen(function* () {
+    const link = yield* raw(port, { path: "/machines/join-link", method: "POST", headers: local });
+    expect(link.status).toBe(200);
+    const code = new URLSearchParams(new URL(JSON.parse(link.body).url).hash.slice(1)).get("code")!;
+    const key = generateHostKey();
+    const joined = yield* raw(port, {
+      path: "/host/join",
+      method: "POST",
+      headers: { host: HOST, "content-type": "application/json" },
+      body: JSON.stringify({
+        code,
+        name,
+        platform: process.platform,
+        publicKey: key.publicKey,
+      }),
+    });
+    expect(joined.status).toBe(200);
+    const hostId = HostId.make(JSON.parse(joined.body).hostId);
+    const confirmed = yield* raw(port, {
+      path: "/machines/confirm",
+      method: "POST",
+      headers: local,
+      body: JSON.stringify({ id: hostId }),
+    });
+    expect(confirmed.status).toBe(200);
+    const tools: Array<RemoteAppTools> = [];
+    const machine = yield* machineService(hostId, port, project.env, tools, name).pipe(
+      Effect.provideContext(agents),
+      Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive))),
+    );
+    const socket = yield* Socket.makeWebSocket(`ws://127.0.0.1:${port}${HOST_CONNECT_PATH}`, {
+      headers: {
+        ...signedConnectHeaders(privateKeyFrom(key.privateKeyPem), ORIGIN, hostId, Date.now()),
+        host: HOST,
+      },
+      openTimeout: "15 seconds",
+    } as never).pipe(Effect.provide(NodeWS.layerWebSocketConstructor));
+    yield* Effect.forkScoped(serveHost(socket, machine.service));
+    return { hostId, machine, tools };
   });
 
 /** The whole server, headless, over `agents` (which it must never ask for a session). */
@@ -585,6 +662,196 @@ describe.skipIf(!hasGit)("a headless control plane", () => {
           body: startBody,
         });
         expect(JSON.parse(retried.body)).toEqual({ threadId, created: false });
+        expect(serverFake.sessions).toHaveLength(0);
+      }).pipe(Effect.scoped),
+    60_000,
+  );
+  it.live(
+    "runs a Codex thread on a joined machine: its models, start, approval, interrupt and resume",
+    () =>
+      Effect.gen(function* () {
+        const project = makeProject("codex-plane");
+        const serverAgents = yield* Layer.build(makeFakeAgentAdapter());
+        const server = yield* Layer.build(
+          headlessServer(serverAgents, { dataDir: join(dir, "codex-data"), embedding: true }),
+        );
+        const { port, token } = yield* Effect.gen(function* () {
+          return {
+            port: serverPort(yield* HttpServer.HttpServer),
+            token: (yield* LaunchToken).token,
+          };
+        }).pipe(Effect.provideContext(server));
+        const booted = yield* raw(port, { path: `/?boot=${token}` });
+        const cookie = booted.headers["set-cookie"]?.[0]?.split(";")[0] ?? "";
+        const local = {
+          cookie,
+          origin: `http://127.0.0.1:${port}`,
+          "content-type": "application/json",
+        };
+        const app = yield* appClient(GramRpcs, port, cookie);
+        const added = yield* app["projects.add"]({ root: project.root });
+
+        const machineAgents = yield* Layer.build(makeFakeAgentAdapter());
+        const machineFake = yield* FakeAgentControl.pipe(Effect.provideContext(machineAgents));
+        // Its Codex has Gram's native gated home ready, as a ChatGPT login there makes it.
+        yield* machineFake.setNativeGateReady(true);
+        const { hostId, tools } = yield* joinMachine(
+          port,
+          local,
+          project,
+          machineAgents,
+          "codex box",
+        );
+        const listed = yield* eventually(
+          "the machine's Codex status",
+          Effect.map(listMachines(port, local), (machines) =>
+            machines.find((each) => each.id === hostId && each.codex !== undefined),
+          ),
+        );
+        // What the machine's own Codex said of itself: signed in, and what it lists.
+        expect(listed.codex).toMatchObject({ signIn: "signedIn" });
+        expect(listed.codex?.models?.map((model) => model.id)).toEqual(["fake-opus", "fake-haiku"]);
+
+        // The picker's Codex models are the machine's, not this server's (which runs none).
+        const models = yield* app["models.list"]({ agent: "codex" });
+        expect(models.models.map((model) => model.id)).toEqual(["fake-opus", "fake-haiku"]);
+
+        // Start: a Codex thread is placed on the machine and its session opens there.
+        const thread: Thread = yield* app["thread.create"]({
+          projectRoot: project.root,
+          checkout: { kind: "current" },
+          model: { agent: "codex", model: "fake-opus" },
+          input: { text: "Start on Codex." },
+        });
+        expect(thread.checkout.hostId).toBe(hostId);
+        const first = yield* eventually(
+          "the Codex session on the machine",
+          Effect.sync(() =>
+            machineFake.sessions.find((session) => session.options.threadId === thread.id),
+          ),
+        );
+        expect(first.options.model).toMatchObject({ agent: "codex", model: "fake-opus" });
+        expect(first.options.cwd).toBe(thread.checkout.path);
+        yield* eventually(
+          "the first message",
+          Effect.sync(() => first.sent.length > 0),
+        );
+        // The session lives in a Codex home of the machine's; the thread keeps which.
+        yield* first.emit({
+          type: "identity",
+          agentSessionId: first.agentSessionId,
+          model: "fake-opus",
+          tools: [],
+          commands: [],
+          codexHome: "owned",
+        });
+
+        // Approval: the machine's agent asks, the answer reaches it there.
+        const requestId = RequestId.make(randomUUID());
+        yield* first.emit(
+          {
+            type: "request",
+            request: {
+              kind: "approval",
+              id: requestId,
+              toolName: "Bash",
+              displayName: "Bash",
+              input: { command: "echo synthetic", description: "A synthetic command" },
+              suggestions: [],
+            },
+          },
+          { type: "status", status: "awaitingApproval" },
+        );
+        yield* eventually(
+          "the answer taken",
+          app["thread.respond"]({
+            threadId: thread.id,
+            requestId,
+            answer: { kind: "approval", decision: "allow", scope: "once" },
+          }).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          ),
+        );
+        yield* eventually(
+          "the answer on the machine",
+          Effect.sync(() => first.responses.some((response) => response.requestId === requestId)),
+        );
+        expect(
+          first.responses.find((response) => response.requestId === requestId)?.answer,
+        ).toEqual({ kind: "approval", decision: "allow", scope: "once" });
+
+        // Interrupt: the turn stops on the machine.
+        yield* first.emit({ type: "status", status: "running" });
+        yield* app["thread.interrupt"]({ threadId: thread.id });
+        yield* eventually(
+          "the interrupt on the machine",
+          Effect.sync(() => first.interrupts > 0),
+        );
+
+        // Resume: a restart opens the same conversation on the machine again, in the same home,
+        // the wait for the previous app-server going with it.
+        yield* app["thread.restartSession"]({ threadId: thread.id });
+        const resumed = yield* eventually(
+          "the resumed session on the machine",
+          Effect.sync(() =>
+            machineFake.sessions.find(
+              (session) => session.options.threadId === thread.id && session !== first,
+            ),
+          ),
+        );
+        expect(first.closed).toBe(true);
+        expect(resumed.options.resumeId).toBe(first.agentSessionId);
+        expect(resumed.options.codexHome).toBe("owned");
+        expect(resumed.options.waitForPreviousSession).toBeDefined();
+        expect(resumed.options.model).toMatchObject({ agent: "codex" });
+
+        // A Codex worker under a workspace that asks before what can't be undone: its
+        // orchestrator spawns it, it goes on the machine, and the machine's Codex holds the gate.
+        const toolsBefore = tools.length;
+        const orchestrator: Thread = yield* app["workspace.startTask"]({
+          target: { projectId: added.id },
+          input: { text: "Plan the work." },
+        });
+        expect(orchestrator.checkout.hostId).toBe(hostId);
+        yield* app["orchestrator.setCharter"]({
+          workspaceId: orchestrator.workspaceId!,
+          charter: {
+            ...DEFAULT_CHARTER,
+            autonomy: "publish",
+            workerModels: [{ agent: "codex", model: "fake-opus" }],
+          },
+        });
+        // A new charter may reopen the orchestrator's session: its tools are its newest one's.
+        const spawned = yield* eventually(
+          "the orchestrator's spawn",
+          Effect.tryPromise(() => {
+            const current = tools.length > toolsBefore ? tools.at(-1) : undefined;
+            return current === undefined
+              ? Promise.resolve(undefined)
+              : current.call("spawn_worker", {
+                  project: added.name,
+                  feature: "codex-worker",
+                  title: "Codex worker on the machine",
+                  brief: "Synthetic work.",
+                });
+          }).pipe(Effect.orElseSucceed(() => undefined)),
+        );
+        expect(spawned.isError, JSON.stringify(spawned.content)).not.toBe(true);
+        const worker = yield* eventually(
+          "the Codex worker's session on the machine",
+          Effect.sync(() =>
+            machineFake.sessions.find(
+              (session) =>
+                session.options.audience === "worker" && session.options.model?.agent === "codex",
+            ),
+          ),
+        );
+        expect(worker.options.model).toMatchObject({ agent: "codex", model: "fake-opus" });
+        expect(worker.options.outwardGate).toBeDefined();
+
+        // Nothing ran here.
+        const serverFake = yield* FakeAgentControl.pipe(Effect.provideContext(serverAgents));
         expect(serverFake.sessions).toHaveLength(0);
       }).pipe(Effect.scoped),
     60_000,

@@ -33,6 +33,9 @@ import {
   HOST_STOPPED_ENDED,
   machineAwayEnded,
   machineRestartedEnded,
+  onMachineUnavailable,
+  opensOnHost,
+  opensOnMachine,
 } from "../runtime/host-agent-sessions.ts";
 import { isUndelivered } from "../runtime/undelivered.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
@@ -47,6 +50,7 @@ import {
   connectHost,
   HOST_BROWSER_POLICY_MISSING,
   HOST_CAPABILITIES,
+  HOST_CODEX_MISSING,
   HOST_FEATURES,
   HOST_SERVES,
   type HostConnection,
@@ -284,6 +288,185 @@ describe("a host that can't hold the browser off", () => {
       expect(onHost.opened[0]!.browser).toBe(false);
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
+});
+
+/**
+ * A joined machine's host whose sessions are a scripted Codex, over a real stream, named `box`,
+ * with `features` in its hello: this build's, or an older host's. The server's own Codex is
+ * scripted too, to show nothing opens there.
+ */
+const codexMachineWith = (features: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const onHost = yield* scriptedAgent("codex", "box");
+    const inServer = yield* scriptedAgent("codex", "server");
+    const { host: hostEnd, control } = yield* streamPair;
+    yield* Effect.forkScoped(
+      serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(hostEnd)), {
+        hello: {
+          protocol: HOST_PROTOCOL_VERSION,
+          hostId: MACHINE,
+          capabilities: HOST_SERVES,
+          features,
+          platform: process.platform,
+          pid: 1,
+        },
+        files: filesOn(yield* Proc),
+        reads: fileReadsOn(yield* Proc),
+        attachments: yield* attachmentsOnHost(mkdtempSync(join(tmpdir(), "gram-host-attached-"))),
+        repos: reposOn(yield* Proc, REPOS),
+        worktrees: yield* Worktrees,
+        git: gitOn(yield* Proc),
+        terminals: yield* terminalsOnHost,
+        sessions: yield* sessionsOnHost(
+          (agent) =>
+            agent === "codex"
+              ? Effect.succeed(onHost.host)
+              : Effect.fail(new AgentUnavailable({ agent, message: "not here" })),
+          () => Effect.succeed(LISTED),
+        ),
+        scan: Effect.succeed({ listening: new Map(), children: new Map() }),
+      }),
+    );
+    const connection = yield* connectHost(yield* NodeSocket.fromDuplex(Effect.succeed(control)), {
+      hostId: MACHINE,
+    });
+    const agent = agentHostOnMachine(
+      followingSessions(Effect.succeed(connection)),
+      () => false,
+      inServer.host,
+      "box",
+      () => "http://100.64.0.1:4317",
+    );
+    return { onHost, inServer, agent };
+  });
+
+describe("a joined machine's Codex sessions", () => {
+  it("open there, never in this machine's host process, whose Codex homes are the server's", () => {
+    const plain = { threadId: THREAD, cwd: "/work" };
+    expect(opensOnMachine("codex", plain)).toBe(true);
+    expect(opensOnHost("codex", plain)).toBe(false);
+    // A restart's wait for the previous app-server goes with the open: that one is the machine's.
+    const restart = { ...plain, waitForPreviousSession: { onWait: Effect.void } };
+    expect(opensOnMachine("codex", restart)).toBe(true);
+    expect(opensOnMachine("claude", restart)).toBe(false);
+    // What only the server holds stays here: a gateway profile's key, a switch, a memory update.
+    expect(
+      opensOnMachine("codex", {
+        ...plain,
+        model: { agent: "codex", model: "m", profileId: "p-1" as ProfileId },
+      }),
+    ).toBe(false);
+    expect(opensOnMachine("codex", { ...plain, switchStartup: "switch-1" })).toBe(false);
+    expect(opensOnMachine("codex", { ...plain, audience: "dream", dreamGuided: true })).toBe(false);
+    expect(opensOnMachine("opencode", plain)).toBe(false);
+  });
+
+  it.live("start on the machine in their home, and its approvals, interrupts and modes cross", () =>
+    Effect.gen(function* () {
+      const { onHost, inServer, agent } = yield* codexMachineWith(HOST_FEATURES);
+      const session = yield* agent.open({
+        threadId: THREAD,
+        cwd: "/work/repo",
+        model: { agent: "codex", model: "gpt-synthetic" },
+        permissionMode: "auto",
+        resumeId: "codex-thread-1",
+        codexHome: "owned",
+        outwardGate: "all",
+        waitForPreviousSession: { onWait: Effect.void },
+      });
+      expect(inServer.opened).toEqual([]);
+      const opened = onHost.opened[0]!;
+      expect(opened).toMatchObject({
+        threadId: THREAD,
+        cwd: "/work/repo",
+        model: { agent: "codex", model: "gpt-synthetic" },
+        permissionMode: "auto",
+        resumeId: "codex-thread-1",
+        codexHome: "owned",
+        outwardGate: "all",
+      });
+      // The wait itself is the host's, for its own app-server.
+      expect(opened.waitForPreviousSession).toBeDefined();
+      yield* session.send({ text: "go" });
+      yield* session.respond("req-1" as RequestId, {
+        kind: "approval",
+        decision: "allow",
+        scope: "once",
+      });
+      yield* session.interrupt;
+      yield* session.setMode("acceptEdits");
+      yield* eventually(
+        () => (onHost.calls.includes("mode acceptEdits") ? true : undefined),
+        "the mode on the machine",
+      );
+      expect(onHost.calls).toEqual([
+        "box: open",
+        "send go",
+        "respond req-1",
+        "interrupt",
+        "mode acceptEdits",
+      ]);
+      // Its events come back from the machine.
+      Queue.offerUnsafe(onHost.events, { type: "status", status: "running" });
+      const first = yield* session.events.pipe(Stream.take(1), Stream.runCollect);
+      expect([...first]).toEqual([{ type: "status", status: "running" }]);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("a fresh session sends no home, and the machine's Codex picks one as it does here", () =>
+    Effect.gen(function* () {
+      const { onHost, agent } = yield* codexMachineWith(HOST_FEATURES);
+      yield* agent.open({ threadId: THREAD, cwd: "/work", model: { agent: "codex", model: "m" } });
+      expect(onHost.opened[0]).not.toHaveProperty("codexHome");
+      expect(onHost.opened[0]).not.toHaveProperty("waitForPreviousSession");
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("a machine's older host is refused, saying to update it, and opens nothing", () =>
+    Effect.gen(function* () {
+      const { onHost, inServer, agent } = yield* codexMachineWith(
+        HOST_FEATURES.filter((feature) => feature !== "agent-codex"),
+      );
+      const error = yield* agent
+        .open({ threadId: THREAD, cwd: "/work", model: { agent: "codex", model: "m" } })
+        .pipe(Effect.scoped, Effect.flip);
+      expect(error).toMatchObject({ _tag: "AgentUnavailable", agent: "codex" });
+      expect(error.message).toBe(`On box: ${HOST_CODEX_MISSING}`);
+      expect(onHost.opened).toEqual([]);
+      expect(inServer.opened).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("a gateway profile's session is refused there, its key never leaving this machine", () =>
+    Effect.gen(function* () {
+      const { onHost, inServer, agent } = yield* codexMachineWith(HOST_FEATURES);
+      const error = yield* agent
+        .open({
+          threadId: THREAD,
+          cwd: "/work",
+          model: { agent: "codex", model: "m", profileId: "p-1" as ProfileId },
+        })
+        .pipe(Effect.scoped, Effect.flip);
+      expect(error.message).toBe("This session can't run on box yet.");
+      expect(onHost.opened).toEqual([]);
+      expect(inServer.opened).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it("say what to fix on the machine when its Codex isn't signed in", () => {
+    expect(
+      onMachineUnavailable(
+        new AgentUnavailable({ agent: "codex", reason: "not-logged-in", message: "no login" }),
+        "box",
+      ).message,
+    ).toBe("Codex isn't signed in on box. Run `codex login` there with your ChatGPT account.");
+    expect(
+      onMachineUnavailable(
+        new AgentUnavailable({ agent: "codex", reason: "startup-failed", message: "it broke" }),
+        "box",
+      ).message,
+    ).toBe("On box: it broke");
+  });
 });
 
 describe("agent sessions through the host process", () => {
