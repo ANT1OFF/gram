@@ -151,6 +151,11 @@ export interface ServerConfigShape {
    */
   readonly decisionHook?: EndpointSetting;
   /**
+   * Where a headless control plane's `gh` reaches GitHub (`GRAM_GITHUB_ROUTE_URL`, with
+   * `GRAM_GITHUB_ROUTE_TOKEN` or `GRAM_GITHUB_ROUTE_TOKEN_FILE`): see `embedding/github-relay.ts`.
+   */
+  readonly githubRoute?: EndpointSetting;
+  /**
    * Sent what happens, in order (`embedding/event-sink.ts`): `GRAM_EVENT_SINK_URL`, with
    * `GRAM_EVENT_SINK_TOKEN`. Absent or unusable, nothing is recorded or sent.
    */
@@ -223,6 +228,13 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
       env["GRAM_EVENT_SINK_TOKEN"],
       env["GRAM_EVENT_SINK_TOKEN_FILE"],
     );
+    const githubRoute = endpointSetting(
+      env["GRAM_GITHUB_ROUTE_URL"],
+      env["GRAM_GITHUB_ROUTE_TOKEN"],
+      env["GRAM_GITHUB_ROUTE_TOKEN_FILE"],
+    );
+    // Read once, here: `gh` and everything else the server starts would inherit it.
+    if (env === process.env) delete env["GRAM_GITHUB_ROUTE_TOKEN"];
     return {
       dataDir: defaultDataDir(env),
       ...(env["GRAM_REMOTE_ORIGIN"] !== undefined
@@ -254,6 +266,7 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
           : {}),
       ...(embed === undefined ? {} : { embed }),
       ...(decisionHook === undefined ? {} : { decisionHook }),
+      ...(githubRoute === undefined ? {} : { githubRoute }),
       ...(eventSink === undefined ? {} : { eventSink }),
       ...(env["GRAM_EVENT_SINK_MESSAGES"] === "1" ? { eventSinkMessages: true } : {}),
     };

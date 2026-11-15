@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { KeptSessions } from "../runtime/kept-sessions.ts";
 import { answerAsk, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
 import { DecisionHook } from "../embedding/decision-hook.ts";
+import { GitHubRelayLive } from "../embedding/github-relay.ts";
 import { type AnswerNote, EventSink } from "../embedding/event-sink.ts";
 import { UsageLimitPoller } from "../usage/limit-poller.ts";
 import { PlanKeeperLive } from "../plans/keeper.ts";
@@ -1052,6 +1053,8 @@ export const ServerCore = Layer.unwrap(
                     Layer.provideMerge(EmbedInbound.layer),
                     Layer.provideMerge(Embedding.layer),
                   ),
+                  // A headless control plane's `gh`, through the deployment's GitHub route.
+                  GitHubRelayLive,
                 ),
               ),
             ),
