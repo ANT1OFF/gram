@@ -18,6 +18,30 @@
 * **orchestration:** close three merge-ownership races at full autonomy ([#651](https://github.com/ANT1OFF/gram/issues/651)) ([42bdb8f](https://github.com/ANT1OFF/gram/commit/42bdb8ffefa9616a296ed0458ea5c9d9f9facb12))
 * scope subscription limit holds to machine logins ([#670](https://github.com/ANT1OFF/gram/issues/670)) ([d2119b5](https://github.com/ANT1OFF/gram/commit/d2119b5d06e2e76b8ba1e1269c347fca61cfc9f8))
 
+### From the embedding branch ([#659](https://github.com/ANT1OFF/gram/issues/659), [#671](https://github.com/ANT1OFF/gram/issues/671))
+
+These came to `main` in two squashed merges, so they are listed by hand. Several are for apps that mount Gram's web app or for hosted deployments; those stay behind the hosted features setting, which is off by default. The branch's own copies of [#653](https://github.com/ANT1OFF/gram/issues/653) and [#664](https://github.com/ANT1OFF/gram/issues/664) are listed above.
+
+#### Features
+
+* a person's message for a thread, and stopping its turn, from the platform ([#650](https://github.com/ANT1OFF/gram/issues/650))
+* an orchestrator can give a worker a machine of its own ([#652](https://github.com/ANT1OFF/gram/issues/652))
+* tell the host provider when a worker's own machine has no work left ([#658](https://github.com/ANT1OFF/gram/issues/658))
+* a delivery chip shows steer, queue and interrupt while an agent works ([#661](https://github.com/ANT1OFF/gram/issues/661))
+* an orchestrator can name the environment a worker's own machine starts in ([#662](https://github.com/ANT1OFF/gram/issues/662))
+* two-line worker rows in the sidebar ([#669](https://github.com/ANT1OFF/gram/issues/669))
+
+#### Bug Fixes
+
+* new-task route budget to 200 kB ([#656](https://github.com/ANT1OFF/gram/issues/656))
+* drop the briefing placeholder that echoed the sent message ([#660](https://github.com/ANT1OFF/gram/issues/660))
+* every worker row keeps its agent's mark ([#663](https://github.com/ANT1OFF/gram/issues/663))
+* thread route budget to 920 kB ([#666](https://github.com/ANT1OFF/gram/issues/666))
+
+#### Performance
+
+* rerun the benchmarks, fix an OpenCode leak and a slow-link markdown race ([#668](https://github.com/ANT1OFF/gram/issues/668))
+
 ## [1.26.0](https://github.com/ANT1OFF/gram/compare/v1.25.0...v1.26.0) (2026-11-15)
 
 
