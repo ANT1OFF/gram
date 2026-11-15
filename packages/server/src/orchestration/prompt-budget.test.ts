@@ -60,10 +60,14 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * to the `over_total` refusal and idle pausing to docs/EMBEDDING.md, and `spawn_worker`,
  * `add_worker_repo` and the prompt lost what the prompt, the held and route-offer results and the
  * `ask_user` and `list_workers` descriptions already say; measured then at 63,329.
+ * Both raised on 2026-11-15, on purpose, for memory every worker writes too: `memory_write`,
+ * `memory_append`, `memory_edit` and `memory_delete` bound for workers, with `revision` on the
+ * write and the delete, and the prompts' lines on notes, the index and who curates. The four
+ * descriptions were cut first; measured then at 63,824 and 40,214.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 63_700,
-  worker: 37_700,
+  orchestrator: 64_200,
+  worker: 41_900,
   plain: 23_650,
 };
 

@@ -924,7 +924,9 @@ export type RefusalCode =
   | "not_yours"
   | "unknown_machine"
   | "ambiguous_machine"
-  | "over_total";
+  | "over_total"
+  | "stale_revision"
+  | "kept_from_workers";
 
 /**
  * An `AppToolError` message with its machine-readable prefix, `code: message`, so an agent (and a

@@ -24,6 +24,7 @@ import { threadHandlers } from "../rpc/handlers/threads.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { emptyWorkerMemo, encodeOutbox, workerThreadId } from "./outbox.ts";
+import { memoryRevision } from "./memory.ts";
 import { Orchestration } from "./service.ts";
 import {
   GIT_HEAVY,
@@ -126,10 +127,6 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           "set_stage",
           "set_group",
           "answer_worker",
-          "memory_write",
-          "memory_append",
-          "memory_edit",
-          "memory_delete",
           "ask_user",
           "close_question",
         ];
@@ -138,8 +135,15 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           expect(names("worker").has(name)).toBe(false);
           expect(names("plain").has(name)).toBe(false);
         }
-        // Workers read their orchestrator's memory; only the orchestrator changes it.
-        for (const name of ["memory_list", "memory_read"]) {
+        // An orchestrator and its workers share one memory, which both read and write.
+        for (const name of [
+          "memory_list",
+          "memory_read",
+          "memory_write",
+          "memory_append",
+          "memory_edit",
+          "memory_delete",
+        ]) {
           expect(names("orchestrator").has(name)).toBe(true);
           expect(names("worker").has(name)).toBe(true);
           expect(names("plain").has(name)).toBe(false);
@@ -702,10 +706,15 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
         const listed = (yield* worker.session.callTool("memory_list", {})) as {
           readonly files: ReadonlyArray<{ readonly path: string }>;
         };
-        // Only plain lowercase names are shown to a worker, so the `MEMORY.md` index is not; a plain
-        // folder is gone into.
-        expect(listed.files.map((file) => file.path).toSorted()).toEqual(["repos/shop.md"]);
-        expect(yield* worker.session.callTool("memory_read", { file: "repos/shop.md" })).toEqual({
+        // Only plain lowercase names and the `MEMORY.md` index are shown to a worker; a plain folder
+        // is gone into.
+        expect(listed.files.map((file) => file.path).toSorted()).toEqual([
+          "MEMORY.md",
+          "repos/shop.md",
+        ]);
+        expect(
+          yield* worker.session.callTool("memory_read", { file: "repos/shop.md" }),
+        ).toMatchObject({
           path: "repos/shop.md",
           content: "2026-11-05: uses pnpm, not npm (from the brief).\n",
         });
@@ -717,6 +726,157 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           .pipe(Effect.flip);
         expect(closed).toMatchObject({ _tag: "AppToolError", tool: "memory_read" });
         expect(String((closed as { message?: unknown }).message)).toContain("no memory to read");
+      }),
+    ),
+  );
+
+  it.effect("lets a worker write the memory it can see, from the revision it read", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const { session } = yield* openOrchestrator(world);
+        yield* session.callTool("memory_append", {
+          path: "repos/shop.md",
+          text: "2026-11-05: uses pnpm, not npm (from the brief).",
+        });
+        yield* session.callTool("memory_write", {
+          path: "plans.md",
+          content: "---\nprivate: true\n---\nOnly the orchestrator reads this.\n",
+        });
+        const worker = yield* spawn(session, { feature: "mail-trigger" });
+        const call = (tool: string, input: Record<string, unknown>) =>
+          worker.session.callTool(tool, input);
+        const refusalOf = (tool: string, input: Record<string, unknown>) =>
+          call(tool, input).pipe(
+            Effect.flip,
+            Effect.map((error) => String((error as { message?: unknown }).message)),
+          );
+
+        // An entry needs no read first.
+        yield* call("memory_append", {
+          path: "repos/shop.md",
+          text: "2026-11-15: e2e needs the browser cache (mail-trigger).",
+        });
+        const read = (yield* call("memory_read", { path: "repos/shop.md" })) as {
+          readonly content: string;
+          readonly revision: string;
+        };
+        expect(read.content).toContain("browser cache");
+        expect(read.revision).toBe(memoryRevision(read.content));
+        expect(
+          partsOf(yield* store.listMessages(worker.thread.id), "data-memory-write"),
+        ).toHaveLength(1);
+
+        // Replacing a note takes the revision it was read at; a worker can't skip it.
+        expect(
+          yield* refusalOf("memory_write", { path: "repos/shop.md", content: "Gone." }),
+        ).toContain("stale_revision");
+        // The orchestrator writes in between: the worker's revision is stale, nothing is written,
+        // and the refusal carries the current text to merge into.
+        yield* session.callTool("memory_append", {
+          path: "repos/shop.md",
+          text: "2026-11-15: releases on Tuesdays (orchestrator).",
+        });
+        const stale = yield* refusalOf("memory_write", {
+          path: "repos/shop.md",
+          content: `${read.content}2026-11-15: lint with oxlint.\n`,
+          revision: read.revision,
+        });
+        expect(stale).toContain("stale_revision");
+        expect(stale).toContain("releases on Tuesdays");
+        const current = (yield* call("memory_read", { path: "repos/shop.md" })) as {
+          readonly content: string;
+          readonly revision: string;
+        };
+        expect(current.content).not.toContain("oxlint");
+        const merged = (yield* call("memory_write", {
+          path: "repos/shop.md",
+          content: `${current.content}2026-11-15: lint with oxlint.\n`,
+          basedOn: current.revision,
+        })) as { readonly revision: string };
+        const after = (yield* session.callTool("memory_read", { path: "repos/shop.md" })) as {
+          readonly content: string;
+          readonly revision: string;
+        };
+        expect(after.content).toContain("releases on Tuesdays");
+        expect(after.content).toContain("oxlint");
+        expect(merged.revision).toBe(after.revision);
+
+        // `new` only creates.
+        yield* call("memory_write", {
+          path: "traps.md",
+          content: "---\nname: traps\ndescription: what bit us\ntype: project\n---\nOne.\n",
+          revision: "new",
+        });
+        expect(
+          yield* refusalOf("memory_write", { path: "traps.md", content: "Two.", revision: "new" }),
+        ).toContain("stale_revision");
+
+        // What is kept from workers can't be changed by one, and a worker can't write it either.
+        for (const [tool, input] of [
+          ["memory_append", { path: "plans.md", text: "More." }],
+          ["memory_edit", { path: "plans.md", old: "Only", new: "Not only" }],
+          ["memory_write", { path: "plans.md", content: "Mine.", revision: "new" }],
+          ["memory_delete", { path: "plans.md", revision: "x" }],
+          ["memory_append", { path: "aws-secret.md", text: "Ordinary." }],
+          [
+            "memory_append",
+            { path: "keys.md", text: "token: ghp_abcdefghijklmnopqrstuvwxyz0123456789" },
+          ],
+          [
+            "memory_append",
+            { path: "notes.md", text: "token: ghp_abcdefghijklmnopqrstuvwxyz0123456789" },
+          ],
+        ] as const) {
+          expect(yield* refusalOf(tool, input)).toContain("kept_from_workers");
+        }
+        expect(
+          ((yield* session.callTool("memory_read", { path: "plans.md" })) as { content: string })
+            .content,
+        ).toContain("Only the orchestrator");
+        const listed = (yield* session.callTool("memory_list", {})) as {
+          readonly files: ReadonlyArray<{ readonly path: string }>;
+        };
+        expect(listed.files.map((file) => file.path)).not.toContain("notes.md");
+
+        // A delete takes the revision too.
+        expect(yield* refusalOf("memory_delete", { path: "traps.md" })).toContain("stale_revision");
+        const traps = (yield* call("memory_read", { path: "traps.md" })) as {
+          readonly revision: string;
+        };
+        expect(
+          yield* refusalOf("memory_delete", { path: "traps.md", revision: "0000000000000000" }),
+        ).toContain("stale_revision");
+        expect(
+          yield* call("memory_delete", { path: "traps.md", revision: traps.revision }),
+        ).toEqual({ path: "traps.md", deleted: true });
+      }),
+    ),
+  );
+
+  it.effect("holds the orchestrator to a revision it names", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const { session } = yield* openOrchestrator(world);
+        const index = (yield* session.callTool("memory_read", { path: "MEMORY.md" })) as {
+          readonly content: string;
+          readonly revision: string;
+        };
+        yield* session.callTool("memory_append", { path: "MEMORY.md", text: "- [[goals]]: goals" });
+        const stale = yield* session
+          .callTool("memory_write", {
+            path: "MEMORY.md",
+            content: "# Index\n",
+            revision: index.revision,
+          })
+          .pipe(Effect.flip);
+        expect(String((stale as { message?: unknown }).message)).toContain("stale_revision");
+        // Without one, the orchestrator still replaces a note as before.
+        yield* session.callTool("memory_write", { path: "MEMORY.md", content: "# Index\n" });
+        expect(
+          ((yield* session.callTool("memory_read", { path: "MEMORY.md" })) as { content: string })
+            .content,
+        ).toBe("# Index\n");
       }),
     ),
   );
@@ -765,7 +925,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           path: "goals.md",
           text: "2026-10-18: Test the synthetic fixture (test brief).",
         });
-        expect(yield* session.callTool("memory_read", { path: "goals.md" })).toEqual({
+        expect(yield* session.callTool("memory_read", { path: "goals.md" })).toMatchObject({
           path: "goals.md",
           content: "2026-10-18: Test the synthetic fixture (test brief).\n",
         });
@@ -787,7 +947,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           path: "repos/shop.md",
           content: "2026-09-24: uses pnpm. Tests run with vitest.\n",
         });
-        expect(yield* session.callTool("memory_read", { path: "repos/shop.md" })).toEqual({
+        expect(yield* session.callTool("memory_read", { path: "repos/shop.md" })).toMatchObject({
           path: "repos/shop.md",
           content: "2026-09-24: uses pnpm. Tests run with vitest.\n",
         });
@@ -808,7 +968,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           old: "on Mondays",
           new: "on Tuesdays",
         });
-        expect(yield* session.callTool("memory_read", { path: "repos/shop.md" })).toEqual({
+        expect(yield* session.callTool("memory_read", { path: "repos/shop.md" })).toMatchObject({
           path: "repos/shop.md",
           content:
             "2026-09-24: uses pnpm. Tests run with vitest.\n2026-09-25: releases are cut on Tuesdays.\n",

@@ -79,7 +79,13 @@ import { PrDependencies } from "../wakes/pr-dependencies.ts";
 import { WakeConditions } from "../wakes/conditions.ts";
 import { ThreadWakes, type WakeInput } from "../wakes/thread-wakes.ts";
 import { compactWorkerRow } from "./ledger.ts";
-import { appendEntry, editPassage, OrchestrationMemory } from "./memory.ts";
+import {
+  appendEntry,
+  editPassage,
+  MEMORY_REVISION_NEW,
+  memoryRevision,
+  OrchestrationMemory,
+} from "./memory.ts";
 import { prWakeEventOf, prWatchSeenOf, refusal } from "./rules.ts";
 import { MAX_WORKER_REPOS, Orchestration } from "./service.ts";
 import { attachUserWords, USER_MESSAGES_MAX, withBriefFooter } from "./user-words.ts";
@@ -114,6 +120,25 @@ const NOT_AN_ORCHESTRATOR =
 
 const NO_MEMORY_TO_READ =
   "This thread is neither a workspace's orchestrator nor a worker reporting to one, so there is no memory to read here.";
+
+/**
+ * Refuses a change made from a revision the file has moved on from, with the file's current text
+ * and revision, so the caller can merge its change into it and write again.
+ */
+const checkRevision = (
+  tool: string,
+  path: string,
+  revision: string | undefined,
+  current: string | undefined,
+): Effect.Effect<void, AppToolError> => {
+  const now = current === undefined ? MEMORY_REVISION_NEW : memoryRevision(current);
+  if (revision === undefined || revision === now) return Effect.void;
+  const message =
+    current === undefined
+      ? `${path} isn't in memory any more (you read revision ${revision}). Write it again with revision "${MEMORY_REVISION_NEW}" if it should still exist.`
+      : `${path} changed since you read it (you read revision ${revision}; it is now ${now}). Merge your change into its current text below, keeping what you aren't changing, and write again with revision ${now}.\n\n${current}`;
+  return Effect.fail(new AppToolError({ tool, message: refusal("stale_revision", message) }));
+};
 
 /** `schedule_wake` lists its condition flat (`WakeConditionInput`); this decodes it as the union. */
 const decodeWakeCondition = Schema.decodeUnknownEffect(WakeCondition);
@@ -942,21 +967,21 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         );
 
     /**
-     * The memory the caller may read: its own as an orchestrator, its orchestrator's as a worker.
-     * Writes stay with `memoryOf`, so the orchestrator is memory's one curator.
+     * The memory the caller may read and write: its own as an orchestrator, its orchestrator's as a
+     * worker. `asWorker` holds a worker to the files it can see; questions stay with `memoryOf`.
      */
     const readableMemoryOf = (tool: string, caller: ThreadId) =>
-      orchestration
-        .memoryReaderOf(caller)
-        .pipe(
-          Effect.flatMap((workspaceId) =>
-            workspaceId === undefined
-              ? Effect.fail(
-                  new AppToolError({ tool, message: refusal("no_authority", NO_MEMORY_TO_READ) }),
-                )
-              : Effect.succeed(workspaceId),
-          ),
-        );
+      Effect.gen(function* () {
+        const workspaceId = yield* orchestration.memoryReaderOf(caller);
+        if (workspaceId === undefined) {
+          return yield* new AppToolError({
+            tool,
+            message: refusal("no_authority", NO_MEMORY_TO_READ),
+          });
+        }
+        const asWorker = (yield* orchestration.authorityOf(caller)) === undefined;
+        return { workspaceId, asWorker };
+      });
 
     /** A write as a diff in the caller's transcript, and `memory.changed` to every window. */
     const showWrite = (caller: ThreadId, workspaceId: WorkspaceId, write: MemoryWrite) =>
@@ -969,17 +994,17 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "memory_list",
         class: "self",
         description:
-          "The files in your workspace's memory, with their sizes. MEMORY.md is the index. A worker reads its orchestrator's memory and can't change it.",
+          "The notes in your workspace's memory, with their sizes. MEMORY.md is the index. An orchestrator and its workers share it.",
       },
       audience: ["orchestrator", "worker"],
       input: Schema.Struct({ prefix: Schema.optionalKey(Schema.String) }),
       handle: (caller, { prefix }) =>
         Effect.gen(function* () {
-          const workspaceId = yield* readableMemoryOf("memory_list", caller);
+          const { workspaceId, asWorker } = yield* readableMemoryOf("memory_list", caller);
           // A worker reads through the anchored tree, without what is private or credential-shaped.
-          const files = (yield* orchestration.authorityOf(caller))
-            ? yield* memory.list(workspaceId)
-            : yield* memory.listForWorker(workspaceId);
+          const files = asWorker
+            ? yield* memory.listForWorker(workspaceId)
+            : yield* memory.list(workspaceId);
           return {
             files: files.filter((file) => prefix === undefined || file.path.startsWith(prefix)),
           };
@@ -991,68 +1016,94 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "memory_read",
         class: "self",
         description:
-          "Use `file` (`path` is an alias), relative to the memory root. Read one memory file's text.",
+          "Use `file` (`path` is an alias), relative to the memory root. Read one memory note's text and its `revision`, which `memory_write` and `memory_delete` take.",
       },
       audience: ["orchestrator", "worker"],
       input: inputAliases(Schema.Struct({ path: Schema.NonEmptyString }), { path: ["file"] }),
       handle: (caller, { path }) =>
         Effect.gen(function* () {
-          const workspaceId = yield* readableMemoryOf("memory_read", caller);
-          const content = (yield* orchestration.authorityOf(caller))
-            ? yield* memory.read(workspaceId, path)
-            : yield* memory.readForWorker(workspaceId, path);
-          return { path, content };
+          const { workspaceId, asWorker } = yield* readableMemoryOf("memory_read", caller);
+          const content = asWorker
+            ? yield* memory.readForWorker(workspaceId, path)
+            : yield* memory.read(workspaceId, path);
+          return { path, content, revision: memoryRevision(content) };
         }).pipe(Effect.mapError(failed("memory_read"))),
     });
+
+    /**
+     * A change to one file through `memory.modify`, under the memory's lock, shown as a diff. A
+     * worker changes only what it can see, into what every worker can still read.
+     */
+    const memoryChange = (
+      tool: string,
+      caller: ThreadId,
+      path: string,
+      change: (
+        current: string | undefined,
+        asWorker: boolean,
+      ) => string | { readonly problem: string } | Effect.Effect<string, AppToolError>,
+    ) =>
+      Effect.gen(function* () {
+        const { workspaceId, asWorker } = yield* readableMemoryOf(tool, caller);
+        const { write, revision } = yield* memory.modify(
+          workspaceId,
+          path,
+          (current) => {
+            const next = change(current, asWorker);
+            if (Effect.isEffect(next)) {
+              return Effect.map(next, (content) => ({ content, result: undefined }));
+            }
+            return typeof next === "string"
+              ? Effect.succeed({ content: next, result: undefined })
+              : Effect.fail(new AppToolError({ tool, message: next.problem }));
+          },
+          { asWorker },
+        );
+        yield* showWrite(caller, workspaceId, write);
+        return { path: write.path, bytes: write.bytes, revision };
+      }).pipe(Effect.mapError(failed(tool)));
 
     const memoryWrite = defineAppTool({
       descriptor: {
         name: "memory_write",
         class: "self",
         description:
-          "Use `file` (`path` is an alias) and `content` (`text` and `message` are aliases). Create or replace a memory file with `content` (the whole file); to add an entry or change one, `memory_append` and `memory_edit` need no fresh read. Paths are relative, a few folders deep at most; files and the index are size-capped, and secrets are scrubbed. The user sees every write as a diff. Record what can't be derived: goals, decisions and why, repo conventions, how the repos relate, open questions. Never worker status.",
+          "Use `file` (`path` is an alias) and `content`, the whole note (`text` and `message` are aliases). Replace a note only with the `revision` from `memory_read` (a worker must give it), keeping what you aren't changing; if it changed since, nothing is written and the refusal gives its current text to merge into. `revision: \"new\"` only creates. Secrets are scrubbed; the user sees each write as a diff. Record what can't be derived; never worker status.",
       },
-      audience: ["orchestrator"],
-      input: inputAliases(Schema.Struct({ path: Schema.NonEmptyString, content: Schema.String }), {
-        path: ["file"],
-        content: ["text", "message"],
-      }),
-      handle: (caller, { path, content }) =>
-        Effect.gen(function* () {
-          const workspaceId = yield* memoryOf("memory_write", caller);
-          const write = yield* memory.write(workspaceId, path, content);
-          yield* showWrite(caller, workspaceId, write);
-          return { path: write.path, bytes: write.bytes };
-        }).pipe(Effect.mapError(failed("memory_write"))),
+      audience: ["orchestrator", "worker"],
+      input: inputAliases(
+        Schema.Struct({
+          path: Schema.NonEmptyString,
+          content: Schema.String,
+          revision: Schema.optionalKey(Schema.NonEmptyString),
+        }),
+        { path: ["file"], content: ["text", "message"], revision: ["basedOn"] },
+      ),
+      handle: (caller, { path, content, revision }) =>
+        memoryChange("memory_write", caller, path, (current, asWorker) => {
+          if (asWorker && current !== undefined && revision === undefined) {
+            return Effect.fail(
+              new AppToolError({
+                tool: "memory_write",
+                message: refusal(
+                  "stale_revision",
+                  `${path} already exists. Read it with \`memory_read\`, keep what you aren't changing, and write again with the \`revision\` it gives you; or add to it with \`memory_append\`.`,
+                ),
+              }),
+            );
+          }
+          return Effect.as(checkRevision("memory_write", path, revision, current), content);
+        }),
     });
-
-    /** A change to one file through `memory.modify`, under the memory's lock, shown as a diff. */
-    const memoryChange = (
-      tool: string,
-      caller: ThreadId,
-      path: string,
-      change: (current: string | undefined) => string | { readonly problem: string },
-    ) =>
-      Effect.gen(function* () {
-        const workspaceId = yield* memoryOf(tool, caller);
-        const { write } = yield* memory.modify(workspaceId, path, (current) => {
-          const next = change(current);
-          return typeof next === "string"
-            ? Effect.succeed({ content: next, result: undefined })
-            : Effect.fail(new AppToolError({ tool, message: next.problem }));
-        });
-        yield* showWrite(caller, workspaceId, write);
-        return { path: write.path, bytes: write.bytes };
-      }).pipe(Effect.mapError(failed(tool)));
 
     const memoryAppend = defineAppTool({
       descriptor: {
         name: "memory_append",
         class: "self",
         description:
-          "Use `file` (`path` is an alias) and `content` (`text` and `message` are aliases). Add `content` to the end of a memory file, on a line of its own, making the file if it isn't there. For a new dated entry: nothing needs reading first, and nothing written meanwhile is lost. The caps and scrubbing of `memory_write` apply.",
+          "Use `file` (`path` is an alias) and `content` (`text` and `message` are aliases). Add `content` as a line at the end of a note, making the note if needed. Needs no read first and loses nothing written meanwhile.",
       },
-      audience: ["orchestrator"],
+      audience: ["orchestrator", "worker"],
       input: inputAliases(
         Schema.Struct({ path: Schema.NonEmptyString, text: Schema.NonEmptyString }),
         { path: ["file"], text: ["content", "message"] },
@@ -1066,9 +1117,9 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "memory_edit",
         class: "self",
         description:
-          "Use `file` (`path` is an alias). Replace `old` with `new` in a memory file, as it reads in `memory_read`; an empty `new` deletes the passage. `old` must appear exactly once, unless `replaceAll`; otherwise nothing changes and the result says so. For correcting or pruning one entry without rewriting the file.",
+          "Use `file` (`path` is an alias). Replace `old` with `new` in a note (an empty `new` deletes it). `old` must appear exactly once unless `replaceAll`; otherwise nothing changes. For one entry without a rewrite.",
       },
-      audience: ["orchestrator"],
+      audience: ["orchestrator", "worker"],
       input: inputAliases(
         Schema.Struct({
           path: Schema.NonEmptyString,
@@ -1087,14 +1138,32 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "memory_delete",
         class: "self",
         description:
-          "Use `file` (`path` is an alias). Delete a memory file. Its text is kept in the memory's history.",
+          "Use `file` (`path` is an alias). Delete a memory note, kept in history. With `revision` (a worker must pass it), refused if the note changed since. Take its line out of MEMORY.md too.",
       },
-      audience: ["orchestrator"],
-      input: inputAliases(Schema.Struct({ path: Schema.NonEmptyString }), { path: ["file"] }),
-      handle: (caller, { path }) =>
+      audience: ["orchestrator", "worker"],
+      input: inputAliases(
+        Schema.Struct({
+          path: Schema.NonEmptyString,
+          revision: Schema.optionalKey(Schema.NonEmptyString),
+        }),
+        { path: ["file"], revision: ["basedOn"] },
+      ),
+      handle: (caller, { path, revision }) =>
         Effect.gen(function* () {
-          const workspaceId = yield* memoryOf("memory_delete", caller);
-          const write = yield* memory.remove(workspaceId, path);
+          const { workspaceId, asWorker } = yield* readableMemoryOf("memory_delete", caller);
+          if (asWorker && revision === undefined) {
+            return yield* new AppToolError({
+              tool: "memory_delete",
+              message: refusal(
+                "stale_revision",
+                `Read ${path} with \`memory_read\` first and pass the \`revision\` it gives you.`,
+              ),
+            });
+          }
+          const write = yield* memory.remove(workspaceId, path, {
+            asWorker,
+            check: (current) => checkRevision("memory_delete", path, revision, current),
+          });
           yield* showWrite(caller, workspaceId, write);
           return { path: write.path, deleted: true };
         }).pipe(Effect.mapError(failed("memory_delete"))),
