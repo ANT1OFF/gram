@@ -1,4 +1,14 @@
-import { chmod, mkdir, readFile, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  readFile,
+  readlink,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { OUTWARD_RULES_FILE } from "./codex-home.ts";
 import { assertOwnedCodexPath } from "./codex-owned-path.ts";
@@ -10,18 +20,76 @@ import { parse, stringify } from "smol-toml";
 /** The model provider a machine's own Codex runs on, kept by the gated home (`ownCodexProvider`). */
 export interface OwnCodexProvider {
   readonly name: string;
+  /** Its table as the gated home writes it: only the keys `PROVIDER_KEYS` allows. */
   readonly table: Readonly<Record<string, unknown>>;
+  /** The environment variables it reads its credentials from, by name: `env_key`, `env_http_headers`. */
+  readonly env: ReadonlyArray<string>;
 }
 
 const isTable = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** An environment variable's name, never its value. */
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+
+const isAbsolutePath = (value: unknown): value is string =>
+  typeof value === "string" && value.startsWith("/") && !/[\s]/.test(value);
+
+/**
+ * What a kept provider's table may say, each checked for holding no credential. A credential is
+ * only ever referenced: by the name of the variable it is in, or by a command (an absolute path)
+ * that reads it from files named by absolute paths. A key not listed here, an inline token
+ * (`experimental_bearer_token`), literal headers (`http_headers`) or query parameters
+ * (`query_params`) keep the provider from being kept at all.
+ */
+const PROVIDER_KEYS: Readonly<Record<string, (value: unknown) => boolean>> = {
+  name: (value) => typeof value === "string",
+  base_url: (value) => {
+    if (typeof value !== "string") return false;
+    try {
+      const url = new URL(value);
+      return (
+        (url.protocol === "https:" || url.protocol === "http:") &&
+        url.username === "" &&
+        url.password === "" &&
+        url.search === "" &&
+        url.hash === ""
+      );
+    } catch {
+      return false;
+    }
+  },
+  wire_api: (value) => typeof value === "string",
+  requires_openai_auth: (value) => value === false,
+  env_key: (value) => typeof value === "string" && ENV_NAME.test(value),
+  env_key_instructions: (value) => typeof value === "string",
+  env_http_headers: (value) =>
+    isTable(value) &&
+    Object.values(value).every((name) => typeof name === "string" && ENV_NAME.test(name)),
+  request_max_retries: (value) => typeof value === "number",
+  stream_max_retries: (value) => typeof value === "number",
+  stream_idle_timeout_ms: (value) => typeof value === "number",
+  supports_websockets: (value) => typeof value === "boolean",
+  auth: (value) => {
+    if (!isTable(value) || !isAbsolutePath(value["command"])) return false;
+    const args = value["args"] ?? [];
+    if (!Array.isArray(args) || !args.every(isAbsolutePath)) return false;
+    return Object.entries(value).every(
+      ([key, each]) =>
+        key === "command" ||
+        key === "args" ||
+        ((key === "timeout_ms" || key === "refresh_interval_ms") && typeof each === "number"),
+    );
+  },
+};
 
 /**
  * The provider a user's Codex configuration runs on in place of a ChatGPT login: `model_provider`
  * names a provider the same file defines in `[model_providers]`, other than `openai`, that says
  * `requires_openai_auth = false` itself. That is how an embedder routes a machine's Codex through
  * its own gateway (a `CODEX_HOME` naming its provider). Anything else is undefined: a ChatGPT
- * login, a built-in provider, or one that leaves OpenAI auth unsaid.
+ * login, a built-in provider, one that leaves OpenAI auth unsaid, and one whose table could carry
+ * a credential itself (`PROVIDER_KEYS`), which the gated home never copies.
  */
 export const ownCodexProvider = (
   user: Readonly<Record<string, unknown>>,
@@ -32,7 +100,16 @@ export const ownCodexProvider = (
   if (!isTable(providers)) return undefined;
   const table = providers[name];
   if (!isTable(table) || table["requires_openai_auth"] !== false) return undefined;
-  return { name, table };
+  for (const [key, value] of Object.entries(table)) {
+    const allowed = PROVIDER_KEYS[key];
+    if (allowed === undefined || !allowed(value)) return undefined;
+  }
+  const headers = table["env_http_headers"];
+  const env = [
+    ...(typeof table["env_key"] === "string" ? [table["env_key"]] : []),
+    ...(isTable(headers) ? Object.values(headers).filter((each) => typeof each === "string") : []),
+  ];
+  return { name, table, env: [...new Set(env)] };
 };
 
 const userHomeOf = (home: string, env: Readonly<Record<string, string | undefined>>) =>
@@ -64,16 +141,34 @@ const hasLogin = (source: string): Promise<boolean> =>
 export const ownedCodexProvider = (
   home: string,
   env: Readonly<Record<string, string | undefined>> = process.env,
-): Effect.Effect<string | undefined> =>
+): Effect.Effect<{ readonly name: string; readonly env: ReadonlyArray<string> } | undefined> =>
   Effect.promise(async () => {
     try {
       const source = userHomeOf(home, env);
       if (await hasLogin(source)) return undefined;
-      return ownCodexProvider(await readUserConfig(source))?.name;
+      const own = ownCodexProvider(await readUserConfig(source));
+      return own === undefined ? undefined : { name: own.name, env: own.env };
     } catch {
       return undefined;
     }
   });
+
+/**
+ * Removes the login link the gated home had while the machine had a ChatGPT login: only Gram's
+ * own symlink to the user's `auth.json` path, identified by where it points, never by reading
+ * what it points to. Anything else at that path (a regular file, or a link elsewhere) refuses the
+ * preparation and is left as it is.
+ */
+const removeLoginLink = async (link: string, auth: string): Promise<void> => {
+  const found = await lstat(link).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (found === undefined) return;
+  if (!found.isSymbolicLink() || (await readlink(link)) !== auth)
+    throw new Error("Unexpected login file in the gated home");
+  await rm(link);
+};
 
 /**
  * The native gated home shares only the login file, by path. Never read or copy auth: Codex owns
@@ -112,8 +207,9 @@ export const prepareOwnedCodexHome = (
       await rm(join(target, "rules", OUTWARD_RULES_FILE), { force: true });
       const link = join(target, "auth.json");
       if (own !== undefined) {
-        // Its own provider authenticates itself: no login file is linked, and none stays linked.
-        await rm(link, { force: true });
+        // Its own provider authenticates itself: no login file is linked, and Gram's own link
+        // from before goes. Nothing else there is removed.
+        await removeLoginLink(link, auth);
       } else if ((await readlink(link).catch(() => undefined)) !== auth) {
         // A CLI may replace its credential file on refresh. Restore the link before every open.
         await rm(link, { force: true });

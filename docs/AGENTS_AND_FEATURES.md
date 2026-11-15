@@ -652,10 +652,15 @@ your own CLI home.
 A machine with no ChatGPT login whose Codex runs on its own provider (an embedding
 platform's gateway) gets the same gated home with that provider in ChatGPT's place:
 its config's `model_provider` names a provider the same file defines with
-`requires_openai_auth = false`. The home keeps that one provider as configured, links
-no `auth.json`, and removes one linked before. The approval policy, exec-policy
-backstop and prompt rules are the same. With an `auth.json` present, the ChatGPT home
-is used as before.
+`requires_openai_auth = false`. Its credentials are only referenced: by the variables
+it names (`env_key`, `env_http_headers`), which alone pass the gated home's key scrub,
+or by an auth command and arguments that are absolute paths. A provider table with an
+inline token (`experimental_bearer_token`), literal `http_headers` or `query_params`, a
+base URL with credentials or a query, or any other key is not kept, so the gated
+thread doesn't start. The home links no `auth.json`. It removes only Gram's own link to
+the user's `auth.json` path; any other file there refuses the start and is left alone.
+The approval policy, exec-policy backstop and prompt rules are the same. With an
+`auth.json` present, the ChatGPT home is used as before.
 
 Before a gated thread starts, resumes or forks, Gram installs prompt rules in its
 owned home. These outrank existing allow rules, including repo `.codex/rules`.
