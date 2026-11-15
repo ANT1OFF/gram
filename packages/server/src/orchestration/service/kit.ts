@@ -899,6 +899,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   const dragsTold = new Set<string>();
   /** Per conflicted worker, the look at whether its conflict has lasted long enough to drag. */
   const dragTimers = yield* FiberMap.make<ThreadId>();
+  /** Per checkout path, the look GitHub is asked for once another worker's PR in its repo merged. */
+  const baseRechecks = yield* FiberMap.make<string>();
   /** Workers whose worktree the orchestrator was woken over as missing, until it is back. */
   const worktreesGone = new Set<ThreadId>();
   /** Workspaces whose next `boot` digest goes out even while paused: a handoff the user asked for. */
@@ -1408,6 +1410,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     conflictedSince,
     dragsTold,
     dragTimers,
+    baseRechecks,
     worktreesGone,
     bootWhilePaused,
     knownOverlaps,

@@ -1121,6 +1121,21 @@ export const overlapPairs = (
 };
 
 /**
+ * What a worker is told when another worker's PR merged into its base and changed files it changes
+ * too: bring the base in now, even if git merges it cleanly.
+ */
+export const baseMovedText = (input: {
+  readonly pr: string;
+  readonly worker: string;
+  readonly files: ReadonlyArray<string>;
+}): string => {
+  const shown = input.files.slice(0, 8).map((file) => `\`${file}\``);
+  const more =
+    input.files.length > shown.length ? ` and ${input.files.length - shown.length} more` : "";
+  return `${input.pr} ("${input.worker}") merged into your base and changed files you change too: ${shown.join(", ")}${more}. Merge or rebase onto the new base now and rerun your checks, even if git reports no conflict, and say in your PR what you kept from each side.`;
+};
+
+/**
  * For each worker, the workers in the same project it overlaps (`overlapPairs`); workers that
  * overlap nobody are absent. Ids come out sorted so two builds of the same ledger compare equal.
  */
