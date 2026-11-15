@@ -229,8 +229,8 @@ const IN_TURN: ReadonlySet<ThreadStatus> = new Set([
 ]);
 
 /**
- * Whether a thread is mid-turn: the one test a pause's confirm counts by, a paused worker's row
- * marks "stopping" by and the briefing reads a turn by.
+ * Whether a thread is mid-turn: the one test a pause's confirm counts by, a paused worker's row marks
+ * "stopping" by.
  */
 export const inTurn = (status: ThreadStatus | undefined): boolean =>
   status !== undefined && IN_TURN.has(status);

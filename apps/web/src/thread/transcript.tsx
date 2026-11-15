@@ -239,8 +239,9 @@ export function Transcript({
   "use no memo";
   // Rows wait for the markdown renderer as they wait for the messages, so none is laid out as
   // plain text first and measured again. A failed load shows them plain rather than never, and a
-  // slow link shows them plain until the renderer arrives: there the wait is seconds.
-  const markdown = useMarkdown();
+  // slow link shows them plain until the renderer arrives: there the wait is seconds, and the
+  // renderer is asked for once the messages are in, so it doesn't go ahead of them on the link.
+  const markdown = useMarkdown(!loadingMessages);
   const markdownPending =
     markdown.module === undefined && markdown.failed === undefined && markdown.plain === undefined;
   const loading = loadingMessages || markdownPending;

@@ -216,40 +216,50 @@ test("lists the workspaces in the switcher's order, the current one opened into 
   );
 });
 
-test("a worker's agent mark shows only where its workspace's workers mix agents", async ({
-  page,
-}) => {
+test("every worker row keeps its agent's mark, whatever its neighbours run", async ({ page }) => {
   const made = await start(page);
-  // Every worker runs Claude Code: the state dot alone marks each row, and its name and card say
-  // the agent.
+  const rows = overview(page).getByTestId("overview-worker");
   const marks = overview(page).getByTestId("overview-worker-agent");
+  // Every worker runs Claude Code, and each row still shows its mark beside its state dot.
   await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Claude Code, /);
   await expect(worker(page, made.inReview).getByTestId("overview-worker-dot")).toBeVisible();
-  await expect(marks).toHaveCount(0);
-  await worker(page, made.inReview).hover();
-  await expect(page.getByTestId("overview-worker-card-feature")).toContainText("Claude Code");
-  await page.mouse.move(1200, 400);
+  const count = await rows.count();
+  expect(count).toBeGreaterThan(1);
+  await expect(marks).toHaveCount(count);
+  const claudeMark = await worker(page, made.inReview)
+    .getByTestId("overview-worker-agent")
+    .locator("svg")
+    .innerHTML();
 
-  // One worker on Codex: the list mixes agents, so every row with a known agent says which.
-  await page.evaluate((id) => {
-    const mock = window.gramMock!;
-    const { thread } = mock.world.summary(id as never);
-    mock.world.replaceThread({ ...thread, model: { agent: "codex", model: "gpt-5-codex" } });
-  }, made.inReview);
+  const original = await page.evaluate(
+    (id) => window.gramMock!.world.summary(id as never).thread.model,
+    made.inReview,
+  );
+  const moveTo = (model: unknown) =>
+    page.evaluate(
+      ({ id, next }) => {
+        const mock = window.gramMock!;
+        const { thread } = mock.world.summary(id as never);
+        mock.world.replaceThread({ ...thread, model: next as never });
+      },
+      { id: made.inReview, next: model },
+    );
+
+  // One worker on Codex: its row draws Codex's mark in the same slot, and the rest keep Claude's.
+  await moveTo({ agent: "codex", model: "gpt-5-codex" });
   await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Codex, /);
   const glyph = worker(page, made.inReview).getByTestId("overview-worker-agent");
   await expect(glyph).toHaveCount(1);
   // It is decorative: the row's name says the agent.
   await expect(glyph.locator("svg")).toHaveAttribute("aria-hidden", "true");
-  const claudeRow = overview(page)
-    .locator(`[data-testid="overview-worker"]:not([data-thread-id="${made.inReview}"])`)
-    .filter({ has: page.getByTestId("overview-worker-agent") })
-    .first();
-  await expect(claudeRow).toHaveAttribute("aria-label", /, Claude Code, /);
-  // The same slot and size, another drawing.
-  expect(await glyph.locator("svg").innerHTML()).not.toBe(
-    await claudeRow.getByTestId("overview-worker-agent").locator("svg").innerHTML(),
-  );
+  expect(await glyph.locator("svg").innerHTML()).not.toBe(claudeMark);
+  await expect(marks).toHaveCount(count);
+
+  // Back on Claude Code, the list is one agent again and no row loses its mark.
+  await moveTo(original);
+  await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Claude Code, /);
+  await expect(marks).toHaveCount(count);
+  expect(await glyph.locator("svg").innerHTML()).toBe(claudeMark);
 });
 
 test("an idle row fades after a day and comes back on hover; one needing you never does", async ({
@@ -739,7 +749,18 @@ test("a solo row dragged onto an empty pane of the grid opens its thread there",
   await expect(panes).toHaveCount(2);
   await expect(panes.nth(0)).toHaveAttribute("data-thread-id", made.orchestratorThreadId);
   await expect(page.getByTestId("empty-pane")).toHaveCount(1);
-  await threadRow(page, "t-flaky").dragTo(panes.nth(1));
+  // Workers above it take a second line as their PRs arrive, moving it down: drag it once it rests.
+  const flaky = threadRow(page, "t-flaky");
+  let at = -1;
+  await expect
+    .poll(async () => {
+      const top = (await flaky.boundingBox())?.y ?? -1;
+      const still = top === at;
+      at = top;
+      return still;
+    })
+    .toBe(true);
+  await flaky.dragTo(panes.nth(1));
   await expect(panes.nth(1)).toHaveAttribute("data-thread-id", "t-flaky");
   await expect(page.getByTestId("empty-pane")).toHaveCount(0);
   await expect(panes.nth(0)).toHaveAttribute("data-thread-id", made.orchestratorThreadId);
@@ -1364,14 +1385,15 @@ test("a worker's PRs show as chips under its row, with checks and the review bot
   const chips = overview(page).locator(
     `[data-testid="overview-pr-chips"][data-thread-id="${made.live}"] [data-testid="overview-pr-chip"]`,
   );
-  // At work its dot says it works, so the row has no words, its step on the hover card: the chips
-  // take the line's end while they fit beside its title, and otherwise wait on the hover card.
+  // At work its dot says it works, so the row has no words, its step on the hover card; its chips
+  // take a second line under its title, beside how long ago it started.
   await expect(worker(page, made.live).getByTestId("overview-worker-now")).toHaveCount(0);
-  await expect(worker(page, made.live)).toHaveJSProperty("offsetHeight", 36);
-  // Given room, they take the line's end.
-  const edge = page.getByTestId("left-resize");
-  await edge.focus();
-  for (let i = 0; i < 12; i++) await page.keyboard.press("ArrowRight");
+  await expect(worker(page, made.live)).toHaveJSProperty("offsetHeight", 48);
+  await expect(worker(page, made.live).getByTestId("overview-worker-dot")).toHaveAttribute(
+    "data-tall",
+    "true",
+  );
+  await expect(worker(page, made.live).getByTestId("overview-worker-age")).toBeVisible();
   await expect(chips).toHaveCount(2);
   // Its own first, red for what blocks the merge; the draft stays grey while its round runs. The
   // worker runs, so its failing CI is its own to fix: a wrench, not the user's red ×. The bot's

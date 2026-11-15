@@ -341,6 +341,8 @@ let openThread = "";
 let sendThread = "";
 let smallThread = "";
 let terminalThread = "";
+/** Threads that stream beside the one measured, to load the server's runtime. */
+let busyThreads: string[] = [];
 
 const openTurns = OPEN_ITEMS / TURN_ITEMS;
 const sendTurns = SEND_ITEMS / TURN_ITEMS;
@@ -375,6 +377,7 @@ test.beforeAll(async ({ browser: given }) => {
   // The measured threads are made last, so the sidebar lists them first, where a click reaches.
   const sidebar: string[] = [];
   for (let i = 0; i < SIDEBAR_THREADS; i++) sidebar.push(await create(`Sidebar thread ${i}`));
+  busyThreads = sidebar.slice(0, BUSY_THREADS);
   openThread = await create(`Long thread, ${thousands(OPEN_ITEMS)} items`);
   sendThread = await create(`Longer thread, ${thousands(SEND_ITEMS)} items`);
   terminalThread = await create("Terminal thread");
@@ -686,6 +689,92 @@ test(`stream a ${thousands(STREAM_WORDS)}-word reply`, async () => {
       // The fake agent takes 10 s to say it: longer on screen means the page fell behind.
       streamSeconds: round(wallMs / 1000),
     },
+  );
+});
+
+/** Other threads streaming at once in the busy-server scenarios. */
+const BUSY_THREADS = 3;
+
+test("stop a streaming reply", async () => {
+  // Stop lands while the reply's events are queued on the thread's lock: under a first-in,
+  // first-out lock it waits for what is ahead of it, so this is the lock's cost a person feels.
+  await timeOpen(page, smallThread, "echo: start Short thread");
+  const composer = page.getByRole("combobox", { name: "Message" });
+  const streaming = transcript(page).locator('[data-streaming="true"]');
+  const stopped: number[] = [];
+  const server: number[] = [];
+  for (let i = 0; i < Math.min(REPEATS, 3); i++) {
+    for (const viaPage of [true, false]) {
+      await expect(composer).toHaveText("");
+      await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
+      const text = `/stream{${STREAM_WORDS}} stop ${i} ${viaPage ? "page" : "server"}`;
+      await composer.fill(text);
+      await expect(composer).toHaveText(text);
+      await composer.press("ControlOrMeta+Enter");
+      await expect(streaming.getByText(/thread worker review/).first()).toBeVisible({
+        timeout: 60_000,
+      });
+      // A second into the reply, when the stream is in full flow.
+      await page.waitForTimeout(1_000);
+      const start = performance.now();
+      if (viaPage) {
+        await page.getByRole("button", { name: "Stop", exact: true }).click();
+        await expect(streaming).toHaveCount(0, { timeout: 30_000 });
+        await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible({
+          timeout: 30_000,
+        });
+        stopped.push(performance.now() - start);
+      } else {
+        await rpc.request("thread.interrupt", { threadId: smallThread });
+        server.push(performance.now() - start);
+        await expect(streaming).toHaveCount(0, { timeout: 30_000 });
+      }
+    }
+  }
+  record("stop-stream-server", "Stop a streaming reply, on the server", "ms", server);
+  record("stop-stream", "Stop a streaming reply, until the composer is back", "ms", stopped);
+});
+
+test(`send while ${BUSY_THREADS} other threads stream`, async () => {
+  const composer = page.getByRole("combobox", { name: "Message" });
+  const sendAndWait = async (text: string) => {
+    await expect(composer).toHaveText("");
+    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
+    await composer.fill(text);
+    await expect(composer).toHaveText(text);
+    const start = performance.now();
+    await composer.press("ControlOrMeta+Enter");
+    await expect(transcript(page).getByText(`echo: ${text}`)).toBeVisible({ timeout: 60_000 });
+    const ms = performance.now() - start;
+    await expect(transcript(page).locator('[data-streaming="true"]')).toHaveCount(0);
+    return ms;
+  };
+  const quiet: number[] = [];
+  const busy: number[] = [];
+  for (let i = 0; i < REPEATS; i++) {
+    // A second for the last round's stops to settle, so the quiet send is quiet.
+    await page.waitForTimeout(1_000);
+    quiet.push(await sendAndWait(`quiet send ${i}`));
+    // Each busy thread streams a long reply; the send lands while every one of them is talking.
+    await Promise.all(
+      busyThreads.map((threadId) =>
+        rpc.request("thread.send", {
+          threadId,
+          input: { text: `/stream{${STREAM_WORDS}} busy ${i}` },
+          clientMessageId: crypto.randomUUID(),
+        }),
+      ),
+    );
+    await page.waitForTimeout(1_000);
+    busy.push(await sendAndWait(`busy send ${i}`));
+    await Promise.all(busyThreads.map((threadId) => rpc.request("thread.interrupt", { threadId })));
+  }
+  record(
+    "send-busy",
+    `Send while ${BUSY_THREADS} other threads stream, until the reply`,
+    "ms",
+    busy,
+    { quietMs: round(median(quiet)) },
   );
 });
 

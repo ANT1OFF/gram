@@ -58,20 +58,23 @@ for (const mode of ["light", "dark"] as const) {
         .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-thread-id")));
     const order = await ids();
     const samples: unknown[] = [];
+    let twoLines: number | undefined;
 
     for (const width of [180, 280, 380, 280, 180]) {
       await resizePane(page, width);
-      // At work while its PR fails CI: one line, its dot saying it works, and the failing PR's
-      // chip after its title wherever it fits; short of room it waits on the row's hover card.
-      // Every row one height: the density's row (`--space-row`).
+      // At work while its PR fails CI: two lines, its title over the failing PR's chip, its dot a
+      // bar beside both, one height at every width, taller than the density's one-line row
+      // (`--space-row`). The briefed worker says so on its own second line, the same height.
       const rowHeight = await rowStep(page);
-      await expect(working).toHaveJSProperty("offsetHeight", rowHeight);
-      // The title wins: the failing PR's chip shows only while the whole title fits beside it.
-      if ((await failingPr.count()) > 0) {
-        const title = working.getByTestId("overview-worker-title");
-        expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-      }
-      await expect(resting).toHaveJSProperty("offsetHeight", rowHeight);
+      const twoLineHeight = await working.evaluate(
+        (element) => (element as HTMLElement).offsetHeight,
+      );
+      expect(twoLineHeight).toBeGreaterThan(rowHeight);
+      twoLines ??= twoLineHeight;
+      expect(twoLineHeight).toBe(twoLines);
+      await expect(working.getByTestId("overview-worker-dot")).toHaveAttribute("data-tall", "true");
+      await expect(failingPr).toBeVisible();
+      await expect(resting).toHaveJSProperty("offsetHeight", twoLineHeight);
       await expect(working.getByTestId("overview-worker-title")).toHaveText(
         "Improve workspace navigation and preserve approval boundaries",
       );
@@ -140,11 +143,13 @@ for (const mode of ["light", "dark"] as const) {
       (threadId) => window.gramMock!.simulateStatus(threadId, "error", "Synthetic worker failure"),
       made.working,
     );
-    // Failed, its edge says so in words.
+    // Failed, its second line says so in words.
     await expect(
       working.locator('[data-testid="overview-worker-now"], [data-testid="overview-worker-state"]'),
     ).toHaveText(/.+/);
-    await expect(working).toHaveJSProperty("offsetHeight", await rowStep(page));
+    expect(
+      await working.evaluate((element) => (element as HTMLElement).offsetHeight),
+    ).toBeGreaterThan(await rowStep(page));
     expect(errors).toEqual([]);
     await test.info().attach("pane-geometry", {
       body: JSON.stringify(samples, null, 2),

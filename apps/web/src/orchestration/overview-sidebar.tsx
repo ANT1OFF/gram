@@ -45,7 +45,7 @@ import { EmbedAccount, EmbedNavigation, EmbedSidebarHeader, EmbedSwitcher } from
 import { useScrollFade } from "@/embed/scroll-fade";
 import { useEmbedShell, useRoomySidebar, useThreadsListed } from "@/embed/store";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
-import { formatRelative, formatStamp } from "@/lib/time";
+import { agoText, formatRelative, formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { EXPLAIN } from "@/lib/explain";
 import { cn } from "@/lib/utils";
@@ -100,7 +100,6 @@ import {
 import { ledgerSlotsText } from "./overview-extras-model";
 import {
   foldByKey,
-  mixedAgents,
   nowLineShown,
   orchestratorHover,
   stateWord,
@@ -129,6 +128,7 @@ import {
 import {
   CURRENT_ROW,
   ROW,
+  ROW_STATUS,
   ROW_TRAIL,
   ROW_TITLE,
   RowMenu,
@@ -138,7 +138,7 @@ import {
   SETTLED,
   STOP,
 } from "./overview-section";
-import { shownPrNumbers, useChipsFit, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
+import { shownPrNumbers, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
 import { threadHost, type MachineMark } from "@/thread/machine-mark";
 import { MachineMarker, useMachineMark, useThreadHost } from "@/thread/machine-marker";
 import { peek } from "./peek-store";
@@ -933,9 +933,6 @@ function WorkspaceFeatures({
       (item) => item.kind !== "worker" || !away.has(item.row.threadId),
     );
   }, [features, snoozed]);
-  const agentMark = useAgentsMixed(
-    items.flatMap((item) => (item.kind === "worker" ? [item.row.threadId] : [])),
-  );
   if (items.length === 0) {
     if (empty) return null;
     return (
@@ -954,12 +951,7 @@ function WorkspaceFeatures({
         {items.map((item) =>
           item.kind === "worker" ? (
             <PresenceItem key={item.row.threadId}>
-              <WorkerRow
-                row={item.row}
-                feature={item.feature}
-                updatedAt={item.updatedAt}
-                agentMark={agentMark}
-              />
+              <WorkerRow row={item.row} feature={item.feature} updatedAt={item.updatedAt} />
             </PresenceItem>
           ) : (
             <PresenceItem key={item.held.id}>
@@ -973,35 +965,22 @@ function WorkspaceFeatures({
 }
 
 /**
- * Whether the workers listed together run more than one agent (`mixedAgents`): only then does each
- * row show its agent's mark. All on one agent, the state dot alone marks a row, and its name and
- * hover card say the agent.
- */
-export function useAgentsMixed(threadIds: readonly ThreadId[]): boolean {
-  return useThreadsStore((s) =>
-    mixedAgents(threadIds.map((id) => s.byId[id]?.thread.model?.agent)),
-  );
-}
-
-/**
  * A live worker: a click opens it, where any ask it has shows, ⌥-click peeks and ⌘/Ctrl-click keeps
- * it beside; a right-click (or Shift+F10) opens its menu, and it drags onto a grid pane. Its agent's
- * mark shows only while its list mixes agents (`agentMark`), and a second line only for an ask, a
- * failure or real activity; its name and hover card keep the rest. In the compact rail's flyout it
+ * it beside; a right-click (or Shift+F10) opens its menu, and it drags onto a grid pane. Its title
+ * line ends in its agent's mark, always; a second line, when it has something to say, holds its PR
+ * chips, its words (an ask, a failure, a wait's reason, real activity) and how long ago it started,
+ * with its dot a bar beside both. Its name and hover card keep the rest. In the compact rail's flyout it
  * has no hover card of its own (`card={false}`), the flyout being one.
  */
 export function WorkerRow({
   row,
   feature,
   updatedAt,
-  agentMark = false,
   card = true,
 }: {
   row: OverviewWorkerRow;
   feature: string;
   updatedAt: number;
-  /** Its list's workers run more than one agent, so its agent's mark says which. */
-  agentMark?: boolean;
   card?: boolean;
 }) {
   const openThread = useOpenThread();
@@ -1044,10 +1023,11 @@ export function WorkerRow({
   // activity. A tone's own word ("Idle") gives way to the machine's name.
   const edgeSays = starting || (!routine && (waiting !== undefined || nowLineShown(row)));
   const prChips = useWorkerPrChips(row.threadId, row.prs);
-  // The words win outright: with words at its edge its PR chips stay on its hover card; at work,
-  // with no words or pause mark, they sit after its title while the whole title fits beside them.
-  const chipsShown = routine && pause === undefined ? prChips : NO_CHIPS;
-  const { line, words, ghost, fits } = useChipsFit(chipsShown.length);
+  const startedAt = useThreadsStore((s) => s.byId[row.threadId]?.thread.createdAt);
+  // A second line under its title for what it has done and what it waits on: its PR chips (a run
+  // of merged ones folded into "N merged"), then its words, then how long ago it started. With
+  // neither chips nor words, the row stays one line and its dot says the rest.
+  const twoLines = edgeSays || prChips.length > 0;
   const facts = [
     row.title,
     ...(unread ? ["unread"] : []),
@@ -1055,6 +1035,7 @@ export function WorkerRow({
     starting ? STARTING : (waiting?.label ?? row.now),
     ...(machine === undefined ? [] : [machine.words]),
     ...(agent === undefined ? [] : [agentLabel(agent)]),
+    ...(startedAt === undefined ? [] : [`started ${agoText(startedAt, now)}`]),
     ...(lastActivity === undefined ? [] : [`last active ${formatStamp(lastActivity)}`]),
   ];
   const preview = usePickedPreview();
@@ -1082,45 +1063,31 @@ export function WorkerRow({
     onClick,
     onKeyDown: rowMenuKeys,
     ...threadDragProps(row.threadId),
-    // Like every row: one line, its title cut at its end with the whole of it on hover, and its
-    // state in short words with its PR chips at the line's right edge.
-    className: cn(ROW, CURRENT_ROW, settled && SETTLED),
+    // Its title on one line, cut at its end with the whole of it on hover, its marks at the line's
+    // right edge; with something to say, a second line under it and its dot a bar beside both.
+    className: cn(ROW, WORKER_ROW, twoLines && TWO_LINE_ROW, CURRENT_ROW, settled && SETTLED),
   };
-  // The PRs its chips show, which its words then leave out: each said once, in the chip or, where
-  // the chip doesn't fit, on the row's hover card.
-  const shownPrs = shownPrNumbers(chipsShown);
+  // The PRs its chips show, which its words then leave out: each said once.
+  const shownPrs = shownPrNumbers(prChips, true);
   const body = (
     <>
-      <StatusDot state={tone} data-testid="overview-worker-dot" data-tone={tone} className={DOT} />
+      <StatusDot
+        state={tone}
+        data-testid="overview-worker-dot"
+        data-tone={tone}
+        data-tall={twoLines || undefined}
+        className={twoLines ? TALL_DOT : DOT}
+      />
       {/* Its title, one line cut at its end; the hover card, or the flyout's tooltip, says the
-          whole. At work, its PR chips sit after it at the line's end only while the whole title
-          fits beside them: the title wins, and short of room they wrap out of sight to the hover
-          card (`useChipsFit`). */}
-      <span ref={line} className="flex h-lh min-w-0 flex-wrap overflow-hidden">
-        <span
-          ref={words}
-          data-testid="overview-worker-title"
-          className={cn(
-            ROW_TITLE,
-            "max-w-full flex-[0_1_auto] text-foreground",
-            unread && UNREAD_TITLE,
-          )}
-        >
-          {row.title}
-        </span>
-        <WorkerPrChips
-          threadId={row.threadId}
-          cardPrs={row.prs}
-          chips={chipsShown}
-          dense
-          ghost
-          ghostRef={ghost}
-          className="ml-auto h-lh items-center pl-1.5"
-        />
+          whole. */}
+      <span
+        data-testid="overview-worker-title"
+        className={cn(ROW_TITLE, "text-foreground", unread && UNREAD_TITLE)}
+      >
+        {row.title}
       </span>
-      {/* At its edge: a pause and its agent's marks, then what its dot can't say in short words (an
-          ask, a failure, a wait's reason, "Starting…"); at work, nothing. */}
-      <span className={ROW_TRAIL}>
+      {/* At the title's edge: the machine it runs on, a pause, and its agent's mark. */}
+      <span className={cn(ROW_TRAIL, WORKER_TRAIL)}>
         {/* Its hover is the row's own: its card, or the flyout's title, says the machine whole. */}
         <MachineMarker
           hostId={hostId}
@@ -1129,39 +1096,67 @@ export function WorkerRow({
           testId="overview-worker-machine"
         />
         {pause !== undefined && <WorkerPauseMark pause={pause} />}
-        {agentMark && agent !== undefined && (
+        {agent !== undefined && (
           <span data-testid="overview-worker-agent" className="flex shrink-0">
             <AgentIcon agent={agent} className="size-icon-row" />
           </span>
         )}
-        {machine !== undefined && !edgeSays ? null : starting ? (
-          <span
-            data-testid="overview-worker-starting"
-            className="min-w-0 truncate text-meta text-muted-foreground"
-          >
-            {STARTING}
-          </span>
-        ) : routine ? null : waiting !== undefined ? (
-          <WaitingLine waiting={waiting} testId="overview-worker-waiting" prs={shownPrs} />
-        ) : (
-          <WorkerNow row={row} asking={asking} tone={tone} prs={shownPrs} />
-        )}
       </span>
+      {twoLines && (
+        <span data-testid="overview-worker-line" className={ROW_STATUS}>
+          {/* Its chips, then its words while at least a few of them fit beside the chips: short of
+              that they wrap out of sight to the hover card, rather than show a cut stub. */}
+          <span className="flex h-lh min-w-0 flex-1 flex-wrap content-start items-center gap-x-1.5 overflow-hidden">
+            {/* The chips' room; the real ones, each a button, sit over it outside the row's own. */}
+            <WorkerPrChips
+              threadId={row.threadId}
+              cardPrs={row.prs}
+              chips={prChips}
+              dense
+              ghost
+              foldMerged
+              className="h-lh shrink-0 items-center"
+            />
+            {edgeSays && (
+              <span className="flex h-lh min-w-16 flex-1 items-center">
+                {starting ? (
+                  <span
+                    data-testid="overview-worker-starting"
+                    className="min-w-0 truncate text-meta text-muted-foreground"
+                  >
+                    {STARTING}
+                  </span>
+                ) : waiting !== undefined ? (
+                  <WaitingLine waiting={waiting} testId="overview-worker-waiting" prs={shownPrs} />
+                ) : (
+                  <WorkerNow row={row} asking={asking} tone={tone} prs={shownPrs} />
+                )}
+              </span>
+            )}
+          </span>
+          {startedAt !== undefined && (
+            <span
+              data-testid="overview-worker-age"
+              className="ml-auto shrink-0 pl-1 text-muted-foreground tabular-nums"
+            >
+              {formatRelative(startedAt, now)}
+            </span>
+          )}
+        </span>
+      )}
     </>
   );
-  // The PR chips sit over the title line's end, outside its button: each is a button of its own.
-  // Its agent's mark, when it shows, keeps the edge.
-  const chips = fits && (
+  // The PR chips sit over their room on the second line, outside the row's button: each is a
+  // button of its own.
+  const chips = twoLines && prChips.length > 0 && (
     <WorkerPrChips
       threadId={row.threadId}
       cardPrs={row.prs}
-      chips={chipsShown}
+      chips={prChips}
       card={card}
       dense
-      className={cn(
-        "absolute top-1/2 -translate-y-1/2",
-        agentMark && agent !== undefined ? "right-7.5" : "right-1.5",
-      )}
+      foldMerged
+      className={WORKER_CHIPS}
     />
   );
   if (!card) {
@@ -1249,8 +1244,6 @@ function usePickedPreview() {
 
 const NO_PRS: readonly { readonly number: number }[] = [];
 
-const NO_CHIPS: ReturnType<typeof useWorkerPrChips> = [];
-
 /** A title marked unread (Mark unread, or an agent's `set_unread`): heavier, until it is opened. */
 const UNREAD_TITLE = "font-semibold text-foreground";
 
@@ -1258,6 +1251,29 @@ const UNREAD_TITLE = "font-semibold text-foreground";
 
 /** A row's 8 px dot, centred in its mark column on the row's one line. */
 const DOT = "size-2 justify-self-center";
+
+/**
+ * A two-line worker's dot: a 4 px bar beside both its lines, in its state's colour, so the two read
+ * as one row with no connector between them.
+ */
+const TALL_DOT = "row-span-2 h-auto min-h-6 w-1 self-stretch justify-self-center rounded-full";
+
+/** A worker row keeps its marks in a third column on the phone too, its second line under them. */
+const WORKER_ROW = "in-data-phone-drawer:grid-cols-[0.625rem_minmax(0,1fr)_auto]";
+
+/** A two-line worker row: room above and below its lines. */
+const TWO_LINE_ROW = "py-1";
+
+/** Its marks at the title line's edge, never a line of their own on the phone. */
+const WORKER_TRAIL = "in-data-phone-drawer:col-start-3 in-data-phone-drawer:justify-end";
+
+/**
+ * Its real PR chips, over their room at the start of the second line: the row's inset, its mark
+ * column and the gap after it, and the row's bottom inset. Only the chips take the pointer: the
+ * line's empty room around them stays the row's.
+ */
+const WORKER_CHIPS =
+  "pointer-events-none absolute bottom-1 left-6 flex h-lh items-center text-meta in-data-phone-drawer:left-7.5 *:pointer-events-auto";
 
 /**
  * A worker's card now line under its title, when it says more than the row's dot; else its tone in

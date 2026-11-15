@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import { noCiRepos, noCiText } from "./no-ci-model";
 
-const NO_GATE = "no local check configured for runheim; local gate OFF — CI and GitHub rules apply";
+const NO_GATE = "no local check configured for harbour; local gate OFF — CI and GitHub rules apply";
 
 const pr = (patch: Partial<WorkerPr> = {}): WorkerPr => ({
-  repo: "example/runheim",
+  repo: "example/harbour",
   number: 1294,
   state: "open",
   checks: "none",
@@ -15,8 +15,8 @@ const pr = (patch: Partial<WorkerPr> = {}): WorkerPr => ({
 
 const worker = (id: string, patch: Partial<WorkerLedgerEntry> = {}): WorkerLedgerEntry => ({
   feature: "codex-login-import",
-  projectId: "p-runheim" as ProjectId,
-  project: "runheim",
+  projectId: "p-harbour" as ProjectId,
+  project: "harbour",
   threadId: id as ThreadId,
   title: `Worker ${id}`,
   state: "inReview",
@@ -43,7 +43,7 @@ describe("noCiRepos", () => {
         worker("b", { pr: pr({ number: 1299 }), morePrs: [pr({ number: 1300 })] }),
       ),
     );
-    expect(repos).toEqual([{ repo: "example/runheim", project: "runheim" }]);
+    expect(repos).toEqual([{ repo: "example/harbour", project: "harbour" }]);
   });
 
   it("says nothing without a ledger, or for a repo with a local check", () => {
@@ -76,22 +76,22 @@ describe("noCiRepos", () => {
       pr: pr({ repo: "example/api", checks: "passing" }),
       alsoIn: [
         {
-          projectId: "p-runheim" as ProjectId,
-          project: "runheim",
+          projectId: "p-harbour" as ProjectId,
+          project: "harbour",
           changedFiles: 0,
           localGate: NO_GATE,
           pr: pr(),
         },
       ],
     });
-    expect(noCiRepos(ledger(spanning))).toEqual([{ repo: "example/runheim", project: "runheim" }]);
+    expect(noCiRepos(ledger(spanning))).toEqual([{ repo: "example/harbour", project: "harbour" }]);
   });
 });
 
 describe("noCiText", () => {
   it("explains calmly, naming every repo", () => {
-    expect(noCiText([{ repo: "example/runheim", project: "runheim" }])).toBe(
-      "No CI on example/runheim: its pull requests report no hosted checks and no local check is set, so nothing tests them before they merge.",
+    expect(noCiText([{ repo: "example/harbour", project: "harbour" }])).toBe(
+      "No CI on example/harbour: its pull requests report no hosted checks and no local check is set, so nothing tests them before they merge.",
     );
     expect(
       noCiText([

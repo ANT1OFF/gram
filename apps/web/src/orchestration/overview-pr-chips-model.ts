@@ -13,6 +13,31 @@ import type { ReviewGlyphKind } from "@/components/review-glyph";
 /** How many chips a row shows before the rest fold into a count. */
 export const MAX_PR_CHIPS = 3;
 
+/**
+ * How many merged PRs a row draws one chip each: from this many on they fold into one "N merged",
+ * so a worker that has merged a run of PRs keeps its line for what is still open.
+ */
+export const MERGED_FOLD_AT = 3;
+
+/** A row's chips with its merged ones folded (`MERGED_FOLD_AT`): what is left, and the count. */
+export interface FoldedChips {
+  readonly chips: readonly PrChip[];
+  /** How many merged PRs fold into the count; 0 when they stay chips. */
+  readonly merged: number;
+  /** One merged chip, for the count's glyph. */
+  readonly mergedChip: PrChip | undefined;
+}
+
+export const foldMergedChips = (chips: readonly PrChip[]): FoldedChips => {
+  const merged = chips.filter((chip) => chip.kind === "merged");
+  if (merged.length < MERGED_FOLD_AT) return { chips, merged: 0, mergedChip: undefined };
+  return {
+    chips: chips.filter((chip) => chip.kind !== "merged"),
+    merged: merged.length,
+    mergedChip: merged[0],
+  };
+};
+
 /** A chip's tint: red for what blocks the merge, an outline for what someone has to look at. */
 export type PrChipTone = "danger" | "warning" | "merged" | "plain";
 

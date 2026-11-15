@@ -236,9 +236,9 @@ for (const mode of ["dark", "light"] as const) {
     // The held worker, at work, conflicts and waits on #214.
     await expect(chipOf(made.held)).toHaveAttribute("data-merge", "conflicts");
     await expect(chipOf(made.held)).toHaveAccessibleName(/merges after acme\/api#214/);
-    // The asking one's edge has words, so its chips stay off its row (the words win); the Workers
-    // tab, a status line wide, shows its held merge.
-    await expect(chipOf(made.asking)).toHaveCount(0);
+    // The asking one's words and its chip share its second line; the Workers tab, a status line
+    // wide, shows its held merge too.
+    await expect(chipOf(made.asking)).toHaveCount(1);
     await page.waitForTimeout(300);
     await shot(`${mode}-overview`, overview);
     const panel = page.getByTestId("workers-panel");

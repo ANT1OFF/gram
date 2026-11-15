@@ -3,7 +3,7 @@
   "lazyChunkKb": 1000,
   "routeKb": {
     "default": 140,
-    "t/$threadId": 900,
+    "t/$threadId": 920,
     "settings.agents": 260,
     "new": 380,
     "w/$workspaceId.memory": 320,

@@ -11,7 +11,13 @@ import { cn } from "@/lib/utils";
 import { CARD_SURFACE } from "@/reviews/pr-display";
 import { useThreadsStore } from "@/stores/threads";
 
-import { MAX_PR_CHIPS, prChipsOf, type PrChip, type PrChipTone } from "./overview-pr-chips-model";
+import {
+  foldMergedChips,
+  MAX_PR_CHIPS,
+  prChipsOf,
+  type PrChip,
+  type PrChipTone,
+} from "./overview-pr-chips-model";
 import { useOrchestratorLedger } from "./use-orchestration";
 
 // A worker's pull requests under its overview row:
@@ -63,16 +69,28 @@ export function useWorkerPrChips(
   return chips;
 }
 
-/** The PR numbers a worker's chips show, the first `MAX_PR_CHIPS`. */
-export const shownPrNumbers = (chips: readonly PrChip[]): readonly { number: number }[] =>
-  chips.slice(0, MAX_PR_CHIPS).map((chip) => ({ number: chip.entry.number }));
+/**
+ * The PR numbers a worker's chips show, the first `MAX_PR_CHIPS`; with `foldMerged`, the merged
+ * ones its "N merged" count stands for too.
+ */
+export const shownPrNumbers = (
+  chips: readonly PrChip[],
+  foldMerged = false,
+): readonly { number: number }[] => {
+  const folded = foldMerged ? foldMergedChips(chips) : undefined;
+  const drawn = (folded?.chips ?? chips).slice(0, MAX_PR_CHIPS);
+  const counted =
+    folded !== undefined && folded.merged > 0 ? chips.filter((chip) => chip.kind === "merged") : [];
+  return [...drawn, ...counted].map((chip) => ({ number: chip.entry.number }));
+};
 
 /**
  * `card={false}` in the compact rail's flyout, itself a card: a chip's own card would sit outside it
  * and close it, so there the chip's name carries what its card would say. `dense`, on an overview
  * row's status line, 16 px tall, so the line keeps its height. `ghost` draws them unseen and
  * inert, to hold their room inside a row's button while the real ones sit over it; `ghostRef` is
- * that room's, for `useChipsFit`.
+ * that room's, for `useChipsFit`. `foldMerged` folds a run of merged PRs into one "N merged"
+ * (`foldMergedChips`).
  */
 export function WorkerPrChips({
   threadId,
@@ -82,6 +100,7 @@ export function WorkerPrChips({
   dense = false,
   ghost = false,
   ghostRef,
+  foldMerged = false,
   className = "pr-1.5 pb-1 pl-6",
 }: {
   threadId: ThreadId;
@@ -92,14 +111,31 @@ export function WorkerPrChips({
   dense?: boolean;
   ghost?: boolean;
   ghostRef?: Ref<HTMLSpanElement> | undefined;
+  foldMerged?: boolean;
   /** Where the chips sit: under an overview row's name by default. */
   className?: string;
 }) {
   const own = useWorkerPrChips(threadId, cardPrs);
   const chips = given ?? own;
   if (chips.length === 0) return null;
-  const shown = chips.slice(0, MAX_PR_CHIPS);
-  const more = chips.length - shown.length;
+  const folded = foldMerged ? foldMergedChips(chips) : undefined;
+  const open = folded?.chips ?? chips;
+  const shown = open.slice(0, MAX_PR_CHIPS);
+  const more = open.length - shown.length;
+  const mergedCount = folded?.mergedChip !== undefined && (
+    <span
+      data-testid={ghost ? undefined : "overview-pr-merged"}
+      role={ghost ? undefined : "img"}
+      aria-label={ghost ? undefined : `${folded.merged} merged pull requests`}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 px-0.5 text-meta text-muted-foreground tabular-nums",
+        dense ? "h-4" : "h-5",
+      )}
+    >
+      <PrMarkIcon group="state" mark={folded.mergedChip.marks.state} />
+      {folded.merged} merged
+    </span>
+  );
   const moreText = more > 0 && (
     <span
       data-testid={ghost ? undefined : "overview-pr-more"}
@@ -122,6 +158,7 @@ export function WorkerPrChips({
           </span>
         ))}
         {moreText}
+        {mergedCount}
       </span>
     );
   }
@@ -143,6 +180,7 @@ export function WorkerPrChips({
         />
       ))}
       {moreText}
+      {mergedCount}
     </div>
   );
 }
