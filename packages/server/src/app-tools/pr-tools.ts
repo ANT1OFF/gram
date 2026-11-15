@@ -72,6 +72,7 @@ import {
 import { WorkerHosts } from "../host/worker-host.ts";
 import { MachineBranchPr } from "../git/machine-branch-pr.ts";
 import { ThreadPrLookup } from "../git/thread-pr.ts";
+import { mergeDelegationStands } from "../orchestration/rules.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -156,6 +157,10 @@ const refuseInBabysit = (thread: Thread) =>
  * The git-backed app tools: PR binding and status over the batched `gh` state,
  * the CI monitor, and auto-merge. Registered from above the state publisher, which they read.
  */
+/** Why a binding of `pr` didn't take: another thread's launch of it is outstanding. */
+const reservedRefusal = (pr: { readonly repo: string; readonly number: number }) =>
+  `${pr.repo}#${pr.number} is being merged by another thread right now, so it can't become this thread's pull request, and this thread's bindings were left as they were. Check it with pr_status once that merge settles, and bind it again if it is still open.`;
+
 export const PrAppToolsLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* AppToolRegistry;
@@ -302,6 +307,13 @@ export const PrAppToolsLive = Layer.effectDiscard(
           });
         });
         if (held !== undefined) return yield* new AppToolError({ tool, message: held });
+        // The store keeps a PR another thread's launch has reserved off this thread's main binding,
+        // in the binding's own transaction, leaving its bindings as they were: the merge decided first.
+        if (
+          (updated.boundPr === undefined || !samePr(updated.boundPr, { repo, number })) &&
+          (yield* reservedElsewhere({ repo, number }, threadId))
+        )
+          return yield* new AppToolError({ tool, message: reservedRefusal({ repo, number }) });
         yield* refreshes.request(updated.checkout.path, true);
         return updated.boundPr ?? { repo, number, monitor: input.monitor ?? false };
       });
@@ -790,6 +802,22 @@ export const PrAppToolsLive = Layer.effectDiscard(
         }),
     });
 
+    /** Whether a launch of `pr` by a thread other than `threadId` is outstanding (a pending fence). */
+    const reservedElsewhere = (
+      pr: { readonly repo: string; readonly number: number },
+      threadId: ThreadId,
+    ) =>
+      store.listMergeFences.pipe(
+        Effect.map((fences) =>
+          fences.some(
+            (fence) =>
+              fence.pending !== undefined &&
+              fence.pending.threadId !== threadId &&
+              samePr(fence.pending.pr, pr),
+          ),
+        ),
+      );
+
     /**
      * Whether `caller` merging `thread`'s PR goes without a card: an orchestrator on its own worker,
      * or a worker on the open PR its own branch opened, in a workspace at `full` autonomy.
@@ -1098,6 +1126,16 @@ export const PrAppToolsLive = Layer.effectDiscard(
               message: "The approved pull request identity changed during the call; call it again.",
             });
           }
+          // The scope the ownership check reads, taken before it: the arming write commits only
+          // while the workspace's projects are still these (a doubt widens nothing).
+          const scopeProjects =
+            allowedBy === "autonomy" && enabled && latest.workspaceId !== undefined
+              ? JSON.stringify(
+                  (yield* store
+                    .getWorkspace(latest.workspaceId)
+                    .pipe(Effect.orElseSucceed(() => undefined)))?.workspace.projectIds,
+                )
+              : undefined;
           const ownership =
             allowedBy === "autonomy" && enabled
               ? yield* workerPrOwnership(latest, pr.repo, pr.number).pipe(
@@ -1144,6 +1182,35 @@ export const PrAppToolsLive = Layer.effectDiscard(
               if (t.parked || t.babysit?.phase === "watching") {
                 refused =
                   "This thread is parked or watching its PR; call it again after that changes.";
+                return t;
+              }
+              // A sibling's pr_bind that committed between the ownership check above and this write
+              // is seen here, in the write's own transaction (`claimScan`): an autonomous arm never
+              // lands on a PR another thread took meanwhile. The launch rechecks the same way.
+              if (allowedBy === "autonomy" && context?.prClaimedByOther === true) {
+                refused =
+                  "Another thread bound this pull request between the check and this write, so it is that thread's to merge now; call again if it should still be yours.";
+                return t;
+              }
+              // Full auto's waiver is decided again on what this transaction reads: a downgrade of
+              // the autonomy, a pause, a lost delegation, or a changed scope or checkout that
+              // committed after the check above refuses the arm rather than riding its old verdict.
+              if (
+                allowedBy === "autonomy" &&
+                enabled &&
+                (!mergeDelegationStands({
+                  callerId: caller,
+                  caller: context?.caller,
+                  target: t,
+                  state: context?.workspace,
+                }) ||
+                  JSON.stringify(context?.workspace?.workspace.projectIds) !== scopeProjects ||
+                  JSON.stringify(t.checkout) !== JSON.stringify(latest.checkout) ||
+                  JSON.stringify(t.extraCheckouts) !== JSON.stringify(latest.extraCheckouts) ||
+                  (caller === thread.id && t.boundPr?.mergeWhenReady?.heldBy === "orchestrator"))
+              ) {
+                refused =
+                  "The workspace's autonomy, the worker's delegation or its scope changed during the call; call it again.";
                 return t;
               }
               refused =
@@ -1237,7 +1304,13 @@ export const PrAppToolsLive = Layer.effectDiscard(
                 typeof ownership === "object" ? withOwnedBranch(t, ownership, ownership.branch) : t;
               return bindMainPr(owned, { ...rest, mergeWhenReady: intent });
             },
-            reusing || (call.carded === true && byOrchestrator) ? caller : undefined,
+            // The autonomy arm reads the caller's own authority in the write's transaction too.
+            reusing || (call.carded === true && byOrchestrator) || allowedBy === "autonomy"
+              ? caller
+              : undefined,
+            // The autonomy arm asks the write to scan competing bindings in its own transaction, so
+            // a sibling's pr_bind can't slip in between the ownership check and this arm.
+            allowedBy === "autonomy" && enabled ? { pr } : undefined,
           );
           // With no attempt of the old intent between its last look and its launch meanwhile.
           const updated = yield* mergeWhenReady === undefined
@@ -1245,6 +1318,14 @@ export const PrAppToolsLive = Layer.effectDiscard(
             : mergeWhenReady.mutate(thread.id, write);
           if (refused !== undefined)
             return yield* new AppToolError({ tool: MERGE, message: refused });
+          // The store keeps a PR another thread's launch has reserved off this thread's main
+          // binding, leaving its bindings as they were, so an arm on it didn't take.
+          if (
+            enabled &&
+            (updated.boundPr === undefined || !samePr(updated.boundPr, pr)) &&
+            (yield* reservedElsewhere(pr, thread.id))
+          )
+            return yield* new AppToolError({ tool: MERGE, message: reservedRefusal(pr) });
           yield* refreshes.request(updated.checkout.path, true);
           const intent = updated.boundPr?.mergeWhenReady;
           // Held on purpose: a freeze that took its auto-merge down doesn't arm it again.

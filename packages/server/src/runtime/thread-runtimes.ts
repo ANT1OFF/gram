@@ -1263,10 +1263,15 @@ const make = Effect.gen(function* () {
       );
     });
 
-  const updateThread: ThreadRuntimesShape["updateThread"] = (threadId, f, authorityCaller) =>
+  const updateThread: ThreadRuntimesShape["updateThread"] = (
+    threadId,
+    f,
+    authorityCaller,
+    claimScan,
+  ) =>
     Effect.gen(function* () {
       const before = yield* store.getThread(threadId);
-      const thread = yield* store.updateThread(threadId, f, authorityCaller);
+      const thread = yield* store.updateThread(threadId, f, authorityCaller, claimScan);
       yield* publishUpsert(thread);
       const unarchived = before.parked && !thread.parked;
       if (before.parked !== thread.parked) yield* markAgentSession(thread);

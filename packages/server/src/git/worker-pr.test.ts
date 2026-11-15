@@ -1,6 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
+import { Proc, type ProcOutput, ProcSpawnError, ProcTimeout } from "@gram/git";
+import * as Effect from "effect/Effect";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   explainOwnershipBlocker,
+  liveHeadAt,
   OWNERSHIP_BLOCKERS,
   ownershipAsk,
   ownershipForAgent,
@@ -291,4 +297,57 @@ describe("remoteRepoOf", () => {
             }
     expect(checked).toBe(hosts.length * owners.length * names.length * suffixes.length * 10);
   });
+});
+
+/** A finished process's output, as `Proc` returns it. */
+const out = (status: number, stdout = "", stderr = ""): ProcOutput => ({
+  status,
+  stdout,
+  stderr,
+  truncated: false,
+});
+
+describe("liveHeadAt", () => {
+  const folder = mkdtempSync(join(tmpdir(), "gram-live-head-"));
+  /** `liveHeadAt` in `folder` with its one git call answered by `answer`. */
+  const head = (answer: Effect.Effect<ProcOutput, ProcSpawnError | ProcTimeout>, at = folder) =>
+    liveHeadAt(at).pipe(Effect.provideService(Proc, { run: () => answer }));
+
+  it.effect("reads a checked-out branch", () =>
+    Effect.gen(function* () {
+      expect(yield* head(Effect.succeed(out(0, "release/next\n")))).toEqual({
+        kind: "branch",
+        name: "release/next",
+      });
+    }),
+  );
+
+  it.effect("reads a silent exit 1 as a verified detached HEAD", () =>
+    Effect.gen(function* () {
+      expect(yield* head(Effect.succeed(out(1)))).toEqual({ kind: "detached" });
+    }),
+  );
+
+  // Every way the HEAD can't be told is unknown, which a conflict check counts as a claim.
+  for (const [why, answer] of [
+    ["a broken git directory", Effect.succeed(out(128, "", "fatal: not a git repository"))],
+    ["a signal", Effect.succeed(out(-1))],
+    ["a truncated read", Effect.succeed({ ...out(0, "release/next"), truncated: true })],
+    ["a timeout", Effect.fail(new ProcTimeout({ bin: "git", message: "timed out" }))],
+    ["a spawn error", Effect.fail(new ProcSpawnError({ bin: "git", message: "ENOENT" }))],
+  ] as const) {
+    it.effect(`reads ${why} as unknown`, () =>
+      Effect.gen(function* () {
+        expect(yield* head(answer)).toEqual({ kind: "unknown" });
+      }),
+    );
+  }
+
+  it.effect("reads a folder that is gone as unknown, without running git", () =>
+    Effect.gen(function* () {
+      expect(
+        yield* head(Effect.die("git ran for a missing folder"), join(folder, "moved-away")),
+      ).toEqual({ kind: "unknown" });
+    }),
+  );
 });
