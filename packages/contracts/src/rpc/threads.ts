@@ -67,10 +67,10 @@ export const ThreadRpcs = RpcGroup.make(
       /** Adopts the attachments staged for this `/new` draft before the first input is sent. */
       draftId: Schema.optionalKey(DraftId),
       /**
-       * Other repositories on this machine the thread also works in, by their folders. With a new
-       * worktree, each gets a worktree of its own on the same branch, made from its checked-out
-       * branch and removed with the thread's; otherwise each folder is given as it is. Refused
-       * for a thread placed on another machine. Its agent is given them all before its first turn.
+       * Other repositories the thread also works in, by their projects' folders here. With a new
+       * worktree, each gets a worktree of its own on the same branch and machine, removed with
+       * the thread's; in a folder as it is on this machine, each folder is given as it is.
+       * Refused for a folder on another machine. Its agent has them all before its first turn.
        */
       alsoIn: Schema.optionalKey(Schema.Array(Schema.String)),
     },

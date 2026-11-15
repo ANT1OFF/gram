@@ -359,6 +359,24 @@ POST /embed/v1/thread-interrupt
 - A thread on a machine started for one person is written in and stopped only for that person: anyone else gets `409` with why.
 - `404` for a thread the server doesn't have, `409` when it can't take the message now (it ended, or its agent couldn't start), `400` for a body that isn't one. `text` is 1 to 20,000 characters.
 
+## A person's thread started in repositories
+
+The platform can start a thread for a person it signed in, in one or more repositories, as New task would start one: a new worktree in the first repository, one on the same branch in each other, and the person's first message.
+
+```
+POST /embed/v1/thread-starts
+{ "person": { "id": "user-7", "name": "Ada" }, "key": "s-1",
+  "repositories": ["acme/api", "https://github.com/acme/web"], "text": "Rename the endpoint in both.",
+  "title": "Rename the endpoint", "branch": "rename-endpoint", "model": { "agent": "claude", "model": "opus" } }
+→ 200 { "threadId": "...", "created": true, "branch": "rename-endpoint" }
+```
+
+- `repositories` names 1 to 8 repositories as `owner/name` or a git URL, the one the thread works in first. Each is cloned as `projects.clone` clones it, or taken as it is when it is already there; a server that runs no work itself files it as an origin that the machine clones.
+- The thread is placed as one the person started: on their own machine where machines are started for one person. With none of theirs running, it is refused with `409` and why.
+- `branch` defaults to `thread/<the thread id's first 8 characters>`; `title` to one made from the message; `model` to the saved default.
+- `key` names the start. Sent again, it answers the thread it made, with `created: false`, and makes nothing.
+- The thread is recorded as made by the person (`thread.create`). A repository that can't give it a worktree makes nothing: `409` with why. `400` for a body that isn't one.
+
 ## Settings supplied from outside
 
 The deployment can set some of the settings for this server. A supplied setting reads as supplied to everything inside, and nothing inside can change it: the Settings page, a paired phone and an agent's `settings_propose` are each refused, with a message that says the service that runs this Gram set it.

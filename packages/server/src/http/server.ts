@@ -67,6 +67,7 @@ import {
   onDemandRequest,
 } from "../embedding/on-demand.ts";
 import { ThreadMessagesInboundLive } from "../embedding/thread-messages.ts";
+import { ThreadStartsInboundLive } from "../embedding/thread-starts.ts";
 import { ThreadNotesInboundLive } from "../embedding/thread-notes.ts";
 import { ObjectStoreLive } from "../embedding/object-store.ts";
 import { TimersLive } from "../embedding/timers.ts";
@@ -903,6 +904,7 @@ export const ServerCore = Layer.unwrap(
         RepoEventsInboundLive,
         ThreadNotesInboundLive,
         ThreadMessagesInboundLive,
+        ThreadStartsInboundLive,
         SuppliedSettingsLive,
       )
         // Above the merges, which it asks again when a dependency merges; a `pipe` takes twenty.
