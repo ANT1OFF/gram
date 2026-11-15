@@ -202,9 +202,11 @@ export const reposOn = (
         Effect.gen(function* () {
           if (!(yield* contained)) return yield* outside;
           if (existsSync(dest)) {
-            const origin = yield* on(git(dest, ["remote", "get-url", "origin"])).pipe(
-              Effect.mapError((error) => failed(error.message)),
-            );
+            // As stored, not as `insteadOf` rewrites it: a machine that routes its remotes
+            // through a proxy would otherwise never match the URL it cloned from.
+            const origin = yield* on(
+              git(dest, ["config", "--local", "--no-includes", "--get", "remote.origin.url"]),
+            ).pipe(Effect.mapError((error) => failed(error.message)));
             const kept = origin.status === 0 ? remoteOf(origin.stdout.trim()) : undefined;
             if (kept === undefined || !("folder" in kept) || kept.identity !== target.identity) {
               // Older hosts used the readable name alone. Leave another identity there untouched,

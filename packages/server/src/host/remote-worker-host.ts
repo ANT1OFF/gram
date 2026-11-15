@@ -126,9 +126,12 @@ export const machineCheckouts = (
       usedCheckoutPaths(onMachine(threads, machine).filter((t) => t.id !== thread?.id)),
     );
 
-  /** The project's remote, read here: the host clones the same repository. */
+  /**
+   * The project's remote, read here as stored, not as `insteadOf` rewrites it: the host clones the
+   * same repository.
+   */
   const originOf = (projectRoot: string) =>
-    git(projectRoot, ["remote", "get-url", "origin"]).pipe(
+    git(projectRoot, ["config", "--get", "remote.origin.url"]).pipe(
       Effect.provideService(Proc, deps.proc),
       Effect.mapError((error) => new GitError({ message: redactUrlCredentials(error.message) })),
       Effect.flatMap((out) => {

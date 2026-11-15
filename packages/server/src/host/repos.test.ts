@@ -107,6 +107,28 @@ describe("reposOn", () => {
     }).pipe(Effect.scoped, Effect.provide(ProcLive)),
   );
 
+  it.effect("keeps its clone when the machine routes remotes elsewhere through insteadOf", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const { env } = localRemote(dir);
+      const root = join(dir, "repos");
+      const repos = reposOn(yield* Proc, root, env);
+      const first = yield* repos.ensure(URL);
+      // A machine whose git sends every remote through a proxy: `remote get-url` now names the
+      // proxy, while the clone's stored origin is still the URL it was made from.
+      execFileSync("git", [
+        "-C",
+        first.path,
+        "config",
+        "url.https://proxy.example.test/git/git.example.test/.insteadOf",
+        "https://git.example.test/",
+      ]);
+      const again = yield* repos.ensure(URL);
+      expect(again.path).toBe(first.path);
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
+  );
+
   it.effect("refuses a folder already there that isn't a clone of that remote", () =>
     Effect.gen(function* () {
       const dir = tempDir();
@@ -181,7 +203,9 @@ describe("reposOn", () => {
         };
         const result = yield* reposOn(proc, dir).ensure(requested!).pipe(Effect.result);
         expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "conflict" } });
-        expect(calls).toEqual([["remote", "get-url", "origin"]]);
+        expect(calls).toEqual([
+          ["config", "--local", "--no-includes", "--get", "remote.origin.url"],
+        ]);
       }).pipe(Effect.scoped),
     );
   }

@@ -51,7 +51,7 @@ describe("joined clone base creation", () => {
       let explicit = false;
       const proc: ProcShape = {
         run: (_bin, args) => {
-          if (args.includes("get-url")) return Effect.succeed(output(URL));
+          if (args.includes("remote.origin.url")) return Effect.succeed(output(URL));
           if (args.includes("--prune"))
             return Deferred.succeed(entered, undefined).pipe(
               Effect.andThen(Deferred.await(release)),
