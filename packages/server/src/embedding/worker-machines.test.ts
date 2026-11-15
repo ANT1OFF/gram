@@ -40,6 +40,7 @@ const ask = {
   title: "Run the browser suite",
   size: "large",
   architecture: "arm64",
+  isolation: "container",
   environment: "6f0c7a4e-2d1b-4c3a-9e8f-1a2b3c4d5e6f",
 };
 
@@ -54,7 +55,7 @@ describe("a worker's own machine", () => {
     expect(isWorkerMachineName("build box")).toBe(false);
   });
 
-  it.effect("asks the provider for it, with the size, processor and environment picked", () =>
+  it.effect("asks the provider for it, with the size, processor, kind and environment picked", () =>
     Effect.gen(function* () {
       const fake = yield* Effect.promise(() => provider(200, { hostKey: "k" }));
       const started = yield* startWorkerMachine(fake.hosts, ask);
@@ -73,6 +74,7 @@ describe("a worker's own machine", () => {
               choices: {
                 size: "large",
                 architecture: "arm64",
+                isolation: "container",
                 environment: "6f0c7a4e-2d1b-4c3a-9e8f-1a2b3c4d5e6f",
               },
             },

@@ -20,7 +20,8 @@ import { useThreadsStore } from "@/stores/threads";
 
 import { FolderBrowser } from "./folder-browser";
 import { GitBadge } from "./git-badge";
-import { baseName, tildify } from "./path";
+import { folderLabel, tildify } from "./path";
+import { projectLabel } from "./project-shortcuts";
 import { PathField } from "./path-field";
 import { useHome, type MachineFolderStatus } from "./use-folder";
 
@@ -108,7 +109,7 @@ export function MachineFolderChip({
           <Folder aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         )}
         <span className={cn("truncate", folder !== undefined && "font-mono")}>
-          {folder === undefined ? baseName(repo ?? "") : shown || "~"}
+          {folder === undefined ? folderLabel(repo ?? "") : shown || "~"}
         </span>
         <ChevronDown aria-hidden className="size-icon-chip shrink-0 text-muted-foreground" />
       </Popover.Trigger>
@@ -169,7 +170,7 @@ export function MachineFolderChip({
                         aria-hidden
                         className="size-icon-row shrink-0 text-muted-foreground"
                       />
-                      <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                      <span className="min-w-0 flex-1 truncate">{projectLabel(project)}</span>
                       <GitBadge />
                     </button>
                   ))}

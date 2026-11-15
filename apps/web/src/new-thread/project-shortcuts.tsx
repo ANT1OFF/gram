@@ -5,7 +5,11 @@ import type { ComponentType, ReactNode } from "react";
 import { BookmarkToggle } from "./bookmark-toggle";
 import { ForgetProjectButton } from "./forget-project-button";
 import { GitBadge } from "./git-badge";
-import { baseName } from "./path";
+import { baseName, folderLabel } from "./path";
+
+/** A project as a person names it: a clone by owner and repository, else by its own name. */
+export const projectLabel = (project: Pick<Project, "root" | "name">): string =>
+  folderLabel(project.root) === baseName(project.root) ? project.name : folderLabel(project.root);
 
 /** Folders worth one click, after the default folder when one is set. */
 const SHORTCUTS = [
@@ -145,7 +149,7 @@ function ProjectRow({
         onClick={() => onChoose(project.root)}
         className={rowCls}
       >
-        <span className="shrink-0 font-medium">{project.name}</span>
+        <span className="shrink-0 font-medium">{projectLabel(project)}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-meta text-muted-foreground">
           {parent}
         </span>

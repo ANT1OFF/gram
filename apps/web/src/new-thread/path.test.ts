@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { FolderEntry } from "@gram/contracts";
 
-import { breadcrumbs, commonPrefix, splitForCompletion, tabCompletion, tildify } from "./path";
+import {
+  breadcrumbs,
+  commonPrefix,
+  folderLabel,
+  splitForCompletion,
+  tabCompletion,
+  tildify,
+} from "./path";
 
 const entry = (name: string): FolderEntry => ({
   name,
@@ -55,5 +62,14 @@ describe("display helpers", () => {
       { label: "etc", path: "/etc" },
       { label: "hosts.d", path: "/etc/hosts.d" },
     ]);
+  });
+});
+
+describe("folderLabel", () => {
+  it("names a clone folder by owner and repository, and any other folder by its name", () => {
+    expect(folderLabel("/home/me/clones/github.com/acme/api+61a386c7374a4745")).toBe("acme/api");
+    expect(folderLabel("/c/gitlab.com/group/sub+repo+0123456789abcdef/")).toBe("group/sub/repo");
+    expect(folderLabel("/home/me/code/api")).toBe("api");
+    expect(folderLabel("/home/me/code/notes+draft")).toBe("notes+draft");
   });
 });

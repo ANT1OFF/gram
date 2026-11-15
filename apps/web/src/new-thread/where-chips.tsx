@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { baseName, tildify } from "./path";
+import { folderLabel, tildify } from "./path";
 import { ProjectLists } from "./project-shortcuts";
 import { useHome } from "./use-folder";
 
@@ -49,7 +49,7 @@ export function FolderPicker({
           title={folder === "" ? "Choose a folder" : `${tildify(folder, home)} · choose another`}
           className="rounded-sm underline decoration-muted-foreground/60 decoration-dotted decoration-2 underline-offset-[0.2em] outline-none hover:decoration-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
         >
-          {folder === "" ? "a folder" : baseName(folder)}
+          {folder === "" ? "a folder" : folderLabel(folder)}
         </Popover.Trigger>
       ) : (
         <Popover.Trigger
@@ -58,7 +58,9 @@ export function FolderPicker({
           className={cn(CHIP, FOCUS, "max-w-64 hover:bg-accent")}
         >
           <Folder aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
-          <span className="truncate">{folder === "" ? "Choose a folder" : baseName(folder)}</span>
+          <span className="truncate">
+            {folder === "" ? "Choose a folder" : folderLabel(folder)}
+          </span>
           <ChevronDown aria-hidden className="size-icon-chip shrink-0 text-muted-foreground" />
         </Popover.Trigger>
       )}

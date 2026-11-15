@@ -289,13 +289,14 @@ owner, is taken: anything else is `404`. Progress is kept in memory, for the per
 ### Workers' own machines
 
 An orchestrator on a person's host may ask for a machine of a worker's own, through `spawn_worker`'s
-`sandbox`: `{own: true, size?, architecture?}` asks for one, `{shareWith}` places the worker on one
+`sandbox`: `{own: true, size?, architecture?, isolation?, environment?}` asks for one (each by the
+provider's own id for it; `isolation` is how strongly it is kept from other machines), `{shareWith}` places the worker on one
 it already has (by machine name or a worker's thread id), and leaving it out keeps the worker on the
 orchestrator's machine. This is the one path by which an agent, not a person's own request, starts a
 host, so the provider holds it to what the person and their organisation allow:
 
 - the server asks `POST /hosts/start` with `{ kind: "worker", owner, name, options: { orchestrator,
-  title, choices: { size?, architecture? } } }` and no proof. `owner` is the owner of the
+  title, choices: { size?, architecture?, isolation?, environment? } } }` and no proof. `owner` is the owner of the
   orchestrator's own host, never read from the call. `name` is `worker-` and 10 hex characters,
   the same for a retry of the same spawn, so a provider should treat a second ask for a name it
   holds as the same machine;
