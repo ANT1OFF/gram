@@ -50,6 +50,7 @@ import { DreamFiles } from "../orchestration/dream-files.ts";
 import { DreamsLive } from "../orchestration/dreams.ts";
 import { OrchestrationMemory } from "../orchestration/memory.ts";
 import { Orchestration, OrchestrationLive } from "../orchestration/service.ts";
+import { WorkerMachineReleaseLive } from "../embedding/worker-machine-release.ts";
 import { RoutineEventSourcesLive } from "../routines/events.ts";
 import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
@@ -914,6 +915,8 @@ export const ServerCore = Layer.unwrap(
               ),
               ThreadArchiverLive,
               WorktreeSweepLive,
+              // Tells the host provider when a worker's own machine has no work left.
+              WorkerMachineReleaseLive,
             ),
           ),
           Layer.provideMerge(Layer.mergeAll(DreamFiles.layer, ThreadArchive.layer)),

@@ -307,6 +307,15 @@ host, so the provider holds it to what the person and their organisation allow:
 A worker host is placed on only by its owner's orchestrators, and is never anyone's default. Pausing
 it when idle, waking it when its worker is messaged and reclaiming it later are the provider's.
 
+When its work is over the server says so (`embedding/worker-machine-release.ts`). Every ten
+minutes it looks at each worker host online for half an hour or more: once no open thread placed on
+it is at work (every worker there is finished as the ledger reads it, with its pull requests merged
+or closed, delivered or archived, or closed with its worktree), it asks `POST /hosts/release` with
+`{ kind: "worker", owner, name, released: true, reason: "finished" }`. Should one be at work there
+again, a worker reopened, it asks the same with `released: false, reason: "working"`, so the
+provider keeps the disk. Each is told once; after a restart it may be told again, which a provider
+takes as the same word. `404` means the provider keeps none of this.
+
 ## A note for a thread
 
 The platform can give one thread a note, which its agent takes as a turn of its own once the thread is free, as it takes any input the server writes itself. It wakes a thread at rest for something that happened outside it, such as an answer given elsewhere to what the agent was waiting on.
