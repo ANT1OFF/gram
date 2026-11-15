@@ -262,6 +262,12 @@ export const makeOpenCodeMapper = (options: OpenCodeMapperOptions): OpenCodeMapp
         );
       }
       endStep(t, out);
+      // A permission is asked while its call runs, so a call's input is needed no longer than its
+      // turn: kept past it, every file a long session wrote would stay in memory.
+      for (const id of t.tools.keys()) {
+        calls.delete(id);
+        rawNames.delete(id);
+      }
       if (t.steps.length > 0)
         out.push(
           chunk(t, { type: "message-metadata", messageMetadata: { agentMessageIds: t.steps } }),
