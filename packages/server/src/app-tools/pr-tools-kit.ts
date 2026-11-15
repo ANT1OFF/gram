@@ -316,9 +316,20 @@ export const armedWorkerBadge = (approved: boolean) =>
     ...(approved ? {} : { checks: "pending" }),
   });
 
-/** A real per-call card approves a recovery PR whose historical branch the worker never held. */
+/**
+ * A real per-call card approves a recovery PR whose historical branch the worker never held: the
+ * user's own worktree has it checked out, so the worker can't check it out and the user is asked.
+ */
 export const approvedRecovery = (world: World, method: "squash" | "rebase" = "squash") =>
   Effect.gen(function* () {
+    const historical = tempDir();
+    yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(historical)));
+    const added = spawnSync(
+      "git",
+      ["-C", world.repo, "worktree", "add", "-q", "-b", "codex/historical-user-branch", historical],
+      { encoding: "utf8" },
+    );
+    expect(added.status, added.stderr).toBe(0);
     const store = yield* ThreadStore;
     const runtimes = yield* ThreadRuntimes;
     const registry = yield* AppToolRegistry;

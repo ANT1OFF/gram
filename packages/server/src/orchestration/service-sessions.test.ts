@@ -202,67 +202,66 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           expect(worker.id).toBe(workerId);
           yield* settle;
 
-          // Recording the spawn kept it, so the orchestrator can't message the worker.
+          // Recording the spawn kept the mark, and the worker is still the orchestrator's to message.
           expect(yield* intervened(workerId)).toBe(true);
-          const refused = yield* orchestration
-            .checkSend(orchestrator.id, worker.id)
-            .pipe(Effect.flip);
-          expect(refused.message).toContain("user_intervened");
-          expect((yield* outboxOf(workspaceId)).notes.at(-1)).toContain(
-            "and wrote to it as it started",
-          );
+          yield* orchestration.checkSend(orchestrator.id, worker.id);
+          const note = (yield* outboxOf(workspaceId)).notes.at(-1);
+          expect(note).toContain("and wrote to it as it started");
+          expect(note).toContain("It is your worker");
         }),
       ),
     GIT_HEAVY,
   );
 
-  it.effect("lets a hold lapse once the worker has sat idle ten minutes since the user wrote", () =>
-    inServer((world) =>
-      Effect.gen(function* () {
-        const runtimes = yield* ThreadRuntimes;
-        const { session, workspaceId } = yield* openOrchestrator(world);
-        const worker = yield* spawn(session, { feature: "mail-trigger", title: "Mail trigger" });
-        yield* stopSilently(worker.session);
-        const held = outboxOf(workspaceId).pipe(
-          Effect.map((outbox) => outbox.workers[worker.thread.id]?.userIntervened === true),
-        );
+  it.effect(
+    "lets the user's mark lapse once the worker has sat idle ten minutes since they wrote",
+    () =>
+      inServer((world) =>
+        Effect.gen(function* () {
+          const runtimes = yield* ThreadRuntimes;
+          const { session, workspaceId } = yield* openOrchestrator(world);
+          const worker = yield* spawn(session, { feature: "mail-trigger", title: "Mail trigger" });
+          yield* stopSilently(worker.session);
+          const held = outboxOf(workspaceId).pipe(
+            Effect.map((outbox) => outbox.workers[worker.thread.id]?.userIntervened === true),
+          );
 
-        // A turn still running keeps the hold however long it takes.
-        yield* runtimes.send(worker.thread.id, { text: "Use the other queue." });
-        yield* waitReal("the hold", held);
-        yield* TestClock.adjust("11 minutes");
-        yield* settle;
-        expect(yield* held).toBe(true);
-        // Its end finds the ten minutes long gone.
-        yield* completeTurn(worker.session);
-        yield* waitReal("the lapse", held.pipe(Effect.map((on) => !on)));
-        expect((yield* outboxOf(workspaceId)).notes.at(-1)).toBe(
-          `"Mail trigger" [thread ${worker.thread.id}] sat idle 10 minutes after the user last wrote to it, so it is yours again; you may message it.`,
-        );
+          // A turn still running keeps the hold however long it takes.
+          yield* runtimes.send(worker.thread.id, { text: "Use the other queue." });
+          yield* waitReal("the hold", held);
+          yield* TestClock.adjust("11 minutes");
+          yield* settle;
+          expect(yield* held).toBe(true);
+          // Its end finds the ten minutes long gone.
+          yield* completeTurn(worker.session);
+          yield* waitReal("the lapse", held.pipe(Effect.map((on) => !on)));
+          expect((yield* outboxOf(workspaceId)).notes.at(-1)).toBe(
+            `"Mail trigger" [thread ${worker.thread.id}] sat idle 10 minutes after the user last wrote to it, so they are likely done talking to it.`,
+          );
 
-        // Writing again restarts the count from the new message.
-        yield* runtimes.send(worker.thread.id, { text: "And rebase." });
-        yield* waitReal("the hold again", held);
-        yield* completeTurn(worker.session);
-        yield* TestClock.adjust("9 minutes");
-        yield* settle;
-        expect(yield* held).toBe(true);
-        yield* TestClock.adjust("1 minutes");
-        yield* waitReal("the second lapse", held.pipe(Effect.map((on) => !on)));
+          // Writing again restarts the count from the new message.
+          yield* runtimes.send(worker.thread.id, { text: "And rebase." });
+          yield* waitReal("the hold again", held);
+          yield* completeTurn(worker.session);
+          yield* TestClock.adjust("9 minutes");
+          yield* settle;
+          expect(yield* held).toBe(true);
+          yield* TestClock.adjust("1 minutes");
+          yield* waitReal("the second lapse", held.pipe(Effect.map((on) => !on)));
 
-        // An input whose agent never opens ends no turn, and lapses all the same.
-        const fake = yield* FakeAgentControl;
-        yield* TestClock.adjust("15 minutes");
-        yield* waitStatus(worker.thread.id, "cold");
-        yield* fake.setUnavailable("no agent here");
-        yield* runtimes.send(worker.thread.id, { text: "Try again." }).pipe(Effect.ignore);
-        yield* waitReal("the hold once more", held);
-        yield* waitStatus(worker.thread.id, "error");
-        yield* fake.setUnavailable(undefined);
-        yield* TestClock.adjust("10 minutes");
-        yield* waitReal("the lapse with no turn", held.pipe(Effect.map((on) => !on)));
-      }),
-    ),
+          // An input whose agent never opens ends no turn, and lapses all the same.
+          const fake = yield* FakeAgentControl;
+          yield* TestClock.adjust("15 minutes");
+          yield* waitStatus(worker.thread.id, "cold");
+          yield* fake.setUnavailable("no agent here");
+          yield* runtimes.send(worker.thread.id, { text: "Try again." }).pipe(Effect.ignore);
+          yield* waitReal("the hold once more", held);
+          yield* waitStatus(worker.thread.id, "error");
+          yield* fake.setUnavailable(undefined);
+          yield* TestClock.adjust("10 minutes");
+          yield* waitReal("the lapse with no turn", held.pipe(Effect.map((on) => !on)));
+        }),
+      ),
   );
 
   it.effect("waits twice as long while a thread of the tree is being rate limited", () =>

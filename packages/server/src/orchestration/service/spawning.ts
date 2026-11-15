@@ -1123,7 +1123,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                   ? []
                   : held
                     ? [
-                        `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} ${byUser.hold === true ? "under their own control" : "and wrote to it as it started"}, for feature ${slug}. It is theirs until it reports, they hand it back, or it sits idle ${USER_HOLD_IDLE_MS / 60_000} minutes; follow its pull request like your own workers'.`,
+                        `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} ${byUser.hold === true ? "under their own control" : "and wrote to it as it started"}, for feature ${slug}. It is your worker: while they talk to it, your messages wait behind their exchange. Follow its pull request like your own workers'.`,
                       ]
                     : [
                         `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} for you, for feature ${slug}, with their words as its brief. It is your worker: direct it and follow its pull request like your own.`,

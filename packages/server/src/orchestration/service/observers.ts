@@ -481,6 +481,21 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
         userInputAt: now,
         lastInputAt: now,
       }));
+      // The user writing to an archived worker brings it back as its orchestrator's live worker:
+      // it is working again, so it reports, messages and merges as one. Its binding never left.
+      if (thread.parked) {
+        yield* runtimes
+          .updateThread(thread.id, (current) =>
+            current.parked ? { ...current, parked: false } : current,
+          )
+          .pipe(
+            Effect.catch((e) =>
+              Effect.logWarning("orchestration couldn't bring an archived worker back").pipe(
+                Effect.annotateLogs({ threadId: thread.id, error: e.message }),
+              ),
+            ),
+          );
+      }
       // Armed here as well as at a turn's end: an input whose turn never ends (an agent that
       // failed to open) must lapse too. The due check leaves a worker still in a turn alone.
       yield* armHold(thread.id, USER_HOLD_IDLE_MS);

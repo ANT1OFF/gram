@@ -849,7 +849,6 @@ export type RefusalCode =
   | "no_authority"
   | "paused"
   | "rate"
-  | "user_intervened"
   | "not_your_worker"
   | "not_admitted"
   | "outside_workspace"
@@ -890,9 +889,10 @@ export const refusal = (code: RefusalCode, message: string): string => `${code}:
 export { USER_HOLD_IDLE_MS };
 
 /**
- * Epoch ms at which a user's hold on a worker lapses if the worker is idle or cold by then;
- * `undefined` without a hold. Counted from the user's latest typed input, so writing again
- * restarts it.
+ * Epoch ms at which the board stops showing the user as talking to a worker, if the worker is idle
+ * or cold by then; `undefined` when they aren't. Counted from the user's latest typed input, so
+ * writing again restarts it. It is information only: the worker stays its orchestrator's
+ * throughout, and nothing it or its orchestrator sends waits for it.
  */
 export const userHoldLapsesAt = (memo: {
   readonly userIntervened: boolean;
@@ -901,20 +901,11 @@ export const userHoldLapsesAt = (memo: {
 }): number | undefined =>
   memo.userIntervened ? (memo.userInputAt ?? memo.lastInputAt) + USER_HOLD_IDLE_MS : undefined;
 
-/**
- * The `user_intervened` refusal: what the hold keeps from the orchestrator (`what`), and the three
- * ways it ends, so the orchestrator can tell the user how to hand the worker back.
- */
-export const userHoldReason = (what: string): string =>
-  `The user wrote to this worker, so it is theirs for now and ${what}. It comes back to you when it next reports, when the user hands it back ("Hand back" in its thread's header, or "Hand back to orchestrator" in the worker's menu on the board or in the sidebar), or once it has sat idle ${USER_HOLD_IDLE_MS / 60_000} minutes after their last message; a digest will say so. If you need it sooner, tell the user they can hand it back.`;
-
 /** What `checkWorkerSend` weighs for one `send_message` from an orchestrator to its own worker. */
 export interface WorkerSendCheck {
   /** Epoch ms of the orchestrator's earlier sends to this worker. */
   readonly recentSends: ReadonlyArray<number>;
   readonly now: number;
-  /** The user typed in the worker after the orchestrator's last message, and it hasn't reported since. */
-  readonly userIntervened: boolean;
   readonly paused: boolean;
   /** The worker's feature, when the user has paused it (`WorkspaceState.pausedFeatures`). */
   readonly pausedFeature?: string | undefined;
@@ -928,7 +919,7 @@ export type WorkerSendVerdict =
     }
   | {
       readonly ok: false;
-      readonly code: Extract<RefusalCode, "paused" | "feature_paused" | "rate" | "user_intervened">;
+      readonly code: Extract<RefusalCode, "paused" | "feature_paused" | "rate">;
       /** Written for the orchestrator to act on. */
       readonly reason: string;
     };
@@ -936,8 +927,9 @@ export type WorkerSendVerdict =
 /**
  * `checkSend` for an orchestrator writing to its own worker. The back-to-back rule is dropped: a
  * worker's first input is the orchestrator's brief, so it would refuse every follow-up until the
- * user typed there. What is left is a pause, the user's intervention, and the per-minute rate limit
- * every thread has, counted here for each worker on its own (`recentSends` are this pair's). It is a
+ * user typed there. What is left is a pause and the per-minute rate limit every thread has, counted
+ * here for each worker on its own (`recentSends` are this pair's). The user writing to the worker
+ * refuses nothing: the send waits behind their exchange instead (`deliver`). It is a
  * loop guard and not a budget: how much an orchestrator says to a worker is otherwise its own
  * business. Hop depth isn't weighed, since these messages always
  * carry depth 1. The refusals no amount of waiting cures come first.
@@ -956,13 +948,6 @@ export const checkWorkerSend = (check: WorkerSendCheck): WorkerSendVerdict => {
       ok: false,
       code: "feature_paused",
       reason: `The user paused feature ${check.pausedFeature}, so its workers get no messages. Only the user can resume it; leave it until a digest says they did.`,
-    };
-  }
-  if (check.userIntervened) {
-    return {
-      ok: false,
-      code: "user_intervened",
-      reason: userHoldReason("you can't message it"),
     };
   }
   const recent = check.recentSends.filter((at) => check.now - at < SEND_WINDOW_MS);

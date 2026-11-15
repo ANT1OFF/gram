@@ -249,7 +249,7 @@ export const workerWait = (
   if (worker.userIntervened)
     return person(
       HELD,
-      "It's under your control, so the orchestrator can't message it. Hand it back when ready.",
+      "You're talking to it, so the orchestrator's messages wait behind yours. Hand it back when you're done.",
     );
   // A provider limit resumes it on its own: whatever its PRs wait on, it moves on once that resets.
   if (worker.limitWait !== undefined)

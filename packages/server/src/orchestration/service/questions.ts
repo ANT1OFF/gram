@@ -47,7 +47,7 @@ import {
   withdrawn,
   type QuestionRefusal,
 } from "../worker-questions.ts";
-import { refusal, userHoldReason, type PendingReason } from "../rules.ts";
+import { refusal, type PendingReason } from "../rules.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import { USER_ANSWERS_MAX, userMessagesOf } from "../user-words.ts";
 import { findUserMessages } from "../../persistence/thread-store.ts";
@@ -168,12 +168,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
             "feature_paused",
             `The user paused feature ${pausedFeature}, so you answer nothing for its workers. Only the user can resume it; leave it until a digest says they did.`,
           ),
-        );
-      }
-      if ((yield* readOutbox(workspaceId)).workers[target.id]?.userIntervened === true) {
-        return yield* toolError(
-          tool,
-          refusal("user_intervened", userHoldReason("so is its question")),
         );
       }
       const request = (yield* store.listRequests(target.id)).find(
@@ -617,12 +611,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
             ),
           );
         }
-        if ((yield* readOutbox(workspaceId)).workers[target.id]?.userIntervened === true) {
-          return yield* toolError(
-            tool,
-            refusal("user_intervened", userHoldReason("so is its question")),
-          );
-        }
       }
       const answer = clipped(redactText(input.answer.trim()), WORKER_QUESTION_ANSWER_MAX);
       const at = yield* Clock.currentTimeMillis;
@@ -939,12 +927,6 @@ export const makeWorkerQuestions = (kit: OrchestrationKit, deps: WorkerQuestions
               "feature_paused",
               `The user paused feature ${pausedFeature}, so its workers' questions are theirs. Leave it until a digest says they resumed it.`,
             ),
-          );
-        }
-        if ((yield* readOutbox(workspaceId)).workers[target.id]?.userIntervened === true) {
-          return yield* toolError(
-            tool,
-            refusal("user_intervened", userHoldReason("so is its question")),
           );
         }
       }

@@ -692,7 +692,7 @@ test("the overview lists a workspace's workers under it, and a worker's thread n
   await expect(held).toContainText("Under your control");
   await held.getByTestId("worker-hold-words").hover();
   await expect(page.locator(`[data-slot="tooltip-content"]`)).toContainText(
-    "The orchestrator can't message it until you hand it back",
+    "It stays the orchestrator's worker, and the orchestrator's messages wait behind yours",
   );
   await expect(page.locator(`[data-slot="tooltip-content"]`)).toContainText(
     "10 minutes after your last message once idle",
