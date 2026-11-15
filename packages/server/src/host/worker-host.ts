@@ -28,6 +28,7 @@ import { Embedding } from "../embedding/embedding.ts";
 import { RemoteHosts, type RemoteHostsShape } from "./remote-hosts.ts";
 import { type MachineParts, placedHost } from "./placed.ts";
 import { machineHosts } from "./remote-worker-host.ts";
+import type { HostShared } from "../shared/host-shared.ts";
 import { ServerConfig } from "../config.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -124,6 +125,11 @@ export interface WorkerHost {
    * recorded when it made it. Absent for this machine, and for a host whose build doesn't serve it.
    */
   readonly identify?: HostRepoIdentify | undefined;
+  /**
+   * Another machine's mirrors of workspaces' shared folders. Absent for this machine, whose threads
+   * use the control plane's own folder, and for a host whose build doesn't keep them.
+   */
+  readonly shared?: HostShared | undefined;
 }
 
 export interface WorkerHostsShape {

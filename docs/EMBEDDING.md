@@ -176,6 +176,10 @@ Limits:
 - A delete the store didn't confirm is kept in `object-store.json` and asked again at each walk.
 - A file is sent only from where it was when it was checked: one whose folder has since become a link is left out, and the log says so.
 
+## Shared folders
+
+Each workspace's shared folder (`docs/AGENTS_AND_FEATURES.md`, "Workspace shared folder") is kept in the data folder, at `shared/<workspaceId>/`, and what each machine's mirror last agreed on is kept in `shared-sync/`. Neither is sent to the object store. A deployment that keeps the data folder, or copies it, keeps them. The machines it starts need no setup: each host keeps its mirrors in its own folder, or in `GRAM_HOST_SHARED` when that is set, and the server brings them in step over the host's connection. When a machine is readied to stop (`/machines/stop/prepare`), its mirrors are brought in step once more, for up to 15 seconds, before the answer.
+
 ## Hosts on demand
 
 A headless server runs no work itself: a thread needs a machine. With `GRAM_HOST_PROVIDER_URL` set,

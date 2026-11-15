@@ -499,6 +499,7 @@ export const machineWorkerHost = (
       attachments: connection.attachments,
       threadPlaces: connection.threadPlaces,
       identify: connection.repos.identify,
+      shared: connection.shared,
     };
   });
 

@@ -141,6 +141,7 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { HOST_STOP_PATHS, hostStopRoute } from "./host-stop-routes.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { WorkspaceOutputs } from "../outputs/workspace-outputs.ts";
+import { SharedFolders } from "../shared/shared-folders.ts";
 import {
   pairingCsp,
   pairingDocument,
@@ -289,10 +290,17 @@ export const AuthMiddleware = HttpRouter.middleware(
     const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
+    const sharedFolders = Option.getOrUndefined(yield* Effect.serviceOption(SharedFolders));
     const stopDeps =
       remoteHosts === undefined || store === undefined || runtimes === undefined
         ? undefined
-        : { hosts: remoteHosts, store, runtimes, settings: store };
+        : {
+            hosts: remoteHosts,
+            store,
+            runtimes,
+            settings: store,
+            ...(sharedFolders === undefined ? {} : { sharedFlush: sharedFolders.flush }),
+          };
     // Absent only in tests that serve the middleware alone, which take the launch token.
     const fronted = Option.getOrUndefined(yield* Effect.serviceOption(FrontedSignIn));
     const securityHeaders = {
@@ -983,7 +991,10 @@ export const ServerCore = Layer.unwrap(
           // `CheckoutService` above here makes each thread's checkout on the machine it is placed on.
           // Beside it, attachments, docs and outputs mirrored to an embedding deployment's object
           // store, under the outputs and the handlers that read through it.
-          Layer.provideMerge(Layer.mergeAll(WorkerHosts.placedCheckouts, ObjectStoreLive)),
+          // Each workspace's shared folder, kept here and mirrored to the machines its threads run on.
+          Layer.provideMerge(
+            Layer.mergeAll(WorkerHosts.placedCheckouts, ObjectStoreLive, SharedFolders.layer),
+          ),
           Layer.provideMerge(
             WorkerHosts.layerLocalOn.pipe(
               Layer.provideMerge(

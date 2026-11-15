@@ -78,6 +78,7 @@ import type { HostThreadPlaces } from "./thread-places.ts";
 import type { HostCheckRequest, HostChecks } from "./checks.ts";
 import type { HostFiles } from "./files.ts";
 import type { HostFolders } from "./folders.ts";
+import type { HostShared } from "../shared/host-shared.ts";
 import { NOT_A_CLAUDE_TOKEN } from "./host-config.ts";
 import type { HostGit } from "./git.ts";
 import type { HostRepos } from "./repos.ts";
@@ -158,6 +159,8 @@ export interface HostService {
   readonly admission?: Admission;
   /** Its readiness to be stopped with its disk kept (`stop.ts`). */
   readonly stop?: HostStop;
+  /** Its mirrors of workspaces' shared folders; a test's host may leave them out. */
+  readonly shared?: HostShared<InvalidState | HostFailed>;
 }
 
 /** A host's update of itself, as it serves `host.update.*`. */
@@ -204,6 +207,7 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "agent-opencode",
   "agent-codex",
   "agent-opencode-sessions",
+  "shared-folders",
 ];
 
 /** Why a Codex session isn't opened on a host that doesn't name `agent-codex`. */
@@ -304,6 +308,7 @@ const defined = <A extends object>(value: A): Defined<A> =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Defined<A>;
 
 const noFolders = new HostFailed({ message: "This host doesn't list its folders." });
+const noShared = new HostFailed({ message: "This host keeps no shared folders." });
 const noThreadPlaces = new HostFailed({
   message: "This host makes no folders for threads started from a profile.",
 });
@@ -352,6 +357,20 @@ const handlersFor = (host: HostService) => {
       "host.attachments.put": ({ threadId, name, data }) =>
         host.attachments.put(threadId, name, data),
       "host.attachments.remove": ({ threadId }) => host.attachments.remove(threadId),
+      "host.shared.open": ({ workspaceId }) =>
+        host.shared === undefined ? Effect.fail(noShared) : host.shared.open(workspaceId),
+      "host.shared.list": ({ workspaceId }) =>
+        host.shared === undefined ? Effect.fail(noShared) : host.shared.list(workspaceId),
+      "host.shared.read": ({ workspaceId, path, offset, length }) =>
+        host.shared === undefined
+          ? Effect.fail(noShared)
+          : host.shared.read(workspaceId, path, offset, length),
+      "host.shared.write": ({ workspaceId, ...write }) =>
+        host.shared === undefined ? Effect.fail(noShared) : host.shared.write(workspaceId, write),
+      "host.shared.remove": ({ workspaceId, path, ifMatch }) =>
+        host.shared === undefined
+          ? Effect.fail(noShared)
+          : host.shared.remove(workspaceId, path, ifMatch),
       "host.threadPlaces.make": ({ threadId, files }) =>
         host.threadPlaces === undefined
           ? Effect.fail(noThreadPlaces)
@@ -774,6 +793,8 @@ export interface HostConnection {
   readonly attachments: HostAttachments | undefined;
   /** Absent for a host from a build that doesn't serve `thread-places`. */
   readonly threadPlaces: HostThreadPlaces | undefined;
+  /** Absent for a host from a build that doesn't serve `shared-folders`. */
+  readonly shared?: HostShared<InvalidState | HostFailed | HostUnavailable> | undefined;
   readonly repos: {
     readonly ensure: (url: string) => Effect.Effect<{ readonly path: string }, WorktreeError>;
     /** Absent for a host from a build that doesn't serve `repo-identity`. */
@@ -1181,6 +1202,24 @@ export const connectHost = (
       // A host that went holds nothing more to delete now; its own prune takes the rest.
       remove: (threadId) =>
         guarded(client["host.attachments.remove"]({ threadId })).pipe(Effect.ignore),
+    };
+    const sharedCall = <A, E extends { readonly _tag: string }>(call: Effect.Effect<A, E>) =>
+      guarded(call).pipe(
+        Effect.mapError((error) =>
+          error instanceof InvalidState || error instanceof HostFailed
+            ? error
+            : unavailable(HOST_NOT_ANSWERING),
+        ),
+      );
+    const shared: HostShared<InvalidState | HostFailed | HostUnavailable> = {
+      open: (workspaceId) => sharedCall(client["host.shared.open"]({ workspaceId })),
+      list: (workspaceId) => sharedCall(client["host.shared.list"]({ workspaceId })),
+      read: (workspaceId, path, offset, length) =>
+        sharedCall(client["host.shared.read"]({ workspaceId, path, offset, length })),
+      write: (workspaceId, write) =>
+        sharedCall(client["host.shared.write"]({ workspaceId, ...write })),
+      remove: (workspaceId, path, ifMatch) =>
+        sharedCall(client["host.shared.remove"]({ workspaceId, path, ifMatch })),
     };
     const threadPlaces: HostThreadPlaces = {
       make: (threadId, laid) =>
@@ -1595,6 +1634,7 @@ export const connectHost = (
       reads: hello.capabilities.includes("file-reads") ? reads : undefined,
       attachments: hello.capabilities.includes("attachments") ? attachments : undefined,
       threadPlaces: hostServes(hello, "thread-places") ? threadPlaces : undefined,
+      shared: hostServes(hello, "shared-folders") ? shared : undefined,
       ...(hello.capabilities.includes("checks") ? { checks } : {}),
       repos: {
         ensure: (url) => worktreeCall(client["host.repos.ensure"]({ url })),
