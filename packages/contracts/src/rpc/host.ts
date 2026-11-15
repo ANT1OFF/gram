@@ -169,6 +169,8 @@ export const HostFeature = Schema.Literals([
    * host without it, which would refuse it anyway.
    */
   "agent-codex",
+  /** Fresh non-credential subscription identity before a cold worker's limit preflight. */
+  "account-scope",
 ]);
 export type HostFeature = typeof HostFeature.Type;
 
@@ -1228,6 +1230,12 @@ export const HostRpcs = RpcGroup.make(
   /** Drops what the host's agents keep across sessions (`AgentHost.reloadConfig` and kin). */
   Rpc.make("host.sessions.reload", {
     payload: { agent: AgentKind, reload: HostAgentReload },
+  }),
+  /** Read-only CLI metadata, negotiated by `account-scope`; starts no session or inference turn. */
+  Rpc.make("host.sessions.accountScope", {
+    payload: { agent: AgentKind },
+    success: Schema.Struct({ scope: Schema.optionalKey(Schema.String) }),
+    error: sessionErrors,
   }),
   /**
    * Keeps a token the user ran `claude setup-token` for on the main machine, and consented to send

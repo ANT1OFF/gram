@@ -670,6 +670,12 @@ export const agentHostOnMachine = (
   };
   return {
     ...inServer,
+    // A joined machine's subscription is never identified by this server's own CLI.
+    readAccountScope: (host.accountScope?.(kind) ?? Effect.succeed(undefined)).pipe(
+      Effect.mapError((error) =>
+        error instanceof AgentUnavailable ? error : unavailable(kind, error),
+      ),
+    ),
     open: (options) =>
       Effect.suspend(() =>
         gone()

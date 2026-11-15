@@ -42,6 +42,7 @@ export type HostAgents = (kind: AgentKind) => Effect.Effect<AgentHost, AgentUnav
  * (`EventLog`), so a subscription that stopped picks up where it was.
  */
 export interface HostSessionsService {
+  readonly accountScope?: (agent: AgentKind) => Effect.Effect<string | undefined, AgentUnavailable>;
   readonly open: (
     request: HostSessionOpen,
   ) => Effect.Effect<HostSessionOpened, AgentUnavailable | HostFailed>;
@@ -616,6 +617,10 @@ export const sessionsOnHost = (
           }),
         ),
       close,
+      accountScope: (agent) =>
+        agents(agent).pipe(
+          Effect.flatMap((host) => host.readAccountScope ?? Effect.succeed(undefined)),
+        ),
       reload: (agent, reload) =>
         agents(agent).pipe(
           Effect.flatMap((host): Effect.Effect<void> => {

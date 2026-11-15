@@ -232,6 +232,60 @@ const eventually = <A>(check: () => A | undefined, label: string) =>
 
 const layer = Layer.mergeAll(WorktreesLive.pipe(Layer.provideMerge(ProcLive)));
 
+describe("a joined machine's current account probe", () => {
+  it.effect.each([true, false])(
+    "uses only the joined CLI and negotiates account-scope support: %s",
+    (supported) =>
+      Effect.gen(function* () {
+        const { onHost, inServer, connection } = yield* routedWith(
+          supported
+            ? HOST_FEATURES
+            : HOST_FEATURES.filter((feature) => feature !== "account-scope"),
+        );
+        let login: string | undefined = "host-login-a";
+        let failed = false;
+        let calls = 0;
+        Object.assign(onHost.host, {
+          readAccountScope: Effect.suspend(() => {
+            calls++;
+            return failed
+              ? Effect.fail(
+                  new AgentUnavailable({
+                    agent: "claude",
+                    reason: "auth-status-failed",
+                    message: "synthetic timeout",
+                  }),
+                )
+              : Effect.succeed(login);
+          }),
+        });
+        Object.assign(inServer.host, {
+          readAccountScope: Effect.die(
+            new Error("The local login must not identify a joined machine."),
+          ),
+        });
+        const agent = agentHostOnMachine(
+          followingSessions(Effect.succeed(connection)),
+          connection.gone,
+          inServer.host,
+          "joined",
+          () => undefined,
+        );
+        expect(yield* agent.readAccountScope!).toBe(supported ? "host-login-a" : undefined);
+        login = "host-login-b";
+        expect(yield* agent.readAccountScope!).toBe(supported ? "host-login-b" : undefined);
+        login = undefined;
+        expect(yield* agent.readAccountScope!).toBeUndefined();
+        failed = true;
+        const result = yield* agent.readAccountScope!.pipe(Effect.result);
+        expect(result._tag).toBe(supported ? "Failure" : "Success");
+        expect(calls).toBe(supported ? 4 : 0);
+        expect(onHost.opened).toEqual([]);
+        expect(inServer.opened).toEqual([]);
+      }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+});
+
 describe("a host that can't hold the browser off", () => {
   it("drops a session's browser denial, as an older host's schema reads the request", () => {
     // The reviewer's case: a host of the release before reads the request without `browser`.

@@ -1,6 +1,12 @@
 import type { AgentHosts } from "./agent-hosts.ts";
 import { accountOf, machineAccountScope } from "./limit-wait.ts";
-import { effectiveCheckout, hostOf, LOCAL_HOST_ID, type Thread } from "@gram/contracts";
+import {
+  effectiveCheckout,
+  hostOf,
+  LOCAL_HOST_ID,
+  type Thread,
+  type HostUnavailable,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 const keyOf = (thread: Thread) =>
   JSON.stringify([hostOf(effectiveCheckout(thread)), thread.model.agent]);
@@ -10,6 +16,8 @@ export const makeAccountScopes = (
   hosts: AgentHosts["Service"],
   threads: ReadonlyArray<Thread>,
   scopeFor: (machine: string, login: string) => string,
+  machineHosts?: (thread: Thread) => Effect.Effect<AgentHosts["Service"], HostUnavailable>,
+  onChange?: (account: string) => Effect.Effect<void>,
 ) => {
   const known = new Map<string, string | undefined>();
   // A restart must not forget a scoped wait merely because the first auth probe fails.
@@ -55,8 +63,13 @@ export const makeAccountScopes = (
           scope: machine === LOCAL_HOST_ID ? undefined : machineAccountScope(machine, "gateway"),
           confirmed: false,
         };
-      if (machine !== LOCAL_HOST_ID) return { scope: fallback(), confirmed: false };
-      const host = yield* hosts.get(thread.model.agent).pipe(Effect.result);
+      if (machine !== LOCAL_HOST_ID && machineHosts === undefined)
+        return { scope: fallback(), confirmed: false };
+      const onMachine = yield* (machineHosts?.(thread) ?? Effect.succeed(hosts)).pipe(
+        Effect.result,
+      );
+      if (onMachine._tag === "Failure") return { scope: fallback(), confirmed: false };
+      const host = yield* onMachine.success.get(thread.model.agent).pipe(Effect.result);
       if (host._tag === "Failure") return { scope: known.get(key), confirmed: false };
       if (host.success.readAccountScope === undefined)
         return { scope: known.get(key), confirmed: false };
@@ -64,7 +77,11 @@ export const makeAccountScopes = (
       if (probe._tag === "Failure") return { scope: known.get(key), confirmed: false };
       if (probe.success === undefined) return { scope: fallback(), confirmed: false };
       const scope = scopeFor(machine, probe.success);
+      const previous = known.get(key);
+      const changed = known.has(key) && previous !== scope;
       known.set(key, scope);
+      if (changed)
+        yield* onChange?.(accountOf({ ...thread.model, accountScope: previous })) ?? Effect.void;
       return { scope, confirmed: true };
     });
   return {

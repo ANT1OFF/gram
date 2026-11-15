@@ -48,6 +48,7 @@ import {
 } from "./test-harness.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
 import { AgentHosts } from "./agent-hosts.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
 
 // 11:00 in Oslo; Claude's message below says the limit lifts at 12:50 there.
 const NOW = Date.parse("2026-10-15T09:00:00Z");
@@ -118,13 +119,13 @@ const nextThreadId = () =>
   `00000000-0000-4000-8000-${(++threadCount).toString(16).padStart(12, "0")}` as ThreadId;
 
 /** A thread mid-way through the user's first turn, "one". */
-const running = (role?: "orchestrator") =>
+const running = (role?: "orchestrator", hostId?: HostId) =>
   Effect.gen(function* () {
     const runtimes = yield* ThreadRuntimes;
     const thread = yield* runtimes.create({
       id: nextThreadId(),
       projectRoot: "/work/repo",
-      checkout: { kind: "main", path: "/work/repo" },
+      checkout: { kind: "main", path: "/work/repo", ...(hostId === undefined ? {} : { hostId }) },
       input: { text: "one" },
       ...(role === undefined ? {} : { role }),
     });
@@ -157,6 +158,7 @@ const waitOf = (threadId: ThreadId) =>
 const loginLayer = (
   current: () => string | undefined,
   probe: Effect.Effect<string | undefined, AgentUnavailable> = Effect.sync(current),
+  joined?: HostId,
 ) =>
   makeRuntimeTestLayer(
     undefined,
@@ -195,12 +197,106 @@ const loginLayer = (
         ).pipe(Context.add(FakeAgentControl, control));
       }),
     ).pipe(Layer.provide(FakeAgentAdapter)),
+    undefined,
+    joined === undefined
+      ? undefined
+      : Layer.effect(
+          WorkerHosts,
+          Effect.gen(function* () {
+            const base = yield* WorkerHosts;
+            return WorkerHosts.fromHosts(
+              base.local,
+              [
+                {
+                  ...base.local,
+                  id: joined,
+                  git: { ...base.local.git, present: () => Effect.succeed(true) },
+                },
+              ],
+              undefined,
+              yield* ThreadStore,
+              () => true,
+            );
+          }),
+        ).pipe(Layer.provide(WorkerHosts.layerLocalForTests)),
   );
 
 describe("subscription login isolation", () => {
-  it.effect.each(["failed", "unknown"] as const)(
-    "keeps a known login's wait and new workers held when its probe is %s",
-    (outcome) => {
+  it.effect(
+    "uses the joined machine's current probe after Forget token instead of holding a cold worker on login A",
+    () => {
+      let login = "account-a";
+      const machine = "joined-machine-2" as HostId;
+      return Effect.gen(function* () {
+        yield* TestClock.setTime(NOW);
+        const runtimes = yield* ThreadRuntimes;
+        const first = yield* runtimes.create({
+          id: nextThreadId(),
+          projectRoot: "/work/repo",
+          checkout: { kind: "main", path: "/joined/repo", hostId: machine },
+          input: { text: "one" },
+        });
+        yield* waitSent(first.id, 1);
+        const oldSession = yield* sessionOf(first.id);
+        yield* fail(first.id, CLAUDE_LIMIT);
+        const original = yield* waitOf(first.id);
+        const sameLogin = yield* runtimes.create({
+          id: nextThreadId(),
+          projectRoot: "/work/repo",
+          checkout: { kind: "main", path: "/joined/repo", hostId: machine },
+          input: {
+            text: "held brief",
+            origin: { threadId: "orch" as ThreadId, title: "Orchestrator", depth: 1 },
+          },
+        });
+        expect(yield* waitOf(sameLogin.id)).toMatchObject({ account: original!.account });
+        expect(yield* sentTo(sameLogin.id)).toEqual([]);
+        login = "account-b"; // Forget token restores the joined machine's own login.
+        const next = yield* runtimes.create({
+          id: nextThreadId(),
+          projectRoot: "/work/repo",
+          checkout: { kind: "main", path: "/joined/repo", hostId: machine },
+          input: {
+            text: "brief",
+            origin: { threadId: "orch" as ThreadId, title: "Orchestrator", depth: 1 },
+          },
+        });
+        yield* settle;
+        expect(yield* waitOf(next.id)).toBeUndefined();
+        yield* waitSent(next.id, 1);
+        expect(yield* waitOf(first.id)).toMatchObject({
+          account: original!.account,
+          cleared: expect.any(Number),
+        });
+        expect(yield* waitOf(sameLogin.id)).toMatchObject({
+          account: original!.account,
+          cleared: expect.any(Number),
+        });
+        yield* TestClock.adjust(LIMIT_RESUME_JITTER_MS + 1);
+        yield* waitSent(first.id, 2);
+        yield* waitSent(sameLogin.id, 1);
+        expect(yield* sessionOf(first.id)).not.toBe(oldSession);
+        expect(yield* waitOf(first.id)).toBeUndefined();
+        expect(yield* waitOf(sameLogin.id)).toBeUndefined();
+      }).pipe(
+        Effect.provide(
+          loginLayer(
+            () => login,
+            Effect.sync(() => login),
+            machine,
+          ),
+        ),
+      );
+    },
+  );
+  it.effect.each([
+    { outcome: "failed", machine: undefined },
+    { outcome: "unknown", machine: undefined },
+    { outcome: "failed", machine: "joined-machine-2" as HostId },
+    { outcome: "unknown", machine: "joined-machine-2" as HostId },
+  ] as const)(
+    "keeps a known login's wait and new workers held when its probe is $outcome on $machine",
+    ({ outcome, machine }) => {
       let uncertain = false;
       const probe = Effect.suspend(() =>
         uncertain
@@ -217,7 +313,7 @@ describe("subscription login isolation", () => {
       );
       return Effect.gen(function* () {
         yield* TestClock.setTime(NOW);
-        const { thread } = yield* running();
+        const { thread } = yield* running(undefined, machine);
         yield* fail(thread.id, CLAUDE_LIMIT);
         const original = yield* waitOf(thread.id);
         uncertain = true;
@@ -228,7 +324,11 @@ describe("subscription login isolation", () => {
         const spawned = yield* runtimes.create({
           id: nextThreadId(),
           projectRoot: "/work/repo",
-          checkout: { kind: "main", path: "/work/repo" },
+          checkout: {
+            kind: "main",
+            path: "/work/repo",
+            ...(machine === undefined ? {} : { hostId: machine }),
+          },
           input: {
             text: "brief",
             origin: { threadId: "orch" as ThreadId, title: "Orchestrator", depth: 1 },
@@ -241,7 +341,7 @@ describe("subscription login isolation", () => {
         });
         expect(yield* sentTo(spawned.id)).toEqual([]);
         expect(yield* sentTo(thread.id)).toEqual(["one"]);
-      }).pipe(Effect.provide(loginLayer(() => "account-a", probe)));
+      }).pipe(Effect.provide(loginLayer(() => "account-a", probe, machine)));
     },
   );
   it.effect(

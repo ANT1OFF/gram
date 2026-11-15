@@ -39,7 +39,7 @@ import type {
   ThreadStatus,
   ThreadError,
 } from "@gram/contracts";
-import { limitDetail, effectiveCheckout, isLocalHost } from "@gram/contracts";
+import { limitDetail } from "@gram/contracts";
 import type { ResumeHold, QueueHold, TurnHold } from "./turn-holds.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import type { NotifyObservers } from "./runtime-observer.ts";
@@ -373,7 +373,6 @@ export const makeLimitResume = ({
         rt.quota !== undefined &&
         rt.quota !== account &&
         thread.sessionSwitch === undefined &&
-        isLocalHost(effectiveCheckout(thread)) &&
         (yield* accountChanged(thread, rt.quota))
       ) {
         // The old process keeps the login it opened with. Only a new process may
@@ -420,11 +419,7 @@ export const makeLimitResume = ({
           const changed = new Set<ThreadId>();
           if (byTurn === undefined) {
             for (const thread of waiting) {
-              if (
-                thread.sessionSwitch === undefined &&
-                isLocalHost(effectiveCheckout(thread)) &&
-                (yield* accountChanged(thread, account))
-              )
+              if (thread.sessionSwitch === undefined && (yield* accountChanged(thread, account)))
                 changed.add(thread.id);
             }
             if (!(yield* releasable(account, now)))
