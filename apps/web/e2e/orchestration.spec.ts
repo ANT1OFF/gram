@@ -591,12 +591,10 @@ test("a new workspace is one sheet, and what it should work on is briefed into a
   await sheet.getByTestId("autonomy").getByRole("radio", { name: "Publish" }).check();
   await page.keyboard.press("ControlOrMeta+Enter");
 
-  // The orchestrator opens on that message, and a placeholder holds the card's place.
+  // The orchestrator opens on that message, shown once: nothing under the stream repeats it.
   await expect(page.getByRole("heading", { level: 1 })).toHaveAccessibleName("Orchestrator: api");
   await expect(page.getByText("Add mail triggers: an endpoint and a form")).toBeVisible();
-  const briefing = page.getByTestId("briefing");
-  await expect(briefing).toHaveAttribute("data-phase", "reading");
-  await expect(briefing).toContainText("Add mail triggers: an…");
+  await expect(page.getByText(/Add mail triggers/)).toHaveCount(1);
   const workspace = await page.evaluate(async () => (await window.gramMock!.listWorkspaces())[0]!);
   expect(workspace.workspace).toMatchObject({
     name: "api",
@@ -605,12 +603,11 @@ test("a new workspace is one sheet, and what it should work on is briefed into a
   });
   expect(workspace.charter.autonomy).toBe("publish");
 
-  // It briefs a worker: the card is made, and the placeholder gives way to it.
+  // It briefs a worker: the card is made.
   await page.evaluate(
     (id) => window.gramMock!.simulateBrief(id, "mail-trigger", "Mail trigger endpoint"),
     workspace.workspace.id,
   );
-  await expect(briefing).toHaveCount(0);
   const cards = await page.evaluate(
     async (id) => (await window.gramMock!.featureCards(id)).cards,
     workspace.workspace.id,
@@ -621,15 +618,13 @@ test("a new workspace is one sheet, and what it should work on is briefed into a
   // Discover, queued behind the first message, is its next turn.
   await expect(page.locator('[data-testid="board-request"][data-kind="discover"]')).toBeVisible();
   await page.evaluate(() => window.gramMock!.release("orchestrator-turn"));
-  await expect(briefing).toHaveCount(0);
 
-  // A message it only answers shows the placeholder while it reads, and nothing after.
+  // A message it only answers shows once, with no card echoing it while it reads.
   const composer = page.getByLabel("Message", { exact: true });
   await composer.fill("What is left?");
   await composer.press("ControlOrMeta+Enter");
-  await expect(briefing).toHaveAttribute("data-phase", "reading");
+  await expect(page.getByText("What is left?", { exact: true })).toHaveCount(1);
   await page.evaluate(() => window.gramMock!.release("orchestrator-turn"));
-  await expect(briefing).toHaveCount(0);
 });
 
 test("the overview lists a workspace's workers under it, and a worker's thread names its feature", async ({
