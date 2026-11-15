@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.26.0](https://github.com/ANT1OFF/gram/compare/v1.25.0...v1.26.0) (2026-11-15)
+
+
+### Features
+
+* **orchestration:** a worker the user writes to stays its orchestrator's ([#646](https://github.com/ANT1OFF/gram/issues/646)) ([44a3d28](https://github.com/ANT1OFF/gram/commit/44a3d28e5a710af3924a40c2338b9224e6122a2d))
+* **web:** an embedding app can say its machines reach the person's own repositories ([#582](https://github.com/ANT1OFF/gram/issues/582)) ([9841807](https://github.com/ANT1OFF/gram/commit/9841807c487d459c02dc7d4fc9e9ab113fcd2b7d))
+* **web:** one calm Board note for a repo that runs no CI ([#634](https://github.com/ANT1OFF/gram/issues/634)) ([76f44c7](https://github.com/ANT1OFF/gram/commit/76f44c78d0ffe78e1a0ceb75b351b6f05bd268eb))
+
+
+### Bug Fixes
+
+* **orchestration:** guide agents to own a PR instead of asking the user at full auto ([#627](https://github.com/ANT1OFF/gram/issues/627)) ([085f942](https://github.com/ANT1OFF/gram/commit/085f94264c717e6562675a5e756bb01e2955f388))
+* **orchestration:** silence review monitors without actionable work ([#617](https://github.com/ANT1OFF/gram/issues/617)) ([d271b81](https://github.com/ANT1OFF/gram/commit/d271b8136b0c8cc46b534a3e78ea50ada12b0f0f))
+* **orchestration:** withdraw orphaned worker questions ([#618](https://github.com/ANT1OFF/gram/issues/618)) ([ef84d75](https://github.com/ANT1OFF/gram/commit/ef84d75152bf0b7a2bc2ae14f552bd5b81378967))
+* **web:** a raised card's shadow keeps its rounded corners in the transcript ([#642](https://github.com/ANT1OFF/gram/issues/642)) ([52fddd3](https://github.com/ANT1OFF/gram/commit/52fddd336777cc83efce6fc0b8717cfd5f37504d))
+* **web:** leave failing checks to their worker, and orphans to the orchestrator ([#628](https://github.com/ANT1OFF/gram/issues/628)) ([2632f41](https://github.com/ANT1OFF/gram/commit/2632f41441433e899d1d26458be2bc7f8065fa1d))
+
 ## [1.25.0](https://github.com/ANT1OFF/gram/compare/v1.24.0...v1.25.0) (2026-11-14)
 
 
