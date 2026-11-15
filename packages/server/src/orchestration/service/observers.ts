@@ -8,6 +8,7 @@ import {
   isLocalHost,
   type BackgroundTask,
   type GitState,
+  type PrStatus,
   DEPENDENCY_DRAG_CONFLICT_MIN,
   prRefText,
   type Project,
@@ -53,6 +54,7 @@ import {
   type RestartCost,
   modeAfterDowngrade,
   overlapPairs,
+  baseMovedText,
   requestWakeMs,
   USER_HOLD_IDLE_MS,
   userHoldLapsesAt,
@@ -126,6 +128,7 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
     knownOverlaps,
     conflictedSince,
     dragTimers,
+    baseRechecks,
     signals,
     findThread,
     dragsTold,
@@ -647,6 +650,61 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       }
     });
 
+  /**
+   * A worker's own PR just merged. Every other live worker with an open PR in that repo has it looked
+   * up again now rather than at its next sweep, since GitHub measures a PR's mergeability again only
+   * once asked, so a conflict the merge made shows within seconds. Each worker whose changes share a
+   * file with the merged PR's is told to bring the new base in, even when git reports no conflict:
+   * two sides that merge cleanly can still no longer agree.
+   */
+  const onWorkerMerged = (thread: Thread, state: WorkspaceState, merged: PrStatus) =>
+    Effect.gen(function* () {
+      const threads = yield* store.listThreads;
+      const projects = yield* store.listProjects;
+      const projectId = thread.projectId;
+      const mergedFiles = filesByProject(thread, projects).filter(
+        (each) => each.projectId === projectId,
+      );
+      const others = workersOf(threads, state).filter(
+        (other) => other.id !== thread.id && !other.parked,
+      );
+      for (const other of others) {
+        const there = filesByProject(other, projects).filter(
+          (each) => each.projectId === projectId,
+        );
+        const checkout =
+          other.projectId === projectId
+            ? effectiveCheckout(other)
+            : (other.extraCheckouts ?? []).find(
+                (extra) => projectOfCheckout(projects, extra)?.id === projectId,
+              );
+        if (checkout === undefined) continue;
+        if (prMarks.get(other.id)?.state === "open" || other.projectId !== projectId) {
+          yield* FiberMap.run(
+            baseRechecks,
+            samePathKey(checkout.path),
+            publisher.refresh(checkout.path, { remote: true }).pipe(Effect.ignore),
+          );
+        }
+        const shared =
+          overlapPairs([...mergedFiles, ...there], state.charter.overlapIgnorePaths)
+            .values()
+            .next().value ?? [];
+        if (shared.length === 0) continue;
+        yield* runtimes
+          .sendNotice(other.id, `base-moved:${merged.url}`, {
+            text: baseMovedText({ pr: merged.url, worker: thread.title, files: shared }),
+          })
+          .pipe(
+            Effect.catch((e) =>
+              Effect.logWarning("couldn't tell a worker its base moved").pipe(
+                Effect.annotateLogs({ threadId: other.id, error: e.message }),
+              ),
+            ),
+          );
+      }
+    });
+
   const onGitState = (thread: Thread, git: GitState) =>
     Effect.gen(function* () {
       const state = yield* listeningWorkspace(thread);
@@ -687,6 +745,13 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
             thread,
           );
         }
+        if (
+          key === thread.id &&
+          badge !== undefined &&
+          prMarks.get(key)?.state === "open" &&
+          mark?.state === "merged"
+        )
+          yield* onWorkerMerged(thread, state, badge);
         prMarks.set(key, mark);
       }
       extraBadges.set(thread.id, git.extraPrs ?? []);

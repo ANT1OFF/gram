@@ -79,6 +79,8 @@ export interface World {
   readonly dir: string;
   readonly repo: string;
   readonly states: Map<string, GitState>;
+  /** Each checkout path the service asked the publisher to look up again, in order. */
+  readonly refreshed: Array<string>;
   /** A checkout on a different branch from its bound PR, while the bound badge remains available. */
   readonly branchPrs: Map<string, PrStatus>;
   observers: Array<GitStateObserver>;
@@ -228,6 +230,7 @@ export const makeWorld = Effect.gen(function* () {
     dir,
     repo: makeRepo(dir),
     states: new Map(),
+    refreshed: [],
     branchPrs: new Map(),
     observers: [],
     ghCalls: [],
@@ -311,7 +314,7 @@ const fakePublisher = (world: World) =>
       stateForThread: (thread) => Effect.sync(() => world.states.get(thread.checkout.path)),
       reconcile: () => Effect.void,
       checksRead: () => Effect.void,
-      refresh: () => Effect.void,
+      refresh: (path) => Effect.sync(() => void world.refreshed.push(path)),
       sweep: Effect.void,
       sync: Effect.void,
       hold: () => Effect.succeed(Effect.void),
