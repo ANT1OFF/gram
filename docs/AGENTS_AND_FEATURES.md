@@ -814,6 +814,31 @@ because they share its limit. The orchestrator is told to respect notes that rul
 as "never UI". A spawn that goes ahead returns `model`, the model the worker runs on. What makes
 the hold and pause gates fire is owned by the limit-wait work, not by this setting.
 
+### Watching the default branch after merges
+
+Gram's merges don't wait on one another: there is no merge queue, and no rule that a branch be up
+to date with its base. So two pull requests that are each green can still break the default branch
+together. The workspace setting **Watch the default branch after merges** (`watchDefaultBranch`) is
+off by default. When it is on, Gram reads the Actions runs of each workspace repo's default branch
+every five minutes, paced to the background share of the GitHub allowance.
+
+- **Red.** When the newest decided commit has a failed run, the orchestrator's next digest names
+  the failed runs and the pull requests merged since the branch was last green, each with the
+  worker that owned it. A commit is told once, across restarts too.
+- **Green again.** When a branch it was told was red is green again, it is told that too.
+
+Gram only tells. The charter line says what to do: don't hold other merges, have a worker rerun
+the failed jobs once (a pass means a flaky test), and when one pull request is named, have a
+worker open a revert pull request and merge it with `merge_when_ready`, then have its owner re-land
+the change with a fix. With several, a worker bisects them first. When merged pull requests in other repos depend on the culprit (`depends_on`, or a version pinned to it), those are reverted first, in reverse order of merging. Reverting a merge someone else
+made is the user's call. Every step runs under the workspace's own autonomy and merge rules.
+Settings by chat can turn it on with the usual approval card.
+
+When a worker's own pull request merges, Gram also looks up every other live worker's open pull
+request in that repo at once, so a conflict the merge made shows within seconds, and it tells
+each worker whose changes share a file with the merged one to bring the new base in, even when git
+reports no conflict.
+
 ## Project local merge checks
 
 A solo workspace can use a local check for each project. It is **off by default**:

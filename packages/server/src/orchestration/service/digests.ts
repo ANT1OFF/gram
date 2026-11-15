@@ -74,6 +74,7 @@ import {
   AWAY_REASON,
   AUTONOMY_LINES,
   ROUTE_AT_LIMIT_LINE,
+  WATCH_DEFAULT_BRANCH_LINE,
   footerLine,
   pausedFeatureOf,
   type OrchestrationKit,
@@ -126,6 +127,7 @@ const charterLines = (
     ({ repo, policy }) => `merge review policy for ${repo}: ${policy}`,
   ),
   ...(charter.routeAtLimit === true ? [ROUTE_AT_LIMIT_LINE] : []),
+  ...(charter.watchDefaultBranch === true ? [WATCH_DEFAULT_BRANCH_LINE] : []),
   ...(briefFooterOf(charter) === undefined ? [] : [footerLine(briefFooterOf(charter)!)]),
   ...routineLines(charter),
   charter.workerModels === undefined

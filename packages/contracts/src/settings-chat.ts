@@ -291,6 +291,9 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
   ws("workspace.routeAtLimit", "Offer another model at a limit", (w) =>
     charterOf(w) === undefined ? undefined : charterOf(w)?.routeAtLimit === true,
   ),
+  ws("workspace.watchDefaultBranch", "Watch the default branch after merges", (w) =>
+    charterOf(w) === undefined ? undefined : charterOf(w)?.watchDefaultBranch === true,
+  ),
   ws("workspace.routines", "Routines", (w) => charterOf(w)?.routines, "none"),
   // Tier 2: the user's own app preferences.
   pref("appearance.mode", "Colour mode"),
@@ -1048,6 +1051,7 @@ export const planSettingsChanges = (
           if (routine.model !== undefined) models.push(routine.model);
         break;
       }
+      case "workspace.watchDefaultBranch":
       case "workspace.routeAtLimit": {
         if (value === null || value === false) {
           delete into[field];

@@ -32,6 +32,7 @@ import {
   workersOf,
   CHARTER_MOVED,
   ROUTE_AT_LIMIT_LINE,
+  WATCH_DEFAULT_BRANCH_LINE,
   footerLine,
   refuseConnectorEntries,
   type OrchestrationKit,
@@ -90,7 +91,10 @@ const withIds = (prior: OrchestratorCharter, charter: OrchestratorCharter): Orch
 
 /** What an open orchestrator session is told when the footer or routing changes under it. */
 const charterChangeNotes = (
-  before: Pick<OrchestratorCharter, "workerBriefFooter" | "routeAtLimit" | "routines">,
+  before: Pick<
+    OrchestratorCharter,
+    "workerBriefFooter" | "routeAtLimit" | "watchDefaultBranch" | "routines"
+  >,
   after: OrchestratorCharter,
 ): ReadonlyArray<string> => {
   const notes: Array<string> = [];
@@ -107,6 +111,13 @@ const charterChangeNotes = (
       after.routeAtLimit === true
         ? `The user turned on your charter's ${ROUTE_AT_LIMIT_LINE}.`
         : "The user turned off offering another worker model at a limit: spawns stop at limits as before, with no alternatives.",
+    );
+  }
+  if ((before.watchDefaultBranch === true) !== (after.watchDefaultBranch === true)) {
+    notes.push(
+      after.watchDefaultBranch === true
+        ? `The user turned on your charter's ${WATCH_DEFAULT_BRANCH_LINE}.`
+        : "The user turned off watching the default branch after merges: you are no longer told when it turns red.",
     );
   }
   if (routinesKey(before) !== routinesKey(after)) {
