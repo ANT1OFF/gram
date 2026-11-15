@@ -416,9 +416,9 @@ there opens its app-server there; this Gram never starts Codex for it.
   that machine's Codex then runs on it. A thread that asks before a push runs on that provider
   too, in Gram's gated home with the same prompt rules, when the machine has no ChatGPT login:
   its configuration's `model_provider` names a provider it defines with
-  `requires_openai_auth = false`, with its credentials only referenced (the variables it names,
-  or an auth command by absolute paths). The gated home keeps that one provider and links no
-  login file.
+  `requires_openai_auth = false`, its credentials named only by the variables they are in
+  (`env_key`, `env_http_headers`). The gated home keeps that one provider and holds no login
+  file.
   A machine with a ChatGPT login keeps the ChatGPT gated home, whatever its configuration names.
 - A machine with an older `gram-host` opens no Codex session: "Its gram-host is older than this
   Gram and doesn't run Codex sessions. Update Gram there (Settings → Machines), then try again."

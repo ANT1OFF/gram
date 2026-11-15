@@ -20,7 +20,7 @@ import { parse, stringify } from "smol-toml";
 /** The model provider a machine's own Codex runs on, kept by the gated home (`ownCodexProvider`). */
 export interface OwnCodexProvider {
   readonly name: string;
-  /** Its table as the gated home writes it: only the keys `PROVIDER_KEYS` allows. */
+  /** Its table as the gated home writes it, built afresh from `PROVIDER_SCHEMA` alone. */
   readonly table: Readonly<Record<string, unknown>>;
   /** The environment variables it reads its credentials from, by name: `env_key`, `env_http_headers`. */
   readonly env: ReadonlyArray<string>;
@@ -29,80 +29,89 @@ export interface OwnCodexProvider {
 const isTable = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** An environment variable's name, never its value. */
-const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+/** The value of `object`'s own property `key`; nothing inherited is ever read. */
+const own = (object: unknown, key: string): unknown =>
+  isTable(object) && Object.hasOwn(object, key) ? object[key] : undefined;
 
-const isAbsolutePath = (value: unknown): value is string =>
-  typeof value === "string" && value.startsWith("/") && !/[\s]/.test(value);
+/** An environment variable's name: the only way a kept provider may name a credential. */
+const ENV_NAME = /^[A-Z_][A-Z0-9_]{0,127}$/;
+const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/;
+const isCount = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0;
 
 /**
- * What a kept provider's table may say, each checked for holding no credential. A credential is
- * only ever referenced: by the name of the variable it is in, or by a command (an absolute path)
- * that reads it from files named by absolute paths. A key not listed here, an inline token
- * (`experimental_bearer_token`), literal headers (`http_headers`) or query parameters
- * (`query_params`) keep the provider from being kept at all.
+ * Each key a kept provider's table may have, and the value the gated home writes for it, or
+ * `invalid` for one it won't (the provider is then not kept). Only these keys are ever read, as own
+ * properties, and the written table holds only what they return: everything else in the user's
+ * table, an inline token, literal headers or query parameters, an auth command and any key a later
+ * Codex adds, is never read and never written. A credential can only be named by the variable it
+ * is in.
  */
-const PROVIDER_KEYS: Readonly<Record<string, (value: unknown) => boolean>> = {
-  name: (value) => typeof value === "string",
-  base_url: (value) => {
-    if (typeof value !== "string") return false;
-    try {
-      const url = new URL(value);
-      return (
-        (url.protocol === "https:" || url.protocol === "http:") &&
-        url.username === "" &&
-        url.password === "" &&
-        url.search === "" &&
-        url.hash === ""
-      );
-    } catch {
-      return false;
-    }
-  },
-  wire_api: (value) => typeof value === "string",
-  requires_openai_auth: (value) => value === false,
-  env_key: (value) => typeof value === "string" && ENV_NAME.test(value),
-  env_key_instructions: (value) => typeof value === "string",
-  env_http_headers: (value) =>
-    isTable(value) &&
-    Object.values(value).every((name) => typeof name === "string" && ENV_NAME.test(name)),
-  request_max_retries: (value) => typeof value === "number",
-  stream_max_retries: (value) => typeof value === "number",
-  stream_idle_timeout_ms: (value) => typeof value === "number",
-  supports_websockets: (value) => typeof value === "boolean",
-  auth: (value) => {
-    if (!isTable(value) || !isAbsolutePath(value["command"])) return false;
-    const args = value["args"] ?? [];
-    if (!Array.isArray(args) || !args.every(isAbsolutePath)) return false;
-    return Object.entries(value).every(
-      ([key, each]) =>
-        key === "command" ||
-        key === "args" ||
-        ((key === "timeout_ms" || key === "refresh_interval_ms") && typeof each === "number"),
-    );
-  },
-};
+const invalid = Symbol("invalid");
+const PROVIDER_SCHEMA = new Map<string, (value: unknown) => unknown>([
+  ["name", (value) => (typeof value === "string" && value.length <= 200 ? value : invalid)],
+  [
+    "base_url",
+    (value) => {
+      if (typeof value !== "string") return invalid;
+      try {
+        const url = new URL(value);
+        return (url.protocol === "https:" || url.protocol === "http:") &&
+          url.username === "" &&
+          url.password === "" &&
+          url.search === "" &&
+          url.hash === ""
+          ? value
+          : invalid;
+      } catch {
+        return invalid;
+      }
+    },
+  ],
+  ["wire_api", (value) => (value === "responses" || value === "chat" ? value : invalid)],
+  ["requires_openai_auth", (value) => (value === false ? false : invalid)],
+  ["env_key", (value) => (typeof value === "string" && ENV_NAME.test(value) ? value : invalid)],
+  [
+    "env_http_headers",
+    (value) => {
+      if (!isTable(value)) return invalid;
+      const headers: Record<string, string> = {};
+      for (const header of Object.keys(value)) {
+        const name = value[header];
+        if (!HEADER_NAME.test(header) || typeof name !== "string" || !ENV_NAME.test(name))
+          return invalid;
+        headers[header] = name;
+      }
+      return headers;
+    },
+  ],
+  ["request_max_retries", (value) => (isCount(value) ? value : invalid)],
+  ["stream_max_retries", (value) => (isCount(value) ? value : invalid)],
+  ["stream_idle_timeout_ms", (value) => (isCount(value) ? value : invalid)],
+  ["supports_websockets", (value) => (typeof value === "boolean" ? value : invalid)],
+]);
 
 /**
  * The provider a user's Codex configuration runs on in place of a ChatGPT login: `model_provider`
  * names a provider the same file defines in `[model_providers]`, other than `openai`, that says
  * `requires_openai_auth = false` itself. That is how an embedder routes a machine's Codex through
  * its own gateway (a `CODEX_HOME` naming its provider). Anything else is undefined: a ChatGPT
- * login, a built-in provider, one that leaves OpenAI auth unsaid, and one whose table could carry
- * a credential itself (`PROVIDER_KEYS`), which the gated home never copies.
+ * login, a built-in provider, one that leaves OpenAI auth unsaid, or one with a value
+ * `PROVIDER_SCHEMA` won't write. What is kept is only what the schema allows.
  */
 export const ownCodexProvider = (
   user: Readonly<Record<string, unknown>>,
 ): OwnCodexProvider | undefined => {
-  const name = user["model_provider"];
+  const name = own(user, "model_provider");
   if (typeof name !== "string" || name === "" || name === "openai") return undefined;
-  const providers = user["model_providers"];
-  if (!isTable(providers)) return undefined;
-  const table = providers[name];
-  if (!isTable(table) || table["requires_openai_auth"] !== false) return undefined;
-  for (const [key, value] of Object.entries(table)) {
-    const allowed = PROVIDER_KEYS[key];
-    if (allowed === undefined || !allowed(value)) return undefined;
+  const source = own(own(user, "model_providers"), name);
+  if (!isTable(source) || own(source, "requires_openai_auth") !== false) return undefined;
+  const table: Record<string, unknown> = {};
+  for (const [key, write] of PROVIDER_SCHEMA) {
+    if (!Object.hasOwn(source, key)) continue;
+    const value = write(source[key]);
+    if (value === invalid) return undefined;
+    table[key] = value;
   }
   const headers = table["env_http_headers"];
   const env = [
@@ -146,29 +155,26 @@ export const ownedCodexProvider = (
     try {
       const source = userHomeOf(home, env);
       if (await hasLogin(source)) return undefined;
-      const own = ownCodexProvider(await readUserConfig(source));
-      return own === undefined ? undefined : { name: own.name, env: own.env };
+      const provider = ownCodexProvider(await readUserConfig(source));
+      return provider === undefined ? undefined : { name: provider.name, env: provider.env };
     } catch {
       return undefined;
     }
   });
 
 /**
- * Removes the login link the gated home had while the machine had a ChatGPT login: only Gram's
- * own symlink to the user's `auth.json` path, identified by where it points, never by reading
- * what it points to. Anything else at that path (a regular file, or a link elsewhere) refuses the
- * preparation and is left as it is.
+ * Whether anything is at the gated home's login path, of any kind; nothing there is read. A gated
+ * home on a machine's own provider holds no login file, and Gram never removes one: with anything
+ * there it refuses to start, and leaves it as it is.
  */
-const removeLoginLink = async (link: string, auth: string): Promise<void> => {
-  const found = await lstat(link).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined;
-    throw error;
-  });
-  if (found === undefined) return;
-  if (!found.isSymbolicLink() || (await readlink(link)) !== auth)
-    throw new Error("Unexpected login file in the gated home");
-  await rm(link);
-};
+const somethingAt = (path: string): Promise<boolean> =>
+  lstat(path).then(
+    () => true,
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    },
+  );
 
 /**
  * The native gated home shares only the login file, by path. Never read or copy auth: Codex owns
@@ -178,8 +184,8 @@ const removeLoginLink = async (link: string, auth: string): Promise<void> => {
  *
  * A machine whose Codex runs on its own provider with no ChatGPT login (`ownedCodexProvider`)
  * gets the same home with that one provider kept in place of ChatGPT's, and no login file: no
- * `auth.json` is linked or copied, and one linked before is removed. Its exec-policy backstop and
- * everything else above are the same.
+ * `auth.json` is linked, copied or removed, and anything at that path refuses the start. Its
+ * exec-policy backstop and everything else above are the same.
  */
 export const prepareOwnedCodexHome = (
   dataDir: string,
@@ -196,8 +202,8 @@ export const prepareOwnedCodexHome = (
       const auth = join(source, "auth.json");
       const user = await readUserConfig(source);
       // Only without a login: a ChatGPT install keeps its ChatGPT home whatever it configures.
-      const own = (await hasLogin(source)) ? undefined : ownCodexProvider(user);
-      if (own === undefined && requireAuth && !(await stat(auth)).isFile())
+      const provider = (await hasLogin(source)) ? undefined : ownCodexProvider(user);
+      if (provider === undefined && requireAuth && !(await stat(auth)).isFile())
         throw new Error("Native login file missing");
       await assertOwnedCodexPath(target, true);
       await mkdir(target, { recursive: true, mode: 0o700 });
@@ -206,10 +212,10 @@ export const prepareOwnedCodexHome = (
       await assertOwnedCodexPath(join(target, "rules"), true);
       await rm(join(target, "rules", OUTWARD_RULES_FILE), { force: true });
       const link = join(target, "auth.json");
-      if (own !== undefined) {
-        // Its own provider authenticates itself: no login file is linked, and Gram's own link
-        // from before goes. Nothing else there is removed.
-        await removeLoginLink(link, auth);
+      if (provider !== undefined) {
+        // Its own provider authenticates itself. No login file is linked, and none is removed:
+        // one there (a link from when the machine had a login, or anything else) refuses.
+        if (await somethingAt(link)) throw new Error("A login file is in the gated home");
       } else if ((await readlink(link).catch(() => undefined)) !== auth) {
         // A CLI may replace its credential file on refresh. Restore the link before every open.
         await rm(link, { force: true });
@@ -232,7 +238,7 @@ export const prepareOwnedCodexHome = (
         config["mcp_servers"] = rest;
       }
       Object.assign(config, {
-        ...(own === undefined
+        ...(provider === undefined
           ? {
               model_provider: "openai",
               openai_base_url: "https://chatgpt.com/backend-api/codex",
@@ -240,7 +246,10 @@ export const prepareOwnedCodexHome = (
               cli_auth_credentials_store: "file",
             }
           : // That one provider, as the user's configuration defines it, and no other.
-            { model_provider: own.name, model_providers: { [own.name]: own.table } }),
+            {
+              model_provider: provider.name,
+              model_providers: { [provider.name]: provider.table },
+            }),
         // Approval policy and sandbox belong to thread/start and thread/resume. Codex 0.162.1
         // rejects `untrusted` in config.toml even though it accepts the per-thread RPC policy.
         features: {
