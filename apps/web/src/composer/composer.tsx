@@ -36,6 +36,7 @@ import {
   type DragEvent,
   type KeyboardEvent,
   type MouseEvent,
+  type RefObject,
 } from "react";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
@@ -125,6 +126,7 @@ import { useOrchestratorVerbs, VerbMenu } from "./verb-menu";
 import { filterVerbs, gridIndexForKey, VERB_COLUMNS, type Verb } from "./verbs";
 import {
   GHOST_MIRROR,
+  GHOST_TRIGGER,
   ROUND,
   SEND_FILL,
   SLAB,
@@ -235,6 +237,12 @@ export function Composer({
     running && summary?.capabilities?.steer === true && !worktreeMissing(summary.git);
   // Codex can't stop its turn for a message: there an interrupt goes in as a steer.
   const interruptible = steerable && summary?.capabilities?.steerInterrupt === true;
+  // The way the next message goes into the running turn, as the delivery chip says it. It holds for
+  // one message: a delivery, or the turn ending, puts it back to a steer.
+  const [picked, setPicked] = useState<Delivery>("steer");
+  useEffect(() => {
+    if (!steerable) setPicked("steer");
+  }, [steerable]);
   // Some tests render a thread with no model.
   const agent = summary?.thread.model?.agent ?? "claude";
   const canFork = summary?.capabilities?.fork === true;
@@ -596,6 +604,7 @@ export function Composer({
    * calls, cancelling nothing), a queue (after the turn) or an interrupt (stopping it now).
    */
   const deliver = (action: Exclude<SendAction, "stop">) => {
+    setPicked("steer");
     switch (action) {
       case "send":
       case "queue":
@@ -606,9 +615,16 @@ export function Composer({
         return void steer(true);
     }
   };
-  /** What the send key does now: a steer while a turn takes input, else a send or a queue. */
+  /** What the send key does now: what the chip says while a turn takes input, else a send or a queue. */
   const sendNow = () => {
-    const action = sendAction({ hasDraft: true, busy, background, steerable, held: undefined });
+    const action = sendAction({
+      hasDraft: true,
+      busy,
+      background,
+      steerable,
+      held: undefined,
+      picked,
+    });
     if (action !== "stop") deliver(action);
   };
 
@@ -1000,7 +1016,7 @@ export function Composer({
   const hasDraft = canSend || attachments.uploading;
   const stopLabel = background ? "Stop the background agents" : "Stop";
   const held = useHeldDelivery(steerable && hasDraft);
-  const action = sendAction({ hasDraft, busy, background, steerable, held });
+  const action = sendAction({ hasDraft, busy, background, steerable, held, picked });
   const sendKeyHint = sendKey === "enter" ? "↵" : sendHint;
   const queueLabel = "Queue: sends when the turn ends";
   const deliveryKeys: Record<Delivery, string> = {
@@ -1055,6 +1071,7 @@ export function Composer({
       background,
       steerable,
       held: clickDelivery(event),
+      picked,
     });
     if (clicked !== "stop") return deliver(clicked);
     // The second click of a double click on Send lands here once the composer has emptied.
@@ -1065,10 +1082,10 @@ export function Composer({
   const onModel = (value: string) => {
     if (!model) return;
     if (value.startsWith(SWITCH_PREFIX)) {
-      const picked = value.slice(SWITCH_PREFIX.length);
+      const chosen = value.slice(SWITCH_PREFIX.length);
       useThreadDialogs
         .getState()
-        .open({ kind: "continueIn", threadId, ...(picked === "" ? {} : { model: picked }) });
+        .open({ kind: "continueIn", threadId, ...(chosen === "" ? {} : { model: chosen }) });
       return;
     }
     const { variant: current, ...rest } = model;
@@ -1245,15 +1262,9 @@ export function Composer({
                 ? ""
                 : (placeholder ??
                   // A phone's line holds the words alone: no keys to hint at on a touch keyboard.
-                  `${
-                    takesControl
-                      ? running
-                        ? "Queue a message for this worker"
-                        : "Message this worker"
-                      : running
-                        ? "Queue a message"
-                        : "Message"
-                  }…${phone ? "" : " (/ for commands, @ for files)"}`)
+                  `${placeholderLead({ takesControl, running, steerable, picked })}…${
+                    phone ? "" : " (/ for commands, @ for files)"
+                  }`)
             }
             className={cn(SLAB_TEXTAREA, "relative")}
             onFocus={(event) => {
@@ -1346,14 +1357,18 @@ export function Composer({
             )}
             <PendingRestart threadId={threadId} />
             <ContextRing threadId={threadId} countUp={focused} />
-            {/* Into a turn that takes input, the chevron opens the three ways in: steer, queue,
-                interrupt. The round button steers. */}
-            {steerable && hasDraft && (
-              <DeliveryMenu
-                disabled={!canSend}
+            {/* While a turn takes input, typed or not, the chip says which way the message goes in
+                (steer, queue or interrupt) and opens the three; the round button sends that way. */}
+            {steerable && (
+              <DeliveryChip
+                picked={picked}
                 keys={deliveryKeys}
                 interruptLine={interruptLine}
-                onPick={deliver}
+                stopLabel={stopLabel}
+                stopKey={stopHint ?? ""}
+                focusAfter={fieldRef}
+                onPick={setPicked}
+                onStop={() => void stopTurn(api, threadId)}
               />
             )}
             {/* One button for what the composer can do now, its word on hover. Right-click for the
@@ -1482,41 +1497,62 @@ const DELIVERY_ITEM =
   "flex cursor-default items-center gap-2.5 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor phone:min-h-11";
 
 /**
- * The chevron before the round button while a turn takes input: Steer, Queue and Interrupt, each
- * with its key and what it does. Its own 44 px target on a phone, where no key is held.
+ * The chip before the round button while a turn takes input, empty or not: the way the message goes
+ * in (Steer, Queue or Interrupt) in a word, so the choice shows before anything is typed. It opens
+ * the three, each with its key and what it does, and Stop for a turn that needs no message. Its own
+ * 44 px target on a phone, where no key is held.
  */
-function DeliveryMenu({
-  disabled,
+function DeliveryChip({
+  picked,
   keys,
   interruptLine,
+  stopLabel,
+  stopKey,
+  focusAfter,
   onPick,
+  onStop,
 }: {
-  disabled: boolean;
+  picked: Delivery;
   keys: Record<Delivery, string>;
   interruptLine: string;
+  stopLabel: string;
+  stopKey: string;
+  /** The field, where focus goes back once a way is picked, ready to type. */
+  focusAfter: RefObject<HTMLTextAreaElement | null>;
   onPick: (delivery: Delivery) => void;
+  onStop: () => void;
 }) {
   const lines: Record<Delivery, string> = {
-    steer: "After the current tool call",
+    steer: "After the current tool call, cancelling nothing",
     queue: "After the turn ends",
     interrupt: interruptLine.replace(/^Interrupt: /, "").replace(/^./, (c) => c.toUpperCase()),
   };
+  const word = DELIVERY_WORDS[picked].label;
+  // Stop leaves focus where the menu opened; a picked way returns it to the field, ready to type.
+  const stopped = useRef(false);
   return (
-    <Menu.Root>
+    <Menu.Root onOpenChange={(open) => open && (stopped.current = false)}>
       <Hint
-        label="Steer, queue or interrupt"
+        label={`${word}: ${lines[picked].toLowerCase()}. Steer, queue or interrupt`}
         render={
           <Menu.Trigger
             data-testid="delivery-menu"
-            aria-label="Steer, queue or interrupt"
-            disabled={disabled}
+            data-picked={picked}
+            aria-label={`${word}. Steer, queue or interrupt`}
             className={cn(
-              "grid h-8 w-5 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring disabled:opacity-50 data-[popup-open]:text-foreground phone:size-11",
+              GHOST_TRIGGER,
+              "inline-flex shrink-0 items-center rounded-full border border-edge pr-1.5 pl-2 text-foreground outline-none select-none",
             )}
           />
         }
       >
-        <ChevronDown aria-hidden className="size-icon-chip" />
+        <Swap swapKey={picked}>
+          <DeliveryGlyph action={picked} />
+        </Swap>
+        <span data-testid="delivery-word" className="@max-[20rem]/composer:sr-only">
+          {word}
+        </span>
+        <ChevronDown aria-hidden className="size-icon-chip text-muted-foreground" />
       </Hint>
       <Menu.Portal>
         <Menu.Positioner
@@ -1525,29 +1561,77 @@ function DeliveryMenu({
           sideOffset={6}
           className="isolate z-50 outline-none"
         >
-          <Menu.Popup className="min-w-64 max-w-[calc(100vw-1rem)] rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none">
-            {DELIVERIES.map((delivery) => (
-              <Menu.Item
-                key={delivery}
-                data-testid={`delivery-${delivery}`}
-                onClick={() => onPick(delivery)}
-                className={DELIVERY_ITEM}
-              >
-                <DeliveryGlyph action={delivery} />
-                <span className="min-w-0 flex-1">
-                  <span className="block">{DELIVERY_WORDS[delivery].label}</span>
-                  <span className="block text-meta text-muted-foreground">{lines[delivery]}</span>
-                </span>
-                <kbd className="pl-3 font-mono text-caption text-muted-foreground phone:hidden">
-                  {keys[delivery]}
-                </kbd>
-              </Menu.Item>
-            ))}
+          <Menu.Popup
+            finalFocus={() => (stopped ? true : (focusAfter.current ?? true))}
+            className="min-w-72 max-w-[calc(100vw-1rem)] rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none"
+          >
+            <Menu.RadioGroup value={picked} onValueChange={(value) => onPick(value as Delivery)}>
+              {DELIVERIES.map((delivery) => (
+                <Menu.RadioItem
+                  key={delivery}
+                  value={delivery}
+                  closeOnClick
+                  data-testid={`delivery-${delivery}`}
+                  className={cn(DELIVERY_ITEM, "data-[checked]:bg-accent")}
+                >
+                  <DeliveryGlyph action={delivery} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block">{DELIVERY_WORDS[delivery].label}</span>
+                    <span className="block text-meta text-muted-foreground">{lines[delivery]}</span>
+                  </span>
+                  <kbd className="pl-3 font-mono text-caption text-muted-foreground phone:hidden">
+                    {keys[delivery]}
+                  </kbd>
+                </Menu.RadioItem>
+              ))}
+            </Menu.RadioGroup>
+            <Menu.Separator className="mx-1.5 my-1 border-t border-edge" />
+            <Menu.Item
+              data-testid="delivery-stop"
+              onClick={() => {
+                stopped.current = true;
+                onStop();
+              }}
+              className={cn(DELIVERY_ITEM, "text-destructive")}
+            >
+              <Square aria-hidden className="size-icon-row" />
+              <span className="min-w-0 flex-1">{stopLabel} without a message</span>
+              <kbd className="pl-3 font-mono text-caption text-muted-foreground phone:hidden">
+                {stopKey}
+              </kbd>
+            </Menu.Item>
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
     </Menu.Root>
   );
+}
+
+/** The empty field's words: where a typed message will go, as the delivery chip says. */
+function placeholderLead({
+  takesControl,
+  running,
+  steerable,
+  picked,
+}: {
+  takesControl: boolean;
+  running: boolean;
+  steerable: boolean;
+  picked: Delivery;
+}): string {
+  const worker = takesControl ? " this worker" : "";
+  if (steerable) {
+    switch (picked) {
+      case "steer":
+        return takesControl ? "Steer this worker" : "Steer the agent";
+      case "queue":
+        return `Queue a message for${worker || " after this turn"}`;
+      case "interrupt":
+        return takesControl ? "Interrupt this worker" : "Interrupt with a message";
+    }
+  }
+  if (running) return takesControl ? "Queue a message for this worker" : "Queue a message";
+  return takesControl ? "Message this worker" : "Message";
 }
 
 /**

@@ -1,0 +1,41 @@
+{
+  "title": "Composer while an agent works",
+  "slug": "working-composer",
+  "status": "approved",
+  "template": "options",
+  "current": 1,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-15"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A Delivery chip",
+      "board": "a-delivery-chip",
+      "shots": {
+        "dark": "shots/a-delivery-chip-dark.png",
+        "light": "shots/a-delivery-chip-light.png"
+      }
+    },
+    {
+      "name": "B Three buttons",
+      "board": "b-three-buttons",
+      "shots": {
+        "dark": "shots/b-three-buttons-dark.png",
+        "light": "shots/b-three-buttons-light.png"
+      }
+    },
+    {
+      "name": "C Working strip",
+      "board": "c-working-strip",
+      "shots": {
+        "dark": "shots/c-working-strip-dark.png",
+        "light": "shots/c-working-strip-light.png"
+      }
+    }
+  ]
+}

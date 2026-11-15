@@ -242,7 +242,6 @@ describe("Composer steer", () => {
     fireEvent.change(textarea, { target: { value: "" } });
     expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Steer" })).toBeNull();
-    expect(screen.queryByTestId("delivery-menu")).toBeNull();
     fireEvent.change(textarea, { target: { value: "use vitest" } });
     expect(screen.getByRole("button", { name: "Steer" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
@@ -317,25 +316,50 @@ describe("Composer steer", () => {
     expect(interrupt).not.toHaveBeenCalled();
   });
 
-  it("offers Steer, Queue and Interrupt from the chevron, each with its key", async () => {
+  it("shows the way in before anything is typed, and says it in the empty field", () => {
+    const { textarea } = setup();
+    fireEvent.change(textarea, { target: { value: "" } });
+    expect(screen.getByTestId("delivery-menu").textContent).toContain("Steer");
+    expect(textarea.placeholder).toMatch(/^Steer the agent…/);
+    expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+  });
+
+  it("sends the way picked on the chip, for that message only", async () => {
     const { api, steer, textarea } = setup();
     const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true } as never);
-    fireEvent.change(textarea, { target: { value: "then the changelog" } });
     fireEvent.click(screen.getByTestId("delivery-menu"));
-    const items = await screen.findAllByRole("menuitem");
+    const items = await screen.findAllByRole("menuitemradio");
     expect(items.map((item) => item.textContent)).toEqual([
-      expect.stringMatching(/^SteerAfter the current tool call/),
+      expect.stringMatching(/^SteerAfter the current tool call, cancelling nothing/),
       expect.stringMatching(/^QueueAfter the turn ends/),
       expect.stringMatching(/^InterruptStops the turn now, cutting off tool calls/),
     ]);
     fireEvent.click(screen.getByTestId("delivery-queue"));
+    await waitFor(() =>
+      expect(textarea.placeholder).toMatch(/^Queue a message for after this turn…/),
+    );
+    expect(screen.getByTestId("delivery-menu").textContent).toContain("Queue");
+    fireEvent.change(textarea, { target: { value: "then the changelog" } });
+    fireEvent.click(screen.getByRole("button", { name: "Queue" }));
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
-    fireEvent.change(textarea, { target: { value: "stop" } });
+    expect(steer).not.toHaveBeenCalled();
+    // The next message is a steer again.
+    await waitFor(() => expect(screen.getByTestId("delivery-menu").textContent).toContain("Steer"));
     fireEvent.click(screen.getByTestId("delivery-menu"));
     fireEvent.click(await screen.findByTestId("delivery-interrupt"));
+    fireEvent.change(textarea, { target: { value: "stop" } });
+    fireEvent.click(screen.getByRole("button", { name: "Interrupt" }));
     await waitFor(() =>
       expect(steer).toHaveBeenCalledWith(THREAD, { text: "stop" }, { interrupt: true }),
     );
+  });
+
+  it("stops the turn from the chip without a message", async () => {
+    const { api } = setup();
+    const interrupt = vi.spyOn(api, "interrupt").mockResolvedValue(undefined);
+    fireEvent.click(screen.getByTestId("delivery-menu"));
+    fireEvent.click(await screen.findByTestId("delivery-stop"));
+    await waitFor(() => expect(interrupt).toHaveBeenCalledTimes(1));
   });
 
   it("steers an interrupt into an agent that can't stop for a message, and says so", async () => {
