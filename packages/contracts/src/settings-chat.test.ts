@@ -768,7 +768,7 @@ describe("settings by chat: the worker brief footer and routing at a limit", () 
     expect(on.ok && on.plan.rows).toEqual([
       {
         key: "workspace.watchDefaultBranch",
-        label: "Watch the default branch after merges",
+        label: "Watch the default branch",
         before: "off (default)",
         after: "on",
       },

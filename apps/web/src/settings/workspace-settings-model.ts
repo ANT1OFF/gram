@@ -213,6 +213,15 @@ export const withRouteAtLimit = (
   return on ? { ...rest, routeAtLimit: true } : rest;
 };
 
+/** The charter watching the default branches after merges, or not; off is stored as absent. */
+export const withWatchDefaultBranch = (
+  charter: OrchestratorCharter,
+  on: boolean,
+): OrchestratorCharter => {
+  const { watchDefaultBranch: _was, ...rest } = charter;
+  return on ? { ...rest, watchDefaultBranch: true } : rest;
+};
+
 /** How a charter's connector set reads in the selector: none, an allowlist, or a denylist. */
 export type ConnectorMode = "all" | "allow" | "deny";
 

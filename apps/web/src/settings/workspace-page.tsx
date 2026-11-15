@@ -43,6 +43,7 @@ import { AutonomyField } from "./autonomy-field";
 import { Field, inputCls, NumberField } from "./fields";
 import { MergeReviewPolicyField } from "./merge-review-policy-field";
 import { RouteAtLimitField } from "./route-at-limit-field";
+import { WatchDefaultBranchField } from "./watch-default-branch-field";
 import { IdleCompactField } from "./idle-compact-field";
 import { PauseAtLimitField } from "./pause-at-limit-field";
 import { RosterEditor } from "./roster-editor";
@@ -179,6 +180,11 @@ export function WorkspaceSettingsPage({
           charter={changes.charter ?? state.charter}
           disabled={changes.busy}
           onChange={(next) => void changes.saveCharter(next, "Merge policy saved")}
+        />
+        <WatchDefaultBranchField
+          charter={changes.charter ?? state.charter}
+          disabled={changes.busy}
+          onChange={(next, title) => void changes.saveCharter(next, title)}
         />
       </SettingsGroup>
       <MoreOptions state={state} changes={changes} />

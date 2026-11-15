@@ -291,7 +291,7 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
   ws("workspace.routeAtLimit", "Offer another model at a limit", (w) =>
     charterOf(w) === undefined ? undefined : charterOf(w)?.routeAtLimit === true,
   ),
-  ws("workspace.watchDefaultBranch", "Watch the default branch after merges", (w) =>
+  ws("workspace.watchDefaultBranch", "Watch the default branch", (w) =>
     charterOf(w) === undefined ? undefined : charterOf(w)?.watchDefaultBranch === true,
   ),
   ws("workspace.routines", "Routines", (w) => charterOf(w)?.routines, "none"),
