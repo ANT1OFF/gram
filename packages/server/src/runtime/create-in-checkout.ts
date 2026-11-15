@@ -110,3 +110,67 @@ export const makeThreadCreator = (deps: {
       }),
   };
 };
+
+/** A thread's checkouts in the repositories it works in: its own, and one in each other. */
+export interface CheckoutsWithOthers {
+  readonly checkout: Checkout;
+  readonly extraCheckouts: ReadonlyArray<Checkout>;
+  /** The folders its agent is given beside its own: the other worktrees, or the others' folders. */
+  readonly additionalDirectories: ReadonlyArray<string>;
+}
+
+/**
+ * The checkout `request` asks for in `projectRoot`, and the thread's place in each of `others`
+ * (projects' folders here, never `projectRoot` itself). With a worktree of its own, it gets one in
+ * each other repository too, on its branch and on its machine; working in a folder as it is on
+ * this machine, it gets the others' folders as they are. A repository that refuses takes the
+ * worktrees made so far with it, so nothing is half made.
+ */
+export const prepareWithOthers = (
+  deps: {
+    readonly prepare: ThreadCreator["prepare"];
+    readonly discard: (checkout: Checkout) => Effect.Effect<void>;
+  },
+  request: CheckoutRequest,
+  projectRoot: string,
+  others: ReadonlyArray<string>,
+): Effect.Effect<CheckoutsWithOthers, InvalidState | NotFound | GitError | CheckoutInUse> =>
+  Effect.gen(function* () {
+    const checkout = yield* deps.prepare(request, projectRoot);
+    if (others.length === 0) return { checkout, extraCheckouts: [], additionalDirectories: [] };
+    const branch = checkout.kind === "worktree" ? checkout.branch : undefined;
+    if (branch === undefined) {
+      // Another machine has none of this disk's folders: there each repository needs a worktree.
+      if (hostOf(checkout) !== LOCAL_HOST_ID) {
+        yield* deps.discard(checkout);
+        return yield* new InvalidState({
+          message:
+            "On another machine, other repositories come with a new worktree: start it in one.",
+        });
+      }
+      return { checkout, extraCheckouts: [], additionalDirectories: [...others] };
+    }
+    const extraCheckouts: Array<Checkout> = [];
+    for (const other of others) {
+      const made = yield* deps
+        .prepare(
+          {
+            kind: "newWorktree",
+            branch,
+            ...(hostOf(checkout) === LOCAL_HOST_ID ? {} : { hostId: hostOf(checkout) }),
+          },
+          other,
+        )
+        .pipe(
+          Effect.onError(() =>
+            Effect.forEach([checkout, ...extraCheckouts], deps.discard, { discard: true }),
+          ),
+        );
+      extraCheckouts.push(made);
+    }
+    return {
+      checkout,
+      extraCheckouts,
+      additionalDirectories: extraCheckouts.map((extra) => extra.path),
+    };
+  });

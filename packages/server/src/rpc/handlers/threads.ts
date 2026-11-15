@@ -15,7 +15,6 @@ import {
   waitTitleOf,
   waitsFor,
   type Thread,
-  type Checkout,
   type CheckoutRequest,
   type TaskChipData,
   type UserInput,
@@ -55,7 +54,7 @@ import { GitRefresh } from "../../git/platform.ts";
 import { makeTurnUndo } from "../../git/turn-undo.ts";
 import { closeAtRest } from "../../runtime/close-at-rest.ts";
 import { TerminalGate } from "../../terminal/gate.ts";
-import { makeThreadCreator } from "../../runtime/create-in-checkout.ts";
+import { makeThreadCreator, prepareWithOthers } from "../../runtime/create-in-checkout.ts";
 import { CheckoutService } from "../../runtime/hooks.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
 import { isLocalApp } from "../../http/local-app.ts";
@@ -299,9 +298,9 @@ export const threadHandlers = Effect.gen(function* () {
             ? { ...checkout, path: yield* resolveFolder(checkout.path) }
             : checkout;
         const others = alsoIn ?? [];
-        if (others.length > 0 && checkoutRequestHost(request) !== undefined) {
+        if (others.length > 0 && checkout.kind === "machineFolder") {
           return yield* new InvalidState({
-            message: "Other repositories are used only by a thread on this machine.",
+            message: "A thread in a folder on another machine uses that folder alone.",
           });
         }
         // Checked before anything is made, so a typo makes nothing.
@@ -310,35 +309,16 @@ export const threadHandlers = Effect.gen(function* () {
           const folder = yield* resolveFolder(other);
           if (folder !== root && !otherRoots.includes(folder)) otherRoots.push(folder);
         }
-        const resolved = yield* prepareCheckout(request, root);
-        if (others.length > 0 && !isLocalHost(resolved)) {
-          yield* checkouts.discard(resolved);
-          return yield* new InvalidState({
-            message: "Other repositories are used only by a thread on this machine.",
-          });
-        }
-        // With a worktree of its own, the thread gets one in each other repository too, on its
-        // branch; working in a folder as it is, it gets the others' folders as they are.
-        const extraCheckouts: Array<Checkout> = [];
-        if (resolved.kind === "worktree" && resolved.branch !== undefined) {
-          for (const other of otherRoots) {
-            const made = yield* prepareCheckout(
-              { kind: "newWorktree", branch: resolved.branch },
-              other,
-            ).pipe(
-              Effect.onError(() =>
-                Effect.forEach([resolved, ...extraCheckouts], checkouts.discard, {
-                  discard: true,
-                }),
-              ),
-            );
-            extraCheckouts.push(made);
-          }
-        }
-        const additionalDirectories =
-          resolved.kind === "worktree" && resolved.branch !== undefined
-            ? extraCheckouts.map((extra) => extra.path)
-            : otherRoots;
+        const {
+          checkout: resolved,
+          extraCheckouts,
+          additionalDirectories,
+        } = yield* prepareWithOthers(
+          { prepare: prepareCheckout, discard: checkouts.discard },
+          request,
+          root,
+          otherRoots,
+        );
         // Chosen here so the draft's staged attachments move into the thread before the first send.
         const id = Schema.decodeSync(ThreadId)(randomUUID());
         const create = (firstInput: UserInput | undefined) =>

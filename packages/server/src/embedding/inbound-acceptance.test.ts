@@ -3,7 +3,7 @@
 // platform's services call it.
 
 import { afterAll, describe, expect, layer } from "@effect/vitest";
-import { GramRpcs, type PrStatus, type ServerEvent } from "@gram/contracts";
+import { GramRpcs, type PrStatus, type ServerEvent, type ThreadId } from "@gram/contracts";
 import { Pr } from "@gram/git";
 import { captureLogs } from "@gram/agents/testing/logs";
 import * as Effect from "effect/Effect";
@@ -12,11 +12,12 @@ import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import { createServer, request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
+import { renameSync } from "node:fs";
 import { join } from "node:path";
 import { ServerConfig } from "../config.ts";
 import { gitPlatformTest } from "../git/platform.ts";
 import { EventHub } from "../events/event-hub.ts";
-import { eventually, makeRepo, removeDir, tempDir } from "../git/test-repo.ts";
+import { eventually, makeRepo, removeDir, run, tempDir } from "../git/test-repo.ts";
 import { HttpServer, RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
 import { IDENTITY_HEADER } from "../http/fronted-identity.ts";
 import { makeTestProxy } from "../http/fronted-identity.testing.ts";
@@ -450,6 +451,80 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
             body: { threadId: "no-such-thread", person },
           })).status,
         ).toBe(404);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "starts a person's thread in repositories, a worktree in each on one branch, once per key",
+    () =>
+      Effect.gen(function* () {
+        const at = yield* port;
+        const control = yield* FakeAgentControl;
+        const store = yield* ThreadStore;
+        // Clones already there are taken as they are: nothing here reaches GitHub.
+        const clones = join(tmp, "start-clones");
+        for (const name of ["api", "web"]) {
+          const repo = join(clones, name);
+          makeRepo(join(clones, `${name}-tmp`));
+          renameSync(join(clones, `${name}-tmp`, "repo"), repo);
+          run(repo, "remote", "add", "origin", `https://github.com/acme/${name}`);
+        }
+        yield* store.updateSettings(
+          (settings) => ({ ...settings, agents: { ...settings.agents, cloneFolder: clones } }),
+          [["agents", "cloneFolder"]],
+        );
+        const person = { id: "user-8", name: "Grace" };
+        const start = {
+          person,
+          key: "s-1",
+          repositories: ["acme/api", "https://github.com/acme/web"],
+          text: "Rename the endpoint in both.",
+        };
+        for (const body of [
+          { ...start, repositories: [] },
+          { ...start, repositories: ["not a repo"] },
+          { ...start, person: undefined },
+          { ...start, text: "" },
+          { ...start, branch: "--force" },
+          { ...start, model: "opus" },
+        ]) {
+          const refused = yield* call(at, "/embed/v1/thread-starts", { token: TOKEN, body });
+          expect(refused.status).toBe(400);
+        }
+        expect((yield* call(at, "/embed/v1/thread-starts", { body: start })).status).toBe(401);
+
+        const made = yield* call(at, "/embed/v1/thread-starts", { token: TOKEN, body: start });
+        expect(made.status).toBe(200);
+        const answered = JSON.parse(made.body) as { threadId: ThreadId; branch: string };
+        expect(answered).toMatchObject({ created: true });
+        const thread = yield* store.getThread(answered.threadId);
+        expect(thread.checkout).toMatchObject({ kind: "worktree", branch: answered.branch });
+        expect(thread.extraCheckouts).toEqual([
+          expect.objectContaining({ kind: "worktree", branch: answered.branch }),
+        ]);
+        expect(thread.additionalDirectories).toEqual([thread.extraCheckouts![0]!.path]);
+        yield* eventually(
+          "the first message sent to the agent",
+          control.latest(thread.id).pipe(
+            Effect.map((session) => session.sent.some((input) => input.text === start.text)),
+            Effect.orElseSucceed(() => false),
+          ),
+        );
+        expect(yield* store.listActorEvents()).toContainEqual(
+          expect.objectContaining({
+            action: "thread.create",
+            threadId: thread.id,
+            actor: { id: "user-8", name: "Grace", role: "member" },
+          }),
+        );
+
+        // Sent again under its key: the same thread, nothing made.
+        const again = yield* call(at, "/embed/v1/thread-starts", { token: TOKEN, body: start });
+        expect(JSON.parse(again.body)).toEqual({
+          threadId: thread.id,
+          created: false,
+          branch: answered.branch,
+        });
       }).pipe(Effect.scoped),
   );
 
