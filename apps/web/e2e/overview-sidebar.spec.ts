@@ -216,40 +216,50 @@ test("lists the workspaces in the switcher's order, the current one opened into 
   );
 });
 
-test("a worker's agent mark shows only where its workspace's workers mix agents", async ({
-  page,
-}) => {
+test("every worker row keeps its agent's mark, whatever its neighbours run", async ({ page }) => {
   const made = await start(page);
-  // Every worker runs Claude Code: the state dot alone marks each row, and its name and card say
-  // the agent.
+  const rows = overview(page).getByTestId("overview-worker");
   const marks = overview(page).getByTestId("overview-worker-agent");
+  // Every worker runs Claude Code, and each row still shows its mark beside its state dot.
   await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Claude Code, /);
   await expect(worker(page, made.inReview).getByTestId("overview-worker-dot")).toBeVisible();
-  await expect(marks).toHaveCount(0);
-  await worker(page, made.inReview).hover();
-  await expect(page.getByTestId("overview-worker-card-feature")).toContainText("Claude Code");
-  await page.mouse.move(1200, 400);
+  const count = await rows.count();
+  expect(count).toBeGreaterThan(1);
+  await expect(marks).toHaveCount(count);
+  const claudeMark = await worker(page, made.inReview)
+    .getByTestId("overview-worker-agent")
+    .locator("svg")
+    .innerHTML();
 
-  // One worker on Codex: the list mixes agents, so every row with a known agent says which.
-  await page.evaluate((id) => {
-    const mock = window.gramMock!;
-    const { thread } = mock.world.summary(id as never);
-    mock.world.replaceThread({ ...thread, model: { agent: "codex", model: "gpt-5-codex" } });
-  }, made.inReview);
+  const original = await page.evaluate(
+    (id) => window.gramMock!.world.summary(id as never).thread.model,
+    made.inReview,
+  );
+  const moveTo = (model: unknown) =>
+    page.evaluate(
+      ({ id, next }) => {
+        const mock = window.gramMock!;
+        const { thread } = mock.world.summary(id as never);
+        mock.world.replaceThread({ ...thread, model: next as never });
+      },
+      { id: made.inReview, next: model },
+    );
+
+  // One worker on Codex: its row draws Codex's mark in the same slot, and the rest keep Claude's.
+  await moveTo({ agent: "codex", model: "gpt-5-codex" });
   await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Codex, /);
   const glyph = worker(page, made.inReview).getByTestId("overview-worker-agent");
   await expect(glyph).toHaveCount(1);
   // It is decorative: the row's name says the agent.
   await expect(glyph.locator("svg")).toHaveAttribute("aria-hidden", "true");
-  const claudeRow = overview(page)
-    .locator(`[data-testid="overview-worker"]:not([data-thread-id="${made.inReview}"])`)
-    .filter({ has: page.getByTestId("overview-worker-agent") })
-    .first();
-  await expect(claudeRow).toHaveAttribute("aria-label", /, Claude Code, /);
-  // The same slot and size, another drawing.
-  expect(await glyph.locator("svg").innerHTML()).not.toBe(
-    await claudeRow.getByTestId("overview-worker-agent").locator("svg").innerHTML(),
-  );
+  expect(await glyph.locator("svg").innerHTML()).not.toBe(claudeMark);
+  await expect(marks).toHaveCount(count);
+
+  // Back on Claude Code, the list is one agent again and no row loses its mark.
+  await moveTo(original);
+  await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Claude Code, /);
+  await expect(marks).toHaveCount(count);
+  expect(await glyph.locator("svg").innerHTML()).toBe(claudeMark);
 });
 
 test("an idle row fades after a day and comes back on hover; one needing you never does", async ({

@@ -100,7 +100,6 @@ import {
 import { ledgerSlotsText } from "./overview-extras-model";
 import {
   foldByKey,
-  mixedAgents,
   nowLineShown,
   orchestratorHover,
   stateWord,
@@ -933,9 +932,6 @@ function WorkspaceFeatures({
       (item) => item.kind !== "worker" || !away.has(item.row.threadId),
     );
   }, [features, snoozed]);
-  const agentMark = useAgentsMixed(
-    items.flatMap((item) => (item.kind === "worker" ? [item.row.threadId] : [])),
-  );
   if (items.length === 0) {
     if (empty) return null;
     return (
@@ -954,12 +950,7 @@ function WorkspaceFeatures({
         {items.map((item) =>
           item.kind === "worker" ? (
             <PresenceItem key={item.row.threadId}>
-              <WorkerRow
-                row={item.row}
-                feature={item.feature}
-                updatedAt={item.updatedAt}
-                agentMark={agentMark}
-              />
+              <WorkerRow row={item.row} feature={item.feature} updatedAt={item.updatedAt} />
             </PresenceItem>
           ) : (
             <PresenceItem key={item.held.id}>
@@ -973,35 +964,21 @@ function WorkspaceFeatures({
 }
 
 /**
- * Whether the workers listed together run more than one agent (`mixedAgents`): only then does each
- * row show its agent's mark. All on one agent, the state dot alone marks a row, and its name and
- * hover card say the agent.
- */
-export function useAgentsMixed(threadIds: readonly ThreadId[]): boolean {
-  return useThreadsStore((s) =>
-    mixedAgents(threadIds.map((id) => s.byId[id]?.thread.model?.agent)),
-  );
-}
-
-/**
  * A live worker: a click opens it, where any ask it has shows, ⌥-click peeks and ⌘/Ctrl-click keeps
  * it beside; a right-click (or Shift+F10) opens its menu, and it drags onto a grid pane. Its agent's
- * mark shows only while its list mixes agents (`agentMark`), and a second line only for an ask, a
- * failure or real activity; its name and hover card keep the rest. In the compact rail's flyout it
+ * mark always shows once its agent is known, so the row never loses it as its neighbours come
+ * and go, and a second line only for an ask, a failure or real activity; its name and hover card keep the rest. In the compact rail's flyout it
  * has no hover card of its own (`card={false}`), the flyout being one.
  */
 export function WorkerRow({
   row,
   feature,
   updatedAt,
-  agentMark = false,
   card = true,
 }: {
   row: OverviewWorkerRow;
   feature: string;
   updatedAt: number;
-  /** Its list's workers run more than one agent, so its agent's mark says which. */
-  agentMark?: boolean;
   card?: boolean;
 }) {
   const openThread = useOpenThread();
@@ -1129,7 +1106,7 @@ export function WorkerRow({
           testId="overview-worker-machine"
         />
         {pause !== undefined && <WorkerPauseMark pause={pause} />}
-        {agentMark && agent !== undefined && (
+        {agent !== undefined && (
           <span data-testid="overview-worker-agent" className="flex shrink-0">
             <AgentIcon agent={agent} className="size-icon-row" />
           </span>
@@ -1160,7 +1137,7 @@ export function WorkerRow({
       dense
       className={cn(
         "absolute top-1/2 -translate-y-1/2",
-        agentMark && agent !== undefined ? "right-7.5" : "right-1.5",
+        agent !== undefined ? "right-7.5" : "right-1.5",
       )}
     />
   );
