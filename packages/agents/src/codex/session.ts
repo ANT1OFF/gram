@@ -878,7 +878,8 @@ export const makeCodexHost = (
       const server = yield* acquireHeld(
         servers.acquire(o.model?.profileId, home, sessionPartitionId, o.switchStartup),
       );
-      if (home === "owned") {
+      // A machine's own provider authenticates itself: there is no ChatGPT login to check.
+      if (home === "owned" && server.ownProvider === undefined) {
         const account = yield* server.rpc
           .request("account/read", { refreshToken: false })
           .pipe(Effect.mapError(unavailable("Codex couldn't check its native login")));
@@ -1032,10 +1033,14 @@ export const makeCodexHost = (
       const threadConfig: NonNullable<ThreadStartParams["config"]> = {
         ...(home === "owned"
           ? {
-              model_provider: "openai",
-              openai_base_url: "https://chatgpt.com/backend-api/codex",
-              forced_login_method: "chatgpt",
-              cli_auth_credentials_store: "file",
+              ...(server.ownProvider === undefined
+                ? {
+                    model_provider: "openai",
+                    openai_base_url: "https://chatgpt.com/backend-api/codex",
+                    forced_login_method: "chatgpt",
+                    cli_auth_credentials_store: "file",
+                  }
+                : { model_provider: server.ownProvider }),
               features: {
                 exec_policy: true,
                 shell_snapshot: false,
@@ -1059,7 +1064,12 @@ export const makeCodexHost = (
       };
       const settings: ThreadSettings = {
         cwd: o.cwd,
-        ...(home === "owned" ? { modelProvider: "openai", allowProviderModelFallback: false } : {}),
+        ...(home === "owned"
+          ? {
+              modelProvider: server.ownProvider ?? "openai",
+              allowProviderModelFallback: false,
+            }
+          : {}),
         ...(model === undefined || model.model === "default" ? {} : { model: model.model }),
         ...(model?.speed === undefined
           ? {}

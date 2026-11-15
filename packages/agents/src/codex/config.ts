@@ -18,19 +18,28 @@ export const appServerArgs = (
   profile?: GatewayProfile,
   catalog?: string,
   owned = false,
+  /**
+   * With `owned`: the machine's own provider its gated home keeps (`ownedHome.provider`), in
+   * place of ChatGPT's. The exec-policy backstop is the same either way.
+   */
+  ownProvider?: string,
 ): Array<string> => {
   if (profile === undefined)
     return owned
       ? [
           "app-server",
-          "-c",
-          'model_provider="openai"',
-          "-c",
-          'openai_base_url="https://chatgpt.com/backend-api/codex"',
-          "-c",
-          'forced_login_method="chatgpt"',
-          "-c",
-          'cli_auth_credentials_store="file"',
+          ...(ownProvider === undefined
+            ? [
+                "-c",
+                'model_provider="openai"',
+                "-c",
+                'openai_base_url="https://chatgpt.com/backend-api/codex"',
+                "-c",
+                'forced_login_method="chatgpt"',
+                "-c",
+                'cli_auth_credentials_store="file"',
+              ]
+            : ["-c", `model_provider=${toml(ownProvider)}`]),
           "-c",
           "features.shell_snapshot=false",
           "-c",

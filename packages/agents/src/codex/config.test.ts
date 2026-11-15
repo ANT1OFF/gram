@@ -27,6 +27,26 @@ const profile: GatewayProfile = {
 };
 
 describe("appServerArgs", () => {
+  it("runs a gated native home on ChatGPT, or on the machine's own provider, always with exec policy", () => {
+    const chatgpt = appServerArgs(undefined, undefined, true);
+    expect(chatgpt).toContain('model_provider="openai"');
+    expect(chatgpt).toContain('forced_login_method="chatgpt"');
+    const own = appServerArgs(undefined, undefined, true, "embedder");
+    expect(own).toEqual([
+      "app-server",
+      "-c",
+      'model_provider="embedder"',
+      "-c",
+      "features.shell_snapshot=false",
+      "-c",
+      "features.exec_policy=true",
+    ]);
+    // A provider is quoted as a TOML string, whatever it is called.
+    expect(appServerArgs(undefined, undefined, true, 'a"b')).toContain('model_provider="a\\"b"');
+    // Only the gated home takes it: the user's own home is left to its configuration.
+    expect(appServerArgs(undefined, undefined, false, "embedder")).toEqual(["app-server"]);
+  });
+
   it("runs a gateway app-server without shell snapshots, which would save the key in CODEX_HOME", () => {
     const args = appServerArgs(profile);
     expect(args[0]).toBe("app-server");

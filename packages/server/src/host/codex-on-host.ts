@@ -11,7 +11,7 @@ import type { AgentUnavailable, HostCodexStatus } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { installOutwardRules, removeOutwardRules } from "../gateway/codex-home.ts";
-import { prepareOwnedCodexHome } from "../gateway/codex-owned-home.ts";
+import { ownedCodexProvider, prepareOwnedCodexHome } from "../gateway/codex-owned-home.ts";
 import { hostModelOf, loginShell, type ShellRun } from "./claude-sign-in.ts";
 import { parseToolVersion } from "../launch-checks/checks.ts";
 
@@ -27,6 +27,7 @@ export const hostCodexLive = (dataDir: string, home = homedir()): Layer.Layer<Co
         prepare: (userEnv) => prepareOwnedCodexHome(dataDir, home, userEnv),
         history: (userEnv) => prepareOwnedCodexHome(dataDir, home, userEnv, false),
         refresh: (userEnv) => Effect.asVoid(prepareOwnedCodexHome(dataDir, home, userEnv)),
+        provider: (userEnv) => ownedCodexProvider(home, userEnv),
         rules: {
           install: (level) => installOutwardRules(dataDir, level, "owned"),
           remove: removeOutwardRules(dataDir, "owned"),
