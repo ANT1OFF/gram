@@ -1,5 +1,47 @@
 # Changelog
 
+## [1.27.0](https://github.com/ANT1OFF/gram/compare/v1.26.0...v1.27.0) (2026-11-15)
+
+
+### Features
+
+* **codex:** a gated session runs on a machine's own provider when it has no ChatGPT login ([#664](https://github.com/ANT1OFF/gram/issues/664)) ([cc8402a](https://github.com/ANT1OFF/gram/commit/cc8402ae8b2b2d4e0dadf505f8dd71b4a1fab651))
+* embedding features from integration/embedding ([#659](https://github.com/ANT1OFF/gram/issues/659)) ([2b5186c](https://github.com/ANT1OFF/gram/commit/2b5186c7aa99a6a4dbfb047fca3406a87579de55))
+* embedding features from integration/embedding ([#671](https://github.com/ANT1OFF/gram/issues/671)) ([562cc2e](https://github.com/ANT1OFF/gram/commit/562cc2ef3ea0e8d5b7b7c5051d28eb9923d3c8d0))
+* **host:** Codex sessions run on joined machines and through a headless Gram ([#653](https://github.com/ANT1OFF/gram/issues/653)) ([ab8076d](https://github.com/ANT1OFF/gram/commit/ab8076de4e650a50e0ee9f4ada45b3af8dc98c8f))
+
+
+### Bug Fixes
+
+* **app-tools:** one merge_when_ready card per merge intent, withdrawn when its PR ends ([#657](https://github.com/ANT1OFF/gram/issues/657)) ([854c610](https://github.com/ANT1OFF/gram/commit/854c610128d9fb52ba0ba9d24f4e5c4732deb6d5))
+* bring the orchestrator back under its prompt budget ([#667](https://github.com/ANT1OFF/gram/issues/667)) ([7b60187](https://github.com/ANT1OFF/gram/commit/7b60187ea4700dba6071630ef0e7f62ceda65df3))
+* **orchestration:** close three merge-ownership races at full autonomy ([#651](https://github.com/ANT1OFF/gram/issues/651)) ([42bdb8f](https://github.com/ANT1OFF/gram/commit/42bdb8ffefa9616a296ed0458ea5c9d9f9facb12))
+* scope subscription limit holds to machine logins ([#670](https://github.com/ANT1OFF/gram/issues/670)) ([d2119b5](https://github.com/ANT1OFF/gram/commit/d2119b5d06e2e76b8ba1e1269c347fca61cfc9f8))
+
+### From the embedding branch ([#659](https://github.com/ANT1OFF/gram/issues/659), [#671](https://github.com/ANT1OFF/gram/issues/671))
+
+These came to `main` in two squashed merges, so they are listed by hand. Several are for apps that mount Gram's web app or for hosted deployments; those stay behind the hosted features setting, which is off by default. The branch's own copies of [#653](https://github.com/ANT1OFF/gram/issues/653) and [#664](https://github.com/ANT1OFF/gram/issues/664) are listed above.
+
+#### Features
+
+* a person's message for a thread, and stopping its turn, from the platform ([#650](https://github.com/ANT1OFF/gram/issues/650))
+* an orchestrator can give a worker a machine of its own ([#652](https://github.com/ANT1OFF/gram/issues/652))
+* tell the host provider when a worker's own machine has no work left ([#658](https://github.com/ANT1OFF/gram/issues/658))
+* a delivery chip shows steer, queue and interrupt while an agent works ([#661](https://github.com/ANT1OFF/gram/issues/661))
+* an orchestrator can name the environment a worker's own machine starts in ([#662](https://github.com/ANT1OFF/gram/issues/662))
+* two-line worker rows in the sidebar ([#669](https://github.com/ANT1OFF/gram/issues/669))
+
+#### Bug Fixes
+
+* new-task route budget to 200 kB ([#656](https://github.com/ANT1OFF/gram/issues/656))
+* drop the briefing placeholder that echoed the sent message ([#660](https://github.com/ANT1OFF/gram/issues/660))
+* every worker row keeps its agent's mark ([#663](https://github.com/ANT1OFF/gram/issues/663))
+* thread route budget to 920 kB ([#666](https://github.com/ANT1OFF/gram/issues/666))
+
+#### Performance
+
+* rerun the benchmarks, fix an OpenCode leak and a slow-link markdown race ([#668](https://github.com/ANT1OFF/gram/issues/668))
+
 ## [1.26.0](https://github.com/ANT1OFF/gram/compare/v1.25.0...v1.26.0) (2026-11-15)
 
 
