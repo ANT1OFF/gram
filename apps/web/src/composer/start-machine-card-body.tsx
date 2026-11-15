@@ -31,8 +31,12 @@ const ORDER: Record<OnDemandPhase, number> = {
 
 const REPOSITORY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/;
 
-/** What this person picked last time, kept in this browser for the next start. */
-const PICKED_KEY = "gram:on-demand-choices";
+/**
+ * The choices this person changed from the provider's default, kept in this browser for the next
+ * start. Only those are sent: a choice they left alone follows the provider's default, which may
+ * change after this start. The key is new so that defaults kept as picks before are dropped.
+ */
+const PICKED_KEY = "gram:on-demand-picks";
 const remembered = (): Record<string, string> => {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(PICKED_KEY) ?? "{}");
@@ -54,6 +58,21 @@ const remember = (picked: Readonly<Record<string, string>>) => {
     // Not kept: the next start offers the defaults again.
   }
 };
+
+/** The remembered picks that can still be picked and differ from their choice's default. */
+export const changedFor = (
+  choices: ReadonlyArray<OnDemandChoice>,
+  kept: Readonly<Record<string, string>>,
+): Record<string, string> =>
+  Object.fromEntries(
+    choices.flatMap((choice) => {
+      const wanted = kept[choice.id];
+      const usable = choice.options.some((option) => option.id === wanted && option.available);
+      return usable && wanted !== undefined && wanted !== choice.default
+        ? [[choice.id, wanted]]
+        : [];
+    }),
+  );
 
 /** Each choice's pick: the one remembered where it can still be picked, else its default. */
 export const pickedFor = (
@@ -148,6 +167,7 @@ export function StartMachineCardBody({
   if (!needsMachine(status)) return null;
   const choices = status?.choices;
   const picks = choices === undefined ? {} : pickedFor(choices.choices, kept);
+  const changed = choices === undefined ? {} : changedFor(choices.choices, kept);
 
   const progress = status?.progress;
   const coming = isComing(status);
@@ -158,8 +178,8 @@ export function StartMachineCardBody({
     setSending(true);
     setError(undefined);
     try {
-      remember(picks);
-      await startOnDemand(reachesTheirs ? [] : picked, picks);
+      remember(changed);
+      await startOnDemand(reachesTheirs ? [] : picked, changed);
       setChoosing(false);
       await refresh();
     } catch (cause) {
@@ -237,7 +257,7 @@ export function StartMachineCardBody({
               key={choice.id}
               choice={choice}
               value={picks[choice.id] ?? choice.default}
-              onChange={(id) => setKept({ ...picks, [choice.id]: id })}
+              onChange={(id) => setKept({ ...kept, [choice.id]: id })}
             />
           ))}
           {choices.note !== undefined && (
