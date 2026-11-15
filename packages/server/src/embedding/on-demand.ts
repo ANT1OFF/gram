@@ -111,7 +111,7 @@ export interface OwnedMachine {
   readonly id: string;
   readonly name: string;
   readonly owner?: string | undefined;
-  readonly onDemand?: "personal" | "thread" | undefined;
+  readonly onDemand?: "personal" | "thread" | "worker" | undefined;
   readonly onlineSince?: number | undefined;
 }
 

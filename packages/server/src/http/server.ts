@@ -891,7 +891,6 @@ export const ServerCore = Layer.unwrap(
         DevServerAppToolsLive,
         ThreadAssistLive,
         RepoEventsInboundLive,
-        OnDemandLive,
         ThreadNotesInboundLive,
         ThreadMessagesInboundLive,
         SuppliedSettingsLive,
@@ -918,7 +917,9 @@ export const ServerCore = Layer.unwrap(
             ),
           ),
           Layer.provideMerge(Layer.mergeAll(DreamFiles.layer, ThreadArchive.layer)),
-          Layer.provideMerge(OrchestrationLive),
+          // On-demand hosts under the orchestration, whose workers' own machines it starts
+          // (`worker-machines.ts`).
+          Layer.provideMerge(OrchestrationLive.pipe(Layer.provideMerge(OnDemandLive))),
           // Gram's own full checks, which the solo merge policy accepts in place of CI, under the
           // orchestration whose ledger shows them.
           Layer.provideMerge(LocalChecksLive.pipe(Layer.provide(LocalCheckRunner.layer))),

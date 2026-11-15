@@ -26,6 +26,8 @@ const oldRunB = { id: id("m-run-b-old") };
 const adaOwn = { id: id("m-ada"), owner: "ada", onDemand: "personal" as const };
 const adaSecond = { id: id("m-ada-2"), owner: "ada", onDemand: "personal" as const };
 const graceOwn = { id: id("m-grace"), owner: "grace", onDemand: "personal" as const };
+const adaWorker = { id: id("m-ada-w"), owner: "ada", onDemand: "worker" as const };
+const graceWorker = { id: id("m-grace-w"), owner: "grace", onDemand: "worker" as const };
 
 describe("a worker that names no machine, in a headless Gram", () => {
   it("goes on its orchestrator's machine", () => {
@@ -58,6 +60,14 @@ describe("the machine an orchestrator names for a worker", () => {
     expect(workerMachine(graceOwn, ada)).toEqual({ error: NOT_THIS_ORCHESTRATIONS_MACHINE });
     expect(workerMachine(runB, ada)).toEqual({ error: NOT_THIS_ORCHESTRATIONS_MACHINE });
     expect(workerMachine(oldRunB, ada)).toEqual({ error: NOT_THIS_ORCHESTRATIONS_MACHINE });
+  });
+
+  it("is a machine the person's orchestrator started for its workers, and never another's", () => {
+    const ada = { own: adaOwn.id, ownOwner: "ada", headless: true };
+    expect(workerMachine(adaWorker, ada)).toEqual({ hostId: adaWorker.id });
+    expect(workerMachine(graceWorker, ada)).toEqual({ error: NOT_THIS_ORCHESTRATIONS_MACHINE });
+    // A run that acts for no one has none.
+    expect(workerMachine(adaWorker, headless)).toEqual({ error: NOT_THIS_ORCHESTRATIONS_MACHINE });
   });
 
   it("takes 'here' on a headless Gram as its orchestrator's machine, never the default", () => {

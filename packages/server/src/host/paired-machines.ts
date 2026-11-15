@@ -76,14 +76,15 @@ export interface PairedMachine {
   /**
    * What an on-demand host is for: `personal`, the person's own host for work in a folder or a
    * repository, or `thread`, a host for the threads placed on it by name (and their workers),
-   * such as one an embedder started for a single run. Either is never anyone's default machine
-   * (`host/headless.ts`).
+   * such as one an embedder started for a single run, or `worker`, a host its owner's
+   * orchestrator started for its own workers (`embedding/worker-machines.ts`). None is ever
+   * anyone's default machine (`host/headless.ts`).
    */
   readonly onDemand?: OnDemandKind;
 }
 
 /** What an embedder started a host on demand for. */
-export type OnDemandKind = "personal" | "thread";
+export type OnDemandKind = "personal" | "thread" | "worker";
 
 /** How a machine other than a joined one came to be registered. */
 export type MachineKind = "provisioned";

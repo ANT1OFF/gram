@@ -548,6 +548,8 @@ layer(TestServer, { excludeTestServices: true })("provisioned hosts over TLS", (
         expect((yield* run({ onDemand: "personal" })).status).toBe(400);
         expect((yield* run({ owner: "ada" })).status).toBe(400);
         expect((yield* run({ onDemand: "elsewhere" })).status).toBe(400);
+        // A worker's own machine is always someone's.
+        expect((yield* run({ onDemand: "worker" })).status).toBe(400);
         expect((yield* run({ onDemand: "thread" })).status).toBe(200);
         const stored = JSON.parse(kept("provisioned-hosts.json")) as {
           machines: Array<{ name: string; onDemand?: string; owner?: string }>;
