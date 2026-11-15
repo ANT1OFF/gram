@@ -35,12 +35,39 @@ import { heldOf, workersOf, pausedFeatureOf, type OrchestrationKit } from "./kit
 import { type OrchestrationShape } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Digests } from "./digests.ts";
+import { orchestratorsMachine, workerMachine, type NamedMachine } from "./spawning.ts";
 
 /** What workers take from the rest of the service. */
 export interface WorkersDeps {
   readonly survey: LedgerWatch["survey"];
   readonly wakeFor: Digests["wakeFor"];
 }
+
+/** A joined machine as `list_workers` weighs whether to list it. */
+type ListedMachine = NamedMachine & { readonly name: string; readonly onlineSince?: number };
+
+/**
+ * The joined machines `list_workers` names: the ones a worker of this orchestrator may go on
+ * (`workerMachine`), less machines an embedder started for workers that are offline and hold
+ * none of this orchestration's workers. Such a machine was made for one worker and went with it,
+ * and a deployment that starts many leaves a long tail of them; listing them only crowds the
+ * orchestrator's reading. A machine one of its workers is on stays, online or not.
+ */
+export const machinesForOrchestrator = <M extends ListedMachine>(
+  machines: ReadonlyArray<M>,
+  context: {
+    readonly own: HostId | undefined;
+    readonly ownOwner: string | undefined;
+    readonly headless: boolean;
+    /** The machines this orchestration's workers are on. */
+    readonly inUse: ReadonlySet<string>;
+  },
+): ReadonlyArray<M> =>
+  machines.filter((machine) => {
+    if (machine.id === context.own || context.inUse.has(machine.id)) return true;
+    if ("error" in workerMachine(machine, context)) return false;
+    return !(machine.onDemand === "worker" && machine.onlineSince === undefined);
+  });
 
 /** Listing workers, their reports, and the user's holds on them. */
 /** `list_workers`' `machines`: the joined machines, left out while none is. */
@@ -97,6 +124,7 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
       const found = yield* survey(state, false);
       const ownWakes = wakesOf(found.outbox, thread.id);
       const machines = kit.joinedMachines();
+      const own = orchestratorsMachine(thread);
       const ledger = ledgerOf({
         state,
         features: filterWorkers(
@@ -126,7 +154,20 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
         })),
         ...(ownWakes.length === 0 ? {} : { wakes: ownWakes }),
         ...(app === undefined ? {} : { app }),
-        ...machinesListed(machines),
+        ...machinesListed(
+          machinesForOrchestrator(machines, {
+            own,
+            ownOwner: own === undefined ? undefined : kit.ownerOf(own),
+            headless: kit.headless !== undefined,
+            inUse: new Set(
+              ledger.features.flatMap((feature) =>
+                feature.workers.flatMap((worker) =>
+                  worker.hostId === undefined ? [] : [worker.hostId],
+                ),
+              ),
+            ),
+          }),
+        ),
         autonomy: autonomyOf(state.charter),
         workerModels: yield* rosterFor(thread, state.charter).pipe(
           Effect.map((here) => rosterOf(here.roster, here.unavailable, here.catalogue)),
