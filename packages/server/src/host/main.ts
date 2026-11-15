@@ -13,6 +13,7 @@ import { AgentUnavailable, HOST_PROTOCOL_VERSION, LOCAL_HOST_ID } from "@gram/co
 import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import { liveScan } from "../ports/scan.ts";
 import { filesOn } from "./files.ts";
 import { foldersOn, gatedSessions } from "./folders.ts";
@@ -33,6 +34,8 @@ import { reposOn } from "./repos.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { claudeSignInOf, hostStatusOf } from "./claude-sign-in.ts";
+import { codexStatusOf, hostCodexLive } from "./codex-on-host.ts";
+import { CodexHost } from "@gram/agents/codex";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHostKeeping } from "./terminals.ts";
 import { KEPT_TERMINALS_ENV, keptTerminalsIn } from "../terminal/kept.ts";
@@ -71,13 +74,16 @@ export const HOST_STREAM_FD = 3;
 
 /**
  * The agents whose sessions the host runs: Claude Code on the user's own login, or on the token
- * `oauthToken` reads (a joined machine's, from `claude setup-token`). A session through a gateway
- * profile, and every Codex session, still opens in the server, which keeps the keys and the Codex
- * homes. Under the fake agent the host runs the fake, as the server does, echoing when asked to.
+ * `oauthToken` reads (a joined machine's, from `claude setup-token`), and on a joined machine
+ * Codex too, its homes in `codexData`, the host's own folder (`codex-on-host.ts`). A session
+ * through a gateway profile still opens in the server, which keeps the keys; so does every Codex
+ * session of this machine, whose homes are the server's. Under the fake agent the host runs the
+ * fake, as the server does, echoing when asked to.
  */
 const hostAgents = (
   oauthToken?: () => string | undefined,
   keyAuth = false,
+  codexData?: string,
 ): Layer.Layer<AgentHosts> =>
   process.env["GRAM_FAKE_AGENT"] === "1"
     ? makeFakeAgentAdapter(process.env["GRAM_FAKE_AGENT_REPLY"] === "echo" ? { reply: "echo" } : {})
@@ -85,16 +91,19 @@ const hostAgents = (
         AgentHosts,
         Effect.gen(function* () {
           const claude = yield* ClaudeHost;
+          const codex = Option.getOrUndefined(yield* Effect.serviceOption(CodexHost));
           return AgentHosts.of({
             get: (agent) =>
               agent === "claude"
                 ? Effect.succeed(claude)
-                : Effect.fail(
-                    new AgentUnavailable({
-                      agent,
-                      message: `${agent} sessions don't run in this machine's host yet.`,
-                    }),
-                  ),
+                : agent === "codex" && codex !== undefined
+                  ? Effect.succeed(codex)
+                  : Effect.fail(
+                      new AgentUnavailable({
+                        agent,
+                        message: `${agent} sessions don't run in this machine's host yet.`,
+                      }),
+                    ),
           });
         }),
       ).pipe(
@@ -106,6 +115,7 @@ const hostAgents = (
             },
           }),
         ),
+        Layer.provide(codexData === undefined ? Layer.empty : hostCodexLive(codexData)),
       );
 
 /** What could stop a host's update: what is running in it now (`HostBusy`). */
@@ -130,6 +140,11 @@ const hostService = (
   Effect.gen(function* () {
     const proc = yield* Proc;
     const agents = yield* AgentHosts;
+    // Named in its hello only where it runs them: a joined machine's host, or the fake.
+    const runsCodex = yield* agents.get("codex").pipe(
+      Effect.as(true),
+      Effect.orElseSucceed(() => false),
+    );
     const terminals = yield* terminalsOnHostKeeping(
       keptTerminals === undefined ? undefined : keptTerminalsIn(keptTerminals),
     );
@@ -197,7 +212,9 @@ const hostService = (
         platform: process.platform,
         pid: process.pid,
         ...(RELEASE === undefined ? {} : { release: RELEASE }),
-        features: HOST_FEATURES,
+        features: runsCodex
+          ? HOST_FEATURES
+          : HOST_FEATURES.filter((feature) => feature !== "agent-codex"),
       },
       files: filesOn(proc),
       folders,
@@ -232,6 +249,8 @@ const hostService = (
           Effect.flatMap((host) => host.listModels()),
           Effect.orElseSucceed(() => undefined),
         ),
+        // And its Codex, where this host runs Codex sessions.
+        runsCodex ? codexStatusOf(agents.get("codex")) : Effect.succeed(undefined),
       ),
       checks,
       admission,
@@ -240,8 +259,11 @@ const hostService = (
     };
   });
 
-const hostLayer = (oauthToken?: () => string | undefined, keyAuth = false) =>
-  Layer.mergeAll(WorktreesLive.pipe(Layer.provideMerge(ProcLive)), hostAgents(oauthToken, keyAuth));
+const hostLayer = (oauthToken?: () => string | undefined, keyAuth = false, codexData?: string) =>
+  Layer.mergeAll(
+    WorktreesLive.pipe(Layer.provideMerge(ProcLive)),
+    hostAgents(oauthToken, keyAuth, codexData),
+  );
 
 /** This machine's host, for the server that started it. */
 const child = Effect.gen(function* () {
@@ -342,7 +364,8 @@ NodeRuntime.runMain(
                 : (busy, admission) => selfUpdater(RELEASE, home, busy, admission),
               join(home, "kept-terminals", hostId),
             ),
-          layer: hostLayer(() => readClaudeToken(joinedHome), keyAuth),
+          // Its Codex homes go in its own folder, beside its token.
+          layer: hostLayer(() => readClaudeToken(joinedHome), keyAuth, joinedHome),
           release: RELEASE,
         }),
 );

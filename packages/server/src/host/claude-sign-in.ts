@@ -6,6 +6,7 @@ import {
   type ClaudeSignIn,
   type HostId,
   type AgentModel,
+  type HostCodexStatus,
   type HostModel,
   type HostStatus,
   type HostTool,
@@ -90,6 +91,11 @@ export const hostModelOf = (model: AgentModel): HostModel => ({
   ...(model.resolvedId === undefined ? {} : { resolvedId: model.resolvedId.slice(0, MODEL_TEXT) }),
   supportsEffort: model.supportsEffort,
   ...(model.efforts === undefined ? {} : { efforts: model.efforts.slice(0, 8) }),
+  ...(model.isDefault === true ? { isDefault: true } : {}),
+  ...(model.speeds === undefined ? {} : { speeds: model.speeds.slice(0, 2) }),
+  ...(model.inputModalities === undefined
+    ? {}
+    : { inputModalities: model.inputModalities.slice(0, 2) }),
 });
 
 /**
@@ -101,14 +107,17 @@ export const hostStatusOf = (
   signIn: Effect.Effect<ClaudeSignIn>,
   run: ShellRun = loginShell,
   models: Effect.Effect<ReadonlyArray<AgentModel> | undefined> = Effect.succeed(undefined),
+  /** Its Codex, on a host that runs Codex sessions (`codex-on-host.ts`). */
+  codex: Effect.Effect<HostCodexStatus | undefined> = Effect.succeed(undefined),
 ): Effect.Effect<HostStatus> =>
   Effect.gen(function* () {
-    const [claudeSignIn, claude, git, listed] = yield* Effect.all(
+    const [claudeSignIn, claude, git, listed, codexStatus] = yield* Effect.all(
       [
         signIn,
         Effect.promise(() => probeTool("claude", run)),
         Effect.promise(() => probeTool("git", run)),
         models,
+        codex,
       ],
       { concurrency: "unbounded" },
     );
@@ -118,6 +127,7 @@ export const hostStatusOf = (
       tools: [claudeTool, git],
       // An empty list is a fact (nothing runs here); only a listing that failed sends no key.
       ...(listed === undefined ? {} : { models: listed.slice(0, MODELS_SENT).map(hostModelOf) }),
+      ...(codexStatus === undefined ? {} : { codex: codexStatus }),
     };
   });
 

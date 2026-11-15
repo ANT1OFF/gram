@@ -77,14 +77,24 @@ export const machineAwayEnded = (machine: string): AgentEvent => ({
  * (its file bridge is in-process), and app tools with no MCP endpoint to reach them over.
  */
 export const opensOnHost = (agent: AgentKind, options: OpenSessionOptions): boolean =>
-  agent === "claude" &&
+  agent === "claude" && options.waitForPreviousSession === undefined && crossesAsData(options);
+
+/** What both kinds of host need of a session's options: nothing that only the server holds. */
+const crossesAsData = (options: OpenSessionOptions): boolean =>
   options.model?.profileId === undefined &&
   options.switchStartup === undefined &&
-  options.waitForPreviousSession === undefined &&
   options.audience !== "dream" &&
   options.dreamFilesOnly !== true &&
   options.dreamGuided !== true &&
   (options.appTools === undefined || options.mcp !== undefined);
+
+/**
+ * Whether a session can open on a joined machine's host. As `opensOnHost`, and Codex too: its
+ * homes there are that machine's own, and so is the app-server a restart waits for, so the wait
+ * goes to the host with the open (`HostSessionOpen.waitForPrevious`).
+ */
+export const opensOnMachine = (agent: AgentKind, options: OpenSessionOptions): boolean =>
+  agent === "codex" ? crossesAsData(options) : opensOnHost(agent, options);
 
 const defined = <A extends object>(value: A): A =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as A;
@@ -119,6 +129,8 @@ const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): H
     browser: o.browser,
     browserSurfaces: o.browserSurfaces === undefined ? undefined : { ...o.browserSurfaces },
     browserAsk: o.browserAsk,
+    codexHome: o.codexHome,
+    waitForPrevious: o.waitForPreviousSession === undefined ? undefined : true,
     browserScope:
       o.browserScope === undefined
         ? undefined
@@ -581,8 +593,20 @@ export const onMachineUnavailable = (
   error: AgentUnavailable,
   machine: string,
 ): AgentUnavailable => {
-  const agent = error.agent === "claude" ? "Claude Code" : error.agent;
+  const agent =
+    error.agent === "claude" ? "Claude Code" : error.agent === "codex" ? "Codex" : error.agent;
   const message = (() => {
+    if (error.agent === "codex")
+      switch (error.reason) {
+        case "not-logged-in":
+          return `Codex isn't signed in on ${machine}. Run \`codex login\` there with your ChatGPT account.`;
+        case "api-key-auth":
+          return `Codex on ${machine} is using API-key auth, and this session needs a ChatGPT login. Run \`codex login\` there.`;
+        default:
+          return error.message.includes(machine)
+            ? error.message
+            : `On ${machine}: ${error.message}`;
+      }
     switch (error.reason) {
       case "not-logged-in":
         return `${agent} isn't logged in on ${machine}. Run \`claude /login\` there, or choose Sign in under Settings → Machines.`;
@@ -656,7 +680,7 @@ export const agentHostOnMachine = (
                 message: `${machineName} is offline; its workers start once it's back.`,
               }),
             )
-          : !opensOnHost(kind, options)
+          : !opensOnMachine(kind, options)
             ? Effect.fail(
                 new AgentUnavailable({
                   agent: kind,

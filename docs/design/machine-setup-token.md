@@ -170,7 +170,8 @@ convenience. Running setup-token again for a new machine costs one browser appro
 
 ## Out of scope
 
-- Codex. It has no equivalent of this flow, and Codex sessions don't run on joined machines yet.
+- Codex. It has no equivalent of this flow: a joined machine's Codex runs on its own `codex login`
+  ([Codex on a machine](../MACHINES.md#codex-on-a-machine)).
 - Rotation and expiry warnings. Gram records when each machine got a token, but doesn't warn
   before the year is up.
 - Revoking from Gram. There is no API for it, so the user revokes at claude.ai.

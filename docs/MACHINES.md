@@ -3,7 +3,7 @@
 [Up: remote access](REMOTE_ACCESS.md)
 
 Another Mac or Linux machine can join your Gram and run its work: its checkouts, git, terminals,
-ports and Claude sessions. The machine you already use keeps Gram's threads, decisions and
+ports and Claude Code and Codex sessions. The machine you already use keeps Gram's threads, decisions and
 settings; the other machine runs `gram-host`, which dials it over Tailscale. The joined machine
 opens no port of its own.
 
@@ -134,7 +134,8 @@ joined first of those online.
   `https://<device>.<tailnet>.ts.net` address a paired phone opens.
 - Git on the new machine, and Claude Code signed in there for its sessions: its own
   `claude /login` (see [Sign in on a machine](#sign-in-on-a-machine)), or a token from this machine
-  ([below](#a-claude-token-from-this-machine)). Nothing else: the join command uses the Gram app on
+  ([below](#a-claude-token-from-this-machine)). For Codex sessions, Codex installed and signed in
+  there too ([Codex on a machine](#codex-on-a-machine)). Nothing else: the join command uses the Gram app on
   that machine, or downloads this Gram's release (macOS on Apple silicon, Linux on x64) into the
   host's folder.
 
@@ -389,6 +390,35 @@ No command output, token or credential file leaves the machine.
   - The machine's Claude Code keeps the login there, as it does in its own terminal. Gram only types the command; it never reads, copies or relays what Claude Code stores.
 - The Machine picker marks such a machine, and its line under Where it runs offers the same sign-in, in a dialog.
 - A session that still can't start there names the machine, for example "Claude Code isn't logged in on <machine>. Run `claude /login` there, or choose Sign in under Settings → Machines." The main Gram's log records each failed start on a joined machine with the machine, the agent and the reason code.
+
+## Codex on a machine
+
+A joined machine whose `gram-host` is this release or newer runs Codex sessions too, on that
+machine's own `codex` and sign-in, the way it runs Claude Code. A thread or worker on Codex placed
+there opens its app-server there; this Gram never starts Codex for it.
+
+- **Its sign-in.** The host asks that machine's Codex, and tells this Gram only the result: a
+  ChatGPT login, an API key (or a provider of the machine's own), not signed in, or unknown. It
+  also says whether `codex` is on its login shell's PATH, and its version.
+- **Its models.** The model picker, and a worker's tier on that machine, use what that machine's
+  Codex lists. A headless Gram lists the Codex models of the machine a new thread would go on.
+- **Its homes.** A session lives in a Codex home of that machine: the user's own (`~/.codex`, or
+  the `CODEX_HOME` the host was started with), or, for a thread in a workspace that asks before a
+  push, Gram's native gated home in the host's own folder, which links that machine's
+  `auth.json` by path. Gram never reads or copies the login file; Codex keeps and refreshes it. A
+  thread resumes in the home it started in.
+- **Its lifecycle.** Permission modes, approvals, interrupts, restarts and resumes work as they do
+  for a Codex thread on this machine. A restart waits there for the previous app-server to exit.
+- **A gateway profile stays here.** A profile's key never leaves this Gram, so a session on a
+  gateway profile doesn't run on a joined machine. A platform that starts a host for its own users
+  and routes Codex through its own gateway gives the host process the environment Codex reads (a
+  `CODEX_HOME` naming its provider, and that provider's key variable), as it does for Claude Code;
+  that machine's Codex then runs on it. A thread that asks before a push still needs a ChatGPT
+  login there, as it does on this machine.
+- A machine with an older `gram-host` opens no Codex session: "Its gram-host is older than this
+  Gram and doesn't run Codex sessions. Update Gram there (Settings → Machines), then try again."
+- Not yet: switching a thread between Claude Code and Codex on a joined machine, and Codex memory
+  updates there.
 
 ## When it drops or restarts
 
