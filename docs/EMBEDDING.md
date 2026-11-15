@@ -326,7 +326,10 @@ An orchestrator on a person's host may ask for a machine of a worker's own, thro
 `sandbox`: `{own: true, size?, architecture?, isolation?, environment?}` asks for one (each by the
 provider's own id for it; `isolation` is how strongly it is kept from other machines), `{shareWith}` places the worker on one
 it already has (by machine name or a worker's thread id), and leaving it out keeps the worker on the
-orchestrator's machine. This is the one path by which an agent, not a person's own request, starts a
+orchestrator's machine. `reason` says in a sentence why the work needs that machine; the worker
+keeps it with the machine and what was named as `spawnedBy.placement`, and its row in the workers
+panel shows "Own · VM · x86 · L" (by the person's own choices' short labels) with the reason on
+hover. This is the one path by which an agent, not a person's own request, starts a
 host, so the provider holds it to what the person and their organisation allow:
 
 - the server asks `POST /hosts/start` with `{ kind: "worker", owner, name, options: { orchestrator,

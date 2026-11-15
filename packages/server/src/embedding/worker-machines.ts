@@ -12,6 +12,7 @@
 // the person as its owner and `onDemand: "worker"`. Only that person's orchestrators place work on
 // it (`orchestration/service/spawning.ts` `workerMachine`), and it is never anyone's default.
 
+import type { WorkerPlacement } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { createHash, randomBytes } from "node:crypto";
 import type { OnDemandHosts } from "./on-demand.ts";
@@ -263,4 +264,34 @@ export const overTotalWords = (
     'Decide: wait for room (schedule_wake with condition threadFinished on a worker, then spawn again); put it on one of these machines (sandbox: {"shareWith": "<machine or threadId>"}); run it on your own machine (sandbox: {"own": false}); or ask for a smaller size.',
   );
   return lines.join("\n");
+};
+
+/**
+ * What a worker's row shows of where `spawn_worker`'s `sandbox` put it: the machine, whether it
+ * shares one, the choices named for it, and the orchestrator's reason.
+ */
+export const placementOf = (
+  machine: string,
+  sandbox: {
+    readonly shareWith?: string | undefined;
+    readonly isolation?: string | undefined;
+    readonly architecture?: string | undefined;
+    readonly size?: string | undefined;
+    readonly environment?: string | undefined;
+    readonly reason?: string | undefined;
+  },
+): WorkerPlacement => {
+  const picks = Object.fromEntries(
+    (["isolation", "architecture", "size", "environment"] as const).flatMap((id) => {
+      const value = sandbox[id];
+      return value === undefined ? [] : [[id, value]];
+    }),
+  );
+  const why = sandbox.reason?.trim();
+  return {
+    machine,
+    ...(sandbox.shareWith === undefined ? {} : { shared: true }),
+    ...(Object.keys(picks).length === 0 ? {} : { picks }),
+    ...(why === undefined || why === "" ? {} : { why }),
+  };
 };

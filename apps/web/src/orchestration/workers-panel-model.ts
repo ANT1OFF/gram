@@ -4,7 +4,10 @@ import {
   isLocalHost,
   type ThreadId,
   type ThreadSummary,
+  type WorkerPlacement,
 } from "@gram/contracts";
+
+import type { OnDemandChoice } from "@/api/on-demand";
 
 import { formatRelative, formatStamp } from "@/lib/time";
 
@@ -78,6 +81,8 @@ export interface PanelRow {
   readonly mainOnly: boolean;
   /** The joined machine its checkout is on; absent for this one. */
   readonly hostId?: HostId | undefined;
+  /** Where its orchestrator put it, when that is a machine for workers, and why. */
+  readonly placement?: WorkerPlacement | undefined;
 }
 
 export interface StatusGroup extends StatusGroupSpec {
@@ -131,7 +136,24 @@ export const panelRow = (
     at: at === undefined ? undefined : formatStamp(at, now),
     mainOnly: row.cleanedUp === true || row.solo === true,
     hostId: hostOfSummary(summary),
+    placement: summary?.thread.spawnedBy?.placement,
   };
+};
+
+/**
+ * A placement in a few words: "Shared" for a machine another worker has, else "Own" and what the
+ * orchestrator named, each by the option's short label where the provider's choices name it.
+ */
+export const placementWords = (
+  placement: WorkerPlacement,
+  choices: ReadonlyArray<OnDemandChoice> = [],
+): string => {
+  if (placement.shared === true) return "Shared";
+  const named = Object.entries(placement.picks ?? {}).map(([id, value]) => {
+    const option = choices.find((choice) => choice.id === id)?.options.find((o) => o.id === value);
+    return option?.short ?? option?.label ?? value;
+  });
+  return ["Own", ...named].join(" · ");
 };
 
 /**

@@ -11,6 +11,7 @@ import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
+import { useOnDemandMachine } from "@/composer/start-machine-card";
 import { MachineMarker } from "@/thread/machine-marker";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { useThreadsStore } from "@/stores/threads";
@@ -38,6 +39,7 @@ import {
   STATUS_GROUPS,
   statusGroups,
   type PanelRow,
+  placementWords,
   type StatusGroup,
   elsewhereLine,
   type StatusGroupId,
@@ -461,6 +463,10 @@ function Row({ row }: { row: PanelRow }) {
   const current = useIsCurrentThread(row.threadId);
   const chips = useWorkerPrChips(row.threadId, NO_CARD_PRS);
   const { line, words, ghost, fits } = useChipsFit(chips.length);
+  // The provider's choices name the options a placement's picks are by (VM, x86, L).
+  const choices = useOnDemandMachine().status?.choices?.choices;
+  const why =
+    row.placement?.why === undefined ? "" : `\nWhy ${row.placement.machine}: ${row.placement.why}`;
   return (
     <div className="relative">
       <button
@@ -469,7 +475,7 @@ function Row({ row }: { row: PanelRow }) {
         data-thread-id={row.threadId}
         data-dot={row.dot}
         aria-current={current ? "page" : undefined}
-        title={`${row.title}\n${row.status}`}
+        title={`${row.title}\n${row.status}${why}`}
         onClick={(event) => openWorker(row, event)}
         onKeyDown={(event) => {
           // ⌘⏎ opens it in the main view, as ⌘-click does; ⏎ alone is the row's click.
@@ -512,6 +518,14 @@ function Row({ row }: { row: PanelRow }) {
               </span>
               <MachineMarker hostId={row.hostId} hover="title" testId="workers-panel-machine" />
             </>
+          )}
+          {row.placement !== undefined && (
+            <span
+              data-testid="workers-panel-placement"
+              className="shrink-0 text-meta text-muted-foreground"
+            >
+              {placementWords(row.placement, choices)}
+            </span>
           )}
           <WorkerPrChips
             threadId={row.threadId}

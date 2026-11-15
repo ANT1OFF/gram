@@ -52,6 +52,20 @@ export const MessageOrigin = Schema.Struct({
 export type MessageOrigin = typeof MessageOrigin.Type;
 
 /** The link from a worker back to the orchestrator that spawned it. */
+/**
+ * Where its orchestrator put a worker that has a machine of its own or shares one of them: the
+ * machine's name, the choices the orchestrator named for it (the host provider's choice ids, such
+ * as `size`, and option ids), and the orchestrator's reason, for the person reading its row.
+ */
+export const WorkerPlacement = Schema.Struct({
+  machine: Schema.String.check(Schema.isMaxLength(200)),
+  /** Set when it shares another worker's machine rather than starting its own. */
+  shared: Schema.optionalKey(Schema.Boolean),
+  picks: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+  why: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(400))),
+});
+export type WorkerPlacement = typeof WorkerPlacement.Type;
+
 export const SpawnedBy = Schema.Struct({
   threadId: ThreadId,
   /** Slug of the feature the worker was spawned for; workers sharing it are one ledger group. */
@@ -60,6 +74,8 @@ export const SpawnedBy = Schema.Struct({
   routine: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
   /** The thread outside the workspace whose message the orchestrator was answering as it started it. */
   askedBy: Schema.optionalKey(AskedBy),
+  /** Where it was put when that is a machine for workers; absent on its orchestrator's machine. */
+  placement: Schema.optionalKey(WorkerPlacement),
 });
 export type SpawnedBy = typeof SpawnedBy.Type;
 

@@ -20,6 +20,7 @@ import {
   groupOf,
   lineOf,
   panelRow,
+  placementWords,
   STATUS_GROUPS,
   statusGroups,
   type StatusGroupId,
@@ -215,6 +216,35 @@ describe("a row", () => {
     } as Partial<Thread>);
     expect(panelRow(row("a", "working"), remote, NOW).hostId).toBe("m-0123456789abcdef01234567");
     expect(panelRow(row("a", "working"), summary("a", "running"), NOW).hostId).toBeUndefined();
+  });
+
+  it("carries where its orchestrator put it, in the provider's short words", () => {
+    const placement = {
+      machine: "w-ab12",
+      picks: { isolation: "vm", architecture: "amd64", size: "large" },
+      why: "Its tests start Docker.",
+    };
+    const placed = summary("a", "running", {
+      spawnedBy: { threadId: "t-0" as ThreadId, feature: "x", placement },
+    });
+    expect(panelRow(row("a", "working"), placed, NOW).placement).toEqual(placement);
+    const choices = [
+      {
+        id: "isolation",
+        label: "Kind",
+        default: "container",
+        options: [{ id: "vm", label: "Virtual machine", short: "VM", available: true }],
+      },
+      {
+        id: "size",
+        label: "Size",
+        default: "small",
+        options: [{ id: "large", label: "Large", short: "L", available: true }],
+      },
+    ];
+    expect(placementWords(placement, choices)).toBe("Own · VM · amd64 · L");
+    expect(placementWords(placement)).toBe("Own · vm · amd64 · large");
+    expect(placementWords({ machine: "w-ab12", shared: true })).toBe("Shared");
   });
 
   it("adds its now line to the state's word", () => {
