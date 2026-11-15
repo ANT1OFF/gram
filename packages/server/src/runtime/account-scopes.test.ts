@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import { makeAccountScopes } from "./account-scopes.ts";
 import { accountOf, machineAccountScope } from "./limit-wait.ts";
 import { AgentHosts } from "./agent-hosts.ts";
+import type { AgentHost } from "@gram/agents";
 
 const thread = (id: string, machine = "local", wait?: string) =>
   ({
@@ -28,6 +29,64 @@ const unavailable = AgentHosts.of({
 });
 
 describe("last known account scopes", () => {
+  it.effect.each(["host-failed", "unsupported", "probe-failed", "unknown"] as const)(
+    "isolates unidentified joined scopes from other machines and local legacy recovery: %s",
+    (state) =>
+      Effect.gen(function* () {
+        const error = new AgentUnavailable({
+          agent: "claude",
+          reason: "auth-status-failed",
+          message: "synthetic probe failure",
+        });
+        const host: AgentHost = {
+          kind: "claude",
+          capabilities: {
+            fork: false,
+            rewind: "none",
+            steer: false,
+            planMode: false,
+            approvalScopes: [],
+            userQuestions: false,
+            costReporting: false,
+            perTurnModel: false,
+            reasoningEffort: false,
+            listSessions: false,
+            subagentStreams: false,
+            stopTasks: false,
+          },
+          open: () => Effect.die(new Error("The account probe must not open a session.")),
+          listModels: () => Effect.succeed([]),
+          ...(state === "unsupported"
+            ? {}
+            : {
+                readAccountScope:
+                  state === "unknown" ? Effect.succeed(undefined) : Effect.fail(error),
+              }),
+        };
+        const hosts = AgentHosts.of({
+          get: () => (state === "host-failed" ? Effect.fail(error) : Effect.succeed(host)),
+        });
+        const scopes = makeAccountScopes(
+          hosts,
+          [thread("legacy", "local", "claude/")],
+          machineAccountScope,
+          () => Effect.succeed(hosts),
+        );
+        const x = yield* scopes.quotaFor(thread("x", "joined-x"));
+        const y = yield* scopes.quotaFor(thread("y", "joined-y"));
+        const local = yield* scopes.quotaFor(thread("local"));
+        expect(x).toBe(
+          accountOf({ agent: "claude", accountScope: machineAccountScope("joined-x", "unknown") }),
+        );
+        expect(y).toBe(
+          accountOf({ agent: "claude", accountScope: machineAccountScope("joined-y", "unknown") }),
+        );
+        expect(x).not.toBe(y);
+        expect(x).not.toBe(local);
+        expect(local).toBe("claude/");
+        expect(yield* scopes.changed(thread("x", "joined-x"), x)).toBe(false);
+      }),
+  );
   it.effect(
     "retains a persisted login during a failed probe, including for a newly spawned sibling",
     () =>

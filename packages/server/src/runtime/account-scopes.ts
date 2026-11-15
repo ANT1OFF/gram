@@ -57,7 +57,15 @@ export const makeAccountScopes = (
       const machine = hostOf(effectiveCheckout(thread));
       const key = keyOf(thread);
       const fallback = () =>
-        known.has(key) ? known.get(key) : machineAccountScope(machine, `thread:${thread.id}`);
+        known.has(key)
+          ? known.get(key)
+          : machineAccountScope(
+              machine,
+              machine === LOCAL_HOST_ID ? `thread:${thread.id}` : "unknown",
+            );
+      // Only this machine may retain a legacy unscoped key. An unidentified joined
+      // login must never enter the shared local bucket, even when its probe fails.
+      const failedScope = () => (machine === LOCAL_HOST_ID ? known.get(key) : fallback());
       if (thread.model.profileId !== undefined)
         return {
           scope: machine === LOCAL_HOST_ID ? undefined : machineAccountScope(machine, "gateway"),
@@ -70,11 +78,11 @@ export const makeAccountScopes = (
       );
       if (onMachine._tag === "Failure") return { scope: fallback(), confirmed: false };
       const host = yield* onMachine.success.get(thread.model.agent).pipe(Effect.result);
-      if (host._tag === "Failure") return { scope: known.get(key), confirmed: false };
+      if (host._tag === "Failure") return { scope: failedScope(), confirmed: false };
       if (host.success.readAccountScope === undefined)
-        return { scope: known.get(key), confirmed: false };
+        return { scope: failedScope(), confirmed: false };
       const probe = yield* host.success.readAccountScope.pipe(Effect.result);
-      if (probe._tag === "Failure") return { scope: known.get(key), confirmed: false };
+      if (probe._tag === "Failure") return { scope: failedScope(), confirmed: false };
       if (probe.success === undefined) return { scope: fallback(), confirmed: false };
       const scope = scopeFor(machine, probe.success);
       const previous = known.get(key);

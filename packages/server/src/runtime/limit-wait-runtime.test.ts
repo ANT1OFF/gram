@@ -158,7 +158,7 @@ const waitOf = (threadId: ThreadId) =>
 const loginLayer = (
   current: () => string | undefined,
   probe: Effect.Effect<string | undefined, AgentUnavailable> = Effect.sync(current),
-  joined?: HostId,
+  joined?: HostId | ReadonlyArray<HostId>,
 ) =>
   makeRuntimeTestLayer(
     undefined,
@@ -206,13 +206,11 @@ const loginLayer = (
             const base = yield* WorkerHosts;
             return WorkerHosts.fromHosts(
               base.local,
-              [
-                {
-                  ...base.local,
-                  id: joined,
-                  git: { ...base.local.git, present: () => Effect.succeed(true) },
-                },
-              ],
+              (typeof joined === "string" ? [joined] : joined).map((id) => ({
+                ...base.local,
+                id,
+                git: { ...base.local.git, present: () => Effect.succeed(true) },
+              })),
               undefined,
               yield* ThreadStore,
               () => true,
@@ -222,6 +220,52 @@ const loginLayer = (
   );
 
 describe("subscription login isolation", () => {
+  it.effect(
+    "keeps an unidentified failed-probe limit on X from holding Y or the local machine",
+    () => {
+      const x = "joined-x" as HostId;
+      const y = "joined-y" as HostId;
+      const probe = Effect.fail(
+        new AgentUnavailable({
+          agent: "claude",
+          reason: "auth-status-failed",
+          message: "synthetic timeout",
+        }),
+      );
+      return Effect.gen(function* () {
+        yield* TestClock.setTime(NOW);
+        const runtimes = yield* ThreadRuntimes;
+        const first = yield* running(undefined, x);
+        yield* fail(first.thread.id, CLAUDE_LIMIT);
+        const original = yield* waitOf(first.thread.id);
+        const spawn = (machine: HostId | undefined, path: string) =>
+          runtimes.create({
+            id: nextThreadId(),
+            projectRoot: "/work/repo",
+            checkout: { kind: "main", path, ...(machine === undefined ? {} : { hostId: machine }) },
+            input: {
+              text: "brief",
+              origin: { threadId: "orch" as ThreadId, title: "Orchestrator", depth: 1 },
+            },
+          });
+        const sibling = yield* spawn(x, "/joined-x/repo");
+        const other = yield* spawn(y, "/joined-y/repo");
+        const local = yield* spawn(undefined, "/local/repo");
+        yield* settle;
+        expect(yield* waitOf(other.id)).toBeUndefined();
+        expect(yield* waitOf(local.id)).toBeUndefined();
+        yield* waitSent(other.id, 1);
+        yield* waitSent(local.id, 1);
+        expect(original?.account).not.toBe("claude/");
+        expect(yield* waitOf(sibling.id)).toMatchObject({
+          account: original!.account,
+          resetsAt: RESET,
+        });
+        expect(yield* sentTo(sibling.id)).toEqual([]);
+        expect(yield* waitOf(first.thread.id)).toEqual(original);
+      }).pipe(Effect.provide(loginLayer(() => undefined, probe, [x, y])));
+    },
+  );
   it.effect(
     "uses the joined machine's current probe after Forget token instead of holding a cold worker on login A",
     () => {
