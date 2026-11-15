@@ -4,6 +4,7 @@ import {
   HostId,
   sendKeyOf,
   type DraftId,
+  type ModelRef,
   type ProjectId,
   type StartTaskInput,
   type WorkspaceId,
@@ -11,7 +12,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { FolderGit2, GitBranch, TriangleAlert } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 import {
@@ -60,7 +61,6 @@ import {
 } from "@/orchestration/task-model";
 import { TaskTargetPicker } from "@/orchestration/task-target-picker";
 import { useOrchestratorLedger, useWorkspacesQuery } from "@/orchestration/use-orchestration";
-import { ADMITTED_AGENTS } from "@/orchestration/admitted";
 import { useServerSettings } from "@/settings-sync/store";
 import { EXPLAIN } from "@/lib/explain";
 import { cn } from "@/lib/utils";
@@ -76,7 +76,7 @@ import { readCameFrom, type CameFrom } from "@/shell/came-from";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
-import { AgentFields, choiceModel, type AgentChoice } from "./agent-fields";
+import type { AgentChoice } from "./agent-fields";
 import { AttachmentChips } from "./attachment-chips";
 import { choiceFromModel } from "./default-choice";
 import {
@@ -110,6 +110,17 @@ const checkingAgent = (model: { agent: string } | undefined): string =>
  * workspace gets one on send, at the autonomy picked above the goal. A single agent chat, the
  * one-off thread, is the other draft behind the same header.
  */
+const TaskOrchestratorFields = lazy(() => import("./task-orchestrator-fields"));
+
+/** The `ModelRef` an orchestrator pick starts on, as `choiceModel` makes it. */
+const orchestratorRef = (choice: AgentChoice): ModelRef => ({
+  agent: choice.agent,
+  model: choice.model,
+  ...(choice.profileId === undefined ? {} : { profileId: choice.profileId }),
+  ...(choice.variant === undefined ? {} : { variant: choice.variant }),
+  ...(choice.speed === undefined ? {} : { speed: choice.speed }),
+});
+
 export function NewTaskDraft({
   initialWay,
   initialWorkspace,
@@ -200,7 +211,7 @@ export function NewTaskDraft({
     pickedOrchestrator !== undefined &&
     pickedOrchestrator.target === taskTargetKey(target) &&
     pickedOrchestrator.choice.model !== ""
-      ? choiceModel(pickedOrchestrator.choice)
+      ? orchestratorRef(pickedOrchestrator.choice)
       : undefined;
   const taskOptions:
     | Pick<StartTaskInput, "target" | "direct" | "autonomy" | "orchestrator">
@@ -652,15 +663,15 @@ export function NewTaskDraft({
                         <span aria-hidden className="pl-1.5 text-meta text-muted-foreground">
                           Orchestrator
                         </span>
-                        <AgentFields
-                          ghost
-                          value={shownOrchestrator}
-                          allowed={ADMITTED_AGENTS}
-                          onChange={(choice) => {
-                            if (target !== undefined)
-                              setPickedOrchestrator({ target: taskTargetKey(target), choice });
-                          }}
-                        />
+                        <Suspense fallback={null}>
+                          <TaskOrchestratorFields
+                            value={shownOrchestrator}
+                            onChange={(choice) => {
+                              if (target !== undefined)
+                                setPickedOrchestrator({ target: taskTargetKey(target), choice });
+                            }}
+                          />
+                        </Suspense>
                       </div>
                     )}
                     {shownWorker !== undefined && (

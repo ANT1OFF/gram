@@ -109,7 +109,7 @@ describe("new-task authoritative preflight", () => {
     const fields = screen.getByTestId("task-orchestrator-fields");
     expect(fields.textContent).toContain("Orchestrator");
     const user = userEvent.setup();
-    await user.click(within(fields).getByLabelText("Agent"));
+    await user.click(await within(fields).findByLabelText("Agent"));
     await user.click(await screen.findByRole("option", { name: "Codex" }));
     await screen.findByText("Orchestrator: Codex · Synthetic");
     expect(preview).toHaveBeenLastCalledWith(
