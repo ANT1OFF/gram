@@ -652,15 +652,16 @@ your own CLI home.
 A machine with no ChatGPT login whose Codex runs on its own provider (an embedding
 platform's gateway) gets the same gated home with that provider in ChatGPT's place:
 its config's `model_provider` names a provider the same file defines with
-`requires_openai_auth = false`. Its credentials are only referenced: by the variables
-it names (`env_key`, `env_http_headers`), which alone pass the gated home's key scrub,
-or by an auth command and arguments that are absolute paths. A provider table with an
-inline token (`experimental_bearer_token`), literal `http_headers` or `query_params`, a
-base URL with credentials or a query, or any other key is not kept, so the gated
-thread doesn't start. The home links no `auth.json`. It removes only Gram's own link to
-the user's `auth.json` path; any other file there refuses the start and is left alone.
-The approval policy, exec-policy backstop and prompt rules are the same. With an
-`auth.json` present, the ChatGPT home is used as before.
+`requires_openai_auth = false`. Gram writes that provider afresh from a fixed list of
+keys: its name, base URL (no credentials or query in it), wire API, retry and timeout
+settings, and the names of the variables its credentials are in (`env_key`,
+`env_http_headers`, each `^[A-Z_][A-Z0-9_]*$`). Nothing else from the table is read or
+written: no inline token, literal headers or query parameters, and no auth command. A
+value it won't write keeps the provider from being used. Only the named variables pass
+the gated home's key scrub. The home holds no `auth.json`: Gram never links or removes
+one there, and anything at that path refuses the start and is left as it is. The
+approval policy, exec-policy backstop and prompt rules are the same. With an
+`auth.json` in the user's home, the ChatGPT home is used as before.
 
 Before a gated thread starts, resumes or forks, Gram installs prompt rules in its
 owned home. These outrank existing allow rules, including repo `.codex/rules`.
