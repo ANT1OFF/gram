@@ -1,0 +1,41 @@
+{
+  "title": "Two-line worker rows",
+  "slug": "worker-two-line",
+  "status": "draft",
+  "template": "options",
+  "current": 1,
+  "approved": null,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-15"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A Facts line",
+      "board": "a-facts-line",
+      "shots": {
+        "dark": "shots/a-facts-line-dark.png",
+        "light": "shots/a-facts-line-light.png"
+      }
+    },
+    {
+      "name": "B Chips on an arc",
+      "board": "b-chips-on-an-arc",
+      "shots": {
+        "dark": "shots/b-chips-on-an-arc-dark.png",
+        "light": "shots/b-chips-on-an-arc-light.png"
+      }
+    },
+    {
+      "name": "C Tall dot",
+      "board": "c-tall-dot",
+      "shots": {
+        "dark": "shots/c-tall-dot-dark.png",
+        "light": "shots/c-tall-dot-light.png"
+      }
+    }
+  ]
+}
