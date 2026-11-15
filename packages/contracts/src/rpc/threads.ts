@@ -66,6 +66,13 @@ export const ThreadRpcs = RpcGroup.make(
       codexHome: Schema.optionalKey(CodexHome),
       /** Adopts the attachments staged for this `/new` draft before the first input is sent. */
       draftId: Schema.optionalKey(DraftId),
+      /**
+       * Other repositories on this machine the thread also works in, by their folders. With a new
+       * worktree, each gets a worktree of its own on the same branch, made from its checked-out
+       * branch and removed with the thread's; otherwise each folder is given as it is. Refused
+       * for a thread placed on another machine. Its agent is given them all before its first turn.
+       */
+      alsoIn: Schema.optionalKey(Schema.Array(Schema.String)),
     },
     success: Thread,
     error: errors(NotFound, AgentUnavailable, GitError, InvalidState, CheckoutInUse),

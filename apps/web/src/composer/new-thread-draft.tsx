@@ -396,17 +396,16 @@ function ConfiguredNewThreadDraft() {
     setStage("creating");
     setError(undefined);
     try {
-      // With repositories it also uses, its folders are given before its first turn: the turn
-      // then starts knowing them. Attachments staged for the draft go with the create itself.
+      // With repositories it also uses, each gets a worktree on its branch (or its folder as it
+      // is), given before its first turn. Attachments staged for the draft go with the create.
       const extra = onMachine ? [] : also;
-      const firstAfter = extra.length > 0 && attachments.ready.length === 0 && prompt.trim() !== "";
       const thread = await api.createThread({
         // A folder on another machine: the server files it under that machine, never this disk.
         projectRoot: onMachine ? (checkedOnMachine?.path ?? "") : projectRoot,
         checkout: checkoutRequest(),
         model: choiceModel(choice),
         mode,
-        ...(!firstAfter && (prompt.trim() || attachments.ready.length > 0)
+        ...(prompt.trim() || attachments.ready.length > 0
           ? {
               input: {
                 text: prompt.trim(),
@@ -415,9 +414,8 @@ function ConfiguredNewThreadDraft() {
             }
           : {}),
         ...(attachments.ready.length > 0 ? { draftId } : {}),
+        ...(extra.length > 0 ? { alsoIn: extra } : {}),
       });
-      for (const root of extra) await api.addDirectory(thread.id, root);
-      if (firstAfter) await api.send(thread.id, { text: prompt.trim() });
       prefillDraftProject(undefined);
       // The prompt box moves down into the new thread's composer.
       const box = slabRef.current?.getBoundingClientRect();

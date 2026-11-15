@@ -15,6 +15,7 @@ import {
   waitTitleOf,
   waitsFor,
   type Thread,
+  type Checkout,
   type CheckoutRequest,
   type TaskChipData,
   type UserInput,
@@ -257,7 +258,18 @@ export const threadHandlers = Effect.gen(function* () {
 
   return {
     "thread.create": (
-      { projectRoot, checkout, model, mode, title, input, resumeSessionId, codexHome, draftId },
+      {
+        projectRoot,
+        checkout,
+        model,
+        mode,
+        title,
+        input,
+        resumeSessionId,
+        codexHome,
+        draftId,
+        alsoIn,
+      },
       /** The call's transport, which the RPC server always gives; absent in-process. */
       call?: { readonly headers?: Readonly<Record<string, string | undefined>> },
     ) =>
@@ -286,7 +298,47 @@ export const threadHandlers = Effect.gen(function* () {
           checkout.kind === "existingWorktree"
             ? { ...checkout, path: yield* resolveFolder(checkout.path) }
             : checkout;
+        const others = alsoIn ?? [];
+        if (others.length > 0 && checkoutRequestHost(request) !== undefined) {
+          return yield* new InvalidState({
+            message: "Other repositories are used only by a thread on this machine.",
+          });
+        }
+        // Checked before anything is made, so a typo makes nothing.
+        const otherRoots: Array<string> = [];
+        for (const other of others) {
+          const folder = yield* resolveFolder(other);
+          if (folder !== root && !otherRoots.includes(folder)) otherRoots.push(folder);
+        }
         const resolved = yield* prepareCheckout(request, root);
+        if (others.length > 0 && !isLocalHost(resolved)) {
+          yield* checkouts.discard(resolved);
+          return yield* new InvalidState({
+            message: "Other repositories are used only by a thread on this machine.",
+          });
+        }
+        // With a worktree of its own, the thread gets one in each other repository too, on its
+        // branch; working in a folder as it is, it gets the others' folders as they are.
+        const extraCheckouts: Array<Checkout> = [];
+        if (resolved.kind === "worktree" && resolved.branch !== undefined) {
+          for (const other of otherRoots) {
+            const made = yield* prepareCheckout(
+              { kind: "newWorktree", branch: resolved.branch },
+              other,
+            ).pipe(
+              Effect.onError(() =>
+                Effect.forEach([resolved, ...extraCheckouts], checkouts.discard, {
+                  discard: true,
+                }),
+              ),
+            );
+            extraCheckouts.push(made);
+          }
+        }
+        const additionalDirectories =
+          resolved.kind === "worktree" && resolved.branch !== undefined
+            ? extraCheckouts.map((extra) => extra.path)
+            : otherRoots;
         // Chosen here so the draft's staged attachments move into the thread before the first send.
         const id = Schema.decodeSync(ThreadId)(randomUUID());
         const create = (firstInput: UserInput | undefined) =>
@@ -294,6 +346,8 @@ export const threadHandlers = Effect.gen(function* () {
             id,
             projectRoot: root,
             checkout: resolved,
+            ...(extraCheckouts.length === 0 ? {} : { extraCheckouts }),
+            ...(additionalDirectories.length === 0 ? {} : { additionalDirectories }),
             // With none picked, `create` takes the saved default, resolving one that follows a tier.
             ...(model === undefined ? {} : { model }),
             ...(mode === undefined ? {} : { mode }),
