@@ -18,6 +18,32 @@
 * **web:** a raised card's shadow keeps its rounded corners in the transcript ([#642](https://github.com/ANT1OFF/gram/issues/642)) ([52fddd3](https://github.com/ANT1OFF/gram/commit/52fddd336777cc83efce6fc0b8717cfd5f37504d))
 * **web:** leave failing checks to their worker, and orphans to the orchestrator ([#628](https://github.com/ANT1OFF/gram/issues/628)) ([2632f41](https://github.com/ANT1OFF/gram/commit/2632f41441433e899d1d26458be2bc7f8065fa1d))
 
+### From the embedding branch ([#649](https://github.com/ANT1OFF/gram/issues/649))
+
+These came to `main` in one squashed merge, so they are listed by hand. Several are for apps that mount Gram's web app or for hosted deployments.
+
+#### Features
+
+* colour scripts embedded in shell commands in their own language ([#621](https://github.com/ANT1OFF/gram/issues/621))
+* the embedding app can list the models it serves an agent that cannot list its own ([#622](https://github.com/ANT1OFF/gram/issues/622))
+* an embedding app's own Settings, and no orchestrator menu on its pages ([#626](https://github.com/ANT1OFF/gram/issues/626))
+* OpenRouter as a gateway kind ([#633](https://github.com/ANT1OFF/gram/issues/633))
+* add OpenRouter in Settings by signing in or pasting a key ([#635](https://github.com/ANT1OFF/gram/issues/635))
+* know OpenCode as a third agent kind ([#639](https://github.com/ANT1OFF/gram/issues/639))
+* an OpenCode adapter on opencode serve ([#640](https://github.com/ANT1OFF/gram/issues/640))
+* archive the Claude session with the thread, warn on a hook with no verdict, count hook heartbeats as progress ([#641](https://github.com/ANT1OFF/gram/issues/641))
+* useShellLocation's navigate can replace the history entry ([#644](https://github.com/ANT1OFF/gram/issues/644))
+* run threads on OpenCode ([#647](https://github.com/ANT1OFF/gram/issues/647))
+* a host provider may offer choices before a person's machine starts ([#648](https://github.com/ANT1OFF/gram/issues/648))
+
+#### Bug Fixes
+
+* a worker question's ask is answered once, and credited to who answered it ([#613](https://github.com/ANT1OFF/gram/issues/613))
+* a provider's refusal reads as the wait's line, not as a reply ([#624](https://github.com/ANT1OFF/gram/issues/624))
+* hold up under a first-in-first-out thread lock ([#636](https://github.com/ANT1OFF/gram/issues/636))
+* stepping out of Settings no longer bounces back to its first page ([#638](https://github.com/ANT1OFF/gram/issues/638))
+* links open in a new tab when the server is hosted ([#645](https://github.com/ANT1OFF/gram/issues/645))
+
 ## [1.25.0](https://github.com/ANT1OFF/gram/compare/v1.24.0...v1.25.0) (2026-11-14)
 
 

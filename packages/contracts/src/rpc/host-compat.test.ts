@@ -38,6 +38,8 @@ const ROOT_PACKAGE = join(import.meta.dirname, "../../../../package.json");
 type Accepted = WireBreak & { readonly because: string };
 
 const OPENCODE = 'it now also takes "opencode"';
+/** The first release that speaks OpenCode: its protocol already takes it, so nothing breaks. */
+const FIRST_WITH_OPENCODE = "1.26.0";
 const OPENED_ELSEWHERE =
   "A host sends it only for an OpenCode session, and a control plane of that release never opens one.";
 const GATED =
@@ -79,7 +81,9 @@ const OPENCODE_BREAKS: ReadonlyArray<
 const ACCEPTED = (released: Released): ReadonlyArray<Accepted> =>
   OPENCODE_BREAKS.filter(
     ([call, , , since]) =>
-      call in released.calls && (since === undefined || byRelease(released.release, since) >= 0),
+      call in released.calls &&
+      (since === undefined || byRelease(released.release, since) >= 0) &&
+      byRelease(released.release, FIRST_WITH_OPENCODE) < 0,
   ).map(([call, at, because]) => ({
     at: `${call} ${at}`,
     what: OPENCODE,
