@@ -23,7 +23,7 @@ import {
   removeOutwardRules,
   syncCodexInstructions,
 } from "./gateway/codex-home.ts";
-import { prepareOwnedCodexHome } from "./gateway/codex-owned-home.ts";
+import { ownedCodexProvider, prepareOwnedCodexHome } from "./gateway/codex-owned-home.ts";
 import { GatewayCredentials } from "./gateway/credentials.ts";
 import { GitPlatformLive } from "./git/platform.ts";
 import { GitTurnHooksLive } from "./git/turn-hooks.ts";
@@ -85,6 +85,7 @@ const CodexAgent = Layer.unwrap(
           history: (userEnv) => prepareOwnedCodexHome(config.dataDir, homedir(), userEnv, false),
           refresh: (userEnv) =>
             Effect.asVoid(prepareOwnedCodexHome(config.dataDir, homedir(), userEnv)),
+          provider: (userEnv) => ownedCodexProvider(homedir(), userEnv),
           rules: {
             install: (level) => installOutwardRules(config.dataDir, level, "owned"),
             remove: removeOutwardRules(config.dataDir, "owned"),

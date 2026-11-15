@@ -649,6 +649,20 @@ threads use the ChatGPT provider, file auth and Gram's approval policy. Gateway
 profiles keep their separate home and credentials. Plain native chats keep using
 your own CLI home.
 
+A machine with no ChatGPT login whose Codex runs on its own provider (an embedding
+platform's gateway) gets the same gated home with that provider in ChatGPT's place:
+its config's `model_provider` names a provider the same file defines with
+`requires_openai_auth = false`. Gram writes that provider afresh from a fixed list of
+keys: its name, base URL (no credentials or query in it), wire API, retry and timeout
+settings, and the names of the variables its credentials are in (`env_key`,
+`env_http_headers`, each `^[A-Z_][A-Z0-9_]*$`). Nothing else from the table is read or
+written: no inline token, literal headers or query parameters, and no auth command. A
+value it won't write keeps the provider from being used. Only the named variables pass
+the gated home's key scrub. The home holds no `auth.json`: Gram never links or removes
+one there, and anything at that path refuses the start and is left as it is. The
+approval policy, exec-policy backstop and prompt rules are the same. With an
+`auth.json` in the user's home, the ChatGPT home is used as before.
+
 Before a gated thread starts, resumes or forks, Gram installs prompt rules in its
 owned home. These outrank existing allow rules, including repo `.codex/rules`.
 Gram's command matcher then raises a once-only card for the outward commands the

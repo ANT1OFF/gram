@@ -86,6 +86,11 @@ export interface CodexServer {
   ) => Effect.Effect<A, E | AgentUnavailable, R | Scope.Scope>;
   /** A gateway profile's provider is injected; otherwise the user's own configuration and login. */
   readonly gateway: boolean;
+  /**
+   * On the owned home: the machine's own provider it runs on in place of ChatGPT's
+   * (`ownedHome.provider`). Undefined on every other home, and on a ChatGPT one.
+   */
+  readonly ownProvider?: string;
   /** Non-fatal problems to surface once per session (version skew, probe fallback). */
   readonly warnings: ReadonlyArray<string>;
   /**
@@ -215,6 +220,18 @@ export interface CodexServersConfig {
     readonly history?: (userEnv: Readonly<Record<string, string>>) => Effect.Effect<string>;
     readonly refresh?: (userEnv: Readonly<Record<string, string>>) => Effect.Effect<void>;
     readonly rules: NonNullable<CodexServersConfig["gateRules"]>;
+    /**
+     * The provider the machine's own Codex runs on in place of a ChatGPT login, which this home
+     * keeps (an embedder routing Codex through its own gateway). Undefined, or absent: ChatGPT's.
+     */
+    readonly provider?: (userEnv: Readonly<Record<string, string>>) => Effect.Effect<
+      | {
+          readonly name: string;
+          /** The variables it reads its credentials from: they alone survive the key scrub. */
+          readonly env: ReadonlyArray<string>;
+        }
+      | undefined
+    >;
   };
   /**
    * Gram's own `CODEX_HOME` for gateway profiles, prepared before each such app-server starts,
@@ -644,17 +661,26 @@ export const CodexServersLive = (
               : undefined;
           if (home === "owned" && serverHome === undefined)
             return yield* unavailable("Gram's native Codex home could not be prepared.");
+          const own =
+            home === "owned" && helperCwd === undefined && config.ownedHome?.provider !== undefined
+              ? yield* config.ownedHome.provider(userEnv)
+              : undefined;
+          const ownProvider = own?.name;
           const env: Record<string, string> = {
             ...serverEnv(prepared.env, credentials),
             ...config.extraEnv,
             ...(serverHome === undefined ? {} : { CODEX_HOME: serverHome }),
           };
           if (helperCwd !== undefined || home === "owned") {
+            // A machine's own provider keeps exactly the variables it names for its credentials;
+            // every other key goes, as on the ChatGPT home.
+            const kept = new Set(own?.env ?? []);
             for (const name of Object.keys(env))
               if (
                 /^(OPENAI_API_KEY|OPENAI_BASE_URL|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL|LLM_API_KEY)$/i.test(
                   name,
-                )
+                ) &&
+                !kept.has(name)
               )
                 delete env[name];
           }
@@ -675,7 +701,7 @@ export const CodexServersLive = (
             prepared.binaryPath,
             helperCwd !== undefined
               ? helperAppServerArgs()
-              : appServerArgs(credentials?.profile, catalog, home === "owned"),
+              : appServerArgs(credentials?.profile, catalog, home === "owned", ownProvider),
             env,
             { stdin: "pipe", ...(helperCwd === undefined ? {} : { cwd: helperCwd }) },
           );
@@ -860,6 +886,7 @@ export const CodexServersLive = (
             cliVersion: prepared.cliVersion,
             openThread: ownedThreads.open,
             gateway: credentials !== undefined,
+            ...(ownProvider === undefined ? {} : { ownProvider }),
             warnings:
               skillsWarning === undefined
                 ? prepared.warnings

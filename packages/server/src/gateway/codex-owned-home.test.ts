@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  existsSync,
   lstatSync,
   linkSync,
   mkdirSync,
@@ -23,7 +24,7 @@ import {
   outwardPromptRules,
   removeOutwardRules,
 } from "./codex-home.ts";
-import { prepareOwnedCodexHome } from "./codex-owned-home.ts";
+import { ownCodexProvider, ownedCodexProvider, prepareOwnedCodexHome } from "./codex-owned-home.ts";
 
 const fixture = Effect.gen(function* () {
   const root = mkdtempSync(join(tmpdir(), "gram-native-home-"));
@@ -39,6 +40,10 @@ const fixture = Effect.gen(function* () {
   );
   return { root, user, data: join(root, "data"), env: { CODEX_HOME: user } };
 });
+
+/** A configuration naming `embedder`, defined with `extra` lines. */
+const table = (extra: string) =>
+  `model_provider = "embedder"\n[model_providers.embedder]\nbase_url = "http://g.invalid"\n${extra}`;
 
 describe("Gram-owned native Codex home", () => {
   it.effect(
@@ -241,4 +246,216 @@ bundled = false
         expect(readFileSync(join(user, "config.toml"), "utf8")).toBe('model = "gpt-6"');
       }).pipe(Effect.scoped),
   );
+  /** An embedder's Codex configuration: its own gateway provider, authenticated by a command. */
+  const embedderConfig = `model = "gpt-6-luna"
+model_provider = "embedder"
+[model_providers.embedder]
+name = "Embedder gateway"
+base_url = "http://gateway.invalid/v1"
+wire_api = "responses"
+requires_openai_auth = false
+env_key = "EMBEDDER_KEY"
+env_http_headers = { "x-org" = "EMBEDDER_ORG" }
+[model_providers.other]
+base_url = "https://other.invalid"
+requires_openai_auth = false
+[mcp_servers.gram]
+command = "shadow"
+[mcp_servers.docs]
+command = "docs"
+`;
+
+  it.effect(
+    "keeps a machine's own provider with no login: no auth.json, the same exec-policy backstop",
+    () =>
+      Effect.gen(function* () {
+        const { root, user, data, env } = yield* fixture;
+        rmSync(join(user, "auth.json"));
+        writeFileSync(join(user, "config.toml"), embedderConfig);
+        expect(yield* ownedCodexProvider(root, env)).toEqual({
+          name: "embedder",
+          env: ["EMBEDDER_KEY", "EMBEDDER_ORG"],
+        });
+        const target = yield* prepareOwnedCodexHome(data, root, env);
+        expect(existsSync(join(target, "auth.json"))).toBe(false);
+        const config = parse(readFileSync(join(target, "config.toml"), "utf8"));
+        expect(config).toEqual({
+          model: "gpt-6-luna",
+          model_provider: "embedder",
+          // That one provider, as configured, and no other.
+          model_providers: {
+            embedder: {
+              name: "Embedder gateway",
+              base_url: "http://gateway.invalid/v1",
+              wire_api: "responses",
+              requires_openai_auth: false,
+              env_key: "EMBEDDER_KEY",
+              env_http_headers: { "x-org": "EMBEDDER_ORG" },
+            },
+          },
+          mcp_servers: { docs: { command: "docs" } },
+          features: {
+            exec_policy: true,
+            shell_snapshot: false,
+            hooks: false,
+            plugins: false,
+            apps: false,
+          },
+        });
+        // The user's rules stay out, and the outward rules install and come off as before.
+        expect(existsSync(join(target, "rules", "allow.rules"))).toBe(false);
+        expect(() => lstatSync(join(target, "auth.json"))).toThrow();
+        expect(lstatSync(join(target, "config.toml")).isFile()).toBe(true);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps a ChatGPT install exactly as before, whatever provider it configures", () =>
+    Effect.gen(function* () {
+      const { root, user, data, env } = yield* fixture;
+      // The fixture's home has a login: its gated home is ChatGPT's, linked by path.
+      writeFileSync(join(user, "config.toml"), embedderConfig);
+      expect(yield* ownedCodexProvider(root, env)).toBeUndefined();
+      const target = yield* prepareOwnedCodexHome(data, root, env);
+      expect(readlinkSync(join(target, "auth.json"))).toBe(join(user, "auth.json"));
+      const config = parse(readFileSync(join(target, "config.toml"), "utf8"));
+      expect(config).toMatchObject({
+        model_provider: "openai",
+        forced_login_method: "chatgpt",
+        openai_base_url: "https://chatgpt.com/backend-api/codex",
+      });
+      expect(config["model_providers"]).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("names no own provider unless one is defined and says it needs no OpenAI auth", () =>
+    Effect.gen(function* () {
+      const { root, user, data, env } = yield* fixture;
+      rmSync(join(user, "auth.json"));
+      for (const config of [
+        "",
+        'model_provider = "openai"\n[model_providers.openai]\nrequires_openai_auth = false',
+        'model_provider = "ollama"',
+        table(""),
+        table("requires_openai_auth = true"),
+        table('requires_openai_auth = "false"'),
+      ]) {
+        writeFileSync(join(user, "config.toml"), config);
+        expect(yield* ownedCodexProvider(root, env), config).toBeUndefined();
+        expect(ownCodexProvider(parse(config)), config).toBeUndefined();
+        // Without a provider of its own or a login, the gated home still refuses to start.
+        expect(Exit.isFailure(yield* Effect.exit(prepareOwnedCodexHome(data, root, env)))).toBe(
+          true,
+        );
+      }
+      // A configuration that can't be read is no provider of its own.
+      writeFileSync(join(user, "config.toml"), "model_provider = [");
+      expect(yield* ownedCodexProvider(root, env)).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+  it.effect("removes nothing at the login path: anything there refuses and stays as it was", () =>
+    Effect.gen(function* () {
+      const { root, user, data, env } = yield* fixture;
+      rmSync(join(user, "auth.json"));
+      writeFileSync(join(user, "config.toml"), embedderConfig);
+      const target = yield* prepareOwnedCodexHome(data, root, env);
+      const link = join(target, "auth.json");
+      const refused = () =>
+        Effect.map(Effect.exit(prepareOwnedCodexHome(data, root, env)), Exit.isFailure);
+      // Gram's own link from when the machine had a login: kept, not removed.
+      symlinkSync(join(user, "auth.json"), link);
+      expect(yield* refused()).toBe(true);
+      expect(readlinkSync(link)).toBe(join(user, "auth.json"));
+      // A regular file in its place, as a refresh replacing the link would leave (the reviewed
+      // race swapped one in between the check and a removal: there is no removal now).
+      rmSync(link);
+      writeFileSync(link, "invented regular login");
+      expect(yield* refused()).toBe(true);
+      expect(readFileSync(link, "utf8")).toBe("invented regular login");
+      // A link anywhere else.
+      rmSync(link);
+      writeFileSync(join(root, "elsewhere.json"), "invented");
+      symlinkSync(join(root, "elsewhere.json"), link);
+      expect(yield* refused()).toBe(true);
+      expect(readlinkSync(link)).toBe(join(root, "elsewhere.json"));
+      expect(readFileSync(join(root, "elsewhere.json"), "utf8")).toBe("invented");
+      // With the path clear it prepares again.
+      rmSync(link);
+      expect(yield* refused()).toBe(false);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("writes only what the schema allows: no credential, however it is spelled", () =>
+    Effect.gen(function* () {
+      const { root, user, data, env } = yield* fixture;
+      rmSync(join(user, "auth.json"));
+      const marker = "invented-review-marker";
+      const written = join(data, "codex-owned-home", "config.toml");
+      for (const extra of [
+        `experimental_bearer_token = "${marker}"`,
+        `http_headers = { Authorization = "Bearer ${marker}" }`,
+        `query_params = { "api-key" = "${marker}" }`,
+        `unknown_future_key = "${marker}"`,
+        // Names an inherited property: never read, nor what is nested in it.
+        `toString = { http_headers = { Authorization = "Bearer ${marker}" } }`,
+        `constructor = "${marker}"`,
+        `hasOwnProperty = { token = "${marker}" }`,
+        // A command and its arguments are never a reference, whatever they look like.
+        `[model_providers.embedder.auth]\ncommand = "/bin/echo"\nargs = ["/${marker}"]`,
+        `[model_providers.embedder.auth]\ncommand = "/bin/cat"\nargs = ["/run/${marker}"]`,
+      ]) {
+        const config = table(`requires_openai_auth = false\n${extra}`);
+        writeFileSync(join(user, "config.toml"), config);
+        const kept = ownCodexProvider(parse(config));
+        expect(kept?.table, extra).toEqual({
+          base_url: "http://g.invalid",
+          requires_openai_auth: false,
+        });
+        expect(JSON.stringify(kept), extra).not.toContain(marker);
+        expect(yield* ownedCodexProvider(root, env), extra).toEqual({ name: "embedder", env: [] });
+        yield* prepareOwnedCodexHome(data, root, env);
+        expect(readFileSync(written, "utf8"), extra).not.toContain(marker);
+      }
+    }).pipe(Effect.scoped),
+  );
+
+  it("keeps no provider with a value it won't write, or one named by an inherited key", () => {
+    const marker = "invented-review-marker";
+    for (const extra of [
+      `env_key = "${marker}"`,
+      `env_key = "lowercase_name"`,
+      `env_http_headers = { "x-key" = "not a variable ${marker}" }`,
+      `env_http_headers = { "x key" = "HEADER_VAR" }`,
+      `wire_api = "${marker}"`,
+      `request_max_retries = -1`,
+    ])
+      expect(
+        ownCodexProvider(parse(table(`requires_openai_auth = false\n${extra}`))),
+        extra,
+      ).toBeUndefined();
+    for (const url of [`https://u:${marker}@g.invalid/v1`, `https://g.invalid/v1?key=${marker}`])
+      expect(
+        ownCodexProvider(
+          parse(
+            `model_provider = "embedder"\n[model_providers.embedder]\nbase_url = "${url}"\nrequires_openai_auth = false`,
+          ),
+        ),
+      ).toBeUndefined();
+    // A provider named after an inherited property is no provider of the file's.
+    for (const name of ["toString", "constructor", "__proto__"])
+      expect(
+        ownCodexProvider(
+          parse(
+            `model_provider = "${name}"\n[model_providers.other]\nrequires_openai_auth = false`,
+          ),
+        ),
+        name,
+      ).toBeUndefined();
+    // `requires_openai_auth` inherited, not its own, says nothing.
+    expect(
+      ownCodexProvider({
+        model_provider: "embedder",
+        model_providers: { embedder: Object.create({ requires_openai_auth: false }) },
+      }),
+    ).toBeUndefined();
+  });
 });
