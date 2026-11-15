@@ -66,7 +66,9 @@ for (const mode of ["light", "dark"] as const) {
       // bar beside both, one height at every width, taller than the density's one-line row
       // (`--space-row`). The briefed worker says so on its own second line, the same height.
       const rowHeight = await rowStep(page);
-      const twoLineHeight = await working.evaluate((element) => element.offsetHeight);
+      const twoLineHeight = await working.evaluate(
+        (element) => (element as HTMLElement).offsetHeight,
+      );
       expect(twoLineHeight).toBeGreaterThan(rowHeight);
       twoLines ??= twoLineHeight;
       expect(twoLineHeight).toBe(twoLines);
@@ -145,9 +147,9 @@ for (const mode of ["light", "dark"] as const) {
     await expect(
       working.locator('[data-testid="overview-worker-now"], [data-testid="overview-worker-state"]'),
     ).toHaveText(/.+/);
-    expect(await working.evaluate((element) => element.offsetHeight)).toBeGreaterThan(
-      await rowStep(page),
-    );
+    expect(
+      await working.evaluate((element) => (element as HTMLElement).offsetHeight),
+    ).toBeGreaterThan(await rowStep(page));
     expect(errors).toEqual([]);
     await test.info().attach("pane-geometry", {
       body: JSON.stringify(samples, null, 2),
