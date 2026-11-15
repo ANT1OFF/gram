@@ -32,7 +32,6 @@ import { usePhone } from "@/lib/use-phone";
 import { useStable } from "@/lib/use-stable";
 import { cn } from "@/lib/utils";
 import { AttentionPulse, Swap, TurnCompleteSheen } from "@/motion";
-import { BriefingPlaceholder } from "@/orchestration/briefing";
 import { orchestratorRowTitle } from "@/orchestration/tree-model";
 import { FinishedWorkerView } from "@/orchestration/finished-worker-view";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
@@ -768,8 +767,6 @@ export function ThreadView({
             </OrchestratorStreamProvider>
             {awaiting && shown.length > 0 && <AwaitingMachine thread={thread} />}
             <div className="w-full thread-column shrink-0 px-6">
-              {/* A worker opens on its catch-up instead, whose words send nothing to it. */}
-              {thread.role === "orchestrator" && <BriefingPlaceholder thread={thread} />}
               {thread.spawnedBy === undefined && !conversationOnly && (
                 <RecapCard threadId={threadId} focused={focused} />
               )}
