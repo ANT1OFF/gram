@@ -1033,8 +1033,9 @@ present and warns when they cannot be read for reasons other than absence.
 ## Workspace shared folder
 
 Each workspace has a shared folder: plain files that every thread in the workspace reads and
-writes, kept when threads end and machines stop. Workspace memory is the orchestrator's curated
-notes, and workers only read it. The shared folder has no curator, and the last write wins. Solo
+writes, kept when threads end and machines stop. Workspace memory is short notes the orchestrator
+curates and its workers also write, each write checked against the revision it read. The shared
+folder has no curator and no revisions: the last write wins. Solo
 threads, which have no workspace, and memory updates get no shared folder.
 
 - **Where it lives.** Gram keeps the folder with its own data, at `<data>/shared/<workspace>/`. A
