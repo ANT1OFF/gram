@@ -9,7 +9,6 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import * as Context from "effect/Context";
-import * as Deferred from "effect/Deferred";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -26,6 +25,7 @@ import { ThreadWaits } from "../waits/service.ts";
 import {
   defineAppTool,
   failed,
+  type AppToolCall,
   type AppToolDefinition,
   type AskedDespiteAutonomy,
 } from "./definition.ts";
@@ -141,69 +141,41 @@ export const REVIEW_BOT_THREAD_TOOLS: ReadonlySet<string> = new Set([
   "pr_resolve_thread",
 ]);
 
-/** What the gate made of one call, for `run`. */
-interface Approved {
-  /** A card was raised and approved (`true`), none was needed (`false`), or there is no gate. */
-  readonly carded: boolean | undefined;
-  /** Why full autonomy didn't cover the call, when it would have but for the call itself. */
-  readonly why: AskedDespiteAutonomy | undefined;
-  /** The thread whose card this call joined (`SharedCard.key`): the call then does nothing. */
-  readonly askedIn: ThreadId | undefined;
-  /** How the user answered another card of this call's `family`, which settled this one. */
-  readonly settledBy: SettledBy | undefined;
-}
+/** What came of one call through the gate, for `run`. */
+type Approved =
+  /** The tool ran (`handle`), with or without a card. */
+  | {
+      readonly kind: "acted";
+      readonly result: unknown;
+      /** Why full autonomy didn't cover the call, when it would have but for the call itself. */
+      readonly why: AskedDespiteAutonomy | undefined;
+    }
+  /** It joined the same caller's waiting card (`SharedCard.key`) and did nothing. */
+  | { readonly kind: "joined"; readonly askedIn: ThreadId };
 
-/** The user's answer on another card of the same family, which took this call's card down. */
-interface SettledBy {
-  readonly threadId: ThreadId;
-  readonly decision: "approved" | "declined";
-}
-
-/** A card some call is waiting on, under a definition's `sharedCard` key. */
+/** A card some call is waiting on, or is acting on, under a definition's `sharedCard` key. */
 interface PendingCard {
   readonly threadId: ThreadId;
-  readonly family: string | undefined;
-  /** Completed when the user answers another card of the family first. */
-  readonly settled: Deferred.Deferred<SettledBy>;
-}
-
-interface PendingCards {
-  readonly byKey: Map<string, PendingCard>;
-  readonly byFamily: Map<string, Set<PendingCard>>;
 }
 
 /**
  * The cards waiting under a `sharedCard` key, per gate: one gate asks for every thread of a server,
  * so a key is one decision across all of them.
  */
-const pendingCards = new WeakMap<ApprovalGate, PendingCards>();
-const pendingCardsOf = (gate: ApprovalGate): PendingCards => {
+const pendingCards = new WeakMap<ApprovalGate, Map<string, PendingCard>>();
+const pendingCardsOf = (gate: ApprovalGate): Map<string, PendingCard> => {
   const known = pendingCards.get(gate);
   if (known !== undefined) return known;
-  const made: PendingCards = { byKey: new Map(), byFamily: new Map() };
+  const made = new Map<string, PendingCard>();
   pendingCards.set(gate, made);
   return made;
 };
 
-/** The user turned the card down, as against a runtime that withdrew it. */
-const userDeclined = (error: AppToolError): boolean =>
-  error.approvalResolution?.origin === "user" && error.approvalResolution.reason === "rejected";
-
-/** What a call gets that joined another call's card (`sharedCard`): it did nothing. */
-export const askedElsewhere = (tool: string, caller: ThreadId, askedIn: ThreadId) => ({
+/** What a call gets that joined its caller's own waiting card (`sharedCard`): it did nothing. */
+export const askedElsewhere = (tool: string, askedIn: ThreadId) => ({
   askedElsewhere: askedIn,
   done: false,
-  note:
-    askedIn === caller
-      ? `The user is already being asked this same ${tool} call in this thread. That card is the one decision; this call did nothing.`
-      : `The user is already being asked this same ${tool} call in another thread (${askedIn}). That card is the one decision, and its answer applies to that call: this one did nothing, raised no card and needn't be repeated or waited on here.`,
-});
-
-/** What a call gets whose card was taken down by the user's approval of the same thing elsewhere. */
-export const settledElsewhere = (tool: string, settledIn: ThreadId) => ({
-  settledElsewhere: settledIn,
-  done: false,
-  note: `The user approved the same ${tool} in another thread (${settledIn}), and that call carried it out under its own approval. This card was withdrawn and this call did nothing; it needn't be repeated.`,
+  note: `The user is already being asked this same ${tool} call from this thread. That card is the one decision; this call did nothing, raised no card and needn't be repeated.`,
 });
 
 /** Schemas belong to definitions and are reused across thread/session bindings. */
@@ -304,13 +276,19 @@ export const bindAppTools = (
       delegatedCall === undefined ? undefined : definition.refuseInsteadOfAsking;
     const sharedCardOf = definition.sharedCard;
     /**
-     * Whether a card was raised and approved for the call (`undefined` with no gate), and why full
-     * autonomy didn't cover it, if it would have but for the call itself.
+     * Puts the call through the gate and, where it may go ahead, runs it (`act`, told whether a
+     * card stood behind it: `undefined` with no gate). A call that shares a card (`sharedCard`)
+     * runs inside the card's bracket, so the same call joins it until it has been carried out.
      */
-    const approve = (decoded: unknown, target: unknown): Effect.Effect<Approved, AppToolError> =>
-      Effect.gen(function* () {
-        if (gate === undefined)
-          return { carded: undefined, why: undefined, askedIn: undefined, settledBy: undefined };
+    const approve = (
+      decoded: unknown,
+      target: unknown,
+      act: (call: AppToolCall) => Effect.Effect<unknown, AppToolError>,
+    ): Effect.Effect<Approved, AppToolError> => {
+      const acted = (carded: boolean | undefined, why: AskedDespiteAutonomy | undefined) =>
+        act({ carded }).pipe(Effect.map((result): Approved => ({ kind: "acted", result, why })));
+      return Effect.gen(function* () {
+        if (gate === undefined) return yield* acted(undefined, undefined);
         const asked =
           asksPerCall === undefined ? undefined : yield* asksPerCall(threadId, decoded, target);
         // A check that dies is a doubt, and a doubt is a card.
@@ -321,8 +299,7 @@ export const bindAppTools = (
                 Effect.catchCause(() => Effect.succeed(false)),
               );
         const verdict = alwaysAsks ? "forced" : approvalFor(descriptor.class, asked, delegated);
-        if (verdict === "none")
-          return { carded: false, why: undefined, askedIn: undefined, settledBy: undefined };
+        if (verdict === "none") return yield* acted(false, undefined);
         // A call the agent can fix itself is refused to it, never put to the user. Only a refusal
         // comes of it: a hook that fails, dies or is slow leaves the card.
         const refusal =
@@ -392,76 +369,32 @@ export const bindAppTools = (
               );
         if (shared === undefined) {
           yield* settled;
-          return { carded: true, why, askedIn: undefined, settledBy: undefined };
+          return yield* acted(true, why);
         }
-        // The same call already waiting on a card: that card is the one decision, so this call
-        // raises none and does nothing. A call of the same family keeps its own card, which the
-        // user's answer to either takes down. Taking the key and giving it back bracket the card,
-        // so an interrupted or failed call never leaves it held.
+        // The same call from the same caller already waiting on a card (or acting on its answer):
+        // that card is the one decision, so this call raises none and does nothing. Taking the key
+        // and giving it back bracket the card and the call, so an interrupted or failed call never
+        // leaves it held.
         const cards = pendingCardsOf(gate);
         const key = `${descriptor.name}\u0000${shared.key}`;
-        const family =
-          shared.family === undefined ? undefined : `${descriptor.name}\u0000${shared.family}`;
-        const mine: PendingCard = { threadId, family, settled: yield* Deferred.make<SettledBy>() };
-        const settleFamily = (decision: SettledBy["decision"]) =>
-          Effect.suspend(() =>
-            Effect.forEach(
-              family === undefined ? [] : [...(cards.byFamily.get(family) ?? [])],
-              (other) =>
-                other === mine
-                  ? Effect.void
-                  : Deferred.succeed(other.settled, { threadId, decision }),
-              { discard: true },
-            ),
-          );
-        const answered = settled.pipe(
-          Effect.tap(() => settleFamily("approved")),
-          Effect.tapError((error) =>
-            userDeclined(error) ? settleFamily("declined") : Effect.void,
-          ),
-          Effect.as<Approved>({ carded: true, why, askedIn: undefined, settledBy: undefined }),
-        );
+        const mine: PendingCard = { threadId };
         return yield* Effect.acquireUseRelease(
           Effect.sync(() => {
-            const pending = cards.byKey.get(key);
-            if (pending !== undefined) return pending;
-            cards.byKey.set(key, mine);
-            if (family !== undefined) {
-              const members = cards.byFamily.get(family) ?? new Set();
-              cards.byFamily.set(family, members.add(mine));
-            }
-            return undefined;
+            const pending = cards.get(key);
+            if (pending === undefined) cards.set(key, mine);
+            return pending;
           }),
           (holder): Effect.Effect<Approved, AppToolError> =>
             holder !== undefined
-              ? Effect.succeed({
-                  carded: false,
-                  why: undefined,
-                  askedIn: holder.threadId,
-                  settledBy: undefined,
-                })
-              : Effect.raceFirst(
-                  answered,
-                  Deferred.await(mine.settled).pipe(
-                    Effect.map((settledBy): Approved => ({
-                      carded: false,
-                      why,
-                      askedIn: undefined,
-                      settledBy,
-                    })),
-                  ),
-                ),
-          (holder) =>
+              ? Effect.succeed({ kind: "joined", askedIn: holder.threadId })
+              : settled.pipe(Effect.andThen(acted(true, why))),
+          () =>
             Effect.sync(() => {
-              if (holder !== undefined) return;
-              if (cards.byKey.get(key) === mine) cards.byKey.delete(key);
-              if (family === undefined) return;
-              const members = cards.byFamily.get(family);
-              members?.delete(mine);
-              if (members?.size === 0) cards.byFamily.delete(family);
+              if (cards.get(key) === mine) cards.delete(key);
             }),
         );
       });
+    };
     const needsApproval =
       asksPerCall === undefined || descriptor.class === "outward"
         ? undefined
@@ -553,17 +486,12 @@ export const bindAppTools = (
                 ),
               );
             }
-            const { carded, why, askedIn, settledBy } = yield* approve(decoded, target);
-            if (askedIn !== undefined) return askedElsewhere(descriptor.name, threadId, askedIn);
-            if (settledBy?.decision === "approved")
-              return settledElsewhere(descriptor.name, settledBy.threadId);
-            if (settledBy?.decision === "declined")
-              return yield* new AppToolError({
-                tool: descriptor.name,
-                message: `The user declined the same ${descriptor.name} in another thread (${settledBy.threadId}), so this card was withdrawn and this call did nothing.${why === undefined ? "" : ` It needed the user: ${why.agent}`}`,
-                approvalRequired: true,
-              });
-            const result = yield* definition.handle(threadId, target, { carded });
+            const approved = yield* approve(decoded, target, (call) =>
+              definition.handle(threadId, target, call),
+            );
+            if (approved.kind === "joined")
+              return askedElsewhere(descriptor.name, approved.askedIn);
+            const { result, why } = approved;
             // The agent learns why the user was asked, and how to go without next time.
             return why === undefined ||
               typeof result !== "object" ||

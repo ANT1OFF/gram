@@ -1074,40 +1074,31 @@ export const PrAppToolsLive = Layer.effectDiscard(
           : caller === thread.id && thread.boundPr?.mergeWhenReady?.heldBy === "orchestrator"
             ? endedFromBadges(thread, pr)
             : refusalForAgent(caller, thread, pr, MERGE, "merges it once its checks pass", true),
-      // A merge card is one caller's decision: the caller is in the key, since who calls decides
-      // who holds the merge (`heldBy`), whether a worker's call is `locked` under an orchestrator's
-      // hold, and whether the approval carries the orchestrator's `userAuthorization`. A plain arm
-      // on an intent the orchestrator doesn't hold writes the same intent for either caller but for
-      // that provenance, so the worker's and its orchestrator's are one family: the user's answer
-      // to either takes the other's card down. Every card goes when the PR merges or closes.
+      // A merge card is one caller's decision: who calls decides who holds the merge (`heldBy`),
+      // whether a worker's call is `locked` under its orchestrator's hold, and whether the approval
+      // carries the orchestrator's `userAuthorization`. So only the same caller's identical call
+      // joins a waiting card; a worker's and its orchestrator's are asked apart. Every card goes
+      // when its PR merges or closes.
       sharedCard: (
         caller,
         { thread, pr, enabled = true, method, afterRefs, hold, holdWaitsOn, release, clearHold },
-      ) => {
-        const target = [pr.repo.toLowerCase(), pr.number, thread.id, method];
-        const plainArm =
-          enabled &&
-          afterRefs.length === 0 &&
-          hold === undefined &&
-          holdWaitsOn === undefined &&
-          release !== true &&
-          !clearHold &&
-          thread.boundPr?.mergeWhenReady?.heldBy !== "orchestrator";
-        return Effect.succeed({
+      ) =>
+        Effect.succeed({
           key: JSON.stringify([
-            ...target,
+            pr.repo.toLowerCase(),
+            pr.number,
+            thread.id,
             caller,
             enabled,
+            method,
             afterRefs.map((ref) => [ref.repo.toLowerCase(), ref.number]),
             hold ?? null,
             holdWaitsOn ?? null,
             release === true,
             clearHold,
           ]),
-          ...(plainArm ? { family: JSON.stringify(target) } : {}),
           moot: mergeCardEnded(thread.id, pr),
-        });
-      },
+        }),
       // Read once a card is up: full auto would have merged it, but for the PR's ownership.
       whyAsked: (caller, { thread, pr, enabled = true, method }) =>
         Effect.gen(function* () {

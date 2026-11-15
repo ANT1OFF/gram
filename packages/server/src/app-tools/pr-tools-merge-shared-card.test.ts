@@ -113,13 +113,13 @@ const secondCall = <A, E>(threadId: ThreadId, call: Effect.Effect<A, E>) =>
   });
 
 describe("merge_when_ready shared card", () => {
-  // 2026-11-15: the worker's plain arm and its orchestrator's each raised a card; approving the
-  // worker's left the orchestrator's up, holding its turn. They are separate approvals (only an
-  // orchestrator's carries its `userAuthorization`), so each keeps its card, but one answer settles
-  // both.
+  // 2026-11-15: the worker's plain arm and its orchestrator's each raised a card, and the
+  // orchestrator's stayed up after the PR had merged. They are separate decisions (who calls
+  // decides `heldBy` and whether the approval carries the orchestrator's `userAuthorization`), so
+  // each keeps its card and no answer stands for the other; the leftover goes when the PR ends.
   for (const first of ["worker", "orchestrator"] as const) {
     it.effect.skipIf(!hasGit)(
-      `approving the ${first}'s plain arm takes the other's card down and releases its thread`,
+      `the ${first}'s approved plain arm leaves the other's card, which goes when the PR merges`,
       () =>
         Effect.gen(function* () {
           const world = yield* makeWorld;
@@ -142,23 +142,30 @@ describe("merge_when_ready shared card", () => {
               const firstCall = yield* Effect.forkScoped(firstRun);
               const card = yield* cardIn(firstId);
               const second = yield* secondCall(secondId, secondRun);
-              // Each caller's own decision: no call stands in for another's.
               expect(second.card).toBeDefined();
 
               yield* runtimes.respond(firstId, card.id, allow);
               yield* Fiber.join(firstCall);
-              // Before: the other card stayed up, and its thread waited on it.
-              expect(yield* Fiber.join(second.fiber)).toMatchObject({
-                settledElsewhere: firstId,
-                done: false,
+              expect((yield* store.getThread(worker.id)).boundPr?.mergeWhenReady).toMatchObject({
+                allowedBy: "user",
               });
+              // The first answer is not the second caller's: its card stays for its own answer.
+              expect(yield* store.listRequests(secondId)).toHaveLength(1);
+
+              yield* publishGit(world, worker, {
+                pr: ready({
+                  number: 12,
+                  url: "https://github.com/acme/app/pull/12",
+                  state: "MERGED",
+                }),
+              });
+              yield* TestClock.adjust(MERGE_CARD_ENDED_POLL);
+              // Before: it stayed up, to be answered for a PR that had already merged.
+              expect((yield* Fiber.join(second.fiber).pipe(Effect.flip)).message).toContain(
+                "acme/app#12 merged while the user was being asked",
+              );
               expect(yield* store.listRequests(secondId)).toEqual([]);
               expect(yield* runtimes.status(secondId)).not.toBe("needsApproval");
-              const intent = (yield* store.getThread(worker.id)).boundPr?.mergeWhenReady;
-              expect(intent).toMatchObject({ allowedBy: "user" });
-              // The intent is the approved call's: a worker's approval carries no orchestrator's
-              // authorization, so the orchestrator is asked again before it maintains the intent.
-              if (first === "worker") expect(intent?.userAuthorization).toBeUndefined();
               expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
             }),
           );
@@ -166,36 +173,69 @@ describe("merge_when_ready shared card", () => {
     );
   }
 
-  it.effect.skipIf(!hasGit)("declining one plain arm declines the other's card", () =>
-    Effect.gen(function* () {
-      const world = yield* makeWorld;
-      yield* withServer(
-        world,
+  // The re-review of #657: a plain call keeps the intent's hold or `after`, and who calls decides
+  // who holds them from then on, so a worker's answer can't settle its orchestrator's call.
+  const inherited: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+    ["hold", { hold: "independent review" }],
+    ["dependency", { after: [{ repo: "acme/app", number: 13 }] }],
+  ];
+  for (const [what, scope] of inherited) {
+    it.effect.skipIf(!hasGit)(
+      `an inherited worker-held ${what} becomes the orchestrator's only on its own answer`,
+      () =>
         Effect.gen(function* () {
-          const store = yield* ThreadStore;
-          const runtimes = yield* ThreadRuntimes;
-          const { orchestrator, worker, workerMerge, orchestratorMerge } =
-            yield* selfMadeWorkerPr(world);
-          const workerCall = yield* Effect.forkScoped(workerMerge.run({}));
-          const card = yield* cardIn(worker.id);
-          const second = yield* secondCall(
-            orchestrator.id,
-            orchestratorMerge.run({ threadId: worker.id }),
+          const world = yield* makeWorld;
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const store = yield* ThreadStore;
+              const runtimes = yield* ThreadRuntimes;
+              const { orchestrator, worker, workerMerge, orchestratorMerge } =
+                yield* ownWorkerPr(world);
+              yield* runtimes.updateThread(worker.id, (t) => ({
+                ...t,
+                boundPr: {
+                  ...t.boundPr!,
+                  mergeWhenReady: {
+                    allowedBy: "user",
+                    method: "squash",
+                    heldBy: "thread",
+                    ...scope,
+                    setAt: 0,
+                  },
+                },
+              }));
+              const workerCall = yield* Effect.forkScoped(workerMerge.run({}));
+              const workerCard = yield* cardIn(worker.id);
+              const second = yield* secondCall(
+                orchestrator.id,
+                orchestratorMerge.run({ threadId: worker.id }),
+              );
+              expect(second.card).toBeDefined();
+              yield* runtimes.respond(worker.id, workerCard.id, allow);
+              yield* Fiber.join(workerCall);
+              // At 87a7c6c0 this answer took the orchestrator's card down, leaving `heldBy: "thread"`.
+              expect(yield* store.listRequests(orchestrator.id)).toHaveLength(1);
+              yield* runtimes.respond(orchestrator.id, second.card!.id, allow);
+              yield* Fiber.join(second.fiber);
+              expect((yield* store.getThread(worker.id)).boundPr?.mergeWhenReady).toMatchObject({
+                ...scope,
+                heldBy: "orchestrator",
+              });
+
+              yield* atAutonomy(orchestrator, "full");
+              const release = yield* secondCall(worker.id, workerMerge.run({ release: true }));
+              expect(release.card !== undefined || release.result?._tag === "None").toBe(true);
+              expect((yield* store.getThread(worker.id)).boundPr?.mergeWhenReady).toMatchObject({
+                ...scope,
+                heldBy: "orchestrator",
+              });
+              expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
+            }),
           );
-          expect(second.card).toBeDefined();
-          yield* runtimes.respond(worker.id, card.id, { ...allow, decision: "deny" });
-          expect((yield* Fiber.join(workerCall).pipe(Effect.flip)).message).toContain(
-            "The user declined merge_when_ready.",
-          );
-          expect((yield* Fiber.join(second.fiber).pipe(Effect.flip)).message).toContain(
-            `The user declined the same merge_when_ready in another thread (${worker.id})`,
-          );
-          expect(yield* store.listRequests(orchestrator.id)).toEqual([]);
-          expect((yield* store.getThread(worker.id)).boundPr?.mergeWhenReady).toBeUndefined();
-        }),
-      );
-    }).pipe(Effect.scoped),
-  );
+        }).pipe(Effect.scoped),
+    );
+  }
 
   it.effect.skipIf(!hasGit)("the same caller's identical call joins its own waiting card", () =>
     Effect.gen(function* () {
