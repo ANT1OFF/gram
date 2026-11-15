@@ -818,7 +818,7 @@ the hold and pause gates fire is owned by the limit-wait work, not by this setti
 
 Gram's merges don't wait on one another: there is no merge queue, and no rule that a branch be up
 to date with its base. So two pull requests that are each green can still break the default branch
-together. The workspace setting **Watch the default branch after merges** (`watchDefaultBranch`) is
+together. The workspace setting **Watch the default branch** (`watchDefaultBranch`) is
 off by default. When it is on, Gram reads the Actions runs of each workspace repo's default branch
 every five minutes, paced to the background share of the GitHub allowance.
 

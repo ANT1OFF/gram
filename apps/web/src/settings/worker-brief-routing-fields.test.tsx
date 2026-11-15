@@ -4,8 +4,13 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RouteAtLimitField } from "./route-at-limit-field";
+import { WatchDefaultBranchField } from "./watch-default-branch-field";
 import { WorkerBriefFooterField } from "./worker-brief-footer-field";
-import { withRouteAtLimit, withWorkerBriefFooter } from "./workspace-settings-model";
+import {
+  withRouteAtLimit,
+  withWatchDefaultBranch,
+  withWorkerBriefFooter,
+} from "./workspace-settings-model";
 
 afterEach(cleanup);
 
@@ -73,6 +78,36 @@ describe("offering another model at a limit", () => {
     expect(withWorkerBriefFooter(charter, " Rule. ")).toEqual({
       ...charter,
       workerBriefFooter: "Rule.",
+    });
+  });
+});
+
+describe("watching the default branch after merges", () => {
+  it("is off by default and turns on and off without leaving a stored false", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <WatchDefaultBranchField charter={DEFAULT_CHARTER} disabled={false} onChange={onChange} />,
+    );
+    const name = "Watch the default branch";
+    const toggle = screen.getByRole("switch", { name });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    expect(onChange).toHaveBeenLastCalledWith(
+      { ...DEFAULT_CHARTER, watchDefaultBranch: true },
+      "The default branch is watched after merges",
+    );
+    rerender(
+      <WatchDefaultBranchField
+        charter={{ ...DEFAULT_CHARTER, watchDefaultBranch: true }}
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("switch", { name }));
+    expect(onChange).toHaveBeenLastCalledWith(DEFAULT_CHARTER, "The default branch isn't watched");
+    expect(withWatchDefaultBranch({ ...DEFAULT_CHARTER, pauseAtLimitPct: 90 }, false)).toEqual({
+      ...DEFAULT_CHARTER,
+      pauseAtLimitPct: 90,
     });
   });
 });
