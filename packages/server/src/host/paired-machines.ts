@@ -825,6 +825,10 @@ export const machineView = (
           ...(online.status.status.codex === undefined
             ? {}
             : { codex: online.status.status.codex }),
+          // Its OpenCode, from a host that runs OpenCode sessions; absent from one that doesn't.
+          ...(online.status.status.opencode === undefined
+            ? {}
+            : { opencode: online.status.status.opencode }),
         }),
     ...(offline === undefined ? {} : { offline }),
     ...(release === undefined ? {} : { release }),

@@ -203,11 +203,16 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "wip-restore",
   "agent-opencode",
   "agent-codex",
+  "agent-opencode-sessions",
 ];
 
 /** Why a Codex session isn't opened on a host that doesn't name `agent-codex`. */
 export const HOST_CODEX_MISSING =
   "Its gram-host is older than this Gram and doesn't run Codex sessions. Update Gram there (Settings → Machines), then try again.";
+
+/** Why an OpenCode session isn't opened on a host that doesn't name `agent-opencode-sessions`. */
+export const HOST_OPENCODE_SESSIONS_MISSING =
+  "Its gram-host is older than this Gram and doesn't run OpenCode sessions. Update Gram there (Settings → Machines), then try again.";
 
 /** Why an OpenCode session isn't opened on a host that doesn't name `agent-opencode`. */
 export const HOST_OPENCODE_MISSING =
@@ -1372,6 +1377,7 @@ export const connectHost = (
     const browserPolicy = hostServes(hello, "browser-policy");
     const knowsOpenCode = hostServes(hello, "agent-opencode");
     const runsCodex = hostServes(hello, "agent-codex");
+    const runsOpenCode = hostServes(hello, "agent-opencode-sessions");
     const readable = (input: UserInput) => (knowsOpenCode ? input : withoutOpenCodeAgents(input));
     const sessions: HostSessionsConnection = {
       browserPolicy,
@@ -1402,7 +1408,15 @@ export const connectHost = (
                     message: HOST_CODEX_MISSING,
                   }),
                 )
-              : sessionCall(client["host.sessions.open"](request), isAgentUnavailable),
+              : request.agent === "opencode" && !runsOpenCode
+                ? Effect.fail(
+                    new AgentUnavailable({
+                      agent: request.agent,
+                      reason: "startup-failed",
+                      message: HOST_OPENCODE_SESSIONS_MISSING,
+                    }),
+                  )
+                : sessionCall(client["host.sessions.open"](request), isAgentUnavailable),
       events: (handle, afterSeq) =>
         hostStream(client["host.sessions.events"]({ handle, afterSeq })),
       ack: (handle, seq) =>

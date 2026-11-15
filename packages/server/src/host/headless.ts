@@ -5,6 +5,7 @@
 import type { AgentHost } from "@gram/agents";
 import { CLAUDE_CAPABILITIES } from "@gram/agents/claude";
 import { CODEX_CAPABILITIES } from "@gram/agents/codex";
+import { OPENCODE_CAPABILITIES } from "@gram/agents/opencode";
 import {
   type AgentKind,
   type AgentModel,
@@ -49,6 +50,8 @@ export interface PlaceableMachine {
   readonly models?: ReadonlyArray<AgentModel> | undefined;
   /** Its Codex, from a host that runs Codex sessions (`HostStatus.codex`). */
   readonly codex?: MachineCodex | undefined;
+  /** Its OpenCode, from a host that runs OpenCode sessions (`HostStatus.opencode`). */
+  readonly opencode?: MachineOpenCode | undefined;
   /** A host an embedder started on demand for one person (`embedding/on-demand.ts`). */
   readonly owner?: string | undefined;
   readonly onDemand?: "personal" | "thread" | "worker" | undefined;
@@ -63,17 +66,35 @@ export interface MachineCodex {
   readonly autoReview: boolean;
 }
 
+/** A machine's OpenCode as placement reads it. */
+export interface MachineOpenCode {
+  readonly found: boolean;
+  readonly models?: ReadonlyArray<AgentModel> | undefined;
+}
+
 /** The agents a headless Gram offers as its machines run them. */
-export type MachineAgent = "claude" | "codex";
+export type MachineAgent = "claude" | "codex" | "opencode";
 
 /** What `machine` lists for `agent`, when it has said. */
 const listOf = (machine: PlaceableMachine, agent: MachineAgent) =>
-  agent === "claude" ? machine.models : machine.codex?.models;
+  agent === "claude"
+    ? machine.models
+    : agent === "codex"
+      ? machine.codex?.models
+      : machine.opencode?.models;
 
 /** Why `machine` lists nothing for `agent`, in words about that machine. */
 const notListing = (machine: PlaceableMachine, agent: MachineAgent): string => {
   if (agent === "claude")
     return `${machine.name} hasn't said which models its Claude Code offers yet.`;
+  if (agent === "opencode") {
+    const opencode = machine.opencode;
+    if (opencode === undefined)
+      return `${machine.name} hasn't said which models its OpenCode offers yet. If its Gram is older than this one, update it there (Settings → Machines).`;
+    if (!opencode.found)
+      return `OpenCode isn't installed on ${machine.name}. Install it there, then re-check.`;
+    return `${machine.name}'s OpenCode couldn't list its models. Check its providers there, then re-check.`;
+  }
   const codex = machine.codex;
   if (codex === undefined)
     return `${machine.name} hasn't said which models its Codex offers yet. If its Gram is older than this one, update it there (Settings → Machines).`;
@@ -211,7 +232,7 @@ export const modelsFor = (
   person: string | undefined,
   onDemand: boolean,
   remembered: Map<string, ReadonlyArray<AgentModel>>,
-  /** Whose lists: Claude Code's, or the machines' Codex's. */
+  /** Whose lists: Claude Code's, or the machines' Codex's or OpenCode's. */
   agent: MachineAgent = "claude",
 ): { readonly models: ReadonlyArray<AgentModel> } | { readonly error: string } => {
   const picked = machineFor(machines, person, onDemand);
@@ -255,6 +276,7 @@ export const headlessAgentHosts = (
   const remembered = {
     claude: new Map<string, ReadonlyArray<AgentModel>>(),
     codex: new Map<string, ReadonlyArray<AgentModel>>(),
+    opencode: new Map<string, ReadonlyArray<AgentModel>>(),
   };
   const listModels = (agent: MachineAgent) =>
     Effect.gen(function* () {
@@ -288,6 +310,16 @@ export const headlessAgentHosts = (
     nativeGateReady: Effect.map(placedCodex, (placed) => placed?.gateReady === true),
     autoReviewReady: Effect.map(placedCodex, (placed) => placed?.autoReview === true),
   };
+  const opencode: AgentHost = {
+    kind: "opencode",
+    capabilities: OPENCODE_CAPABILITIES,
+    open: () => Effect.fail(unavailable("opencode", RUNS_NOTHING_HERE)),
+    // A gateway profile's key stays here, and no session on it opens on a machine.
+    listModels: (options) =>
+      options?.profileId === undefined
+        ? listModels("opencode")
+        : Effect.fail(unavailable("opencode", GATEWAY_STAYS_HERE)),
+  };
   return AgentHosts.of({
     elsewhere: true,
     get: (agent) =>
@@ -295,12 +327,14 @@ export const headlessAgentHosts = (
         ? Effect.succeed(claude)
         : agent === "codex"
           ? Effect.succeed(codex)
-          : Effect.fail(
-              new AgentUnavailable({
-                agent,
-                message: `${agent} sessions don't run on a joined machine yet, and this Gram runs none itself.`,
-              }),
-            ),
+          : agent === "opencode"
+            ? Effect.succeed(opencode)
+            : Effect.fail(
+                new AgentUnavailable({
+                  agent,
+                  message: `${agent} sessions don't run on a joined machine yet, and this Gram runs none itself.`,
+                }),
+              ),
   });
 };
 

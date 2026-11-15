@@ -52,6 +52,7 @@ import {
   HOST_CAPABILITIES,
   HOST_CODEX_MISSING,
   HOST_FEATURES,
+  HOST_OPENCODE_SESSIONS_MISSING,
   HOST_SERVES,
   type HostConnection,
   type HostSessionsConnection,
@@ -349,10 +350,10 @@ describe("a host that can't hold the browser off", () => {
  * with `features` in its hello: this build's, or an older host's. The server's own Codex is
  * scripted too, to show nothing opens there.
  */
-const codexMachineWith = (features: ReadonlyArray<string>) =>
+const codexMachineWith = (features: ReadonlyArray<string>, kind: AgentKind = "codex") =>
   Effect.gen(function* () {
-    const onHost = yield* scriptedAgent("codex", "box");
-    const inServer = yield* scriptedAgent("codex", "server");
+    const onHost = yield* scriptedAgent(kind, "box");
+    const inServer = yield* scriptedAgent(kind, "server");
     const { host: hostEnd, control } = yield* streamPair;
     yield* Effect.forkScoped(
       serveHost(yield* NodeSocket.fromDuplex(Effect.succeed(hostEnd)), {
@@ -373,7 +374,7 @@ const codexMachineWith = (features: ReadonlyArray<string>) =>
         terminals: yield* terminalsOnHost,
         sessions: yield* sessionsOnHost(
           (agent) =>
-            agent === "codex"
+            agent === kind
               ? Effect.succeed(onHost.host)
               : Effect.fail(new AgentUnavailable({ agent, message: "not here" })),
           () => Effect.succeed(LISTED),
@@ -394,6 +395,65 @@ const codexMachineWith = (features: ReadonlyArray<string>) =>
     return { onHost, inServer, agent };
   });
 
+describe("a joined machine's OpenCode sessions", () => {
+  it("open there as Codex's do, and what only the server holds stays here", () => {
+    const plain = { threadId: THREAD, cwd: "/work" };
+    expect(opensOnMachine("opencode", plain)).toBe(true);
+    expect(opensOnHost("opencode", plain)).toBe(false);
+    expect(
+      opensOnMachine("opencode", {
+        ...plain,
+        model: { agent: "opencode", model: "openai/m", profileId: "p-1" as ProfileId },
+      }),
+    ).toBe(false);
+    expect(opensOnMachine("opencode", { ...plain, audience: "dream", dreamGuided: true })).toBe(
+      false,
+    );
+  });
+
+  it.live("start on the machine, and its sends and interrupts cross", () =>
+    Effect.gen(function* () {
+      const { onHost, inServer, agent } = yield* codexMachineWith(HOST_FEATURES, "opencode");
+      const session = yield* agent.open({
+        threadId: THREAD,
+        cwd: "/work/repo",
+        model: { agent: "opencode", model: "openai/gpt-synthetic" },
+      });
+      expect(inServer.opened).toEqual([]);
+      expect(onHost.opened[0]).toMatchObject({
+        threadId: THREAD,
+        cwd: "/work/repo",
+        model: { agent: "opencode", model: "openai/gpt-synthetic" },
+      });
+      yield* session.send({ text: "go" });
+      yield* session.interrupt;
+      yield* eventually(
+        () => (onHost.calls.includes("interrupt") ? true : undefined),
+        "the interrupt on the machine",
+      );
+      expect(onHost.calls).toEqual(["box: open", "send go", "interrupt"]);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live(
+    "a host that only knows the kind is refused, saying to update it, and opens nothing",
+    () =>
+      Effect.gen(function* () {
+        const { onHost, inServer, agent } = yield* codexMachineWith(
+          HOST_FEATURES.filter((feature) => feature !== "agent-opencode-sessions"),
+          "opencode",
+        );
+        const error = yield* agent
+          .open({ threadId: THREAD, cwd: "/work", model: { agent: "opencode", model: "openai/m" } })
+          .pipe(Effect.scoped, Effect.flip);
+        expect(error).toMatchObject({ _tag: "AgentUnavailable", agent: "opencode" });
+        expect(error.message).toBe(`On box: ${HOST_OPENCODE_SESSIONS_MISSING}`);
+        expect(onHost.opened).toEqual([]);
+        expect(inServer.opened).toEqual([]);
+      }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+});
+
 describe("a joined machine's Codex sessions", () => {
   it("open there, never in this machine's host process, whose Codex homes are the server's", () => {
     const plain = { threadId: THREAD, cwd: "/work" };
@@ -412,7 +472,6 @@ describe("a joined machine's Codex sessions", () => {
     ).toBe(false);
     expect(opensOnMachine("codex", { ...plain, switchStartup: "switch-1" })).toBe(false);
     expect(opensOnMachine("codex", { ...plain, audience: "dream", dreamGuided: true })).toBe(false);
-    expect(opensOnMachine("opencode", plain)).toBe(false);
   });
 
   it.live("start on the machine in their home, and its approvals, interrupts and modes cross", () =>

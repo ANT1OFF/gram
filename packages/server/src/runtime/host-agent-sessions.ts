@@ -89,12 +89,13 @@ const crossesAsData = (options: OpenSessionOptions): boolean =>
   (options.appTools === undefined || options.mcp !== undefined);
 
 /**
- * Whether a session can open on a joined machine's host. As `opensOnHost`, and Codex too: its
+ * Whether a session can open on a joined machine's host. As `opensOnHost`, and Codex and OpenCode
+ * too (OpenCode's `opencode serve` and config there are that machine's own). Codex: its
  * homes there are that machine's own, and so is the app-server a restart waits for, so the wait
  * goes to the host with the open (`HostSessionOpen.waitForPrevious`).
  */
 export const opensOnMachine = (agent: AgentKind, options: OpenSessionOptions): boolean =>
-  agent === "codex" ? crossesAsData(options) : opensOnHost(agent, options);
+  agent === "codex" || agent === "opencode" ? crossesAsData(options) : opensOnHost(agent, options);
 
 const defined = <A extends object>(value: A): A =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as A;

@@ -169,6 +169,12 @@ export const HostFeature = Schema.Literals([
    * host without it, which would refuse it anyway.
    */
   "agent-codex",
+  /**
+   * Runs OpenCode sessions on the machine's own `opencode` and its config (`HostStatus.opencode`).
+   * `agent-opencode` alone only knows the kind; a control plane opens no OpenCode session on a
+   * host without this one, which would refuse it anyway.
+   */
+  "agent-opencode-sessions",
   /** Fresh non-credential subscription identity before a cold worker's limit preflight. */
   "account-scope",
 ]);
@@ -258,6 +264,18 @@ export const HostCodexStatus = Schema.Struct({
 });
 export type HostCodexStatus = typeof HostCodexStatus.Type;
 
+/**
+ * The machine's OpenCode as its host finds it: whether `opencode` is there, its version, and what
+ * it lists (`provider/model` ids, from the providers its own config names). Nothing of a key.
+ */
+export const HostOpenCodeStatus = Schema.Struct({
+  found: Schema.Boolean,
+  version: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
+  /** Absent when OpenCode couldn't list. */
+  models: Schema.optionalKey(Schema.Array(HostModel).check(Schema.isMaxLength(64))),
+});
+export type HostOpenCodeStatus = typeof HostOpenCodeStatus.Type;
+
 /** `host.status`: what the machine can run now. */
 export const HostStatus = Schema.Struct({
   claudeSignIn: ClaudeSignIn,
@@ -273,6 +291,11 @@ export const HostStatus = Schema.Struct({
    * it ignores it.
    */
   codex: Schema.optionalKey(HostCodexStatus),
+  /**
+   * Its OpenCode, from a host that runs OpenCode sessions (`agent-opencode-sessions`). A control
+   * plane built before it ignores it.
+   */
+  opencode: Schema.optionalKey(HostOpenCodeStatus),
 });
 export type HostStatus = typeof HostStatus.Type;
 
