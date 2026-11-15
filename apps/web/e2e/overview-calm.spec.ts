@@ -64,7 +64,7 @@ test("every workspace stays listed, idle ones too; At rest folds only the PRs an
   ).toHaveAttribute("aria-expanded", "true");
 });
 
-test("every row in the sidebar is one line of one height; a worker's edge keeps its wait's reason", async ({
+test("every row in the sidebar is one height for its lines; a worker's edge keeps its wait's reason", async ({
   page,
 }) => {
   await open(page, 1440);
@@ -84,15 +84,20 @@ test("every row in the sidebar is one line of one height; a worker's edge keeps 
         .filter((row) => row.checkVisibility())
         .map((row) => ({
           tone: row.querySelector("[data-tone]")?.getAttribute("data-tone"),
+          tall:
+            row.querySelector('[data-testid="overview-worker-dot"]')?.getAttribute("data-tall") ===
+            "true",
           height: Math.round(row.getBoundingClientRect().height),
           words: row.querySelector(
             '[data-testid="overview-worker-now"], [data-testid="overview-worker-state"], [data-testid="overview-worker-waiting"]',
           )?.textContent,
         })),
     );
-  // Every row is one height, whatever it lists or says.
+  // A row with nothing more to say is one line of one height; a worker with PRs or words takes a
+  // second line, and every such row is the same taller height.
   expect(rows.length).toBeGreaterThan(4);
-  expect(rows.every((row) => row.height === 36)).toBe(true);
+  expect(rows.filter((row) => !row.tall).every((row) => row.height === 36)).toBe(true);
+  expect(rows.filter((row) => row.tall).every((row) => row.height === 48)).toBe(true);
   // Working: the dot says it, so no words at the edge.
   expect(rows.filter((row) => row.tone === "working").every((row) => row.words === undefined)).toBe(
     true,
