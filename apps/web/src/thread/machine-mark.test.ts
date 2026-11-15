@@ -148,3 +148,31 @@ describe("a machine's mark", () => {
     });
   });
 });
+
+describe("a machine being started again", () => {
+  it("reads as starting, with since when, and no fix for the person", () => {
+    const mark = machineMark(
+      STUDIO,
+      [
+        {
+          id: STUDIO,
+          name: "studio",
+          kind: "provisioned",
+          offline: { kind: "lost", at: AT },
+          starting: AT + 1,
+        },
+      ],
+      NOW,
+    );
+    expect(mark).toMatchObject({
+      state: "starting",
+      startingSince: AT + 1,
+      words: "on studio, starting",
+    });
+    expect(mark.hint).toContain("starting again for a thread that waits on it");
+  });
+
+  it("reads as offline once nothing waits on it", () => {
+    expect(machineMark(STUDIO, machines, NOW)).not.toHaveProperty("startingSince");
+  });
+});

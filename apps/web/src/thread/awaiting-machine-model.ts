@@ -79,6 +79,8 @@ export const WAIT_WORDS = {
   startingNote: "usually under a minute",
   again: "Starting a machine again",
   againNote: "the first didn't start",
+  /** A thread's own machine, stopped while idle, coming back for a message sent to it. */
+  restarting: { head: "Starting this thread's machine again", note: "it stopped while idle" },
   /** Gram's sentence when no machine came and nobody gave another. */
   failed: "No machine started for this thread.",
   kept: "What you sent is kept, and goes once a machine has started.",

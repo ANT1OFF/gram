@@ -59,5 +59,10 @@ export const MachineState = Schema.Struct({
   onlineSince: Schema.optionalKey(Schema.Number),
   /** Why it is offline; set only while it isn't connected. */
   offline: Schema.optionalKey(MachineOffline),
+  /**
+   * Epoch ms since a thread has waited on it to be started, as whoever runs the machines starts a
+   * stopped one when it is wanted; set only while it is offline and something waits.
+   */
+  starting: Schema.optionalKey(Schema.Number),
 });
 export type MachineState = typeof MachineState.Type;

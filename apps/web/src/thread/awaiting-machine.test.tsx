@@ -1,14 +1,20 @@
 // @vitest-environment happy-dom
 import type { ProjectId, QueueItemId, Thread, ThreadId, ThreadSummary } from "@gram/contracts";
-import { AWAITED_HOST_ID } from "@gram/contracts";
+import { AWAITED_HOST_ID, HostId } from "@gram/contracts";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EMPTY_SHELL, useEmbedShell } from "@/embed/store";
 import { formatClockTime } from "@/lib/time";
+import { useMachines } from "@/stores/machines";
 import { useThreadsStore } from "@/stores/threads";
 
-import { AwaitingMachine, AwaitingMachineChip, resetAskedAgain } from "./awaiting-machine";
+import {
+  AwaitingMachine,
+  AwaitingMachineChip,
+  MachineStarting,
+  resetAskedAgain,
+} from "./awaiting-machine";
 import { ASKED_LAPSE_MS } from "./awaiting-machine-model";
 import { MachineChip } from "./machine-chip";
 
@@ -275,5 +281,55 @@ describe("a waiting thread's header chip", () => {
     expect(chip.getAttribute("data-machine-state")).toBe("no machine");
     expect(chip.textContent).toBe("no machine");
     expect(chip.getAttribute("aria-label")).toBe("No machine started for this thread");
+  });
+});
+
+describe("a thread whose machine stopped while idle", () => {
+  const HOST = HostId.make("m-a17f58913c6fda1fa6cf6090");
+  const placed = () => {
+    const summary = waiting({ since: STARTED });
+    const { awaitingMachine: _none, ...rest } = summary.thread;
+    return seed({
+      ...summary,
+      status: "starting",
+      queue: [],
+      thread: { ...rest, checkout: { kind: "main", path: "/work", hostId: HOST } },
+    } as ThreadSummary);
+  };
+
+  afterEach(() => useMachines.setState({ machines: undefined }));
+
+  it("says its machine is starting again, and for how long, while a message waits on it", () => {
+    useMachines.setState({
+      machines: [
+        {
+          id: HOST,
+          name: "sbx_mine",
+          kind: "provisioned",
+          offline: { kind: "lost", at: NOW - 3_600_000 },
+          starting: NOW - 12_000,
+        },
+      ],
+    });
+    render(<MachineStarting thread={placed()} />);
+    expect(screen.getByTestId("machine-wait-starting").textContent).toBe(
+      "Starting this thread's machine again · it stopped while idle0:12",
+    );
+  });
+
+  it("says nothing while nothing waits on it, or once it is back", () => {
+    useMachines.setState({
+      machines: [
+        { id: HOST, name: "sbx_mine", kind: "provisioned", offline: { kind: "lost", at: NOW } },
+      ],
+    });
+    const { unmount } = render(<MachineStarting thread={placed()} />);
+    expect(screen.queryByTestId("machine-restarting")).toBeNull();
+    unmount();
+    useMachines.setState({
+      machines: [{ id: HOST, name: "sbx_mine", kind: "provisioned", onlineSince: NOW }],
+    });
+    render(<MachineStarting thread={placed()} />);
+    expect(screen.queryByTestId("machine-restarting")).toBeNull();
   });
 });

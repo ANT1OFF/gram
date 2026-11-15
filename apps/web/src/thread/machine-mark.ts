@@ -21,12 +21,21 @@ export interface MachineMark {
    * Why nothing reaches it now, in a word or two; absent while it is online, and before the
    * machines are known.
    */
-  readonly state?: "offline" | "needs update" | "not joined";
+  readonly state?: "offline" | "starting" | "needs update" | "not joined";
+  /**
+   * Epoch ms since a thread has waited on it to be started (`MachineState.starting`): it stopped,
+   * and whoever runs the machines is bringing it back. Set only with `state` "starting".
+   */
+  readonly startingSince?: number;
   /** Where it runs in a few words, for a row's own hover and accessible name: "on atlas, offline". */
   readonly words: string;
   /** The hover: the machine, how it got in and its state, then why and the fix when offline. */
   readonly hint: string;
 }
+
+/** A starting machine's hover, under its state. */
+export const STARTING_WHY =
+  "It stopped while idle, and is starting again for a thread that waits on it.";
 
 const KIND: Readonly<Record<MachineState["kind"], string>> = {
   joined: "Joined machine",
@@ -85,17 +94,22 @@ export function machineMark(
     older &&
     machine.offline?.kind === "mismatch" &&
     machine.offline.protocol > HOST_PROTOCOL_VERSION;
-  const state = older && !newer ? "needs update" : "offline";
+  const state =
+    older && !newer ? "needs update" : machine.starting !== undefined ? "starting" : "offline";
   return {
     name: machine.name,
     state,
+    ...(state === "starting" && machine.starting !== undefined
+      ? { startingSince: machine.starting }
+      : {}),
     words: `on ${machine.name}, ${state}`,
     hint: [
       head,
       `${KIND[machine.kind]} · ${newer ? "newer than this Gram" : state}`,
-      health.why,
+      // Being brought back: why it went and how to bring it back are not the person's to act on.
+      state === "starting" ? STARTING_WHY : health.why,
       // A provisioned host is replaced by whoever started it; the fixes are a joined machine's.
-      machine.kind === "provisioned"
+      machine.kind === "provisioned" || state === "starting"
         ? undefined
         : older && !newer
           ? "Update it in Settings → Machines."

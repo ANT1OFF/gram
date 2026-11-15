@@ -103,4 +103,31 @@ describe("stop marks", () => {
       }).pipe(Effect.scoped),
     );
   });
+
+  it("says since when a machine is wanted, and tells when that starts and ends", async () => {
+    let at = 100;
+    const told: string[] = [];
+    const marks = makeStopMarks(
+      () => at,
+      undefined,
+      (id) => told.push(id),
+    );
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const first = yield* Deferred.make<void>();
+        const one = yield* Effect.forkScoped(marks.wanting(machine, Deferred.await(first)));
+        yield* Effect.yieldNow;
+        at = 150;
+        const two = yield* Effect.forkScoped(marks.wanting(machine, Effect.void));
+        yield* Fiber.join(two);
+        // The first wait's start stands while any wait does, and only the first and last tell.
+        expect(marks.wantedSince(machine)).toBe(100);
+        expect(told).toEqual(["m-one"]);
+        yield* Deferred.succeed(first, undefined);
+        yield* Fiber.join(one);
+        expect(marks.wantedSince(machine)).toBeUndefined();
+        expect(told).toEqual(["m-one", "m-one"]);
+      }).pipe(Effect.scoped),
+    );
+  });
 });

@@ -66,7 +66,7 @@ import { copyMarkdown } from "./message-actions";
 import { forkedFromText } from "./fork-text";
 import { trackWrappedChips } from "./header-chips";
 import { LabelChip, useThreadLabel } from "./label-chip";
-import { AwaitingMachine, useMachineWait } from "./awaiting-machine";
+import { AwaitingMachine, MachineStarting, useMachineWait } from "./awaiting-machine";
 import { WAIT_WORDS } from "./awaiting-machine-model";
 import { MachineChip } from "./machine-chip";
 import { FolderMissingNotice } from "./folder-missing-notice";
@@ -766,6 +766,8 @@ export function ThreadView({
               )}
             </OrchestratorStreamProvider>
             {awaiting && shown.length > 0 && <AwaitingMachine thread={thread} />}
+            {/* Its machine stopped while idle and is coming back for what was sent to it. */}
+            {!awaiting && <MachineStarting thread={thread} />}
             <div className="w-full thread-column shrink-0 px-6">
               {thread.spawnedBy === undefined && !conversationOnly && (
                 <RecapCard threadId={threadId} focused={focused} />
