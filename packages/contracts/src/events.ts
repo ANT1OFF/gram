@@ -163,6 +163,7 @@ export const ServerEvent = Schema.Union([
     type: Schema.Literal("usageLimit"),
     threadId: ThreadId,
     agent: AgentKind,
+    accountScope: Schema.optionalKey(Schema.String),
     gateway: Schema.optionalKey(Schema.Literal(true)),
     /** The gateway profile the session runs on, with `gateway`. */
     profileId: Schema.optionalKey(Schema.String),

@@ -48,12 +48,15 @@ import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 
 /** The `noticeKeys` key of the queued "continue" a limit's resume sends. */
 const LIMIT_RESUME_KEY = "limit-resume";
+const admissionKey = (account: string, model: string) => JSON.stringify([account, model]);
 
 /**
  * What limit waits read and change: the store, each account's limit history this run, the timers
  * that resume waiting threads, and the holds other services registered.
  */
 export interface LimitResumeDeps {
+  readonly quotaFor: (thread: Thread) => Effect.Effect<string>;
+  readonly accountChanged: (thread: Thread, previous: string) => Effect.Effect<boolean>;
   readonly store: ThreadStoreShape;
   readonly runtimes: ReadonlyMap<ThreadId, Runtime>;
   readonly getRuntime: GetRuntime;
@@ -86,10 +89,13 @@ export interface LimitResumeDeps {
   readonly syncQueue: (rt: Runtime) => Effect.Effect<void>;
   readonly drainQueue: (rt: Runtime) => Effect.Effect<void>;
   readonly pumpDeliveries: (rt: Runtime) => Effect.Effect<void>;
+  readonly reopenWhenIdle: (rt: Runtime) => Effect.Effect<void>;
 }
 
 /** Limit waits and the holds on resuming them, over every thread's runtime. */
 export const makeLimitResume = ({
+  quotaFor,
+  accountChanged,
   store,
   runtimes,
   getRuntime,
@@ -112,7 +118,10 @@ export const makeLimitResume = ({
   syncQueue,
   drainQueue,
   pumpDeliveries,
+  reopenWhenIdle,
 }: LimitResumeDeps) => {
+  // Admission is evidence even when a usage snapshot remains full or has aged out.
+  const admissions = new Map<string, number>();
   /**
    * When a turn on `account` last met its limit: this run's latest, or, with none this run (a
    * restart), the latest a thread waiting on it began waiting. A thread that waits with the account
@@ -138,7 +147,7 @@ export const makeLimitResume = ({
   const releasable = (account: string, now: number): Effect.Effect<boolean> =>
     Effect.gen(function* () {
       if (Option.isNone(limitReadings)) return false;
-      const readings = yield* limitReadings.value.current;
+      const readings = yield* limitReadings.value.all ?? limitReadings.value.current;
       const last = earlyReleases.get(account);
       if (now < earlyReleaseDue(last) && !limitTurnedOver(readings, account, last, now)) {
         return false;
@@ -150,8 +159,23 @@ export const makeLimitResume = ({
    * Whether a new turn on `account` goes despite the waits recorded on it: its waits ended early
    * already (or may now), and nothing met the limit since the readings that say so.
    */
-  const goesAhead = (account: string, now: number): Effect.Effect<boolean> =>
+  const goesAhead = (account: string, now: number, model?: string): Effect.Effect<boolean> =>
     Effect.gen(function* () {
+      const admittedAt =
+        model === undefined
+          ? -Infinity
+          : (admissions.get(admissionKey(account, model)) ?? -Infinity);
+      if (admittedAt > hitAt(account)) {
+        const newerRejection =
+          Option.isSome(limitReadings) &&
+          (yield* limitReadings.value.all ?? limitReadings.value.current).some(
+            (reading) =>
+              accountOf(reading) === account &&
+              reading.status === "rejected" &&
+              reading.at > admittedAt,
+          );
+        if (!newerRejection) return true;
+      }
       if (Option.isNone(limitReadings)) return false;
       const held = [...runtimes.values()].some(
         (each) =>
@@ -161,7 +185,12 @@ export const makeLimitResume = ({
           each.limitWait.cleared === undefined,
       );
       if (held) return yield* releasable(account, now);
-      return limitClearedBy(yield* limitReadings.value.current, account, hitAt(account), now);
+      return limitClearedBy(
+        yield* limitReadings.value.all ?? limitReadings.value.current,
+        account,
+        hitAt(account),
+        now,
+      );
     });
 
   /** The latest reset of `account`'s `rejected` readings still to come, the CLI's own word. */
@@ -169,7 +198,7 @@ export const makeLimitResume = ({
     Effect.gen(function* () {
       if (Option.isNone(limitReadings)) return undefined;
       let until: number | undefined;
-      for (const record of yield* limitReadings.value.current) {
+      for (const record of yield* limitReadings.value.all ?? limitReadings.value.current) {
         const at = record.resetsAt;
         if (record.status !== "rejected" || accountOf(record) !== account || at === undefined)
           continue;
@@ -206,9 +235,13 @@ export const makeLimitResume = ({
    * `undefined` once that is past, and when fresh data says the limit no longer applies
    * (`goesAhead`): a wait recorded before it doesn't hold a new turn back.
    */
-  const limitedUntil = (account: string, now: number): Effect.Effect<number | undefined> =>
+  const limitedUntil = (
+    account: string,
+    now: number,
+    model?: string,
+  ): Effect.Effect<number | undefined> =>
     Effect.gen(function* () {
-      if (yield* goesAhead(account, now)) return undefined;
+      if (yield* goesAhead(account, now, model)) return undefined;
       return (yield* rejectedUntil(account, now)) ?? waitsUntil(account, now);
     });
 
@@ -244,7 +277,7 @@ export const makeLimitResume = ({
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       const account =
-        rt.quota ?? accountOf((yield* store.getThread(rt.threadId).pipe(Effect.orDie)).model);
+        rt.quota ?? (yield* quotaFor(yield* store.getThread(rt.threadId).pipe(Effect.orDie)));
       const before = rt.resumedFrom;
       const found = classifyLimit(
         failure,
@@ -335,9 +368,19 @@ export const makeLimitResume = ({
       )
         return false;
       const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
-      const account = accountOf(thread.model);
+      const account = yield* quotaFor(thread);
+      if (
+        rt.quota !== undefined &&
+        rt.quota !== account &&
+        thread.sessionSwitch === undefined &&
+        (yield* accountChanged(thread, rt.quota))
+      ) {
+        // The old process keeps the login it opened with. Only a new process may
+        // claim the account we just identified through the CLI.
+        rt.reopenOnIdle = rt.session !== undefined;
+      }
       const now = yield* Clock.currentTimeMillis;
-      const until = yield* limitedUntil(account, now);
+      const until = yield* limitedUntil(account, now, thread.model.model);
       if (until === undefined) return false;
       yield* enterWait(rt, {
         kind: "limit",
@@ -363,8 +406,9 @@ export const makeLimitResume = ({
       .withPermits(1)(
         Effect.gen(function* () {
           const now = yield* Clock.currentTimeMillis;
+          if (byTurn !== undefined) admissions.set(admissionKey(account, byTurn), now);
           // A turn proves only its own model: another may have met a limit of its own.
-          const waiting = (yield* store.listThreads).filter(
+          let waiting = (yield* store.listThreads).filter(
             (thread) =>
               thread.limitWait?.account === account &&
               thread.limitWait.kind === "limit" &&
@@ -372,9 +416,18 @@ export const makeLimitResume = ({
               (byTurn === undefined || thread.model.model === byTurn),
           );
           if (!waiting.some((thread) => thread.limitWait!.cleared === undefined)) return;
-          if (byTurn === undefined && !(yield* releasable(account, now))) return;
-          if (byTurn === undefined && Option.isSome(limitReadings)) {
-            const readings = yield* limitReadings.value.current;
+          const changed = new Set<ThreadId>();
+          if (byTurn === undefined) {
+            for (const thread of waiting) {
+              if (thread.sessionSwitch === undefined && (yield* accountChanged(thread, account)))
+                changed.add(thread.id);
+            }
+            if (!(yield* releasable(account, now)))
+              waiting = waiting.filter((thread) => changed.has(thread.id));
+          }
+          if (waiting.length === 0) return;
+          if (byTurn === undefined && changed.size === 0 && Option.isSome(limitReadings)) {
+            const readings = yield* limitReadings.value.all ?? limitReadings.value.current;
             const last = earlyReleases.get(account);
             // Other windows than the last release went on start the spacing over.
             const count = limitTurnedOver(readings, account, last, now) ? 0 : (last?.count ?? 0);
@@ -385,7 +438,11 @@ export const makeLimitResume = ({
             });
           }
           yield* Effect.logInfo("limit no longer applies; waits end early").pipe(
-            Effect.annotateLogs({ account, threads: waiting.length, byTurn: byTurn ?? "" }),
+            Effect.annotateLogs({
+              provider: account.split("/")[0],
+              threads: waiting.length,
+              byTurn: byTurn ?? "",
+            }),
           );
           const plan = resumePlan(
             waiting.map((thread) => ({
@@ -406,6 +463,11 @@ export const makeLimitResume = ({
                   return undefined;
                 }
                 const next = { ...wait, cleared: wait.cleared ?? now, resumeAt: at };
+                if (
+                  changed.has(each.id) &&
+                  (yield* store.getThread(each.id).pipe(Effect.orDie)).sessionSwitch === undefined
+                )
+                  rt.reopenOnIdle = rt.session !== undefined;
                 return { thread: yield* storeWait(rt, next), wait: next };
               }),
             );
@@ -423,7 +485,7 @@ export const makeLimitResume = ({
       .pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("limit early release failed").pipe(
-            Effect.annotateLogs({ account, cause: Cause.pretty(cause) }),
+            Effect.annotateLogs({ provider: account.split("/")[0], cause: Cause.pretty(cause) }),
           ),
         ),
       );
@@ -659,7 +721,10 @@ export const makeLimitResume = ({
           } else rt.resumedFrom = wait;
           // The user's "now" outranks what Gram knows of the account: a sibling still waiting, or
           // a rejected reading, must not put the thread straight back.
-          rt.admitted = byUser;
+          // The timer's release is also an admission to retry, not an invitation
+          // for a sibling's stale record to put it back before the CLI is called.
+          rt.admitted = true;
+          if (byUser && rt.session !== undefined) rt.reopenOnIdle = true;
           yield* Effect.logInfo("thread resumes after a limit").pipe(
             Effect.annotateLogs({ threadId, kind: wait.kind, attempt: wait.attempt }),
           );
@@ -675,6 +740,7 @@ export const makeLimitResume = ({
             yield* syncQueue(rt);
           }
           if (!isShuttingDown()) {
+            if (rt.reopenOnIdle) yield* reopenWhenIdle(rt);
             yield* rt.queue.length > 0 ? drainQueue(rt) : pumpDeliveries(rt);
           }
           return { thread, wait };
@@ -710,6 +776,8 @@ export const makeLimitResume = ({
       yield* FiberMap.remove(limitTimers, rt.threadId);
       const thread = yield* storeWait(rt, undefined);
       rt.resumedFrom = wait;
+      rt.admitted = true;
+      if (rt.session !== undefined) yield* reopenWhenIdle(rt);
       yield* notifyObservers(rt.threadId, "onLimitWait", (observer) =>
         observer.onLimitWait?.(thread, wait, "resumed"),
       );
@@ -783,7 +851,11 @@ export const makeLimitResume = ({
       const wait =
         rt.limitWait ?? (yield* store.getThread(rt.threadId).pipe(Effect.orDie)).limitWait;
       // Only a wait on the account the thread left: a limit the new agent's account reported stays.
-      if (wait === undefined || wait.account !== account) return;
+      if (
+        wait === undefined ||
+        (wait.account !== account && !wait.account.startsWith(`${account}/"`))
+      )
+        return;
       yield* FiberMap.remove(limitTimers, rt.threadId);
       const thread = yield* storeWait(rt, undefined);
       yield* notifyObservers(rt.threadId, "onLimitWait", (observer) =>

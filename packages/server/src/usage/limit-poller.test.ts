@@ -43,6 +43,103 @@ const host = (
 ): AgentHost => ({ kind, readSubscriptionLimits }) as AgentHost;
 
 describe("subscription limit polling", () => {
+  it.effect(
+    "polls setup-token subscriptions without identity metadata under one stable machine scope",
+    () => {
+      let calls = 0;
+      const anonymous = {
+        ...host(
+          "claude",
+          Effect.sync(() => {
+            calls++;
+            return [report("seven_day", 0.24)];
+          }),
+        ),
+        readAccountScope: Effect.succeed(undefined),
+      };
+      return withPoller(
+        [anonymous],
+        Effect.gen(function* () {
+          const readings = yield* UsageLimitReadings;
+          const poller = yield* UsageLimitPoller;
+          yield* poller.refresh;
+          const first = yield* readings.current;
+          expect(first).toMatchObject([
+            { utilization: 0.24, accountScope: readings.scopeFor!("local", "unknown") },
+          ]);
+          yield* TestClock.adjust(LIMIT_POLL_MS);
+          yield* poller.refresh;
+          expect(calls).toBe(2);
+          expect((yield* readings.current)[0]?.accountScope).toBe(first[0]?.accountScope);
+        }),
+      );
+    },
+  );
+
+  it.effect(
+    "retains the selected account readings without a usage query when the identity probe fails",
+    () => {
+      let failing = false;
+      let calls = 0;
+      const own = {
+        ...host(
+          "claude",
+          Effect.sync(() => {
+            calls++;
+            return [report("seven_day", 1)];
+          }),
+        ),
+        readAccountScope: Effect.suspend(() =>
+          failing
+            ? Effect.fail(
+                new AgentUnavailable({
+                  agent: "claude",
+                  reason: "auth-status-failed",
+                  message: "synthetic timeout",
+                }),
+              )
+            : Effect.succeed("account-a"),
+        ),
+      };
+      return withPoller(
+        [own],
+        Effect.gen(function* () {
+          const readings = yield* UsageLimitReadings;
+          const poller = yield* UsageLimitPoller;
+          yield* poller.refresh;
+          const first = yield* readings.current;
+          failing = true;
+          yield* TestClock.adjust(LIMIT_POLL_MS);
+          yield* poller.refresh;
+          expect(calls).toBe(1);
+          expect(yield* readings.current).toEqual(first);
+        }),
+      );
+    },
+  );
+  it.effect(
+    "discards metadata read across a login switch instead of attributing it to either account",
+    () => {
+      let login = "account-a";
+      const changing = {
+        ...host(
+          "claude",
+          Effect.sync(() => {
+            login = "account-b";
+            return [report("seven_day", 1)];
+          }),
+        ),
+        readAccountScope: Effect.sync(() => login),
+      };
+      return withPoller(
+        [changing],
+        Effect.gen(function* () {
+          yield* (yield* UsageLimitPoller).refresh;
+          expect(yield* (yield* UsageLimitReadings).all!).toEqual([]);
+        }),
+      );
+    },
+  );
   it.effect("starts no CLI while no window shows, and reads afresh as one comes back", () =>
     Effect.gen(function* () {
       let calls = 0;

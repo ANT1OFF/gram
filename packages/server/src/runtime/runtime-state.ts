@@ -138,6 +138,8 @@ export interface Runtime {
    * which a model change mid-session doesn't move.
    */
   quota: string | undefined;
+  /** Machine/login scope captured when this process opened; never reassigned from another CLI. */
+  accountScope?: string | undefined;
   /** That profile, a gateway's, whose limits aren't the subscription's; absent on the CLI's own login. */
   profileId: string | undefined;
   /**

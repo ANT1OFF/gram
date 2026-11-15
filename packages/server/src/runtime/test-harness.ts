@@ -11,6 +11,7 @@ import { folderExists } from "../fs/folders.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import type { SqlClient } from "../platform/unstable.ts";
 import { AgentHosts } from "./agent-hosts.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
 import { FakeAgentAdapter, FakeAgentControl } from "./fake-agent.ts";
 import { CheckoutService, TurnHooks } from "./hooks.ts";
 import {
@@ -39,9 +40,14 @@ export const makeRuntimeTestLayer = (
   store: Layer.Layer<ThreadStore | SqlClient.SqlClient, unknown> = ThreadStore.layerSqlite(
     ":memory:",
   ),
+  workerHosts: Layer.Layer<
+    WorkerHosts,
+    never,
+    AgentHosts | CheckoutService | ThreadStore
+  > = WorkerHosts.layerLocalForTests,
 ) =>
   AppToolRegistry.layer.pipe(
-    Layer.provideMerge(ThreadRuntimes.layerOnLocalHost),
+    Layer.provideMerge(ThreadRuntimes.layer.pipe(Layer.provideMerge(workerHosts))),
     Layer.provideMerge(UsageLimitReadings.layer),
     Layer.provideMerge(EventHub.layer),
     Layer.provideMerge(store),

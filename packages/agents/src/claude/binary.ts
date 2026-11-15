@@ -1,6 +1,7 @@
 import { AgentUnavailable, isWindowsBatchFile } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { win32 } from "node:path";
+import { createHash } from "node:crypto";
 import {
   probeScript,
   resolveBinary as resolveExecutable,
@@ -179,6 +180,18 @@ const OAUTH_METHODS: ReadonlySet<string> = new Set([
   "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
   "CCR_OAUTH_TOKEN_FILE",
 ]);
+
+/** Private CLI fingerprint; the control plane re-keys it per install before public state. Never uses credentials. */
+export const accountScopeFromStatus = (stdout: string): string | undefined => {
+  if (checkAuthStatus(stdout) !== undefined) return undefined;
+  const status = JSON.parse(stdout) as Record<string, unknown>;
+  const identity = status["accountId"] ?? status["email"];
+  if (typeof identity !== "string" || identity.trim() === "") return undefined;
+  const organization = typeof status["orgId"] === "string" ? status["orgId"] : "";
+  return createHash("sha256")
+    .update(JSON.stringify([identity, organization]))
+    .digest("hex");
+};
 
 /** Checks `claude auth status --json`: subscription (OAuth) against Anthropic, nothing else. */
 export const checkAuthStatus = (stdout: string): AuthProblem | undefined => {

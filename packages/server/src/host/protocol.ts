@@ -13,6 +13,7 @@ import type {
 } from "@gram/agents";
 import {
   AgentUnavailable,
+  type AgentKind,
   AnswerUndelivered,
   type HostAgentReload,
   type HostStatus,
@@ -194,6 +195,7 @@ export const HOST_SERVES: ReadonlyArray<HostCapability> = [
 
 /** The features this build's host names in its hello, beside its capabilities. */
 export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
+  "account-scope",
   "thread-places",
   "browser-policy",
   "session-retarget",
@@ -490,6 +492,10 @@ const handlersFor = (host: HostService) => {
         ),
       "host.sessions.close": ({ handle }) => host.sessions.close(handle),
       "host.sessions.reload": ({ agent, reload }) => host.sessions.reload(agent, reload),
+      "host.sessions.accountScope": ({ agent }) =>
+        (host.sessions.accountScope?.(agent) ?? Effect.succeed(undefined)).pipe(
+          Effect.map((scope) => (scope === undefined ? {} : { scope })),
+        ),
       "host.claude.setToken": ({ token }) =>
         host.claude === undefined
           ? Effect.fail(new HostFailed({ message: NO_TOKEN_STORE }))
@@ -641,6 +647,10 @@ export interface HostTerminalsConnection {
  * nothing to do.
  */
 export interface HostSessionsConnection {
+  /** Fresh host-owned login metadata; unknown on an older host, failure on a failed probe. */
+  readonly accountScope?: (
+    agent: AgentKind,
+  ) => Effect.Effect<string | undefined, AgentUnavailable | HostFailed>;
   /**
    * The host holds a session to the browser it was opened with (`browser-policy`). Absent or
    * false, it may leave Claude in Chrome to the CLI's own default: `open` refuses
@@ -1491,6 +1501,13 @@ export const connectHost = (
         agent === "opencode" && !knowsOpenCode
           ? Effect.void
           : guarded(client["host.sessions.reload"]({ agent, reload })).pipe(Effect.ignore),
+      accountScope: (agent) =>
+        hostServes(hello, "account-scope")
+          ? sessionCall(
+              client["host.sessions.accountScope"]({ agent }),
+              (error): error is AgentUnavailable => error instanceof AgentUnavailable,
+            ).pipe(Effect.map((result) => result.scope))
+          : Effect.succeed(undefined),
     };
     /**
      * A token call: the host's own refusal passes as it is; anything else (an older host's

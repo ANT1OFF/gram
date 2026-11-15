@@ -368,12 +368,26 @@ interface TaskStart {
 const turnEnd = (
   result: SDKResultMessage,
   apiError?: string,
+  apiErrorText?: string,
 ): {
   readonly reason: TurnEndReason;
   readonly error?: string;
   readonly failure?: AgentFailure;
 } => {
   const terminal = asRecord(result)["terminal_reason"];
+  // Claude can abort streaming after reporting a subscription rejection. That is the
+  // provider's refusal, not the user's Stop; its synthetic reply is otherwise hidden.
+  if (
+    (terminal === "aborted_tools" || terminal === "aborted_streaming") &&
+    apiError !== undefined &&
+    apiErrorText !== undefined
+  ) {
+    return {
+      reason: "error",
+      error: apiErrorText,
+      failure: claudeFailure(int(asRecord(result)["api_error_status"]), apiError, apiErrorText),
+    };
+  }
   if (terminal === "aborted_tools" || terminal === "aborted_streaming") {
     return { reason: "interrupted" };
   }
@@ -634,6 +648,7 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
   const ledger = makeUsageLedger(options);
   /** The `error` on this turn's synthetic API-error message, for `turnEnd`. */
   let apiError: string | undefined;
+  let apiErrorText: string | undefined;
   const record = (apiMessageId: string, raw: unknown, out: Array<AgentEvent>): void => {
     const event = ledger.record(apiMessageId, raw);
     if (event !== undefined) out.push(event);
@@ -774,6 +789,11 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
     // a limit waited out. Its words are not the agent's reply.
     const failureReply =
       key === MAIN && m.error !== undefined && m.message.model === SYNTHETIC_MODEL;
+    if (failureReply) {
+      apiErrorText = m.message.content
+        .flatMap((block) => (block.type === "text" ? [block.text] : []))
+        .join("\n");
+    }
     const streamed = l.streamed.has(apiId) || failureReply;
     for (const block of m.message.content) {
       if (block.type === "tool_use") {
@@ -884,10 +904,15 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
   };
 
   const onResult = (m: SDKResultMessage, out: Array<AgentEvent>) => {
-    closeAll(out, false, turnEnd(m, apiError).reason === "interrupted" ? "Cancelled" : undefined);
+    closeAll(
+      out,
+      false,
+      turnEnd(m, apiError, apiErrorText).reason === "interrupted" ? "Cancelled" : undefined,
+    );
     out.push(ledger.finish(m));
-    out.push({ type: "turnEnd", ...turnEnd(m, apiError) });
+    out.push({ type: "turnEnd", ...turnEnd(m, apiError, apiErrorText) });
     apiError = undefined;
+    apiErrorText = undefined;
   };
 
   const onSystem = (m: Extract<SDKMessage, { type: "system" }>, out: Array<AgentEvent>) => {
@@ -923,8 +948,19 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
           // A CLI iteration can go idle without a result. Its open lane is the evidence;
           // after a real result the lane is closed, so its idle tail adds no second turn end.
           const unfinished = lanes.has(MAIN);
-          closeAll(out, false, "Cancelled");
-          if (unfinished) out.push({ type: "turnEnd", reason: "interrupted" });
+          const failure =
+            apiError !== undefined && apiErrorText !== undefined
+              ? {
+                  reason: "error" as const,
+                  error: apiErrorText,
+                  failure: claudeFailure(undefined, apiError, apiErrorText),
+                }
+              : undefined;
+          closeAll(out, false, failure === undefined ? "Cancelled" : undefined);
+          if (unfinished)
+            out.push({ type: "turnEnd", ...(failure ?? { reason: "interrupted" as const }) });
+          apiError = undefined;
+          apiErrorText = undefined;
           out.push(status("idle"));
         }
         return;

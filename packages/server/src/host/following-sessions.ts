@@ -190,6 +190,7 @@ export const followingSessions = (
       authenticate: (handle, name) => call((s) => s.connectors.authenticate(handle, name)),
     },
     close: (handle) => quiet((s) => s.close(handle)),
+    accountScope: (agent) => call((s) => s.accountScope?.(agent) ?? Effect.succeed(undefined)),
     reload: (agent, reload) => quiet((s) => s.reload(agent, reload)),
   };
 };

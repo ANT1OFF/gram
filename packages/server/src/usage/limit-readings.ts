@@ -21,6 +21,7 @@ import * as Stream from "effect/Stream";
 import { EventHub } from "../events/event-hub.ts";
 import { SqlClient, type SqlError } from "../platform/unstable.ts";
 import { makeLimitHistory } from "./limit-history.ts";
+import { makeAccountScope } from "./account-scope.ts";
 
 type UsageLimitEvent = Extract<ServerEvent, { type: "usageLimit" }>;
 
@@ -35,20 +36,32 @@ const run = <A>(effect: Effect.Effect<A, SqlError>) =>
   effect.pipe(Effect.catch((error) => Effect.die(error)));
 const decode = Schema.decodeUnknownOption(Schema.fromJsonString(LimitRecord));
 const encode = Schema.encodeSync(Schema.fromJsonString(LimitRecord));
-const keyOf = (record: Pick<LimitRecord, "agent" | "profileId" | "window">) =>
-  `${record.agent}/${record.profileId ?? ""}/${record.window}`;
+const keyOf = (record: Pick<LimitRecord, "agent" | "profileId" | "accountScope" | "window">) =>
+  record.accountScope === undefined
+    ? `${record.agent}/${record.profileId ?? ""}/${record.window}`
+    : JSON.stringify([record.agent, record.profileId ?? "", record.accountScope, record.window]);
 /** What a record says apart from when it was read. */
 const restOf = (record: LimitRecord) => JSON.stringify({ ...record, at: undefined });
 
 export interface UsageLimitReadingsShape {
-  /** Every window's latest reading still current now, gateways' included, by agent and window. */
+  /** Install-keyed pseudonym for public account metadata; key never leaves Gram's own state. */
+  readonly scopeFor?: (machine: string, login: string) => string;
+  /** The selected local logins' current windows and gateway readings, for the meter and ledger. */
   readonly current: Effect.Effect<ReadonlyArray<LimitRecord>>;
+  /** All machine/login scopes, for runtime waits. The public meter uses `current` only. */
+  readonly all?: Effect.Effect<ReadonlyArray<LimitRecord>>;
+  /** Select the freshly identified local login, never from an old process's events. */
+  readonly selectAccount?: (
+    agent: AgentKind,
+    accountScope: string | undefined,
+  ) => Effect.Effect<void>;
   /** Authoritative CLI snapshot: removes missing subscription windows, preserving gateway records.
-   * Pass `current` captured before the query: newer stream readings win, even in the same ms. */
+   * Pass `all` (or legacy `current`) captured before the query: newer stream readings win, even in the same ms. */
   readonly replaceSubscription: (
     agent: AgentKind,
     reports: ReadonlyArray<SubscriptionLimitReport>,
     beforeQuery: ReadonlyArray<LimitRecord>,
+    accountScope?: string,
   ) => Effect.Effect<void>;
   /** Takes one `usageLimit` event as it arrives; the layer feeds it every one the hub publishes. */
   readonly record: (event: UsageLimitEvent) => Effect.Effect<void>;
@@ -63,7 +76,7 @@ export interface UsageLimitReadingsShape {
    * kept. A rejection read since stays.
    */
   readonly admitted: (
-    login: Pick<LimitRecord, "agent" | "profileId">,
+    login: Pick<LimitRecord, "agent" | "profileId" | "accountScope">,
     since: number,
   ) => Effect.Effect<void>;
   /**
@@ -89,10 +102,12 @@ export class UsageLimitReadings extends Context.Service<
       Effect.gen(function* () {
         const hub = yield* EventHub;
         const sql = yield* SqlClient.SqlClient;
+        const scopeFor = yield* makeAccountScope(sql);
 
         const lock = yield* Semaphore.make(1);
         const changed = yield* PubSub.unbounded<void>();
         const records = new Map<string, LimitRecord>();
+        const selected = new Map<AgentKind, string | undefined>();
         /** When each key was last written, and what was written apart from `at`. */
         const written = new Map<string, { readonly at: number; readonly rest: string }>();
 
@@ -105,15 +120,16 @@ export class UsageLimitReadings extends Context.Service<
         for (const row of rows) {
           const record = decode(row.data);
           if (record._tag === "Some" && limitCurrent(record.value, now)) {
-            records.set(row.key, record.value);
-            written.set(row.key, { at: record.value.at, rest: restOf(record.value) });
+            const key = keyOf(record.value);
+            records.set(key, record.value);
+            written.set(key, { at: record.value.at, rest: restOf(record.value) });
           } else {
             yield* run(sql`DELETE FROM usage_limits WHERE key = ${row.key}`);
           }
         }
 
         const record = (
-          event: Pick<LimitRecord, "agent" | "profileId" | "window"> & LimitReport,
+          event: Pick<LimitRecord, "agent" | "profileId" | "accountScope" | "window"> & LimitReport,
           snapshot = false,
         ) =>
           Effect.gen(function* () {
@@ -125,6 +141,7 @@ export class UsageLimitReadings extends Context.Service<
             if (reading === undefined || reading === before) return;
             const next: LimitRecord = {
               agent: event.agent,
+              ...(event.accountScope === undefined ? {} : { accountScope: event.accountScope }),
               ...(event.profileId === undefined ? {} : { profileId: event.profileId }),
               window: event.window,
               ...reading,
@@ -153,6 +170,11 @@ export class UsageLimitReadings extends Context.Service<
           }
           return [...records.values()];
         });
+        const visible = (all: ReadonlyArray<LimitRecord>) =>
+          all.filter(
+            (entry) =>
+              entry.profileId !== undefined || entry.accountScope === selected.get(entry.agent),
+          );
 
         yield* hub
           .internalEvents(
@@ -162,7 +184,20 @@ export class UsageLimitReadings extends Context.Service<
           .pipe(
             Stream.runForEach((event) =>
               lock
-                .withPermits(1)(record(event))
+                .withPermits(1)(
+                  record(event).pipe(
+                    Effect.andThen(
+                      event.accountScope === undefined
+                        ? Effect.void
+                        : Effect.suspend(() =>
+                            hub.publish({
+                              type: "usageLimits.snapshot",
+                              limits: visible([...records.values()]),
+                            }),
+                          ),
+                    ),
+                  ),
+                )
                 .pipe(Effect.andThen(PubSub.publish(changed, undefined))),
             ),
             Effect.forkScoped,
@@ -172,16 +207,19 @@ export class UsageLimitReadings extends Context.Service<
           agent,
           reports,
           beforeQuery,
+          accountScope,
         ) =>
           lock
             .withPermits(1)(
               Effect.gen(function* () {
+                selected.set(agent, accountScope);
                 const captured = new Map(beforeQuery.map((before) => [keyOf(before), before]));
                 const windows = new Set(reports.map((report) => report.window));
                 for (const [key, before] of records) {
                   if (
                     before.agent !== agent ||
                     before.profileId !== undefined ||
+                    before.accountScope !== accountScope ||
                     captured.get(key) !== before
                   )
                     continue;
@@ -192,15 +230,34 @@ export class UsageLimitReadings extends Context.Service<
                   }
                 }
                 for (const report of reports) {
-                  const before = records.get(keyOf({ agent, window: report.window }));
-                  if (before !== captured.get(keyOf({ agent, window: report.window }))) continue;
-                  yield* record({ agent, ...report }, true);
+                  const login = {
+                    agent,
+                    ...(accountScope === undefined ? {} : { accountScope }),
+                    window: report.window,
+                  };
+                  const before = records.get(keyOf(login));
+                  if (before !== captured.get(keyOf(login))) continue;
+                  yield* record({ ...login, ...report }, true);
                 }
               }),
             )
             .pipe(Effect.andThen(PubSub.publish(changed, undefined)), Effect.asVoid);
         return UsageLimitReadings.of({
-          current: lock.withPermits(1)(current),
+          scopeFor,
+          current: lock.withPermits(1)(current.pipe(Effect.map(visible))),
+          all: lock.withPermits(1)(current),
+          selectAccount: (agent, scope) =>
+            lock.withPermits(1)(
+              Effect.gen(function* () {
+                if (selected.has(agent) && selected.get(agent) === scope) return;
+                selected.set(agent, scope);
+                yield* hub.publish({
+                  type: "usageLimits.snapshot",
+                  limits: visible(yield* current),
+                });
+                yield* PubSub.publish(changed, undefined);
+              }),
+            ),
           record: (event) => lock.withPermits(1)(record(event)),
           replaceSubscription,
           changes: Stream.fromPubSub(changed),
@@ -217,6 +274,7 @@ export class UsageLimitReadings extends Context.Service<
                     if (
                       before.agent !== login.agent ||
                       before.profileId !== login.profileId ||
+                      before.accountScope !== login.accountScope ||
                       before.status !== "rejected" ||
                       before.at >= since
                     )
@@ -232,7 +290,7 @@ export class UsageLimitReadings extends Context.Service<
                   if (!any) return false;
                   yield* hub.publish({
                     type: "usageLimits.snapshot",
-                    limits: [...records.values()],
+                    limits: visible([...records.values()]),
                   });
                   return true;
                 }),

@@ -28,7 +28,7 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "./agent-hosts.ts";
 import { FakeAgentAdapter, FakeAgentControl, type FakeSession } from "./fake-agent.ts";
 import { CheckoutService, TurnHooks } from "./hooks.ts";
-import { LIMIT_RESUME_TEXT } from "./limit-wait.ts";
+import { LIMIT_RESUME_TEXT, accountOf, machineAccountScope } from "./limit-wait.ts";
 import { notePrompt } from "./switch-handoff.ts";
 import { makeRuntimeTestLayer, RuntimeTestLayer, TEST_CONFIG, waitFor } from "./test-harness.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
@@ -1163,7 +1163,7 @@ describe("switchAgent's handoff, as the review of #433 reproduced it", () => {
 });
 
 /** A switch a crash left `ready` and owing its handoff, with work queued behind it. */
-const seedOwed = (options: { wait?: "claude/" | "codex/"; mode?: "auto"; parked?: boolean } = {}) =>
+const seedOwed = (options: { wait?: string; mode?: "auto"; parked?: boolean } = {}) =>
   Effect.gen(function* () {
     const runtimes = yield* ThreadRuntimes;
     const store = yield* ThreadStore;
@@ -1227,26 +1227,31 @@ const firstInput = (threadId: ThreadId) =>
   });
 
 describe("switchAgent's handoff at boot, as review rev 2 of #433 reproduced it", () => {
-  it.effect("ends the old account's wait before giving the owed handoff, the work after it", () =>
-    onDisk((file) =>
-      Effect.gen(function* () {
-        const id = yield* seedOwed({ wait: "claude/" }).pipe(Effect.provide(layerAt(file)));
-        yield* Effect.gen(function* () {
-          const store = yield* ThreadStore;
-          yield* (yield* ThreadRuntimes).sendQueuedAtBoot;
-          const next = yield* firstInput(id);
-          expect(isHandoff(next.sent[0]!.text)).toBe(true);
-          expect((yield* store.getThread(id)).limitWait).toBeUndefined();
-          yield* next.completeTurn("Goal: carry on.");
-          yield* waitFor(
-            "the work after the handoff",
-            Effect.sync(() => next.sent.some((input) => input.text === "WORK_AFTER_BOOT")),
-          );
-          // No old turn resumed on the new agent.
-          expect(next.sent.some((input) => input.text === LIMIT_RESUME_TEXT)).toBe(false);
-        }).pipe(Effect.provide(layerAt(file)));
-      }),
-    ),
+  it.effect.each([
+    "claude/",
+    accountOf({ agent: "claude", accountScope: machineAccountScope("local", "old-login") }),
+  ])(
+    "ends the old account's wait before giving the owed handoff, the work after it: %s",
+    (account) =>
+      onDisk((file) =>
+        Effect.gen(function* () {
+          const id = yield* seedOwed({ wait: account }).pipe(Effect.provide(layerAt(file)));
+          yield* Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            yield* (yield* ThreadRuntimes).sendQueuedAtBoot;
+            const next = yield* firstInput(id);
+            expect(isHandoff(next.sent[0]!.text)).toBe(true);
+            expect((yield* store.getThread(id)).limitWait).toBeUndefined();
+            yield* next.completeTurn("Goal: carry on.");
+            yield* waitFor(
+              "the work after the handoff",
+              Effect.sync(() => next.sent.some((input) => input.text === "WORK_AFTER_BOOT")),
+            );
+            // No old turn resumed on the new agent.
+            expect(next.sent.some((input) => input.text === LIMIT_RESUME_TEXT)).toBe(false);
+          }).pipe(Effect.provide(layerAt(file)));
+        }),
+      ),
   );
 
   it.effect(

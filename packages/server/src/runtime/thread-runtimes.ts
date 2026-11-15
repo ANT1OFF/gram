@@ -5,6 +5,7 @@ import {
   type ThreadId,
   type TurnId,
   effectiveCheckout,
+  hostOf,
   fastSelectionProblem,
   isLocalHost,
   InterruptHung,
@@ -50,6 +51,8 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { ActivityTracker } from "./activity.ts";
 import type { AgentHosts } from "./agent-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
+import { makeAccountScopes } from "./account-scopes.ts";
+import { ephemeralAccountScope } from "../usage/account-scope.ts";
 import { ownedRuntimes } from "./owned-runtimes.ts";
 import { asRecorded, fromStored, mayReachThread, type StoredActor } from "../host/ownership.ts";
 import { type CheckoutService, TurnHooks, type TurnHooksShape } from "./hooks.ts";
@@ -247,6 +250,19 @@ const make = Effect.gen(function* () {
   // Each thread's machine: its session and its checkout go to the machine it is placed on.
   const workerHosts = yield* WorkerHosts;
   const { sessions: hosts, checkouts, git } = workerHosts.placed;
+  /** Subscription readings keep the install's privacy key and each machine/login's limits. */
+  const limitReadings = yield* Effect.serviceOption(UsageLimitReadings);
+  const accountScopes = makeAccountScopes(
+    workerHosts.local.sessions,
+    yield* store.listThreads,
+    Option.isSome(limitReadings) && limitReadings.value.scopeFor !== undefined
+      ? limitReadings.value.scopeFor
+      : ephemeralAccountScope(),
+    (thread) =>
+      workerHosts.get(hostOf(effectiveCheckout(thread))).pipe(Effect.map((host) => host.sessions)),
+    (account) => startRelease(account),
+  );
+  const { scopeFor: accountScopeFor, quotaFor } = accountScopes;
   const config = yield* ServerConfig;
   const hooks = turnsHere(yield* TurnHooks, store);
   const sessions = yield* FiberMap.make<ThreadId>();
@@ -305,8 +321,6 @@ const make = Effect.gen(function* () {
   const retryStops = yield* FiberMap.make<ThreadId>();
   /** Each thread waiting out a limit (`Thread.limitWait`), the timer that resumes it. */
   const limitTimers = yield* FiberMap.make<ThreadId>();
-  /** The latest reading of each subscription window, whose rejections name when an account lifts. */
-  const limitReadings = yield* Effect.serviceOption(UsageLimitReadings);
   // Present in the full server; `undefined` leaves every request and session as it always was.
   const decisions = Option.getOrUndefined(yield* Effect.serviceOption(DecisionHook));
   const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
@@ -645,6 +659,8 @@ const make = Effect.gen(function* () {
     cancelLimitWait,
     turnHeld,
   } = makeLimitResume({
+    quotaFor,
+    accountChanged: accountScopes.changed,
     store,
     runtimes,
     getRuntime,
@@ -667,6 +683,7 @@ const make = Effect.gen(function* () {
     syncQueue: (rt) => syncQueue(rt),
     drainQueue: (rt) => drainQueue(rt),
     pumpDeliveries: (rt) => pumpDeliveries(rt),
+    reopenWhenIdle: (rt) => reopenWhenIdle(rt),
   });
 
   // Each reading taken in may say an account's limit no longer applies: one a thread waits on.
@@ -968,6 +985,7 @@ const make = Effect.gen(function* () {
     });
 
   const { handleEvent, setBackground, setLapsedConnectors } = makeAgentEvents({
+    rememberAccount: accountScopes.remember,
     store,
     hub,
     decisions,
@@ -1054,6 +1072,8 @@ const make = Effect.gen(function* () {
   });
 
   const { stopInMissing, forkStopInMissing, openSession, recoverOwned } = makeSessionLifecycle({
+    accountScopeFor,
+    limitReadings,
     store,
     decisions,
     hub,
@@ -1628,9 +1648,13 @@ const make = Effect.gen(function* () {
         }),
       ),
     limitedUntil: (thread) =>
-      Clock.currentTimeMillis.pipe(
-        Effect.flatMap((now) => limitedUntil(accountOf(thread.model), now)),
-      ),
+      Effect.gen(function* () {
+        return yield* limitedUntil(
+          yield* quotaFor(thread),
+          yield* Clock.currentTimeMillis,
+          thread.model.model,
+        );
+      }),
     endLimitWait: (rt, previous) => locked(rt, dropWaitForSwitch(rt, accountOf(previous))),
     reopenTarget: reopenSwitchTarget,
     background: (effect) => FiberSet.run(switchSettles, effect).pipe(Effect.asVoid),

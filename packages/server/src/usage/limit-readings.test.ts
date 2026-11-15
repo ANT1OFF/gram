@@ -49,7 +49,64 @@ const tempDb = () => {
   return { path: join(dir, "gram.db"), done: () => rmSync(dir, { recursive: true, force: true }) };
 };
 
+const identify = (path: string) =>
+  withReadings(
+    path,
+    Effect.gen(function* () {
+      const readings = yield* UsageLimitReadings;
+      const first = readings.scopeFor!("local", "synthetic-account");
+      expect(readings.scopeFor!("local", "synthetic-account")).toBe(first);
+      expect(readings.scopeFor!("local", "another-account")).not.toBe(first);
+      expect(readings.scopeFor!("another-machine", "synthetic-account")).not.toBe(first);
+      expect(first).not.toContain("synthetic-account");
+      return first;
+    }),
+  );
+
 describe("kept limit readings", () => {
+  it.effect(
+    "keys public account pseudonyms per install and keeps them stable across restarts",
+    () =>
+      Effect.gen(function* () {
+        const db = tempDb();
+        yield* Effect.addFinalizer(() => Effect.sync(db.done));
+        const first = yield* identify(db.path);
+        expect(yield* identify(db.path)).toBe(first);
+        expect(yield* identify(":memory:")).not.toBe(first);
+      }),
+  );
+  it.effect("keeps old and remote rejections separate from the selected local login", () =>
+    withReadings(
+      ":memory:",
+      Effect.gen(function* () {
+        const readings = yield* UsageLimitReadings;
+        yield* readings.record(
+          reading({ accountScope: "local-old", status: "rejected", utilization: 1 }),
+        );
+        yield* readings.record(
+          reading({ accountScope: "remote-own", status: "rejected", utilization: 1 }),
+        );
+        yield* readings.replaceSubscription(
+          "claude",
+          [{ window: "five_hour", status: "allowed", utilization: 0.24, resetsAt: 5 * HOUR }],
+          yield* readings.all!,
+          "local-new",
+        );
+        expect(yield* readings.current).toMatchObject([
+          { accountScope: "local-new", utilization: 0.24 },
+        ]);
+        expect(yield* readings.all!).toHaveLength(3);
+        yield* readings.admitted({ agent: "claude", accountScope: "local-new" }, 1000);
+        expect(
+          (yield* readings.all!).filter((record) => record.status === "rejected"),
+        ).toHaveLength(2);
+        yield* readings.selectAccount!("claude", "remote-own");
+        expect(yield* readings.current).toMatchObject([
+          { accountScope: "remote-own", status: "rejected" },
+        ]);
+      }),
+    ),
+  );
   it.effect("snapshot metadata keeps a confirmed exhausted window's reset usable for waits", () =>
     withReadings(
       ":memory:",

@@ -6,6 +6,7 @@ import * as Layer from "effect/Layer";
 import {
   authUnavailable,
   checkAuthStatus,
+  accountScopeFromStatus,
   parseCliVersion,
   parseProbeOutput,
   pathCandidates,
@@ -43,6 +44,9 @@ export interface ClaudeEnvironmentShape {
   readonly invalidate: Effect.Effect<void>;
   /** `claude auth status --json` must report a subscription login. */
   readonly checkAuth: (prepared: PreparedClaude) => Effect.Effect<void, AgentUnavailable>;
+  readonly accountScope?: (
+    prepared: PreparedClaude,
+  ) => Effect.Effect<string | undefined, AgentUnavailable>;
   /**
    * Claude Code's own key auth (an API key, `ANTHROPIC_AUTH_TOKEN` or an `apiKeyHelper`) is this
    * machine's operator's choice, so sessions aren't held to the subscription login.
@@ -265,6 +269,21 @@ export const ClaudeEnvironmentLive = (
               ),
         invalidate: prepared.reset,
         checkAuth,
+        accountScope: (ready) =>
+          runCommand(ready.binaryPath, ["auth", "status", "--json"], {
+            env: ready.env,
+            timeoutMs,
+          }).pipe(
+            Effect.map((output) => accountScopeFromStatus(output.stdout)),
+            Effect.mapError(
+              () =>
+                new AgentUnavailable({
+                  agent: "claude",
+                  reason: "auth-status-failed",
+                  message: "Couldn't identify the Claude Code subscription login.",
+                }),
+            ),
+          ),
         keyAuth: config.keyAuth === true,
       } satisfies ClaudeEnvironmentShape;
     }),

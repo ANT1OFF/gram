@@ -54,6 +54,20 @@ afterEach(() => {
 });
 
 describe("usage limit readings", () => {
+  it("takes scoped account readings only through the server's selected snapshot", () => {
+    const limits = limitsOf(
+      [{ ...reading(), at: NOW, samples: [], utilization: 0.24, accountScope: "current-login" }],
+      NOW,
+    );
+    expect(
+      withReading(
+        limits,
+        reading({ status: "rejected", utilization: 1, accountScope: "old-or-remote-login" }),
+        NOW + 1000,
+      ),
+    ).toBe(limits);
+    expect(limits.claude?.fiveHour?.utilization).toBe(0.24);
+  });
   it("names the 5-hour and weekly windows, and no others", () => {
     expect(limitWindowOf("five_hour")).toBe("fiveHour");
     expect(limitWindowOf("seven_day")).toBe("weekly");

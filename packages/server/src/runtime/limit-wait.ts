@@ -310,11 +310,17 @@ export const LIMIT_HELD_RECHECK_MS = 60_000;
 /** What a resumed thread is sent, as the user's own "continue" would be. */
 export const LIMIT_RESUME_TEXT = "The usage limit has reset. Continue where you left off.";
 
-/** The login a thread's limits count against, as `Runtime.quota` names it: `agent/profileId`. */
+/** Provider/profile plus an opaque machine/login scope. Unscoped keys are legacy or synthetic. */
 export const accountOf = (model: {
   readonly agent: string;
   readonly profileId?: string | undefined;
-}): string => `${model.agent}/${model.profileId ?? ""}`;
+  readonly accountScope?: string | undefined;
+}): string =>
+  `${model.agent}/${model.profileId ?? ""}${model.accountScope === undefined ? "" : `/${JSON.stringify(model.accountScope)}`}`;
+
+/** Machine and login are both required: identical folders on two machines are not one login. */
+export const machineAccountScope = (machine: string, login: string): string =>
+  JSON.stringify([machine, login]);
 
 /** What a sender is told of input queued behind a limit: not a failure, and when it goes. */
 export const limitQueuedNote = (wait: Pick<LimitWait, "resumeAt">, now: number): string =>
@@ -344,6 +350,7 @@ export const LIMIT_CLEARED_TEXT = "The usage limit no longer applies. Continue w
 /** One window's reading, as `UsageLimitReadings.current` has it. */
 export interface AccountReading {
   readonly agent: string;
+  readonly accountScope?: string | undefined;
   readonly profileId?: string | undefined;
   readonly window: string;
   readonly status: string;

@@ -624,6 +624,10 @@ export const makeClaudeHost = (
               onSome: (provider) => provider.credentials(profileId, "claude"),
             });
       if (gateway === undefined) yield* environment.checkAuth(prepared);
+      const accountScope =
+        gateway === undefined && environment.accountScope !== undefined
+          ? yield* environment.accountScope(prepared).pipe(Effect.orElseSucceed(() => undefined))
+          : undefined;
       // A profile without models would hand `claude` an empty model id.
       if (gateway !== undefined && (o.model?.model ?? "").trim() === "") {
         return yield* new AgentUnavailable({
@@ -1600,7 +1604,13 @@ export const makeClaudeHost = (
                 ),
           ),
         // Single consumer: the thread runtime.
-        events: Stream.fromQueue(events),
+        events: Stream.fromQueue(events).pipe(
+          Stream.map((event) =>
+            event.type === "identity" && accountScope !== undefined
+              ? { ...event, accountScope }
+              : event,
+          ),
+        ),
         processId: Effect.sync(() => processId),
         send: (message, sendOptions) => {
           const messageId = sendOptions?.messageId;
@@ -1907,6 +1917,11 @@ export const makeClaudeHost = (
 
     return {
       kind: "claude",
+      ...(environment.accountScope === undefined
+        ? {}
+        : {
+            readAccountScope: environment.prepare.pipe(Effect.flatMap(environment.accountScope)),
+          }),
       supportsWorkspaceSwitch: process.platform !== "win32",
       checkWorkspaceSwitch: environment.prepare.pipe(Effect.flatMap(environment.checkAuth)),
       switchAttemptReceipt: (id) =>
