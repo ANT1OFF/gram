@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  existsSync,
   lstatSync,
   linkSync,
   mkdirSync,
@@ -23,7 +24,7 @@ import {
   outwardPromptRules,
   removeOutwardRules,
 } from "./codex-home.ts";
-import { prepareOwnedCodexHome } from "./codex-owned-home.ts";
+import { ownCodexProvider, ownedCodexProvider, prepareOwnedCodexHome } from "./codex-owned-home.ts";
 
 const fixture = Effect.gen(function* () {
   const root = mkdtempSync(join(tmpdir(), "gram-native-home-"));
@@ -39,6 +40,10 @@ const fixture = Effect.gen(function* () {
   );
   return { root, user, data: join(root, "data"), env: { CODEX_HOME: user } };
 });
+
+/** A configuration naming `embedder`, defined with `extra` lines. */
+const table = (extra: string) =>
+  `model_provider = "embedder"\n[model_providers.embedder]\nbase_url = "http://g.invalid"\n${extra}`;
 
 describe("Gram-owned native Codex home", () => {
   it.effect(
@@ -240,5 +245,112 @@ bundled = false
         expect(Exit.isFailure(yield* Effect.exit(prepare))).toBe(true);
         expect(readFileSync(join(user, "config.toml"), "utf8")).toBe('model = "gpt-6"');
       }).pipe(Effect.scoped),
+  );
+  /** An embedder's Codex configuration: its own gateway provider, authenticated by a command. */
+  const embedderConfig = `model = "gpt-6-luna"
+model_provider = "embedder"
+[model_providers.embedder]
+name = "Embedder gateway"
+base_url = "http://gateway.invalid/v1"
+wire_api = "responses"
+requires_openai_auth = false
+[model_providers.embedder.auth]
+command = "/bin/cat"
+args = ["/var/run/token-path-only"]
+[model_providers.other]
+base_url = "https://other.invalid"
+requires_openai_auth = false
+[mcp_servers.gram]
+command = "shadow"
+[mcp_servers.docs]
+command = "docs"
+`;
+
+  it.effect(
+    "keeps a machine's own provider with no login: no auth.json, the same exec-policy backstop",
+    () =>
+      Effect.gen(function* () {
+        const { root, user, data, env } = yield* fixture;
+        rmSync(join(user, "auth.json"));
+        writeFileSync(join(user, "config.toml"), embedderConfig);
+        expect(yield* ownedCodexProvider(root, env)).toBe("embedder");
+        const target = yield* prepareOwnedCodexHome(data, root, env);
+        expect(existsSync(join(target, "auth.json"))).toBe(false);
+        const config = parse(readFileSync(join(target, "config.toml"), "utf8"));
+        expect(config).toEqual({
+          model: "gpt-6-luna",
+          model_provider: "embedder",
+          // That one provider, as configured, and no other.
+          model_providers: {
+            embedder: {
+              name: "Embedder gateway",
+              base_url: "http://gateway.invalid/v1",
+              wire_api: "responses",
+              requires_openai_auth: false,
+              auth: { command: "/bin/cat", args: ["/var/run/token-path-only"] },
+            },
+          },
+          mcp_servers: { docs: { command: "docs" } },
+          features: {
+            exec_policy: true,
+            shell_snapshot: false,
+            hooks: false,
+            plugins: false,
+            apps: false,
+          },
+        });
+        // The user's rules stay out, and the outward rules install and come off as before.
+        expect(existsSync(join(target, "rules", "allow.rules"))).toBe(false);
+        // A login linked before (the machine once had one) does not stay linked.
+        writeFileSync(join(user, "elsewhere.json"), "invented");
+        symlinkSync(join(user, "elsewhere.json"), join(target, "auth.json"));
+        yield* prepareOwnedCodexHome(data, root, env);
+        expect(existsSync(join(target, "auth.json"))).toBe(false);
+        expect(lstatSync(join(target, "config.toml")).isFile()).toBe(true);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps a ChatGPT install exactly as before, whatever provider it configures", () =>
+    Effect.gen(function* () {
+      const { root, user, data, env } = yield* fixture;
+      // The fixture's home has a login: its gated home is ChatGPT's, linked by path.
+      writeFileSync(join(user, "config.toml"), embedderConfig);
+      expect(yield* ownedCodexProvider(root, env)).toBeUndefined();
+      const target = yield* prepareOwnedCodexHome(data, root, env);
+      expect(readlinkSync(join(target, "auth.json"))).toBe(join(user, "auth.json"));
+      const config = parse(readFileSync(join(target, "config.toml"), "utf8"));
+      expect(config).toMatchObject({
+        model_provider: "openai",
+        forced_login_method: "chatgpt",
+        openai_base_url: "https://chatgpt.com/backend-api/codex",
+      });
+      expect(config["model_providers"]).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("names no own provider unless one is defined and says it needs no OpenAI auth", () =>
+    Effect.gen(function* () {
+      const { root, user, data, env } = yield* fixture;
+      rmSync(join(user, "auth.json"));
+      for (const config of [
+        "",
+        'model_provider = "openai"\n[model_providers.openai]\nrequires_openai_auth = false',
+        'model_provider = "ollama"',
+        table(""),
+        table("requires_openai_auth = true"),
+        table('requires_openai_auth = "false"'),
+      ]) {
+        writeFileSync(join(user, "config.toml"), config);
+        expect(yield* ownedCodexProvider(root, env), config).toBeUndefined();
+        expect(ownCodexProvider(parse(config)), config).toBeUndefined();
+        // Without a provider of its own or a login, the gated home still refuses to start.
+        expect(Exit.isFailure(yield* Effect.exit(prepareOwnedCodexHome(data, root, env)))).toBe(
+          true,
+        );
+      }
+      // A configuration that can't be read is no provider of its own.
+      writeFileSync(join(user, "config.toml"), "model_provider = [");
+      expect(yield* ownedCodexProvider(root, env)).toBeUndefined();
+    }).pipe(Effect.scoped),
   );
 });
