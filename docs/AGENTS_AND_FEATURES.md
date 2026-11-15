@@ -1012,6 +1012,38 @@ version; opening another session preserves existing files. Startup explains the
 sparse layout. It carries recorded standing decisions when
 present and warns when they cannot be read for reasons other than absence.
 
+## Workspace shared folder
+
+Each workspace has a shared folder: plain files that every thread in the workspace reads and
+writes, kept when threads end and machines stop. Workspace memory is the orchestrator's curated
+notes, and workers only read it. The shared folder has no curator, and the last write wins. Solo
+threads, which have no workspace, and memory updates get no shared folder.
+
+- **Where it lives.** Gram keeps the folder with its own data, at `<data>/shared/<workspace>/`. A
+  thread on this machine is given that folder. Each session gets it as an extra directory beside
+  the folders you granted, and its instructions name it.
+- **Threads on other machines.** A thread on a joined or provisioned machine is given a mirror on
+  that machine, under the host's own folder (`shared/<workspace>/`, or `GRAM_HOST_SHARED`). While
+  the machine is connected, Gram brings the mirror and its own folder in step every five seconds,
+  in both directions. The mirror is in step before the session opens, and one last time when the
+  machine is readied to stop. A file changed on one side goes to the other, and a file deleted on
+  one side is deleted on the other. When a file changed on both sides, the later write wins, and an
+  edit beats a delete. Every write and delete names the version it replaces, so a file that changed
+  again since it was listed waits for the next round instead of being overwritten. What the two
+  sides last agreed on is kept in `<data>/shared-sync/`, so deletes still carry after a restart.
+- **What it carries.** Plain files of up to 64 MB, and up to 5,000 files in a workspace. A larger
+  file stays on the machine where it was written, and Gram never deletes it on either side. Links,
+  and names Gram keeps for itself (`.gram-*`), are never carried or followed. Writes arrive under
+  `.gram-incoming` and are moved into place whole, so an agent never reads half a file.
+- **Limits.** A host older than this release (one that doesn't name `shared-folders`) runs its
+  threads without a shared folder. Claude Code and Codex are given the folder as a directory they
+  may write. OpenCode is told where it is but not given it, so it asks as it would for any folder
+  outside its checkout. The folder isn't a place for credentials: whatever an agent writes there
+  reaches every thread in the workspace.
+
+Source: [shared folders](../packages/server/src/shared/shared-folders.ts),
+[sync](../packages/server/src/shared/sync.ts), [one copy on a machine](../packages/server/src/shared/tree.ts).
+
 ## Pausing a workspace
 
 Only the user pauses or resumes a workspace (title bar, Board, sidebar, palette); no

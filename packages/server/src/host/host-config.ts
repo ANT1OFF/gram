@@ -49,6 +49,15 @@ export const hostAttachments = (env: NodeJS.ProcessEnv = process.env, home = hom
   join(hostHome(env, home), "attachments");
 
 /**
+ * Where the host keeps its mirrors of workspaces' shared folders, one folder each:
+ * `GRAM_HOST_SHARED` when set, otherwise `shared` in the host's own folder.
+ */
+export const hostShared = (env: NodeJS.ProcessEnv = process.env, home = homedir()): string => {
+  const set = env["GRAM_HOST_SHARED"];
+  return set !== undefined && set !== "" ? set : join(hostHome(env, home), "shared");
+};
+
+/**
  * Where the host keeps its clones of the repositories workers placed on it work in:
  * `GRAM_HOST_REPOS` when set, otherwise `repos` in the host's own folder.
  */

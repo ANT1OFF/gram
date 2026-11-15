@@ -69,6 +69,7 @@ import type { SessionRestarts } from "./session-restarts.ts";
 import type { AgentEvents } from "./agent-events.ts";
 import type { ServerApprovals } from "./server-approvals.ts";
 import type { UsageLimitReadingsShape } from "../usage/limit-readings.ts";
+import { sharedFolderNote } from "../shared/note.ts";
 
 /**
  * `Effect.scoped` for a session's lifetime, where a finalizer's defect joins the lifetime's failure
@@ -135,6 +136,8 @@ export interface SessionLifecycleDeps {
   readonly isShuttingDown: () => boolean;
   readonly markShutdownFailed: () => void;
   readonly currentAppTools: () => AppToolRegistryPort | undefined;
+  /** The workspace's shared folder on the thread's machine, for its session; none without one. */
+  readonly sharedFolder: (thread: Thread) => Effect.Effect<string | undefined>;
 }
 
 /** The sessions `ThreadRuntimes` runs, one per thread, each in `sessions`. */
@@ -179,6 +182,7 @@ export const makeSessionLifecycle = ({
   isShuttingDown,
   markShutdownFailed,
   currentAppTools,
+  sharedFolder,
 }: SessionLifecycleDeps) => {
   /**
    * The thread's recent turns as a new session reads them when the agent's own conversation was
@@ -578,6 +582,18 @@ export const makeSessionLifecycle = ({
         const dreamMode = dreamSupport?.mode;
         const sessionAppTools = currentAppTools();
         const mcp = sessionAppTools === undefined ? Option.none() : yield* mcpEndpoint(rt.threadId);
+        // Given beside the folders the user granted, and named in the session's instructions.
+        const shared = thread.role === "dream" ? undefined : yield* sharedFolder(thread);
+        const directories =
+          shared === undefined
+            ? thread.additionalDirectories
+            : [...(thread.additionalDirectories ?? []), shared];
+        const instructions =
+          shared === undefined
+            ? policy.instructions
+            : [policy.instructions, sharedFolderNote(shared)]
+                .filter((part) => part !== undefined && part !== "")
+                .join("\n\n");
         const open = (options: ResumeOptions) =>
           host.open({
             threadId: rt.threadId,
@@ -602,9 +618,7 @@ export const makeSessionLifecycle = ({
                     ),
                   },
                 }),
-            ...(thread.additionalDirectories === undefined
-              ? {}
-              : { additionalDirectories: thread.additionalDirectories }),
+            ...(directories === undefined ? {} : { additionalDirectories: directories }),
             ...(sessionAppTools === undefined ? {} : { appTools: sessionAppTools }),
             ...(Option.isSome(mcp) ? { mcp: mcp.value } : {}),
             audience: thread.role === "dream" ? "dream" : policy.audience,
@@ -616,9 +630,7 @@ export const makeSessionLifecycle = ({
                   instructions: dreamRolePromptFor(thread.model.agent),
                 }
               : {}),
-            ...(thread.role === "dream" || policy.instructions === undefined
-              ? {}
-              : { instructions: policy.instructions }),
+            ...(thread.role === "dream" || instructions === undefined ? {} : { instructions }),
             ...(dreamMode === "guided" || policy.outwardGate === undefined
               ? {}
               : { outwardGate: policy.outwardGate }),

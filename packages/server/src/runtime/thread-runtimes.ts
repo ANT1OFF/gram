@@ -97,6 +97,7 @@ import { makeTurnLifecycle } from "./turn-lifecycle.ts";
 import { makeMessageQueue, makeQueueMethods } from "./message-queue.ts";
 import { makeThreadLifecycle, makeCloseMethods } from "./thread-lifecycle.ts";
 import { makeAgentEvents } from "./agent-events.ts";
+import { SharedFolders } from "../shared/shared-folders.ts";
 import { DecisionHook } from "../embedding/decision-hook.ts";
 import { EventSink } from "../embedding/event-sink.ts";
 import { makeHookedRequests } from "../embedding/hooked-requests.ts";
@@ -323,6 +324,7 @@ const make = Effect.gen(function* () {
   const limitTimers = yield* FiberMap.make<ThreadId>();
   // Present in the full server; `undefined` leaves every request and session as it always was.
   const decisions = Option.getOrUndefined(yield* Effect.serviceOption(DecisionHook));
+  const sharedFolders = Option.getOrUndefined(yield* Effect.serviceOption(SharedFolders));
   const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
   const hooked = makeHookedRequests();
   /** The decision hook's calls for agents' requests, which outlive the event that began them. */
@@ -1113,6 +1115,8 @@ const make = Effect.gen(function* () {
     markShutdownFailed: () => {
       shutdownFailed = true;
     },
+    sharedFolder: (thread) =>
+      sharedFolders === undefined ? Effect.succeed(undefined) : sharedFolders.forSession(thread),
     currentAppTools: () => appTools,
   });
   const { claimClose, settleClose, guardHolds, restsNow, create } = makeThreadLifecycle({

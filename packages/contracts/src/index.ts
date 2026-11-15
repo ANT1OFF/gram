@@ -95,6 +95,7 @@ export * from "./vocabulary.ts";
 export * from "./review-monitor.ts";
 export * from "./pr-people.ts";
 export * from "./folder-access.ts";
+export * from "./shared-folder.ts";
 export * from "./settings.ts";
 export * from "./settings-chat.ts";
 export * from "./workspace-chat.ts";

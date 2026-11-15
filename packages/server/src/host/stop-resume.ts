@@ -36,6 +36,8 @@ export interface StopResumeDeps {
   readonly hosts: Pick<RemoteHostsShape, "connection" | "machines" | "stops">;
   readonly store: Pick<ThreadStore["Service"], "listThreads">;
   readonly runtimes: Pick<ThreadRuntimesShape, "restSession" | "startSession">;
+  /** Brings the machine's shared-folder mirrors in step one last time, where there are any. */
+  readonly sharedFlush?: (id: HostId) => Effect.Effect<void>;
 }
 
 /** Every checkout a thread holds, followed ones included. */
@@ -74,6 +76,8 @@ const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 /** The most folders one stop is asked to keep (`host.stop.prepare`'s limit). */
 export const STOP_FOLDERS_MAX = 512;
+/** How long a stop waits for the machine's shared folders, inside the embedder's own deadline. */
+const SHARED_FLUSH_WITHIN = "15 seconds";
 /** How long a machine gets to say it takes work again. */
 const CANCEL_WITHIN = "30 seconds";
 
@@ -233,6 +237,9 @@ export const prepareStop = (
       yield* takeBack;
       return { ...answer, idle: false, working, note: "The stop was taken back meanwhile." };
     }
+    // What its threads last wrote to their shared folders comes here before the machine goes.
+    if (deps.sharedFlush !== undefined)
+      yield* deps.sharedFlush(id).pipe(Effect.timeoutOption(SHARED_FLUSH_WITHIN), Effect.asVoid);
     deps.hosts.stops.stopped(id, rested);
     yield* Effect.logInfo("a machine was readied to stop").pipe(
       Effect.annotateLogs({ hostId: id, idle: prepared.idle, rested: rested.length }),

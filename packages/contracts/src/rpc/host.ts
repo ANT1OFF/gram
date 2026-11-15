@@ -27,7 +27,8 @@ import {
 import { FolderListing, FsFile, FsListing, HostFolderChecked } from "../fs.ts";
 import { GitState } from "../git.ts";
 import { ClaudeSignIn } from "../launch-checks.ts";
-import { HostId, ProfileId, RequestId, TerminalId, ThreadId } from "../ids.ts";
+import { HostId, ProfileId, RequestId, TerminalId, ThreadId, WorkspaceId } from "../ids.ts";
+import { SHARED_PART_BYTES, SharedListing, SharedPart } from "../shared-folder.ts";
 import { TerminalEvent, TerminalInfo, TerminalOpened } from "../terminal.ts";
 import { ProfileFile } from "../thread-profile.ts";
 import { FileImage } from "../thread-ui.ts";
@@ -177,6 +178,11 @@ export const HostFeature = Schema.Literals([
   "agent-opencode-sessions",
   /** Fresh non-credential subscription identity before a cold worker's limit preflight. */
   "account-scope",
+  /**
+   * Keeps a mirror of a workspace's shared folder on the machine (`host.shared.*`), for the control
+   * plane to keep in step with its own. A host without it runs its threads with no shared folder.
+   */
+  "shared-folders",
 ]);
 export type HostFeature = typeof HostFeature.Type;
 
@@ -873,6 +879,58 @@ export const HostRpcs = RpcGroup.make(
   }),
   /** Deletes what the host holds of `threadId`'s attachments: the thread is gone. */
   Rpc.make("host.attachments.remove", { payload: { threadId: ThreadId } }),
+  /**
+   * Makes the host's mirror of a workspace's shared folder, when it isn't there yet, and answers
+   * where it is, for the workspace's sessions on this machine to be given.
+   */
+  Rpc.make("host.shared.open", {
+    payload: { workspaceId: WorkspaceId },
+    success: Schema.Struct({ path: Schema.String }),
+    error: readErrors,
+  }),
+  /** The files in the host's mirror of a workspace's shared folder, each with its hash. */
+  Rpc.make("host.shared.list", {
+    payload: { workspaceId: WorkspaceId },
+    success: SharedListing,
+    error: readErrors,
+  }),
+  /** A part of one file in the host's mirror. */
+  Rpc.make("host.shared.read", {
+    payload: {
+      workspaceId: WorkspaceId,
+      path: Schema.String,
+      offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+      length: PositiveInt.check(Schema.isLessThanOrEqualTo(SHARED_PART_BYTES)),
+    },
+    success: SharedPart,
+    error: readErrors,
+  }),
+  /**
+   * A part of one file for the host's mirror, written beside it. The last part (`offset` plus the
+   * part reaching `size`) puts the file in place, but only when what is there still has the hash
+   * `ifMatch` (`absent` for no file) and the whole has the hash `sha256`; otherwise it is refused
+   * and nothing changes. Answers whether the file is in place.
+   */
+  Rpc.make("host.shared.write", {
+    payload: {
+      workspaceId: WorkspaceId,
+      path: Schema.String,
+      offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+      data: Schema.String,
+      size: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+      mtimeMs: Schema.Number,
+      sha256: Schema.String,
+      ifMatch: Schema.String,
+    },
+    success: Schema.Struct({ placed: Schema.Boolean }),
+    error: readErrors,
+  }),
+  /** Deletes one file from the host's mirror, only while it still has the hash `ifMatch`. */
+  Rpc.make("host.shared.remove", {
+    payload: { workspaceId: WorkspaceId, path: Schema.String, ifMatch: Schema.String },
+    success: Schema.Struct({ removed: Schema.Boolean }),
+    error: readErrors,
+  }),
   /**
    * Makes `threadId`'s own folder under the host's thread folders, new and empty, lays `files` in
    * it and answers where it is. The host checks each path itself, and refuses an id it already
