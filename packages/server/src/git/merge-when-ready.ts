@@ -47,6 +47,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Cause from "effect/Cause";
+import { ghThreadEnv } from "../embedding/github-relay.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { folderExists, ghFolderOf } from "../fs/folders.ts";
 import { mergeDelegationStands } from "../orchestration/rules.ts";
@@ -480,8 +481,10 @@ export const MergeWhenReadyLive = Layer.effect(
       turns.delete(key);
     };
 
-    const run = (cwd: string, args: ReadonlyArray<string>) =>
-      gh(cwd, args).pipe(Effect.provideService(Proc, proc));
+    const run = (cwd: string, args: ReadonlyArray<string>, threadId?: ThreadId) =>
+      gh(cwd, args, threadId === undefined ? {} : { env: ghThreadEnv(threadId) }).pipe(
+        Effect.provideService(Proc, proc),
+      );
 
     /** Explicit reconciliation and every later launch verify the branch independently of PR lag. */
     const readBase = (cwd: string, repo: string, branch: string) =>
@@ -1174,16 +1177,21 @@ export const MergeWhenReadyLive = Layer.effect(
                           : threadId,
                       );
                       if (!reserved) return { claimed: true } as const;
-                      return yield* run(ghCwd, [
-                        "pr",
-                        "merge",
-                        String(bound.number),
-                        `--${intent.method}`,
-                        "--match-head-commit",
-                        head,
-                        "--repo",
-                        bound.repo,
-                      ]).pipe(
+                      return yield* run(
+                        ghCwd,
+                        [
+                          "pr",
+                          "merge",
+                          String(bound.number),
+                          `--${intent.method}`,
+                          "--match-head-commit",
+                          head,
+                          "--repo",
+                          bound.repo,
+                        ],
+                        // Made for this thread: a deployment's GitHub route acts for its person.
+                        threadId,
+                      ).pipe(
                         Effect.map((out) => ({ out })),
                         Effect.catch((e) => Effect.succeed({ lost: e.message })),
                         Effect.tap((result) =>

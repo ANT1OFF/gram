@@ -47,6 +47,7 @@ import {
   isBadgeOf,
   rebindBlocker,
 } from "../git/extra-prs.ts";
+import { ghThreadEnv } from "../embedding/github-relay.ts";
 import { ghFolderOf } from "../fs/folders.ts";
 import { GitRefresh } from "../git/platform.ts";
 import { checkSiteOf, LocalChecks } from "../git/local-checks.ts";
@@ -708,8 +709,11 @@ export const PrAppToolsLive = Layer.effectDiscard(
               });
             }
           });
+          // Made for this thread: a deployment's GitHub route acts for its person.
           const run = (args: ReadonlyArray<string>) =>
-            gh(cwd, [...args, "--repo", repo]).pipe(Effect.provideService(Proc, proc));
+            gh(cwd, [...args, "--repo", repo], { env: ghThreadEnv(thread.id) }).pipe(
+              Effect.provideService(Proc, proc),
+            );
           const view = (field: string) =>
             run(["pr", "view", String(number), "--json", field, "--jq", `.${field}`]).pipe(
               Effect.map((out) => (out.status === 0 ? out.stdout.trim() : "")),

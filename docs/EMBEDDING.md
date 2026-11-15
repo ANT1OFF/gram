@@ -11,16 +11,18 @@ whatever its environment says.
 The seams are configured from the server's environment, never from settings, and a malformed
 value stops the server at start rather than half-configuring it.
 
-| Variable                   | What it sets                                                                   |
-| -------------------------- | ------------------------------------------------------------------------------ |
-| `GRAM_EMBED_TOKEN`         | The bearer token the platform's services send on `/embed/v1/*`                 |
-| `GRAM_REPO_EVENTS`         | `pushed`: repository events arrive on `/embed/v1/repo-events`; needs the token |
-| `GRAM_SCHEDULER_URL`       | Where wakes, snoozes and routine runs are registered; needs the token          |
-| `GRAM_SCHEDULER_TOKEN`     | The bearer token sent to the scheduler                                         |
-| `GRAM_OBJECT_STORE_URL`    | Where attachments, docs and outputs are kept as well as on the disk            |
-| `GRAM_OBJECT_STORE_TOKEN`  | The bearer token sent to the object store                                      |
-| `GRAM_HOST_PROVIDER_URL`   | Where a person's machine is asked for, on a headless server; needs the token   |
-| `GRAM_HOST_PROVIDER_TOKEN` | The bearer token sent to the host provider                                     |
+| Variable                   | What it sets                                                                      |
+| -------------------------- | --------------------------------------------------------------------------------- |
+| `GRAM_EMBED_TOKEN`         | The bearer token the platform's services send on `/embed/v1/*`                    |
+| `GRAM_REPO_EVENTS`         | `pushed`: repository events arrive on `/embed/v1/repo-events`; needs the token    |
+| `GRAM_SCHEDULER_URL`       | Where wakes, snoozes and routine runs are registered; needs the token             |
+| `GRAM_SCHEDULER_TOKEN`     | The bearer token sent to the scheduler                                            |
+| `GRAM_OBJECT_STORE_URL`    | Where attachments, docs and outputs are kept as well as on the disk               |
+| `GRAM_OBJECT_STORE_TOKEN`  | The bearer token sent to the object store                                         |
+| `GRAM_HOST_PROVIDER_URL`   | Where a person's machine is asked for, on a headless server; needs the token      |
+| `GRAM_HOST_PROVIDER_TOKEN` | The bearer token sent to the host provider                                        |
+| `GRAM_GITHUB_ROUTE_URL`    | Where a headless server's `gh` reaches GitHub ([A GitHub route](#a-github-route)) |
+| `GRAM_GITHUB_ROUTE_TOKEN`  | The bearer token sent to the GitHub route (or `GRAM_GITHUB_ROUTE_TOKEN_FILE`)     |
 
 Tokens are at least 32 characters with no whitespace. The server takes them out of its own
 environment once it has read them, so no agent, terminal or `git` process it starts inherits one.
@@ -175,6 +177,17 @@ Limits:
 - A send that fails is tried again at the next walk, and an output's at the next time it is recorded.
 - A delete the store didn't confirm is kept in `object-store.json` and asked again at each walk.
 - A file is sent only from where it was when it was checked: one whose folder has since become a link is left out, and the log says so.
+
+## A GitHub route
+
+A headless server (`GRAM_HEADLESS=1`) keeps the network tier: PR badges and checks, the CI monitor, merges and auto-merge, review bots and the default-branch watch all run `gh` on it. A deployment that gives the server no GitHub credential of its own sets `GRAM_GITHUB_ROUTE_URL`, and every `gh` the server runs reaches GitHub through that route instead.
+
+- The server serves a socket at `github-relay/gh.sock` in its data folder and points `gh` at it (`GH_CONFIG_DIR`, with `http_unix_socket`). `gh` is given a placeholder `GH_TOKEN`, which is never sent on.
+- Each request goes to `<url>/api<path>`, `<url>/uploads<path>` or `<url>/codeload<path>`, by the host `gh` asked for, with `Authorization: Bearer <token>` (the token file, when one is named, is read on every call) and `x-gram-upstream-host`. A redirect is handed back to `gh` as it came.
+- A call made for one thread (`merge_when_ready`'s merge, `set_auto_merge`) carries `x-gram-thread: <threadId>`, so the route can act for that thread's person and check what it may do. A sweep of a checkout's badge names no thread.
+- The route answers as GitHub would: `gh` reads the answer as GitHub's.
+
+The route is refused on a server that runs work itself, which would hand its agents the same `gh`, and a route that is given and can't be used stops the server at start.
 
 ## Shared folders
 
