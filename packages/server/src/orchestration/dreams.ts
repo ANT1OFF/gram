@@ -81,7 +81,8 @@ import {
   dreamSessionFileName,
 } from "./dream-files.ts";
 import { mergeConflict } from "./dream-merge.ts";
-import { dreamPrompt } from "./dream-prompt.ts";
+import { dreamCheckPrompt, dreamPrompt } from "./dream-prompt.ts";
+import { lintLines, lintMemory, seriousLintProblems } from "./memory-lint.ts";
 import {
   DELTA_CONTEXT_MESSAGES,
   capDigest,
@@ -262,6 +263,29 @@ const dreamReportOf = (
 });
 
 /**
+ * The dream's report with what Gram's own check of its output still finds, under a heading of its
+ * own, so the reviewer sees a broken link or a split subject the dream left without hunting for
+ * it. Nothing is added when the check is clean.
+ */
+const reportWithChecks = (output: {
+  readonly files: ReadonlyArray<MemorySetFile>;
+  readonly report?: string | undefined;
+}): { readonly report?: string } => {
+  // Tidiness (a long index line, a missing description) is the dream's to see with `dream_check`.
+  const problems = lintMemory(output.files).filter(
+    (problem) => problem.kind !== "no_description" && problem.kind !== "index_line_long",
+  );
+  if (problems.length === 0) return output.report === undefined ? {} : { report: output.report };
+  const checks = `## Checks by Gram\n\nWhat Gram's check of this memory still finds:\n\n${lintLines(problems)}\n`;
+  return {
+    report:
+      output.report === undefined || output.report.trim() === ""
+        ? checks
+        : `${output.report.trimEnd()}\n\n${checks}`,
+  };
+};
+
+/**
  * A fingerprint of the three sides of a conflict, which a merge belongs to: a live write or a
  * rewritten output since makes it a merge of something else, so it is no longer offered.
  */
@@ -413,6 +437,8 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
       const adoptionLock = yield* Semaphore.make(1);
       /** The running dreams by the thread each runs as: what a turn end is looked up in. */
       const running = new Map<ThreadId, DreamId>();
+      /** Dreams Gram has sent back once to fix what `lintMemory` found; held only while they run. */
+      const checkedOnce = new Set<DreamId>();
       /**
        * The merges asked for, by dream and path, with the sides each read. Held here and nowhere
        * else, so an adoption's `merged` can only take a text the server made: a restart forgets
@@ -976,7 +1002,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             completed.mode === "auto"
               ? yield* autoAdopt(completed, outputDigest(verdict.output))
               : completed;
-          yield* announce(ended, verdict.review, verdict.output.report, {
+          yield* announce(ended, verdict.review, reportWithChecks(verdict.output).report, {
             kind: ended.adoptionFailure === undefined ? "done" : "error",
             title:
               ended.mode !== "auto"
@@ -985,6 +1011,38 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                   ? "Memory update automatically adopted"
                   : "Memory update automatic adoption stopped",
           });
+        });
+
+      /**
+       * The second look a dream gets when it says it is done: Gram lints its output as a whole,
+       * and if a link leads nowhere, a subject is split in two or the index has outgrown its
+       * target, sends it back once with the list. What it leaves after that reaches the reviewer.
+       * Any trouble reading the output finishes it as it is, where the real check refuses it.
+       */
+      const checkThenFinish = (thread: Thread, dreamId: DreamId) =>
+        Effect.gen(function* () {
+          if (!checkedOnce.has(dreamId)) {
+            checkedOnce.add(dreamId);
+            const dream = yield* store.getDream(dreamId).pipe(Effect.option);
+            const serious =
+              dream._tag === "None" || dream.value.status !== "running"
+                ? undefined
+                : yield* files.peekOutput(dream.value.workspaceId, dreamId).pipe(
+                    Effect.map((output) => seriousLintProblems(lintMemory(output))),
+                    Effect.orElseSucceed(() => undefined),
+                  );
+            if (serious !== undefined) {
+              const sent = yield* runtimes
+                .send(thread.id, { text: dreamCheckPrompt(serious), author: "server" })
+                .pipe(
+                  Effect.as(true),
+                  Effect.orElseSucceed(() => false),
+                );
+              if (sent) return;
+            }
+          }
+          checkedOnce.delete(dreamId);
+          yield* finish(dreamId);
         });
 
       const onTurnEnd = (thread: Thread, end: ObservedTurnEnd) => {
@@ -997,7 +1055,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
         // `done`. An interrupt is the user's, who may steer it and let it go on; a synthesized end
         // is the host giving up on a turn, not the agent finishing one.
         return end.reason === "completed" && !end.synthesized && end.queueEmpty
-          ? finish(dreamId)
+          ? checkThenFinish(thread, dreamId)
           : Effect.void;
       };
 
@@ -1371,7 +1429,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             memoryDigest: found.memoryDigest,
             outputDigest: outputDigest(found.output),
             files: found.files,
-            ...(found.output.report === undefined ? {} : { report: found.output.report }),
+            ...reportWithChecks(found.output),
           };
         }).pipe(withAnchoredFiles);
 

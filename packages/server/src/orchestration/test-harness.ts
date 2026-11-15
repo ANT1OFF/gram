@@ -64,6 +64,7 @@ import { ComposerPresence } from "../runtime/composer-presence.ts";
 import { cloneIdentityOf } from "../host/repos.ts";
 import { MachineOwnersForTests, type WorkerHost, WorkerHosts } from "../host/worker-host.ts";
 import { OrchestratorAppToolsLive } from "./tools.ts";
+import { TranscriptSearchAppToolsLive } from "./transcript-search-tool.ts";
 import { PrDependenciesLive } from "../wakes/pr-dependencies.ts";
 import { ThreadWakesLive } from "../wakes/thread-wakes.ts";
 import { BranchHeads } from "../wakes/branch-heads.ts";
@@ -598,6 +599,7 @@ export const serverLayer = (
   Layer.mergeAll(
     OrchestrationAppToolsLive,
     OrchestratorAppToolsLive.pipe(Layer.provideMerge(PrDependenciesLive)),
+    TranscriptSearchAppToolsLive,
     RoutineAppToolsLive,
     PrAppToolsLive.pipe(
       Layer.provideMerge(MergeWhenReadyLive.pipe(Layer.provide(fakeGh(world)))),

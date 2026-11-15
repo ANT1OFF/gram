@@ -972,6 +972,16 @@ every one of them reads it and writes it with `memory_append` (a dated entry, no
 `memory_delete`. The orchestrator curates it by convention, folding duplicates together, pruning
 what is stale and keeping the index true; nothing locks writing to it.
 
+`search_transcripts` is full-text search over the workspace's own conversations: its
+orchestrator's thread and its workers', archived ones included, ranked with what was said above
+tool names and inputs. It reads the index behind `search_threads` but answers only from the
+caller's workspace, and gives each hit's thread, its `seq` (place in the thread), the message's
+role and a snippet; `threadId` narrows it to one thread, `workersOnly` leaves out the
+orchestrator's conversation and `withText` adds the message's text, cut at 2,000 characters.
+Everything it returns is scrubbed. An orchestrator, its workers and a running memory update have
+it; a plain thread does not. Source:
+[transcript search tool](../packages/server/src/orchestration/transcript-search-tool.ts).
+
 `memory_read` returns a note's `revision`, the start of the SHA-256 of its text as read.
 `memory_write` and `memory_delete` take it: when the note has changed since, nothing is written
 and the refusal (`stale_revision`) carries the note's current text and revision, so the caller
@@ -1191,6 +1201,16 @@ tools can access other permitted files. Gram validates candidates before Review/
 strict file-only policy refuses this route. Newer installed Codex versions are accepted
 for memory updates with a compatibility warning. Older or unknown versions remain unavailable
 for memory updates while ordinary sessions stay available.
+
+A memory update writes memory as notes with front matter and `[[links]]`, and checks it before it
+finishes: `dream_check` lints the candidate as a whole (links that name no note, two notes on one
+subject, notes the index doesn't name, an index over its 4 KB target, long index lines, notes with
+no description), and the prompt asks it to check each claim it keeps against the sessions or
+`search_transcripts` and say on the entry how it was verified. When it says it is done, Gram runs
+the same check; a broken link, a split subject or an oversized index sends it back once with the
+list, and whatever is left after that is appended to the report under "Checks by Gram" for the
+reviewer. The check never refuses output; the caps and path rules do that. Source:
+[memory checks](../packages/server/src/orchestration/memory-lint.ts).
 
 Selected-harness preflight reads discovery, model/profile and support before
 startup. It does not run a provider turn, open a page or grant permissions.
