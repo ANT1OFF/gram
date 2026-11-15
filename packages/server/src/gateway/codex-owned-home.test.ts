@@ -254,6 +254,8 @@ name = "Embedder gateway"
 base_url = "http://gateway.invalid/v1"
 wire_api = "responses"
 requires_openai_auth = false
+env_key = "EMBEDDER_KEY"
+env_http_headers = { "x-org" = "EMBEDDER_ORG" }
 [model_providers.embedder.auth]
 command = "/bin/cat"
 args = ["/var/run/token-path-only"]
@@ -273,7 +275,10 @@ command = "docs"
         const { root, user, data, env } = yield* fixture;
         rmSync(join(user, "auth.json"));
         writeFileSync(join(user, "config.toml"), embedderConfig);
-        expect(yield* ownedCodexProvider(root, env)).toBe("embedder");
+        expect(yield* ownedCodexProvider(root, env)).toEqual({
+          name: "embedder",
+          env: ["EMBEDDER_KEY", "EMBEDDER_ORG"],
+        });
         const target = yield* prepareOwnedCodexHome(data, root, env);
         expect(existsSync(join(target, "auth.json"))).toBe(false);
         const config = parse(readFileSync(join(target, "config.toml"), "utf8"));
@@ -287,6 +292,8 @@ command = "docs"
               base_url: "http://gateway.invalid/v1",
               wire_api: "responses",
               requires_openai_auth: false,
+              env_key: "EMBEDDER_KEY",
+              env_http_headers: { "x-org": "EMBEDDER_ORG" },
               auth: { command: "/bin/cat", args: ["/var/run/token-path-only"] },
             },
           },
@@ -301,11 +308,11 @@ command = "docs"
         });
         // The user's rules stay out, and the outward rules install and come off as before.
         expect(existsSync(join(target, "rules", "allow.rules"))).toBe(false);
-        // A login linked before (the machine once had one) does not stay linked.
-        writeFileSync(join(user, "elsewhere.json"), "invented");
-        symlinkSync(join(user, "elsewhere.json"), join(target, "auth.json"));
+        // Gram's own link from when the machine had a login does not stay.
+        symlinkSync(join(user, "auth.json"), join(target, "auth.json"));
         yield* prepareOwnedCodexHome(data, root, env);
         expect(existsSync(join(target, "auth.json"))).toBe(false);
+        expect(() => lstatSync(join(target, "auth.json"))).toThrow();
         expect(lstatSync(join(target, "config.toml")).isFile()).toBe(true);
       }).pipe(Effect.scoped),
   );
@@ -351,6 +358,64 @@ command = "docs"
       // A configuration that can't be read is no provider of its own.
       writeFileSync(join(user, "config.toml"), "model_provider = [");
       expect(yield* ownedCodexProvider(root, env)).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+  it.effect("never removes a login file it didn't link, and refuses to prepare over it", () =>
+    Effect.gen(function* () {
+      const { root, user, data, env } = yield* fixture;
+      rmSync(join(user, "auth.json"));
+      writeFileSync(join(user, "config.toml"), embedderConfig);
+      const target = yield* prepareOwnedCodexHome(data, root, env);
+      const link = join(target, "auth.json");
+      // A regular file (as a CLI's refresh can leave in place of the link), and a link elsewhere.
+      writeFileSync(link, "invented regular login");
+      expect(Exit.isFailure(yield* Effect.exit(prepareOwnedCodexHome(data, root, env)))).toBe(true);
+      expect(readFileSync(link, "utf8")).toBe("invented regular login");
+      rmSync(link);
+      writeFileSync(join(root, "elsewhere.json"), "invented");
+      symlinkSync(join(root, "elsewhere.json"), link);
+      expect(Exit.isFailure(yield* Effect.exit(prepareOwnedCodexHome(data, root, env)))).toBe(true);
+      expect(readlinkSync(link)).toBe(join(root, "elsewhere.json"));
+      expect(readFileSync(join(root, "elsewhere.json"), "utf8")).toBe("invented");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps no provider whose table could carry a credential itself, and writes none", () =>
+    Effect.gen(function* () {
+      const { root, user, data, env } = yield* fixture;
+      rmSync(join(user, "auth.json"));
+      const marker = "invented-review-marker";
+      for (const extra of [
+        `experimental_bearer_token = "${marker}"`,
+        `http_headers = { Authorization = "Bearer ${marker}" }`,
+        `query_params = { "api-key" = "${marker}" }`,
+        `env_http_headers = { "x-key" = "not a variable ${marker}" }`,
+        `env_key = "${marker} value"`,
+        `unknown_future_key = "${marker}"`,
+        `[model_providers.embedder.auth]\ncommand = "/bin/echo"\nargs = ["${marker}"]`,
+        `[model_providers.embedder.auth]\ncommand = "echo"\nargs = ["/path"]`,
+        `[model_providers.embedder.auth]\ncommand = "/bin/cat"\nargs = ["/path"]\nenv = { TOKEN = "${marker}" }`,
+      ]) {
+        const config = table(`requires_openai_auth = false\n${extra}`);
+        writeFileSync(join(user, "config.toml"), config);
+        expect(ownCodexProvider(parse(config)), extra).toBeUndefined();
+        expect(yield* ownedCodexProvider(root, env), extra).toBeUndefined();
+        // Without a provider of its own or a login the gated home refuses, writing nothing of it.
+        expect(Exit.isFailure(yield* Effect.exit(prepareOwnedCodexHome(data, root, env)))).toBe(
+          true,
+        );
+        const written = join(data, "codex-owned-home", "config.toml");
+        if (existsSync(written)) expect(readFileSync(written, "utf8")).not.toContain(marker);
+      }
+      // A base URL that names credentials or a query is refused the same way.
+      for (const url of [`https://u:${marker}@g.invalid/v1`, `https://g.invalid/v1?key=${marker}`])
+        expect(
+          ownCodexProvider(
+            parse(
+              `model_provider = "embedder"\n[model_providers.embedder]\nbase_url = "${url}"\nrequires_openai_auth = false`,
+            ),
+          ),
+        ).toBeUndefined();
     }).pipe(Effect.scoped),
   );
 });

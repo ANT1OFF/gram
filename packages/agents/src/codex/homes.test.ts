@@ -86,7 +86,8 @@ if (args[0] === "debug") {
 const catalog = args.find((arg) => arg.startsWith("model_catalog_json="));
 if (catalog) fs.appendFileSync(${JSON.stringify(catalogsFile)}, catalog + "\\n");
 fs.appendFileSync(${JSON.stringify(serversFile)}, process.pid + " " + home + "\\n");
-fs.appendFileSync(${JSON.stringify(requestsFile)}, JSON.stringify({ home, args }) + "\\n");
+const keys = ["LLM_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "EMBEDDER_HEADER"];
+fs.appendFileSync(${JSON.stringify(requestsFile)}, JSON.stringify({ home, args, env: keys.filter((key) => process.env[key] !== undefined) }) + "\\n");
 const file = path.join(home, "threads.json");
 const approvals = new Map();
 const rulesIn = (dir) => fs.existsSync(dir)
@@ -216,6 +217,8 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
   const requests = (): ReadonlyArray<{
     home: string;
     args?: ReadonlyArray<string>;
+    /** Which key variables the app-server was started with, by name. */
+    env?: ReadonlyArray<string>;
     method?: string;
     params?: Record<string, unknown>;
   }> =>
@@ -267,8 +270,12 @@ const withHomes = <A>(
   body: (homes: Homes) => Effect.Effect<A, unknown, Scope.Scope>,
   skillRoots: ReadonlyArray<string> = [],
   afterClose?: (gatewayHome: string) => void,
-  /** The machine's own provider the owned home keeps (`ownedHome.provider`). */
-  ownProvider?: string,
+  options: {
+    /** The machine's own provider the owned home keeps (`ownedHome.provider`). */
+    readonly ownProvider?: { readonly name: string; readonly env: ReadonlyArray<string> };
+    /** More child env, as an embedder's host is started with. */
+    readonly env?: Readonly<Record<string, string>>;
+  } = {},
 ) =>
   Effect.acquireUseRelease(
     Effect.sync(() => mkdtempSync(join(tmpdir(), "gram-codex-homes-"))),
@@ -289,7 +296,7 @@ const withHomes = <A>(
           CodexServersLive({
             binaryPath: fake.binary,
             shell: "/bin/sh",
-            extraEnv: { CODEX_HOME: userHome },
+            extraEnv: { CODEX_HOME: userHome, ...options.env },
             ownedHome: {
               prepare: () =>
                 Effect.sync(() => {
@@ -310,9 +317,9 @@ const withHomes = <A>(
                   rmSync(join(ownedHome, "rules", "gate.rules"), { force: true }),
                 ),
               },
-              ...(ownProvider === undefined
+              ...(options.ownProvider === undefined
                 ? {}
-                : { provider: () => Effect.succeed<string | undefined>(ownProvider) }),
+                : { provider: () => Effect.succeed(options.ownProvider) }),
             },
             gatewayHome: () =>
               Effect.sync(() => {
@@ -496,6 +503,14 @@ describe.skipIf(process.platform === "win32")("Codex homes over real app-servers
     60_000,
   );
 
+  /** Invented values only: which of them reach a child is what is checked, never the value. */
+  const invented = {
+    LLM_API_KEY: "invented-llm-key",
+    OPENAI_API_KEY: "invented-openai-key",
+    ANTHROPIC_API_KEY: "invented-anthropic-key",
+    EMBEDDER_HEADER: "invented-header",
+  };
+
   it.live(
     "runs a gated session on the machine's own provider, with its rules and no ChatGPT login",
     () =>
@@ -526,6 +541,9 @@ describe.skipIf(process.platform === "win32")("Codex homes over real app-servers
               ]),
             );
             expect(args.join(" ")).not.toMatch(/chatgpt|forced_login_method|openai/);
+            // Exactly the variables the provider names reach it; every other key is scrubbed.
+            const started = owned.find((each) => each.args !== undefined);
+            expect(started?.env).toEqual(["LLM_API_KEY", "EMBEDDER_HEADER"]);
             // No ChatGPT login is asked for: the provider authenticates itself.
             expect(owned.map((each) => each.method)).not.toContain("account/read");
             const start = owned.find((each) => each.method === "thread/start")?.params ?? {};
@@ -556,35 +574,44 @@ describe.skipIf(process.platform === "win32")("Codex homes over real app-servers
           }),
         [],
         undefined,
-        "embedder",
+        {
+          ownProvider: { name: "embedder", env: ["LLM_API_KEY", "EMBEDDER_HEADER"] },
+          env: invented,
+        },
       ),
     60_000,
   );
 
   it.live("keeps ChatGPT's gated home exactly as before when no own provider is named", () =>
-    withHomes(({ host, ownedHome, repo, requests }) =>
-      Effect.gen(function* () {
-        yield* host.open({
-          threadId: ThreadId.make("chatgpt"),
-          cwd: repo,
-          outwardGate: "all",
-          permissionMode: "bypassPermissions",
-        });
-        const owned = requests().filter((each) => each.home === ownedHome);
-        const args = owned.find((each) => each.args !== undefined)?.args ?? [];
-        expect(args).toEqual(
-          expect.arrayContaining([
-            'model_provider="openai"',
-            'forced_login_method="chatgpt"',
-            "features.exec_policy=true",
-          ]),
-        );
-        expect(owned.map((each) => each.method)).toContain("account/read");
-        expect(owned.find((each) => each.method === "thread/start")?.params).toMatchObject({
-          modelProvider: "openai",
-          config: { model_provider: "openai", forced_login_method: "chatgpt" },
-        });
-      }),
+    withHomes(
+      ({ host, ownedHome, repo, requests }) =>
+        Effect.gen(function* () {
+          yield* host.open({
+            threadId: ThreadId.make("chatgpt"),
+            cwd: repo,
+            outwardGate: "all",
+            permissionMode: "bypassPermissions",
+          });
+          const owned = requests().filter((each) => each.home === ownedHome);
+          const args = owned.find((each) => each.args !== undefined)?.args ?? [];
+          expect(args).toEqual(
+            expect.arrayContaining([
+              'model_provider="openai"',
+              'forced_login_method="chatgpt"',
+              "features.exec_policy=true",
+            ]),
+          );
+          expect(owned.map((each) => each.method)).toContain("account/read");
+          expect(owned.find((each) => each.method === "thread/start")?.params).toMatchObject({
+            modelProvider: "openai",
+            config: { model_provider: "openai", forced_login_method: "chatgpt" },
+          });
+          // Every key is scrubbed from the gated home's child, as before; other variables stay.
+          expect(owned.find((each) => each.args !== undefined)?.env).toEqual(["EMBEDDER_HEADER"]);
+        }),
+      [],
+      undefined,
+      { env: invented },
     ),
   );
 
