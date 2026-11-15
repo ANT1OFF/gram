@@ -1,5 +1,5 @@
 {
-  "firstPaintKb": 2250,
+  "firstPaintKb": 2200,
   "lazyChunkKb": 1000,
   "routeKb": {
     "default": 140,

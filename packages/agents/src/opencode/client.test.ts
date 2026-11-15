@@ -54,6 +54,22 @@ describe("the OpenCode client", () => {
     });
   });
 
+  it("trims a base URL's trailing slashes in one pass, however many there are", async () => {
+    const { sent, fetch } = recording(() => json({ data: [] }));
+    // 200,000 slashes then a letter: `/\/+$/` takes seconds to give up on this, past the timeout.
+    const run = "/".repeat(200_000);
+    await makeOpenCodeClient({ baseUrl: `http://h${run}x`, password: "p", fetch }).listSessions(
+      "/w",
+      1,
+    );
+    await makeOpenCodeClient({ baseUrl: `http://h/x${run}`, password: "p", fetch }).listSessions(
+      "/w",
+      1,
+    );
+    expect(sent[0]?.url.startsWith(`http://h${run}x/api/session`)).toBe(true);
+    expect(sent[1]?.url.startsWith("http://h/x/api/session")).toBe(true);
+  });
+
   it("puts a session's id and a reply's request id in the path, encoded", async () => {
     const { sent, fetch } = recording(() => new Response(""));
     const client = makeOpenCodeClient({ baseUrl: "http://h", password: "p", fetch });
