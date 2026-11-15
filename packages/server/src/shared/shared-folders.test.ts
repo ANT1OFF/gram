@@ -12,7 +12,7 @@ let dir: string;
 const REMOTE = HostId.make("machine-1");
 const WS = WorkspaceId.make("ws-1");
 
-const threadOn = (hostId: HostId | undefined, extra: Partial<Thread> = {}): Thread =>
+const threadOn = (hostId: HostId | undefined, extra: Record<string, unknown> = {}): Thread =>
   ({
     id: ThreadId.make("t-1"),
     workspaceId: WS,
