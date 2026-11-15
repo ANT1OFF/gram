@@ -49,9 +49,10 @@ import * as Stream from "effect/Stream";
 import * as Cause from "effect/Cause";
 import { EventHub } from "../events/event-hub.ts";
 import { folderExists, ghFolderOf } from "../fs/folders.ts";
+import { mergeDelegationStands } from "../orchestration/rules.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { type MergeFence, type PendingMerge } from "../persistence/merge-fence.ts";
-import { ThreadStore } from "../persistence/thread-store.ts";
+import { ThreadStore, type ThreadUpdateContext } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { isBadgeOf } from "./extra-prs.ts";
 import { type CheckSite, checkSiteOf, LocalChecks, type LocalCheck } from "./local-checks.ts";
@@ -523,7 +524,13 @@ export const MergeWhenReadyLive = Layer.effect(
      * when a sibling's `pr_bind` committed since the launch's last conflict scan, so the merge below
      * is never launched onto a PR that is now another thread's. Memory follows the durable write.
      */
-    const reserveFence = (key: string, pending: PendingMerge, moved = movedBases.get(key) ?? []) =>
+    const reserveFence = (
+      key: string,
+      pending: PendingMerge,
+      authorized: (thread: Thread | undefined, context: ThreadUpdateContext | undefined) => boolean,
+      authorityCaller: ThreadId,
+      moved = movedBases.get(key) ?? [],
+    ) =>
       Effect.uninterruptible(
         Effect.gen(function* () {
           const cutoff = verificationAfter.get(key);
@@ -533,7 +540,13 @@ export const MergeWhenReadyLive = Layer.effect(
             ...(cutoff === undefined ? {} : { verifyAfter: cutoff }),
             pending,
           };
-          const reserved = yield* store.reserveMergeFence(record, pending.pr, pending.threadId);
+          const reserved = yield* store.reserveMergeFence(
+            record,
+            pending.pr,
+            pending.threadId,
+            authorized,
+            authorityCaller,
+          );
           if (reserved) {
             movedBases.set(key, [...moved]);
             unsettled.set(key, pending);
@@ -1077,17 +1090,85 @@ export const MergeWhenReadyLive = Layer.effect(
                     // A freeze set while the lookups ran: the merge waits for its end.
                     const frozenNow = yield* frozenFor(bound, fresh.baseRef);
                     if (frozenNow !== undefined) return { frozen: frozenNow } as const;
+                    /**
+                     * The launch's authority, decided again in the reservation's own transaction:
+                     * the thread still binds this PR with this very intent, unheld, unparked and
+                     * unwatched, in an unpaused workspace; an autonomy intent only while full auto
+                     * still delegates the worker its merges in the scope its ownership was found in;
+                     * a reused approval only while it and its delegation stand. Anything revoked
+                     * before the reservation commits refuses it, whatever the checks above read.
+                     */
+                    const stillAuthorized = (
+                      current: Thread | undefined,
+                      context: ThreadUpdateContext | undefined,
+                    ): boolean => {
+                      const binding = current?.boundPr;
+                      if (
+                        current === undefined ||
+                        context === undefined ||
+                        current.parked ||
+                        current.babysit?.phase === "watching" ||
+                        binding === undefined ||
+                        !samePr(binding, bound) ||
+                        binding.mergeWhenReady?.setAt !== intent.setAt ||
+                        binding.mergeWhenReady.hold !== undefined ||
+                        context.workspace?.paused !== undefined
+                      )
+                        return false;
+                      if (intent.allowedBy === "autonomy")
+                        return (
+                          owned !== undefined &&
+                          mergeDelegationStands({
+                            callerId: threadId,
+                            caller: context.caller,
+                            target: current,
+                            state: context.workspace,
+                          }) &&
+                          JSON.stringify(context.workspace?.workspace.projectIds) ===
+                            owned.projects &&
+                          JSON.stringify([current.checkout, current.extraCheckouts]) ===
+                            owned.folders
+                        );
+                      if (intent.userAuthorization?.reused === true) {
+                        const approval = intent.userAuthorization;
+                        return (
+                          reusedScope !== undefined &&
+                          userMergeAuthorizationMatches(
+                            approval.callerId,
+                            current,
+                            bound,
+                            intent.method,
+                          ) &&
+                          userMergeDelegationIsLive(approval.callerId, current, context) &&
+                          JSON.stringify(binding.mergeWhenReady) === JSON.stringify(intent) &&
+                          JSON.stringify(current.checkout) ===
+                            JSON.stringify(reusedScope.thread.checkout) &&
+                          JSON.stringify(current.extraCheckouts) ===
+                            JSON.stringify(reusedScope.thread.extraCheckouts) &&
+                          JSON.stringify(context.workspace?.workspace.projectIds) ===
+                            JSON.stringify(reusedScope.context.workspace?.workspace.projectIds)
+                        );
+                      }
+                      return true;
+                    };
                     const merge = Effect.gen(function* () {
                       // Before even starting gh: a process crash cannot skip the fence write, and
                       // the reservation refuses in-transaction if a sibling bound the PR since the
                       // conflict scans above, so no merge launches onto another thread's work.
-                      const reserved = yield* reserveFence(key, {
-                        pr: { repo: bound.repo, number: bound.number },
-                        threadId,
-                        head,
-                        ...(tip === undefined ? {} : { tip }),
-                        at: yield* Clock.currentTimeMillis,
-                      });
+                      const reserved = yield* reserveFence(
+                        key,
+                        {
+                          pr: { repo: bound.repo, number: bound.number },
+                          threadId,
+                          head,
+                          ...(tip === undefined ? {} : { tip }),
+                          at: yield* Clock.currentTimeMillis,
+                        },
+                        stillAuthorized,
+                        intent.userAuthorization?.reused === true
+                          ? intent.userAuthorization.callerId
+                          : threadId,
+                      );
                       if (!reserved) return { claimed: true } as const;
                       return yield* run(ghCwd, [
                         "pr",
@@ -1175,13 +1256,14 @@ export const MergeWhenReadyLive = Layer.effect(
           return yield* recheck.pipe(Effect.andThen(Effect.suspend(() => attempt(threadId, head))));
         }
         if ("claimed" in launched) {
-          // A sibling bound the PR between the launch's last conflict scan and its reservation. Wait
-          // and look again: the next attempt's ownership recheck drops the intent and tells the
-          // worker (autonomy), or its identity recheck stands the merge down (a reused approval).
+          // The reservation refused in its own transaction: a sibling bound the PR, or the launch's
+          // authority (autonomy, delegation, scope, intent) changed, after the checks above. Wait and
+          // look again: the next attempt's rechecks drop the intent and tell the worker, or stand
+          // the merge down, on what is true then.
           yield* noteWait(
             thread.value,
             bound,
-            "another thread bound it, so it is that thread's to merge",
+            "another thread bound it or its merge's authority changed just before the launch",
           );
           return yield* recheck.pipe(Effect.andThen(Effect.suspend(() => attempt(threadId, head))));
         }

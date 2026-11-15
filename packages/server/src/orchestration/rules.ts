@@ -356,6 +356,57 @@ export const workerMergesOwnAtFull = (
   autonomyOf(input.charter) === "full" &&
   input.paused !== true;
 
+/**
+ * Whether full auto still delegates `target`'s merges to `callerId`, decided over facts one
+ * transaction read: the caller's thread and `target`'s workspace state. The same rule as the
+ * service's `workerMergesOwn` (a worker on its own PR, in the workspace its orchestrator listens to)
+ * and `fullAutonomyAllows` (an orchestrator on its worker's), so an arming write or a launch
+ * reservation commits only while the delegation stands, never on a verdict read before it. A
+ * missing caller, workspace or charter is a no.
+ */
+export const mergeDelegationStands = (input: {
+  readonly callerId: ThreadId;
+  readonly caller: RuleThread | undefined;
+  readonly target: RuleThread;
+  readonly state:
+    | {
+        readonly workspace: RuleWorkspace;
+        readonly charter: Pick<OrchestratorCharter, "autonomy"> | undefined;
+        readonly paused?: unknown;
+        readonly pausedFeatures?: ReadonlyArray<string> | undefined;
+      }
+    | undefined;
+}): boolean => {
+  const { callerId, caller, target, state } = input;
+  if (caller === undefined || caller.id !== callerId || state === undefined) return false;
+  const feature = target.spawnedBy?.feature;
+  const paused =
+    state.paused !== undefined ||
+    (feature !== undefined && state.pausedFeatures?.includes(feature) === true);
+  if (callerId === target.id) {
+    // `listeningWorkspace`: only the workspace whose orchestrator spawned the worker speaks for it.
+    if (
+      target.spawnedBy === undefined ||
+      state.workspace.orchestratorThreadId !== target.spawnedBy.threadId
+    )
+      return false;
+    return workerMergesOwnAtFull({
+      thread: target,
+      workspace: state.workspace,
+      charter: state.charter,
+      paused,
+    });
+  }
+  if (caller.workspaceId !== target.workspaceId) return false;
+  return fullAutonomyAllows({
+    caller,
+    target,
+    workspace: state.workspace,
+    charter: state.charter,
+    paused,
+  });
+};
+
 // ---------------------------------------------------------------------------------------------
 // Permission modes
 // ---------------------------------------------------------------------------------------------

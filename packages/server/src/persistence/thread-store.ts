@@ -20,6 +20,7 @@ import {
   Label,
   NotFound,
   normalizeThreadPrs,
+  MAX_EXTRA_PRS,
   Palette,
   PendingRequest,
   PlanItem,
@@ -439,6 +440,12 @@ export interface ThreadPlanRecord {
 
 const TurnPlanJson = Schema.Array(PlanItem);
 
+/** Whether `a` and `b` name one PR: GitHub compares `owner/repo` case-insensitively. */
+const samePrRef = (
+  a: { readonly repo: string; readonly number: number },
+  b: { readonly repo: string; readonly number: number },
+) => a.number === b.number && a.repo.toLowerCase() === b.repo.toLowerCase();
+
 /** Authority facts read in the same transaction as a guarded thread edit. */
 export interface ThreadUpdateContext {
   readonly caller: Thread | undefined;
@@ -496,7 +503,10 @@ export interface ThreadStoreShape {
   /** Removes a project from the recents; refused while any thread belongs to it. */
   forgetProject(id: ProjectId): Effect.Effect<void, NotFound | InvalidState>;
 
-  /** Stores a new thread; returns it as stamped, which is the one to publish. */
+  /**
+   * Stores a new thread; returns it as stamped, which is the one to publish. A main binding of a PR
+   * another thread's launch has reserved is kept as a followed PR instead (`keepReservationOwned`).
+   */
   insertThread(thread: Thread): Effect.Effect<Thread>;
   getThread(id: ThreadId): Effect.Effect<Thread, ThreadNotFound>;
   /** Read-only authority snapshot from one transaction, for the final check after provider I/O. */
@@ -519,6 +529,13 @@ export interface ThreadStoreShape {
     fence: MergeFence,
     pr: { readonly repo: string; readonly number: number },
     excluding: ThreadId,
+    /**
+     * The launch's authority, decided in the reservation's own transaction against the reserving
+     * thread (`excluding`) and its caller's facts (`authorityCaller`, else the thread's own): a
+     * delegation, scope or intent revoked before the reservation commits refuses it (`false`).
+     */
+    authorized?: (thread: Thread | undefined, context: ThreadUpdateContext | undefined) => boolean,
+    authorityCaller?: ThreadId,
   ): Effect.Effect<boolean>;
   /** Re-check authority and exact pending attempt atomically with its FULL commit. */
   reconcileMergeFence(
@@ -528,6 +545,14 @@ export interface ThreadStoreShape {
     authorized: (thread: Thread | undefined, context: ThreadUpdateContext | undefined) => boolean,
   ): Effect.Effect<boolean>;
   listThreads: Effect.Effect<ReadonlyArray<Thread>>;
+  /**
+   * Every thread as a claim check reads them, failing closed: the rows that decode, and the ids of
+   * unparked rows that don't (`unknown`), which a conflict check must count as a claim.
+   */
+  listThreadsForClaims: Effect.Effect<{
+    readonly threads: ReadonlyArray<Thread>;
+    readonly unknown: ReadonlyArray<ThreadId>;
+  }>;
   updateThread(
     id: ThreadId,
     f: (thread: Thread, context?: ThreadUpdateContext) => Thread,
@@ -1662,9 +1687,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               claimScan === undefined
                 ? base
                 : { ...base!, prClaimedByOther: yield* otherThreadBindsPr(id, claimScan.pr) };
-            return yield* writeThread(
-              stampParked(thread, normalizeThreadPrs(f(thread, context)), Date.now()),
-            );
+            const next = stampParked(thread, normalizeThreadPrs(f(thread, context)), Date.now());
+            return yield* writeThread(yield* keepReservationOwned(thread, next));
           }),
         );
 
@@ -2063,37 +2087,139 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         });
 
       /**
+       * Every thread row as a claim check must read it, failing closed: the rows that decode, and
+       * the ids of those that don't and aren't parked by their own `parked` column. A display list
+       * drops an undecodable row; a safety check can't take that as no claim, since the row may
+       * still bind the PR or hold its branch. A parked row never claims, so its column rules it out.
+       */
+      const claimRows = sql<{
+        id: string;
+        data: string;
+        parked: number;
+      }>`SELECT id, data, parked FROM threads`.pipe(
+        Effect.flatMap((rows) =>
+          Effect.gen(function* () {
+            const threads: Array<Thread> = [];
+            const unknown: Array<ThreadId> = [];
+            for (const row of rows) {
+              const decoded = decodeStored(Thread, row.data);
+              if (decoded.ok) {
+                threads.push(decoded.value);
+                continue;
+              }
+              yield* unreadable("threads", row.id, decoded.paths);
+              if (row.parked !== 1) unknown.push(row.id as ThreadId);
+            }
+            return { threads, unknown } as const;
+          }),
+        ),
+      );
+
+      /**
        * Whether a thread other than `excludeId` binds `pr` as its own, read in the caller's
-       * transaction: an unparked thread whose `boundPr` names it (GitHub compares `owner/repo`
-       * case-insensitively; a closed thread's row is gone, so it never counts). The arming write and
-       * the launch reservation run this scan atomically with their own commit, so a competing
-       * `pr_bind` that landed since the last ownership check is seen, never missed by a separate scan.
+       * transaction: an unparked thread whose `boundPr` names it (a closed thread's row is gone, so
+       * it never counts), or an unparked row that doesn't decode, which can't be ruled out. The
+       * arming write and the launch reservation run this scan atomically with their own commit, so
+       * a competing `pr_bind` that landed since the last ownership check is seen, never missed.
        */
       const otherThreadBindsPr = (
         excludeId: ThreadId,
         pr: { readonly repo: string; readonly number: number },
       ) =>
-        sql<{ id: string; data: string }>`SELECT id, data FROM threads`.pipe(
-          Effect.flatMap((rows) =>
-            readableRows(
-              unreadable,
-              "threads",
-              rows,
-              (r) => r.id,
-              (r) => decodeStored(Thread, r.data),
-            ),
-          ),
-          Effect.map((threads) =>
-            threads.some(
-              (thread) =>
-                thread.id !== excludeId &&
-                !thread.parked &&
-                thread.boundPr !== undefined &&
-                thread.boundPr.number === pr.number &&
-                thread.boundPr.repo.toLowerCase() === pr.repo.toLowerCase(),
-            ),
+        claimRows.pipe(
+          Effect.map(
+            ({ threads, unknown }) =>
+              unknown.some((id) => id !== excludeId) ||
+              threads.some(
+                (thread) =>
+                  thread.id !== excludeId &&
+                  !thread.parked &&
+                  thread.boundPr !== undefined &&
+                  samePrRef(thread.boundPr, pr),
+              ),
           ),
         );
+
+      /**
+       * The thread whose outstanding launch reservation (a pending merge fence) names `pr`, other
+       * than `excludeId`, read in the caller's transaction. A fence row that doesn't decode fails
+       * the read, as every merge-fence read does: a safety record is never skipped.
+       */
+      const reservedByOther = (
+        excludeId: ThreadId,
+        pr: { readonly repo: string; readonly number: number },
+      ) =>
+        sql<{ data: string }>`SELECT data FROM merge_fences`.pipe(
+          Effect.map((rows) =>
+            rows
+              .map((row) => Schema.decodeUnknownSync(MergeFence)(JSON.parse(row.data)).pending)
+              .find(
+                (pending) =>
+                  pending !== undefined &&
+                  pending.threadId !== excludeId &&
+                  samePrRef(pending.pr, pr),
+              ),
+          ),
+        );
+
+      /**
+       * `next` as it may be stored while another thread's launch has reserved a PR (a pending merge
+       * fence): a write never newly makes a thread the PR's main owner then, by binding it or by
+       * bringing back from the archive a thread bound to it. Such a binding is kept as a followed PR
+       * (which claims nothing) and the thread keeps the main binding it had, so the reservation and
+       * a claim of one PR are ordered in this transaction: whichever commits first, the other gives
+       * way. An edit that keeps an existing unparked binding introduces no claim and is untouched.
+       * The tool that asked for the binding sees it didn't take and says why (`pr_bind`).
+       */
+      const keepReservationOwned = (before: Thread | undefined, next: Thread) =>
+        Effect.gen(function* () {
+          const bound = next.boundPr;
+          if (next.parked || bound === undefined) return next;
+          const claimedBefore =
+            before !== undefined &&
+            !before.parked &&
+            before.boundPr !== undefined &&
+            samePrRef(before.boundPr, bound);
+          if (claimedBefore) return next;
+          const pending = yield* reservedByOther(next.id, bound);
+          if (pending === undefined) return next;
+          const kept =
+            before !== undefined &&
+            !before.parked &&
+            before.boundPr !== undefined &&
+            !samePrRef(before.boundPr, bound)
+              ? before.boundPr
+              : undefined;
+          const extras = next.extraPrs ?? [];
+          const followed = extras.some((extra) => samePrRef(extra, bound))
+            ? extras
+            : extras.length < MAX_EXTRA_PRS
+              ? [
+                  ...extras,
+                  {
+                    repo: bound.repo,
+                    number: bound.number,
+                    monitor: bound.monitor,
+                    ...(bound.reviewMonitor === undefined
+                      ? {}
+                      : { reviewMonitor: bound.reviewMonitor }),
+                  },
+                ]
+              : extras;
+          const { boundPr: _, extraPrs: __, ...rest } = next;
+          yield* Effect.logWarning("binding of a reserved PR kept as followed").pipe(
+            Effect.annotateLogs({
+              threadId: next.id,
+              pr: `${bound.repo}#${bound.number}`,
+              reservedBy: pending.threadId,
+            }),
+          );
+          return normalizeThreadPrs({
+            ...rest,
+            ...(kept === undefined ? {} : { boundPr: kept }),
+            ...(followed.length === 0 ? {} : { extraPrs: followed }),
+          });
+        });
 
       /** The thread's messages whose stored text holds any of `needles` as written, in order. */
       const messagesHolding = (
@@ -2350,7 +2476,15 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         setProjectBookmarked,
         forgetProject,
 
-        insertThread: (thread) => tx(writeThread(thread)),
+        insertThread: (thread) =>
+          tx(
+            Effect.gen(function* () {
+              const before = yield* readThread(thread.id).pipe(Effect.option);
+              return yield* writeThread(
+                yield* keepReservationOwned(Option.getOrUndefined(before), thread),
+              );
+            }),
+          ),
         getThread: (id) => run(readThread(id)),
         getThreadWithAuthority: (id, callerId) =>
           tx(
@@ -2368,10 +2502,20 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           ),
         ),
         putMergeFence: (fence) => durableFence(writeMergeFence(fence)),
-        reserveMergeFence: (fence, pr, excluding) =>
+        reserveMergeFence: (fence, pr, excluding, authorized, authorityCaller) =>
           durableFence(
             Effect.gen(function* () {
               if (yield* otherThreadBindsPr(excluding, pr)) return false;
+              if (authorized !== undefined) {
+                const owner = Option.getOrUndefined(
+                  yield* readThread(excluding).pipe(Effect.option),
+                );
+                const context =
+                  owner === undefined
+                    ? undefined
+                    : yield* readThreadAuthority(owner, authorityCaller ?? excluding);
+                if (!authorized(owner, context)) return false;
+              }
               yield* writeMergeFence(fence);
               return true;
             }),
@@ -2422,6 +2566,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             return threads;
           }),
         ),
+        listThreadsForClaims: run(claimRows),
         updateThread,
         // SQLite doesn't enforce foreign keys unless asked, so child rows go explicitly.
         removeThread: (id) =>

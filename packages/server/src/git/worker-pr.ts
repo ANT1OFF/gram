@@ -268,20 +268,31 @@ const originUrlOf = (at: string) =>
     Effect.orElseSucceed(() => undefined),
   );
 
+/** What a local folder's HEAD is right now, as `liveHeadAt` reads it. */
+export type LiveHead =
+  | { readonly kind: "branch"; readonly name: string }
+  | { readonly kind: "detached" }
+  /** The folder is gone, isn't a readable repository, or git failed, timed out or didn't start. */
+  | { readonly kind: "unknown" };
+
 /**
- * The branch a local folder has checked out right now, read from its HEAD; `undefined` when the
- * folder is gone, is detached, or can't be read. A conflict check reads this so a branch a sibling
- * switched or renamed to, which the publisher may not have sampled onto its recorded checkout, is
- * still seen as held. Another machine's folder is never read live: there only the record counts.
+ * A local folder's HEAD read now: the branch it has checked out, a verified detached HEAD, or
+ * `unknown` when it can't be told. A conflict check reads this so a branch a sibling switched or
+ * renamed to, which the publisher may not have sampled onto its recorded checkout, is still seen as
+ * held; `unknown` is never read as "holds nothing". Another machine's folder is never read live.
  */
-const liveBranchAt = (path: string) =>
+export const liveHeadAt = (path: string): Effect.Effect<LiveHead, never, Proc> =>
   Effect.gen(function* () {
-    if (!(yield* folderExists(path))) return undefined;
+    if (!(yield* folderExists(path))) return { kind: "unknown" } as const;
     const out = yield* git(path, ["symbolic-ref", "--quiet", "--short", "HEAD"], {
       timeoutMs: 2_000,
     });
-    return out.status === 0 ? out.stdout.trim() || undefined : undefined;
-  }).pipe(Effect.orElseSucceed(() => undefined));
+    const name = out.stdout.trim();
+    if (out.status === 0 && !out.truncated && name !== "") return { kind: "branch", name } as const;
+    // `--quiet` exits 1, silently, only for a HEAD that is a commit rather than a branch.
+    if (out.status === 1 && out.stderr.trim() === "") return { kind: "detached" } as const;
+    return { kind: "unknown" } as const;
+  }).pipe(Effect.orElseSucceed(() => ({ kind: "unknown" }) as const));
 
 /**
  * The workspace project a worktree on another machine was made for, from what this machine
@@ -516,7 +527,10 @@ const claimedByAnother = (
 ) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore;
-    for (const other of yield* store.listThreads) {
+    // A row that doesn't decode can't be ruled out: it may bind the PR or hold its branch.
+    const { threads, unknown } = yield* store.listThreadsForClaims;
+    if (unknown.some((id) => id !== thread.id)) return true;
+    for (const other of threads) {
       if (other.id === thread.id || other.parked) continue;
       const bound = other.boundPr;
       if (bound !== undefined && sameRepo(bound.repo, repo) && bound.number === number) return true;
@@ -530,10 +544,14 @@ const claimedByAnother = (
             (owned) => samePath(owned.path, checkout.path) && owned.branch === branch,
           );
         // The record can lag: on this machine, read the folder's live HEAD too, so a branch the
-        // sibling just switched or renamed to is seen before the publisher samples it. A gone,
-        // detached or unreadable folder leaves the record to speak for it.
-        if (!holds && isLocalHost(checkout) && (yield* liveBranchAt(checkout.path)) === branch)
-          holds = true;
+        // sibling just switched or renamed to is seen before the publisher samples it. A HEAD that
+        // can't be read (the folder moved or is gone, its git directory is broken, git failed or
+        // timed out) may hold the branch, so it counts as holding it; only a HEAD read as another
+        // branch, or as detached, leaves the record to speak for the folder.
+        if (!holds && isLocalHost(checkout)) {
+          const live = yield* liveHeadAt(checkout.path);
+          holds = live.kind === "unknown" || (live.kind === "branch" && live.name === branch);
+        }
         if (holds && (yield* mayHoldRepo(checkout, repo))) return true;
       }
     }
