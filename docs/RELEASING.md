@@ -49,7 +49,8 @@ On the same branch, add the version's What's New cards: one file per highlight i
 [whats-new/index.ts](../apps/web/src/whats-new/index.ts)). Write them for people using the app,
 from what the release changes for them, and check each card's control names against the code.
 `assemble.test.ts` fails without that directory, and publication renders the release notes
-from it. Changes that reached `main` in a squashed merge with a non-conventional title (an
+from it. While the metadata PR is a draft, its checks run only the static stages and Vitest, which
+is where that test fails; marking it ready for review runs every lane. Changes that reached `main` in a squashed merge with a non-conventional title (an
 integration branch, say) are missing from release-please's changelog and its proposal: list them
 in the version's section of `CHANGELOG.md` by hand, on the same branch, before it merges. Every release's file from 1.19.0 on is what later changes are held to, so a joined
 machine on this release, or a deployment pinned to it, keeps working with every later one (see

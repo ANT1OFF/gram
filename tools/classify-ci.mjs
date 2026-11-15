@@ -11,7 +11,7 @@ import {
 // Main pushes, manual runs and anything this can't classify run every lane.
 let selected = new Set(CI_LANES);
 let kind = "code";
-const { CI_EVENT, CI_BASE, CI_HEAD, CI_MERGE, GITHUB_OUTPUT } = process.env;
+const { CI_EVENT, CI_BASE, CI_HEAD, CI_MERGE, CI_HEAD_REF, CI_DRAFT, GITHUB_OUTPUT } = process.env;
 const git = (args) =>
   execFileSync("git", ["--no-replace-objects", ...args], { encoding: "utf8" }).trim();
 if (
@@ -49,6 +49,16 @@ if (
     selected = new Set(CI_LANES);
   }
 }
+// release-please updates its draft metadata PR on every push to main. While it is a draft it runs
+// the static stages and Vitest, where the version's missing What's New cards fail
+// (docs/RELEASING.md); the other lanes run once it is marked ready, which runs this again.
+if (
+  kind === "code" &&
+  CI_EVENT === "pull_request" &&
+  CI_DRAFT === "true" &&
+  (CI_HEAD_REF ?? "").startsWith("release-please--")
+)
+  selected = new Set([...selected].filter((lane) => lane === "static" || lane === "tests"));
 const lanes = CI_LANES.filter((lane) => selected.has(lane));
 console.log(`CI qualification: ${kind}${kind === "docs" ? "" : ` (${lanes.join(", ")})`}`);
 if (GITHUB_OUTPUT) appendFileSync(GITHUB_OUTPUT, `kind=${kind}\nlanes=${JSON.stringify(lanes)}\n`);

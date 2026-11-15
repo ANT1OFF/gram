@@ -4,10 +4,20 @@ export const DOCUMENTATION_POLICY = "gram-prose-v2";
 export type CiKind = "docs" | "full";
 /**
  * What a change runs beside `classify`/`qualification`: the static stages and bundle build, the
- * Vitest suite (Linux and macOS), the unsigned macOS package, and the mock-API Playwright suite.
+ * Vitest suite on Linux, the same suite on macOS, the unsigned packages, and the mock-API
+ * Playwright suite.
  */
-export type CiLane = "static" | "tests" | "package" | "e2e";
-export const CI_LANES: ReadonlyArray<CiLane> = ["static", "tests", "package", "e2e"];
+export type CiLane = "static" | "tests" | "macos" | "package" | "e2e";
+export const CI_LANES: ReadonlyArray<CiLane> = ["static", "tests", "macos", "package", "e2e"];
+
+/**
+ * The workspaces whose behaviour can differ on macOS: processes, signals, the file system, the
+ * desktop app. The web app, contracts and themes run the same everywhere (jsdom, plain data), so a
+ * change that reaches only them, or a tool's own tests, runs the Vitest suite on Linux alone.
+ * `main` runs every lane, macOS included.
+ */
+const MACOS_SENSITIVE = /^(apps\/desktop|packages\/(agents|git|server|shell))\//;
+const MACOS_NEUTRAL = /^(apps\/web|packages\/(contracts|themes))\//;
 
 /** No `..` or `.` segment, empty segment, or character outside ordinary file names. */
 const ordinaryPath = (path: string) =>
@@ -64,8 +74,11 @@ const extraLanes = (path: string): ReadonlyArray<CiLane> | undefined => {
 const pathLanes = (path: string): "docs" | ReadonlyArray<CiLane> => {
   if (!ordinaryPath(path)) return CI_LANES;
   const extra = extraLanes(path);
-  if (extra === undefined) return prose(path) ? "docs" : CI_LANES;
-  return ["static", "tests", ...extra];
+  if (extra === undefined) {
+    if (prose(path)) return "docs";
+    return MACOS_NEUTRAL.test(path) ? CI_LANES.filter((lane) => lane !== "macos") : CI_LANES;
+  }
+  return ["static", "tests", ...(MACOS_SENSITIVE.test(path) ? (["macos"] as const) : []), ...extra];
 };
 
 /**
