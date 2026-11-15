@@ -206,7 +206,7 @@ test("Take over holds a worker without a message, and Hand back returns it", asy
   // line beside it say that sending takes it over.
   await expect(composerOf(page, made.asking)).toHaveAttribute(
     "placeholder",
-    /^(Message this worker|Queue a message for this worker)… /,
+    /^(Message this worker|Queue a message for this worker|Steer this worker)… /,
   );
   await composerOf(page, made.asking).fill("Draft only");
   await expect(
@@ -223,7 +223,7 @@ test("Take over holds a worker without a message, and Hand back returns it", asy
   // Held, a message no longer takes anything: the composer says plain Message again.
   await expect(composerOf(page, made.asking)).toHaveAttribute(
     "placeholder",
-    /^(Message|Queue a message)… /,
+    /^(Message|Queue a message|Steer the agent)… /,
   );
   // Nothing was sent to it: its composer is untouched and no message of the user's appeared.
   await expect(composerOf(page, made.asking)).toHaveValue("");

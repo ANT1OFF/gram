@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Composer while an agent works · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .two {
+        display: flex;
+        gap: 28px;
+        align-items: flex-start;
+        width: 100%;
+      }
+      .desk {
+        flex: 1 1 0;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        min-width: 0;
+      }
+      .lbl {
+        font-size: 12px;
+        color: var(--fg-muted);
+        margin-bottom: -8px;
+      }
+      .working {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--accent);
+      }
+      .slab {
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl);
+        background: var(--surface-1);
+        width: 100%;
+        overflow: hidden;
+      }
+      .slab .draft {
+        padding: 12px 16px 4px;
+        min-height: 44px;
+        color: var(--fg);
+        font-size: 14px;
+      }
+      .slab .draft.ph {
+        color: var(--fg-muted);
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 8px 8px;
+      }
+      .bar .fill {
+        flex: 1;
+      }
+      .ib {
+        display: inline-grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        border: 0;
+        border-radius: var(--radius-md);
+        background: transparent;
+        color: var(--fg-muted);
+      }
+      .meter {
+        width: 20px;
+        height: 3px;
+        border-radius: 2px;
+        background: var(--border-strong);
+      }
+      svg.i {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.75;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex: none;
+      }
+      svg.i.sm {
+        width: 14px;
+        height: 14px;
+      }
+      .round {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--accent);
+        color: var(--on-accent);
+        flex: none;
+      }
+      .round.stop {
+        background: var(--fg);
+        color: var(--surface-1);
+      }
+      .round.ghost {
+        background: color-mix(in oklab, var(--fg) 8%, transparent);
+        color: var(--fg);
+      }
+      .round.warn {
+        background: var(--danger-tint, color-mix(in oklab, var(--danger) 16%, transparent));
+        color: var(--danger);
+      }
+      .sq {
+        width: 8px;
+        height: 8px;
+        border-radius: 1.5px;
+        background: currentColor;
+      }
+      /* A: the delivery chip */
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 8px 0 9px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 999px;
+        background: transparent;
+        color: var(--fg);
+        font-size: 12.5px;
+      }
+      .chip .k {
+        color: var(--fg-muted);
+      }
+      .chip[aria-expanded="true"] {
+        background: var(--surface-hover);
+      }
+      .menu {
+        display: flex;
+        flex-direction: column;
+        width: 300px;
+        padding: 4px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        background: var(--surface-2, var(--surface-1));
+        box-shadow: var(--shadow-md, none);
+      }
+      .menu button {
+        display: grid;
+        grid-template-columns: 16px 1fr auto;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--fg);
+        text-align: left;
+        font-size: 13px;
+      }
+      .menu button[aria-checked="true"] {
+        background: var(--surface-hover);
+      }
+      .menu .sub {
+        display: block;
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .menu kbd,
+      .keys kbd,
+      .seg kbd {
+        font: inherit;
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .menu hr {
+        border: 0;
+        border-top: 1px solid var(--border-subtle);
+        margin: 4px 6px;
+      }
+      .menu .danger {
+        color: var(--danger);
+      }
+      /* B: three buttons */
+      .trio {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .keys {
+        display: flex;
+        justify-content: flex-end;
+        gap: 14px;
+        padding: 0 12px 8px;
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .tip {
+        align-self: flex-end;
+        padding: 5px 8px;
+        border-radius: var(--radius-sm);
+        background: var(--fg);
+        color: var(--surface-1);
+        font-size: 12px;
+      }
+      /* C: the working strip */
+      .strip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px 6px 14px;
+        border-bottom: 1px solid var(--border-subtle);
+        background: color-mix(in oklab, var(--accent) 6%, transparent);
+        font-size: 12.5px;
+        color: var(--fg-muted);
+      }
+      .strip .fill {
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .seg {
+        display: inline-flex;
+        gap: 2px;
+        padding: 2px;
+        border-radius: var(--radius-md);
+        background: color-mix(in oklab, var(--fg) 6%, transparent);
+      }
+      .seg button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 9px;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--fg-muted);
+        font-size: 12.5px;
+      }
+      .seg button[aria-pressed="true"] {
+        background: var(--surface-1);
+        color: var(--fg);
+        box-shadow: var(--shadow-sm, 0 0 0 1px var(--border-subtle));
+      }
+      .txt {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--fg);
+        font-size: 12.5px;
+      }
+      /* Phone */
+      .handset {
+        flex: none;
+        width: 330px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 22px;
+        padding: 14px 12px;
+        background: var(--bg);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .handset .round,
+      .handset .ib {
+        width: 40px;
+        height: 40px;
+      }
+      .handset .chip {
+        height: 36px;
+        padding: 0 12px;
+        font-size: 13px;
+      }
+      .handset .seg {
+        width: 100%;
+      }
+      .handset .seg button {
+        flex: 1;
+        justify-content: center;
+        height: 36px;
+      }
+      .sheet {
+        display: flex;
+        flex-direction: column;
+        padding: 6px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 18px;
+        background: var(--surface-2, var(--surface-1));
+      }
+      .sheet .grab {
+        align-self: center;
+        width: 36px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border-strong);
+        margin: 2px 0 6px;
+      }
+      .sheet button {
+        display: grid;
+        grid-template-columns: 18px 1fr;
+        gap: 12px;
+        align-items: center;
+        min-height: 52px;
+        padding: 6px 12px;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--fg);
+        text-align: left;
+        font-size: 14px;
+      }
+      .sheet button[aria-checked="true"] {
+        background: var(--surface-hover);
+      }
+      .sheet .sub {
+        display: block;
+        font-size: 12.5px;
+        color: var(--fg-muted);
+      }
+      .cap {
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <!-- The product's lucide glyphs: Send for steer, ListPlus for queue, the interrupt mark, Mic. -->
+      <symbol id="steer" viewBox="0 0 24 24">
+        <path
+          d="M14.5 21.7a.5.5 0 0 0 .9 0l6.5-19a.5.5 0 0 0-.6-.6l-19 6.5a.5.5 0 0 0 0 .9l7.9 3.2a2 2 0 0 1 1.1 1.1z"
+        />
+        <path d="m21.9 2.1-10.9 10.9" />
+      </symbol>
+      <symbol id="queue" viewBox="0 0 24 24">
+        <path d="M11 12H3" />
+        <path d="M16 6H3" />
+        <path d="M16 18H3" />
+        <path d="M18 9v6" />
+        <path d="M21 12h-6" />
+      </symbol>
+      <symbol id="interrupt" viewBox="0 0 24 24">
+        <rect x="4" y="4" width="10" height="10" rx="1.5" />
+        <path d="M14 20h6" />
+        <path d="m17 17 3 3-3 3" />
+      </symbol>
+      <symbol id="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
+      <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+      <symbol id="mic" viewBox="0 0 24 24">
+        <rect x="9" y="2" width="6" height="12" rx="3" />
+        <path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4" />
+      </symbol>
+      <symbol id="stop" viewBox="0 0 24 24">
+        <rect x="6" y="6" width="12" height="12" rx="2" />
+      </symbol>
+    </svg>
+    <main class="mock-canvas">
+      <p class="mock-note">
+        While an agent works the composer offers three ways in: Steer (lands after the current tool
+        call, cancels nothing), Queue (after the turn ends) and Interrupt (stops the turn now and
+        answers this). Today only a chevron shows them, and only once you have typed; the empty
+        field even says "Queue a message" while ↵ steers. Each direction below shows the choice
+        before you type. Keys stay ↵ steer, ⌥↵ queue, ⌘. interrupt (⌘. alone still stops). Pick A, B
+        or C by name.
+      </p>
+
+      <!-- A ------------------------------------------------------------------------------ -->
+      <section class="board" data-name="A Delivery chip" data-size="980x600">
+        <div class="board-frame">
+          <div class="content two">
+            <div class="desk">
+              <div class="working"><span class="dot"></span>Working · Running bun test</div>
+              <span class="lbl">Empty: the chip says what ↵ will do; Stop keeps Send's place</span>
+              <div class="slab">
+                <div class="draft ph">
+                  Steer the agent… it reads this after the current tool call
+                </div>
+                <div class="bar">
+                  <button class="ib" type="button" aria-label="Attach">
+                    <svg class="i"><use href="#plus" /></svg>
+                  </button>
+                  <span class="fill"></span>
+                  <button class="ib" type="button" aria-label="Dictate">
+                    <svg class="i"><use href="#mic" /></svg>
+                  </button>
+                  <span class="meter" aria-label="Context 36%"></span>
+                  <button class="chip" type="button" aria-haspopup="menu">
+                    <svg class="i sm"><use href="#steer" /></svg>Steer<svg class="i sm k">
+                      <use href="#chev" />
+                    </svg>
+                  </button>
+                  <button class="round stop" type="button" aria-label="Stop">
+                    <span class="sq"></span>
+                  </button>
+                </div>
+              </div>
+              <span class="lbl"
+                >With a draft, chip open: pick for this message, then the next is a steer
+                again</span
+              >
+              <div class="slab">
+                <div class="draft">Skip the e2e suite, the unit tests are enough.</div>
+                <div class="bar">
+                  <button class="ib" type="button" aria-label="Attach">
+                    <svg class="i"><use href="#plus" /></svg>
+                  </button>
+                  <span class="fill"></span>
+                  <button class="ib" type="button" aria-label="Dictate">
+                    <svg class="i"><use href="#mic" /></svg>
+                  </button>
+                  <span class="meter"></span>
+                  <button class="chip" type="button" aria-expanded="true">
+                    <svg class="i sm"><use href="#steer" /></svg>Steer<svg class="i sm k">
+                      <use href="#chev" />
+                    </svg>
+                  </button>
+                  <button class="round" type="button" aria-label="Steer">
+                    <svg class="i"><use href="#steer" /></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="menu" role="menu" style="align-self: flex-end; margin-top: -8px">
+                <button type="button" role="menuitemradio" aria-checked="true">
+                  <svg class="i"><use href="#steer" /></svg
+                  ><span
+                    >Steer<span class="sub"
+                      >After the current tool call, cancels nothing</span
+                    ></span
+                  ><kbd>↵</kbd>
+                </button>
+                <button type="button" role="menuitemradio" aria-checked="false">
+                  <svg class="i"><use href="#queue" /></svg
+                  ><span>Queue<span class="sub">After this turn ends</span></span
+                  ><kbd>⌥↵</kbd>
+                </button>
+                <button type="button" role="menuitemradio" aria-checked="false">
+                  <svg class="i"><use href="#interrupt" /></svg
+                  ><span>Interrupt<span class="sub">Stops the turn now and answers this</span></span
+                  ><kbd>⌘.</kbd>
+                </button>
+                <hr />
+                <button type="button" class="danger">
+                  <svg class="i"><use href="#stop" /></svg><span>Stop without a message</span
+                  ><kbd>⌘.</kbd>
+                </button>
+              </div>
+            </div>
+            <div class="handset">
+              <div class="working"><span class="dot"></span>Working · Running bun test</div>
+              <div class="slab">
+                <div class="draft">Skip the e2e suite.</div>
+                <div class="bar">
+                  <button class="ib" type="button" aria-label="Attach">
+                    <svg class="i"><use href="#plus" /></svg>
+                  </button>
+                  <span class="fill"></span>
+                  <button class="chip" type="button" aria-expanded="true">
+                    <svg class="i sm"><use href="#steer" /></svg>Steer<svg class="i sm k">
+                      <use href="#chev" />
+                    </svg>
+                  </button>
+                  <button class="round" type="button" aria-label="Steer">
+                    <svg class="i"><use href="#steer" /></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="sheet" role="menu">
+                <span class="grab"></span>
+                <button type="button" role="menuitemradio" aria-checked="true">
+                  <svg class="i"><use href="#steer" /></svg
+                  ><span>Steer<span class="sub">After the current tool call</span></span>
+                </button>
+                <button type="button" role="menuitemradio" aria-checked="false">
+                  <svg class="i"><use href="#queue" /></svg
+                  ><span>Queue<span class="sub">After this turn ends</span></span>
+                </button>
+                <button type="button" role="menuitemradio" aria-checked="false">
+                  <svg class="i"><use href="#interrupt" /></svg
+                  ><span>Interrupt<span class="sub">Stops now and answers this</span></span>
+                </button>
+              </div>
+              <span class="cap"
+                >The chip opens a sheet; the round button sends the way the chip says.</span
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- B ------------------------------------------------------------------------------ -->
+      <section class="board" data-name="B Three buttons" data-size="980x600">
+        <div class="board-frame">
+          <div class="content two">
+            <div class="desk">
+              <div class="working"><span class="dot"></span>Working · Running bun test</div>
+              <span class="lbl">Empty: Stop alone, the field says what typing will offer</span>
+              <div class="slab">
+                <div class="draft ph">Type to steer, queue or interrupt…</div>
+                <div class="bar">
+                  <button class="ib" type="button" aria-label="Attach">
+                    <svg class="i"><use href="#plus" /></svg>
+                  </button>
+                  <span class="fill"></span>
+                  <button class="ib" type="button" aria-label="Dictate">
+                    <svg class="i"><use href="#mic" /></svg>
+                  </button>
+                  <span class="meter"></span>
+                  <button class="round stop" type="button" aria-label="Stop">
+                    <span class="sq"></span>
+                  </button>
+                </div>
+              </div>
+              <span class="lbl"
+                >With a draft: Stop opens into three, Steer is the filled one; keys under them</span
+              >
+              <div class="slab">
+                <div class="draft">Skip the e2e suite, the unit tests are enough.</div>
+                <div class="bar">
+                  <button class="ib" type="button" aria-label="Attach">
+                    <svg class="i"><use href="#plus" /></svg>
+                  </button>
+                  <span class="fill"></span>
+                  <button class="ib" type="button" aria-label="Dictate">
+                    <svg class="i"><use href="#mic" /></svg>
+                  </button>
+                  <span class="meter"></span>
+                  <span class="trio">
+                    <button class="round warn" type="button" aria-label="Interrupt">
+                      <svg class="i"><use href="#interrupt" /></svg>
+                    </button>
+                    <button class="round ghost" type="button" aria-label="Queue">
+                      <svg class="i"><use href="#queue" /></svg>
+                    </button>
+                    <button class="round" type="button" aria-label="Steer">
+                      <svg class="i"><use href="#steer" /></svg>
+                    </button>
+                  </span>
+                </div>
+                <div class="keys">
+                  <span>Interrupt <kbd>⌘.</kbd></span
+                  ><span>Queue <kbd>⌥↵</kbd></span
+                  ><span>Steer <kbd>↵</kbd></span>
+                </div>
+              </div>
+              <span class="tip">Queue: after this turn ends ⌥↵</span>
+              <span class="cap"
+                >Icons with words on hover, as every composer control. The key line shows for a
+                thread's first few drafts, then hides; the hover words stay.</span
+              >
+            </div>
+            <div class="handset">
+              <div class="working"><span class="dot"></span>Working · Running bun test</div>
+              <div class="slab">
+                <div class="draft">Skip the e2e suite.</div>
+                <div class="bar">
+                  <span class="fill"></span>
+                  <span class="trio">
+                    <button class="round warn" type="button" aria-label="Interrupt">
+                      <svg class="i"><use href="#interrupt" /></svg>
+                    </button>
+                    <button class="round ghost" type="button" aria-label="Queue">
+                      <svg class="i"><use href="#queue" /></svg>
+                    </button>
+                    <button class="round" type="button" aria-label="Steer">
+                      <svg class="i"><use href="#steer" /></svg>
+                    </button>
+                  </span>
+                </div>
+                <div class="keys" style="justify-content: flex-end; gap: 22px; padding-right: 14px">
+                  <span>Interrupt</span><span>Queue</span><span>Steer</span>
+                </div>
+              </div>
+              <span class="cap"
+                >No hover on a phone, so the words sit under the three, always.</span
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- C ------------------------------------------------------------------------------ -->
+      <section class="board" data-name="C Working strip" data-size="980x600">
+        <div class="board-frame">
+          <div class="content two">
+            <div class="desk">
+              <span class="lbl"
+                >Empty: the strip on the composer says it works, with Stop in words</span
+              >
+              <div class="slab">
+                <div class="strip">
+                  <span class="dot"></span><span class="fill">Working · Running bun test</span>
+                  <button class="txt" type="button">
+                    <svg class="i sm"><use href="#stop" /></svg>Stop <kbd class="cap">⌘.</kbd>
+                  </button>
+                </div>
+                <div class="draft ph">
+                  Steer the agent… it reads this after the current tool call
+                </div>
+                <div class="bar">
+                  <button class="ib" type="button" aria-label="Attach">
+                    <svg class="i"><use href="#plus" /></svg>
+                  </button>
+                  <span class="fill"></span>
+                  <button class="ib" type="button" aria-label="Dictate">
+                    <svg class="i"><use href="#mic" /></svg>
+                  </button>
+                  <span class="meter"></span>
+                  <button
+                    class="round"
+                    type="button"
+                    aria-label="Steer"
+                    disabled
+                    style="opacity: 0.4"
+                  >
+                    <svg class="i"><use href="#steer" /></svg>
+                  </button>
+                </div>
+              </div>
+              <span class="lbl"
+                >With a draft: the strip turns into the choice; the round button follows it</span
+              >
+              <div class="slab">
+                <div class="strip">
+                  <span class="dot"></span><span class="fill">Send it</span>
+                  <span class="seg" role="radiogroup" aria-label="Send it">
+                    <button type="button" aria-pressed="true">
+                      <svg class="i sm"><use href="#steer" /></svg>Steer now <kbd>↵</kbd>
+                    </button>
+                    <button type="button" aria-pressed="false">
+                      <svg class="i sm"><use href="#queue" /></svg>After this turn <kbd>⌥↵</kbd>
+                    </button>
+                    <button type="button" aria-pressed="false">
+                      <svg class="i sm"><use href="#interrupt" /></svg>Interrupt <kbd>⌘.</kbd>
+                    </button>
+                  </span>
+                </div>
+                <div class="draft">Skip the e2e suite, the unit tests are enough.</div>
+                <div class="bar">
+                  <button class="ib" type="button" aria-label="Attach">
+                    <svg class="i"><use href="#plus" /></svg>
+                  </button>
+                  <span class="fill"></span>
+                  <button class="ib" type="button" aria-label="Dictate">
+                    <svg class="i"><use href="#mic" /></svg>
+                  </button>
+                  <span class="meter"></span>
+                  <button class="round" type="button" aria-label="Steer">
+                    <svg class="i"><use href="#steer" /></svg>
+                  </button>
+                </div>
+              </div>
+              <span class="cap"
+                >The words are the point here, so this bends the icons-with-words-on-hover rule for
+                the strip alone. Stop moves out of Send's place into the strip.</span
+              >
+            </div>
+            <div class="handset">
+              <div class="slab">
+                <div class="strip">
+                  <span class="dot"></span><span class="fill">Running bun test</span>
+                  <button class="txt" type="button">
+                    <svg class="i sm"><use href="#stop" /></svg>Stop
+                  </button>
+                </div>
+                <div class="draft">Skip the e2e suite.</div>
+                <div class="bar">
+                  <span class="fill"></span>
+                  <button class="round" type="button" aria-label="Steer">
+                    <svg class="i"><use href="#steer" /></svg>
+                  </button>
+                </div>
+              </div>
+              <span class="cap">With a draft, the strip becomes three equal targets:</span>
+              <div class="seg" role="radiogroup" aria-label="Send it">
+                <button type="button" aria-pressed="true">Steer now</button>
+                <button type="button" aria-pressed="false">After turn</button>
+                <button type="button" aria-pressed="false">Interrupt</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
