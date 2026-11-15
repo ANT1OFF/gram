@@ -33,6 +33,25 @@ export interface AskedDespiteAutonomy {
 }
 
 /**
+ * What makes a call's card the same decision as another's (`sharedCard`), and when it no longer
+ * needs one.
+ */
+export interface SharedCard {
+  /**
+   * Calls of the same tool with equal keys are the same decision: while one's card waits, or its
+   * approved call runs, the other raises none and does nothing. The key names everything the
+   * decision covers, the caller included, so one caller's answer never stands for another's.
+   */
+  readonly key: string;
+  /**
+   * Completes once the call has nothing left to act on (its pull request merged or closed), with
+   * what the waiting agent is told. Its card is then withdrawn and the call refused; absent, a card
+   * waits for its answer.
+   */
+  readonly moot?: Effect.Effect<string>;
+}
+
+/**
  * A tool definition before it's bound to a thread. `T` is what a call acts on: its decoded input,
  * or what `resolve` makes of it.
  */
@@ -89,6 +108,13 @@ export interface AppToolDefinition<S extends Schema.Top = Schema.Top, T = S["Typ
    * refuses: `undefined`, a failure or a slow answer raise the card as before.
    */
   refuseInsteadOfAsking?(threadId: ThreadId, target: T): Effect.Effect<string | undefined>;
+  /**
+   * When a card would go up: what makes it the same decision as another call's (`SharedCard`), and
+   * when it is moot. An identical call joins the waiting card and returns at once without acting
+   * (`askedElsewhere`). It never lets a call through without a card: an answer applies to the call
+   * it was given on alone. A failure shares nothing.
+   */
+  sharedCard?(threadId: ThreadId, target: T): Effect.Effect<SharedCard | undefined>;
   /**
    * Every call raises a card for that call alone, in every mode, for every audience and at every
    * autonomy: `bypassPermissions`, an earlier answer and `delegatedAtFullAutonomy` don't lift it,
