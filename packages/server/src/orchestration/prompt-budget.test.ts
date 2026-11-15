@@ -64,9 +64,13 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * `memory_append`, `memory_edit` and `memory_delete` bound for workers, with `revision` on the
  * write and the delete, and the prompts' lines on notes, the index and who curates. The four
  * descriptions were cut first; measured then at 63,824 and 40,214.
+ * The orchestrator's raised on 2026-11-15, on purpose, for `search_transcripts` (full-text search
+ * over the workspace's own conversations) and its half sentence in the memory section. Its
+ * description was cut down first and its input aliases dropped; measured then at 64,987. The
+ * worker's held.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 64_200,
+  orchestrator: 65_400,
   worker: 41_900,
   plain: 23_650,
 };

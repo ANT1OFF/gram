@@ -43,6 +43,7 @@ const GRAM_TOOLS: Readonly<Record<string, Verbs>> = {
   list_workers: ["Listing workers", "Listed workers"],
   get_thread: ["Reading a thread", "Read a thread"],
   search_threads: ["Searching threads", "Searched threads"],
+  search_transcripts: ["Searching past conversations", "Searched past conversations"],
   list_events: ["Reading events", "Read events"],
   list_open_prs: ["Listing pull requests", "Listed pull requests"],
   list_review_requests: ["Listing review requests", "Listed review requests"],

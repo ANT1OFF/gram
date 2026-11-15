@@ -156,12 +156,14 @@ describe.skipIf(!hasGit || process.platform === "win32")(
             .split("\n")
             .map((line) => JSON.parse(line) as { msg: Record<string, unknown> });
           expect(log.find(({ msg }) => msg["dreamToolNames"])?.msg["dreamToolNames"]).toEqual([
+            "dream_check",
             "dream_delete",
             "dream_edit",
             "dream_list",
             "dream_read",
             "dream_search",
             "dream_write",
+            "search_transcripts",
           ]);
           expect(log.some(({ msg }) => msg["dreamFailure"])).toBe(false);
           expect(

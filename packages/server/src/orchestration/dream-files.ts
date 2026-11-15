@@ -149,6 +149,15 @@ export interface DreamFilesShape {
     dreamId: string,
   ): Effect.Effect<DreamOutput, MemoryError | DreamOutputRefused>;
   /**
+   * The memory files in `output/` as they stand, for a look before the dream is done: no caps, no
+   * report, no refusal of a strange entry (it is skipped). Not validation, which `collectOutput`
+   * is, after file access closed; this reads what a running dream may still change.
+   */
+  peekOutput(
+    workspaceId: string,
+    dreamId: string,
+  ): Effect.Effect<ReadonlyArray<MemorySetFile>, MemoryError | DreamOutputRefused>;
+  /**
    * A fresh, empty folder for one merge run, outside the dream folder so the merge can't reach the
    * dream's inputs or output, and removed when the scope closes; its absolute path. One per run,
    * because a confined session may still write inside its cwd, and what one run left must not reach
@@ -564,6 +573,29 @@ const make = (root: string): DreamFilesShape => {
                 "The memory update ended without a nonempty output/REPORT.md; seeded memory alone is not a completed consolidation",
             });
           return { files: checked.files, report };
+        }),
+      ),
+
+    peekOutput: (workspaceId, dreamId) =>
+      guarded(workspaceId, dreamId, () =>
+        Effect.gen(function* () {
+          const within = dreamRel(dreamId);
+          if ((yield* tree.resolveInTree(workspaceId, within, "dreams")).kind !== "dir") {
+            return yield* noDream(dreamId);
+          }
+          const found = yield* asRefusal(
+            walk(workspaceId, `${within}/output`, within, MEMORY_MAX_DEPTH),
+          );
+          const files: Array<MemorySetFile> = [];
+          for (const path of found.files) {
+            if (path === DREAM_REPORT || !path.endsWith(".md")) continue;
+            if (files.length >= MEMORY_MAX_FILES) break;
+            const content = yield* asRefusal(
+              tree.readText(workspaceId, `${within}/output/${path}`, within, `output/${path}`),
+            );
+            files.push({ path, content: redactText(content) });
+          }
+          return files;
         }),
       ),
 

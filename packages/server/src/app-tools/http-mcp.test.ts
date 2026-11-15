@@ -651,12 +651,14 @@ describe("mounted in ServerLayer", () => {
               client.listTools(),
             );
             expect(tools.map((t) => t.name)).toEqual([
+              "dream_check",
               "dream_delete",
               "dream_edit",
               "dream_list",
               "dream_read",
               "dream_search",
               "dream_write",
+              "search_transcripts",
             ]);
             yield* runtimes.close(thread.id);
             // The failed policy is logged, and the dream reopened with its own bounds anyway.
