@@ -362,6 +362,97 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
       }).pipe(Effect.scoped),
   );
 
+  it.effect(
+    "takes a person's message for a thread, once per key, as theirs, and stops its turn",
+    () =>
+      Effect.gen(function* () {
+        const at = yield* port;
+        const runtimes = yield* ThreadRuntimes;
+        const control = yield* FakeAgentControl;
+        const store = yield* ThreadStore;
+        const repo = makeRepo(join(tmp, "messages"));
+        const thread = yield* runtimes.create({
+          projectRoot: repo,
+          checkout: { kind: "main", path: repo },
+        });
+        const person = { id: "user-7", name: "Ada" };
+        const message = { threadId: thread.id, person, key: "m-1", text: "Look at the tests." };
+
+        for (const body of [
+          { ...message, threadId: "" },
+          { ...message, person: undefined },
+          { ...message, person: { id: "has a space" } },
+          { ...message, key: "has:colon" },
+          { ...message, text: " " },
+          { ...message, text: "x".repeat(20_001) },
+          { ...message, mode: "shout" },
+        ]) {
+          const refused = yield* call(at, "/embed/v1/thread-messages", { token: TOKEN, body });
+          expect(refused.status).toBe(400);
+        }
+        const missing = yield* call(at, "/embed/v1/thread-messages", {
+          token: TOKEN,
+          body: { ...message, threadId: "no-such-thread" },
+        });
+        expect(missing.status).toBe(404);
+        expect((yield* call(at, "/embed/v1/thread-messages", { body: message })).status).toBe(401);
+
+        // At rest: sent now, as the person's own words.
+        const sent = yield* call(at, "/embed/v1/thread-messages", { token: TOKEN, body: message });
+        expect(sent.status).toBe(200);
+        expect(JSON.parse(sent.body)).toEqual({ queued: false });
+        yield* eventually(
+          "the message sent to the agent",
+          control.latest(thread.id).pipe(
+            Effect.map((session) => session.sent.some((input) => input.text === message.text)),
+            Effect.orElseSucceed(() => false),
+          ),
+        );
+        const session = yield* control.latest(thread.id);
+        // Sent again under its key, as a caller that never heard the answer would: one message.
+        const again = yield* call(at, "/embed/v1/thread-messages", { token: TOKEN, body: message });
+        expect(JSON.parse(again.body)).toEqual({ queued: false });
+        expect(session.sent.filter((input) => input.text === message.text)).toHaveLength(1);
+        const recorded = yield* store.listActorEvents();
+        expect(recorded).toContainEqual(
+          expect.objectContaining({
+            action: "thread.send",
+            threadId: thread.id,
+            actor: { id: "user-7", name: "Ada", role: "member" },
+          }),
+        );
+
+        // A turn is running: queued behind it, or steered into it.
+        const queued = yield* call(at, "/embed/v1/thread-messages", {
+          token: TOKEN,
+          body: { ...message, key: "m-2", text: "And the docs." },
+        });
+        expect(JSON.parse(queued.body)).toEqual({ queued: true });
+        const steered = yield* call(at, "/embed/v1/thread-messages", {
+          token: TOKEN,
+          body: { ...message, key: "m-3", text: "Skip the lint step.", mode: "steer" },
+        });
+        expect(steered.status).toBe(200);
+        expect(session.steered.map((input) => input.text)).toContain("Skip the lint step.");
+
+        // Stopped by the person: the turn is interrupted.
+        const before = session.interrupts;
+        const stopped = yield* call(at, "/embed/v1/thread-interrupt", {
+          token: TOKEN,
+          body: { threadId: thread.id, person },
+        });
+        expect(stopped.status).toBe(200);
+        expect(JSON.parse(stopped.body)).toEqual({ interrupted: true });
+        expect(session.interrupts).toBeGreaterThan(before);
+        expect(
+          (yield* call(at, "/embed/v1/thread-interrupt", {
+            token: TOKEN,
+            body: { threadId: "no-such-thread", person },
+          })).status,
+        ).toBe(404);
+      }).pipe(Effect.scoped),
+  );
+
   it.effect("reads a pull request when its event is pushed, not before", () =>
     Effect.gen(function* () {
       const at = yield* port;

@@ -299,6 +299,27 @@ POST /embed/v1/thread-notes
 - The agent reads the text after a line saying it comes from the app the workspace runs in and not from a person in the thread. It grants nothing.
 - `404` for a thread the server doesn't have, `409` when the thread couldn't take it (it ended, or its agent couldn't start), `400` for a body that isn't one. `text` is 1 to 4000 characters.
 
+## A person's message for a thread
+
+The platform can write in a thread for a person it signed in, and stop the thread's turn, so that a person's own API or MCP client can do what they would do in the web app without a browser.
+
+```
+POST /embed/v1/thread-messages
+{ "threadId": "...", "person": { "id": "user-7", "name": "Ada" }, "key": "m-1", "text": "Look at the tests.", "mode": "queue" }
+→ 200 { "queued": false }
+→ 200 { "queued": true }
+
+POST /embed/v1/thread-interrupt
+{ "threadId": "...", "person": { "id": "user-7" } }
+→ 200 { "interrupted": true }
+```
+
+- The message is the person's own, as one they typed: it is shown as theirs, recorded as their `thread.send` or `thread.steer`, and `person.id` is the id the proxy's statement gives them ([sign-in through a proxy](DOCKER.md#sign-in-through-a-proxy)). The platform decides that the person may write in the thread; the server trusts it to say who they are, as it does for a thread started for someone.
+- `mode` is `queue` (the default: sent now on a thread at rest, else after the running turn, `queued: true`), `steer` (into the running turn, cancelling nothing) or `interrupt` (the turn stops and the agent answers this). A steer the thread can't take now, with no turn running or an agent that can't, is sent as `queue` would send it.
+- `key` names the message, 1 to 128 letters, digits, `_` or `-`. Sent again, it is the same message and answers what the first answered, so a caller that retries delivers once. Unlike a note's, it is kept with the thread.
+- A thread on a machine started for one person is written in and stopped only for that person: anyone else gets `409` with why.
+- `404` for a thread the server doesn't have, `409` when it can't take the message now (it ended, or its agent couldn't start), `400` for a body that isn't one. `text` is 1 to 20,000 characters.
+
 ## Settings supplied from outside
 
 The deployment can set some of the settings for this server. A supplied setting reads as supplied to everything inside, and nothing inside can change it: the Settings page, a paired phone and an agent's `settings_propose` are each refused, with a message that says the service that runs this Gram set it.
