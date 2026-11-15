@@ -1150,6 +1150,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                       ? {}
                       : { routine: { id: input.routine.id, name: input.routine.name } }),
                     ...(askedBy === undefined ? {} : { askedBy }),
+                    ...(input.placement === undefined ? {} : { placement: input.placement }),
                   },
                   extraCheckouts,
                   ...(browser ? { browser: true } : {}),

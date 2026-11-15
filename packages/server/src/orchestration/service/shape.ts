@@ -39,6 +39,7 @@ import {
   type TaskModelSelection,
   type SettingsRequirement,
   type SettingsWrite,
+  type WorkerPlacement,
 } from "@gram/contracts";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
@@ -133,6 +134,11 @@ export interface SpawnWorkerInput {
    * by an agent's tool.
    */
   readonly unattended?: true | undefined;
+  /**
+   * Where `sandbox` put it, kept on the worker's `spawnedBy` for its row; set by the tool's
+   * `resolve`, never by the agent directly.
+   */
+  readonly placement?: WorkerPlacement | undefined;
 }
 
 /** What `spawn_worker` tells the orchestrator about a low-priority brief it held instead. */

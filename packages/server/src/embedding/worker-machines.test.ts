@@ -10,6 +10,7 @@ import {
   parseOverTotal,
   startWorkerMachine,
   workerMachineName,
+  placementOf,
 } from "./worker-machines.ts";
 
 /** A host provider that answers `/hosts/start` with `status` and `body`, and keeps what it got. */
@@ -173,4 +174,25 @@ describe("a worker's own machine", () => {
       ).toBeUndefined();
     }),
   );
+});
+
+describe("placementOf", () => {
+  it("keeps the machine, what was named and why, for the worker's row", () => {
+    expect(
+      placementOf("w-ab12", {
+        isolation: "vm",
+        architecture: "amd64",
+        size: "large",
+        reason: " Its tests start Docker. ",
+      }),
+    ).toEqual({
+      machine: "w-ab12",
+      picks: { isolation: "vm", architecture: "amd64", size: "large" },
+      why: "Its tests start Docker.",
+    });
+    expect(placementOf("w-ab12", { shareWith: "t-1" })).toEqual({
+      machine: "w-ab12",
+      shared: true,
+    });
+  });
 });
