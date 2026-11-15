@@ -10,6 +10,8 @@ import { AppActivity, pollWhileShown } from "../git/activity.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { UsageLimitReadings } from "./limit-readings.ts";
+import { LOCAL_HOST_ID } from "@gram/contracts";
+import { machineAccountScope } from "../runtime/limit-wait.ts";
 
 export const LIMIT_POLL_MS = 60_000;
 /** Coalesce simultaneous Usage page requests and a background refresh. */
@@ -46,7 +48,18 @@ export class UsageLimitPoller extends Context.Service<
               Effect.gen(function* () {
                 const host = yield* hosts.get(agent).pipe(Effect.option);
                 if (host._tag === "None" || host.value.readSubscriptionLimits === undefined) return;
-                const beforeQuery = yield* readings.current;
+                const beforeQuery = yield* readings.all ?? readings.current;
+                const login =
+                  host.value.readAccountScope === undefined
+                    ? undefined
+                    : yield* host.value.readAccountScope.pipe(
+                        Effect.orElseSucceed(() => undefined),
+                      );
+                // A host that can identify logins must not publish an unidentified snapshot
+                // into the legacy shared bucket when its identity check failed.
+                if (host.value.readAccountScope !== undefined && login === undefined) return;
+                const accountScope =
+                  login === undefined ? undefined : machineAccountScope(LOCAL_HOST_ID, login);
                 const result = yield* host.value.readSubscriptionLimits.pipe(
                   Effect.catch((error) =>
                     error.reason === "not-logged-in" ||
@@ -59,7 +72,20 @@ export class UsageLimitPoller extends Context.Service<
                 );
                 // Transient failures retain the last observation and its age; never fabricate 0%.
                 if (result._tag === "Failure") return;
-                yield* readings.replaceSubscription(agent, result.success, beforeQuery);
+                // A login changed while the query was running: discard that snapshot.
+                if (
+                  host.value.readAccountScope !== undefined &&
+                  (yield* host.value.readAccountScope.pipe(
+                    Effect.orElseSucceed(() => undefined),
+                  )) !== login
+                )
+                  return;
+                yield* readings.replaceSubscription(
+                  agent,
+                  result.success,
+                  beforeQuery,
+                  accountScope,
+                );
                 yield* hub.publish({
                   type: "usageLimits.snapshot",
                   limits: yield* readings.current,

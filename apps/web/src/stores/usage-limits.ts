@@ -75,6 +75,9 @@ const isProvider = (agent: string): agent is LimitProvider =>
  * so the next plain reading clears a rejection.
  */
 export function withReading(limits: UsageLimits, event: UsageLimitEvent, now: number): UsageLimits {
+  // Scoped process reports may be from a remote machine or a previous login. The
+  // server's snapshot selects the current local account for the shared meter.
+  if (event.accountScope !== undefined) return limits;
   const window = limitWindowOf(event.window);
   if (event.gateway === true || !isProvider(event.agent) || window === undefined) return limits;
   const before = limits[event.agent]?.[window];

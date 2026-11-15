@@ -1493,6 +1493,40 @@ describe("synthetic", () => {
     });
   });
 
+  it("preserves a subscription rejection when Claude aborts streaming", () => {
+    const error = "You've hit your weekly limit · resets Nov 18, 9am (Europe/Oslo)";
+    const denied = assistant("denied", [{ type: "text", text: error }]);
+    Object.assign(denied, { error: "rate_limit" });
+    if (denied.type === "assistant") denied.message.model = "<synthetic>";
+    expect(
+      replay([denied, result({ terminal_reason: "aborted_streaming" })]).find(
+        (event) => event.type === "turnEnd",
+      ),
+    ).toMatchObject({ type: "turnEnd", reason: "error", error, failure: { kind: "rateLimit" } });
+  });
+
+  it("preserves a subscription rejection when the CLI returns idle without a result", () => {
+    const error = "You've hit your weekly limit · resets Nov 18, 9am (Europe/Oslo)";
+    const denied = assistant("denied", [{ type: "text", text: error }]);
+    Object.assign(denied, { error: "rate_limit" });
+    if (denied.type === "assistant") denied.message.model = "<synthetic>";
+    const mapper = newMapper();
+    mapper.map(denied);
+    expect(
+      mapper
+        .map(system("session_state_changed", { state: "idle" }))
+        .find((event) => event.type === "turnEnd"),
+    ).toMatchObject({ reason: "error", error, failure: { kind: "rateLimit" } });
+    expect(
+      mapper
+        .map(system("session_state_changed", { state: "idle" }))
+        .filter((event) => event.type === "turnEnd"),
+    ).toEqual([]);
+    mapper.map(assistant("next", [{ type: "text", text: "done" }]));
+    const end = mapper.map(result({})).find((event) => event.type === "turnEnd");
+    expect(end).toMatchObject({ reason: "completed" });
+  });
+
   it("classifies invented API errors with gateway refusals first", () => {
     expect(failure("p15-api-error-429")).toEqual({
       type: "turnEnd",

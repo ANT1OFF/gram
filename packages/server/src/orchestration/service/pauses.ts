@@ -305,7 +305,11 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       if (thread === undefined || error?.kind !== "rateLimit") return;
       if (thread.parked || thread.limitWait?.cancelled === true) return;
       const now = yield* Clock.currentTimeMillis;
-      const readings = yield* limitReadings.value.current;
+      // `current` is already restricted to the freshly identified local login.
+      const readings = (yield* limitReadings.value.current).map((record) => ({
+        ...record,
+        accountScope: undefined,
+      }));
       if (!limitClearedBy(readings, accountOf(thread.model), error.at, now)) return;
       yield* Effect.logInfo("the limit that stopped the orchestrator no longer applies").pipe(
         Effect.annotateLogs({ workspaceId }),

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   supportsFastControl,
   checkAuthStatus,
+  accountScopeFromStatus,
   classifyExecutable,
   expectedCliVersion,
   npmShimTarget,
@@ -20,6 +21,55 @@ import {
 } from "./binary.ts";
 
 const bytes = (...values: Array<number>) => new Uint8Array(values);
+
+const accountStatus = (email: string, orgId = "org-a") =>
+  JSON.stringify({
+    loggedIn: true,
+    authMethod: "claude.ai",
+    apiProvider: "firstParty",
+    email,
+    orgId,
+  });
+
+describe("subscription account identity", () => {
+  it("distinguishes account and organization using opaque public metadata", () => {
+    const scope = accountScopeFromStatus(accountStatus("one@example.invalid"));
+    expect(scope).toMatch(/^[a-f0-9]{64}$/);
+    expect(accountScopeFromStatus(accountStatus("one@example.invalid"))).toBe(scope);
+    expect(accountScopeFromStatus(accountStatus("two@example.invalid"))).not.toBe(scope);
+    expect(accountScopeFromStatus(accountStatus("one@example.invalid", "org-b"))).not.toBe(scope);
+    expect(scope).not.toContain("example.invalid");
+    // Credential-looking fields are never part of this identifier or returned as it.
+    expect(
+      accountScopeFromStatus(
+        JSON.stringify({
+          ...JSON.parse(accountStatus("one@example.invalid")),
+          accessToken: "synthetic-token-a",
+        }),
+      ),
+    ).toBe(scope);
+    expect(
+      accountScopeFromStatus(
+        JSON.stringify({
+          ...JSON.parse(accountStatus("one@example.invalid")),
+          accessToken: "synthetic-token-b",
+        }),
+      ),
+    ).toBe(scope);
+  });
+  it("leaves missing identity and non-subscription authentication unknown", () => {
+    expect(accountScopeFromStatus("{}")).toBeUndefined();
+    expect(accountScopeFromStatus("not json")).toBeUndefined();
+    expect(
+      accountScopeFromStatus(JSON.stringify({ loggedIn: true, authMethod: "oauth_token" })),
+    ).toBeUndefined();
+    expect(
+      accountScopeFromStatus(
+        JSON.stringify({ loggedIn: true, authMethod: "apiKey", email: "one@example.invalid" }),
+      ),
+    ).toBeUndefined();
+  });
+});
 const text = (s: string) => new TextEncoder().encode(s);
 
 const CMUX_WRAPPER = text(

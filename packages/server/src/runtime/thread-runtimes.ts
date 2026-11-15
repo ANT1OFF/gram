@@ -5,6 +5,8 @@ import {
   type ThreadId,
   type TurnId,
   effectiveCheckout,
+  hostOf,
+  LOCAL_HOST_ID,
   fastSelectionProblem,
   isLocalHost,
   InterruptHung,
@@ -53,7 +55,12 @@ import { WorkerHosts } from "../host/worker-host.ts";
 import { ownedRuntimes } from "./owned-runtimes.ts";
 import { asRecorded, fromStored, mayReachThread, type StoredActor } from "../host/ownership.ts";
 import { type CheckoutService, TurnHooks, type TurnHooksShape } from "./hooks.ts";
-import { accountOf, type EarlyReleases, type ReleaseWave } from "./limit-wait.ts";
+import {
+  accountOf,
+  machineAccountScope,
+  type EarlyReleases,
+  type ReleaseWave,
+} from "./limit-wait.ts";
 import { makeRateLimitGate } from "./rate-limits.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { RETRIES_EXHAUSTED } from "./thread-error.ts";
@@ -247,6 +254,23 @@ const make = Effect.gen(function* () {
   // Each thread's machine: its session and its checkout go to the machine it is placed on.
   const workerHosts = yield* WorkerHosts;
   const { sessions: hosts, checkouts, git } = workerHosts.placed;
+  // Never infer another machine's login from this machine's CLI or usage meter. Hosts
+  // without public account metadata are isolated to the thread until identity arrives.
+  const accountScopeFor = (thread: Thread): Effect.Effect<string | undefined> =>
+    Effect.gen(function* () {
+      const machine = hostOf(effectiveCheckout(thread));
+      if (thread.model.profileId !== undefined)
+        return machine === LOCAL_HOST_ID ? undefined : machineAccountScope(machine, "gateway");
+      if (machine !== LOCAL_HOST_ID) return machineAccountScope(machine, `thread:${thread.id}`);
+      const host = yield* workerHosts.local.sessions.get(thread.model.agent).pipe(Effect.option);
+      if (Option.isNone(host) || host.value.readAccountScope === undefined) return undefined;
+      const login = yield* host.value.readAccountScope.pipe(Effect.orElseSucceed(() => undefined));
+      return machineAccountScope(machine, login ?? `thread:${thread.id}`);
+    });
+  const quotaFor = (thread: Thread) =>
+    accountScopeFor(thread).pipe(
+      Effect.map((accountScope) => accountOf({ ...thread.model, accountScope })),
+    );
   const config = yield* ServerConfig;
   const hooks = turnsHere(yield* TurnHooks, store);
   const sessions = yield* FiberMap.make<ThreadId>();
@@ -645,6 +669,7 @@ const make = Effect.gen(function* () {
     cancelLimitWait,
     turnHeld,
   } = makeLimitResume({
+    quotaFor,
     store,
     runtimes,
     getRuntime,
@@ -667,6 +692,7 @@ const make = Effect.gen(function* () {
     syncQueue: (rt) => syncQueue(rt),
     drainQueue: (rt) => drainQueue(rt),
     pumpDeliveries: (rt) => pumpDeliveries(rt),
+    reopenWhenIdle: (rt) => reopenWhenIdle(rt),
   });
 
   // Each reading taken in may say an account's limit no longer applies: one a thread waits on.
@@ -1054,6 +1080,8 @@ const make = Effect.gen(function* () {
   });
 
   const { stopInMissing, forkStopInMissing, openSession, recoverOwned } = makeSessionLifecycle({
+    accountScopeFor,
+    limitReadings,
     store,
     decisions,
     hub,
@@ -1628,9 +1656,13 @@ const make = Effect.gen(function* () {
         }),
       ),
     limitedUntil: (thread) =>
-      Clock.currentTimeMillis.pipe(
-        Effect.flatMap((now) => limitedUntil(accountOf(thread.model), now)),
-      ),
+      Effect.gen(function* () {
+        return yield* limitedUntil(
+          yield* quotaFor(thread),
+          yield* Clock.currentTimeMillis,
+          thread.model.model,
+        );
+      }),
     endLimitWait: (rt, previous) => locked(rt, dropWaitForSwitch(rt, accountOf(previous))),
     reopenTarget: reopenSwitchTarget,
     background: (effect) => FiberSet.run(switchSettles, effect).pipe(Effect.asVoid),

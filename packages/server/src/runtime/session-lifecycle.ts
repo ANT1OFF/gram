@@ -36,8 +36,11 @@ import {
   type Thread,
   type TurnId,
   type ThreadId,
+  effectiveCheckout,
+  isLocalHost,
 } from "@gram/contracts";
 import { UNKNOWN_FAILURE } from "./thread-error.ts";
+import { accountOf } from "./limit-wait.ts";
 import { HANDOFF_TURNS_TOKENS, renderLostSession, renderRecentTurns } from "./switch-handoff.ts";
 import { fromStoredMessages } from "../orchestration/transcripts.ts";
 
@@ -64,6 +67,7 @@ import type { SessionPolicies } from "./session-policy.ts";
 import type { SessionRestarts } from "./session-restarts.ts";
 import type { AgentEvents } from "./agent-events.ts";
 import type { ServerApprovals } from "./server-approvals.ts";
+import type { UsageLimitReadingsShape } from "../usage/limit-readings.ts";
 
 /**
  * `Effect.scoped` for a session's lifetime, where a finalizer's defect joins the lifetime's failure
@@ -89,6 +93,8 @@ const SETTLED: AgentEvent = { type: "status", status: "idle" };
 
 /** What opening and ending a session read and change beside a thread's `Runtime`. */
 export interface SessionLifecycleDeps {
+  readonly accountScopeFor: (thread: Thread) => Effect.Effect<string | undefined>;
+  readonly limitReadings: Option.Option<UsageLimitReadingsShape>;
   readonly store: ThreadStoreShape;
   readonly hub: EventHubShape;
   readonly checkouts: CheckoutServiceShape;
@@ -132,6 +138,8 @@ export interface SessionLifecycleDeps {
 
 /** The sessions `ThreadRuntimes` runs, one per thread, each in `sessions`. */
 export const makeSessionLifecycle = ({
+  accountScopeFor,
+  limitReadings,
   decisions,
   store,
   hub,
@@ -535,7 +543,17 @@ export const makeSessionLifecycle = ({
         decisions !== undefined && thread.role !== "dream" && (yield* decisions.enabled);
       rt.capabilities = host.capabilities;
       rt.cwd = thread.checkout.path;
-      rt.quota = `${thread.model.agent}/${thread.model.profileId ?? ""}`;
+      rt.accountScope = yield* accountScopeFor(thread);
+      rt.quota = accountOf({ ...thread.model, accountScope: rt.accountScope });
+      if (
+        isLocalHost(effectiveCheckout(thread)) &&
+        thread.model.profileId === undefined &&
+        Option.isSome(limitReadings)
+      ) {
+        yield* (
+          limitReadings.value.selectAccount?.(thread.model.agent, rt.accountScope) ?? Effect.void
+        );
+      }
       rt.profileId = thread.model.profileId;
       rt.agent = thread.model.agent;
       yield* setStatus(rt, "starting");

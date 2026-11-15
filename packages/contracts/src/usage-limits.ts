@@ -57,6 +57,8 @@ export type LimitReading = typeof LimitReading.Type;
 /** A reading with what it is of: one agent's window, on its own login or a gateway profile's. */
 export const LimitRecord = Schema.Struct({
   agent: AgentKind,
+  /** Opaque machine/login scope; absent only on older or synthetic readings. */
+  accountScope: Schema.optionalKey(Schema.String),
   /** The gateway profile it came through; absent for the CLI's own login, the subscription. */
   profileId: Schema.optionalKey(Schema.String),
   /** The agent's name for it, one of `SUBSCRIPTION_LIMIT_WINDOWS`. */

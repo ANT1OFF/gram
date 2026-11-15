@@ -7,11 +7,14 @@ import {
   type AgentFailure,
   type OrchestrationDigest,
   type ThreadId,
+  type HostId,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Context from "effect/Context";
+import * as Stream from "effect/Stream";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,8 +38,15 @@ import {
   LIMIT_EARLY_GAP_MS,
   LIMIT_RESUME_TEXT,
 } from "./limit-wait.ts";
-import { recordingDelivery, RuntimeTestLayer, TEST_CONFIG, waitFor } from "./test-harness.ts";
+import {
+  recordingDelivery,
+  RuntimeTestLayer,
+  TEST_CONFIG,
+  waitFor,
+  makeRuntimeTestLayer,
+} from "./test-harness.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
+import { AgentHosts } from "./agent-hosts.ts";
 
 // 11:00 in Oslo; Claude's message below says the limit lifts at 12:50 there.
 const NOW = Date.parse("2026-10-15T09:00:00Z");
@@ -141,6 +151,178 @@ const waitOf = (threadId: ThreadId) =>
     Effect.flatMap((store) => store.getThread(threadId)),
     Effect.map((thread) => thread.limitWait),
   );
+
+/** Public account metadata changes independently of processes already open on the old login. */
+const loginLayer = (current: () => string | undefined) =>
+  makeRuntimeTestLayer(
+    undefined,
+    undefined,
+    undefined,
+    Layer.effectContext(
+      Effect.gen(function* () {
+        const hosts = yield* AgentHosts;
+        const control = yield* FakeAgentControl;
+        return Context.make(
+          AgentHosts,
+          AgentHosts.of({
+            get: (kind) =>
+              hosts.get(kind).pipe(
+                Effect.map((host) => ({
+                  ...host,
+                  readAccountScope: Effect.sync(current),
+                  open: (options) => {
+                    const accountScope = current();
+                    return host.open(options).pipe(
+                      Effect.map((session) => ({
+                        ...session,
+                        events: session.events.pipe(
+                          Stream.map((event) =>
+                            event.type === "identity" && accountScope !== undefined
+                              ? { ...event, accountScope }
+                              : event,
+                          ),
+                        ),
+                      })),
+                    );
+                  },
+                })),
+              ),
+          }),
+        ).pipe(Context.add(FakeAgentControl, control));
+      }),
+    ).pipe(Layer.provide(FakeAgentAdapter)),
+  );
+
+describe("subscription login isolation", () => {
+  it.effect(
+    "releases an old login's wait and reopens its process when fresh account metadata changes",
+    () => {
+      let login = "account-a";
+      return Effect.gen(function* () {
+        yield* TestClock.setTime(NOW);
+        const { thread, session } = yield* running();
+        yield* fail(thread.id, CLAUDE_LIMIT);
+        yield* TestClock.adjust("1 minute");
+        login = "account-b";
+        // Opening the usage meter polls metadata and selects the new local login.
+        const readings = yield* UsageLimitReadings;
+        yield* readings.selectAccount!("claude", "new-login");
+        yield* settle;
+        expect(yield* waitOf(thread.id)).toMatchObject({ cleared: expect.any(Number) });
+        yield* TestClock.adjust(LIMIT_RESUME_JITTER_MS + 1);
+        yield* waitSent(thread.id, 2);
+        expect(yield* sessionOf(thread.id)).not.toBe(session);
+        expect(yield* sentTo(thread.id)).toEqual(["one", LIMIT_CLEARED_TEXT]);
+      }).pipe(Effect.provide(loginLayer(() => login)));
+    },
+  );
+
+  it.effect("does not pool unidentified subscription logins", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW);
+      const { thread } = yield* running();
+      yield* fail(thread.id, CLAUDE_LIMIT);
+      const runtimes = yield* ThreadRuntimes;
+      const spawned = yield* runtimes.create({
+        id: nextThreadId(),
+        projectRoot: "/work/repo",
+        checkout: { kind: "main", path: "/work/repo" },
+        input: {
+          text: "brief",
+          origin: { threadId: "orch" as ThreadId, title: "Orchestrator", depth: 1 },
+        },
+      });
+      expect(yield* waitOf(spawned.id)).toBeUndefined();
+      yield* waitSent(spawned.id, 1);
+    }).pipe(Effect.provide(loginLayer(() => undefined))),
+  );
+  it.effect(
+    "starts a new worker on the new login despite the old process's rejected weekly window",
+    () => {
+      let login = "account-a";
+      return Effect.gen(function* () {
+        yield* TestClock.setTime(NOW);
+        const { thread, session } = yield* running();
+        yield* session.emit({
+          type: "rateLimit",
+          status: "rejected",
+          window: "seven_day",
+          utilization: 1,
+          resetsAt: RESET,
+        });
+        yield* fail(thread.id, CLAUDE_LIMIT);
+        login = "account-b";
+        // The old process can still report the old login after the user's CLI switched.
+        yield* session.emit({
+          type: "rateLimit",
+          status: "rejected",
+          window: "seven_day",
+          utilization: 1,
+          resetsAt: RESET,
+        });
+        const runtimes = yield* ThreadRuntimes;
+        const spawned = yield* runtimes.create({
+          id: nextThreadId(),
+          projectRoot: "/work/repo",
+          checkout: { kind: "main", path: "/work/repo" },
+          input: {
+            text: "brief",
+            origin: { threadId: "orch" as ThreadId, title: "Orchestrator", depth: 1 },
+          },
+        });
+        yield* settle;
+        expect(yield* waitOf(spawned.id)).toBeUndefined();
+        yield* waitSent(spawned.id, 1);
+      }).pipe(Effect.provide(loginLayer(() => login)));
+    },
+  );
+
+  it.effect(
+    "reopens the process on explicit Resume and sends the held brief on the new login",
+    () => {
+      let login = "account-a";
+      return Effect.gen(function* () {
+        yield* TestClock.setTime(NOW);
+        const runtimes = yield* ThreadRuntimes;
+        const { thread, session } = yield* running();
+        yield* fail(thread.id, CLAUDE_LIMIT);
+        yield* runtimes.send(thread.id, {
+          text: "brief",
+          origin: { threadId: "orch" as ThreadId, title: "Orchestrator", depth: 1 },
+        });
+        login = "account-b";
+        yield* runtimes.resumeLimitWait(thread.id);
+        yield* waitSent(thread.id, 2);
+        expect(yield* sessionOf(thread.id)).not.toBe(session);
+        yield* complete(thread.id);
+        yield* waitSent(thread.id, 3);
+        expect(yield* waitOf(thread.id)).toBeUndefined();
+      }).pipe(Effect.provide(loginLayer(() => login)));
+    },
+  );
+
+  it.effect("does not use local rejections before attempting a joined machine's transport", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW);
+      const { thread } = yield* running();
+      yield* fail(thread.id, CLAUDE_LIMIT);
+      const runtimes = yield* ThreadRuntimes;
+      const spawned = yield* runtimes.create({
+        id: nextThreadId(),
+        projectRoot: "/work/repo",
+        checkout: { kind: "main", path: "/remote/repo", hostId: "remote-machine" as HostId },
+        input: {
+          text: "brief",
+          origin: { threadId: "orch" as ThreadId, title: "Orchestrator", depth: 1 },
+        },
+      });
+      yield* settle;
+      expect(yield* waitOf(spawned.id)).toBeUndefined();
+      // Transport is synthetic in this harness; delivery must reach its adapter.
+      yield* waitSent(spawned.id, 1);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+});
 
 const digest = (text: string) => ({
   text,
@@ -983,6 +1165,39 @@ describe("a limit that no longer applies", () => {
       });
       expect(sent.queued).toBe(false);
       expect(yield* waitOf(thread.id)).toBeUndefined();
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("does not reapply a full stored rejection after a successful retry", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW);
+      const runtimes = yield* ThreadRuntimes;
+      const { thread, session } = yield* running();
+      yield* session.emit({
+        type: "rateLimit",
+        status: "rejected",
+        window: "seven_day",
+        utilization: 1,
+        resetsAt: RESET,
+      });
+      yield* fail(thread.id, CLAUDE_LIMIT);
+      yield* TestClock.adjust("1 minute");
+      yield* runtimes.resumeLimitWait(thread.id);
+      yield* waitSent(thread.id, 2);
+      yield* complete(thread.id);
+      yield* settle;
+      const spawned = yield* runtimes.create({
+        id: nextThreadId(),
+        projectRoot: "/work/repo",
+        checkout: { kind: "main", path: "/work/repo" },
+        input: {
+          text: "brief",
+          origin: { threadId: "orch" as ThreadId, title: "Orchestrator", depth: 1 },
+        },
+      });
+      yield* settle;
+      expect(yield* waitOf(spawned.id)).toBeUndefined();
+      yield* waitSent(spawned.id, 1);
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 });

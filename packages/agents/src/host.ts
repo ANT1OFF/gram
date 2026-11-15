@@ -467,6 +467,8 @@ export interface ListModelsOptions {
 }
 
 export interface AgentHost {
+  /** Fresh opaque login identity from the CLI's public auth-status metadata. */
+  readonly readAccountScope?: Effect.Effect<string | undefined, AgentUnavailable>;
   /** Fresh preparation check for a native login under Gram's outward gate; absent refuses. */
   readonly nativeGateReady?: Effect.Effect<boolean>;
   /**

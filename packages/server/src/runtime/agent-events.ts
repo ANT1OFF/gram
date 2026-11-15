@@ -24,6 +24,8 @@ import {
 } from "./runtime-state.ts";
 import {
   listedRow,
+  hostOf,
+  effectiveCheckout,
   type AgentEvent,
   type ApprovalRequest,
   type PendingRequest,
@@ -59,7 +61,7 @@ import {
   type HookedRequests,
   type RequestAction,
 } from "../embedding/hooked-requests.ts";
-import type { EarlyReleases } from "./limit-wait.ts";
+import { accountOf, machineAccountScope, type EarlyReleases } from "./limit-wait.ts";
 import type { makeRateLimitGate } from "./rate-limits.ts";
 import type { AgentSession } from "@gram/agents";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
@@ -498,6 +500,13 @@ export const makeAgentEvents = ({
       switch (event.type) {
         case "identity": {
           const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
+          if (event.accountScope !== undefined && thread.model.profileId === undefined) {
+            rt.accountScope = machineAccountScope(
+              hostOf(effectiveCheckout(thread)),
+              event.accountScope,
+            );
+            rt.quota = accountOf({ ...thread.model, accountScope: rt.accountScope });
+          }
           const newId = thread.agentSessionId !== event.agentSessionId;
           const newHome = event.codexHome !== undefined && thread.codexHome !== event.codexHome;
           if (newId || newHome) {
@@ -914,6 +923,7 @@ export const makeAgentEvents = ({
               type: "usageLimit",
               threadId: rt.threadId,
               agent: rt.agent,
+              ...(rt.accountScope === undefined ? {} : { accountScope: rt.accountScope }),
               ...(rt.profileId === undefined
                 ? {}
                 : { gateway: true as const, profileId: rt.profileId }),
@@ -952,6 +962,7 @@ export const makeAgentEvents = ({
               yield* limitReadings.value.admitted(
                 {
                   agent: rt.agent,
+                  ...(rt.accountScope === undefined ? {} : { accountScope: rt.accountScope }),
                   ...(rt.profileId === undefined ? {} : { profileId: rt.profileId }),
                 },
                 rt.turn.startedAt,

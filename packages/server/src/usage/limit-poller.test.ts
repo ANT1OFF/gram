@@ -43,6 +43,29 @@ const host = (
 ): AgentHost => ({ kind, readSubscriptionLimits }) as AgentHost;
 
 describe("subscription limit polling", () => {
+  it.effect(
+    "discards metadata read across a login switch instead of attributing it to either account",
+    () => {
+      let login = "account-a";
+      const changing = {
+        ...host(
+          "claude",
+          Effect.sync(() => {
+            login = "account-b";
+            return [report("seven_day", 1)];
+          }),
+        ),
+        readAccountScope: Effect.sync(() => login),
+      };
+      return withPoller(
+        [changing],
+        Effect.gen(function* () {
+          yield* (yield* UsageLimitPoller).refresh;
+          expect(yield* (yield* UsageLimitReadings).all!).toEqual([]);
+        }),
+      );
+    },
+  );
   it.effect("starts no CLI while no window shows, and reads afresh as one comes back", () =>
     Effect.gen(function* () {
       let calls = 0;
