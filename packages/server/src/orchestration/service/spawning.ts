@@ -350,15 +350,17 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       if (hostId === undefined) return;
       const machine = joinedMachines().find((m) => m.id === hostId);
       const name = machine?.name ?? hostId;
-      if ((chosen.agent !== "claude" && chosen.agent !== "codex") || chosen.profileId !== undefined)
+      if (chosen.profileId !== undefined)
         return yield* toolError(
           tool,
           refusal(
             "not_admitted",
-            `${name} runs direct Claude and Codex sessions only. Choose a worker model on its own CLI, or spawn on this machine.`,
+            `${name} runs direct Claude, Codex and OpenCode sessions only. Choose a worker model on its own CLI, or spawn on this machine.`,
           ),
         );
       if (chosen.agent === "codex") return yield* admitMachineCodex(tool, machine, name, chosen);
+      if (chosen.agent === "opencode")
+        return yield* admitMachineOpenCode(tool, machine, name, chosen);
       if (machine?.tools?.some((entry) => entry.tool === "claude" && !entry.found))
         return yield* toolError(
           tool,
@@ -429,6 +431,45 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           refusal(
             "not_admitted",
             `${name} is not signed in to Codex. Run codex login on that machine before spawning a Codex worker.`,
+          ),
+        );
+    });
+  /**
+   * A direct OpenCode worker on a joined machine, as the machine says of its OpenCode. Where its
+   * status isn't in yet, nothing is refused on it: the open there says what is wrong.
+   */
+  const admitMachineOpenCode = (
+    tool: string,
+    machine: ReturnType<typeof joinedMachines>[number] | undefined,
+    name: string,
+    chosen: ModelRef,
+  ) =>
+    Effect.gen(function* () {
+      // A status without OpenCode comes from a host that doesn't run OpenCode sessions.
+      if (machine?.tools !== undefined && machine.opencode === undefined)
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name}'s Gram is older than this one and doesn't run OpenCode sessions. Update Gram there (Settings → Machines), or choose another worker model.`,
+          ),
+        );
+      const opencode = machine?.opencode;
+      if (opencode === undefined) return;
+      if (!opencode.found)
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name}: OpenCode is not installed. Install it there before spawning an OpenCode worker.`,
+          ),
+        );
+      if (opencode.models !== undefined && hostListing(opencode.models, chosen.model) === undefined)
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${name}'s OpenCode doesn't list ${chosen.model}. Pick a model it lists, or check its providers there.`,
           ),
         );
     });
@@ -936,7 +977,11 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           const machineRecord =
             hostId === undefined ? undefined : joinedMachines().find((m) => m.id === hostId);
           const placedModels =
-            chosen.agent === "codex" ? machineRecord?.codex?.models : machineRecord?.models;
+            chosen.agent === "codex"
+              ? machineRecord?.codex?.models
+              : chosen.agent === "opencode"
+                ? machineRecord?.opencode?.models
+                : machineRecord?.models;
           const efforts =
             input.effort === undefined
               ? []

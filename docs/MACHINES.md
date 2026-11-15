@@ -3,7 +3,7 @@
 [Up: remote access](REMOTE_ACCESS.md)
 
 Another Mac or Linux machine can join your Gram and run its work: its checkouts, git, terminals,
-ports and Claude Code and Codex sessions. The machine you already use keeps Gram's threads, decisions and
+ports and Claude Code, Codex and OpenCode sessions. The machine you already use keeps Gram's threads, decisions and
 settings; the other machine runs `gram-host`, which dials it over Tailscale. The joined machine
 opens no port of its own.
 
@@ -424,6 +424,24 @@ there opens its app-server there; this Gram never starts Codex for it.
   Gram and doesn't run Codex sessions. Update Gram there (Settings → Machines), then try again."
 - Not yet: switching a thread between Claude Code and Codex on a joined machine, and Codex memory
   updates there.
+
+## OpenCode on a machine
+
+A joined machine whose `gram-host` is this release or newer runs OpenCode sessions too, on that
+machine's own `opencode` (`opencode serve`, one per host) and its own OpenCode config. A thread or
+worker on OpenCode placed there opens there; this Gram never starts OpenCode for it.
+
+- **What it runs on.** The providers and keys are the ones that machine's OpenCode config names;
+  Gram writes none and reads none. An embedder that routes OpenCode through its own gateway writes
+  that config on the machine before its host starts.
+- **Its models.** The host reports whether `opencode` is on its login shell's PATH, its version, and
+  the `provider/model` ids it lists. A headless Gram lists the OpenCode models of the machine a new
+  thread would go on, and an orchestrator's OpenCode worker is refused on a machine whose OpenCode
+  isn't installed or doesn't list the model.
+- **Gateway profiles stay here.** A session through a gateway profile never opens on a machine,
+  as for Codex.
+- A machine with an older `gram-host` opens no OpenCode session: "Its gram-host is older than this
+  Gram and doesn't run OpenCode sessions. Update Gram there (Settings → Machines), then try again."
 
 ## When it drops or restarts
 

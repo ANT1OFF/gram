@@ -36,6 +36,8 @@ import { makeFakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { claudeSignInOf, hostStatusOf } from "./claude-sign-in.ts";
 import { codexStatusOf, hostCodexLive } from "./codex-on-host.ts";
 import { CodexHost } from "@gram/agents/codex";
+import { OpenCodeHost } from "@gram/agents/opencode";
+import { hostOpenCodeLive, openCodeStatusOf } from "./opencode-on-host.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHostKeeping } from "./terminals.ts";
 import { KEPT_TERMINALS_ENV, keptTerminalsIn } from "../terminal/kept.ts";
@@ -92,18 +94,21 @@ const hostAgents = (
         Effect.gen(function* () {
           const claude = yield* ClaudeHost;
           const codex = Option.getOrUndefined(yield* Effect.serviceOption(CodexHost));
+          const opencode = Option.getOrUndefined(yield* Effect.serviceOption(OpenCodeHost));
           return AgentHosts.of({
             get: (agent) =>
               agent === "claude"
                 ? Effect.succeed(claude)
                 : agent === "codex" && codex !== undefined
                   ? Effect.succeed(codex)
-                  : Effect.fail(
-                      new AgentUnavailable({
-                        agent,
-                        message: `${agent} sessions don't run in this machine's host yet.`,
-                      }),
-                    ),
+                  : agent === "opencode" && opencode !== undefined
+                    ? Effect.succeed(opencode)
+                    : Effect.fail(
+                        new AgentUnavailable({
+                          agent,
+                          message: `${agent} sessions don't run in this machine's host yet.`,
+                        }),
+                      ),
           });
         }),
       ).pipe(
@@ -116,6 +121,8 @@ const hostAgents = (
           }),
         ),
         Layer.provide(codexData === undefined ? Layer.empty : hostCodexLive(codexData)),
+        // OpenCode as well on a joined machine (the one whose host has a folder of its own).
+        Layer.provide(codexData === undefined ? Layer.empty : hostOpenCodeLive()),
       );
 
 /** What could stop a host's update: what is running in it now (`HostBusy`). */
@@ -142,6 +149,10 @@ const hostService = (
     const agents = yield* AgentHosts;
     // Named in its hello only where it runs them: a joined machine's host, or the fake.
     const runsCodex = yield* agents.get("codex").pipe(
+      Effect.as(true),
+      Effect.orElseSucceed(() => false),
+    );
+    const runsOpenCode = yield* agents.get("opencode").pipe(
       Effect.as(true),
       Effect.orElseSucceed(() => false),
     );
@@ -212,9 +223,11 @@ const hostService = (
         platform: process.platform,
         pid: process.pid,
         ...(RELEASE === undefined ? {} : { release: RELEASE }),
-        features: runsCodex
-          ? HOST_FEATURES
-          : HOST_FEATURES.filter((feature) => feature !== "agent-codex"),
+        features: HOST_FEATURES.filter(
+          (feature) =>
+            (feature !== "agent-codex" || runsCodex) &&
+            (feature !== "agent-opencode-sessions" || runsOpenCode),
+        ),
       },
       files: filesOn(proc),
       folders,
@@ -251,6 +264,8 @@ const hostService = (
         ),
         // And its Codex, where this host runs Codex sessions.
         runsCodex ? codexStatusOf(agents.get("codex")) : Effect.succeed(undefined),
+        // And its OpenCode, where this host runs OpenCode sessions.
+        runsOpenCode ? openCodeStatusOf(agents.get("opencode")) : Effect.succeed(undefined),
       ),
       checks,
       admission,

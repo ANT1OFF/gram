@@ -124,8 +124,49 @@ describe("headlessAgentHosts", () => {
         Effect.scoped(claude.open({ threadId: "t-1", cwd: "/work/repo" } as never)),
       );
       expect(opened).toMatchObject({ _tag: "AgentUnavailable", message: RUNS_NOTHING_HERE });
-      // An agent no machine runs is still refused.
-      expect(yield* Effect.flip(hosts.get("opencode"))).toMatchObject({ _tag: "AgentUnavailable" });
+    }),
+  );
+
+  it.effect("offers OpenCode as the default machine's own OpenCode lists it", () =>
+    Effect.gen(function* () {
+      const listed = [{ ...MODELS[0]!, id: "openai/gpt-synthetic", displayName: "GPT synthetic" }];
+      const hosts = headlessAgentHosts(
+        remote([
+          machine("m-first", {
+            name: "build box",
+            onlineSince: 1,
+            models: MODELS,
+            opencode: { found: true, models: listed },
+          }),
+        ]),
+      );
+      const opencode = yield* hosts.get("opencode");
+      expect(yield* opencode.listModels()).toEqual(listed);
+      const opened = yield* Effect.flip(
+        Effect.scoped(opencode.open({ threadId: "t-1", cwd: "/work/repo" } as never)),
+      );
+      expect(opened).toMatchObject({ _tag: "AgentUnavailable", message: RUNS_NOTHING_HERE });
+      // A gateway profile's list stays here.
+      expect(yield* Effect.flip(opencode.listModels({ profileId: "p-1" } as never))).toMatchObject({
+        _tag: "AgentUnavailable",
+      });
+    }),
+  );
+
+  it.effect("says why OpenCode lists nothing: an older host, or none installed", () =>
+    Effect.gen(function* () {
+      const older = yield* headlessAgentHosts(
+        remote([machine("m-first", { name: "build box", onlineSince: 1 })]),
+      ).get("opencode");
+      expect((yield* Effect.flip(older.listModels())).message).toContain("update it there");
+      const absent = yield* headlessAgentHosts(
+        remote([
+          machine("m-first", { name: "build box", onlineSince: 1, opencode: { found: false } }),
+        ]),
+      ).get("opencode");
+      expect((yield* Effect.flip(absent.listModels())).message).toBe(
+        "OpenCode isn't installed on build box. Install it there, then re-check.",
+      );
     }),
   );
 

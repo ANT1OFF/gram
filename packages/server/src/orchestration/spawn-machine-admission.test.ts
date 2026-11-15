@@ -60,7 +60,7 @@ describe("spawn admission on a joined machine", () => {
       },
       why: "through a gateway",
       machine: MACHINE,
-      says: /build box.*direct Claude and Codex/,
+      says: /build box.*direct Claude, Codex and OpenCode/,
     },
     {
       model: { agent: "codex", model: "fake-opus" },
