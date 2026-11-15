@@ -27,6 +27,7 @@ const Policy = Schema.Struct({
         Schema.Struct({
           static: Schema.optionalKey(Names),
           tests: Schema.optionalKey(Names),
+          macos: Schema.optionalKey(Names),
           package: Schema.optionalKey(Names),
           e2e: Schema.optionalKey(Names),
         }),

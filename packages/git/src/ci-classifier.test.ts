@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 import { DOCUMENTATION_POLICY } from "./ci-policy.ts";
 
 const DOCS = "kind=docs\nlanes=[]\n";
-const FULL = `kind=code\nlanes=${JSON.stringify(["static", "tests", "package", "e2e"])}\n`;
+const laned = (selected: string[]) => `kind=code\nlanes=${JSON.stringify(selected)}\n`;
+const FULL = `kind=code\nlanes=${JSON.stringify(["static", "tests", "macos", "package", "e2e"])}\n`;
 
 it("the Actions entrypoint uses actual base policy/diff and defaults main/manual/errors to full", () => {
   const cwd = mkdtempSync(join(tmpdir(), "gram-ci-entrypoint-"));
@@ -52,7 +53,11 @@ it("the Actions entrypoint uses actual base policy/diff and defaults main/manual
       event: string,
       baseSha = base,
       headSha = head,
-      { checkout, merge }: { checkout?: string; merge?: string } = {},
+      {
+        checkout,
+        merge,
+        pr = {},
+      }: { checkout?: string; merge?: string; pr?: Record<string, string> } = {},
     ) => {
       const before = git(["rev-parse", "HEAD"]);
       const made = mergeOf(baseSha, headSha);
@@ -70,6 +75,9 @@ it("the Actions entrypoint uses actual base policy/diff and defaults main/manual
             CI_BASE: baseSha,
             CI_HEAD: headSha,
             CI_MERGE: merge ?? made ?? headSha,
+            CI_HEAD_REF: "",
+            CI_DRAFT: "",
+            ...pr,
             GITHUB_OUTPUT: output,
           },
         });
@@ -89,8 +97,20 @@ it("the Actions entrypoint uses actual base policy/diff and defaults main/manual
     git(["add", "packages"]);
     git(["commit", "-qm", "a test"]);
     expect(classify("pull_request", base, git(["rev-parse", "HEAD"]))).toBe(
-      `kind=code\nlanes=${JSON.stringify(["static", "tests"])}\n`,
+      `kind=code\nlanes=${JSON.stringify(["static", "tests", "macos"])}\n`,
     );
+    // The release metadata PR, while a draft, runs the static stages and Vitest; ready, its lanes.
+    const tip = git(["rev-parse", "HEAD"]);
+    const release = { CI_HEAD_REF: "release-please--branches--main" };
+    expect(classify("pull_request", base, tip, { pr: { ...release, CI_DRAFT: "true" } })).toBe(
+      laned(["static", "tests"]),
+    );
+    expect(classify("pull_request", base, tip, { pr: { ...release, CI_DRAFT: "false" } })).toBe(
+      laned(["static", "tests", "macos"]),
+    );
+    expect(
+      classify("pull_request", base, tip, { pr: { CI_HEAD_REF: "feat/x", CI_DRAFT: "true" } }),
+    ).toBe(laned(["static", "tests", "macos"]));
     expect(classify("push", base, git(["rev-parse", "HEAD"]))).toBe(FULL);
     git(["reset", "-q", "--hard", head]);
     expect(classify("pull_request", unpolicied)).toBe(FULL);
@@ -157,7 +177,9 @@ const lane = (id: string) =>
         ? "package"
         : id === "check-static"
           ? "static"
-          : "tests";
+          : id === "macos-tests"
+            ? "macos"
+            : "tests";
 it("the qualification entrypoint passes only the lanes classify selected, every job accounted for", () => {
   const script = fileURLToPath(new URL("../../../tools/qualify-ci.mjs", import.meta.url));
   const ids = [
@@ -189,7 +211,7 @@ it("the qualification entrypoint passes only the lanes classify selected, every 
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, CI_NEEDS: JSON.stringify(value) },
     });
-  const all = ["static", "tests", "package", "e2e"];
+  const all = ["static", "tests", "macos", "package", "e2e"];
   expect(qualify(needs("code", all))).toContain("Qualified");
   expect(qualify(needs("docs", []))).toContain("Qualified");
   expect(qualify(needs("code", ["static", "tests"]))).toContain("Qualified");

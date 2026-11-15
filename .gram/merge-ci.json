@@ -27,13 +27,8 @@
       "docsJobs": ["classify", "qualification", "docs"],
       "laneJobs": {
         "static": ["check static"],
-        "tests": [
-          "check tests 1/2",
-          "check tests 2/2",
-          "macos tests 1/3",
-          "macos tests 2/3",
-          "macos tests 3/3"
-        ],
+        "tests": ["check tests 1/2", "check tests 2/2"],
+        "macos": ["macos tests 1/3", "macos tests 2/3", "macos tests 3/3"],
         "package": ["macos package", "linux package"],
         "e2e": [
           "e2e 1/8",

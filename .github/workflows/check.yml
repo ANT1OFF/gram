@@ -5,6 +5,8 @@ on:
   # checking each one as well left the runners too few for the branch's own runs.
   pull_request:
     branches-ignore: ["integration/**"]
+    # Ready for review too: a draft release metadata PR runs a short set of lanes (classify).
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     # An integration branch collects pull requests before main, so it is checked as main is.
     branches: [main, "integration/**"]
@@ -57,6 +59,8 @@ jobs:
           CI_BASE: ${{ github.event.pull_request.base.sha }}
           CI_HEAD: ${{ github.event.pull_request.head.sha }}
           CI_MERGE: ${{ github.sha }}
+          CI_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          CI_DRAFT: ${{ github.event.pull_request.draft }}
 
   docs:
     needs: classify
@@ -342,10 +346,12 @@ jobs:
   # beside them. Static stages are platform-independent and stay in `check static`. Packaging never
   # signs (see apps/desktop/electron-builder.yml), so no signing or notarization secret reaches CI.
   # The e2e shards stay on Linux: in series on this 3-core runner they would take over an hour.
+  # On a pull request the suite runs here only when the diff reaches code whose behaviour can differ
+  # on macOS (the `macos` lane: the desktop app, server, agents, git and shell); `main` always does.
   macos-tests:
     needs: classify
     name: macos tests ${{ matrix.shard }}/3
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && contains(fromJSON(needs.classify.outputs.lanes), 'tests')
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && contains(fromJSON(needs.classify.outputs.lanes), 'macos')
     runs-on: macos-15
     timeout-minutes: 30
     strategy:

@@ -106,11 +106,13 @@ for (const width of [1440, 390]) {
     await missing.click();
     await expect(markers.nth(1)).toContainText("Summary not provided");
     const unavailable = markers.nth(1).getByTestId("compaction-details");
-    await unavailable.scrollIntoViewIfNeeded();
-    await unavailable.hover();
-    await page.mouse.wheel(0, 500);
-    await page.mouse.move(0, 0);
+    // The transcript can still be growing from the reopened markers when the wheel lands, and one
+    // wheel then stops short of the end: wheel again until the details clear the bottom edge.
     await expect(async () => {
+      await unavailable.scrollIntoViewIfNeeded();
+      await unavailable.hover();
+      await page.mouse.wheel(0, 500);
+      await page.mouse.move(0, 0);
       const details = (await unavailable.boundingBox())!;
       const transcript = (await page.getByTestId("transcript").boundingBox())!;
       expect(details.y + details.height).toBeLessThanOrEqual(transcript.y + transcript.height - 24);

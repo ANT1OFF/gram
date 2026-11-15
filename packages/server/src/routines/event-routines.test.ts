@@ -674,7 +674,14 @@ describe.skipIf(!hasGit)("event routines", () => {
               if (delay === "registration") yield* Deferred.await(registering);
               yield* TestClock.adjust("15 minutes");
               yield* Deferred.succeed(resume, undefined);
-              const [worker] = yield* workersAt(id, 1);
+              // Without a held step the timer can still be armed after that step on a loaded
+              // runner, from the clock as it then stands: step on until the worker comes.
+              const [worker] = yield* advanceUntil(
+                "the routine's worker",
+                workersOf(id).pipe(
+                  Effect.map((workers) => (workers.length > 0 ? workers : undefined)),
+                ),
+              );
               expect(yield* briefOf(worker!.id)).toContain("o/r#6:");
               expect((yield* ranAfter(id, back.trigger!.firedAt!)).lastRun).toMatchObject({
                 outcome: "started",

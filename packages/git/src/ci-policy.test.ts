@@ -13,7 +13,9 @@ const lanes = (input: string) => {
   const result = ciLanes(input);
   return result === "docs" ? "docs" : [...CI_LANES].filter((lane) => result.has(lane));
 };
-const ALL = ["static", "tests", "package", "e2e"];
+const ALL = ["static", "tests", "macos", "package", "e2e"];
+/** Every lane but the macOS Vitest suite: what the web app, contracts and themes reach. */
+const LINUX = ["static", "tests", "package", "e2e"];
 
 describe("prose policy", () => {
   it.each([
@@ -41,7 +43,6 @@ describe("prose policy", () => {
     "packages/git/README.md",
     "packages/git/src/fixtures/review-bot/README.md",
     "tools/notes.md",
-    "apps/web/src/whats-new/release-notes.tsx",
     ".github/workflows/check.yml",
     ".gram/merge-ci.json",
     "tools/classify-ci.mjs",
@@ -66,7 +67,7 @@ describe("prose policy", () => {
     expect(lanes(raw(path))).toEqual(ALL);
   });
   it.each([
-    ["packages/server/src/runtime/limit-wait-runtime.test.ts", ["static", "tests"]],
+    ["packages/server/src/runtime/limit-wait-runtime.test.ts", ["static", "tests", "macos"]],
     ["apps/web/src/thread/request-cards.test.tsx", ["static", "tests"]],
     ["apps/web/scripts/e2e-timings.test.mjs", ["static", "tests"]],
     ["tools/release-stable/stable.test.mjs", ["static", "tests"]],
@@ -83,9 +84,14 @@ describe("prose policy", () => {
     // mock-kit.test.mjs lists the templates directory: a README there is not prose.
     [".agents/skills/mock-build/templates/README.md", ["static", "tests"]],
     [".agents/skills/mock-build/SKILL.md", ["static", "tests"]],
-    ["apps/desktop/src/main/ipc.ts", ["static", "tests", "package"]],
-    ["apps/desktop/assets/README.md", ["static", "tests", "package"]],
-    ["apps/web/src/thread/request-cards.tsx", ALL],
+    ["apps/desktop/src/main/ipc.ts", ["static", "tests", "macos", "package"]],
+    ["apps/desktop/assets/README.md", ["static", "tests", "macos", "package"]],
+    ["apps/web/src/thread/request-cards.tsx", LINUX],
+    ["apps/web/src/whats-new/release-notes.tsx", LINUX],
+    ["packages/contracts/src/rpc/schema.ts", LINUX],
+    ["packages/themes/src/color.ts", LINUX],
+    ["packages/shell/src/index.ts", ALL],
+    ["packages/agents/src/opencode/stream.test.ts", ["static", "tests", "macos"]],
     ["packages/server/src/runtime/test-harness.ts", ALL],
     ["packages/server/src/runtime/limit-wait.ts", ALL],
   ])("runs only what %s can affect", (path, expected) => {
@@ -119,7 +125,7 @@ describe("prose policy", () => {
     expect(lanes(raw("apps/desktop/src/main/ipc.ts") + raw("apps/web/e2e/smoke.spec.ts"))).toEqual(
       ALL,
     );
-    expect(lanes(raw("tools/check-docs.mjs") + raw("apps/web/src/app.tsx"))).toEqual(ALL);
+    expect(lanes(raw("tools/check-docs.mjs") + raw("apps/web/src/app.tsx"))).toEqual(LINUX);
   });
   it("includes additions/deletions and both sides of renames", () => {
     expect(classifyCiDiff(raw("README.md", "A", "000000"))).toBe("docs");
@@ -204,7 +210,7 @@ const job = (lane: string, result: string | undefined) => ({ lane, result });
 
 const run = (selected: ReadonlyArray<string>, docs = false) => [
   job("docs", docs ? "success" : "skipped"),
-  ...["static", "tests", "tests", "package", ...Array(8).fill("e2e")].map((lane) =>
+  ...["static", "tests", "macos", "package", ...Array(8).fill("e2e")].map((lane) =>
     job(lane, selected.includes(lane) ? "success" : "skipped"),
   ),
 ];
