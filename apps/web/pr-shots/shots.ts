@@ -2688,7 +2688,75 @@ const ORCHESTRATOR_CONTINUE_IN_SHOTS: readonly Shot[] = [
   },
 ];
 
+/**
+ * The new-workspace sheet on a server that clones for its threads: two repositories filed in its
+ * clone folders (`<host>/<owner>/<repo>+<hash>`), the list opened, and a save the server refuses
+ * with a message naming one of those folders by its full path.
+ */
+const openNewWorkspaceRefused = async (page: Page) => {
+  await page.addInitScript(() => {
+    const roots = {
+      platform: "/data/state/profile-origins/github.com/acme/platform+61a386c7374a4745",
+      harness: "/data/state/profile-origins/github.com/acme/harness+3960900c24f45e9d",
+    };
+    let held: unknown;
+    Object.defineProperty(window, "gramMock", {
+      configurable: true,
+      get: () => held,
+      set: (mock: Record<string, (...args: never[]) => Promise<unknown>>) => {
+        held = mock;
+        const listProjects = mock["listProjects"]!.bind(mock);
+        const extra = async () => {
+          const [first] = (await listProjects()) as Array<Record<string, unknown>>;
+          return Object.entries(roots).map(([name, root]) => ({
+            ...first,
+            id: `p-${name}`,
+            name,
+            root,
+          }));
+        };
+        mock["listProjects"] = async () => [
+          ...((await listProjects()) as unknown[]),
+          ...(await extra()),
+        ];
+        const listRepositories = mock["listRepositories"]!.bind(mock);
+        mock["listRepositories"] = async () => {
+          const { repos } = (await listRepositories()) as { repos: unknown[] };
+          const added = (await extra()).map((p) => ({
+            name: p["name"],
+            root: p["root"],
+            projectId: p["id"],
+          }));
+          return { repos: [...added, ...repos] };
+        };
+        mock["saveWorkspace"] = async () => {
+          throw new Error(
+            `/workspace/.cache/host/repos/github.com/acme/platform+61a386c7374a4745 already holds a different origin. Move that clone or choose a different repository; nothing was fetched.`,
+          );
+        };
+      },
+    });
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/new-workspace?repo=p-platform");
+  const sheet = page.getByRole("form", { name: "New workspace" });
+  await sheet.getByTestId("new-workspace-repo").first().waitFor();
+  await sheet.getByTestId("new-workspace-add").click();
+  // Click, not check: after the change a picked row leaves the list, so it never reads as ticked.
+  await sheet.getByRole("checkbox", { name: /^harness/ }).click();
+  await expect(sheet.getByTestId("new-workspace-repo")).toHaveCount(2);
+  await sheet.getByTestId("new-workspace-start").click();
+  await expect(sheet.getByRole("alert")).toContainText("already holds a different origin");
+  await page.waitForTimeout(400);
+};
+
 export const SHOTS: readonly Shot[] = [
+  {
+    name: "new-workspace-refused",
+    title:
+      "New workspace on a server that clones for its threads: two picked repositories, the list open, a refused save",
+    open: openNewWorkspaceRefused,
+  },
   ...ORCHESTRATOR_CONTINUE_IN_SHOTS,
   ...CONTINUE_IN_SHOTS,
   ...MACHINE_SHOTS,

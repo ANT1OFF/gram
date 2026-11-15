@@ -5,6 +5,9 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
+import { FormError } from "@/components/form-error";
+import { folderPlace } from "@/new-thread/path";
+import { useHome } from "@/new-thread/use-folder";
 
 /**
  * The rows a workspace's repository list shows: each candidate once, and before them a picked
@@ -43,6 +46,7 @@ export function RepositoryChecklist({
   autofocus = false,
   className,
   empty,
+  hidePicked = false,
 }: {
   projects: readonly Project[];
   picked: readonly ProjectId[];
@@ -54,7 +58,10 @@ export function RepositoryChecklist({
   className?: string | undefined;
   /** Shown when there is nothing to list. */
   empty: ReactNode;
+  /** Lists only what isn't picked, for a form that shows its picks on their own. */
+  hidePicked?: boolean;
 }) {
+  const home = useHome();
   const api = useApi();
   const queryClient = useQueryClient();
   // Under `projects` so whatever refreshes the projects (an add, a clone, a workspace) does this too.
@@ -66,7 +73,10 @@ export function RepositoryChecklist({
   const [error, setError] = useState<string>();
   useEffect(() => onPendingChange?.(adding !== undefined), [adding, onPendingChange]);
 
-  const rows = checklistRows(data?.repos ?? [], projects, picked);
+  const all = checklistRows(data?.repos ?? [], projects, picked);
+  const rows = hidePicked
+    ? all.filter((repo) => repo.projectId === undefined || !picked.includes(repo.projectId))
+    : all;
 
   const add = (root: string) => {
     if (adding !== undefined) return;
@@ -89,7 +99,10 @@ export function RepositoryChecklist({
       <ul data-testid={testId} className={className}>
         {rows.map((repo, i) => (
           <li key={repo.projectId ?? repo.root}>
-            <label className="flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-accent/30">
+            <label
+              title={repo.root}
+              className="flex min-w-0 items-center gap-2 rounded-md px-1 py-0.5 hover:bg-accent/30"
+            >
               <input
                 type="checkbox"
                 className="size-4 accent-primary"
@@ -103,19 +116,15 @@ export function RepositoryChecklist({
                 }}
               />
               <FolderGit2 aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
-              <span>{repo.name}</span>
-              <span className="truncate font-mono text-meta text-muted-foreground">
-                {repo.root}
+              <span className="shrink-0">{repo.name}</span>
+              <span className="min-w-0 truncate font-mono text-meta text-muted-foreground">
+                {folderPlace(repo.root, home)}
               </span>
             </label>
           </li>
         ))}
       </ul>
-      {error !== undefined && (
-        <p role="alert" className="text-meta text-destructive">
-          {error}
-        </p>
-      )}
+      {error !== undefined && <FormError message={error} />}
     </>
   );
 }

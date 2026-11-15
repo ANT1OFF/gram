@@ -6,6 +6,8 @@ import {
   breadcrumbs,
   commonPrefix,
   folderLabel,
+  folderPlace,
+  messageParts,
   splitForCompletion,
   tabCompletion,
   tildify,
@@ -71,5 +73,46 @@ describe("folderLabel", () => {
     expect(folderLabel("/c/gitlab.com/group/sub+repo+0123456789abcdef/")).toBe("group/sub/repo");
     expect(folderLabel("/home/me/code/api")).toBe("api");
     expect(folderLabel("/home/me/code/notes+draft")).toBe("notes+draft");
+  });
+});
+
+describe("folderPlace", () => {
+  it("shows a clone by where it came from, and any other folder with home as ~", () => {
+    expect(
+      folderPlace("/data/state/profile-origins/github.com/acme/api+61a386c7374a4745", "/home/me"),
+    ).toBe("github.com/acme/api");
+    expect(folderPlace("/c/gitlab.com/group/sub+repo+0123456789abcdef", undefined)).toBe(
+      "gitlab.com/group/sub/repo",
+    );
+    expect(folderPlace("/home/me/code/api", "/home/me")).toBe("~/code/api");
+    expect(folderPlace("/srv/api", "/home/me")).toBe("/srv/api");
+  });
+});
+
+describe("messageParts", () => {
+  it("names a clone folder in a message by its repository, keeping the full path", () => {
+    expect(
+      messageParts(
+        "/workspace/.cache/repos/github.com/acme/api+61a386c7374a4745 already holds a different origin.",
+        undefined,
+      ),
+    ).toEqual([
+      { path: "/workspace/.cache/repos/github.com/acme/api+61a386c7374a4745", label: "acme/api" },
+      { text: " already holds a different origin." },
+    ]);
+  });
+
+  it("shows other paths with home as ~ and leaves closing punctuation and plain text alone", () => {
+    expect(messageParts("Couldn't read /home/me/code/api.", "/home/me")).toEqual([
+      { text: "Couldn't read " },
+      { path: "/home/me/code/api", label: "~/code/api" },
+      { text: "." },
+    ]);
+    expect(messageParts("Pick at least one repository.", "/home/me")).toEqual([
+      { text: "Pick at least one repository." },
+    ]);
+    expect(messageParts("owner/repo and 1/2 aren't paths", undefined)).toEqual([
+      { text: "owner/repo and 1/2 aren't paths" },
+    ]);
   });
 });

@@ -18,8 +18,8 @@ for (const action of ["Enter", "Clone"] as const) {
     else await sheet.getByRole("button", { name: action, exact: true }).click();
     await expect(sheet.getByRole("status")).toContainText("Cloning EXAMPLE/workspace-fixture");
     await page.evaluate(() => window.gramMock?.release("clone"));
-    await expect(sheet.getByRole("checkbox", { name: /^workspace-fixture/ })).toBeChecked();
     await expect(sheet.getByTestId("new-workspace-repo")).toHaveText(["workspace-fixture"]);
+    await expect(sheet.getByRole("checkbox", { name: /^workspace-fixture/ })).toHaveCount(0);
     await expect(field).toHaveValue("");
     await expect(sheet.getByRole("alert")).toHaveCount(0);
   });
@@ -53,7 +53,7 @@ for (const agent of ["claude", "codex"] as const) {
     await sheet
       .getByTestId("new-workspace-checklist")
       .getByRole("checkbox", { name: /^api/ })
-      .check();
+      .click();
     await expect(sheet.getByRole("link", { name: /gateway key/i })).toHaveCount(0);
     await sheet.getByTestId("new-workspace-start").click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveAccessibleName("Orchestrator: api");
