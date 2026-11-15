@@ -1374,14 +1374,15 @@ test("a worker's PRs show as chips under its row, with checks and the review bot
   const chips = overview(page).locator(
     `[data-testid="overview-pr-chips"][data-thread-id="${made.live}"] [data-testid="overview-pr-chip"]`,
   );
-  // At work its dot says it works, so the row has no words, its step on the hover card: the chips
-  // take the line's end while they fit beside its title, and otherwise wait on the hover card.
+  // At work its dot says it works, so the row has no words, its step on the hover card; its chips
+  // take a second line under its title, beside how long ago it started.
   await expect(worker(page, made.live).getByTestId("overview-worker-now")).toHaveCount(0);
-  await expect(worker(page, made.live)).toHaveJSProperty("offsetHeight", 36);
-  // Given room, they take the line's end.
-  const edge = page.getByTestId("left-resize");
-  await edge.focus();
-  for (let i = 0; i < 12; i++) await page.keyboard.press("ArrowRight");
+  await expect(worker(page, made.live)).toHaveJSProperty("offsetHeight", 48);
+  await expect(worker(page, made.live).getByTestId("overview-worker-dot")).toHaveAttribute(
+    "data-tall",
+    "true",
+  );
+  await expect(worker(page, made.live).getByTestId("overview-worker-age")).toBeVisible();
   await expect(chips).toHaveCount(2);
   // Its own first, red for what blocks the merge; the draft stays grey while its round runs. The
   // worker runs, so its failing CI is its own to fix: a wrench, not the user's red ×. The bot's
