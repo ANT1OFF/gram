@@ -622,7 +622,8 @@ Gram never deletes the CLI's own files for it.
 
 ### Limits
 
-- Not on joined machines, which run direct Claude Code sessions only.
+- Not on joined machines: they run Claude Code and Codex sessions, but don't hand one between
+  agents yet.
 - Not with gateway profiles on either side: a switch uses the CLI's own sign-in.
 - Not on Windows, where Gram can't yet stop a session cleanly for a switch.
 - Only you switch a worker; the orchestrator can't.
