@@ -582,7 +582,9 @@ describe.skipIf(process.platform === "win32")("MCP restart across a shared owned
           ];
           const opened = f.log().filter((v) => v.msg.opened);
           expect(new Set(opened.map((v) => v.pid)).size).toBe(3);
-          expect(opened[0]!.pid).toBe(opened[1]!.pid);
+          // The four threads open at once, in whatever order: find each one's child by its session.
+          const pidOf = (id: string) => opened.find((v) => v.msg.opened === id)!.pid;
+          expect(pidOf(ids[0]!)).toBe(pidOf(ids[1]!));
           const boot = f.log().filter((v) => v.msg.boot);
           expect(
             boot.filter((v) => v.msg.boot?.home === "user" && !v.msg.boot.gatewayKeyPresent),
@@ -701,7 +703,7 @@ describe.skipIf(process.platform === "win32")("MCP restart across a shared owned
           const reopened = log.filter((v) => v.msg.opened === ids[0]).at(-1)!;
           expect(reopened.msg.servers).toEqual([]);
           expect(log.indexOf(reopened)).toBeGreaterThan(
-            log.findIndex((v) => v.msg.exited && v.pid === opened[0]!.pid),
+            log.findIndex((v) => v.msg.exited && v.pid === pidOf(ids[0]!)),
           );
           for (const id of ids.slice(2)) {
             const pid = opened.find((v) => v.msg.opened === id)!.pid;

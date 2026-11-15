@@ -17,6 +17,9 @@
 // `bun run check:cancel` stops this checkout's running check and every stage it started, and
 // nothing else: each stage runs in a process group of its own, recorded per checkout.
 //
+// On CI a shard whose tests fail in a few files runs those files once more, alone, and passes if
+// they do, naming each such flaky test as a warning (rerun.mjs). A local check never reruns.
+//
 // CI splits the check across jobs: `--only static` runs the static stages alone, and
 // `--only tests --shard <i>/<n>` one Vitest shard alone, so the jobs together run it all once.
 //
@@ -24,12 +27,13 @@
 //   bun run check:affected [--base <ref>] [--workers <n>]
 //   bun run check:cancel
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { affected, workspaces } from "./affected.mjs";
+import { failedFiles, flakyReport, shouldRerun } from "./rerun.mjs";
 import { slowFiles } from "./timings.mjs";
 import { vitestArgs } from "./vitest-args.mjs";
 import {
@@ -244,6 +248,7 @@ if (
   free();
   free = noop;
   results.push(tests);
+  let failed = [];
   try {
     const json = JSON.parse(readFileSync(reportFile, "utf8"));
     tests.summary =
@@ -253,12 +258,39 @@ if (
     for (const { file, ms } of slowFiles(json, root)) {
       say(`  ${seconds(ms).padStart(6)}s  ${file}`);
     }
+    if (!tests.ok) failed = failedFiles(json, root);
   } catch {
     tests.ok = false;
     tests.summary = "no Vitest report";
   }
-  rmSync(reportDir, { recursive: true, force: true });
   report(tests);
+  // On CI, a few failed files run once more, alone: a flake then costs this, not a rerun of the
+  // whole job, and is named so it gets fixed (rerun.mjs). A local check never reruns.
+  if (ci && !tests.ok && shouldRerun(failed) && process.env["GRAM_CHECK_RERUN"] !== "0") {
+    const again = join(reportDir, "rerun.json");
+    say(`\n▸ Rerunning ${failed.length} failed ${failed.length === 1 ? "file" : "files"} alone`);
+    const rerun = await run(
+      "tests rerun",
+      "node",
+      [
+        "node_modules/vitest/vitest.mjs",
+        ...vitestArgs({ workers: Math.min(workers, failed.length), reportFile: again }),
+        ...failed.map(({ path }) => path),
+      ],
+      { stream: true },
+    );
+    results.push(rerun);
+    if (rerun.ok) {
+      const { lines, summary } = flakyReport(failed);
+      for (const line of lines) say(line);
+      if (process.env["GITHUB_STEP_SUMMARY"])
+        appendFileSync(process.env["GITHUB_STEP_SUMMARY"], `${summary}\n`);
+      tests.ok = true;
+      tests.summary += `; ${failed.length} flaky ${failed.length === 1 ? "file" : "files"} passed alone`;
+    }
+    report(rerun);
+  }
+  rmSync(reportDir, { recursive: true, force: true });
 }
 
 const ok = results.every((result) => result.ok);

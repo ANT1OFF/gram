@@ -266,8 +266,12 @@ describe("ObjectStore", () => {
           // One that couldn't be read sends nothing, and one the store refused is asked again.
           yield* objects.putStaged(key, "5:3000", () => Effect.succeed(false));
           store.status = 503;
+          const puts = () => store.calls.filter((call) => call.startsWith("PUT ")).length;
+          const before = puts();
           yield* objects.putStaged(key, "6:4000", stage("pdf-33"));
-          yield* eventually("the refused send tried", () => staged === 3);
+          // Staged is not yet sent: wait for the store to refuse the send itself, or the store may
+          // take it once it is back and leave nothing to ask again.
+          yield* eventually("the refused send tried", () => staged === 3 && puts() > before);
           store.status = undefined;
           yield* objects.putStaged(key, "6:4000", stage("pdf-33"));
           yield* eventually(

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import type { MockOneThreadSimulation } from "../src/api/mock-asks";
+import { dragAndDrop } from "./drag";
 import { setLayout } from "./layout";
 import { openMore } from "./more-menu";
 import { openOrchestrator, pressFirstWorkspaceKey, threadRow } from "./thread-row";
@@ -749,18 +750,10 @@ test("a solo row dragged onto an empty pane of the grid opens its thread there",
   await expect(panes).toHaveCount(2);
   await expect(panes.nth(0)).toHaveAttribute("data-thread-id", made.orchestratorThreadId);
   await expect(page.getByTestId("empty-pane")).toHaveCount(1);
-  // Workers above it take a second line as their PRs arrive, moving it down: drag it once it rests.
-  const flaky = threadRow(page, "t-flaky");
-  let at = -1;
-  await expect
-    .poll(async () => {
-      const top = (await flaky.boundingBox())?.y ?? -1;
-      const still = top === at;
-      at = top;
-      return still;
-    })
-    .toBe(true);
-  await flaky.dragTo(panes.nth(1));
+  // Workers above it take a second line as their PRs arrive, moving it down at any time. A pointer
+  // drag aims at where the row was, and on a loaded runner picked up the row that moved there, so
+  // the drag's events go to the row itself.
+  await dragAndDrop(page, threadRow(page, "t-flaky"), panes.nth(1));
   await expect(panes.nth(1)).toHaveAttribute("data-thread-id", "t-flaky");
   await expect(page.getByTestId("empty-pane")).toHaveCount(0);
   await expect(panes.nth(0)).toHaveAttribute("data-thread-id", made.orchestratorThreadId);

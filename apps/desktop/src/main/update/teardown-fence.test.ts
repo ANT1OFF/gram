@@ -261,7 +261,7 @@ describe.skipIf(process.platform === "win32")("update teardown fence", () => {
     const stopped: UpdateTeardown[] = [];
     await stopForUpdate(host, (teardown) => stopped.push(teardown));
     expect(stopped).toEqual([{ path: "clean" }]);
-    expect(pids.some(alive)).toBe(false);
+    expect(await reaped(pids)).toEqual([]);
   });
 
   it("proceeds past a hanging non-essential finalizer once the essentials are attested", async () => {
@@ -279,7 +279,7 @@ describe.skipIf(process.platform === "win32")("update teardown fence", () => {
     expect(forced.names).toHaveLength(2);
     for (const name of forced.names) expect(name).not.toMatch(/[/\\]|setInterval/);
     // Nothing of the old tree is left: the server, its terminal or what that ran.
-    expect([root(), ...pids].some(alive)).toBe(false);
+    expect(await reaped([root(), ...pids])).toEqual([]);
   }, 30_000);
 
   // Gram's server is a utility process in the app's own process group, and the check's reads run
