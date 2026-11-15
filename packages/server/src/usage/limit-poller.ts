@@ -49,17 +49,17 @@ export class UsageLimitPoller extends Context.Service<
                 const host = yield* hosts.get(agent).pipe(Effect.option);
                 if (host._tag === "None" || host.value.readSubscriptionLimits === undefined) return;
                 const beforeQuery = yield* readings.all ?? readings.current;
-                const login =
-                  host.value.readAccountScope === undefined
-                    ? undefined
-                    : yield* host.value.readAccountScope.pipe(
-                        Effect.orElseSucceed(() => undefined),
-                      );
-                // A host that can identify logins must not publish an unidentified snapshot
-                // into the legacy shared bucket when its identity check failed.
-                if (host.value.readAccountScope !== undefined && login === undefined) return;
-                const accountScope =
-                  login === undefined ? undefined : machineAccountScope(LOCAL_HOST_ID, login);
+                const supportsIdentity = host.value.readAccountScope !== undefined;
+                const identity = yield* (
+                  host.value.readAccountScope ?? Effect.succeed(undefined)
+                ).pipe(Effect.result);
+                // A failed probe is not a successful subscription with missing metadata.
+                if (identity._tag === "Failure") return;
+                const login = identity.success;
+                const accountScope = supportsIdentity
+                  ? (readings.scopeFor?.(LOCAL_HOST_ID, login ?? "unknown") ??
+                    machineAccountScope(LOCAL_HOST_ID, login ?? "unknown"))
+                  : undefined;
                 const result = yield* host.value.readSubscriptionLimits.pipe(
                   Effect.catch((error) =>
                     error.reason === "not-logged-in" ||
@@ -72,14 +72,11 @@ export class UsageLimitPoller extends Context.Service<
                 );
                 // Transient failures retain the last observation and its age; never fabricate 0%.
                 if (result._tag === "Failure") return;
-                // A login changed while the query was running: discard that snapshot.
-                if (
-                  host.value.readAccountScope !== undefined &&
-                  (yield* host.value.readAccountScope.pipe(
-                    Effect.orElseSucceed(() => undefined),
-                  )) !== login
-                )
-                  return;
+                // Never attribute a query across a changed or failed identity observation.
+                const after = yield* (
+                  host.value.readAccountScope ?? Effect.succeed(undefined)
+                ).pipe(Effect.result);
+                if (after._tag === "Failure" || after.success !== login) return;
                 yield* readings.replaceSubscription(
                   agent,
                   result.success,

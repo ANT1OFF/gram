@@ -21,6 +21,7 @@ import * as Stream from "effect/Stream";
 import { EventHub } from "../events/event-hub.ts";
 import { SqlClient, type SqlError } from "../platform/unstable.ts";
 import { makeLimitHistory } from "./limit-history.ts";
+import { makeAccountScope } from "./account-scope.ts";
 
 type UsageLimitEvent = Extract<ServerEvent, { type: "usageLimit" }>;
 
@@ -43,6 +44,8 @@ const keyOf = (record: Pick<LimitRecord, "agent" | "profileId" | "accountScope" 
 const restOf = (record: LimitRecord) => JSON.stringify({ ...record, at: undefined });
 
 export interface UsageLimitReadingsShape {
+  /** Install-keyed pseudonym for public account metadata; key never leaves Gram's own state. */
+  readonly scopeFor?: (machine: string, login: string) => string;
   /** The selected local logins' current windows and gateway readings, for the meter and ledger. */
   readonly current: Effect.Effect<ReadonlyArray<LimitRecord>>;
   /** All machine/login scopes, for runtime waits. The public meter uses `current` only. */
@@ -99,6 +102,7 @@ export class UsageLimitReadings extends Context.Service<
       Effect.gen(function* () {
         const hub = yield* EventHub;
         const sql = yield* SqlClient.SqlClient;
+        const scopeFor = yield* makeAccountScope(sql);
 
         const lock = yield* Semaphore.make(1);
         const changed = yield* PubSub.unbounded<void>();
@@ -239,6 +243,7 @@ export class UsageLimitReadings extends Context.Service<
             )
             .pipe(Effect.andThen(PubSub.publish(changed, undefined)), Effect.asVoid);
         return UsageLimitReadings.of({
+          scopeFor,
           current: lock.withPermits(1)(current.pipe(Effect.map(visible))),
           all: lock.withPermits(1)(current),
           selectAccount: (agent, scope) =>

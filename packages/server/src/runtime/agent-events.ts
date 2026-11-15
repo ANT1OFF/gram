@@ -24,8 +24,6 @@ import {
 } from "./runtime-state.ts";
 import {
   listedRow,
-  hostOf,
-  effectiveCheckout,
   type AgentEvent,
   type ApprovalRequest,
   type PendingRequest,
@@ -37,6 +35,7 @@ import {
   type GramUIMessageChunk,
   type MessageId,
   type ThreadId,
+  type Thread,
 } from "@gram/contracts";
 import { BACKGROUND_SETTLE } from "./session-restarts.ts";
 import { touchesRemote } from "./remote-commands.ts";
@@ -61,7 +60,7 @@ import {
   type HookedRequests,
   type RequestAction,
 } from "../embedding/hooked-requests.ts";
-import { accountOf, machineAccountScope, type EarlyReleases } from "./limit-wait.ts";
+import { accountOf, type EarlyReleases } from "./limit-wait.ts";
 import type { makeRateLimitGate } from "./rate-limits.ts";
 import type { AgentSession } from "@gram/agents";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
@@ -79,6 +78,7 @@ import type { MessageQueue } from "./message-queue.ts";
 
 /** What an agent's events reach: nearly every other part of `ThreadRuntimes`. */
 export interface AgentEventsDeps {
+  readonly rememberAccount: (thread: Thread, login: string, previous: string | undefined) => string;
   readonly store: ThreadStoreShape;
   readonly hub: EventHubShape;
   /** The decision hook, where one is configured, and the requests it holds (`decideRequest`). */
@@ -157,6 +157,7 @@ const startedDuringStop = (rt: Runtime, event: AgentEvent): string | undefined =
 
 /** The handler every live session's events go through, one at a time under the runtime lock. */
 export const makeAgentEvents = ({
+  rememberAccount,
   store,
   hub,
   decisions,
@@ -501,10 +502,7 @@ export const makeAgentEvents = ({
         case "identity": {
           const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
           if (event.accountScope !== undefined && thread.model.profileId === undefined) {
-            rt.accountScope = machineAccountScope(
-              hostOf(effectiveCheckout(thread)),
-              event.accountScope,
-            );
+            rt.accountScope = rememberAccount(thread, event.accountScope, rt.accountScope);
             rt.quota = accountOf({ ...thread.model, accountScope: rt.accountScope });
           }
           const newId = thread.agentSessionId !== event.agentSessionId;

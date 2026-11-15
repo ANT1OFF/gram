@@ -67,7 +67,7 @@ export type FileChange = typeof FileChange.Type;
 export const IdentityEvent = Schema.Struct({
   type: Schema.Literal("identity"),
   agentSessionId: Schema.String,
-  /** Opaque subscription login identity; never a credential or an email address. */
+  /** Private CLI login fingerprint, re-keyed by the control plane before public state. Never a credential or email. */
   accountScope: Schema.optionalKey(Schema.String),
   /** Codex: the home the session lives in (see `Thread.codexHome`). */
   codexHome: Schema.optionalKey(CodexHome),

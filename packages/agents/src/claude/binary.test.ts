@@ -57,7 +57,7 @@ describe("subscription account identity", () => {
       ),
     ).toBe(scope);
   });
-  it("leaves missing identity and non-subscription authentication unknown", () => {
+  it("keeps subscription authentication with missing identity distinct from non-subscription authentication", () => {
     expect(accountScopeFromStatus("{}")).toBeUndefined();
     expect(accountScopeFromStatus("not json")).toBeUndefined();
     expect(

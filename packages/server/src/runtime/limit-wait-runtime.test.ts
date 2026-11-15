@@ -8,6 +8,7 @@ import {
   type OrchestrationDigest,
   type ThreadId,
   type HostId,
+  AgentUnavailable,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -153,7 +154,10 @@ const waitOf = (threadId: ThreadId) =>
   );
 
 /** Public account metadata changes independently of processes already open on the old login. */
-const loginLayer = (current: () => string | undefined) =>
+const loginLayer = (
+  current: () => string | undefined,
+  probe: Effect.Effect<string | undefined, AgentUnavailable> = Effect.sync(current),
+) =>
   makeRuntimeTestLayer(
     undefined,
     undefined,
@@ -169,7 +173,7 @@ const loginLayer = (current: () => string | undefined) =>
               hosts.get(kind).pipe(
                 Effect.map((host) => ({
                   ...host,
-                  readAccountScope: Effect.sync(current),
+                  readAccountScope: probe,
                   open: (options) => {
                     const accountScope = current();
                     return host.open(options).pipe(
@@ -194,6 +198,52 @@ const loginLayer = (current: () => string | undefined) =>
   );
 
 describe("subscription login isolation", () => {
+  it.effect.each(["failed", "unknown"] as const)(
+    "keeps a known login's wait and new workers held when its probe is %s",
+    (outcome) => {
+      let uncertain = false;
+      const probe = Effect.suspend(() =>
+        uncertain
+          ? outcome === "failed"
+            ? Effect.fail(
+                new AgentUnavailable({
+                  agent: "claude",
+                  reason: "auth-status-failed",
+                  message: "synthetic timeout",
+                }),
+              )
+            : Effect.succeed(undefined)
+          : Effect.succeed("account-a"),
+      );
+      return Effect.gen(function* () {
+        yield* TestClock.setTime(NOW);
+        const { thread } = yield* running();
+        yield* fail(thread.id, CLAUDE_LIMIT);
+        const original = yield* waitOf(thread.id);
+        uncertain = true;
+        yield* (yield* UsageLimitReadings).selectAccount!("claude", "unrelated-poll");
+        yield* settle;
+        expect(yield* waitOf(thread.id)).toEqual(original);
+        const runtimes = yield* ThreadRuntimes;
+        const spawned = yield* runtimes.create({
+          id: nextThreadId(),
+          projectRoot: "/work/repo",
+          checkout: { kind: "main", path: "/work/repo" },
+          input: {
+            text: "brief",
+            origin: { threadId: "orch" as ThreadId, title: "Orchestrator", depth: 1 },
+          },
+        });
+        expect(yield* waitOf(spawned.id)).toMatchObject({
+          kind: "limit",
+          account: original!.account,
+          resetsAt: RESET,
+        });
+        expect(yield* sentTo(spawned.id)).toEqual([]);
+        expect(yield* sentTo(thread.id)).toEqual(["one"]);
+      }).pipe(Effect.provide(loginLayer(() => "account-a", probe)));
+    },
+  );
   it.effect(
     "releases an old login's wait and reopens its process when fresh account metadata changes",
     () => {

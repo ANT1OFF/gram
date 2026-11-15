@@ -56,6 +56,7 @@ const admissionKey = (account: string, model: string) => JSON.stringify([account
  */
 export interface LimitResumeDeps {
   readonly quotaFor: (thread: Thread) => Effect.Effect<string>;
+  readonly accountChanged: (thread: Thread, previous: string) => Effect.Effect<boolean>;
   readonly store: ThreadStoreShape;
   readonly runtimes: ReadonlyMap<ThreadId, Runtime>;
   readonly getRuntime: GetRuntime;
@@ -94,6 +95,7 @@ export interface LimitResumeDeps {
 /** Limit waits and the holds on resuming them, over every thread's runtime. */
 export const makeLimitResume = ({
   quotaFor,
+  accountChanged,
   store,
   runtimes,
   getRuntime,
@@ -371,7 +373,8 @@ export const makeLimitResume = ({
         rt.quota !== undefined &&
         rt.quota !== account &&
         thread.sessionSwitch === undefined &&
-        isLocalHost(effectiveCheckout(thread))
+        isLocalHost(effectiveCheckout(thread)) &&
+        (yield* accountChanged(thread, rt.quota))
       ) {
         // The old process keeps the login it opened with. Only a new process may
         // claim the account we just identified through the CLI.
@@ -420,7 +423,7 @@ export const makeLimitResume = ({
               if (
                 thread.sessionSwitch === undefined &&
                 isLocalHost(effectiveCheckout(thread)) &&
-                (yield* quotaFor(thread)) !== account
+                (yield* accountChanged(thread, account))
               )
                 changed.add(thread.id);
             }

@@ -5,8 +5,6 @@ import {
   type ThreadId,
   type TurnId,
   effectiveCheckout,
-  hostOf,
-  LOCAL_HOST_ID,
   fastSelectionProblem,
   isLocalHost,
   InterruptHung,
@@ -52,15 +50,12 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { ActivityTracker } from "./activity.ts";
 import type { AgentHosts } from "./agent-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
+import { makeAccountScopes } from "./account-scopes.ts";
+import { ephemeralAccountScope } from "../usage/account-scope.ts";
 import { ownedRuntimes } from "./owned-runtimes.ts";
 import { asRecorded, fromStored, mayReachThread, type StoredActor } from "../host/ownership.ts";
 import { type CheckoutService, TurnHooks, type TurnHooksShape } from "./hooks.ts";
-import {
-  accountOf,
-  machineAccountScope,
-  type EarlyReleases,
-  type ReleaseWave,
-} from "./limit-wait.ts";
+import { accountOf, type EarlyReleases, type ReleaseWave } from "./limit-wait.ts";
 import { makeRateLimitGate } from "./rate-limits.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { RETRIES_EXHAUSTED } from "./thread-error.ts";
@@ -254,23 +249,16 @@ const make = Effect.gen(function* () {
   // Each thread's machine: its session and its checkout go to the machine it is placed on.
   const workerHosts = yield* WorkerHosts;
   const { sessions: hosts, checkouts, git } = workerHosts.placed;
-  // Never infer another machine's login from this machine's CLI or usage meter. Hosts
-  // without public account metadata are isolated to the thread until identity arrives.
-  const accountScopeFor = (thread: Thread): Effect.Effect<string | undefined> =>
-    Effect.gen(function* () {
-      const machine = hostOf(effectiveCheckout(thread));
-      if (thread.model.profileId !== undefined)
-        return machine === LOCAL_HOST_ID ? undefined : machineAccountScope(machine, "gateway");
-      if (machine !== LOCAL_HOST_ID) return machineAccountScope(machine, `thread:${thread.id}`);
-      const host = yield* workerHosts.local.sessions.get(thread.model.agent).pipe(Effect.option);
-      if (Option.isNone(host) || host.value.readAccountScope === undefined) return undefined;
-      const login = yield* host.value.readAccountScope.pipe(Effect.orElseSucceed(() => undefined));
-      return machineAccountScope(machine, login ?? `thread:${thread.id}`);
-    });
-  const quotaFor = (thread: Thread) =>
-    accountScopeFor(thread).pipe(
-      Effect.map((accountScope) => accountOf({ ...thread.model, accountScope })),
-    );
+  /** Subscription readings keep the install's privacy key and each machine/login's limits. */
+  const limitReadings = yield* Effect.serviceOption(UsageLimitReadings);
+  const accountScopes = makeAccountScopes(
+    workerHosts.local.sessions,
+    yield* store.listThreads,
+    Option.isSome(limitReadings) && limitReadings.value.scopeFor !== undefined
+      ? limitReadings.value.scopeFor
+      : ephemeralAccountScope(),
+  );
+  const { scopeFor: accountScopeFor, quotaFor } = accountScopes;
   const config = yield* ServerConfig;
   const hooks = turnsHere(yield* TurnHooks, store);
   const sessions = yield* FiberMap.make<ThreadId>();
@@ -329,8 +317,6 @@ const make = Effect.gen(function* () {
   const retryStops = yield* FiberMap.make<ThreadId>();
   /** Each thread waiting out a limit (`Thread.limitWait`), the timer that resumes it. */
   const limitTimers = yield* FiberMap.make<ThreadId>();
-  /** The latest reading of each subscription window, whose rejections name when an account lifts. */
-  const limitReadings = yield* Effect.serviceOption(UsageLimitReadings);
   // Present in the full server; `undefined` leaves every request and session as it always was.
   const decisions = Option.getOrUndefined(yield* Effect.serviceOption(DecisionHook));
   const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
@@ -670,6 +656,7 @@ const make = Effect.gen(function* () {
     turnHeld,
   } = makeLimitResume({
     quotaFor,
+    accountChanged: accountScopes.changed,
     store,
     runtimes,
     getRuntime,
@@ -994,6 +981,7 @@ const make = Effect.gen(function* () {
     });
 
   const { handleEvent, setBackground, setLapsedConnectors } = makeAgentEvents({
+    rememberAccount: accountScopes.remember,
     store,
     hub,
     decisions,

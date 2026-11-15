@@ -38,9 +38,10 @@ import {
   type ThreadId,
   effectiveCheckout,
   isLocalHost,
+  hostOf,
 } from "@gram/contracts";
 import { UNKNOWN_FAILURE } from "./thread-error.ts";
-import { accountOf } from "./limit-wait.ts";
+import { accountOf, machineAccountScope } from "./limit-wait.ts";
 import { HANDOFF_TURNS_TOKENS, renderLostSession, renderRecentTurns } from "./switch-handoff.ts";
 import { fromStoredMessages } from "../orchestration/transcripts.ts";
 
@@ -550,9 +551,13 @@ export const makeSessionLifecycle = ({
         thread.model.profileId === undefined &&
         Option.isSome(limitReadings)
       ) {
-        yield* (
-          limitReadings.value.selectAccount?.(thread.model.agent, rt.accountScope) ?? Effect.void
-        );
+        const machine = hostOf(effectiveCheckout(thread));
+        const meterScope =
+          rt.accountScope === machineAccountScope(machine, `thread:${thread.id}`)
+            ? (limitReadings.value.scopeFor?.(machine, "unknown") ??
+              machineAccountScope(machine, "unknown"))
+            : rt.accountScope;
+        yield* limitReadings.value.selectAccount?.(thread.model.agent, meterScope) ?? Effect.void;
       }
       rt.profileId = thread.model.profileId;
       rt.agent = thread.model.agent;

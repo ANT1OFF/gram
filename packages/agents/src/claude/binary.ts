@@ -181,7 +181,7 @@ const OAUTH_METHODS: ReadonlySet<string> = new Set([
   "CCR_OAUTH_TOKEN_FILE",
 ]);
 
-/** Hash public auth-status metadata only. Never inspect a credential to identify a login. */
+/** Private CLI fingerprint; the control plane re-keys it per install before public state. Never uses credentials. */
 export const accountScopeFromStatus = (stdout: string): string | undefined => {
   if (checkAuthStatus(stdout) !== undefined) return undefined;
   const status = JSON.parse(stdout) as Record<string, unknown>;
