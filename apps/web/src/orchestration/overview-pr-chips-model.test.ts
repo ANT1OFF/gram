@@ -5,7 +5,7 @@ import type { PrGlyphEntry } from "@/components/pr-glyph";
 import { prGlyphOf, type PrGlyphSource } from "@/components/pr-glyph-model";
 import type { ReviewGlyphState } from "@/components/review-glyph";
 
-import { prChipsOf, prChipTone } from "./overview-pr-chips-model";
+import { foldMergedChips, prChipsOf, prChipTone } from "./overview-pr-chips-model";
 
 const entry = (
   number: number,
@@ -195,5 +195,30 @@ describe("prChipsOf", () => {
     );
     expect(chip!.marks.state.kind).toBe("open");
     expect(chip!.marks.checks?.kind).toBe("pending");
+  });
+});
+
+/** One open PR, then `merged` merged ones. */
+const openThenMerged = (merged: number) =>
+  prChipsOf(
+    [
+      entry(656, { state: "OPEN", checks: "pending" }),
+      ...Array.from({ length: merged }, (_, index) => entry(600 + index, { state: "MERGED" })),
+    ],
+    [],
+  );
+
+describe("foldMergedChips", () => {
+  it("keeps one or two merged PRs as chips", () => {
+    const folded = foldMergedChips(openThenMerged(2));
+    expect(folded.merged).toBe(0);
+    expect(folded.chips.map((chip) => chip.entry.number)).toEqual([656, 600, 601]);
+  });
+
+  it("folds three or more merged PRs into a count, keeping the open ones as chips", () => {
+    const folded = foldMergedChips(openThenMerged(9));
+    expect(folded.merged).toBe(9);
+    expect(folded.mergedChip?.kind).toBe("merged");
+    expect(folded.chips.map((chip) => chip.entry.number)).toEqual([656]);
   });
 });
