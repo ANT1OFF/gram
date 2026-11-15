@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.26.0](https://github.com/ANT1OFF/gram/compare/v1.25.0...v1.26.0) (2026-11-15)
+
+
+### Features
+
+* **orchestration:** a worker the user writes to stays its orchestrator's ([#646](https://github.com/ANT1OFF/gram/issues/646)) ([44a3d28](https://github.com/ANT1OFF/gram/commit/44a3d28e5a710af3924a40c2338b9224e6122a2d))
+* **web:** an embedding app can say its machines reach the person's own repositories ([#582](https://github.com/ANT1OFF/gram/issues/582)) ([9841807](https://github.com/ANT1OFF/gram/commit/9841807c487d459c02dc7d4fc9e9ab113fcd2b7d))
+* **web:** one calm Board note for a repo that runs no CI ([#634](https://github.com/ANT1OFF/gram/issues/634)) ([76f44c7](https://github.com/ANT1OFF/gram/commit/76f44c78d0ffe78e1a0ceb75b351b6f05bd268eb))
+
+
+### Bug Fixes
+
+* **orchestration:** guide agents to own a PR instead of asking the user at full auto ([#627](https://github.com/ANT1OFF/gram/issues/627)) ([085f942](https://github.com/ANT1OFF/gram/commit/085f94264c717e6562675a5e756bb01e2955f388))
+* **orchestration:** silence review monitors without actionable work ([#617](https://github.com/ANT1OFF/gram/issues/617)) ([d271b81](https://github.com/ANT1OFF/gram/commit/d271b8136b0c8cc46b534a3e78ea50ada12b0f0f))
+* **orchestration:** withdraw orphaned worker questions ([#618](https://github.com/ANT1OFF/gram/issues/618)) ([ef84d75](https://github.com/ANT1OFF/gram/commit/ef84d75152bf0b7a2bc2ae14f552bd5b81378967))
+* **web:** a raised card's shadow keeps its rounded corners in the transcript ([#642](https://github.com/ANT1OFF/gram/issues/642)) ([52fddd3](https://github.com/ANT1OFF/gram/commit/52fddd336777cc83efce6fc0b8717cfd5f37504d))
+* **web:** leave failing checks to their worker, and orphans to the orchestrator ([#628](https://github.com/ANT1OFF/gram/issues/628)) ([2632f41](https://github.com/ANT1OFF/gram/commit/2632f41441433e899d1d26458be2bc7f8065fa1d))
+
+### From the embedding branch ([#649](https://github.com/ANT1OFF/gram/issues/649))
+
+These came to `main` in one squashed merge, so they are listed by hand. Several are for apps that mount Gram's web app or for hosted deployments.
+
+#### Features
+
+* colour scripts embedded in shell commands in their own language ([#621](https://github.com/ANT1OFF/gram/issues/621))
+* the embedding app can list the models it serves an agent that cannot list its own ([#622](https://github.com/ANT1OFF/gram/issues/622))
+* an embedding app's own Settings, and no orchestrator menu on its pages ([#626](https://github.com/ANT1OFF/gram/issues/626))
+* OpenRouter as a gateway kind ([#633](https://github.com/ANT1OFF/gram/issues/633))
+* add OpenRouter in Settings by signing in or pasting a key ([#635](https://github.com/ANT1OFF/gram/issues/635))
+* know OpenCode as a third agent kind ([#639](https://github.com/ANT1OFF/gram/issues/639))
+* an OpenCode adapter on opencode serve ([#640](https://github.com/ANT1OFF/gram/issues/640))
+* archive the Claude session with the thread, warn on a hook with no verdict, count hook heartbeats as progress ([#641](https://github.com/ANT1OFF/gram/issues/641))
+* useShellLocation's navigate can replace the history entry ([#644](https://github.com/ANT1OFF/gram/issues/644))
+* run threads on OpenCode ([#647](https://github.com/ANT1OFF/gram/issues/647))
+* a host provider may offer choices before a person's machine starts ([#648](https://github.com/ANT1OFF/gram/issues/648))
+
+#### Bug Fixes
+
+* a worker question's ask is answered once, and credited to who answered it ([#613](https://github.com/ANT1OFF/gram/issues/613))
+* a provider's refusal reads as the wait's line, not as a reply ([#624](https://github.com/ANT1OFF/gram/issues/624))
+* hold up under a first-in-first-out thread lock ([#636](https://github.com/ANT1OFF/gram/issues/636))
+* stepping out of Settings no longer bounces back to its first page ([#638](https://github.com/ANT1OFF/gram/issues/638))
+* links open in a new tab when the server is hosted ([#645](https://github.com/ANT1OFF/gram/issues/645))
+
 ## [1.25.0](https://github.com/ANT1OFF/gram/compare/v1.24.0...v1.25.0) (2026-11-14)
 
 
