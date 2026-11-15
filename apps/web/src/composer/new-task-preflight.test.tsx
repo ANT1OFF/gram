@@ -5,7 +5,8 @@ import {
   type SelectedHarnessSupport,
   type TaskModelSelection,
 } from "@gram/contracts";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/api/mock";
@@ -85,6 +86,65 @@ describe("new-task authoritative preflight", () => {
     await screen.findByText("Synthetic start boundary");
     expect(start).toHaveBeenCalledWith(
       expect.objectContaining({ selection, target: { projectId } }),
+    );
+  });
+
+  it("picks the orchestrator's agent in the prompt box, previews the pick and starts on it", async () => {
+    const { api, preview, start } = setup(async (input?: unknown) => {
+      const picked = (input as { orchestrator?: TaskModelSelection["orchestrator"] }).orchestrator;
+      return { orchestrator: picked ?? { agent: "claude", model: "synthetic-model" } };
+    });
+    // Each agent names its default, which a new pick of the agent opens on.
+    vi.spyOn(api, "listModels").mockResolvedValue({
+      models: [
+        {
+          id: "synthetic-model",
+          displayName: "Synthetic",
+          supportsEffort: false,
+          isDefault: true,
+        },
+      ],
+    });
+    await screen.findByText(/^Orchestrator: Claude Code · /);
+    const fields = screen.getByTestId("task-orchestrator-fields");
+    expect(fields.textContent).toContain("Orchestrator");
+    const user = userEvent.setup();
+    await user.click(await within(fields).findByLabelText("Agent"));
+    await user.click(await screen.findByRole("option", { name: "Codex" }));
+    await screen.findByText("Orchestrator: Codex · Synthetic");
+    expect(preview).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        orchestrator: { agent: "codex", model: "synthetic-model", speed: "standard" },
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("What needs doing"), {
+      target: { value: "Synthetic task" },
+    });
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: /Start workspace and send/ }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    fireEvent.submit(screen.getByRole("form", { name: "New task" }));
+    await screen.findByText("Synthetic start boundary");
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orchestrator: { agent: "codex", model: "synthetic-model", speed: "standard" },
+        selection: {
+          orchestrator: { agent: "codex", model: "synthetic-model", speed: "standard" },
+        },
+      }),
+    );
+  });
+
+  it("says when the task moves a running orchestrator to the pick", async () => {
+    setup(async () => ({
+      orchestrator: { agent: "codex", model: "synthetic-model" },
+      orchestratorFrom: { agent: "claude", model: "synthetic-model" },
+    }));
+    await screen.findByText(
+      "The orchestrator moves from Claude Code · synthetic-model to Codex · synthetic-model as the task starts.",
     );
   });
 

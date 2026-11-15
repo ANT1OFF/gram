@@ -33,6 +33,11 @@ export const TaskModelSelection = Schema.Struct({
    * naming what it opens on instead, for the preview to show. Absent when it opens as its slot says.
    */
   orchestratorNote: Schema.optionalKey(Schema.String),
+  /**
+   * The model the running orchestrator is on, when the task's pick (`StartTaskInput.orchestrator`)
+   * moves it to `orchestrator` as the task starts. Absent when it stays as it is.
+   */
+  orchestratorFrom: Schema.optionalKey(ModelRef),
 });
 export type TaskModelSelection = typeof TaskModelSelection.Type;
 

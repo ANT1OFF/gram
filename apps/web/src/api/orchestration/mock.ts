@@ -34,7 +34,7 @@ export function createOrchestrationMock(
 ): OrchestrationApi {
   // Read only the synthetic world's stored choices; no fixture preview creates a holder.
   const taskPreflight = async (
-    input: Pick<StartTaskInput, "target" | "direct" | "autonomy">,
+    input: Pick<StartTaskInput, "target" | "direct" | "autonomy" | "orchestrator">,
   ): Promise<TaskModelSelection> => {
     const state = orchestration
       .peek()
@@ -51,7 +51,13 @@ export function createOrchestrationMock(
       .find((row) => row.thread.id === state?.workspace.orchestratorThreadId)?.thread;
     const slot =
       state?.charter.orchestratorModel ?? settings.agents.defaultModel ?? charter.orchestratorModel;
-    const orchestrator = held?.model ?? (slot === undefined ? undefined : firstChoiceOf(slot));
+    // A pick moves a running orchestrator to it as the task starts, or opens a new one on it.
+    const standingModel = held?.model ?? (slot === undefined ? undefined : firstChoiceOf(slot));
+    const orchestrator = input.orchestrator ?? standingModel;
+    const moves =
+      held !== undefined &&
+      input.orchestrator !== undefined &&
+      JSON.stringify(held.model) !== JSON.stringify(input.orchestrator);
     if (orchestrator === undefined)
       throw new MockInvalidState(
         "This synthetic workspace has no model choice. Select one in Settings → Workspaces & merging.",
@@ -84,6 +90,7 @@ export function createOrchestrationMock(
     return {
       orchestrator,
       ...(held === undefined ? {} : { orchestratorThreadId: held.id }),
+      ...(moves ? { orchestratorFrom: held.model } : {}),
       ...(worker === undefined ? {} : { worker }),
       ...(input.direct === undefined ? {} : { workerChoices }),
     };

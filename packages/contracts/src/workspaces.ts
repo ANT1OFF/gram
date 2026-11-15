@@ -563,6 +563,13 @@ export const StartTaskInput = Schema.Struct({
    * absent is `DEFAULT_CHARTER`'s. A workspace that already exists keeps its own.
    */
   autonomy: Schema.optionalKey(Autonomy),
+  /**
+   * The orchestrator's model as the user picked it on the draft; absent keeps the workspace's. A
+   * workspace without a running orchestrator opens it on this and keeps it as its orchestrator
+   * model; a running one on another model moves to it first (`orchestrator.switch`), and the task
+   * waits in its queue for the new session.
+   */
+  orchestrator: Schema.optionalKey(ModelRef),
   /** Models shown by task preflight. A changed selection refuses rather than silently switching. */
   selection: Schema.optionalKey(SupportedTaskModelSelection),
 });

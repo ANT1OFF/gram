@@ -232,12 +232,33 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
           : { id: context.holder.id, model: context.holder.model },
     });
 
-  const taskPlan = (input: Pick<StartTaskInput, "target" | "direct" | "autonomy">) =>
+  const taskPlan = (
+    input: Pick<StartTaskInput, "target" | "direct" | "autonomy" | "orchestrator">,
+  ) =>
     Effect.gen(function* () {
       const context = yield* taskContext(input);
       const { charter, holder, projectIds } = context;
-      const opened = holder === undefined ? yield* openModel(charter) : undefined;
-      const orchestrator = holder?.model ?? opened!.model;
+      const picked = input.orchestrator;
+      if (picked !== undefined && !admittedForRole(picked.agent, "orchestrator"))
+        return yield* new InvalidState({
+          message: `${kindName(picked.agent)} threads can't be orchestrators yet. Pick another orchestrator model.`,
+        });
+      // A pick opens a workspace's first orchestrator on it, as its charter will then say; a running
+      // one moves to it as the task starts (`prepareTaskOrchestrator`), or is on it already.
+      const opened =
+        holder === undefined
+          ? yield* openModel(
+              picked === undefined ? charter : { ...charter, orchestratorModel: picked },
+            )
+          : undefined;
+      const switching = holder?.sessionSwitch?.target;
+      const moves =
+        holder !== undefined &&
+        picked !== undefined &&
+        !sameTaskModel(holder.model, picked) &&
+        (switching === undefined || !sameTaskModel(switching, picked));
+      const orchestrator =
+        holder === undefined ? opened!.model : picked !== undefined ? picked : holder.model;
       if (input.direct !== undefined && !projectIds.includes(input.direct.projectId))
         return yield* new InvalidState({
           message: "The selected worker repository isn't one of this workspace's repositories.",
@@ -252,6 +273,7 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
         ...(workers?.worker === undefined ? {} : { worker: workers.worker }),
         ...(workers === undefined ? {} : { workerChoices: workers.choices }),
         ...(opened?.note === undefined ? {} : { orchestratorNote: opened.note }),
+        ...(moves ? { orchestratorFrom: holder.model } : {}),
       };
       const fresh = Effect.gen(function* () {
         const current = yield* taskContext(input);

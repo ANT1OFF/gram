@@ -88,6 +88,7 @@ export const OrchestrationRpcs = RpcGroup.make(
       target: StartTaskInput.fields.target,
       direct: StartTaskInput.fields.direct,
       autonomy: StartTaskInput.fields.autonomy,
+      orchestrator: StartTaskInput.fields.orchestrator,
     },
     success: TaskModelSelection,
     error: errors(NotFound, InvalidState, AgentUnavailable),

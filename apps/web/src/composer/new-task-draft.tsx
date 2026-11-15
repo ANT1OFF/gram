@@ -4,6 +4,7 @@ import {
   HostId,
   sendKeyOf,
   type DraftId,
+  type ModelRef,
   type ProjectId,
   type StartTaskInput,
   type WorkspaceId,
@@ -11,7 +12,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { FolderGit2, GitBranch, TriangleAlert } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 import {
@@ -75,7 +76,9 @@ import { readCameFrom, type CameFrom } from "@/shell/came-from";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
+import type { AgentChoice } from "./agent-fields";
 import { AttachmentChips } from "./attachment-chips";
+import { choiceFromModel } from "./default-choice";
 import {
   carriedDraft,
   carryDraft,
@@ -107,6 +110,17 @@ const checkingAgent = (model: { agent: string } | undefined): string =>
  * workspace gets one on send, at the autonomy picked above the goal. A single agent chat, the
  * one-off thread, is the other draft behind the same header.
  */
+const TaskOrchestratorFields = lazy(() => import("./task-orchestrator-fields"));
+
+/** The `ModelRef` an orchestrator pick starts on, as `choiceModel` makes it. */
+const orchestratorRef = (choice: AgentChoice): ModelRef => ({
+  agent: choice.agent,
+  model: choice.model,
+  ...(choice.profileId === undefined ? {} : { profileId: choice.profileId }),
+  ...(choice.variant === undefined ? {} : { variant: choice.variant }),
+  ...(choice.speed === undefined ? {} : { speed: choice.speed }),
+});
+
 export function NewTaskDraft({
   initialWay,
   initialWorkspace,
@@ -185,7 +199,23 @@ export function NewTaskDraft({
   const name = workspace?.workspace.name ?? repos[0]?.name ?? "";
   const { data: ledger } = useOrchestratorLedger(workspace?.workspace.id);
   const agents = useServerSettings((s) => s.settings?.agents);
-  const taskOptions: Pick<StartTaskInput, "target" | "direct" | "autonomy"> | undefined =
+  // The orchestrator picked on this draft, for the target it was picked for: a running one moves
+  // to it as the task starts, a new one opens on it. Unpicked, the workspace's own.
+  const [pickedOrchestrator, setPickedOrchestrator] = useState<{
+    target: string;
+    choice: AgentChoice;
+  }>();
+  const orchestratorPick =
+    way === "plan" &&
+    target !== undefined &&
+    pickedOrchestrator !== undefined &&
+    pickedOrchestrator.target === taskTargetKey(target) &&
+    pickedOrchestrator.choice.model !== ""
+      ? orchestratorRef(pickedOrchestrator.choice)
+      : undefined;
+  const taskOptions:
+    | Pick<StartTaskInput, "target" | "direct" | "autonomy" | "orchestrator">
+    | undefined =
     target === undefined
       ? undefined
       : {
@@ -195,6 +225,7 @@ export function NewTaskDraft({
               : { projectId: target.projectId },
           ...(way === "direct" && repo !== undefined ? { direct: { projectId: repo.id } } : {}),
           ...(makesOne && pickedAutonomy !== undefined ? { autonomy: pickedAutonomy } : {}),
+          ...(orchestratorPick === undefined ? {} : { orchestrator: orchestratorPick }),
         };
   const selection = useQuery({
     queryKey: [
@@ -210,6 +241,18 @@ export function NewTaskDraft({
     staleTime: 30_000,
   });
   const orchestratorModel = selection.data?.orchestrator;
+  // What the orchestrator chips show: the pick while its model is still being chosen, else what
+  // the preview says it runs on.
+  const shownOrchestrator: AgentChoice | undefined =
+    way !== "plan"
+      ? undefined
+      : pickedOrchestrator !== undefined &&
+          target !== undefined &&
+          pickedOrchestrator.target === taskTargetKey(target)
+        ? pickedOrchestrator.choice
+        : orchestratorModel === undefined
+          ? undefined
+          : choiceFromModel(orchestratorModel);
   const onDemand = useOnDemandMachine();
   const startMachine = needsMachine(onDemand.status);
   const machineOnline = onDemand.status?.machine?.online === true;
@@ -245,7 +288,12 @@ export function NewTaskDraft({
         : undefined;
   const workerPreflight = useHarnessPreflight(workerModel, "worker");
   // Models by the names the composer gives them, not their ids.
-  const nameOf = useModelNames([orchestratorModel, workerModel, shownWorker?.model]);
+  const nameOf = useModelNames([
+    orchestratorModel,
+    selection.data?.orchestratorFrom,
+    workerModel,
+    shownWorker?.model,
+  ]);
   const inputModel = way === "direct" ? workerModel : orchestratorModel;
   const inputModels = useModelsSettled(
     inputModel?.agent ?? "claude",
@@ -346,6 +394,8 @@ export function NewTaskDraft({
     !selection.isFetching &&
     !selection.isError &&
     !preflight.blocked &&
+    // An agent picked for the orchestrator whose models aren't listed yet has nothing to start on.
+    (shownOrchestrator === undefined || shownOrchestrator.model !== "") &&
     (way !== "direct" || (workerModel !== undefined && !workerPreflight.blocked)) &&
     (!hasImages || !imagePreflight.blocked) &&
     (way === "plan" || repo !== undefined) &&
@@ -362,7 +412,12 @@ export function NewTaskDraft({
     setError(undefined);
     // The worker picked from the roster is the one the server checks and starts.
     const chosenWorker = way === "direct" && shownWorker !== undefined ? workerModel : undefined;
-    const { workerChoices: _choices, orchestratorNote: _note, ...shown } = selection.data;
+    const {
+      workerChoices: _choices,
+      orchestratorNote: _note,
+      orchestratorFrom: _from,
+      ...shown
+    } = selection.data;
     try {
       const thread = await api.startTask({
         target:
@@ -386,6 +441,7 @@ export function NewTaskDraft({
             }
           : {}),
         ...(makesOne && pickedAutonomy !== undefined ? { autonomy: pickedAutonomy } : {}),
+        ...(orchestratorPick === undefined ? {} : { orchestrator: orchestratorPick }),
       });
       useTaskDraftStore
         .getState()
@@ -593,8 +649,31 @@ export function NewTaskDraft({
                     <DictationStrip partial={dictation.partial} />
                   )}
                 <DictationError state={dictation.state} />
-                {(dictation.available || shownWorker !== undefined) && (
+                {(dictation.available ||
+                  shownWorker !== undefined ||
+                  shownOrchestrator !== undefined) && (
                   <div className="flex flex-wrap items-center gap-1 px-2 pb-2">
+                    {shownOrchestrator !== undefined && (
+                      <div
+                        role="group"
+                        aria-label="Orchestrator"
+                        data-testid="task-orchestrator-fields"
+                        className="contents"
+                      >
+                        <span aria-hidden className="pl-1.5 text-meta text-muted-foreground">
+                          Orchestrator
+                        </span>
+                        <Suspense fallback={null}>
+                          <TaskOrchestratorFields
+                            value={shownOrchestrator}
+                            onChange={(choice) => {
+                              if (target !== undefined)
+                                setPickedOrchestrator({ target: taskTargetKey(target), choice });
+                            }}
+                          />
+                        </Suspense>
+                      </div>
+                    )}
                     {shownWorker !== undefined && (
                       <div role="group" aria-label="Worker" className="contents">
                         <span aria-hidden className="pl-1.5 text-meta text-muted-foreground">
@@ -718,8 +797,10 @@ export function NewTaskDraft({
         <div className="flex flex-col gap-3">
           {/* While the check runs, Start says so itself (`checking`); no line here. */}
           {orchestratorModel !== undefined && way === "plan" && (
-            <p className="text-meta text-muted-foreground">
-              {`Orchestrator: ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)}`}
+            <p data-testid="task-orchestrator-line" className="text-meta text-muted-foreground">
+              {selection.data?.orchestratorFrom === undefined
+                ? `Orchestrator: ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)}`
+                : `The orchestrator moves from ${agentLabel(selection.data.orchestratorFrom.agent)} · ${nameOf(selection.data.orchestratorFrom)} to ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)} as the task starts.`}
             </p>
           )}
           {/* Its slot follows a tier nothing here fills: why, beside what stands in. */}

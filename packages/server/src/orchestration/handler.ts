@@ -53,45 +53,70 @@ export const orchestrationHandlers = Effect.gen(function* () {
     "workspace.save": (input) => orchestration.saveWorkspace(input),
     "workspace.remove": ({ workspaceId }) => orchestration.removeWorkspace(workspaceId),
     "workspace.taskPreflight": (input) => orchestration.taskPreflight(input),
-    "workspace.startTask": ({ target, input, draftId, direct, autonomy, selection }) =>
-      orchestration.withTaskStartup(
-        {
+    "workspace.startTask": ({
+      target,
+      input,
+      draftId,
+      direct,
+      autonomy,
+      orchestrator: picked,
+      selection,
+    }) =>
+      Effect.gen(function* () {
+        // The orchestrator the user picked: a running one starts moving to it, under the locks a
+        // switch and a charter change take, before the task's own startup takes them.
+        yield* orchestration.prepareTaskOrchestrator({
           target,
-          ...(direct === undefined ? {} : { direct }),
-          ...(autonomy === undefined ? {} : { autonomy }),
-        },
-        selection,
-        (current) =>
-          Effect.gen(function* () {
-            const orchestrator = yield* orchestration.open(
-              "projectId" in target ? { projectId: target.projectId, autonomy } : target,
-              current.orchestrator,
-            );
-            const workspaceId = orchestrator.workspaceId;
-            if (workspaceId === undefined) {
-              return yield* new InvalidState({ message: "The orchestrator has no workspace." });
-            }
-            if (direct === undefined) {
-              yield* adopted(draftId, orchestrator.id, input, (task) =>
-                deliver(orchestrator.id, task),
+          ...(picked === undefined ? {} : { orchestrator: picked }),
+        });
+        return yield* orchestration.withTaskStartup(
+          {
+            target,
+            ...(direct === undefined ? {} : { direct }),
+            ...(autonomy === undefined ? {} : { autonomy }),
+            ...(picked === undefined ? {} : { orchestrator: picked }),
+          },
+          selection,
+          (current) =>
+            Effect.gen(function* () {
+              // A running orchestrator that is moving to the pick is on its old model until the
+              // switch lands, so it is opened as it is.
+              const orchestrator = yield* orchestration.open(
+                "projectId" in target ? { projectId: target.projectId, autonomy } : target,
+                current.orchestratorThreadId !== undefined && picked !== undefined
+                  ? undefined
+                  : current.orchestrator,
               );
-              return orchestrator;
-            }
-            // Chosen here so the draft's attachments move into the worker before its first send.
-            const id = Schema.decodeSync(ThreadId)(randomUUID());
-            return yield* adopted(draftId, id, input, (task) =>
-              orchestration.startWorker(workspaceId, {
-                id,
-                projectId: direct.projectId,
-                base: direct.base,
-                input: task,
-                hold: direct.hold === true,
-                ...(direct.hostId === undefined ? {} : { hostId: direct.hostId }),
-                ...(current.worker === undefined ? {} : { model: current.worker }),
-              }),
-            );
-          }),
-      ),
+              const workspaceId = orchestrator.workspaceId;
+              if (workspaceId === undefined) {
+                return yield* new InvalidState({ message: "The orchestrator has no workspace." });
+              }
+              if (direct === undefined) {
+                // Mid-switch it is queued, never steered into the checkpoint turn: the switch holds
+                // the queue and gives it to the new session.
+                yield* adopted(draftId, orchestrator.id, input, (task) =>
+                  orchestrator.sessionSwitch === undefined
+                    ? deliver(orchestrator.id, task)
+                    : runtimes.send(orchestrator.id, task).pipe(Effect.asVoid),
+                );
+                return orchestrator;
+              }
+              // Chosen here so the draft's attachments move into the worker before its first send.
+              const id = Schema.decodeSync(ThreadId)(randomUUID());
+              return yield* adopted(draftId, id, input, (task) =>
+                orchestration.startWorker(workspaceId, {
+                  id,
+                  projectId: direct.projectId,
+                  base: direct.base,
+                  input: task,
+                  hold: direct.hold === true,
+                  ...(direct.hostId === undefined ? {} : { hostId: direct.hostId }),
+                  ...(current.worker === undefined ? {} : { model: current.worker }),
+                }),
+              );
+            }),
+        );
+      }),
     "orchestrator.open": ({ workspaceId, projectId }) => {
       if (workspaceId !== undefined && projectId === undefined) {
         return orchestration.open({ workspaceId });
