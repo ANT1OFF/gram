@@ -166,9 +166,11 @@ const optionsFor = (
   remoteAppTools: RemoteAppTools | undefined,
   onConnectorsSeen: (seen: ConnectorsSeen) => void,
 ): OpenSessionOptions => {
-  const { handle: _handle, agent: _agent, mcp, ...rest } = request;
+  const { handle: _handle, agent: _agent, mcp, waitForPrevious, ...rest } = request;
   return {
     ...rest,
+    // The previous session's app-server is this host's own, so the wait for it to exit is too.
+    ...(waitForPrevious === true ? { waitForPreviousSession: { onWait: Effect.void } } : {}),
     ...(mcp === undefined ? {} : { mcp: { url: mcp.url, headers: mcp.headers } }),
     ...(remoteAppTools === undefined ? {} : { remoteAppTools }),
     onConnectorsSeen,

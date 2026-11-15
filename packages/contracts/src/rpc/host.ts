@@ -12,6 +12,7 @@ import {
   NotFound,
 } from "../errors.ts";
 import { BrowserScope, CodexSurfaces } from "../settings.ts";
+import { CodexHome } from "../codex-home.ts";
 import { FsFilesResult, FsResolveResult } from "../fs-files.ts";
 import { FsSearchResult } from "../fs-search.ts";
 import {
@@ -162,6 +163,12 @@ export const HostFeature = Schema.Literals([
    * leaves an OpenCode worker's agent out of what it sends that host.
    */
   "agent-opencode",
+  /**
+   * Runs Codex sessions on the machine's own Codex app-server and sign-in
+   * (`HostSessionOpen.codexHome`, `HostStatus.codex`). A control plane opens no Codex session on a
+   * host without it, which would refuse it anyway.
+   */
+  "agent-codex",
 ]);
 export type HostFeature = typeof HostFeature.Type;
 
@@ -217,8 +224,37 @@ export const HostModel = Schema.Struct({
   resolvedId: Schema.optionalKey(HostModelText),
   supportsEffort: Schema.Boolean,
   efforts: Schema.optionalKey(Schema.Array(ReasoningVariant).check(Schema.isMaxLength(8))),
+  /**
+   * The model the agent picks when none is named, and the speeds and inputs it takes, as its
+   * picker shows them. Absent from a host before 1.27; a control plane built before them ignores
+   * them.
+   */
+  isDefault: Schema.optionalKey(Schema.Boolean),
+  speeds: Schema.optionalKey(
+    Schema.Array(Schema.Literals(["standard", "fast"])).check(Schema.isMaxLength(2)),
+  ),
+  inputModalities: Schema.optionalKey(
+    Schema.Array(Schema.Literals(["text", "image"])).check(Schema.isMaxLength(2)),
+  ),
 });
 export type HostModel = typeof HostModel.Type;
+
+/**
+ * The machine's Codex as its host finds it: whether `codex` is there, how it is signed in (the
+ * classification alone), what it lists, and whether it can hold Gram's outward gate (its native
+ * home is prepared) and run Codex's own Auto reviewer.
+ */
+export const HostCodexStatus = Schema.Struct({
+  found: Schema.Boolean,
+  version: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
+  /** `signedIn` is a ChatGPT login; `apiKey` an API key or a provider of the machine's own. */
+  signIn: Schema.Literals(["signedIn", "notSignedIn", "apiKey", "unknown"]),
+  /** Absent when Codex couldn't list. */
+  models: Schema.optionalKey(Schema.Array(HostModel).check(Schema.isMaxLength(64))),
+  gateReady: Schema.Boolean,
+  autoReview: Schema.Boolean,
+});
+export type HostCodexStatus = typeof HostCodexStatus.Type;
 
 /** `host.status`: what the machine can run now. */
 export const HostStatus = Schema.Struct({
@@ -230,6 +266,11 @@ export const HostStatus = Schema.Struct({
    * then resolves against its own lists. A control plane built before it ignores it.
    */
   models: Schema.optionalKey(Schema.Array(HostModel).check(Schema.isMaxLength(64))),
+  /**
+   * Its Codex, from a host that runs Codex sessions (`agent-codex`). A control plane built before
+   * it ignores it.
+   */
+  codex: Schema.optionalKey(HostCodexStatus),
 });
 export type HostStatus = typeof HostStatus.Type;
 
@@ -562,6 +603,16 @@ export const HostSessionOpen = Schema.Struct({
   browserScope: Schema.optionalKey(BrowserScope),
   /** Each action in the browser asks first (`OpenSessionOptions.browserAsk`). */
   browserAsk: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Codex: the home the session was first opened in (`OpenSessionOptions.codexHome`), so a resume
+   * finds it there. Sent only to a host that names `agent-codex`.
+   */
+  codexHome: Schema.optionalKey(CodexHome),
+  /**
+   * Codex: a restart, whose open waits for the previous session's app-server on the host to exit
+   * (`OpenSessionOptions.waitForPreviousSession`). Sent only to a host that names `agent-codex`.
+   */
+  waitForPrevious: Schema.optionalKey(Schema.Boolean),
 });
 export type HostSessionOpen = typeof HostSessionOpen.Type;
 

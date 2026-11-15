@@ -3,6 +3,7 @@ import { type CheckoutRequest, HostId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import {
   defaultMachine,
+  GATEWAY_STAYS_HERE,
   headlessAgentHosts,
   headlessLocal,
   headlessPlacement,
@@ -30,6 +31,16 @@ const machine = (
 const remote = (machines: ReadonlyArray<PlaceableMachine>) =>
   ({ list: () => machines }) as unknown as Pick<RemoteHostsShape, "list">;
 const MODELS = [{ id: "fake-opus", displayName: "Fake Opus", supportsEffort: false }];
+const CODEX_MODELS = [
+  { id: "fake-codex", displayName: "Fake Codex", supportsEffort: true, isDefault: true },
+];
+/** A machine's Codex that is installed and signed in, listing nothing yet. */
+const CODEX = {
+  found: true,
+  signIn: "signedIn",
+  gateReady: false,
+  autoReview: false,
+} as const satisfies PlaceableMachine["codex"];
 
 describe("defaultMachine", () => {
   it("picks the confirmed machine online now that joined first", () => {
@@ -95,6 +106,12 @@ describe("placeRequest", () => {
   );
 });
 
+/** The headless Codex of a Gram whose one machine, `build box`, says `codex` of its Codex. */
+const codexOf = (codex: PlaceableMachine["codex"]) =>
+  headlessAgentHosts(
+    remote([machine("m-first", { name: "build box", onlineSince: 1, codex })]),
+  ).get("codex");
+
 describe("headlessAgentHosts", () => {
   it.effect("offers Claude Code as the default machine lists it, and opens nothing here", () =>
     Effect.gen(function* () {
@@ -107,7 +124,60 @@ describe("headlessAgentHosts", () => {
         Effect.scoped(claude.open({ threadId: "t-1", cwd: "/work/repo" } as never)),
       );
       expect(opened).toMatchObject({ _tag: "AgentUnavailable", message: RUNS_NOTHING_HERE });
-      expect(yield* Effect.flip(hosts.get("codex"))).toMatchObject({ _tag: "AgentUnavailable" });
+      // An agent no machine runs is still refused.
+      expect(yield* Effect.flip(hosts.get("opencode"))).toMatchObject({ _tag: "AgentUnavailable" });
+    }),
+  );
+
+  it.effect(
+    "offers Codex as the default machine's own Codex lists it, and opens nothing here",
+    () =>
+      Effect.gen(function* () {
+        const hosts = headlessAgentHosts(
+          remote([
+            machine("m-first", {
+              onlineSince: 1,
+              models: MODELS,
+              codex: { ...CODEX, models: CODEX_MODELS, gateReady: true, autoReview: true },
+            }),
+          ]),
+        );
+        const codex = yield* hosts.get("codex");
+        expect(codex.kind).toBe("codex");
+        expect(yield* codex.listModels()).toEqual(CODEX_MODELS);
+        // Whether it holds the gate and has its own Auto is what that machine's Codex says.
+        expect(yield* codex.nativeGateReady!).toBe(true);
+        expect(yield* codex.autoReviewReady!).toBe(true);
+        const opened = yield* Effect.flip(
+          Effect.scoped(codex.open({ threadId: "t-1", cwd: "/work/repo" } as never)),
+        );
+        expect(opened).toMatchObject({ _tag: "AgentUnavailable", message: RUNS_NOTHING_HERE });
+        // A gateway profile's key stays here, and its sessions never go to a machine.
+        expect(yield* Effect.flip(codex.listModels({ profileId: "p-1" as never }))).toMatchObject({
+          message: GATEWAY_STAYS_HERE,
+        });
+      }),
+  );
+
+  it.effect("says why a machine lists no Codex models, and holds no gate it can't", () =>
+    Effect.gen(function* () {
+      const older = yield* codexOf(undefined);
+      expect(yield* Effect.flip(older.listModels())).toMatchObject({
+        message: expect.stringContaining("update it there"),
+      });
+      expect(yield* older.nativeGateReady!).toBe(false);
+      expect(yield* older.autoReviewReady!).toBe(false);
+      const missing = yield* codexOf({ ...CODEX, found: false });
+      expect(yield* Effect.flip(missing.listModels())).toMatchObject({
+        message: "Codex isn't installed on build box. Install it there, then re-check.",
+      });
+      const signedOut = yield* codexOf({ ...CODEX, signIn: "notSignedIn" });
+      expect(yield* Effect.flip(signedOut.listModels())).toMatchObject({
+        message: expect.stringContaining("Run `codex login` there"),
+      });
+      // An API key or a provider of the machine's own lists as a ChatGPT login does.
+      const keyed = yield* codexOf({ ...CODEX, signIn: "apiKey", models: CODEX_MODELS });
+      expect(yield* keyed.listModels()).toEqual(CODEX_MODELS);
     }),
   );
 
@@ -183,6 +253,19 @@ describe("modelsFor", () => {
         new Map(),
       ),
     ).toEqual({ error: expect.stringContaining("ada's hasn't said which models") });
+  });
+
+  it("reads each agent's own list: a person's own machine's Codex, never its Claude Code's", () => {
+    const machines = [
+      own({ onlineSince: 1, models: MODELS, codex: { ...CODEX, models: CODEX_MODELS } }),
+      machine("m-shared", { onlineSince: 1, models: OTHER }),
+    ];
+    expect(modelsFor(machines, "ada", true, new Map(), "codex")).toEqual({ models: CODEX_MODELS });
+    expect(modelsFor(machines, "ada", true, new Map(), "claude")).toEqual({ models: MODELS });
+    // The shared machine runs no Codex: nobody in particular is told why, about it.
+    expect(modelsFor(machines, undefined, true, new Map(), "codex")).toEqual({
+      error: expect.stringContaining("m-shared hasn't said which models its Codex offers"),
+    });
   });
 
   it("is the default machine's list for nobody in particular", () => {
