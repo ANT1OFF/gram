@@ -119,7 +119,7 @@ describe("the start card", () => {
 
   it("offers the deployment's choices, locks what the person may not pick, and starts with theirs", async () => {
     useEmbedShell.setState({ machines: { noun: "sandbox", repositories: "theirs" } });
-    localStorage.removeItem("gram:on-demand-choices");
+    localStorage.removeItem("gram:on-demand-picks");
     const calls = serve([
       {
         available: true,
@@ -150,7 +150,51 @@ describe("the start card", () => {
       JSON.stringify({ repositories: [], choices: { size: "large" } }),
     );
     // Kept for the next start.
-    expect(localStorage.getItem("gram:on-demand-choices")).toBe(JSON.stringify({ size: "large" }));
+    expect(localStorage.getItem("gram:on-demand-picks")).toBe(JSON.stringify({ size: "large" }));
+  });
+
+  it("sends only what the person changed, so a choice left alone follows the default", async () => {
+    useEmbedShell.setState({ machines: { noun: "sandbox", repositories: "theirs" } });
+    // Kept from before: a pick that is now the default, and one of a choice no longer offered.
+    localStorage.setItem("gram:on-demand-picks", JSON.stringify({ kind: "fast", gone: "x" }));
+    const calls = serve([
+      {
+        available: true,
+        choices: {
+          choices: [
+            {
+              id: "kind",
+              label: "Kind",
+              default: "fast",
+              options: [
+                { id: "fast", label: "Fast", available: true },
+                { id: "strong", label: "Strong", available: true },
+              ],
+            },
+            {
+              id: "size",
+              label: "Size",
+              default: "small",
+              options: [
+                { id: "small", label: "Small", available: true },
+                { id: "large", label: "Large", available: true },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+    show();
+    await screen.findByRole("radio", { name: /Strong/ });
+    // Changed and changed back: left alone.
+    fireEvent.click(screen.getByRole("radio", { name: /Large/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Small/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Start a sandbox/ }));
+    await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
+    expect(calls.find((call) => call.method === "POST")?.body).toBe(
+      JSON.stringify({ repositories: [] }),
+    );
+    expect(localStorage.getItem("gram:on-demand-picks")).toBe(JSON.stringify({}));
   });
 
   it("shows the start step by step, and nothing once the machine is up", async () => {
