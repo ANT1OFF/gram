@@ -21,7 +21,34 @@ import { samePath } from "./paths.ts";
 
 export const WIP_REF_PREFIX = "refs/gram/wip";
 
-export const wipRef = (threadId: string): string => `${WIP_REF_PREFIX}/${threadId}`;
+/**
+ * The host's own name under `refs/gram/wip`, when it has one: `GRAM_HOST_WIP_NAMESPACE`. A host
+ * whose remote lets each machine write only refs under its own name (a hosted sandbox behind a
+ * git proxy, say) keeps its threads' work at `refs/gram/wip/<namespace>/<thread>`, and reads it
+ * back from there. Unset, or not a plain name, the ref is `refs/gram/wip/<thread>`.
+ */
+export const WIP_NAMESPACE_ENV = "GRAM_HOST_WIP_NAMESPACE";
+const NAMESPACE = /^[A-Za-z0-9._-]{1,128}$/;
+const hostNamespace = (): string | undefined => {
+  const value = process.env[WIP_NAMESPACE_ENV];
+  return value !== undefined && NAMESPACE.test(value) ? value : undefined;
+};
+
+export const wipRef = (threadId: string): string => {
+  const namespace = hostNamespace();
+  return namespace === undefined
+    ? `${WIP_REF_PREFIX}/${threadId}`
+    : `${WIP_REF_PREFIX}/${namespace}/${threadId}`;
+};
+
+/** Whether `ref` is where a host keeps `threadId`'s work: with no namespace, or under one. */
+export const isWipRefOf = (ref: string, threadId: string): boolean => {
+  if (ref === `${WIP_REF_PREFIX}/${threadId}`) return true;
+  const start = `${WIP_REF_PREFIX}/`;
+  const end = `/${threadId}`;
+  if (!ref.startsWith(start) || !ref.endsWith(end)) return false;
+  return NAMESPACE.test(ref.slice(start.length, ref.length - end.length));
+};
 
 /** A push can carry many objects over a slow link. */
 const PUSH_TIMEOUT_MS = 120_000;

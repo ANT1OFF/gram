@@ -9,11 +9,13 @@ import {
   fetchBranchTip,
   fetchWip,
   isPushRemote,
+  isWipRefOf,
   pushWip,
   restoreWip,
   restoreWipWorktree,
   snapshotWip,
   wipCaughtUp,
+  WIP_NAMESPACE_ENV,
   wipRef,
 } from "./wip.ts";
 
@@ -455,4 +457,31 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
       expect(fs.readFileSync(nodePath.join(tree, "done.txt"), "utf8")).toBe("pushed\n");
     }).pipe(provide),
   );
+});
+
+describe("the host's WIP namespace", () => {
+  const thread = "8d160cde-ab61-520f-9968-1c4da2b6f6b3";
+  const before = process.env[WIP_NAMESPACE_ENV];
+  afterEach(() => {
+    if (before === undefined) delete process.env[WIP_NAMESPACE_ENV];
+    else process.env[WIP_NAMESPACE_ENV] = before;
+  });
+
+  it("keeps the ref under the host's name when it has one, and at the top without", () => {
+    delete process.env[WIP_NAMESPACE_ENV];
+    expect(wipRef(thread)).toBe(`refs/gram/wip/${thread}`);
+    process.env[WIP_NAMESPACE_ENV] = "personal-ab12";
+    expect(wipRef(thread)).toBe(`refs/gram/wip/personal-ab12/${thread}`);
+    // Not a plain name: ignored, so the ref can't reach outside refs/gram/wip.
+    process.env[WIP_NAMESPACE_ENV] = "../heads/main";
+    expect(wipRef(thread)).toBe(`refs/gram/wip/${thread}`);
+  });
+
+  it("knows a thread's ref with or without a namespace, and no other", () => {
+    expect(isWipRefOf(`refs/gram/wip/${thread}`, thread)).toBe(true);
+    expect(isWipRefOf(`refs/gram/wip/personal-ab12/${thread}`, thread)).toBe(true);
+    expect(isWipRefOf(`refs/gram/wip/a/b/${thread}`, thread)).toBe(false);
+    expect(isWipRefOf(`refs/heads/x/${thread}`, thread)).toBe(false);
+    expect(isWipRefOf(`refs/gram/wip/personal-ab12/other`, thread)).toBe(false);
+  });
 });
