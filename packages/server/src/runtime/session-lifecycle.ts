@@ -636,6 +636,8 @@ export const makeSessionLifecycle = ({
               : { outwardGate: policy.outwardGate }),
             ...(hooked ? hookedSessionOptions : {}),
             ...(policy.confineWrites === true ? { confineWrites: true } : {}),
+            // Someone else's code (a fork's PR head): the folder's own agent settings don't load.
+            ...(thread.checkout.untrusted === true ? { untrustedTree: true } : {}),
             ...(policy.pinCwd === true ? { pinCwd: true } : {}),
             ...(policy.mcpAllowlist === undefined ? {} : { mcpAllowlist: policy.mcpAllowlist }),
             ...(policy.mcpDenylist === undefined ? {} : { mcpDenylist: policy.mcpDenylist }),

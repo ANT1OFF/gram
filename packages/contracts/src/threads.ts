@@ -25,6 +25,8 @@ export const CheckoutRequest = Schema.Union([
     kind: Schema.Literal("newWorktree"),
     branch: Schema.String,
     base: Schema.optionalKey(Schema.String),
+    /** The branch is someone else's (`Checkout.untrusted`); only ever narrows what is copied in. */
+    untrusted: Schema.optionalKey(Schema.Boolean),
     /**
      * The joined machine the worktree is made on, from its own clone of the project's repository;
      * absent for this machine.

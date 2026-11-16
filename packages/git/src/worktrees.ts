@@ -9,10 +9,15 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import {
+  type Buckets,
+  emptyBuckets,
   mergeSelectedIntoRoot,
   newRules,
+  parseTrackedRules,
   readPermissionRules,
+  SETTINGS_TRACKED_PATH,
   seedWorktreePermissions,
+  withoutRules,
 } from "./claude-settings.ts";
 import { WorktreeError } from "./errors.ts";
 import {
@@ -29,6 +34,7 @@ import { expandHome, fromGitPath, isDir, mtimeMs, samePathKey, tryRealPathSync }
 import { Proc } from "./proc.ts";
 import { listBaseRefs, localBaseRef, originBaseRef } from "./refs.ts";
 import { copyWorktreeIncludes } from "./worktree-include.ts";
+import { isUntrustedWorktree, markUntrustedWorktree } from "./worktree-trust.ts";
 
 const invalid = (message: string) =>
   new WorktreeError({ reason: "invalidRequest", message, dirty: false });
@@ -288,15 +294,28 @@ export const sanitizeBase = (
 };
 
 /**
+ * Marks a worktree just added as untrusted. A marker that can't be written fails the step: the
+ * worktree would otherwise read as the user's own the next time it is opened or restored.
+ */
+const markUntrusted = (worktreeDir: string) =>
+  Effect.try({
+    try: () => markUntrustedWorktree(worktreeDir),
+    catch: (error) =>
+      failed(`couldn't mark ${worktreeDir} as someone else's code: ${String(error)}`),
+  });
+
+/**
  * One `git worktree add`: an existing local branch is checked out; a new branch starts from the
  * override, else an up-to-date origin default, else HEAD. Then `.worktreeinclude` copy and
- * permission seeding.
+ * permission seeding, or for an `untrusted` tree (someone else's PR head) neither: it is marked
+ * (`markUntrustedWorktree`) and gets nothing of the main checkout's.
  */
 export const addWorktree = (
   repoTop: string,
   safeBranch: string,
   worktreeDir: string,
   baseOverride: string | undefined,
+  untrusted = false,
 ) =>
   Effect.gen(function* () {
     // A checkout under `.worktrees/<branch>` can pass Windows' 260-character path limit, as removal can.
@@ -316,6 +335,10 @@ export const addWorktree = (
     if (out.status !== 0) {
       return yield* Effect.fail(invalid(`git worktree failed: ${gitFailMsg(out, "")}`));
     }
+    if (untrusted) {
+      yield* markUntrusted(worktreeDir);
+      return { copiedIncludes: 0, startPoint };
+    }
     const copiedIncludes = yield* copyWorktreeIncludes(repoTop, worktreeDir);
     yield* seedWorktreePermissions(repoTop, worktreeDir);
     return { copiedIncludes, startPoint };
@@ -327,6 +350,11 @@ export interface CreateWorktreeRequest {
   readonly branch?: string | undefined;
   /** Start point for a NEW branch; unresolvable values fall back silently. */
   readonly base?: string | undefined;
+  /**
+   * Someone else's branch, such as a fork's PR head: nothing of the main checkout's is copied or
+   * seeded in, and the checkout says so (`Checkout.untrusted`). A reused worktree marked so stays so.
+   */
+  readonly untrusted?: boolean | undefined;
   readonly openCheckouts: ReadonlyArray<string>;
 }
 
@@ -385,7 +413,15 @@ export const createWorktree = (request: CreateWorktreeRequest) =>
     }
     const added = plan.reuse
       ? { copiedIncludes: 0, startPoint: undefined }
-      : yield* addWorktree(repoTop, safeBranch, plan.worktreeDir, baseOverride);
+      : yield* addWorktree(
+          repoTop,
+          safeBranch,
+          plan.worktreeDir,
+          baseOverride,
+          request.untrusted === true,
+        );
+    const untrusted =
+      !plan.isMainCheckout && (request.untrusted === true || isUntrustedWorktree(plan.worktreeDir));
     // Reused checkouts too, so repos whose worktrees predate this get the line on their next open.
     // A git dir that can't be written doesn't block the checkout.
     if (!plan.isMainCheckout) {
@@ -402,6 +438,7 @@ export const createWorktree = (request: CreateWorktreeRequest) =>
       ...(branch === undefined ? {} : { branch }),
       ...(base === undefined || base === branch ? {} : { base }),
       ...(plan.isMainCheckout ? {} : { repoRoot: repoTop }),
+      ...(untrusted ? { untrusted: true } : {}),
     };
     return {
       repoTop,
@@ -448,6 +485,8 @@ export interface RestoreWorktreeRequest {
   readonly branch: string;
   /** The PR whose head recreates the branch when neither the repo nor `origin` has it. */
   readonly fromPr?: number | undefined;
+  /** The checkout was someone else's (`Checkout.untrusted`): restored the same way, and marked again. */
+  readonly untrusted?: boolean | undefined;
   readonly openCheckouts: ReadonlyArray<string>;
 }
 
@@ -537,8 +576,12 @@ export const restoreWorktree = (request: RestoreWorktreeRequest) =>
         return { kind: "branchGone" } satisfies RestoredWorktree;
       }
     }
-    yield* copyWorktreeIncludes(repoTop, request.worktreeDir);
-    yield* seedWorktreePermissions(repoTop, request.worktreeDir);
+    if (request.untrusted === true) {
+      yield* markUntrusted(request.worktreeDir);
+    } else {
+      yield* copyWorktreeIncludes(repoTop, request.worktreeDir);
+      yield* seedWorktreePermissions(repoTop, request.worktreeDir);
+    }
     const roots = yield* tryRepoRoots(repoTop).pipe(Effect.orElseSucceed(() => undefined));
     if (roots !== undefined) {
       yield* Effect.try(() => excludeWorktreesFolder(roots.common)).pipe(Effect.ignore);
@@ -652,7 +695,10 @@ export const removeWorktree = (request: RemoveWorktreeRequest) =>
     const selected = request.mergeRules ?? [];
     const pending =
       selected.length > 0 && (yield* isRegisteredWorktree(repoPath, request.worktreeDir))
-        ? readPermissionRules(request.worktreeDir)
+        ? withoutRules(
+            readPermissionRules(request.worktreeDir),
+            yield* trackedRules(request.worktreeDir),
+          )
         : undefined;
     yield* removeWorktreeDir(repoPath, request.worktreeDir, request.force ?? false);
     if (pending !== undefined) {
@@ -661,14 +707,31 @@ export const removeWorktree = (request: RemoveWorktreeRequest) =>
     }
   });
 
-/** Rules approved inside a registered worktree that the root lacks (excluded ones filtered). */
+/**
+ * The rules the worktree's branch tracks in its settings file at `HEAD`: its author's, which are
+ * never offered or merged back into the main checkout. Empty when the file isn't tracked.
+ */
+const trackedRules = (worktreeDir: string): Effect.Effect<Buckets, never, Proc> =>
+  git(worktreeDir, ["show", `HEAD:${SETTINGS_TRACKED_PATH}`]).pipe(
+    Effect.map((out) => (out.status === 0 ? parseTrackedRules(out.stdout) : emptyBuckets)),
+    Effect.orElseSucceed(() => emptyBuckets),
+  );
+
+/**
+ * Rules approved inside a registered worktree that the root lacks (excluded ones filtered). Rules
+ * the branch itself tracks in the file aren't approvals, so they are never listed.
+ */
 export const pendingPermissions = (repoPath: string, worktreeDir: string) =>
   Effect.gen(function* () {
     const repoTop = yield* resolveRepoTop(yield* resolveRepoPath(repoPath));
     if (!(yield* isRegisteredWorktree(repoTop, worktreeDir))) {
       return yield* Effect.fail(invalid("worktreeDir is not a registered worktree of this repo"));
     }
-    return newRules(readPermissionRules(worktreeDir), readPermissionRules(repoTop));
+    const approved = withoutRules(
+      readPermissionRules(worktreeDir),
+      yield* trackedRules(worktreeDir),
+    );
+    return newRules(approved, readPermissionRules(repoTop));
   });
 
 // ---------------------------------------------------------------------------------------------

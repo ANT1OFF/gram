@@ -225,6 +225,7 @@ export const machineCheckouts = (
             repoPath,
             branch: request.branch,
             ...(request.base === undefined ? {} : { base: request.base }),
+            ...(request.untrusted === true ? { untrusted: true } : {}),
             openCheckouts,
           })
           .pipe(
@@ -331,6 +332,7 @@ export const machineCheckouts = (
             worktreeDir: checkout.path,
             branch: checkout.branch,
             fromPr,
+            ...(checkout.untrusted === true ? { untrusted: true } : {}),
             openCheckouts: yield* others(thread),
           })
           .pipe(

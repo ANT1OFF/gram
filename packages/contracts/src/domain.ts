@@ -368,6 +368,12 @@ export const Checkout = Schema.Struct({
    * to confirm it; absent on a checkout made before it was recorded.
    */
   cloneIdentity: Schema.optionalKey(Schema.String),
+  /**
+   * The tree is someone else's: a pull request's head from another repository. Nothing of the main
+   * checkout's (`.worktreeinclude` files, permission rules) was copied in, its own agent settings
+   * aren't loaded, and its tracked rules are never offered back to the main checkout.
+   */
+  untrusted: Schema.optionalKey(Schema.Boolean),
 });
 export type Checkout = typeof Checkout.Type;
 

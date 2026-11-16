@@ -128,6 +128,13 @@ export interface OpenSessionOptions {
   readonly confineWrites?: boolean;
   /** Only the bounded Dream MCP file bridge; no native tools. Unsupported hosts refuse. */
   readonly dreamFilesOnly?: boolean;
+  /**
+   * `cwd` holds someone else's code, such as a fork's pull request head: the agent loads none of
+   * the folder's own settings (Claude Code's project and local settings, with their hooks, env,
+   * permission rules and MCP servers), only the user's. A host that loads no folder settings
+   * unasked ignores it.
+   */
+  readonly untrustedTree?: boolean;
   /** Prompt-guided Dream using normal native permissions; never a file-only guarantee. */
   readonly dreamGuided?: boolean;
   /**

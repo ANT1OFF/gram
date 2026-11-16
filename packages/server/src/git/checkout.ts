@@ -11,6 +11,7 @@ import {
 import {
   Checkpoints,
   git,
+  isUntrustedWorktree,
   Proc,
   samePath,
   worktreeCleanliness,
@@ -100,6 +101,7 @@ export const GitCheckoutLive = Layer.effect(
                 repoPath: root,
                 branch: request.branch,
                 ...(request.base === undefined ? {} : { base: request.base }),
+                ...(request.untrusted === true ? { untrusted: true } : {}),
                 openCheckouts,
               })
               .pipe(
@@ -138,10 +140,12 @@ export const GitCheckoutLive = Layer.effect(
               });
             }
             const branch = entry.branch === undefined ? {} : { branch: entry.branch };
+            // A PR head from another repository stays someone else's code in every thread opened on it.
+            const trust = isUntrustedWorktree(entry.path) ? { untrusted: true } : {};
             return (
               entry.isMain
                 ? { kind: "main", path: entry.path, ...branch }
-                : { kind: "worktree", path: entry.path, ...branch, repoRoot: main.path }
+                : { kind: "worktree", path: entry.path, ...branch, repoRoot: main.path, ...trust }
             ) satisfies Checkout;
           }
         }
@@ -295,6 +299,7 @@ export const GitCheckoutLive = Layer.effect(
             worktreeDir: checkout.path,
             branch: checkout.branch,
             fromPr,
+            ...(checkout.untrusted === true ? { untrusted: true } : {}),
             openCheckouts: others,
           })
           .pipe(
