@@ -2,7 +2,7 @@
 // behind another service sits behind: how a server with no window takes it from its environment,
 // and how server code reads it.
 
-import { applySettingsPatch, embeddingOn } from "@gram/contracts";
+import { applySettingsPatch, embeddingOn, RECOMMENDED } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ServerConfig } from "../config.ts";
@@ -38,6 +38,25 @@ export const seedEmbedding: Effect.Effect<void, never, ServerConfig | ThreadStor
 );
 
 /**
+ * A headless server has no welcome, which is where a new install turns the recommended setup on.
+ * So while the setting is absent it starts as the welcome leaves one: on, and the current table
+ * seen. A choice already saved, on or off, stays.
+ */
+export const seedHeadlessRecommended: Effect.Effect<void, never, ServerConfig | ThreadStore> =
+  Effect.gen(function* () {
+    if ((yield* ServerConfig).headless !== true) return;
+    const store = yield* ThreadStore;
+    if ((yield* store.getSettings).agents.recommendedSetup !== undefined) return;
+    yield* store.updateSettings(
+      (settings) =>
+        applySettingsPatch(settings, {
+          agents: { recommendedSetup: { enabled: true, seen: RECOMMENDED.version } },
+        }),
+      [["agents", "recommendedSetup"]],
+    );
+  });
+
+/**
  * Tells the desktop shell whether the hosted features are on, as `{ type: "embedding", on }`,
  * as the server starts and whenever the setting changes: the shell's main process reads no
  * settings of its own, and lends this machine only while they are on. Elsewhere (browser dev,
@@ -49,12 +68,16 @@ export const tellShellEmbedding = (on: boolean): void => {
   port?.postMessage({ type: "embedding", on });
 };
 
-/** `store` with `GRAM_EMBEDDING` applied before anything above it reads the settings. */
+/**
+ * `store` with `GRAM_EMBEDDING`, and a headless server's recommended setup, applied before
+ * anything above it reads the settings.
+ */
 export const withEmbeddingSeed = <A, E, R>(
   store: Layer.Layer<A | ThreadStore, E, R>,
 ): Layer.Layer<A | ThreadStore, E, R | ServerConfig> =>
   Layer.effectDiscard(
     seedEmbedding.pipe(
+      Effect.andThen(seedHeadlessRecommended),
       Effect.andThen(embeddingEnabled),
       Effect.tap((on) => Effect.sync(() => tellShellEmbedding(on))),
     ),
