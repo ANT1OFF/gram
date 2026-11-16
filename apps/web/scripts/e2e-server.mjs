@@ -40,7 +40,9 @@ export async function checkServer(origin, token, fetchImpl = fetch, timeoutMs = 
 /** Where `buildForPreview` writes the bundle that `spawnVitePreview` serves. */
 const E2E_DIST_DIR = "dist-e2e";
 
-const MOCK_ENV = { VITE_API: "mock", VITE_MOCK_SPEED: "0.25" };
+// A fifth of the mock's own pace: scripted waits still order the events, and specs wait on what
+// they show rather than on time. At 0.25 the same specs took about 7% longer.
+const MOCK_ENV = { VITE_API: "mock", VITE_MOCK_SPEED: "0.05" };
 
 /** The Vite that `dir` installs, so another checkout's app is served by its own Vite and config. */
 const viteBin = (dir = webDir) =>
