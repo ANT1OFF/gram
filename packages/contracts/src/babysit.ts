@@ -124,7 +124,9 @@ export const serializeHumanReviewNotice = (notice: HumanReviewNotice): string =>
     if (body === "") lines.push(`${said}, with no comment.`);
     else {
       lines.push(`${said}:`);
-      for (const line of body.split(/\r?\n/)) lines.push(line === "" ? ">" : `> ${line}`);
+      // Every break a reader may take as a new line, a lone CR and the Unicode separators too.
+      for (const line of body.split(/\r\n|[\n\v\f\r\u0085\u2028\u2029]/))
+        lines.push(line === "" ? ">" : `> ${line}`);
     }
   }
   lines.push(
