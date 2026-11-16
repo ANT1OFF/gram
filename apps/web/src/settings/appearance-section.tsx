@@ -255,7 +255,7 @@ function NavigationRows() {
     >
       <Segmented
         label="Position"
-        description="The sidebar at the left, or a dock of icons at the top or bottom of the window. A phone keeps its menu."
+        description="The sidebar at the left, or a dock of icons at the top or bottom."
         keywords={["sidebar", "dock", "top", "bottom"]}
         value={position}
         options={NAVIGATION_POSITIONS}
@@ -263,7 +263,7 @@ function NavigationRows() {
       />
       <Segmented
         label="Auto-hide"
-        description={`Slides the navigation away until the pointer rests at its edge, the keyboard moves into it, or ${hint === "" ? "Collapse / expand sidebar" : hint} shows it.`}
+        description={`Slides it away until you point at its edge, Tab into it or press ${hint === "" ? "the sidebar key" : hint}.`}
         keywords={["hide", "sidebar", "dock"]}
         value={autoHide ? "on" : "off"}
         options={AUTO_HIDE}
