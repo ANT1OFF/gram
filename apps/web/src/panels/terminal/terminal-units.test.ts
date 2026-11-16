@@ -139,9 +139,11 @@ describe("terminalTheme", () => {
         ansi: derivePalette(palette, contrast).ansi,
       })),
     );
-    // Frozen fb2ff2cb matrix, captured before the ANSI correction.
+    // Frozen fb2ff2cb matrix, captured before the ANSI correction; moved once on purpose since,
+    // when the Minimal light palettes' chrome stepped further off the page and their ANSI black
+    // darkened with it (#d3d3d4 to #cdced0) to hold its contrast there.
     expect(createHash("sha256").update(JSON.stringify(matrix)).digest("hex")).toBe(
-      "af4596158d6f1f167b1c8809d1a059ebaebb32aaa9fedcf07b10b829f812ada6",
+      "924f73f438a24221b0bd2ab8f27cf205ae49df0206dd26b3f3ccb26572fcc8c9",
     );
   });
 

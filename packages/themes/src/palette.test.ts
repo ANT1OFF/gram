@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { contrastRatio } from "./color.ts";
 import {
   ANSI_KEYS,
   derivePalette,
@@ -98,6 +99,17 @@ describe("presets", () => {
   it("matches each preset's declared mode to its background", () => {
     for (const palette of PRESET_PALETTES) {
       expect(paletteFromSeeds(palette.seeds).mode).toBe(palette.mode);
+    }
+  });
+
+  it("sets a light preset's sidebar and title bar a visible step off its page", () => {
+    // On a light page a step under about 1.08:1 reads as one flat sheet: the chrome and the page
+    // run together. Dark palettes read smaller steps, so the floor is for light ones.
+    for (const palette of PRESET_PALETTES.filter((p) => p.mode === "light")) {
+      expect(
+        contrastRatio(palette.seeds.bg, palette.seeds.surface),
+        `${palette.id}: page ${palette.seeds.bg}, chrome ${palette.seeds.surface}`,
+      ).toBeGreaterThanOrEqual(1.08);
     }
   });
 });
