@@ -158,6 +158,36 @@ describe.skipIf(!hasGit)("other worker models", () => {
       ),
   );
 
+  it.effect("run at high or below, and a delegated effort can't take them past it", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const orchestration = yield* Orchestration;
+        const store = yield* ThreadStore;
+        const { session, workspaceId } = yield* openOrchestrator(world);
+        // A model of the user's own that takes efforts, which the roster leaves off.
+        yield* store.updateSettings((settings) => ({
+          ...settings,
+          agents: { ...settings.agents, customModels: [{ agent: "claude", id: "fake-deep" }] },
+        }));
+        yield* orchestration.setCharter(workspaceId, roster({ otherWorkerModels: true }));
+        const deep = yield* spawn(session, { feature: "review", model: "claude:fake-deep" });
+        expect(deep.thread.model).toEqual({
+          agent: "claude",
+          model: "fake-deep",
+          speed: "standard",
+          variant: "high",
+        });
+        const past = yield* session
+          .callTool("set_thread_effort", { threadId: deep.thread.id, effort: "max" })
+          .pipe(Effect.flip);
+        expect(past.message).toContain("runs at effort high or below, not max");
+        expect((yield* store.getThread(deep.thread.id)).model.variant).toBe("high");
+        yield* session.callTool("set_thread_effort", { threadId: deep.thread.id, effort: "low" });
+        expect((yield* store.getThread(deep.thread.id)).model.variant).toBe("low");
+      }),
+    ),
+  );
+
   it.effect(
     "are on for a new workspace, said in its charter lines, and a change is told to the session",
     () =>

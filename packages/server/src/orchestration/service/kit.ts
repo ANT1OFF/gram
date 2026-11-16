@@ -11,6 +11,7 @@ import {
   NotFound,
   customModelsOf,
   withCustomModels,
+  listedRow,
   type AgentModel,
   type CatalogueRow,
   resolveModel,
@@ -70,6 +71,7 @@ import { AgentHosts } from "../../runtime/agent-hosts.ts";
 import { makeThreadCreator } from "../../runtime/create-in-checkout.ts";
 import { CheckoutService } from "../../runtime/hooks.ts";
 import { availableHere } from "../../runtime/model-slots.ts";
+import { selectableModels } from "../../runtime/model-efforts.ts";
 import { UsageLimitPoller } from "../../usage/limit-poller.ts";
 import { UsageLimitReadings } from "../../usage/limit-readings.ts";
 import { ThreadPlans } from "../../plans/service.ts";
@@ -268,9 +270,14 @@ export const OTHER_WORKER_MODELS_SETTING =
  */
 export type OtherWorkerModel = { readonly model: ModelRef } | { readonly why: string } | undefined;
 
-/** High, as a model off the roster runs, where it takes efforts at all (`OtherWorkerModel`). */
-const atHigh = (efforts: ReadonlyArray<string> | undefined) =>
-  efforts?.includes("high") === true ? { variant: "high" as const } : {};
+/**
+ * The effort a model off the roster runs at (`OtherWorkerModel`): high, else the highest it lists
+ * below that, so it never falls back to a default that may be higher. None where it lists none.
+ */
+const atHigh = (efforts: ReadonlyArray<string> | undefined) => {
+  const variant = (["high", "medium", "low"] as const).find((each) => efforts?.includes(each));
+  return variant === undefined ? {} : { variant };
+};
 
 /** The charter's roster as it runs here (`rosterHere`), which `workerModel` picks from. */
 export interface WorkerModelsHere {
@@ -830,7 +837,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
                   agent,
                   model: listed.row.id,
                   speed: "standard",
-                  ...atHigh(listed.row.efforts),
                 });
               }
             }
@@ -849,7 +855,6 @@ export const makeOrchestrationKit = Effect.gen(function* () {
                 model: row.id,
                 profileId: profile.id,
                 speed: "standard",
-                ...atHigh(row.variants),
               });
             }
           }
@@ -863,7 +868,20 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           let first: string | undefined;
           for (const model of found) {
             const why = yield* unavailableHere(model);
-            if (why === undefined) return { model };
+            if (why === undefined) {
+              // Its efforts as a spawn and `set_thread_effort` read them, every one for a model
+              // that takes efforts without listing them.
+              const efforts = yield* selectableModels(
+                store,
+                hosts,
+                model.agent,
+                model.profileId,
+              ).pipe(
+                Effect.map((models) => listedRow(models, model.model)?.efforts ?? []),
+                Effect.orElseSucceed((): ReadonlyArray<string> => []),
+              );
+              return { model: { ...model, ...atHigh(efforts) } };
+            }
             first ??= why;
           }
           return { why: first! };

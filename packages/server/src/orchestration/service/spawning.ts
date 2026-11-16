@@ -583,7 +583,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           model.speed === "fast"
             ? "a model off the charter's worker models runs at Standard speed only, so switch the worker to Standard first"
             : model.variant !== undefined && aboveHigh(model.variant)
-              ? `a model off the charter's worker models runs at effort high or below, and the worker is at ${model.variant}: set its effort to high first`
+              ? `a model off the charter's worker models runs at effort high or below, not ${model.variant}`
               : undefined;
         if (problem !== undefined)
           return yield* toolError(tool, refusal("not_admitted", `${problem}.`));
