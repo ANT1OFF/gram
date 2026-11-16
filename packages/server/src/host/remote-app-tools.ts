@@ -94,6 +94,7 @@ export const appToolsAt = (
         description: tool.description ?? "",
         inputSchema: tool.inputSchema,
         alwaysLoad: tool["_meta"]?.["anthropic/alwaysLoad"] === true,
+        ...(tool.annotations === undefined ? {} : { annotations: tool.annotations }),
       })),
       call: async (name, args, signal) =>
         (await client.callTool(

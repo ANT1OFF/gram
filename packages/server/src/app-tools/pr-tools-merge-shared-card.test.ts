@@ -24,8 +24,8 @@ import { ready } from "./pr-tools-kit.ts";
 import { AppToolRegistry } from "./registry.ts";
 
 /**
- * A worker at full autonomy whose PR #12 was opened from a worktree it made itself, so a merge of
- * it needs the user, as on 2026-11-15: and that worker's orchestrator.
+ * A worker at publish autonomy whose PR #12 was opened from a worktree it made itself:
+ * its merge still needs a card, as does its orchestrator's call.
  */
 let made = 0;
 const selfMadeWorkerPr = (world: World) =>
@@ -36,7 +36,7 @@ const selfMadeWorkerPr = (world: World) =>
     const { session, thread } = yield* openOrchestrator(world);
     const worker = yield* spawn(session, { feature: `shared-card-${made}` });
     yield* completeTurn(worker.session);
-    yield* atAutonomy(thread, "full");
+    // The harness starts at publish: ownership doubts still raise cards here.
     const selfMade = tempDir();
     yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(selfMade)));
     run(world.repo, "worktree", "add", "-q", "-b", branch, selfMade);

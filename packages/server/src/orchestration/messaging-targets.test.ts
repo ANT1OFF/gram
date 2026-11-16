@@ -165,7 +165,9 @@ describe.skipIf(!hasGit)("message target validation", () => {
             "use `message_orchestrator` with `text`",
           );
           expect(worker.session.options.instructions).toContain("shortened IDs are refused");
-          expect(worker.session.options.instructions).toContain("Prefer `report` for progress");
+          // When to report rather than message is the tools' to say, as both do.
+          expect(general.descriptor.description).toContain("Prefer `report` for progress");
+          expect(tool.descriptor.description).toContain("Prefer `report`");
         }),
       ),
   );

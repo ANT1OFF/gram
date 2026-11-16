@@ -137,6 +137,8 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             ...DEFAULT_CHARTER,
             workerMode: "auto",
             workerModels: [...roster, sol],
+            // A new workspace lets the orchestrator go beyond the roster.
+            otherWorkerModels: true,
           });
           const refused = yield* orchestration
             .setCharter(state.workspace.id, {

@@ -13,6 +13,10 @@ const badgeVariants = cva(
         destructive:
           "bg-destructive-tint text-destructive focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 [a]:hover:bg-destructive-tint-hover",
         outline: "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
+        // A status's tone outlines on the neutral fill, never a tinted one (DESIGN.md): done or
+        // passing in `success`, a caution on something chosen in `warning`.
+        success: "border-success/50 text-success [a]:hover:bg-muted",
+        warning: "border-warning/50 text-warning [a]:hover:bg-muted",
         ghost: "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-link underline-offset-4 hover:underline",
       },

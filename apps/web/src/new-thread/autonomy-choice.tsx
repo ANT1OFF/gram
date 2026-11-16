@@ -1,12 +1,9 @@
 import type { Autonomy } from "@gram/contracts";
-import { useId } from "react";
 
-import { ChoiceCheck } from "@/components/choice-check";
 import { Hint } from "@/components/hint";
-import { CHOICE_CARD, FOCUS_RING } from "@/lib/selection";
+import { FOCUS_RING } from "@/lib/selection";
 import { cn } from "@/lib/utils";
-import { SegmentSlab } from "@/motion";
-import { SEGMENT_SLAB, SEGMENT_TRACK } from "@/settings/fields";
+import { OptionGroup } from "@/settings/fields";
 import { AUTONOMY_LEVELS, autonomyLevel } from "@/settings/workspace-settings-model";
 
 import { AuthorityExplainer } from "./authority-explainer";
@@ -39,47 +36,25 @@ export function AutonomyChoice({
   /** Tells autonomy apart from a thread's permission mode first, where a workspace is set up. */
   explain?: boolean;
 }) {
-  const slab = useId();
-  const labelId = useId();
   const full = autonomyLevel("full");
   return (
     <div data-testid={testId} data-value={value} className="flex flex-col gap-2">
-      <span id={labelId} className="text-meta font-medium text-muted-foreground">
+      <span aria-hidden className="text-meta font-medium text-muted-foreground">
         {label}
       </span>
       {explain && <AuthorityExplainer className="mb-0.5" />}
-      <div
-        role="radiogroup"
-        aria-labelledby={labelId}
-        className={cn(SEGMENT_TRACK, "grid grid-cols-1 sm:grid-cols-3")}
-      >
-        {AUTONOMY_LEVELS.map((level) => {
-          const checked = level.value === value;
-          return (
-            <button
-              key={level.value}
-              type="button"
-              role="radio"
-              aria-checked={checked}
-              aria-label={level.label}
-              aria-description={AUTONOMY_LINE[level.value]}
-              disabled={disabled}
-              data-testid={`autonomy-${level.value}`}
-              onClick={() => {
-                if (!checked) onChange(level.value);
-              }}
-              className={CHOICE_CARD}
-            >
-              {checked && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
-              <span className="flex w-full items-center gap-1.5 text-reading font-medium">
-                {level.label}
-                <ChoiceCheck checked={checked} className="ml-auto" />
-              </span>
-              <span className="text-meta text-muted-foreground">{AUTONOMY_LINE[level.value]}</span>
-            </button>
-          );
-        })}
-      </div>
+      <OptionGroup<Autonomy>
+        label={label}
+        options={AUTONOMY_LEVELS.map((level) => ({
+          value: level.value,
+          label: level.label,
+          description: AUTONOMY_LINE[level.value],
+          testId: `autonomy-${level.value}`,
+        }))}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+      />
       {value === "full" && (
         <p data-testid="autonomy-full-note" className="text-meta text-muted-foreground">
           Your branch protection and required reviews are the only gate.{" "}

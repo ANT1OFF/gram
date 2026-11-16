@@ -1,15 +1,15 @@
-import { describe, expect, it } from "@effect/vitest";
+import { afterAll, describe, expect, it } from "@effect/vitest";
 import { Proc, type ProcOutput, ProcSpawnError, ProcTimeout } from "@gram/git";
 import * as Effect from "effect/Effect";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   explainOwnershipBlocker,
   liveHeadAt,
   OWNERSHIP_BLOCKERS,
-  ownershipAsk,
-  ownershipForAgent,
+  ownershipFix,
+  ownershipRefusalText,
   prHostOf,
   remoteNamesOtherRepo,
   remoteNamesRepo,
@@ -41,7 +41,7 @@ describe("ownership blockers", () => {
     for (const inherited of ["constructor", "__proto__", "toString", "hasOwnProperty"])
       expect(explainOwnershipBlocker(inherited)).toEqual({
         reason: inherited,
-        fix: "Call again in a minute; if it keeps happening, the user has to approve it.",
+        fix: "Retry the ownership check; ask your orchestrator if it persists.",
       });
     expect(explainOwnershipBlocker("it is merged")).toEqual({
       reason: "it is merged, not open",
@@ -51,33 +51,23 @@ describe("ownership blockers", () => {
 
   it("tells the worker and its orchestrator each what they can do", () => {
     const blocker = OWNERSHIP_BLOCKERS.branchNotHeld;
-    expect(ownershipForAgent(blocker, "worker")).toBe(
-      "Full auto covers only a worker's own pull request, and Gram couldn't confirm this one is the worker's own: its branch isn't checked out in a worktree Gram gave the worker. Check the branch out inside the worktree Gram gave you (or ask your orchestrator to start a fresh worker for the follow-up), then call again. Gram can then merge it without asking.",
+    expect(ownershipFix(blocker, "worker")).toBe(
+      "Check the branch out inside the worktree Gram gave you (or ask your orchestrator to start a fresh worker for the follow-up), then call again. Gram can then merge it without asking.",
     );
-    expect(ownershipForAgent(blocker, "orchestrator", "run it")).toBe(
-      "Full auto covers only a worker's own pull request, and Gram couldn't confirm this one is the worker's own: its branch isn't checked out in a worktree Gram gave the worker. Have the worker check the branch out inside the worktree Gram gave it, or start a fresh worker for the follow-up. Gram can then run it without asking.",
+    expect(ownershipFix(blocker, "orchestrator", "run it")).toBe(
+      "Have the worker check the branch out inside the worktree Gram gave it, or start a fresh worker for the follow-up. Gram can then run it without asking.",
     );
   });
 
-  it("never tells an agent to wait on an approval that can't act", () => {
-    // local_check rechecks ownership after its card, so approving it runs nothing.
-    const fork = ownershipAsk(
-      OWNERSHIP_BLOCKERS.fork,
-      "worker",
-      "runs Gram's check of a worker's own pull request",
-      "Gram checks only a worker's own pull request, so approving won't run it either.",
-      "run it",
-      false,
-    );
-    expect(fork.user).toBe(
-      "Full auto runs Gram's check of a worker's own pull request without asking, but Gram couldn't confirm this one is the worker's own: its branch is on a fork, not in the repository itself. Gram checks only a worker's own pull request, so approving won't run it either.",
-    );
-    expect(fork.agent).toBe(
-      "Full auto covers only a worker's own pull request, and Gram couldn't confirm this one is the worker's own: its branch is on a fork, not in the repository itself. Push the branch to the repository from the worktree Gram gave you and open the pull request from there. Gram can then run it without asking. The user's approval doesn't change this: Gram refuses it for a pull request that isn't the worker's own.",
-    );
-    const gone = ownershipAsk(OWNERSHIP_BLOCKERS.noWorkspace, "worker", "", "", "run it", false);
-    expect(gone.agent).not.toContain("has to approve");
-    expect(gone.agent).toContain("otherwise rely on CI");
+  it("gives every ownership doubt repair guidance at full, with no approval escape", () => {
+    for (const blocker of Object.values(OWNERSHIP_BLOCKERS))
+      for (const audience of ["worker", "orchestrator"] as const) {
+        const refusal = ownershipRefusalText(blocker, audience, "merge_when_ready");
+        expect(refusal).toContain(explainOwnershipBlocker(blocker).reason);
+        expect(refusal).toContain("Then call merge_when_ready again so Gram verifies ownership");
+        expect(refusal).toContain("The call was refused; the user wasn't asked.");
+        expect(refusal).not.toMatch(/has to approve|user has to add|user's approval/);
+      }
   });
 });
 
@@ -309,6 +299,7 @@ const out = (status: number, stdout = "", stderr = ""): ProcOutput => ({
 
 describe("liveHeadAt", () => {
   const folder = mkdtempSync(join(tmpdir(), "gram-live-head-"));
+  afterAll(() => rmSync(folder, { recursive: true, force: true }));
   /** `liveHeadAt` in `folder` with its one git call answered by `answer`. */
   const head = (answer: Effect.Effect<ProcOutput, ProcSpawnError | ProcTimeout>, at = folder) =>
     liveHeadAt(at).pipe(Effect.provideService(Proc, { run: () => answer }));
@@ -350,4 +341,66 @@ describe("liveHeadAt", () => {
       ).toEqual({ kind: "unknown" });
     }),
   );
+
+  const notRepo = out(
+    128,
+    "",
+    "fatal: not a git repository (or any of the parent directories): .git\n",
+  );
+  it.effect("recognizes a verified non-repository with a separate fixed-locale probe", () =>
+    Effect.gen(function* () {
+      const calls: Array<ReadonlyArray<string>> = [];
+      expect(
+        yield* liveHeadAt(folder).pipe(
+          Effect.provideService(Proc, {
+            run: (_bin, args, options) => {
+              calls.push(args);
+              if (args[0] === "rev-parse")
+                expect(options.env).toMatchObject({
+                  LC_ALL: "C",
+                  LANGUAGE: "C",
+                  GIT_DISCOVERY_ACROSS_FILESYSTEM: "1",
+                });
+              return Effect.succeed(notRepo);
+            },
+          }),
+        ),
+      ).toEqual({ kind: "no-repository" });
+      expect(calls).toEqual([
+        ["symbolic-ref", "--quiet", "--short", "HEAD"],
+        ["rev-parse", "--git-dir"],
+      ]);
+    }),
+  );
+
+  for (const marker of [".git", "HEAD", "objects", "refs", "config", "commondir"]) {
+    it.effect(`keeps a broken repository's ${marker} marker in an ancestor unknown`, () =>
+      Effect.gen(function* () {
+        const parent = join(folder, marker.replace(".", "dot"));
+        const nested = join(parent, "nested");
+        mkdirSync(nested, { recursive: true });
+        mkdirSync(join(parent, marker));
+        expect(yield* head(Effect.succeed(notRepo), nested)).toEqual({ kind: "unknown" });
+      }),
+    );
+  }
+
+  for (const probe of [
+    out(0, ".git\n"),
+    out(128, "", "fatal: bad config"),
+    out(1),
+    { ...notRepo, truncated: true },
+  ]) {
+    it.effect(`keeps an inconclusive repository probe unknown (${JSON.stringify(probe)})`, () =>
+      Effect.gen(function* () {
+        expect(
+          yield* liveHeadAt(folder).pipe(
+            Effect.provideService(Proc, {
+              run: (_bin, args) => Effect.succeed(args[0] === "symbolic-ref" ? notRepo : probe),
+            }),
+          ),
+        ).toEqual({ kind: "unknown" });
+      }),
+    );
+  }
 });

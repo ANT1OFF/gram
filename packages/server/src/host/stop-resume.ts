@@ -25,7 +25,7 @@ import {
   type Thread,
   type ThreadId,
 } from "@gram/contracts";
-import { wipRef } from "@gram/git";
+import { isWipRefOf } from "@gram/git";
 import * as Effect from "effect/Effect";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
@@ -142,7 +142,7 @@ const keptOf = (
         ...where,
         ...(answer.note === undefined ? {} : { note: answer.note }),
       };
-    const sound = answer.ref === wipRef(threadId) && commit;
+    const sound = answer.ref !== undefined && isWipRefOf(answer.ref, threadId) && commit;
     return {
       threadId,
       cwd,

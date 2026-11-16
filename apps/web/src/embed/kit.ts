@@ -6,15 +6,31 @@
 import type { ReactElement } from "react";
 
 import { AgentIcon as AppAgentIcon } from "@/agents/agent-display";
-import { cn as appCn } from "@/lib/utils";
 
+export { EmptyState, type EmptyAction, type EmptyIcon } from "@/components/empty-state";
 export { Hint } from "@/components/hint";
 export { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 export { Badge } from "@/components/ui/badge";
 export { Button, buttonVariants } from "@/components/ui/button";
 export { ButtonGroup } from "@/components/ui/button-group";
+export { Checkbox, RadioGroup, type RadioOption } from "@/components/ui/checkbox";
 export { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-export { Input, InputGroup } from "@/components/ui/input";
+export { Input, InputGroup, Textarea } from "@/components/ui/input";
+export {
+  Menu,
+  MenuCheckboxItem,
+  MenuContent,
+  MenuGroup,
+  MenuItem,
+  MenuLabel,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuSub,
+  MenuSubContent,
+  MenuSubTrigger,
+  MenuTrigger,
+} from "@/components/ui/menu";
 export { Meter, meterTone, type MeterTone } from "@/components/ui/meter";
 export {
   Select,
@@ -24,14 +40,19 @@ export {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+export { Skeleton } from "@/components/ui/skeleton";
 export { Switch } from "@/components/ui/switch";
 export { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+// Words for what is still loading ("Loading members…"), a band of light across them.
+export { Shimmer } from "@/motion/shimmer";
 // A page of settings, as Settings' own are built: the column, its groups, and a row per setting.
-export { Field, OptionGroup, SettingRow, Toggle } from "@/settings/fields";
+export { Field, OptionGroup, SettingRow, Toggle, type OptionGroupOption } from "@/settings/fields";
 export { SettingsGroup } from "@/settings/settings-group";
 // A popover hung from a button, as the title bar's own are: for a switcher or a short menu.
 export { TitlebarPopover as Popover } from "@/shell/titlebar-popover";
+// A centred dialog, mounted while it is open, and a sheet from the window's end edge.
+export { DialogShell as Dialog, Sheet } from "@/thread/dialog-shell";
 
 export { Page } from "./page";
 
@@ -45,12 +66,4 @@ export const AgentIcon: (props: {
   labelled?: boolean;
 }) => ReactElement = AppAgentIcon;
 
-/** A class or a falsy value that is left out. */
-export type ClassInput = string | false | null | undefined | readonly ClassInput[];
-
-/**
- * Joins class names, leaving out the falsy ones, and settles Tailwind classes that conflict in
- * favour of the later one, as Gram's own components do.
- */
-export const cn: (...classes: ClassInput[]) => string = (...classes) =>
-  appCn(...(classes as Parameters<typeof appCn>));
+export { cn, type ClassInput } from "./kit-cn";

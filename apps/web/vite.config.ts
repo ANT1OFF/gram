@@ -66,6 +66,8 @@ const e2eTokenEndpoint = (token: string): Plugin => {
 interface BundleBudgets {
   readonly firstPaintKb: number;
   readonly lazyChunkKb: number;
+  /** The light kit's entry and what it imports; `scripts/build-embed.mjs` checks it. */
+  readonly kitLiteKb: number;
   /** By route file under `src/routes`, without `.tsx`; `default` is for a route not named. */
   readonly routeKb: Readonly<Record<string, number>>;
 }

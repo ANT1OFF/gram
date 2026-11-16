@@ -21,8 +21,9 @@ configured pass.
   workflow; **Full** asks about nothing and lets the orchestrator merge. A merge under Full covers
   a worker's own pull request, one whose head branch is checked out in its worktree; for one
   opened elsewhere, such as a release script's deploy PR, the agent is told to check the branch out
-  instead of you being asked. A fork, another thread's pull request or a repository outside the
-  workspace still asks you. How the orchestrator
+  instead of you being asked. Every unverified ownership check at Full, including a fork, another
+  thread's PR or a repository outside the workspace, refuses to the agent with repair steps.
+  It must fix the cause and call again; ownership doubts never raise a user card at Full. How the orchestrator
   works with its workers is the same at every level: it answers a worker's waiting question when
   your brief, its memory or your own words settle it, workers message it and each other, and it
   restarts a worker's session. Approvals and plan requests stay yours. Only you can
@@ -48,7 +49,11 @@ configured pass.
 - **Models by assignment.** Each workspace lists the models its workers may use, with a note in
   your own words on what each is for, and the orchestrator picks by those notes: for example,
   implementation on Claude, independent reviews on Codex, small chores on a fast model and
-  specialised work on a model you choose for it.
+  specialised work on a model you choose for it. A worker can ask for a **council**: up to three
+  reviewers on different harnesses or tiers, each read-only by its brief, sending its findings and
+  a score straight to the author, for at most three rounds before you are asked. With
+  [other worker models](#other-worker-models) on, the orchestrator may go beyond the list when none
+  of it fits.
 - **Questions and approvals.** A worker asks a decision with options and its recommendation, and
   keeps working on what doesn't depend on it. The orchestrator answers only when the brief, a
   standing ruling or its memory settles it; otherwise the question reaches you as written.
@@ -681,10 +686,12 @@ and preparation/rule installation failures still stop thread startup.
 
 Gram's app-tool approvals are separate from a CLI's native permissions. Full Auto
 waives an own-worker merge card only after verifying the held workspace worktree
-and branch; following a PR or checkout grants no ownership. When that check fails,
-the card says why under its summary, the orchestrator's ledger line leads with a
-`full auto, PR ownership unverified` tag, and the calling agent's result (declined,
-withdrawn or approved) carries the reason and the fix. Explicitly name a
+and branch; following a PR or checkout grants no ownership. When that check fails
+at Full, `merge_when_ready`, `set_auto_merge` and `local_check` refuse to the calling
+agent with the reason and repair steps, without asking you. The agent fixes the
+worktree or PR and calls again; for another thread's claim, its orchestrator should
+merge on the thread that holds it. Unreadable or uncertain state stays blocked and
+can be retried. Supervised and Publish keep their approval cards. Explicitly name a
 follow-on PR when the thread still binds an older main PR. Root pauses, user/worker
 holds, scoped approval provenance and current-head merge checks remain authoritative.
 
@@ -813,6 +820,23 @@ neither at its limit nor paused by the user. Other models on the same login are 
 because they share its limit. The orchestrator is told to respect notes that rule work out, such
 as "never UI". A spawn that goes ahead returns `model`, the model the worker runs on. What makes
 the hold and pause gates fire is owned by the limit-wait work, not by this setting.
+
+### Other worker models
+
+The workspace setting **Use other models** (`otherWorkerModels`, under the roster in Settings →
+Workspaces → Models) is on for a new workspace and off for one made before it existed. While it is
+off, the roster is the whole allow-list, and a spawn or a model switch on anything else is refused
+with a refusal that names the setting. While it is on, the roster stays the preferred models: the
+orchestrator picks by their notes first, and goes beyond them only when none fits the work or a
+council needs a model they lack. It names such a model as `agent:model`, and says which and why.
+
+- **Which models.** One the harness lists on your own login, or one on a gateway profile a roster
+  entry of that harness already runs on. Never a profile no entry uses, so gateways stay opt-in.
+- **How it runs.** At Standard speed, and at high effort or below: `spawn_worker` runs an effort
+  asked above high at high and says so, and `set_thread_model` refuses a switch at Fast or above
+  high. `manage_held_spawn` `retarget` follows the same rule.
+- **Where the rule is told.** In the charter lines of the orchestrator's boot digest, and in its
+  next digest when you turn the setting on or off. Settings by chat sets it with the usual card.
 
 ### Watching the default branch after merges
 
@@ -1202,11 +1226,23 @@ strict file-only policy refuses this route. Newer installed Codex versions are a
 for memory updates with a compatibility warning. Older or unknown versions remain unavailable
 for memory updates while ordinary sessions stay available.
 
+A memory update is given a goal and tools rather than a procedure. Gram lays out what is new
+since the last update, with `input/INDEX.md` listing each session newest first (what it is, when it
+was last active, how much is new, the digest of what came before). The memory update decides what
+to read and how deeply, favouring recent sessions and the orchestrator's own thread, and skips what
+holds nothing durable. `dream_search` finds text in one file or across a whole folder;
+`search_transcripts` and `read_transcript` follow a lead into the workspace's older conversations,
+open or archived, which only a running memory update can read this way. It writes the candidate as
+it learns, keeping it a whole memory at every point, never asks or waits for the user (questions go
+to `questions.md`), and stops when it judges it has covered what is relevant rather than reading
+everything. Source: [memory update prompt](../packages/server/src/orchestration/dream-prompt.ts),
+[transcript reader](../packages/server/src/orchestration/transcript-read-tool.ts).
+
 A memory update writes memory as notes with front matter and `[[links]]`, and checks it before it
 finishes: `dream_check` lints the candidate as a whole (links that name no note, two notes on one
 subject, notes the index doesn't name, an index over its 4 KB target, long index lines, notes with
-no description), and the prompt asks it to check each claim it keeps against the sessions or
-`search_transcripts` and say on the entry how it was verified. When it says it is done, Gram runs
+no description), and the prompt asks it to say on each new or changed entry a later session will
+act on how it was verified. When it says it is done, Gram runs
 the same check; a broken link, a split subject or an oversized index sends it back once with the
 list, and whatever is left after that is appended to the report under "Checks by Gram" for the
 reviewer. The check never refuses output; the caps and path rules do that. Source:

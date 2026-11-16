@@ -1,5 +1,6 @@
 import {
   DEFAULT_CHARTER,
+  NEW_WORKSPACE_CHOICES,
   type Autonomy,
   type ModelRef,
   type OrchestratorCharter,
@@ -32,5 +33,6 @@ export const subscriptionTaskCharter = (
     ...(autonomy === undefined ? {} : { autonomy }),
     ...(model === undefined ? {} : { orchestratorModel: model }),
     ...(roster === undefined || roster.length === 0 ? {} : { workerModels: roster }),
+    ...NEW_WORKSPACE_CHOICES,
   };
 };

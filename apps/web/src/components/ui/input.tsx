@@ -30,6 +30,31 @@ export function Input({
 }
 
 /**
+ * A text field of several lines, as Settings' briefs and New's task have it: the one-line field's
+ * edge, focus ring and states, as wide as its column, at least 64 px tall, and resizable down the
+ * page. `invalid` as on `Input`; `rows` sets how tall it opens.
+ */
+export function Textarea({
+  className,
+  invalid,
+  ...props
+}: ComponentProps<"textarea"> & { invalid?: boolean | undefined }) {
+  return (
+    <textarea
+      data-slot="textarea"
+      {...(invalid ? { "aria-invalid": true } : {})}
+      className={cn(
+        inputCls,
+        INPUT_STATES,
+        "h-auto min-h-16 max-w-none resize-y py-1.5",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+/**
  * A field with its unit: words ahead of the input ("$") or after it ("per month"), muted, on the
  * input's line. The words are decoration; name the unit in the field's label or description too.
  */

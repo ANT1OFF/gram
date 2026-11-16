@@ -26,6 +26,7 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { emptyWorkerMemo, encodeOutbox, workerThreadId } from "./outbox.ts";
 import { memoryRevision } from "./memory.ts";
 import { Orchestration } from "./service.ts";
+import { OTHER_WORKER_MODELS_SETTING } from "./service/kit.ts";
 import {
   GIT_HEAVY,
   atAutonomy,
@@ -1964,7 +1965,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           })
           .pipe(Effect.flip);
         expect(refused.message).toBe(
-          "not_admitted: The charter doesn't allow workers on claude:fake-sonnet. Allowed: claude:fake-opus (Fake Opus (echo)), claude:fake-haiku (Fake Haiku (echo)).",
+          `not_admitted: The charter doesn't allow workers on claude:fake-sonnet. Allowed: claude:fake-opus (Fake Opus (echo)), claude:fake-haiku (Fake Haiku (echo)). Others need the workspace setting "${OTHER_WORKER_MODELS_SETTING}"; if none of these fits, ask the user to turn it on.`,
         );
         // The picker's name for a model names the entry, as its id does.
         const byName = yield* spawn(session, {
@@ -2155,7 +2156,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           yield* runtimes.updateThread(worker.thread.id, (t) => ({ ...t, checkout }));
 
           // The other transport, where the registry raises the cards itself: none for the
-          // delegated call, and the class's card for everything else.
+          // delegated call; ownership doubts refuse, and calls outside the delegation keep cards.
           const gated = registry
             .forTransport(thread.id, "orchestrator")
             .find((tool) => tool.descriptor.name === "set_auto_merge")!;
@@ -2236,10 +2237,12 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             ...t,
             boundPr: { repo: "elsewhere/tools", number: 12, monitor: false },
           }));
-          yield* decline(
-            { threadId: worker.thread.id },
-            `Merge elsewhere/tools#12 (squash) once GitHub allows it, on “${worker.thread.title}”`,
+          const outside = yield* gated.run({ threadId: worker.thread.id }).pipe(Effect.flip);
+          expect(outside.message).toContain(
+            "its repository isn't a workspace project the worker has a worktree in",
           );
+          expect(outside.message).toContain("Then call set_auto_merge again");
+          expect(yield* store.listRequests(thread.id)).toEqual([]);
           expect(world.ghCalls.filter((call) => call[2] === "merge")).toHaveLength(1);
 
           // `merge_when_ready` merges the worker's bound PR, held to the same: its own alone.

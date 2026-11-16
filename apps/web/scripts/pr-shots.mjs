@@ -27,6 +27,8 @@ const HELP = `bun run --filter @gram/web pr:shots [flags]
                     a real window; 1440x900 is the older size)
   --path <route>    an ad-hoc shot of a route that only needs loading, e.g. /settings/agents
   --mode <mode>     dark or light (default: both)
+  --palette <id>    a palette from @gram/themes' presets, such as minimal-ocean (default: the
+                    default pair); its partner is shown in the other mode
   --base <ref>      what "before" is the merge base with (default: origin/main)
   --after-only      skip the base checkout
   --list            print the shots and exit
@@ -207,6 +209,7 @@ async function main() {
       set: { type: "string" },
       path: { type: "string", multiple: true, default: [] },
       mode: { type: "string", multiple: true, default: [] },
+      palette: { type: "string" },
       size: { type: "string" },
       base: { type: "string", default: "origin/main" },
       "after-only": { type: "boolean", default: false },
@@ -235,6 +238,7 @@ async function main() {
     GRAM_PR_SHOTS_PATHS: split(values.path).join(","),
     GRAM_PR_SHOTS_MODES: modes.length === 0 && (flows || tasks) ? "dark" : modes.join(","),
     GRAM_PR_SHOTS_SIZE: namedSet ? size : "",
+    GRAM_PR_SHOTS_PALETTE: values.palette ?? "",
   };
   if (values.list) return playwright(["--list"], env);
 

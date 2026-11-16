@@ -20,6 +20,7 @@ import { useId, useState, type ReactNode } from "react";
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -631,9 +632,9 @@ function RoutineEditor({
             <label htmlFor={ids.brief} className={LABEL}>
               Brief
             </label>
-            <textarea
+            <Textarea
               id={ids.brief}
-              className={cn(inputCls, "h-auto min-h-20 max-w-none resize-y py-1.5 leading-snug")}
+              className="min-h-20 leading-snug"
               rows={4}
               maxLength={ROUTINE_BRIEF_MAX}
               placeholder="What the worker does each time, written to stand alone."

@@ -1,6 +1,12 @@
-import { Menu } from "@base-ui/react/menu";
-import { CalendarDays, CheckIcon, Network, type LucideIcon } from "lucide-react";
+import { CalendarDays, Network, type LucideIcon } from "lucide-react";
 
+import {
+  Menu,
+  MenuContent,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
+} from "@/components/ui/menu";
 import { cn } from "@/lib/utils";
 import { useLayoutStore, type DoneGrouping } from "@/stores/layout";
 
@@ -15,11 +21,6 @@ const ICONS: Readonly<Record<DoneGrouping, LucideIcon>> = {
   orchestrator: Network,
 };
 
-const POPUP =
-  "z-50 min-w-44 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
-const ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[highlighted]:row-cursor [&_svg]:size-icon-row [&_svg]:shrink-0";
-
 /** The grouping's icon button and its menu. `stop` marks it a stop for the overview's arrow keys. */
 export function DoneGroupingMenu({
   className,
@@ -33,8 +34,8 @@ export function DoneGroupingMenu({
   const current = DONE_GROUPINGS.find((each) => each.id === grouping) ?? DONE_GROUPINGS[0]!;
   const Icon = ICONS[current.id];
   return (
-    <Menu.Root>
-      <Menu.Trigger
+    <Menu>
+      <MenuTrigger
         {...stop}
         data-testid="done-grouping"
         data-grouping={current.id}
@@ -46,33 +47,24 @@ export function DoneGroupingMenu({
         )}
       >
         <Icon aria-hidden className="size-icon-row" />
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
-          <Menu.Popup data-testid="done-grouping-menu" data-surface="overlay" className={POPUP}>
-            <Menu.RadioGroup
-              aria-label="Group by"
-              value={grouping}
-              onValueChange={(next: DoneGrouping) => setGrouping(next)}
-            >
-              {DONE_GROUPINGS.map(({ id, hint }) => {
-                const ItemIcon = ICONS[id];
-                return (
-                  <Menu.RadioItem key={id} value={id} closeOnClick className={ITEM}>
-                    <span className="flex size-3.5 items-center justify-center">
-                      <Menu.RadioItemIndicator>
-                        <CheckIcon aria-hidden />
-                      </Menu.RadioItemIndicator>
-                    </span>
-                    <ItemIcon aria-hidden className="text-muted-foreground" />
-                    {hint}
-                  </Menu.RadioItem>
-                );
-              })}
-            </Menu.RadioGroup>
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+      </MenuTrigger>
+      <MenuContent data-testid="done-grouping-menu" className="min-w-44">
+        <MenuRadioGroup
+          aria-label="Group by"
+          value={grouping}
+          onValueChange={(next: DoneGrouping) => setGrouping(next)}
+        >
+          {DONE_GROUPINGS.map(({ id, hint }) => {
+            const ItemIcon = ICONS[id];
+            return (
+              <MenuRadioItem key={id} value={id}>
+                <ItemIcon aria-hidden className="text-muted-foreground" />
+                {hint}
+              </MenuRadioItem>
+            );
+          })}
+        </MenuRadioGroup>
+      </MenuContent>
+    </Menu>
   );
 }

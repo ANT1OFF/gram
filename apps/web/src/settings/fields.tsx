@@ -1,16 +1,18 @@
 import { Undo2 } from "lucide-react";
-import { useId, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 
+import { ChoiceCheck } from "@/components/choice-check";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { inputCls } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { CHOICE_CARD } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { SegmentSlab } from "@/motion";
 
-import { HelpTip, SettingDescription } from "./help-tip";
+import { FieldLayout, RowLabel, wordsOf, type FieldProps, type RichLabel } from "./field-frame";
 import { isLongError } from "./long-error";
 import { parseNumberDraft } from "./number-draft";
 import { DraftActions, dropUndo, offerUndo, SaveHint, UndoSave } from "./save-hint";
@@ -30,89 +32,31 @@ export const rowInputCls = cn(inputCls, "w-64 max-w-full");
  */
 export const LONG_COPY = "data-long-copy";
 
-/**
- * A setting's name, its ⓘ for what the description leaves out, what sits beside them, such as the
- * reset and "Saved", and the one line of description under them.
- */
-function RowLabel({
-  label,
-  htmlFor,
-  description,
-  learnMore,
-  children,
-}: {
-  label: string;
-  htmlFor: string | undefined;
-  description: string | undefined;
-  learnMore: ReactNode;
-  /** After the name, on its line. */
-  children?: ReactNode;
-}) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <div className="flex min-h-5 items-center gap-1">
-        {htmlFor === undefined ? (
-          <span data-setting-label="" className="font-medium">
-            {label}
-          </span>
-        ) : (
-          <label data-setting-label="" htmlFor={htmlFor} className="font-medium">
-            {label}
-          </label>
-        )}
-        <HelpTip label={label} help={learnMore} />
-        {children}
-      </div>
-      {description !== undefined && <SettingDescription>{description}</SettingDescription>}
-    </div>
-  );
-}
-
 /** A labelled setting in a form: its name and one line of description, then the control below. */
 export function Field({
-  label,
-  description,
   keywords,
-  htmlFor,
-  learnMore,
-  action,
-  hint,
   undoKey,
-  children,
-}: {
-  label: string;
-  description?: string;
+  ...props
+}: FieldProps & {
   /** Extra words Settings search finds this by. */
   keywords?: readonly string[];
-  /** The control's id, when it's a single form element the label should name. */
-  htmlFor?: string;
-  /** What the one line leaves out, behind the ⓘ beside the name. */
-  learnMore?: ReactNode;
-  /** On the label's line, at its end. */
-  action?: ReactNode;
-  /**
-   * Under the control: such as how to keep a draft not saved yet. Kept off the name's line, which
-   * holds only the name and "Saved".
-   */
-  hint?: ReactNode;
   /** A typed setting's key for `offerUndo`, whose Undo shows after "Saved". */
   undoKey?: string;
-  children: ReactNode;
 }) {
-  const search = useSettingSearch({ label, description, keywords });
+  const words = wordsOf(props);
+  const search = useSettingSearch({ ...words, keywords });
   const row = useId();
   return (
-    <div {...search} {...touchHandlers(row)} data-setting="" className="flex flex-col gap-1.5">
-      <div className="flex items-start gap-1">
-        <RowLabel label={label} htmlFor={htmlFor} description={description} learnMore={learnMore}>
+    <FieldLayout
+      {...props}
+      rootProps={{ ...search, ...touchHandlers(row) }}
+      receipt={
+        <>
           <SavedMark row={row} />
           {undoKey !== undefined && <UndoSave undoKey={undoKey} />}
-        </RowLabel>
-        {action !== undefined && <div className="ms-auto flex items-center">{action}</div>}
-      </div>
-      {children}
-      {hint}
-    </div>
+        </>
+      }
+    />
   );
 }
 
@@ -128,6 +72,7 @@ const NESTED_ROW = "border-t-0! ps-9! pt-0!";
  */
 export function SettingRow({
   label,
+  labelText,
   description,
   keywords,
   htmlFor,
@@ -139,12 +84,13 @@ export function SettingRow({
   hint,
   undoKey,
   nested = false,
+  testId,
   children,
-}: {
-  label: string;
-  description?: string;
+}: RichLabel & {
   /** Extra words Settings search finds this by. */
   keywords?: readonly string[];
+  /** On the row, for specs to find it by. */
+  testId?: string | undefined;
   /**
    * A part of the row above it: set in from the card's edge under that row's name, with no hairline
    * between the two.
@@ -171,19 +117,27 @@ export function SettingRow({
   undoKey?: string;
   children?: ReactNode;
 }) {
-  const search = useSettingSearch({ label, description, keywords });
+  const words = wordsOf({ label, labelText, description });
+  const search = useSettingSearch({ ...words, keywords });
   const row = useId();
   return (
     <div
       {...search}
       {...touchHandlers(row)}
       data-setting=""
+      data-testid={testId}
       className={cn("@container/row flex flex-col gap-2", nested && NESTED_ROW)}
     >
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <div className="flex min-w-0 flex-[1_1_14rem]">
-          <RowLabel label={label} htmlFor={htmlFor} description={description} learnMore={learnMore}>
-            {onReset && <ResetButton label={label} onReset={onReset} />}
+          <RowLabel
+            label={label}
+            labelText={words.label}
+            htmlFor={htmlFor}
+            description={description}
+            learnMore={learnMore}
+          >
+            {onReset && <ResetButton label={words.label} onReset={onReset} />}
             {children === undefined && <SaveReceipt row={row} undoKey={undoKey} />}
           </RowLabel>
         </div>
@@ -329,35 +283,107 @@ export const SEGMENT_SLAB = "choice-selected";
  */
 export const SEGMENT_ROOMY = "h-8 px-3";
 
-/** One choice out of a few, as a row of radio buttons. */
+/** One of an `OptionGroup`'s choices. */
+export interface OptionGroupOption<T extends string> {
+  readonly value: T;
+  readonly label: string;
+  /**
+   * One line on what picking it does: words, as it is also the choice's `aria-description`. When
+   * any choice has one, the group draws its choices as cards, side by side where the column has
+   * room (26 rem, as New workspace's column has) and one above the next where it hasn't, the line under each name.
+   */
+  readonly description?: string;
+  readonly testId?: string;
+}
+
+/**
+ * One choice out of a few, as a row of radio buttons: a segmented control of short words, or,
+ * where the choices carry a `description`, a row of choice cards as New's autonomy has, the pick
+ * with its check beside its name so it never shows by colour alone. Either way it is one Tab stop,
+ * and the arrow keys, Home and End move the pick, as radios do.
+ */
 export function OptionGroup<T extends string>({
   label,
   options,
   value,
   onChange,
   disabled = false,
+  className,
 }: {
   label: string;
-  options: readonly { readonly value: T; readonly label: string }[];
+  options: readonly OptionGroupOption<T>[];
   value: T | undefined;
   onChange: (value: T) => void;
   disabled?: boolean;
+  /** On the group's outermost element. */
+  className?: string;
 }) {
   const slab = useId();
+  const cards = options.some((option) => option.description !== undefined);
+  const radios = useRovingRadios(options, value, onChange);
+  if (cards)
+    return (
+      // Side by side once the column the group sits in has room, not the window: an embedding
+      // app's side panel is narrow in a wide window.
+      <div className={cn("@container/options w-full", className)}>
+        <div
+          role="radiogroup"
+          aria-label={label}
+          onKeyDown={disabled ? undefined : radios.onKeyDown}
+          className={cn(
+            SEGMENT_TRACK,
+            "grid grid-cols-1 @min-[26rem]/options:auto-cols-fr @min-[26rem]/options:grid-flow-col",
+          )}
+        >
+          {options.map((option) => {
+            const checked = option.value === value;
+            return (
+              <button
+                key={option.value}
+                {...radios.itemProps(option.value)}
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                aria-label={option.label}
+                {...(option.description === undefined
+                  ? {}
+                  : { "aria-description": option.description })}
+                data-testid={option.testId}
+                disabled={disabled}
+                className={CHOICE_CARD}
+              >
+                {checked && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
+                <span className="flex w-full items-center gap-1.5 text-reading font-medium">
+                  {option.label}
+                  <ChoiceCheck checked={checked} className="ml-auto" />
+                </span>
+                {option.description !== undefined && (
+                  <span className="text-meta text-muted-foreground">{option.description}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
   return (
-    <div role="radiogroup" aria-label={label} className={OPTION_GROUP}>
+    <div
+      role="radiogroup"
+      aria-label={label}
+      onKeyDown={disabled ? undefined : radios.onKeyDown}
+      className={cn(OPTION_GROUP, className)}
+    >
       {options.map((option) => (
         <Button
           key={option.value}
+          {...radios.itemProps(option.value)}
           size="sm"
           role="radio"
           aria-checked={option.value === value}
           variant="ghost"
           className={cn(SEGMENT, SEGMENT_ROOMY)}
+          data-testid={option.testId}
           disabled={disabled}
-          onClick={() => {
-            if (option.value !== value) onChange(option.value);
-          }}
         >
           {option.value === value && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
           {option.label}
@@ -367,9 +393,63 @@ export function OptionGroup<T extends string>({
   );
 }
 
+/** The arrow keys that move a radio group's pick, and which way. */
+const STEP: Readonly<Record<string, number>> = {
+  ArrowRight: 1,
+  ArrowDown: 1,
+  ArrowLeft: -1,
+  ArrowUp: -1,
+};
+
+/**
+ * A group of `role="radio"` buttons that behaves as radios do: one Tab stop, on the picked choice
+ * (the first while none is), and the arrow keys, Home and End move to the next choice and pick
+ * it, wrapping at the ends.
+ */
+function useRovingRadios<T extends string>(
+  options: readonly { readonly value: T }[],
+  value: T | undefined,
+  onChange: (value: T) => void,
+) {
+  const buttons = useRef(new Map<T, HTMLButtonElement>());
+  const stop = options.some((option) => option.value === value) ? value : options[0]?.value;
+  const pick = (next: T) => {
+    if (next !== value) onChange(next);
+  };
+  return {
+    itemProps: (choice: T) => ({
+      ref: (element: HTMLButtonElement | null) => {
+        if (element) buttons.current.set(choice, element);
+        else buttons.current.delete(choice);
+      },
+      tabIndex: choice === stop ? 0 : -1,
+      onClick: () => pick(choice),
+    }),
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+      const at = options.findIndex((option) => buttons.current.get(option.value) === event.target);
+      if (at === -1 || options.length === 0) return;
+      const last = options.length - 1;
+      const to =
+        event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? last
+            : STEP[event.key] === undefined
+              ? undefined
+              : (at + STEP[event.key]! + options.length) % options.length;
+      if (to === undefined) return;
+      event.preventDefault();
+      const next = options[to]!.value;
+      buttons.current.get(next)?.focus();
+      pick(next);
+    },
+  };
+}
+
 /** An on/off setting: a row with a switch on the right. */
 export function Toggle({
   label,
+  labelText,
   description,
   keywords,
   checked,
@@ -381,11 +461,12 @@ export function Toggle({
   detail,
   learnMore,
   nested = false,
-}: {
-  label: string;
-  description?: string;
+  testId,
+}: RichLabel & {
   /** Extra words Settings search finds this by. */
   keywords?: readonly string[];
+  /** On the row, for specs to find it by. */
+  testId?: string;
   /** A part of the switch above it; see `SettingRow`. */
   nested?: boolean;
   checked: boolean;
@@ -401,11 +482,14 @@ export function Toggle({
   learnMore?: ReactNode;
 }) {
   const id = useId();
+  // Toggle's own props hold the pairing (a name that isn't words brings its words); destructuring
+  // loses it for the compiler, so it is put back together for the row.
+  const name = { label, labelText, description } as RichLabel;
   return (
     <SettingRow
-      label={label}
+      {...name}
       htmlFor={id}
-      {...(description === undefined ? {} : { description })}
+      testId={testId}
       {...(keywords === undefined ? {} : { keywords })}
       onReset={onReset}
       error={error}

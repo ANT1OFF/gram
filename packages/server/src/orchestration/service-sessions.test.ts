@@ -841,6 +841,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           expect(made.charter).toEqual({
             ...DEFAULT_CHARTER,
             workerMode: "auto",
+            otherWorkerModels: true,
           });
           expect(made.charter.autonomy).toBe("full");
           // With no model of its own, at publish, it asks before what can't be taken back, which

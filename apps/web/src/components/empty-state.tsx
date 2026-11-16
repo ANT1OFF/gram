@@ -1,5 +1,4 @@
-import type { LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode, Ref } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -16,6 +15,13 @@ export interface EmptyAction {
   /** The filled primary: only where it is the one way in to the whole app (home, nothing set up). */
   readonly primary?: boolean | undefined;
 }
+
+/** A glyph such as a Lucide icon: it takes a class, is hidden from a screen reader, and is drawn on. */
+export type EmptyIcon = ComponentType<{
+  className?: string;
+  "aria-hidden"?: boolean;
+  ref?: Ref<SVGSVGElement>;
+}>;
 
 /**
  * What an empty view says, the same on every surface: its glyph drawn on, a short title (a fragment,
@@ -34,7 +40,7 @@ export function EmptyState({
   iconClassName,
   children,
 }: {
-  icon: LucideIcon;
+  icon: EmptyIcon;
   title: ReactNode;
   /** What goes here, in one sentence. */
   line?: ReactNode;

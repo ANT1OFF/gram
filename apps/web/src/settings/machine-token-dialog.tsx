@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogShell } from "@/thread/dialog-shell";
 
 import { type JoinedMachine, machinesApi, MachinesError, type TokenRun } from "./machines-api";
@@ -128,19 +129,18 @@ export function TokenDialog({
           <fieldset className="flex flex-col gap-1.5" data-testid="machines-token-targets">
             <legend className="mb-1 font-medium">Send it to</legend>
             {targets.map((target) => (
-              <label key={target.id} className="flex h-7 items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={picked.has(target.id)}
-                  onChange={(event) => {
-                    const next = new Set(picked);
-                    if (event.target.checked) next.add(target.id);
-                    else next.delete(target.id);
-                    setPicked(next);
-                  }}
-                />
-                {target.name}
-              </label>
+              <Checkbox
+                key={target.id}
+                className="min-h-7 items-center"
+                label={target.name}
+                checked={picked.has(target.id)}
+                onCheckedChange={(checked) => {
+                  const next = new Set(picked);
+                  if (checked) next.add(target.id);
+                  else next.delete(target.id);
+                  setPicked(next);
+                }}
+              />
             ))}
             {targets.length === 0 && (
               <p className="text-meta text-muted-foreground">

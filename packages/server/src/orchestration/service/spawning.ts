@@ -236,6 +236,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     authorityOf,
     requireAuthority,
     rosterHere,
+    workerModelsHere,
     spawnLock,
     checkoutLock,
     checkoutKey,
@@ -486,9 +487,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         thread,
         state.charter,
         input.model,
-        state.charter.workerModels === undefined
-          ? undefined
-          : yield* rosterHere(state.charter.workerModels, state.charter, hostId),
+        yield* workerModelsHere(thread, state.charter, hostId),
       );
       yield* admitMachineModel("spawn_worker", hostId, chosen.model);
     });
@@ -565,9 +564,8 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         thread,
         state.charter,
         workerModelLabel(model),
-        state.charter.workerModels === undefined
-          ? undefined
-          : yield* rosterHere(state.charter.workerModels, state.charter),
+        yield* workerModelsHere(thread, state.charter),
+        model.profileId,
       );
       // A switch is to the model named or not at all; the default stands in only for a spawn.
       if (picked.instead !== undefined) {
@@ -578,6 +576,17 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             `${picked.instead.of} is unavailable here (${picked.instead.why}), so the worker stays on its model.`,
           ),
         );
+      }
+      // Off the roster, no faster or harder than such a model is allowed to run.
+      if (picked.other) {
+        const problem =
+          model.speed === "fast"
+            ? "a model off the charter's worker models runs at Standard speed only, so switch the worker to Standard first"
+            : model.variant !== undefined && aboveHigh(model.variant)
+              ? `a model off the charter's worker models runs at effort high or below, not ${model.variant}`
+              : undefined;
+        if (problem !== undefined)
+          return yield* toolError(tool, refusal("not_admitted", `${problem}.`));
       }
     });
 
@@ -725,9 +734,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 caller,
                 state.charter,
                 input.model,
-                state.charter.workerModels === undefined
-                  ? undefined
-                  : yield* rosterHere(state.charter.workerModels, state.charter),
+                yield* workerModelsHere(caller, state.charter),
               );
               // Every field of the model as admitted, effort (`variant`) and speed included.
               const sameModel = modelFields(existing.model) === modelFields(picked.model);
@@ -916,9 +923,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                   caller,
                   state.charter,
                   input.model,
-                  state.charter.workerModels === undefined
-                    ? undefined
-                    : yield* rosterHere(state.charter.workerModels, state.charter, hostId),
+                  yield* workerModelsHere(caller, state.charter, hostId),
                 )
               : yield* Effect.gen(function* () {
                   // The user's pick, checked against the roster as it runs now, else its default.
@@ -941,6 +946,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                     model,
                     name: entry === undefined ? workerModelLabel(model) : rosterName(entry),
                     follows: entry?.tier !== undefined,
+                    other: false,
                     instead: undefined,
                   };
                 });
@@ -998,14 +1004,18 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             );
           }
           // An entry that follows a tier keeps the recommendation's ceiling: an effort asked above
-          // high runs at high. A pinned entry takes any effort its model lists.
+          // high runs at high, as it does on a model off the roster. A pinned entry takes any effort
+          // its model lists.
+          const ceiling = picked.follows || picked.other === true;
           const asked =
-            picked.follows && input.effort !== undefined && aboveHigh(input.effort)
+            ceiling && input.effort !== undefined && aboveHigh(input.effort)
               ? "high"
               : input.effort;
           if (asked !== input.effort) {
             warnings.push(
-              `${picked.name} follows the recommendation, whose effort stops at high, so this worker runs at high rather than ${input.effort}.`,
+              picked.other === true
+                ? `${picked.name} isn't one of the charter's worker models, and a model off them stops at effort high, so this worker runs at high rather than ${input.effort}.`
+                : `${picked.name} follows the recommendation, whose effort stops at high, so this worker runs at high rather than ${input.effort}.`,
             );
           }
           const effort = asked !== undefined && efforts.includes(asked) ? asked : undefined;
@@ -1018,7 +1028,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           const model: ModelRef =
             effort !== undefined
               ? { ...bare, variant: effort }
-              : state.charter.workerModels === undefined
+              : state.charter.workerModels === undefined && picked.other !== true
                 ? bare
                 : chosen;
           // The browser only where each consent it needs is on; otherwise it runs without.

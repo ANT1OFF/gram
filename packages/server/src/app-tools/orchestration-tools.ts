@@ -1,4 +1,5 @@
 import {
+  aboveHigh,
   listedRow,
   canonicalModelId,
   AppToolError,
@@ -841,6 +842,15 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
               tool,
               message: `${current.model} supports ${efforts.join(", ")}.`,
             });
+          }
+          // A delegated raise past high stays inside what the charter allows its model: a model
+          // off the roster runs at high or below (`checkWorkerModel`).
+          if (
+            orchestration !== undefined &&
+            aboveHigh(variant) &&
+            (yield* orchestration.isDelegated(caller, threadId))
+          ) {
+            yield* orchestration.checkWorkerModel(caller, { ...current, variant });
           }
           yield* runtimes.setModel(target.thread.id, { ...current, variant });
           return { threadId: target.thread.id, variant };

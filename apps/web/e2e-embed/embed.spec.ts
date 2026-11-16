@@ -1151,3 +1151,147 @@ test("navigate with replace takes the current entry's place in the history", asy
   await expect(page).toHaveURL(/\/w\/acme\/$/);
   expect(errors).toEqual([]);
 });
+
+test("a menu taller than the window scrolls in place, its submenu too, on a desktop and a phone", async ({
+  page,
+}) => {
+  for (const size of [
+    { width: 1280, height: 800 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(size);
+    const errors = await mounted(page, "/govern/members");
+    const fits = async (testId: string) => {
+      const popup = page.getByTestId(testId);
+      await expect(popup).toBeVisible();
+      const box = (await popup.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(size.height);
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(size.width);
+      const scroll = await popup.evaluate((element) => ({
+        overflow: getComputedStyle(element).overflowY,
+        scrollable: element.scrollHeight > element.clientHeight,
+      }));
+      expect(scroll).toEqual({ overflow: "auto", scrollable: true });
+      return popup;
+    };
+    const pageScroll = () =>
+      page.evaluate(() => [document.scrollingElement?.scrollTop ?? 0, window.scrollY]);
+    const before = await pageScroll();
+
+    await page.getByTestId("fixture-long-menu").click();
+    const menu = await fits("fixture-long-menu-popup");
+    // The last row is reached inside the menu; the page behind doesn't move.
+    await page.keyboard.press("End");
+    await expect(menu.getByRole("menuitem", { name: "Member 45" })).toBeInViewport();
+    expect(await menu.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    expect(await pageScroll()).toEqual(before);
+
+    await page.keyboard.press("Home");
+    await menu.getByTestId("fixture-long-submenu").hover();
+    await page.keyboard.press("ArrowRight");
+    const submenu = await fits("fixture-long-submenu-popup");
+    await page.keyboard.press("End");
+    await expect(submenu.getByRole("menuitem", { name: "Member 45" })).toBeInViewport();
+    expect(await submenu.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    expect(await pageScroll()).toEqual(before);
+
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    expect(errors).toEqual([]);
+  }
+});
+
+test("a page drawn with the light kit loads none of Gram's app, and looks as Gram does", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const scripts: { path: string; bytes: number }[] = [];
+  page.on("response", async (response) => {
+    const path = new URL(response.url()).pathname;
+    if (path.endsWith(".js")) scripts.push({ path, bytes: (await response.body()).byteLength });
+  });
+  await page.goto("/lite.html");
+  await expect(page.getByTestId("lite-title")).toBeVisible();
+  // The person's stored look on <html>, with the app's own palette standing in for Gram's default.
+  const html = page.locator("html");
+  await expect(html).toHaveAttribute("data-palette", "host-dark");
+  await expect(html).toHaveAttribute("data-mode", "dark");
+  await expect(html).not.toHaveAttribute("data-theme-booting", "");
+  // The page is the app's palette, and Gram's controls are drawn as Gram draws them.
+  const look = await page.evaluate(() => {
+    const submit = getComputedStyle(document.querySelector('[data-testid="lite-submit"]')!);
+    const keep = getComputedStyle(document.querySelector('[data-testid="lite-keep"]')!);
+    return {
+      page: getComputedStyle(document.body).backgroundColor,
+      font: getComputedStyle(document.body).fontFamily,
+      button: submit.backgroundColor,
+      radius: submit.borderTopLeftRadius,
+      box: keep.accentColor,
+    };
+  });
+  expect(look.page).toBe("rgb(11, 12, 13)");
+  expect(look.font).toContain("Inter");
+  expect(look.button).not.toBe("rgba(0, 0, 0, 0)");
+  expect(look.radius).not.toBe("0px");
+  expect(look.box).not.toBe("auto");
+  const edge = () =>
+    page.getByTestId("lite-email").evaluate((element) => getComputedStyle(element).borderColor);
+  const valid = await edge();
+  await page.getByTestId("lite-email").fill("not an address");
+  await expect(page.getByTestId("lite-email")).toHaveAttribute("aria-invalid", "true");
+  expect(await edge()).not.toBe(valid);
+  // None of Gram's app came with it: a fraction of the app's code, React included.
+  const total = scripts.reduce((sum, each) => sum + each.bytes, 0);
+  expect(total).toBeLessThan(600_000);
+  expect(errors).toEqual([]);
+});
+
+test("a light page takes the person's own palette, More contrast and motion, as Gram would", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.addInitScript(() => {
+    const seeds = {
+      bg: "#0b1d3a",
+      surface: "#0f2447",
+      text: "#e6eefc",
+      muted: "#8aa0c4",
+      accent: "#4f8cff",
+      accent2: "#c2a878",
+      red: "#d27a6e",
+      green: "#8fb58a",
+      yellow: "#c2a878",
+      cyan: "#7fa6b5",
+    };
+    localStorage.setItem(
+      "gram.theme",
+      JSON.stringify({
+        state: {
+          palette: "my-blue",
+          contrast: "more",
+          customPalettes: [{ id: "my-blue", name: "My blue", seeds }],
+        },
+        version: 1,
+      }),
+    );
+  });
+  await page.goto("/lite.html");
+  await expect(page.getByTestId("lite-title")).toBeVisible();
+  const html = page.locator("html");
+  await expect(html).toHaveAttribute("data-palette", "my-blue");
+  await expect(html).toHaveAttribute("data-contrast", "more");
+  await expect(html).toHaveAttribute("data-motion", "full");
+  // The palette's colours are written for the page: its own background, not the default's.
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe(
+    "rgb(11, 12, 13)",
+  );
+  expect(
+    await page.evaluate(() => document.getElementById("gram-custom-palettes")?.textContent),
+  ).toContain('[data-palette="my-blue"]');
+  expect(errors).toEqual([]);
+});

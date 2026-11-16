@@ -1,8 +1,8 @@
-import { paletteFromSeeds, type Palette } from "@gram/themes";
+import type { Palette } from "@gram/themes";
 import { createStore, useStore } from "zustand";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 
-import { DEFAULT_THEME, sanitizePrefs, type ThemePrefs } from "./theme";
+import { DEFAULT_THEME, sanitizePalettes, sanitizePrefs, type ThemePrefs } from "./theme";
 
 export interface ThemeState extends ThemePrefs {
   /** User palettes, rendered alongside the presets. */
@@ -14,18 +14,6 @@ export interface ThemeState extends ThemePrefs {
 export type ThemeStore = ReturnType<typeof createThemeStore>;
 
 export const THEME_STORAGE_KEY = "gram.theme";
-
-function sanitizePalettes(input: unknown): Palette[] {
-  if (!Array.isArray(input)) return [];
-  return input.flatMap((item: unknown) => {
-    try {
-      const p = item as Palette;
-      return [paletteFromSeeds(p.seeds, { id: p.id, name: p.name })];
-    } catch {
-      return [];
-    }
-  });
-}
 
 export function createThemeStore(storage?: StateStorage) {
   return createStore<ThemeState>()(

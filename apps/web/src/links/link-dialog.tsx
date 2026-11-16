@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type { LinkSafetyConfig, LinkSafetyModalProps } from "streamdown";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { copyText } from "@/settings/copy-text";
 import { DialogShell } from "@/thread/dialog-shell";
 
@@ -47,16 +48,16 @@ function OpenLinkDialog({ onClose, onConfirm, url }: Omit<LinkSafetyModalProps, 
       </p>
       {link !== null &&
         (link.untrustable === undefined ? (
-          <label className="flex items-center gap-2 text-reading">
-            <input
-              type="checkbox"
-              checked={trust}
-              onChange={(event) => setTrust(event.target.checked)}
-            />
-            <span>
-              Always open links to <span className="font-mono">{link.host}</span> without asking
-            </span>
-          </label>
+          <Checkbox
+            className="text-reading"
+            label={
+              <>
+                Always open links to <span className="font-mono">{link.host}</span> without asking
+              </>
+            }
+            checked={trust}
+            onChange={(event) => setTrust(event.target.checked)}
+          />
         ) : (
           <p className="text-meta text-muted-foreground">{ALWAYS_ASKS_BECAUSE[link.untrustable]}</p>
         ))}

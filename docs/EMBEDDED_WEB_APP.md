@@ -20,6 +20,8 @@ out. Nothing here changes the desktop app.
 | `gram-web.css`            | Every style of the app, fonts included. Link it once.                               |
 | `gram-web.d.ts`, `types/` | The types below, as [contract.ts](../apps/web/src/embed/contract.ts) declares them. |
 | `gram-web-kit.js`         | Gram's own controls, for your pages (below).                                        |
+| `gram-web-kit-lite.js`    | The basic controls alone, for a page shown before Gram mounts (below).              |
+| `gram-web-kit-lite.css`   | The light kit's stylesheet: Gram's theme, base styles and fonts, and its controls'. |
 | `theme.css`               | The names of Gram's theme for your own Tailwind build (below).                      |
 | `classes.txt`             | Every class in `gram-web.css`, for that build to write again in one order (below).  |
 | `chunks/`, `assets/`      | What the entry loads later, found relative to it.                                   |
@@ -471,11 +473,133 @@ components the app itself draws, from the same build, so their styles are alread
 `gram-web.css` and a tooltip of yours opens under the app's own provider. The list grows as
 pages need more; a control added to it keeps its props.
 
+`Page` also takes `above` (over the title: a back link, a line on where the page sits, or the
+tabs it belongs to), `headingLevel` (`2` where the page sits under an `h1` of your own; the look
+is the same) and `hideTitleOnPhone` (on a phone the title is left to your own bar, which names the
+page already; it stays the heading for a screen reader) and `wide` (the pane's whole width
+rather than Settings' reading column, for a page laid out beside a tree of its own).
+`SettingRow`'s, `Field`'s and `Toggle`'s `label` and `description` may be more than words (a
+code span, a link, a badge or a status beside the name); give a label that isn't a string its
+words in `labelText` (its type asks for them), which Settings search, the reset's name and the ⓘ
+use. All three take a
+`testId` on their row.
+
+For forms:
+
+- `Textarea`: a field of several lines with `Input`'s edge, focus ring and `invalid`, as wide as
+  its column, 64 px tall at least (a `min-h-*` of yours wins) and resizable down the page. Every
+  `<textarea>` prop goes to it; `rows` sets how tall it opens.
+- `Checkbox`: a native checkbox with its `label` and an optional `description` line under it, the
+  box on the label's first line at any text size and its name in UI text unless your
+  `className` gives another step. Every `<input>` prop (`checked`, `onChange`, `name`,
+  `disabled`, `data-testid`) goes to the box and `className` to the row; `onCheckedChange`
+  gives the new state, as `Switch` does. Without a `label` it is the bare box, named by your
+  `aria-label`, and takes no description.
+- `RadioGroup<T>`: one choice out of a list, as a column of native radio buttons with a line
+  each: `label` (the group's name for a screen reader) or `labelledBy` (the id of a visible
+  heading that names it), `options` (`{ value, label, description?, disabled? }`, the
+  `RadioOption<T>` type), `value`, `onChange(value)`, and optional `disabled`, `name` (for a
+  form), `autoFocusFirst`, `className` and `testId`.
+- `OptionGroup` choices take a `description` (words: it is also the choice's
+  `aria-description`) and a `testId` (the `OptionGroupOption<T>` type). When any choice has a
+  description, the group draws them as choice cards, side by side where its column is 26 rem or
+  wider and one above the next where it is narrower, each with its line and the pick's check, as
+  New's autonomy picker is; without, it is the segmented control. Either way it is one Tab stop,
+  and the arrow keys, Home and End move the pick. It also takes a `className`.
+
+For what opens over the page:
+
+- `Dialog`: a centred modal, as Gram's are. Mount it to open it, or give `open` to keep it
+  mounted so it fades out as it closes. Closing (Esc, the backdrop) calls `onClose`, and focus
+  goes back to what had it, or to `returnFocus()` when that is gone. Props: `title`,
+  `description?`, `onClose`, `children` (its body and its buttons; a Cancel calls `onClose`), and
+  optional `open`, `testId`, `returnFocus`, `initialFocus` and `className` (on the popup). It
+  opens a fifth of the way down and scrolls before it runs past the window; focus starts on its
+  first control, so for a long body whose first control is at its end, give `initialFocus`.
+- `Sheet`: a sheet from the window's end edge, as the workspace sheet is: `open`, `onClose`,
+  `title`, `children` (its body, which scrolls, by keyboard too), and optional `description` (a
+  line at the top of the body, which describes the dialog), `beside` (after the title: a badge, a
+  count), `actions` (in the header, before Close), `wide` (36 rem rather than 28, for a page of
+  settings), `testId`, `closeLabel`, `returnFocus` and `className` (on the body). It stays
+  mounted while closed, so it slides away with its content. A `Dialog` rendered inside it dims
+  it, and a click on the dim only closes the dialog; one rendered beside it covers it with its
+  own backdrop.
+- `Menu`: a menu hung from a button, with Gram's popup and rows. `Menu` holds a `MenuTrigger`
+  (give it a `render`, such as a `Button`) and a `MenuContent` (`side`, `align`, default under
+  the trigger at its end, and `sideOffset`). Rows: `MenuItem` (`onClick`, `disabled`, `danger`
+  for a removal), `MenuCheckboxItem` (`checked`, `onCheckedChange`; the menu stays open),
+  `MenuRadioGroup` (`value`, `onValueChange`) of `MenuRadioItem`s (`value`), `MenuGroup` with a
+  `MenuLabel`, `MenuSeparator`, and a submenu as `MenuSub` with a `MenuSubTrigger` and a
+  `MenuSubContent`. They take Base UI's Menu props beside these. A menu never runs past the
+  window: a long one scrolls and a long row wraps. A row that opens a `Dialog` (a removal's
+  confirm) opens it best once the menu has closed, from `Menu`'s `onOpenChangeComplete`, so the
+  two don't both hold focus for a moment.
+
+For states and feedback:
+
+- `EmptyState`: what an empty list or page says, as the Board's and the Inbox's do: `icon` (a
+  Lucide icon or any glyph taking `className`, the `EmptyIcon` type), `title` (a fragment, "No
+  members yet"), `line?` (what goes there, one sentence), `action?` (`{ label, onClick, testId?,
+  primary? }`, the `EmptyAction` type: one outline button, filled only where it is the one way in),
+  and optional `testId`, `className`, `iconClassName` (only for a glyph whose colour is a status)
+  and `children` (after the action).
+- `Skeleton`: where something still loading will be, at the size you give it (`className`), in
+  the hover fill and pulsing under the Full motion setting only. Hidden from a screen reader.
+- `Shimmer`: words for what is still loading ("Loading members…"), a band of light across them
+  (`active`, default on; `className`). Gram says what loads in words where it can.
+- `Badge` and `Alert` take `variant="success"` and `variant="warning"` beside `destructive`. As
+  Gram's own status marks, the tone outlines a neutral fill and colours a badge's words or an
+  alert's glyph, never a tinted fill: `success` for done or passing, `warning` for a caution on
+  something chosen. Amber that means "needs you" is not `warning`; see the design notes.
+- `SettingsGroup` takes `plainOnPhone`: on a phone, a plain list rather than a card, with no
+  hairlines between rows and the title a quiet label with a rule running out after it. Wider
+  windows keep the card.
+
+The package's declarations (`gram-web-kit.d.ts` and `types/`) type every one of these, `render`
+on `Button`, `Badge` and the tooltip's trigger included, so an app needs no declarations of its
+own for the kit: resolve `@gram/web/kit` to the package and its `exports` find them. A test
+type-checks a page on the kit against exactly what the package ships
+([embed-types.test.mjs](../apps/web/scripts/embed-types.test.mjs)).
+
+### Before Gram mounts
+
+A page your app shows before it mounts Gram (a sign-in, a landing page, a boot screen) can look like
+Gram without loading it. `@gram/web/kit-lite` has the basics: `Button`, `buttonVariants`,
+`ButtonGroup`, `Input`, `InputGroup`, `Textarea`, `Field`, `Checkbox`, `RadioGroup`, `Badge`,
+`Alert`, `Skeleton`, `Shimmer` and `cn`. They are the full kit's own controls from the same
+sources, with the same props; the light kit's `Field` is Settings' field as it is drawn, without
+the search and "Saved" a page of settings adds. `applyGramTheme(theme?)` puts the person's
+stored look on `<html>` as Gram's own theme sync does once it mounts: their mode, palette (one of
+their own palettes too, its colours written for the page), contrast, density and motion, resolved
+against the OS's preferences, with your app's `theme` (the one you mount with) over them. So the
+page is already in the look Gram will open in. The OS's preferences are read once, as it runs;
+call it again to follow a change. Call it on every such page: without it the page draws in
+Gram's default dark palette.
+
+```tsx
+import { applyGramTheme, Button, Field, Input } from "@gram/web/kit-lite";
+import "@gram/web/kit-lite.css";
+
+applyGramTheme(houseTheme);
+```
+
+`@gram/web/kit-lite.css` carries Gram's tokens and every palette, its base styles, the Glass look's
+fonts (Inter and JetBrains Mono) and the styles of the light kit's controls; your own markup takes
+the theme's names from `theme.css` as below. Neither loads any of Gram's app: the light kit is
+about 200 kB of code before compression (60 kB after), React aside, and the build fails past its
+budget (`kitLiteKb` in `apps/web/bundle-budgets.json`). Once Gram mounts, its own stylesheet and
+kit take over; a page that mounts Gram needs only those.
+
 For your own markup, `@gram/web/theme.css` gives a Tailwind 4 build of yours the names of Gram's
 theme: its colours (`bg-surface-3`, `text-muted-foreground`), type steps (`text-meta`,
 `text-heading`), named spaces (`p-inset`, `gap-section`), icon sizes, variants (`dark:`, `phone:`)
 and utilities (`focus-ring`). The values behind the names are the custom properties the app's
 stylesheet sets on `<html>`, so your pages follow the person's palette, mode and look.
+
+The type steps are the seven of [the design notes](../DESIGN.md#tokens), and there is no smaller
+one: words read for meaning (a time, a state, a chip's word) are `text-meta`, 13 px, and
+`text-caption`, 11 px, is only for what is never read for meaning, such as a key cap or a count.
+A class outside the scale, such as `text-micro`, writes no style at all.
 
 ```css
 @layer theme, base, components, utilities;
@@ -554,6 +678,7 @@ one lands, and carry its "Embedders" line into the merge's description.
 [separate app](../apps/web/e2e-embed/fixture/src/main.tsx) that consumes only the build, and
 drives it in a browser: the whole app mounts, an added page opens from the sidebar, the palette
 and its address and is named in the title bar and on a phone, the switcher moves between the
-sidebar and the title bar, pages of its own use the kit (a page of settings among them) and the
-theme's names, and all of it works
+sidebar and the title bar, pages of its own use the kit (a page of settings among them, and a
+menu and submenu taller than the window, which scroll in place) and the theme's names, and all of
+it works
 under a base path. CI runs it in the first e2e shard.

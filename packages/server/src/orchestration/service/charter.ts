@@ -32,6 +32,7 @@ import {
   workersOf,
   CHARTER_MOVED,
   ROUTE_AT_LIMIT_LINE,
+  OTHER_WORKER_MODELS_LINE,
   WATCH_DEFAULT_BRANCH_LINE,
   footerLine,
   refuseConnectorEntries,
@@ -93,7 +94,7 @@ const withIds = (prior: OrchestratorCharter, charter: OrchestratorCharter): Orch
 const charterChangeNotes = (
   before: Pick<
     OrchestratorCharter,
-    "workerBriefFooter" | "routeAtLimit" | "watchDefaultBranch" | "routines"
+    "workerBriefFooter" | "routeAtLimit" | "otherWorkerModels" | "watchDefaultBranch" | "routines"
   >,
   after: OrchestratorCharter,
 ): ReadonlyArray<string> => {
@@ -111,6 +112,13 @@ const charterChangeNotes = (
       after.routeAtLimit === true
         ? `The user turned on your charter's ${ROUTE_AT_LIMIT_LINE}.`
         : "The user turned off offering another worker model at a limit: spawns stop at limits as before, with no alternatives.",
+    );
+  }
+  if ((before.otherWorkerModels === true) !== (after.otherWorkerModels === true)) {
+    notes.push(
+      after.otherWorkerModels === true
+        ? `The user turned on your charter's ${OTHER_WORKER_MODELS_LINE}.`
+        : "The user turned off other worker models: spawn workers only on the charter's worker models now.",
     );
   }
   if ((before.watchDefaultBranch === true) !== (after.watchDefaultBranch === true)) {

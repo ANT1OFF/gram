@@ -185,7 +185,7 @@ export const PRESET_PALETTES = [
     pairId: "minimal-ocean-dark",
     seeds: {
       bg: "#ffffff",
-      surface: "#fbfbfc",
+      surface: "#f4f5f7",
       text: "#0c0e12",
       muted: "#5c626d",
       accent: "#2f6bff",
@@ -221,7 +221,7 @@ export const PRESET_PALETTES = [
     pairId: "minimal-grape-dark",
     seeds: {
       bg: "#ffffff",
-      surface: "#fbfbfc",
+      surface: "#f4f5f7",
       text: "#0c0e12",
       muted: "#5c626d",
       accent: "#7256e8",
@@ -257,7 +257,7 @@ export const PRESET_PALETTES = [
     pairId: "minimal-forest-dark",
     seeds: {
       bg: "#ffffff",
-      surface: "#fbfbfc",
+      surface: "#f4f5f7",
       text: "#0c0e12",
       muted: "#5c626d",
       accent: "#0f9d70",
@@ -293,7 +293,7 @@ export const PRESET_PALETTES = [
     pairId: "minimal-sunset-dark",
     seeds: {
       bg: "#ffffff",
-      surface: "#fbfbfc",
+      surface: "#f4f5f7",
       text: "#0c0e12",
       muted: "#5c626d",
       accent: "#ef5f3c",
@@ -329,7 +329,7 @@ export const PRESET_PALETTES = [
     pairId: "minimal-vivid-dark",
     seeds: {
       bg: "#ffffff",
-      surface: "#fbfbfc",
+      surface: "#f4f5f7",
       text: "#0c0e12",
       muted: "#5c626d",
       accent: "#2f6bff",
@@ -365,7 +365,7 @@ export const PRESET_PALETTES = [
     pairId: "minimal-graphite-dark",
     seeds: {
       bg: "#ffffff",
-      surface: "#fbfbfc",
+      surface: "#f4f5f7",
       text: "#0c0e12",
       muted: "#5c626d",
       accent: "#16181d",
@@ -402,7 +402,7 @@ export const PRESET_PALETTES = [
     pairId: "neutral-dark",
     seeds: {
       bg: "#fcfcfc",
-      surface: "#fafafa",
+      surface: "#f2f2f2",
       text: "#27272a",
       muted: "#71717b",
       accent: "#1b4ed8",

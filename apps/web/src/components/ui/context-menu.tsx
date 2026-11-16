@@ -1,13 +1,8 @@
 import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 
+import { MENU_DANGER, MENU_FITS, MENU_ITEM, MENU_POPUP } from "@/lib/selection";
 import { cn } from "@/lib/utils";
-
-const POPUP =
-  "z-50 min-w-44 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
-
-const ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor";
 
 const ContextMenu = ContextMenuPrimitive.Root;
 const ContextMenuSub = ContextMenuPrimitive.SubmenuRoot;
@@ -29,7 +24,7 @@ function ContextMenuContent({ className, ...props }: ContextMenuPrimitive.Popup.
         <ContextMenuPrimitive.Popup
           data-slot="context-menu-content"
           data-surface="overlay"
-          className={cn(POPUP, className)}
+          className={cn(MENU_POPUP, MENU_FITS, className)}
           {...props}
         />
       </ContextMenuPrimitive.Positioner>
@@ -37,11 +32,16 @@ function ContextMenuContent({ className, ...props }: ContextMenuPrimitive.Popup.
   );
 }
 
-function ContextMenuItem({ className, ...props }: ContextMenuPrimitive.Item.Props) {
+/** One row; `onClick` is its action. `danger` for one that removes something. */
+function ContextMenuItem({
+  className,
+  danger = false,
+  ...props
+}: ContextMenuPrimitive.Item.Props & { danger?: boolean }) {
   return (
     <ContextMenuPrimitive.Item
       data-slot="context-menu-item"
-      className={cn(ITEM, className)}
+      className={cn(MENU_ITEM, danger && MENU_DANGER, className)}
       {...props}
     />
   );
@@ -60,7 +60,7 @@ function ContextMenuCheckboxItem({
     <ContextMenuPrimitive.CheckboxItem
       data-slot="context-menu-checkbox-item"
       closeOnClick={false}
-      className={cn(ITEM, className)}
+      className={cn(MENU_ITEM, className)}
       {...props}
     >
       <span className={INDICATOR}>
@@ -84,7 +84,7 @@ function ContextMenuRadioItem({
     <ContextMenuPrimitive.RadioItem
       data-slot="context-menu-radio-item"
       closeOnClick={false}
-      className={cn(ITEM, className)}
+      className={cn(MENU_ITEM, className)}
       {...props}
     >
       <span className={INDICATOR}>
@@ -115,11 +115,11 @@ function ContextMenuSubTrigger({
   return (
     <ContextMenuPrimitive.SubmenuTrigger
       data-slot="context-menu-sub-trigger"
-      className={cn(ITEM, "data-[popup-open]:bg-accent", className)}
+      className={cn(MENU_ITEM, "data-[popup-open]:bg-accent", className)}
       {...props}
     >
       {children}
-      <ChevronRightIcon aria-hidden className="ml-auto size-icon-chip" />
+      <ChevronRightIcon aria-hidden className="ml-auto size-icon-chip!" />
     </ContextMenuPrimitive.SubmenuTrigger>
   );
 }
@@ -135,7 +135,7 @@ function ContextMenuSubContent({ className, ...props }: ContextMenuPrimitive.Pop
         <ContextMenuPrimitive.Popup
           data-slot="context-menu-sub-content"
           data-surface="overlay"
-          className={cn(POPUP, className)}
+          className={cn(MENU_POPUP, MENU_FITS, className)}
           {...props}
         />
       </ContextMenuPrimitive.Positioner>
