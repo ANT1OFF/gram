@@ -267,6 +267,12 @@ export interface MockWaitingOnSimulation extends MockQuietBusySimulation {
   readonly rebase: ThreadId;
   /** Waits on main to move. */
   readonly exportPresets: ThreadId;
+  /** Watches two workflow runs at once. */
+  readonly verify: ThreadId;
+  /** Waits on a release to be published. */
+  readonly bump: ThreadId;
+  /** A timed wake more than a day away. */
+  readonly later: ThreadId;
 }
 
 export interface MockFinishedSimulation extends MockBoardSimulation {

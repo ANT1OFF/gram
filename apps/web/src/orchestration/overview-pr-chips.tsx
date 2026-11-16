@@ -18,6 +18,8 @@ import {
   type PrChip,
   type PrChipTone,
 } from "./overview-pr-chips-model";
+import { WorkerRunChip } from "./overview-run-chip";
+import type { WatchedRun } from "./overview-run-chip-model";
 import { useOrchestratorLedger } from "./use-orchestration";
 
 // A worker's pull requests under its overview row:
@@ -90,7 +92,7 @@ export const shownPrNumbers = (
  * row's status line, 16 px tall, so the line keeps its height. `ghost` draws them unseen and
  * inert, to hold their room inside a row's button while the real ones sit over it; `ghostRef` is
  * that room's, for `useChipsFit`. `foldMerged` folds a run of merged PRs into one "N merged"
- * (`foldMergedChips`).
+ * (`foldMergedChips`). `runs`, the workflow runs it watches while it waits, follow as one chip.
  */
 export function WorkerPrChips({
   threadId,
@@ -101,6 +103,7 @@ export function WorkerPrChips({
   ghost = false,
   ghostRef,
   foldMerged = false,
+  runs = NO_RUNS,
   className = "pr-1.5 pb-1 pl-6",
 }: {
   threadId: ThreadId;
@@ -112,12 +115,13 @@ export function WorkerPrChips({
   ghost?: boolean;
   ghostRef?: Ref<HTMLSpanElement> | undefined;
   foldMerged?: boolean;
+  runs?: readonly WatchedRun[];
   /** Where the chips sit: under an overview row's name by default. */
   className?: string;
 }) {
   const own = useWorkerPrChips(threadId, cardPrs);
   const chips = given ?? own;
-  if (chips.length === 0) return null;
+  if (chips.length === 0 && runs.length === 0) return null;
   const folded = foldMerged ? foldMergedChips(chips) : undefined;
   const open = folded?.chips ?? chips;
   const shown = open.slice(0, MAX_PR_CHIPS);
@@ -159,13 +163,20 @@ export function WorkerPrChips({
         ))}
         {moreText}
         {mergedCount}
+        <WorkerRunChip runs={runs} dense={dense} ghost />
       </span>
     );
   }
   return (
     <div
       role="group"
-      aria-label="Pull requests"
+      aria-label={
+        chips.length === 0
+          ? "Workflow runs"
+          : runs.length === 0
+            ? "Pull requests"
+            : "Pull requests and workflow runs"
+      }
       data-testid="overview-pr-chips"
       data-thread-id={threadId}
       className={cn("flex gap-1", dense ? "flex-nowrap" : "flex-wrap", className)}
@@ -181,9 +192,12 @@ export function WorkerPrChips({
       ))}
       {moreText}
       {mergedCount}
+      <WorkerRunChip runs={runs} dense={dense} />
     </div>
   );
 }
+
+const NO_RUNS: readonly WatchedRun[] = [];
 
 /** A chip's box: its tone, and 16 px tall on a row's status line or 20 px elsewhere. */
 const chipClass = (chip: PrChip, dense: boolean) =>

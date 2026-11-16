@@ -16,10 +16,13 @@ import { describe, expect, it } from "vitest";
 import { railRows, type RailFacts } from "./rail-model";
 import { workerActivity } from "./wait-model";
 import {
+  besideRuns,
+  conditionGlyph,
   conditionShort,
   orchestratorWaitingOn,
   waitClock,
   waitingOf,
+  watchedRuns,
   workerWaitingOn,
   WAIT_KINDS,
   type WaitKind,
@@ -221,6 +224,46 @@ describe("what a worker waits on", () => {
       worker("working", { wakes: [{ ...timed(NOW + 30 * MIN), condition: later }] }),
     );
     expect(waiting).toMatchObject({ kind: "condition", label: `Waiting · ${label}` });
+    expect(waiting?.edge).toEqual({ glyph: "condition", token: "" });
+  });
+
+  it("gives a condition wake a glyph of its kind alone, its words on the hover", () => {
+    const glyphs = (
+      [
+        { kind: "branchMoved", repo: "acme/app", branch: "main" },
+        { kind: "threadFinished", threadId: "t-9" as ThreadId },
+        { kind: "ciStuck", repo: "acme/app", pr: 4 },
+        { kind: "machine", metric: "load", below: 2 },
+        { kind: "machine", metric: "diskFree", belowGB: 20 },
+        { kind: "freezeLifted", repo: "acme/app" },
+        { kind: "releasePublished", source: "github", name: "acme/gram" },
+        { kind: "versionChanged", target: "codex" },
+      ] as const satisfies readonly WakeCondition[]
+    ).map(conditionGlyph);
+    expect(glyphs).toEqual([
+      "branch",
+      "thread",
+      "ciQueued",
+      "load",
+      "disk",
+      "freeze",
+      "release",
+      "version",
+    ]);
+    const release = waitingOn(
+      worker("working", {
+        wakes: [
+          {
+            ...timed(NOW + 30 * MIN, "bump it"),
+            condition: { kind: "releasePublished", source: "github", name: "acme/gram" },
+          },
+        ],
+      }),
+    );
+    expect(release?.edge).toEqual({ glyph: "release", token: "" });
+    expect(release?.reasons[0]?.detail).toBe(
+      "Wakes when acme/gram on GitHub has a new release, at least 7 days old, else at 07:30: bump it",
+    );
   });
 
   it("reads a release wait and a version wait in a few words", () => {
@@ -255,6 +298,8 @@ describe("what a worker waits on", () => {
   });
 
   it("keeps every label to four words, the separator aside", () => {
+    // A wake over a day away says its date as well ("until 4 Nov 09:00"), one word more, as a
+    // weekday alone read as this week's or the last's; a row's edge shows it as its glyph and time.
     const labels = [
       waitingOn(worker("inReview", { pr: pr({ checks: "pending" }) })),
       waitingOn(
@@ -262,7 +307,7 @@ describe("what a worker waits on", () => {
           pr: pr({ mergeState: "CLEAN", localCheck: { status: "running" }, mergeWhenReady: {} }),
         }),
       ),
-      waitingOn(worker("working", { wakes: [timed(NOW + 26 * 60 * MIN)] })),
+      waitingOn(worker("working", { wakes: [timed(NOW + 20 * 60 * MIN)] })),
       waitingOn(worker("working", { limitWait: limit(NOW + MIN, "backoff") })),
       waitingOn(worker("working", { limitWait: limit(NOW - MIN) })),
       waitingOn(worker("working", { userIntervened: true })),
@@ -281,21 +326,53 @@ describe("what a worker waits on", () => {
       }),
     );
     expect(waiting).toMatchObject({ kind: "run", label: "Waiting · Release run" });
-    expect(waiting?.reasons[0]?.detail).toBe("Watching the Release run, 4242 in acme/app.");
+    expect(waiting?.reasons[0]?.detail).toBe(
+      "Watching the Release run, 4242 in acme/app: running.",
+    );
+    expect(waiting?.edge).toEqual({ glyph: "run", token: "" });
+    expect(waiting?.reasons[0]?.run).toMatchObject({ repo: "acme/app", runId: 4242 });
     expect(
       waitingOn(worker("delivered", { runWatches: [{ repo: "acme/app", runId: 7, since: NOW }] }))
         ?.label,
     ).toBe("Waiting · run 7");
   });
 
-  it("names a timed wake by its time, on a 24-hour clock, the day named when it isn't today", () => {
+  it("puts its watched runs on one chip, its line naming the wait it has beside them", () => {
+    const runs = [
+      { repo: "acme/app", runId: 1, name: "Build: linux", since: NOW - MIN },
+      { repo: "acme/app", runId: 2, name: "Build: macOS", since: NOW - MIN },
+    ];
+    const both = waitingOn(
+      worker("delivered", { runWatches: runs, wakes: [timed(NOW + 70 * MIN)] }),
+    );
+    expect(watchedRuns(both).map((run) => run.runId)).toEqual([1, 2]);
+    const line = besideRuns(both);
+    expect(line).toMatchObject({ kind: "timer", edge: { glyph: "timer", token: "08:10" } });
+    // Its hover still lists every wait, the runs first.
+    expect(line?.hint).toBe(both?.hint);
+    expect(line?.hint).toContain("Watching the Build: macOS run");
+    // Runs alone: the chip says it all.
+    expect(besideRuns(waitingOn(worker("delivered", { runWatches: runs })))).toBeUndefined();
+    // A wait that ranks above them keeps the line as it was.
+    const ci = waitingOn(
+      worker("inReview", { pr: pr({ checks: "pending" }), runWatches: runs.slice(0, 1) }),
+    );
+    expect(besideRuns(ci)).toBe(ci);
+    expect(watchedRuns(ci)).toHaveLength(1);
+    expect(watchedRuns(undefined)).toEqual([]);
+  });
+
+  it("names a timed wake by its time, on a 24-hour clock, the date when it is over a day away", () => {
     const today = waitingOn(worker("working", { wakes: [timed(NOW + 70 * MIN)] }));
     expect(today).toMatchObject({ kind: "timer", label: "Waiting · until 08:10" });
     expect(today?.reasons[0]?.detail).toBe("Wakes at 08:10: check the deploy");
     const late = waitingOn(worker("working", { wakes: [timed(NOW + 14 * 60 * MIN)] }));
     expect(late?.label).toBe("Waiting · until 21:00");
-    const tomorrow = waitingOn(worker("working", { wakes: [timed(NOW + 26 * 60 * MIN)] }));
-    expect(tomorrow?.label).toBe("Waiting · until Wed 09:00");
+    const tomorrow = waitingOn(worker("working", { wakes: [timed(NOW + 20 * 60 * MIN)] }));
+    expect(tomorrow?.label).toBe("Waiting · until Wed 03:00");
+    const later = waitingOn(worker("working", { wakes: [timed(NOW + 26 * 60 * MIN)] }));
+    expect(later?.label).toBe("Waiting · until 4 Nov 09:00");
+    expect(later?.edge).toEqual({ glyph: "timer", token: "4 Nov 09:00" });
   });
 
   it("pauses on a usage limit until it resumes on its own", () => {
@@ -314,7 +391,7 @@ describe("what a worker waits on", () => {
     );
   });
 
-  it("gives each wait on a PR or a limit a glyph and its key token for a narrow edge", () => {
+  it("gives each wait a glyph and its key token for a narrow edge", () => {
     expect(edge(worker("inReview", { pr: pr({ checks: "pending 3/5" }) }))).toEqual({
       glyph: "ci",
       token: "#69",
@@ -356,8 +433,11 @@ describe("what a worker waits on", () => {
       glyph: "limit",
       token: "resuming",
     });
-    // Words short enough for the edge stay words.
-    expect(edge(worker("working", { wakes: [timed(NOW + 70 * MIN)] }))).toBeUndefined();
+    expect(edge(worker("working", { wakes: [timed(NOW + 70 * MIN)] }))).toEqual({
+      glyph: "timer",
+      token: "08:10",
+    });
+    // Your hold says it in its words.
     expect(edge(worker("working", { userIntervened: true }))).toBeUndefined();
   });
 
