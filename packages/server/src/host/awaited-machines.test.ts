@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { HostId, HostUnavailable } from "@gram/contracts";
+import { HostId, HostUnavailable, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
@@ -66,6 +66,30 @@ describe("a session on a machine started again after a stop", () => {
         stops.resumed(ID);
         yield* TestClock.adjust("1 second");
         expect(yield* Fiber.join(opening)).toBe(HOST);
+      }),
+    ),
+  );
+
+  it.effect("opens a thread's session once its own folders are back, before the rest", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { stops, forSession } = setup();
+        const mine = ThreadId.make("t-mine");
+        stops.expect(ID);
+        stops.back(ID);
+        const opening = yield* Effect.forkScoped(forSession(ID, mine));
+        yield* TestClock.adjust("5 seconds");
+        expect(opening.pollUnsafe()).toBeUndefined();
+        // Its folders go first.
+        expect([...stops.awaited(ID)]).toEqual([mine]);
+        stops.threadBack(ID, ThreadId.make("t-other"));
+        yield* TestClock.adjust("5 seconds");
+        expect(opening.pollUnsafe()).toBeUndefined();
+        stops.threadBack(ID, mine);
+        yield* TestClock.adjust("1 second");
+        expect(yield* Fiber.join(opening)).toBe(HOST);
+        // Another thread on it still waits for the whole resume.
+        expect(stops.resuming(ID)).toBe(true);
       }),
     ),
   );

@@ -185,10 +185,15 @@ export const mayReach = (ownerOf: OwnerOf, hostId: HostId): Effect.Effect<boolea
  * door every route to a joined machine goes through (`WorkerHosts.get`, the session lookup).
  */
 export const ownedMachines =
-  <H>(ownerOf: OwnerOf, reach: (id: HostId) => Effect.Effect<H, HostUnavailable>) =>
-  (id: HostId): Effect.Effect<H, HostUnavailable> =>
+  <H, A extends ReadonlyArray<unknown> = []>(
+    ownerOf: OwnerOf,
+    reach: (id: HostId, ...rest: A) => Effect.Effect<H, HostUnavailable>,
+  ) =>
+  (id: HostId, ...rest: A): Effect.Effect<H, HostUnavailable> =>
     Effect.flatMap(mayReach(ownerOf, id), (ok) =>
-      ok ? reach(id) : Effect.fail(new HostUnavailable({ hostId: id, message: NOT_YOUR_MACHINE })),
+      ok
+        ? reach(id, ...rest)
+        : Effect.fail(new HostUnavailable({ hostId: id, message: NOT_YOUR_MACHINE })),
     );
 
 /** Every checkout a thread works in: its own, the one it follows now, and its other repos'. */

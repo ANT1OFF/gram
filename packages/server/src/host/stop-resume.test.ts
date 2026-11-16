@@ -13,7 +13,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
-import { makeStopMarks } from "./stop-marks.ts";
+import { makeStopMarks, type StopMarks } from "./stop-marks.ts";
 import type { RestoreRequest } from "./stop.ts";
 import { cloneIdentityOf, cloneUrlOf } from "./repos.ts";
 import { prepareStop, resumeHost, type StopResumeDeps } from "./stop-resume.ts";
@@ -173,6 +173,28 @@ describe("resuming a machine on another disk", () => {
         expect([...first.restored, ...second.restored]).toHaveLength(1);
       }),
     ),
+  );
+
+  it.effect("puts the folders of a thread a session waits for back first, and says so", () =>
+    Effect.gen(function* () {
+      const { deps, asked } = machine([], true);
+      const hosts = deps.hosts as unknown as { stops: StopMarks };
+      const real = hosts.stops;
+      const back: Array<string> = [];
+      hosts.stops = {
+        ...real,
+        threadBack: (id: HostId, threadId: ThreadId) => {
+          back.push(threadId);
+          real.threadBack(id, threadId);
+        },
+      };
+      const stops = real;
+      stops.awaiting(MACHINE, "t-refused" as ThreadId);
+      yield* resumeHost(deps, MACHINE);
+      expect(asked[0]?.threadId).toBe("t-refused");
+      expect(back[0]).toBe("t-refused");
+      expect(back).toEqual(expect.arrayContaining(["t-worker", "t-nothing", "t-folder"]));
+    }),
   );
 
   it.effect("holds the machine to what the stop said it kept, remembered or given back", () =>
