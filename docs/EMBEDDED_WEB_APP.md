@@ -616,6 +616,7 @@ one lands, and carry its "Embedders" line into the merge's description.
 [separate app](../apps/web/e2e-embed/fixture/src/main.tsx) that consumes only the build, and
 drives it in a browser: the whole app mounts, an added page opens from the sidebar, the palette
 and its address and is named in the title bar and on a phone, the switcher moves between the
-sidebar and the title bar, pages of its own use the kit (a page of settings among them) and the
-theme's names, and all of it works
+sidebar and the title bar, pages of its own use the kit (a page of settings among them, and a
+menu and submenu taller than the window, which scroll in place) and the theme's names, and all of
+it works
 under a base path. CI runs it in the first e2e shard.
