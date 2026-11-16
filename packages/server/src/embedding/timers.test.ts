@@ -81,8 +81,19 @@ const withTimers = <A, E>(
     ),
   );
 
-// Loopback calls land in a few milliseconds; a loaded runner gets many times that.
-const settle = Effect.sleep(Duration.millis(400));
+/** Waits, on real time, until what the scheduler was told passes `done`. */
+const toldUntil = (told: ReadonlyArray<Told>, done: (told: ReadonlyArray<Told>) => boolean) =>
+  Effect.gen(function* () {
+    const deadline = Date.now() + 10_000;
+    while (!done(told) && Date.now() < deadline) yield* Effect.sleep(Duration.millis(5));
+  });
+/** Waits until the scheduler has been told `count` calls, and no more. */
+const toldAt = (told: ReadonlyArray<Told>, count: number) =>
+  toldUntil(told, (each) => each.length >= count).pipe(
+    Effect.andThen(Effect.sync(() => expect(told.length).toBe(count))),
+  );
+// For "nothing more was told": loopback calls land in a few milliseconds.
+const quiet = Effect.sleep(Duration.millis(100));
 const fire = (key: unknown) => routes.get("POST timers/fire")!({ key });
 
 describe("Timers", () => {
@@ -93,8 +104,8 @@ describe("Timers", () => {
         yield* withTimers(options, (timers) =>
           Effect.gen(function* () {
             const started = Date.now();
-            yield* timers.until("wake:a", started + 200);
-            expect(Date.now() - started).toBeGreaterThanOrEqual(190);
+            yield* timers.until("wake:a", started + 50);
+            expect(Date.now() - started).toBeGreaterThanOrEqual(45);
           }),
         );
       }
@@ -109,7 +120,7 @@ describe("Timers", () => {
         Effect.gen(function* () {
           const at = Date.now() + 400;
           const wait = yield* Effect.forkScoped(timers.until("wake:b", at));
-          yield* settle;
+          yield* toldAt(told, 1);
           expect(told).toEqual([
             {
               method: "PUT",
@@ -130,7 +141,7 @@ describe("Timers", () => {
           // Called a moment early by the scheduler's clock, it still ends at its time by this one.
           expect(Date.now()).toBeGreaterThanOrEqual(at);
           expect((yield* routes.get("GET timers")!(undefined)).body).toEqual({ timers: [] });
-          yield* settle;
+          yield* quiet;
           // Fired from there: nothing to take back.
           expect(told.length).toBe(1);
         }),
@@ -144,9 +155,9 @@ describe("Timers", () => {
       yield* withTimers({ url }, (timers) =>
         Effect.gen(function* () {
           const first = yield* Effect.forkScoped(timers.until("routine:w:r", Date.now() + 60_000));
-          yield* settle;
+          yield* toldAt(told, 1);
           yield* Fiber.interrupt(first);
-          yield* settle;
+          yield* toldAt(told, 2);
           expect(told.map((each) => each.method)).toEqual(["PUT", "DELETE"]);
 
           // Cancelled and armed again at once, as a rescheduled routine is.
@@ -154,7 +165,11 @@ describe("Timers", () => {
           const second = yield* Effect.forkScoped(timers.until("routine:w:r", later));
           yield* Fiber.interrupt(second);
           const third = yield* Effect.forkScoped(timers.until("routine:w:r", later));
-          yield* settle;
+          yield* toldUntil(
+            told,
+            (each) => (each.at(-1)?.body as { atMs?: number } | undefined)?.atMs === later,
+          );
+          yield* quiet;
           expect(told.at(-1)).toMatchObject({ method: "PUT", body: { atMs: later } });
           yield* Fiber.interrupt(third);
         }),
@@ -174,8 +189,7 @@ describe("Timers", () => {
             // The scheduler refuses the registration: the wait goes on, and is still listed.
             answer.status = 503;
             const wait = yield* Effect.forkScoped(timers.until("wake:c", Date.now() + 60_000));
-            yield* settle;
-            expect(told.length).toBe(1);
+            yield* toldAt(told, 1);
             expect((yield* fire("wake:c")).body).toEqual({ fired: true });
             yield* Fiber.interrupt(wait);
           }),

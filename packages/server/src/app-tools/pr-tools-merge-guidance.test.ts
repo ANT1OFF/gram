@@ -21,9 +21,27 @@ import {
   spawn,
   waitReal,
   withServer,
+  type World,
 } from "../orchestration/test-harness.ts";
 import { armedWorkerBadge, badge } from "./pr-tools-kit.ts";
 import { AppToolRegistry } from "./registry.ts";
+
+/** A worker of `world`, its own PR 12 bound, at full autonomy. */
+const boundWorker = (world: World) =>
+  Effect.gen(function* () {
+    const registry = yield* AppToolRegistry;
+    const { session, thread } = yield* openOrchestrator(world);
+    const worker = yield* spawn(session, { feature: "hosted" });
+    yield* completeTurn(worker.session);
+    yield* atAutonomy(thread, "full");
+    world.prHeads.set(12, { headRefName: worker.thread.checkout.branch! });
+    const tools = registry.forTransport(worker.thread.id, "worker");
+    const bind = tools
+      .find((t) => t.descriptor.name === "pr_bind")!
+      .run({ repo: "acme/app", number: 12 });
+    const merge = tools.find((t) => t.descriptor.name === "merge_when_ready")!;
+    return { worker, bind, merge };
+  });
 
 /** The deploy PR a release script opened from a scratch worktree it then removed. */
 const DEPLOY = "release/prod-6d5d5050";
@@ -49,9 +67,9 @@ describe("merge_when_ready guidance at full autonomy", () => {
               .find((t) => t.descriptor.name === "merge_when_ready")!;
             expect(yield* merge.delegatedAtFullAutonomy!({ pr: 21 })).toBe(false);
             const refused = yield* merge.run({ pr: 21 }).pipe(Effect.flip);
-            expect(refused.message).toBe(
-              `Full auto covers only a worker's own pull request: one whose head branch is checked out in the worktree Gram gave the worker. acme/app#21's head branch \`${DEPLOY}\` isn't checked out there. Check it out in the worktree Gram gave you (\`git fetch origin ${DEPLOY}\` then \`git switch ${DEPLOY}\`; commit your own work first), then call merge_when_ready again; Gram then merges it once its checks pass without asking. That holds only while no other thread has it as its pull request or holds its branch: checking out another thread's branch never makes it yours. The user wasn't asked, and their approval isn't the way through for this.`,
-            );
+            // The refusal carries the fix: the branch to check out, and how.
+            expect(refused.message).toContain(`acme/app#21's head branch \`${DEPLOY}\``);
+            expect(refused.message).toContain(`git switch ${DEPLOY}`);
             expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
             expect((yield* store.getThread(worker.thread.id)).boundPr).toBeUndefined();
 
@@ -209,59 +227,67 @@ describe("merge_when_ready guidance at full autonomy", () => {
       },
     }));
 
-  for (const { label, identity } of REMOTE_IDENTITIES) {
-    const claims = label !== "another repository";
-    it.effect.skipIf(!hasGit)(
-      `a branch a live worker holds on another machine under ${label} ${claims ? "stays that worker's" : "claims nothing"}`,
-      () =>
-        Effect.gen(function* () {
-          expect(identity).toBeDefined();
-          const world = yield* makeWorld;
-          world.joinedMachine = {
-            id: MACHINE,
-            online: true,
-            worktrees: new Map([
-              [
-                "/synthetic/worktree",
-                {
-                  clone: "/synthetic/clone",
-                  origin: "https://github.com/acme/app.git",
-                  branch: REMOTE_BRANCH,
-                },
-              ],
-            ]),
-          };
-          yield* withServer(
-            world,
-            Effect.gen(function* () {
-              const store = yield* ThreadStore;
-              const runtimes = yield* ThreadRuntimes;
-              const registry = yield* AppToolRegistry;
-              const { session, thread } = yield* openOrchestrator(world);
-              const worker = yield* spawn(session, { feature: "local-adopter" });
-              const sibling = yield* spawn(session, { feature: "remote-holder" });
-              yield* completeTurn(worker.session);
-              yield* completeTurn(sibling.session);
-              yield* atAutonomy(thread, "full");
+  // One world for every identity: a refused merge_when_ready changes nothing, so each identity is
+  // recorded on the sibling in turn and asked about over the same worker and PR.
+  it.effect.skipIf(!hasGit)(
+    "a branch a live worker holds on another machine stays that worker's under every form of its repository, and another repository claims nothing",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        world.joinedMachine = {
+          id: MACHINE,
+          online: true,
+          worktrees: new Map([
+            [
+              "/synthetic/worktree",
+              {
+                clone: "/synthetic/clone",
+                origin: "https://github.com/acme/app.git",
+                branch: REMOTE_BRANCH,
+              },
+            ],
+          ]),
+        };
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            const runtimes = yield* ThreadRuntimes;
+            const registry = yield* AppToolRegistry;
+            const { session, thread } = yield* openOrchestrator(world);
+            const worker = yield* spawn(session, { feature: "local-adopter" });
+            const sibling = yield* spawn(session, { feature: "remote-holder" });
+            yield* completeTurn(worker.session);
+            yield* completeTurn(sibling.session);
+            yield* atAutonomy(thread, "full");
+            world.prHeads.set(21, { headRefName: REMOTE_BRANCH });
+            run(worker.thread.checkout.path, "switch", "-q", "-c", REMOTE_BRANCH);
+            const merge = registry
+              .forTransport(worker.thread.id, "worker")
+              .find((t) => t.descriptor.name === "merge_when_ready")!;
+            // The repository that claims nothing goes last: it would leave the merge armed.
+            const ordered = REMOTE_IDENTITIES.toSorted(
+              (a, b) =>
+                Number(a.label === "another repository") - Number(b.label === "another repository"),
+            );
+            for (const { label, identity } of ordered) {
+              const claims = label !== "another repository";
+              expect(identity, label).toBeDefined();
               yield* remoteHolder(runtimes, sibling.thread.id, identity!, REMOTE_BRANCH, 21);
-              world.prHeads.set(21, { headRefName: REMOTE_BRANCH });
-              run(worker.thread.checkout.path, "switch", "-q", "-c", REMOTE_BRANCH);
-              const merge = registry
-                .forTransport(worker.thread.id, "worker")
-                .find((t) => t.descriptor.name === "merge_when_ready")!;
-              expect(yield* merge.delegatedAtFullAutonomy!({ pr: 21 })).toBe(!claims);
-              if (!claims) return;
+              expect(yield* merge.delegatedAtFullAutonomy!({ pr: 21 }), label).toBe(!claims);
+              if (!claims) continue;
               const refused = yield* merge.run({ pr: 21 }).pipe(Effect.flip);
-              expect(refused.message).toContain("another thread has it as its pull request");
-              expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
+              expect(refused.message, label).toContain("another thread has it as its pull request");
+              expect(yield* store.listRequests(worker.thread.id), label).toEqual([]);
               expect(
                 (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
+                label,
               ).toBeUndefined();
-            }),
-          );
-        }).pipe(Effect.scoped),
-    );
-  }
+            }
+          }),
+        );
+      }).pipe(Effect.scoped),
+  );
 
   it.effect.skipIf(!hasGit)(
     "a branch recorded for a sibling's folder under another machine's id still claims it",
@@ -381,18 +407,11 @@ describe("merge_when_ready guidance at full autonomy", () => {
   );
 
   for (const { label, identity } of REMOTE_IDENTITIES.filter((each) =>
+    // Each form's matching is checked above; these check the fresh read asks it again.
     [
-      "it without .git",
       "its scp form",
-      "an encoded owner",
-      "an encoded repository",
       "a lookalike character",
-      "a subpath",
-      "an extra segment",
-      "a constructor host",
       "a __proto__ host",
-      "a .GIT suffix",
-      "a .Git suffix",
       "a .gIt suffix in scp form",
     ].includes(each.label),
   )) {
@@ -596,47 +615,55 @@ describe("merge_when_ready guidance at full autonomy", () => {
     },
   ] as const;
 
-  for (const each of HOSTS) {
-    it.effect.skipIf(!hasGit)(
-      `${each.owned ? "arms" : "refuses to arm"} a worker's own PR from ${each.label}`,
-      () =>
-        Effect.gen(function* () {
-          const world = yield* makeWorld;
-          world.origin = each.origin;
-          world.prHost = "prHost" in each ? each.prHost : undefined;
-          yield* withServer(
-            world,
-            Effect.gen(function* () {
-              const store = yield* ThreadStore;
-              const registry = yield* AppToolRegistry;
-              const { session, thread } = yield* openOrchestrator(world);
-              const worker = yield* spawn(session, { feature: "hosted" });
-              yield* completeTurn(worker.session);
-              yield* atAutonomy(thread, "full");
-              world.prHeads.set(12, { headRefName: worker.thread.checkout.branch! });
-              const tools = registry.forTransport(worker.thread.id, "worker");
-              yield* tools
-                .find((t) => t.descriptor.name === "pr_bind")!
-                .run({ repo: "acme/app", number: 12 });
-              const merge = tools.find((t) => t.descriptor.name === "merge_when_ready")!;
-              expect(yield* merge.delegatedAtFullAutonomy!({})).toBe(each.owned);
-              if (each.owned) {
-                yield* merge.run({});
-                expect(
-                  (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
-                ).toMatchObject({ allowedBy: "autonomy" });
-                expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
-                return;
-              }
+  // A refusal changes nothing, so every origin that isn't the PR's repository is tried in one world.
+  it.effect.skipIf(!hasGit)(
+    "refuses to arm a worker's own PR from an origin on another host than the PR's",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            const { worker, bind, merge } = yield* boundWorker(world);
+            for (const each of HOSTS.filter((one) => !one.owned)) {
+              world.origin = each.origin;
+              world.prHost = "prHost" in each ? each.prHost : undefined;
+              yield* bind;
+              expect(yield* merge.delegatedAtFullAutonomy!({}), each.label).toBe(false);
               const refused = yield* merge.run({}).pipe(Effect.flip);
-              expect(refused.message).toContain(
+              expect(refused.message, each.label).toContain(
                 "it is in another repository than the worktree Gram gave the worker",
               );
-              expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
-              expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
-            }),
-          );
-        }).pipe(Effect.scoped),
+            }
+            expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
+            expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
+          }),
+        );
+      }).pipe(Effect.scoped),
+  );
+
+  for (const each of HOSTS.filter((one) => one.owned)) {
+    it.effect.skipIf(!hasGit)(`arms a worker's own PR from ${each.label}`, () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        world.origin = each.origin;
+        world.prHost = "prHost" in each ? each.prHost : undefined;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            const { worker, bind, merge } = yield* boundWorker(world);
+            yield* bind;
+            expect(yield* merge.delegatedAtFullAutonomy!({})).toBe(true);
+            yield* merge.run({});
+            expect(
+              (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
+            ).toMatchObject({ allowedBy: "autonomy" });
+            expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
+          }),
+        );
+      }).pipe(Effect.scoped),
     );
   }
 

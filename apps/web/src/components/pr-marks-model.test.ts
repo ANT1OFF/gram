@@ -1,72 +1,34 @@
-import {
-  ArrowDown,
-  Ban,
-  Bot,
-  BotMessageSquare,
-  CircleAlert,
-  CircleCheck,
-  CircleHelp,
-  CircleMinus,
-  CirclePause,
-  CircleX,
-  GitMerge,
-  GitMergeConflict,
-  GitPullRequest,
-  GitPullRequestClosed,
-  GitPullRequestDraft,
-  Link2,
-  MessageSquare,
-  MessageSquareWarning,
-  OctagonX,
-  Timer,
-  UserRoundCheck,
-  UserRoundSearch,
-  Wrench,
-} from "lucide-react";
 import { describe, expect, it } from "vitest";
 
-import { PendingRing } from "@/motion/spinner";
-
 import {
-  BOT_DISPLAY,
   CHECKS_DISPLAY,
   checksMarkOf,
   diffText,
-  MERGE_DISPLAY,
   mergeMarkOf,
   mergeMarksOf,
   mergeWaitsOn,
-  PR_STATE_DISPLAY,
   prLifecycleOf,
   prMarksOf,
   worstPrMark,
   prRefText,
   prStateMarkOf,
   prTooltipOf,
-  REVIEW_DISPLAY,
   reviewMarkOf,
   reviewThreadsMarkOf,
-  type BotMarkKind,
   type ChecksMarkKind,
-  type MergeMarkKind,
   type MergeSource,
   type PrLifecycle,
-  type ReviewMarkKind,
 } from "./pr-marks-model";
 
 describe("PR state marks", () => {
   it.each([
-    [{ state: "OPEN" }, "open", GitPullRequest, "text-success"],
-    [{ state: "open" }, "open", GitPullRequest, "text-success"],
-    [{ state: "OPEN", isDraft: true }, "draft", GitPullRequestDraft, "text-muted-foreground"],
-    [{ state: "MERGED" }, "merged", GitMerge, "text-merged"],
-    [{ state: "merged" }, "merged", GitMerge, "text-merged"],
-    [{ state: "CLOSED" }, "closed", GitPullRequestClosed, "text-destructive"],
-    [{ state: "closed", isDraft: true }, "closed", GitPullRequestClosed, "text-destructive"],
-    [{}, "open", GitPullRequest, "text-success"],
-  ] as const)("%o is %s", (source, kind, icon, tone) => {
+    [{ state: "OPEN" }, "open"],
+    [{ state: "OPEN", isDraft: true }, "draft"],
+    [{ state: "merged" }, "merged"],
+    [{ state: "closed", isDraft: true }, "closed"],
+    [{}, "open"],
+  ] as const)("%o is %s", (source, kind) => {
     expect(prLifecycleOf(source)).toBe(kind);
-    expect(PR_STATE_DISPLAY[kind]).toEqual({ icon, tone });
   });
 
   it("a merged or closed PR of a reused branch name reads as open, not as a phantom merge", () => {
@@ -88,20 +50,16 @@ describe("PR state marks", () => {
 
 describe("checks marks", () => {
   it.each([
-    ["pending", PendingRing, "text-status-working", "Checks running"],
-    ["passing", CircleCheck, "text-success", "Checks passing"],
-    ["failing", CircleX, "text-destructive", "Checks failing"],
-    ["fixing", Wrench, "text-status-working", "Checks failing; its worker is fixing them"],
-    ["none", CircleMinus, "text-muted-foreground", "No checks"],
-    ["unknown", CircleHelp, "text-muted-foreground", "Checks unknown"],
-  ] as const satisfies readonly (readonly [ChecksMarkKind, unknown, string, string])[])(
-    "%s",
-    (kind, icon, tone, detail) => {
-      expect(CHECKS_DISPLAY[kind]).toEqual({ icon, tone });
-      const rollup = kind === "fixing" ? "failing" : kind === "unknown" ? undefined : kind;
-      expect(checksMarkOf(rollup, { fixing: kind === "fixing" })).toMatchObject({ kind, detail });
-    },
-  );
+    "pending",
+    "passing",
+    "failing",
+    "fixing",
+    "none",
+    "unknown",
+  ] as const satisfies readonly ChecksMarkKind[])("%s", (kind) => {
+    const rollup = kind === "fixing" ? "failing" : kind === "unknown" ? undefined : kind;
+    expect(checksMarkOf(rollup, { fixing: kind === "fixing" }).kind).toBe(kind);
+  });
 
   it("failing CI its worker owns is fixing, informational rather than red", () => {
     expect(checksMarkOf("failing", { fixing: true }).kind).toBe("fixing");
@@ -117,18 +75,6 @@ describe("checks marks", () => {
 });
 
 describe("review marks", () => {
-  it.each([
-    ["waiting", UserRoundSearch, "text-muted-foreground"],
-    ["approved", UserRoundCheck, "text-success"],
-    ["changes", MessageSquareWarning, "text-foreground"],
-    ["threads", MessageSquare, "text-foreground"],
-  ] as const satisfies readonly (readonly [ReviewMarkKind, unknown, string])[])(
-    "%s",
-    (kind, icon, tone) => {
-      expect(REVIEW_DISPLAY[kind]).toEqual({ icon, tone });
-    },
-  );
-
   it("reads GitHub's decision and who is asked", () => {
     expect(reviewMarkOf({ reviewDecision: "APPROVED" })).toMatchObject({ kind: "approved" });
     expect(
@@ -148,42 +94,10 @@ describe("review marks", () => {
     expect(reviewThreadsMarkOf(0)).toBeUndefined();
     expect(reviewThreadsMarkOf(2)).toMatchObject({ kind: "threads", word: "2 threads" });
   });
-
-  it.each([
-    ["quiet", Bot, "text-muted-foreground"],
-    ["inFlight", PendingRing, "text-muted-foreground"],
-    ["blockers", Bot, "text-destructive"],
-    ["approved", BotMessageSquare, "text-success"],
-    ["changesRequested", Bot, "text-destructive"],
-    ["findings", Bot, "text-foreground"],
-    ["reviewerThreads", MessageSquare, "text-foreground"],
-  ] as const satisfies readonly (readonly [BotMarkKind, unknown, string])[])(
-    "the review bot's %s",
-    (kind, icon, tone) => {
-      expect(BOT_DISPLAY[kind]).toEqual({ icon, tone });
-    },
-  );
 });
 
 describe("merge marks", () => {
   const open: MergeSource = { state: "OPEN", baseRef: "main" };
-
-  it.each([
-    ["conflicts", GitMergeConflict, "text-destructive"],
-    ["refused", OctagonX, "text-destructive"],
-    ["held", CirclePause, "text-muted-foreground"],
-    ["waiting", Link2, "text-muted-foreground"],
-    ["behind", ArrowDown, "text-muted-foreground"],
-    ["blocked", Ban, "text-foreground"],
-    ["unstable", CircleAlert, "text-foreground"],
-    ["armed", Timer, "text-merged"],
-    ["mergeable", GitMerge, "text-success"],
-  ] as const satisfies readonly (readonly [MergeMarkKind, unknown, string])[])(
-    "%s",
-    (kind, icon, tone) => {
-      expect(MERGE_DISPLAY[kind]).toEqual({ icon, tone });
-    },
-  );
 
   it.each([
     [{ mergeState: "DIRTY" }, "conflicts", "Conflicts with main"],

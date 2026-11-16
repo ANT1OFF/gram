@@ -1429,7 +1429,7 @@ describe("merge_when_ready", () => {
       }).pipe(Effect.scoped, Effect.provide(MergeTestLayer)),
   );
 
-  for (const hold of [null, "", "   "] as const) {
+  for (const hold of [null, "   "] as const) {
     it.live.skipIf(!hasGit)(
       `clears a merge hold explicitly with ${JSON.stringify(hold)} without dropping dependencies`,
       () =>

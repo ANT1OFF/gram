@@ -52,7 +52,7 @@ const total = async (page: Page) =>
 /** Focus on nothing, and past the settle time. */
 const settle = async (page: Page) => {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.waitForTimeout(SETTLED_MS);
+  await page.clock.runFor(SETTLED_MS);
 };
 
 /** → until the top card shows `text`. */
@@ -137,6 +137,8 @@ test("an approval's rebound chord answers it in Quiet, modifiers and all, and it
 });
 
 test("Later sends a card to the back, and O opens its thread out of Quiet", async ({ page }) => {
+  // The settle time runs on the installed clock, so waiting past it takes no real time.
+  await page.clock.install();
   await start(page);
   await settle(page);
   const first = await card(page).getAttribute("data-key");
@@ -195,6 +197,7 @@ const answerAll = (page: Page) =>
   });
 
 test("a solo thread's question is a card too, not 'Nothing needs you'", async ({ page }) => {
+  await page.clock.install();
   await seed(page);
   await page.getByTestId("titlebar-overflow").click();
   await page.getByTestId("menu-view").click();

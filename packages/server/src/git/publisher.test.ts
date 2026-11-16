@@ -638,8 +638,8 @@ describe.skipIf(!hasGit)("GitStatePublisher", () => {
       const release = yield* publisher.hold(root);
       yield* Queue.clear(events);
       write(nodePath.join(root, "held.txt"), "x\n");
-      // Well past the watcher's debounce: nothing is watching the held checkout.
-      yield* Effect.sleep("1500 millis");
+      // Twice the watcher's debounce (400 ms) and more: nothing is watching the held checkout.
+      yield* Effect.sleep("1000 millis");
       expect((yield* Queue.clear(events)).filter((e) => stateOf(e) !== undefined)).toEqual([]);
 
       yield* release;

@@ -4,6 +4,7 @@ import { showsFocus } from "./titlebar-menu";
 
 import { openOverviewDensity } from "./overview-density";
 import { seedTheme } from "./seed-theme";
+import { shot } from "./shots";
 
 // Preserve native middle-click/new-tab coverage using full Chromium. Its headless shell can
 // strand background-tab initialization under load: https://github.com/microsoft/playwright/issues/42142
@@ -61,7 +62,7 @@ for (const mode of ["dark"] as const) {
         contentType: "application/json",
       });
       await page.mouse.move(1000, 1000);
-      await sidebar.screenshot({ path: test.info().outputPath(`${mode}-${width}.png`) });
+      await shot(sidebar, { path: test.info().outputPath(`${mode}-${width}.png`) });
       expect(geometry.width).toBe(width);
       // The header drags the window; each action in it takes its own clicks.
       expect(geometry.drag).toBe("drag");

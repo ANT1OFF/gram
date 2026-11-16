@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { shot } from "./shots";
 // Quota-only real response shapes replayed offline at capture time. This is renderer qualification,
 // not a new live account query. Authentication and the CLI are explicit signed-out mocks.
 test.use({ locale: "en-GB", timezoneId: "Europe/Oslo" });
@@ -74,7 +75,7 @@ test("captured CLI windows show the same percentages and 24-hour resets on Usage
     await expect(card.getByTestId("usage-limit-percent")).toHaveText(percent!);
     await expect(card.getByTestId("usage-limit-reset")).toHaveText(reset!);
   }
-  await page.screenshot({
+  await shot(page, {
     path: info.outputPath("captured-subscription-limits.png"),
     fullPage: true,
   });

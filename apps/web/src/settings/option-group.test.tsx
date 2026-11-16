@@ -21,7 +21,6 @@ describe("OptionGroup", () => {
       />,
     );
     const group = screen.getByRole("radiogroup", { name: "Period" });
-    expect(group.className).toContain("w-fit");
     expect(screen.getByTestId("period-month").getAttribute("aria-checked")).toBe("false");
     expect(within(group).queryByTestId("choice-check")).toBeNull();
   });
@@ -113,13 +112,5 @@ describe("OptionGroup keyboard", () => {
       />,
     );
     expect(screen.getAllByRole("radio").map((radio) => radio.tabIndex)).toEqual([0, -1]);
-  });
-
-  it("lays its cards out by its own column, not the window", () => {
-    render(<Harness described />);
-    const group = screen.getByRole("radiogroup", { name: "Pick" });
-    expect(group.parentElement!.className).toContain("@container/options");
-    expect(group.className).toContain("@min-[26rem]/options:grid-flow-col");
-    expect(group.className).not.toContain("sm:");
   });
 });

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { seedTheme } from "./seed-theme";
+import { shot } from "./shots";
 
 // An MCP server proposed by an agent (`mcp_server_propose`): the card shows everything that would
 // be written, and only Approve or Decline. Synthetic mock state; nothing reaches a provider or a
@@ -121,7 +122,7 @@ for (const [colorScheme, palette] of [
       await expect(card.getByTestId("approval-allow")).toContainText("Add server");
       await expect(card.getByTestId("approval-deny")).toBeVisible();
       await expect(card.getByTestId("approval-always")).toHaveCount(0);
-      await card.screenshot({ path: testInfo.outputPath(`local-${colorScheme}.png`) });
+      await shot(card, { path: testInfo.outputPath(`local-${colorScheme}.png`) });
     });
 
     test("a remote replacement shows the URL, the host, both servers and the sign-in", async ({
@@ -139,12 +140,12 @@ for (const [colorScheme, palette] of [
         "https://old.example.invalid/mcp",
       );
       await expect(card.getByTestId("approval-allow")).toContainText("Replace server");
-      await card.screenshot({ path: testInfo.outputPath(`remote-${colorScheme}.png`) });
+      await shot(card, { path: testInfo.outputPath(`remote-${colorScheme}.png`) });
     });
 
     test("before: the same input on a card that doesn't know it", async ({ page }, testInfo) => {
       const card = await raise(page, "mcp__gram__unknown_tool", LOCAL, "An app tool's card.");
-      await card.screenshot({ path: testInfo.outputPath(`before-${colorScheme}.png`) });
+      await shot(card, { path: testInfo.outputPath(`before-${colorScheme}.png`) });
     });
   });
 }
@@ -196,5 +197,5 @@ test("spaces in values show exactly as they would be written, each value's edges
   // An empty argument is still a chip with an edge, not nothing.
   const empty = card.getByTestId("mcp-arg").last();
   expect((await empty.boundingBox())!.width).toBeGreaterThan(4);
-  await card.screenshot({ path: test.info().outputPath("spaces.png") });
+  await shot(card, { path: test.info().outputPath("spaces.png") });
 });

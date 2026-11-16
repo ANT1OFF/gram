@@ -4,12 +4,13 @@ import { slowdown } from "./slowdown";
 import { threadRow } from "./thread-row";
 import { openPanelTab } from "./panel-tab";
 import { openMoreOptions } from "./new-thread-options";
+import { shot } from "./shots";
 
 // Looks and accessibility audit of the surfaces added in M3 wave "tonight": Glass, the only look,
 // light and dark, standard and more contrast. Each surface is driven from the mock, then its text is checked
 // against the WCAG floor on the colour actually painted behind it (composited up the ancestors),
-// its controls are checked for a visible focus indicator, and a screenshot goes to
-// e2e/__screenshots__/audit-2/ (gitignored) for review. The theme runs are opt-in:
+// its controls are checked for a visible focus indicator, and with `GRAM_E2E_SHOTS` set a
+// screenshot goes to e2e/__screenshots__/audit-2/ (gitignored) for review. The theme runs are opt-in:
 // GRAM_AUDIT=default covers two themes that between them hit every mode and contrast,
 // GRAM_AUDIT=1 all four. The motion test always runs.
 
@@ -472,7 +473,7 @@ for (const theme of THEMES) {
         const found: string[] = [];
         const root = await surface.open(page);
         await page.waitForTimeout(150);
-        await page.screenshot({ path: `e2e/__screenshots__/audit-2/${id}-${surface.name}.png` });
+        await shot(page, { path: `e2e/__screenshots__/audit-2/${id}-${surface.name}.png` });
         const { checked, failures } = await auditContrast(root, theme.contrast);
         for (const f of failures) {
           found.push(`${surface.name}: "${f.text}" ${f.fg} on ${f.bg} = ${f.ratio} (< ${f.floor})`);

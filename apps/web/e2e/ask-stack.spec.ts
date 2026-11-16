@@ -100,7 +100,7 @@ const goTo = async (page: Page, text: string) => {
 /** Focus on the list, where nothing types, and past the settle time. */
 const settle = async (page: Page) => {
   await inbox(page).getByTestId("inbox-list").focus();
-  await page.waitForTimeout(SETTLED_MS);
+  await page.clock.runFor(SETTLED_MS);
 };
 
 const pending = (page: Page, threadId: string) =>
@@ -169,13 +169,13 @@ test("the orchestrator's composer is its own: no key there answers, and Enter se
   const composer = page.getByLabel("Message", { exact: true });
   const before = await count(page).getAttribute("data-asks");
   await composer.focus();
-  await page.waitForTimeout(SETTLED_MS);
+  await page.clock.runFor(SETTLED_MS);
   await page.keyboard.type("2 tests fail");
   await expect(composer).toHaveValue("2 tests fail");
   await composer.fill("");
   await page.keyboard.press("Alt+Digit1");
   await page.keyboard.press("ControlOrMeta+Enter");
-  await page.waitForTimeout(SETTLED_MS);
+  await page.clock.runFor(SETTLED_MS);
   await expect(page.getByTestId("inbox-line-undo")).toHaveCount(0);
   await expect(count(page)).toHaveAttribute("data-asks", before!);
 
@@ -340,7 +340,7 @@ test("a second key right after an answer, or after the shown ask changed by itse
     [made.workspaceId, '[data-testid="inbox-detail"]'] as const,
   );
   expect(landed).toBe(true);
-  await page.waitForTimeout(SETTLED_MS);
+  await page.clock.runFor(SETTLED_MS);
   await expect(undoLine(page)).toHaveCount(0);
   await expect(currentAsk(page).locator("[data-picked]")).toHaveCount(0);
 });

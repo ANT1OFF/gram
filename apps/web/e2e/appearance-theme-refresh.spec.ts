@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { seedTheme } from "./seed-theme";
 import { openPanelTab } from "./panel-tab";
+import { shot } from "./shots";
 
 // The behaviour doesn't depend on the family: one non-default family runs it end to end. Every
 // family's tokens, pairing and contrast are unit-tested in packages/themes, and every palette's
@@ -59,7 +60,7 @@ for (const name of families) {
       await page.goto("/t/t-flaky");
       await expect(page.getByTestId("approval-card")).toBeVisible();
       await page.evaluate(() => document.fonts.ready);
-      await page.screenshot({
+      await shot(page, {
         path: testInfo.outputPath(`${id}-${mode}-thread.png`),
         animations: "disabled",
       });
@@ -108,7 +109,7 @@ for (const name of families) {
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
     ).toBeLessThanOrEqual(0);
-    await page.screenshot({
+    await shot(page, {
       path: testInfo.outputPath(`${id}-narrow-settings.png`),
       animations: "disabled",
     });
@@ -164,7 +165,7 @@ for (const name of terminalFamilies) {
         "outline-style",
         "solid",
       );
-      await page.screenshot({
+      await shot(page, {
         path: testInfo.outputPath(`${id}-${mode}-terminal.png`),
         animations: "disabled",
       });

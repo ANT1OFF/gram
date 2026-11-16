@@ -3,6 +3,7 @@ import type { ThreadId, UserInput } from "@gram/contracts";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { seedTheme } from "./seed-theme";
+import { keepShots } from "./shots";
 
 declare global {
   interface Window {
@@ -125,12 +126,14 @@ test("failed queue restores sent files beside a draft typed during streaming and
     calls: await page.evaluate(() => window.composerRecovery.calls),
     errors,
   };
-  await page.screenshot({ path: testInfo.outputPath("failed-queue.png") });
   await writeFile(testInfo.outputPath("recovery-receipt.json"), JSON.stringify(receipt, null, 2));
-  await testInfo.attach("failed queue visible result", {
-    path: testInfo.outputPath("failed-queue.png"),
-    contentType: "image/png",
-  });
+  if (keepShots) {
+    await page.screenshot({ path: testInfo.outputPath("failed-queue.png") });
+    await testInfo.attach("failed queue visible result", {
+      path: testInfo.outputPath("failed-queue.png"),
+      contentType: "image/png",
+    });
+  }
   await testInfo.attach("recovery receipt", {
     path: testInfo.outputPath("recovery-receipt.json"),
     contentType: "application/json",
@@ -176,7 +179,6 @@ test("failed Send and start a new draft stays on its thread, successful retry op
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       ),
   );
-  await page.screenshot({ path: testInfo.outputPath("failed-new-draft.png") });
   await writeFile(
     testInfo.outputPath("new-draft-receipt.json"),
     JSON.stringify(
@@ -189,10 +191,13 @@ test("failed Send and start a new draft stays on its thread, successful retry op
       2,
     ),
   );
-  await testInfo.attach("failed new draft visible result", {
-    path: testInfo.outputPath("failed-new-draft.png"),
-    contentType: "image/png",
-  });
+  if (keepShots) {
+    await page.screenshot({ path: testInfo.outputPath("failed-new-draft.png") });
+    await testInfo.attach("failed new draft visible result", {
+      path: testInfo.outputPath("failed-new-draft.png"),
+      contentType: "image/png",
+    });
+  }
   await expect(page).toHaveURL(/\/t\/t-flaky$/);
   await expect(field).toHaveValue("Keep this draft");
   await expect(page.getByRole("button", { name: "Remove keep.txt" })).toBeVisible();

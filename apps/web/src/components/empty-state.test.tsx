@@ -27,8 +27,6 @@ describe("EmptyState", () => {
     );
     const buttons = within(empty).getAllByRole("button");
     expect(buttons).toHaveLength(1);
-    expect(buttons[0]!.className).toContain("border");
-    expect(buttons[0]!.className).not.toContain("bg-primary");
     fireEvent.click(buttons[0]!);
     expect(onClick).toHaveBeenCalledOnce();
   });

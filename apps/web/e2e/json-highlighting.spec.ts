@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { seedTheme } from "./seed-theme";
+import { shot } from "./shots";
 const command = "printf synthetic\n";
 const stdout =
   ' \t{\r\n\t"nested": [true, null, {"html": "<script>α🌈</script>", "escaped": "\\t\\n"}]\n} \r\n\n';
@@ -220,7 +221,7 @@ for (const [provider, mode, narrow] of [
     } else await expect(card).toContainText('"cwd": "/synthetic/project"');
     await expect(card.locator("script")).toHaveCount(0);
     await expect(structured.locator("em")).toHaveCount(0);
-    await page.screenshot({
+    await shot(page, {
       path: `e2e/__screenshots__/json-${provider}-${mode}-${narrow ? "narrow" : "wide"}.${phase}.png`,
     });
     expect(errors).toEqual([]);

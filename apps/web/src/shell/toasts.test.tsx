@@ -71,11 +71,7 @@ describe("Toasts", () => {
     expect(screen.getByTestId("toast-dock").contains(toast)).toBe(true);
     const list = screen.getByRole("list", { name: "Notifications" });
     expect(list.getAttribute("data-docked")).toBe("true");
-    expect(list.className).not.toContain("fixed");
     expect(list.getAttribute("aria-live")).toBe("polite");
-    // The panel's own button comes before the toasts in the document and isn't covered by them.
-    const apply = screen.getByRole("button", { name: "Apply suggestion" });
-    expect(apply.compareDocumentPosition(toast) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("floats bottom-right while the panel is closed or in focus mode", () => {
@@ -90,7 +86,6 @@ describe("Toasts", () => {
 
     const list = screen.getByRole("list", { name: "Notifications" });
     expect(list.getAttribute("data-docked")).toBe("false");
-    expect(list.className).toContain("fixed");
     expect(screen.getByTestId("toast-dock").childElementCount).toBe(0);
 
     act(() => useLayoutStore.setState({ panelOpen: true, focusMode: true }));

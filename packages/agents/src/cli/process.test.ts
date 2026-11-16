@@ -51,21 +51,39 @@ it.skipIf(process.platform === "win32")(
     const script = `sleep 30 & echo $! > '${pidFile}'; echo READY`;
     const started = Date.now();
     try {
-      await Effect.runPromise(
-        runCommand("/bin/bash", ["-c", script], {
-          env: { PATH: "/usr/bin:/bin" },
-          timeoutMs: 1_000,
-          isolateSession: true,
-        }),
-      ).catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        expect(message).toMatch(/timed out/);
-      });
+      // The background child holds stdout open, so the probe ends only by its timeout.
+      const error = await Effect.runPromise(
+        Effect.flip(
+          runCommand("/bin/bash", ["-c", script], {
+            env: { PATH: "/usr/bin:/bin" },
+            timeoutMs: 1_000,
+            isolateSession: true,
+          }),
+        ),
+      );
+      expect(error.message).toMatch(/timed out/);
       expect(Date.now() - started).toBeLessThan(5_000);
       const pid = Number(readFileSync(pidFile, "utf8").trim());
       expect(Number.isInteger(pid)).toBe(true);
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      expect(() => process.kill(pid, 0)).toThrow();
+      // Gone, or a zombie a container's init hasn't reaped yet: either way no longer running.
+      const running = () => {
+        try {
+          process.kill(pid, 0);
+        } catch {
+          return false;
+        }
+        if (process.platform !== "linux") return true;
+        try {
+          return !/^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, "utf8"));
+        } catch {
+          return false;
+        }
+      };
+      const deadline = Date.now() + 2_000;
+      while (running() && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(running()).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { openOrchestrator, pressFirstWorkspaceKey } from "./thread-row";
+import { shot } from "./shots";
 
 // Low-priority briefs held until a usage limit resets: the
 // held state on the Board and on the feature card in the stream, with its reset on a 24-hour
@@ -115,7 +116,7 @@ test("a provider recovery hold uses the existing held chip and exposes its failu
   await expect(chip).toBeVisible();
   await expect(chip).toHaveAttribute("title", /^Codex is at 85%/);
   await chip.scrollIntoViewIfNeeded();
-  await chip.screenshot({ path: testInfo.outputPath("spawn-circuit-breaker-before.png") });
+  await shot(chip, { path: testInfo.outputPath("spawn-circuit-breaker-before.png") });
   const before = await chip.getAttribute("data-held-id");
   await page.evaluate(
     async ([workspaceId, id]) => {
@@ -139,5 +140,5 @@ test("a provider recovery hold uses the existing held chip and exposes its failu
   await expect(chip.getByRole("button", { name: "Release Provider recovery now" })).toBeEnabled();
   await expect(chip).not.toHaveAttribute("title", /0%|5-hour limit/);
   await chip.scrollIntoViewIfNeeded();
-  await chip.screenshot({ path: testInfo.outputPath("spawn-circuit-breaker-after.png") });
+  await shot(chip, { path: testInfo.outputPath("spawn-circuit-breaker-after.png") });
 });

@@ -11,24 +11,25 @@ afterEach(cleanup);
 
 describe("ReviewNoticeCard", () => {
   it("shows the round, verdict, merge state and failing checks", () => {
-    const notice = mockReviewNotice(412);
+    const notice = { ...mockReviewNotice(412), round: 17 };
     render(<ReviewNoticeCard notice={notice} text={serializeReviewNotice(notice)} />);
-    const card = screen.getByRole("article", { name: "Review update on #412" });
-    expect(within(card).getByText("Round 3")).toBeTruthy();
+    const card = screen.getByRole("article", { name: /#412/ });
+    expect(card.textContent).toContain("17");
     expect(within(card).getByTestId("notice-verdict").textContent).toBe("Changes requested");
-    expect(card.textContent).toContain("Merge state BLOCKED");
+    expect(card.textContent).toContain(notice.mergeState);
+    const checks = within(card).getByRole("list", { name: "Failing checks" });
     expect(
-      within(within(card).getByRole("list", { name: "Failing checks" })).getByText(
-        "Failing: test (windows)",
-      ),
-    ).toBeTruthy();
+      within(checks)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual([expect.stringContaining("test (windows)")]);
   });
 
   it("lists blockers and suggestions with linked locations", () => {
     const notice = mockReviewNotice(412);
     render(<ReviewNoticeCard notice={notice} text="" />);
     const blockers = screen.getByRole("region", { name: "Blockers" });
-    expect(within(blockers).getByText("Blockers (1)")).toBeTruthy();
+    expect(within(blockers).getAllByRole("listitem")).toHaveLength(1);
     expect(
       within(blockers).getByRole("link", { name: "src/retry.ts:42" }).getAttribute("href"),
     ).toBe("https://github.com/example/api/pull/412#discussion_PRRC_1");
@@ -73,7 +74,7 @@ describe("HumanReviewNoticeCard", () => {
     const notice = mockHumanReviewNotice(412);
     const text = serializeHumanReviewNotice(notice);
     render(<HumanReviewNoticeCard notice={notice} text={text} />);
-    const card = screen.getByRole("article", { name: "Review from a person on #412" });
+    const card = screen.getByRole("article", { name: /#412/ });
     const [first, second] = within(card).getAllByRole("listitem");
     expect(first?.textContent).toContain("octocat");
     expect(within(first!).getByTestId("notice-verdict").textContent).toBe("Changes requested");

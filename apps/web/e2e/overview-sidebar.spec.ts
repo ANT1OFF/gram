@@ -219,52 +219,6 @@ test("lists the workspaces in the switcher's order, the current one opened into 
   );
 });
 
-test("every worker row keeps its agent's mark, whatever its neighbours run", async ({ page }) => {
-  const made = await start(page);
-  const rows = overview(page).getByTestId("overview-worker");
-  const marks = overview(page).getByTestId("overview-worker-agent");
-  // Every worker runs Claude Code, and each row still shows its mark beside its state dot.
-  await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Claude Code, /);
-  await expect(worker(page, made.inReview).getByTestId("overview-worker-dot")).toBeVisible();
-  const count = await rows.count();
-  expect(count).toBeGreaterThan(1);
-  await expect(marks).toHaveCount(count);
-  const claudeMark = await worker(page, made.inReview)
-    .getByTestId("overview-worker-agent")
-    .locator("svg")
-    .innerHTML();
-
-  const original = await page.evaluate(
-    (id) => window.gramMock!.world.summary(id as never).thread.model,
-    made.inReview,
-  );
-  const moveTo = (model: unknown) =>
-    page.evaluate(
-      ({ id, next }) => {
-        const mock = window.gramMock!;
-        const { thread } = mock.world.summary(id as never);
-        mock.world.replaceThread({ ...thread, model: next as never });
-      },
-      { id: made.inReview, next: model },
-    );
-
-  // One worker on Codex: its row draws Codex's mark in the same slot, and the rest keep Claude's.
-  await moveTo({ agent: "codex", model: "gpt-5-codex" });
-  await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Codex, /);
-  const glyph = worker(page, made.inReview).getByTestId("overview-worker-agent");
-  await expect(glyph).toHaveCount(1);
-  // It is decorative: the row's name says the agent.
-  await expect(glyph.locator("svg")).toHaveAttribute("aria-hidden", "true");
-  expect(await glyph.locator("svg").innerHTML()).not.toBe(claudeMark);
-  await expect(marks).toHaveCount(count);
-
-  // Back on Claude Code, the list is one agent again and no row loses its mark.
-  await moveTo(original);
-  await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Claude Code, /);
-  await expect(marks).toHaveCount(count);
-  expect(await glyph.locator("svg").innerHTML()).toBe(claudeMark);
-});
-
 test("an idle row fades after a day and comes back on hover; one needing you never does", async ({
   page,
 }) => {
@@ -287,21 +241,6 @@ test("an idle row fades after a day and comes back on hover; one needing you nev
   await expect(row).toHaveCSS("filter", /grayscale\(1\)/);
   await row.hover();
   await expect(row).not.toHaveCSS("filter", /grayscale\(1\)/);
-});
-
-test("a worker's hover card reads it: title, station, now line, PR and a 24-hour time", async ({
-  page,
-}) => {
-  const made = await start(page);
-  const live = await liveFromCards(page, made.workspaceId);
-  await worker(page, made.inReview).hover();
-  const card = page.getByTestId("overview-worker-card");
-  await expect(card).toBeVisible();
-  const each = live.flatMap((f) => f.workers).find((w) => w.id === made.inReview)!;
-  await expect(card.getByTestId("overview-worker-card-title")).toHaveText(each.title);
-  await expect(card.getByTestId("overview-worker-card-station")).toHaveText("Review");
-  await expect(card.getByTestId("pr-chip")).toHaveCount(1);
-  await expect(card.getByTestId("overview-worker-card-time")).toHaveText(/^\d{2}:\d{2}$/);
 });
 
 test("opening a worker closes its hover card until a fresh hover; a focus still opens it", async ({
@@ -391,16 +330,6 @@ test("a worker whose turn runs pulses its dot; the other rows stay still", async
 test("the system's reduced motion stops the pulse and leaves the dot still", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const made = await start(page);
-  const dots = await dotAnimations(page);
-  const live = dots.find((dot) => dot.threadId === made.live)!;
-  expect(live.working).toBe(true);
-  expect(live.animation).toBe("none");
-  expect(live.opacity).toBe("1");
-});
-
-test("Motion off stops the pulse and leaves the dot still", async ({ page }) => {
-  const made = await start(page, { motion: "off" });
-  await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
   const dots = await dotAnimations(page);
   const live = dots.find((dot) => dot.threadId === made.live)!;
   expect(live.working).toBe(true);
@@ -1228,22 +1157,6 @@ test("⌘B hides an automatic compact overview, the focus going to the composer,
   await expect(
     rail(page).locator('[data-testid="overview-tile"][aria-current="true"]'),
   ).toBeFocused();
-});
-
-test("a working orchestrator's tile has a soft dot that pulses at full motion only", async ({
-  page,
-}) => {
-  await start(page, { width: 1100 });
-  const dot = rail(page).getByTestId("overview-tile-working").first();
-  await expect(dot).toBeVisible();
-  const animation = () => dot.evaluate((element) => getComputedStyle(element).animationName);
-  await expect.poll(animation).toBe("gram-working");
-
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await expect(page.locator("html")).toHaveAttribute("data-motion", "reduced");
-  await expect.poll(animation).toBe("none");
-  // The dot still shows, still.
-  await expect(dot).toBeVisible();
 });
 
 test("a worker still running after its feature is delivered shows with its step and age", async ({

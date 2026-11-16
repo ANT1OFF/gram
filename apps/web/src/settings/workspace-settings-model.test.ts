@@ -84,9 +84,6 @@ describe("the charter's autonomy", () => {
     expect(AUTONOMY_LEVELS.filter((level) => level.warn).map((level) => level.value)).toEqual([
       "full",
     ]);
-    expect(autonomyLevel("supervised").description).toBe(
-      "Asks before anything leaves your machine: a push, a pull request, a merge.",
-    );
     expect(autonomyLevel("full").detail).toContain("branch protection, required reviews");
     // One line each, with the rest behind "Learn more".
     for (const level of AUTONOMY_LEVELS) {

@@ -60,9 +60,7 @@ describe("AddConnectorForm", () => {
         targets: ["claude"],
       }),
     );
-    expect((await screen.findByRole("status")).textContent).toBe(
-      "Added sentry to Claude Code. The session reopens once it's idle to connect it.",
-    );
+    expect((await screen.findByRole("status")).textContent).toMatch(/sentry.*Claude Code.*reopens/);
     expect(screen.queryByRole("form", { name: "Add MCP server" })).toBeNull();
     expect(document.body.textContent).not.toContain("sekrit-token");
     await waitFor(() => expect(listConnectors).toHaveBeenCalledTimes(2));
@@ -89,9 +87,7 @@ describe("AddConnectorForm", () => {
       "true",
     );
     // "Local" is Claude Code's; Codex has one config, and the form says so.
-    expect(screen.getByTestId("scope-hint").textContent).toBe(
-      "Codex: its config.toml, for you in every project (Codex has no narrower scope).",
-    );
+    expect(screen.getByTestId("scope-hint").textContent).toContain("config.toml");
     fireEvent.click(within(form).getByRole("button", { name: "Add server" }));
     await waitFor(() =>
       expect(addConnector).toHaveBeenLastCalledWith({
@@ -117,19 +113,13 @@ describe("AddConnectorForm", () => {
     fireEvent.click(within(again).getByRole("radio", { name: "Project" }));
     fireEvent.click(within(again).getByRole("checkbox", { name: "Claude Code" }));
     expect(within(again).getAllByRole("checkbox")).toHaveLength(2);
-    expect(screen.getByTestId("scope-hint").textContent).toContain(
-      "Each agent keeps its own sign-in, so you sign in once in each.",
-    );
+    expect(screen.getByTestId("scope-hint").textContent).toMatch(/sign-in/);
     fireEvent.click(within(again).getByRole("button", { name: "Add server" }));
-    expect((await screen.findByRole("alert")).textContent).toBe(
-      "Codex connects over streamable HTTP only. Pick HTTP, or leave Codex out.",
-    );
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Codex.*HTTP/);
     expect(addConnector).toHaveBeenCalledTimes(1);
 
     fireEvent.click(within(again).getByRole("checkbox", { name: "Codex" }));
-    expect(screen.getByTestId("scope-hint").textContent).toContain(
-      "Claude Code: everyone in the repo, via .mcp.json you can commit.",
-    );
+    expect(screen.getByTestId("scope-hint").textContent).toContain(".mcp.json");
     fireEvent.click(within(again).getByRole("button", { name: "Add server" }));
     await waitFor(() =>
       expect(addConnector).toHaveBeenLastCalledWith({
@@ -140,9 +130,10 @@ describe("AddConnectorForm", () => {
         targets: ["claude"],
       }),
     );
-    expect((await screen.findByRole("status")).textContent).toBe(
-      "Added fs to Claude Code. This thread's agent wasn't one of them, so it won't appear here.",
-    );
+    // This thread's agent wasn't one of them, so nothing reopens here.
+    const added = (await screen.findByRole("status")).textContent;
+    expect(added).toMatch(/^Added fs/);
+    expect(added).not.toContain("reopens");
   });
 
   it("explains a bad field before calling the server, and shows a server refusal", async () => {
@@ -156,16 +147,14 @@ describe("AddConnectorForm", () => {
     const form = await openForm();
     type("Server name", "my server");
     fireEvent.click(within(form).getByRole("button", { name: "Add server" }));
-    expect(within(form).getByRole("alert").textContent).toBe(
-      "Name the server with letters, digits, dashes or underscores.",
-    );
+    expect(within(form).getByRole("alert").textContent).toMatch(/letters/);
     expect(addConnector).not.toHaveBeenCalled();
 
     type("Server name", "sentry");
     type("URL", "https://mcp.sentry.dev/mcp");
     fireEvent.click(within(form).getByRole("button", { name: "Add server" }));
-    expect((await within(form).findByRole("alert")).textContent).toBe(
-      "Couldn't add sentry: MCP server sentry already exists",
+    expect((await within(form).findByRole("alert")).textContent).toContain(
+      "MCP server sentry already exists",
     );
   });
 
@@ -184,8 +173,6 @@ describe("AddConnectorForm", () => {
     await waitFor(() =>
       expect(removeConnector).toHaveBeenCalledWith({ threadId: T, name: "github", scope: "user" }),
     );
-    expect((await screen.findByRole("status")).textContent).toBe(
-      "Removed github. The session reopens once it's idle.",
-    );
+    expect((await screen.findByRole("status")).textContent).toMatch(/^Removed github/);
   });
 });

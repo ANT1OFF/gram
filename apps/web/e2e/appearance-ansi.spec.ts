@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { openPanelTab } from "./panel-tab";
+import { shot } from "./shots";
 
 // The canvas paints SGR text in the `--ansi-*` tokens the same way for every palette, so two cases
 // cover both modes and both contrasts. Every family's ANSI contrast, in both contrasts, is
@@ -160,7 +161,7 @@ for (const { family, mode, contrast } of cases) {
       body: JSON.stringify(result, null, 2),
       contentType: "application/json",
     });
-    await panel.screenshot({
+    await shot(panel, {
       path: testInfo.outputPath(`${family}-${mode}-${contrast}-sgr.png`),
       animations: "disabled",
     });

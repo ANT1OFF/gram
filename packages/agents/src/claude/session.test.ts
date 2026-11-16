@@ -3473,66 +3473,51 @@ describe("makeConnectors", () => {
           );
         },
       };
-      const connectors = makeConnectors(blocked, { audience: "orchestrator", mcpAllowlist: [] });
-      const teams = yield* Effect.flip(connectors.reconnect("teams"));
-      expect(teams.message).toContain(
-        "Gram's orchestrator connector allowlist doesn't include teams",
-      );
-      expect(teams.message).toContain("add it to Settings → Workspaces → Orchestrator connectors");
-      expect(teams.message).toContain("then restart the session");
-      const notes = yield* Effect.flip(connectors.reconnect("claude.ai Notes"));
-      expect(notes.message).toContain("allowlist doesn't include claude.ai Notes");
-      expect(notes.message).toContain("upstream URL");
-      expect(teams.message).not.toContain("enterprise managed policy");
+      /** Which of Gram's lists a refusal sends the user to, or why it holds: one phrase each. */
+      type Policy = Parameters<typeof makeConnectors>[1];
+      type Extra = Parameters<typeof makeConnectors>[2];
+      const refusal = (options: Policy, name: string, extra?: Extra) =>
+        Effect.flip(makeConnectors(blocked, options, extra).reconnect(name)).pipe(
+          Effect.map((error) => error.message),
+        );
+      const orchestrator: Policy = { audience: "orchestrator", mcpAllowlist: [] };
+      const teams = yield* refusal(orchestrator, "teams");
+      expect(teams).toContain("orchestrator connector allowlist doesn't include teams");
+      expect(teams).not.toContain("enterprise managed policy");
+      expect(yield* refusal(orchestrator, "claude.ai Notes")).toContain("upstream URL");
       expect(calls).toEqual(["reconnect:teams", "reconnect:claude.ai Notes"]);
-
-      const confined = makeConnectors(blocked, { confineWrites: true, mcpAllowlist: ["teams"] });
-      expect((yield* Effect.flip(confined.reconnect("teams"))).message).toContain(
-        "confined session",
-      );
-      const urlGrant = makeConnectors(blocked, {
-        audience: "orchestrator",
-        mcpAllowlist: ["https://mcp.example.test/*"],
-      });
-      expect((yield* Effect.flip(urlGrant.reconnect("claude.ai Notes"))).message).toContain(
-        "Check Gram's orchestrator connector allowlist",
-      );
-
-      // A worker's lists are its workspace's, which reopen the session by themselves.
-      const worker = makeConnectors(blocked, { audience: "worker", mcpAllowlist: ["parse"] });
-      const workerTeams = (yield* Effect.flip(worker.reconnect("teams"))).message;
-      expect(workerTeams).toContain("workspace connector allowlist doesn't include teams");
-      expect(workerTeams).toContain("picks the change up once it is idle");
-      const denied = makeConnectors(blocked, { audience: "worker", mcpDenylist: ["teams"] });
-      expect((yield* Effect.flip(denied.reconnect("teams"))).message).toContain(
-        "This workspace's connectors leave out teams",
-      );
-      // An orchestrator listing none is held only by its workspace where tool search is on,
-      // and gets none of the user's servers where it isn't.
-      const byWorkspace = makeConnectors(blocked, {
-        audience: "orchestrator",
-        mcpNoneWithoutToolSearch: true,
-        mcpAllowlist: ["parse"],
-      });
-      expect((yield* Effect.flip(byWorkspace.reconnect("teams"))).message).toContain(
-        "workspace connector allowlist doesn't include teams",
-      );
-      const lean = makeConnectors(
-        blocked,
-        { audience: "orchestrator", mcpNoneWithoutToolSearch: true, mcpAllowlist: [] },
-        { noToolSearch: true },
-      );
-      const leanTeams = (yield* Effect.flip(lean.reconnect("teams"))).message;
-      expect(leanTeams).toContain("without tool search, as on a gateway key");
-      expect(leanTeams).toContain("add it to Settings → Workspaces → Orchestrator connectors");
-      expect(leanTeams).toContain("then restart the session");
-      const deniedByUrl = makeConnectors(blocked, {
-        audience: "worker",
-        mcpDenylist: ["https://mcp.example.test/*"],
-      });
-      expect((yield* Effect.flip(deniedByUrl.reconnect("claude.ai Notes"))).message).toContain(
-        "Check this workspace's connectors for claude.ai Notes",
-      );
+      const cases: ReadonlyArray<readonly [Policy, string, string, Extra?]> = [
+        [{ confineWrites: true, mcpAllowlist: ["teams"] }, "teams", "confined session"],
+        [
+          { audience: "orchestrator", mcpAllowlist: ["https://mcp.example.test/*"] },
+          "claude.ai Notes",
+          "orchestrator connector allowlist",
+        ],
+        // A worker's lists are its workspace's, which reopen the session by themselves.
+        [{ audience: "worker", mcpAllowlist: ["parse"] }, "teams", "workspace connector allowlist"],
+        [{ audience: "worker", mcpDenylist: ["teams"] }, "teams", "connectors leave out teams"],
+        [
+          { audience: "worker", mcpDenylist: ["https://mcp.example.test/*"] },
+          "claude.ai Notes",
+          "workspace's connectors for claude.ai Notes",
+        ],
+        // An orchestrator listing none is held only by its workspace where tool search is on,
+        // and gets none of the user's servers where it isn't.
+        [
+          { audience: "orchestrator", mcpNoneWithoutToolSearch: true, mcpAllowlist: ["parse"] },
+          "teams",
+          "workspace connector allowlist",
+        ],
+        [
+          { audience: "orchestrator", mcpNoneWithoutToolSearch: true, mcpAllowlist: [] },
+          "teams",
+          "without tool search",
+          { noToolSearch: true },
+        ],
+      ];
+      for (const [options, name, says, extra] of cases) {
+        expect(yield* refusal(options, name, extra)).toContain(says);
+      }
     }),
   );
 
@@ -3609,8 +3594,8 @@ describe("makeConnectors", () => {
         Promise.reject(new Error('Server type "stdio" does not support OAuth authentication')),
       );
       const error = yield* Effect.flip(makeConnectors(q).authenticate!("files"));
-      expect(error.message).toContain("signing in to files: Server type");
-      expect(error.message).toContain("does not support OAuth authentication");
+      expect(error.message).toContain("files");
+      expect(error.message).toContain('Server type "stdio" does not support OAuth authentication');
     }),
   );
 
@@ -3832,8 +3817,9 @@ describe("Claude subscription limits", () => {
         },
       });
       const host = yield* ClaudeHost.pipe(Effect.provide(h.layer));
-      expect((yield* Effect.flip(host.readSubscriptionLimits!)).message).toBe(
-        "Claude Code could not read subscription limits.",
+      // The SDK's own error text stays out of what Gram shows.
+      expect((yield* Effect.flip(host.readSubscriptionLimits!)).message).not.toContain(
+        "synthetic private response",
       );
       expect(query(h).closed).toBe(true);
     }),

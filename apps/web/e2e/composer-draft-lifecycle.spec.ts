@@ -4,6 +4,7 @@ import { expect, test, type Locator, type Page, type TestInfo } from "@playwrigh
 
 import { seedTheme } from "./seed-theme";
 import { threadRow } from "./thread-row";
+import { keepShots } from "./shots";
 
 const browserErrors = new WeakMap<Page, string[]>();
 
@@ -103,8 +104,10 @@ const evidence = async (page: Page, info: TestInfo, name: string) => {
     })),
   };
   await writeFile(info.outputPath(`${name}.json`), JSON.stringify(receipt, null, 2));
-  await page.screenshot({ path: info.outputPath(`${name}.png`) });
-  await info.attach(name, { path: info.outputPath(`${name}.png`), contentType: "image/png" });
+  if (keepShots) {
+    await page.screenshot({ path: info.outputPath(`${name}.png`) });
+    await info.attach(name, { path: info.outputPath(`${name}.png`), contentType: "image/png" });
+  }
   await info.attach(`${name} receipt`, {
     path: info.outputPath(`${name}.json`),
     contentType: "application/json",

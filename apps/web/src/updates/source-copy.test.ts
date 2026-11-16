@@ -3,21 +3,17 @@ import { describe, expect, it } from "vitest";
 import { ghSourceCopy, nativeSourceNote } from "./source-copy";
 
 describe("update source copy", () => {
-  it("says the signed updater reads anonymously, and names no repository without a source", () => {
-    expect(nativeSourceNote("o/r")).toBe(
-      "Releases are read anonymously from the public o/r repository; no sign-in is needed.",
-    );
+  it("names the repository the signed updater reads, and none without a source", () => {
+    expect(nativeSourceNote("o/r")).toContain("o/r");
     expect(nativeSourceNote(undefined)).not.toMatch(/\bgh\b|ANT1OFF/);
   });
 
-  it("keeps the gh updater's wording, with the repository it reads", () => {
-    expect(ghSourceCopy({ repo: "o/r", visibility: "private" })).toEqual({
-      automaticChecks:
-        "Check for private o/r releases with your gh login. Never installs or interrupts agents.",
-    });
-    expect(ghSourceCopy({ repo: "o/r", visibility: "public" }).automaticChecks).toBe(
-      "Check for o/r releases with your gh login. Never installs or interrupts agents.",
-    );
+  it("says a private repository is private, with the repository the gh updater reads", () => {
+    const privately = ghSourceCopy({ repo: "o/r", visibility: "private" }).automaticChecks;
+    const publicly = ghSourceCopy({ repo: "o/r", visibility: "public" }).automaticChecks;
+    expect(privately).toContain("private o/r");
+    expect(publicly).toContain("o/r");
+    expect(publicly).not.toContain("private");
     expect(Object.values(ghSourceCopy(undefined)).join(" ")).not.toContain("ANT1OFF");
   });
 });

@@ -424,8 +424,7 @@ describe("MockApi orchestration", () => {
         seen.push(ledger.features[0]?.stage?.stage ?? "");
       }
     })();
-    await settle();
-    expect(seen).toEqual(["build"]);
+    await vi.waitFor(() => expect(seen).toEqual(["build"]));
 
     const state = await api.setOrchestratorStage(made.workspaceId, {
       feature: "mail-trigger",
@@ -437,8 +436,7 @@ describe("MockApi orchestration", () => {
       plan: ["contract agreed", "build", "preview deployed", "merge in order", "rolled out"],
     });
     expect(state.stages?.["mail-trigger"]?.note).toBeUndefined();
-    await settle();
-    expect(seen).toEqual(["build", "merge in order"]);
+    await vi.waitFor(() => expect(seen).toEqual(["build", "merge in order"]));
 
     // An event that changes nothing the ledger holds sends nothing.
     await api.rename(made.orchestratorThreadId, "Renamed");
@@ -502,10 +500,11 @@ describe("MockApi orchestration", () => {
     await expect(api.orchestratorHandoff(made.workspaceId)).rejects.toMatchObject({
       _tag: "InvalidState",
     });
-    await new Promise((resolve) => setTimeout(resolve, 700));
+    await vi.waitFor(() => {
+      expect(sessions.at(-1)).toMatch(/^mock-session-/);
+      expect(sessions.at(-1)).not.toBe(thread.agentSessionId);
+    });
     abort.abort();
-    expect(sessions.at(-1)).toMatch(/^mock-session-/);
-    expect(sessions.at(-1)).not.toBe(thread.agentSessionId);
   });
 
   it("keeps a held handoff running until the spec releases it", async () => {

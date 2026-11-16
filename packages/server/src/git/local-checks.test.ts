@@ -1136,14 +1136,15 @@ describe.skipIf(process.platform === "win32")("the configured local check", () =
         },
         {
           isolation: LOCAL_CHECK_ISOLATION,
-          setup: "sleep 1",
-          command: "sleep 1; touch finished",
-          timeoutMs: 1_500,
+          // Each step alone fits the budget; the two together don't.
+          setup: "sleep 0.6",
+          command: "sleep 0.6; touch finished",
+          timeoutMs: 1_000,
         },
       );
       expect(result).toMatchObject({
         ok: false,
-        reason: "timed out: still running after 1500 ms, so Gram stopped it",
+        reason: "timed out: still running after 1000 ms, so Gram stopped it",
       });
       expect(existsSync(nodePath.join(dir, "finished"))).toBe(false);
       removeDir(dir);
@@ -1302,11 +1303,11 @@ describe.skipIf(process.platform === "win32")("a local check that can't finish",
           base: { HOME: dir },
           pathValue: `${bin}:${LAUNCHD_PATH}`,
         },
-        { isolation: LOCAL_CHECK_ISOLATION, command: "bun run check:ci", timeoutMs: 1500 },
+        { isolation: LOCAL_CHECK_ISOLATION, command: "bun run check:ci", timeoutMs: 800 },
       );
       expect(outcome).toEqual({
         ok: false,
-        reason: "timed out: still running after 1500 ms, so Gram stopped it",
+        reason: "timed out: still running after 800 ms, so Gram stopped it",
         failure: { kind: "timed-out", tail: "still building" },
       });
       removeDir(dir);

@@ -15,7 +15,7 @@ import {
   MachineStarting,
   resetAskedAgain,
 } from "./awaiting-machine";
-import { ASKED_LAPSE_MS } from "./awaiting-machine-model";
+import { ASKED_LAPSE_MS, WAIT_WORDS } from "./awaiting-machine-model";
 import { MachineChip } from "./machine-chip";
 
 const T = "t-wait" as ThreadId;
@@ -77,12 +77,13 @@ describe("a waiting thread's conversation", () => {
     expect(screen.getByTestId("machine-wait-message").textContent).toContain(
       "Draft the release notes for 2.4.",
     );
-    expect(screen.getByTestId("machine-wait-held").textContent).toBe(
-      `${formatClockTime(STARTED)} · sent when the machine has started`,
-    );
+    const held = screen.getByTestId("machine-wait-held").textContent;
+    expect(held).toContain(formatClockTime(STARTED));
+    expect(held).toContain(WAIT_WORDS.heldStarting);
     const line = screen.getByTestId("machine-wait-starting");
     expect(line.getAttribute("role")).toBe("status");
-    expect(line.textContent).toBe("Starting this thread's machine · usually under a minute0:42");
+    expect(line.hasAttribute("data-again")).toBe(false);
+    expect(screen.getByTestId("machine-wait-elapsed").textContent).toBe("0:42");
     // The message after the first stays in the queue, not in the conversation.
     expect(screen.getByTestId("machine-wait").textContent).not.toContain("Keep it under");
     expect(screen.queryByTestId("machine-wait-failed")).toBeNull();
@@ -93,7 +94,7 @@ describe("a waiting thread's conversation", () => {
     render(<AwaitingMachine thread={thread} />);
     const line = screen.getByTestId("machine-wait-starting");
     expect(line.getAttribute("data-again")).toBe("true");
-    expect(line.textContent).toBe("Starting a machine again · the first didn't start0:07");
+    expect(screen.getByTestId("machine-wait-elapsed").textContent).toBe("0:07");
   });
 
   it("shows how the wait stands with nothing in the queue", () => {
@@ -111,12 +112,8 @@ describe("a waiting thread's conversation", () => {
     expect(screen.getByTestId("machine-wait-sentence").textContent).toBe(
       "The machine couldn't be started: no capacity in this region.",
     );
-    expect(card.textContent).toContain(
-      "What you sent is kept, and goes once a machine has started.",
-    );
-    expect(screen.getByTestId("machine-wait-held").textContent).toBe(
-      `${formatClockTime(STARTED)} · not sent yet, and kept`,
-    );
+    expect(card.textContent).toContain(WAIT_WORDS.kept);
+    expect(screen.getByTestId("machine-wait-held").textContent).toContain(WAIT_WORDS.heldFailed);
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
     expect(screen.queryByTestId("machine-wait-starting")).toBeNull();
   });
@@ -129,17 +126,13 @@ describe("a waiting thread's conversation", () => {
         )}
       />,
     );
-    expect(screen.getByTestId("machine-wait-sentence").textContent).toBe(
-      "No machine started for this thread.",
-    );
+    expect(screen.getByTestId("machine-wait-sentence").textContent).toBe(WAIT_WORDS.failed);
   });
 
   it("has no Try again where nobody can be asked, and says what still works", () => {
     render(<AwaitingMachine thread={failed()} />);
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
-    expect(screen.getByTestId("machine-wait-failed").textContent).toContain(
-      "What you sent is kept. To try again, start the thread again.",
-    );
+    expect(screen.getByTestId("machine-wait-failed").textContent).toContain(WAIT_WORDS.keptNoRetry);
   });
 
   it("asks the embedding app for another machine, then reads as starting again", async () => {
@@ -158,11 +151,10 @@ describe("a waiting thread's conversation", () => {
     vi.setSystemTime(NOW + 3_000);
     await act(async () => asked());
     const line = await screen.findByTestId("machine-wait-starting");
-    expect(line.textContent).toBe("Starting a machine again · the first didn't start0:00");
+    expect(line.getAttribute("data-again")).toBe("true");
+    expect(screen.getByTestId("machine-wait-elapsed").textContent).toBe("0:00");
     expect(screen.queryByTestId("machine-wait-failed")).toBeNull();
-    expect(screen.getByTestId("machine-wait-held").textContent).toContain(
-      "sent when the machine has started",
-    );
+    expect(screen.getByTestId("machine-wait-held").textContent).toContain(WAIT_WORDS.heldStarting);
   });
 
   it("shows the next failure when the new try fails too", async () => {
@@ -185,8 +177,8 @@ describe("a waiting thread's conversation", () => {
     useEmbedShell.setState({ machines: { startAgain } });
     render(<AwaitingMachine thread={failed()} />);
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect((await screen.findByTestId("machine-wait-retry-failed")).textContent).toBe(
-      "Couldn't ask for another machine. You have reached your limit of machines.",
+    expect((await screen.findByTestId("machine-wait-retry-failed")).textContent).toContain(
+      "You have reached your limit of machines.",
     );
     expect(screen.getByTestId("machine-wait-failed")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Try again" }).hasAttribute("disabled")).toBe(false);
@@ -228,9 +220,7 @@ describe("a waiting thread's conversation", () => {
     first.unmount();
     await act(async () => refuse(new Error("No capacity.")));
     render(<AwaitingMachine thread={thread} />);
-    expect(screen.getByTestId("machine-wait-retry-failed").textContent).toBe(
-      "Couldn't ask for another machine. No capacity.",
-    );
+    expect(screen.getByTestId("machine-wait-retry-failed").textContent).toContain("No capacity.");
     expect(screen.getByRole("button", { name: "Try again" }).hasAttribute("disabled")).toBe(false);
   });
 
@@ -269,8 +259,7 @@ describe("a waiting thread's header chip", () => {
     render(<MachineChip thread={starting()} />);
     const chip = screen.getByTestId("pane-machine");
     expect(chip.getAttribute("data-machine-state")).toBe("starting");
-    expect(chip.textContent).toBe("machine starting");
-    expect(chip.getAttribute("aria-label")).toBe("This thread's machine is starting");
+    expect(chip.textContent).toBe(WAIT_WORDS.chip.starting);
     expect(screen.queryByTestId("pane-machine-folder")).toBeNull();
     expect(document.body.textContent).not.toContain("no longer joined");
   });
@@ -279,8 +268,7 @@ describe("a waiting thread's header chip", () => {
     render(<AwaitingMachineChip thread={failed()} />);
     const chip = screen.getByTestId("pane-machine");
     expect(chip.getAttribute("data-machine-state")).toBe("no machine");
-    expect(chip.textContent).toBe("no machine");
-    expect(chip.getAttribute("aria-label")).toBe("No machine started for this thread");
+    expect(chip.textContent).toBe(WAIT_WORDS.chip.failed);
   });
 });
 
@@ -312,9 +300,10 @@ describe("a thread whose machine stopped while idle", () => {
       ],
     });
     render(<MachineStarting thread={placed()} />);
-    expect(screen.getByTestId("machine-wait-starting").textContent).toBe(
-      "Starting this thread's machine again · it stopped while idle0:12",
+    expect(screen.getByTestId("machine-wait-starting").textContent).toContain(
+      WAIT_WORDS.restarting.head,
     );
+    expect(screen.getByTestId("machine-wait-elapsed").textContent).toBe("0:12");
   });
 
   it("says nothing while nothing waits on it, or once it is back", () => {

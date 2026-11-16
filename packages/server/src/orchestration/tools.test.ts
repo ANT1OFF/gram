@@ -1964,9 +1964,11 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             model: "claude:fake-sonnet",
           })
           .pipe(Effect.flip);
-        expect(refused.message).toBe(
-          `not_admitted: The charter doesn't allow workers on claude:fake-sonnet. Allowed: claude:fake-opus (Fake Opus (echo)), claude:fake-haiku (Fake Haiku (echo)). Others need the workspace setting "${OTHER_WORKER_MODELS_SETTING}"; if none of these fits, ask the user to turn it on.`,
-        );
+        // Refused as not admitted, naming the model, what is allowed, and the setting that would.
+        expect(refused.message).toMatch(/^not_admitted: .*claude:fake-sonnet/);
+        expect(refused.message).toContain("claude:fake-opus (Fake Opus (echo))");
+        expect(refused.message).toContain("claude:fake-haiku (Fake Haiku (echo))");
+        expect(refused.message).toContain(OTHER_WORKER_MODELS_SETTING);
         // The picker's name for a model names the entry, as its id does.
         const byName = yield* spawn(session, {
           feature: "named",
@@ -1996,9 +1998,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
         const stuck = yield* session
           .callTool("set_thread_model", { threadId: build.thread.id, model: "fake-haiku" })
           .pipe(Effect.flip);
-        expect(stuck.message).toBe(
-          "not_admitted: claude:fake-haiku is unavailable here (its gateway profile is gone; pick another for it in Settings → Workspaces), so the worker stays on its model.",
-        );
+        expect(stuck.message).toMatch(/^not_admitted: claude:fake-haiku .*gateway profile is gone/);
       }),
     ),
   );

@@ -59,11 +59,14 @@ const afterLargeTurn = (world: World) =>
     return { ...opened, sent, fake };
   });
 
-/** Moves the clock in steps, letting the service and the runtime take each one. */
+/**
+ * Moves the clock in steps, letting the service and the runtime take each one. Five minutes a step:
+ * the timer that matters is armed at the turn's end, long before, and each step settles.
+ */
 const pass = (ms: number) =>
   Effect.gen(function* () {
-    for (let left = ms; left > 0; left -= MIN / 2) {
-      yield* TestClock.adjust(Math.min(MIN / 2, left));
+    for (let left = ms; left > 0; left -= 5 * MIN) {
+      yield* TestClock.adjust(Math.min(5 * MIN, left));
       yield* settle;
     }
   });
@@ -115,11 +118,15 @@ describe("idle compaction in a workspace", () => {
         const { thread, sent } = yield* afterLargeTurn(world);
         const presence = yield* ComposerPresence;
         // The window reports its draft every 30 s, as the renderer does while it has one.
+        // Nothing here starts a git process, so yielding lets the service take each step; one
+        // settle after a step every ten minutes covers what would.
         for (let t = 0; t < 62 * MIN; t += MIN / 2) {
           yield* presence.drafts("window-1", [thread.id as ThreadId]);
           yield* TestClock.adjust(MIN / 2);
-          yield* settle;
+          for (let i = 0; i < 50; i++) yield* Effect.yieldNow;
+          if (t % (10 * MIN) === 0) yield* settle;
         }
+        yield* settle;
         expect(sent().filter(isIdleCompact)).toEqual([]);
       }),
     ),

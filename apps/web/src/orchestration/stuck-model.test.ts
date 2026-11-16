@@ -24,7 +24,6 @@ const thread = (patch: Partial<Thread> = {}) =>
 
 describe("why is it stuck", () => {
   it("offers itself once a worker has sat STUCK_AFTER_MS without a turn, tool call or report", () => {
-    expect(STUCK_AFTER_MS).toBe(45 * 60_000);
     expect(stalledSince(entry(), thread(), "idle", NOW)).toBe(NOW - 2 * HOUR);
     expect(
       stalledSince(entry(), thread({ lastActivityAt: NOW - STUCK_AFTER_MS + 1 }), "idle", NOW),

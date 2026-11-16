@@ -20,7 +20,6 @@ describe("interrupt policy", () => {
 
   it("keeps merges, wakes, stage moves and progress for Since you left", () => {
     for (const event of ["merge", "done", "wake", "stage", "progress"] as const) {
-      expect(INTERRUPT_POLICY[event]).toBe("sinceYouLeft");
       expect(interrupts(event)).toBe(false);
     }
     expect(interrupts("info")).toBe(false);

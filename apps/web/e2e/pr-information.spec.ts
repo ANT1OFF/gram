@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openReviewsTab, reviewsInPanel } from "./reviews-panel";
 import { seedTheme } from "./seed-theme";
+import { shot } from "./shots";
 
 // The review requests and open PRs lists with everything they say about each PR: the right panel's
 // Reviews tab is where they are listed in full, so each test places both there.
@@ -115,7 +116,7 @@ for (const mode of ["dark"] as const) {
       for (const id of ["review-requests", "open-prs"]) {
         const section = panel.getByTestId(id);
         await section.scrollIntoViewIfNeeded();
-        await section.screenshot({ path: info.outputPath(`${id}-${width}-${mode}.png`) });
+        await shot(section, { path: info.outputPath(`${id}-${width}-${mode}.png`) });
         const overflow = await section.evaluate((element) =>
           [...element.querySelectorAll("li")].some((row) => row.scrollWidth > row.clientWidth),
         );
@@ -147,7 +148,7 @@ for (const mode of ["dark"] as const) {
       await expect(card).toContainText("Opened");
       await expect(card).toContainText("Activity");
       await expect(card).toContainText("Conflicts with its base");
-      await card.screenshot({ path: info.outputPath(`card-${width}-${mode}.png`) });
+      await shot(card, { path: info.outputPath(`card-${width}-${mode}.png`) });
     });
   }
 }
@@ -226,7 +227,7 @@ test("populated right panel retains full labels, thread navigation and keyboard 
   const card = page.getByTestId("open-pr-card");
   await expect(card).toContainText("a-very-long-label-without-spaces-for-layout");
   await expect(card).toContainText("In the thread “Fix flaky retry test”");
-  await card.screenshot({ path: info.outputPath("panel-full-labels-card.png") });
+  await shot(card, { path: info.outputPath("panel-full-labels-card.png") });
   await page.keyboard.press("Tab");
   await expect(
     owned.getByRole("button", { name: "Go to thread: Fix flaky retry test" }),
@@ -251,9 +252,9 @@ test("no-match and empty snapshots explain the local view clearly", async ({ pag
   const section = page.getByTestId("review-requests");
   await section.getByRole("textbox", { name: "Search Review requests" }).fill("missing label");
   await expect(section).toContainText("No PRs match this view.");
-  await section.screenshot({ path: info.outputPath("no-match.png") });
+  await shot(section, { path: info.outputPath("no-match.png") });
   await page.evaluate(() => window.gramMock?.replacePrLists({ requests: [], prs: [] }));
   await expect(page.getByTestId("reviews-tab-count")).toHaveCount(0);
   await expect(section).toContainText("None right now.");
-  await section.screenshot({ path: info.outputPath("empty.png") });
+  await shot(section, { path: info.outputPath("empty.png") });
 });

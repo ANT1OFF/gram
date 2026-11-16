@@ -4,6 +4,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { terminalText } from "./terminal";
 import { openPanelTab } from "./panel-tab";
+import { shot } from "./shots";
 
 const ICONS = "\uf109 \uf2db \uf108 \uf0a0 \ue70f \uf489 \u{f02e0} \ue0b0";
 const GLYPHS = `ICONS: ${ICONS} \uefff`;
@@ -121,7 +122,7 @@ for (const dpr of [1, 2]) {
       expect(result.cellWidth).toBe(Math.ceil(result.textWidth));
       expect(result.textFamily).toContain("Geist Mono Variable");
       expect(result.textFamily).not.toContain("Symbols Nerd Font");
-      await terminal.screenshot({ path: testInfo.outputPath("terminal-glyphs.png") });
+      await shot(terminal, { path: testInfo.outputPath("terminal-glyphs.png") });
       const notice = page.locator("link[data-terminal-font-license]");
       await expect(notice).toHaveAttribute("rel", "license");
       const response = await page.request.get((await notice.getAttribute("href"))!);
@@ -168,7 +169,7 @@ test("a stalled symbols request keeps the shell usable and repaints when it fini
     await expect
       .poll(async () => (await glyphPixels(terminal)).matchesMissing)
       .toEqual(Array(8).fill(false));
-    await terminal.screenshot({ path: testInfo.outputPath("font-loaded.png") });
+    await shot(terminal, { path: testInfo.outputPath("font-loaded.png") });
     // Input, fit/zoom and search still operate after the late repaint.
     const surface = terminal.getByTestId("terminal-surface");
     // Zoom refits the grid; which of its sides changes depends on the font's cell metrics.
@@ -299,7 +300,7 @@ for (const hidden of [false, true]) {
       const match = (await terminal.locator("[data-terminal-find-match]").first().boundingBox())!;
       expect(match.width).toBeCloseTo((6 * canvas.width) / after.cols, 0);
       expect(match.height).toBeCloseTo(canvas.height / after.rows, 0);
-      await terminal.screenshot({ path: testInfo.outputPath("late-text-font.png") });
+      await shot(terminal, { path: testInfo.outputPath("late-text-font.png") });
       await writeFile(
         testInfo.outputPath("late-text-font.json"),
         JSON.stringify({ hidden, before, after, receipts }, null, 2),

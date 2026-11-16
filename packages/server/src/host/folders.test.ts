@@ -21,6 +21,8 @@ import {
 } from "@gram/contracts";
 import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import type { EventHub } from "../events/event-hub.ts";
@@ -30,6 +32,7 @@ import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import {
+  FOLDER_DEADLINE,
   type FolderBounds,
   type FolderIo,
   foldersOn,
@@ -485,33 +488,56 @@ describe("a machine's folder listing", () => {
     }).pipe(Effect.scoped, Effect.provide(ProcLive)),
   );
 
-  it.live(
-    "doesn't wait on a folder whose disk doesn't answer",
-    () =>
-      Effect.gen(function* () {
-        const dir = tempDir();
-        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
-        const bounds = home(dir);
-        // `scratch/.git` stands for a link into a mount that hangs: its probe never settles.
-        const io: FolderIo = {
-          realpath: (path) => fsp.realpath(path),
-          stat: (path) =>
-            path.endsWith(join("scratch", ".git")) ? new Promise(() => {}) : fsp.stat(path),
-          opendir: (path) => fsp.opendir(path),
-        };
-        const started = Date.now();
-        const listing = yield* foldersOn(yield* Proc, bounds, io).browse("~/", 50);
-        expect(Date.now() - started).toBeLessThan(8_000);
-        expect(listing.entries.find((entry) => entry.name === "scratch")?.isGitRepo).toBe(false);
+  // On the test clock: the deadlines are seconds long, and the hung calls are the only waits.
+  it.effect("doesn't wait on a folder whose disk doesn't answer", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const bounds = home(dir);
+      /** Set once a call that never settles has been made. */
+      const hung = { probe: false, realpath: false };
+      const untilHung = (which: keyof typeof hung) =>
+        Effect.gen(function* () {
+          for (let i = 0; i < 1000 && !hung[which]; i++)
+            yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 5)));
+          expect(hung[which]).toBe(true);
+        });
+      // `scratch/.git` stands for a link into a mount that hangs: its probe never settles.
+      const io: FolderIo = {
+        realpath: (path) => fsp.realpath(path),
+        stat: (path) => {
+          if (!path.endsWith(join("scratch", ".git"))) return fsp.stat(path);
+          hung.probe = true;
+          return new Promise(() => {});
+        },
+        opendir: (path) => fsp.opendir(path),
+      };
+      const browsing = yield* Effect.forkScoped(
+        foldersOn(yield* Proc, bounds, io).browse("~/", 50),
+      );
+      yield* untilHung("probe");
+      // Past the probe's own deadline, well inside the listing's.
+      yield* TestClock.adjust("3 seconds");
+      const listing = yield* Fiber.join(browsing);
+      expect(listing.entries.find((entry) => entry.name === "scratch")?.isGitRepo).toBe(false);
 
-        // A folder that never answers at all is given up on, not waited for.
-        const stuck: FolderIo = { ...io, realpath: () => new Promise(() => {}) };
-        const gaveUp = yield* foldersOn(yield* Proc, bounds, stuck)
+      // A folder that never answers at all is given up on, not waited for.
+      const stuck: FolderIo = {
+        ...io,
+        realpath: () => {
+          hung.realpath = true;
+          return new Promise(() => {});
+        },
+      };
+      const giving = yield* Effect.forkScoped(
+        foldersOn(yield* Proc, bounds, stuck)
           .browse("~/", 50)
-          .pipe(Effect.flip);
-        expect(gaveUp.message).toContain("took too long");
-      }).pipe(Effect.scoped, Effect.provide(ProcLive)),
-    20_000,
+          .pipe(Effect.flip),
+      );
+      yield* untilHung("realpath");
+      yield* TestClock.adjust(FOLDER_DEADLINE);
+      expect((yield* Fiber.join(giving)).message).toContain("took too long");
+    }).pipe(Effect.scoped, Effect.provide(ProcLive)),
   );
 });
 

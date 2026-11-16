@@ -12,6 +12,7 @@ import {
   openContentsByKeyboard,
 } from "./titlebar-menu";
 import { threadRow } from "./thread-row";
+import { shot } from "./shots";
 
 const shots = process.env["GRAM_LONG_SHOTS"] ?? "e2e/__screenshots__";
 const phase = process.env["GRAM_LONG_PHASE"] ?? "after";
@@ -289,42 +290,15 @@ test("pending jump survives a same-count interior history replacement", async ({
   ).toHaveAttribute("aria-current", "location");
 });
 
-test("navigation offers bounded older-history continuity without transcript scrolling", async ({
-  page,
-}) => {
-  await open(page);
-  await openContents(page);
-  const menu = page.getByTestId("toc");
-  for (let count = 44; count <= 132; count += 22) {
-    await menu
-      .getByRole("menuitem", { name: "Load earlier prompts and chapters", exact: true })
-      .click();
-    await openContents(page);
-    await expect(menu.getByRole("menuitem", { name: /^Synthetic / })).toHaveCount(count);
-  }
-  await expect(
-    menu.getByRole("menuitem", { name: "Load earlier prompts and chapters", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    menu.getByRole("menuitem", { name: "Synthetic decision 1", exact: true }),
-  ).toBeAttached();
-  await menu.getByRole("menuitem", { name: "Synthetic decision 1", exact: true }).click();
-  await expect(
-    page.getByTestId("transcript").locator('[data-message-id="nav-u0"]'),
-  ).toBeInViewport();
-});
-
-// One mode: the palette changes nothing the rail measures.
+// One mode: the palette changes nothing the rail measures. A short thread, whose rail is centred;
+// a full one's pitch is the overflow case's button size.
 for (const mode of ["dark"] as const) {
-  for (const turns of [8, 120]) {
+  for (const turns of [8]) {
     test(`${mode}/${turns}: matched rail captures`, async ({ page }) => {
       await open(page, turns, mode);
-      if (turns === 120) {
-        for (const turn of [100, 80, 60, 40, 20, 0, 119]) await jump(page, turn);
-      }
       await page.mouse.move(0, 0);
       await page.getByLabel("Message", { exact: true }).focus();
-      await page.screenshot({ path: `${shots}/${mode}-${turns}.${phase}.png` });
+      await shot(page, { path: `${shots}/${mode}-${turns}.${phase}.png` });
       const rail = page.getByTestId("conversation-rail");
       const railGeometry = await rail.evaluate((el) => {
         const buttons = [...el.querySelectorAll("button")];

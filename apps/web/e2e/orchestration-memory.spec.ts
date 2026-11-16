@@ -3,6 +3,7 @@ import type { SelectedHarnessSupport } from "@gram/contracts";
 
 import { slowdown } from "./slowdown";
 import { openOrchestrator, threadRow } from "./thread-row";
+import { shot } from "./shots";
 
 /** The workspace's Board view, from its orchestrator: ⌘⇧D opens the Board of the workspace in view. */
 const openBoard = async (page: Page, orchestratorThreadId: string) => {
@@ -240,6 +241,8 @@ test("memory files are read, edited within their caps, deleted, and a version is
 test("an answer picks a choice or says it in words, closes the question, and reaches the orchestrator", async ({
   page,
 }) => {
+  // The undo window runs on the installed clock, so waiting past it takes no real time.
+  await page.clock.install();
   const made = await openMemory(page);
   await memoryTab(page, "Decisions");
   const section = page.getByTestId("memory-questions");
@@ -293,7 +296,8 @@ test("an answer picks a choice or says it in words, closes the question, and rea
   await expect(item("Q3")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(inbox).toBeHidden();
-  await expect(questions).toHaveCount(0, { timeout: 15_000 });
+  await page.clock.runFor(8_000);
+  await expect(questions).toHaveCount(0);
   await expect(section).toContainText("No open questions.");
   await expect(closed.locator('[data-question="Q1"]')).toHaveAttribute(
     "data-closed-as",
@@ -927,7 +931,7 @@ test("a long synthetic dream review stays within the application viewport", asyn
       };
     });
     console.log(`synthetic review ${name}`, JSON.stringify(result));
-    await page.screenshot({ path: test.info().outputPath(`dream-review-scroll-${name}.png`) });
+    await shot(page, { path: test.info().outputPath(`dream-review-scroll-${name}.png`) });
     expect(result.document.scrollTop).toBe(0);
     expect(result.document.scrollHeight).toBe(result.document.clientHeight);
     expect(result.shell.bottom).toBe(result.document.clientHeight);

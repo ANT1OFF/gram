@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { shot } from "./shots";
 
 test("a layout-generated pointer entry at the origin leaves the conversation reachable", async ({
   page,
@@ -12,7 +13,7 @@ test("a layout-generated pointer entry at the origin leaves the conversation rea
   // It has not moved onto the strip: a layout-generated entry must not open it over the page.
   await page.mouse.move(0, 0);
   await page.clock.runFor(500);
-  await page.screenshot({ path: testInfo.outputPath("origin-hover.png") });
+  await shot(page, { path: testInfo.outputPath("origin-hover.png") });
   await expect(page.getByTestId("overview-rail-overlay")).toHaveCount(0);
   await page.clock.resume();
   await composer.click();
@@ -32,7 +33,7 @@ test("leaving the compact strip before its hover delay cancels its pending open"
   const box = (await composer.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.clock.runFor(500);
-  await page.screenshot({ path: testInfo.outputPath("passing-hover.png") });
+  await shot(page, { path: testInfo.outputPath("passing-hover.png") });
   await expect(page.getByTestId("overview-rail-overlay")).toHaveCount(0);
   await page.clock.resume();
   await composer.click();

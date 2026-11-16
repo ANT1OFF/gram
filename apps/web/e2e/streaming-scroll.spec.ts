@@ -8,7 +8,14 @@ const errors = new WeakMap<Page, string[]>();
 const shots = process.env["GRAM_SCROLL_SHOTS"];
 const phase = process.env["GRAM_SCROLL_PHASE"] ?? "after";
 // Playwright hides native scrollbars by default; this suite exercises their actual hit target.
-test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
+test.use({
+  launchOptions: {
+    ...(process.env["GRAM_E2E_CHROMIUM"]
+      ? { executablePath: process.env["GRAM_E2E_CHROMIUM"] }
+      : {}),
+    ignoreDefaultArgs: ["--hide-scrollbars"],
+  },
+});
 
 test.beforeEach(async ({ page }) => {
   const observed: string[] = [];

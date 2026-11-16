@@ -24,7 +24,8 @@ integration risks changed; do not weaken a failing assertion to obtain green.
 For UI screenshot review, run `bun run --filter @gram/web pr:shots --help` and
 select a shot, for example `bun run --filter @gram/web pr:shots --path /settings/agents --after-only`.
 Use the [PR shots helper](../apps/web/scripts/pr-shots.mjs) output or the changed
-Playwright spec's screenshot/retained trace, and view the image.
+Playwright spec's screenshot/retained trace, and view the image. Specs write their review
+screenshots only when `GRAM_E2E_SHOTS` is set (to anything), since nothing compares them.
 A generated screenshot without inspection is not visual verification. Trivial
 prose does not require screenshots. Detailed native/provider opt-ins belong in
 [protocol, native and live checks](#protocol-native-and-live-checks) and formal release steps in

@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { closeMenus } from "./titlebar-menu";
 import { waitForBoardLayout } from "./board-layout";
@@ -848,35 +848,6 @@ test("finished work is in History, and a merged worker offers its cleanup", asyn
   await expect(notice).toBeHidden();
 });
 
-/**
- * Whether the first spinner in `place` turns across a few clock steps. The clock moves only what is
- * on screen, so it is scrolled to before it is watched.
- */
-const turns = async (place: Locator) => {
-  const spinner = place.locator("svg.lucide-spinner").first();
-  await spinner.scrollIntoViewIfNeeded();
-  return spinner.evaluate(async (el: SVGElement) => {
-    const angles = new Set<string>();
-    for (let i = 0; i < 4; i++) {
-      angles.add(el.style.rotate);
-      await new Promise((resolve) => setTimeout(resolve, 60));
-    }
-    return angles.size > 1;
-  });
-};
-
-test("a working thread's spinner turns in its pane header", async ({ page }) => {
-  // The pane shows a release worker, seeded running with no script, so it stays at work.
-  await page.goto("/t/t-plan");
-  await expect(threadRow(page, "t-docs")).toBeVisible();
-  const { release } = await page.evaluate(() => window.gramMock!.simulateReleaseGroup());
-  await threadRow(page, release.running).click();
-  await expect(page).toHaveURL(new RegExp(`/t/${release.running}$`));
-  await expect
-    .poll(() => turns(page.getByTestId("pane-status")), { message: "the pane header spins" })
-    .toBe(true);
-});
-
 test("the Board hides finished work until asked, and remembers that per workspace", async ({
   page,
 }) => {
@@ -1480,9 +1451,10 @@ test("a fresh session is always offered from the header, saves to memory first u
   await expect(page.getByTestId("handoff")).toHaveCount(2);
 });
 
-test("Tidy up asks the orchestrator to put its board in order, from the Board or the palette", async ({
+test("Tidy up asks the orchestrator to put its board in order, from the Board's palette", async ({
   page,
 }) => {
+  // The title bar's Tidy up, its sent state and its rest are titlebar-tidy.spec.ts's.
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   const palette = page.getByTestId("command-palette");
@@ -1491,35 +1463,16 @@ test("Tidy up asks the orchestrator to put its board in order, from the Board or
   await page.keyboard.press("ControlOrMeta+Shift+KeyD");
   await expectBoard(page, made.orchestratorThreadId);
 
-  // In the title bar's "…", in words; a toast says it went, and reopened it rests a moment so a
-  // second press doesn't queue a second sweep.
-  await page.setViewportSize({ width: 1680, height: 900 });
-  const bar = page.getByTestId("shell-titlebar");
-  await bar.getByTestId("titlebar-overflow").click();
-  await page.getByTestId("menu-workspace").click();
-  const tidy = page.getByTestId("titlebar-menu-workspace").getByTestId("folded-tidy");
-  await expect(tidy).toHaveAccessibleName("Tidy up");
-  await tidy.click();
-  const toast = page.getByTestId("toast").filter({ hasText: "Asked the orchestrator to tidy up" });
-  await expect(toast).toHaveCount(1);
-  await bar.getByTestId("titlebar-overflow").click();
-  await page.getByTestId("menu-workspace").click();
-  await expect(tidy).toHaveAttribute("data-sent", /^(sent|queued)$/);
-  await expect(tidy).toHaveAttribute("aria-disabled", "true");
-  await tidy.click({ force: true });
-  await expect(toast).toHaveCount(1);
-  await closeMenus(page);
-
-  // It is an ordinary message of the user's in the orchestrator's thread.
-  await pickChat(page);
-  await expect(page.locator('[data-testid="board-request"][data-kind="tidyUp"]')).toHaveCount(1);
-
   await page.keyboard.press("ControlOrMeta+k");
   await palette.getByRole("combobox").fill(">tidy");
   await palette.getByText("Tidy up workspace", { exact: true }).click();
   await expect(
-    page.getByTestId("toast").filter({ hasText: "Asked the orchestrator to tidy up" }).last(),
+    page.getByTestId("toast").filter({ hasText: "Asked the orchestrator to tidy up" }),
   ).toBeVisible();
+
+  // It is an ordinary message of the user's in the orchestrator's thread.
+  await pickChat(page);
+  await expect(page.locator('[data-testid="board-request"][data-kind="tidyUp"]')).toHaveCount(1);
 });
 
 test("a charter lists worker models, and says which can't run here and where to fix it", async ({
@@ -1683,29 +1636,11 @@ test("a charter lists worker models, and says which can't run here and where to 
   ).toBeVisible();
 });
 
-test("the palette opens the first workspace's board", async ({ page }) => {
-  await page.goto("/t/t-flaky");
-  await expect(threadRow(page, "t-flaky")).toBeVisible();
-  const made = await simulate(page);
-  const palette = page.getByTestId("command-palette");
-  await page.keyboard.press("ControlOrMeta+k");
-  await palette.getByRole("combobox").fill(">board");
-  await palette.getByText("Open board", { exact: true }).click();
-  await expect(page.getByTestId("rail-board")).toBeVisible();
-  // Its one worker reported done with nothing left: in Done, as the sidebar has it, so nothing is
-  // going; Show finished puts it back on its line.
-  await expect(page.getByTestId("rail-empty")).toContainText("Nothing going now");
-  await page.getByTestId("shell-titlebar").getByTestId("rail-show-archived").click();
-  await expect(
-    page
-      .getByTestId("rail-board")
-      .locator(`[data-testid="rail-worker"][data-thread-id="${made.workerThreadId}"]`),
-  ).toBeVisible();
-});
-
 test("a workspace's More… adds and removes repos, and a repo the orchestrator names is an ask", async ({
   page,
 }) => {
+  // The undo window runs on the installed clock, so waiting past it takes no real time.
+  await page.clock.install();
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   const made = await simulate(page);
@@ -1784,7 +1719,8 @@ test("a workspace's More… adds and removes repos, and a repo the orchestrator 
   // Held, its card leaves the thread too: one answer, never two.
   await expect(page.getByTestId("thread-view").getByTestId("approval-card")).toHaveCount(0);
   // Out once the undo window has passed.
-  await expect(held).toHaveCount(0, { timeout: 10_000 * slowdown });
+  await page.clock.runFor(8_000);
+  await expect(held).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(await removeRepo()).toHaveText(["agent-factory", "example-device-apps"]);
 });

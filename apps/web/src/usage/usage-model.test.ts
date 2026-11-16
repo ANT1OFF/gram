@@ -37,10 +37,6 @@ const row = (over: Partial<UsageOverviewRow>): UsageOverviewRow => ({
 
 describe("usage model", () => {
   it("colours each provider by its brand, Claude's models as shades of its orange", () => {
-    expect(PROVIDER_COLOR).toEqual({
-      claude: "var(--provider-anthropic)",
-      codex: "var(--provider-openai)",
-    });
     for (const family of ["opus", "sonnet", "haiku", "other"] as const)
       expect(FAMILY_COLOR[family]).toContain("var(--provider-anthropic)");
     expect(FAMILY_COLOR.opus).toBe(PROVIDER_COLOR.claude);

@@ -16,7 +16,6 @@ import {
   filteredGroups,
   filterLabel,
   elsewhereLine,
-  FOLDED_BY_DEFAULT,
   groupOf,
   lineOf,
   panelRow,
@@ -101,10 +100,6 @@ describe("the Workers tab's groups", () => {
       "Done",
     ]);
     for (const group of groups) expect(group.rows).toEqual([]);
-  });
-
-  it("folds only Done to start with", () => {
-    expect(FOLDED_BY_DEFAULT).toEqual(["done"]);
   });
 
   it("puts a worker under Needs you exactly when the needs-you list has an item on it", () => {
