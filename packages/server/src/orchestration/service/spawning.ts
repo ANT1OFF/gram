@@ -26,7 +26,7 @@ import {
   hostListing,
   workerBrowserOn,
 } from "@gram/contracts";
-import { OWNERS_DIFFER, sameOwner } from "../../host/ownership.ts";
+import { type OwnerOf, ownerPerson, OWNERS_DIFFER, sameOwner } from "../../host/ownership.ts";
 import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -120,7 +120,7 @@ export const recoveredMachineProblem = (
   worker: Pick<Thread, "checkout" | "currentCheckout" | "extraCheckouts">,
   context: {
     readonly own: HostId | undefined;
-    readonly ownerOf: (hostId: HostId) => string | undefined;
+    readonly ownerOf: OwnerOf;
     readonly headless: boolean;
     readonly machines: ReadonlyArray<NamedMachine>;
   },
@@ -137,7 +137,7 @@ export const recoveredMachineProblem = (
         : (context.machines.find((machine) => machine.id === host) ?? { id: host }),
       {
         own: context.own,
-        ownOwner: context.own === undefined ? undefined : context.ownerOf(context.own),
+        ownOwner: context.own === undefined ? undefined : ownerPerson(context.ownerOf(context.own)),
         headless: context.headless,
       },
     );
@@ -321,7 +321,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       }
       const placed = workerMachine(record, {
         own,
-        ownOwner: own === undefined ? undefined : ownerOf(own),
+        ownOwner: own === undefined ? undefined : ownerPerson(ownerOf(own)),
         headless: headless !== undefined,
       });
       if ("error" in placed) return yield* toolError(tool, refusal("not_admitted", placed.error));

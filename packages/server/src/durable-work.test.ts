@@ -4,8 +4,10 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { makeDurableWork } from "./durable-work.ts";
 import {
+  asServerWork,
   callerPerson,
   currentCaller,
+  isServerWork,
   recordActor,
   RoutedFor,
   type RecordedActor,
@@ -110,7 +112,7 @@ it.effect("runs every attempt as the actor the intent was saved with, a retry in
     const seen: Array<string | undefined | "server"> = [];
     const { work, save } = harness(() =>
       Effect.gen(function* () {
-        seen.push((yield* currentCaller) === undefined ? "server" : yield* callerPerson);
+        seen.push(isServerWork(yield* currentCaller) ? "server" : yield* callerPerson);
         return "done";
       }),
     );
@@ -121,8 +123,10 @@ it.effect("runs every attempt as the actor the intent was saved with, a retry in
       .pipe(Effect.provideService(RoutedFor, { person: "grace" }));
     save("ada-retry", { person: "ada" });
     save("unsigned", {});
-    save("server", yield* recordActor);
-    yield* work.resume(["ada-retry", "unsigned", "server"]);
-    expect(seen).toEqual(["ada", "ada", undefined, "server"]);
+    save("server", yield* asServerWork(recordActor));
+    // Written where nobody said whose it is: no one's in particular, never the server's own.
+    save("unsaid", yield* recordActor);
+    yield* work.resume(["ada-retry", "unsigned", "server", "unsaid"]);
+    expect(seen).toEqual(["ada", "ada", undefined, "server", undefined]);
   }),
 );

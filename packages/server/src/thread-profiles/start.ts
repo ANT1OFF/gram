@@ -19,7 +19,15 @@ import {
   LOCAL_HOST_ID,
   type ProfileFile,
 } from "@gram/contracts";
-import { keepsOwner, mayPlaceAwaited, sameOwner } from "../host/ownership.ts";
+import {
+  type HostOwner,
+  keepsOwner,
+  mayPlaceAwaited,
+  ownerOfMachine,
+  RoutedFor,
+  sameOwner,
+  type SharedHost,
+} from "../host/ownership.ts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -479,7 +487,12 @@ export const makeProfileStarter = ({
       // As the person who started it, where the start named one: the thread's creator on the
       // record, and the writer of its first message, which is sent as theirs when it goes.
       return yield* (
-        startedBy === undefined ? made : made.pipe(Effect.provideService(ActingPerson, startedBy))
+        startedBy === undefined
+          ? made
+          : made.pipe(
+              Effect.provideService(ActingPerson, startedBy),
+              Effect.provideService(RoutedFor, { person: startedBy }),
+            )
       ).pipe(
         Effect.onExit((exit) =>
           Exit.isSuccess(exit) ? Effect.void : runtimes.close(id).pipe(Effect.ignore),
@@ -512,7 +525,7 @@ export const makeProfileStarter = ({
       const target = machines.get(to);
       if (
         target === undefined ||
-        !mayPlaceAwaited((id) => (id === to ? stringField(target, "owner") : undefined), thread, to)
+        !mayPlaceAwaited((id) => (id === to ? machineOwner(target) : undefined), thread, to)
       )
         return yield* refuse(NOT_THE_THREADS_OWNER);
       let files: ReadonlyArray<ProfileFile> = [];
@@ -694,7 +707,7 @@ export const makeProfileStarter = ({
           if (source === undefined) return yield* refuse(OWNER_UNKNOWN);
           const target = machines.get(to);
           const ownerOf = (id: HostId) =>
-            stringField((id === from ? source : id === to ? target : undefined) ?? {}, "owner");
+            machineOwner((id === from ? source : id === to ? target : undefined) ?? {});
           if (
             target === undefined ||
             !keepsOwner(ownerOf, thread, { hostId: to }) ||
@@ -780,6 +793,32 @@ const sameKind = (from: string | undefined, to: string | undefined): boolean =>
 const stringField = (record: object, field: string): string | undefined => {
   const value: unknown = Reflect.get(record, field);
   return typeof value === "string" ? value : undefined;
+};
+
+/** A record's shared marker (`SharedHost`), where it has a well-formed one. */
+const sharedField = (record: object): SharedHost | undefined => {
+  const value: unknown = Reflect.get(record, "shared");
+  if (typeof value !== "object" || value === null) return undefined;
+  const scope: unknown = Reflect.get(value, "scope");
+  const people: unknown = Reflect.get(value, "people");
+  return typeof scope === "string" &&
+    Array.isArray(people) &&
+    people.every((person) => typeof person === "string")
+    ? { scope, people: people as ReadonlyArray<string> }
+    : undefined;
+};
+
+/**
+ * Whom a machine's record says it is for (`ownerOfMachine`). A record with no such fields is a
+ * machine that is anyone's; one whose marker can't be read names no one, so it is no one's.
+ */
+const machineOwner = (record: object): HostOwner => {
+  const owner = stringField(record, "owner");
+  const onDemand = stringField(record, "onDemand");
+  const shared = sharedField(record);
+  if (shared === undefined && Reflect.get(record, "shared") !== undefined)
+    return ownerOfMachine({ owner, onDemand: onDemand ?? "thread" });
+  return ownerOfMachine({ owner, onDemand, shared });
 };
 
 /** Two decoded values, alike whatever order their keys were written in. */

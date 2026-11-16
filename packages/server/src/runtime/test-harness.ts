@@ -3,6 +3,7 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { RoutedFor, SERVER_WORK } from "../host/ownership.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ServerConfig, type ServerConfigShape } from "../config.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
@@ -55,6 +56,9 @@ export const makeRuntimeTestLayer = (
     Layer.provideMerge(hooks),
     Layer.provideMerge(checkouts),
     Layer.provideMerge(ServerConfig.layer(config)),
+    // The server's own work, as the server's root gives it (`host/ownership.ts`): a test's calls
+    // are the server's unless they say whose they are.
+    Layer.provideMerge(Layer.succeed(RoutedFor, SERVER_WORK)),
     Layer.orDie,
   );
 

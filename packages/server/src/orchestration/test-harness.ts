@@ -62,6 +62,7 @@ import { RoutinesLive } from "../routines/routines.ts";
 import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
 import { cloneIdentityOf } from "../host/repos.ts";
+import { RoutedFor, SERVER_WORK } from "../host/ownership.ts";
 import { MachineOwnersForTests, type WorkerHost, WorkerHosts } from "../host/worker-host.ts";
 import { OrchestratorAppToolsLive } from "./tools.ts";
 import { TranscriptSearchAppToolsLive } from "./transcript-search-tool.ts";
@@ -685,6 +686,10 @@ export const withServer = <A, E>(
       const context = yield* Layer.build(serverLayer(world, config));
       return yield* body.pipe(Effect.provide(context));
     }),
+  ).pipe(
+    // The server's own work, as the server's root gives it (`host/ownership.ts`): a test's calls
+    // are the server's unless they say whose they are.
+    Effect.provideService(RoutedFor, SERVER_WORK),
   );
 
 const realPause = (ms: number) =>

@@ -275,7 +275,10 @@ naming the person in `owner` and `onDemand: "personal"`. From then on:
   and on no other machine: with none of theirs online they are asked to start it (the composer's
   start card), never placed on a shared host or one started for something else;
 - a host started for the threads placed on it by name (`onDemand: "thread"`, an automated run's,
-  say, with or without an `owner`) takes only those threads and their workers;
+  say) takes only those threads and their workers. It names whom it is for: its `owner`, or an
+  explicit `shared` marker with the people it admits and the scope it is shared in
+  ([Provisioned hosts](PROVISIONED_HOSTS.md)). One that names neither is refused at registration;
+  one kept from an earlier version is reached by the server's own work alone;
 - a worker goes on its orchestrator's machine: when it names none, and when it names "local" (this
   server runs nothing itself). It names another machine only if that machine is the same person's
   own; a machine started for other work, another person's, or (on a headless server) one that says
@@ -283,10 +286,14 @@ naming the person in `owner` and `onDemand: "personal"`. From then on:
 - a host started for one person is never anyone's default, and work that names it for anyone else
   is refused;
 - a thread is its host's owner's, and nothing else makes it anyone's. Threads that work together
-  are one person's: a worker is spawned only on a host of its orchestrator's owner (or on no
-  one's under no one's), a thread joins an orchestrator only on such a host, and a thread moves
-  only onto a host of the same owner. So a workspace's orchestrator and its workers never span
-  two people;
+  are one owner's: a worker is spawned only on a host of its orchestrator's owner or shared scope
+  (or on anyone's under anyone's), a thread joins an orchestrator only on such a host, and a
+  thread moves only onto a host of the same owner or scope. Two hosts that name no one are never
+  one owner's. So a workspace's orchestrator and its workers never span two people;
+- the server's own work is a capability the server gives what it does by itself, never the
+  absence of a caller: every person's request and call is made for that person, an agent's for
+  its thread's host's owner (or scope), and anything that says neither reaches only machines that
+  aren't on demand;
 - ownership is checked at two places that every path passes:
   - **where a host or session is reached.** Machine lookup (every terminal, by thread or by
     terminal id, a kept one included; its Sign in shell; keystrokes; files; git; folders) and
@@ -299,7 +306,7 @@ naming the person in `owner` and `onDemand: "personal"`. From then on:
     archive, directory grants, a reload, a queue edit) pass the same rule. A reopened thread
     comes back on its own host, and links again only to threads of the same owner. Another
     member still reads what the workspace shows; a call with no signed-in person reaches no
-    one's host;
+    host started on demand;
   - **where work is kept for later.** Durable work records who it was written for, and every
     attempt, a retry after a restart included, runs as them, never as the server's own. A
     thread's queued input keeps its writer beside it (whoever wrote, edited or replaced it last),

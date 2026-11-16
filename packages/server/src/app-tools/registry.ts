@@ -31,7 +31,7 @@ import {
 } from "./definition.ts";
 import { inputLengthProblem } from "./input.ts";
 import { DecisionHook, REFUSAL_FOR_AGENT } from "../embedding/decision-hook.ts";
-import { RoutedFor, threadOwner } from "../host/ownership.ts";
+import { type Caller, callerOf, RoutedFor, threadOwner } from "../host/ownership.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { makeActionGuard, type ActionGuard } from "../embedding/guard.ts";
 import { dreamFileTools } from "./dream-tools.ts";
@@ -193,12 +193,13 @@ const byToolName = (a: AppToolDefinition, b: AppToolDefinition): number => {
  * RPC began the turn, nor anyone the input names. Without a lineage, no one's.
  */
 const asLineage = <A, E, R>(
-  lineage: ((threadId: ThreadId) => Effect.Effect<string | undefined>) | undefined,
+  lineage: ((threadId: ThreadId) => Effect.Effect<Caller>) | undefined,
   threadId: ThreadId,
   call: Effect.Effect<A, E, R>,
 ) =>
-  Effect.flatMap(lineage === undefined ? Effect.succeed(undefined) : lineage(threadId), (person) =>
-    Effect.provideService(call, RoutedFor, { person }),
+  Effect.flatMap(
+    lineage === undefined ? Effect.succeed<Caller>({ person: undefined }) : lineage(threadId),
+    (caller) => Effect.provideService(call, RoutedFor, caller),
   );
 
 /**
@@ -225,7 +226,7 @@ export const bindAppTools = (
    * The person the thread's work is for: its machine's owner (`host/ownership.ts`). Each call runs
    * as theirs, so it reaches their machine and no one else's. Absent: no one's.
    */
-  lineage?: (threadId: ThreadId) => Effect.Effect<string | undefined>,
+  lineage?: (threadId: ThreadId) => Effect.Effect<Caller>,
 ): ReadonlyArray<AppTool> =>
   definitions.toSorted(byToolName).map((definition) => {
     const { descriptor } = definition;
@@ -673,8 +674,10 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
       const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
       const lineage = (threadId: ThreadId) =>
         store.getThread(threadId).pipe(
-          Effect.map((thread) => threadOwner(hosts?.ownerOf ?? (() => undefined), thread)),
-          Effect.orElseSucceed(() => undefined),
+          Effect.map((thread) =>
+            callerOf(threadOwner(hosts?.ownerOf ?? (() => undefined), thread)),
+          ),
+          Effect.orElseSucceed((): Caller => ({ person: undefined })),
         );
 
       const setTitle = defineAppTool({

@@ -49,7 +49,8 @@ import { tokenCookieName } from "./auth.ts";
 import { SERVICE_TYP, IDENTITY_HEADER } from "./fronted-identity.ts";
 import { makeTestProxy } from "./fronted-identity.testing.ts";
 import { LOCAL_APP_HEADER } from "./local-app.ts";
-import { generateHostKey, HOST_MCP_PATH } from "../host/machine-keys.ts";
+import { generateHostKey, HOST_MCP_PATH, hostIdOf } from "../host/machine-keys.ts";
+import { privateJsonFile } from "./remote-sessions.ts";
 import { HOST_PATHS, MACHINES_LIST_PATH } from "./machine-routes.ts";
 import { REMOTE_STATUS_PATH } from "./remote-access.ts";
 import { WORKSPACE_TRANSFER_PATHS } from "../transfer/routes.ts";
@@ -97,9 +98,16 @@ const providerPort = await new Promise<number>((resolve) => {
   receiver.listen(0, "127.0.0.1", () => resolve((receiver.address() as { port: number }).port));
 });
 
-const server = (embedding: boolean, socketLifetimeMs?: number, onDemand = false) => {
+const server = (
+  embedding: boolean,
+  socketLifetimeMs?: number,
+  onDemand = false,
+  /** Writes what an earlier run left in the data folder, before the server reads it. */
+  seed?: (dataDir: string) => void,
+) => {
   const dataDir = mkdtempSync(join(tmpdir(), "gram-fronted-data-"));
   dataDirs.push(dataDir);
+  seed?.(dataDir);
   return ServerLayer.pipe(
     Layer.provideMerge(makeFakeAgentAdapter({ reply: "echo" })),
     Layer.provide(TurnHooks.layerNoop),
@@ -257,9 +265,91 @@ const lineageFolder = (dirs: Array<string>) => {
   return made;
 };
 
+/**
+ * A host an embedder started on demand for the threads placed on it by name, registered before
+ * a host had to say whom it is for: no owner and no shared marker, as an older build kept it.
+ */
+const noOnesKey = generateHostKey().publicKey;
+const NO_ONES_HOST = hostIdOf(noOnesKey);
+const seedHostForNoOne = (dataDir: string) =>
+  privateJsonFile(dataDir, "provisioned-hosts.json", 4 * 1024 * 1024).write({
+    version: 1,
+    machines: [
+      {
+        id: NO_ONES_HOST,
+        name: "run-host",
+        platform: "linux",
+        publicKey: noOnesKey,
+        joinedAt: 1,
+        confirmedAt: 1,
+        kind: "provisioned",
+        onDemand: "thread",
+      },
+    ],
+  });
+
 const ada = { sub: "user-ada", name: "Ada", role: "member" };
 const grace = { sub: "user-grace", name: "Grace", role: "member" };
 const vera = { sub: "user-vera", name: "Vera", role: "viewer" };
+
+/** A thread a member started, as it is once placed on `hostId`. */
+const placedOn = (dirs: Array<string>, hostId: string, by: typeof ada) =>
+  Effect.gen(function* () {
+    const { port } = yield* info;
+    const store = yield* ThreadStore;
+    const runtimes = yield* ThreadRuntimes;
+    const folder = mkdtempSync(join(tmpdir(), "gram-fronted-noone-"));
+    dirs.push(folder);
+    const created = yield* (yield* as(port, by))["thread.create"]({
+      projectRoot: folder,
+      checkout: { kind: "current" },
+    });
+    yield* waitFor(
+      "the session",
+      runtimes.session(created.id).pipe(
+        Effect.as(true),
+        Effect.orElseSucceed(() => false),
+      ),
+    );
+    yield* store.updateThread(created.id, (thread) => ({
+      ...thread,
+      checkout: { ...thread.checkout, hostId: hostId as never },
+    }));
+    return { threadId: created.id, folder };
+  });
+
+/** Every route a member takes to a thread and its host, each with why it was refused. */
+const triesOf = (
+  member: Effect.Success<ReturnType<typeof as>>,
+  threadId: ThreadId,
+  hostId: string,
+  folder: string,
+  n: number,
+) => ({
+  terminal: member["terminal.open"]({ threadId, cols: 80, rows: 24 }),
+  hostShell: member["terminal.open"]({ signIn: hostId as never, cols: 80, rows: 24 }),
+  send: member["thread.send"]({
+    threadId,
+    input: { text: "a colleague's instructions" },
+    clientMessageId: `noone-send-${n}`,
+  }),
+  steer: member["thread.steer"]({
+    threadId,
+    input: { text: "a colleague's steer" },
+    clientMessageId: `noone-steer-${n}`,
+  }),
+  mode: member["thread.setMode"]({ threadId, mode: "bypassPermissions" }),
+  queueEdit: member["thread.queue.edit"]({
+    threadId,
+    itemId: "queued-1" as never,
+    input: { text: "edited" },
+  }),
+  queueRemove: member["thread.queue.remove"]({ threadId, itemId: "queued-1" as never }),
+  createOnHost: member["thread.create"]({
+    projectRoot: folder,
+    checkout: { kind: "newWorktree", branch: `noone-${n}`, hostId: hostId as never },
+  }),
+});
 
 /** A saved grid of two panes side by side, the right one focused. */
 const grid = (...panes: ReadonlyArray<string>) => ({
@@ -1367,6 +1457,106 @@ describe("sign-in through a fronting proxy", () => {
               }),
             ),
           ).toBe("the call went through");
+        }),
+      );
+    },
+  );
+
+  // Fail-closed ownership (`host/ownership.ts`): a host started on demand that names no one is
+  // reached by the server's own work alone, and one shared by its embedder by the people it names.
+  layer(server(true, undefined, false, seedHostForNoOne), { excludeTestServices: true })(
+    "with hosts started on demand for no one, or shared",
+    (it) => {
+      it.effect(
+        "refuses every member's call on a thread on a host that names no one, its starter's too",
+        () =>
+          Effect.gen(function* () {
+            const { port } = yield* info;
+            const remote = Option.getOrThrow(yield* Effect.serviceOption(RemoteHosts));
+            // Kept as an older build registered it: on demand, with neither owner nor marker.
+            const kept = remote.machines.get(NO_ONES_HOST);
+            expect(kept).toMatchObject({ onDemand: "thread" });
+            expect(kept).not.toHaveProperty("owner");
+            expect(kept).not.toHaveProperty("shared");
+            const { threadId, folder } = yield* placedOn(dirs, NO_ONES_HOST, grace);
+            let n = 0;
+            for (const person of [grace, ada]) {
+              const member = yield* as(port, person);
+              for (const [name, call] of Object.entries(
+                triesOf(member, threadId, NO_ONES_HOST, folder, n++),
+              ))
+                expect([
+                  person.sub,
+                  name,
+                  yield* refusal(call as Effect.Effect<unknown, unknown>),
+                ]).toEqual([person.sub, name, expect.stringContaining(NOT_YOUR_MACHINE)]);
+              // An answer, over HTTP as answers come: refused before the request is looked up.
+              expect(
+                yield* post(
+                  port,
+                  ASK_ANSWER_PATH,
+                  JSON.stringify({
+                    threadId,
+                    requestId: RequestId.make("pending-on-no-ones"),
+                    answer: { kind: "approval", decision: "allow", scope: "once" },
+                  }),
+                  { [IDENTITY_HEADER]: proxy.statement(person) },
+                ),
+              ).toMatchObject({ status: 403, body: expect.stringContaining(NOT_YOUR_MACHINE) });
+              // What the workspace shows of it is still a read.
+              expect(yield* refusal(member["thread.listWaits"]({ threadId }))).toBe(
+                "the call went through",
+              );
+            }
+            // Nothing a member sent reached it.
+            expect(
+              (yield* (yield* ThreadStore).listMessages(threadId)).some((message) =>
+                JSON.stringify(message).includes("a colleague's"),
+              ),
+            ).toBe(false);
+            // And no such host can be registered now: it is refused, saying why.
+            const again = remote.machines.provision({
+              name: "run-host-2",
+              platform: "linux",
+              publicKey: generateHostKey().publicKey,
+              onDemand: "thread",
+            });
+            expect(again).toMatchObject({ kind: "refused", status: 400 });
+          }),
+      );
+
+      it.effect("lets through only the people a shared host names", () =>
+        Effect.gen(function* () {
+          const { port } = yield* info;
+          const remote = Option.getOrThrow(yield* Effect.serviceOption(RemoteHosts));
+          const provisioned = remote.machines.provision({
+            name: "shared-run-host",
+            platform: "linux",
+            publicKey: generateHostKey().publicKey,
+            onDemand: "thread",
+            shared: { scope: "run:shared", people: [ada.sub] },
+          });
+          if (provisioned.kind !== "provisioned") throw new Error("not provisioned");
+          const hostId = provisioned.machine.id;
+          // Grace started it, but the host admits Ada alone.
+          const { threadId, folder } = yield* placedOn(dirs, hostId, grace);
+          const graceClient = yield* as(port, grace);
+          for (const [name, call] of Object.entries(
+            triesOf(graceClient, threadId, hostId, folder, 100),
+          ))
+            expect([name, yield* refusal(call as Effect.Effect<unknown, unknown>)]).toEqual([
+              name,
+              expect.stringContaining(NOT_YOUR_MACHINE),
+            ]);
+          // Ada gets past the owner's check: the host is just not online here.
+          const adaClient = yield* as(port, ada);
+          for (const [name, call] of Object.entries(
+            triesOf(adaClient, threadId, hostId, folder, 200),
+          ))
+            expect([name, yield* refusal(call as Effect.Effect<unknown, unknown>)]).not.toEqual([
+              name,
+              expect.stringContaining(NOT_YOUR_MACHINE),
+            ]);
         }),
       );
     },

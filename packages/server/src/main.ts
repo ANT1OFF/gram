@@ -36,6 +36,7 @@ import { sealForUpdate } from "./persistence/update-seal.ts";
 import { OpenerLive } from "./platform/opener.ts";
 import { TailscaleLive } from "./http/remote-control.ts";
 import { HttpServer } from "./platform/unstable.ts";
+import { asServerWork } from "./host/ownership.ts";
 import { AgentHosts } from "./runtime/agent-hosts.ts";
 import {
   AGENTS_STOP_TIMEOUT_MS,
@@ -324,6 +325,10 @@ program.pipe(
       ),
     ),
   ),
+  // The server's own work, by its root: everything it starts by itself reaches every machine
+  // (`host/ownership.ts`). Every person's request and call is made for that person instead, and
+  // nothing reached without either says it is anyone's.
+  asServerWork,
   // After the layers have closed, so it times the whole teardown. The exit is explicit: `runMain`
   // leaves a program that ends without a signal to the event loop, which `parentPort` keeps alive.
   Effect.onExit((exit) =>

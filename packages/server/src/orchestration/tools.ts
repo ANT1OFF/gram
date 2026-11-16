@@ -64,6 +64,7 @@ import { GitStatePublisher } from "../git/publisher.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { OnDemand, choicesFor } from "../embedding/on-demand.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
+import { ownerPerson } from "../host/ownership.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import {
   awaitWorkerMachine,
@@ -221,7 +222,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           .getThread(caller)
           .pipe(Effect.mapError(() => fail("Your thread can't be read now.")));
         const ownHost = hostOf(effectiveCheckout(orchestrator));
-        const owner = workerHosts?.ownerOf(ownHost);
+        const owner = ownerPerson(workerHosts?.ownerOf(ownHost));
         if (onDemand === undefined || owner === undefined)
           return yield* fail(
             "Workers can't have machines of their own here: leave out sandbox, and the worker runs on your machine.",

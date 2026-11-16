@@ -13,7 +13,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
-import { NOT_YOUR_MACHINE, OWNERS_DIFFER, RoutedFor } from "../host/ownership.ts";
+import { asServerWork, NOT_YOUR_MACHINE, OWNERS_DIFFER, RoutedFor } from "../host/ownership.ts";
 import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
 import { closedThreadHandlers } from "../rpc/handlers/closed-threads.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -104,7 +104,8 @@ const inServerWithShared = <A, E>(world: World, body: Effect.Effect<A, E, Server
       const context = yield* Layer.build(serverLayer(world).pipe(Layer.provide(withShared)));
       return yield* body.pipe(Effect.provide(context));
     }),
-  );
+    // The server's own work, as the server's root gives it (`withServer`).
+  ).pipe(asServerWork);
 
 /** The orchestrator's agent reports its 5-hour window at `utilization`, resetting in an hour. */
 const report = (session: FakeSession, utilization: number) =>

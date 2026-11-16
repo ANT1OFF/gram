@@ -488,7 +488,10 @@ export type StoredQueuedInput = QueuedInput & { readonly actor?: StoredActor };
 
 const StoredActorJson = Schema.Union([
   Schema.Literal("server"),
-  Schema.Struct({ person: Schema.optionalKey(Schema.String) }),
+  Schema.Struct({
+    person: Schema.optionalKey(Schema.String),
+    scope: Schema.optionalKey(Schema.String),
+  }),
 ]);
 
 export interface ThreadStoreShape {

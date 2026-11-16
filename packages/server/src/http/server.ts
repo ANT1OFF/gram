@@ -119,7 +119,7 @@ import { agentHostsOrHeadless, withHeadlessCheck } from "../host/headless.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
-import { mayReachThread, ownersOf } from "../host/ownership.ts";
+import { mayReachThread, ownersOf, RoutedFor, SERVER_WORK } from "../host/ownership.ts";
 import { compressedStatic } from "./compressed-static.ts";
 import { markLocalApp, unmarkLocalApp } from "./local-app.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
@@ -773,14 +773,18 @@ export const AuthMiddleware = HttpRouter.middleware(
   { global: true },
 );
 
-/** `effect` served as `request`, the caller as the auth middleware decided it is. */
+/**
+ * `effect` served as `request`, the caller as the auth middleware decided it is. A person's
+ * request is made for them (`RoutedFor`), never as the server's own work it would otherwise
+ * inherit, so whatever route serves it reaches only the machines they may (`host/ownership.ts`).
+ */
 const asCaller = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   request: HttpServerRequest.HttpServerRequest,
   actor?: Actor,
 ) =>
   Effect.provideService(
-    effect,
+    actor === undefined ? effect : Effect.provideService(effect, RoutedFor, { person: actor.id }),
     HttpServerRequest.HttpServerRequest,
     // Only a verified statement names an actor: any other caller's word for one is taken off.
     actor === undefined ? unmarkActor(request) : markActor(request, actor),
@@ -1170,6 +1174,11 @@ export const ServerLayer: Layer.Layer<
           websocket: websocketOptions,
         }),
       ),
+      // The server's own work (`host/ownership.ts`): what these layers start by themselves, and
+      // the requests of the server's own callers (this machine's app, the platform's service, a
+      // host). Every person's request and call is made for that person instead (`asCaller`,
+      // `ActorGuard`), and an agent's for its thread's owner.
+      Layer.provide(Layer.succeed(RoutedFor, SERVER_WORK)),
     );
   }),
 );

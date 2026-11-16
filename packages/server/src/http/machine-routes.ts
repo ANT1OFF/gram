@@ -32,7 +32,12 @@ import {
   SSH_TARGET,
 } from "../host/ssh-join.ts";
 import { installScript, updateCommand } from "../host/install-script.ts";
-import type { DialAccess, DialRoute } from "../host/paired-machines.ts";
+import {
+  type DialAccess,
+  type DialRoute,
+  isSharedHost,
+  WHOSE_HOST,
+} from "../host/paired-machines.ts";
 import { type HostFolders, MAX_LISTED } from "../host/folders.ts";
 import type { RemoteHostsShape } from "../host/remote-hosts.ts";
 import type { McpTokens } from "../app-tools/mcp-tokens.ts";
@@ -153,6 +158,8 @@ const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body
 const refuse = (message: string, status = 403) => HttpServerResponse.text(message, { status });
 
 const JOIN_BODY_MAX = 512;
+/** A provisioned host's registration: a join's, with room for whom a shared host admits. */
+const PROVISION_BODY_MAX = 16_384;
 /** A person's stable subject, as fronted sign-in names them: printable, at most 128 characters. */
 const OWNER = /^[\x21-\x7e]{1,128}$/;
 /** A folder request's body: a machine's id, a path and a limit. */
@@ -443,8 +450,8 @@ export const machineManagement = (
             },
             409,
           );
-        const body = yield* jsonBody(JOIN_BODY_MAX);
-        const { name, publicKey, platform = "linux", owner, onDemand } = body ?? {};
+        const body = yield* jsonBody(PROVISION_BODY_MAX);
+        const { name, publicKey, platform = "linux", owner, onDemand, shared } = body ?? {};
         if (
           typeof name !== "string" ||
           typeof publicKey !== "string" ||
@@ -452,22 +459,24 @@ export const machineManagement = (
         )
           return json({ message: "Give the host's name and its public key." }, 400);
         // A host started on demand: for one person (`personal`, which names its owner), or for
-        // the threads placed on it by name (`thread`, with or without an owner), or for an
-        // orchestrator's workers (`worker`, which names whose). An owner always comes with a kind,
-        // and a person's own host and a worker host always with their owner.
+        // the threads placed on it by name (`thread`), or for an orchestrator's workers (`worker`,
+        // which names whose). Each says whom it is for, fail-closed (`host/ownership.ts`): a
+        // person's own host and a worker host their owner, a thread host its owner or an explicit
+        // shared marker (`shared`, its scope and the people it admits). One that names neither
+        // would be reached by no one but the server, so it is refused, as is either without a kind.
         if (
           (owner !== undefined && (typeof owner !== "string" || !OWNER.test(owner))) ||
+          (shared !== undefined && !isSharedHost(shared)) ||
+          (owner !== undefined && shared !== undefined) ||
           (onDemand !== undefined &&
             onDemand !== "personal" &&
             onDemand !== "thread" &&
             onDemand !== "worker") ||
-          (owner !== undefined && onDemand === undefined) ||
+          ((owner !== undefined || shared !== undefined) && onDemand === undefined) ||
+          (onDemand !== undefined && owner === undefined && shared === undefined) ||
           ((onDemand === "personal" || onDemand === "worker") && owner === undefined)
         )
-          return json(
-            { message: "An on-demand host names its kind, and a person's its owner." },
-            400,
-          );
+          return json({ message: WHOSE_HOST }, 400);
         const result = (() => {
           try {
             return hosts.machines.provision({
@@ -478,6 +487,7 @@ export const machineManagement = (
               ...(onDemand === "personal" || onDemand === "thread" || onDemand === "worker"
                 ? { onDemand }
                 : {}),
+              ...(isSharedHost(shared) ? { shared } : {}),
             });
           } catch {
             return undefined;

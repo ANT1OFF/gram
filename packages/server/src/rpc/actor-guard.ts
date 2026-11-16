@@ -7,7 +7,13 @@ import {
 } from "@gram/contracts";
 import { ANSWER_OVER_HTTP } from "../embedding/answer-proof.ts";
 import { ActingPerson } from "../embedding/person.ts";
-import { mayReachThread, NOT_YOUR_MACHINE, ownersOf, RoutedFor } from "../host/ownership.ts";
+import {
+  mayReachThread,
+  NOT_YOUR_MACHINE,
+  ownerOfMachine,
+  ownersOf,
+  RoutedFor,
+} from "../host/ownership.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -337,8 +343,9 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
        */
       const onAnothersMachine = (person: string | undefined, payload: unknown) =>
         Effect.gen(function* () {
-          // Looked up only while some machine is someone's.
-          if (machines?.list().some((machine) => machine.owner !== undefined) !== true)
+          // Looked up only while some machine isn't anyone's: a person's, a shared scope's, or one
+          // started on demand that names no one, which the server's own work alone reaches.
+          if (machines?.list().some((machine) => ownerOfMachine(machine) !== undefined) !== true)
             return false;
           const threads = [...threadsNamed(payload)];
           for (const workspaceId of workspacesNamed(payload)) {

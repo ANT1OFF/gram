@@ -535,8 +535,10 @@ layer(TestServer, { excludeTestServices: true })("provisioned hosts over TLS", (
         });
         expect((yield* machines).map((one) => one.id)).toEqual([probeId]);
 
-        // A host for the threads placed on it by name (one run's, say) needs no owner; a person's
-        // own host does, and an owner always comes with a kind.
+        // Every host started on demand says whom it is for, fail-closed: a person's own host and
+        // a worker's its owner, a host for the threads placed on it by name (one run's, say) its
+        // owner or an explicit shared marker. One that names neither is refused, and neither
+        // comes without a kind.
         const forRun = provisionHost("run-1");
         const run = (body: Record<string, unknown>) =>
           local(MACHINES_PROVISION_PATH, {
@@ -545,18 +547,39 @@ layer(TestServer, { excludeTestServices: true })("provisioned hosts over TLS", (
             platform: process.platform,
             ...body,
           });
+        const shared = { scope: "run:1", people: ["ada", "grace"] };
         expect((yield* run({ onDemand: "personal" })).status).toBe(400);
         expect((yield* run({ owner: "ada" })).status).toBe(400);
+        expect((yield* run({ shared })).status).toBe(400);
         expect((yield* run({ onDemand: "elsewhere" })).status).toBe(400);
         // A worker's own machine is always someone's.
         expect((yield* run({ onDemand: "worker" })).status).toBe(400);
-        expect((yield* run({ onDemand: "thread" })).status).toBe(200);
+        // A thread host that names no one would be no one's but the server's: refused.
+        expect((yield* run({ onDemand: "thread" })).status).toBe(400);
+        // A shared marker is a thread host's alone, never beside an owner, and well-formed.
+        expect((yield* run({ onDemand: "personal", owner: "ada", shared })).status).toBe(400);
+        expect((yield* run({ onDemand: "thread", owner: "ada", shared })).status).toBe(400);
+        expect((yield* run({ onDemand: "worker", shared })).status).toBe(400);
+        for (const malformed of [
+          { scope: "", people: [] },
+          { scope: "run 1", people: [] },
+          { scope: "run:1", people: ["ada", "ada"] },
+          { scope: "run:1", people: [7] },
+          { scope: "run:1" },
+        ])
+          expect((yield* run({ onDemand: "thread", shared: malformed })).status).toBe(400);
+        expect(
+          (yield* run({ onDemand: "thread", shared: { scope: "run:1", people: [] } })).status,
+        ).toBe(200);
+        // The same key with another marker is another registration: refused, not changed.
+        expect((yield* run({ onDemand: "thread", shared })).status).toBe(409);
         const stored = JSON.parse(kept("provisioned-hosts.json")) as {
-          machines: Array<{ name: string; onDemand?: string; owner?: string }>;
+          machines: Array<{ name: string; onDemand?: string; owner?: string; shared?: unknown }>;
         };
         const runsOwn = stored.machines.find((each) => each.name === forRun.name);
         expect(runsOwn?.onDemand).toBe("thread");
         expect(runsOwn?.owner).toBeUndefined();
+        expect(runsOwn?.shared).toEqual({ scope: "run:1", people: [] });
       }).pipe(Effect.scoped),
     180_000,
   );

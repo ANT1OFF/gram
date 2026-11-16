@@ -24,7 +24,15 @@ import { ServerConfig } from "../config.ts";
 import { Embedding } from "../embedding/embedding.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
-import { callerPerson, NOT_YOUR_MACHINE, ownersOf } from "./ownership.ts";
+import {
+  admitsCall,
+  callerPerson,
+  currentCaller,
+  NOT_YOUR_MACHINE,
+  type OwnerOf,
+  ownersOf,
+  type SharedHost,
+} from "./ownership.ts";
 import { RemoteHosts, type RemoteHostsShape } from "./remote-hosts.ts";
 import type { WorkerHost } from "./worker-host.ts";
 
@@ -55,6 +63,8 @@ export interface PlaceableMachine {
   /** A host an embedder started on demand for one person (`embedding/on-demand.ts`). */
   readonly owner?: string | undefined;
   readonly onDemand?: "personal" | "thread" | "worker" | undefined;
+  /** A host an embedder started on demand for something shared (`SharedHost`). */
+  readonly shared?: SharedHost | undefined;
 }
 
 /** A machine's Codex as placement reads it. */
@@ -140,8 +150,8 @@ export interface HeadlessPlacement {
    * when an embedder started one for them, else the default one (`defaultMachine`).
    */
   readonly machine: Effect.Effect<HostId, InvalidState>;
-  /** The person a host was started for, when it was started for one. */
-  readonly ownerOf: (hostId: HostId) => string | undefined;
+  /** Whom a host was started for (`HostOwner`), when it was started for someone. */
+  readonly ownerOf: OwnerOf;
 }
 
 /**
@@ -192,7 +202,7 @@ export { NOT_YOUR_MACHINE };
 /**
  * `request` as a headless Gram places it: on the machine it names, else on the default one. An
  * existing worktree is a folder of this machine, where nothing runs, so it is refused. A machine
- * started on demand for one person takes only that person's work.
+ * started on demand takes only the work of a call it admits (`admitsCall`).
  */
 export const placeRequest = (
   placement: HeadlessPlacement,
@@ -203,10 +213,10 @@ export const placeRequest = (
       return yield* Effect.fail(new InvalidState({ message: RUNS_NOTHING_HERE }));
     const named = checkoutRequestHost(request);
     if (named !== undefined) {
-      const owner = placement.ownerOf(named);
-      // Placement is strict: new work goes on an owned machine only for its owner, never for
-      // the server's own work with nobody to say who it is for.
-      if (owner !== undefined && owner !== (yield* callerPerson))
+      // Placement is strict: new work goes on a machine started for someone only for a call it
+      // admits (its person, one of its shared people or an agent of its scope), never for the
+      // server's own work with nobody to say who it is for, and on one that names no one for none.
+      if (!admitsCall(placement.ownerOf(named), yield* currentCaller))
         return yield* Effect.fail(new InvalidState({ message: NOT_YOUR_MACHINE }));
       return request;
     }

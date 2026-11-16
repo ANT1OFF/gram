@@ -21,6 +21,7 @@ import { redactText } from "../../logging/redact.ts";
 import { filterWorkers, ledgerOf, visibleFeatures, type WorkerFacts } from "../ledger.ts";
 import { wakesOf, withNotes } from "../outbox.ts";
 import { ledgerQuestions } from "../worker-questions.ts";
+import { ownerPerson } from "../../host/ownership.ts";
 import { slotHereNow } from "../../runtime/model-slots.ts";
 import {
   coordinationAllows,
@@ -157,7 +158,7 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
         ...machinesListed(
           machinesForOrchestrator(machines, {
             own,
-            ownOwner: own === undefined ? undefined : kit.ownerOf(own),
+            ownOwner: own === undefined ? undefined : ownerPerson(kit.ownerOf(own)),
             headless: kit.headless !== undefined,
             inUse: new Set(
               ledger.features.flatMap((feature) =>

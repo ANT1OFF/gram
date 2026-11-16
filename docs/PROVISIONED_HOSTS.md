@@ -91,15 +91,30 @@ with a browser's `Origin`.
    { "name": "sandbox-1", "publicKey": "…", "platform": "linux" }
    ```
 
-   A host started on demand says what for, in `onDemand`:
+   A host started on demand says what for, in `onDemand`, and whom it is for:
 
    - `"personal"`: one person's own host ([Hosts on demand](EMBEDDING.md#hosts-on-demand)), which
      also names them in `"owner"`;
+   - `"worker"`: a host an orchestrator started for its own workers, which names its `"owner"`;
    - `"thread"`: a host for the threads placed on it by name and their workers, such as one an
-     embedder starts for a single automated run. It names an `owner` only if it is one person's.
+     embedder starts for a single automated run. It names an `"owner"` when it is one person's,
+     and otherwise an explicit shared marker:
 
-   Either kind is never anyone's default machine, so no thread that names no machine lands on it.
-   An `owner` always comes with a kind. The same key registered again must name the same ones.
+     ```json
+     { "onDemand": "thread", "shared": { "scope": "run:42", "people": ["<person>", "<person>"] } }
+     ```
+
+     `people` are the stable subjects of the people who may reach it, at most 64 and none twice;
+     an empty list admits no person. `scope` (printable, at most 128 characters) groups the hosts
+     that count as one owner's: a thread moves between hosts of one scope, and an agent on one
+     reaches the others, so an embedder gives each unit of work a scope of its own.
+
+   Ownership is fail-closed. A host started on demand that names neither an owner nor a shared
+   marker is refused (`400`), as is one with both, a marker on any kind but `"thread"`, and an
+   owner or marker without a kind. A host registered that way by an earlier version is reached by
+   the server's own work alone: no person's call, and no agent's, reaches it or a thread on it.
+   Each kind is never anyone's default machine, so no thread that names no machine lands on it.
+   The same key registered again must name the same ones.
 
    It answers `{ "hostId", "fingerprint", "created", "origin" }`. Registering the same key again
    with the same name changes nothing and answers `created: false`. These are refused with `409`:

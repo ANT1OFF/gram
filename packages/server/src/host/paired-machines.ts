@@ -15,6 +15,7 @@ import {
 } from "./machine-keys.ts";
 import { SSH_TARGET } from "./ssh-join.ts";
 import type { MachineUpdate } from "./machine-updates.ts";
+import type { SharedHost } from "./ownership.ts";
 
 /** How long a join link lasts, as a phone's pairing link does. */
 export const JOIN_LIFETIME_MS = 15 * 60_000;
@@ -36,6 +37,35 @@ const NONCES_KEPT = 4096;
  * took, which only many keys spent together around a restart could turn into a full set.
  */
 export const DIALS_PER_MACHINE = 12;
+
+/** A person's stable subject, as an on-demand host names its owner or its shared people. */
+export const PERSON_SUBJECT = /^[\x21-\x7e]{1,128}$/;
+/** A shared host's scope (`SharedHost.scope`): printable, without spaces. */
+export const SHARED_SCOPE = /^[\x21-\x7e]{1,128}$/;
+/** How many people a shared host admits at most. */
+export const MAX_SHARED_PEOPLE = 64;
+
+/** Whether `value` is a well-formed shared marker: a scope and up to 64 distinct people. */
+export const isSharedHost = (value: unknown): value is SharedHost => {
+  if (typeof value !== "object" || value === null) return false;
+  const { scope, people } = value as Record<string, unknown>;
+  return (
+    typeof scope === "string" &&
+    SHARED_SCOPE.test(scope) &&
+    Array.isArray(people) &&
+    people.length <= MAX_SHARED_PEOPLE &&
+    people.every((person) => typeof person === "string" && PERSON_SUBJECT.test(person)) &&
+    new Set(people).size === people.length
+  );
+};
+
+/** Whether two shared markers say the same: one scope, the same people in any order. */
+const sameShared = (a: SharedHost | undefined, b: SharedHost | undefined): boolean =>
+  a === undefined || b === undefined
+    ? a === b
+    : a.scope === b.scope &&
+      a.people.length === b.people.length &&
+      a.people.every((person) => b.people.includes(person));
 
 /** A joined machine as the main Gram keeps it: its pinned key and what it said it was. */
 export interface PairedMachine {
@@ -81,7 +111,18 @@ export interface PairedMachine {
    * anyone's default machine (`host/headless.ts`).
    */
   readonly onDemand?: OnDemandKind;
+  /**
+   * A `thread` host started for something shared rather than for one person: the scope it is
+   * shared in and the people it admits (`host/ownership.ts`). An on-demand host names an `owner`
+   * or this, never both and never neither: one with neither is reached by the server's own work
+   * alone.
+   */
+  readonly shared?: SharedHost;
 }
+
+/** What a provisioned host is told that says wrongly, or not at all, whom it is for. */
+export const WHOSE_HOST =
+  "An on-demand host names whom it is for: a person's and a worker host its owner, a thread host its owner or whom it is shared with. Nothing else names either.";
 
 /** What an embedder started a host on demand for. */
 export type OnDemandKind = "personal" | "thread" | "worker";
@@ -161,6 +202,8 @@ export interface ProvisionRequest {
   /** The person the host is for, when an embedder started it on demand for one. */
   readonly owner?: string;
   readonly onDemand?: OnDemandKind;
+  /** Whom a `thread` host is shared with, where it isn't one person's (`PairedMachine.shared`). */
+  readonly shared?: SharedHost;
 }
 
 export type ProvisionResult =
@@ -243,7 +286,13 @@ const isMachine = (value: unknown): value is PairedMachine => {
     (m["kind"] === undefined ||
       (m["kind"] === "provisioned" &&
         m["confirmedAt"] !== undefined &&
-        m["sshTarget"] === undefined))
+        m["sshTarget"] === undefined)) &&
+    // A shared marker only on a provisioned thread host with no owner, and well-formed.
+    (m["shared"] === undefined ||
+      (m["kind"] === "provisioned" &&
+        m["onDemand"] === "thread" &&
+        m["owner"] === undefined &&
+        isSharedHost(m["shared"])))
   );
 };
 
@@ -274,7 +323,8 @@ const machinesIn = (value: unknown, provisioned: boolean, most: number): PairedM
  */
 export const fileMachineStore = (dataDir: string): PairedMachineStore => {
   const file = privateJsonFile(dataDir, "machines.json", 64 * 1024);
-  const hostsFile = privateJsonFile(dataDir, "provisioned-hosts.json", 256 * 1024);
+  // Room for every host to name its most shared people (`MAX_SHARED_PEOPLE`).
+  const hostsFile = privateJsonFile(dataDir, "provisioned-hosts.json", 4 * 1024 * 1024);
   const read = (): PairedMachine[] => [
     ...machinesIn(file.read(), false, MAX_MACHINES),
     ...machinesIn(hostsFile.read(), true, MAX_PROVISIONED),
@@ -581,6 +631,19 @@ export const createPairedMachines = (
           status: 400,
           message: "The host's key isn't valid.",
         };
+      // Whom it is for, fail-closed: an on-demand host names one person (`owner`) or an explicit
+      // shared scope (`shared`, a `thread` host's only), never both and never neither, and
+      // nothing that isn't on demand names either.
+      const { owner, onDemand, shared } = request;
+      if (
+        (owner !== undefined && !PERSON_SUBJECT.test(owner)) ||
+        (shared !== undefined && !isSharedHost(shared)) ||
+        (owner !== undefined && shared !== undefined) ||
+        (onDemand === undefined && (owner !== undefined || shared !== undefined)) ||
+        (onDemand !== undefined && owner === undefined && shared === undefined) ||
+        (shared !== undefined && onDemand !== "thread")
+      )
+        return { kind: "refused", status: 400, message: WHOSE_HOST };
       const id = hostIdOf(request.publicKey);
       const existing = byId(id);
       if (existing !== undefined) {
@@ -595,7 +658,8 @@ export const createPairedMachines = (
         return existing.name === request.name &&
           existing.platform === request.platform &&
           existing.owner === request.owner &&
-          existing.onDemand === request.onDemand
+          existing.onDemand === request.onDemand &&
+          sameShared(existing.shared, request.shared)
           ? { kind: "provisioned", machine: existing, created: false }
           : {
               kind: "refused",
@@ -632,6 +696,9 @@ export const createPairedMachines = (
         kind: "provisioned",
         ...(request.owner === undefined ? {} : { owner: request.owner }),
         ...(request.onDemand === undefined ? {} : { onDemand: request.onDemand }),
+        ...(request.shared === undefined
+          ? {}
+          : { shared: { scope: request.shared.scope, people: [...request.shared.people] } }),
       };
       save([...machines, machine]);
       return { kind: "provisioned", machine, created: true };
@@ -836,6 +903,7 @@ export const machineView = (
     ...(machine.kind === undefined ? {} : { kind: machine.kind }),
     ...(machine.owner === undefined ? {} : { owner: machine.owner }),
     ...(machine.onDemand === undefined ? {} : { onDemand: machine.onDemand }),
+    ...(machine.shared === undefined ? {} : { shared: machine.shared }),
     ...(online?.selfUpdate === true ? { selfUpdate: true } : {}),
     ...(status.update === undefined ? {} : { update: status.update }),
   };

@@ -3,7 +3,18 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { defineAppTool } from "../app-tools/definition.ts";
 import { bindAppTools } from "../app-tools/registry.ts";
-import { asThreadOwner, callerPerson, MOVE_CHANGES_OWNER, RoutedFor } from "../host/ownership.ts";
+import {
+  asServerWork,
+  asThreadOwner,
+  currentCaller,
+  mayReach,
+  MOVE_CHANGES_OWNER,
+  NOBODY,
+  ownersOf,
+  RoutedFor,
+  sameOwner,
+  callerPerson,
+} from "../host/ownership.ts";
 import { ownedRuntimes } from "../runtime/owned-runtimes.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import { describe, expect, it } from "vitest";
@@ -31,6 +42,8 @@ import {
 import { ActingPerson } from "./person.ts";
 
 const id = (value: string) => value as HostId;
+/** A place on `hostId`, as a checkout names its machine. */
+const at = (hostId: string) => ({ hostId: id(hostId) });
 const TOKEN = "t".repeat(40);
 const machine = (
   over: Omit<Partial<PlaceableMachine>, "id"> & { id: string },
@@ -182,7 +195,7 @@ describe("hosts provisioned on demand: a background worker's person", () => {
       handle: () => callerPerson,
     });
     const [bound] = bindAppTools([tool], ThreadId.make("ada-worker"), undefined, undefined, (t) =>
-      asThreadOwner(getThread, ownerOf, t)(callerPerson),
+      asThreadOwner(getThread, ownerOf, t)(Effect.map(callerPerson, (person) => ({ person }))),
     );
     // What the input says of an owner is never read.
     expect(await Effect.runPromise(inGracesRpc(bound!.run({ owner: "grace" })))).toBe("ada");
@@ -519,7 +532,7 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
   it("lets the owner, and the server's own work, through", async () => {
     const { reached, owned } = recording();
     await Effect.runPromise(as("ada")(owned.send(adaWorker, { text: "Ada's" })));
-    await Effect.runPromise(owned.steer(adaWorker, { text: "the server's" }));
+    await Effect.runPromise(asServerWork(owned.steer(adaWorker, { text: "the server's" })));
     await Effect.runPromise(as("grace")(owned.send(sharedThread, { text: "anyone's" })));
     expect(reached).toEqual([`send:${adaWorker}`, `steer:${adaWorker}`, `send:${sharedThread}`]);
   });
@@ -528,13 +541,15 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
   it("moves a thread only onto a machine started for the same person", async () => {
     const { reached, owned } = recording();
     const orchestrator = ThreadId.make("ada-orchestrator");
-    await Effect.runPromise(owned.moveCheckout(orchestrator, onto("m-ada")));
-    await Effect.runPromise(owned.moveCheckout(sharedThread, onto("m-shared")));
+    await Effect.runPromise(asServerWork(owned.moveCheckout(orchestrator, onto("m-ada"))));
+    await Effect.runPromise(asServerWork(owned.moveCheckout(sharedThread, onto("m-shared"))));
     for (const [threadId, hostId] of [
       [orchestrator, "m-shared"],
       [sharedThread, "m-ada"],
     ] as const) {
-      const exit = await Effect.runPromiseExit(owned.moveCheckout(threadId, onto(hostId)));
+      const exit = await Effect.runPromiseExit(
+        asServerWork(owned.moveCheckout(threadId, onto(hostId))),
+      );
       expect(String(exit)).toContain(MOVE_CHANGES_OWNER);
     }
     // And never for someone else, wherever to.
@@ -551,8 +566,10 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
     const orchestrator = ThreadId.make("ada-orchestrator");
     const from = onto("m-ada");
     const plan = (hostId: string) => ({ from, prepare: Effect.succeed(onto(hostId)) });
-    await Effect.runPromise(owned.relocate(orchestrator, plan("m-ada")));
-    const changed = await Effect.runPromiseExit(owned.relocate(orchestrator, plan("m-shared")));
+    await Effect.runPromise(asServerWork(owned.relocate(orchestrator, plan("m-ada"))));
+    const changed = await Effect.runPromiseExit(
+      asServerWork(owned.relocate(orchestrator, plan("m-shared"))),
+    );
     expect(String(changed)).toContain(MOVE_CHANGES_OWNER);
     const refused = await Effect.runPromise(
       as("grace")(owned.relocate(orchestrator, plan("m-ada"))).pipe(Effect.flip),
@@ -568,11 +585,11 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
     const ada = ThreadId.make("waiting-ada");
     const grace = ThreadId.make("waiting-grace");
     const anyone = ThreadId.make("waiting-anyone");
-    await Effect.runPromise(owned.relocate(ada, plan("m-ada")));
-    await Effect.runPromise(owned.relocate(ada, plan("m-shared")));
-    await Effect.runPromise(owned.relocate(anyone, plan("m-ada")));
+    await Effect.runPromise(asServerWork(owned.relocate(ada, plan("m-ada"))));
+    await Effect.runPromise(asServerWork(owned.relocate(ada, plan("m-shared"))));
+    await Effect.runPromise(asServerWork(owned.relocate(anyone, plan("m-ada"))));
     // Never onto a machine started for someone else than its starter.
-    const changed = await Effect.runPromiseExit(owned.relocate(grace, plan("m-ada")));
+    const changed = await Effect.runPromiseExit(asServerWork(owned.relocate(grace, plan("m-ada"))));
     expect(String(changed)).toContain(MOVE_CHANGES_OWNER);
     // And while it waits, nobody else reaches it: to them it isn't there.
     const refused = await Effect.runPromise(
@@ -589,5 +606,122 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
       `relocate:${anyone}`,
       `send:${ada}`,
     ]);
+  });
+});
+
+// Fail-closed ownership (`host/ownership.ts`): a host started on demand says whom it is for, a
+// person or an explicit shared scope; one that names neither is the server's own work's alone;
+// and the server's own work is a capability, never a call with no caller.
+describe("hosts provisioned on demand: those that name no one, and shared ones", () => {
+  const noOnes = machine({ id: "m-noone", onDemand: "thread" });
+  const runOne = machine({
+    id: "m-run1",
+    onDemand: "thread",
+    shared: { scope: "run:1", people: ["ada"] },
+  });
+  const runOneAgain = machine({
+    id: "m-run1b",
+    onDemand: "thread",
+    shared: { scope: "run:1", people: [] },
+  });
+  const runTwo = machine({
+    id: "m-run2",
+    onDemand: "thread",
+    shared: { scope: "run:2", people: ["ada"] },
+  });
+  const all = [adaBox, sharedBox, noOnes, runOne, runOneAgain, runTwo];
+  const owners = ownersOf({ list: () => all });
+  const reaches = (hostId: string, caller: Parameters<typeof RoutedFor.of>[0] | "unsaid") =>
+    Effect.runPromise(
+      caller === "unsaid"
+        ? mayReach(owners, id(hostId))
+        : mayReach(owners, id(hostId)).pipe(Effect.provideService(RoutedFor, caller)),
+    );
+
+  it("reaches a host that names no one only as the server's own work", async () => {
+    expect(owners(id("m-noone"))).toBe(NOBODY);
+    for (const caller of [
+      { person: "ada" },
+      { person: undefined },
+      { person: undefined, scope: "run:1" },
+    ])
+      expect(await reaches("m-noone", caller)).toBe(false);
+    expect(await reaches("m-noone", "unsaid")).toBe(false);
+    expect(await Effect.runPromise(asServerWork(mayReach(owners, id("m-noone"))))).toBe(true);
+  });
+
+  it("takes the server's own work from its capability, never from a call with no caller", async () => {
+    expect(await reaches("m-ada", "unsaid")).toBe(false);
+    expect(await Effect.runPromise(asServerWork(mayReach(owners, id("m-ada"))))).toBe(true);
+    // A machine that is anyone's (not on demand) stays anyone's, a call with no caller included.
+    expect(await reaches("m-shared", "unsaid")).toBe(true);
+    expect(await reaches("m-shared", { person: "grace" })).toBe(true);
+    // A person acting narrows the server's own work it runs under.
+    expect(
+      await Effect.runPromise(
+        asServerWork(
+          Effect.map(currentCaller, (caller) => caller?.person).pipe(
+            Effect.provideService(ActingPerson, "grace"),
+          ),
+        ),
+      ),
+    ).toBe("grace");
+  });
+
+  it("reaches a shared host only for the people it names and the agents of its scope", async () => {
+    expect(await reaches("m-run1", { person: "ada" })).toBe(true);
+    expect(await reaches("m-run1", { person: "grace" })).toBe(false);
+    expect(await reaches("m-run1", { person: undefined })).toBe(false);
+    expect(await reaches("m-run1", { person: undefined, scope: "run:1" })).toBe(true);
+    expect(await reaches("m-run1", { person: undefined, scope: "run:2" })).toBe(false);
+    // An empty list admits no person at all.
+    expect(await reaches("m-run1b", { person: "ada" })).toBe(false);
+    expect(await reaches("m-run1b", { person: undefined, scope: "run:1" })).toBe(true);
+  });
+
+  it("counts two hosts one owner's only for one person or one shared scope", () => {
+    expect(sameOwner(owners, at("m-run1"), at("m-run1b"))).toBe(true);
+    expect(sameOwner(owners, at("m-run1"), at("m-run2"))).toBe(false);
+    expect(sameOwner(owners, at("m-run1"), at("m-ada"))).toBe(false);
+    expect(sameOwner(owners, at("m-run1"), at("m-shared"))).toBe(false);
+    expect(sameOwner(owners, at("m-noone"), at("m-shared"))).toBe(false);
+    expect(sameOwner(owners, at("m-noone"), at("m-ada"))).toBe(false);
+    // One host is one owner's, whatever it names.
+    expect(sameOwner(owners, at("m-noone"), at("m-noone"))).toBe(true);
+    // Two hosts that name no one are no one's together: never linked.
+    const twoNoOnes = ownersOf({
+      list: () => [noOnes, machine({ id: "m-noone2", onDemand: "thread" })],
+    });
+    expect(sameOwner(twoNoOnes, at("m-noone"), at("m-noone2"))).toBe(false);
+    // Machines that are anyone's (this one, joined ones) are one owner's, as before.
+    expect(sameOwner(owners, {}, at("m-shared"))).toBe(true);
+  });
+
+  it("places new work on them only for a call they admit, never for the server's own", async () => {
+    const placement = headlessPlacement({ list: () => all as never }, true);
+    const place = (hostId: string, caller: Parameters<typeof RoutedFor.of>[0] | "server") =>
+      outcome(
+        placeRequest(placement, { kind: "newWorktree", branch: "b", hostId: id(hostId) }).pipe(
+          Effect.as("placed"),
+          caller === "server" ? asServerWork : Effect.provideService(RoutedFor, caller),
+        ),
+      );
+    for (const caller of [{ person: "ada" }, { person: "grace" }, "server"] as const)
+      expect(await place("m-noone", caller)).toBe(NOT_YOUR_MACHINE);
+    expect(await place("m-run1", { person: "ada" })).toBe("placed");
+    expect(await place("m-run1", { person: undefined, scope: "run:1" })).toBe("placed");
+    expect(await place("m-run1", { person: "grace" })).toBe(NOT_YOUR_MACHINE);
+    expect(await place("m-run1", "server")).toBe(NOT_YOUR_MACHINE);
+  });
+
+  it("runs an agent's call on a shared host in its scope, and on one that names no one as no one", async () => {
+    const onShared = stored("run-thread", "m-run1");
+    const onNoOnes = stored("noone-thread", "m-noone");
+    const lookup = (threadId: ThreadId) =>
+      Effect.succeed(threadId === onShared.id ? onShared : onNoOnes);
+    const callerAt = (thread: Thread) =>
+      Effect.runPromise(asServerWork(asThreadOwner(lookup, owners, thread.id)(currentCaller)));
+    expect(await callerAt(onShared)).toEqual({ person: undefined, scope: "run:1" });
+    expect(await callerAt(onNoOnes)).toEqual({ person: undefined });
   });
 });

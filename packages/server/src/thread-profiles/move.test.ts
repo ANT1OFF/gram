@@ -322,17 +322,45 @@ describe("moving a profile thread keeps whose it is (REVIEW-477 1)", () => {
     }),
   );
 
-  it.effect(
-    "moves a thread from a machine registered before kinds onto one for threads placed by name",
-    () =>
-      Effect.gen(function* () {
-        // An embedder's run host, kept from before it said its kind, restarted as one that says it.
-        const { starter, cleanup } = setup({
-          records: { [GONE]: { id: GONE }, [NEXT]: { onDemand: "thread" } },
-        });
+  it.effect("moves between thread hosts of one shared scope, whoever each admits", () =>
+    Effect.gen(function* () {
+      const { starter, cleanup } = setup({
+        records: {
+          [GONE]: { onDemand: "thread", shared: { scope: "run:1", people: ["ada"] } },
+          [NEXT]: { onDemand: "thread", shared: { scope: "run:1", people: ["ada", "bob"] } },
+        },
+      });
+      yield* Effect.addFinalizer(() => Effect.sync(cleanup));
+      expect((yield* starter.moveOne(ID, NEXT)).moved).toBe(true);
+    }),
+  );
+
+  // Fail-closed (`host/ownership.ts`): a thread changes owner by no move. Not from a machine that
+  // is anyone's (one registered before kinds) onto one that is someone's or no one's, not between
+  // two shared scopes, and never between two hosts that name no one, which are no one's together.
+  it.effect("never moves a thread between scopes, or onto or between hosts that name no one", () =>
+    Effect.gen(function* () {
+      for (const records of [
+        { [GONE]: { id: GONE }, [NEXT]: { onDemand: "thread" } },
+        { [GONE]: { id: GONE }, [NEXT]: owned("ada") },
+        { [GONE]: { onDemand: "thread" }, [NEXT]: { onDemand: "thread" } },
+        {
+          [GONE]: { onDemand: "thread", shared: { scope: "run:1", people: ["ada"] } },
+          [NEXT]: { onDemand: "thread", shared: { scope: "run:2", people: ["ada"] } },
+        },
+        {
+          [GONE]: { onDemand: "thread", shared: { scope: "run:1", people: ["ada"] } },
+          [NEXT]: owned("ada"),
+        },
+      ]) {
+        const { starter, calls, current, cleanup } = setup({ records });
         yield* Effect.addFinalizer(() => Effect.sync(cleanup));
-        expect((yield* starter.moveOne(ID, NEXT)).moved).toBe(true);
-      }),
+        const error = yield* starter.moveOne(ID, NEXT).pipe(Effect.flip);
+        expect(error.message).toBe(NOT_THE_THREADS_OWNER);
+        expect(calls).toEqual([]);
+        expect(current()?.checkout.hostId).toBe(GONE);
+      }
+    }),
   );
 
   it.effect(

@@ -18,7 +18,7 @@ import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ActingPerson } from "../embedding/person.ts";
-import { mayPlaceAwaited, mayReachThread, RoutedFor } from "../host/ownership.ts";
+import { mayPlaceAwaited, mayReachThread, RoutedFor, SERVER_WORK } from "../host/ownership.ts";
 import type { HostThreadPlaces } from "../host/thread-places.ts";
 import type { WorkerHost } from "../host/worker-host.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -611,9 +611,12 @@ const ownerOfMachine = (id: HostId) => (id === MACHINE ? "ada" : id === OTHER ? 
 describe("whose a thread is while it waits for its machine", () => {
   const waiting = waitingThread;
   const ownerOf = ownerOfMachine;
-  const reaches = (thread: never, person: string | undefined | "server") =>
+  const reaches = (thread: never, person: string | undefined | "server" | "nobody said") =>
     mayReachThread(() => Effect.succeed(thread), ownerOf, ID).pipe(
-      Effect.provideService(RoutedFor, person === "server" ? undefined : { person }),
+      Effect.provideService(
+        RoutedFor,
+        person === "server" ? SERVER_WORK : person === "nobody said" ? undefined : { person },
+      ),
     );
 
   it.effect("is reached only by who it was started by, and by the server itself", () =>
@@ -622,6 +625,8 @@ describe("whose a thread is while it waits for its machine", () => {
       expect(yield* reaches(waiting("ada"), "bob")).toBe(false);
       expect(yield* reaches(waiting("ada"), undefined)).toBe(false);
       expect(yield* reaches(waiting("ada"), "server")).toBe(true);
+      // The server's own work is a capability, never the absence of a caller.
+      expect(yield* reaches(waiting("ada"), "nobody said")).toBe(false);
       // Started by no one in particular: anyone's, as a thread on no one's machine is.
       expect(yield* reaches(waiting(), "bob")).toBe(true);
     }),

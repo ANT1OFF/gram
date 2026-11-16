@@ -272,7 +272,12 @@ export const StoredWorkerQuestion = Schema.Struct({
    * notice goes to the worker as theirs, a retry included, never as the server's own work. Absent
    * for a decision the server made, and in records written before this was kept.
    */
-  closedFor: Schema.optionalKey(Schema.Struct({ person: Schema.optionalKey(Schema.String) })),
+  closedFor: Schema.optionalKey(
+    Schema.Struct({
+      person: Schema.optionalKey(Schema.String),
+      scope: Schema.optionalKey(Schema.String),
+    }),
+  ),
 });
 export type StoredWorkerQuestion = typeof StoredWorkerQuestion.Type;
 

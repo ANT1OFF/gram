@@ -9,6 +9,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import { EventHub } from "../events/event-hub.ts";
+import { RoutedFor, SERVER_WORK } from "../host/ownership.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ServerConfig } from "../config.ts";
 import { FakeAgentAdapter, FakeAgentControl } from "./fake-agent.ts";
@@ -93,6 +94,8 @@ const harness = (file = ":memory:") => {
     Layer.provideMerge(CheckoutService.layerNoGit),
     Layer.provideMerge(ServerConfig.layer(TEST_CONFIG)),
     Layer.provideMerge(Logger.layer([logger])),
+    // The server's own work, as the server's root gives it (`host/ownership.ts`).
+    Layer.provideMerge(Layer.succeed(RoutedFor, SERVER_WORK)),
     Layer.orDie,
   );
   return {
