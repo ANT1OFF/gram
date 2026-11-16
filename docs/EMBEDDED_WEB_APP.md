@@ -478,7 +478,8 @@ page already; it stays the heading for a screen reader) and `wide` (the pane's w
 rather than Settings' reading column, for a page laid out beside a tree of its own).
 `SettingRow`'s, `Field`'s and `Toggle`'s `label` and `description` may be more than words (a
 code span, a link, a badge or a status beside the name); give a label that isn't a string its
-words in `labelText`, which Settings search, the reset's name and the ⓘ use. All three take a
+words in `labelText` (its type asks for them), which Settings search, the reset's name and the ⓘ
+use. All three take a
 `testId` on their row.
 
 For forms:

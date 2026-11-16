@@ -83,6 +83,8 @@ const modes: readonly RadioOption<Level>[] = [
 export const wrong: readonly OptionGroupOption<Level>[] = [{ value: "mid", label: "Mid" }];
 const Glyph: EmptyIcon = ({ className }) => <svg className={className} />;
 const add: EmptyAction = { label: "Add a member", onClick: () => {}, testId: "add" };
+// @ts-expect-error: a name that isn't words brings its words, for search and the reset's name
+export const unnamed = <SettingRow label={<b>Key</b>} />;
 const tone: MeterTone = meterTone(0.95);
 const classes: ClassInput = ["p-inset", false, null];
 

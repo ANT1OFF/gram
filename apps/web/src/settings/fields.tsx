@@ -74,17 +74,27 @@ function RowLabel({
 
 /**
  * A setting's name and line may be rich (a link, a code span, a badge beside the words). Settings
- * search, the reset's and the ⓘ's names need their words: a string is its own, anything else
- * gives them in `labelText`.
+ * search, the reset's and the ⓘ's names need their words: a string is its own, and a name that
+ * isn't one must give them in `labelText`.
  */
-interface RichLabel {
-  label: ReactNode;
-  /** The name's words, when `label` is not a string. */
-  labelText?: string | undefined;
-  description?: ReactNode;
-}
+type RichLabel = { description?: ReactNode } & (
+  | { label: string; labelText?: string | undefined }
+  | {
+      label: Exclude<ReactNode, string>;
+      /** The name's words: Settings search, the reset's name and the ⓘ use them. */
+      labelText: string;
+    }
+);
 
-const wordsOf = ({ label, labelText, description }: RichLabel) => ({
+const wordsOf = ({
+  label,
+  labelText,
+  description,
+}: {
+  label: ReactNode;
+  labelText: string | undefined;
+  description: ReactNode;
+}) => ({
   label: labelText ?? (typeof label === "string" ? label : ""),
   description: typeof description === "string" ? description : undefined,
 });
@@ -574,13 +584,14 @@ export function Toggle({
   learnMore?: ReactNode;
 }) {
   const id = useId();
+  // Toggle's own props hold the pairing (a name that isn't words brings its words); destructuring
+  // loses it for the compiler, so it is put back together for the row.
+  const name = { label, labelText, description } as RichLabel;
   return (
     <SettingRow
-      label={label}
-      labelText={labelText}
+      {...name}
       htmlFor={id}
       testId={testId}
-      {...(description === undefined ? {} : { description })}
       {...(keywords === undefined ? {} : { keywords })}
       onReset={onReset}
       error={error}
