@@ -311,11 +311,10 @@ export function RightPanel() {
             ref={tabList}
             data-label-fit={phoneHeader ? "all" : labelFit.tabs}
             className={cn(
-              // Each tab draws its own underline, so the list's 1 px indicator, which hangs below
-              // the list, is hidden: in a scrolling list it would overflow it and, with classic
-              // scrollbars, show a vertical scrollbar beside More. The fit folds tabs into More
-              // before they'd scroll, so no scrollbar is shown either way.
-              "min-w-0 overflow-x-auto overflow-y-hidden border-b-0 [scrollbar-width:none] [&>[data-slot=tabs-indicator]]:hidden",
+              // Each tab draws its own underline, so the list's 1 px indicator is hidden: it hangs
+              // below the list, which scrolls sideways and so up and down too, and with classic
+              // scrollbars it showed a vertical scrollbar beside More.
+              "min-w-0 overflow-x-auto border-b-0 [&>[data-slot=tabs-indicator]]:hidden",
               // The row's own children there, so each segment is as wide as its name needs.
               phoneHeader ? "contents" : !reviewAction && "flex-1",
             )}
