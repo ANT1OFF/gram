@@ -209,6 +209,8 @@ export const HandoffMarker = Schema.Struct({
   /** The turn that carries the checkpoint prompt, once one does. */
   checkpointTurnId: Schema.optionalKey(TurnId),
   previousAgentSessionId: Schema.optionalKey(Schema.String),
+  /** No checkpoint was taken (`Handoff.unsaved`): skipped by the user, or the session was in error. */
+  unsaved: Schema.optionalKey(Schema.Boolean),
 });
 export type HandoffMarker = typeof HandoffMarker.Type;
 

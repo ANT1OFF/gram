@@ -78,6 +78,12 @@ const switchCheckpointNote = (from: AgentKind, to: AgentKind): string =>
 
 /** The wake reason of the `boot` digest that opens the fresh session. */
 const HANDOFF_BOOT_REASON = "a fresh session after a handoff";
+/**
+ * The same, when the old session wrote nothing to memory first: what it was in the middle of may
+ * be missing from memory, so the new one checks the ledger before acting on memory alone.
+ */
+export const HANDOFF_UNSAVED_BOOT_REASON =
+  "a fresh session after a handoff that skipped saving to memory, so memory may be missing what the last session was doing: check the ledger and workers' reports before acting on memory alone";
 
 /** What handoff takes from the rest of the service. */
 export interface HandoffDeps {
@@ -297,6 +303,7 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
             carried !== undefined && carried.previous.agent !== carried.target.agent
               ? "switch"
               : marker.reason,
+          ...(marker.unsaved === true ? { unsaved: true } : {}),
           ...(carried?.handoff === undefined
             ? {}
             : {
@@ -359,7 +366,12 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
       yield* Effect.logInfo("orchestration handoff").pipe(
         Effect.annotateLogs({ workspaceId, reason: marker.reason }),
       );
-      reasons.set(workspaceId, (reasons.get(workspaceId) ?? new Set()).add(HANDOFF_BOOT_REASON));
+      reasons.set(
+        workspaceId,
+        (reasons.get(workspaceId) ?? new Set()).add(
+          marker.unsaved === true ? HANDOFF_UNSAVED_BOOT_REASON : HANDOFF_BOOT_REASON,
+        ),
+      );
       if (state?.paused !== undefined && state.paused.reason !== "parked") {
         bootWhilePaused.add(workspaceId);
       }
@@ -394,6 +406,7 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
             ...(thread.agentSessionId === undefined
               ? {}
               : { previousAgentSessionId: thread.agentSessionId }),
+            ...(outbox.handoff.unsaved === true ? { unsaved: true } : {}),
           };
           return [{ ...outbox, handoff: next }, next];
         });
@@ -712,16 +725,20 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
           : yield* runtimes
               .switchNotePlan(thread.id, options?.note !== false)
               .pipe(Effect.mapError((e) => new InvalidState({ message: e.message })));
+      // Skipped by the user (a hard cut): only a plain fresh session, never a switch, whose note
+      // is the checkpoint's reply.
+      const skipped = target === undefined && options?.checkpoint === false;
       const broken = status === "error" || notePlan?.mode === "limit";
       const at = yield* Clock.currentTimeMillis;
       const marker: HandoffMarker = {
         reason,
         ...(target === undefined ? {} : { target }),
         at,
-        phase: broken ? "fresh" : "checkpoint",
-        ...(broken && thread.agentSessionId !== undefined
+        phase: broken || skipped ? "fresh" : "checkpoint",
+        ...((broken || skipped) && thread.agentSessionId !== undefined
           ? { previousAgentSessionId: thread.agentSessionId }
           : {}),
+        ...(target === undefined && (broken || skipped) ? { unsaved: true } : {}),
       };
       const claim = Effect.gen(function* () {
         if (target !== undefined) {
@@ -775,13 +792,16 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
       yield* store.appendOrchestrationEvent(workspaceId, {
         at,
         kind: "handoffRequested",
-        data: { reason, checkpoint: !broken },
+        data: { reason, checkpoint: !broken && !skipped },
       });
       // A digest that hasn't gone out would reach the session that is about to go. One a turn
       // already carries finishes first, acknowledged as usual: the checkpoint waits behind it.
       yield* cancelDelivery(workspaceId, thread.id);
       yield* orchestrationChanged(workspaceId);
-      if (broken) {
+      if (broken || skipped) {
+        // A hard cut stops the running turn as Stop does, answering its open cards, so the fresh
+        // session needn't wait for it to end.
+        if (skipped) yield* runtimes.interrupt(thread.id).pipe(Effect.ignore);
         yield* performFresh(workspaceId, thread.id);
       } else {
         yield* runtimes

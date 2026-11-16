@@ -1,0 +1,15 @@
+{
+  "title": "Fresh session from the context chip",
+  "slug": "fresh-session",
+  "status": "approved",
+  "template": "app-screen",
+  "current": 1,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-16"
+    }
+  ]
+}

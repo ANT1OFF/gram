@@ -1138,6 +1138,28 @@ orchestrator one digest covering the pause, then lets workers go in batches of t
 45 seconds apart, those it stopped told to continue where they left off. Pauses the
 server makes (delivery failure, parking, re-enabling) stop only the orchestrator.
 
+## A fresh orchestrator session
+
+Fresh session (the refresh icon in the orchestrator's header, its `/` menu, the palette and the
+thread menu) replaces the orchestrator's agent session with a new one under the same thread. The new session
+boots from its role, `MEMORY.md`, the standing decisions, the charter and the ledger, so workers,
+features, pull requests, held briefs, questions, what waits on the user and queued messages all
+carry over; the conversation, tool output and prompt cache don't, compacted or not. Workers keep
+their own sessions. It is offered whatever the context fill: compaction handles a full context, and
+this is for dropping what the conversation holds.
+
+**Save to memory first** is on by default: the old session gets one checkpoint turn to write down
+what isn't in memory yet, and the cut follows when that turn ends. Turned off, it is a hard cut
+(`orchestrator.handoff` with `checkpoint: false`): the running turn stops as Stop does, which
+declines any card it has open, and the fresh session starts at once. Use it for an orchestrator
+that is stuck, looping or confused. The transcript's divider reads "New session · you asked for
+one, without saving first", the boot digest tells the new session that memory may be missing what
+the last one was doing, and the next memory update's `input/INDEX.md` marks the orchestrator
+thread to be read early, so what wasn't saved can still be recovered from the transcript. A
+session in error skips the checkpoint the same way.
+
+Source: [handoff](../packages/server/src/orchestration/service/handoff.ts).
+
 ## Idle compaction
 
 A large Claude thread left idle is compacted with its own `/compact` just before its one-hour

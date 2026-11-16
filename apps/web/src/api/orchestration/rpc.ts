@@ -77,7 +77,13 @@ export const orchestrationRpc = ({ client, connection }: RpcContext): Orchestrat
     run(client["orchestrator.retrySwitch"]({ workspaceId })),
   cancelOrchestratorSwitch: (workspaceId) =>
     run(client["orchestrator.cancelSwitch"]({ workspaceId })),
-  orchestratorHandoff: (workspaceId) => run(client["orchestrator.handoff"]({ workspaceId })),
+  orchestratorHandoff: (workspaceId, options) =>
+    run(
+      client["orchestrator.handoff"]({
+        workspaceId,
+        ...(options?.checkpoint === undefined ? {} : { checkpoint: options.checkpoint }),
+      }),
+    ),
   threadDetach: (threadId) => run(client["thread.detach"]({ threadId })),
   threadJoinWorkspace: (input) => run(client["thread.joinWorkspace"](input)),
   threadJoinTargets: (threadId) => run(client["thread.joinTargets"]({ threadId })),
