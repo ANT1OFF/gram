@@ -2,6 +2,7 @@ import {
   DEFAULT_LOOK_ID,
   DEFAULT_PALETTE_ID,
   LOOKS,
+  paletteFromSeeds,
   PRESET_PALETTES,
   resolvePalette,
   type Contrast,
@@ -121,4 +122,17 @@ export function sanitizePrefs(input: unknown): Partial<ThemePrefs> {
   else if (raw["contrast"] === "standard") out.contrast = "system";
   if (oneOf(MOTION_PREFS, raw["motion"])) out.motion = raw["motion"];
   return out;
+}
+
+/** Keeps the stored custom palettes that still derive, rebuilt from their seeds. */
+export function sanitizePalettes(input: unknown): Palette[] {
+  if (!Array.isArray(input)) return [];
+  return input.flatMap((item: unknown) => {
+    try {
+      const p = item as Palette;
+      return [paletteFromSeeds(p.seeds, { id: p.id, name: p.name })];
+    } catch {
+      return [];
+    }
+  });
 }

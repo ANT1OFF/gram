@@ -6,7 +6,6 @@
 import type { ReactElement } from "react";
 
 import { AgentIcon as AppAgentIcon } from "@/agents/agent-display";
-import { cn as appCn } from "@/lib/utils";
 
 export { EmptyState, type EmptyAction, type EmptyIcon } from "@/components/empty-state";
 export { Hint } from "@/components/hint";
@@ -67,12 +66,4 @@ export const AgentIcon: (props: {
   labelled?: boolean;
 }) => ReactElement = AppAgentIcon;
 
-/** A class or a falsy value that is left out. */
-export type ClassInput = string | false | null | undefined | readonly ClassInput[];
-
-/**
- * Joins class names, leaving out the falsy ones, and settles Tailwind classes that conflict in
- * favour of the later one, as Gram's own components do.
- */
-export const cn: (...classes: ClassInput[]) => string = (...classes) =>
-  appCn(...(classes as Parameters<typeof appCn>));
+export { cn, type ClassInput } from "./kit-cn";

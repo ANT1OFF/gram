@@ -23,6 +23,35 @@ const run = (label, bin, args) => {
 const binOf = (name, file) => join(dirname(require.resolve(`${name}/package.json`)), file);
 
 run("bundle", binOf("vite", "bin/vite.js"), ["build", "--config", "vite.embed.config.ts"]);
+// The light kit, on its own, beside the rest: a page that shows before Gram mounts loads this and
+// nothing of the app, so it keeps a budget (bundle-budgets.json, `kitLiteKb`): the entry and every
+// file it imports.
+run("light kit", binOf("vite", "bin/vite.js"), ["build", "--config", "vite.kit-lite.config.ts"]);
+{
+  const budget = JSON.parse(readFileSync(join(webDir, "bundle-budgets.json"), "utf8")).kitLiteKb;
+  const seen = new Set();
+  const visit = (file) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const code = readFileSync(join(outDir, file), "utf8");
+    // Static and dynamic imports alike: a part loaded on demand counts against the budget too.
+    for (const [, specifier] of code.matchAll(
+      /(?:from|import)\s*\(?\s*["'](\.\.?\/[^"']+\.js)["']/g,
+    ))
+      visit(join(dirname(file), specifier).replaceAll("\\", "/"));
+  };
+  visit("gram-web-kit-lite.js");
+  let bytes = 0;
+  for (const file of seen) bytes += readFileSync(join(outDir, file)).byteLength;
+  const kb = bytes / 1000;
+  if (kb > budget) {
+    console.error(
+      `build-embed: the light kit loads ${kb.toFixed(0)} kB (${seen.size} files), over its ${budget} kB budget in bundle-budgets.json`,
+    );
+    process.exit(1);
+  }
+  console.log(`build-embed: the light kit loads ${kb.toFixed(0)} kB of its ${budget} kB budget`);
+}
 
 writeDeclarations(outDir);
 
@@ -105,6 +134,8 @@ writeFileSync(
       exports: {
         ".": { types: "./gram-web.d.ts", default: "./gram-web.js" },
         "./kit": { types: "./gram-web-kit.d.ts", default: "./gram-web-kit.js" },
+        "./kit-lite": { types: "./gram-web-kit-lite.d.ts", default: "./gram-web-kit-lite.js" },
+        "./kit-lite.css": "./gram-web-kit-lite.css",
         "./style.css": "./gram-web.css",
         "./theme.css": "./theme.css",
         "./classes.txt": "./classes.txt",

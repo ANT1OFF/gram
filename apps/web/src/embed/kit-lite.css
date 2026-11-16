@@ -1,0 +1,32 @@
+/* The light kit's stylesheet (`@gram/web/kit-lite.css`): Gram's look for a page drawn before Gram
+   mounts. The theme's tokens and every palette, Gram's base styles, the Glass look's fonts, and
+   only the utilities the light kit's controls are drawn with. Gram's whole stylesheet
+   (`gram-web.css`) is a superset; a page that mounts Gram needs only that one. */
+@import "tailwindcss" source(none);
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Glass, Gram's default look: Inter and JetBrains Mono. A theme's own fonts replace them. */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+@import "../styles/generated/themes.css";
+@import "../styles/tokens.css";
+@import "../styles/motion.css";
+@import "../styles/looks.css";
+@import "../styles/theme.css";
+@import "../styles/base.css";
+
+/* The light kit's controls, as kit-lite.ts lists them. */
+@source "../components/hint.tsx";
+@source "../components/ui/alert.tsx";
+@source "../components/ui/badge.tsx";
+@source "../components/ui/button.tsx";
+@source "../components/ui/button-group.tsx";
+@source "../components/ui/checkbox.tsx";
+@source "../components/ui/input.tsx";
+@source "../components/ui/skeleton.tsx";
+@source "../components/ui/tooltip.tsx";
+@source "../motion/shimmer.tsx";
+@source "../settings/field-frame.tsx";
+@source "../settings/help-tip.tsx";

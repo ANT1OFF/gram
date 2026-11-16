@@ -20,6 +20,8 @@ out. Nothing here changes the desktop app.
 | `gram-web.css`            | Every style of the app, fonts included. Link it once.                               |
 | `gram-web.d.ts`, `types/` | The types below, as [contract.ts](../apps/web/src/embed/contract.ts) declares them. |
 | `gram-web-kit.js`         | Gram's own controls, for your pages (below).                                        |
+| `gram-web-kit-lite.js`    | The basic controls alone, for a page shown before Gram mounts (below).              |
+| `gram-web-kit-lite.css`   | The light kit's stylesheet: Gram's theme, base styles and fonts, and its controls'. |
 | `theme.css`               | The names of Gram's theme for your own Tailwind build (below).                      |
 | `classes.txt`             | Every class in `gram-web.css`, for that build to write again in one order (below).  |
 | `chunks/`, `assets/`      | What the entry loads later, found relative to it.                                   |
@@ -558,6 +560,35 @@ on `Button`, `Badge` and the tooltip's trigger included, so an app needs no decl
 own for the kit: resolve `@gram/web/kit` to the package and its `exports` find them. A test
 type-checks a page on the kit against exactly what the package ships
 ([embed-types.test.mjs](../apps/web/scripts/embed-types.test.mjs)).
+
+### Before Gram mounts
+
+A page your app shows before it mounts Gram (a sign-in, a landing page, a boot screen) can look like
+Gram without loading it. `@gram/web/kit-lite` has the basics: `Button`, `buttonVariants`,
+`ButtonGroup`, `Input`, `InputGroup`, `Textarea`, `Field`, `Checkbox`, `RadioGroup`, `Badge`,
+`Alert`, `Skeleton`, `Shimmer` and `cn`. They are the full kit's own controls from the same
+sources, with the same props; the light kit's `Field` is Settings' field as it is drawn, without
+the search and "Saved" a page of settings adds. `applyGramTheme(theme?)` puts the person's
+stored look on `<html>` as Gram's own theme sync does once it mounts: their mode, palette (one of
+their own palettes too, its colours written for the page), contrast, density and motion, resolved
+against the OS's preferences, with your app's `theme` (the one you mount with) over them. So the
+page is already in the look Gram will open in. The OS's preferences are read once, as it runs;
+call it again to follow a change. Call it on every such page: without it the page draws in
+Gram's default dark palette.
+
+```tsx
+import { applyGramTheme, Button, Field, Input } from "@gram/web/kit-lite";
+import "@gram/web/kit-lite.css";
+
+applyGramTheme(houseTheme);
+```
+
+`@gram/web/kit-lite.css` carries Gram's tokens and every palette, its base styles, the Glass look's
+fonts (Inter and JetBrains Mono) and the styles of the light kit's controls; your own markup takes
+the theme's names from `theme.css` as below. Neither loads any of Gram's app: the light kit is
+about 200 kB of code before compression (60 kB after), React aside, and the build fails past its
+budget (`kitLiteKb` in `apps/web/bundle-budgets.json`). Once Gram mounts, its own stylesheet and
+kit take over; a page that mounts Gram needs only those.
 
 For your own markup, `@gram/web/theme.css` gives a Tailwind 4 build of yours the names of Gram's
 theme: its colours (`bg-surface-3`, `text-muted-foreground`), type steps (`text-meta`,

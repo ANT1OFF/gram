@@ -11,13 +11,16 @@ import { fileURLToPath } from "node:url";
 const webDir = fileURLToPath(new URL("..", import.meta.url));
 const require = createRequire(join(webDir, "package.json"));
 
-// Declarations for the two entries. The contract imports nothing of the app; the kit re-exports
+// Declarations for the entries. The contract imports nothing of the app; the kit re-exports
 // a few of the app's components, whose declarations name only React and the libraries they wrap.
 // The compiler writes one for every module those reach, so only the listed ones are kept, with
 // the app's `@/` paths made relative, and anything else they turn out to need stops the build.
 export const TYPES = [
   "embed/contract",
+  "embed/apply-theme",
   "embed/kit",
+  "embed/kit-cn",
+  "embed/kit-lite",
   "embed/page",
   "components/empty-state",
   "components/hint",
@@ -36,6 +39,7 @@ export const TYPES = [
   "components/ui/tabs",
   "components/ui/tooltip",
   "motion/shimmer",
+  "settings/field-frame",
   "settings/fields",
   "settings/settings-group",
   "shell/titlebar-popover",
@@ -61,10 +65,17 @@ export function writeDeclarations(outDir) {
     for (const name of TYPES) {
       const depth = name.split("/").length - 1;
       const up = depth === 0 ? "./" : "../".repeat(depth);
-      const text = readFileSync(join(emitted, `${name}.d.ts`), "utf8").replaceAll(
-        /(from |import\()"@\/([^"]+)"/g,
-        (_match, lead, path) => `${lead}"${up}${path}.js"`,
-      );
+      // The app's `@/` paths made relative, and every relative path given its `.js`, so the
+      // declarations resolve under NodeNext as well as a bundler's resolution.
+      const text = readFileSync(join(emitted, `${name}.d.ts`), "utf8")
+        .replaceAll(
+          /(from |import\()"@\/([^"]+)"/g,
+          (_match, lead, path) => `${lead}"${up}${path}.js"`,
+        )
+        .replaceAll(
+          /(from |import\()"(\.\.?\/[^"]+?)(?<!\.js)"/g,
+          (_match, lead, path) => `${lead}"${path}.js"`,
+        );
       for (const [, specifier] of text.matchAll(/(?:from |import\()"([^"]+)"/g)) {
         const known = specifier.startsWith(".")
           ? TYPES.includes(
@@ -103,4 +114,8 @@ export function writeDeclarations(outDir) {
     ].join("\n"),
   );
   writeFileSync(join(outDir, "gram-web-kit.d.ts"), 'export * from "./types/embed/kit.js";\n');
+  writeFileSync(
+    join(outDir, "gram-web-kit-lite.d.ts"),
+    'export * from "./types/embed/kit-lite.js";\n',
+  );
 }

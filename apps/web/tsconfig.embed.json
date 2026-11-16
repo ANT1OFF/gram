@@ -17,5 +17,10 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src/embed/contract.ts", "src/embed/kit.ts", "src/vite-env.d.ts"]
+  "include": [
+    "src/embed/contract.ts",
+    "src/embed/kit.ts",
+    "src/embed/kit-lite.ts",
+    "src/vite-env.d.ts"
+  ]
 }
