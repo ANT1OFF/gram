@@ -17,6 +17,7 @@ import { Hint } from "@/components/hint";
 import { Spinner } from "@/motion/spinner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogShell } from "@/thread/dialog-shell";
@@ -1015,7 +1016,7 @@ function AddDialog({
               the Gram app there, or downloads it, and runs in the background from then on.
               <span className="mt-1.5 flex items-center gap-2">
                 {link === undefined ? (
-                  <span className="h-7 flex-1 animate-pulse rounded-sm bg-accent" />
+                  <Skeleton className="h-7 flex-1" />
                 ) : (
                   <>
                     <code

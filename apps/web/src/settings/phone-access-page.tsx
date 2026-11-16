@@ -21,6 +21,7 @@ import { encode } from "uqr";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { agoText, formatDay, formatStamp } from "@/lib/time";
 import { Dialog, DialogShell } from "@/thread/dialog-shell";
@@ -554,7 +555,7 @@ function PairDialog({ status, onClose }: { status: RemoteAccessStatus; onClose: 
           </p>
           <div className="flex justify-center">
             {link === undefined ? (
-              <div className="size-56 animate-pulse rounded-md bg-accent" />
+              <Skeleton className="size-56 rounded-md" />
             ) : (
               <QrCode text={link.url} label="QR code of the one-time pairing link" />
             )}
