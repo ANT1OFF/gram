@@ -105,6 +105,9 @@ describe("digest words", () => {
     expect(handoffLabel({ reason: "schedule" } as unknown as Reason)).toBe(
       "New session · schedule",
     );
+    expect(handoffLabel({ reason: "user", unsaved: true })).toBe(
+      "New session · you asked for one, without saving first",
+    );
   });
 
   it("puts the workers on the budget line, not the day's cost, and warns only at the worker cap", () => {

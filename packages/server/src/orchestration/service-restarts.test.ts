@@ -754,6 +754,61 @@ describe.skipIf(!hasGit)("orchestration service", () => {
       ),
   );
 
+  it.effect(
+    "a hard cut skips the checkpoint: stops the running turn and boots from memory at once",
+    () =>
+      inServer((world) =>
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          const orchestration = yield* Orchestration;
+          const fake = yield* FakeAgentControl;
+          const { session, thread, workspaceId } = yield* openOrchestrator(world);
+          yield* session.callTool("memory_write", {
+            path: "MEMORY.md",
+            content: "# Memory\n- 2026-09-24 (user): ship the mail trigger first.\n",
+          });
+          // A turn that never ends by itself: a looping orchestrator.
+          yield* runtimes.send(thread.id, { text: "Why is it taking so long?" });
+          yield* waitSent(thread.id, 2);
+          yield* waitStatus(thread.id, "running");
+          const previous = (yield* store.getThread(thread.id)).agentSessionId;
+
+          yield* orchestration.handoff(workspaceId, "user", undefined, { checkpoint: false });
+          const fresh = yield* waitReal(
+            "the fresh session's boot digest",
+            Effect.sync(() =>
+              fake.sessions.find(
+                (s) => s !== session && s.options.threadId === thread.id && s.sent.length > 0,
+              ),
+            ),
+          );
+          expect(session.interrupts).toBeGreaterThan(0);
+          expect(session.closed).toBe(true);
+          // No checkpoint prompt reached the old session.
+          expect(
+            session.sent.some((sent) => sent.text.includes("The user asked for a handoff")),
+          ).toBe(false);
+          const [boot] = fresh.sent;
+          expect(boot?.notice).toMatchObject({ variant: "boot" });
+          expect(boot?.text).toContain("ship the mail trigger first");
+          expect(boot?.text).toContain("skipped saving to memory");
+
+          const marks = (yield* store.listMessages(thread.id)).flatMap((message) =>
+            message.parts.flatMap((part) => (part.type === "data-handoff" ? [part.data] : [])),
+          );
+          expect(marks).toEqual([
+            { previousAgentSessionId: previous, reason: "user", unsaved: true, at: marks[0]!.at },
+          ]);
+          const requested = (yield* store.listOrchestrationEvents(workspaceId, 0)).find(
+            (event) => event.kind === "handoffRequested",
+          );
+          expect(requested?.data).toMatchObject({ reason: "user", checkpoint: false });
+          expect((yield* outboxOf(workspaceId)).handoff).toBeUndefined();
+        }),
+      ),
+  );
+
   it.effect("a handoff lets a digest in flight finish first, and acknowledges nothing itself", () =>
     inServer((world) =>
       Effect.gen(function* () {

@@ -1,7 +1,8 @@
+import { Popover } from "@base-ui/react/popover";
 import type { WorkspaceState } from "@gram/contracts";
-import { ChartPie, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
+import { useState } from "react";
 
-import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Shimmer, spin } from "@/motion";
@@ -35,61 +36,124 @@ export function HandingOff({
   );
 }
 
+const SAVE_FIRST_ON = "The orchestrator writes down what it hasn't saved, then hands off.";
+const SAVE_FIRST_OFF =
+  "Its current turn stops now and any approval it waits on is declined. Anything not in memory is left behind; a later memory update can still read it from the transcript.";
+
+/** Save to memory first, ticked by default; unticked, a hard cut. */
+function SaveFirst({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="grid grid-cols-[auto_1fr] items-start gap-x-2 gap-y-0.5">
+      <input
+        type="checkbox"
+        data-testid="fresh-session-save-first"
+        className="mt-1"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span className="text-reading">Save to memory first</span>
+      <span
+        data-testid="fresh-session-save-first-detail"
+        className="col-start-2 text-meta text-muted-foreground"
+      >
+        {checked ? SAVE_FIRST_ON : SAVE_FIRST_OFF}
+      </span>
+    </label>
+  );
+}
+
 /**
- * A gauge in the warning colour, shown once the orchestrator's context is nearly full; it opens the
- * fresh session's confirmation. An icon only: the agent compacts by
- * itself, so this is an option, not a warning, and the percent is in its label.
+ * The orchestrator's Fresh session, always in its header: an icon that opens a popover with the
+ * choice to save to memory first and the button that starts it. A fresh session is for dropping
+ * what is in the conversation, whatever its size, so it says nothing about context.
  */
-export function ContextChip({
-  pct,
-  onAct,
+export function FreshSessionChip({
+  state,
   inTitlebar = false,
   className,
 }: {
-  pct: number;
-  onAct: () => void;
+  state: WorkspaceState;
   /** One of the title bar's icon buttons: its size, stroke and hover fill. */
   inTitlebar?: boolean;
   className?: string;
 }) {
-  const label = `Context ${pct} % — start a fresh session`;
+  const handoff = useHandoff(state);
+  const [open, setOpen] = useState(false);
+  const [saveFirst, setSaveFirst] = useState(true);
+  const label = "Fresh session";
   return (
-    <Hint
-      label={`${label}\nIt starts again from the orchestrator's memory and the ledger.`}
-      side="bottom"
-      render={
-        inTitlebar ? (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            data-testid="context-chip"
-            data-pct={pct}
-            aria-label={label}
-            onClick={onAct}
-            className={cn("text-muted-foreground", className)}
-          />
-        ) : (
-          <button
-            type="button"
-            data-testid="context-chip"
-            data-pct={pct}
-            aria-label={label}
-            onClick={onAct}
-            className={cn(
-              "grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
-              className,
-            )}
-          />
-        )
-      }
+    <Popover.Root
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setSaveFirst(true);
+      }}
     >
-      <ChartPie aria-hidden className={inTitlebar ? "shrink-0" : "size-icon-row shrink-0"} />
-    </Hint>
+      <Popover.Trigger
+        data-testid="fresh-session-chip"
+        aria-label={label}
+        title={label}
+        render={
+          inTitlebar ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={cn("text-muted-foreground aria-expanded:bg-muted", className)}
+            />
+          ) : (
+            <button
+              type="button"
+              className={cn(
+                "grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-muted aria-expanded:text-foreground",
+                className,
+              )}
+            />
+          )
+        }
+      >
+        <RefreshCw aria-hidden className={inTitlebar ? "shrink-0" : "size-icon-row shrink-0"} />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner side="bottom" align="end" sideOffset={6} className="isolate z-50">
+          <Popover.Popup
+            data-testid="fresh-session-popup"
+            className="flex w-80 max-w-[calc(100vw-2rem)] origin-(--transform-origin) flex-col gap-3 rounded-lg border border-edge bg-popover p-3 text-meta text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          >
+            <Popover.Title className="font-medium">Fresh session</Popover.Title>
+            <Popover.Description className="text-muted-foreground">
+              {FRESH_SESSION_EXPLANATION}
+            </Popover.Description>
+            <SaveFirst checked={saveFirst} onChange={setSaveFirst} />
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                data-testid="fresh-session-start"
+                disabled={!handoff.available || handoff.running}
+                onClick={() => {
+                  setOpen(false);
+                  void handoff.start({ checkpoint: saveFirst });
+                }}
+              >
+                Start fresh session
+              </Button>
+            </div>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
 function ConfirmDialog({ state, onClose }: { state: WorkspaceState; onClose: () => void }) {
   const handoff = useHandoff(state);
+  const [saveFirst, setSaveFirst] = useState(true);
   return (
     <DialogShell
       testId="fresh-session-dialog"
@@ -98,6 +162,7 @@ function ConfirmDialog({ state, onClose }: { state: WorkspaceState; onClose: () 
       onClose={onClose}
     >
       <p className="text-reading">{FRESH_SESSION_EXPLANATION}</p>
+      <SaveFirst checked={saveFirst} onChange={setSaveFirst} />
       {!handoff.available && (
         <p role="status" className="text-meta text-muted-foreground">
           This workspace has no orchestrator open, so there is no session to replace.
@@ -114,7 +179,7 @@ function ConfirmDialog({ state, onClose }: { state: WorkspaceState; onClose: () 
           disabled={!handoff.available || handoff.running}
           onClick={() => {
             onClose();
-            void handoff.start();
+            void handoff.start({ checkpoint: saveFirst });
           }}
         >
           Start fresh session

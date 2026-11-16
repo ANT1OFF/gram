@@ -396,6 +396,20 @@ POST /embed/v1/thread-interrupt
 - A thread on a machine started for one person is written in and stopped only for that person: anyone else gets `409` with why.
 - `404` for a thread the server doesn't have, `409` when it can't take the message now (it ended, or its agent couldn't start), `400` for a body that isn't one. `text` is 1 to 20,000 characters.
 
+## A fresh orchestrator session for a person
+
+The platform can start a workspace's orchestrator on a fresh session for a person it signed in, as Fresh session does in the web app ([a fresh orchestrator session](AGENTS_AND_FEATURES.md#a-fresh-orchestrator-session)).
+
+```
+POST /embed/v1/thread-fresh-session
+{ "threadId": "...", "person": { "id": "user-7", "name": "Ada" }, "checkpoint": true }
+→ 200 { "started": true }
+```
+
+- `threadId` is the orchestrator's thread. `checkpoint` (default `true`) has it save to memory first; `false` is a hard cut: its running turn stops as Stop does and the fresh session starts at once. The answer comes once the handoff is under way, not once it is done.
+- It is recorded as the person's `orchestrator.handoff`, and a thread on a machine started for one person is reached only for that person.
+- `404` for a thread the server doesn't have; `409` for one that isn't its workspace's orchestrator or can't take a fresh session now (another handoff running, parked, ended); `400` for a body that isn't one.
+
 ## A person's thread started in repositories
 
 The platform can start a thread for a person it signed in, in one or more repositories, as New task would start one: a new worktree in the first repository, one on the same branch in each other, and the person's first message.

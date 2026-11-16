@@ -1177,7 +1177,11 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       host.replace(rest);
     },
 
-    async handoff(workspaceId: WorkspaceId): Promise<Thread> {
+    async handoff(
+      workspaceId: WorkspaceId,
+      options?: { readonly checkpoint?: boolean },
+    ): Promise<Thread> {
+      const unsaved = options?.checkpoint === false;
       const state = find(workspaceId);
       const orchestrator = holder(state);
       if (orchestrator === undefined) {
@@ -1192,7 +1196,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
         );
       }
       handingOff.add(workspaceId);
-      host.setStatus(orchestrator.id, "running", "writing what isn't in memory yet");
+      if (!unsaved) host.setStatus(orchestrator.id, "running", "writing what isn't in memory yet");
       const finish = () => {
         handingOff.delete(workspaceId);
         const current = host.threads().find((t) => t.id === orchestrator.id);
@@ -1200,7 +1204,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
         host.putMessage(
           orchestrator.id,
           assistantMessage([
-            { type: "text", text: "ready" },
+            ...(unsaved ? [] : [{ type: "text" as const, text: "ready" }]),
             {
               type: "data-handoff",
               id: host.ids(),
@@ -1209,6 +1213,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
                   ? {}
                   : { previousAgentSessionId: current.agentSessionId }),
                 reason: "user",
+                ...(unsaved ? { unsaved: true } : {}),
                 at: Date.now(),
               },
             },

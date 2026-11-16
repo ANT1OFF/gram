@@ -28,11 +28,11 @@ import {
 } from "@/thread/orchestration-model";
 
 import { workerRepoNames } from "./board-model";
-import { ContextChip, HandingOff } from "./fresh-session";
+import { FreshSessionChip, HandingOff } from "./fresh-session";
 import { memoryIsEmpty } from "./memory-model";
 import { useOpenBoard } from "./open-board";
 import { midTurnWorkers } from "./tree-model";
-import { useHandoff, useHandoffStore, useResume } from "./use-board-actions";
+import { useHandoff, useResume } from "./use-board-actions";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
 import { useWorkerPause } from "./worker-pause";
 
@@ -219,8 +219,7 @@ function useOrchestratorWorkspace(thread: Thread) {
 }
 
 /**
- * An orchestrator's chips in its pane header: once its context is nearly full, the offer of a
- * fresh session, the ways to its board and its memory, which the thread menu offers too, and its
+ * An orchestrator's chips in its pane header: Fresh session, the ways to its board and its memory, which the thread menu offers too, and its
  * workspace's settings in a sheet. The glyph and title already say whose it is. The questions it
  * left open have no chip here: what needs you has one way in (`NeedsYouEntry`), and its workspace's
  * line counts them. Switching it is in the thread menu and the workspace settings' Models.
@@ -247,13 +246,7 @@ export function OrchestratorChips({
       {handoff.running ? (
         <HandingOff />
       ) : (
-        handoff.suggestedAtPct !== undefined && (
-          <ContextChip
-            pct={handoff.suggestedAtPct}
-            inTitlebar={inTitlebar}
-            onAct={() => useHandoffStore.getState().confirm(workspaceId)}
-          />
-        )
+        state !== undefined && <FreshSessionChip state={state} inTitlebar={inTitlebar} />
       )}
       {!inTitlebar && (
         <Hint
