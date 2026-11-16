@@ -119,7 +119,7 @@ import { agentHostsOrHeadless, withHeadlessCheck } from "../host/headless.ts";
 import { LocalHostProcess } from "../host/local-process.ts";
 import { AgentHostsThroughHost } from "../runtime/host-agent-sessions.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
-import { mayReachThread, ownersOf } from "../host/ownership.ts";
+import { mayReachThread, ownersOf, ServerWork } from "../host/ownership.ts";
 import { compressedStatic } from "./compressed-static.ts";
 import { markLocalApp, unmarkLocalApp } from "./local-app.ts";
 import { ProcessRoots, ThreadPorts } from "../ports/service.ts";
@@ -1172,4 +1172,8 @@ export const ServerLayer: Layer.Layer<
       ),
     );
   }),
+).pipe(
+  // The server's own work, from its layers' fibers to its listeners', holds the capability; every
+  // RPC, route and tool call made for someone says whom for over it (`host/ownership.ts`).
+  Layer.provide(Layer.succeed(ServerWork)(true)),
 );

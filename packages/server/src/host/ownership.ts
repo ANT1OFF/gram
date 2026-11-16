@@ -11,10 +11,20 @@
 //    written (`recordActor`) and runs every attempt, a retry included, as them (`asRecorded`).
 //
 // The calls are told who they are made for (`RoutedFor`): every RPC as its signed-in person, and
-// every agent tool call as its own thread's machine's owner (`asThreadOwner`). Threads in one
+// every agent tool call as its own thread's machine's owner (`asThreadOwner`). The server's own
+// work is told so explicitly (`ServerWork`, granted where the server starts and to kept work
+// written by it): a fiber that says nothing is no one's, never the server's. Threads in one
 // orchestration have one owner: a link between them (a spawn, a join, a move) is made only
-// between machines of the same person's, or of no one's (`sameOwner`), so a workspace's
+// between machines of the same owner's, or of no one's (`sameOwner`), so a workspace's
 // orchestrator and its workers never span two people.
+//
+// A machine started on demand always names its owner: the subject of the person it is for, or
+// one no person signs in with (such as a run's), which leaves it to the server's own work and
+// its own threads. Such a host may name the one person who reaches it besides
+// (`PairedMachine.person`): reach alone, never placement or a link, so its threads and their agents
+// stay its owner's and touch nothing of that person's. One registered before owners were required names none, and is closed the same
+// way (`holderOf`): reached by the server's own work alone, and of no owner's but its own. Only a
+// machine joined or registered for no one in particular (no kind) is open to every caller.
 //
 // One thread has no machine yet: one started before its machine (`Thread.awaitingMachine`). Until
 // it is placed it is reached only by whoever it was started by, where the start named a person
@@ -45,7 +55,8 @@ export const OWNERS_DIFFER =
  * Who a call that may reach a machine is made for: set around every RPC (`rpc/actor-guard.ts`),
  * as the signed-in person, or nobody without fronted sign-in; around every agent's tool call
  * (`app-tools/registry.ts`), as its thread's machine's owner; and around every attempt at kept
- * work, as who it was written for. Absent only for the server's own work.
+ * work, as who it was written for. Absent for the server's own work, which holds `ServerWork`,
+ * and for a fiber that says nothing, which is no one's.
  */
 export interface Caller {
   readonly person: string | undefined;
@@ -55,12 +66,36 @@ export const RoutedFor = Context.Reference<Caller | undefined>("@gram/server/Rou
   defaultValue: () => undefined,
 });
 
-/** This fiber's caller: `RoutedFor`, else the acting person where one is known. */
+/**
+ * The capability the server's own work runs with: granted where the server starts (`main.ts`),
+ * and to kept work the server wrote (`asRecorded`). Without it, and with no caller said, a fiber
+ * is no one's: it reaches only machines open to every caller, never one started for someone.
+ */
+export const ServerWork = Context.Reference<boolean>("@gram/server/ServerWork", {
+  defaultValue: () => false,
+});
+
+/** `effect` as the server's own work (`ServerWork`), whoever's fiber runs it. */
+export const asServer = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  effect.pipe(
+    Effect.provideService(RoutedFor, undefined),
+    Effect.provideService(ActingPerson, undefined),
+    Effect.provideService(ServerWork, true),
+  );
+
+/** The caller of a fiber that says nothing and holds no `ServerWork`: no one. */
+const NO_ONE: Caller = { person: undefined };
+
+/**
+ * This fiber's caller: `RoutedFor`, else the acting person where one is known, else the server's
+ * own work (`undefined`) where it holds `ServerWork`, else no one.
+ */
 export const currentCaller: Effect.Effect<Caller | undefined> = Effect.gen(function* () {
   const routed = yield* RoutedFor;
   if (routed !== undefined) return routed;
   const person = yield* ActingPerson;
-  return person === undefined ? undefined : { person };
+  if (person !== undefined) return { person };
+  return (yield* ServerWork) ? undefined : NO_ONE;
 });
 
 /** The person what is placed now is for, where one is known. */
@@ -69,32 +104,80 @@ export const callerPerson: Effect.Effect<string | undefined> = Effect.map(
   (caller) => caller?.person,
 );
 
-/** The person a machine was started for, when it was started for one. */
-export type OwnerOf = (hostId: HostId) => string | undefined;
+/**
+ * Whose a machine is (`holderOf`), when it is anyone's; with `personOf` where the machines say
+ * who besides may reach one (`PairedMachine.person`). Made without it, no one besides does.
+ */
+export type OwnerOf = ((hostId: HostId) => string | undefined) & {
+  readonly personOf?: (hostId: HostId) => string | undefined;
+};
 
-/** Owners as the joined machines record them. */
-export const ownersOf =
-  (
-    machines:
-      | {
-          readonly list: () => ReadonlyArray<{
-            readonly id: string;
-            readonly owner?: string | undefined;
-          }>;
-        }
-      | undefined,
-  ): OwnerOf =>
-  (hostId) =>
-    machines?.list().find((machine) => machine.id === hostId)?.owner;
+/** What a closed machine's holder starts with: no person's subject or owner can (`holderOf`). */
+const CLOSED = "\u0000closed:";
 
 /**
- * The rule. Whether this fiber's caller may reach `hostId`: a machine nobody owns, the server's
- * own work, or its owner's call. Anyone else's, and a call with no signed-in person, may not.
+ * Whose a machine is, as the rule compares it: its owner where it names one; for one started on
+ * demand that names none (registered before owners were required), a holder of its own that no
+ * caller is and no other machine shares, so only the server's own work reaches it and nothing
+ * links to it; for a machine of no kind, none, so it is open to every caller.
+ */
+export const holderOf = (machine: {
+  readonly id: string;
+  readonly owner?: string | undefined;
+  readonly onDemand?: string | undefined;
+}): string | undefined =>
+  machine.owner ?? (machine.onDemand === undefined ? undefined : `${CLOSED}${machine.id}`);
+
+/** Whether a holder (`holderOf`) is a closed machine's, which no person or embedder names. */
+export const isClosed = (holder: string | undefined): boolean =>
+  holder !== undefined && holder.startsWith(CLOSED);
+
+/** A holder as a subject to tell an embedder (an owner), never a closed machine's. */
+export const ownerSubject = (holder: string | undefined): string | undefined =>
+  isClosed(holder) ? undefined : holder;
+
+/** Owners as the joined machines record them, as the rule compares them (`holderOf`). */
+export const ownersOf = (
+  machines:
+    | {
+        readonly list: () => ReadonlyArray<{
+          readonly id: string;
+          readonly owner?: string | undefined;
+          readonly person?: string | undefined;
+          readonly onDemand?: string | undefined;
+        }>;
+      }
+    | undefined,
+): OwnerOf =>
+  Object.assign(
+    (hostId: HostId) => {
+      const machine = machines?.list().find((each) => each.id === hostId);
+      return machine === undefined ? undefined : holderOf(machine);
+    },
+    {
+      personOf: (hostId: HostId) => {
+        const machine = machines?.list().find((each) => each.id === hostId);
+        return machine?.owner === undefined ? undefined : machine.person;
+      },
+    },
+  );
+
+/**
+ * The rule. Whether this fiber's caller may reach `hostId`: a machine open to every caller (no
+ * kind, no owner), the server's own work (`ServerWork`), or its owner's call. Anyone else's, a
+ * call with no signed-in person, and a fiber that says nothing may not; nor may anyone but the
+ * server reach a closed machine (`holderOf`).
  */
 export const mayReach = (ownerOf: OwnerOf, hostId: HostId): Effect.Effect<boolean> => {
   const owner = ownerOf(hostId);
   if (owner === undefined) return Effect.succeed(true);
-  return Effect.map(currentCaller, (caller) => caller === undefined || caller.person === owner);
+  const person = ownerOf.personOf?.(hostId);
+  return Effect.map(
+    currentCaller,
+    (caller) =>
+      caller === undefined ||
+      (caller.person !== undefined && (caller.person === owner || caller.person === person)),
+  );
 };
 
 /**
@@ -172,7 +255,8 @@ export const asThreadOwner =
     );
 
 /**
- * Whether two places are of one owner: machines of the same person's, or both of no one's. The
+ * Whether two places are of one owner: machines of the same owner's, or both open to every
+ * caller. A closed machine (`holderOf`) is of one owner with itself alone. The
  * one test for a link between threads (a worker under its orchestrator, a join, a move), so an
  * orchestration never spans two people and a thread never changes owner.
  */
@@ -184,7 +268,8 @@ export const sameOwner = (
 
 /**
  * Whether a thread waiting for its machine (`Thread.awaitingMachine`) may be placed on `hostId`:
- * a machine started for whoever the thread was started by, or for nobody. It has no machine yet,
+ * a machine started for whoever the thread was started by, or reached by them beside its owner
+ * (`PairedMachine.person`), or for nobody. It has no machine yet,
  * so there is no owner to keep; a thread started by no one in particular goes on any.
  */
 export const mayPlaceAwaited = (
@@ -194,12 +279,27 @@ export const mayPlaceAwaited = (
 ): boolean => {
   const owner = ownerOf(hostId);
   const startedBy = thread.awaitingMachine?.startedBy;
-  return owner === undefined || startedBy === undefined || owner === startedBy;
+  return (
+    owner === undefined ||
+    startedBy === undefined ||
+    owner === startedBy ||
+    ownerOf.personOf?.(hostId) === startedBy
+  );
 };
 
 /** What a move that would hand a thread to another owner, or to none, is told. */
 export const MOVE_CHANGES_OWNER =
   "A thread moves only onto a machine started for the same person as the one it is on.";
+
+/**
+ * Whether a move from `from` to `to` gives a thread on a closed machine (`holderOf`, one started
+ * on demand before owners were required) the owner its embedder now names: what the embedder's
+ * own move may do, as a thread whose machine is gone is placed on one started for whom it is
+ * for. Never the other way, and never from a machine open to every caller, whose threads are
+ * anyone's to take.
+ */
+export const claimsUnowned = (ownerOf: OwnerOf, from: HostId, to: HostId): boolean =>
+  isClosed(ownerOf(from)) && ownerSubject(ownerOf(to)) !== undefined;
 
 /** Whether moving `thread` into `checkout` keeps whose it is (`sameOwner`). */
 export const keepsOwner = (
@@ -230,10 +330,13 @@ export const recordActor: Effect.Effect<RecordedActor | undefined> = Effect.map(
 export const asRecorded =
   (actor: RecordedActor | undefined) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-    effect.pipe(
-      Effect.provideService(RoutedFor, actor === undefined ? undefined : { person: actor.person }),
-      Effect.provideService(ActingPerson, actor?.person),
-    );
+    actor === undefined
+      ? asServer(effect)
+      : effect.pipe(
+          Effect.provideService(RoutedFor, { person: actor.person }),
+          Effect.provideService(ActingPerson, actor.person),
+          Effect.provideService(ServerWork, false),
+        );
 
 /**
  * A recorded actor as kept with work that has no other place for "the server's own": `"server"`

@@ -275,7 +275,10 @@ naming the person in `owner` and `onDemand: "personal"`. From then on:
   and on no other machine: with none of theirs online they are asked to start it (the composer's
   start card), never placed on a shared host or one started for something else;
 - a host started for the threads placed on it by name (`onDemand: "thread"`, an automated run's,
-  say, with or without an `owner`) takes only those threads and their workers;
+  say) takes only those threads and their workers. It names its `owner` as every host started on
+  demand does: a person's subject, or one no person signs in with, such as the run's own, with
+  the one person who may reach it besides in `person`. With an owner of no person's, its threads
+  and their agents link to nothing of that person's;
 - a worker goes on its orchestrator's machine: when it names none, and when it names "local" (this
   server runs nothing itself). It names another machine only if that machine is the same person's
   own; a machine started for other work, another person's, or (on a headless server) one that says
@@ -299,7 +302,9 @@ naming the person in `owner` and `onDemand: "personal"`. From then on:
     archive, directory grants, a reload, a queue edit) pass the same rule. A reopened thread
     comes back on its own host, and links again only to threads of the same owner. Another
     member still reads what the workspace shows; a call with no signed-in person reaches no
-    one's host;
+    one's host. A host started on demand that names no owner (registered by an older build) is
+    reached by the server's own work alone. The server's own work is told so explicitly, where the
+    server starts: a call that says nothing of whom it is for is no one's;
   - **where work is kept for later.** Durable work records who it was written for, and every
     attempt, a retry after a restart included, runs as them, never as the server's own. A
     thread's queued input keeps its writer beside it (whoever wrote, edited or replaced it last),

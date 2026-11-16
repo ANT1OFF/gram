@@ -535,8 +535,9 @@ layer(TestServer, { excludeTestServices: true })("provisioned hosts over TLS", (
         });
         expect((yield* machines).map((one) => one.id)).toEqual([probeId]);
 
-        // A host for the threads placed on it by name (one run's, say) needs no owner; a person's
-        // own host does, and an owner always comes with a kind.
+        // A host of every kind names its owner, one for the threads placed on it by name (a run's,
+        // say) included: with none, it would be open to everyone. An owner always comes with a
+        // kind, and the one person besides its owner who may reach it with an owner.
         const forRun = provisionHost("run-1");
         const run = (body: Record<string, unknown>) =>
           local(MACHINES_PROVISION_PATH, {
@@ -550,13 +551,17 @@ layer(TestServer, { excludeTestServices: true })("provisioned hosts over TLS", (
         expect((yield* run({ onDemand: "elsewhere" })).status).toBe(400);
         // A worker's own machine is always someone's.
         expect((yield* run({ onDemand: "worker" })).status).toBe(400);
-        expect((yield* run({ onDemand: "thread" })).status).toBe(200);
+        expect((yield* run({ onDemand: "thread" })).status).toBe(400);
+        expect((yield* run({ onDemand: "thread", person: "ada" })).status).toBe(400);
+        expect((yield* run({ onDemand: "thread", owner: "run/1", person: 7 })).status).toBe(400);
+        expect((yield* run({ onDemand: "thread", owner: "run/1", person: "ada" })).status).toBe(
+          200,
+        );
         const stored = JSON.parse(kept("provisioned-hosts.json")) as {
-          machines: Array<{ name: string; onDemand?: string; owner?: string }>;
+          machines: Array<{ name: string; onDemand?: string; owner?: string; person?: string }>;
         };
         const runsOwn = stored.machines.find((each) => each.name === forRun.name);
-        expect(runsOwn?.onDemand).toBe("thread");
-        expect(runsOwn?.owner).toBeUndefined();
+        expect(runsOwn).toMatchObject({ onDemand: "thread", owner: "run/1", person: "ada" });
       }).pipe(Effect.scoped),
     180_000,
   );

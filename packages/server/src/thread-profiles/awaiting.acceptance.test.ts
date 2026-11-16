@@ -18,7 +18,7 @@ import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ActingPerson } from "../embedding/person.ts";
-import { mayPlaceAwaited, mayReachThread, RoutedFor } from "../host/ownership.ts";
+import { asServer, mayPlaceAwaited, mayReachThread, RoutedFor } from "../host/ownership.ts";
 import type { HostThreadPlaces } from "../host/thread-places.ts";
 import type { WorkerHost } from "../host/worker-host.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -612,9 +612,11 @@ describe("whose a thread is while it waits for its machine", () => {
   const waiting = waitingThread;
   const ownerOf = ownerOfMachine;
   const reaches = (thread: never, person: string | undefined | "server") =>
-    mayReachThread(() => Effect.succeed(thread), ownerOf, ID).pipe(
-      Effect.provideService(RoutedFor, person === "server" ? undefined : { person }),
-    );
+    person === "server"
+      ? asServer(mayReachThread(() => Effect.succeed(thread), ownerOf, ID))
+      : mayReachThread(() => Effect.succeed(thread), ownerOf, ID).pipe(
+          Effect.provideService(RoutedFor, { person }),
+        );
 
   it.effect("is reached only by who it was started by, and by the server itself", () =>
     Effect.gen(function* () {

@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import { ServerWork } from "../host/ownership.ts";
 import * as Logger from "effect/Logger";
 import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -93,6 +94,8 @@ const harness = (file = ":memory:") => {
     Layer.provideMerge(CheckoutService.layerNoGit),
     Layer.provideMerge(ServerConfig.layer(TEST_CONFIG)),
     Layer.provideMerge(Logger.layer([logger])),
+    // As the server's own work, as `main.ts` runs it: these calls are made for no one.
+    Layer.provideMerge(Layer.succeed(ServerWork)(true)),
     Layer.orDie,
   );
   return {

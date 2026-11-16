@@ -11,6 +11,7 @@ import { afterAll, describe, expect, layer } from "@effect/vitest";
 import {
   DEFAULT_CHARTER,
   GramRpcs,
+  type HostId,
   PROFILE_MOVE_PATH,
   PROFILE_START_PATH,
   PROFILE_WAIT_PATH,
@@ -31,7 +32,14 @@ import { makeRepo, removeDir } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { HttpServer, RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
 import { NO_ACTOR_REFUSAL, VIEWER_REFUSAL } from "../rpc/actor-guard.ts";
-import { NOT_YOUR_MACHINE, OWNERS_DIFFER, RoutedFor } from "../host/ownership.ts";
+import {
+  mayReach,
+  NOT_YOUR_MACHINE,
+  OWNERS_DIFFER,
+  ownersOf,
+  RoutedFor,
+  sameOwner,
+} from "../host/ownership.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { ANSWER_OVER_HTTP, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
@@ -49,7 +57,8 @@ import { tokenCookieName } from "./auth.ts";
 import { SERVICE_TYP, IDENTITY_HEADER } from "./fronted-identity.ts";
 import { makeTestProxy } from "./fronted-identity.testing.ts";
 import { LOCAL_APP_HEADER } from "./local-app.ts";
-import { generateHostKey, HOST_MCP_PATH } from "../host/machine-keys.ts";
+import { generateHostKey, HOST_MCP_PATH, hostIdOf } from "../host/machine-keys.ts";
+import { privateJsonFile } from "./remote-sessions.ts";
 import { HOST_PATHS, MACHINES_LIST_PATH } from "./machine-routes.ts";
 import { REMOTE_STATUS_PATH } from "./remote-access.ts";
 import { WORKSPACE_TRANSFER_PATHS } from "../transfer/routes.ts";
@@ -97,9 +106,16 @@ const providerPort = await new Promise<number>((resolve) => {
   receiver.listen(0, "127.0.0.1", () => resolve((receiver.address() as { port: number }).port));
 });
 
-const server = (embedding: boolean, socketLifetimeMs?: number, onDemand = false) => {
+const server = (
+  embedding: boolean,
+  socketLifetimeMs?: number,
+  onDemand = false,
+  /** What the data folder holds before the server starts, such as machines from an older build. */
+  seed?: (dataDir: string) => void,
+) => {
   const dataDir = mkdtempSync(join(tmpdir(), "gram-fronted-data-"));
   dataDirs.push(dataDir);
+  seed?.(dataDir);
   return ServerLayer.pipe(
     Layer.provideMerge(makeFakeAgentAdapter({ reply: "echo" })),
     Layer.provide(TurnHooks.layerNoop),
@@ -256,6 +272,69 @@ const lineageFolder = (dirs: Array<string>) => {
   dirs.push(made);
   return made;
 };
+
+/** A thread of Grace's, as an embedder's start places it on `hostId`. */
+const placedOn = (port: number, hostId: HostId) =>
+  Effect.gen(function* () {
+    const store = yield* ThreadStore;
+    const runtimes = yield* ThreadRuntimes;
+    const graceClient = yield* as(port, grace);
+    const created = yield* graceClient["thread.create"]({
+      projectRoot: lineageFolder(dataDirs),
+      checkout: { kind: "current" },
+    });
+    yield* waitFor(
+      "the session",
+      runtimes.session(created.id).pipe(
+        Effect.as(true),
+        Effect.orElseSucceed(() => false),
+      ),
+    );
+    yield* store.updateThread(created.id, (thread) => ({
+      ...thread,
+      checkout: { ...thread.checkout, hostId },
+    }));
+    return created.id;
+  });
+/** What a member's changes to `threadId` on `hostId` were each told. */
+const tried = (member: Effect.Success<ReturnType<typeof as>>, threadId: ThreadId, hostId: HostId) =>
+  Effect.gen(function* () {
+    const calls = {
+      send: member["thread.send"]({
+        threadId,
+        input: { text: "take it over" },
+        clientMessageId: `try-${randomBytes(4).toString("hex")}`,
+      }),
+      fork: member["thread.fork"]({ threadId, fromMessageId: "m-0" as never }),
+      restart: member["thread.restartSession"]({ threadId }),
+      threadTerminal: member["terminal.open"]({ threadId, cols: 80, rows: 24 }),
+      signIn: member["terminal.open"]({ signIn: hostId, cols: 80, rows: 24 }),
+    };
+    const told: Record<string, string> = {};
+    for (const [name, call] of Object.entries(calls))
+      told[name] = yield* refusal(call as Effect.Effect<unknown, unknown>);
+    return told;
+  });
+
+/** An on-demand host from a build that took one with no owner, as its data folder kept it. */
+const ownerlessKey = generateHostKey().publicKey;
+const OWNERLESS_HOST = hostIdOf(ownerlessKey);
+const seedOwnerlessHost = (dataDir: string) =>
+  privateJsonFile(dataDir, "provisioned-hosts.json", 256 * 1024).write({
+    version: 1,
+    machines: [
+      {
+        id: OWNERLESS_HOST,
+        name: "old-run-box",
+        platform: "linux",
+        publicKey: ownerlessKey,
+        joinedAt: 1,
+        confirmedAt: 1,
+        kind: "provisioned",
+        onDemand: "thread",
+      },
+    ],
+  });
 
 const ada = { sub: "user-ada", name: "Ada", role: "member" };
 const grace = { sub: "user-grace", name: "Grace", role: "member" };
@@ -1367,6 +1446,88 @@ describe("sign-in through a fronting proxy", () => {
               }),
             ),
           ).toBe("the call went through");
+        }),
+      );
+    },
+  );
+
+  layer(server(true, undefined, true, seedOwnerlessHost), { excludeTestServices: true })(
+    "with hosts started for runs",
+    (it) => {
+      // An on-demand host registered before owners were required, with none: it was open to every
+      // member, so anyone could take over the run on it. Now it is the server's own alone.
+      it.effect("refuses every member's changes to a thread on an ownerless on-demand host", () =>
+        Effect.gen(function* () {
+          const { port } = yield* info;
+          const threadId = yield* placedOn(port, OWNERLESS_HOST);
+          for (const person of [ada, grace])
+            expect(
+              Object.values(yield* tried(yield* as(port, person), threadId, OWNERLESS_HOST)),
+            ).toEqual(Array(5).fill(expect.stringContaining(NOT_YOUR_MACHINE)));
+          // What the workspace shows of it is still a read.
+          const adaClient = yield* as(port, ada);
+          expect(yield* refusal(adaClient["thread.listWaits"]({ threadId }))).toBe(
+            "the call went through",
+          );
+        }),
+      );
+
+      it.effect("provisions no on-demand host without an owner", () =>
+        Effect.gen(function* () {
+          const remote = Option.getOrThrow(yield* Effect.serviceOption(RemoteHosts));
+          const ask = {
+            name: "run-box",
+            platform: "linux",
+            publicKey: generateHostKey().publicKey,
+          };
+          expect(remote.machines.provision({ ...ask, onDemand: "thread" })).toMatchObject({
+            kind: "refused",
+            status: 400,
+          });
+          expect(
+            remote.machines.provision({ ...ask, onDemand: "thread", person: grace.sub }),
+          ).toMatchObject({ kind: "refused", status: 400 });
+        }),
+      );
+
+      // A host for a run that acts for Grace: owned by the run, reached by her alone.
+      it.effect("keeps a run's host to the person it is for, and links it to nothing of hers", () =>
+        Effect.gen(function* () {
+          const { port } = yield* info;
+          const remote = Option.getOrThrow(yield* Effect.serviceOption(RemoteHosts));
+          const provisioned = remote.machines.provision({
+            name: "run-of-grace",
+            platform: "linux",
+            publicKey: generateHostKey().publicKey,
+            owner: "run/of-grace",
+            person: grace.sub,
+            onDemand: "thread",
+          });
+          if (provisioned.kind !== "provisioned") throw new Error("not provisioned");
+          const hostId = provisioned.machine.id;
+          const threadId = yield* placedOn(port, hostId);
+          expect(Object.values(yield* tried(yield* as(port, ada), threadId, hostId))).toEqual(
+            Array(5).fill(expect.stringContaining(NOT_YOUR_MACHINE)),
+          );
+          // Grace gets past the owner's check: the machine is just not online here.
+          const hers = yield* tried(yield* as(port, grace), threadId, hostId);
+          for (const told of Object.values(hers)) expect(told).not.toContain(NOT_YOUR_MACHINE);
+          // Its agents act as the run, never as Grace: her own machine is another owner's.
+          const own = remote.machines.provision({
+            name: "grace-own",
+            platform: "linux",
+            publicKey: generateHostKey().publicKey,
+            owner: grace.sub,
+            onDemand: "personal",
+          });
+          if (own.kind !== "provisioned") throw new Error("not provisioned");
+          const ownerOf = ownersOf(remote.machines);
+          expect(sameOwner(ownerOf, { hostId }, { hostId: own.machine.id })).toBe(false);
+          expect(
+            yield* mayReach(ownerOf, own.machine.id).pipe(
+              Effect.provideService(RoutedFor, { person: ownerOf(hostId) }),
+            ),
+          ).toBe(false);
         }),
       );
     },

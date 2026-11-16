@@ -16,7 +16,7 @@ import { ActingPerson } from "../embedding/person.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { openSignInTerminal } from "./claude-sign-in.ts";
 import type { HeadlessPlacement } from "./headless.ts";
-import { NOT_YOUR_MACHINE, ownedMachines, RoutedFor } from "./ownership.ts";
+import { asServer, NOT_YOUR_MACHINE, ownedMachines, RoutedFor } from "./ownership.ts";
 import { placedHost } from "./placed.ts";
 import type { WorkerHost } from "./worker-host.ts";
 
@@ -444,10 +444,19 @@ describe("a machine started for one person, on every route to it", () => {
         placed.terminals.open({ hostId: MACHINE, cols: 80, rows: 24 } as never),
       );
       yield* as("grace")(placed.terminals.input(opened.terminalId, "ls\r"));
-      // A session the server reopens on its own carries no caller.
+      // A session the server reopens on its own carries no caller, and holds the capability.
       yield* Effect.scoped(
         (yield* placed.sessions.get("claude")).open({ threadId: "t-remote" } as never),
-      );
+      ).pipe(asServer);
+      // Without it, a fiber that says nothing is no one's, and reaches no one's machine.
+      expect(
+        yield* Effect.scoped(
+          (yield* placed.sessions.get("claude")).open({ threadId: "t-remote" } as never),
+        ).pipe(
+          Effect.flip,
+          Effect.map((error) => error._tag),
+        ),
+      ).toBe("AgentUnavailable");
       expect(calls).toEqual([
         `${MACHINE}:terminal.open:undefined`,
         `${MACHINE}:terminal.input:${MACHINE}-t1`,

@@ -128,7 +128,8 @@ Content-Type: application/json
   is as for a start.
 
 - **In order.** Start the thread with `machine: "later"`; start the machine and
-  [register it](PROVISIONED_HOSTS.md) with the same person as its `owner`, or with none; once it
+  [register it](PROVISIONED_HOSTS.md) with the same person as its `owner`, or as the one `person`
+  besides an owner of no person's (a run's, say); once it
   is online, name it. If it fails to start, say so on `/threads/machine-wait`; to try again, call
   that without `failed`, start another machine and name it. The person asks for that with the
   page's Try again, which reaches your service through the mount's `machines.startAgain`.
@@ -157,10 +158,10 @@ Content-Type: application/json
   again just before the thread moves, so a machine that dials in meanwhile keeps its thread and
   what was made for it on the target is removed. `hostId` must be a joined machine, online now.
 - **Whose it stays.** A thread is for the person its machine was started for. It moves only to a
-  machine started for the same person and the same purpose (`owner` and `onDemand` as the machine
-  records them), or from one machine started for nobody to another. A thread on a machine
-  registered before machines said their kind may move to one started for the threads placed on
-  it (`onDemand: "thread"`), never the other way. Its owner and its lineage's
+  machine started for the same owner and the same purpose (`owner` and `onDemand` as the machine
+  records them), or from one machine of no kind to another. A thread on a machine started for it
+  that names no owner (registered by an older build) moves only onto one that names its owner,
+  which it then is for. Its owner and its lineage's
   stay what they were. A thread whose machine is no longer on record doesn't move: who it is for
   can't be told. Being the platform's service doesn't change this.
 - **Nothing left behind.** The move claims the thread in its runtime before anything is made on
