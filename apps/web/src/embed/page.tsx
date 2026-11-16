@@ -32,7 +32,8 @@ export function Page({
   headingLevel?: 1 | 2;
   /**
    * On a phone, the title is left to the app's own bar, which names the page already: still the
-   * page's heading for a screen reader, but not drawn. Wider windows show it.
+   * page's heading for a screen reader, but not drawn, and the actions go under the line. Wider
+   * windows show it.
    */
   hideTitleOnPhone?: boolean;
   /**
@@ -45,7 +46,12 @@ export function Page({
   const Heading = headingLevel === 2 ? "h2" : "h1";
   const header = (
     <header className="flex flex-wrap items-start gap-x-3 gap-y-2">
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
+      {/* With the title left to the phone's bar, the line takes the row there and the actions
+          go under it, rather than beside it in half the width. */}
+      <div
+        data-slot="page-heading"
+        className={cn("flex min-w-0 flex-1 flex-col gap-1", hideTitleOnPhone && "phone:basis-full")}
+      >
         <Heading
           className={cn(
             "font-heading text-heading text-foreground",

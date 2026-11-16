@@ -6,6 +6,8 @@ import { Page } from "./page";
 
 afterEach(cleanup);
 
+const heading = () => document.querySelector('[data-slot="page-heading"]')!.className;
+
 describe("Page", () => {
   it("is titled by an h1 shown everywhere, with nothing above it, by default", () => {
     render(<Page title="Members">Rows</Page>);
@@ -45,6 +47,27 @@ describe("Page", () => {
       </Page>,
     );
     expect(screen.getByRole("heading", { name: "Limits" }).className).toContain("phone:sr-only");
+  });
+
+  it("puts the actions under the line on a phone that hides the title, beside it otherwise", () => {
+    render(
+      <Page
+        title="Limits"
+        description="What each team may use."
+        actions={<button>Add</button>}
+        hideTitleOnPhone
+      >
+        Rows
+      </Page>,
+    );
+    expect(heading()).toContain("phone:basis-full");
+    cleanup();
+    render(
+      <Page title="Limits" description="What each team may use." actions={<button>Add</button>}>
+        Rows
+      </Page>,
+    );
+    expect(heading()).not.toContain("phone:basis-full");
   });
 
   it("keeps Settings' reading column unless it is wide", () => {

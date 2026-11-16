@@ -104,6 +104,7 @@ function Limits() {
     <Page
       title="Limits"
       description="What the organisation may spend."
+      hideTitleOnPhone
       actions={
         <Popover
           label="Organisations"
