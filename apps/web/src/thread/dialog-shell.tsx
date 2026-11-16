@@ -121,13 +121,21 @@ export function Sheet({
           finalFocus={returnFocusTo(opener, returnFocus)}
           className={cn(SHEET_POPUP, wide && SHEET_WIDE)}
         >
-          <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+          <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4 phone:h-13 phone:pr-1">
             <Dialog.Title className="min-w-0 flex-1 truncate font-heading text-title">
               {title}
             </Dialog.Title>
             {actions}
             <Dialog.Close
-              render={<Button size="icon-xs" variant="ghost" aria-label={closeLabel} />}
+              render={
+                // A phone's 44 px target, as a phone sheet's Close is.
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={closeLabel}
+                  className="phone:size-11"
+                />
+              }
             >
               <X aria-hidden />
             </Dialog.Close>
