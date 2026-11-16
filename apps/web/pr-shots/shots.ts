@@ -3760,12 +3760,27 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "workspace-models-group",
-    title: "Workspace settings: Models, with routing at a limit and the worker brief footer",
+    title:
+      "Workspace settings: Models, with other models, routing at a limit and the worker brief footer",
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateOrchestration("board"));
       await openWorkspaceSettingsFromBar(page);
       await page.getByTestId("workspace-page").waitFor();
       await page.getByRole("region", { name: "Models" }).waitFor();
+      await page.waitForTimeout(600);
+    },
+    element: (page) => page.getByRole("region", { name: "Models" }),
+  },
+  {
+    name: "workspace-models-group-narrow",
+    title: "Workspace settings: Models at phone width, Use other models under the roster",
+    open: async (page) => {
+      await openOrchestratorOf(page, () => window.gramMock!.simulateOrchestration("board"));
+      await openWorkspaceSettingsFromBar(page);
+      await page.getByTestId("workspace-page").waitFor();
+      // A phone's width, once the sheet is open: opening the orchestrator sets its own window.
+      await page.setViewportSize({ width: 390, height: 1400 });
+      await page.getByTestId("other-worker-models").scrollIntoViewIfNeeded();
       await page.waitForTimeout(600);
     },
     element: (page) => page.getByRole("region", { name: "Models" }),

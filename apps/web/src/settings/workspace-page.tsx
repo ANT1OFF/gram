@@ -42,6 +42,7 @@ import { AutomaticDreamField } from "./automatic-dream-field";
 import { AutonomyField } from "./autonomy-field";
 import { Field, inputCls, NumberField } from "./fields";
 import { MergeReviewPolicyField } from "./merge-review-policy-field";
+import { OtherWorkerModelsField } from "./other-worker-models-field";
 import { RouteAtLimitField } from "./route-at-limit-field";
 import { WatchDefaultBranchField } from "./watch-default-branch-field";
 import { IdleCompactField } from "./idle-compact-field";
@@ -149,7 +150,7 @@ export function WorkspaceSettingsPage({
       <SettingsGroup
         label="Models"
         description="Which models the orchestrator and its workers run on."
-        keywords={["roster", "worker models", "orchestrator model", "brief footer"]}
+        keywords={["roster", "worker models", "other models", "orchestrator model", "brief footer"]}
       >
         {orchestrator !== undefined && (
           <SwitchOrchestratorAction thread={orchestrator} disabled={changes.busy} />
@@ -158,6 +159,11 @@ export function WorkspaceSettingsPage({
           charter={changes.charter ?? state.charter}
           disabled={changes.busy || orchestrator?.sessionSwitch !== undefined}
           onChange={(next) => void changes.saveCharter(next, "Models saved")}
+        />
+        <OtherWorkerModelsField
+          charter={changes.charter ?? state.charter}
+          disabled={changes.busy}
+          onChange={(next, title) => void changes.saveCharter(next, title)}
         />
         <RouteAtLimitField
           charter={changes.charter ?? state.charter}

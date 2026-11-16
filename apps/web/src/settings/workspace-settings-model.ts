@@ -213,6 +213,15 @@ export const withRouteAtLimit = (
   return on ? { ...rest, routeAtLimit: true } : rest;
 };
 
+/** The charter letting the orchestrator go beyond the roster, or not; off is stored as absent. */
+export const withOtherWorkerModels = (
+  charter: OrchestratorCharter,
+  on: boolean,
+): OrchestratorCharter => {
+  const { otherWorkerModels: _was, ...rest } = charter;
+  return on ? { ...rest, otherWorkerModels: true } : rest;
+};
+
 /** The charter watching the default branches after merges, or not; off is stored as absent. */
 export const withWatchDefaultBranch = (
   charter: OrchestratorCharter,

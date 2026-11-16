@@ -68,6 +68,13 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * over the workspace's own conversations) and its half sentence in the memory section. Its
  * description was cut down first and its input aliases dropped; measured then at 64,987. The
  * worker's held.
+ * All three held on 2026-11-16 for the council (up to three reviewers on other models, sending
+ * their findings to the author): the orchestrator's review sentence was rewritten to cover it and
+ * moved out of full autonomy's lines to every level's, its merge hold left there; its line on
+ * cross-harness review was dropped, now said in it, and its sentence on when to archive workers
+ * cut, which Housekeeping says. The worker's got one line, and its line on `message_orchestrator`
+ * lost what that tool's description says (no thread ID; prefer `report`). Measured at 65,268 and
+ * 41,742 before, 65,366 and 41,868 after; the plain prompt is unchanged at 23,646.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
   orchestrator: 65_400,

@@ -291,6 +291,9 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
   ws("workspace.routeAtLimit", "Offer another model at a limit", (w) =>
     charterOf(w) === undefined ? undefined : charterOf(w)?.routeAtLimit === true,
   ),
+  ws("workspace.otherWorkerModels", "Let the orchestrator use other models", (w) =>
+    charterOf(w) === undefined ? undefined : charterOf(w)?.otherWorkerModels === true,
+  ),
   ws("workspace.watchDefaultBranch", "Watch the default branch", (w) =>
     charterOf(w) === undefined ? undefined : charterOf(w)?.watchDefaultBranch === true,
   ),
@@ -1052,6 +1055,7 @@ export const planSettingsChanges = (
         break;
       }
       case "workspace.watchDefaultBranch":
+      case "workspace.otherWorkerModels":
       case "workspace.routeAtLimit": {
         if (value === null || value === false) {
           delete into[field];
