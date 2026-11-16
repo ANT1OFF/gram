@@ -703,24 +703,21 @@ const openNewOnPhone = async (page: Page, path: "/new-task" | "/new") => {
   await page.waitForTimeout(600);
 };
 
-/**
- * The New form over the board scenario's workspace, opened from the header's `+`, with its "in"
- * chip's menu open (before: the four-row New menu, which the base shows instead).
- */
+/** The header's New over the board scenario's workspace: its menu open, Team and Chat. */
 const openNewEntry = async (page: Page) => {
   await openOverviewDensity(page, 280);
   await page.setViewportSize({ width: 1440, height: 860 });
   await page.getByTestId("new-entry").click();
-  const menu = page.getByTestId("new-entry-menu");
-  const target = page.getByTestId("task-target");
-  await expect(menu.or(target)).toBeVisible();
-  if (await target.isVisible()) {
-    await target.click();
-    await page.getByTestId("task-target-menu").waitFor();
-  } else {
-    await page.getByTestId("new-entry-task").hover();
-    await page.getByTestId("new-entry-task-to").waitFor();
-  }
+  await page.getByTestId("new-entry-menu").waitFor();
+  await page.waitForTimeout(400);
+};
+
+/** New → Team with its workspace chip open: which workspace's orchestrator the task goes to. */
+const openTaskPicker = async (page: Page) => {
+  await openNewEntry(page);
+  await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Team/ }).click();
+  await page.getByTestId("task-target").click();
+  await page.getByTestId("task-target-menu").waitFor();
   await page.waitForTimeout(400);
 };
 
@@ -2980,8 +2977,13 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "new-entry-menu",
-    title: "The header's New: the one New form, with its workspace chip open",
+    title: "The header's New: its menu of what New starts",
     open: openNewEntry,
+  },
+  {
+    name: "new-task-picker",
+    title: "New task on Team, its workspace chip open: which orchestrator the task goes to",
+    open: openTaskPicker,
   },
   ...NEW_ENTRY_LANDINGS,
   proposalCard("Please change the settings", "A settings change by chat's card", "settings-card"),

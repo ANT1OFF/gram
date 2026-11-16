@@ -104,11 +104,14 @@ test("⌘N starts a task: a repo's workspace on send, then its orchestrator", as
   await expect(page.getByTestId("task-target")).toHaveText("api");
   await expect(page.getByTestId("task-autonomy")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Send to team/ })).toBeVisible();
-  // A repeat start to the same workspace folds who and where away: the line beside Start says
-  // both, and typing starts in the brief.
-  await expect(page.getByRole("radiogroup", { name: "Who does it" })).toHaveCount(0);
-  await expect(page.getByRole("group", { name: "Where it runs" })).toHaveCount(0);
-  await expect(page.getByLabel("What needs doing")).toBeFocused();
+  const who = page.getByRole("radiogroup", { name: "Who does it" });
+  await expect(who.getByRole("radio")).toHaveCount(2);
+  await expect(page.getByRole("radio", { name: "Team", exact: true })).toBeChecked();
+  const where = page.getByRole("group", { name: "Where it runs" });
+  await expect(where.getByTestId("task-target")).toHaveText("api");
+  // The orchestrator decides where its workers run: no repository, checkout or machine here.
+  await expect(where.getByTestId("task-repo")).toHaveCount(0);
+  await expect(where.getByTestId("task-checkout")).toHaveCount(0);
   // Beside Start, a line each: where it runs (with Change), whom it reports to, and whether its
   // merge waits for you, as a choice.
   const authority = page.getByTestId("task-authority");
@@ -125,21 +128,12 @@ test("⌘N starts a task: a repo's workspace on send, then its orchestrator", as
   await expect(authority.getByTestId("task-merge-approval")).toContainText(
     "Merges pull requests without asking you.",
   );
-  // Change beside Start unfolds the full choice with the workspace's menu open, and ⌘⇧L does
-  // from the keyboard.
+  // Change beside Start opens the workspace's menu in one click, and ⌘⇧L does from the keyboard.
   await authority.getByRole("button", { name: /^Change where it runs/ }).click();
   const targets = page.getByTestId("task-target-menu");
   await expect(targets).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(targets).toBeHidden();
-  const who = page.getByRole("radiogroup", { name: "Who does it" });
-  await expect(who.getByRole("radio")).toHaveCount(2);
-  await expect(page.getByRole("radio", { name: "Team", exact: true })).toBeChecked();
-  const where = page.getByRole("group", { name: "Where it runs" });
-  await expect(where.getByTestId("task-target")).toHaveText("api");
-  // The orchestrator decides where its workers run: no repository, checkout or machine here.
-  await expect(where.getByTestId("task-repo")).toHaveCount(0);
-  await expect(where.getByTestId("task-checkout")).toHaveCount(0);
   await page.getByLabel("What needs doing").focus();
   await page.keyboard.press("ControlOrMeta+Shift+KeyL");
   await expect(targets).toBeVisible();
@@ -187,6 +181,20 @@ test("⌘N starts a task: a repo's workspace on send, then its orchestrator", as
   await expect(page.getByTestId("message-user").last()).toContainText(
     "Fix the retry test on Windows",
   );
+
+  // A repeat start to the same workspace folds who and where away: the line beside Start says
+  // both, and typing starts in the brief. Change unfolds them, still on Team.
+  await add.click();
+  await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Team/ }).click();
+  await expect(page).toHaveURL(/\/new-task$/);
+  await expect(who).toHaveCount(0);
+  await expect(where).toHaveCount(0);
+  await expect(page.getByTestId("task-destination")).toContainText("Runs in api");
+  await expect(page.getByLabel("What needs doing")).toBeFocused();
+  await page.getByTestId("task-destination-change").click();
+  await expect(page.getByTestId("task-target-menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("radio", { name: "Team", exact: true })).toBeChecked();
 });
 
 test("Who does it turns a task into a one-off thread and back, keeping what was typed", async ({
