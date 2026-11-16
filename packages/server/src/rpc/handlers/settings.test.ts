@@ -1,7 +1,13 @@
 import { vi } from "vitest";
 import { TurnActivity } from "../../runtime/turn-activity.ts";
 import { describe, expect, it } from "@effect/vitest";
-import { applySettingsPatch, embeddingOn, InvalidState, ThreadId } from "@gram/contracts";
+import {
+  applySettingsPatch,
+  embeddingOn,
+  InvalidState,
+  type SettingsPatch,
+  ThreadId,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -18,7 +24,7 @@ import { TEST_CONFIG } from "../../runtime/test-harness.ts";
 import { localAppHeadersForTests } from "../../http/local-app.ts";
 import { EMBEDDING_LOCAL_ONLY, embeddingEnabled } from "../../settings/embedding.ts";
 import { suppliedRefusal } from "../../settings/supplied.ts";
-import { settingsHandlers } from "./settings.ts";
+import { hostSettingRefusal, settingsHandlers } from "./settings.ts";
 
 const TestLayer = ServerCore.pipe(
   Layer.provideMerge(FakeAgentAdapter),
@@ -111,6 +117,52 @@ describe("a person's own settings", () => {
       // No longer supplied, the person's own shows again.
       yield* store.putSuppliedSettings(undefined);
       expect((yield* handlers["settings.get"]()).layout?.grid).toEqual(grid("t-mine"));
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+});
+
+describe("settings that name a program or folder on the server", () => {
+  it.effect("are refused whole to a signed-in person, and changed by the local app", () =>
+    Effect.gen(function* () {
+      const handlers = yield* settingsHandlers;
+      const store = yield* ThreadStore;
+      yield* handlers["settings.set"]({ patch: { editor: { command: "code -g" } } });
+      const asAda = Effect.provideService(ActingPerson, "ada");
+      const patches: ReadonlyArray<SettingsPatch> = [
+        { editor: { command: "/bin/sh -c {path}" }, layout: { focusMode: true } },
+        { editor: { command: null } },
+        { terminal: { shell: "/tmp/payload" } },
+        { agents: { defaultFolder: "/" } },
+        { agents: { cloneFolder: "/etc" } },
+      ];
+      for (const patch of patches) {
+        const refused = yield* handlers["settings.set"]({ patch }).pipe(asAda, Effect.flip);
+        expect(refused).toBeInstanceOf(InvalidState);
+        expect(refused.message).toContain("names a program or folder on the server");
+      }
+      expect(
+        yield* handlers["settings.set"]({ patch: { editor: { command: "vim" } } }).pipe(
+          asAda,
+          Effect.flip,
+        ),
+      ).toEqual(new InvalidState({ message: hostSettingRefusal(["editor", "command"]) }));
+      // Nothing of a refused patch was written.
+      const stored = yield* store.getSettings;
+      expect(stored.editor.command).toBe("code -g");
+      expect(stored.layout?.focusMode).toBeUndefined();
+      // Repeating the value changes nothing, so a whole section's save passes, as do other settings.
+      yield* handlers["settings.set"]({
+        patch: { editor: { command: "code -g" }, layout: { focusMode: true } },
+      }).pipe(asAda);
+      expect((yield* store.getSettings).layout?.focusMode).toBe(true);
+      // The app on the server's own machine still changes them, signed in or not.
+      yield* handlers["settings.set"](
+        { patch: { editor: { command: "zed" } } },
+        { headers: localAppHeadersForTests() },
+      ).pipe(asAda);
+      yield* handlers["settings.set"]({ patch: { terminal: { shell: "pwsh" } } });
+      expect((yield* store.getSettings).editor.command).toBe("zed");
+      expect((yield* store.getSettings).terminal.shell).toBe("pwsh");
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 });

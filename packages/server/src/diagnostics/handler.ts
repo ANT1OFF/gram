@@ -12,7 +12,7 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { makeDiagnostics } from "../rpc/handlers/app.ts";
 import type { Handlers } from "../rpc/handlers/common.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { Opener } from "../platform/opener.ts";
+import { Opener, refuseFenced } from "../platform/opener.ts";
 import { openFolderCommand } from "./opener.ts";
 import { formatDiagnosticsReport, type LogTail } from "./report.ts";
 
@@ -59,6 +59,7 @@ export const diagnosticsHandlers = Effect.gen(function* () {
 
     "app.openLogsFolder": () =>
       refuseUnavailable("openLogsFolder").pipe(
+        Effect.andThen(refuseFenced(opener)),
         Effect.andThen(
           Effect.try({
             try: () => mkdirSync(logDir, { recursive: true }),
