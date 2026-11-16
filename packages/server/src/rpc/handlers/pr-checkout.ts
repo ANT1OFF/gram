@@ -1,5 +1,11 @@
-import { GitError, InvalidState, LOCAL_HOST_ID, type BoundPr } from "@gram/contracts";
-import { fetchPrHead, prHead, Proc, tryRepoTop } from "@gram/git";
+import {
+  GitError,
+  InvalidState,
+  LOCAL_HOST_ID,
+  type BoundPr,
+  type CheckoutRequest,
+} from "@gram/contracts";
+import { fetchPrHead, prHead, Proc, tryRepoTop, type PrHead } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { resolveFolder } from "../../fs/folders.ts";
 import { toGitError } from "../../git/mapping.ts";
@@ -9,6 +15,17 @@ import { heldCheckoutPaths } from "../../runtime/create-in-checkout.ts";
 import { CheckoutService } from "../../runtime/hooks.ts";
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
 import type { Handlers } from "./common.ts";
+
+/**
+ * The worktree a PR is checked out in. A fork's head is its author's code: the worktree gets
+ * nothing of the main checkout's, and the thread's agent loads none of the settings the PR carries
+ * (`Checkout.untrusted`).
+ */
+export const prCheckoutRequest = (
+  head: Pick<PrHead, "fork">,
+  branch: string,
+): CheckoutRequest & { readonly kind: "newWorktree" } =>
+  head.fork ? { kind: "newWorktree", branch, untrusted: true } : { kind: "newWorktree", branch };
 
 /** `pr.checkout`. */
 export const prCheckoutHandlers = Effect.gen(function* () {
@@ -31,7 +48,7 @@ export const prCheckoutHandlers = Effect.gen(function* () {
         const branch = yield* provide(fetchPrHead(top, head)).pipe(Effect.mapError(toGitError));
         const open = heldCheckoutPaths(yield* store.listThreads, LOCAL_HOST_ID);
         const checkout = yield* checkouts
-          .prepare({ kind: "newWorktree", branch }, open, root)
+          .prepare(prCheckoutRequest(head, branch), open, root)
           .pipe(
             Effect.catchTag("WorktreeDirty", (e) =>
               Effect.fail(new InvalidState({ message: `${e.path} has uncommitted changes` })),

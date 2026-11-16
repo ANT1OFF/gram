@@ -173,6 +173,9 @@ export const widenedEntries = (
     return as !== undefined && coveredBy(allowlist, as) ? [] : [record];
   });
 
+/** What Claude Code loads when `settingSources` is left out. */
+const ALL_SETTING_SOURCES: ReadonlyArray<SettingSource> = ["user", "project", "local"];
+
 /**
  * The `allowedMcpServers` entries the other settings files Claude Code reads list, for the sources
  * it reads: the user's, under `userDir`, and the folder's own shared and local ones.
@@ -607,6 +610,14 @@ export const makeClaudeHost = (
           message: "Memory update file bridge is unavailable; no session was started",
         });
       const prepared = yield* environment.prepare;
+      // Someone else's tree (a fork's PR head): the folder's project and local settings are its
+      // author's, with hooks, env and allow rules, so only the user's own load.
+      const settingSources: ReadonlyArray<SettingSource> | undefined =
+        o.untrustedTree === true
+          ? (config.settingSources ?? ALL_SETTING_SOURCES).filter(
+              (source) => source !== "project" && source !== "local",
+            )
+          : config.settingSources;
       // A thread on a gateway profile runs `claude` against the gateway with the user's key, so the
       // subscription guard doesn't apply to it; every other thread keeps the guard.
       const profileId = o.model?.profileId;
@@ -665,7 +676,7 @@ export const makeClaudeHost = (
           ? widenedEntries(
               lists.mcpAllowlist,
               yield* Effect.promise(() =>
-                otherAllowlists(o.cwd, claudeSettingsDir(env), config.settingSources),
+                otherAllowlists(o.cwd, claudeSettingsDir(env), settingSources),
               ),
             )
           : [];
@@ -1104,9 +1115,9 @@ export const makeClaudeHost = (
         },
         ...(o.dreamFilesOnly === true
           ? { settingSources: [] }
-          : config.settingSources === undefined
+          : settingSources === undefined
             ? {}
-            : { settingSources: [...config.settingSources] }),
+            : { settingSources: [...settingSources] }),
         // Agent SDK 0.3.286 leaves an omitted mode to Claude Code, which starts a gateway session
         // in auto mode, decided by its classifier instead of by `canUseTool`.
         permissionMode: o.permissionMode ?? "default",
@@ -1695,7 +1706,7 @@ export const makeClaudeHost = (
             }
             const p = pending.get(requestId);
             if (p === undefined) return;
-            const resolution = resolveRequest(p.request, p.input, answer, config.settingSources);
+            const resolution = resolveRequest(p.request, p.input, answer, settingSources);
             const mode = resolution.setMode;
             // Switch before returning from `canUseTool`, so the next tool call sees the new mode.
             // A refused mode must not strand the answer: the request settles either way, and the

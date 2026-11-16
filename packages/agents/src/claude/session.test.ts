@@ -603,6 +603,18 @@ describe("ClaudeHost.open", () => {
     }),
   );
 
+  // A fork's PR head carries its author's `.claude` settings: hooks, env and allow rules.
+  it.effect("loads only the user's settings in someone else's tree", () =>
+    Effect.gen(function* () {
+      const h = harness();
+      yield* openSession({ untrustedTree: true }).pipe(Effect.provide(h.layer));
+      expect(query(h).options.settingSources).toEqual(["user"]);
+      const narrowed = harness({ config: { settingSources: ["project", "local"] } });
+      yield* openSession({ untrustedTree: true }).pipe(Effect.provide(narrowed.layer));
+      expect(query(narrowed).options.settingSources).toEqual([]);
+    }),
+  );
+
   it.effect("reports a resume without a transcript as session-not-found", () =>
     Effect.gen(function* () {
       const missing = harness({ startupStderr: "No conversation found with session ID: r1" });

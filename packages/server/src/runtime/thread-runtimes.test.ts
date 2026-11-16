@@ -1809,6 +1809,30 @@ describe("ThreadRuntimes", () => {
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
+  it.effect("opens a session in someone else's tree without the folder's own settings", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const fake = yield* FakeAgentControl;
+      const thread = yield* runtimes.create({
+        projectRoot: "/work/repo",
+        checkout: {
+          kind: "worktree",
+          path: "/work/repo/.worktrees/pr-7-x",
+          repoRoot: "/work/repo",
+          untrusted: true,
+        },
+        input: { text: "review it" },
+      });
+      const session = yield* waitFor(
+        "the first send",
+        fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
+      );
+      expect(session.options).toMatchObject({ untrustedTree: true });
+      const own = yield* createRunning();
+      expect("untrustedTree" in own.session.options).toBe(false);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
   it.effect("passes the thread's session policy at every open", () =>
     Effect.gen(function* () {
       const runtimes = yield* ThreadRuntimes;

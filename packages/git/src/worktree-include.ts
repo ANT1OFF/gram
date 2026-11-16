@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import { copyInside, readInside, realRoot } from "./contained.ts";
 import { git } from "./exec.ts";
 import type { Proc } from "./proc.ts";
+import { isUntrustedWorktree } from "./worktree-trust.ts";
 
 /** Ignored-file listings include `node_modules`; far past the view cap on a real repo. */
 const LS_FILES_MAX_BYTES = 256 * 1024 * 1024;
@@ -32,7 +33,8 @@ export const matchesInclude = (patterns: ReadonlyArray<string>, relPath: string)
  * Copy files that are BOTH gitignored-untracked AND matched by `.worktreeinclude` from `repoTop` into
  * `worktreeDir`. Returns the count. Never fails creation: per-file errors are skipped. Both ends stay
  * inside their checkout: a source that is a link or resolves outside `repoTop` is skipped, and so is
- * a destination the new branch has routed through a link.
+ * a destination the new branch has routed through a link. Nothing is copied into an untrusted
+ * worktree (`isUntrustedWorktree`): the main checkout's secrets don't go beside someone else's code.
  */
 export const copyWorktreeIncludes = (
   repoTop: string,
@@ -42,6 +44,7 @@ export const copyWorktreeIncludes = (
     let from: string;
     let to: string;
     let content: string;
+    if (isUntrustedWorktree(worktreeDir)) return 0;
     try {
       from = realRoot(repoTop);
       to = realRoot(worktreeDir);

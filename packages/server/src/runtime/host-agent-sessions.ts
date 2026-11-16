@@ -120,6 +120,7 @@ const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): H
     outwardGate: o.outwardGate,
     gateConnectors: o.gateConnectors,
     confineWrites: o.confineWrites,
+    untrustedTree: o.untrustedTree,
     pinCwd: o.pinCwd,
     mcpAllowlist: o.mcpAllowlist,
     mcpDenylist: o.mcpDenylist,

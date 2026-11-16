@@ -2,11 +2,12 @@ import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import { readPermissionRules, settingsPath } from "./claude-settings.ts";
+import { readPermissionRules, seedWorktreePermissions, settingsPath } from "./claude-settings.ts";
 import { ProcLive } from "./proc.ts";
 import { originBaseRef } from "./refs.ts";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-utils.ts";
 import { copyWorktreeIncludes } from "./worktree-include.ts";
+import { isUntrustedWorktree } from "./worktree-trust.ts";
 import {
   addWorktree,
   baseBranches,
@@ -715,6 +716,102 @@ describe.skipIf(!hasGit)("worktrees", () => {
         expect(fs.existsSync(work)).toBe(true);
         yield* removeWorktree({ repoPath: repo, worktreeDir: wt, force: true, openCheckouts: [] });
         expect(fs.existsSync(wt)).toBe(false);
+      }).pipe(provide),
+    );
+
+    // A fork's PR head is its author's code: nothing of the main checkout's goes beside it, and the
+    // rules its branch tracks never read as the user's approvals.
+    it.live("gives an untrusted worktree nothing of the main checkout's", () =>
+      Effect.gen(function* () {
+        const repo = makeRepo(tmp());
+        write(
+          nodePath.join(repo, ".gitignore"),
+          ".env\n.claude/settings.local.json\n.worktrees/\n",
+        );
+        write(nodePath.join(repo, ".worktreeinclude"), ".env\n");
+        run(repo, "add", "-A");
+        run(repo, "commit", "-qm", "fixture");
+        write(nodePath.join(repo, ".env"), "TOKEN=secret");
+        allowRules(repo, "Bash(npm test:*)");
+        run(repo, "checkout", "-qb", "pr-7-evil");
+        allowRules(repo, "Bash(curl:*)");
+        run(repo, "add", "-f", ".claude/settings.local.json");
+        run(repo, "commit", "-qm", "the PR's own rules");
+        run(repo, "checkout", "-q", "-");
+        allowRules(repo, "Bash(npm test:*)");
+
+        const { checkout } = yield* createWorktree({
+          repoPath: repo,
+          branch: "pr-7-evil",
+          untrusted: true,
+          openCheckouts: [],
+        });
+        const wt = checkout.path;
+        expect(checkout.untrusted).toBe(true);
+        expect(isUntrustedWorktree(wt)).toBe(true);
+        expect(fs.existsSync(nodePath.join(wt, ".env"))).toBe(false);
+        expect(readPermissionRules(wt).allow).toEqual(["Bash(curl:*)"]);
+        // The seeding an agent's own move into a worktree runs stays off too.
+        yield* seedWorktreePermissions(repo, wt);
+        expect(yield* copyWorktreeIncludes(repo, wt)).toBe(0);
+        expect(readPermissionRules(wt).allow).toEqual(["Bash(curl:*)"]);
+        expect(yield* pendingPermissions(repo, wt)).toEqual([]);
+
+        // Only what is approved during the thread is offered, and only that is merged back.
+        allowRules(wt, "Bash(curl:*)", "Bash(date:*)");
+        expect(yield* pendingPermissions(repo, wt)).toEqual(["Bash(date:*)"]);
+        // A thread reopened on the worktree reads it as untrusted still.
+        const reused = yield* createWorktree({
+          repoPath: repo,
+          branch: "pr-7-evil",
+          openCheckouts: [],
+        });
+        expect(reused.reused).toBe(true);
+        expect(reused.checkout.untrusted).toBe(true);
+        yield* removeWorktree({
+          repoPath: repo,
+          worktreeDir: wt,
+          force: true,
+          mergeRules: ["Bash(curl:*)", "Bash(date:*)"],
+          openCheckouts: [],
+        });
+        expect(readPermissionRules(repo).allow).toEqual(["Bash(npm test:*)", "Bash(date:*)"]);
+
+        // Restored, it is marked again and still gets nothing.
+        yield* restoreWorktree({
+          repoPath: repo,
+          worktreeDir: wt,
+          branch: "pr-7-evil",
+          untrusted: true,
+          openCheckouts: [],
+        });
+        expect(isUntrustedWorktree(wt)).toBe(true);
+        expect(fs.existsSync(nodePath.join(wt, ".env"))).toBe(false);
+        expect(readPermissionRules(wt).allow).toEqual(["Bash(curl:*)"]);
+      }).pipe(provide),
+    );
+
+    it.live("copies includes and seeds rules into the user's own new worktree", () =>
+      Effect.gen(function* () {
+        const repo = makeRepo(tmp());
+        write(
+          nodePath.join(repo, ".gitignore"),
+          ".env\n.claude/settings.local.json\n.worktrees/\n",
+        );
+        write(nodePath.join(repo, ".worktreeinclude"), ".env\n");
+        run(repo, "add", "-A");
+        run(repo, "commit", "-qm", "fixture");
+        write(nodePath.join(repo, ".env"), "TOKEN=secret");
+        allowRules(repo, "Bash(npm test:*)");
+        const { checkout } = yield* createWorktree({
+          repoPath: repo,
+          branch: "mine",
+          openCheckouts: [],
+        });
+        expect(checkout.untrusted).toBeUndefined();
+        expect(isUntrustedWorktree(checkout.path)).toBe(false);
+        expect(fs.existsSync(nodePath.join(checkout.path, ".env"))).toBe(true);
+        expect(readPermissionRules(checkout.path).allow).toEqual(["Bash(npm test:*)"]);
       }).pipe(provide),
     );
 

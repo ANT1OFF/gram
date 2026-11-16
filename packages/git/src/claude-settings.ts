@@ -9,6 +9,7 @@ import * as nodePath from "node:path";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 import { readInside, realRoot, writeInside } from "./contained.ts";
+import { isUntrustedWorktree } from "./worktree-trust.ts";
 
 export interface Buckets {
   readonly allow: ReadonlyArray<string>;
@@ -107,6 +108,29 @@ export const newRules = (worktree: Buckets, root: Buckets): Array<string> =>
     worktree[key].filter((rule) => !isExcluded(rule) && !root[key].includes(rule)),
   );
 
+/** `buckets` without the rules in `tracked`, bucket by bucket. */
+export const withoutRules = (buckets: Buckets, tracked: Buckets): Buckets => ({
+  allow: buckets.allow.filter((rule) => !tracked.allow.includes(rule)),
+  deny: buckets.deny.filter((rule) => !tracked.deny.includes(rule)),
+  ask: buckets.ask.filter((rule) => !tracked.ask.includes(rule)),
+});
+
+/**
+ * The rules of the settings file as the checkout's `HEAD` tracks it: rules a branch's author wrote,
+ * not ones the user approved. Empty when the file isn't tracked or doesn't parse.
+ */
+export const parseTrackedRules = (content: string): Buckets => {
+  try {
+    const parsed: unknown = JSON.parse(content);
+    return isObject(parsed) ? extract(parsed) : emptyBuckets;
+  } catch {
+    return emptyBuckets;
+  }
+};
+
+/** Where the settings file is, relative to its checkout, as `git show HEAD:<path>` takes it. */
+export const SETTINGS_TRACKED_PATH = SETTINGS_REL;
+
 /**
  * Add-only union of `incoming` into `base.permissions`: existing entries first (non-string entries
  * kept), new ones appended, duplicates collapsed, other keys untouched, excluded rules dropped.
@@ -151,13 +175,16 @@ const locked = <A>(f: () => A): Effect.Effect<A> =>
 
 /**
  * Seed a new worktree with the repo root's rules (excluded ones dropped), unioning into an existing
- * worktree file without clobbering it. A no-op without a root file. Never fails creation.
+ * worktree file without clobbering it. A no-op without a root file, and for an untrusted worktree
+ * (`isUntrustedWorktree`), whose code the user's pre-approved commands mustn't cover. Never fails
+ * creation.
  */
 export const seedWorktreePermissions = (
   repoTop: string,
   worktreeDir: string,
 ): Effect.Effect<void> =>
   locked(() => {
+    if (isUntrustedWorktree(worktreeDir)) return;
     const root = readSettings(repoTop);
     if (!root) return;
     const incoming = mapBuckets(extract(root), (list) => list.filter((rule) => !isExcluded(rule)));
