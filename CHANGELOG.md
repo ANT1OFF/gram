@@ -21,6 +21,7 @@
 * **settings:** a toggle for watching the default branch after merges ([#682](https://github.com/ANT1OFF/gram/issues/682)) ([8758446](https://github.com/ANT1OFF/gram/commit/8758446f2bffe8685cacd11faed2059e11228360))
 * **web:** say a thread's machine is starting again while a message waits on it ([#695](https://github.com/ANT1OFF/gram/issues/695)) ([388b753](https://github.com/ANT1OFF/gram/commit/388b753030b8e3dc647002da94b12cf6744d26bb))
 * **workspaces:** a shared folder each workspace's threads read and write, mirrored to their machines ([#675](https://github.com/ANT1OFF/gram/issues/675)) ([5b9f82b](https://github.com/ANT1OFF/gram/commit/5b9f82b0f5b825761ac69501a3e2ad27970c38f1))
+* workers pick machine options by name, a thread reads "delivered" when nothing merged, and queued messages send when a machine joins ([#697](https://github.com/ANT1OFF/gram/issues/697)) ([3afd974](https://github.com/ANT1OFF/gram/commit/3afd9741f89f17571d311fdfc5add3c392e80c6c))
 
 
 ### Bug Fixes
