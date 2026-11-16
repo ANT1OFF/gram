@@ -38,14 +38,16 @@ export const LONG_COPY = "data-long-copy";
  */
 function RowLabel({
   label,
+  labelText,
   htmlFor,
   description,
   learnMore,
   children,
 }: {
-  label: string;
+  label: ReactNode;
+  labelText: string;
   htmlFor: string | undefined;
-  description: string | undefined;
+  description: ReactNode;
   learnMore: ReactNode;
   /** After the name, on its line. */
   children?: ReactNode;
@@ -62,7 +64,7 @@ function RowLabel({
             {label}
           </label>
         )}
-        <HelpTip label={label} help={learnMore} />
+        <HelpTip label={labelText} help={learnMore} />
         {children}
       </div>
       {description !== undefined && <SettingDescription>{description}</SettingDescription>}
@@ -70,9 +72,37 @@ function RowLabel({
   );
 }
 
+/**
+ * A setting's name and line may be rich (a link, a code span, a badge beside the words). Settings
+ * search, the reset's and the ⓘ's names need their words: a string is its own, and a name that
+ * isn't one must give them in `labelText`.
+ */
+type RichLabel = { description?: ReactNode } & (
+  | { label: string; labelText?: string | undefined }
+  | {
+      label: Exclude<ReactNode, string>;
+      /** The name's words: Settings search, the reset's name and the ⓘ use them. */
+      labelText: string;
+    }
+);
+
+const wordsOf = ({
+  label,
+  labelText,
+  description,
+}: {
+  label: ReactNode;
+  labelText: string | undefined;
+  description: ReactNode;
+}) => ({
+  label: labelText ?? (typeof label === "string" ? label : ""),
+  description: typeof description === "string" ? description : undefined,
+});
+
 /** A labelled setting in a form: its name and one line of description, then the control below. */
 export function Field({
   label,
+  labelText,
   description,
   keywords,
   htmlFor,
@@ -80,12 +110,13 @@ export function Field({
   action,
   hint,
   undoKey,
+  testId,
   children,
-}: {
-  label: string;
-  description?: string;
+}: RichLabel & {
   /** Extra words Settings search finds this by. */
   keywords?: readonly string[];
+  /** On the field, for specs to find it by. */
+  testId?: string;
   /** The control's id, when it's a single form element the label should name. */
   htmlFor?: string;
   /** What the one line leaves out, behind the ⓘ beside the name. */
@@ -101,12 +132,25 @@ export function Field({
   undoKey?: string;
   children: ReactNode;
 }) {
-  const search = useSettingSearch({ label, description, keywords });
+  const words = wordsOf({ label, labelText, description });
+  const search = useSettingSearch({ ...words, keywords });
   const row = useId();
   return (
-    <div {...search} {...touchHandlers(row)} data-setting="" className="flex flex-col gap-1.5">
+    <div
+      {...search}
+      {...touchHandlers(row)}
+      data-setting=""
+      data-testid={testId}
+      className="flex flex-col gap-1.5"
+    >
       <div className="flex items-start gap-1">
-        <RowLabel label={label} htmlFor={htmlFor} description={description} learnMore={learnMore}>
+        <RowLabel
+          label={label}
+          labelText={words.label}
+          htmlFor={htmlFor}
+          description={description}
+          learnMore={learnMore}
+        >
           <SavedMark row={row} />
           {undoKey !== undefined && <UndoSave undoKey={undoKey} />}
         </RowLabel>
@@ -130,6 +174,7 @@ const NESTED_ROW = "border-t-0! ps-9! pt-0!";
  */
 export function SettingRow({
   label,
+  labelText,
   description,
   keywords,
   htmlFor,
@@ -141,12 +186,13 @@ export function SettingRow({
   hint,
   undoKey,
   nested = false,
+  testId,
   children,
-}: {
-  label: string;
-  description?: string;
+}: RichLabel & {
   /** Extra words Settings search finds this by. */
   keywords?: readonly string[];
+  /** On the row, for specs to find it by. */
+  testId?: string | undefined;
   /**
    * A part of the row above it: set in from the card's edge under that row's name, with no hairline
    * between the two.
@@ -173,19 +219,27 @@ export function SettingRow({
   undoKey?: string;
   children?: ReactNode;
 }) {
-  const search = useSettingSearch({ label, description, keywords });
+  const words = wordsOf({ label, labelText, description });
+  const search = useSettingSearch({ ...words, keywords });
   const row = useId();
   return (
     <div
       {...search}
       {...touchHandlers(row)}
       data-setting=""
+      data-testid={testId}
       className={cn("@container/row flex flex-col gap-2", nested && NESTED_ROW)}
     >
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <div className="flex min-w-0 flex-[1_1_14rem]">
-          <RowLabel label={label} htmlFor={htmlFor} description={description} learnMore={learnMore}>
-            {onReset && <ResetButton label={label} onReset={onReset} />}
+          <RowLabel
+            label={label}
+            labelText={words.label}
+            htmlFor={htmlFor}
+            description={description}
+            learnMore={learnMore}
+          >
+            {onReset && <ResetButton label={words.label} onReset={onReset} />}
             {children === undefined && <SaveReceipt row={row} undoKey={undoKey} />}
           </RowLabel>
         </div>
@@ -497,6 +551,7 @@ function useRovingRadios<T extends string>(
 /** An on/off setting: a row with a switch on the right. */
 export function Toggle({
   label,
+  labelText,
   description,
   keywords,
   checked,
@@ -508,11 +563,12 @@ export function Toggle({
   detail,
   learnMore,
   nested = false,
-}: {
-  label: string;
-  description?: string;
+  testId,
+}: RichLabel & {
   /** Extra words Settings search finds this by. */
   keywords?: readonly string[];
+  /** On the row, for specs to find it by. */
+  testId?: string;
   /** A part of the switch above it; see `SettingRow`. */
   nested?: boolean;
   checked: boolean;
@@ -528,11 +584,14 @@ export function Toggle({
   learnMore?: ReactNode;
 }) {
   const id = useId();
+  // Toggle's own props hold the pairing (a name that isn't words brings its words); destructuring
+  // loses it for the compiler, so it is put back together for the row.
+  const name = { label, labelText, description } as RichLabel;
   return (
     <SettingRow
-      label={label}
+      {...name}
       htmlFor={id}
-      {...(description === undefined ? {} : { description })}
+      testId={testId}
       {...(keywords === undefined ? {} : { keywords })}
       onReset={onReset}
       error={error}

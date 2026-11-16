@@ -83,6 +83,8 @@ const modes: readonly RadioOption<Level>[] = [
 export const wrong: readonly OptionGroupOption<Level>[] = [{ value: "mid", label: "Mid" }];
 const Glyph: EmptyIcon = ({ className }) => <svg className={className} />;
 const add: EmptyAction = { label: "Add a member", onClick: () => {}, testId: "add" };
+// @ts-expect-error: a name that isn't words brings its words, for search and the reset's name
+export const unnamed = <SettingRow label={<b>Key</b>} />;
 const tone: MeterTone = meterTone(0.95);
 const classes: ClassInput = ["p-inset", false, null];
 
@@ -133,6 +135,35 @@ export function KitPage({ pick }: { pick: (level: Level) => void }) {
       <SettingsGroup label="Members" plainOnPhone card>
         Rows
       </SettingsGroup>
+      <Page
+        title="Ada Lovelace"
+        above={<a href="/members">Members</a>}
+        headingLevel={2}
+        hideTitleOnPhone
+        wide
+      >
+        <SettingsGroup label="Keys">
+          <SettingRow
+            label={
+              <>
+                Deploy key <code>ed25519</code>
+              </>
+            }
+            labelText="Deploy key"
+            description={<a href="/docs">How keys work</a>}
+          />
+          <Toggle
+            label={<i>Digest</i>}
+            labelText="Digest"
+            testId="digest"
+            checked={false}
+            onChange={() => {}}
+          />
+          <Field label={<b>Name</b>} labelText="Name" testId="name">
+            <Input />
+          </Field>
+        </SettingsGroup>
+      </Page>
       <Alert variant="destructive">
         <AlertTitle>Failed</AlertTitle>
         <AlertDescription>Try again.</AlertDescription>
@@ -200,6 +231,8 @@ export function KitPage({ pick }: { pick: (level: Level) => void }) {
       </Sheet>
       {/* @ts-expect-error: a variant the kit doesn't have */}
       <Button variant="huge">No</Button>
+      {/* @ts-expect-error: a page's title is words, for its heading and its key */}
+      <Page title={<b>Rich</b>}>No</Page>
       {/* @ts-expect-error: a page needs its title */}
       <Page>No title</Page>
     </Page>
