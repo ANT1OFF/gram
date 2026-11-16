@@ -411,6 +411,16 @@ export const resumeHost = (
         reopened: reopened.length,
         missing: missing.length,
         restored: restored.length,
+        // Why, counted: no note is a folder Gram didn't make from a clone, or a host that can't.
+        ...(missing.length === 0
+          ? {}
+          : {
+              missingWhy: Object.fromEntries(
+                [
+                  ...Map.groupBy(missing, (entry) => entry.note ?? "not made from a clone here"),
+                ].map(([why, entries]) => [why, entries.length]),
+              ),
+            }),
       }),
     );
     return { reopened, left, missing, restored };
