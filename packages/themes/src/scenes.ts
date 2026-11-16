@@ -219,10 +219,10 @@ export function sceneSvg(kind: SceneId, dark: boolean, id = "s"): string {
       sky(c.s1, c.s2) +
       stars +
       orb(980, 300, 230, c.sun) +
-      trees(540, 140, c.t[0], 34, 7) +
-      trees(660, 170, c.t[1], 44, 19) +
-      trees(800, 200, c.t[2], 56, 31) +
-      trees(960, 240, c.t[3], 72, 43);
+      trees(540, 140, c.t[0]!, 34, 7) +
+      trees(660, 170, c.t[1]!, 44, 19) +
+      trees(800, 200, c.t[2]!, 56, 31) +
+      trees(960, 240, c.t[3]!, 72, 43);
   } else if (kind === "coast") {
     const c = dark
       ? {

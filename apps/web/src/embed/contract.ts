@@ -696,6 +696,38 @@ export interface HostSidebarTheme {
   };
 }
 
+/**
+ * The look a person sees until they choose their own in Settings, by name only: no colour values.
+ * Each part applies only while the person hasn't picked it; their own choice always wins.
+ */
+export interface LookDefaults {
+  /**
+   * A built-in palette, by its id (`"petrol-dark"`): it takes the place of Gram's default pair,
+   * and follows Mode through its pair. An id that isn't built in is ignored.
+   */
+  readonly palette?: string;
+  /** An accent laid over the palette (`ACCENTS` in `@gram/themes`). */
+  readonly accent?:
+    | "ink"
+    | "indigo"
+    | "plum"
+    | "forest"
+    | "sage"
+    | "clay"
+    | "ochre"
+    | "petrol"
+    | "graphite"
+    | "navy";
+  /** A background picture, or `"off"`. */
+  readonly backdrop?: "off" | "fjord" | "dunes" | "pines" | "coast" | "peaks" | "waves";
+  /** How opaque cards, the sidebar and the title bar are over a picture. */
+  readonly surfaces?: "solid" | "frosted" | "clear";
+  /** The open sidebar flush with the window, or inset as a rounded panel apart from its edges. */
+  readonly sidebar?: "flush" | "inset";
+  /** The sidebar's icons in their row's colour, or in the accent. */
+  readonly sidebarIcons?: "plain" | "accent";
+}
+
 export interface MountOptions {
   /** The element the app fills. It takes the whole window: one mount to a page. */
   readonly element: HTMLElement;
@@ -719,6 +751,12 @@ export interface MountOptions {
    * person's own palette and fonts, picked in Settings, still win. Left out, the look is Gram's.
    */
   readonly theme?: HostTheme;
+  /**
+   * The look a person sees until they choose their own, by name: a built-in palette, an accent, a
+   * background picture, the surfaces and the sidebar's shape and icons. Unlike `theme` it carries
+   * no colours, so an app can follow Gram's own palettes and still pick its default look.
+   */
+  readonly defaults?: LookDefaults;
 }
 
 export interface GramHandle {

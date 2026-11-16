@@ -28,14 +28,19 @@ export function createThemeStore(storage?: StateStorage) {
         name: THEME_STORAGE_KEY,
         version: 1,
         storage: createJSONStorage(() => storage ?? window.localStorage),
-        partialize: ({ look, palette, mode, density, contrast, motion, customPalettes }) => ({
-          look,
-          palette,
-          mode,
-          density,
-          contrast,
-          motion,
-          customPalettes,
+        partialize: (state) => ({
+          look: state.look,
+          palette: state.palette,
+          mode: state.mode,
+          density: state.density,
+          contrast: state.contrast,
+          motion: state.motion,
+          accent: state.accent,
+          backdrop: state.backdrop,
+          surfaces: state.surfaces,
+          sidebar: state.sidebar,
+          sidebarIcons: state.sidebarIcons,
+          customPalettes: state.customPalettes,
         }),
         merge: (persisted, current) => {
           const raw = (persisted ?? {}) as Record<string, unknown>;

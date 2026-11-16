@@ -28,6 +28,12 @@ export function appearanceFromPrefs(prefs: ThemePrefs): Appearance {
     density: prefs.density,
     contrast: prefs.contrast === "system" ? "standard" : prefs.contrast,
     motion: prefs.motion,
+    // Only what the person chose: left out, the embedding app's default or Gram's applies.
+    ...(prefs.accent ? { accent: prefs.accent } : {}),
+    ...(prefs.backdrop ? { backdrop: prefs.backdrop } : {}),
+    ...(prefs.surfaces ? { surfaces: prefs.surfaces } : {}),
+    ...(prefs.sidebar ? { sidebar: prefs.sidebar } : {}),
+    ...(prefs.sidebarIcons ? { sidebarIcons: prefs.sidebarIcons } : {}),
   };
 }
 
