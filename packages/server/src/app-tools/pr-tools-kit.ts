@@ -317,8 +317,8 @@ export const armedWorkerBadge = (approved: boolean) =>
   });
 
 /**
- * A real per-call card approves a recovery PR whose historical branch the worker never held: the
- * user's own worktree has it checked out, so the worker can't check it out and the user is asked.
+ * A per-call card at Publish approves a recovery PR whose historical branch the worker never
+ * held. Full can then reuse that exact approval; it no longer raises ownership cards itself.
  */
 export const approvedRecovery = (world: World, method: "squash" | "rebase" = "squash") =>
   Effect.gen(function* () {
@@ -336,7 +336,10 @@ export const approvedRecovery = (world: World, method: "squash" | "rebase" = "sq
     const root = yield* openOrchestrator(world);
     const worker = yield* spawn(root.session, { feature: "recovery-integration" });
     yield* completeTurn(worker.session);
-    yield* atAutonomy(root.thread, "full", { mergeReviewPolicy: "bot" });
+    yield* store.updateWorkspace(root.workspaceId, (state) => ({
+      ...state,
+      charter: { ...state.charter, mergeReviewPolicy: "bot" },
+    }));
     yield* store.updateSettings((settings) => ({
       ...settings,
       reviewBots: [
@@ -370,6 +373,7 @@ export const approvedRecovery = (world: World, method: "squash" | "rebase" = "sq
       scope: "once",
     });
     yield* Fiber.join(call);
+    yield* atAutonomy(root.thread, "full", { mergeReviewPolicy: "bot" });
     return { root, worker, merge, input: { threadId: worker.thread.id, release: true } };
   });
 

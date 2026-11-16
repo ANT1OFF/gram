@@ -24,7 +24,7 @@ import { AppToolRegistry } from "./registry.ts";
 describe("merge_when_ready ownership boundary", () => {
   for (const change of ["rename", "switch"] as const) {
     it.effect.skipIf(!hasGit)(
-      `a sibling's unsampled branch ${change} keeps a card, not an autonomous arm`,
+      `a sibling's unsampled branch ${change} refuses an autonomous arm without a card`,
       () =>
         Effect.gen(function* () {
           const world = yield* makeWorld;

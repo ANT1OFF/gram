@@ -10,9 +10,11 @@ import {
   type Project,
   type Thread,
 } from "@gram/contracts";
-import { git, prHead, type Proc, realPathOrOwned, samePath } from "@gram/git";
+import { git, prHead, type Proc, realPathOrOwned, realPathSync, samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import { lstatSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { folderExists, ghFolderOf } from "../fs/folders.ts";
 import { cloneIdentityOf, cloneUrlOf } from "../host/repos.ts";
 import { WorkerHosts, type WorkerHostsShape } from "../host/worker-host.ts";
@@ -59,12 +61,12 @@ export interface OwnershipExplanation {
   readonly unblocks?: true;
 }
 
-const TRY_AGAIN = "Call again in a minute; if it keeps happening, the user has to approve it.";
+const TRY_AGAIN = "Retry the ownership check; ask your orchestrator if it persists.";
 
 const EXPLANATIONS: Record<string, OwnershipExplanation> = {
   [OWNERSHIP_BLOCKERS.noWorkspace]: {
     reason: "the worker no longer belongs to a workspace",
-    fix: "Full auto covers workspace workers only, so the user has to approve this.",
+    fix: "Ask your orchestrator to start a worker in the repository's workspace.",
   },
   [OWNERSHIP_BLOCKERS.worktreeGone]: {
     reason: "the worktree Gram gave the worker is gone, and its repository was never recorded",
@@ -74,9 +76,9 @@ const EXPLANATIONS: Record<string, OwnershipExplanation> = {
   },
   [OWNERSHIP_BLOCKERS.repoNotInWorkspace]: {
     reason: "its repository isn't a workspace project the worker has a worktree in",
-    fix: "Open the pull request from the worktree Gram gave you; for a repository outside the workspace, the user has to add it or approve this.",
+    fix: "Open the pull request from a worktree Gram gave you in a workspace project; ask your orchestrator to start the appropriate worker if needed.",
     orchestratorFix:
-      "Have the worker open the pull request from the worktree Gram gave it, or start a worker in that repository's project; for a repository outside the workspace, the user has to add it or approve this.",
+      "Have the worker open the pull request from the worktree Gram gave it in a workspace project, or start the appropriate worker there.",
   },
   [OWNERSHIP_BLOCKERS.otherRepo]: {
     reason: "it is in another repository than the worktree Gram gave the worker",
@@ -87,7 +89,7 @@ const EXPLANATIONS: Record<string, OwnershipExplanation> = {
   },
   [OWNERSHIP_BLOCKERS.stateUnknown]: {
     reason: "GitHub didn't say whether it is open",
-    fix: TRY_AGAIN,
+    fix: "Retry pr_status to verify that the PR is open.",
   },
   [OWNERSHIP_BLOCKERS.fork]: {
     reason: "its branch is on a fork, not in the repository itself",
@@ -105,7 +107,7 @@ const EXPLANATIONS: Record<string, OwnershipExplanation> = {
   },
   [OWNERSHIP_BLOCKERS.headUnknown]: {
     reason: "GitHub didn't say which commit its head is",
-    fix: TRY_AGAIN,
+    fix: "Retry pr_status to read the PR's head commit.",
   },
   [OWNERSHIP_BLOCKERS.headMoved]: {
     reason: "its head moved after Gram checked it",
@@ -113,21 +115,21 @@ const EXPLANATIONS: Record<string, OwnershipExplanation> = {
   },
   [OWNERSHIP_BLOCKERS.unverified]: {
     reason: "Gram couldn't read the worker's worktree or the pull request on GitHub",
-    fix: TRY_AGAIN,
+    fix: "Check that the worker's worktree is readable and GitHub is reachable, then retry; ask your orchestrator if it persists.",
   },
   [OWNERSHIP_BLOCKERS.machineUnconfirmed]: {
     reason:
       "the machine the worker runs on didn't confirm that the worktree Gram made there still has its branch and its repository",
-    fix: "Keep the branch Gram gave you checked out in that worktree, with its origin unchanged, and call again. If the machine is offline or its gram-host is out of date, the user has to approve this.",
+    fix: "Keep the recorded branch and origin in the worktree Gram made on your machine, reconnect it with a current gram-host, then retry; ask your orchestrator if it persists.",
     orchestratorFix:
-      "Have the worker keep the branch Gram gave it checked out in that worktree, with its origin unchanged. If the machine is offline or its gram-host is out of date, the user has to approve this.",
+      "Have the worker keep the recorded branch and origin in its worktree, reconnect its machine with a current gram-host, then retry.",
   },
   [OWNERSHIP_BLOCKERS.otherThread]: {
     reason:
       "another thread has it as its pull request, or holds its branch in a worktree of its own, so it is that thread's work even where the worker has the branch checked out",
-    fix: "Leave it to the thread that holds it, or ask your orchestrator; otherwise the user has to approve this.",
+    fix: "Ask your orchestrator to merge it on the thread that holds this PR; checking out its branch doesn't transfer ownership. Retry if that thread's claim has changed.",
     orchestratorFix:
-      "Merge it on the thread that holds it; otherwise the user has to approve this.",
+      "Merge it on the thread that holds this PR. Retry if that thread's claim has changed.",
   },
   [OWNERSHIP_BLOCKERS.cloneUnrecorded]: {
     reason:
@@ -162,40 +164,18 @@ export const ownershipFix = (
   return `${audience === "orchestrator" ? (orchestratorFix ?? fix) : fix}${unblocks ? ` Gram can then ${act} without asking.` : ""}`;
 };
 
-/**
- * The blocker as the calling agent reads it: why full auto didn't cover the call, and what it can
- * do so that the next one goes through without the user.
- */
-export const ownershipForAgent = (
+/** An ownership doubt at full autonomy is the agent's to resolve, never an approval request. */
+export const ownershipRefusalText = (
   blocker: string,
   audience: "worker" | "orchestrator",
-  act?: string,
-): string =>
-  `Full auto covers only a worker's own pull request, and Gram couldn't confirm this one is the worker's own: ${explainOwnershipBlocker(blocker).reason}. ${ownershipFix(blocker, audience, act)}`;
-
-/**
- * A card full auto would have skipped but for ownership, said to each who reads it (the app tools'
- * `AskedDespiteAutonomy`): `covers` finishes "Full auto …" and `approving` says what approving does.
- * `approvalActs: false` is for a tool that rechecks ownership after the card, so that approving it
- * does nothing: the agent is then told so, and never to wait on the user.
- */
-export const ownershipAsk = (
-  blocker: string,
-  audience: "worker" | "orchestrator",
-  covers: string,
-  approving: string,
-  act?: string,
-  approvalActs = true,
-) => {
-  const { reason, unblocks } = explainOwnershipBlocker(blocker);
-  const agent = approvalActs
-    ? ownershipForAgent(blocker, audience, act)
-    : `Full auto covers only a worker's own pull request, and Gram couldn't confirm this one is the worker's own: ${reason}. ${unblocks ? ownershipFix(blocker, audience, act) : "Call again later if this was a hiccup; otherwise rely on CI."} The user's approval doesn't change this: Gram refuses it for a pull request that isn't the worker's own.`;
-  return {
-    user: `Full auto ${covers} without asking, but Gram couldn't confirm this one is the worker's own: ${reason}. ${approving}`,
-    agent,
-    tag: `full auto, PR ownership unverified: ${reason}`,
-  };
+  tool: string,
+): string => {
+  const explanation = explainOwnershipBlocker(blocker);
+  const fix =
+    audience === "orchestrator"
+      ? (explanation.orchestratorFix ?? explanation.fix)
+      : explanation.fix;
+  return `Full auto covers only a worker's own pull request, and Gram couldn't confirm this one is the worker's own: ${explanation.reason}. ${fix} Then call ${tool} again so Gram verifies ownership. The call was refused; the user wasn't asked.`;
 };
 
 /** The worktrees Gram gave the thread: never one it follows (`currentCheckout`). */
@@ -275,13 +255,35 @@ const originUrlOf = (at: string) =>
 export type LiveHead =
   | { readonly kind: "branch"; readonly name: string }
   | { readonly kind: "detached" }
-  /** The folder is gone, isn't a readable repository, or git failed, timed out or didn't start. */
+  | { readonly kind: "no-repository" }
+  /** The folder is gone, its repository is unreadable, or git failed, timed out or didn't start. */
   | { readonly kind: "unknown" };
 
 /**
- * A local folder's HEAD read now: the branch it has checked out, a verified detached HEAD, or
- * `unknown` when it can't be told. A conflict check reads this so a branch a sibling switched or
- * renamed to, which the publisher may not have sampled onto its recorded checkout, is still seen as
+ * No repository markers from the real folder up to its filesystem root. `lstat` sees broken links
+ * too; any marker or filesystem error keeps the doubt. Bare git-dir markers cover those repositories too,
+ * including broken ones that git itself no longer recognizes. Nothing here reads their contents.
+ */
+const noGitMarkersAbove = (path: string): boolean => {
+  try {
+    let at = realPathSync(path);
+    for (;;) {
+      if (!statSync(at).isDirectory()) return false;
+      for (const marker of [".git", "HEAD", "objects", "refs", "config", "commondir"])
+        if (lstatSync(join(at, marker), { throwIfNoEntry: false }) !== undefined) return false;
+      const parent = dirname(at);
+      if (parent === at) return true;
+      at = parent;
+    }
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * A local folder's HEAD read now: its branch, a verified detached HEAD, no repository, or `unknown`
+ * when it can't be told. A conflict check reads this so a branch a sibling switched or renamed to,
+ * which the publisher may not have sampled onto its recorded checkout, is still seen as
  * held; `unknown` is never read as "holds nothing". Another machine's folder is never read live.
  */
 export const liveHeadAt = (path: string): Effect.Effect<LiveHead, never, Proc> =>
@@ -294,6 +296,24 @@ export const liveHeadAt = (path: string): Effect.Effect<LiveHead, never, Proc> =
     if (out.status === 0 && !out.truncated && name !== "") return { kind: "branch", name } as const;
     // `--quiet` exits 1, silently, only for a HEAD that is a commit rather than a branch.
     if (out.status === 1 && out.stderr.trim() === "") return { kind: "detached" } as const;
+    if (out.status === 128 && !out.truncated) {
+      const probe = yield* git(path, ["rev-parse", "--git-dir"], {
+        timeoutMs: 2_000,
+        env: { LC_ALL: "C", LANGUAGE: "C", GIT_DISCOVERY_ACROSS_FILESYSTEM: "1" },
+      });
+      // Exit 128 alone also means bad config, unsafe ownership, or broken repository metadata.
+      // Fix the locale and search across mounts (as the disk walk does), then accept only git's
+      // exact discovery failure. Other diagnostics, even at exit 128, keep the doubt.
+      if (
+        probe.status === 128 &&
+        !probe.truncated &&
+        probe.stdout.trim() === "" &&
+        probe.stderr.trim() ===
+          "fatal: not a git repository (or any of the parent directories): .git" &&
+        noGitMarkersAbove(path)
+      )
+        return { kind: "no-repository" } as const;
+    }
     return { kind: "unknown" } as const;
   }).pipe(Effect.orElseSucceed(() => ({ kind: "unknown" }) as const));
 
@@ -474,7 +494,7 @@ const mayNameRepo = (url: string | undefined, repo: string): boolean => {
 
 /**
  * Whether the remote `url` plainly names a repository other than `repo`, on GitHub's own host and
- * its default port: the only answer that lets another thread's folder hold no claim on a branch.
+ * its default port: enough to rule out a branch claim in that repository.
  * It is never true where `remoteNamesRepo` is.
  */
 export const remoteNamesOtherRepo = (url: string | undefined, repo: string): boolean => {
@@ -549,8 +569,8 @@ const claimedByAnother = (
         // The record can lag: on this machine, read the folder's live HEAD too, so a branch the
         // sibling just switched or renamed to is seen before the publisher samples it. A HEAD that
         // can't be read (the folder moved or is gone, its git directory is broken, git failed or
-        // timed out) may hold the branch, so it counts as holding it; only a HEAD read as another
-        // branch, or as detached, leaves the record to speak for the folder.
+        // timed out) may hold the branch, so it counts as holding it; a verified non-repository,
+        // another branch or a detached HEAD leaves only the recorded claims to speak for it.
         if (!holds && isLocalHost(checkout)) {
           const live = yield* liveHeadAt(checkout.path);
           holds = live.kind === "unknown" || (live.kind === "branch" && live.name === branch);
@@ -809,8 +829,8 @@ export const endedPrText = (repo: string, number: number, state: "merged" | "clo
   `${repo}#${number} is ${state}, so there is nothing to merge; check it with pr_status. Nobody was asked.`;
 
 /**
- * At `full` autonomy, the refusal the calling agent gets in place of a card when the PR would be
- * the worker's own but for something the agent can fix itself, never widening what is owned:
+ * At `full` autonomy, every ownership doubt returns a refusal to the calling agent instead of
+ * a user card, never widening what is owned. More specific guidance where it is safe:
  *
  * - its head branch isn't held in the worker's worktree, no other thread follows or holds it, and
  *   no other git worktree has it checked out (a deploy PR a release script opened from a scratch
@@ -819,8 +839,8 @@ export const endedPrText = (repo: string, number: number, state: "merged" | "clo
  *
  * - it is merged or closed: there is nothing to merge (`endedPrText`).
  *
- * `undefined` for everything else (a fork, a repository outside the workspace, another thread's
- * PR, a doubt), which still asks the user. The caller has already established the delegation.
+ * Every other ownership blocker is refused with repair guidance too. `undefined` only when
+ * ownership is verified. The caller has already established the full-autonomy delegation.
  */
 export const ownershipRefusal = (
   thread: Thread,
@@ -839,19 +859,36 @@ export const ownershipRefusal = (
     if (typeof ownership !== "string") return undefined;
     const state = /^it is (merged|closed)$/.exec(ownership)?.[1] as "merged" | "closed" | undefined;
     if (state !== undefined) return endedPrText(repo, number, state);
+    const refusal = ownershipRefusalText(ownership, options.audience, options.tool);
+    if (options.audience === "worker" && thread.boundPr?.mergeWhenReady?.heldBy === "orchestrator")
+      return refusal;
     if (ownership !== OWNERSHIP_BLOCKERS.branchNotHeld || !isLocalHost(thread.checkout))
-      return undefined;
+      return refusal;
     const here = thread.checkout.path;
-    if (thread.checkout.kind !== "worktree" || !(yield* folderExists(here))) return undefined;
+    if (thread.checkout.kind !== "worktree" || !(yield* folderExists(here))) return refusal;
     const head = yield* prHead(here, number, repo);
     const branch = head.headRefName;
-    if (!SAFE_BRANCH.test(branch) || branch.startsWith("-") || head.fork) return undefined;
-    if (yield* heldByAnother(thread, repo, number, branch)) return undefined;
-    if (yield* checkedOutElsewhere(here, branch)) return undefined;
+    if (!SAFE_BRANCH.test(branch) || branch.startsWith("-") || head.fork) return refusal;
+    if (yield* heldByAnother(thread, repo, number, branch)) return refusal;
+    if (yield* checkedOutElsewhere(here, branch)) return refusal;
     const steps = `\`git fetch origin ${branch}\` then \`git switch ${branch}\``;
     const fix =
       options.audience === "worker"
         ? `Check it out in the worktree Gram gave you (${steps}; commit your own work first), then call ${options.tool} again`
         : `Have the worker check it out in the worktree Gram gave it (${steps}), then call ${options.tool} again`;
     return `Full auto covers only a worker's own pull request: one whose head branch is checked out in the worktree Gram gave the worker. ${repo}#${number}'s head branch \`${branch}\` isn't checked out there. ${fix}; Gram then ${options.action} without asking. That holds only while no other thread has it as its pull request or holds its branch: checking out another thread's branch never makes it yours. The user wasn't asked, and their approval isn't the way through for this.`;
-  }).pipe(Effect.catchCause(() => Effect.succeed(undefined)));
+  }).pipe(
+    // Finish inside the registry's refusal-hook budget even when GitHub or a sibling is slow.
+    Effect.timeoutOrElse({
+      duration: "4 seconds",
+      orElse: () =>
+        Effect.succeed(
+          ownershipRefusalText(OWNERSHIP_BLOCKERS.unverified, options.audience, options.tool),
+        ),
+    }),
+    Effect.catchCause(() =>
+      Effect.succeed(
+        ownershipRefusalText(OWNERSHIP_BLOCKERS.unverified, options.audience, options.tool),
+      ),
+    ),
+  );

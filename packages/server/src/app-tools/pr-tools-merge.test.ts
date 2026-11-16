@@ -44,7 +44,7 @@ describe("merge_when_ready", () => {
     "pause",
     "park",
   ] as const) {
-    it.effect.skipIf(!hasGit)(`approved recovery requires a card after ${change}`, () =>
+    it.effect.skipIf(!hasGit)(`invalidates approved recovery after ${change}`, () =>
       Effect.gen(function* () {
         const world = yield* makeWorld;
         yield* withServer(
@@ -124,18 +124,40 @@ describe("merge_when_ready", () => {
               yield* runtimes.updateThread(worker.thread.id, (t) => ({ ...t, parked: true }));
             const before = yield* store.getThread(worker.thread.id);
             expect(yield* merge.delegatedAtFullAutonomy!(changedInput)).toBe(false);
-            const call = yield* Effect.forkScoped(merge.run(changedInput).pipe(Effect.flip));
-            const card = yield* waitReal(
-              "changed recovery approval",
-              store.listRequests(callerId).pipe(Effect.map((all) => all[0])),
-            );
-            expect(card).toMatchObject({ displayName: "merge_when_ready", scopes: ["once"] });
-            yield* runtimes.respond(callerId, card.id, {
-              kind: "approval",
-              decision: "deny",
-              scope: "once",
-            });
-            expect(yield* Fiber.join(call)).toMatchObject({ approvalRequired: true });
+            const ownershipDoubt = [
+              "method",
+              "PR",
+              "repo",
+              "scope",
+              "worker",
+              "no user authorization",
+              "no approval",
+              "user hold",
+              "fork",
+              "project",
+              "workspace",
+              "park",
+            ].includes(change);
+            if (ownershipDoubt) {
+              const refused = yield* merge.run(changedInput).pipe(Effect.flip);
+              expect(refused.message).toContain(
+                "Gram couldn't confirm this one is the worker's own",
+              );
+              expect(yield* store.listRequests(callerId)).toEqual([]);
+            } else {
+              const call = yield* Effect.forkScoped(merge.run(changedInput).pipe(Effect.flip));
+              const card = yield* waitReal(
+                "changed recovery approval",
+                store.listRequests(callerId).pipe(Effect.map((all) => all[0])),
+              );
+              expect(card).toMatchObject({ displayName: "merge_when_ready", scopes: ["once"] });
+              yield* runtimes.respond(callerId, card.id, {
+                kind: "approval",
+                decision: "deny",
+                scope: "once",
+              });
+              expect(yield* Fiber.join(call)).toMatchObject({ approvalRequired: true });
+            }
             expect((yield* store.getThread(worker.thread.id)).boundPr).toEqual(before.boundPr);
             expect((yield* store.getThread(worker.thread.id)).ownedBranches).toEqual(
               before.ownedBranches,

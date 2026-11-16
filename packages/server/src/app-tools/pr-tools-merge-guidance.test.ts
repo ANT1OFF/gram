@@ -111,23 +111,12 @@ describe("merge_when_ready guidance at full autonomy", () => {
                 .forTransport(worker.thread.id, "worker")
                 .find((t) => t.descriptor.name === "merge_when_ready")!;
               expect(yield* merge.delegatedAtFullAutonomy!({ pr: 30 })).toBe(false);
-              const call = yield* Effect.forkScoped(merge.run({ pr: 30 }).pipe(Effect.flip));
-              const card = yield* waitReal(
-                "the approval card",
-                store.listRequests(worker.thread.id).pipe(Effect.map((all) => all[0])),
+              const refused = yield* merge.run({ pr: 30 }).pipe(Effect.flip);
+              expect(refused.message).toContain("another thread has it as its pull request");
+              expect(refused.message).toContain(
+                "Ask your orchestrator to merge it on the thread that holds this PR",
               );
-              if (card.kind !== "approval") throw new Error("not an approval");
-              expect(card.autonomyNote).toBe(
-                "full auto, PR ownership unverified: another thread has it as its pull request, or holds its branch in a worktree of its own, so it is that thread's work even where the worker has the branch checked out",
-              );
-              yield* runtimes.respond(worker.thread.id, card.id, {
-                kind: "approval",
-                decision: "deny",
-                scope: "once",
-              });
-              expect((yield* Fiber.join(call)).message).toContain(
-                "Leave it to the thread that holds it",
-              );
+              expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
               expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
             }),
           );
@@ -262,19 +251,9 @@ describe("merge_when_ready guidance at full autonomy", () => {
                 .find((t) => t.descriptor.name === "merge_when_ready")!;
               expect(yield* merge.delegatedAtFullAutonomy!({ pr: 21 })).toBe(!claims);
               if (!claims) return;
-              const call = yield* Effect.forkScoped(merge.run({ pr: 21 }).pipe(Effect.flip));
-              const card = yield* waitReal(
-                "the approval card",
-                store.listRequests(worker.thread.id).pipe(Effect.map((all) => all[0])),
-              );
-              if (card.kind !== "approval") throw new Error("not an approval");
-              expect(card.autonomyNote).toContain("another thread has it as its pull request");
-              yield* runtimes.respond(worker.thread.id, card.id, {
-                kind: "approval",
-                decision: "deny",
-                scope: "once",
-              });
-              yield* Fiber.join(call);
+              const refused = yield* merge.run({ pr: 21 }).pipe(Effect.flip);
+              expect(refused.message).toContain("another thread has it as its pull request");
+              expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
               expect(
                 (yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady,
               ).toBeUndefined();
@@ -619,7 +598,7 @@ describe("merge_when_ready guidance at full autonomy", () => {
 
   for (const each of HOSTS) {
     it.effect.skipIf(!hasGit)(
-      `${each.owned ? "arms" : "asks before arming"} a worker's own PR from ${each.label}`,
+      `${each.owned ? "arms" : "refuses to arm"} a worker's own PR from ${each.label}`,
       () =>
         Effect.gen(function* () {
           const world = yield* makeWorld;
@@ -629,7 +608,6 @@ describe("merge_when_ready guidance at full autonomy", () => {
             world,
             Effect.gen(function* () {
               const store = yield* ThreadStore;
-              const runtimes = yield* ThreadRuntimes;
               const registry = yield* AppToolRegistry;
               const { session, thread } = yield* openOrchestrator(world);
               const worker = yield* spawn(session, { feature: "hosted" });
@@ -650,21 +628,11 @@ describe("merge_when_ready guidance at full autonomy", () => {
                 expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
                 return;
               }
-              const call = yield* Effect.forkScoped(merge.run({}).pipe(Effect.flip));
-              const card = yield* waitReal(
-                "the approval card",
-                store.listRequests(worker.thread.id).pipe(Effect.map((all) => all[0])),
+              const refused = yield* merge.run({}).pipe(Effect.flip);
+              expect(refused.message).toContain(
+                "it is in another repository than the worktree Gram gave the worker",
               );
-              if (card.kind !== "approval") throw new Error("not an approval");
-              expect(card.autonomyNote).toBe(
-                "full auto, PR ownership unverified: it is in another repository than the worktree Gram gave the worker",
-              );
-              yield* runtimes.respond(worker.thread.id, card.id, {
-                kind: "approval",
-                decision: "deny",
-                scope: "once",
-              });
-              yield* Fiber.join(call);
+              expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
               expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
             }),
           );
