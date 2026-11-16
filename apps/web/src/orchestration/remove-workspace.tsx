@@ -6,6 +6,7 @@ import { useMemo, useRef, useState } from "react";
 import { useApi } from "@/api/context";
 import { errorMessage, isThreadNotFound } from "@/api/errors";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { forgetClosedThread, useThreadsStore } from "@/stores/threads";
 import { useLeaveThread } from "@/thread/close-thread-dialog";
 import { Dialog, DialogShell } from "@/thread/dialog-shell";
@@ -122,20 +123,13 @@ export function RemoveWorkspaceDialog({
         ))}
       </ul>
       {workers !== undefined && (
-        <label className="flex items-start gap-2 text-reading">
-          <input
-            type="checkbox"
-            className="mt-1"
-            checked={closeWorkers}
-            onChange={(event) => setCloseWorkers(event.target.checked)}
-          />
-          <span className="flex flex-col gap-0.5">
-            Also close {workers}
-            <span className="text-meta text-muted-foreground">
-              Worktrees and branches stay on disk either way.
-            </span>
-          </span>
-        </label>
+        <Checkbox
+          className="text-reading"
+          label={<>Also close {workers}</>}
+          description="Worktrees and branches stay on disk either way."
+          checked={closeWorkers}
+          onChange={(event) => setCloseWorkers(event.target.checked)}
+        />
       )}
       {error && (
         <p role="alert" className="text-reading text-destructive">

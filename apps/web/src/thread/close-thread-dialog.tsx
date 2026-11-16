@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { focusPaneComposer } from "@/shell/pane-focus";
 import { useLayoutStore } from "@/stores/layout";
 import { closeThread, useThreadsStore } from "@/stores/threads";
@@ -180,45 +181,37 @@ export function CloseThreadDialog({
       )}
 
       {canRemove && (
-        <label className="flex items-start gap-2 text-reading">
-          <input
-            type="checkbox"
-            className="mt-1"
-            checked={removeWorktree}
-            onChange={(event) => {
-              setRemoveWorktree(event.target.checked);
-              setDirty(undefined);
-            }}
-          />
-          <span className="flex flex-col gap-0.5">
-            Also delete the worktree on disk
-            <span className="text-meta text-muted-foreground">
-              {!removeWorktree
-                ? "The worktree folder stays on disk."
-                : canDeleteBranch && deleteBranch
-                  ? "The worktree folder will be removed."
-                  : "The worktree folder will be removed. The branch and its commits are kept."}
-            </span>
-          </span>
-        </label>
+        <Checkbox
+          className="text-reading"
+          label="Also delete the worktree on disk"
+          description={
+            !removeWorktree
+              ? "The worktree folder stays on disk."
+              : canDeleteBranch && deleteBranch
+                ? "The worktree folder will be removed."
+                : "The worktree folder will be removed. The branch and its commits are kept."
+          }
+          checked={removeWorktree}
+          onChange={(event) => {
+            setRemoveWorktree(event.target.checked);
+            setDirty(undefined);
+          }}
+        />
       )}
 
       {canDeleteBranch && (
-        <label className="flex items-start gap-2 pl-5 text-reading">
-          <input
-            type="checkbox"
-            className="mt-1"
-            checked={deleteBranch}
-            onChange={(event) => setDeleteBranch(event.target.checked)}
-          />
-          <span className="flex flex-col gap-0.5">
-            Also delete the local branch {branchName}
-            <span className="text-meta text-muted-foreground">
+        <Checkbox
+          className="pl-5 text-reading"
+          label={<>Also delete the local branch {branchName}</>}
+          description={
+            <>
               #{merged.number} is merged. The branch is deleted only if its tip is still the PR's
               head and nothing else has it checked out; the remote branch is never touched.
-            </span>
-          </span>
-        </label>
+            </>
+          }
+          checked={deleteBranch}
+          onChange={(event) => setDeleteBranch(event.target.checked)}
+        />
       )}
 
       {canRemove && removeWorktree && (

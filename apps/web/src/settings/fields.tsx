@@ -2,11 +2,13 @@ import { Undo2 } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 
+import { ChoiceCheck } from "@/components/choice-check";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { inputCls } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { CHOICE_CARD } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { SegmentSlab } from "@/motion";
 
@@ -329,23 +331,86 @@ export const SEGMENT_SLAB = "choice-selected";
  */
 export const SEGMENT_ROOMY = "h-8 px-3";
 
-/** One choice out of a few, as a row of radio buttons. */
+/** One of an `OptionGroup`'s choices. */
+export interface OptionGroupOption<T extends string> {
+  readonly value: T;
+  readonly label: string;
+  /**
+   * One line on what picking it does. When any choice has one, the group draws its choices as
+   * cards side by side (one above the next on a phone), the line under each name.
+   */
+  readonly description?: string;
+  readonly testId?: string;
+}
+
+/**
+ * One choice out of a few, as a row of radio buttons: a segmented control of short words, or,
+ * where the choices carry a `description`, a row of choice cards as New's autonomy has, the pick
+ * with its check beside its name so it never shows by colour alone.
+ */
 export function OptionGroup<T extends string>({
   label,
   options,
   value,
   onChange,
   disabled = false,
+  className,
 }: {
   label: string;
-  options: readonly { readonly value: T; readonly label: string }[];
+  options: readonly OptionGroupOption<T>[];
   value: T | undefined;
   onChange: (value: T) => void;
   disabled?: boolean;
+  className?: string;
 }) {
   const slab = useId();
+  const cards = options.some((option) => option.description !== undefined);
+  const pick = (next: T) => {
+    if (next !== value) onChange(next);
+  };
+  if (cards)
+    return (
+      <div
+        role="radiogroup"
+        aria-label={label}
+        className={cn(
+          SEGMENT_TRACK,
+          "grid w-full grid-cols-1 sm:auto-cols-fr sm:grid-flow-col",
+          className,
+        )}
+      >
+        {options.map((option) => {
+          const checked = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={checked}
+              aria-label={option.label}
+              {...(option.description === undefined
+                ? {}
+                : { "aria-description": option.description })}
+              data-testid={option.testId}
+              disabled={disabled}
+              onClick={() => pick(option.value)}
+              className={CHOICE_CARD}
+            >
+              {checked && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
+              <span className="flex w-full items-center gap-1.5 text-reading font-medium">
+                {option.label}
+                <ChoiceCheck checked={checked} className="ml-auto" />
+              </span>
+              {option.description !== undefined && (
+                <span className="text-meta text-muted-foreground">{option.description}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    );
   return (
-    <div role="radiogroup" aria-label={label} className={OPTION_GROUP}>
+    <div role="radiogroup" aria-label={label} className={cn(OPTION_GROUP, className)}>
       {options.map((option) => (
         <Button
           key={option.value}
@@ -354,10 +419,9 @@ export function OptionGroup<T extends string>({
           aria-checked={option.value === value}
           variant="ghost"
           className={cn(SEGMENT, SEGMENT_ROOMY)}
+          data-testid={option.testId}
           disabled={disabled}
-          onClick={() => {
-            if (option.value !== value) onChange(option.value);
-          }}
+          onClick={() => pick(option.value)}
         >
           {option.value === value && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
           {option.label}

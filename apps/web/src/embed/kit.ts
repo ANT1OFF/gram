@@ -13,8 +13,9 @@ export { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 export { Badge } from "@/components/ui/badge";
 export { Button, buttonVariants } from "@/components/ui/button";
 export { ButtonGroup } from "@/components/ui/button-group";
+export { Checkbox, RadioGroup, type RadioOption } from "@/components/ui/checkbox";
 export { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-export { Input, InputGroup } from "@/components/ui/input";
+export { Input, InputGroup, Textarea } from "@/components/ui/input";
 export { Meter, meterTone, type MeterTone } from "@/components/ui/meter";
 export {
   Select,
@@ -28,7 +29,7 @@ export { Switch } from "@/components/ui/switch";
 export { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 // A page of settings, as Settings' own are built: the column, its groups, and a row per setting.
-export { Field, OptionGroup, SettingRow, Toggle } from "@/settings/fields";
+export { Field, OptionGroup, SettingRow, Toggle, type OptionGroupOption } from "@/settings/fields";
 export { SettingsGroup } from "@/settings/settings-group";
 // A popover hung from a button, as the title bar's own are: for a switcher or a short menu.
 export { TitlebarPopover as Popover } from "@/shell/titlebar-popover";

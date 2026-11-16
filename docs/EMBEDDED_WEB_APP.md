@@ -471,11 +471,40 @@ components the app itself draws, from the same build, so their styles are alread
 `gram-web.css` and a tooltip of yours opens under the app's own provider. The list grows as
 pages need more; a control added to it keeps its props.
 
+For forms:
+
+- `Textarea`: a field of several lines with `Input`'s edge, focus ring and `invalid`, as wide as
+  its column, 64 px tall at least (a `min-h-*` of yours wins) and resizable down the page. Every
+  `<textarea>` prop goes to it; `rows` sets how tall it opens.
+- `Checkbox`: a native checkbox with its `label` and an optional `description` line under it, the
+  box on the label's first line at any text size. Every `<input>` prop (`checked`, `onChange`,
+  `name`, `disabled`, `data-testid`) goes to the box and `className` to the row; without a
+  `label` it is the bare box, named by your `aria-label`.
+- `RadioGroup<T>`: one choice out of a list, as a column of radio buttons with a line each:
+  `label` (the group's name for a screen reader), `options` (`{ value, label, description?,
+  disabled? }`, the `RadioOption<T>` type), `value`, `onChange(value)`, and optional `disabled`,
+  `name` (for a form), `className` and `testId`.
+- `OptionGroup` choices take a `description` and a `testId` (the `OptionGroupOption<T>` type).
+  When any choice has a description, the group draws them as choice cards side by side, one
+  above the next on a phone, each with its line and the pick's check, as New's autonomy picker
+  is; without, it is the segmented control. It also takes a `className`.
+
+The package's declarations (`gram-web-kit.d.ts` and `types/`) type every one of these, `render`
+on `Button`, `Badge` and the tooltip's trigger included, so an app needs no declarations of its
+own for the kit: resolve `@gram/web/kit` to the package and its `exports` find them. A test
+type-checks a page on the kit against exactly what the package ships
+([embed-types.test.mjs](../apps/web/scripts/embed-types.test.mjs)).
+
 For your own markup, `@gram/web/theme.css` gives a Tailwind 4 build of yours the names of Gram's
 theme: its colours (`bg-surface-3`, `text-muted-foreground`), type steps (`text-meta`,
 `text-heading`), named spaces (`p-inset`, `gap-section`), icon sizes, variants (`dark:`, `phone:`)
 and utilities (`focus-ring`). The values behind the names are the custom properties the app's
 stylesheet sets on `<html>`, so your pages follow the person's palette, mode and look.
+
+The type steps are the seven of [the design notes](../DESIGN.md#tokens), and there is no smaller
+one: words read for meaning (a time, a state, a chip's word) are `text-meta`, 13 px, and
+`text-caption`, 11 px, is only for what is never read for meaning, such as a key cap or a count.
+A class outside the scale, such as `text-micro`, writes no style at all.
 
 ```css
 @layer theme, base, components, utilities;

@@ -1,9 +1,9 @@
 import { WORKER_BRIEF_FOOTER_MAX, type OrchestratorCharter } from "@gram/contracts";
 import { useId, useState } from "react";
 
-import { cn } from "@/lib/utils";
+import { Textarea } from "@/components/ui/input";
 
-import { Field, inputCls } from "./fields";
+import { Field } from "./fields";
 import { withWorkerBriefFooter } from "./workspace-settings-model";
 
 /**
@@ -50,10 +50,10 @@ export function WorkerBriefFooterField({
           </p>
         }
       >
-        <textarea
+        <Textarea
           id={id}
           data-testid="worker-brief-footer-input"
-          className={cn(inputCls, "h-auto min-h-16 max-w-none resize-y py-1.5 leading-snug")}
+          className="leading-snug"
           rows={3}
           maxLength={WORKER_BRIEF_FOOTER_MAX}
           placeholder="None"
