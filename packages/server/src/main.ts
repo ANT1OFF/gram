@@ -33,7 +33,7 @@ import { createLogger, logDirFor } from "./logging/logger.ts";
 import { ServerLog, serverLogLayer } from "./logging/service.ts";
 import { ThreadStore } from "./persistence/thread-store.ts";
 import { sealForUpdate } from "./persistence/update-seal.ts";
-import { OpenerLive } from "./platform/opener.ts";
+import { OpenerLive, openerFenced } from "./platform/opener.ts";
 import { TailscaleLive } from "./http/remote-control.ts";
 import { HttpServer } from "./platform/unstable.ts";
 import { AgentHosts } from "./runtime/agent-hosts.ts";
@@ -315,12 +315,16 @@ program.pipe(
       Layer.provideMerge(LogLive),
       // Phone access turned on from Settings adds Gram's own Tailscale Serve listener.
       Layer.provide(TailscaleLive),
-      // Under the shell, so a forced quit spares the editors and file managers it opened.
+      // Under the shell, so a forced quit spares the editors and file managers it opened. A server
+      // with no local user (headless, or signed in to through a proxy) starts none.
       Layer.provide(
-        OpenerLive((pid) => {
-          // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Electron MessagePortMain
-          parentPort?.postMessage({ type: "launched", pid });
-        }),
+        OpenerLive(
+          (pid) => {
+            // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Electron MessagePortMain
+            parentPort?.postMessage({ type: "launched", pid });
+          },
+          { fenced: openerFenced(config) },
+        ),
       ),
     ),
   ),

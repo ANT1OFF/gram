@@ -1311,6 +1311,40 @@ export const PERSONAL_SETTINGS: ReadonlyArray<readonly [section: string, field: 
   ["layout", "grid"],
 ];
 
+/**
+ * The settings that name a program the server runs or a folder on its disk, each by its path (a
+ * section and a field). On a server people sign in to through a proxy, only the app on the
+ * server's own machine changes these (`settings.set` refuses anyone else): to a signed-in person
+ * they would be a way to run a program of their choosing there.
+ */
+export const HOST_SETTINGS: ReadonlyArray<readonly [section: string, field: string]> = [
+  ["editor", "command"],
+  ["terminal", "shell"],
+  ["agents", "codexRuntime"],
+  ["agents", "defaultFolder"],
+  ["agents", "cloneFolder"],
+];
+
+/**
+ * The first of `HOST_SETTINGS` whose value `patch` would change in `settings`, if any. A patch that
+ * repeats a value passes: a window saving a whole section changes nothing by it.
+ */
+export const hostSettingChangedBy = (
+  settings: Settings,
+  patch: SettingsPatch,
+): ReadonlyArray<string> | undefined => {
+  const next = applySettingsPatch(settings, patch);
+  const at = (root: Settings, [section, field]: readonly [string, string]): unknown => {
+    const value: unknown = (root as Record<string, unknown>)[section];
+    return typeof value === "object" && value !== null
+      ? (value as Record<string, unknown>)[field]
+      : undefined;
+  };
+  return HOST_SETTINGS.find(
+    (path) => JSON.stringify(at(settings, path)) !== JSON.stringify(at(next, path)),
+  );
+};
+
 /** The name a personal setting's value is kept under: its path, dotted. */
 export const personalSettingKey = (path: ReadonlyArray<string>): string => path.join(".");
 

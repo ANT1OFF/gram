@@ -27,6 +27,11 @@ export interface LaunchSpec {
 export interface OpenerShape {
   /** Starts `spec` detached with no stdio; succeeds once the program has started. */
   readonly launch: (spec: LaunchSpec) => Effect.Effect<void, InvalidState>;
+  /**
+   * Set on a server that starts no program for anyone: why. A caller refuses with it
+   * ({@link refuseFenced}) before it reads any path or setting.
+   */
+  readonly refusal?: string | undefined;
 }
 
 /** What `spawn` gets for `spec`: a shell launch (a Windows `.cmd` shim) carries cmd.exe escaping. */
@@ -94,6 +99,38 @@ export const makeNodeOpener = (onLaunched: (pid: number) => void = () => {}): Op
     }),
 });
 
-/** The real opener, reporting each program it starts to `onLaunched`. */
-export const OpenerLive = (onLaunched?: (pid: number) => void): Layer.Layer<never> =>
-  Layer.succeed(Opener, makeNodeOpener(onLaunched));
+/** What a fenced opener refuses with. */
+export const OPENER_FENCED =
+  "This Gram is a shared server, which starts no programs on its own machine for the people using it.";
+
+/** Starts nothing, and says so before a caller reads anything: a server with no local user. */
+export const fencedOpener: OpenerShape = {
+  refusal: OPENER_FENCED,
+  launch: () => Effect.fail(new InvalidState({ message: OPENER_FENCED })),
+};
+
+/**
+ * Whether this server starts programs for nobody: a headless control plane, or one that people
+ * sign in to through a fronting proxy (configured, whether or not the hosted features are on
+ * yet). Either has no local user whose editor, file manager or browser a program would be.
+ */
+export const openerFenced = (config: {
+  readonly headless?: boolean | undefined;
+  readonly frontedIdentity?: unknown;
+}): boolean => config.headless === true || config.frontedIdentity !== undefined;
+
+/** Refuses with `opener`'s refusal, if it has one; called first, before any path or setting is read. */
+export const refuseFenced = (opener: OpenerShape): Effect.Effect<void, InvalidState> =>
+  opener.refusal === undefined
+    ? Effect.void
+    : Effect.fail(new InvalidState({ message: opener.refusal }));
+
+/**
+ * The real opener, reporting each program it starts to `onLaunched`; the fenced one on a server
+ * {@link openerFenced} describes, so a new caller is refused by construction.
+ */
+export const OpenerLive = (
+  onLaunched?: (pid: number) => void,
+  options: { readonly fenced?: boolean } = {},
+): Layer.Layer<never> =>
+  Layer.succeed(Opener, options.fenced === true ? fencedOpener : makeNodeOpener(onLaunched));

@@ -1,4 +1,5 @@
 import {
+  hostSettingChangedBy,
   InvalidState,
   SettingsRpcs,
   settingsPatchPaths,
@@ -18,6 +19,10 @@ import { makeSettingsWriter } from "../../settings/writer.ts";
 import { logDefects, type Handlers } from "./common.ts";
 import { gatewayHandlers } from "./gateway.ts";
 import { keybindingsHandlers } from "./keybindings.ts";
+
+/** What a signed-in person's change to one of `HOST_SETTINGS` is refused with. */
+export const hostSettingRefusal = (path: ReadonlyArray<string>): string =>
+  `${path.join(".")} names a program or folder on the server, so only the app on the server's own machine can change it.`;
 
 /** `settings.*`, `labels.*` and `palettes.*`; `profiles.*` live in `gateway.ts`. */
 export const settingsHandlers = Effect.gen(function* () {
@@ -56,18 +61,25 @@ export const settingsHandlers = Effect.gen(function* () {
       /** The call's transport, which the RPC server always gives; absent in-process. */
       call?: { readonly headers?: Readonly<Record<string, string | undefined>> },
     ) =>
-      // The hosted features change who this Gram answers to, so the switch is the local app's: the
-      // transport says which connection this is (`isLocalApp`), not anything the caller sent.
-      patch.experimental?.embedding !== undefined && !isLocalApp(call?.headers)
-        ? Effect.fail(new InvalidState({ message: EMBEDDING_LOCAL_ONLY }))
-        : // What an embedding deployment supplies is read-only here (`settings/supplied.ts`).
-          suppliedPathChangedBy(store, patch).pipe(
-            Effect.flatMap((path) =>
-              path === undefined
-                ? setFor(patch)
-                : Effect.fail(new InvalidState({ message: suppliedRefusal(path) })),
-            ),
-          ),
+      Effect.gen(function* () {
+        const localApp = isLocalApp(call?.headers);
+        // The hosted features change who this Gram answers to, so the switch is the local app's: the
+        // transport says which connection this is (`isLocalApp`), not anything the caller sent.
+        if (patch.experimental?.embedding !== undefined && !localApp)
+          return yield* new InvalidState({ message: EMBEDDING_LOCAL_ONLY });
+        // A person signed in through a proxy changes no program or folder the server acts on
+        // (`HOST_SETTINGS`): the whole patch is refused, so nothing of it is written.
+        if (!localApp && (yield* ActingPerson) !== undefined) {
+          const host = hostSettingChangedBy(yield* store.getSettings, patch);
+          if (host !== undefined)
+            return yield* new InvalidState({ message: hostSettingRefusal(host) });
+        }
+        // What an embedding deployment supplies is read-only here (`settings/supplied.ts`).
+        const supplied = yield* suppliedPathChangedBy(store, patch);
+        if (supplied !== undefined)
+          return yield* new InvalidState({ message: suppliedRefusal(supplied) });
+        return yield* setFor(patch);
+      }),
 
     "palettes.list": () => store.listPalettes,
     // `builtin` is server-owned: a client can't mark a palette built-in or clear the flag.

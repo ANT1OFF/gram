@@ -1,6 +1,6 @@
 import { InvalidState, isExternalUrl } from "@gram/contracts";
 import * as Effect from "effect/Effect";
-import { Opener } from "../platform/opener.ts";
+import { Opener, refuseFenced } from "../platform/opener.ts";
 import type { Command } from "./pure.ts";
 
 /** The OS command that opens `url` in the default browser, without a shell to quote through. */
@@ -21,11 +21,12 @@ export const openExternal = (
 ): Effect.Effect<void, InvalidState> =>
   shellOpensLinks
     ? Effect.fail(new InvalidState({ message: "In the app, links open through its link dialog." }))
-    : isExternalUrl(url)
-      ? Effect.gen(function* () {
-          const opener = yield* Opener;
-          yield* opener
-            .launch(openCommand(process.platform, url))
-            .pipe(Effect.mapError(() => new InvalidState({ message: `Couldn't open ${url}` })));
-        })
-      : Effect.fail(new InvalidState({ message: `Only http(s) links can be opened: ${url}` }));
+    : Effect.gen(function* () {
+        const opener = yield* Opener;
+        yield* refuseFenced(opener);
+        if (!isExternalUrl(url))
+          return yield* new InvalidState({ message: `Only http(s) links can be opened: ${url}` });
+        yield* opener
+          .launch(openCommand(process.platform, url))
+          .pipe(Effect.mapError(() => new InvalidState({ message: `Couldn't open ${url}` })));
+      });
