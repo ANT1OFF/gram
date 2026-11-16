@@ -61,6 +61,7 @@ export const badge = (overrides: Partial<PrStatus> = {}): PrStatus => ({
   checks: "pending",
   headMatches: true,
   aheadOfPr: false,
+  baseRef: "main",
   ...overrides,
 });
 
@@ -90,7 +91,34 @@ const FakeGh = Layer.succeed(Proc, {
       }
       ghCalls.push([bin, ...args]);
       ghDirs.push(cwd);
-      return { ...gh.answer(args), truncated: false };
+      const answer = gh.answer(args);
+      // `gh pr view --json` of what merge_when_ready's approval covers, unless a test answers it:
+      // the badge's PR, from a branch in the repository itself.
+      if (
+        answer === ok &&
+        args[0] === "pr" &&
+        args[1] === "view" &&
+        args.some((arg) => arg.includes("baseRefName,headRepository"))
+      ) {
+        const shown = current.badge;
+        const repo = args[args.indexOf("--repo") + 1] ?? "acme/web";
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            number: Number(args[2]),
+            url: `https://github.com/${repo}/pull/${args[2]}`,
+            title: shown?.title ?? "t",
+            headRefName: shown?.headRef ?? "feature",
+            isCrossRepository: false,
+            state: shown?.state ?? "OPEN",
+            headRefOid: shown?.headRefOid ?? "h1",
+            baseRefName: shown?.baseRef ?? "main",
+          }),
+          stderr: "",
+          truncated: false,
+        };
+      }
+      return { ...answer, truncated: false };
     }),
 });
 

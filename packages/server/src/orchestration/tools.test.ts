@@ -2177,7 +2177,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             "--repo",
             "acme/app",
             "--json",
-            "number,url,title,headRefName,isCrossRepository,state,headRefOid",
+            "number,url,title,headRefName,isCrossRepository,state,headRefOid,baseRefName,headRepository,headRepositoryOwner",
           ];
           expect(world.ghCalls.slice(0, 2)).toEqual([headView, headView]);
           expect(world.ghCalls[2]).toEqual([

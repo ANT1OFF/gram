@@ -37,6 +37,10 @@ export interface PrHead {
   readonly headRefOid?: string;
   /** The head branch lives in another repository. */
   readonly fork: boolean;
+  /** `baseRefName`: the branch the PR merges into. */
+  readonly baseRef?: string;
+  /** `owner/name` of the repository the head branch lives in, when GitHub names it. */
+  readonly headRepo?: string;
 }
 
 /**
@@ -75,7 +79,7 @@ export const prHead = (
         String(number),
         ...(repo === undefined ? [] : ["--repo", repo]),
         "--json",
-        "number,url,title,headRefName,isCrossRepository,state,headRefOid",
+        "number,url,title,headRefName,isCrossRepository,state,headRefOid,baseRefName,headRepository,headRepositoryOwner",
       ],
       { timeoutMs: 15_000 },
     ).pipe(Effect.mapError((e) => fail(e.message)));
@@ -89,6 +93,16 @@ export const prHead = (
     }
     const text = (key: string) => (typeof view[key] === "string" ? (view[key] as string) : "");
     const nwo = repoFromPrUrl(text("url"));
+    const nested = (key: string, field: string) => {
+      const value = view[key];
+      const inner =
+        typeof value === "object" && value !== null
+          ? (value as Record<string, unknown>)[field]
+          : undefined;
+      return typeof inner === "string" && inner !== "" ? inner : undefined;
+    };
+    const headOwner = nested("headRepositoryOwner", "login");
+    const headName = nested("headRepository", "name");
     if (nwo === undefined || text("headRefName") === "") {
       return yield* fail(`gh didn't describe pull request #${number}`);
     }
@@ -101,6 +115,10 @@ export const prHead = (
       ...(text("state") === "" ? {} : { state: text("state") }),
       ...(text("headRefOid") === "" ? {} : { headRefOid: text("headRefOid") }),
       fork: view["isCrossRepository"] === true,
+      ...(text("baseRefName") === "" ? {} : { baseRef: text("baseRefName") }),
+      ...(headOwner === undefined || headName === undefined
+        ? {}
+        : { headRepo: `${headOwner}/${headName}` }),
     };
   });
 

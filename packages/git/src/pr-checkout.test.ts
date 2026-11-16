@@ -90,6 +90,9 @@ describe("prHead", () => {
           isCrossRepository: true,
           state: "OPEN",
           headRefOid: "h1",
+          baseRefName: "main",
+          headRepository: { id: "R_1", name: "web" },
+          headRepositoryOwner: { id: "U_1", login: "outsider" },
         }),
       }));
       const described = yield* prHead("/w", 12, undefined).pipe(Effect.provideService(Proc, proc));
@@ -99,6 +102,8 @@ describe("prHead", () => {
         fork: true,
         state: "OPEN",
         headRefOid: "h1",
+        baseRef: "main",
+        headRepo: "outsider/web",
       });
       expect(calls[0]).toEqual([
         "gh",
@@ -106,7 +111,7 @@ describe("prHead", () => {
         "view",
         "12",
         "--json",
-        "number,url,title,headRefName,isCrossRepository,state,headRefOid",
+        "number,url,title,headRefName,isCrossRepository,state,headRefOid,baseRefName,headRepository,headRepositoryOwner",
       ]);
     }),
   );

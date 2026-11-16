@@ -302,7 +302,12 @@ const scenario = <E, R>(
             repo: "example/project",
             number,
             monitor: true,
-            mergeWhenReady: { method: "squash", allowedBy: "user", setAt: index + 1 },
+            mergeWhenReady: {
+              method: "squash",
+              allowedBy: "user",
+              approved: { head: headOf(number), baseRef: "main", fork: false },
+              setAt: index + 1,
+            },
           },
         }));
         threads.push(thread.id);
@@ -595,7 +600,12 @@ describe("armed merges on a base that moved", () => {
                     ...t,
                     boundPr: {
                       ...t.boundPr!,
-                      mergeWhenReady: { method: "squash", allowedBy: "user", setAt: 99 },
+                      mergeWhenReady: {
+                        method: "squash",
+                        allowedBy: "user",
+                        approved: { head: headOf(5), baseRef: "main", fork: false },
+                        setAt: 99,
+                      },
                     },
                   })),
                 ),

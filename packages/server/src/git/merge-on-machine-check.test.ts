@@ -239,7 +239,12 @@ const placed = (dir: string) =>
         repo: "example/project",
         number: 7,
         monitor: true,
-        mergeWhenReady: { method: "squash", allowedBy: "user", setAt: 1 },
+        mergeWhenReady: {
+          method: "squash",
+          allowedBy: "user",
+          approved: { head: HEAD, baseRef: "main", fork: false },
+          setAt: 1,
+        },
       },
     }));
     return { thread: updated, site: checkSiteOf(updated.checkout, updated.checkout.path) };

@@ -195,7 +195,13 @@ describe("merges onto one base from two workspaces", () => {
               repo: "example/project",
               number,
               monitor: true,
-              mergeWhenReady: { method: "squash", allowedBy: "user", setAt: 1 },
+              mergeWhenReady: {
+                method: "squash",
+                allowedBy: "user",
+                // The user approved this head: Gram's own check may run it here.
+                approved: { head: HEADS[number]!, baseRef: "main", fork: false },
+                setAt: 1,
+              },
             },
           }));
           badges.set(thread.id, badgeOf(number, BASE));
