@@ -184,7 +184,9 @@ test("lists the workspaces in the switcher's order, the current one opened into 
     // The now line is always in the row's name, or what it waits on in its place (`rowWaiting`);
     // on the row only if it says more than the dot.
     const waits = row.getByTestId("overview-worker-waiting");
-    const waiting = (await waits.count()) === 0 ? undefined : await waits.getAttribute("title");
+    // Its title is the wait's label, then its whole words on the next line.
+    const waiting =
+      (await waits.count()) === 0 ? undefined : (await waits.getAttribute("title"))?.split("\n")[0];
     const now = asking ? "asks you" : (waiting ?? each.now);
     expect(await row.getAttribute("aria-label")).toContain(`, ${now}`);
     const line = row.getByTestId("overview-worker-now");
@@ -1592,27 +1594,62 @@ test("a calm worker and its orchestrator say what they wait on, the whole list o
     await expect(waits(threadId)).toHaveAttribute("data-glyph", glyph);
   };
   await edge(made.ci, "ci", "#341");
-  await expect(waits(made.ci)).toHaveAttribute("title", "Waiting · checks on #341");
+  await expect(waits(made.ci)).toHaveAttribute(
+    "title",
+    /^Waiting · checks on #341\nCI is running on #341 in example\/[\w-]+\.$/,
+  );
   await expect(waits(made.ci)).toHaveAttribute("data-kind", "checks");
   await edge(made.reviewing, "review", "#343");
-  await expect(waits(made.reviewing)).toHaveAttribute("title", "Waiting · review on #343");
+  await expect(waits(made.reviewing)).toHaveAttribute("title", /^Waiting · review on #343\n/);
   await edge(made.stacked, "dependency", "#341");
-  await expect(waits(made.stacked)).toHaveAttribute("title", "Waiting · #341 to merge");
+  await expect(waits(made.stacked)).toHaveAttribute("title", /^Waiting · #341 to merge\n/);
   await edge(made.merging, "merge", "#345");
   await edge(made.rebase, "dependency", "#341");
   await edge(made.limited, "limit", /^(\w{3} )?\d{2}:\d{2}$/);
   await expect(waits(made.limited)).toHaveAttribute(
     "title",
-    /^Paused · limit until (\w{3} )?\d{2}:\d{2}$/,
+    /^Paused · limit until (\w{3} )?\d{2}:\d{2}\n/,
   );
-  // Words that fit stay words.
-  await expect(waits(made.release)).toHaveText("Release run");
-  await expect(waits(made.timed)).toHaveText(/^until (\w{3} )?\d{2}:\d{2}$/);
-  await expect(waits(made.timed)).not.toHaveAttribute("data-glyph", /./);
-  await expect(waits(made.exportPresets)).toHaveText("main to move");
+  // A timed wake is its alarm clock and its time, the date once it is over a day away.
+  await edge(made.timed, "timer", /^(\w{3} )?\d{2}:\d{2}$/);
+  await expect(waits(made.timed)).toHaveAttribute(
+    "title",
+    /^Waiting · until (\w{3} )?\d{2}:\d{2}\n/,
+  );
+  await edge(made.later, "timer", /^\d{1,2} \w{3} \d{2}:\d{2}$/);
+  // A condition wake is its kind's glyph alone, its words on the hover.
+  await edge(made.exportPresets, "branch", "");
   await expect(waits(made.exportPresets)).toHaveAttribute("data-kind", "condition");
+  await expect(waits(made.exportPresets)).toHaveAttribute(
+    "title",
+    /^Waiting · main to move\nWakes when example\/[\w-]+ main gets a new head, else at /,
+  );
+  await edge(made.bump, "release", "");
+  await expect(waits(made.bump)).toHaveAttribute(
+    "title",
+    /^Waiting · search-lib release\nWakes when example\/search-lib on GitHub has a new release/,
+  );
+  // A watched workflow run is a chip beside the PR chips, never its long name: the run glyph and
+  // the running mark, a count for several, the names on its hover; the line says nothing more.
+  const runChip = (threadId: string) =>
+    page
+      .locator(`[data-testid="overview-pr-chips"][data-thread-id="${threadId}"]`)
+      .getByTestId("overview-run-chip");
+  await expect(runChip(made.release)).toHaveAttribute("data-runs", "1");
+  await expect(runChip(made.release)).toHaveText("");
+  await expect(runChip(made.release)).toHaveAccessibleName(
+    /^Watching a workflow run: Application checks: release 2\.4\.0 with the owner index \(example\/[\w-]+ #8812\), running$/,
+  );
+  await expect(waits(made.release)).toHaveCount(0);
+  await expect(runChip(made.verify)).toHaveAttribute("data-runs", "2");
+  await expect(runChip(made.verify)).toHaveText("2");
+  await runChip(made.verify).hover();
+  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText(
+    /Watching 2 workflow runs · running\s*Build: linux \(example\/[\w-]+ #8813\)\s*Build: macOS/,
+  );
+  await page.mouse.move(1430, 1190);
   // Calm: the hollow waiting dot, never the needs-you one, and nothing added to Needs you.
-  for (const id of [made.ci, made.timed, made.limited, made.release]) {
+  for (const id of [made.ci, made.timed, made.limited, made.release, made.verify]) {
     await expect(row(id).getByTestId("overview-worker-dot")).not.toHaveAttribute(
       "data-tone",
       /needs|attention|error/,
@@ -1628,7 +1665,8 @@ test("a calm worker and its orchestrator say what they wait on, the whole list o
     `[data-testid="overview-workspace"][data-workspace-id="${made.workspaceId}"]`,
   );
   const own = workspace.getByTestId("overview-orchestrator-waiting");
-  await expect(own).toHaveText("thread to finish");
+  await expect(own).toHaveText("");
+  await expect(own).toHaveAttribute("data-glyph", "thread");
   await expect(own).toHaveAttribute("data-kind", "condition");
   await expect(workspace.getByTestId("overview-workspace-row")).toHaveAttribute(
     "title",

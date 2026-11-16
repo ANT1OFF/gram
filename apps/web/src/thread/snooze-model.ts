@@ -1,4 +1,4 @@
-import { formatStamp, formatWakeTime } from "@/lib/time";
+import { formatStamp, formatWeekdayTime } from "@/lib/time";
 
 // When a snooze ends, worked out on the wall clock of a time zone (the viewer's, or a pinned one
 // in tests): "tomorrow 09:00" is 09:00 on the next calendar day there, however long that night is
@@ -112,7 +112,7 @@ export const snoozePresets = (now: number, zone: SnoozeZone = {}): SnoozePreset[
  * date beyond it, where a weekday alone would be ambiguous.
  */
 export const snoozeTime = (at: number, now: number, zone: SnoozeZone = {}): string =>
-  at - now < 6 * 24 * 3_600_000 ? formatWakeTime(at, now, zone) : formatStamp(at, now, zone);
+  at - now < 6 * 24 * 3_600_000 ? formatWeekdayTime(at, now, zone) : formatStamp(at, now, zone);
 
 /** The chip's words: "Snoozed until Fri 09:00". */
 export const snoozedUntilText = (at: number, now: number, zone: SnoozeZone = {}): string =>

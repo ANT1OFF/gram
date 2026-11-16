@@ -76,7 +76,7 @@ export function formatDay(at: number, now = Date.now(), intl: ZoneOption = {}): 
  * the date before it (`14 Jun 08:00`), with the year when it isn't this one (`14 Jun 2025 08:00`).
  * "Today" is `now`'s day in the viewer's zone, or `intl.timeZone`'s. The other forms are each for
  * one job: a relative time (`agoText`), a message's full hint (`formatMessageTime`), a log line's
- * seconds (`formatLogTime`), a wake's weekday (`formatWakeTime`) and a bare clock
+ * seconds (`formatLogTime`), a wake's time (`formatWakeTime`), a weekday (`formatWeekdayTime`) and a bare clock
  * (`formatClockTime`).
  */
 export function formatStamp(at: number, now = Date.now(), intl: ZoneOption = {}): string {
@@ -188,13 +188,27 @@ export function formatMessageStamp(
 const wakeTimeFormats = new Map<string | undefined, Intl.DateTimeFormat>();
 
 /**
- * When a pending wake is due, for its chip: `14:30` on the day it is set from, `Fri 14:30` on
- * another (a wake is at most a week ahead), in the viewer's zone. `intl` pins the zone, for tests.
- * The one weekday form left: within that week the weekday is unambiguous, and it keeps a worker's
- * wait label ("Waiting · until Fri 14:30") inside its four words, which `formatStamp`'s date would
- * not.
+ * When a pending wake is due, for its chip and a row's edge: `14:30` on the day it is set from,
+ * `Fri 00:30` on the next within a day, and the date when it is more than a day away
+ * (`formatStamp`'s `14 Jun 08:00`): a weekday alone for a wake days off read as this week's or the
+ * last's. In the viewer's zone; `intl` pins it, for tests.
  */
 export function formatWakeTime(
+  at: number,
+  now = Date.now(),
+  intl: { readonly timeZone?: string } = {},
+): string {
+  return at - now > DAY_MS ? formatStamp(at, now, intl) : formatWeekdayTime(at, now, intl);
+}
+
+const DAY_MS = 24 * 3_600_000;
+
+/**
+ * A time in the coming week: `14:30` on `now`'s day, `Fri 14:30` on another, in the viewer's zone
+ * or `intl`'s. Only where the weekday can't be mistaken: a wake within a day (`formatWakeTime`), a
+ * snooze within the week.
+ */
+export function formatWeekdayTime(
   at: number,
   now = Date.now(),
   intl: { readonly timeZone?: string } = {},

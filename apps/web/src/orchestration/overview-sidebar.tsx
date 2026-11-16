@@ -10,17 +10,27 @@ import {
 } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
 import {
+  AlarmClock,
   Bot,
   ChevronDown,
   ChevronsLeft,
+  CircleArrowUp,
+  Cpu,
+  Flag,
   FoldHorizontal,
   Gauge,
+  GitBranch,
+  HardDrive,
   Hourglass,
   LaptopMinimalCheck,
   Link2,
   PanelLeft,
   PanelLeftClose,
+  Snail,
+  Snowflake,
+  Tag,
   Timer,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -155,7 +165,7 @@ import { accentStyle, useWorkspaceAccent } from "./workspace-accent";
 import { WorkspaceMenuItems } from "./workspace-menu-items";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { useOrchestratorWaiting, useWorkerWaitings } from "./use-waiting-on";
-import type { WaitGlyph, WaitingOn } from "./waiting-on";
+import { besideRuns, watchedRuns, type WaitGlyph, type WaitingOn } from "./waiting-on";
 import { ledgerWorkersOver, workerActivities, workerTones } from "./workers-model";
 
 // The overview sidebar: the Orchestrator layout's left
@@ -1001,6 +1011,9 @@ export function WorkerRow({
   const dot = TONE_DOT[tone];
   const working = tone === "working";
   const waiting = rowWaiting(row, tone);
+  // The runs it watches as one chip beside its PR chips, and its line's wait the next it has.
+  const runs = watchedRuns(waiting);
+  const lineWait = besideRuns(waiting);
   // Ages to the minute.
   const now = useNow(true, undefined, 60_000);
   const settled =
@@ -1112,6 +1125,7 @@ export function WorkerRow({
               threadId={row.threadId}
               cardPrs={row.prs}
               chips={prChips}
+              runs={runs}
               dense
               ghost
               foldMerged
@@ -1127,7 +1141,13 @@ export function WorkerRow({
                     {STARTING}
                   </span>
                 ) : waiting !== undefined ? (
-                  <WaitingLine waiting={waiting} testId="overview-worker-waiting" prs={shownPrs} />
+                  lineWait !== undefined && (
+                    <WaitingLine
+                      waiting={lineWait}
+                      testId="overview-worker-waiting"
+                      prs={shownPrs}
+                    />
+                  )
                 ) : (
                   <WorkerNow row={row} asking={asking} tone={tone} prs={shownPrs} />
                 )}
@@ -1148,11 +1168,12 @@ export function WorkerRow({
   );
   // The PR chips sit over their room on the second line, outside the row's button: each is a
   // button of its own.
-  const chips = twoLines && prChips.length > 0 && (
+  const chips = twoLines && (prChips.length > 0 || runs.length > 0) && (
     <WorkerPrChips
       threadId={row.threadId}
       cardPrs={row.prs}
       chips={prChips}
+      runs={runs}
       card={card}
       dense
       foldMerged
@@ -1439,7 +1460,10 @@ function WorkerCard({
   );
 }
 
-/** A wait's glyph at a row's edge, in the PR vocabulary's marks where it has one. */
+/**
+ * A wait's glyph at a row's edge, in the PR vocabulary's marks where it has one; a timed wake's the
+ * thread's wake chip's alarm clock, and a condition's what it waits on.
+ */
 const WAIT_GLYPH: Readonly<Record<WaitGlyph, LucideIcon>> = {
   ci: PendingRing,
   localCheck: LaptopMinimalCheck,
@@ -1447,13 +1471,25 @@ const WAIT_GLYPH: Readonly<Record<WaitGlyph, LucideIcon>> = {
   merge: Timer,
   dependency: Link2,
   limit: Gauge,
+  run: Workflow,
+  timer: AlarmClock,
+  branch: GitBranch,
+  thread: Flag,
+  ciQueued: Snail,
+  load: Cpu,
+  disk: HardDrive,
+  freeze: Snowflake,
+  release: Tag,
+  version: CircleArrowUp,
+  condition: Hourglass,
 };
 
 /**
  * What a worker or an orchestrator at rest waits on, at its row's edge, as calm as an idle row
  * beside the row's hollow dot that already says it waits: the wait's glyph and its key token, the
- * PR or the time ("#397", "08:10"), where it has them (`WaitEdge`), else its short words without
- * "Waiting" (`waitShort`). Its words are on its hover; the whole list is on the row's card.
+ * PR or the time ("#397", "08:10"), or its glyph alone for a condition ("a release is published"),
+ * where it has them (`WaitEdge`), else its short words without "Waiting" (`waitShort`). Its label
+ * and its whole words are its hover; the whole list is on the row's card.
  */
 function WaitingLine({
   waiting,
@@ -1467,13 +1503,14 @@ function WaitingLine({
 }) {
   const edge = waiting.edge;
   const Glyph = edge === undefined ? undefined : WAIT_GLYPH[edge.glyph];
+  const detail = waiting.reasons[0]?.detail;
   return (
     <Swap swapKey={waiting.label} className="min-w-0 truncate text-meta text-muted-foreground">
       <span
         data-testid={testId}
         data-kind={waiting.kind}
         data-glyph={edge?.glyph}
-        title={waiting.label}
+        title={detail === undefined ? waiting.label : `${waiting.label}\n${detail}`}
         className="flex min-w-0 items-center gap-1"
       >
         {Glyph !== undefined && <Glyph aria-hidden className="size-icon-chip shrink-0" />}

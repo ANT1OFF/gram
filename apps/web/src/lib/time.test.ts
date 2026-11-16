@@ -177,6 +177,11 @@ describe("formatWakeTime", () => {
     // 00:05 the next day in Oslo, though still the same day in UTC.
     expect(formatWakeTime(Date.UTC(2026, 9, 6, 22, 5), AT, oslo)).toBe("Wed 00:05");
     expect(formatWakeTime(Date.UTC(2026, 9, 6, 22, 5), AT, { timeZone: "UTC" })).toBe("22:05");
-    expect(formatWakeTime(AT + 3 * 86_400_000, AT, oslo)).toBe("Fri 14:37");
+    expect(formatWakeTime(AT + 23 * 3_600_000, AT, oslo)).toBe("Wed 13:37");
+  });
+
+  it("gives the date once the wake is more than a day away, where a weekday reads as this week's", () => {
+    expect(formatWakeTime(AT + 25 * 3_600_000, AT, oslo)).toBe("7 Oct 15:37");
+    expect(formatWakeTime(AT + 3 * 86_400_000, AT, oslo)).toBe("9 Oct 14:37");
   });
 });

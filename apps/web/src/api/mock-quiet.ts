@@ -127,8 +127,9 @@ export async function simulateQuietBusy(
 /**
  * `casefiles` as `simulateQuietBusy` leaves it, with a worker more for each other kind of wait the
  * sidebar names: a timed wake, a release run it watches, a usage limit it waits out, a merge Gram
- * makes once ready, a wake on another PR and one on main moving; and the orchestrator resting on
- * wakes of its own, one for the release worker to finish.
+ * makes once ready, a wake on another PR and one on main moving; two runs watched at once, a wake
+ * on a release, and a timed wake two days off; and the orchestrator resting on wakes of its own,
+ * one for the release worker to finish.
  * Times sit on the half hour after now, so a shot's labels move only with the clock's half hour.
  */
 export async function simulateWaitingOn(
@@ -170,7 +171,14 @@ export async function simulateWaitingOn(
     ...release,
     completedAt: Date.now(),
     completedReason: "agent",
-    runWatches: [{ repo: origin, runId: 8812, name: "Release", since: Date.now() - 4 * minute }],
+    runWatches: [
+      {
+        repo: origin,
+        runId: 8812,
+        name: "Application checks: release 2.4.0 with the owner index",
+        since: Date.now() - 4 * minute,
+      },
+    ],
   });
   const limited = await spawn("casefile-index", "Reindex old casefiles", "reindex-old");
   host.replace({
@@ -229,6 +237,22 @@ export async function simulateWaitingOn(
   wake(presets.id, base + 180 * minute, "Rebase onto main once the export command lands", {
     condition: { kind: "branchMoved", repo: origin, branch: "main" },
   });
+  const verify = await spawn("casefile-release", "Verify the 2.4.0 artifacts", "verify-240");
+  host.replace({
+    ...verify,
+    completedAt: Date.now(),
+    completedReason: "agent",
+    runWatches: [
+      { repo: origin, runId: 8813, name: "Build: linux", since: Date.now() - 6 * minute },
+      { repo: origin, runId: 8814, name: "Build: macOS", since: Date.now() - 6 * minute },
+    ],
+  });
+  const bump = await spawn("casefile-index", "Bump the search library", "search-bump");
+  wake(bump.id, base + 360 * minute, "Bump once the fix is released", {
+    condition: { kind: "releasePublished", source: "github", name: "example/search-lib" },
+  });
+  const later = await spawn("casefile-export", "Retire the old export", "retire-export");
+  wake(later.id, base + 2 * 24 * 60 * minute, "Remove the old export once nobody uses it");
   wake(busy.orchestratorThreadId, base + 10 * minute, "Check #341 and #343, then merge the index");
   wake(busy.orchestratorThreadId, base + 240 * minute, "Announce 2.4.0", {
     condition: { kind: "threadFinished", threadId: release.id },
@@ -242,6 +266,9 @@ export async function simulateWaitingOn(
     merging: merging.id,
     rebase: rebase.id,
     exportPresets: presets.id,
+    verify: verify.id,
+    bump: bump.id,
+    later: later.id,
   };
 }
 

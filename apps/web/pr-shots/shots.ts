@@ -3873,8 +3873,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "sidebar-waiting-kinds",
-    title:
-      "Every kind of wait in the sidebar, and the orchestrator resting on a wake of its own (after only)",
+    title: "Every kind of wait in the sidebar, and the orchestrator resting on a wake of its own",
     open: (page) => openWaitingOn(page, true),
     element: (page) => page.getByTestId("overview-sidebar"),
   },
@@ -3886,6 +3885,44 @@ export const SHOTS: readonly Shot[] = [
       await openWaitingOn(page, true);
     },
     element: (page) => page.getByTestId("overview-sidebar"),
+  },
+  {
+    name: "sidebar-waiting-kinds-phone",
+    title:
+      "Every kind of wait in the phone's drawer; capture with `--size 390x844` for its touch screen",
+    open: async (page) => {
+      await openWaitingOn(page, true);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.getByTestId("phone-menu").click();
+      await page.getByTestId("phone-drawer").waitFor();
+      // Down to the workers that watch runs, the drawer's last rows.
+      await page
+        .getByTestId("phone-drawer")
+        .getByTestId("overview-worker")
+        .last()
+        .evaluate((row) => row.scrollIntoView({ block: "end" }));
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "sidebar-waiting-kinds-compact",
+    title: "The compact strip at 1100 px over the same waits: its tiles, no wait drawn there",
+    open: async (page) => {
+      await openWaitingOn(page, true);
+      await page.setViewportSize({ width: 1100, height: 900 });
+      await page.getByTestId("overview-rail").waitFor();
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "sidebar-waiting-run-hover",
+    title: "A run chip's hover: each watched run's name, and that it runs",
+    open: async (page) => {
+      await openWaitingOn(page, true);
+      await page.locator('[data-testid="overview-run-chip"][data-runs="2"]').hover();
+      await page.locator('[data-slot="tooltip-content"][data-open]').waitFor();
+      await page.waitForTimeout(400);
+    },
   },
   {
     name: "sidebar-waiting-hover",

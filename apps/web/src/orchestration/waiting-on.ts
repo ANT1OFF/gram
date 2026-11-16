@@ -59,9 +59,31 @@ export const WAIT_KINDS: readonly WaitKind[] = [
 /**
  * What a narrow edge draws for a wait: a glyph for what it waits on, in the PR vocabulary's marks
  * where it has one (`pr-marks-model.ts`): CI's pending ring, Gram's local check, the review bot,
- * the armed merge, another PR, a provider limit.
+ * the armed merge, another PR, a provider limit; a watched workflow run, a timed wake, and one per
+ * kind of condition a wake waits on (`CONDITION_GLYPH`).
  */
-export type WaitGlyph = "ci" | "localCheck" | "review" | "merge" | "dependency" | "limit";
+export type WaitGlyph =
+  | "ci"
+  | "localCheck"
+  | "review"
+  | "merge"
+  | "dependency"
+  | "limit"
+  | "run"
+  | "timer"
+  | ConditionGlyph;
+
+/** A condition wake's glyph, one per kind of condition; `condition` for a kind this build lacks. */
+export type ConditionGlyph =
+  | "branch"
+  | "thread"
+  | "ciQueued"
+  | "load"
+  | "disk"
+  | "freeze"
+  | "release"
+  | "version"
+  | "condition";
 
 /**
  * A wait as a sidebar row's edge says it: its glyph and its one key token, the PR it waits on or
@@ -84,8 +106,13 @@ export interface WaitReason {
   readonly detail: string;
   /** Epoch ms it clears by, when that is known: a wake's time, a limit's reset. */
   readonly at?: number | undefined;
-  /** Its glyph and key token for a narrow edge; none where `short` is short already. */
+  /**
+   * Its glyph and key token for a narrow edge, the token empty where the glyph says it alone (a
+   * condition, whose words are on the hover); none where `short` is short already.
+   */
   readonly edge?: WaitEdge | undefined;
+  /** The workflow run it watches, for a run's chip. */
+  readonly run?: Pick<RunWatch, "repo" | "runId" | "name" | "url"> | undefined;
 }
 
 export interface WaitingOn {
@@ -213,6 +240,28 @@ export const conditionShort = (condition: WakeCondition): string => {
   }
 };
 
+/** A condition's glyph at a row's edge: what it waits on, its words on the hover. */
+export const conditionGlyph = (condition: WakeCondition): ConditionGlyph => {
+  switch (condition.kind) {
+    case "branchMoved":
+      return "branch";
+    case "threadFinished":
+      return "thread";
+    case "ciStuck":
+      return "ciQueued";
+    case "machine":
+      return condition.metric === "load" ? "load" : "disk";
+    case "freezeLifted":
+      return "freeze";
+    case "releasePublished":
+      return "release";
+    case "versionChanged":
+      return "version";
+    default:
+      return "condition";
+  }
+};
+
 /**
  * A pending wake as a wait: on a time, on a condition (a branch moving, a thread finishing), or on
  * another PR's events, the last two with its time as a fallback.
@@ -231,6 +280,7 @@ export const wakeReason = (
       short: conditionShort(wake.condition),
       detail: `Wakes when ${wakeConditionWhen(wake.condition, named)}, else at ${clock(wake.at)}${note}`,
       at: wake.at,
+      edge: { glyph: conditionGlyph(wake.condition), token: "" },
     };
   }
   const detail = `${wakeWhenText(wake, clock)}${note}`;
@@ -245,15 +295,43 @@ export const wakeReason = (
       edge: { glyph: PR_EVENT_GLYPH[event], token: pr },
     };
   }
-  return { kind: "timer", short: `until ${clock(wake.at)}`, detail, at: wake.at };
+  const until = clock(wake.at);
+  return {
+    kind: "timer",
+    short: `until ${until}`,
+    detail,
+    at: wake.at,
+    edge: { glyph: "timer", token: until },
+  };
 };
 
-/** A watched workflow run as a wait. */
-export const runReason = (run: Pick<RunWatch, "repo" | "runId" | "name">): WaitReason => ({
+/**
+ * A watched workflow run as a wait. Its watch lasts only while the run hasn't finished (the run
+ * monitor drops it when it concludes, and tells the thread), so it is always still running.
+ */
+export const runReason = (run: Pick<RunWatch, "repo" | "runId" | "name" | "url">): WaitReason => ({
   kind: "run",
   short: run.name === undefined ? `run ${run.runId}` : `${run.name} run`,
-  detail: `Watching ${run.name === undefined ? "workflow run" : `the ${run.name} run,`} ${run.runId} in ${run.repo}.`,
+  detail: `Watching ${run.name === undefined ? "workflow run" : `the ${run.name} run,`} ${run.runId} in ${run.repo}: running.`,
+  edge: { glyph: "run", token: "" },
+  run,
 });
+
+/** The workflow runs a wait watches, for its row's run chip; none, none. */
+export const watchedRuns = (
+  waiting: WaitingOn | undefined,
+): readonly NonNullable<WaitReason["run"]>[] =>
+  waiting?.reasons.flatMap((reason) => (reason.run === undefined ? [] : [reason.run])) ?? [];
+
+/**
+ * A wait less its watched runs, for a row whose run chip already says them: the wait it names
+ * next, its hover still listing them all; none when it watches runs and nothing else.
+ */
+export const besideRuns = (waiting: WaitingOn | undefined): WaitingOn | undefined => {
+  if (waiting === undefined || waiting.kind !== "run") return waiting;
+  const rest = waitingOf(waiting.reasons.filter((reason) => reason.kind !== "run"));
+  return rest === undefined ? undefined : { ...rest, hint: waiting.hint };
+};
 
 /** A provider limit a thread waits out (`Thread.limitWait`, as the ledger carries it). */
 export interface LimitWaitFacts {
