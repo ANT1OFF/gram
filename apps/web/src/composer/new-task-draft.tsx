@@ -1,26 +1,18 @@
 import {
   DEFAULT_CHARTER,
   autonomyOf,
-  HostId,
   sendKeyOf,
   type DraftId,
   type ModelRef,
-  type ProjectId,
   type StartTaskInput,
   type WorkspaceId,
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { FolderGit2, GitBranch, TriangleAlert } from "lucide-react";
-import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
+import { TriangleAlert } from "lucide-react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
-import {
-  MachineNote,
-  MachinePicker,
-  machineBlocker,
-  useJoinedMachines,
-} from "@/new-thread/machine-picker";
 import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-preflight";
 import { HarnessSupportDetails } from "@/agents/support-details";
 import { agentLabel } from "@/agents/agent-display";
@@ -28,14 +20,6 @@ import { errorMessage } from "@/api/errors";
 import { RunsOnStop } from "./runs-on-chip";
 import { needsMachine, StartMachineCard, useOnDemandMachine } from "./start-machine-card";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { shortcutPressed } from "@/keyboard/bindings";
 import { useShortcut } from "@/keyboard/registry";
 import { ShortcutKbd, useShortcutHint } from "@/keyboard/use-shortcut-hint";
@@ -58,12 +42,10 @@ import {
   taskRepos,
   taskTargetKey,
   type TaskTarget,
-  type TaskWay,
 } from "@/orchestration/task-model";
 import { TaskTargetPicker } from "@/orchestration/task-target-picker";
 import { useOrchestratorLedger, useWorkspacesQuery } from "@/orchestration/use-orchestration";
 import { useServerSettings } from "@/settings-sync/store";
-import { EXPLAIN } from "@/lib/explain";
 import { cn } from "@/lib/utils";
 import { AuthorityExplainer } from "@/new-thread/authority-explainer";
 import { TaskAuthorityLine } from "@/new-thread/authority-line";
@@ -71,7 +53,7 @@ import { AutonomyChoice } from "@/new-thread/autonomy-choice";
 import { ControlDetails } from "@/new-thread/control-details";
 import { useWorkspaceMergeApproval } from "@/new-thread/merge-approval";
 import { useNewForm } from "@/embed/store";
-import { NewFormHeader, WHO_ENTRY, WhereFact, WhereStop, type Who } from "@/new-thread/who-does-it";
+import { NewFormHeader, WhereStop, type Who } from "@/new-thread/who-does-it";
 import { WorkspaceAutonomy } from "@/new-thread/workspace-autonomy";
 import { readCameFrom, type CameFrom } from "@/shell/came-from";
 import { useLayoutStore } from "@/stores/layout";
@@ -96,8 +78,6 @@ import { useAttachments } from "./use-attachments";
 import { useMentions } from "./use-mentions";
 import { useModelNames, useModelsSettled } from "./models";
 import { SLAB, SLAB_TEXTAREA } from "./styles";
-import { shownWorkerChoice, workerChoiceKey } from "./worker-choice";
-import { WorkerFields } from "./worker-fields";
 
 const labelCls = "text-meta font-medium text-muted-foreground";
 
@@ -106,10 +86,10 @@ const checkingAgent = (model: { agent: string } | undefined): string =>
   model === undefined ? "Checking agents…" : `Checking ${agentLabel(model.agent)}…`;
 
 /**
- * The New form for the orchestrator (⌘N's `/new-task`) or, with `initialWay` "direct" (⌥⌘N), for
- * one worker to start on at once: what needs doing, and the workspace it goes to. A repo with no
- * workspace gets one on send, at the autonomy picked above the goal. A single agent chat, the
- * one-off thread, is the other draft behind the same header.
+ * The New form for the orchestrator (⌘N's `/new-task`): what needs doing, and the workspace whose
+ * orchestrator it goes to, which decides how to run it. A repo with no workspace gets one on send,
+ * at the autonomy picked above the goal. A single agent chat, the one-off thread, is the other
+ * draft behind the same header.
  */
 const TaskOrchestratorFields = lazy(() => import("./task-orchestrator-fields"));
 
@@ -123,10 +103,8 @@ const orchestratorRef = (choice: AgentChoice): ModelRef => ({
 });
 
 export function NewTaskDraft({
-  initialWay,
   initialWorkspace,
 }: {
-  initialWay?: TaskWay | undefined;
   initialWorkspace?: WorkspaceId | undefined;
 } = {}) {
   const api = useApi();
@@ -152,13 +130,9 @@ export function NewTaskDraft({
   );
   const last = useTaskDraftStore((s) => s.last);
   const pickedAutonomy = useTaskDraftStore((s) => s.autonomy);
-  const rememberedWorkers = useTaskDraftStore((s) => s.workers);
   const sendKey = useServerSettings((s) => (s.settings ? sendKeyOf(s.settings) : undefined));
 
-  // An embedding app that leaves the one-worker choice out has the form on the orchestrator's,
-  // whichever shortcut or link opened it.
   const newForm = useNewForm();
-  const way: TaskWay = newForm?.task === "hidden" ? "plan" : (initialWay ?? "plan");
   // A pick in the "in" chip holds until a shortcut or the palette names another workspace.
   // Switching who does it keeps the workspace in the route, and so the pick.
   const [picked, setPicked] = useRoutePick<TaskTarget>(initialWorkspace ?? "", pendingTaskTarget);
@@ -186,12 +160,6 @@ export function NewTaskDraft({
     return () => useTaskDraftStore.getState().show(undefined);
   }, [showing]);
   const repos = target === undefined ? [] : taskRepos(target, workspaces, projects);
-  const [repoId, setRepoId] = useState<ProjectId>();
-  const repo = repos.find((each) => each.id === repoId) ?? repos[0];
-  // A direct worker can start on a joined machine, in a new worktree of that machine's own clone.
-  const joined = useJoinedMachines();
-  const [machineId, setMachineId] = useState<string>();
-  const machine = way === "direct" ? joined?.find((each) => each.id === machineId) : undefined;
   const workspace =
     target?.kind === "workspace"
       ? workspaces.find((state) => state.workspace.id === target.workspaceId)
@@ -207,16 +175,13 @@ export function NewTaskDraft({
     choice: AgentChoice;
   }>();
   const orchestratorPick =
-    way === "plan" &&
     target !== undefined &&
     pickedOrchestrator !== undefined &&
     pickedOrchestrator.target === taskTargetKey(target) &&
     pickedOrchestrator.choice.model !== ""
       ? orchestratorRef(pickedOrchestrator.choice)
       : undefined;
-  const taskOptions:
-    | Pick<StartTaskInput, "target" | "direct" | "autonomy" | "orchestrator">
-    | undefined =
+  const taskOptions: Pick<StartTaskInput, "target" | "autonomy" | "orchestrator"> | undefined =
     target === undefined
       ? undefined
       : {
@@ -224,7 +189,6 @@ export function NewTaskDraft({
             target.kind === "workspace"
               ? { workspaceId: target.workspaceId }
               : { projectId: target.projectId },
-          ...(way === "direct" && repo !== undefined ? { direct: { projectId: repo.id } } : {}),
           ...(makesOne && pickedAutonomy !== undefined ? { autonomy: pickedAutonomy } : {}),
           ...(orchestratorPick === undefined ? {} : { orchestrator: orchestratorPick }),
         };
@@ -245,15 +209,13 @@ export function NewTaskDraft({
   // What the orchestrator chips show: the pick while its model is still being chosen, else what
   // the preview says it runs on.
   const shownOrchestrator: AgentChoice | undefined =
-    way !== "plan"
-      ? undefined
-      : pickedOrchestrator !== undefined &&
-          target !== undefined &&
-          pickedOrchestrator.target === taskTargetKey(target)
-        ? pickedOrchestrator.choice
-        : orchestratorModel === undefined
-          ? undefined
-          : choiceFromModel(orchestratorModel);
+    pickedOrchestrator !== undefined &&
+    target !== undefined &&
+    pickedOrchestrator.target === taskTargetKey(target)
+      ? pickedOrchestrator.choice
+      : orchestratorModel === undefined
+        ? undefined
+        : choiceFromModel(orchestratorModel);
   const onDemand = useOnDemandMachine();
   const startMachine = needsMachine(onDemand.status);
   const machineOnline = onDemand.status?.machine?.online === true;
@@ -269,33 +231,9 @@ export function NewTaskDraft({
       ? {}
       : { threadId: selection.data.orchestratorThreadId },
   );
-  // The roster the preview offers a direct worker; this draft's pick, else the target's last one.
-  const workerChoices = way === "direct" ? (selection.data?.workerChoices ?? []) : [];
-  const [pickedWorker, setPickedWorker] = useState<{ target: string; key: string }>();
-  const targetKey = target === undefined ? undefined : taskTargetKey(target);
-  const workerKey =
-    pickedWorker !== undefined && pickedWorker.target === targetKey
-      ? pickedWorker.key
-      : targetKey === undefined
-        ? undefined
-        : rememberedWorkers[targetKey];
-  const shownWorker =
-    workerChoices.length === 0 ? undefined : shownWorkerChoice(workerChoices, workerKey);
-  const workerModel =
-    shownWorker === undefined
-      ? selection.data?.worker
-      : shownWorker.unavailable === undefined
-        ? shownWorker.model
-        : undefined;
-  const workerPreflight = useHarnessPreflight(workerModel, "worker");
   // Models by the names the composer gives them, not their ids.
-  const nameOf = useModelNames([
-    orchestratorModel,
-    selection.data?.orchestratorFrom,
-    workerModel,
-    shownWorker?.model,
-  ]);
-  const inputModel = way === "direct" ? workerModel : orchestratorModel;
+  const nameOf = useModelNames([orchestratorModel, selection.data?.orchestratorFrom]);
+  const inputModel = orchestratorModel;
   const inputModels = useModelsSettled(
     inputModel?.agent ?? "claude",
     inputModel !== undefined,
@@ -315,7 +253,7 @@ export function NewTaskDraft({
   const hasImages = attachments.ready.some((attachment) =>
     attachment.mediaType?.startsWith("image/"),
   );
-  const mentionRoot = (way === "direct" ? repo : repos[0])?.root;
+  const mentionRoot = repos[0]?.root;
   const mentions = useMentions({
     id: "mention-menu-new-task",
     text: prompt,
@@ -346,9 +284,6 @@ export function NewTaskDraft({
   );
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
-  // "Start under my control": off unless asked for, so a worker started here is its orchestrator's.
-  const [hold, setHold] = useState(false);
-  const holdId = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const [controlsOpen, setControlsOpen] = useState(false);
 
@@ -397,10 +332,7 @@ export function NewTaskDraft({
     !preflight.blocked &&
     // An agent picked for the orchestrator whose models aren't listed yet has nothing to start on.
     (shownOrchestrator === undefined || shownOrchestrator.model !== "") &&
-    (way !== "direct" || (workerModel !== undefined && !workerPreflight.blocked)) &&
     (!hasImages || !imagePreflight.blocked) &&
-    (way === "plan" || repo !== undefined) &&
-    (machine === undefined || machineBlocker(machine) === undefined) &&
     // The line beside Start names the workspace's autonomy: never start on a level not yet read.
     (target.kind !== "workspace" || workspace !== undefined);
 
@@ -411,14 +343,7 @@ export function NewTaskDraft({
     if (!valid || sending || selection.data === undefined) return;
     setSending(true);
     setError(undefined);
-    // The worker picked from the roster is the one the server checks and starts.
-    const chosenWorker = way === "direct" && shownWorker !== undefined ? workerModel : undefined;
-    const {
-      workerChoices: _choices,
-      orchestratorNote: _note,
-      orchestratorFrom: _from,
-      ...shown
-    } = selection.data;
+    const { orchestratorNote: _note, orchestratorFrom: _from, ...shown } = selection.data;
     try {
       const thread = await api.startTask({
         target:
@@ -429,24 +354,12 @@ export function NewTaskDraft({
           text: prompt.trim(),
           ...(attachments.ready.length > 0 ? { attachments: attachments.ready } : {}),
         },
-        selection: chosenWorker === undefined ? shown : { ...shown, worker: chosenWorker },
+        selection: shown,
         ...(attachments.ready.length > 0 ? { draftId } : {}),
-        ...(way === "direct" && repo !== undefined
-          ? {
-              direct: {
-                projectId: repo.id,
-                ...(chosenWorker === undefined ? {} : { worker: chosenWorker }),
-                ...(hold ? { hold: true } : {}),
-                ...(machine === undefined ? {} : { hostId: HostId.make(machine.id) }),
-              },
-            }
-          : {}),
         ...(makesOne && pickedAutonomy !== undefined ? { autonomy: pickedAutonomy } : {}),
         ...(orchestratorPick === undefined ? {} : { orchestrator: orchestratorPick }),
       });
-      useTaskDraftStore
-        .getState()
-        .remember(target, chosenWorker === undefined ? undefined : workerChoiceKey(chosenWorker));
+      useTaskDraftStore.getState().remember(target);
       void navigate({ to: "/t/$threadId", params: { threadId: thread.id } });
     } catch (e) {
       setSending(false);
@@ -478,27 +391,14 @@ export function NewTaskDraft({
     void navigate({ to: "/new" });
   };
 
-  // The orchestrator and a worker are this draft on another way; the workspace and what was typed stay.
+  // The orchestrator is this draft; Chat is the other, which what was typed goes along to.
   const pickWho = (who: Who) => {
-    if (who === "me") return toOneOff();
-    useTaskDraftStore.getState().rememberEntry(WHO_ENTRY[who]);
-    void navigate({
-      to: "/new-task",
-      search: {
-        ...(who === "worker" ? { way: "direct" as const } : {}),
-        ...(initialWorkspace === undefined ? {} : { workspace: initialWorkspace }),
-      },
-    });
+    if (who === "me") toOneOff();
   };
 
-  const submitLabel =
-    way === "plan"
-      ? makesOne
-        ? "Start workspace and send"
-        : (newForm?.team?.start ?? "Send to team")
-      : makesOne
-        ? "Start workspace and task"
-        : "Start task";
+  const submitLabel = makesOne
+    ? "Start workspace and send"
+    : (newForm?.team?.start ?? "Send to team");
   // What Start waits on while a check runs, in its own words on the button: the task's selection,
   // then each agent's readiness, then the workspace's autonomy the summary beside it names.
   const checking: string | undefined =
@@ -510,13 +410,11 @@ export function NewTaskDraft({
           ? "Checking agents…"
           : preflight.checking
             ? checkingAgent(orchestratorModel)
-            : way === "direct" && workerPreflight.checking
-              ? checkingAgent(workerModel)
-              : hasImages && imagePreflight.checking
-                ? checkingAgent(inputModel)
-                : target.kind === "workspace" && workspace === undefined
-                  ? "Checking the workspace…"
-                  : undefined;
+            : hasImages && imagePreflight.checking
+              ? checkingAgent(inputModel)
+              : target.kind === "workspace" && workspace === undefined
+                ? "Checking the workspace…"
+                : undefined;
   const budget = ledger?.budget;
   // The level the line beside Start names: the new workspace's pick, else the workspace's own.
   // Undefined while a named workspace hasn't loaded: the line waits rather than show the default.
@@ -529,16 +427,6 @@ export function NewTaskDraft({
     workspace,
     autonomy ?? autonomyOf(DEFAULT_CHARTER),
   );
-  // The places after the workspace, as the form names them: a direct worker's repo and checkout.
-  // With a machine joined, which one too, so a folded form still says where it runs.
-  const places =
-    way === "direct" && repo !== undefined
-      ? [
-          repo.name,
-          "New worktree, new branch",
-          ...((joined?.length ?? 0) > 0 ? [machine?.name ?? "This machine"] : []),
-        ]
-      : [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -552,7 +440,7 @@ export function NewTaskDraft({
         }}
       >
         <NewFormHeader
-          who={way === "direct" ? "worker" : "orchestrator"}
+          who="orchestrator"
           onWho={pickWho}
           disabled={attachments.uploading}
           goal={
@@ -650,9 +538,7 @@ export function NewTaskDraft({
                     <DictationStrip partial={dictation.partial} />
                   )}
                 <DictationError state={dictation.state} />
-                {(dictation.available ||
-                  shownWorker !== undefined ||
-                  shownOrchestrator !== undefined) && (
+                {(dictation.available || shownOrchestrator !== undefined) && (
                   <div className="flex flex-wrap items-center gap-1 px-2 pb-2">
                     {shownOrchestrator !== undefined && (
                       <div
@@ -673,22 +559,6 @@ export function NewTaskDraft({
                             }}
                           />
                         </Suspense>
-                      </div>
-                    )}
-                    {shownWorker !== undefined && (
-                      <div role="group" aria-label="Worker" className="contents">
-                        <span aria-hidden className="pl-1.5 text-meta text-muted-foreground">
-                          Worker
-                        </span>
-                        <WorkerFields
-                          choices={workerChoices}
-                          shown={shownWorker}
-                          disabled={sending}
-                          onPick={(key) => {
-                            if (targetKey !== undefined)
-                              setPickedWorker({ target: targetKey, key });
-                          }}
-                        />
                       </div>
                     )}
                     <span
@@ -725,60 +595,16 @@ export function NewTaskDraft({
                   onPick={(next) => {
                     if (next.kind === "newWorkspace") return toNewWorkspace();
                     setPicked(next);
-                    setRepoId(undefined);
                   }}
                 />
               </WhereStop>
-              {way === "direct" && repo !== undefined && (
-                <WhereStop label="Repository">
-                  {repos.length > 1 ? (
-                    <Select
-                      value={repo.id}
-                      items={repos.map((each) => ({ value: each.id, label: each.name }))}
-                      onValueChange={(value) => {
-                        if (value !== null) setRepoId(value as ProjectId);
-                      }}
-                    >
-                      <SelectTrigger size="sm" aria-label="Repo" className="h-7 text-meta">
-                        <FolderGit2 aria-hidden />
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {repos.map((each) => (
-                          <SelectItem key={each.id} value={each.id}>
-                            {each.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <WhereFact icon={FolderGit2} testId="task-repo">
-                      {repo.name}
-                    </WhereFact>
-                  )}
-                </WhereStop>
-              )}
-              {way === "direct" && repo !== undefined && (
-                <WhereStop label="Checkout">
-                  <WhereFact icon={GitBranch} testId="task-checkout">
-                    New worktree, new branch
-                  </WhereFact>
-                </WhereStop>
-              )}
               <RunsOnStop />
-              {way === "direct" && repo !== undefined && (joined?.length ?? 0) > 0 && (
-                <WhereStop label="Machine">
-                  <MachinePicker machines={joined} value={machineId} onChange={setMachineId} />
-                </WhereStop>
-              )}
             </>
           }
           line={
-            target === undefined && settled ? (
-              "Gram doesn't know a repository to start a workspace in yet. Pick Chat to open one, or add one under Settings → Workspaces & merging."
-            ) : machine === undefined ? undefined : (
-              <MachineNote machine={machine} />
-            )
+            target === undefined && settled
+              ? "Gram doesn't know a repository to start a workspace in yet. Pick Chat to open one, or add one under Settings → Workspaces & merging."
+              : undefined
           }
         />
 
@@ -798,7 +624,7 @@ export function NewTaskDraft({
 
         <div className="flex flex-col gap-3">
           {/* While the check runs, Start says so itself (`checking`); no line here. */}
-          {orchestratorModel !== undefined && way === "plan" && (
+          {orchestratorModel !== undefined && (
             <p data-testid="task-orchestrator-line" className="text-meta text-muted-foreground">
               {selection.data?.orchestratorFrom === undefined
                 ? `Orchestrator: ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)}`
@@ -816,9 +642,7 @@ export function NewTaskDraft({
               <span>{selection.data.orchestratorNote}</span>
             </p>
           )}
-          {/* A direct worker's workspace still opens its orchestrator, so one that can't run
-              blocks starting: shown then, and only then. */}
-          {orchestratorModel !== undefined && (way === "plan" || preflight.blocked) && (
+          {orchestratorModel !== undefined && (
             <HarnessPreflightNote
               result={preflight.result}
               checking={preflight.checking}
@@ -843,28 +667,6 @@ export function NewTaskDraft({
                 Retry task check
               </Button>
             </p>
-          )}
-          {shownWorker?.unavailable !== undefined && (
-            <p role="alert" className="text-meta text-destructive">
-              {agentLabel(shownWorker.model.agent)} {nameOf(shownWorker.model)} can't run here:{" "}
-              {shownWorker.unavailable}. Pick another worker model.
-            </p>
-          )}
-          {way === "direct" && workerModel !== undefined && shownWorker === undefined && (
-            <p className="text-meta text-muted-foreground">
-              Worker: {agentLabel(workerModel.agent)} · {nameOf(workerModel)}
-            </p>
-          )}
-          {way === "direct" && workerModel !== undefined && (
-            <HarnessPreflightNote
-              result={workerPreflight.result}
-              checking={workerPreflight.checking}
-              model={workerModel}
-              onRetry={async () => {
-                await workerPreflight.recheck();
-                await selection.refetch();
-              }}
-            />
           )}
           {hasImages && (
             <HarnessPreflightNote
@@ -905,13 +707,10 @@ export function NewTaskDraft({
                   </span>
                 ) : (
                   <TaskAuthorityLine
-                    way={way}
                     workspace={name}
-                    places={places}
                     makesOne={makesOne}
                     // While a pick saves, the line says the level it is saving.
                     autonomy={makesOne ? autonomy : mergeApproval.autonomy}
-                    hold={way === "direct" && hold}
                     remembered={remembered}
                     onChangeWhere={attachments.uploading ? undefined : changeWhere}
                     changeWhereHint={whereHint || undefined}
@@ -931,7 +730,7 @@ export function NewTaskDraft({
                 {!makesOne && mergeApproval.below !== undefined && (
                   <span className="basis-full pl-5.5">{mergeApproval.below}</span>
                 )}
-                {way === "plan" && budget !== undefined && (
+                {budget !== undefined && (
                   <span
                     data-testid="task-workers"
                     className="rounded-sm border border-border px-1 text-meta tabular-nums"
@@ -943,26 +742,6 @@ export function NewTaskDraft({
             )}
           </div>
           <ControlDetails open={controlsOpen} onOpenChange={setControlsOpen}>
-            {way === "direct" && (
-              <div data-testid="task-hold" className="flex items-start gap-2">
-                <Switch
-                  id={holdId}
-                  aria-describedby={`${holdId}-line`}
-                  checked={hold}
-                  disabled={sending}
-                  onCheckedChange={setHold}
-                  className="mt-0.5"
-                />
-                <div className="flex min-w-0 flex-col gap-0.5 text-meta">
-                  <label htmlFor={holdId} className="font-medium text-foreground">
-                    Start under my control
-                  </label>
-                  <span id={`${holdId}-line`} className="text-muted-foreground">
-                    {EXPLAIN.startHeld}
-                  </span>
-                </div>
-              </div>
-            )}
             {target !== undefined && !makesOne && (
               <div className="flex flex-col gap-1">
                 <span className={labelCls}>Workspace autonomy</span>
@@ -974,9 +753,9 @@ export function NewTaskDraft({
             )}
             <AuthorityExplainer />
             <HarnessSupportDetails
-              observation={way === "direct" ? workerPreflight.observation : preflight.observation}
+              observation={preflight.observation}
               imageInput={imagePreflight.result.support}
-              threadId={way === "direct" ? undefined : selection.data?.orchestratorThreadId}
+              threadId={selection.data?.orchestratorThreadId}
             />
           </ControlDetails>
         </div>

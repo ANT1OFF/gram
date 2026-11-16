@@ -12,10 +12,8 @@ import {
   type LimitRecord,
   PlanStepId,
   seedOrchestratorPlan,
-  type ModelRef,
   type Thread,
   type ThreadId,
-  type UserInput,
   type WorkspaceState,
   type WorkspaceId,
   type AppToolError,
@@ -104,7 +102,6 @@ export interface HeldSpawnsDeps {
   readonly spawnFor: (
     callerId: ThreadId,
     input: SpawnWorkerInput,
-    byUser?: { readonly id: ThreadId; readonly input: UserInput; readonly model?: ModelRef },
   ) => Effect.Effect<SpawnedWorker, AppToolError>;
   readonly survey: LedgerWatch["survey"];
   readonly spawnBreaker: Effect.Success<ReturnType<typeof makeSpawnBreaker>>;

@@ -21,9 +21,10 @@ key, over ordinary TLS with no Tailscale and nothing to confirm: see
 
 ## Start a thread on a machine
 
-Once a machine is confirmed, **Machine** shows first under Where it runs on New → Chat, and beside
-the repository when New task starts a worker. It reads "This machine" until you pick another. The
-menu marks a machine that is offline or whose Claude Code isn't signed in.
+Once a machine is confirmed, **Machine** shows first under Where it runs on New → Chat. It reads
+"This machine" until you pick another. The menu marks a machine that is offline or whose Claude
+Code isn't signed in. New → Team hands the task to the workspace's orchestrator, which picks where
+each of its workers runs.
 
 - **A chat in a folder there.** Picking a joined machine puts the chat in its home folder (`~`
   there). The Folder chip beside it lists that machine's home and the folders its recent chats ran
@@ -42,8 +43,6 @@ menu marks a machine that is offline or whose Claude Code isn't signed in.
 - When the machine is offline, lacks Claude Code or Git, or isn't signed in, the line says so, with
   **Check again** (and the sign-in icon when signing in is the fix), and Start waits until it can
   start there.
-- A folded New task, one going back to the workspace the last task went to, names the machine in
-  the line beside Start. Its Change opens the picker.
 - You can also ask the orchestrator to put a worker there: `spawn_worker` takes the machine's name
   or id, in any case. `local` and `this machine` are reserved for this machine: naming either, like
   naming none, runs the worker here, and a machine can't join under either name. A blank or unknown

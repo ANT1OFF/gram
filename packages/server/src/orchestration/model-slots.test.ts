@@ -138,31 +138,35 @@ describe.skipIf(!hasGit)("model slots that follow a tier", () => {
             (yield* (yield* ThreadStore).getWorkspace(state.workspace.id)).charter.workerModels,
           ).toEqual(state.charter.workerModels);
           const handlers = yield* orchestrationHandlers;
-          const selection = yield* handlers["workspace.taskPreflight"]({
-            target: { workspaceId: state.workspace.id },
-            direct: { projectId: project.id },
-          });
+          const target = { workspaceId: state.workspace.id };
+          const selection = yield* handlers["workspace.taskPreflight"]({ target });
           expect(selection.orchestrator).toEqual({
             agent: "codex",
             model: "gpt-6.1-sol",
             variant: "high",
             speed: "standard",
           });
-          expect(selection.worker).toEqual({
-            agent: "codex",
-            model: "gpt-6.1-sol",
-            variant: "medium",
-            speed: "standard",
+          const thread = yield* handlers["workspace.startTask"]({
+            target,
+            selection,
+            input: { text: "Synthetic task" },
           });
-          const [scoped, cheap, top] = selection.workerChoices!;
-          expect(scoped).toMatchObject({ useFor: RECOMMENDED.tiers.scoped.note, default: true });
+          const session = yield* waitSent(thread.id, 1);
+          const listed = (yield* session.callTool("list_workers", {})) as {
+            readonly workerModels: ReadonlyArray<Record<string, unknown>>;
+          };
+          const [scoped, cheap, top] = listed.workerModels;
+          expect(scoped).toMatchObject({
+            runsOn: "codex:gpt-6.1-sol · medium",
+            useFor: RECOMMENDED.tiers.scoped.note,
+            default: true,
+          });
           expect(cheap).toMatchObject({
-            model: { agent: "codex", model: "gpt-6-luna", variant: "medium" },
+            runsOn: "codex:gpt-6-luna · medium",
             useFor: "Synthetic note of the user's own",
           });
           // Kept to Claude, which isn't here: unavailable, never moved to the other harness.
-          expect(top?.model).toMatchObject({ agent: "claude", model: "claude-fable-5-2" });
-          expect(top?.unavailable).toContain("fills the Top tier");
+          expect(top?.["unavailable"]).toContain("fills the Top tier");
         }).pipe(Effect.provide(context));
       }),
     ),
@@ -313,16 +317,23 @@ describe.skipIf(!hasGit)("a slot that can't run here says so", () => {
             state.workspace.id,
           );
           const handlers = yield* orchestrationHandlers;
-          const selection = yield* handlers["workspace.taskPreflight"]({
-            target: { workspaceId: state.workspace.id },
-            direct: { projectId: project.id },
-          });
+          const target = { workspaceId: state.workspace.id };
+          const selection = yield* handlers["workspace.taskPreflight"]({ target });
           expect(selection.orchestrator.agent).toBe("claude");
           expect(selection.orchestratorNote).toContain("only a newer version of Gram knows");
-          expect(selection.workerChoices?.[0]).toMatchObject({
+          const thread = yield* handlers["workspace.startTask"]({
+            target,
+            selection,
+            input: { text: "Synthetic task" },
+          });
+          const session = yield* waitSent(thread.id, 1);
+          const listed = (yield* session.callTool("list_workers", {})) as {
+            readonly workerModels: ReadonlyArray<Record<string, unknown>>;
+          };
+          expect(listed.workerModels[0]).toMatchObject({
             unavailable: expect.stringContaining('"huge" tier'),
           });
-          expect(selection.worker).toMatchObject({ model: "sonnet" });
+          expect(listed.workerModels[1]).toMatchObject({ model: "claude:sonnet", default: true });
         }).pipe(Effect.provide(context));
       }),
     ),

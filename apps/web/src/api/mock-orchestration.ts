@@ -2,7 +2,6 @@ import {
   withRoutineGenerations,
   withRoutineIds,
   connectorEntryProblem,
-  derivedTitle,
   autonomyOf,
   availableWorkspaceName,
   newWorkspaceCharter,
@@ -310,10 +309,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
   const intervened = new Set<ThreadId>();
   /** Projects set to have no local check (`noLocalCheck`): their workers' rows say so. */
   const noLocalCheck = new Set<string>();
-  /** Workers started from New for their orchestrator, until their brief, the user's words, is sent. */
-  const briefed = new Set<ThreadId>();
-  /** Workers started from New, held or not, until their first turn begins (`takeNewBrief`). */
-  const fromNew = new Set<ThreadId>();
   /**
    * Threads that have run a turn, as the server's memo records it (`hasStartedTurn`): a worker reads
    * `briefed` until one has, and `working` after, however soon that turn ends.
@@ -1448,61 +1443,6 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     },
 
     /**
-     * New task straight to a worker: a worker of `orchestrator` in a new worktree of `projectId`,
-     * on a feature named from the first words of `text` and numbered past the ones taken, as the
-     * server's `startWorker` makes it. The caller sends it `text` as its brief, which leaves it the
-     * orchestrator's; with `hold` ("Start under my control") that send holds it as the user's.
-     */
-    async startWorker(
-      orchestrator: Thread,
-      projectId: ProjectId,
-      text: string,
-      hold = false,
-    ): Promise<Thread> {
-      const workspaceId = orchestrator.workspaceId;
-      const state = workspaces.find((w) => w.workspace.id === workspaceId);
-      if (workspaceId === undefined || state === undefined) throw notFound("workspace", "(none)");
-      if (!state.workspace.projectIds.includes(projectId)) {
-        throw new MockInvalidState(
-          `That repo isn't one of the "${state.workspace.name}" workspace's.`,
-        );
-      }
-      const line = text.split("\n").find((each) => each.trim() !== "") ?? "";
-      const base =
-        line
-          .toLowerCase()
-          .split(/[^a-z0-9]+/)
-          .filter((word) => word !== "")
-          .slice(0, 5)
-          .join("-")
-          .slice(0, 45) || "task";
-      const taken = new Set(
-        host
-          .threads()
-          .flatMap((t) => (t.workspaceId === workspaceId ? [t.spawnedBy?.feature] : [])),
-      );
-      let feature = base;
-      for (let n = 2; taken.has(feature); n++) feature = `${base}-${n}`;
-      const created = await host.createThread({
-        projectRoot: project(projectId).root,
-        title: derivedTitle(line),
-        mode: orchestrationMode(await host.settings()),
-        branch: `feat/${feature}`,
-      });
-      const worker: Thread = {
-        ...created,
-        userNamed: false,
-        workspaceId,
-        spawnedBy: { threadId: orchestrator.id, feature },
-      };
-      if (!hold) briefed.add(worker.id);
-      fromNew.add(worker.id);
-      host.replace(worker);
-      host.emit({ type: "orchestration.changed", workspaceId });
-      return worker;
-    },
-
-    /**
      * Dev and e2e hook: moves a feature's or a group's stage to the next step of its plan, as the
      * orchestrator's `set_stage` would, and returns it; `undefined` with no plan, or at the last step.
      */
@@ -1613,18 +1553,8 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       return { thread, membership: "restored" };
     },
 
-    /**
-     * Whether `threadId` is a worker started from New whose first turn begins now, which works on
-     * its brief as a real one does (`workerBriefScript`); true once per worker.
-     */
-    takeNewBrief(threadId: ThreadId): boolean {
-      return fromNew.delete(threadId);
-    },
-
     /** The user sent `threadId` a message: a worker is marked so its orchestrator holds off. */
     userTyped(threadId: ThreadId): void {
-      // A worker's brief from New: the user's words, but the worker stays its orchestrator's.
-      if (briefed.delete(threadId)) return;
       const thread = host.threads().find((t) => t.id === threadId);
       if (thread?.spawnedBy === undefined || intervened.has(threadId)) return;
       intervened.add(threadId);

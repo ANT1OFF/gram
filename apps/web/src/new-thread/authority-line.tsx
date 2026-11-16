@@ -21,28 +21,18 @@ const MERGE_APPROVAL: Readonly<Record<Autonomy, string>> = {
   full: "Automatic",
 };
 
-/** What that means for several workers' pull requests, after the value. */
+/** What that means for the workers' pull requests, after the value. */
 const PLAN_MERGE: Readonly<Record<Autonomy, string>> = {
   supervised: "Asks before a push, a pull request or a merge",
   publish: "Opens pull requests; merging waits for you",
   full: "Merges pull requests without asking you",
 };
 
-/** The same, said of the one worker a direct start makes. */
-const WORKER_MERGE: Readonly<Record<Autonomy, string>> = {
-  supervised: "Asks before a push, a pull request or a merge",
-  publish: "Opens its pull request; merging waits for you",
-  full: "Merges its pull request without asking you",
-};
-
 /** The New form's summary beside Start: who owns the task, then, apart, who approves a merge. */
 export interface TaskSummary {
   /** Where it runs: the workspace, or the one this start makes. */
   readonly where: string;
-  /**
-   * Whom it reports to: the orchestrator that plans it or that the worker reports to, or the user
-   * while a direct worker is held. Ownership only; it says nothing of merging.
-   */
+  /** Whom it reports to: the orchestrator that plans it. Ownership only; nothing of merging. */
   readonly who: string;
   /** Whether a merge waits for the user: "Automatic" or "Ask", the workspace's autonomy. */
   readonly approval: string;
@@ -52,68 +42,46 @@ export interface TaskSummary {
 
 /**
  * Where a task runs and whom it reports to, and, as a separate labelled part, whether its merge
- * waits for the user. Reporting is ownership: a worker reports to its orchestrator whatever that
- * orchestrator may merge, so the two are never said in one breath. A level this build doesn't know
- * says so rather than guessing.
+ * waits for the user. A level this build doesn't know says so rather than guessing.
  */
 export function taskSummary({
-  way,
   workspace,
   makesOne = false,
   autonomy,
-  hold,
 }: {
-  way: "plan" | "direct";
   /** The workspace's name, or the repository's for a workspace this start makes. */
   workspace: string;
   makesOne?: boolean | undefined;
   autonomy: string;
-  hold: boolean;
 }): TaskSummary {
-  const orchestrator = `the ${workspace} orchestrator`;
   const level = presentAutonomy(autonomy);
   return {
     where: makesOne ? `Runs in a new ${workspace} workspace` : `Runs in ${workspace}`,
-    who:
-      way === "plan"
-        ? `Planned by ${orchestrator}`
-        : hold
-          ? `You direct it until you hand it to ${orchestrator}`
-          : `Reports to ${orchestrator}`,
+    who: `Planned by the ${workspace} orchestrator`,
     approval: known(MERGE_APPROVAL, autonomy as Autonomy) ?? level.label,
-    merge:
-      known(way === "plan" ? PLAN_MERGE : WORKER_MERGE, autonomy as Autonomy) ??
-      level.description.replace(/\.$/, ""),
+    merge: known(PLAN_MERGE, autonomy as Autonomy) ?? level.description.replace(/\.$/, ""),
   };
 }
 
 /**
  * The New form's summary beside Start, one fact a line on one text edge, each line's mark in a
- * column of its own: where the task runs (`Runs in billing-api · api · New worktree, new branch`,
- * the places as the form names them), marked Remembered when it is the last task's target rather
+ * column of its own: where the task runs (`Runs in billing-api`), marked Remembered when it is the last task's target rather
  * than where the user is, with Change (`onChangeWhere`) to pick another; then whom it reports to;
  * then Merge approval, Ask or Automatic, with what that means for this start (amber at Automatic,
  * as everywhere Full shows). `approval` makes the merge approval a choice; none of it is folded.
  */
 export function TaskAuthorityLine({
-  way,
   workspace,
-  places = [],
   makesOne,
   autonomy,
-  hold,
   remembered = false,
   onChangeWhere,
   changeWhereHint,
   approval,
 }: {
-  way: "plan" | "direct";
   workspace: string;
-  /** The repository and checkout after the workspace, as the form names them. */
-  places?: readonly string[] | undefined;
   makesOne?: boolean | undefined;
   autonomy: string;
-  hold: boolean;
   /** Whether the target is the last task's, kept from before rather than read off this place. */
   remembered?: boolean | undefined;
   /** Opens where it runs to change it. */
@@ -131,12 +99,11 @@ export function TaskAuthorityLine({
 }) {
   const level = presentAutonomy(autonomy);
   const icon = known(AUTONOMY_ICON, autonomy as Autonomy) ?? Shield;
-  const summary = taskSummary({ way, workspace, makesOne, autonomy, hold });
+  const summary = taskSummary({ workspace, makesOne, autonomy });
   return (
     <span
       data-testid="task-authority"
       data-autonomy={autonomy}
-      data-hold={hold ? "true" : undefined}
       className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-1.5 gap-y-1 text-reading text-muted-foreground"
     >
       <Network aria-hidden className="col-start-1 mt-1 size-icon-row shrink-0" />
@@ -145,7 +112,7 @@ export function TaskAuthorityLine({
         data-remembered={remembered ? "true" : undefined}
         className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
       >
-        <span className="min-w-0 text-foreground">{[summary.where, ...places].join(" · ")}</span>
+        <span className="min-w-0 text-foreground">{summary.where}</span>
         {remembered && (
           <Hint
             label="Where your last task went. Change picks another."

@@ -248,7 +248,6 @@ import {
   seedMessages,
   seedSummaries,
   sessionStart,
-  workerBriefScript,
   type Script,
   type Step,
 } from "./mock-scripts";
@@ -928,18 +927,13 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     const answered = runtime.fold.store.getState().messages.some((m) => m.role === "assistant");
     // A worker's first turn waits for its session to open, as a real one's does.
     const opening = fresh && runtime.summary.thread.spawnedBy !== undefined;
-    // One started from New then works on its brief for minutes, as a real one does, so it never
-    // reads Stopped a second after it began.
-    const brief = opening && this.#orchestration.takeNewBrief(threadId);
     const script =
       (!answered && SCRIPTS[threadId]) ||
-      (brief
-        ? workerBriefScript
-        : runtime.summary.thread.role === "orchestrator" &&
-            input.origin === undefined &&
-            input.notice === undefined
-          ? orchestratorScript
-          : echoScript);
+      (runtime.summary.thread.role === "orchestrator" &&
+      input.origin === undefined &&
+      input.notice === undefined
+        ? orchestratorScript
+        : echoScript);
     const steps = script(input, this.#ids);
     await this.#continue(threadId, opening ? [...sessionStart(), ...steps] : steps);
   }

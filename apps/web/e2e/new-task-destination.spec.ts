@@ -21,9 +21,9 @@ async function realistic(page: Page) {
   });
 }
 
-/** Opens New task with ⌥⌘N: where it goes, and which workspace the title bar names. */
+/** Opens New task with ⌘N: where it goes, and which workspace the title bar names. */
 async function newTask(page: Page) {
-  await page.keyboard.press("ControlOrMeta+Alt+n");
+  await page.keyboard.press("ControlOrMeta+n");
   await expect(page.getByLabel("What needs doing")).toBeVisible();
   return {
     target: page.getByTestId("task-target"),
@@ -41,7 +41,6 @@ test("from a solo thread, New task goes to its repo's workspace, and the title b
   await expect(page.getByLabel("Message", { exact: true })).toBeVisible();
   const { target, titlebar } = await newTask(page);
   await expect(target).toHaveText("billing-api");
-  await expect(page.getByTestId("task-repo")).toHaveText("api");
   await expect(titlebar).toHaveText("billing-api");
 });
 

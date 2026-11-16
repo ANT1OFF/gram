@@ -1,7 +1,7 @@
 // A headless control plane as two real processes, started as the Docker image starts them: the
 // server (`node main.ts` with `GRAM_HEADLESS=1`) and a provisioned `gram-host` on the fake agent,
-// which dials the server's TLS listener. An orchestrator and a worker run in the host's process;
-// the server's has no agent to run them with.
+// which dials the server's TLS listener. An orchestrator runs in the host's process; the server's
+// has no agent to run it with.
 
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -191,7 +191,7 @@ describe.skipIf(!hasGit || !hasOpenssl || process.platform === "win32")(
     );
 
     it.live(
-      "an orchestrator and a worker run in the host's process, none in the server's",
+      "an orchestrator runs in the host's process, none in the server's",
       () =>
         Effect.gen(function* () {
           const { certFile, keyFile } = makeCertificate();
@@ -333,18 +333,6 @@ describe.skipIf(!hasGit || !hasOpenssl || process.platform === "win32")(
           expect(orchestrator.checkout.path.startsWith(repos)).toBe(true);
           expect(existsSync(join(orchestrator.checkout.path, "tracked.txt"))).toBe(true);
           yield* echoed(orchestrator.id);
-
-          const worker: Thread = yield* app["workspace.startTask"]({
-            target: { projectId: project.id },
-            input: { text: "Do the work." },
-            direct: { projectId: project.id },
-          });
-          expect(worker.id).not.toBe(orchestrator.id);
-          expect(worker.checkout.kind).toBe("worktree");
-          expect(worker.checkout.hostId).toBe(provisioned.hostId);
-          expect(worker.checkout.path.startsWith(repos)).toBe(true);
-          expect(existsSync(join(worker.checkout.path, "tracked.txt"))).toBe(true);
-          yield* echoed(worker.id);
 
           // Nothing was made on the control plane's side.
           expect(existsSync(join(root, ".worktrees"))).toBe(false);

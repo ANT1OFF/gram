@@ -289,7 +289,7 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
       .getState()
       .requestPanel({ threadId, panel, ...(target === undefined ? {} : { target }) }, threadId);
   // A new draft with the report as its brief, through the same New form and its Start as any other:
-  // a worker's to a new worker of its workspace, anything else to a one-off thread.
+  // a worker's to its workspace's orchestrator, anything else to a one-off thread.
   const resume = () => {
     carryDraft({
       text: resumeBrief(thread.title, report, pr),
@@ -297,10 +297,7 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
       attachments: [],
     });
     if (worker && thread.workspaceId !== undefined) {
-      void navigate({
-        to: "/new-task",
-        search: { way: "direct", workspace: thread.workspaceId },
-      });
+      void navigate({ to: "/new-task", search: { workspace: thread.workspaceId } });
     } else {
       void navigate({ to: "/new" });
     }

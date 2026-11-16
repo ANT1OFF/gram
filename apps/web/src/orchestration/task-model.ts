@@ -5,9 +5,6 @@ export type TaskTarget =
   | { readonly kind: "workspace"; readonly workspaceId: WorkspaceId }
   | { readonly kind: "repo"; readonly projectId: ProjectId };
 
-/** Who picks a task up: the orchestrator, or one worker started from it at once. */
-export type TaskWay = "plan" | "direct";
-
 /** A target as one string, for remembering it. */
 export const taskTargetKey = (target: TaskTarget): string =>
   target.kind === "workspace" ? `w:${target.workspaceId}` : `p:${target.projectId}`;
@@ -19,7 +16,7 @@ const byUse = (a: Project, b: Project) =>
 /**
  * The projects a task can make a workspace for: those no workspace has yet, most useful first.
  * `repoRoot` can't pick out the git repos among them, since a project a thread registered has none
- * stored; a folder without git is refused on send, when its worker can't have a worktree.
+ * stored; a folder without git is refused on send, when its workers couldn't have worktrees.
  */
 export const reposWithoutWorkspace = (
   workspaces: readonly WorkspaceState[],
@@ -118,7 +115,7 @@ export const settledTaskTarget = (
   return own === undefined ? target : inWorkspace(own);
 };
 
-/** The repos a worker straight from the draft may start in, home first. */
+/** The target's repos, home first: what the draft's @-mentions list files from. */
 export const taskRepos = (
   target: TaskTarget,
   workspaces: readonly WorkspaceState[],

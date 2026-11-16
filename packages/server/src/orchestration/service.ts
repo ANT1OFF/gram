@@ -374,7 +374,7 @@ export const OrchestrationLive = Layer.effect(
 
     const { policyFor, opening, modeAfterSwitch } = makeSessionPolicy(kit);
 
-    const { openModel, taskWorkers, taskPreflight, withTaskStartup } = makeTaskStartup(kit);
+    const { openModel, taskPreflight, withTaskStartup } = makeTaskStartup(kit);
 
     const {
       cancelDelivery,
@@ -451,7 +451,6 @@ export const OrchestrationLive = Layer.effect(
       joinGroup,
       spawnWorker,
       briefFooter,
-      startWorker,
       setRoutineAdmission,
     } = makeSpawning(kit, {
       outsideWorkspace,
@@ -459,8 +458,6 @@ export const OrchestrationLive = Layer.effect(
       repoNames,
       joinWorkspace,
       resolveProject,
-      taskWorkers,
-      armHold,
       projectCall,
       pausedSpawnGate,
       spawnBreaker,
@@ -897,7 +894,6 @@ export const OrchestrationLive = Layer.effect(
       releaseHeldBrief,
       manageHeldSpawn,
       briefFooter,
-      startWorker,
       taskPreflight,
       prepareTaskOrchestrator,
       withTaskStartup,
