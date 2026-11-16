@@ -39,6 +39,12 @@ describe("quoteShellPath", () => {
     );
   });
 
+  it("doubles PowerShell's curly single quotes too, so a file name cannot close the quote", () => {
+    expect(quoteShellPath("C:\\a\u2019; calc; \u2018b.txt", "powershell")).toBe(
+      "'C:\\a\u2019\u2019; calc; \u2018\u2018b.txt'",
+    );
+  });
+
   it("double-quotes for cmd with every % escaped outside the quotes", () => {
     expect(quoteShellPath("C:\\Users\\me\\a b & %USERPROFILE%.txt", "cmd")).toBe(
       '"C:\\Users\\me\\a b & "^%"USERPROFILE"^%".txt"',

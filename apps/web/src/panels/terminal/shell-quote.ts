@@ -39,7 +39,11 @@ export function quoteShellPath(path: string, kind: ShellKind): string {
     case "git-bash":
       return posix(toMsysPath(path));
     case "powershell":
-      return /^[\w:./\\-]+$/.test(path) ? path : `'${path.replaceAll("'", "''")}'`;
+      // PowerShell ends a single-quoted string at ' and at the curly quotes ‘ ’ ‚ ‛ too, so each is
+      // doubled; leaving one would let a dropped file's name close the quote and run the rest.
+      return /^[\w:./\\-]+$/.test(path)
+        ? path
+        : `'${path.replace(/['\u2018\u2019\u201A\u201B]/g, (quote) => quote + quote)}'`;
     case "cmd":
       return /^[\w:./\\-]+$/.test(path)
         ? path
