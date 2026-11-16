@@ -21,9 +21,17 @@ describe("Checkbox", () => {
     const box = screen.getByRole("checkbox", { name: /Also delete the worktree/ });
     expect(box).toBe(screen.getByTestId("delete"));
     expect(box.className).toContain("accent-primary");
+    expect(box.closest("label")?.className).toContain("text-body");
     expect(box.closest("label")?.textContent).toBe("Also delete the worktreeThe folder goes too.");
     fireEvent.click(box);
     expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it("takes another text step from the row's classes", () => {
+    render(<Checkbox label="Trust this host" className="text-reading" />);
+    const row = screen.getByRole("checkbox", { name: "Trust this host" }).closest("label")!;
+    expect(row.className).toContain("text-reading");
+    expect(row.className).not.toContain("text-body");
   });
 
   it("is the bare box without a label, with the classes given", () => {

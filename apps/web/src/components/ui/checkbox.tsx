@@ -9,8 +9,9 @@ import { cn } from "@/lib/utils";
 const BOX = "size-3.5 shrink-0 accent-primary outline-none focus-visible:focus-ring";
 
 /**
- * A choice's words: its name, and one muted line under it on what ticking it does. The box sits on
- * the name's first line (`h-lh`), whatever the text size the row is set in.
+ * A choice's words: its name, and one muted line under it on what ticking it does. The name is UI
+ * text (`text-body`) unless the row's `className` gives another step; the box sits on the name's
+ * first line (`h-lh`) at any of them.
  */
 function ChoiceLabel({
   label,
@@ -26,7 +27,7 @@ function ChoiceLabel({
   return (
     <label
       className={cn(
-        "flex cursor-pointer items-start gap-2 has-disabled:cursor-not-allowed has-disabled:opacity-50",
+        "flex cursor-pointer items-start gap-2 text-body has-disabled:cursor-not-allowed has-disabled:opacity-50",
         className,
       )}
     >
