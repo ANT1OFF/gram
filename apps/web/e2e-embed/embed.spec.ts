@@ -1098,6 +1098,18 @@ test.describe("on a phone", () => {
     expect(errors).toEqual([]);
   });
 
+  test("a page that leaves its title to the header keeps its line whole, its actions under it", async ({
+    page,
+  }) => {
+    const errors = await mounted(page, "/govern/limits");
+    const line = await page.getByText("What the organisation may spend.").boundingBox();
+    const action = await page.getByTestId("fixture-popover-trigger").boundingBox();
+    // The line takes the page's width rather than sharing it with the action.
+    expect(line?.width).toBeGreaterThan(320);
+    expect(action?.y).toBeGreaterThanOrEqual((line?.y ?? 0) + (line?.height ?? 0));
+    expect(errors).toEqual([]);
+  });
+
   test("the roomy menu's foot names the person and says Settings is behind their button", async ({
     page,
   }) => {
