@@ -900,6 +900,53 @@ test("the theme can draw the sidebar inset, with glyphs of its colour; without i
   expect(errors).toEqual([]);
 });
 
+/** `#rrggbb` as `getComputedStyle` names it. */
+const rgb = (hex: string) =>
+  `rgb(${[1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)).join(", ")})`;
+
+test("defaults give the look by name until the person picks their own", async ({ page }) => {
+  const errors = await mounted(page, "/?look-defaults");
+  const look = () =>
+    page.evaluate(() => {
+      const root = document.documentElement;
+      const sidebar = document.querySelector('[data-testid="overview-sidebar"]')!;
+      const search = sidebar.querySelector('[data-testid="overview-search"] svg')!;
+      return {
+        palette: root.dataset["palette"],
+        sidebar: root.dataset["sidebar"],
+        backdrop: root.dataset["backdrop"],
+        picture: document.querySelector("#gram-backdrop svg") !== null,
+        margin: getComputedStyle(sidebar).margin,
+        icon: getComputedStyle(search).color,
+        accentText: getComputedStyle(root).getPropertyValue("--accent-text").trim(),
+      };
+    });
+  const started = await look();
+  expect(started).toMatchObject({
+    palette: "petrol-dark~plum",
+    sidebar: "inset",
+    backdrop: "fjord",
+    picture: true,
+    margin: "8px",
+  });
+  // The glyphs take the accent's text colour, written as a token, not a colour of the app's.
+  expect(started.icon).toBe(rgb(started.accentText));
+
+  // The person's own choices win over the defaults.
+  await page.evaluate(async () => {
+    const mock = (
+      window as unknown as { gramMock: { simulateSettingsChange(patch: object): Promise<void> } }
+    ).gramMock;
+    await mock.simulateSettingsChange({
+      appearance: { paletteId: "rose-dark", accent: "palette", backdrop: "off", sidebar: "flush" },
+    });
+  });
+  await expect
+    .poll(look)
+    .toMatchObject({ palette: "rose-dark", sidebar: "flush", backdrop: "off", picture: false });
+  expect(errors).toEqual([]);
+});
+
 test("a collapsible group starts closed, keeps its place in view, and stays as it was left", async ({
   page,
 }) => {

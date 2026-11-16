@@ -372,6 +372,19 @@ mountGram({
         },
       }
     : {}),
+  // An app that follows Gram's palettes and picks its default look by name only.
+  ...(new URLSearchParams(location.search).has("look-defaults")
+    ? {
+        defaults: {
+          palette: "petrol-dark",
+          accent: "plum",
+          sidebar: "inset",
+          sidebarIcons: "accent",
+          backdrop: "fjord",
+          surfaces: "frosted",
+        } as const,
+      }
+    : {}),
   shell: {
     machines: {
       // What a real app hands to its own service, which begins the wait again and starts a machine.
