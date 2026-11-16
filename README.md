@@ -7,7 +7,7 @@
 A desktop app for macOS and Linux where an orchestrator agent runs a team of Claude Code and Codex
 workers for you, each in its own git worktree, from task to merged pull request.
 
-![Gram on a workspace's orchestrator. The sidebar has a 1 question pill, then the storefront workspace and its four workers: Order email asks you, Cart summary is working, Address picker has pull request #142 with checks passed and review to come, and Typo tolerance has #424 with checks running; then a few solo threads. The title bar holds Chat and Board and the orchestrator's Memory, with the usage button on the right. In the chat, the task given to the orchestrator, its reply that it started six workers, and a card per feature with each worker's state and pull request, two of them merged.](docs/assets/gram-orchestrator.png)
+![Gram on a workspace's orchestrator. The sidebar has a 1 question pill, then the storefront workspace and its four workers: Order email asks you, Cart summary is working, Address picker has pull request #142 with checks passed and review to come, and Typo tolerance has #424 with checks running; then a few solo threads. The title bar holds Chat and Board, Fresh session and the orchestrator's Memory, with the usage button on the right. In the chat, the task given to the orchestrator, its reply that it started six workers, and a card per feature with each worker's state and pull request, two of them merged.](docs/assets/gram-orchestrator.png)
 
 - **An orchestrator per workspace.** You give it tasks; it writes a brief for each, starts a
   worker on it and answers what it can, passing the rest to you. New task (⌘N) goes either to an

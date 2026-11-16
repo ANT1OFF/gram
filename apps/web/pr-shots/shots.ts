@@ -346,8 +346,9 @@ const README_PARKED = ["t-flaky", "t-question", "t-plan", "t-background", "t-edi
  * panel closed and no usage limits reported, at `width` × `height`. The README's images in
  * `docs/assets/` are `readme-hero`, `readme-board`, `readme-inbox`, `readme-quiet` (`openReadmeQuiet`),
  * `readme-beside`, `readme-steer`, `readme-new-task` and `readme-palettes`, resized to at most 1600 px
- * wide and palette-quantised. `bun run --filter @gram/web pr:shots --shot readme-hero,… --mode dark
- * --after-only` retakes them in one run.
+ * wide and palette-quantised (256 colours, fast octree, no dither), all but `readme-inbox`: its
+ * blurred backdrop bands into blobs when quantised, so it stays full colour. `bun run --filter
+ * @gram/web pr:shots --shot readme-hero,… --mode dark --after-only` retakes them in one run.
  */
 const openReadme = async (page: Page, width: number, height: number) => {
   await page.addInitScript(() => sessionStorage.setItem("gram.mock.limits", "none"));
