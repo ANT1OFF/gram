@@ -28,7 +28,8 @@ export const WIP_REF_PREFIX = "refs/gram/wip";
  * back from there. Unset, or not a plain name, the ref is `refs/gram/wip/<thread>`.
  */
 export const WIP_NAMESPACE_ENV = "GRAM_HOST_WIP_NAMESPACE";
-const NAMESPACE = /^[A-Za-z0-9._-]{1,128}$/;
+/** A plain name: one path segment git takes as a ref component, so never `.` or `..`. */
+const NAMESPACE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/;
 const hostNamespace = (): string | undefined => {
   const value = process.env[WIP_NAMESPACE_ENV];
   return value !== undefined && NAMESPACE.test(value) ? value : undefined;
@@ -140,11 +141,17 @@ export const isPushRemote = (remote: string): boolean =>
 /** The transports a push may use, as a clone on a host may: never a helper, a file or `git://`. */
 export const WIP_PUSH_PROTOCOLS = "https:ssh";
 
-/** The thread a work-in-progress ref is for, when `ref` is one this module wrote. */
+/**
+ * The thread a work-in-progress ref is for, when `ref` is one this module wrote:
+ * `refs/gram/wip/<thread>`, or `refs/gram/wip/<namespace>/<thread>` under a host's namespace.
+ */
 const threadOfWipRef = (ref: string): string | undefined => {
   const prefix = `${WIP_REF_PREFIX}/`;
-  const id = ref.slice(0, prefix.length) === prefix ? ref.slice(prefix.length) : "";
-  return isValidCheckpointId(id) ? id : undefined;
+  if (ref.slice(0, prefix.length) !== prefix) return undefined;
+  const rest = ref.slice(prefix.length).split("/");
+  const id = rest.at(-1) ?? "";
+  if (rest.length > 2 || !isValidCheckpointId(id)) return undefined;
+  return rest.length === 1 || isWipRefOf(ref, id) ? id : undefined;
 };
 
 /**

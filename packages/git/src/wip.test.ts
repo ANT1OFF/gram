@@ -98,6 +98,38 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
     }).pipe(provide),
   );
 
+  it.live("pushes and reads back the work under the host's namespace", () =>
+    Effect.gen(function* () {
+      const before = process.env[WIP_NAMESPACE_ENV];
+      process.env[WIP_NAMESPACE_ENV] = "personal-ab12";
+      try {
+        const { repo, origin } = withOrigin();
+        write(nodePath.join(repo, "tracked.txt"), "kept under a name\n");
+        const kept = yield* snapshotWip(repo, "thread-1");
+        expect(kept.ref).toBe("refs/gram/wip/personal-ab12/thread-1");
+        yield* pushWip(repo, kept, "origin", FILE);
+        expect(run(origin, "rev-parse", kept.ref).trim()).toBe(kept.commit);
+        expect(run(origin, "show", `${kept.ref}:tracked.txt`)).toBe("kept under a name\n");
+        // Read back on another machine of the same host.
+        const { clone } = cloneOf(origin);
+        expect((yield* fetchWip(clone, "thread-1", "origin", FILE))?.commit).toBe(kept.commit);
+        // Deeper, or not a plain name: not a snapshot this module wrote.
+        for (const ref of [
+          "refs/gram/wip/a/b/thread-1",
+          "refs/gram/wip/personal-ab12/",
+          "refs/gram/wip/../thread-1",
+        ])
+          expect(
+            (yield* Effect.flip(pushWip(repo, { ...kept, ref }, "origin", FILE))).message,
+            ref,
+          ).toContain("not a work-in-progress snapshot");
+      } finally {
+        if (before === undefined) delete process.env[WIP_NAMESPACE_ENV];
+        else process.env[WIP_NAMESPACE_ENV] = before;
+      }
+    }).pipe(provide),
+  );
+
   it.live("refuses an id or a remote that git would read as something else", () =>
     Effect.gen(function* () {
       const { repo } = withOrigin();
