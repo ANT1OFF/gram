@@ -7,7 +7,7 @@ import { expect, it } from "vitest";
 // not dark until ThemeRoot pairs it. `e2e/boot-paint.spec.ts` runs it once in a real page.
 
 const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
-const source = html.match(/<script>([\s\S]*?)<\/script>/)![1]!;
+const source = html.match(/<script>([\s\S]*?)<\/script\s*>/i)![1]!;
 
 /** Runs the boot script over `stored` (`gram.theme`'s state) and returns the root's dataset. */
 const boot = (stored: object | undefined, systemLight = false) => {
