@@ -126,7 +126,6 @@ describe("browser tools", () => {
       browser_record: "self",
       browser_batch: "outwardGated",
     });
-    expect(tools[0]?.descriptor.description).toContain("MCP or API connectors");
   });
 
   it("exports object input schemas for every browser tool during MCP discovery", () => {

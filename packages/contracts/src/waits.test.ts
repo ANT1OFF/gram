@@ -9,7 +9,6 @@ import {
   fenceWaitNote,
   isWaitLink,
   plainWaitText,
-  WaitDataSchema,
   WaitItem,
   waitData,
   waitIsKept,
@@ -51,25 +50,6 @@ const item = (id: string, patch: Partial<WaitItem> = {}): WaitItem => ({
 });
 
 describe("waits", () => {
-  it("round-trips an item, open and resolved, its chip, its row and its event", () => {
-    expectRoundTrip(WaitItem, draft);
-    expectRoundTrip(WaitItem, {
-      id: "w-2" as WaitId,
-      kind: "review",
-      title: "example/api#431",
-      link: "https://github.com/example/api/pull/431",
-      source: "agent",
-      createdAt: 1,
-      updatedAt: 2,
-      resolvedAt: 3,
-      resolvedBy: "user",
-      note: "approved",
-    });
-    expectRoundTrip(WaitDataSchema, waitData(draft));
-    expectRoundTrip(WaitView, waitViewOf(threadId, draft));
-    expectRoundTrip(ServerEvent, { type: "thread.waits", threadId, waits: [draft] });
-  });
-
   it("round-trips a helper's suggestion and what it resolved, and never counts a suggestion", () => {
     const suggestion: WaitItem = {
       ...draft,

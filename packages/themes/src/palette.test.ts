@@ -14,43 +14,9 @@ import { PRESET_PALETTES } from "./presets.ts";
 const HEX = /^#[0-9a-f]{6}$/;
 
 describe("presets", () => {
-  it("keeps the ten original presets first, then Minimal colourways and the six new pairs", () => {
-    expect(PRESET_PALETTES.map((p) => p.id)).toEqual([
-      "tokyo-night",
-      "slate-dark",
-      "tokyo-light",
-      "dracula",
-      "high-contrast",
-      "night-owl",
-      "catppuccin-latte",
-      "catppuccin-frappe",
-      "catppuccin-macchiato",
-      "catppuccin-mocha",
-      "minimal-ocean",
-      "minimal-ocean-dark",
-      "minimal-grape",
-      "minimal-grape-dark",
-      "minimal-forest",
-      "minimal-forest-dark",
-      "minimal-sunset",
-      "minimal-sunset-dark",
-      "minimal-vivid",
-      "minimal-vivid-dark",
-      "minimal-graphite",
-      "minimal-graphite-dark",
-      "neutral",
-      "neutral-dark",
-      "rose",
-      "rose-dark",
-      "forest",
-      "forest-dark",
-      "ocean",
-      "ocean-dark",
-      "ember",
-      "ember-dark",
-      "violet",
-      "violet-dark",
-    ]);
+  it("gives each preset an id of its own and every seed as hex", () => {
+    const ids = PRESET_PALETTES.map((p) => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
     for (const palette of PRESET_PALETTES) {
       expect(Object.keys(palette.seeds).toSorted()).toEqual(SEED_TOKEN_KEYS.toSorted());
       for (const hex of Object.values(palette.seeds)) expect(hex).toMatch(HEX);

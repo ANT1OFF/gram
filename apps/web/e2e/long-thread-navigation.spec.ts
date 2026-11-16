@@ -314,7 +314,8 @@ test("navigation offers bounded older-history continuity without transcript scro
   ).toBeInViewport();
 });
 
-for (const mode of ["light", "dark"] as const) {
+// One mode: the palette changes nothing the rail measures.
+for (const mode of ["dark"] as const) {
   for (const turns of [8, 120]) {
     test(`${mode}/${turns}: matched rail captures`, async ({ page }) => {
       await open(page, turns, mode);

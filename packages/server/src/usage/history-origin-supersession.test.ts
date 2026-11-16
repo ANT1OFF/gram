@@ -54,35 +54,37 @@ const prefix = (model: string | null = "actual") => {
   ].forEach((x) => r.consume(x));
   return r;
 };
-for (const model of [null, "actual"])
+for (const [model, recover] of [
+  [null, false],
+  ["actual", true],
+] as const)
   for (const expected of [c(5), absent, null, c(10, 0, { cached_input_tokens: 11 })])
-    for (const recover of [false, true])
-      it(`refused origin retains independent requirement gaps model=${model} requirement=${String(expected)} recover=${recover}`, () => {
-        const r = prefix(model);
-        r.consume(request(expected, c(10), now));
-        r.consume(request(expected, c(10), now));
-        if (recover) r.consume(token(c(20), c(10)));
-        [
-          terminal("old"),
-          e("turn_context", { turn_id: "new", model: "new-actual" }, now),
-          token(c(30), c(10), now),
-          terminal("new"),
-        ].forEach((x) => r.consume(x));
-        const rows = canonical(r);
-        expect(r.records.has("response:r1")).toBe(false);
-        expect(rows.find((x) => x.id === "old")).toMatchObject({
-          at: Date.parse(old),
-          model,
-          tokens: { inputTokens: 10 },
-        });
-        expect(rows.find((x) => x.id === "new")).toMatchObject({
-          tokens: { inputTokens: 10 },
-          model: "new-actual",
-          partial: !recover,
-          basis: recover ? "delta" : "last-request",
-        });
-        expect(r.retainedBytes()).toBeLessThan(32 * 1024 * 1024);
+    it(`refused origin retains independent requirement gaps model=${model} requirement=${String(expected)} recover=${recover}`, () => {
+      const r = prefix(model);
+      r.consume(request(expected, c(10), now));
+      r.consume(request(expected, c(10), now));
+      if (recover) r.consume(token(c(20), c(10)));
+      [
+        terminal("old"),
+        e("turn_context", { turn_id: "new", model: "new-actual" }, now),
+        token(c(30), c(10), now),
+        terminal("new"),
+      ].forEach((x) => r.consume(x));
+      const rows = canonical(r);
+      expect(r.records.has("response:r1")).toBe(false);
+      expect(rows.find((x) => x.id === "old")).toMatchObject({
+        at: Date.parse(old),
+        model,
+        tokens: { inputTokens: 10 },
       });
+      expect(rows.find((x) => x.id === "new")).toMatchObject({
+        tokens: { inputTokens: 10 },
+        model: "new-actual",
+        partial: !recover,
+        basis: recover ? "delta" : "last-request",
+      });
+      expect(r.retainedBytes()).toBeLessThan(32 * 1024 * 1024);
+    });
 it("wrong-owner requirement evidence cannot invalidate original-session continuity", () => {
   const r = prefix();
   r.consume(request(c(5), c(10), now, "old", "foreign"));

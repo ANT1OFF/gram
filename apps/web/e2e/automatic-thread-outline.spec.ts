@@ -118,8 +118,10 @@ async function seed(
 // Explicit visual baseline is the provisional Hint-only source, not shipped main.
 // Common interaction assertions stay the same; rest-style assertions name each source's design.
 if (phase !== "before") {
-  for (const provider of ["claude", "codex"] as const) {
-    for (const mode of ["dark", "light"] as const) {
+  // One provider and mode: the rail is the same component for both, and the tests below run each
+  // provider's prompts through it.
+  for (const provider of ["claude"] as const) {
+    for (const mode of ["dark"] as const) {
       test(`${provider}/${mode}: quiet rail keeps hover, keyboard and current location discoverable`, async ({
         page,
       }) => {

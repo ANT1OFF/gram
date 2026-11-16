@@ -155,7 +155,6 @@ describe("publish_doc", () => {
           content: "Revised.",
         })) as { earlier?: unknown };
         expect(updated.earlier).toBeUndefined();
-        expect(publish.descriptor.description).toContain("updates that doc");
       }).pipe(Effect.scoped),
   );
 

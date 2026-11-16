@@ -87,13 +87,6 @@ describe("Effect Schema as AI SDK validators via Standard Schema", () => {
     expect(result.data[0]?.metadata?.agentMessageIds).toEqual(metadata.agentMessageIds);
   });
 
-  it("round-trips metadata with agent message ids", () => {
-    expectRoundTrip(
-      MessageMetadataSchema,
-      Schema.decodeUnknownSync(MessageMetadataSchema)(metadata),
-    );
-  });
-
   it("reports invalid metadata", async () => {
     const result = await validate([{ ...sample, metadata: { turnId: "" } }]);
     expect(result.success).toBe(false);

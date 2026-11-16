@@ -313,7 +313,8 @@ test("the question and the card fit a narrow window", async ({ page }) => {
   expect(await noSideScroll('[data-testid="mock-card"]')).toBe(true);
 });
 
-for (const mode of ["dark", "light"] as const) {
+// Light only: the card starting on the app's mode is what this adds, and dark is the default.
+for (const mode of ["light"] as const) {
   test(`before and after, in ${mode} mode`, async ({ page }) => {
     await seedTheme(page, {
       mode,

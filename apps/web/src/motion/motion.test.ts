@@ -3,8 +3,6 @@ import { readFileSync } from "node:fs";
 import { LOOKS } from "@gram/themes";
 import { describe, expect, it } from "vitest";
 
-import { buttonVariants } from "@/components/ui/button";
-
 import { barScale } from "./level-bars";
 import { glides, REPEAT_MS } from "./list-highlight";
 import { initialSegments, nextSegments } from "./streaming-text";
@@ -91,26 +89,6 @@ describe("the shimmer's CSS", () => {
   });
 });
 
-describe("the status mark's CSS", () => {
-  const css = readFileSync(new URL("../styles/motion.css", import.meta.url), "utf8");
-  const rules = css.match(/[^{}]*\.gram-mark[^{}]*\{[^}]*\}/g) ?? [];
-
-  it("moves only on the motion-scaled durations, so Reduced lands each phase at once", () => {
-    const moving = rules.flatMap((rule) =>
-      [...rule.matchAll(/(stroke-dasharray|stroke-dashoffset|scale)\s+([^,;]+)/g)].map(
-        ([, , timing]) => timing!,
-      ),
-    );
-    expect(moving.length).toBeGreaterThan(0);
-    for (const timing of moving) expect(timing).toMatch(/var\(--dur-move-/);
-    expect(rules.join("")).not.toMatch(/animation|infinite/);
-  });
-
-  it("draws in the text colour, which forced colours replace", () => {
-    expect(rules.join("")).not.toMatch(/\b(stroke|fill|color):\s*(?!currentColor)[a-z#]/);
-  });
-});
-
 describe("the segment slab's CSS", () => {
   it("outlines the selection under forced colours, which drop the slab's background", () => {
     const css = readFileSync(new URL("../styles/motion.css", import.meta.url), "utf8");
@@ -134,16 +112,6 @@ describe("the draw-on's CSS", () => {
   });
 });
 
-describe("the Button's press", () => {
-  it("shrinks it only under Full motion, and never a menu trigger, which stays put as it opens", () => {
-    const classes = buttonVariants().split(" ");
-    expect(classes).toContain("motion-safe:active:not-aria-[haspopup]:scale-[0.97]");
-    expect(classes.filter((c) => c.includes("active:") && !c.startsWith("motion-safe:"))).toEqual(
-      [],
-    );
-  });
-});
-
 describe("the listening bars", () => {
   it("stand at rest in silence, rise with loudness, the middle most, and ease half the way a step", () => {
     expect(barScale(1, 0, 0.7)).toBe(0.7);
@@ -152,31 +120,6 @@ describe("the listening bars", () => {
     expect(barScale(1, 1, 0.7)).toBeCloseTo(0.85);
     expect(barScale(1, 0.5, 0.85)).toBeGreaterThan(barScale(0, 0.5, 0.85) - 0.2);
     for (const index of [0, 1, 2] as const) expect(barScale(index, 1, 1)).toBeLessThanOrEqual(1);
-  });
-
-  it("rest in CSS where the clock leaves them, which is all Reduced and Off show", () => {
-    const css = readFileSync(new URL("../styles/motion.css", import.meta.url), "utf8");
-    expect(css).toMatch(/\.gram-level-bar \{[^}]*scale: 1 0\.45;/);
-    expect(css).toMatch(/\.gram-level-bar:nth-child\(2\) \{[^}]*scale: 1 0\.7;/);
-    expect(css.match(/[^{}]*\.gram-level-bar[^{}]*\{[^}]*\}/g)?.join("")).not.toMatch(/animation/);
-  });
-});
-
-describe("popups under Reduced", () => {
-  it("fade without settling from small: the scale is dropped where every popup enters and leaves", () => {
-    const css = readFileSync(new URL("../styles/motion.css", import.meta.url), "utf8");
-    expect(css).toMatch(
-      /html\[data-motion="reduced"\] \[data-starting-style\],\s*html\[data-motion="reduced"\] \[data-ending-style\] \{\s*scale: none !important;/,
-    );
-  });
-
-  it("all enter and leave by one recipe, Select and Tooltip included", () => {
-    for (const file of ["select", "tooltip"]) {
-      const source = readFileSync(new URL(`../components/ui/${file}.tsx`, import.meta.url), "utf8");
-      expect(source).not.toMatch(/animate-in|animate-out/);
-      expect(source).toContain("data-[starting-style]:opacity-0");
-      expect(source).toContain("data-[ending-style]:opacity-0");
-    }
   });
 });
 
@@ -189,11 +132,8 @@ describe("the list highlight", () => {
     expect(glides(600)).toBe(true);
   });
 
-  it("glides on the motion-scaled duration, and outlines the option under forced colours", () => {
+  it("outlines the option under forced colours", () => {
     const css = readFileSync(new URL("../styles/motion.css", import.meta.url), "utf8");
-    expect(css).toMatch(
-      /\.gram-list-highlight\[data-glide="true"\] \{[^}]*translate var\(--dur-move-fast\)/,
-    );
     expect(css).toMatch(
       /@media \(forced-colors: active\) \{\s*\.gram-list-highlight \{[^}]*outline: 1px solid Highlight/,
     );

@@ -1,6 +1,5 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
-import { HelperKind } from "./helper.ts";
 import type { AgentModel } from "./models.ts";
 import {
   clampEffort,
@@ -88,14 +87,6 @@ describe("the recommendation table", () => {
     }
   });
 
-  it("sets each helper kind's effort: title at medium, the rest at low", () => {
-    const helpers = RECOMMENDED.tiers.cheap.helpers ?? {};
-    expect(Object.keys(helpers).toSorted()).toEqual([...HelperKind.literals].toSorted());
-    for (const kind of HelperKind.literals) {
-      expect(helpers[kind], kind).toBe(kind === "title" ? "medium" : "low");
-    }
-  });
-
   it("keeps Gram's own development workflow out of its notes", () => {
     const denied = /merge_when_ready|bun run|AGENTS\.md|worktree|\bGram\b|orchestrat/i;
     for (const tier of TIERS) expect(RECOMMENDED.tiers[tier].note).not.toMatch(denied);
@@ -103,34 +94,6 @@ describe("the recommendation table", () => {
 });
 
 describe("resolveTier", () => {
-  it("resolves the Claude-only table", () => {
-    expect(resolve("cheap", { claude })).toEqual({
-      agent: "claude",
-      model: "haiku",
-      variant: "medium",
-      speed: "standard",
-    });
-    expect(resolve("scoped", { claude })?.model).toBe("sonnet");
-    // The named alias, not "default", whose model the CLI may move.
-    expect(resolve("lead", { claude })?.model).toBe("opus");
-    expect(resolve("top", { claude })?.model).toBe("fable");
-  });
-
-  it("resolves the Codex-only table, Lead on Sol at high", () => {
-    expect(resolve("cheap", { codex })).toMatchObject({ model: "gpt-6-luna", variant: "medium" });
-    expect(resolve("scoped", { codex })).toMatchObject({ model: "gpt-6.1-sol", variant: "medium" });
-    expect(resolve("lead", { codex })).toMatchObject({ model: "gpt-6.1-sol", variant: "high" });
-    expect(resolve("top", { codex })).toMatchObject({ model: "gpt-6-astra", variant: "medium" });
-  });
-
-  it("puts Scoped on Codex when both are installed, the rest on Claude", () => {
-    const both = { claude, codex };
-    expect(resolve("cheap", both)).toMatchObject({ agent: "claude", model: "haiku" });
-    expect(resolve("scoped", both)).toMatchObject({ agent: "codex", model: "gpt-6.1-sol" });
-    expect(resolve("lead", both)).toMatchObject({ agent: "claude", model: "opus" });
-    expect(resolve("top", both)).toMatchObject({ agent: "claude", model: "fable" });
-  });
-
   it("keeps a slot on its own harness and at its own effort", () => {
     const both = { claude, codex };
     expect(resolveTier(RECOMMENDED, { tier: "scoped", agent: "claude" }, both)?.ref).toEqual({

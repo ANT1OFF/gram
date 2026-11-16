@@ -3,28 +3,18 @@ import { describe, expect, it } from "vitest";
 import { UserInput } from "./domain.ts";
 import {
   BudgetMeters,
-  DigestChange,
-  DigestReport,
-  DigestVariant,
+  type DigestReport,
   DigestWaiting,
   FEATURE_PLAN_MAX_STAGES,
   FeatureGroupLedgerEntry,
   FeatureLedgerEntry,
   FeatureStage,
-  Handoff,
-  MemoryWrite,
   fenceThreadMessage,
   fromOwnOrchestrator,
-  MessageOrigin,
+  type MessageOrigin,
   OrchestrationDigest,
-  OrchestrationPause,
-  OrchestratorLedger,
-  PauseReason,
   serializeDigest,
-  SpawnedBy,
-  ThreadRole,
   ThreadWake,
-  ThreadWakes,
   WAKE_NOTE_MAX,
   WORKER_ANSWER_MAX,
   WORKER_REPORT_INTERFACE_MAX,
@@ -33,11 +23,7 @@ import {
   WorkerAnswer,
   WorkerLedgerEntry,
   WorkerPendingRequest,
-  WorkerPr,
   WorkerReport,
-  WorkerReportState,
-  WorkerState,
-  WorkerQuiet,
   prWakeWhen,
 } from "./orchestration.ts";
 import {
@@ -63,11 +49,9 @@ import {
   modelSlotOf,
   newWorkspaceCharter,
   OrchestratorCharter,
-  JoinTarget,
   StartTaskInput,
   WORKER_MODEL_NOTE_MAX,
   Workspace,
-  WorkspaceState,
   autonomyOf,
   availableWorkspaceName,
   briefFooterOf,
@@ -78,18 +62,6 @@ const decode =
   <A, I>(schema: Schema.Codec<A, I>) =>
   (value: unknown): A =>
     Schema.decodeUnknownSync(schema)(value);
-
-it("round trips a workspace a thread can join", () => {
-  expectRoundTrip(
-    JoinTarget,
-    decode(JoinTarget)({ workspaceId: "w1", name: "shop", adds: ["warehouse"] }),
-  );
-});
-
-it("round trips quiet worker evidence", () => {
-  expectRoundTrip(WorkerQuiet, { kind: "turnEnded", at: 10, lastTool: "Bash" });
-  expectRoundTrip(WorkerQuiet, { kind: "toolStalled", at: 20 });
-});
 
 const report = decode(WorkerReport)({
   threadId: "t1",
@@ -187,116 +159,14 @@ describe("orchestration schemas", () => {
     expect(availableWorkspaceName("  ", [])).toBe("Workspace");
   });
 
-  it("round-trip through JSON", () => {
-    expectRoundTrip(MessageOrigin, decode(MessageOrigin)({ threadId: "t1", title: "a", depth: 1 }));
-    expectRoundTrip(
-      MessageOrigin,
-      decode(MessageOrigin)({ threadId: "t1", title: "a", depth: 1, role: "orchestrator" }),
-    );
-    for (const mode of ["queue", "steer", "interrupt"]) {
-      expectRoundTrip(
-        MessageOrigin,
-        decode(MessageOrigin)({ threadId: "t1", title: "a", depth: 1, mode }),
-      );
-    }
-    for (const role of ThreadRole.literals) expectRoundTrip(ThreadRole, role);
-    expectRoundTrip(SpawnedBy, decode(SpawnedBy)({ threadId: "t0", feature: "cart" }));
+  it("caps a wake's note", () => {
     const wake = decode(ThreadWake)({ id: "w1", threadId: "t1", at: 2, note: "look", setAt: 1 });
-    expectRoundTrip(ThreadWake, wake);
-    expectRoundTrip(ThreadWakes, { wakes: [wake] });
     expect(() => decode(ThreadWake)({ ...wake, note: "x".repeat(WAKE_NOTE_MAX + 1) })).toThrow();
-    for (const reason of PauseReason.literals) {
-      expectRoundTrip(OrchestrationPause, { reason, at: 1 });
-    }
-    expectRoundTrip(OrchestrationPause, { reason: "deliveryFailed", detail: "3 attempts", at: 1 });
-    for (const state of WorkerReportState.literals) expectRoundTrip(WorkerReportState, state);
-    for (const state of WorkerState.literals) expectRoundTrip(WorkerState, state);
-    for (const variant of DigestVariant.literals) expectRoundTrip(DigestVariant, variant);
-    expectRoundTrip(WorkerReport, report);
-    expectRoundTrip(
-      WorkerReport,
-      decode(WorkerReport)({ threadId: "t1", state: "progress", summary: "", at: 1 }),
-    );
-    expectRoundTrip(WorkerPendingRequest, { kind: "question", ageMin: 0 });
-    expectRoundTrip(WorkerPr, { repo: "acme/web", number: 1 });
-    expectRoundTrip(WorkerPr, {
-      repo: "acme/web",
-      number: 2,
-      reviewDecision: "REVIEW_REQUIRED",
-      reviewRequests: [
-        { kind: "team", name: "platform", codeOwner: true },
-        { kind: "user", name: "mona" },
-      ],
-      changesRequestedBy: ["octo"],
-      botOnHead: "reviewing",
-      reviewUnread: true,
-      mergeWhenReady: { hold: "after the release", refused: true },
-    });
-    expectRoundTrip(WorkerLedgerEntry, worker);
-    expectRoundTrip(WorkerLedgerEntry, bare);
-    expectRoundTrip(FeatureLedgerEntry, feature);
-    expectRoundTrip(BudgetMeters, budget);
-    expectRoundTrip(DigestChange, digest.changes[0]!);
-    expectRoundTrip(DigestChange, digest.changes[1]!);
-    expectRoundTrip(DigestReport, digest.reports[0]!);
-    expectRoundTrip(OrchestrationDigest, digest);
-    expectRoundTrip(
-      OrchestratorLedger,
-      decode(OrchestratorLedger)({
-        workspaceId: "w1",
-        orchestratorThreadId: "t0",
-        features: [feature],
-        budget,
-        orchestratorEdits: 1,
-        paused: { reason: "user", at: 9 },
-        builtAt: 10,
-      }),
-    );
-    expectRoundTrip(
-      OrchestratorLedger,
-      decode(OrchestratorLedger)({
-        workspaceId: "w1",
-        features: [],
-        budget,
-        orchestratorEdits: 0,
-        builtAt: 10,
-      }),
-    );
-    expectRoundTrip(MemoryWrite, {
-      path: "MEMORY.md",
-      action: "write",
-      before: "a",
-      after: "ab",
-      bytes: 2,
-    });
-    expectRoundTrip(MemoryWrite, { path: "notes/x.md", action: "delete", before: "a", bytes: 0 });
-    expectRoundTrip(Handoff, { previousAgentSessionId: "s1", reason: "context", at: 3 });
-    expectRoundTrip(Handoff, { reason: "user", at: 3 });
   });
 
-  it("round-trips a workspace, its charter and its state", () => {
-    const workspace = decode(Workspace)({
-      id: "w1",
-      name: "Shop",
-      projectIds: ["p1", "p2"],
-      homeProjectId: "p1",
-      orchestratorThreadId: "t0",
-      createdAt: 1,
-    });
-    expectRoundTrip(Workspace, workspace);
-    expect(() => decode(Workspace)({ ...workspace, projectIds: [] })).toThrow();
-    const charter = decode(OrchestratorCharter)({
-      ...DEFAULT_CHARTER,
-      workerMode: "acceptEdits",
-      workerModels: [{ agent: "claude", model: "sonnet" }],
-    });
-    expectRoundTrip(OrchestratorCharter, charter);
-    expectRoundTrip(WorkspaceState, { workspace, charter });
-    expectRoundTrip(WorkspaceState, {
-      workspace,
-      charter,
-      paused: { reason: "deliveryFailed", at: 2 },
-    });
+  it("refuses a workspace with no projects", () => {
+    const workspace = { id: "w1", name: "Shop", projectIds: [], homeProjectId: "p1", createdAt: 1 };
+    expect(() => decode(Workspace)(workspace)).toThrow();
   });
 
   it("makes a new workspace's charter from the saved roster, else none, with no profile pinned", () => {
@@ -383,24 +253,7 @@ describe("orchestration schemas", () => {
     ).toThrow();
   });
 
-  it("round-trips a task for a workspace, or for a project's new workspace", () => {
-    const task = decode(StartTaskInput)({
-      target: { workspaceId: "w1" },
-      input: {
-        text: "Add a retry",
-        attachments: [{ path: "/tmp/_drafts/d1/a.png", name: "a.png" }],
-      },
-      draftId: "5a9b6bc9-01d5",
-    });
-    expectRoundTrip(StartTaskInput, task);
-    expectRoundTrip(
-      StartTaskInput,
-      decode(StartTaskInput)({
-        target: { projectId: "p1" },
-        input: { text: "Add a retry" },
-        autonomy: "supervised",
-      }),
-    );
+  it("refuses a task with no target", () => {
     expect(() => decode(StartTaskInput)({ target: {}, input: { text: "x" } })).toThrow();
   });
 

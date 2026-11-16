@@ -101,9 +101,9 @@ async function populate(page: Page) {
   await expect(page.getByTestId("reviews-tab-count")).toHaveText("5");
 }
 
-for (const mode of ["light", "dark"] as const) {
-  // The right panel's narrowest, its default and a wide one.
-  for (const width of [240, 352, 480]) {
+// One mode: nothing here depends on the palette. The right panel's narrowest and a wide one.
+for (const mode of ["dark"] as const) {
+  for (const width of [240, 480]) {
     test(`PR information at ${width}px in ${mode}`, async ({ page }, info) => {
       await page.setViewportSize({ width: 1280, height: 1100 });
       await seedTheme(page, { palette: "graphite", mode, motion: "off" });

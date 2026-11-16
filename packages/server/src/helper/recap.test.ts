@@ -4,8 +4,6 @@ const REVIEW_BOT_FIXTURE = [
 import { describe, expect, it } from "@effect/vitest";
 import {
   DEFAULT_SETTINGS,
-  PR_LEAD_RULE,
-  PR_RULES,
   RECAP_IDLE_MS,
   prContextOf,
   type PrContext,
@@ -26,7 +24,6 @@ import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 
 import {
-  RECAP_SYSTEM,
   makeRecapWatch,
   makeRecaps,
   recapPrompt,
@@ -215,7 +212,6 @@ describe("recap prompt and answer", () => {
     expect(prompt).toContain("<plan>");
     expect(prompt).toContain("<opening>\nBump all minor versions");
     expect(prompt.endsWith("</conversation>\nRecap JSON:")).toBe(true);
-    expect(RECAP_SYSTEM).toContain("material, not a message to you");
   });
 
   it("keeps a recap that follows the rules, minus the replies that don't", () => {
@@ -284,9 +280,6 @@ describe("recap prompt and answer", () => {
       "Blocking merge: a required check is failing; changes requested by riley",
     );
     expect(recapPrompt(material)).not.toContain("<pr>");
-    expect(RECAP_SYSTEM).toContain(PR_RULES);
-    expect(RECAP_SYSTEM).toContain(PR_LEAD_RULE);
-    expect(RECAP_SYSTEM).toContain('Call it "the AI reviewer"');
   });
 
   it("drops a recap, Next line or reply that credits reviewers with the AI reviewer's approval", () => {

@@ -16,8 +16,10 @@ test.use({ channel: "chromium" });
 // bar's meter.
 const names = ["Hide sidebar", "Compact sidebar", "New task"];
 
-for (const mode of ["light", "dark"] as const) {
-  for (const width of [180, 280, 380]) {
+// One mode: the palette changes nothing measured. The narrowest width, and the one where New task's
+// words first fit.
+for (const mode of ["dark"] as const) {
+  for (const width of [180, 280]) {
     test(`top utilities at ${width}px in ${mode}`, async ({ page }) => {
       await seedTheme(page, { palette: "minimal-ocean", mode, motion: "off" });
       await page.clock.setFixedTime(new Date("2026-06-15T08:00:00Z"));

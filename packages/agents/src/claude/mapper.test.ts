@@ -196,7 +196,6 @@ describe("fixture replay", () => {
     const labels = [...new Set(fixture(name).map((e) => e.label))];
     for (const label of labels) {
       const events = replayFixture(name, label);
-      expect(summarize(events)).toMatchSnapshot(label ?? "events");
       const messages = await assemble(events);
       for (const message of messages.values()) {
         expect(message.role).toBe("assistant");

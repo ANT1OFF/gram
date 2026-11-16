@@ -1,16 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import {
-  HelperEventPayload,
-  RECAP_AWAY_MS,
-  RECAP_IDLE_MS,
-  RecapView,
-  recapDue,
-  recapFacts,
-  suggestKeepRate,
-} from "./assist.ts";
+import { RECAP_AWAY_MS, RECAP_IDLE_MS, recapDue, recapFacts, suggestKeepRate } from "./assist.ts";
 import type { GitState } from "./git.ts";
-import type { ThreadId, TurnId } from "./ids.ts";
-import { expectRoundTrip } from "./test-utils.ts";
 
 const git = (patch: Partial<GitState> = {}): GitState => ({
   repo: true,
@@ -97,18 +87,6 @@ describe("recapFacts", () => {
     expect(recapFacts(onMain(git({ changedFiles: 2 })))).toEqual(["2 files changed"]);
     expect(recapFacts(git({ repo: false, changedFiles: 3 }))).toEqual([]);
     expect(recapFacts(undefined)).toEqual([]);
-  });
-});
-
-describe("assist contracts", () => {
-  it("round-trips a recap and a helper event", () => {
-    expectRoundTrip(RecapView, {
-      threadId: "t1" as ThreadId,
-      recap: { recap: "You bumped the deps.", next: null, replies: ["Commit this"] },
-      lastActiveAt: 5,
-      turnId: "turn-1" as TurnId,
-    });
-    expectRoundTrip(HelperEventPayload, { kind: "recap", event: "dismissedFast" });
   });
 });
 

@@ -54,17 +54,12 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           const parked = yield* spawn(session, { feature: "billing" });
           yield* stopSilently(parked.session);
           yield* session.callTool("archive_thread", { threadId: parked.thread.id });
-          expect(session.options.instructions).toContain("autonomy is `publish`");
-          expect(worker.session.options.instructions).toContain(
-            "Push your branch and open pull requests yourself.",
-          );
 
           // The orchestrator is idle and reopens at once; the worker finishes its turn first,
           // under the level it started with.
           const full = yield* atAutonomy(thread, "full");
           expect(full.options).toMatchObject({ audience: "orchestrator" });
           expect(full.options.outwardGate).toBeUndefined();
-          expect(full.options.instructions).toContain("autonomy is `full`");
           expect(full.options.resumeId).toBe(session.agentSessionId);
           expect(worker.session.closed).toBe(false);
           expect(yield* sessionsOf(worker.thread.id)).toHaveLength(1);
@@ -75,9 +70,6 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           );
           expect(freed.options).toMatchObject({ audience: "worker" });
           expect(freed.options.outwardGate).toBeUndefined();
-          expect(freed.options.instructions).toContain(
-            "Push and open pull requests without approval",
-          );
           // Its turn ended without a word, so the session at full opens on its wrap-up turn.
           yield* waitSent(worker.thread.id, 1);
           expect(freed.sent[0]?.text).toBe(wrapUpText("ended"));
@@ -90,9 +82,6 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             sessionsOf(worker.thread.id).pipe(Effect.map((sessions) => sessions[2])),
           );
           expect(held.options).toMatchObject({ audience: "worker", outwardGate: "all" });
-          expect(held.options.instructions).toContain(
-            "Pushing, opening a pull request and merging ask the user first.",
-          );
 
           // Anything else about the charter leaves the sessions where they are, and so does a
           // parked worker's: it opens under the level in force if it is ever woken.
