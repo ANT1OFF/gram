@@ -15,7 +15,7 @@
 import type { WorkerPlacement } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { createHash, randomBytes } from "node:crypto";
-import type { OnDemandHosts } from "./on-demand.ts";
+import type { OnDemandChoice, OnDemandHosts } from "./on-demand.ts";
 import { callOutside } from "./outside.ts";
 
 /** What an orchestrator asks of a worker's own machine. Short ids, as the provider offers them. */
@@ -134,6 +134,58 @@ export const parseOverTotal = (
     ...(total === undefined ? {} : { total }),
     machines,
   };
+};
+
+/** The fields of a worker's own machine an orchestrator picks, by the provider's choice id. */
+export const WORKER_MACHINE_PICKS = ["size", "architecture", "isolation", "environment"] as const;
+export type WorkerMachinePick = (typeof WORKER_MACHINE_PICKS)[number];
+
+const plain = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+/**
+ * Each pick as the provider's option id, from what an orchestrator wrote: the id itself, or an
+ * option's label or short label ("No Internet", "x86", "VM"), case and punctuation aside. A pick
+ * the provider offers no option for is refused with the options it offers, so the orchestrator can
+ * name one; with no choices offered, each pick goes to the provider as written, which decides.
+ */
+export const resolveWorkerPicks = (
+  offered: ReadonlyArray<OnDemandChoice> | undefined,
+  picks: Partial<Record<WorkerMachinePick, string | undefined>>,
+):
+  | { readonly picks: Partial<Record<WorkerMachinePick, string>> }
+  | { readonly refused: string } => {
+  const resolved: Partial<Record<WorkerMachinePick, string>> = {};
+  for (const key of WORKER_MACHINE_PICKS) {
+    const asked = picks[key]?.trim();
+    if (asked === undefined || asked === "") continue;
+    const choice = offered?.find((each) => each.id === key);
+    if (choice === undefined) {
+      resolved[key] = asked;
+      continue;
+    }
+    // Every option the person was offered, not only those their own machine may have: a worker's
+    // machine has limits of its own, which the provider checks.
+    const usable = choice.options;
+    const wanted = plain(asked);
+    const found =
+      usable.find((option) => option.id === asked) ??
+      usable.find(
+        (option) =>
+          plain(option.id) === wanted ||
+          plain(option.label) === wanted ||
+          (option.short !== undefined && plain(option.short) === wanted),
+      );
+    if (found === undefined)
+      return {
+        refused: `${choice.label}: ${asked} isn't offered here. Name one of: ${usable
+          .map((option) =>
+            option.label === option.id ? option.id : `${option.label} (${option.id})`,
+          )
+          .join(", ")}.`,
+      };
+    resolved[key] = found.id;
+  }
+  return { picks: resolved };
 };
 
 /**

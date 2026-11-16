@@ -7,7 +7,7 @@ import { ServerConfig } from "../../config.ts";
 import { ActingPerson, personKey } from "../../embedding/person.ts";
 import { EventHub } from "../../events/event-hub.ts";
 import { GitStatePublisher } from "../../git/publisher.ts";
-import { publishMachineStates } from "../../host/machine-events.ts";
+import { publishMachineStates, sendQueuedOnJoin } from "../../host/machine-events.ts";
 import { RemoteHosts } from "../../host/remote-hosts.ts";
 import { logFileName } from "../../logging/daily-file.ts";
 import { ServerLog, type ServerLogShape } from "../../logging/service.ts";
@@ -91,7 +91,10 @@ export const appHandlers = Effect.gen(function* () {
   // Absent in handler-only test layers; only the headless browser host is watched from a client.
   const serverBrowser =
     Option.getOrUndefined(yield* Effect.serviceOption(PanePort))?.view !== undefined;
-  if (Option.isSome(machines)) yield* publishMachineStates(hub, machines.value);
+  if (Option.isSome(machines)) {
+    yield* publishMachineStates(hub, machines.value);
+    yield* sendQueuedOnJoin(runtimes, machines.value);
+  }
 
   const withPorts = (summary: ThreadSummary): ThreadSummary => {
     const listening = ports.portsOf(summary.thread.id);
