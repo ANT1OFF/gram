@@ -7,7 +7,7 @@
 A desktop app for macOS and Linux where an orchestrator agent runs a team of Claude Code and Codex
 workers for you, each in its own git worktree, from task to merged pull request.
 
-![Gram on a workspace's orchestrator. The sidebar has a 1 question pill, then the workspace and its four workers: one asks you, one is editing code, one waits on review and one on checks, then a few solo threads. The title bar holds Chat and Board, the orchestrator's mark and its Memory, with the usage button on the right. Above the chat, 1 running, 2 in review and 2 merged today. In the chat, the task given to the orchestrator, its reply that it started six workers, and a card per feature with each worker's state and pull request, two of them merged.](docs/assets/gram-orchestrator.png)
+![Gram on a workspace's orchestrator. The sidebar has a 1 question pill, then the storefront workspace and its four workers: Order email asks you, Cart summary is working, Address picker has pull request #142 with checks passed and review to come, and Typo tolerance has #424 with checks running; then a few solo threads. The title bar holds Chat and Board and the orchestrator's Memory, with the usage button on the right. In the chat, the task given to the orchestrator, its reply that it started six workers, and a card per feature with each worker's state and pull request, two of them merged.](docs/assets/gram-orchestrator.png)
 
 - **An orchestrator per workspace.** You give it tasks; it writes a brief for each, starts a
   worker on it and answers what it can, passing the rest to you. New task (⌘N) goes either to an
@@ -93,7 +93,7 @@ its title opens that memory to read or edit.
   the last 7 or 30 days.
 - **The Board.** Each feature's workers and pull requests on one line, from briefed to merged.
 
-![Gram's Board as a grid with the columns Task, Stage, Now and Pull request. Three features are rows: Order email needs you, its template drafted; saved-addresses heads its three workers, Cart summary running, Address picker waiting on review of #142 and Addresses API merged as #418; search-typos heads Typo tolerance waiting on checks for #424 and Search suggestions merged as #421. Each row's stage is a bar through briefed to merged. The title bar reads 1 waiting · Open Inbox](docs/assets/gram-board.png)
+![Gram's Board as a grid with the columns Task, Stage, Now and Pull request. Three features are rows: Order email needs you, its template drafted; saved-addresses heads its three workers, Cart summary working, Address picker in review on #142 and Addresses API merged as #418; search-typos heads Typo tolerance waiting on checks for #424 and Search suggestions merged as #421. Each row's stage is a bar from briefed to merged, with the stage named under it. The title bar reads 1 waiting · Open Inbox, beside Hide finished.](docs/assets/gram-board.png)
 
 The Inbox opens over your work, so you can answer without leaving your place.
 
@@ -102,6 +102,28 @@ The Inbox opens over your work, so you can answer without leaving your place.
 Gram doesn't prescribe a way of working. The same pieces run as a swarm of workers in parallel
 that message each other, or with the orchestrator calling on one worker for one job.
 [Agents and features](docs/AGENTS_AND_FEATURES.md) covers it in depth.
+
+## A closer look
+
+Open a worker beside the orchestrator's chat (⌘\\) to read its transcript and pull request and to
+steer it, without leaving the orchestrator.
+
+![Gram with the orchestrator's chat on the left and the worker Search in Settings open beside it on the right. The chat has merged pull requests, an update from the worker, and the orchestrator's note that #142 waits on checks. The worker's side shows the end of its finished turn: what it changed in three files, 48 tests passed, 3 files changed with Undo and View changes, then "Looks right. Open the PR." and its reply that it opened #142 and fixed the review bot's two nits. Under it, #142's bar waiting on checks and a composer that reads Steer this thread.](docs/assets/gram-beside.png)
+
+A message sent into a running turn steers it after the current tool call (↵). The chevron beside
+Steer queues it for the end of the turn instead (⌥↵), or interrupts the turn (⌘.).
+
+![A solo thread working on Fix flaky retry test, with a draft in the composer: "Use the fake clock, not a longer timeout." Above it, the send button's menu lists Steer, after the current tool call, cancelling nothing; Queue, after the turn ends; and Interrupt, which stops the turn now, cutting off tool calls. The blue Steer button and Stop sit at the composer's right.](docs/assets/gram-steer.png)
+
+New task (⌘N) asks what needs doing, where it runs and who does it: a team, where the workspace's
+orchestrator plans it, or a chat with one agent. The workspace's merge approval sits beside Send.
+
+![Gram's New task over the storefront workspace. What needs doing reads "Let customers save a default payment method at checkout, like addresses." Under it, the workspace storefront, and Who does it with Team chosen over Chat. Below, Send to team beside Runs in storefront, planned by the storefront orchestrator, and its merge approval set to Automatic and a 4 of 10 workers chip.](docs/assets/gram-new-task.png)
+
+Settings → Appearance has nine palettes, each with a light and a dark version, and an editor for
+your own colours.
+
+![Settings open on Appearance's palettes: Neutral, chosen, then Graphite, Ocean, Forest, Rose, Ember, Violet, Tokyo and Catppuccin, each a small preview of the app in its colours, then Edit colours…. Beside them, samples of the sidebar's rows and a terminal block; below, the font settings.](docs/assets/gram-palettes.png)
 
 ## Focus
 
