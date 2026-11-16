@@ -1311,6 +1311,20 @@ export const PERSONAL_SETTINGS: ReadonlyArray<readonly [section: string, field: 
   ["layout", "grid"],
 ];
 
+/**
+ * The settings that choose a program the server runs or a folder on its machine that it acts in,
+ * each named by its path. On a server many people sign in to through a proxy, only the local app
+ * and the deployment change them, never a person's `settings.set`. Agents never change them
+ * either: each is one of `USER_ONLY_SETTINGS`.
+ */
+export const HOST_PROGRAM_SETTINGS: ReadonlyArray<readonly [section: string, field: string]> = [
+  ["editor", "command"],
+  ["terminal", "shell"],
+  ["agents", "codexRuntime"],
+  ["agents", "defaultFolder"],
+  ["agents", "cloneFolder"],
+];
+
 /** The name a personal setting's value is kept under: its path, dotted. */
 export const personalSettingKey = (path: ReadonlyArray<string>): string => path.join(".");
 

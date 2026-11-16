@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { InvalidState } from "@gram/contracts";
 import * as Effect from "effect/Effect";
-import { Opener, type OpenerShape } from "../platform/opener.ts";
+import { fenceOpener, NO_LOCAL_PROGRAMS, Opener, type OpenerShape } from "../platform/opener.ts";
 import { openCommand, openExternal } from "./open-external.ts";
 
 describe("openExternal", () => {
@@ -48,6 +48,21 @@ describe("openExternal", () => {
         ),
       ).toMatchObject({ _tag: "InvalidState" });
       expect(opened).toHaveLength(1);
+    }),
+  );
+
+  it.effect("refuses on a server that starts no programs, before the link is looked at", () =>
+    Effect.gen(function* () {
+      const opened: Array<string> = [];
+      const opener = fenceOpener(
+        { launch: ({ args }) => Effect.sync(() => void opened.push(args.at(-1) ?? "")) },
+        Effect.succeed(true),
+      );
+      for (const url of ["https://example.invalid/", "file:///etc/hosts"])
+        expect(
+          yield* openExternal(url).pipe(Effect.provideService(Opener, opener), Effect.flip),
+        ).toEqual(new InvalidState({ message: NO_LOCAL_PROGRAMS }));
+      expect(opened).toEqual([]);
     }),
   );
 });

@@ -11,6 +11,7 @@ import { publishMachineStates, sendQueuedOnJoin } from "../../host/machine-event
 import { RemoteHosts } from "../../host/remote-hosts.ts";
 import { logFileName } from "../../logging/daily-file.ts";
 import { ServerLog, type ServerLogShape } from "../../logging/service.ts";
+import { Opener } from "../../platform/opener.ts";
 import { openExternal } from "../../ports/open-external.ts";
 import { PanePort } from "../../browser/pane-port.ts";
 import { ThreadPorts, type ThreadPortsShape } from "../../ports/service.ts";
@@ -82,6 +83,8 @@ export const appHandlers = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const log = yield* ServerLog;
   const ports = yield* ThreadPorts;
+  // As this server's layers provide it: fenced where it starts no programs (`fenceOpener`).
+  const opener = yield* Opener;
   // Absent in runtime-only test layers, which watch no checkouts.
   const publisher = yield* Effect.serviceOption(GitStatePublisher);
   // Absent in runtime-only test layers, which keep no limit readings.
@@ -144,7 +147,10 @@ export const appHandlers = Effect.gen(function* () {
     "app.diagnostics": () => makeDiagnostics({ runtimes, config, log, ports, serverBrowser }),
 
     // The native shell owns the link dialog when present.
-    "app.openExternal": ({ url }) => openExternal(url, config.shellOpensLinks === true),
+    "app.openExternal": ({ url }) =>
+      openExternal(url, config.shellOpensLinks === true).pipe(
+        Effect.provideService(Opener, opener),
+      ),
 
     "events.subscribe": () =>
       // Whose connection it is, read as the stream starts: what is one person's own reaches only

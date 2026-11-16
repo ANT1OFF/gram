@@ -14,6 +14,7 @@ import { frontedIdentityFrom, type FrontedIdentityConfig } from "./http/fronted-
 import { remoteOrigin } from "./http/remote-access.ts";
 import { type ProvisionedHostsConfig, provisionedHostsFrom } from "./host/provisioned.ts";
 import { defaultDataDir } from "./logging/data-dir.ts";
+import type { OpenerShape } from "./platform/opener.ts";
 
 /** An endpoint outside the server that an embedding deployment points it at. */
 export interface EndpointConfig {
@@ -178,10 +179,18 @@ export const appLabelOf = (
     ? undefined
     : `${config.appVersion}${config.appBuild === undefined ? "" : ` (${config.appBuild.slice(0, 7)})`}`;
 
-/** Refuses an unavailable app feature even when a caller bypasses the UI's visibility gate. */
-export const refuseUnavailable = (feature: RuntimeFeatureId): Effect.Effect<void, InvalidState> =>
+/**
+ * Refuses an unavailable app feature even when a caller bypasses the UI's visibility gate. Each
+ * of these features starts a program through `opener`, so one that starts none here (a headless
+ * server, or one people sign in to through a proxy) refuses them too, before the caller reads any
+ * path or setting.
+ */
+export const refuseUnavailable = (
+  feature: RuntimeFeatureId,
+  opener: Pick<OpenerShape, "refused">,
+): Effect.Effect<void, InvalidState> =>
   featureAvailable(feature, {})
-    ? Effect.void
+    ? (opener.refused ?? Effect.void)
     : Effect.fail(new InvalidState({ message: featureRefusal(feature) }));
 
 /** Loopback, the only address a server outside a container listens on. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS } from "./settings.ts";
+import { DEFAULT_SETTINGS, HOST_PROGRAM_SETTINGS } from "./settings.ts";
 import {
   applyCharterWrites,
   applySettingsWrites,
@@ -94,6 +94,11 @@ describe("settings by chat: tiers", () => {
     ]) {
       expect(userOnlySetting(key), key).toBeDefined();
     }
+  });
+
+  it("keeps every setting that picks a program or folder on the server from agents", () => {
+    for (const path of HOST_PROGRAM_SETTINGS)
+      expect(userOnlySetting(path.join(".")), path.join(".")).toBeDefined();
   });
 
   it("keeps the catalogue and the user-only list apart", () => {

@@ -13,7 +13,8 @@ export const openCommand = (platform: NodeJS.Platform, url: string): Command =>
 
 /**
  * `app.openExternal`: http(s) only, launched through the `Opener`; a failure is `InvalidState`.
- * Refused outright under the desktop shell, whose own link dialog is the only way out there.
+ * Refused outright under the desktop shell, whose own link dialog is the only way out there, and
+ * where the opener starts no programs (`fenceOpener`), before the link is looked at.
  */
 export const openExternal = (
   url: string,
@@ -21,11 +22,12 @@ export const openExternal = (
 ): Effect.Effect<void, InvalidState> =>
   shellOpensLinks
     ? Effect.fail(new InvalidState({ message: "In the app, links open through its link dialog." }))
-    : isExternalUrl(url)
-      ? Effect.gen(function* () {
-          const opener = yield* Opener;
-          yield* opener
-            .launch(openCommand(process.platform, url))
-            .pipe(Effect.mapError(() => new InvalidState({ message: `Couldn't open ${url}` })));
-        })
-      : Effect.fail(new InvalidState({ message: `Only http(s) links can be opened: ${url}` }));
+    : Effect.gen(function* () {
+        const opener = yield* Opener;
+        yield* opener.refused ?? Effect.void;
+        if (!isExternalUrl(url))
+          return yield* new InvalidState({ message: `Only http(s) links can be opened: ${url}` });
+        yield* opener
+          .launch(openCommand(process.platform, url))
+          .pipe(Effect.mapError(() => new InvalidState({ message: `Couldn't open ${url}` })));
+      });

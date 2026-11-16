@@ -1,4 +1,5 @@
 import {
+  HOST_PROGRAM_SETTINGS,
   InvalidState,
   SettingsRpcs,
   settingsPatchPaths,
@@ -13,11 +14,23 @@ import { EventHub } from "../../events/event-hub.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { isLocalApp } from "../../http/local-app.ts";
 import { EMBEDDING_LOCAL_ONLY } from "../../settings/embedding.ts";
-import { suppliedPathChangedBy, suppliedRefusal } from "../../settings/supplied.ts";
+import {
+  lockedPathChangedBy,
+  suppliedPathChangedBy,
+  suppliedRefusal,
+} from "../../settings/supplied.ts";
+import { FrontedSignIn } from "../actor-guard.ts";
 import { makeSettingsWriter } from "../../settings/writer.ts";
 import { logDefects, type Handlers } from "./common.ts";
 import { gatewayHandlers } from "./gateway.ts";
 import { keybindingsHandlers } from "./keybindings.ts";
+
+/**
+ * What a person's change to one of `HOST_PROGRAM_SETTINGS` is refused with on a server people sign
+ * in to through a proxy.
+ */
+export const hostProgramRefusal = (path: ReadonlyArray<string>): string =>
+  `${path.join(".")} chooses a program or folder on the machine this Gram runs on, so only the service that runs it changes it.`;
 
 /** `settings.*`, `labels.*` and `palettes.*`; `profiles.*` live in `gateway.ts`. */
 export const settingsHandlers = Effect.gen(function* () {
@@ -26,6 +39,20 @@ export const settingsHandlers = Effect.gen(function* () {
   const writer = yield* makeSettingsWriter;
   // Absent in handler tests that build no hub.
   const hub = Option.getOrUndefined(yield* Effect.serviceOption(EventHub));
+  // Absent in handler tests that serve no sign-in: the launch token, as on the desktop.
+  const fronted = Option.getOrUndefined(yield* Effect.serviceOption(FrontedSignIn));
+
+  /**
+   * The first path of `patch` that would change a program or folder the server acts with, while
+   * people sign in through a proxy and the call isn't the local app's. Everyone signed in shares
+   * this machine's user, so none of them picks what it runs; the local app and the deployment
+   * (`settings/supplied.ts`) still do.
+   */
+  const hostProgramChangedBy = (patch: SettingsPatch, localApp: boolean) =>
+    Effect.gen(function* () {
+      if (localApp || fronted === undefined || !(yield* fronted.active)) return undefined;
+      return lockedPathChangedBy(patch, yield* store.getSettings, HOST_PROGRAM_SETTINGS);
+    });
 
   /**
    * The shared part of `patch` by the one writer, and the caller's own view to their own rows.
@@ -60,14 +87,17 @@ export const settingsHandlers = Effect.gen(function* () {
       // transport says which connection this is (`isLocalApp`), not anything the caller sent.
       patch.experimental?.embedding !== undefined && !isLocalApp(call?.headers)
         ? Effect.fail(new InvalidState({ message: EMBEDDING_LOCAL_ONLY }))
-        : // What an embedding deployment supplies is read-only here (`settings/supplied.ts`).
-          suppliedPathChangedBy(store, patch).pipe(
-            Effect.flatMap((path) =>
-              path === undefined
-                ? setFor(patch)
-                : Effect.fail(new InvalidState({ message: suppliedRefusal(path) })),
-            ),
-          ),
+        : Effect.gen(function* () {
+            // Checked whole before anything is written, so a refused patch changes nothing.
+            const hostPath = yield* hostProgramChangedBy(patch, isLocalApp(call?.headers));
+            if (hostPath !== undefined)
+              return yield* new InvalidState({ message: hostProgramRefusal(hostPath) });
+            // What an embedding deployment supplies is read-only here (`settings/supplied.ts`).
+            const supplied = yield* suppliedPathChangedBy(store, patch);
+            if (supplied !== undefined)
+              return yield* new InvalidState({ message: suppliedRefusal(supplied) });
+            return yield* setFor(patch);
+          }),
 
     "palettes.list": () => store.listPalettes,
     // `builtin` is server-owned: a client can't mark a palette built-in or clear the flag.

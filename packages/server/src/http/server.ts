@@ -60,6 +60,7 @@ import { OrchestratorAppToolsLive } from "../orchestration/tools.ts";
 import { TranscriptSearchAppToolsLive } from "../orchestration/transcript-search-tool.ts";
 import { TranscriptReadAppToolsLive } from "../orchestration/transcript-read-tool.ts";
 import { LOOPBACK_HOST, ServerConfig } from "../config.ts";
+import { fenceOpener, Opener } from "../platform/opener.ts";
 import { Embedding } from "../embedding/embedding.ts";
 import { EmbedInbound, EMBED_PREFIX } from "../embedding/inbound.ts";
 import { RepoEventsInboundLive } from "../embedding/repo-events.ts";
@@ -862,6 +863,22 @@ export const rpcRoutes = <Rpcs extends Rpc.Any, E, R>(
     Layer.provide(RpcSerialization.layerJson),
   );
 
+/**
+ * The opener as this server's handlers get it. A headless server starts no programs on its machine,
+ * and nor does one while people sign in to it through a proxy: they are not at this machine, and a
+ * program started for them would run as the server's own user (`fenceOpener`). Elsewhere, as main
+ * provides it.
+ */
+export const OpenerFence: Layer.Layer<never, never, ServerConfig | FrontedSignIn> = Layer.effect(
+  Opener,
+  Effect.gen(function* () {
+    const inner = yield* Opener;
+    if ((yield* ServerConfig).headless === true) return fenceOpener(inner, Effect.succeed(true));
+    const signIn = yield* FrontedSignIn;
+    return signIn.config === undefined ? inner : fenceOpener(inner, signIn.active);
+  }),
+);
+
 // Every RPC behind the actor guard, which does nothing unless people sign in through a proxy.
 const RpcRoutes = rpcRoutes(GramRpcs.middleware(ActorGuard), RpcHandlersLayer).pipe(
   Layer.provide(ActorGuard.layer),
@@ -1146,6 +1163,7 @@ export const ServerLayer: Layer.Layer<
       },
     ).pipe(
       Layer.merge(LoopStallLog),
+      Layer.provide(OpenerFence),
       Layer.provide(FrontedSignIn.layer),
       Layer.provideMerge(ServerCore),
       Layer.provide(RemoteControl.layer),

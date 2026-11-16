@@ -18,7 +18,9 @@ import { TEST_CONFIG } from "../../runtime/test-harness.ts";
 import { localAppHeadersForTests } from "../../http/local-app.ts";
 import { EMBEDDING_LOCAL_ONLY, embeddingEnabled } from "../../settings/embedding.ts";
 import { suppliedRefusal } from "../../settings/supplied.ts";
-import { settingsHandlers } from "./settings.ts";
+import { makeTestProxy } from "../../http/fronted-identity.testing.ts";
+import { FrontedSignIn } from "../actor-guard.ts";
+import { hostProgramRefusal, settingsHandlers } from "./settings.ts";
 
 const TestLayer = ServerCore.pipe(
   Layer.provideMerge(FakeAgentAdapter),
@@ -170,5 +172,88 @@ describe("hosted features", () => {
     Effect.gen(function* () {
       expect(yield* embeddingEnabled).toBe(false);
     }).pipe(Effect.scoped, Effect.provide(seeded(false))),
+  );
+});
+
+/** Sign-in through a proxy, on or off as `active` says. */
+const frontedSignIn = (active: () => boolean) =>
+  Layer.succeed(FrontedSignIn, {
+    config: makeTestProxy().config,
+    active: Effect.sync(active),
+  });
+
+describe("settings that choose a program or folder on the server", () => {
+  it.effect("are refused whole to a person signed in through a proxy, and kept as they were", () =>
+    Effect.gen(function* () {
+      const handlers = yield* settingsHandlers;
+      const store = yield* ThreadStore;
+      yield* handlers["settings.set"](
+        { patch: { editor: { command: "code -g" } } },
+        { headers: localAppHeadersForTests() },
+      );
+      const before = yield* storedRow;
+
+      const asAda = Effect.provideService(ActingPerson, "ada");
+      const attempts = [
+        { editor: { command: "/bin/sh -c {path}" } },
+        { editor: { command: null } },
+        { terminal: { shell: "/tmp/payload" } },
+        { agents: { defaultFolder: "/" } },
+        { agents: { cloneFolder: "/etc" } },
+        // A harmless change beside one is refused with it: the patch is taken whole or not at all.
+        { layout: { focusMode: true }, editor: { command: "/bin/sh" } },
+      ] as const;
+      for (const patch of attempts) {
+        const refused = yield* handlers["settings.set"]({ patch }).pipe(asAda, Effect.flip);
+        expect(refused).toBeInstanceOf(InvalidState);
+        expect(refused.message).toMatch(/chooses a program or folder on the machine/);
+      }
+      expect((yield* store.getSettings).editor.command).toBe("code -g");
+      expect((yield* store.getSettings).layout?.focusMode).toBeUndefined();
+      expect(yield* storedRow).toBe(before);
+      expect(
+        yield* handlers["settings.set"]({ patch: { editor: { command: "x" } } }).pipe(Effect.flip),
+      ).toEqual(new InvalidState({ message: hostProgramRefusal(["editor", "command"]) }));
+
+      // Saving the value it already has changes nothing, so it passes, and so does the rest.
+      yield* handlers["settings.set"]({
+        patch: { editor: { command: "code -g" }, layout: { focusMode: true } },
+      }).pipe(asAda);
+      expect((yield* store.getSettings).layout?.focusMode).toBe(true);
+      // The local app still changes them.
+      yield* handlers["settings.set"](
+        { patch: { editor: { command: "zed" } } },
+        { headers: localAppHeadersForTests() },
+      );
+      expect((yield* store.getSettings).editor.command).toBe("zed");
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.merge(
+          TestLayer,
+          frontedSignIn(() => true),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("are anyone's to change while nobody signs in through a proxy", () =>
+    Effect.gen(function* () {
+      const handlers = yield* settingsHandlers;
+      const store = yield* ThreadStore;
+      yield* handlers["settings.set"]({
+        patch: { editor: { command: "code -g" }, terminal: { shell: "pwsh" } },
+      });
+      expect((yield* store.getSettings).editor.command).toBe("code -g");
+      expect((yield* store.getSettings).terminal?.shell).toBe("pwsh");
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.merge(
+          TestLayer,
+          frontedSignIn(() => false),
+        ),
+      ),
+    ),
   );
 });

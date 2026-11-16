@@ -22,7 +22,8 @@ import type { Handlers } from "./common.ts";
 
 /**
  * `editor.open`: a file (at a line) or folder in `settings.editor.command`. `fs.reveal`: the same
- * target shown in Finder / Explorer. Both spawn detached on the local machine.
+ * target shown in Finder / Explorer. Both spawn detached on the local machine, and both are refused
+ * first, before the path or the editor setting is read, where this server starts no programs.
  */
 export const editorHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
@@ -71,7 +72,7 @@ export const editorHandlers = Effect.gen(function* () {
   return {
     "editor.open": ({ path, line, threadId }) =>
       Effect.gen(function* () {
-        yield* refuseUnavailable("openInEditor");
+        yield* refuseUnavailable("openInEditor", launcher);
         const { target, folder } = yield* resolveTarget(path, threadId);
         const settings = yield* store.getSettings;
         const command = editorCommand(settings.editor.command, { path: target, line, folder });
@@ -87,7 +88,7 @@ export const editorHandlers = Effect.gen(function* () {
       }),
     "fs.reveal": ({ path, threadId }) =>
       Effect.gen(function* () {
-        yield* refuseUnavailable("revealInFileManager");
+        yield* refuseUnavailable("revealInFileManager", launcher);
         const { target, folder } = yield* resolveTarget(path, threadId);
         const command = revealCommand(target, folder, process.platform);
         const pathValue = yield* childPath;

@@ -461,6 +461,13 @@ Most settings are one value for the server. A few are a person's own view of the
 - A viewer may send a patch of personal settings only. One that names anything shared is refused whole.
 - A supplied setting wins over a person's own as over the shared value, and a change to it is refused the same way.
 
+### Programs and folders on the server
+
+With sign-in through a fronting proxy, nobody signed in is at the server's machine, and whatever it starts runs as the server's own user. So while it is on:
+
+- Opening a file in an editor (`editor.open`), showing one in the file manager (`fs.reveal`), opening a link (`app.openExternal`) and opening the logs folder (`app.openLogsFolder`) are refused before any path or setting is read, and nothing is started. A headless server ([Docker](DOCKER.md#a-headless-control-plane)) refuses them always, the app's own window included.
+- The settings that pick a program the server runs or a folder on its machine (`HOST_PROGRAM_SETTINGS` in `packages/contracts/src/settings.ts`: the editor command, the terminal's shell, the Codex runtime, the default folder and the clone folder) can't be changed with `settings.set`. A patch that would change one is refused whole and nothing is stored; one that repeats the value it has passes. The local app and the deployment, through [supplied settings](#settings-supplied-from-outside), still set them.
+
 ### A person's own Waiting on you
 
 With sign-in through a fronting proxy, an item of Waiting on you names the person it waits on (`person` on the item, and on its `wait_items` row), where the server knew one when it was added:

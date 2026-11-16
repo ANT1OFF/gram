@@ -58,7 +58,7 @@ export const diagnosticsHandlers = Effect.gen(function* () {
       }),
 
     "app.openLogsFolder": () =>
-      refuseUnavailable("openLogsFolder").pipe(
+      refuseUnavailable("openLogsFolder", opener).pipe(
         Effect.andThen(
           Effect.try({
             try: () => mkdirSync(logDir, { recursive: true }),

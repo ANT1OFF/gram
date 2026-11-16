@@ -55,6 +55,22 @@ const overlaps = (path: ReadonlyArray<string>, locked: ReadonlyArray<string>): b
   path.slice(0, locked.length).every((key, index) => key === locked[index]) ||
   locked.slice(0, path.length).every((key, index) => key === path[index]);
 
+/**
+ * The first path of `patch` that would change one of `locked` from its value in `current`, if any.
+ * A patch that repeats the value passes: a window saving a whole section changes nothing by it.
+ */
+export const lockedPathChangedBy = (
+  patch: SettingsPatch,
+  current: unknown,
+  locked: ReadonlyArray<ReadonlyArray<string>>,
+): ReadonlyArray<string> | undefined =>
+  settingsPatchPaths(patch).find((path) =>
+    locked.some(
+      (held) =>
+        overlaps(path, held) && !same(valueAt(patch, held) ?? null, valueAt(current, held) ?? null),
+    ),
+  );
+
 /** What is supplied now, while the hosted features are on. */
 const suppliedNow = (store: Pick<ThreadStoreShape, "getSettings" | "getSuppliedSettings">) =>
   Effect.gen(function* () {
@@ -74,14 +90,7 @@ export const suppliedPathChangedBy = (
   Effect.gen(function* () {
     const supplied = yield* suppliedNow(store);
     if (supplied === undefined) return undefined;
-    const locked = settingsPatchPaths(supplied);
-    return settingsPatchPaths(patch).find((path) =>
-      locked.some(
-        (held) =>
-          overlaps(path, held) &&
-          !same(valueAt(patch, held) ?? null, valueAt(supplied, held) ?? null),
-      ),
-    );
+    return lockedPathChangedBy(patch, supplied, settingsPatchPaths(supplied));
   });
 
 /** The first of `paths` (the fields an approved proposal writes) that is supplied, if any. */

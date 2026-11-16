@@ -301,8 +301,8 @@ each turn's usage, and every decision the hook made.
 
 ## A headless control plane
 
-With `GRAM_HEADLESS=1` the server runs no work itself. It starts no agent, opens no terminal and
-makes no worktree in the container; every thread, an orchestrator's included, runs on a
+With `GRAM_HEADLESS=1` the server runs no work itself. It starts no agent, opens no terminal,
+starts no editor, file manager or browser, and makes no worktree in the container; every thread, an orchestrator's included, runs on a
 [joined machine](MACHINES.md). It is one of the hosted features, so the server only starts with
 `GRAM_EMBEDDING=1` set as well (or the setting already stored on), and says so when it isn't.
 

@@ -27,6 +27,11 @@ export interface LaunchSpec {
 export interface OpenerShape {
   /** Starts `spec` detached with no stdio; succeeds once the program has started. */
   readonly launch: (spec: LaunchSpec) => Effect.Effect<void, InvalidState>;
+  /**
+   * Fails while this server starts no programs at all (`fenceOpener`), so a caller can refuse
+   * before it reads a path or a setting. Absent, programs may be started.
+   */
+  readonly refused?: Effect.Effect<void, InvalidState> | undefined;
 }
 
 /** What `spawn` gets for `spec`: a shell launch (a Windows `.cmd` shim) carries cmd.exe escaping. */
@@ -93,6 +98,34 @@ export const makeNodeOpener = (onLaunched: (pid: number) => void = () => {}): Op
       }
     }),
 });
+
+/**
+ * Why a server with no local user starts no program: one people reach through a fronting proxy, or
+ * a headless one. Its users are not at this machine, so an editor, a file manager or a browser
+ * opened here would show nobody anything, and would run as the server's own user.
+ */
+export const NO_LOCAL_PROGRAMS =
+  "This Gram runs on a server, and starts no programs on it: open files and links on your own machine.";
+
+/**
+ * `inner`, refusing every launch while `refuse` says so, before anything is started. Asked on
+ * each launch, so a setting that turns the fence on or off takes effect at once.
+ */
+export const fenceOpener = (inner: OpenerShape, refuse: Effect.Effect<boolean>): OpenerShape => {
+  const refused = Effect.flatMap(refuse, (fenced) =>
+    fenced ? Effect.fail(new InvalidState({ message: NO_LOCAL_PROGRAMS })) : Effect.void,
+  ).pipe(Effect.andThen(inner.refused ?? Effect.void));
+  return { refused, launch: (spec) => Effect.andThen(refused, inner.launch(spec)) };
+};
+
+/** An opener that starts nothing, ever: a headless server's (`GRAM_HEADLESS=1`). */
+export const OpenerRefused: Layer.Layer<never> = Layer.succeed(
+  Opener,
+  fenceOpener(
+    { launch: () => Effect.fail(new InvalidState({ message: NO_LOCAL_PROGRAMS })) },
+    Effect.succeed(true),
+  ),
+);
 
 /** The real opener, reporting each program it starts to `onLaunched`. */
 export const OpenerLive = (onLaunched?: (pid: number) => void): Layer.Layer<never> =>

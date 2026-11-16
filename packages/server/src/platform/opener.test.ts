@@ -5,7 +5,16 @@ import { afterEach, describe, expect, it } from "@effect/vitest";
 import { InvalidState } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { removeDir } from "../git/test-repo.ts";
-import { makeNodeOpener, Opener, spawnInvocation, spawnOptions } from "./opener.ts";
+import {
+  fenceOpener,
+  makeNodeOpener,
+  NO_LOCAL_PROGRAMS,
+  Opener,
+  OpenerRefused,
+  type OpenerShape,
+  spawnInvocation,
+  spawnOptions,
+} from "./opener.ts";
 
 const nodeOpener = makeNodeOpener();
 
@@ -31,6 +40,48 @@ describe("Opener", () => {
         .pipe(Effect.flip);
       expect(error.message).toMatch(/^Couldn't start \/nonexistent\/gram-opener-test:/);
     }),
+  );
+});
+
+describe("fenceOpener", () => {
+  it.effect("refuses before the inner opener is asked while fenced, and follows the switch", () =>
+    Effect.gen(function* () {
+      const started: string[] = [];
+      const inner: OpenerShape = {
+        launch: ({ file }) => Effect.sync(() => void started.push(file)),
+      };
+      let fenced = true;
+      const opener = fenceOpener(
+        inner,
+        Effect.sync(() => fenced),
+      );
+
+      expect(yield* opener.refused!.pipe(Effect.flip)).toEqual(
+        new InvalidState({ message: NO_LOCAL_PROGRAMS }),
+      );
+      expect(yield* opener.launch({ file: "editor", args: [] }).pipe(Effect.flip)).toEqual(
+        new InvalidState({ message: NO_LOCAL_PROGRAMS }),
+      );
+      expect(started).toEqual([]);
+
+      // Off again (the desktop app on its own), the same opener starts programs as before.
+      fenced = false;
+      yield* opener.refused!;
+      yield* opener.launch({ file: "editor", args: [] });
+      expect(started).toEqual(["editor"]);
+    }),
+  );
+
+  it.effect("starts nothing, ever, as a headless server's opener", () =>
+    Effect.gen(function* () {
+      const opener = yield* Opener;
+      expect(yield* opener.refused!.pipe(Effect.flip)).toMatchObject({
+        message: NO_LOCAL_PROGRAMS,
+      });
+      expect(
+        yield* opener.launch({ file: process.execPath, args: ["-e", ""] }).pipe(Effect.flip),
+      ).toMatchObject({ message: NO_LOCAL_PROGRAMS });
+    }).pipe(Effect.provide(OpenerRefused)),
   );
 });
 
