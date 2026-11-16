@@ -383,7 +383,7 @@ describe("orchestration schemas", () => {
     ).toThrow();
   });
 
-  it("round-trips a task for a workspace, or for a project straight to a worker", () => {
+  it("round-trips a task for a workspace, or for a project's new workspace", () => {
     const task = decode(StartTaskInput)({
       target: { workspaceId: "w1" },
       input: {
@@ -398,7 +398,6 @@ describe("orchestration schemas", () => {
       decode(StartTaskInput)({
         target: { projectId: "p1" },
         input: { text: "Add a retry" },
-        direct: { projectId: "p1", base: "origin/main" },
         autonomy: "supervised",
       }),
     );

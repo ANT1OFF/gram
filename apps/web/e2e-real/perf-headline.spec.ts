@@ -1165,7 +1165,7 @@ test("attach a terminal over slow 3G", async () => {
 });
 
 // Last: it makes a workspace, and the launch scenarios above measure a window without one.
-test("start a coding worker", async () => {
+test("send a task to a running orchestrator", async () => {
   const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   const on = fresh.page;
   on.setDefaultTimeout(30_000);
@@ -1180,20 +1180,20 @@ test("start a coding worker", async () => {
   const server: number[] = [];
   for (let i = 0; i < Math.min(REPEATS, 3); i++) {
     const text = `Write perf note ${i}`;
-    // The New form on Task: one worker in its own worktree, through to a pull request.
-    await on.goto(`${h.origin_url()}/new-task?way=direct`);
-    await expect(on.getByRole("button", { name: /Start task/ })).toBeVisible();
+    // The New form on Team, its workspace's orchestrator running.
+    await on.goto(`${h.origin_url()}/new-task`);
+    await expect(on.getByRole("button", { name: /Send to team/ })).toBeVisible();
     await on.getByLabel("What needs doing").fill(text);
     const answered = fresh.wire.answered("workspace.startTask");
     const start = performance.now();
-    await on.getByRole("button", { name: /Start task/ }).click();
+    await on.getByRole("button", { name: /Send to team/ }).click();
     void answered.then(() => server.push(performance.now() - start));
-    // Its worktree is made, its session started, and its first words are on screen.
+    // The orchestrator has it and answers on screen.
     await expect(transcript(on).getByText(`echo: ${text}`)).toBeVisible({ timeout: 120_000 });
     samples.push(performance.now() - start);
   }
-  record("worker-start", "Start a coding worker until its first output", "ms", samples, {
-    // The server's share: the worktree, the branch and the worker's thread.
+  record("task-send", "Send a task to a running orchestrator until its reply", "ms", samples, {
+    // The server's share: the preflight check and the hand-over.
     startTaskAnsweredMs: round(median(server)),
   });
   await on.close();

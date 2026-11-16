@@ -14,7 +14,7 @@ describe("NewFormHeader", () => {
     render(
       <TooltipProvider>
         <NewFormHeader
-          who="worker"
+          who="orchestrator"
           onWho={onWho}
           goal={<textarea aria-label="What needs doing" />}
           where={<span>Synthetic workspace</span>}
@@ -25,22 +25,14 @@ describe("NewFormHeader", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("New task");
     const who = screen.getByRole("radiogroup", { name: "Who does it" });
     const radios = within(who).getAllByRole("radio");
-    expect(radios.map((radio) => radio.getAttribute("aria-label"))).toEqual([
-      "Task",
-      "Team",
-      "Chat",
-    ]);
+    // An orchestrator, which decides how to run it, or one agent: no worker straight away.
+    expect(radios.map((radio) => radio.getAttribute("aria-label"))).toEqual(["Team", "Chat"]);
     // Each choice says what comes of it in one sentence, under its plain name.
     expect(radios.map((radio) => radio.textContent)).toEqual([
-      "TaskOne worker does it in its own worktree and opens a pull request.",
-      "TeamAn orchestrator splits it up, runs workers and sees their pull requests merged.",
+      "TeamAn orchestrator plans it, runs workers as needed and sees their pull requests merged.",
       "ChatYou and one agent in a folder. No workspace or orchestrator.",
     ]);
-    expect(radios.map((radio) => radio.getAttribute("aria-checked"))).toEqual([
-      "true",
-      "false",
-      "false",
-    ]);
+    expect(radios.map((radio) => radio.getAttribute("aria-checked"))).toEqual(["true", "false"]);
     // The goal leads, then where it runs, then who does it.
     const goal = screen.getByRole("textbox", { name: "What needs doing" });
     const whereGroup = screen.getByRole("group", { name: "Where it runs" });
@@ -53,7 +45,7 @@ describe("NewFormHeader", () => {
     expect(within(where).getByText("Synthetic workspace")).toBeTruthy();
     expect(screen.getByTestId("task-way-note").textContent).toBe("Synthetic line");
 
-    fireEvent.click(radios[2]!);
+    fireEvent.click(radios[1]!);
     expect(onWho).toHaveBeenCalledWith("me");
     fireEvent.click(radios[0]!);
     expect(onWho).toHaveBeenCalledTimes(1);
@@ -63,7 +55,7 @@ describe("NewFormHeader", () => {
     render(
       <TooltipProvider>
         <NewFormHeader
-          who="worker"
+          who="orchestrator"
           onWho={vi.fn()}
           goal={<textarea aria-label="What needs doing" />}
           where={<span>Synthetic workspace</span>}

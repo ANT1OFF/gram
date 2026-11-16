@@ -1146,12 +1146,10 @@ describe("GramRpcs", () => {
     const task = {
       target: { projectId: "p1" },
       input: { text: "Fix the flaky retry test" },
-      direct: { projectId: "p1", base: "main" },
     };
     expect(startTask(task)).toEqual(task);
-    const held = { ...task, direct: { ...task.direct, hold: true } };
-    expect(startTask(held)).toEqual(held);
-    expect(() => startTask({ ...task, direct: { ...task.direct, hold: "yes" } })).toThrow();
+    // New task always goes to the orchestrator: an older client's worker straight away is dropped.
+    expect(startTask({ ...task, direct: { projectId: "p1", base: "main" } })).toEqual(task);
     expect(startTask({ target: { workspaceId: "w1" }, input: { text: "x" } })).toEqual({
       target: { workspaceId: "w1" },
       input: { text: "x" },

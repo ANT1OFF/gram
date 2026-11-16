@@ -434,14 +434,14 @@ function ConfiguredNewThreadDraft() {
     }
   };
 
-  // The orchestrator and a worker are the task draft; what was typed goes along, and so does the
-  // folder, as its workspace or as a repo to make one for.
+  // The orchestrator is the task draft; what was typed goes along, and so does the folder, as its
+  // workspace or as a repo to make one for.
   const pickWho = (who: Who) => {
     if (who === "me" || attachments.uploading) return;
     carryDraft({ text: prompt, draftId, attachments: attachments.ready });
     prefillTaskTarget(onMachine ? undefined : folderTarget(project, workspaces));
     useTaskDraftStore.getState().rememberEntry(WHO_ENTRY[who]);
-    void navigate({ to: "/new-task", search: who === "worker" ? { way: "direct" } : {} });
+    void navigate({ to: "/new-task" });
   };
 
   // The folder's path field and the ways to resume are the form's rarely used half: the Folder

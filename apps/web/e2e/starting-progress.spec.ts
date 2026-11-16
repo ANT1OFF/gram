@@ -9,10 +9,22 @@ test("a starting worker shows its progress under the brief until its first outpu
     window.gramMockHoldGates = true;
     window.gramMockHoldWorkerStart = true;
   });
-  await page.goto("/new-task?way=direct");
-  await page.getByLabel("What needs doing").fill("Add retry coverage for the queue consumer.");
-  await page.getByRole("button", { name: /Start (workspace and )?task/ }).click();
+  // New task goes to the orchestrator, which briefs a worker as `spawn_worker` does.
+  await page.goto("/new-task");
+  await page.getByLabel("What needs doing").fill("Plan the queue consumer's retry coverage.");
+  await page.getByTestId("task-submit").click();
   await expect(page).toHaveURL(/\/t\//);
+  const workerId = await page.evaluate(async () => {
+    const mock = window.gramMock!;
+    const [state] = await mock.listWorkspaces();
+    const worker = await mock.simulateBrief(state!.workspace.id, "queue-retry", "Queue retry");
+    void mock.send(worker.id, { text: "Add retry coverage for the queue consumer." });
+    return worker.id;
+  });
+  await page.evaluate((id) => {
+    history.pushState({}, "", `/t/${id}`);
+    dispatchEvent(new PopStateEvent("popstate"));
+  }, workerId);
   await expect(page.getByTestId("message-user").first()).toContainText("Add retry coverage");
 
   const progress = page.getByTestId("starting-progress");

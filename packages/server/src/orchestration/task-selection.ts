@@ -9,7 +9,4 @@ export const sameTaskModel = (left: ModelRef, right: ModelRef): boolean =>
 
 export const sameTaskSelection = (left: TaskModelSelection, right: TaskModelSelection): boolean =>
   sameTaskModel(left.orchestrator, right.orchestrator) &&
-  left.orchestratorThreadId === right.orchestratorThreadId &&
-  (left.worker === undefined || right.worker === undefined
-    ? left.worker === right.worker
-    : sameTaskModel(left.worker, right.worker));
+  left.orchestratorThreadId === right.orchestratorThreadId;

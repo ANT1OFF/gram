@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
 import { DraftId } from "./attachments.ts";
 import { type AgentKind, ModelRef, PermissionMode, UserInput } from "./domain.ts";
 import { SupportedTaskModelSelection } from "./task-preflight.ts";
-import { HostId, ProjectId, ThreadId, WorkspaceId } from "./ids.ts";
+import { ProjectId, ThreadId, WorkspaceId } from "./ids.ts";
 import { MergeReviewPolicy, RepoMergeReviewPolicies } from "./merge-policy.ts";
 import {
   type AvailableModels,
@@ -545,36 +545,12 @@ export const JoinTarget = Schema.Struct({
 });
 export type JoinTarget = typeof JoinTarget.Type;
 
-/** ⌘N's New task: what the user wants done, for a workspace's orchestrator or one new worker. */
+/** ⌘N's New task: what the user wants done, for a workspace's orchestrator. */
 export const StartTaskInput = Schema.Struct({
   target: TaskTarget,
   input: UserInput,
   /** The draft `input`'s attachments were staged under, as `thread.create` takes it. */
   draftId: Schema.optionalKey(DraftId),
-  /**
-   * Straight to a worker: one starts now in a new worktree of this project, one of the target's,
-   * with `input` as its brief, instead of the orchestrator reading it first. It is the
-   * orchestrator's worker unless `hold` asks to start it under the user's control.
-   */
-  direct: Schema.optionalKey(
-    Schema.Struct({
-      projectId: ProjectId,
-      base: Schema.optionalKey(Schema.String),
-      /**
-       * The worker's model as the user picked it from the preview's `workerChoices`; absent is the
-       * roster's default. One no longer on the roster, or unavailable here, is refused.
-       */
-      worker: Schema.optionalKey(ModelRef),
-      /**
-       * "Start under my control": the worker is the user's from its first input, as one they took
-       * over is, until they hand it back. Absent, it is the orchestrator's from the start, with the
-       * user's words as its brief.
-       */
-      hold: Schema.optionalKey(Schema.Boolean),
-      /** The joined machine its worktree is made on, as `newWorktree.hostId`; absent is this one. */
-      hostId: Schema.optionalKey(HostId),
-    }),
-  ),
   /**
    * The autonomy a workspace made for a `projectId` target starts at, the user's pick on the draft;
    * absent is `DEFAULT_CHARTER`'s. A workspace that already exists keeps its own.

@@ -10,25 +10,13 @@ afterEach(cleanup);
 
 describe("taskSummary", () => {
   it("says where it runs and whom it reports to, and apart from that who approves a merge", () => {
-    expect(
-      taskSummary({ way: "direct", workspace: "billing-api", autonomy: "publish", hold: false }),
-    ).toEqual({
+    expect(taskSummary({ workspace: "billing-api", autonomy: "publish" })).toEqual({
       where: "Runs in billing-api",
-      who: "Reports to the billing-api orchestrator",
+      who: "Planned by the billing-api orchestrator",
       approval: "Ask",
-      merge: "Opens its pull request; merging waits for you",
+      merge: "Opens pull requests; merging waits for you",
     });
-    expect(
-      taskSummary({ way: "direct", workspace: "billing-api", autonomy: "full", hold: true }),
-    ).toEqual({
-      where: "Runs in billing-api",
-      who: "You direct it until you hand it to the billing-api orchestrator",
-      approval: "Automatic",
-      merge: "Merges its pull request without asking you",
-    });
-    expect(
-      taskSummary({ way: "plan", workspace: "api", autonomy: "supervised", hold: false }),
-    ).toEqual({
+    expect(taskSummary({ workspace: "api", autonomy: "supervised" })).toEqual({
       where: "Runs in api",
       who: "Planned by the api orchestrator",
       approval: "Ask",
@@ -38,20 +26,14 @@ describe("taskSummary", () => {
 
   it("never says supervision and merging in one breath", () => {
     for (const autonomy of ["supervised", "publish", "full"]) {
-      const { who } = taskSummary({ way: "direct", workspace: "api", autonomy, hold: false });
-      expect(who).toBe("Reports to the api orchestrator");
+      const { who } = taskSummary({ workspace: "api", autonomy });
+      expect(who).toBe("Planned by the api orchestrator");
       expect(who).not.toMatch(/supervis|merge/i);
     }
   });
 
-  it("names the workspace a start makes, and holds only a direct worker", () => {
-    const made = taskSummary({
-      way: "plan",
-      workspace: "api",
-      makesOne: true,
-      autonomy: "full",
-      hold: true,
-    });
+  it("names the workspace a start makes", () => {
+    const made = taskSummary({ workspace: "api", makesOne: true, autonomy: "full" });
     expect(made.where).toBe("Runs in a new api workspace");
     expect(made.who).toBe("Planned by the api orchestrator");
     expect(made.approval).toBe("Automatic");
@@ -59,12 +41,7 @@ describe("taskSummary", () => {
   });
 
   it("falls back to the level's own words for a level this build doesn't know", () => {
-    const unknown = taskSummary({
-      way: "direct",
-      workspace: "api",
-      autonomy: "someday",
-      hold: false,
-    });
+    const unknown = taskSummary({ workspace: "api", autonomy: "someday" });
     expect(unknown.merge).toBe("This version of Gram doesn't know this level");
   });
 });
@@ -73,29 +50,21 @@ describe("TaskAuthorityLine", () => {
   it("says where it runs, whom it reports to and merge approval on lines of their own", () => {
     render(
       <TooltipProvider>
-        <TaskAuthorityLine
-          way="direct"
-          workspace="api"
-          places={["api", "New worktree, new branch"]}
-          autonomy="full"
-          hold={false}
-        />
+        <TaskAuthorityLine workspace="api" autonomy="full" />
       </TooltipProvider>,
     );
-    expect(screen.getByTestId("task-destination").textContent).toBe(
-      "Runs in api · api · New worktree, new branch",
-    );
-    expect(screen.getByTestId("task-owner").textContent).toBe("Reports to the api orchestrator");
+    expect(screen.getByTestId("task-destination").textContent).toBe("Runs in api");
+    expect(screen.getByTestId("task-owner").textContent).toBe("Planned by the api orchestrator");
     const merge = screen.getByTestId("task-merge-approval");
     expect(merge.textContent).toBe(
-      "Merge approvalAutomaticMerges its pull request without asking you.",
+      "Merge approvalAutomaticMerges pull requests without asking you.",
     );
     expect(merge.querySelector("span.text-warning")?.textContent).toBe("Automatic");
     expect(screen.queryByTestId("task-destination-remembered")).toBeNull();
   });
 
   it("is calm below Full", () => {
-    render(<TaskAuthorityLine way="plan" workspace="api" autonomy="publish" hold={false} />);
+    render(<TaskAuthorityLine workspace="api" autonomy="publish" />);
     expect(screen.getByTestId("task-owner").textContent).toBe("Planned by the api orchestrator");
     expect(screen.getByTestId("task-merge-approval").textContent).toMatch(/^Merge approvalAsk/);
     expect(screen.getByTestId("task-authority").querySelector(".text-warning")).toBeNull();
@@ -106,10 +75,8 @@ describe("TaskAuthorityLine", () => {
     render(
       <TooltipProvider>
         <TaskAuthorityLine
-          way="direct"
           workspace="billing-api"
           autonomy="full"
-          hold={false}
           remembered
           onChangeWhere={onChangeWhere}
           changeWhereHint="⌘⇧L"
@@ -127,10 +94,8 @@ describe("TaskAuthorityLine", () => {
     render(
       <TooltipProvider>
         <TaskAuthorityLine
-          way="direct"
           workspace="api"
           autonomy="full"
-          hold={false}
           approval={{ label: "Merge approval for api, a workspace setting", onPick }}
         />
       </TooltipProvider>,
