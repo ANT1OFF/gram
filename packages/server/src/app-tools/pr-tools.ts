@@ -21,6 +21,7 @@ import {
   gitFailMsg,
   invalidatePrBadges,
   originOwnerRepo,
+  prHead,
   Proc,
   repoFromPrUrl,
   type ProcOutput,
@@ -131,6 +132,12 @@ const refuseOverHold = (tool: string, caller: ThreadId, thread: Thread) => {
     ? Effect.fail(new AppToolError({ tool, message: heldMessage(intent) }))
     : Effect.void;
 };
+
+/** What the card says the approval covers. */
+const approvalScopeText = (scope: NonNullable<MergeIntent["approved"]>) =>
+  scope.fork
+    ? `from a fork${scope.headRepo === undefined ? "" : ` (${scope.headRepo})`}, its head ${scope.head.slice(0, 7)} exactly, into ${scope.baseRef}; a new push to the fork asks again`
+    : `from a branch in the repository itself, at ${scope.head.slice(0, 7)} now, into ${scope.baseRef}`;
 
 /** Why a worker can't move past the merge its orchestrator holds. */
 const heldMessage = (intent: MergeIntent) =>
@@ -894,6 +901,36 @@ export const PrAppToolsLive = Layer.effectDiscard(
       }).pipe(Effect.catchCause(() => Effect.succeed(undefined)));
 
     const MERGE = "merge_when_ready";
+    /**
+     * What a user's approval of a merge of `pr` would cover, read afresh from GitHub: its head, its
+     * base and whether the head is on a fork. A card names these, and the intent keeps them
+     * (`MergeIntent.approved`), so a push to a fork or a retarget asks again.
+     */
+    const approvalScope = (
+      thread: Thread,
+      pr: { readonly repo: string; readonly number: number },
+    ) =>
+      Effect.gen(function* () {
+        const cwd = yield* ghFolderOf(thread.checkout);
+        // Unreadable is unknown, never a scope: the caller refuses a user approval without one.
+        const head = yield* prHead(cwd, pr.number, pr.repo).pipe(
+          Effect.provideService(Proc, proc),
+          Effect.catchCause(() => Effect.succeed(undefined)),
+        );
+        if (
+          head === undefined ||
+          head.headRefOid === undefined ||
+          head.baseRef === undefined ||
+          head.repo.toLowerCase() !== pr.repo.toLowerCase()
+        )
+          return undefined;
+        return {
+          head: head.headRefOid,
+          baseRef: head.baseRef,
+          fork: head.fork,
+          ...(head.headRepo === undefined ? {} : { headRepo: head.headRepo }),
+        } satisfies NonNullable<MergeIntent["approved"]>;
+      }).pipe(Effect.catchCause(() => Effect.succeed(undefined)));
 
     const mergeWhenReadyTool = defineAppTool({
       descriptor: {
@@ -981,6 +1018,9 @@ export const PrAppToolsLive = Layer.effectDiscard(
             thread,
             pr: { repo, number },
             afterRefs: after.flatMap((entry) => (entry.ref === undefined ? [] : [entry.ref])),
+            // What an approval would cover, shown on the card and kept with the intent.
+            scope:
+              input.enabled === false ? undefined : yield* approvalScope(thread, { repo, number }),
             // Capture this approval instance before the gate: a replacement cannot inherit its waiver.
             reuseApproval:
               input.enabled !== false &&
@@ -998,11 +1038,25 @@ export const PrAppToolsLive = Layer.effectDiscard(
           };
         }),
       // Arming a merge is the merge as far as a decision goes; dropping the intent is not one.
-      decision: (_caller, { enabled = true, pr, method, thread }) =>
+      decision: (_caller, { enabled = true, pr, method, thread, scope }) =>
         enabled
           ? {
               action: "pr.merge",
-              detail: { repo: pr.repo, number: pr.number, method, threadId: thread.id },
+              detail: {
+                repo: pr.repo,
+                number: pr.number,
+                method,
+                threadId: thread.id,
+                // What the approval covers: the head and base it is pinned to, and whether a fork.
+                ...(scope === undefined
+                  ? {}
+                  : {
+                      head: scope.head,
+                      base: scope.baseRef,
+                      fromFork: scope.fork,
+                      ...(scope.headRepo === undefined ? {} : { headRepo: scope.headRepo }),
+                    }),
+              },
             }
           : undefined,
       // After `resolve`, which the target's type is inferred from.
@@ -1036,15 +1090,18 @@ export const PrAppToolsLive = Layer.effectDiscard(
           }
           return yield* workerOwnsPr(thread, pr.repo, pr.number);
         }).pipe(Effect.catchCause(() => Effect.succeed(false))),
-      describe: (caller, { thread, pr, enabled = true, method, afterRefs, hold, clearHold }) =>
+      describe: (
+        caller,
+        { thread, pr, enabled = true, method, afterRefs, hold, clearHold, scope },
+      ) =>
         Effect.gen(function* () {
           if (!enabled) return `Stop merging ${prName(pr)} when it is ready`;
           const policy = yield* reviewPolicyFor(thread, pr.repo);
           const condition =
             policy === "solo"
-              ? "fresh CI passes, or Gram's own full check of it merged onto its base passes, and GitHub allows it"
+              ? `fresh CI passes, or Gram's own full check of it merged onto its base passes${scope?.fork === true ? " (which runs the fork's code at that head on this machine)" : ""}, and GitHub allows it`
               : "it is approved on its head, green and clean";
-          return `Merge ${prName(pr)} (${method ?? thread.boundPr?.mergeWhenReady?.method ?? "squash"}) once ${condition}${afterRefs.length === 0 ? "" : `, after ${afterRefs.map(prName).join(", ")}`}${clearHold ? ", no hold" : hold === undefined ? "" : `, held: ${hold}`}${thread.id === caller ? "" : `, on “${thread.title}”`}`;
+          return `Merge ${prName(pr)} (${method ?? thread.boundPr?.mergeWhenReady?.method ?? "squash"})${scope === undefined ? "" : ` ${approvalScopeText(scope)},`} once ${condition}${afterRefs.length === 0 ? "" : `, after ${afterRefs.map(prName).join(", ")}`}${clearHold ? ", no hold" : hold === undefined ? "" : `, held: ${hold}`}${thread.id === caller ? "" : `, on “${thread.title}”`}`;
         }),
       // Ownership doubts refuse even over a hold. With ownership verified, the orchestrator's
       // hold still asks its worker; an ended PR needs no card at any autonomy.
@@ -1059,12 +1116,26 @@ export const PrAppToolsLive = Layer.effectDiscard(
       // when its PR merges or closes.
       sharedCard: (
         caller,
-        { thread, pr, enabled = true, method, afterRefs, hold, holdWaitsOn, release, clearHold },
+        {
+          thread,
+          pr,
+          enabled = true,
+          method,
+          afterRefs,
+          hold,
+          holdWaitsOn,
+          release,
+          clearHold,
+          scope,
+        },
       ) =>
         Effect.succeed({
           key: JSON.stringify([
             pr.repo.toLowerCase(),
             pr.number,
+            // A card covers one base, and on a fork one head: another is another decision.
+            scope?.baseRef ?? null,
+            scope?.fork === true ? scope.head : null,
             thread.id,
             caller,
             enabled,
@@ -1090,6 +1161,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
           release,
           clearHold,
           reuseApproval,
+          scope,
         },
         call,
       ) =>
@@ -1123,6 +1195,32 @@ export const PrAppToolsLive = Layer.effectDiscard(
               message: "The approved pull request identity changed during the call; call it again.",
             });
           }
+          // A user's approval covers what its card named. Read again after the card: a push to a
+          // fork or a retarget while it waited is not what the user approved.
+          const approved =
+            allowedBy !== "user" || !enabled
+              ? undefined
+              : call.carded === true
+                ? yield* approvalScope(latest, pr)
+                : scope;
+          if (allowedBy === "user" && enabled) {
+            if (approved === undefined || scope === undefined)
+              return yield* new AppToolError({
+                tool: MERGE,
+                message: `GitHub's head and base of ${prName(pr)} couldn't be read, so Gram can't record what the approval covers; call it again.`,
+              });
+            if (
+              approved.baseRef !== scope.baseRef ||
+              approved.fork !== scope.fork ||
+              (approved.fork && approved.head !== scope.head)
+            )
+              return yield* new AppToolError({
+                tool: MERGE,
+                message: `${prName(pr)} changed while the user was asked (now ${approvalScopeText(approved)}), so the approval doesn't cover it; call it again.`,
+              });
+          }
+          // What the card named, which is what the user approved.
+          const approvedScope = allowedBy === "user" && enabled ? scope : undefined;
           // The scope the ownership check reads, taken before it: the arming write commits only
           // while the workspace's projects are still these (a doubt widens nothing).
           const scopeProjects =
@@ -1271,6 +1369,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
                         locked || byOrchestrator ? ("orchestrator" as const) : ("thread" as const),
                     }),
                 allowedBy,
+                ...(approvedScope === undefined ? {} : { approved: approvedScope }),
                 ...(reusing
                   ? {
                       userAuthorization: {

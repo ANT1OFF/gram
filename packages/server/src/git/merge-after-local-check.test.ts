@@ -167,7 +167,12 @@ describe("an armed merge after Gram's own check fails", () => {
             repo: "example/project",
             number: 7,
             monitor: true,
-            mergeWhenReady: { method: "squash", allowedBy: "user", setAt: 1 },
+            mergeWhenReady: {
+              method: "squash",
+              allowedBy: "user",
+              approved: { head: HEAD, baseRef: "main", fork: false },
+              setAt: 1,
+            },
           },
         }));
         const service = yield* MergeWhenReady;

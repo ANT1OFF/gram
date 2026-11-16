@@ -103,6 +103,7 @@ export interface World {
       readonly fork?: boolean;
       readonly state?: string;
       readonly headRefOid?: string;
+      readonly baseRef?: string;
     }
   >;
   /**
@@ -369,6 +370,7 @@ const fakeGh = (world: World) => {
         isCrossRepository: head.fork === true,
         state: head.state ?? "OPEN",
         headRefOid: head.headRefOid ?? "h1",
+        baseRefName: head.baseRef ?? "main",
       };
       return { status: 0, stdout: JSON.stringify(view), stderr: "", truncated: false };
     }

@@ -3,7 +3,12 @@ import type { PrStatus } from "@gram/contracts";
 import { LOCAL_CHECK_ISOLATION } from "./local-checks.ts";
 import { localCheckFailedText, mergeBlocker } from "./merge-when-ready.ts";
 
-const intent = { method: "squash", allowedBy: "user", setAt: 1 } as const;
+const intent = {
+  method: "squash",
+  allowedBy: "user",
+  approved: { head: "new-head", baseRef: "main", fork: false },
+  setAt: 1,
+} as const;
 const green = (more: Partial<PrStatus> = {}): PrStatus => ({
   number: 2,
   state: "OPEN",
@@ -15,6 +20,7 @@ const green = (more: Partial<PrStatus> = {}): PrStatus => ({
   aheadOfPr: false,
   headRefOid: "new-head",
   baseRefOid: "base-1",
+  baseRef: "main",
   mergeState: "CLEAN",
   ...more,
 });

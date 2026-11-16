@@ -110,6 +110,30 @@ export const parsePrRef = (
   return match === null ? undefined : { repo: match[1]!, number: Number(match[2]) };
 };
 
+/** What a `merge_when_ready` that the user must approve again is told to do. */
+const ASK_AGAIN = "call merge_when_ready again, so the user approves what it would merge now";
+
+/**
+ * Why the user's approval of `intent` no longer covers the PR `badge` shows, or `undefined`. A user
+ * approval covers the base its card named, and on a fork the exact head too: anyone who can push
+ * to a fork can move its head, so a new head there merges or runs nothing until the user approves
+ * it. A head in the repository itself moves only by those the repository lets push. An approval
+ * recorded before Gram recorded what it covers asks again. `autonomy` intents recheck ownership at
+ * launch instead.
+ */
+export const approvalBlocker = (intent: MergeIntent, badge: PrStatus): string | undefined => {
+  if (intent.allowedBy !== "user") return undefined;
+  const approved = intent.approved;
+  if (approved === undefined)
+    return `the user's approval doesn't say which head and base it covers; ${ASK_AGAIN}`;
+  if (badge.baseRef === undefined) return "its base branch isn't known yet";
+  if (badge.baseRef !== approved.baseRef)
+    return `its base changed from ${approved.baseRef} to ${badge.baseRef} after the user approved it; ${ASK_AGAIN}`;
+  if (approved.fork && badge.headRefOid !== approved.head)
+    return `its head is on a fork${approved.headRepo === undefined ? "" : ` (${approved.headRepo})`} and moved from ${approved.head.slice(0, 7)}, the head the user approved, to ${badge.headRefOid?.slice(0, 7) ?? "an unknown commit"}; Gram neither checks nor merges a new fork head until the user approves it: ${ASK_AGAIN}`;
+  return undefined;
+};
+
 /**
  * Why the PR `badge` shows isn't to be merged now, before `after` is asked about, or `undefined`
  * when it is ready. A badge that didn't read the reviews can't say the approval is on its head.
@@ -125,6 +149,8 @@ export const mergeBlocker = (
   if (badge.state !== "OPEN") return `it is ${badge.state.toLowerCase()}`;
   if (badge.headRefOid === undefined) return "its head isn't known yet";
   if (intent.failedOn === badge.headRefOid) return "a merge of this head was refused";
+  const drift = approvalBlocker(intent, badge);
+  if (drift !== undefined) return drift;
   if (badge.reviewUnread === true) return "its reviews weren't read";
   if (!mergePolicyReady(badge, policy, bots, localCheck))
     return policy === "bot"
@@ -1523,6 +1549,44 @@ export const MergeWhenReadyLive = Layer.effect(
           return verdict === "gone" ? take(turn.queued) : verdict;
         }),
       );
+    /** Thread, head and base of checks whose provenance was verified, so a look reads it once. */
+    const provenanceVerified = new Set<string>();
+    /**
+     * Why Gram may not run the repository's own check of `badge`'s head on this machine for
+     * `thread`, or `undefined` when it may: the one rule on every path to `localChecks.ensure`. The
+     * check runs the head's code here, unsandboxed, so it must be the thread's own PR (open, not
+     * from a fork, its head branch held by the thread), or the exact head the user approved merging
+     * onto the base the approval names. An ownership blocker (`OWNERSHIP_BLOCKERS`) when not.
+     */
+    const checkProvenance = (
+      thread: Thread,
+      bound: BoundPr,
+      badge: PrStatus,
+      head: string,
+      intent: MergeIntent | undefined,
+    ): Effect.Effect<string | undefined> =>
+      Effect.gen(function* () {
+        if (
+          intent?.allowedBy === "user" &&
+          intent.approved?.head === head &&
+          approvalBlocker(intent, badge) === undefined
+        )
+          return undefined;
+        const key = `${thread.id}\u0000${head}\u0000${currentBaseOf(badge) ?? ""}`;
+        if (provenanceVerified.has(key)) return undefined;
+        const blocker = yield* workerPrBlocker(thread, bound.repo, bound.number, head).pipe(
+          Effect.provideService(ThreadStore, store),
+          Effect.provideService(Proc, proc),
+          withMachines(machines),
+          Effect.orElseSucceed(() => OWNERSHIP_BLOCKERS.unverified),
+        );
+        if (blocker === undefined) {
+          if (provenanceVerified.size >= 1_000) provenanceVerified.clear();
+          provenanceVerified.add(key);
+        }
+        return blocker;
+      });
+
     const startLocalCheck = (
       thread: Thread,
       bound: BoundPr,
@@ -1545,6 +1609,10 @@ export const MergeWhenReadyLive = Layer.effect(
         const key = baseKey(bound.repo, badge.baseRef);
         if (movedBases.get(key)?.includes(base))
           return `GitHub still reads ${base.slice(0, 7)} as a base Gram moved on from`;
+        // It runs the head's code on this machine: only the thread's own, or the head the user approved.
+        const provenance = yield* checkProvenance(thread, bound, badge, head, intent);
+        if (provenance !== undefined)
+          return `Gram doesn't run its own check of ${head.slice(0, 7)} on this machine, since ${prName(bound)} isn't this thread's own (${explainOwnershipBlocker(provenance).reason}) and the user didn't approve merging this head; CI on the head can still satisfy the merge, or ${ASK_AGAIN}`;
         // Read before the turn is taken, so nothing stands between taking it and the check that
         // hands it on.
         const dir = yield* checkSiteFor(thread, repoDirOf(thread));
@@ -1615,6 +1683,18 @@ export const MergeWhenReadyLive = Layer.effect(
           intent.hold === undefined ? yield* frozenFor(bound, badge.baseRef) : undefined;
         if (frozen !== undefined) {
           yield* noteWait(thread, bound, frozen);
+          return yield* stop(thread.id);
+        }
+        // What the user approved no longer covers the PR (a push to its fork, a retarget): no check
+        // and no merge, and the thread hears why at once, since only a new approval moves it.
+        const drift =
+          intent.hold === undefined && head !== undefined && badge.baseRef !== undefined
+            ? approvalBlocker(intent, badge)
+            : undefined;
+        if (drift !== undefined) {
+          if (bound.mergeWaiting?.why !== drift)
+            yield* tell(thread, bound, `merge_when_ready on ${prName(bound)} waits: ${drift}.`);
+          yield* noteWait(thread, bound, drift);
           return yield* stop(thread.id);
         }
         if (
@@ -1759,12 +1839,13 @@ export const MergeWhenReadyLive = Layer.effect(
         const base = currentBaseOf(badge);
         if (head === undefined || base === undefined)
           return { refused: `GitHub didn't give ${prName(bound)}'s head and base commits` };
-        // Its own PR alone: never a fork's or another branch's code on this machine.
-        const ownership = yield* workerPrBlocker(thread.value, bound.repo, bound.number, head).pipe(
-          Effect.provideService(ThreadStore, store),
-          Effect.provideService(Proc, proc),
-          withMachines(machines),
-          Effect.orElseSucceed(() => OWNERSHIP_BLOCKERS.unverified),
+        // Its own PR, or the head the user approved merging: no other code on this machine.
+        const ownership = yield* checkProvenance(
+          thread.value,
+          bound,
+          badge,
+          head,
+          bound.mergeWhenReady,
         );
         if (ownership !== undefined) {
           const { reason, fix, unblocks } = explainOwnershipBlocker(ownership);

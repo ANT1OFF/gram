@@ -128,7 +128,10 @@ changes into events that wake the thread that cares:
   a passing [local merge check](#project-local-merge-checks), and GitHub's rules, then merges
   pinned to the head it checked. An approval stands for the call it was given on: the same call
   again from the same caller joins its waiting card (`askedElsewhere`), while a worker's call and
-  its orchestrator's are asked apart. A card is withdrawn if its PR merges or closes first.
+  its orchestrator's are asked apart. A card is withdrawn if its PR merges or closes first. The
+  card names the head and base it covers and whether the PR is from a fork. A user's approval is
+  pinned to that base, and on a fork to that exact head: a retarget, or a push to the fork, merges
+  and checks nothing until the user approves again.
 - **Digests.** Worker reports, finished turns, errors, long-open requests and pull request changes
   wake the orchestrator with one digest built from the current ledger.
 - **Routines.** A workspace's [routines](#routines) start a fresh worker (or brief the orchestrator)
@@ -910,7 +913,9 @@ the alternative under the merge policy.
 ### How the gate runs
 
 `merge_when_ready` runs the check when a passing check is all a merge lacks; `local_check` starts
-it early for a worker's own bound PR. Gram fetches the pinned head and base into its own bare
+it early for a worker's own bound PR. Either runs the head's code on this machine only for the
+thread's own PR (open, not from a fork, its head branch held by the thread) or for the exact head the
+user approved merging; any other head waits for CI. Gram fetches the pinned head and base into its own bare
 repository (hashing objects again and ignoring agent-writable config, attributes, hooks,
 replace refs and grafts), merges them and creates a fresh checkout with an unpredictable name.
 A stored pass is specific to the project, command, setup, timeout, exact head and base, and

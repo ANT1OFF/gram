@@ -1272,7 +1272,12 @@ describe("merge_when_ready", () => {
   );
 
   it("waits for the bot's approval on the head, green checks and a merge GitHub allows", () => {
-    const intent = { method: "squash", allowedBy: "user", setAt: 0 } as const;
+    const intent = {
+      method: "squash",
+      allowedBy: "user",
+      approved: { head: "h1", baseRef: "main", fork: false },
+      setAt: 0,
+    } as const;
     expect(mergeBlocker(intent, ready())).toBeUndefined();
     expect(mergeBlocker(intent, ready({ mergeState: "UNSTABLE" }))).toBeUndefined();
     expect(mergeBlocker(intent, ready({ mergeState: "BLOCKED" }))).toMatch(/not approved/);

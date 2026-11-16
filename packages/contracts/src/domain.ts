@@ -466,6 +466,21 @@ export const MergeIntent = Schema.Struct({
       reused: Schema.optionalKey(Schema.Literal(true)),
     }),
   ),
+  /**
+   * What a `user` approval covers, as its card named it: the PR's head and base when asked, and
+   * whether the head is on a fork (`headRepo`, when GitHub named it). A fork's head is pinned: a new
+   * push to it is merged or checked only once the user approves again. Every approval is pinned to
+   * `baseRef`: a retarget asks again. Absent on `autonomy`, which rechecks ownership at launch, and
+   * on approvals recorded before this was, which ask again.
+   */
+  approved: Schema.optionalKey(
+    Schema.Struct({
+      head: Schema.String,
+      baseRef: Schema.String,
+      fork: Schema.Boolean,
+      headRepo: Schema.optionalKey(Schema.String),
+    }),
+  ),
   /** Epoch ms. */
   setAt: Schema.Number,
   /** The head a merge was refused on; it is tried again once the head moves. */

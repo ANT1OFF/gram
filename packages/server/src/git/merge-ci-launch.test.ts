@@ -32,6 +32,7 @@ const published: PrStatus = {
   aheadOfPr: false,
   headRefOid: HEAD,
   baseRefOid: base,
+  baseRef: "main",
   headRef: "feat/topic",
   mergeState: "CLEAN",
 };
@@ -390,7 +391,12 @@ describe("actual merge launch with GitHub CI evidence", () => {
               repo: "example/project",
               number: 5,
               monitor: true,
-              mergeWhenReady: { method: "squash", allowedBy: "user", setAt: 1 },
+              mergeWhenReady: {
+                method: "squash",
+                allowedBy: "user",
+                approved: { head: HEAD, baseRef: "main", fork: false },
+                setAt: 1,
+              },
             },
           }));
           const pr = yield* Pr;
