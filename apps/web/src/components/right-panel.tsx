@@ -311,11 +311,12 @@ export function RightPanel() {
             ref={tabList}
             data-label-fit={phoneHeader ? "all" : labelFit.tabs}
             className={cn(
-              "min-w-0 overflow-x-auto border-b-0",
+              // Each tab draws its own underline, so the list's 1 px indicator is hidden: it hangs
+              // below the list, which scrolls sideways and so up and down too, and with classic
+              // scrollbars it showed a vertical scrollbar beside More.
+              "min-w-0 overflow-x-auto border-b-0 [&>[data-slot=tabs-indicator]]:hidden",
               // The row's own children there, so each segment is as wide as its name needs.
-              phoneHeader
-                ? "contents [&>[data-slot=tabs-indicator]]:hidden"
-                : !reviewAction && "flex-1",
+              phoneHeader ? "contents" : !reviewAction && "flex-1",
             )}
           >
             {/* An icon and a name each, the rarer tabs always in More and Terminal, Files, PR and

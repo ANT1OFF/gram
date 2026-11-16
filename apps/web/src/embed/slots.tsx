@@ -274,7 +274,10 @@ function EmbedGroup({
               onClick={fold.toggle}
               className={cn(
                 heading,
-                roomy && "pt-0",
+                // The heading's 20 px and its 4 px below, counted inside its width: a content-box
+                // button at full width would stand out past the sidebar by its padding and scroll
+                // the sidebar sideways.
+                roomy && "box-border h-6 pt-0",
                 "w-full gap-1 rounded-(--radius-sm) text-left outline-none transition-colors duration-(--dur-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
               )}
             >

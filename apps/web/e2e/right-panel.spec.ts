@@ -63,12 +63,17 @@ const everyNameShows = async (page: Page) => {
     .toBe(true);
 };
 
-/** The strip's content overruns its box. Polled: a fit settles over a frame or two. */
+/**
+ * The strip's content overruns its box, either way: below it, it would show a scrollbar beside
+ * More. Polled: a fit settles over a frame or two.
+ */
 const overflows = (page: Page) =>
   page
     .getByTestId("right-panel")
     .locator("[data-label-fit]")
-    .evaluate((list) => list.scrollWidth > list.clientWidth);
+    .evaluate(
+      (list) => list.scrollWidth > list.clientWidth || list.scrollHeight > list.clientHeight,
+    );
 
 test("a wide panel names every tab, and the open one stands on a background and an underline", async ({
   page,
