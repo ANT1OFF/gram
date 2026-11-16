@@ -522,6 +522,26 @@ For what opens over the page:
   confirm) opens it best once the menu has closed, from `Menu`'s `onOpenChangeComplete`, so the
   two don't both hold focus for a moment.
 
+For states and feedback:
+
+- `EmptyState`: what an empty list or page says, as the Board's and the Inbox's do: `icon` (a
+  Lucide icon or any glyph taking `className`, the `EmptyIcon` type), `title` (a fragment, "No
+  members yet"), `line?` (what goes there, one sentence), `action?` (`{ label, onClick, testId?,
+  primary? }`, the `EmptyAction` type: one outline button, filled only where it is the one way in),
+  and optional `testId`, `className`, `iconClassName` (only for a glyph whose colour is a status)
+  and `children` (after the action).
+- `Skeleton`: where something still loading will be, at the size you give it (`className`), in
+  the hover fill and pulsing under the Full motion setting only. Hidden from a screen reader.
+- `Shimmer`: words for what is still loading ("Loading members…"), a band of light across them
+  (`active`, default on; `className`). Gram says what loads in words where it can.
+- `Badge` and `Alert` take `variant="success"` and `variant="warning"` beside `destructive`. As
+  Gram's own status marks, the tone outlines a neutral fill and colours a badge's words or an
+  alert's glyph, never a tinted fill: `success` for done or passing, `warning` for a caution on
+  something chosen. Amber that means "needs you" is not `warning`; see the design notes.
+- `SettingsGroup` takes `plainOnPhone`: on a phone, a plain list rather than a card, with no
+  hairlines between rows and the title a quiet label with a rule running out after it. Wider
+  windows keep the card.
+
 The package's declarations (`gram-web-kit.d.ts` and `types/`) type every one of these, `render`
 on `Button`, `Badge` and the tooltip's trigger included, so an app needs no declarations of its
 own for the kit: resolve `@gram/web/kit` to the package and its `exports` find them. A test

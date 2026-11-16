@@ -16,6 +16,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
   Dialog,
+  EmptyState,
   Field,
   Hint,
   Input,
@@ -48,6 +49,8 @@ import {
   SettingRow,
   SettingsGroup,
   Sheet,
+  Shimmer,
+  Skeleton,
   Switch,
   Tabs,
   TabsContent,
@@ -59,6 +62,8 @@ import {
   TooltipContent,
   TooltipTrigger,
   type ClassInput,
+  type EmptyAction,
+  type EmptyIcon,
   type MeterTone,
   type OptionGroupOption,
   type RadioOption,
@@ -76,6 +81,8 @@ const modes: readonly RadioOption<Level>[] = [
 ];
 // @ts-expect-error: an option's value outside its type
 export const wrong: readonly OptionGroupOption<Level>[] = [{ value: "mid", label: "Mid" }];
+const Glyph: EmptyIcon = ({ className }) => <svg className={className} />;
+const add: EmptyAction = { label: "Add a member", onClick: () => {}, testId: "add" };
 const tone: MeterTone = meterTone(0.95);
 const classes: ClassInput = ["p-inset", false, null];
 
@@ -114,6 +121,18 @@ export function KitPage({ pick }: { pick: (level: Level) => void }) {
       <Badge render={<a href="/z" />} variant="secondary">
         2
       </Badge>
+      <EmptyState icon={Glyph} title="No members yet" line="Invite one to start." action={add} />
+      <Skeleton className="h-7 w-40" />
+      <Shimmer>Loading members…</Shimmer>
+      <Badge variant="success">Passing</Badge>
+      <Badge variant="warning">Bypass</Badge>
+      <Alert variant="warning">
+        <AlertTitle>Writes go live</AlertTitle>
+      </Alert>
+      <Alert variant="success">Saved</Alert>
+      <SettingsGroup label="Members" plainOnPhone card>
+        Rows
+      </SettingsGroup>
       <Alert variant="destructive">
         <AlertTitle>Failed</AlertTitle>
         <AlertDescription>Try again.</AlertDescription>

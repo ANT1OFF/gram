@@ -26,6 +26,19 @@ export const SETTINGS_STACK = "flex flex-col gap-6";
 /** A group's title: clearly above a row's name, which is the body size at medium weight. */
 export const GROUP_TITLE = "font-heading text-title text-foreground";
 
+/** `plainOnPhone`'s classes, each part's own, all under `phone:`. */
+const PLAIN = {
+  section: "phone:gap-0!",
+  head: "phone:items-center!",
+  caption:
+    "phone:items-center! phone:after:order-1 phone:after:h-px phone:after:min-w-6 phone:after:flex-1 phone:after:bg-border",
+  // The rule runs out after the title on its line; a description takes the line under both.
+  description: "phone:order-2 phone:basis-full!",
+  title:
+    "phone:font-sans! phone:text-body! phone:font-normal! phone:whitespace-nowrap! phone:text-muted-foreground!",
+  card: "phone:rounded-none! phone:border-0! phone:bg-transparent! phone:[&>*]:border-t-0! phone:[&>*]:px-0! phone:[&>*]:py-1.5!",
+};
+
 /**
  * A named group of settings within a page: its title with one plain sentence on what it is for on
  * the same line (wrapping under it only when the two don't fit), an ⓘ for anything more, over a
@@ -40,6 +53,7 @@ export function SettingsGroup({
   keywords,
   action,
   card = true,
+  plainOnPhone = false,
   testId,
   children,
 }: {
@@ -55,6 +69,12 @@ export function SettingsGroup({
   action?: ReactNode;
   /** Off for a group whose content isn't rows, which then sits on the page itself. */
   card?: boolean;
+  /**
+   * On a phone, a plain list rather than a card: no card and no hairlines between rows, and the
+   * title a quiet label with a rule running out after it, as an overview groups its rows. Wider
+   * windows keep the card. Its classes are important, to hold over an embedding app's own.
+   */
+  plainOnPhone?: boolean;
   /** On the card, for specs to find the group's rows by. */
   testId?: string;
   children: ReactNode;
@@ -67,7 +87,7 @@ export function SettingsGroup({
       {...(keywords ? { keywords } : {})}
       aria-labelledby={titleId}
       {...(anchor === undefined ? {} : { id: anchor })}
-      className="flex scroll-mt-4 flex-col gap-2"
+      className={cn("flex scroll-mt-4 flex-col gap-2", plainOnPhone && PLAIN.section)}
     >
       {/* Flush with the page's title and the card's edge: one left edge for every heading. */}
       {/* With an action, on a phone the title and the action share the first line and the sentence
@@ -78,16 +98,18 @@ export function SettingsGroup({
         className={cn(
           "flex items-start gap-3",
           action !== undefined && "phone:flex-wrap phone:gap-y-0.5",
+          plainOnPhone && PLAIN.head,
         )}
       >
         <div
           className={cn(
             "flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5",
+            plainOnPhone && PLAIN.caption,
             action !== undefined && "phone:contents!",
           )}
         >
           <div className="flex min-h-6 items-center gap-1">
-            <h3 id={titleId} className={GROUP_TITLE}>
+            <h3 id={titleId} className={cn(GROUP_TITLE, plainOnPhone && PLAIN.title)}>
               {label}
             </h3>
             <HelpTip label={label} help={learnMore} />
@@ -96,6 +118,7 @@ export function SettingsGroup({
             <div
               className={cn(
                 "min-w-0",
+                plainOnPhone && PLAIN.description,
                 action !== undefined && "phone:order-last phone:-mt-2 phone:basis-full!",
               )}
             >
@@ -107,7 +130,10 @@ export function SettingsGroup({
           <div className="flex shrink-0 items-center phone:ms-auto">{action}</div>
         )}
       </div>
-      <div data-testid={testId} className={cn(card ? SETTINGS_CARD : "flex flex-col gap-4")}>
+      <div
+        data-testid={testId}
+        className={cn(card ? SETTINGS_CARD : "flex flex-col gap-4", plainOnPhone && PLAIN.card)}
+      >
         {children}
       </div>
     </SearchScope>
