@@ -411,10 +411,23 @@ export const resumeHost = (
         reopened: reopened.length,
         missing: missing.length,
         restored: restored.length,
+        // Why, counted: no note is a folder Gram didn't make from a clone, or a host that can't.
+        ...(missing.length === 0
+          ? {}
+          : {
+              missingWhy: Object.fromEntries(
+                [
+                  ...Map.groupBy(missing, (entry) => entry.note ?? "not made from a clone here"),
+                ].map(([why, entries]) => [why, entries.length]),
+              ),
+            }),
       }),
     );
     return { reopened, left, missing, restored };
-  });
+  }).pipe(
+    // Sessions held for it (`StopMarks.resuming`) open now, their folders back or not.
+    Effect.ensuring(Effect.sync(() => deps.hosts.stops.resumed(id))),
+  );
 
 export interface StopState {
   readonly id: HostId;
@@ -424,6 +437,11 @@ export interface StopState {
   readonly stoppedAt?: number;
   /** A thread waits for it to be started now. */
   readonly wanted: boolean;
+  /**
+   * Dialled in after a stop and not yet resumed (`StopMarks.resuming`), however it was started:
+   * resume it (`POST /machines/stop/resume`), as its sessions wait for that.
+   */
+  readonly resuming?: boolean;
 }
 
 /** Each joined machine: whether it is dialled in, readied to stop, and wanted. */
@@ -446,6 +464,7 @@ export const stopStatus = (
           online,
           ...(stoppedAt === undefined ? {} : { stoppedAt }),
           wanted: deps.hosts.stops.wanted(id),
+          ...(online && deps.hosts.stops.resuming(id) ? { resuming: true } : {}),
         };
       }),
   );

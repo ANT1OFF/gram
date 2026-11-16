@@ -189,7 +189,8 @@ const WAKE_LOOK = "500 millis";
  * that is joined but away is waited for, for `waitMs`: whoever runs the machines stops idle ones
  * with their disks kept (`stop-resume.ts`) and starts one again when it is wanted, which the wait
  * says it is (`RemoteHosts.stops.wanted`). So is one readied to stop and still there, which takes
- * no work until it is stopped and started, or its stop is taken back. With them off, and for a
+ * no work until it is stopped and started, or its stop is taken back, and one back after a stop
+ * until its threads are resumed (`StopMarks.resuming`), whose folders may not be there before. With them off, and for a
  * machine that isn't joined, an absent machine is unavailable at once, as ever.
  */
 export const awaitedMachines =
@@ -205,7 +206,10 @@ export const awaitedMachines =
         Effect.map((host) => ({ host, away: undefined })),
         Effect.catch((away) => Effect.succeed({ host: undefined, away })),
       );
-      if (first.host !== undefined && !remote.stops.holding(id)) return first.host;
+      // Readied to stop, or back after one and not yet resumed (its folders maybe not there yet):
+      // it takes no new session until then.
+      const settled = () => !remote.stops.holding(id) && !remote.stops.resuming(id);
+      if (first.host !== undefined && settled()) return first.host;
       const asIs = first.host === undefined ? Effect.fail(first.away) : Effect.succeed(first.host);
       if (remote.machines.get(id)?.confirmedAt === undefined) return yield* asIs;
       if (!embeddingOn(yield* store.getSettings)) return yield* asIs;
@@ -214,8 +218,14 @@ export const awaitedMachines =
       );
       const ready = get(id).pipe(
         Effect.filterOrFail(
-          () => !remote.stops.holding(id),
-          () => new HostUnavailable({ hostId: id, message: "That machine is being stopped." }),
+          settled,
+          () =>
+            new HostUnavailable({
+              hostId: id,
+              message: remote.stops.holding(id)
+                ? "That machine is being stopped."
+                : "That machine's threads are being put back.",
+            }),
         ),
       );
       return yield* remote.stops.wanting(
