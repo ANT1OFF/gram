@@ -1,7 +1,7 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 
-import { MENU_ITEM, MENU_LABEL, MENU_POPUP } from "@/lib/selection";
+import { MENU_DANGER, MENU_FITS, MENU_ITEM, MENU_LABEL, MENU_POPUP } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 
 /**
@@ -39,7 +39,8 @@ const MenuSub = MenuPrimitive.SubmenuRoot;
 
 /**
  * The menu's popup, under its trigger by default and lined up with its end edge. `side`, `align`
- * and `sideOffset` place it; every other prop goes to the popup.
+ * and `sideOffset` place it; every other prop goes to the popup. It never runs past the window: a
+ * long menu scrolls and a long row wraps.
  */
 function MenuContent({
   className,
@@ -63,16 +64,13 @@ function MenuContent({
         <MenuPrimitive.Popup
           data-slot="menu-content"
           data-surface="overlay"
-          className={cn(MENU_POPUP, className)}
+          className={cn(MENU_POPUP, MENU_FITS, className)}
           {...props}
         />
       </MenuPrimitive.Positioner>
     </MenuPrimitive.Portal>
   );
 }
-
-/** A removal's row: in the destructive colour, highlighted or not. It should confirm first. */
-const DANGER = "text-destructive data-[highlighted]:text-destructive";
 
 /** One row; `onClick` is its action. `danger` for one that removes something. */
 function MenuItem({
@@ -83,7 +81,7 @@ function MenuItem({
   return (
     <MenuPrimitive.Item
       data-slot="menu-item"
-      className={cn(MENU_ITEM, danger && DANGER, className)}
+      className={cn(MENU_ITEM, danger && MENU_DANGER, className)}
       {...props}
     />
   );
@@ -174,7 +172,7 @@ function MenuSubContent({ className, ...props }: MenuPrimitive.Popup.Props) {
         <MenuPrimitive.Popup
           data-slot="menu-sub-content"
           data-surface="overlay"
-          className={cn(MENU_POPUP, className)}
+          className={cn(MENU_POPUP, MENU_FITS, className)}
           {...props}
         />
       </MenuPrimitive.Positioner>

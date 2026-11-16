@@ -10,7 +10,6 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
-import { cn } from "@/lib/utils";
 
 /** One thing a Settings list row can do, the same in its ⋯ menu and its right-click menu. */
 export interface RowAction {
@@ -22,8 +21,6 @@ export interface RowAction {
   /** While another action on the row runs. */
   readonly disabled?: boolean;
 }
-
-const DANGER = "text-destructive data-[highlighted]:text-destructive";
 
 /** The ⋯ at a row's end. `label` names it, such as "Gateway Staging actions". */
 export function RowMenuButton({
@@ -92,7 +89,7 @@ export function RowContextMenu({
           <ContextMenuItem
             key={action.label}
             disabled={action.disabled === true}
-            className={cn(action.danger && DANGER)}
+            danger={action.danger === true}
             onClick={action.onSelect}
           >
             <action.icon aria-hidden className="size-icon-row" />

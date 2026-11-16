@@ -57,6 +57,10 @@ describe("Menu", () => {
     expect(popup.getAttribute("role")).toBe("menu");
     expect(popup.getAttribute("data-surface")).toBe("overlay");
     expect(popup.className).toContain("shadow-overlay");
+    // Never past the window: no taller or wider than the room beside the trigger, scrolling.
+    expect(popup.className).toContain("max-h-(--available-height)");
+    expect(popup.className).toContain("max-w-(--available-width)");
+    expect(popup.className).toContain("overflow-y-auto");
     const rename = screen.getByRole("menuitem", { name: "Rename" });
     expect(rename.className).toContain("data-[highlighted]:row-cursor");
     expect(rename.className).not.toContain("text-destructive");
