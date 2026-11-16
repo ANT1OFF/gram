@@ -3,10 +3,15 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import type { ShellNewForm } from "@/embed/contract";
+import { useEmbedShell } from "@/embed/store";
 
 import { NewFormHeader } from "./who-does-it";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useEmbedShell.setState({ threadsPage: {} });
+});
 
 describe("NewFormHeader", () => {
   it("is one title, then the goal, where it goes, Who does it and one line", () => {
@@ -70,5 +75,33 @@ describe("NewFormHeader", () => {
     expect(screen.queryByRole("radiogroup", { name: "Who does it" })).toBeNull();
     expect(screen.queryByRole("group", { name: "Where it runs" })).toBeNull();
     expect(screen.queryByText("Synthetic workspace")).toBeNull();
+  });
+
+  it("ignores an older embedder's `newForm.task`, a type error for a typed one", () => {
+    // The option is gone: a typed embedder still passing it fails to compile at its pin bump...
+    // @ts-expect-error `task` was removed from ShellNewForm; drop it from the mount options.
+    const typed: ShellNewForm = { task: "hidden" };
+    expect(typed).toBeTruthy();
+    // ...and an untyped one that still passes it gets the two choices, in its words, no crash.
+    const untyped = {
+      task: "hidden",
+      team: { label: "Crew", line: "A lead splits it up." },
+    } as unknown as ShellNewForm;
+    useEmbedShell.setState({ threadsPage: { newForm: untyped } });
+    render(
+      <TooltipProvider>
+        <NewFormHeader
+          who="orchestrator"
+          onWho={vi.fn()}
+          where={<span>Synthetic workspace</span>}
+        />
+      </TooltipProvider>,
+    );
+    const who = screen.getByRole("radiogroup", { name: "Who does it" });
+    expect(
+      within(who)
+        .getAllByRole("radio")
+        .map((radio) => radio.getAttribute("aria-label")),
+    ).toEqual(["Crew", "Chat"]);
   });
 });

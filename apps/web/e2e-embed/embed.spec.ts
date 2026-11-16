@@ -376,16 +376,17 @@ test("the page of every thread and New take the embedding app's words", async ({
   await expect(page.getByRole("button", { name: /^Start chat/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Start agent", exact: true })).toBeVisible();
   // Who does it is two choices, an orchestrator or one agent; the app words them and the button.
+  // An app built against an older Gram may still pass `newForm.task`, which was removed: it is
+  // ignored, never a crash (`errors` stays empty below).
   await expect(page.getByTestId("new-who-worker")).toHaveCount(0);
   await page.evaluate(() => {
+    const newForm = {
+      task: "hidden",
+      team: { label: "Crew", line: "A lead splits it up." },
+      solo: { label: "Alone", start: "Start alone" },
+    };
     (window as unknown as Update).embed.update({
-      threadsPage: {
-        kinds: { solo: "One agent" },
-        newForm: {
-          team: { label: "Crew", line: "A lead splits it up." },
-          solo: { label: "Alone", start: "Start alone" },
-        },
-      },
+      threadsPage: { kinds: { solo: "One agent" }, newForm },
     });
   });
   await expect(page.getByTestId("new-who-orchestrator")).toBeVisible();
