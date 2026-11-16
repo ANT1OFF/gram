@@ -14,6 +14,7 @@ import {
   shellPage,
   useLayoutStore,
 } from "@/stores/layout";
+import { useNavigationLayout } from "@/stores/navigation";
 import { useThreadsStore } from "@/stores/threads";
 import { useViewStore } from "@/views/view-store";
 
@@ -76,6 +77,9 @@ export function useShellLayout() {
   const settings = page === "/settings";
   // A phone has no room beside the chat for the overview: it is the header's drawer instead.
   const phone = usePhone();
+  // A dock, or a sidebar that hides when not in use, takes no column: the page has the width.
+  const nav = useNavigationLayout(phone);
+  const navAway = nav.position !== "side" || nav.autoHide;
   const input = {
     windowWidth,
     threadInView: hasThread,
@@ -83,8 +87,8 @@ export function useShellLayout() {
     panelBarred,
     focusMode,
     sidebarWidth,
-    sidebarPeek: settings || phone ? false : sidebarPeek,
-    overviewSidebar: settings || phone ? "hidden" : overviewSidebar,
+    sidebarPeek: settings || phone || navAway ? false : sidebarPeek,
+    overviewSidebar: settings || phone || navAway ? "hidden" : overviewSidebar,
     panelOpen,
     panelWidth,
     panelExpanded,
@@ -123,6 +127,14 @@ export function useShellLayout() {
   );
   return {
     fit,
+    /** Where the main navigation sits, and whether it hides when not in use. */
+    nav,
+    /** The auto-hidden sidebar's form, out of view at the window's left until it is wanted. */
+    autoHidden: (settings || nav.position !== "side" || !nav.autoHide
+      ? "none"
+      : overviewSidebar === "compact"
+        ? "compact"
+        : "full") as "none" | "compact" | "full",
     focusMode,
     /** Settings is open: the title bar carries Back and its name, and no overview shows. */
     settings,

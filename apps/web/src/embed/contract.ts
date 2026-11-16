@@ -798,6 +798,30 @@ export interface LookDefaults {
   readonly sidebar?: "flush" | "inset";
   /** The sidebar's icons in their row's colour, or in the accent. */
   readonly sidebarIcons?: "plain" | "accent";
+  /**
+   * Where the main navigation sits and whether it hides when not in use. Left out, it is the
+   * sidebar at the window's left, always shown. Settings → Appearance → Navigation wins over it.
+   */
+  readonly navigation?: NavigationDefaults;
+}
+
+/** Where the main navigation sits and how it shows. Each value left out keeps Gram's own. */
+export interface NavigationDefaults {
+  /**
+   * `side` (the default) is the sidebar at the window's left. `dock` draws the navigation as a
+   * rounded bar of icons with short labels at the window's top or bottom edge (`edge`); its
+   * Overview item opens the sidebar over the page. A phone keeps its drawer either way.
+   */
+  readonly position?: "side" | "dock";
+  /** The dock's edge of the window. Defaults to `bottom`. Ignored with `position: "side"`. */
+  readonly edge?: "top" | "bottom";
+  /**
+   * Slides the navigation out of view while it is not in use, giving its room to the page. It
+   * comes back while the pointer rests at its edge of the window, while the keyboard's focus is in
+   * it (Tab reaches it, and Focus sidebar, ⌘⌥S, moves there), and with ⌘B, which shows and hides
+   * it. Escape hides it again. Defaults to false.
+   */
+  readonly autoHide?: boolean;
 }
 
 export interface MountOptions {

@@ -421,6 +421,26 @@ mountGram({
         },
       }
     : {}),
+  // The shell's layout: `?nav=dock-top`, `?nav=dock-bottom` or `?nav=side`, and `&auto-hide`.
+  ...(new URLSearchParams(location.search).has("nav") ||
+  new URLSearchParams(location.search).has("auto-hide")
+    ? {
+        layout: {
+          navigation: {
+            ...(new URLSearchParams(location.search).get("nav")?.startsWith("dock")
+              ? {
+                  position: "dock" as const,
+                  edge:
+                    new URLSearchParams(location.search).get("nav") === "dock-top"
+                      ? ("top" as const)
+                      : ("bottom" as const),
+                }
+              : { position: "side" as const }),
+            autoHide: new URLSearchParams(location.search).has("auto-hide"),
+          },
+        },
+      }
+    : {}),
   // An app that follows Gram's palettes and picks its default look by name only.
   ...(new URLSearchParams(location.search).has("look-defaults")
     ? {

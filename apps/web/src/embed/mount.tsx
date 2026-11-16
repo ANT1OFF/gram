@@ -31,6 +31,7 @@ import type {
   UseShellLocation,
 } from "./contract";
 import { EMPTY_SHELL, routeProblem, shellFor, useEmbedShell } from "./store";
+import { useNavigationStore } from "@/stores/navigation";
 import { installHostTheme } from "@/theme/host-theme";
 import { installLookDefaults } from "@/theme/look-defaults";
 
@@ -95,6 +96,7 @@ export const mountGram: MountGram = async (options) => {
       options.theme,
       options.defaults,
     );
+    useNavigationStore.getState().setHost(options.defaults?.navigation);
 
     const api = await createApi(
       mock ? "mock" : "rpc",
