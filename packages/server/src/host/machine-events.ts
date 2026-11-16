@@ -1,4 +1,4 @@
-import type { MachineState, ServerEvent } from "@gram/contracts";
+import type { HostId, MachineState, ServerEvent } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as FiberSet from "effect/FiberSet";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
@@ -56,6 +56,38 @@ export const publishMachineStates = (
               return hub.publish({ type: "machines.snapshot", machines });
             }),
           );
+        }),
+      ),
+      (unwatch) => Effect.sync(unwatch),
+    );
+  });
+
+/** The machines connected now. */
+const onlineIn = (hosts: Pick<RemoteHostsShape, "states">): ReadonlySet<HostId> =>
+  new Set(
+    hosts.states().flatMap((machine) => (machine.onlineSince === undefined ? [] : [machine.id])),
+  );
+
+/**
+ * Sends, when a machine comes online, what waits queued in the threads that run on it. A message
+ * sent while the machine was offline stays queued (the send there failed), and the queue waits for
+ * the folder to come back, which only the machine's joining tells. A machine that was already
+ * online when this starts is the boot's (`sendQueuedAtBoot`).
+ */
+export const sendQueuedOnJoin = (
+  runtimes: { readonly sendQueuedOn: (hostId: HostId) => Effect.Effect<void> },
+  hosts: Pick<RemoteHostsShape, "states" | "watch">,
+) =>
+  Effect.gen(function* () {
+    const run = yield* FiberSet.makeRuntime<never>();
+    let online = onlineIn(hosts);
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        hosts.watch(() => {
+          const now = onlineIn(hosts);
+          const joined = [...now].filter((id) => !online.has(id));
+          online = now;
+          for (const id of joined) run(runtimes.sendQueuedOn(id));
         }),
       ),
       (unwatch) => Effect.sync(unwatch),

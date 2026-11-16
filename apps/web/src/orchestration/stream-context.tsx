@@ -4,7 +4,7 @@ import { createContext, use, useMemo, type ReactNode } from "react";
 import { useAllActivity } from "@/stores/all-activity";
 
 import { CardFactsContext } from "./card-tones";
-import { FeatureCardView } from "./feature-card";
+import { endWordOf, FeatureCardView } from "./feature-card";
 import { useRailFacts } from "./feature-sheet";
 import { cardRows, planRuns, planStream, quietCard, type StreamPlan } from "./stream-model";
 import { UpdateBlock, UpdateRun } from "./update-block";
@@ -125,6 +125,10 @@ export function StreamExtrasView({
   if (stream === undefined || extras === undefined) return null;
   const titleOf = (threadId: ThreadId) =>
     stream.workers.find((worker) => worker.threadId === threadId)?.title;
+  const endWord = (feature: string) => {
+    const card = stream.cards.get(feature);
+    return card === undefined ? "merged" : endWordOf(card);
+  };
   const cardOf = (feature: string) => {
     const card = stream.cards.get(feature);
     return card === undefined ? null : (
@@ -142,7 +146,12 @@ export function StreamExtrasView({
           renderReply={renderReply}
         />
       ) : (
-        <UpdateRun parts={extras.run} renderMerged={cardOf} renderReply={renderReply} />
+        <UpdateRun
+          parts={extras.run}
+          renderMerged={cardOf}
+          renderReply={renderReply}
+          endWord={endWord}
+        />
       )}
       {cardRows(extras.cards, (feature) => {
         const card = stream.cards.get(feature);
@@ -155,6 +164,7 @@ export function StreamExtrasView({
             key={`run:${row.parts.map((part) => (part.kind === "merged" ? part.feature : "")).join(" ")}`}
             parts={row.parts}
             renderMerged={cardOf}
+            endWord={endWord}
           />
         ),
       )}

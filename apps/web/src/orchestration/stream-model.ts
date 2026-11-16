@@ -528,6 +528,8 @@ export interface RunWords {
 export function runWords(
   parts: readonly RunPart[],
   clock: (at: number) => string = formatStamp,
+  /** A finished feature's word: `delivered` when nothing of it merged. Left out, `merged`. */
+  endWord?: (feature: string) => "merged" | "delivered",
 ): RunWords {
   const updates = parts.flatMap((part) => (part.kind === "update" ? [part] : []));
   const lines = updates.flatMap((part) => part.lines);
@@ -540,8 +542,10 @@ export function runWords(
   const byKind = new Map<StreamLine["kind"], number>();
   for (const { line } of lines) byKind.set(line.kind, (byKind.get(line.kind) ?? 0) + 1);
   for (const part of parts) {
-    if (part.kind === "merged" && !said.has(part.feature))
-      byKind.set("merged", (byKind.get("merged") ?? 0) + 1);
+    if (part.kind === "merged" && !said.has(part.feature)) {
+      const kind = endWord?.(part.feature) ?? "merged";
+      byKind.set(kind, (byKind.get(kind) ?? 0) + 1);
+    }
   }
   const counts = COUNT_ORDER.flatMap((kind) => {
     const n = byKind.get(kind);

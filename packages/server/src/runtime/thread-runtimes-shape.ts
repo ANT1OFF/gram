@@ -34,6 +34,7 @@ import type {
   RestartMidTurn,
   RestartSessionResult,
   StartSessionResult,
+  HostId,
 } from "@gram/contracts";
 import type { HistoryRewind, ThreadStoreShape, TurnRecord } from "../persistence/thread-store.ts";
 import type * as Effect from "effect/Effect";
@@ -392,6 +393,11 @@ export interface ThreadRuntimesShape {
    * for it to come back.
    */
   readonly sendQueuedAtBoot: Effect.Effect<void>;
+  /**
+   * Sends what waits queued in each thread that isn't archived and runs on `hostId`, once that
+   * machine is connected: a send while it was offline failed and kept the message queued.
+   */
+  readonly sendQueuedOn: (hostId: HostId) => Effect.Effect<void>;
   /**
    * How many threads a quit would cut off: with a turn open (running, or waiting on an approval or an
    * answer), or with a background shell, subagent or monitor still going. Terminal tabs aren't

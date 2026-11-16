@@ -576,6 +576,16 @@ describe("runs of quiet rows", () => {
     expect(runWords(run ?? [], clock).counts).toEqual([{ kind: "merged", text: "1 merged" }]);
   });
 
+  it("counts a finished feature with nothing merged as delivered, not merged", () => {
+    const parts = [
+      { kind: "merged" as const, feature: "probe-a" },
+      { kind: "merged" as const, feature: "probe-b" },
+    ];
+    expect(runWords(parts, clock, () => "delivered").counts).toEqual([
+      { kind: "delivered", text: "2 delivered" },
+    ]);
+  });
+
   it("ends a run at a live card, which stays a card under the run's row", () => {
     const merging = mergedDigest(2);
     const messages = [
