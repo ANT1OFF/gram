@@ -852,9 +852,9 @@ const redialling = Effect.gen(function* () {
     };
   });
   const first = yield* dial;
-  const agent = (reattachMs: number) =>
+  const agent = (reattachMs: number, callMs = 2_000) =>
     agentHostOnMachine(
-      followingSessions(current, { reattachMs, callMs: 2_000 }),
+      followingSessions(current, { reattachMs, callMs }),
       () => false,
       inServer.host,
       "box",
@@ -964,7 +964,7 @@ describe("a joined machine's sessions across a dropped connection", () => {
   it.live("end once the machine doesn't come back in time", () =>
     Effect.gen(function* () {
       const { onHost, first, agent } = yield* redialling;
-      const session = yield* agent(1_000).open({ threadId: THREAD, cwd: "/work" });
+      const session = yield* agent(300).open({ threadId: THREAD, cwd: "/work" });
       const collected = yield* Effect.forkScoped(Stream.runCollect(session.events));
       yield* Queue.offer(onHost.events, notice("before"));
       yield* Effect.sleep("200 millis");
@@ -1011,13 +1011,13 @@ describe("input a joined machine's session didn't take", () => {
   it.live("waits for a machine that is away past a call's wait, and delivers once it is back", () =>
     Effect.gen(function* () {
       const { onHost, dial, first, agent } = yield* redialling;
-      const session = yield* agent(10_000).open({ threadId: THREAD, cwd: "/work" });
+      const session = yield* agent(10_000, 300).open({ threadId: THREAD, cwd: "/work" });
       yield* Effect.forkScoped(Stream.runDrain(session.events));
       first.hostEnd.destroy();
       yield* eventually(() => (first.connection.gone() ? true : undefined), "the drop");
       const sending = yield* Effect.forkScoped(Effect.exit(session.send({ text: "hi" })));
-      // Longer than a call waits (2 s here): before this change the send gave up and succeeded.
-      yield* Effect.sleep("2500 millis");
+      // Longer than a call waits (300 ms here): before this change the send gave up and succeeded.
+      yield* Effect.sleep("600 millis");
       yield* dial;
       expect(Exit.isSuccess(yield* Fiber.join(sending))).toBe(true);
       expect(onHost.calls.filter((call) => call === "send hi")).toHaveLength(1);
@@ -1047,7 +1047,7 @@ describe("input a joined machine's session didn't take", () => {
   it.live("is kept, not lost, when the machine doesn't come back in time", () =>
     Effect.gen(function* () {
       const { onHost, first, agent } = yield* redialling;
-      const session = yield* agent(1_000).open({ threadId: THREAD, cwd: "/work" });
+      const session = yield* agent(300).open({ threadId: THREAD, cwd: "/work" });
       yield* Effect.forkScoped(Stream.runDrain(session.events));
       first.hostEnd.destroy();
       yield* eventually(() => (first.connection.gone() ? true : undefined), "the drop");

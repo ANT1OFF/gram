@@ -11,6 +11,7 @@ import {
   titlebarMore,
 } from "./titlebar-menu";
 import { threadRow } from "./thread-row";
+import { shot } from "./shots";
 
 declare global {
   interface Window {
@@ -149,7 +150,7 @@ if (phase !== "before") {
           exact: true,
         });
         const capture = (state: string) =>
-          page.screenshot({
+          shot(page, {
             path: `${shots}/quiet-${provider}-${mode}-${state}.${visualPhase}.png`,
           });
         await expect(rail).toBeVisible();
@@ -272,7 +273,7 @@ if (phase !== "before") {
       await expect(
         page.getByTestId("transcript").locator('[data-message-id="prompt-0"]'),
       ).toBeInViewport();
-      await page.screenshot({ path: `${shots}/outline-touch.after.png` });
+      await shot(page, { path: `${shots}/outline-touch.after.png` });
     });
   });
 }
@@ -303,7 +304,7 @@ for (const provider of ["claude", "codex"] as const) {
     await expect(transcript.locator('[data-message-id="prompt-7"]')).toBeVisible();
     if (phase === "before") {
       await expect(contents).toHaveCount(0);
-      await page.screenshot({ path: `${shots}/outline-${provider}-wide.before.png` });
+      await shot(page, { path: `${shots}/outline-${provider}-wide.before.png` });
       return;
     }
     await expect(contents).toHaveCount(0);
@@ -313,7 +314,7 @@ for (const provider of ["claude", "codex"] as const) {
     await expect(
       page.getByTestId("conversation-rail").locator('[aria-current="location"]'),
     ).toHaveCount(1);
-    await page.screenshot({ path: `${shots}/outline-${provider}-wide.after.png` });
+    await shot(page, { path: `${shots}/outline-${provider}-wide.after.png` });
     const menu = await openContents(page);
     await expect(menu.getByRole("menuitem")).toHaveCount(8);
     await menu.getByRole("menuitem", { name: "Choose a storage format", exact: true }).click();
@@ -396,7 +397,7 @@ for (const provider of ["claude", "codex"] as const) {
       menu.getByRole("menuitem", { name: "Record the migration decision", exact: true }),
     ).toBeVisible();
     await expect(menu).toHaveCSS("opacity", "1");
-    await page.screenshot({ path: `${shots}/outline-${provider}-narrow.after.png` });
+    await shot(page, { path: `${shots}/outline-${provider}-narrow.after.png` });
     await menu.press("Escape");
     await setLayout(page, "1 pane");
     await expect(rail).toBeVisible();

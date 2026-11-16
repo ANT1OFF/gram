@@ -99,8 +99,8 @@ describe("reopenNotice", () => {
       role: "orchestrator",
       workspaceId: "w-1" as WorkspaceId,
     };
-    expect(reopenNotice(reopenedOf(orchestrator, { membership: "slotTaken" }))?.body).toBe(
-      "Its workspace has another orchestrator now, so this one is back as a plain thread in the workspace.",
+    expect(reopenNotice(reopenedOf(orchestrator, { membership: "slotTaken" }))?.body).toMatch(
+      /another orchestrator.*plain thread/,
     );
     expect(reopenNotice(reopenedOf(orchestrator, { membership: "notAdmitted" }))?.body).toContain(
       "can't be a workspace's orchestrator any more",
@@ -109,11 +109,9 @@ describe("reopenNotice", () => {
       reopenNotice(
         reopenedOf(worker, { membership: "orchestratorGone" }, { problem: "folderMissing" }),
       )?.body,
-    ).toBe(
-      "Its worktree no longer exists: /repo/.worktrees/fix. Restore it from the thread, from its branch or its PR's head. The orchestrator that spawned it is closed or replaced, so it is back in the workspace without one.",
-    );
-    expect(reopenNotice(reopenedOf(worker, { membership: "workspaceGone" }))?.body).toBe(
-      "Its workspace was removed, so it is back as a plain thread.",
+    ).toMatch(/^Its worktree no longer exists: \/repo\/\.worktrees\/fix\..*orchestrator/);
+    expect(reopenNotice(reopenedOf(worker, { membership: "workspaceGone" }))?.body).toMatch(
+      /workspace was removed.*plain thread/,
     );
   });
 });

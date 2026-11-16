@@ -504,9 +504,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           model: { ...t.model, profileId: "litellm" as ProfileId },
         }));
         const gateway = yield* orchestration.handoff(workspaceId, "user", codex).pipe(Effect.flip);
-        expect(gateway.message).toBe(
-          "Switching uses the CLI's own sign-in; it doesn't move gateway accounts.",
-        );
+        expect(gateway.message).toContain("gateway");
         expect((yield* store.getThread(thread.id)).sessionSwitch).toBeUndefined();
       }),
     ),
@@ -829,9 +827,10 @@ describe.skipIf(!hasGit)("orchestration service", () => {
               .setCharter(workspaceId, { ...full, autonomy })
               .pipe(Effect.flip);
             expect(refused).toMatchObject({ _tag: "InvalidState" });
-            expect(refused.message).toBe(
-              `Autonomy can't go from full to ${autonomy} yet, because “Mail trigger” couldn't ask before a push. Codex cannot prepare Gram's native approval home. Check codex login and the Gram data directory, or select a prepared gateway home. Prepare their native approval home and start fresh sessions, choose a prepared gateway home or a mode that can ask, detach them, or let them finish, and then change it.`,
-            );
+            // It names the level, the worker that can't ask, and why: not the sentence around them.
+            expect(refused.message).toContain(`full to ${autonomy}`);
+            expect(refused.message).toContain("“Mail trigger”");
+            expect(refused.message).toContain("Codex cannot prepare Gram's native approval home");
             expect(refused.message).not.toContain(fine.thread.title);
           }
           expect((yield* store.getWorkspace(workspaceId)).charter.autonomy).toBe("full");

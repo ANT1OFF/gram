@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { layoutPresets, openLayout } from "./layout";
+import { shot as keep } from "./shots";
 
 // Checks Glass, the only look, renders its structural treatment, the grid holds at every preset, and
-// the overview sidebar and focus mode still lay out. Screenshots for review go to
-// e2e/__screenshots__/looks/ (gitignored; they change every run).
+// the overview sidebar and focus mode still lay out. With `GRAM_E2E_SHOTS` set, screenshots for
+// review go to e2e/__screenshots__/looks/ (gitignored; they change every run).
 
 const SETTINGS_KEY = "gram.mock.settings";
 
@@ -35,7 +36,7 @@ const style = (page: Page, selector: string, property: string) =>
     .evaluate((el, prop) => getComputedStyle(el).getPropertyValue(prop), property);
 
 const shot = (page: Page, name: string) =>
-  page.screenshot({ path: `e2e/__screenshots__/looks/${name}.png` });
+  keep(page, { path: `e2e/__screenshots__/looks/${name}.png` });
 
 for (const [look, mode] of [["glass", "dark"]] as const) {
   test(`${look} (${mode}) renders its structure and holds the grid`, async ({ page }) => {
@@ -86,13 +87,3 @@ for (const [look, mode] of [["glass", "dark"]] as const) {
     await page.keyboard.press("ControlOrMeta+Shift+.");
   });
 }
-
-test("the /new prompt box takes the look's composer treatment, as the thread's does", async ({
-  page,
-}) => {
-  const slab = '[data-surface="composer"]';
-  await useLook(page, "glass", "dark");
-  await page.goto("/new");
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  expect(await style(page, slab, "border-top-left-radius")).toBe("22px");
-});

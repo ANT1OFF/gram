@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { ThreadSummary } from "@gram/contracts";
 
 import { seedTheme } from "./seed-theme";
+import { keepShots } from "./shots";
 
 declare global {
   interface Window {
@@ -89,10 +90,12 @@ test("reconnect snapshots replace old activity while subsequent live events stil
 
   await reconnect({ status: "running", activity: "Running tests after reconnect" });
   await showHint();
-  const phase = process.env["GRAM_FEED_PHASE"] ?? "after";
-  const capture = info.outputPath(`activity-reconnect.${phase}.png`);
-  await page.screenshot({ path: capture });
-  await info.attach(`Activity reconnect — ${phase}`, { path: capture, contentType: "image/png" });
+  if (keepShots) {
+    const phase = process.env["GRAM_FEED_PHASE"] ?? "after";
+    const capture = info.outputPath(`activity-reconnect.${phase}.png`);
+    await page.screenshot({ path: capture });
+    await info.attach(`Activity reconnect — ${phase}`, { path: capture, contentType: "image/png" });
+  }
   await info.attach("Reconnect interaction receipt", {
     body: JSON.stringify({
       action: "simulateDisconnect, receive a fresh snapshot, hover the header status",

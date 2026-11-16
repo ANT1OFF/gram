@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { openOverviewDensity } from "./overview-density";
 import { seedTheme } from "./seed-theme";
 import { openOrchestrator, threadRow } from "./thread-row";
+import { shot } from "./shots";
 
 async function resizePane(page: Page, width: number) {
   const handle = page.getByRole("separator", { name: "Resize overview" });
@@ -102,7 +103,7 @@ for (const mode of ["dark"] as const) {
           .every((leaf) => leaf.width >= 30),
       ).toBe(true);
       samples.push({ width, geometry });
-      await sidebar.screenshot({ path: test.info().outputPath(`${mode}-${width}.png`) });
+      await shot(sidebar, { path: test.info().outputPath(`${mode}-${width}.png`) });
     }
 
     // A short title leaves the room: at a wide pane the failing PR's chip is after it, saying its

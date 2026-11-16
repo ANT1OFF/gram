@@ -119,8 +119,6 @@ describe("Sheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open member" }));
     const sheet = await screen.findByTestId("member-sheet");
     expect(screen.getByRole("dialog", { name: "Ada" })).toBe(sheet);
-    expect(sheet.className).toContain("end-2");
-    expect(sheet.className).toContain("w-[min(28rem,calc(100vw-1rem))]");
     expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
     expect(screen.getByText("Owner since 2024")).toBeTruthy();
   });

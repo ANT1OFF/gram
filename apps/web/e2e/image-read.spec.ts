@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import type { GramUIMessage } from "@gram/contracts";
 
 import { MOCK_TOOL_IMAGE } from "../src/api/mock-files";
+import { shot } from "./shots";
 
 const path = MOCK_TOOL_IMAGE.path;
 const name = path.split("/").at(-1)!;
@@ -114,7 +115,7 @@ for (const width of [390]) {
     const lightbox = page.getByTestId("attachment-lightbox");
     await expect(lightbox.getByRole("img", { name, exact: true })).toBeVisible();
     await expect(lightbox).toHaveCSS("opacity", "1");
-    await page.screenshot({ path: testInfo.outputPath(`image-read-open-${width}.png`) });
+    await shot(page, { path: testInfo.outputPath(`image-read-open-${width}.png`) });
     await page.keyboard.press("Escape");
     await expect(lightbox).toBeHidden();
     await expect(page.locator('[data-tool-call-id="missing-image"]')).toContainText(
@@ -128,7 +129,7 @@ for (const width of [390]) {
       "aria-expanded",
       "true",
     );
-    await page.screenshot({ path: testInfo.outputPath(`image-read-card-${width}.png`) });
+    await shot(page, { path: testInfo.outputPath(`image-read-card-${width}.png`) });
 
     const inline = page.locator('[data-tool-call-id="inline-image"]');
     // The row names the call in words; its raw tool id is in the details.
@@ -149,6 +150,6 @@ for (const width of [390]) {
     await thumbnail.click();
     await expect(lightbox.getByRole("img", { name, exact: true })).toBeVisible();
     await expect(lightbox).toHaveCSS("opacity", "1");
-    await page.screenshot({ path: testInfo.outputPath(`image-read-reload-${width}.png`) });
+    await shot(page, { path: testInfo.outputPath(`image-read-reload-${width}.png`) });
   });
 }

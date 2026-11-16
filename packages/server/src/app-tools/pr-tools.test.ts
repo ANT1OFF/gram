@@ -531,10 +531,12 @@ describe.skipIf(!hasGit)("run_monitor", () => {
         { startImmediately: true },
       );
       yield* runtimes.updateThread(thread.id, (t) => ({ ...t, parked: true }));
-      yield* Effect.sleep(Duration.millis(200));
+      yield* eventually(
+        "the park's upsert",
+        Effect.sync(() => upserts.count > 0 || undefined),
+      );
       // And it writes nothing back, which it would hear again as another upsert, and so on.
       const seen = upserts.count;
-      expect(seen).toBeGreaterThan(0);
       yield* Effect.sleep(Duration.millis(200));
       expect(upserts.count).toBe(seen);
       expect(yield* store.listQueue(thread.id)).toHaveLength(MAX_RUN_WATCHES);

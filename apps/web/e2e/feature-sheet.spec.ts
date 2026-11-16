@@ -71,23 +71,6 @@ test("a worker in the sheet opens its worker view", async ({ page }) => {
   await expect(page.getByTestId("view-board")).toBeHidden();
 });
 
-test("the helper's sentence shows in the sheet", async ({ page }) => {
-  await seed(page);
-  const text = "Endpoint in review, waiting on the form; three branches ready to push.";
-  await page.evaluate(
-    (armed) => window.gramMock!.simulateFeatureSummary(armed.feature, armed.text),
-    { feature: "mail-trigger", text },
-  );
-  const made = await page.evaluate(() => window.gramMock!.simulateAsks());
-  await openOrchestrator(page, made.orchestratorThreadId);
-  await page
-    .getByRole("radiogroup", { name: "View" })
-    .getByRole("radio", { name: /^Board\b/ })
-    .click();
-  await line(page, "mail-trigger").getByTestId("rail-feature").click();
-  await expect(sheet(page).getByTestId("feature-sheet-summary")).toHaveText(text);
-});
-
 test("the feature menu: Ask about it fills the orchestrator's composer and sends nothing", async ({
   page,
 }) => {

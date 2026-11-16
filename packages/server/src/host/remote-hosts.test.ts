@@ -3,7 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { HOST_PROTOCOL_VERSION, HostId, type ServerEvent } from "@gram/contracts";
 import * as Context from "effect/Context";
-import type * as Duration from "effect/Duration";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -112,26 +112,47 @@ const servedWith = (
 
 const served = servedWith();
 
-/** A host that holds back its hello by `delay`. */
-const slowHello = (dial: DialOptions, hostId: string, delay: Duration.Input) =>
+/**
+ * A host that holds back its hello: `reading` is done once it has its socket and would read, and it
+ * reads nothing until `release` is.
+ */
+const heldHello = (dial: DialOptions, hostId: string) =>
   Effect.gen(function* () {
-    const socket = yield* Socket.makeWebSocket(dial.url!, {
-      headers: signedConnectHeaders(dial.key, dial.origin, dial.hostId),
-    });
-    let first = true;
-    const held: Socket.Socket = {
-      ...socket,
-      reader: Effect.map(socket.reader, (reader) => ({
-        ...reader,
-        pull: Effect.suspend(() => {
-          if (!first) return reader.pull;
-          first = false;
-          return Effect.andThen(Effect.sleep(delay), reader.pull);
-        }),
-      })),
-    };
-    yield* serveHost(held, yield* service(hostId));
-  }).pipe(Effect.scoped, Effect.provide(NodeSocket.layerWebSocketConstructor));
+    const reading = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    const run = Effect.gen(function* () {
+      const socket = yield* Socket.makeWebSocket(dial.url!, {
+        headers: signedConnectHeaders(dial.key, dial.origin, dial.hostId),
+      });
+      let first = true;
+      const held: Socket.Socket = {
+        ...socket,
+        reader: Effect.map(socket.reader, (reader) => ({
+          ...reader,
+          pull: Effect.suspend(() => {
+            if (!first) return reader.pull;
+            first = false;
+            return Deferred.succeed(reading, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.andThen(reader.pull),
+            );
+          }),
+        })),
+      };
+      yield* serveHost(held, yield* service(hostId));
+    }).pipe(Effect.scoped, Effect.provide(NodeSocket.layerWebSocketConstructor));
+    return { run, reading, release };
+  });
+
+/** Polls on real time until `check` holds, or fails the test after `seconds`. */
+const waitUntil = (label: string, check: () => boolean, seconds = 10) =>
+  Effect.gen(function* () {
+    const deadline = Date.now() + seconds * 1000;
+    while (!check()) {
+      if (Date.now() > deadline) return yield* Effect.die(new Error(`timed out: ${label}`));
+      yield* Effect.sleep("10 millis");
+    }
+  });
 
 /**
  * A host that can be stalled: while it is, it reads nothing, so it answers no ping, as a host does
@@ -391,22 +412,22 @@ describe("joined machines over the network", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.live(
-    "keeps a machine removed while it says hello offline",
-    () =>
-      Effect.gen(function* () {
-        const { hosts, base } = yield* served;
-        const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
-        yield* Effect.forkScoped(slowHello(dial, hostId, "3 seconds"));
-        yield* Effect.sleep("1 second");
-        hosts.remove(HostId.make(hostId));
-        yield* Effect.sleep("4 seconds");
-        expect(hosts.list()).toEqual([]);
-        expect(Effect.runSync(Effect.exit(hosts.connection(HostId.make(hostId))))._tag).toBe(
-          "Failure",
-        );
-      }).pipe(Effect.scoped),
-    20_000,
+  it.live("keeps a machine removed while it says hello offline", () =>
+    Effect.gen(function* () {
+      const { hosts, base, finished } = yield* served;
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      const host = yield* heldHello(dial, hostId);
+      yield* Effect.forkScoped(host.run);
+      yield* Deferred.await(host.reading);
+      hosts.remove(HostId.make(hostId));
+      // Its hello arrives after the removal: the dial ends without bringing it back.
+      yield* Deferred.succeed(host.release, undefined);
+      yield* waitUntil("the dial to end", () => finished() === 1);
+      expect(hosts.list()).toEqual([]);
+      expect(Effect.runSync(Effect.exit(hosts.connection(HostId.make(hostId))))._tag).toBe(
+        "Failure",
+      );
+    }).pipe(Effect.scoped),
   );
 
   it.live("lists what a machine can run once it is online, and again when asked", () =>
@@ -498,17 +519,17 @@ describe("joined machines over the network", () => {
       Effect.gen(function* () {
         const { hosts, base, finished } = yield* served;
         const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
-        yield* Effect.forkScoped(slowHello(dial, hostId, "4 seconds"));
-        yield* Effect.sleep("1 second");
+        const host = yield* heldHello(dial, hostId);
+        yield* Effect.forkScoped(host.run);
+        yield* Deferred.await(host.reading);
         expect(finished()).toBe(0);
         hosts.keepOrigin(undefined);
-        // Ended at once, not when the held hello arrives three seconds later.
-        yield* Effect.sleep("1 second");
-        expect(finished()).toBe(1);
-        yield* Effect.sleep("3 seconds");
+        // Ended while the hello is still held, not when it arrives.
+        yield* waitUntil("the dial to end", () => finished() === 1);
+        yield* Deferred.succeed(host.release, undefined);
+        yield* Effect.sleep("100 millis");
         expect(hosts.list()[0]).not.toHaveProperty("onlineSince");
       }).pipe(Effect.scoped),
-    20_000,
   );
 
   it.live(
@@ -582,7 +603,7 @@ describe("joined machines over the network", () => {
       yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
       yield* online(hosts, hostId);
       hosts.keepOrigin("https://moved.example-tailnet.ts.net");
-      yield* Effect.sleep("200 millis");
+      yield* waitUntil("moved", () => hosts.list("on")[0]?.offline?.kind === "moved");
       expect(hosts.list("on")[0]?.offline).toMatchObject({ kind: "moved" });
 
       // Access turned off and on again before it redials: its connection was lost then. Access
@@ -591,7 +612,7 @@ describe("joined machines over the network", () => {
       yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
       yield* online(hosts, hostId);
       hosts.keepOrigin(undefined);
-      yield* Effect.sleep("200 millis");
+      yield* waitUntil("off", () => hosts.list("off")[0]?.offline?.kind === "tailscale-off");
       expect(hosts.list("off")[0]?.offline).toEqual({ kind: "tailscale-off" });
       expect(hosts.list("on")[0]?.offline).toMatchObject({ kind: "lost" });
 

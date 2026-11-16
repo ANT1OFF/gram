@@ -7,7 +7,7 @@ import { create } from "zustand";
 
 import type { Api } from "@/api/types";
 import { EXPLAIN } from "@/lib/explain";
-import { DISCOVER_MESSAGE, TIDY_UP_MESSAGE } from "@/orchestration/board-model";
+import { DISCOVER_MESSAGE, TIDY_UP_MESSAGE, tidyUpBlocked } from "@/orchestration/board-model";
 import { TIDY_SENT_MS } from "@/orchestration/use-board-actions";
 import { renderWithApi } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
@@ -65,13 +65,13 @@ it("is disabled, and says why in words, while there is no orchestrator that can 
   const send = vi.fn<Api["send"]>();
   const { unmount } = renderWithApi(<Bar state={workspace()} />, { send });
   expect(item().getAttribute("aria-disabled")).toBe("true");
-  expect(item().textContent).toBe("Tidy upNo orchestrator yet: open it first");
+  expect(item().textContent).toContain(tidyUpBlocked(undefined));
   fireEvent.click(item());
   unmount();
 
   withOrchestrator("ended");
   renderWithApi(<Bar state={workspace(ORCH)} />, { send });
-  expect(item().textContent).toBe("Tidy upThe orchestrator thread has ended");
+  expect(item().textContent).toContain(tidyUpBlocked({ status: "ended" }));
   fireEvent.click(item());
   expect(send).not.toHaveBeenCalled();
 });
@@ -139,7 +139,7 @@ it("offers Discover beside Tidy up, off with the same reason while there is no o
   const send = vi.fn<Api["send"]>();
   renderWithApi(<Bar state={workspace()} />, { send });
   expect(discover().getAttribute("aria-disabled")).toBe("true");
-  expect(discover().textContent).toBe("Discover workspaceNo orchestrator yet: open it first");
+  expect(discover().textContent).toContain(tidyUpBlocked(undefined));
   fireEvent.click(discover());
   expect(send).not.toHaveBeenCalled();
 });

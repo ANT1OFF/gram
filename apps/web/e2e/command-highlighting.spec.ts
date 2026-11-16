@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { seedTheme } from "./seed-theme";
+import { shot } from "./shots";
 
 // Invented content only. These commands are displayed, never executed.
 const command = `printf '%s\\n' '{"items":[1,2,3]}' | jq '\n  .items[] | select(. > 1)\n'\nprintf '%s\\n' "$HOME" && echo "done"\n`;
@@ -186,7 +187,7 @@ for (const [provider, mode] of [
     }
     await expect(page.locator("html")).toHaveAttribute("data-mode", mode);
     await card.scrollIntoViewIfNeeded();
-    await page.screenshot({
+    await shot(page, {
       path: `e2e/__screenshots__/command-${provider}-${mode}.${phase}.png`,
     });
     expect(errors).toEqual([]);
@@ -235,7 +236,7 @@ if (phase === "after") {
     expect(await code.locator("..").evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(
       true,
     );
-    await page.screenshot({ path: "e2e/__screenshots__/command-narrow-fallback.after.png" });
+    await shot(page, { path: "e2e/__screenshots__/command-narrow-fallback.after.png" });
   });
 
   test("a grammar load failure keeps the exact uncolored command", async ({ page }) => {
@@ -266,7 +267,7 @@ if (phase === "after") {
     await expect(card.locator("pre").last()).toHaveText(
       JSON.stringify({ stdout, stderr: "", interrupted: false, exitCode: 0 }, null, 2),
     );
-    await page.screenshot({ path: "e2e/__screenshots__/command-load-fallback.after.png" });
+    await shot(page, { path: "e2e/__screenshots__/command-load-fallback.after.png" });
     expect(runtimeErrors).toEqual([]);
     // The bundle has two shellscript chunks and the dev server one module; this fixture blocks
     // each, and each blocked load is the only error it logs.

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { openOrchestrator, threadRow } from "./thread-row";
+import { shot } from "./shots";
 
 /** A workspace of its own, opened at its settings page; its id. */
 const openWorkspace = async (page: Page) => {
@@ -111,7 +112,7 @@ test("adds a routine, refuses a 12-hour time, and saves its schedule and target"
     schedule: { every: "week", day: 5, at: "16:00" },
     target: "orchestrator",
   });
-  await section.screenshot({ path: test.info().outputPath("routines-section.png") });
+  await shot(section, { path: test.info().outputPath("routines-section.png") });
 });
 
 test("turns a routine off and on, runs it now, and removes it after asking", async ({ page }) => {

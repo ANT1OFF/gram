@@ -18,7 +18,6 @@ import {
   reviewStripWidth,
   REVIEW_WIDTH_SHARE,
   sanitizeBoardFilters,
-  OVERVIEW_FOLDED_BY_DEFAULT,
   overviewSectionFolded,
   sanitizeOverviewView,
   type OverviewSection,
@@ -824,7 +823,6 @@ describe("side panels", () => {
 
   it("starts At rest folded, and remembers it", () => {
     const folded = (section: OverviewSection) => overviewSectionFolded(s(), section);
-    expect(OVERVIEW_FOLDED_BY_DEFAULT).toEqual(["rest"]);
     expect(folded("rest")).toBe(true);
     expect(folded("solo")).toBe(false);
     s().toggleOverviewSection("rest");

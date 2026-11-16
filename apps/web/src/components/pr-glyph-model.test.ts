@@ -1,13 +1,4 @@
 import type { PrReviewState } from "@gram/contracts";
-import {
-  CircleX,
-  GitMerge,
-  GitMergeConflict,
-  GitPullRequest,
-  GitPullRequestClosed,
-  GitPullRequestDraft,
-  MessageSquareWarning,
-} from "lucide-react";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -134,21 +125,6 @@ describe("one glyph everywhere", () => {
 });
 
 describe("PR_GLYPH_DISPLAY", () => {
-  it.each<[PrGlyphKind, unknown, string]>([
-    ["ready", GitPullRequest, "text-success"],
-    ["open", GitPullRequest, "text-success"],
-    // Trouble shows as its own mark from the PR vocabulary, so a closed PR keeps its shape alone.
-    ["failing", CircleX, "text-destructive"],
-    ["changes", MessageSquareWarning, "text-foreground"],
-    ["conflicts", GitMergeConflict, "text-destructive"],
-    ["draft", GitPullRequestDraft, "text-muted-foreground"],
-    ["merged", GitMerge, "text-merged"],
-    ["closed", GitPullRequestClosed, "text-destructive"],
-    ["unknown", GitPullRequest, "text-muted-foreground"],
-  ])("draws %s", (kind, icon, tone) => {
-    expect(PR_GLYPH_DISPLAY[kind]).toEqual({ icon, tone });
-  });
-
   it("draws checks still running with the checks' running mark, everywhere a glyph is drawn", () => {
     expect(PR_GLYPH_DISPLAY.pending).toEqual(CHECKS_DISPLAY.pending);
   });

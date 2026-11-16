@@ -2,13 +2,14 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { seedTheme, type SeededTheme } from "./seed-theme";
 import { slowdown } from "./slowdown";
+import { shot } from "./shots";
 
 // Opening Settings used to fade the whole page from the boot palette (Tokyo Night dark) into the real
 // theme: <html> started with hardcoded attributes, so every `transition-all` button and the body's
 // colour transition animated on first paint. Under Glass, <main> was transparent on every route, so
 // with native vibrancy (a transparent window) full-page routes had no opaque surface at all and showed
 // whatever was behind them. These open and scroll Settings and assert nothing churns, animates or
-// shows through. Screenshots for review go to e2e/__screenshots__/flicker/ (gitignored).
+// shows through. With `GRAM_E2E_SHOTS` set, screenshots for review go to e2e/__screenshots__/flicker/.
 
 // Cold route loads run long on a loaded machine; the starved Windows runner took 38 s to open a
 // thread and 11–35 s per click. The sampling itself is bounded.
@@ -147,7 +148,7 @@ test("full-page routes stay opaque over native vibrancy (Glass light, Catppuccin
   ).toBeLessThan(1);
   // The gaps between floating panes paint an opaque backdrop too; a transparent window never clears.
   expect(await mainAlpha(page), "the gaps between panes show the window").toBe(1);
-  await page.screenshot({ path: "e2e/__screenshots__/flicker/glass-native-grid.png" });
+  await shot(page, { path: "e2e/__screenshots__/flicker/glass-native-grid.png" });
 
   // Then Settings, in-app, the way ⌘, opens it.
   await page.keyboard.press("ControlOrMeta+,");
@@ -157,7 +158,7 @@ test("full-page routes stay opaque over native vibrancy (Glass light, Catppuccin
   expect(await mainAlpha(page), "Settings content is see-through").toBe(1);
   await expect(page.getByTestId("thread-grid")).toHaveCount(0);
   await expect(page.getByTestId("transcript")).toHaveCount(0);
-  await page.screenshot({ path: "e2e/__screenshots__/flicker/glass-native-settings.png" });
+  await shot(page, { path: "e2e/__screenshots__/flicker/glass-native-settings.png" });
 
   for (const path of ["/settings/gateways", "/new", "/"]) {
     await page.goto(path);
@@ -165,7 +166,7 @@ test("full-page routes stay opaque over native vibrancy (Glass light, Catppuccin
     await page.waitForTimeout(500);
     expect(await mainAlpha(page), `${path} is see-through`).toBe(1);
     if (path === "/new") {
-      await page.screenshot({ path: "e2e/__screenshots__/flicker/glass-native-new.png" });
+      await shot(page, { path: "e2e/__screenshots__/flicker/glass-native-new.png" });
     }
   }
 });

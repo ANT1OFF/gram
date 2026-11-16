@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { closeMenus } from "./titlebar-menu";
 
 import { openOrchestrator, threadRow } from "./thread-row";
+import { keepShots } from "./shots";
 
 // The Board view: tidying up, Waiting on you, folds and every way that opens it. Mock state lives
 // in memory, so every step after the seed navigates inside the app; nothing reloads.
@@ -367,17 +368,21 @@ test("a worker's red CI stays out of the Failing strip and Needs you, held by th
   await expect(stopped).toHaveCount(1);
   await expect(failed).toHaveCount(0);
   const before = Number(await pill.getAttribute("data-count"));
-  const heldShot = testInfo.outputPath("held-worker-ci.png");
-  await page.screenshot({ path: heldShot });
-  await testInfo.attach("held-worker-ci", { path: heldShot });
+  if (keepShots) {
+    const heldShot = testInfo.outputPath("held-worker-ci.png");
+    await page.screenshot({ path: heldShot });
+    await testInfo.attach("held-worker-ci", { path: heldShot });
+  }
 
   await page.evaluate((id) => window.gramMock!.releaseWorker(id), made.failing);
   await expect(stopped).toHaveCount(1);
   await expect(failed).toHaveCount(0);
   await expect(pill).toHaveAttribute("data-count", String(before));
-  const ownedShot = testInfo.outputPath("worker-owned-ci.png");
-  await page.screenshot({ path: ownedShot });
-  await testInfo.attach("worker-owned-ci", { path: ownedShot });
+  if (keepShots) {
+    const ownedShot = testInfo.outputPath("worker-owned-ci.png");
+    await page.screenshot({ path: ownedShot });
+    await testInfo.attach("worker-owned-ci", { path: ownedShot });
+  }
 });
 
 test("a repo that runs no CI gets one calm note on the Board, not a failure", async ({ page }) => {

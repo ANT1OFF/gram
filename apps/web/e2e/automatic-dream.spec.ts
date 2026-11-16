@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { shot } from "./shots";
 
 test("automatic Dream is opt-in, validates its threshold, and saves its workspace charter across route remounts", async ({
   page,
@@ -77,7 +78,7 @@ test("automatic Dream is opt-in, validates its threshold, and saves its workspac
   await expect(section.getByTestId("automatic-dream-progress")).toContainText(
     "Automatic runs await review",
   );
-  await section.getByTestId("automatic-dream-setting").screenshot({
+  await shot(section.getByTestId("automatic-dream-setting"), {
     path: test.info().outputPath("automatic-dream-settings.png"),
   });
   await toggle.uncheck();

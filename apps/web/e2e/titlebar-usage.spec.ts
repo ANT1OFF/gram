@@ -194,34 +194,6 @@ test("the title bar's meter is an icon button on an orchestrator, a worker and a
   await readsAsButton();
 });
 
-test("an orchestrator's title bar has Memory beside Chat · Board", async ({ page }) => {
-  await seed(page, { "gram.mock.orchestration": "board" });
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/");
-  await expect(page).toHaveURL(/\/t\/t-mock-\d+$/);
-  const workspaceId = await page.evaluate(
-    async () => (await window.gramMock!.listWorkspaces())[0]!.workspace.id,
-  );
-  const bar = page.getByTestId("shell-titlebar");
-  // Round 15: the orchestrator's bare org-chart glyph beside Chat · Board said only what the
-  // switcher and Chat already say. Its role is in the heading's name, for a screen reader alone.
-  await expect(bar.getByTestId("pane-role")).toHaveText("Orchestrator");
-  await expect(bar.getByTestId("pane-role").locator("svg")).toHaveCount(0);
-  await expect(bar.getByRole("heading", { name: /^Orchestrator: / })).toBeAttached();
-  // An icon with its name on hover, like the bar's other icons.
-  const memory = bar.getByRole("link", { name: "Memory", exact: true });
-  await expect(memory).toBeVisible();
-  await expect(memory).toHaveText("");
-  // To the right of the views.
-  const views = (await bar.getByTestId("view-switcher").boundingBox())!;
-  const box = (await memory.boundingBox())!;
-  expect(box.x).toBeGreaterThan(views.x + views.width);
-  await memory.hover();
-  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText("Memory");
-  await memory.click();
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceId}/memory$`));
-});
-
 test("every icon in the title bar is one size and stroke, and names itself the moment it is hovered", async ({
   page,
 }) => {

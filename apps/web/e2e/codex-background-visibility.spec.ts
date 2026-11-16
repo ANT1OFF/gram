@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import displayed from "../src/thread/codex-background.fixture.json" with { type: "json" };
+import { shot } from "./shots";
 
 test("Codex background output and count survive parent idle, exit updates one card, and child snapshots are inspectable", async ({
   page,
@@ -32,7 +33,7 @@ test("Codex background output and count survive parent idle, exit updates one ca
     .poll(() => command.evaluate((node) => node.getBoundingClientRect().height))
     .toBeGreaterThan(180);
   await command.locator("pre").last().scrollIntoViewIfNeeded();
-  await page.screenshot({
+  await shot(page, {
     path: testInfo.outputPath("codex-background-running.png"),
     animations: "disabled",
   });
@@ -58,7 +59,7 @@ test("Codex background output and count survive parent idle, exit updates one ca
     .toBeGreaterThan(180);
   await expect(page.getByTestId("subagent-transcript")).toHaveCount(0);
   await spawn.getByText("child-1", { exact: true }).scrollIntoViewIfNeeded();
-  await page.screenshot({
+  await shot(page, {
     path: testInfo.outputPath("codex-background-exited-and-child-snapshot.png"),
     animations: "disabled",
   });

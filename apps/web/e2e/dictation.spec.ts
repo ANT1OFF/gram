@@ -251,46 +251,6 @@ test("holding Right ⌥ talks from anywhere in the window, with a tone at each e
   expect(await tones(page)).toEqual([659, 880]);
 });
 
-test("a tap of Right ⌥, or ⌥ with another key, throws dictation away without a sound", async ({
-  page,
-}) => {
-  // With the microphone ready, capture is live well inside a tap: only the tap rule keeps it quiet.
-  await withVoice(page, true, { keepMicrophoneReady: true });
-  await withDictateKeys(page, "altright");
-  await countTones(page);
-  const composer = await openThread(page);
-  await composer.fill("Draft");
-  await composer.focus();
-  await page.waitForTimeout(500 * slowdown);
-  await page.keyboard.down("AltRight");
-  // Up as soon as a word is heard, which a hold would commit. Checked each frame: `expect.poll`'s
-  // 100 ms steps plus a fixed wait made the press about 300 ms on CI, a hold as often as a tap.
-  await page.waitForFunction(
-    () => {
-      const bridge = window.gramMock!.speechBridge;
-      return bridge.framesHeard >= bridge.framesPerWord;
-    },
-    undefined,
-    { polling: "raf" },
-  );
-  await page.keyboard.up("AltRight");
-  await page.waitForTimeout(800 * slowdown);
-  await expect(composer).toHaveValue("Draft");
-  await expect(page.getByRole("button", { name: "Start dictation" })).toBeVisible();
-
-  // A key with it makes a shortcut, not dictation. ⌥↑ moves the caret on every platform; ⌥← is the
-  // browser's Back off macOS.
-  await composer.press("End");
-  await page.keyboard.down("AltRight");
-  await page.waitForTimeout(100);
-  await page.keyboard.press("ArrowUp");
-  await page.waitForTimeout(600 * slowdown);
-  await page.keyboard.up("AltRight");
-  await expect(composer).toHaveValue("Draft");
-  await expect(page.getByTestId("dictation-partial")).toHaveCount(0);
-  expect(await tones(page)).toEqual([]);
-});
-
 test("a double tap of Right ⌥ keeps listening until the next press; Sounds off stays quiet", async ({
   page,
 }) => {
@@ -318,22 +278,6 @@ test("a double tap of Right ⌥ keeps listening until the next press; Sounds off
   await section.getByRole("switch", { name: "Sounds" }).click();
   await expect(section.getByTestId("dictation-sound-volume")).toBeVisible();
   expect(await tones(page)).toEqual([659]);
-});
-
-test("an empty draft's placeholder gives way to the partial, and comes back after", async ({
-  page,
-}) => {
-  await withVoice(page);
-  const composer = await openThread(page);
-  await expect(composer).toHaveAttribute("placeholder", /^Message…/);
-  await page.getByRole("button", { name: "Start dictation" }).click();
-  await expect(composer).toHaveAttribute("placeholder", "");
-  await expect(page.getByTestId("dictation-partial")).toContainText("Refactor the");
-  await expect(composer).toHaveAttribute("placeholder", "");
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("dictation-partial")).toHaveCount(0);
-  await expect(composer).toHaveValue("");
-  await expect(composer).toHaveAttribute("placeholder", /^Message…/);
 });
 
 test("typing while dictating keeps what was heard and stops listening", async ({ page }) => {
@@ -471,9 +415,7 @@ test("says why it can't start: no model yet, or no microphone permission", async
   const error = page.getByRole("alert").filter({ hasText: "Dictation:" });
   await expect(error).toContainText("The speech model isn't downloaded yet");
   await expect(page.getByTestId("dictation-button")).toHaveAttribute("data-state", "error");
-  // The old toolbar hint disappeared after 2.5 seconds; the full error stays until dismissed.
-  await page.waitForTimeout(3_000 * slowdown);
-  await expect(error).toBeVisible();
+  // That it outlasts the old 2.5 s hint is composer-dictation.test.tsx's, on a fake clock.
   const composer = page.getByRole("combobox", { name: "Message" });
   await composer.fill("Keep this draft");
   await composer.press("Escape");

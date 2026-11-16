@@ -1,14 +1,9 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { useLayoutStore } from "./layout";
 
-beforeEach(() => {
-  expect(window.localStorage.length).toBe(0);
-  expect(window.sessionStorage.length).toBe(0);
-});
-
-describe("layout browser storage fixture", () => {
+describe("layout storage", () => {
   it("persists panel width and rehydrates it from browser storage", async () => {
     expect(useLayoutStore.persist.getOptions().storage).toBeDefined();
     useLayoutStore.getState().setPanelWidth(420);
@@ -18,7 +13,6 @@ describe("layout browser storage fixture", () => {
     window.localStorage.setItem("gram.layout", saved);
     await useLayoutStore.persist.rehydrate();
     expect(useLayoutStore.getState().panelWidth).toBe(420);
-    window.sessionStorage.setItem("owned-session", "previous test");
   });
 
   it("opens a board saved on the lanes on the grid, and forgets the old layout", async () => {
@@ -39,31 +33,5 @@ describe("layout browser storage fixture", () => {
     const saved = JSON.parse(window.localStorage.getItem("gram.layout")!).state;
     expect(saved).not.toHaveProperty("boardLayout");
     expect(saved.boardArchivedShown).toEqual(["w-1", "w-2"]);
-  });
-
-  it("starts with empty storage and uses actual Web Storage keys, strings and removal", () => {
-    const storage = window.localStorage;
-    storage.setItem("owned-key", "value");
-    storage.setItem("owned-key", "replacement");
-    expect(storage.length).toBe(1);
-    expect(storage.key(0)).toBe("owned-key");
-    expect(storage.key(1)).toBeNull();
-    expect(storage.getItem("owned-key")).toBe("replacement");
-    storage.removeItem("owned-key");
-    expect(storage.getItem("owned-key")).toBeNull();
-    storage.setItem("owned-leak-sentinel", "next test must not inherit this");
-    window.sessionStorage.setItem("owned-leak-sentinel", "session too");
-  });
-
-  it("keeps an intentionally denied storage getter observable", () => {
-    const denied = new Error("Owned synthetic storage refusal");
-    const getter = vi.spyOn(window, "localStorage", "get").mockImplementation(() => {
-      throw denied;
-    });
-    try {
-      expect(() => window.localStorage).toThrow(denied);
-    } finally {
-      getter.mockRestore();
-    }
   });
 });

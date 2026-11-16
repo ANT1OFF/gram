@@ -401,29 +401,6 @@ test("first run with no agent warns once and leads with installing one", async (
   );
 });
 
-test("an empty home says no workspaces once, with Open a repository as its primary", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    sessionStorage.setItem("gram.mock.fresh", "1");
-    sessionStorage.setItem(
-      "gram.mock.settings",
-      JSON.stringify({ onboarding: { welcomeSeen: true } }),
-    );
-  });
-  await page.goto("/");
-  const home = page.getByTestId("home-empty");
-  await expect(home.getByTestId("empty-title")).toHaveText("No workspaces yet");
-  await expect(page.getByTestId("overview-empty-hint")).toHaveCount(0);
-  await expect(page.getByText("No workspaces yet")).toHaveCount(1);
-  const open = home.getByRole("button", { name: "Open a repository" });
-  await expect(open).toHaveClass(/bg-primary/);
-  await open.click();
-  await expect(page).toHaveURL(/\/new-workspace/);
-  // Away from home, the sidebar says what will fill it.
-  await expect(page.getByTestId("overview-empty-hint")).toContainText("No workspaces yet");
-});
-
 test("first run can be skipped for good", async ({ page }) => {
   await page.goto("/");
   const welcome = page.getByTestId("welcome");

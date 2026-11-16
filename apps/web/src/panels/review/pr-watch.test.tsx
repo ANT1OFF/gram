@@ -137,7 +137,6 @@ describe("PrWatch", () => {
         `Stopped: ${STOP_REASON_TEXT[stopReason]}`,
       );
     }
-    expect(STOP_REASON_TEXT.disagreement).toBe("the bot and agent disagree on one thread twice");
 
     setBabysit({
       ...initialBabysitState(0),

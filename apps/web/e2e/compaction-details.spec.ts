@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { GramUIMessage } from "@gram/contracts";
+import { shot } from "./shots";
 
 const summary =
   "1. **Intent**\nPreserve the retry fix.\n<script>unsafe()</script>\n" +
@@ -85,12 +86,12 @@ for (const width of [390]) {
     await expect(async () => {
       expect(await result.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
     }).toPass({ timeout: 5_000 });
-    await page.screenshot({ path: testInfo.outputPath(`compaction-expanded-${width}.png`) });
+    await shot(page, { path: testInfo.outputPath(`compaction-expanded-${width}.png`) });
     await page.keyboard.press("Shift+Tab");
     await toggle.press("Space");
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(result).toHaveCount(0);
-    await page.screenshot({ path: testInfo.outputPath(`compaction-collapsed-${width}.png`) });
+    await shot(page, { path: testInfo.outputPath(`compaction-collapsed-${width}.png`) });
     const missing = markers.nth(1).getByRole("button");
     await missing.click();
     await expect(markers.nth(1)).toContainText("Automatic compaction · Completed");
@@ -118,6 +119,6 @@ for (const width of [390]) {
       const transcript = (await page.getByTestId("transcript").boundingBox())!;
       expect(details.y + details.height).toBeLessThanOrEqual(transcript.y + transcript.height - 24);
     }).toPass({ timeout: 5_000 });
-    await page.screenshot({ path: testInfo.outputPath(`compaction-restored-${width}.png`) });
+    await shot(page, { path: testInfo.outputPath(`compaction-restored-${width}.png`) });
   });
 }

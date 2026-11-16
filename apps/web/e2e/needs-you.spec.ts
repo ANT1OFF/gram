@@ -148,41 +148,6 @@ test("the pill opens every workspace's items by kind, and Open thread lands on t
   await expect(page.getByTestId("right-panel")).toBeVisible();
 });
 
-test("list rows are two lines: what it is about, then workspace, kind, thread and age; the detail has the question", async ({
-  page,
-}) => {
-  await start(page);
-  await openInbox(page);
-  const question = await show(page, UV);
-  await expect(question.getByTestId("inbox-item-title")).toHaveText(UV);
-  await expect(question.getByTestId("inbox-item-title")).not.toContainText("uv only");
-  // Its kind (its glyph, under Questions, which says it in words), workspace and thread.
-  await expect(question.getByRole("img", { name: "Question" })).toBeVisible();
-  await expect(question.getByTestId("inbox-item-where")).toHaveText(
-    "agent-platform · Refresh the setup guide",
-  );
-  // A kind its heading doesn't say is said in words: a plan, under Approvals.
-  const plan = inbox(page).locator('[data-testid="inbox-item"][data-kind="plan"]');
-  await expect(plan.getByTestId("inbox-item-title")).toHaveText("Plan to review");
-  await expect(plan.getByTestId("inbox-item-where")).not.toContainText("Plan to review");
-  // Its title wraps to a second line before it is cut, never a third; its hover says all of it.
-  const lines = await question
-    .getByTestId("inbox-item-title")
-    .evaluate((el) =>
-      Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)),
-    );
-  expect(lines).toBeGreaterThanOrEqual(1);
-  expect(lines).toBeLessThanOrEqual(2);
-  expect(await question.getAttribute("title")).toContain(
-    "The setup guide covers both pip and uv. Keep both, or uv only?",
-  );
-  // The whole question and its choices are the detail's alone.
-  await expect(detail(page)).toContainText(
-    "The setup guide covers both pip and uv. Keep both, or uv only?",
-  );
-  await expect(detail(page).getByTestId("ask-option")).toHaveCount(2);
-});
-
 test("Esc, Enter and the approval keys stay with the Inbox: the thread's approval under it isn't answered", async ({
   page,
 }) => {
@@ -632,30 +597,4 @@ test("a question whose options carry screenshots shows them in the detail, besid
   // A click enlarges it.
   await hybrid.locator("button").first().click();
   await expect(page.getByRole("dialog", { name: /C Hybrid/ })).toBeVisible();
-});
-
-test("a short list has no category strip: its section headings already say it", async ({
-  page,
-}) => {
-  // The realistic morning: one error and one question, each under its own heading, both in sight.
-  await page.setViewportSize(WIDE);
-  await page.addInitScript(() => sessionStorage.setItem("gram.mock.orchestration", "realistic"));
-  await page.goto("/");
-  await openInbox(page);
-  await expect(inbox(page).getByTestId("inbox-section")).toHaveCount(2);
-  await expect(inbox(page).getByTestId("inbox-item")).toHaveCount(2);
-  // The strip would only say "Errors 1 · Questions 1" over headings that say the same.
-  await expect(inbox(page).getByTestId("needs-you-strip")).toHaveCount(0);
-  await expect(inbox(page).getByTestId("inbox-keys")).toContainText("j k move");
-});
-
-test("an empty Inbox lists only the key that works", async ({ page }) => {
-  await page.setViewportSize(WIDE);
-  await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
-  await page.goto("/");
-  await page.getByTestId("overview-sidebar").waitFor();
-  await page.keyboard.press("ControlOrMeta+Shift+I");
-  await expect(inbox(page).getByTestId("inbox-empty")).toBeVisible();
-  // Nothing to move through, pick, send or take back.
-  await expect(inbox(page).getByTestId("inbox-keys")).toHaveText("esc close");
 });

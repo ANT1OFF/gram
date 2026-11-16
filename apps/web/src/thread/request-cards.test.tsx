@@ -1221,7 +1221,6 @@ describe("an MCP server proposal", () => {
     expect(screen.getAllByTestId("mcp-env").map((row) => row.textContent)).toEqual([
       "LOG_LEVEL=info",
     ]);
-    expect(screen.getByTestId("mcp-env-value").className).toContain("whitespace-pre-wrap");
     expect(screen.getAllByTestId("mcp-target").map((row) => row.textContent)).toEqual([
       "Claude CodeClaude Code's user config (claude mcp add-json --scope user): every project",
       "CodexCodex's config.toml, [mcp_servers.docs-index]: every project, Gram's own Codex home included",

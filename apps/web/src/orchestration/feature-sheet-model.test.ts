@@ -82,6 +82,9 @@ describe("featureSheet", () => {
   });
 });
 
+const labels = (state: { paused: boolean; staged: boolean }) =>
+  FEATURE_MENU.map((item) => featureMenuLabel(item, state));
+
 describe("the feature menu", () => {
   it("keeps to the menu cap, each label a few words", () => {
     expect(FEATURE_MENU.length).toBeLessThanOrEqual(MENU_CAP);
@@ -90,31 +93,9 @@ describe("the feature menu", () => {
     }
   });
 
-  it("reads Open, Ask about it, Set stage…, Move to group, Pause, Rename, Archive", () => {
-    expect(
-      FEATURE_MENU.map((item) => featureMenuLabel(item, { paused: false, staged: false })),
-    ).toEqual([
-      "Open",
-      "Ask about it",
-      "Set stage…",
-      "Move to group",
-      "Pause",
-      "Rename",
-      "Archive",
-    ]);
-  });
-
   it("says Resume on a paused feature, and Edit plan… on one with a stage", () => {
-    expect(
-      FEATURE_MENU.map((item) => featureMenuLabel(item, { paused: true, staged: true })),
-    ).toEqual([
-      "Open",
-      "Ask about it",
-      "Edit plan…",
-      "Move to group",
-      "Resume",
-      "Rename",
-      "Archive",
-    ]);
+    const plain = labels({ paused: false, staged: false });
+    const changed = labels({ paused: true, staged: true }).filter((label, i) => label !== plain[i]);
+    expect(changed).toEqual(["Edit plan…", "Resume"]);
   });
 });

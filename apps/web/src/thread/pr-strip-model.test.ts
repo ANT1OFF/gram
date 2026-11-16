@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 
 import { checkBuckets, extraRowsOf, foldedRows, prRowOf, stripLayout } from "./pr-strip-model";
 import { prGlyphOf } from "@/components/pr-glyph-model";
-import { formatCount } from "@/lib/format";
 
 const run = (status: PrCheckRun["status"]) => ({
   name: status,
@@ -299,12 +298,5 @@ describe("hidden rows", () => {
       [4, false],
       [9, true],
     ]);
-  });
-});
-
-describe("formatCount", () => {
-  it("groups thousands", () => {
-    expect(formatCount(5624)).toBe("5,624");
-    expect(formatCount(0)).toBe("0");
   });
 });

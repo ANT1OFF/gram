@@ -1,12 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 import { setLayout } from "./layout";
+import { shot } from "./shots";
 
 // Under Glass the panes sit flush on the grid's hairline sheet: square corners, no margin, and a 1px
 // hairline where two meet. Over native vibrancy the window is transparent, so every grid pixel no
 // pane covers, the hairlines and anything a moving pane uncovers, needs an opaque painter or the
 // window shows through. This samples them on every other frame while panes split, resize, maximize
 // and close, asserts no point lacks an opaque background, and checks the panes fill the grid at
-// rest. Screenshots for review go to e2e/__screenshots__/gutters/ (gitignored).
+// rest. With `GRAM_E2E_SHOTS` set, screenshots for review go to e2e/__screenshots__/gutters/.
 
 const SETTINGS_KEY = "gram.mock.settings";
 
@@ -207,7 +208,7 @@ test("Glass panes stay flush and painted over native vibrancy while they split, 
   await expect(page.getByTestId("pane")).toHaveCount(4);
   await page.waitForTimeout(800);
   await expectPainted(page, "2×2");
-  await page.screenshot({ path: "e2e/__screenshots__/gutters/glass-native-2x2.png" });
+  await shot(page, { path: "e2e/__screenshots__/gutters/glass-native-2x2.png" });
 
   await page.keyboard.press("ControlOrMeta+Shift+Enter");
   await page.waitForTimeout(800);
@@ -218,7 +219,7 @@ test("Glass panes stay flush and painted over native vibrancy while they split, 
   await page.getByTestId("pane").nth(1).getByRole("button", { name: "Close pane" }).click();
   await page.waitForTimeout(800);
   await expectPainted(page, "close");
-  await page.screenshot({ path: "e2e/__screenshots__/gutters/glass-native-closed.png" });
+  await shot(page, { path: "e2e/__screenshots__/gutters/glass-native-closed.png" });
 });
 
 test("gutter monitor probes beneath portaled overlays without hiding missing paint", async ({

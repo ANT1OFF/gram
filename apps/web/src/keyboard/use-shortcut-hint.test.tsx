@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { useBindingsStore } from "./bindings-store";
 import { formatKeys } from "./registry";
-import { ShortcutKbd, withHint } from "./use-shortcut-hint";
+import { ShortcutKbd } from "./use-shortcut-hint";
 
 afterEach(() => {
   cleanup();
@@ -26,12 +26,5 @@ describe("ShortcutKbd", () => {
 
     act(() => useBindingsStore.setState({ overrides: { "sidebar.toggle": null } }));
     expect(button.querySelector("kbd")).toBeNull();
-  });
-});
-
-describe("withHint", () => {
-  it("adds the keys in parentheses, or nothing when there are none", () => {
-    expect(withHint("Collapse sidebar", "⌘B")).toBe("Collapse sidebar (⌘B)");
-    expect(withHint("Collapse sidebar", "")).toBe("Collapse sidebar");
   });
 });

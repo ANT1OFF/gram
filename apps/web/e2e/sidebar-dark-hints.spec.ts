@@ -3,6 +3,7 @@ import { expect, test, type Locator } from "@playwright/test";
 
 import { openOverviewDensity } from "./overview-density";
 import { seedTheme } from "./seed-theme";
+import { shot } from "./shots";
 
 const luminance = (color: string) =>
   color
@@ -67,7 +68,7 @@ for (const mode of ["light", "dark"] as const) {
     await settings.hover();
     await expect(hint).toHaveText(/^Settings \(.+\)$/);
     await expect(hint).toHaveCSS("opacity", "1");
-    await page.screenshot({ path: test.info().outputPath(`${mode}-icon-hover.png`) });
+    await shot(page, { path: test.info().outputPath(`${mode}-icon-hover.png`) });
     const icon = await colors(hint);
     await test.info().attach("hint-colors", {
       body: JSON.stringify({ icon }, null, 2),

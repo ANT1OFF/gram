@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { threadRow } from "./thread-row";
+import { shot } from "./shots";
 
 // This verifies the existing status renderer against synthetic runtime events. The real
 // multi-provider/process isolation is exercised by the server's owned protocol regression.
@@ -34,7 +35,7 @@ test("shows a shared-child restart wait while another thread remains usable", as
   await expect(waiting).toHaveText(detail);
   await expect(waiting).toHaveAttribute("aria-live", "polite");
   await expect(threadRow(page, "t-release")).toHaveAccessibleName("Release checklist, Starting…");
-  await page.screenshot({ path: testInfo.outputPath("starting-wait-detail.png") });
+  await shot(page, { path: testInfo.outputPath("starting-wait-detail.png") });
   await threadRow(page, "t-flaky").click();
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
   await expect(page.getByTestId("connection-banner")).toBeHidden();

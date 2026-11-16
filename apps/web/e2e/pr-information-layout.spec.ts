@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openReviewsTab, reviewsInPanel } from "./reviews-panel";
 import { seedTheme } from "./seed-theme";
+import { shot } from "./shots";
 
 /**
  * Same explicit offline provider state and adversarial fixtures as the independent review, with
@@ -76,7 +77,7 @@ for (const mode of ["dark"] as const) {
       for (const id of ["open-pr", "review-request"]) {
         const row = page.getByTestId(id);
         await row.scrollIntoViewIfNeeded();
-        await row.screenshot({ path: info.outputPath(`${id}.png`) });
+        await shot(row, { path: info.outputPath(`${id}.png`) });
         await expect(row.getByLabel("123456 lines added")).toHaveText("+123,456");
         await expect(row.getByLabel("987654 lines deleted")).toHaveText("−987,654");
         const bounds = await row.evaluate((element) => {
@@ -129,7 +130,7 @@ for (const mode of ["dark"] as const) {
         await expect(card).toBeVisible();
         await expect(card).toContainText("label-099");
         await expect(card).toContainText("3 more labels not loaded");
-        await page.screenshot({ path: info.outputPath("viewport.png") });
+        await shot(page, { path: info.outputPath("viewport.png") });
         const bounds = await card.evaluate((element) => {
           const rect = element.getBoundingClientRect();
           return {
@@ -181,7 +182,7 @@ for (const mode of ["dark"] as const) {
           expect(box!.y + box!.height).toBeLessThanOrEqual(bounds.bottom);
         }
         expect(await page.evaluate(() => scrollY)).toBe(0);
-        await page.screenshot({ path: info.outputPath("scrolled-metadata.png") });
+        await shot(page, { path: info.outputPath("scrolled-metadata.png") });
         await card.press("Escape");
         await expect(trigger).toBeFocused();
         await expect(card).not.toBeVisible();

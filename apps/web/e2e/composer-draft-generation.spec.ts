@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import type { ThreadId, UserInput } from "@gram/contracts";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { threadRow } from "./thread-row";
+import { keepShots } from "./shots";
 
 const A = "t-deps" as ThreadId;
 const B = "t-release" as ThreadId;
@@ -208,11 +209,13 @@ const receipt = async (page: Page, info: TestInfo) => {
     state: await page.evaluate(() => window.composerGeneration),
   };
   await writeFile(info.outputPath("receipt.json"), JSON.stringify(result, null, 2));
-  await page.screenshot({ path: info.outputPath("visible.png") });
-  await info.attach("generation result", {
-    path: info.outputPath("visible.png"),
-    contentType: "image/png",
-  });
+  if (keepShots) {
+    await page.screenshot({ path: info.outputPath("visible.png") });
+    await info.attach("generation result", {
+      path: info.outputPath("visible.png"),
+      contentType: "image/png",
+    });
+  }
   return result;
 };
 test("missed close/reopen fences old send failure after remount", async ({ page }, info) => {

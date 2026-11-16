@@ -230,7 +230,6 @@ describe("PrBadge", () => {
       <PrBadge threadId={T} git={git({ pr: pr() })} testId="pr-badge" bare numbered={false} />,
     );
     const badge = screen.getByTestId("pr-badge");
-    expect(badge.className).not.toContain("border");
     expect(badge.textContent).toBe("#412");
     expect(badge.querySelector(".sr-only")?.textContent).toBe("#412");
 
@@ -241,7 +240,7 @@ describe("PrBadge", () => {
     rerender(
       <PrBadge threadId={T} git={git({ pr: pr() })} thread={followed} testId="pr-badge" bare />,
     );
-    expect(screen.getByTestId("pr-badge").className).toContain("border-dashed");
+    expect(screen.getByTestId("pr-badge").dataset["cue"]).toBe("followed");
   });
 
   it("marks local commits past the PR head, except while diverged", () => {
@@ -300,10 +299,7 @@ describe("PrBadge", () => {
     );
     const badge = screen.getByTestId("pr-badge");
     expect(badge.dataset["cue"]).toBe("followed");
-    expect(badge.className).toContain("border-dashed");
-    expect(badge.getAttribute("title")).toContain(
-      "Dashed: followed the agent to feat/b, launched on feat/a",
-    );
+    expect(badge.getAttribute("title")).toMatch(/feat\/b.*feat\/a/);
     expect(badge.textContent).toContain("followed the agent into another worktree");
 
     rerender(

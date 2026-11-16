@@ -13,6 +13,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MOCK_TOOL_IMAGE } from "../src/api/mock-files";
+import { shot } from "./shots";
 
 /** Real mapper, runtime admission/capture, SQLite and attachment reader; browser feed/IPC mocked. */
 test("agent-read snapshot survives source deletion and reload without crossing threads", async ({
@@ -227,13 +228,13 @@ test("agent-read snapshot survives source deletion and reload without crossing t
     await image.scrollIntoViewIfNeeded();
     await expect(image).toBeInViewport();
     await expect(card.locator(".gram-expand")).toHaveCSS("opacity", "1");
-    await page.screenshot({ path: testInfo.outputPath("agent-read-snapshot-card.png") });
+    await shot(page, { path: testInfo.outputPath("agent-read-snapshot-card.png") });
     await card
       .getByRole("button", { name: "Open board-icon-alignment-working-after.png", exact: true })
       .click();
     await expect(page.getByTestId("attachment-lightbox").getByRole("img")).toBeVisible();
     await expect(page.getByTestId("attachment-lightbox")).toHaveCSS("opacity", "1");
-    await page.screenshot({ path: testInfo.outputPath("agent-read-snapshot-lightbox.png") });
+    await shot(page, { path: testInfo.outputPath("agent-read-snapshot-lightbox.png") });
     await page.keyboard.press("Escape");
     await restore(threadId);
     await page.getByRole("button", { name: "Read 1 file, used 1 tool", exact: true }).click();
@@ -242,7 +243,7 @@ test("agent-read snapshot survives source deletion and reload without crossing t
     await page.getByRole("button", { name: "Read 1 file, used 1 tool", exact: true }).click();
     await expect(card.getByTestId("tool-image-missing")).toContainText("Image no longer available");
     await expect(card.getByRole("img")).toHaveCount(0);
-    await page.screenshot({ path: testInfo.outputPath("agent-read-other-thread-refused.png") });
+    await shot(page, { path: testInfo.outputPath("agent-read-other-thread-refused.png") });
     expect(consoleErrors).toEqual([]);
   } finally {
     rmSync(dir, { recursive: true, force: true });

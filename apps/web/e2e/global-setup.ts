@@ -93,7 +93,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   env["GRAM_E2E_PORT"] = String(server.port);
   env["GRAM_E2E_TOKEN"] = token;
   try {
-    await warmUp(server.origin);
+    // A preview serves a built bundle, with nothing left to transform on first load: CI previews,
+    // so it skips the five or so seconds per shard the warm-up takes.
+    if (!preview) await warmUp(server.origin);
   } catch (error) {
     await server.stop();
     throw error;

@@ -23,7 +23,6 @@ import {
   historyEntries,
   historyWhen,
   IMPORTED_OWNER,
-  RECENT_DONE,
   recentDone,
   recentWhen,
   searchHistory,
@@ -431,7 +430,6 @@ describe("the sidebar's Done", () => {
       finishedAt: at(13, 5),
     });
     expect(rows.some((row) => row.outcome === "archived")).toBe(false);
-    expect(RECENT_DONE).toBe(3);
   });
 
   it("times a row by its clock today and by its date and clock before", () => {

@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 
 import { openNotifications } from "./open-notifications";
 import { seedTheme } from "./seed-theme";
+import { shot } from "./shots";
 
 test.describe("message timestamp convention", () => {
   test.use({ locale: "en-US", timezoneId: "Europe/Oslo", viewport: { width: 1440, height: 900 } });
@@ -71,7 +72,7 @@ test.describe("message timestamp convention", () => {
         datetime: await time.getAttribute("datetime"),
         title: await time.getAttribute("title"),
       });
-      await page.screenshot({ path: testInfo.outputPath(`timestamp-${role}.png`) });
+      await shot(page, { path: testInfo.outputPath(`timestamp-${role}.png`) });
     }
     const evidencePath = testInfo.outputPath("timestamp-render-evidence.json");
     await writeFile(
@@ -110,7 +111,7 @@ for (const width of [1440, 480]) {
     const bounds = await actions.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
-    await actions.screenshot({ path: testInfo.outputPath(`actions-${width}.png`) });
+    await shot(actions, { path: testInfo.outputPath(`actions-${width}.png`) });
 
     const copy = actions.getByRole("button", { name: "Copy message", exact: true });
     await copy.hover();
@@ -136,7 +137,7 @@ for (const width of [1440, 480]) {
       /^Fork into worktree…Continue from this reply in a new worktree$/,
     ]);
     await expect(page.getByRole("menuitem", { name: "Copy turn", exact: true })).toBeFocused();
-    await menu.screenshot({ path: testInfo.outputPath(`menu-${width}.png`) });
+    await shot(menu, { path: testInfo.outputPath(`menu-${width}.png`) });
     await page.keyboard.press("End");
     await expect(page.getByTestId("message-fork-worktree")).toBeFocused();
     await page.keyboard.press("Enter");
@@ -278,7 +279,7 @@ test.describe("touch message actions", () => {
     const bounds = await page.getByRole("menu").boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
-    await page.screenshot({ path: testInfo.outputPath("message-actions-touch.png") });
+    await shot(page, { path: testInfo.outputPath("message-actions-touch.png") });
   });
 
   test("in the orchestrator's chat they keep their row under the message, shown, not floating", async ({

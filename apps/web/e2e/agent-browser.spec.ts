@@ -14,6 +14,7 @@ import { EventEmitter } from "node:events";
 import { createAgentPanes } from "../../../packages/shell/src/modules/agent-browser/pane";
 import { createBrowseHostList } from "../../../packages/shell/src/core/browse-rules";
 import { threadRow } from "./thread-row";
+import { shot as keepShot } from "./shots";
 
 const HOST = "organization.example.invalid";
 
@@ -619,7 +620,7 @@ for (const width of [1440, 480]) {
       0,
     );
     expect(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-    await page.screenshot({ path: testInfo.outputPath(`browser-inspection-${width}.png`) });
+    await keepShot(page, { path: testInfo.outputPath(`browser-inspection-${width}.png`) });
     await panel.getByRole("button", { name: "Phone layout · 390 × 844" }).click();
     await expect.poll(() => driver.inspection().viewportPreset).toBe("phone");
     await panel.getByRole("button", { name: "Capture inspection screenshot" }).click();

@@ -26,25 +26,23 @@ import { AppToolRegistry } from "./registry.ts";
 import { ready, armedWorkerBadge, approvedRecovery, otherRecoveryRoot } from "./pr-tools-kit.ts";
 
 describe("merge_when_ready", () => {
-  for (const change of [
-    "method",
-    "PR",
-    "repo",
-    "scope",
-    "worker",
-    "sibling",
-    "different root",
-    "workspace",
-    "no user authorization",
-    "no approval",
-    "user hold",
-    "fork",
-    "project",
-    "autonomy",
-    "pause",
-    "park",
+  // A change only to the call (its input or its caller) leaves the thread as it was, so those share
+  // one world; every change to what is stored gets its own.
+  for (const changes of [
+    ["method", "PR", "repo", "scope", "worker"],
+    ["sibling"],
+    ["different root"],
+    ["workspace"],
+    ["no user authorization"],
+    ["no approval"],
+    ["user hold"],
+    ["fork"],
+    ["project"],
+    ["autonomy"],
+    ["pause"],
+    ["park"],
   ] as const) {
-    it.effect.skipIf(!hasGit)(`invalidates approved recovery after ${change}`, () =>
+    it.effect.skipIf(!hasGit)(`invalidates approved recovery after ${changes.join(", ")}`, () =>
       Effect.gen(function* () {
         const world = yield* makeWorld;
         yield* withServer(
@@ -54,115 +52,121 @@ describe("merge_when_ready", () => {
             const runtimes = yield* ThreadRuntimes;
             const registry = yield* AppToolRegistry;
             const { root, worker, merge: rootMerge, input } = yield* approvedRecovery(world);
-            let merge = rootMerge;
-            let callerId = root.thread.id;
-            let changedInput: Record<string, unknown> = input;
-            if (change === "method") changedInput = { ...input, method: "rebase" };
-            if (change === "PR") changedInput = { ...input, pr: "acme/app#13" };
-            if (change === "repo") changedInput = { ...input, pr: "foreign/app#12" };
-            if (change === "scope") changedInput = { ...input, after: ["acme/app#13"] };
-            if (change === "worker" || change === "sibling") {
-              const caller =
-                change === "worker" ? worker : yield* spawn(root.session, { feature: "sibling" });
-              if (change === "sibling") yield* completeTurn(caller.session);
-              callerId = caller.thread.id;
-              merge = registry
-                .forTransport(callerId, "worker")
-                .find((t) => t.descriptor.name === "merge_when_ready")!;
-            }
-            if (change === "different root") {
-              const other = yield* otherRecoveryRoot(root.project.id);
-              callerId = other.thread.id;
-              merge = registry
-                .forTransport(callerId, "orchestrator")
-                .find((t) => t.descriptor.name === "merge_when_ready")!;
-            }
-            if (change === "workspace") {
-              const other = yield* otherRecoveryRoot(root.project.id);
-              yield* runtimes.updateThread(worker.thread.id, (t) => ({
-                ...t,
-                workspaceId: other.workspaceId,
-              }));
-            }
-            if (
-              change === "no user authorization" ||
-              change === "no approval" ||
-              change === "user hold"
-            ) {
-              yield* runtimes.updateThread(worker.thread.id, (t) => {
-                const { userAuthorization: _approval, ...intent } = t.boundPr!.mergeWhenReady!;
-                const { mergeWhenReady: _intent, ...binding } = t.boundPr!;
-                if (change === "no approval") return { ...t, boundPr: binding };
-                return {
+            for (const change of changes) {
+              let merge = rootMerge;
+              let callerId = root.thread.id;
+              let changedInput: Record<string, unknown> = input;
+              if (change === "method") changedInput = { ...input, method: "rebase" };
+              if (change === "PR") changedInput = { ...input, pr: "acme/app#13" };
+              if (change === "repo") changedInput = { ...input, pr: "foreign/app#12" };
+              if (change === "scope") changedInput = { ...input, after: ["acme/app#13"] };
+              if (change === "worker" || change === "sibling") {
+                const caller =
+                  change === "worker" ? worker : yield* spawn(root.session, { feature: "sibling" });
+                if (change === "sibling") yield* completeTurn(caller.session);
+                callerId = caller.thread.id;
+                merge = registry
+                  .forTransport(callerId, "worker")
+                  .find((t) => t.descriptor.name === "merge_when_ready")!;
+              }
+              if (change === "different root") {
+                const other = yield* otherRecoveryRoot(root.project.id);
+                callerId = other.thread.id;
+                merge = registry
+                  .forTransport(callerId, "orchestrator")
+                  .find((t) => t.descriptor.name === "merge_when_ready")!;
+              }
+              if (change === "workspace") {
+                const other = yield* otherRecoveryRoot(root.project.id);
+                yield* runtimes.updateThread(worker.thread.id, (t) => ({
                   ...t,
-                  boundPr: {
-                    ...t.boundPr!,
-                    mergeWhenReady:
-                      change === "no user authorization"
-                        ? intent
-                        : { ...t.boundPr!.mergeWhenReady!, heldBy: "thread" },
+                  workspaceId: other.workspaceId,
+                }));
+              }
+              if (
+                change === "no user authorization" ||
+                change === "no approval" ||
+                change === "user hold"
+              ) {
+                yield* runtimes.updateThread(worker.thread.id, (t) => {
+                  const { userAuthorization: _approval, ...intent } = t.boundPr!.mergeWhenReady!;
+                  const { mergeWhenReady: _intent, ...binding } = t.boundPr!;
+                  if (change === "no approval") return { ...t, boundPr: binding };
+                  return {
+                    ...t,
+                    boundPr: {
+                      ...t.boundPr!,
+                      mergeWhenReady:
+                        change === "no user authorization"
+                          ? intent
+                          : { ...t.boundPr!.mergeWhenReady!, heldBy: "thread" },
+                    },
+                  };
+                });
+              }
+              if (change === "fork")
+                world.prHeads.set(12, { headRefName: "codex/historical-user-branch", fork: true });
+              if (change === "project") {
+                const other = yield* store.ensureProject({ root: world.dir, name: "other" });
+                yield* store.updateWorkspace(root.workspaceId, (state) => ({
+                  ...state,
+                  workspace: {
+                    ...state.workspace,
+                    projectIds: [other.id],
+                    homeProjectId: other.id,
                   },
-                };
-              });
-            }
-            if (change === "fork")
-              world.prHeads.set(12, { headRefName: "codex/historical-user-branch", fork: true });
-            if (change === "project") {
-              const other = yield* store.ensureProject({ root: world.dir, name: "other" });
-              yield* store.updateWorkspace(root.workspaceId, (state) => ({
-                ...state,
-                workspace: { ...state.workspace, projectIds: [other.id], homeProjectId: other.id },
-              }));
-            }
-            if (change === "autonomy") yield* atAutonomy(root.thread, "publish");
-            if (change === "pause")
-              yield* store.updateWorkspace(root.workspaceId, (state) => ({
-                ...state,
-                paused: { reason: "user", at: 1 },
-              }));
-            if (change === "park")
-              yield* runtimes.updateThread(worker.thread.id, (t) => ({ ...t, parked: true }));
-            const before = yield* store.getThread(worker.thread.id);
-            expect(yield* merge.delegatedAtFullAutonomy!(changedInput)).toBe(false);
-            const ownershipDoubt = [
-              "method",
-              "PR",
-              "repo",
-              "scope",
-              "worker",
-              "no user authorization",
-              "no approval",
-              "user hold",
-              "fork",
-              "project",
-              "workspace",
-              "park",
-            ].includes(change);
-            if (ownershipDoubt) {
-              const refused = yield* merge.run(changedInput).pipe(Effect.flip);
-              expect(refused.message).toContain(
-                "Gram couldn't confirm this one is the worker's own",
+                }));
+              }
+              if (change === "autonomy") yield* atAutonomy(root.thread, "publish");
+              if (change === "pause")
+                yield* store.updateWorkspace(root.workspaceId, (state) => ({
+                  ...state,
+                  paused: { reason: "user", at: 1 },
+                }));
+              if (change === "park")
+                yield* runtimes.updateThread(worker.thread.id, (t) => ({ ...t, parked: true }));
+              const before = yield* store.getThread(worker.thread.id);
+              expect(yield* merge.delegatedAtFullAutonomy!(changedInput)).toBe(false);
+              const ownershipDoubt = [
+                "method",
+                "PR",
+                "repo",
+                "scope",
+                "worker",
+                "no user authorization",
+                "no approval",
+                "user hold",
+                "fork",
+                "project",
+                "workspace",
+                "park",
+              ].includes(change);
+              if (ownershipDoubt) {
+                const refused = yield* merge.run(changedInput).pipe(Effect.flip);
+                expect(refused.message).toContain(
+                  "Gram couldn't confirm this one is the worker's own",
+                );
+                expect(yield* store.listRequests(callerId)).toEqual([]);
+              } else {
+                const call = yield* Effect.forkScoped(merge.run(changedInput).pipe(Effect.flip));
+                const card = yield* waitReal(
+                  "changed recovery approval",
+                  store.listRequests(callerId).pipe(Effect.map((all) => all[0])),
+                );
+                expect(card).toMatchObject({ displayName: "merge_when_ready", scopes: ["once"] });
+                yield* runtimes.respond(callerId, card.id, {
+                  kind: "approval",
+                  decision: "deny",
+                  scope: "once",
+                });
+                expect(yield* Fiber.join(call)).toMatchObject({ approvalRequired: true });
+              }
+              expect((yield* store.getThread(worker.thread.id)).boundPr).toEqual(before.boundPr);
+              expect((yield* store.getThread(worker.thread.id)).ownedBranches).toEqual(
+                before.ownedBranches,
               );
-              expect(yield* store.listRequests(callerId)).toEqual([]);
-            } else {
-              const call = yield* Effect.forkScoped(merge.run(changedInput).pipe(Effect.flip));
-              const card = yield* waitReal(
-                "changed recovery approval",
-                store.listRequests(callerId).pipe(Effect.map((all) => all[0])),
-              );
-              expect(card).toMatchObject({ displayName: "merge_when_ready", scopes: ["once"] });
-              yield* runtimes.respond(callerId, card.id, {
-                kind: "approval",
-                decision: "deny",
-                scope: "once",
-              });
-              expect(yield* Fiber.join(call)).toMatchObject({ approvalRequired: true });
+              expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
             }
-            expect((yield* store.getThread(worker.thread.id)).boundPr).toEqual(before.boundPr);
-            expect((yield* store.getThread(worker.thread.id)).ownedBranches).toEqual(
-              before.ownedBranches,
-            );
-            expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
           }),
         );
       }).pipe(Effect.scoped),

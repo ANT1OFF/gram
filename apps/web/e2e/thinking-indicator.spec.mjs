@@ -7,6 +7,7 @@ import { makeMapper } from "../../../packages/agents/src/claude/mapper.ts";
 import { createMessageFold } from "../src/stores/message-fold.ts";
 
 import { seedTheme } from "./seed-theme";
+import { shot } from "./shots.ts";
 
 // Node-side adapter replay uses current TypeScript source without adding an agent dependency
 // or project reference to the shipped web UI. Browser chunks still enter its real feed/fold.
@@ -111,13 +112,13 @@ test("Codex silent item start displays Thinking, empty completion removes it, an
   await send(page, m.map(item(reasoning)));
   await expect(note).toBeVisible();
   await expect(note).toHaveText("Thinking…");
-  await page.screenshot({
+  await shot(page, {
     path: info.outputPath("codex-silent-start.png"),
     animations: "disabled",
   });
   await send(page, m.map(item(reasoning, true)));
   await expect(note).toHaveCount(0);
-  await page.screenshot({
+  await shot(page, {
     path: info.outputPath("codex-empty-completion.png"),
     animations: "disabled",
   });
@@ -137,7 +138,7 @@ test("Codex silent item start displays Thinking, empty completion removes it, an
   );
   await expect(note).toHaveCount(0);
   await expect(page.getByTestId("approval-card")).toContainText("Invented offline edit approval");
-  await page.screenshot({
+  await shot(page, {
     path: info.outputPath("codex-tool-approval.png"),
     animations: "disabled",
   });
@@ -199,7 +200,7 @@ test("Codex summary deltas do not leave stale Thinking after an empty completion
   await expect(page.getByText("Invented summary text must remain hidden.")).toHaveCount(0);
   await send(page, m.map(item(reasoning, true)));
   await expect(page.getByTestId("reasoning-note")).toHaveCount(0);
-  await page.screenshot({
+  await shot(page, {
     path: info.outputPath("codex-summary-empty-completion.png"),
     animations: "disabled",
   });
@@ -264,7 +265,7 @@ test("Codex summary/raw deltas keep their parts ordered, hide text, and remain c
     { type: "reasoning", id: "r:raw", text: "Invented raw text remains hidden.", state: "done" },
   ]);
   await expect(page.getByTestId("reasoning-note")).toHaveCount(0);
-  await page.screenshot({
+  await shot(page, {
     path: info.outputPath("codex-summary-raw-ended.png"),
     animations: "disabled",
   });
@@ -312,7 +313,7 @@ test("one raw-only reasoning item displays one visual indicator", async ({ page 
       state: "streaming",
     },
   ]);
-  await page.screenshot({ path: info.outputPath("raw-only-live.png"), animations: "disabled" });
+  await shot(page, { path: info.outputPath("raw-only-live.png"), animations: "disabled" });
   const end = m.map({
     method: "item/completed",
     params: {
@@ -334,7 +335,7 @@ test("one raw-only reasoning item displays one visual indicator", async ({ page 
       state: "done",
     },
   ]);
-  await page.screenshot({ path: info.outputPath("raw-only-ended.png"), animations: "disabled" });
+  await shot(page, { path: info.outputPath("raw-only-ended.png"), animations: "disabled" });
 });
 
 test("Codex startup, tool, approval, compaction and error without a reasoning item never display Thinking", async ({
@@ -358,7 +359,7 @@ test("Codex startup, tool, approval, compaction and error without a reasoning it
   await send(page, m.map(item({ type: "contextCompaction", id: "compact" })));
   await expect(page.getByTestId("pane-status")).toHaveText("Compacting");
   await expect(page.getByTestId("reasoning-note")).toHaveCount(0);
-  await page.screenshot({ path: info.outputPath("codex-compacting.png"), animations: "disabled" });
+  await shot(page, { path: info.outputPath("codex-compacting.png"), animations: "disabled" });
   await send(
     page,
     m.map({ method: "turn/completed", params: { threadId: "thread", turn: turn("failed") } }),
@@ -381,7 +382,7 @@ for (const status of ["completed", "interrupted", "failed", "exit"])
     );
     await send(page, m.map(item(reasoning)));
     await expect(page.getByTestId("reasoning-note")).toHaveCount(0);
-    await page.screenshot({ path: info.outputPath(`codex-${status}.png`), animations: "disabled" });
+    await shot(page, { path: info.outputPath(`codex-${status}.png`), animations: "disabled" });
   });
 
 test("Claude thinking start/stop retains the same visible indicator without revealing text", async ({
@@ -413,7 +414,7 @@ test("Claude thinking start/stop retains the same visible indicator without reve
   const note = page.getByTestId("reasoning-note");
   await expect(note).toBeVisible();
   await expect(note).toHaveText("Thinking…");
-  await page.screenshot({
+  await shot(page, {
     path: info.outputPath("claude-thinking-start.png"),
     animations: "disabled",
   });
@@ -425,7 +426,7 @@ test("Claude thinking start/stop retains the same visible indicator without reve
   );
   await send(page, m.map(stop));
   await expect(note).toHaveCount(0);
-  await page.screenshot({
+  await shot(page, {
     path: info.outputPath("claude-thinking-end.png"),
     animations: "disabled",
   });

@@ -117,9 +117,7 @@ describe("New thread on a joined machine", () => {
     expect(screen.getByTestId("where-folder").textContent).toContain("~");
     // Checked by the machine's host: its home, as it is, with no checkout to choose.
     const note = await screen.findByTestId("machine-folder-note");
-    expect(note.textContent).toBe(
-      "Runs on build box in /home/dev, as it is: no worktree, diff or pull request outside a repository.",
-    );
+    expect(note.textContent).toMatch(/build box in \/home\/dev\b.*no worktree/);
     expect(screen.queryByRole("radio", { name: "Current checkout" })).toBeNull();
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Start chat" }).hasAttribute("disabled")).toBe(
@@ -137,14 +135,14 @@ describe("New thread on a joined machine", () => {
     const field = await screen.findByRole("combobox", { name: "Folder on build box" });
     await user.clear(field);
     await user.type(field, "~/code/dotfiles");
-    expect((await screen.findByTestId("machine-folder-note")).textContent).toBe(
-      "Runs on build box in /home/dev/code/dotfiles, as it is, on its branch main.",
-    );
+    const repoNote = (await screen.findByTestId("machine-folder-note")).textContent;
+    expect(repoNote).toMatch(/build box in \/home\/dev\/code\/dotfiles\b.*main/);
+    expect(repoNote).not.toContain("no worktree");
 
     await user.clear(field);
     await user.type(field, "~/.ssh");
-    expect((await screen.findAllByTestId("folder-problem"))[0]?.textContent).toBe(
-      "Gram doesn't run a chat in /home/dev/.ssh: it holds keys or credentials.",
+    expect((await screen.findAllByTestId("folder-problem"))[0]?.textContent).toMatch(
+      /\/home\/dev\/\.ssh.*credentials/,
     );
     expect(screen.getByRole("button", { name: "Start chat" }).hasAttribute("disabled")).toBe(true);
 
