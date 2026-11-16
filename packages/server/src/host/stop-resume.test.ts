@@ -130,47 +130,49 @@ describe("resuming a machine on another disk", () => {
   );
 
   it.effect("counts a folder made by a resume beside it as there, not missing", () =>
-    Effect.gen(function* () {
-      // A host that makes each folder once: asked again for one that is there, it says so.
-      const disk = new Set<string>();
-      const restore = (request: RestoreRequest) =>
-        Effect.gen(function* () {
-          // Cloning takes a while; one made meanwhile is found there at the end.
-          yield* Effect.sleep("1 second");
-          if (disk.has(request.cwd))
-            return { restored: false, note: "Its folder is there already." } as HostStopRestored;
-          disk.add(request.cwd);
-          return { restored: true, commit: COMMIT } as HostStopRestored;
-        });
-      const cwd = "/clones/widgets-trees/shared";
-      const deps = {
-        hosts: {
-          connection: () =>
-            Effect.succeed({
-              git: { present: (at: string) => Effect.sync(() => disk.has(at)) },
-              stop: { restore },
-            }),
-          stops: makeStopMarks(),
-        },
-        store: {
-          // Two threads in one folder.
-          listThreads: Effect.succeed([
-            thread("t-one", { path: cwd, cloneIdentity: cloneIdentityOf(URL)! }),
-            thread("t-two", { path: cwd, cloneIdentity: cloneIdentityOf(URL)! }),
-          ]),
-        },
-        runtimes: { startSession: () => Effect.void },
-      } as unknown as StopResumeDeps;
-      const resumes = yield* Effect.forkChild(
-        Effect.all([resumeHost(deps, MACHINE), resumeHost(deps, MACHINE)], {
-          concurrency: "unbounded",
-        }),
-      );
-      yield* TestClock.adjust("5 seconds");
-      const [first, second] = yield* Fiber.join(resumes);
-      expect([...first.missing, ...second.missing]).toEqual([]);
-      expect([...first.restored, ...second.restored]).toHaveLength(1);
-    }),
+    Effect.scoped(
+      Effect.gen(function* () {
+        // A host that makes each folder once: asked again for one that is there, it says so.
+        const disk = new Set<string>();
+        const restore = (request: RestoreRequest) =>
+          Effect.gen(function* () {
+            // Cloning takes a while; one made meanwhile is found there at the end.
+            yield* Effect.sleep("1 second");
+            if (disk.has(request.cwd))
+              return { restored: false, note: "Its folder is there already." } as HostStopRestored;
+            disk.add(request.cwd);
+            return { restored: true, commit: COMMIT } as HostStopRestored;
+          });
+        const cwd = "/clones/widgets-trees/shared";
+        const deps = {
+          hosts: {
+            connection: () =>
+              Effect.succeed({
+                git: { present: (at: string) => Effect.sync(() => disk.has(at)) },
+                stop: { restore },
+              }),
+            stops: makeStopMarks(),
+          },
+          store: {
+            // Two threads in one folder.
+            listThreads: Effect.succeed([
+              thread("t-one", { path: cwd, cloneIdentity: cloneIdentityOf(URL)! }),
+              thread("t-two", { path: cwd, cloneIdentity: cloneIdentityOf(URL)! }),
+            ]),
+          },
+          runtimes: { startSession: () => Effect.void },
+        } as unknown as StopResumeDeps;
+        const resumes = yield* Effect.forkScoped(
+          Effect.all([resumeHost(deps, MACHINE), resumeHost(deps, MACHINE)], {
+            concurrency: "unbounded",
+          }),
+        );
+        yield* TestClock.adjust("5 seconds");
+        const [first, second] = yield* Fiber.join(resumes);
+        expect([...first.missing, ...second.missing]).toEqual([]);
+        expect([...first.restored, ...second.restored]).toHaveLength(1);
+      }),
+    ),
   );
 
   it.effect("holds the machine to what the stop said it kept, remembered or given back", () =>
