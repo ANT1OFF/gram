@@ -133,6 +133,27 @@ export function KitPage({ pick }: { pick: (level: Level) => void }) {
       <SettingsGroup label="Members" plainOnPhone card>
         Rows
       </SettingsGroup>
+      <Page
+        title="Ada Lovelace"
+        above={<a href="/members">Members</a>}
+        headingLevel={2}
+        hideTitleOnPhone
+      >
+        <SettingsGroup label="Keys">
+          <SettingRow
+            label={
+              <>
+                Deploy key <code>ed25519</code>
+              </>
+            }
+            labelText="Deploy key"
+            description={<a href="/docs">How keys work</a>}
+          />
+          <Field label={<b>Name</b>} labelText="Name">
+            <Input />
+          </Field>
+        </SettingsGroup>
+      </Page>
       <Alert variant="destructive">
         <AlertTitle>Failed</AlertTitle>
         <AlertDescription>Try again.</AlertDescription>
@@ -200,6 +221,8 @@ export function KitPage({ pick }: { pick: (level: Level) => void }) {
       </Sheet>
       {/* @ts-expect-error: a variant the kit doesn't have */}
       <Button variant="huge">No</Button>
+      {/* @ts-expect-error: a page's title is words, for its heading and its key */}
+      <Page title={<b>Rich</b>}>No</Page>
       {/* @ts-expect-error: a page needs its title */}
       <Page>No title</Page>
     </Page>
