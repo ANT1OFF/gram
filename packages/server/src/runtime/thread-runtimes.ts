@@ -82,6 +82,7 @@ import { retryFacts, RETRY_DEADLINE } from "./retrying.ts";
 import {
   type Turn,
   type StopClaim,
+  stopHeld,
   type Runtime,
   BUSY,
   makeTurnId,
@@ -948,7 +949,7 @@ const make = Effect.gen(function* () {
       }
       // A stop still under way holds the queue and the deliveries: its interrupt mustn't reach
       // the next turn. Its end sends them (`runStop`).
-      if (rt.stopPending !== undefined) return;
+      if (stopHeld(rt)) return;
       // The queue and the deliveries wait for the limit's resume, which sends them.
       if (rt.limitWait !== undefined) return yield* startIdleTimer(rt);
       // And for a queue hold to let go (`releaseQueue`).
@@ -1163,7 +1164,7 @@ const make = Effect.gen(function* () {
       yield* clearPendingRequests(rt, "stop-requested");
       // A machine restart that cuts the turn short now doesn't carry it on.
       rt.stopAsked = rt.turn.id;
-      rt.stopPending = rt.turn.id;
+      rt.stopsPending = (rt.stopsPending ?? 0) + 1;
       return { session: rt.session, turn: rt.turn };
     });
 
@@ -1177,6 +1178,7 @@ const make = Effect.gen(function* () {
         return;
       }
       const turnId = target.turn.id;
+      // Every claim is counted; the last to settle lets the queue go.
       yield* Effect.gen(function* () {
         if (yield* Deferred.isDone(target.turn.done)) return;
         yield* target.session.interrupt.pipe(
@@ -1197,11 +1199,13 @@ const make = Effect.gen(function* () {
           locked(
             rt,
             Effect.gen(function* () {
-              if (rt.stopPending !== turnId) return;
-              rt.stopPending = undefined;
+              // Every stop claimed holds the queue until it has settled: the last one sends.
+              rt.stopsPending = Math.max(0, (rt.stopsPending ?? 0) - 1);
+              if (stopHeld(rt)) return;
               if (rt.turn === undefined && rt.session !== undefined && rt.status === "idle")
                 yield* becomeIdle(rt);
-              else yield* drainQueue(rt);
+              else if (rt.queue.length > 0 || rt.launch !== undefined) yield* drainQueue(rt);
+              else yield* pumpDeliveries(rt);
             }),
           ),
         ),

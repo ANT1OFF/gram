@@ -11,6 +11,7 @@ import {
   type Runtime,
   type Turn,
   type StopClaim,
+  stopHeld,
   makeTurnId,
   makeQueueItemId,
   locked,
@@ -549,6 +550,9 @@ export const makeMessageQueue = ({
       if (rt.closing) return yield* failPendingDeliveries(rt, "ended");
       // Held for `whileAtRest`, which pumps again once it lets go.
       if (rt.reserved) return;
+      // Held while a stop is under way, so its late interrupt can't reach the turn a delivery
+      // would start; its end pumps again (`runStop`).
+      if (stopHeld(rt)) return;
       // Held until the thread's machine is named: the placement pumps again (`relocate`).
       if (yield* awaitsMachine(rt)) return;
       // Held for the limit's resume, which pumps again.
@@ -798,7 +802,7 @@ export const makeMessageQueue = ({
                 return result;
               }
               // A stop under way: this waits for it to settle, which sends it (`runStop`).
-              if (rt.stopPending !== undefined) return yield* enqueue();
+              if (stopHeld(rt)) return yield* enqueue();
               if (rt.session !== undefined && rt.turn === undefined) {
                 const kept = yield* sendNow(rt, rt.session, input).pipe(
                   Effect.as(false),
@@ -895,7 +899,7 @@ export const makeMessageQueue = ({
       if (
         (rt.queue.length === 0 && rt.launch === undefined) ||
         // A stop under way sends what waited once it has settled (`runStop`).
-        rt.stopPending !== undefined ||
+        stopHeld(rt) ||
         rt.closing ||
         rt.reserved ||
         rt.limitWait !== undefined ||

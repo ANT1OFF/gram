@@ -90,6 +90,9 @@ export const openLane = (rt: Runtime, toolCallId: string) =>
     (inFlight) => inFlight.parentToolUseId === toolCallId && !inFlight.finished,
   );
 
+/** Whether a claimed stop is still under way, which holds what would start the next turn. */
+export const stopHeld = (rt: Runtime): boolean => (rt.stopsPending ?? 0) > 0;
+
 /**
  * A stop claimed under the runtime's lock (`claimStop` in `thread-runtimes.ts`): the open turn's,
  * or between turns the background agents'. `runStop` carries it out once the lock is let go.
@@ -223,11 +226,11 @@ export interface Runtime {
   /** The turn the user asked to stop, which a machine restart under it never continues. */
   stopAsked: TurnId | undefined;
   /**
-   * A claimed stop of this turn still under way (`claimStop`, `runStop`): until it settles nothing
-   * queued starts a turn, so the session's interrupt, which can arrive late, never reaches the next
-   * turn instead of this one.
+   * How many claimed stops are still under way (`claimStop`, `runStop`): until every one has
+   * settled nothing queued or delivered starts a turn, so a session's interrupt, which can arrive
+   * late, never reaches the next turn instead of the one it was claimed for.
    */
-  stopPending?: TurnId | undefined;
+  stopsPending?: number | undefined;
   /** The checkout or granted folders changed mid-turn; reopen the session once it's idle. */
   reopenOnIdle: boolean;
   /**
