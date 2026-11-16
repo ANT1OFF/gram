@@ -261,7 +261,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       const machines = createPairedMachines(store, now, nonces, changed);
       const online = new Map<HostId, Online>();
       let readAccess: (() => DialAccess) | undefined;
-      const stops = makeStopMarks(now);
+      // A machine waited on or no longer is news to the threads that run on it (`starting`).
+      const stops = makeStopMarks(now, undefined, () => changed());
       const root = yield* Effect.scope;
       // The server's own logger and the rest, for a check started outside an effect.
       const context = yield* Effect.context<never>();
@@ -538,6 +539,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             .filter((machine) => machine.confirmedAt !== undefined)
             .map((machine): MachineState => {
               const live = online.get(machine.id);
+              const starting = stops.wantedSince(machine.id);
               const { offline } = machineView(
                 machine,
                 live === undefined ? undefined : { since: live.since },
@@ -554,6 +556,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
                 kind: isProvisioned(machine) ? "provisioned" : "joined",
                 ...(live === undefined ? {} : { onlineSince: live.since }),
                 ...(offline === undefined ? {} : { offline }),
+                ...(live !== undefined || starting === undefined ? {} : { starting }),
               };
             }),
         watch: (listener) => {

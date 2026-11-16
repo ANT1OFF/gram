@@ -53,6 +53,8 @@ export interface StopMarks {
   readonly wanting: <A, E, R>(id: HostId, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
   /** Whether anything waits on the machine to be started now. */
   readonly wanted: (id: HostId) => boolean;
+  /** Since when something has waited on the machine to be started, while anything does. */
+  readonly wantedSince: (id: HostId) => number | undefined;
   /** The machine was removed: nothing is remembered of it. */
   readonly forget: (id: HostId) => void;
 }
@@ -63,11 +65,14 @@ const folder = (threadId: ThreadId, cwd: string) => `${threadId}\0${cwd}`;
 export const makeStopMarks = (
   now: () => number = Date.now,
   holdMs: number = STOP_HOLD_MS,
+  /** Told when a machine starts or stops being waited on (`wantedSince`). */
+  onWanted: (id: HostId) => void = () => {},
 ): StopMarks => {
   const marks = new Map<HostId, { readonly at: number; left: boolean }>();
   const last = new Map<HostId, number>();
   const rested = new Map<HostId, ReadonlyArray<ThreadId>>();
   const waiting = new Map<HostId, number>();
+  const waitingSince = new Map<HostId, number>();
   const cancels = new Map<HostId, number>();
   const kept = new Map<HostId, Map<string, KeptRecord>>();
   /** The mark, unless its hold ran out with the machine there all along. */
@@ -121,16 +126,25 @@ export const makeStopMarks = (
     },
     wanting: (id, effect) =>
       Effect.acquireUseRelease(
-        Effect.sync(() => void waiting.set(id, (waiting.get(id) ?? 0) + 1)),
+        Effect.sync(() => {
+          const before = waiting.get(id) ?? 0;
+          waiting.set(id, before + 1);
+          if (before > 0) return;
+          waitingSince.set(id, now());
+          onWanted(id);
+        }),
         () => effect,
         () =>
           Effect.sync(() => {
             const left = (waiting.get(id) ?? 1) - 1;
-            if (left <= 0) waiting.delete(id);
-            else waiting.set(id, left);
+            if (left > 0) return void waiting.set(id, left);
+            waiting.delete(id);
+            waitingSince.delete(id);
+            onWanted(id);
           }),
       ),
     wanted: (id) => (waiting.get(id) ?? 0) > 0,
+    wantedSince: (id) => waitingSince.get(id),
     forget: (id) => {
       marks.delete(id);
       last.delete(id);

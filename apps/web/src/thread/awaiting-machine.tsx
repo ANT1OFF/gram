@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils";
 import { Spinner } from "@/motion/spinner";
 import { useThreadsStore } from "@/stores/threads";
 
+import { threadHost } from "./machine-mark";
+import { useMachineMark } from "./machine-marker";
 import {
   ASKED_LAPSE_MS,
   elapsedClock,
@@ -151,8 +153,34 @@ function Elapsed({ since }: { since: number }) {
   );
 }
 
+/**
+ * A thread on a machine that stopped and is being started again (`MachineMark.startingSince`): the
+ * line the wait for a first machine draws, under the conversation, so a message sent to it reads
+ * as waiting on the machine and not as a turn that hangs. Nothing while the machine is anything
+ * else.
+ */
+export function MachineStarting({ thread }: { thread: Thread }) {
+  const since = useMachineMark(threadHost(thread))?.startingSince;
+  if (since === undefined) return null;
+  return (
+    <div
+      data-testid="machine-restarting"
+      className="@container flex w-full thread-column flex-col px-6 pt-3 pb-2"
+    >
+      <StartingLine wait={{ state: "starting", since }} words={WAIT_WORDS.restarting} />
+    </div>
+  );
+}
+
 /** "Starting this thread's machine · usually under a minute   0:42". */
-function StartingLine({ wait }: { wait: MachineWait }) {
+function StartingLine({
+  wait,
+  words,
+}: {
+  wait: MachineWait;
+  /** Its head and note in place of a first machine's. */
+  words?: { readonly head: string; readonly note: string } | undefined;
+}) {
   const again = wait.state === "again";
   return (
     <div
@@ -164,12 +192,12 @@ function StartingLine({ wait }: { wait: MachineWait }) {
       <Spinner aria-hidden className="size-icon-row shrink-0" />
       <span className="min-w-0 flex-1">
         <strong className="font-medium text-foreground">
-          {again ? WAIT_WORDS.again : WAIT_WORDS.starting}
+          {words?.head ?? (again ? WAIT_WORDS.again : WAIT_WORDS.starting)}
         </strong>
         {/* A narrow pane keeps the head and the clock. */}
         <span className="@max-sm:hidden">
           {" · "}
-          {again ? WAIT_WORDS.againNote : WAIT_WORDS.startingNote}
+          {words?.note ?? (again ? WAIT_WORDS.againNote : WAIT_WORDS.startingNote)}
         </span>
       </span>
       <Elapsed since={wait.since} />
