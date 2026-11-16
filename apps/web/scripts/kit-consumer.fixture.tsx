@@ -59,6 +59,8 @@ const modes: readonly RadioOption<Level>[] = [
   { value: "low", label: "Low" },
   { value: "high", label: "High", description: "Asks first.", disabled: true },
 ];
+// @ts-expect-error: an option's value outside its type
+export const wrong: readonly OptionGroupOption<Level>[] = [{ value: "mid", label: "Mid" }];
 const tone: MeterTone = meterTone(0.95);
 const classes: ClassInput = ["p-inset", false, null];
 
@@ -129,13 +131,6 @@ export function KitPage({ pick }: { pick: (level: Level) => void }) {
       <AgentIcon agent="claude" labelled />
       {/* @ts-expect-error: a variant the kit doesn't have */}
       <Button variant="huge">No</Button>
-      {/* @ts-expect-error: an option's value outside its type */}
-      <OptionGroup<Level>
-        label="Level"
-        options={[{ value: "mid", label: "Mid" }]}
-        value="low"
-        onChange={pick}
-      />
       {/* @ts-expect-error: a page needs its title */}
       <Page>No title</Page>
     </Page>
