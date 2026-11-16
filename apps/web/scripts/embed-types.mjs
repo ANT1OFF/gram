@@ -65,10 +65,17 @@ export function writeDeclarations(outDir) {
     for (const name of TYPES) {
       const depth = name.split("/").length - 1;
       const up = depth === 0 ? "./" : "../".repeat(depth);
-      const text = readFileSync(join(emitted, `${name}.d.ts`), "utf8").replaceAll(
-        /(from |import\()"@\/([^"]+)"/g,
-        (_match, lead, path) => `${lead}"${up}${path}.js"`,
-      );
+      // The app's `@/` paths made relative, and every relative path given its `.js`, so the
+      // declarations resolve under NodeNext as well as a bundler's resolution.
+      const text = readFileSync(join(emitted, `${name}.d.ts`), "utf8")
+        .replaceAll(
+          /(from |import\()"@\/([^"]+)"/g,
+          (_match, lead, path) => `${lead}"${up}${path}.js"`,
+        )
+        .replaceAll(
+          /(from |import\()"(\.\.?\/[^"]+?)(?<!\.js)"/g,
+          (_match, lead, path) => `${lead}"${path}.js"`,
+        );
       for (const [, specifier] of text.matchAll(/(?:from |import\()"([^"]+)"/g)) {
         const known = specifier.startsWith(".")
           ? TYPES.includes(

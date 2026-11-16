@@ -568,9 +568,13 @@ Gram without loading it. `@gram/web/kit-lite` has the basics: `Button`, `buttonV
 `ButtonGroup`, `Input`, `InputGroup`, `Textarea`, `Field`, `Checkbox`, `RadioGroup`, `Badge`,
 `Alert`, `Skeleton`, `Shimmer` and `cn`. They are the full kit's own controls from the same
 sources, with the same props; the light kit's `Field` is Settings' field as it is drawn, without
-the search and "Saved" a page of settings adds. `applyGramTheme(theme?)` puts the person's stored
-mode, palette and motion setting on `<html>` and your app's `theme` (the one you mount with) over
-them, as mounting does, so the page is already in the look Gram will open in.
+the search and "Saved" a page of settings adds. `applyGramTheme(theme?)` puts the person's
+stored look on `<html>` as Gram's own theme sync does once it mounts: their mode, palette (one of
+their own palettes too, its colours written for the page), contrast, density and motion, resolved
+against the OS's preferences, with your app's `theme` (the one you mount with) over them. So the
+page is already in the look Gram will open in. The OS's preferences are read once, as it runs;
+call it again to follow a change. Call it on every such page: without it the page draws in
+Gram's default dark palette.
 
 ```tsx
 import { applyGramTheme, Button, Field, Input } from "@gram/web/kit-lite";

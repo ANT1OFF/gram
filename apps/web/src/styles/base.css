@@ -5,6 +5,11 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* The default palette is dark; native controls and scrollbars are drawn dark too until the
+     theme names a mode (tokens.css sets it per mode). */
+  :root:not([data-mode]) {
+    color-scheme: dark;
+  }
   html,
   body,
   #root {

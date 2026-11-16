@@ -30,10 +30,37 @@ const EXPORTS = [
 afterEach(() => {
   vi.unstubAllGlobals();
   const root = document.documentElement;
-  for (const name of ["look", "mode", "palette", "motion"]) delete root.dataset[name];
+  for (const name of ["look", "mode", "palette", "motion", "contrast", "density"])
+    delete root.dataset[name];
   document.getElementById("gram-host-theme")?.remove();
+  document.getElementById("gram-custom-palettes")?.remove();
   localStorage.clear();
 });
+
+/** The OS asks for what `queries` names, and nothing else. */
+const system = (...queries: string[]) =>
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: queries.includes(query),
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
+
+const store = (state: Record<string, unknown>) =>
+  localStorage.setItem("gram.theme", JSON.stringify({ state, version: 1 }));
+
+const SEEDS = {
+  bg: "#0b1d3a",
+  surface: "#0f2447",
+  text: "#e6eefc",
+  muted: "#8aa0c4",
+  accent: "#4f8cff",
+  accent2: "#c2a878",
+  red: "#d27a6e",
+  green: "#8fb58a",
+  yellow: "#c2a878",
+  cyan: "#7fa6b5",
+};
 
 describe("@gram/web/kit-lite", () => {
   it("exports exactly the basics", () => {
@@ -81,6 +108,48 @@ describe("applyGramTheme", () => {
     expect(document.getElementById("gram-host-theme")?.textContent).toContain(
       '[data-palette="host-dark"]',
     );
+  });
+
+  it("resolves the default motion against the OS, as Gram does once it mounts", () => {
+    system();
+    lite.applyGramTheme();
+    expect(document.documentElement.dataset["motion"]).toBe("full");
+    system("(prefers-reduced-motion: reduce)");
+    lite.applyGramTheme();
+    expect(document.documentElement.dataset["motion"]).toBe("reduced");
+  });
+
+  it("takes More contrast, saved or asked for by the OS", () => {
+    system();
+    lite.applyGramTheme();
+    expect(document.documentElement.dataset["contrast"]).toBe("standard");
+    store({ contrast: "more" });
+    lite.applyGramTheme();
+    expect(document.documentElement.dataset["contrast"]).toBe("more");
+    localStorage.clear();
+    system("(prefers-contrast: more)");
+    lite.applyGramTheme();
+    expect(document.documentElement.dataset["contrast"]).toBe("more");
+  });
+
+  it("draws a palette of the person's own, writing its colours for the page", () => {
+    system();
+    store({
+      palette: "my-blue",
+      customPalettes: [{ id: "my-blue", name: "My blue", seeds: SEEDS }],
+    });
+    lite.applyGramTheme();
+    expect(document.documentElement.dataset["palette"]).toBe("my-blue");
+    expect(document.getElementById("gram-custom-palettes")?.textContent).toContain(
+      '[data-palette="my-blue"]',
+    );
+  });
+
+  it("names the mode of the palette drawn, so a dark-only app palette stays dark under Light", () => {
+    system();
+    store({ mode: "light" });
+    lite.applyGramTheme({ name: "House", palettes: { dark: SEEDS } });
+    expect(document.documentElement.dataset).toMatchObject({ palette: "host-dark", mode: "dark" });
   });
 
   it("boots the defaults where storage can't be read", () => {

@@ -1248,3 +1248,50 @@ test("a page drawn with the light kit loads none of Gram's app, and looks as Gra
   expect(total).toBeLessThan(600_000);
   expect(errors).toEqual([]);
 });
+
+test("a light page takes the person's own palette, More contrast and motion, as Gram would", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.addInitScript(() => {
+    const seeds = {
+      bg: "#0b1d3a",
+      surface: "#0f2447",
+      text: "#e6eefc",
+      muted: "#8aa0c4",
+      accent: "#4f8cff",
+      accent2: "#c2a878",
+      red: "#d27a6e",
+      green: "#8fb58a",
+      yellow: "#c2a878",
+      cyan: "#7fa6b5",
+    };
+    localStorage.setItem(
+      "gram.theme",
+      JSON.stringify({
+        state: {
+          palette: "my-blue",
+          contrast: "more",
+          customPalettes: [{ id: "my-blue", name: "My blue", seeds }],
+        },
+        version: 1,
+      }),
+    );
+  });
+  await page.goto("/lite.html");
+  await expect(page.getByTestId("lite-title")).toBeVisible();
+  const html = page.locator("html");
+  await expect(html).toHaveAttribute("data-palette", "my-blue");
+  await expect(html).toHaveAttribute("data-contrast", "more");
+  await expect(html).toHaveAttribute("data-motion", "full");
+  // The palette's colours are written for the page: its own background, not the default's.
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe(
+    "rgb(11, 12, 13)",
+  );
+  expect(
+    await page.evaluate(() => document.getElementById("gram-custom-palettes")?.textContent),
+  ).toContain('[data-palette="my-blue"]');
+  expect(errors).toEqual([]);
+});

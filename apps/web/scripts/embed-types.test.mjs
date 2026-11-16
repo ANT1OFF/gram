@@ -69,4 +69,44 @@ describe("the package's declarations", () => {
     expect(`${result.stdout}${result.stderr}`).toBe("");
     expect(result.status).toBe(0);
   }, 120_000);
+
+  it("types the same pages under NodeNext, as an ES module package", () => {
+    // The package ships as `"type": "module"`, where NodeNext asks every relative path for its
+    // extension.
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ type: "module" }));
+    writeFileSync(join(app, "package.json"), JSON.stringify({ type: "module" }));
+    copyFileSync(join(webDir, "scripts/kit-consumer.fixture.tsx"), join(app, "page.tsx"));
+    copyFileSync(join(webDir, "scripts/kit-lite-consumer.fixture.tsx"), join(app, "sign-in.tsx"));
+    writeFileSync(
+      join(app, "tsconfig.node.json"),
+      JSON.stringify({
+        compilerOptions: {
+          target: "es2024",
+          lib: ["ES2024", "DOM", "DOM.Iterable"],
+          module: "nodenext",
+          moduleResolution: "nodenext",
+          jsx: "react-jsx",
+          strict: true,
+          noEmit: true,
+          skipLibCheck: false,
+          types: [],
+          paths: {
+            "@gram/web/kit": [join(pkg, "gram-web-kit.d.ts")],
+            "@gram/web/kit-lite": [join(pkg, "gram-web-kit-lite.d.ts")],
+          },
+        },
+        files: ["page.tsx", "sign-in.tsx"],
+      }),
+    );
+    const result = spawnSync(
+      process.execPath,
+      [tsc, "--project", join(app, "tsconfig.node.json")],
+      { cwd: app, encoding: "utf8" },
+    );
+    // Only the package's own declarations: the libraries they name are checked by their authors.
+    const ours = `${result.stdout}${result.stderr}`
+      .split("\n")
+      .filter((line) => line.includes(pkg) || /^(page|sign-in)\.tsx/.test(line));
+    expect(ours).toEqual([]);
+  }, 120_000);
 });

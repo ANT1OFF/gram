@@ -34,7 +34,10 @@ run("light kit", binOf("vite", "bin/vite.js"), ["build", "--config", "vite.kit-l
     if (seen.has(file)) return;
     seen.add(file);
     const code = readFileSync(join(outDir, file), "utf8");
-    for (const [, specifier] of code.matchAll(/(?:from|import)\s*["'](\.\/[^"']+\.js)["']/g))
+    // Static and dynamic imports alike: a part loaded on demand counts against the budget too.
+    for (const [, specifier] of code.matchAll(
+      /(?:from|import)\s*\(?\s*["'](\.\.?\/[^"']+\.js)["']/g,
+    ))
       visit(join(dirname(file), specifier).replaceAll("\\", "/"));
   };
   visit("gram-web-kit-lite.js");
