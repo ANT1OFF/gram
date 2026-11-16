@@ -5,7 +5,7 @@ test("streams a scripted thread, approves a request and sends a queued message",
   page,
 }) => {
   // The script holds its turn just after the opening line. Unheld, the line folds into the running
-  // turn's row as soon as the next words start, about half a second later at the mock's speed: a
+  // turn's row as soon as the next words start, a moment later at the mock's speed: a
   // cold browser often missed it between polls.
   await page.addInitScript(() => {
     window.gramMockHoldGates = true;

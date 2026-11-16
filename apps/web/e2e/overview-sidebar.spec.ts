@@ -486,23 +486,38 @@ test("Needs you counts the asks across every workspace, and lists them by worksp
   // opening turn raises it, and nothing failing or waiting in a tray.
   await flakyAsked(page);
   await expect(needs).not.toHaveAttribute("data-count", "0");
-  const count = Number(await needs.getAttribute("data-count"));
-  expect(count).toBeGreaterThan(1);
-  // Its words name the kinds, or past two the count; its name always says the count, then kinds.
-  await expect(needs).toHaveAccessibleName(new RegExp(`^${count} need you: \\d+ \\w+`));
-  // Its hover says its scope, every workspace, and how much of it is where by kind: here first,
-  // then each other place, so the header needn't repeat it.
-  await expect(needs).toHaveAttribute(
-    "title",
-    new RegExp(`^Inbox.*\\n${count} need you across all workspaces\\n[\\s\\S]*\\d+ approvals?`),
-  );
+  // The count, name and hover are read together: another seed thread can still raise an ask, and
+  // a count read on its own went stale before the name was checked (8, then "9 need you").
+  const pill = () =>
+    needs.evaluate((el) => ({
+      count: Number(el.getAttribute("data-count")),
+      name: el.getAttribute("aria-label") ?? "",
+      title: el.getAttribute("title") ?? "",
+    }));
+  await expect
+    .poll(async () => {
+      const { count, name, title } = await pill();
+      return (
+        count > 1 &&
+        // Its words name the kinds, or past two the count; its name always says the count, then kinds.
+        new RegExp(`^${count} need you: \\d+ \\w+`).test(name) &&
+        // Its hover says its scope, every workspace, and how much of it is where by kind: here
+        // first, then each other place, so the header needn't repeat it.
+        new RegExp(
+          `^Inbox.*\\n${count} need you across all workspaces\\n[\\s\\S]*\\d+ approvals?`,
+        ).test(title)
+      );
+    })
+    .toBe(true);
   await expect(needs).toHaveAttribute("title", /\n(Here \(.+\): |Threads outside a workspace: )/);
   await needs.click();
   const inbox = page.getByTestId("inbox");
   await expect(inbox).toBeVisible();
   // By kind: the approvals the threads and workspaces ask lead.
   await expect(inbox.getByRole("region", { name: "Approvals" })).toBeVisible();
-  await expect(inbox.getByTestId("inbox-item")).toHaveCount(count);
+  await expect
+    .poll(async () => (await inbox.getByTestId("inbox-item").count()) === (await pill()).count)
+    .toBe(true);
   // Esc closes it, and the focus goes back to the pill.
   await page.keyboard.press("Escape");
   await expect(inbox).toBeHidden();
