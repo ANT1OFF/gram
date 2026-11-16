@@ -334,12 +334,9 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             const session = yield* waitSent(first.threadId, 1);
             const digest = session.sent[0]?.text ?? "";
             expect(digest).toContain("while you were away");
-            expect(digest).toContain(
-              `A restart cut these 2 workers off mid-turn, so none is working now whatever the ledger says: “Mail trigger” [thread ${first.cut}] (asked to continue where it left off), `,
-            );
-            expect(digest).toContain(
-              `It also stopped background work, as the agents described it: “Stock” [thread ${first.idle}]: shell \``,
-            );
+            // Each cut worker and each stopped background task, by thread.
+            expect(digest).toContain(`“Mail trigger” [thread ${first.cut}]`);
+            expect(digest).toContain(`“Stock” [thread ${first.idle}]: shell \``);
             const fake = yield* FakeAgentControl;
             expect(fake.sessions.filter((each) => each.options.threadId === first.idle)).toEqual(
               [],
@@ -697,7 +694,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             audience: "orchestrator",
             outwardGate: "irreversible",
           });
-          expect(fresh.options.instructions).toContain('orchestrator of the "shop" workspace');
+          expect(fresh.options.instructions).toContain('"shop"');
           const [boot] = fresh.sent;
           expect(boot?.notice).toMatchObject({ variant: "boot", generation: 3, changes: [] });
           expect(boot?.text).toContain("ship the mail trigger first");

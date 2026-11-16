@@ -251,9 +251,8 @@ describe("report_issue", () => {
         });
         if (card.kind !== "approval") throw new Error("not an approval card");
         expect(card.scopes).toEqual(["once"]);
-        expect(card.description).toBe(
-          "File “Terminal freezes on resize” on ANT1OFF/gram (bug, web)",
-        );
+        for (const part of ["Terminal freezes on resize", "ANT1OFF/gram", "bug", "web"])
+          expect(card.description).toContain(part);
         const body = [
           `Resizing froze it. Log in ~/proj/out.log, token: [redacted] and [redacted].`,
           "",

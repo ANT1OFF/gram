@@ -26,6 +26,12 @@ describe("what a viewer may call", () => {
       "worktree.status",
       "git.branches",
       "thread.suggestions",
+      // No viewer pins, shows, unpins, opens or lists a page: only a member's own RPCs reach the store.
+      "pages.pin",
+      "pages.showOffer",
+      "pages.unpin",
+      "pages.open",
+      "pages.list",
     ])
       expect(VIEWER_RPCS.has(tag)).toBe(false);
   });

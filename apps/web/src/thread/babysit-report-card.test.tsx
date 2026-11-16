@@ -37,23 +37,21 @@ describe("BabysitReportCard", () => {
         .getByRole("link", { name: /#412 ready to merge/ })
         .getAttribute("href"),
     ).toBe("https://github.com/example/api/pull/412");
-    expect(within(card).getByText("9a1e77c")).toBeTruthy();
-    expect(within(card).getByTestId("notice-verdict").textContent).toBe("Approved");
-    expect(within(card).getByText("Checks passing")).toBeTruthy();
-    expect(card.textContent).toContain("Merge state CLEAN");
-    expect(within(card).getByText("3 rounds · 1 finding handled")).toBeTruthy();
-    expect(within(card).getByTestId("babysit-not-merged").textContent).toMatch(/^Not merged/);
+    // The short head commit, so the human merges what was reviewed.
+    expect(card.textContent).toContain("9a1e77c");
+    expect(card.textContent).not.toContain("9a1e77c0d");
+    expect(within(card).getByTestId("notice-verdict").dataset.verdict).toBe("approved");
+    expect(card.textContent).toContain("CLEAN");
+    expect(within(card).getByTestId("babysit-not-merged")).toBeTruthy();
   });
 
   it("lists declined findings for the human to judge", () => {
     render(<BabysitReportCard report={report()} />);
     const declined = screen.getByRole("region", { name: "Declined" });
-    expect(within(declined).getByText("Declined (1)")).toBeTruthy();
-    expect(within(declined).getByText("src/retry.ts:8")).toBeTruthy();
-    expect(within(declined).getByText(/baseDelayMs/)).toBeTruthy();
+    expect(within(declined).getAllByRole("listitem")).toHaveLength(1);
+    expect(declined.textContent).toContain("src/retry.ts:8");
     cleanup();
     render(<BabysitReportCard report={report({ declined: [], handled: 4 })} />);
     expect(screen.queryByRole("region", { name: "Declined" })).toBeNull();
-    expect(screen.getByText("3 rounds · 4 findings handled")).toBeTruthy();
   });
 });

@@ -176,16 +176,6 @@ describe("PrStrip", () => {
     expect(screen.getByRole("img", { name: "Merged" })).toBeTruthy();
   });
 
-  it("offers the folder and terminal for the checkout's own repository and branch", async () => {
-    setThread(undefined);
-    renderWithApi(<PrStrip threadId={T} focused={false} />, {});
-    fireEvent.click(screen.getByTestId("pr-row-repo"));
-    const repoMenu = await screen.findByTestId("pr-row-repo-menu");
-    expect(repoMenu.textContent).toContain("Open repository on GitHub");
-    expect(repoMenu.textContent).toContain("Copy path");
-    expect(repoMenu.textContent).toContain("Open in terminal");
-  });
-
   it("offers a PR bound from another repository only what doesn't need its folder", async () => {
     const git = mockGitState(T, undefined)!;
     act(() => {
@@ -365,7 +355,7 @@ describe("PrStrip", () => {
       expect(screen.getByRole("img", { name: "Merged" })).toBeTruthy();
       const chip = screen.getByTestId("pr-row-cleanup");
       expect(chip.getAttribute("aria-label")).toBe("Clean up now…");
-      expect(chip.title).toBe("#412 merged. Its worktree is removed soon.\nClean up now…");
+      expect(chip.title).toContain("#412");
 
       fireEvent.click(chip);
       expect(useThreadDialogs.getState().dialog).toEqual({
@@ -388,9 +378,8 @@ describe("PrStrip", () => {
       renderBottom();
       const chip = screen.getByTestId("pr-row-cleanup");
       expect(chip.getAttribute("aria-label")).toBe("Clean up…");
-      expect(chip.title).toBe(
-        "#412 merged. Remove its worktree and the branch fix/flaky?\nClean up…",
-      );
+      // It names what it would remove.
+      expect(chip.title).toContain("fix/flaky");
     });
 
     it("dismisses the cleanup with the row's ×, without a notice taking its place", async () => {

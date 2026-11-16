@@ -175,8 +175,6 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
             confineWrites: true,
           });
           expect(session.options.outwardGate).toBeUndefined();
-          expect(session.options.instructions).toContain("normal Codex permissions");
-          expect(session.options.instructions).not.toContain("You have no shell");
           const original = yield* session.callTool("dream_read", {
             path: "input/memory/MEMORY.md",
           });

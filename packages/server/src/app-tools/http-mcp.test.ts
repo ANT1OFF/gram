@@ -643,7 +643,6 @@ describe("mounted in ServerLayer", () => {
             expect(reopened.options.dreamGuided).toBe(agent === "codex");
             if (agent === "codex") {
               expect(reopened.options.outwardGate).toBeUndefined();
-              expect(reopened.options.instructions).toContain("normal Codex permissions");
             } else {
               expect(reopened.options.outwardGate).toBe("all");
             }

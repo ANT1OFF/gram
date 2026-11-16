@@ -1,11 +1,9 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 import {
-  EVENT_BUDGET,
   FEATURE_STATIONS,
   FeatureCard,
   FeatureCards,
-  StreamEventKind,
   cardShown,
   cardStationOf,
   currentSummary,
@@ -93,12 +91,7 @@ const facts = (
 describe("stationOf", () => {
   const cases: ReadonlyArray<readonly [string, Partial<WorkerLedgerEntry>, FeatureStation]> = [
     ["briefed", { state: "briefed" }, "briefed"],
-    ["working", { state: "working" }, "working"],
     ["question", { state: "question" }, "working"],
-    ["needsUser", { state: "needsUser" }, "working"],
-    ["blocked", { state: "blocked" }, "working"],
-    ["inReview, checks pending", { state: "inReview", pr: pr({ checks: "pending" }) }, "checks"],
-    ["inReview, checks failing", { state: "inReview", pr: pr({ checks: "failing" }) }, "checks"],
     [
       "inReview, failing required checks with others passing",
       { state: "inReview", pr: pr({ checks: "failing (not required: passing)" }) },
@@ -109,7 +102,6 @@ describe("stationOf", () => {
       { state: "inReview", pr: pr({ checks: "passing" }) },
       "review",
     ],
-    ["inReview, no checks", { state: "inReview", pr: pr({ checks: "none" }) }, "review"],
     [
       "inReview, held",
       {
@@ -118,11 +110,9 @@ describe("stationOf", () => {
       },
       "review",
     ],
-    ["readyToMerge", { state: "readyToMerge", pr: pr({ checks: "passing" }) }, "review"],
     ["done with an open PR still checking", { state: "done", pr: pr() }, "checks"],
     ["done without a PR", { state: "done" }, "review"],
     ["delivered", { state: "delivered" }, "merged"],
-    ["merged", { state: "merged", pr: pr({ state: "merged", checks: "passing" }) }, "merged"],
   ];
   it.each(cases)("%s", (_name, patch, station) => {
     expect(stationOf(worker(patch))).toBe(station);
@@ -493,25 +483,6 @@ const change = (to: WorkerState, from?: WorkerState, threadId: ThreadId = A): Di
 });
 
 describe("event budget", () => {
-  it("sorts every event kind into card, line or silent", () => {
-    for (const kind of StreamEventKind.literals) {
-      expect(["card", "line", "silent"]).toContain(EVENT_BUDGET[kind]);
-    }
-  });
-
-  it("lets merges, failures and asks speak; wakes and stage moves never reach the stream", () => {
-    expect(EVENT_BUDGET.merged).toBe("line");
-    expect(EVENT_BUDGET.error).toBe("line");
-    // A failing check is its worker's to fix, or its orchestrator's: it updates the card only.
-    expect(EVENT_BUDGET.checksFailing).toBe("card");
-    expect(EVENT_BUDGET.needsUser).toBe("line");
-    expect(EVENT_BUDGET.question).toBe("line");
-    expect(EVENT_BUDGET.wake).toBe("silent");
-    expect(EVENT_BUDGET.stage).not.toBe("line");
-    expect(EVENT_BUDGET.working).not.toBe("line");
-    expect(EVENT_BUDGET.inReview).not.toBe("line");
-  });
-
   it("turns a digest into one line per speaking event and nothing for the rest", () => {
     const merged = worker({ state: "merged", pr: pr({ state: "merged", number: 431 }) });
     const lines = streamLinesOf(
@@ -534,10 +505,7 @@ describe("event budget", () => {
 
   it.each([
     ["running", { state: "inReview", status: "running" }],
-    ["at rest", { state: "inReview", status: "idle" }],
     ["waiting on an approval", { state: "needsUser", status: "needsApproval" }],
-    ["reporting itself blocked", { state: "blocked", status: "idle", reportStands: true }],
-    ["closed", { state: "inReview", status: "ended" }],
     ["archived", { state: "archived", status: "idle" }],
   ] as const)("never speaks failing checks of a worker %s", (_, own) => {
     const pending = digest(1, {

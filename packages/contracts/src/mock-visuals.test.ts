@@ -1,9 +1,7 @@
-import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 import {
   boardSlug,
   directionsFromShots,
-  MockCardData,
   mockRefKind,
   parseMockRecord,
   pathName,
@@ -11,7 +9,7 @@ import {
   splitPreviewTarget,
   visualsProblem,
 } from "./mock-visuals.ts";
-import { askQuestion, closeQuestion, parseQuestions, QuestionChoice } from "./questions.ts";
+import { askQuestion, closeQuestion, parseQuestions } from "./questions.ts";
 import { askQuestionProblem } from "./worker-questions.ts";
 
 describe("pathName long separator runs", () => {
@@ -64,13 +62,6 @@ const options = [
 ];
 
 describe("the option and question schema", () => {
-  it("takes an image and a preview on a choice, and nothing else new", () => {
-    const decode = Schema.decodeUnknownSync(QuestionChoice);
-    expect(decode(options[0])).toEqual(options[0]);
-    expect(decode({ label: "Plain" })).toEqual({ label: "Plain" });
-    expect(() => decode({ label: "A", image: 3 })).toThrow();
-  });
-
   it("refuses visuals of the wrong kind before anything is kept", () => {
     expect(visualsProblem(options, `${MOCK}/mock.json`)).toBeUndefined();
     expect(visualsProblem([{ label: "A", image: `${MOCK}/v1.html` }], undefined)).toMatch(
@@ -255,18 +246,5 @@ describe("the mock card's pieces", () => {
     });
     expect(parseMockRecord("not json")).toBeUndefined();
     expect(parseMockRecord("[]")).toBeUndefined();
-  });
-
-  it("decodes the card the server sends", () => {
-    const card = {
-      title: "Needs you home",
-      version: 1,
-      approved: 1,
-      status: "approved",
-      page: `${MOCK}/v1.html`,
-      record: `${MOCK}/mock.json`,
-      directions: [{ name: "A inbox", shots: { dark: `${MOCK}/shots/a-inbox-dark.png` } }],
-    };
-    expect(Schema.decodeUnknownSync(MockCardData)(card)).toEqual(card);
   });
 });

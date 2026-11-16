@@ -122,10 +122,18 @@ if [ -n "$out" ]; then cp "$file" "$out"; else cat "$file"; fi
 describe("the join installer", () => {
   it("is one command, with the link handed over without its quotes", () => {
     expect(installCommand(ORIGIN, `${ORIGIN}/host/join#code=ab'cd`)).toBe(
-      `curl -fsSL ${ORIGIN}/host/install | sh -s -- '${ORIGIN}/host/join#code=abcd'`,
+      `curl -fsSL '${ORIGIN}/host/install' | sh -s -- '${ORIGIN}/host/join#code=abcd'`,
     );
     // Run again on a joined machine it needs no link: the join stands.
-    expect(updateCommand(ORIGIN)).toBe(`curl -fsSL ${ORIGIN}/host/install | sh`);
+    expect(updateCommand(ORIGIN)).toBe(`curl -fsSL '${ORIGIN}/host/install' | sh`);
+  });
+
+  it("quotes the installer's URL, so shell characters in the origin are not run", () => {
+    const origin = "https://a;id;$(x)'b.ts.net";
+    expect(updateCommand(origin)).toBe("curl -fsSL 'https://a;id;$(x)b.ts.net/host/install' | sh");
+    expect(installCommand(origin, "l")).toBe(
+      "curl -fsSL 'https://a;id;$(x)b.ts.net/host/install' | sh -s -- 'l'",
+    );
   });
 
   for (const shell of ["sh", "dash"].filter((name) => spawnSync(name, ["-c", ":"]).status === 0)) {

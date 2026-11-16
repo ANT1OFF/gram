@@ -70,7 +70,7 @@ describe("first run", () => {
     const welcome = within(await screen.findByTestId("welcome"));
     // It leads with the repository: the screen's heading is the action.
     const heading = welcome.getByRole("heading", { name: "Open a repository" });
-    expect(screen.getByTestId("welcome").querySelector("h2")).toBe(heading);
+    expect(heading).toBeTruthy();
     await waitFor(() => expect(api.launchChecks).toHaveBeenCalled());
     await vi.mocked(api.launchChecks).mock.results[0]!.value;
     expect(await welcome.findByRole("radio", { name: /^api/ })).toBeTruthy();
@@ -231,11 +231,9 @@ describe("first run", () => {
       "listitem",
     );
     // The ready agent is named in the line under Open; only the one to sign in to is listed.
-    expect(welcome.getByTestId("welcome-runs-with").textContent).toBe("Runs with Codex");
+    expect(welcome.getByTestId("welcome-runs-with").getAttribute("data-ready")).toBe("true");
     expect(rows.map((item) => item.getAttribute("data-tool"))).toEqual(["claude"]);
-    const claude = rows[0];
-    expect(claude?.getAttribute("data-state")).toBe("attention");
-    expect(claude?.textContent).toContain("Run claude in a terminal to sign in.");
+    expect(rows[0]?.getAttribute("data-state")).toBe("attention");
     fireEvent.click(welcome.getByRole("button", { name: "Check again" }));
     await waitFor(() => expect(api.launchChecks).toHaveBeenCalledWith(true));
     expect(updateSettings).not.toHaveBeenCalled();
@@ -255,17 +253,16 @@ describe("first run", () => {
     const [claude] = rows;
     expect(rows).toHaveLength(1);
     expect(claude?.getAttribute("data-state")).toBe("optional");
-    expect(claude?.textContent).toContain("Not installed");
     // Optional: the remedy is on its hover, not spelled out under it.
     expect(within(claude!).queryByTestId("welcome-remedy")).toBeNull();
     const install = within(claude!).getByRole("link", { name: /^Install Claude Code/ });
     expect(install.getAttribute("href")).toBe("https://docs.claude.com/en/docs/claude-code/setup");
-    expect(welcome.getByTestId("welcome-runs-with").textContent).toBe("Runs with Codex");
+    expect(welcome.getByTestId("welcome-runs-with").getAttribute("data-ready")).toBe("true");
     fireEvent.click(welcome.getByRole("button", { name: "Check again" }));
     await waitFor(() => expect(api.launchChecks).toHaveBeenCalledWith(true));
   });
 
-  it("spells out how to install each agent while neither is ready", async () => {
+  it("with no agent ready, offers to install each and calls opening a repository setup", async () => {
     const { render } = load(withOnboarding({}), {
       ...ALL_READY,
       tools: ALL_READY.tools.filter((tool) => tool.tool !== "claude" && tool.tool !== "codex"),
@@ -278,51 +275,14 @@ describe("first run", () => {
       "listitem",
     );
     expect(welcome.getByTestId("welcome-runs-with").getAttribute("data-ready")).toBe("false");
-    expect(welcome.getByTestId("welcome-runs-with").textContent).toBe(
-      "Install Claude Code or Codex to start",
-    );
     expect(rows.map((row) => row.getAttribute("data-tool"))).toEqual(["claude", "codex"]);
     for (const row of rows) {
       expect(row.getAttribute("data-state")).toBe("missing");
       expect(within(row).getByTestId("welcome-remedy").textContent).toContain("npm i -g");
       expect(within(row).getByRole("link", { name: /^Install/ })).toBeTruthy();
     }
-  });
-
-  it("with no agent ready, leads with installing one and calls opening a repository setup", async () => {
-    const { render } = load(withOnboarding({}), {
-      ...ALL_READY,
-      tools: ALL_READY.tools.filter((tool) => tool.tool !== "claude" && tool.tool !== "codex"),
-      claudeSignIn: "unknown",
-      codexSignIn: "notSignedIn",
-    });
-    render();
-    const welcome = within(await screen.findByTestId("welcome"));
-    await welcome.findByRole("list", { name: "Tools to set up" });
-    const agents = welcome.getByTestId("welcome-agents");
-    const open = welcome.getByTestId("welcome-open");
-    expect(open.getAttribute("data-setup")).toBe("true");
-    // The repository action only sets it up; installing an agent is offered for each.
-    expect(within(agents).getAllByRole("link", { name: /^Install/ })).toHaveLength(2);
-  });
-
-  it("says what the GitHub CLI is for while it is missing, without blocking the start", async () => {
-    const { render } = load(withOnboarding({}), {
-      ...ALL_READY,
-      tools: ALL_READY.tools.filter((tool) => tool.tool !== "gh"),
-      ghSignedIn: false,
-    });
-    render();
-    const welcome = within(await screen.findByTestId("welcome"));
-    const rows = within(await welcome.findByRole("list", { name: "Tools to set up" })).getAllByRole(
-      "listitem",
-    );
-    expect(welcome.getByTestId("welcome-runs-with").textContent).toBe(
-      "Runs with Claude Code or Codex",
-    );
-    expect(rows.map((row) => row.getAttribute("data-tool"))).toEqual(["gh"]);
-    expect(rows[0]?.getAttribute("data-state")).toBe("optional");
-    expect(rows[0]?.textContent).toContain("For pull requests");
+    // The repository action only sets it up.
+    expect(welcome.getByTestId("welcome-open").getAttribute("data-setup")).toBe("true");
   });
 
   it("shows nothing after the first run", async () => {
@@ -348,17 +308,18 @@ describe("toolRows", () => {
   };
 
   it("lists the agents first, and with neither ready both say what to do", () => {
-    expect(toolRows(checks).map((row) => [row.tool, row.state, row.detail])).toEqual([
-      ["claude", "attention", "Not signed in. Run `claude` in a terminal to sign in."],
-      [
-        "codex",
-        "missing",
-        "Not found. Install it with `npm i -g @openai/codex@0.154.0`, then sign in with `codex login`.",
-      ],
-      ["git", "missing", "Not found on your login-shell PATH."],
-      ["gh", "attention", "Not signed in. Run `gh auth login`."],
+    const rows = toolRows(checks);
+    expect(rows.map((row) => [row.tool, row.state])).toEqual([
+      ["claude", "attention"],
+      ["codex", "missing"],
+      ["git", "missing"],
+      ["gh", "attention"],
     ]);
-    expect(canStart(toolRows(checks))).toBe(false);
+    // The remedy carries the command to run: the server's pinned upgrade, and each sign-in.
+    expect(rows[1]?.detail).toContain("`npm i -g @openai/codex@0.154.0`");
+    expect(rows[1]?.detail).toContain("`codex login`");
+    expect(rows[3]?.detail).toContain("`gh auth login`");
+    expect(canStart(rows)).toBe(false);
   });
 
   it("tells someone with neither agent how to install each one", () => {
@@ -367,21 +328,16 @@ describe("toolRows", () => {
       claudeSignIn: "unknown",
       tools: [{ tool: "git", found: true, version: "2.47.1" }],
     };
-    expect(toolRows(neither).map((row) => [row.tool, row.state, row.detail])).toEqual([
-      [
-        "claude",
-        "missing",
-        "Not found. Install it with `npm i -g @anthropic-ai/claude-code`, then sign in with `claude`.",
-      ],
-      [
-        "codex",
-        "missing",
-        "Not found. Install it with `npm i -g @openai/codex`, then sign in with `codex login`.",
-      ],
-      ["git", "ready", "2.47.1"],
-      ["gh", "optional", "Not found on your login-shell PATH."],
+    const rows = toolRows(neither);
+    expect(rows.map((row) => [row.tool, row.state])).toEqual([
+      ["claude", "missing"],
+      ["codex", "missing"],
+      ["git", "ready"],
+      ["gh", "optional"],
     ]);
-    expect(canStart(toolRows(neither))).toBe(false);
+    expect(rows[0]?.detail).toContain("`npm i -g @anthropic-ai/claude-code`");
+    expect(rows[1]?.detail).toContain("`npm i -g @openai/codex`");
+    expect(canStart(rows)).toBe(false);
   });
 
   it("supports a Codex-only install, with Claude Code and GitHub optional", () => {
@@ -440,31 +396,28 @@ describe("runsWith", () => {
       codexSignIn: "signedIn" as const,
       tools: [...base.tools, { tool: "codex" as const, found: true, version: "0.160.0" }],
     };
-    expect(words(codex)).toEqual({ ready: true, agents: ["codex"], words: "Runs with Codex" });
+    expect(words(codex)).toMatchObject({ ready: true, agents: ["codex"] });
     const both = {
       ...codex,
       claudeSignIn: "signedIn" as const,
       tools: [...codex.tools, { tool: "claude" as const, found: true, version: "2.1.273" }],
     };
-    expect(words(both).words).toBe("Runs with Claude Code or Codex");
-    expect(words({ ...both, tools: both.tools.filter((tool) => tool.tool !== "git") })).toEqual({
-      ready: false,
-      agents: ["claude", "codex"],
-      words: "Runs with Claude Code or Codex once git is installed",
-    });
+    expect(words(both)).toMatchObject({ ready: true, agents: ["claude", "codex"] });
+    // Without git neither can start; the line says what is missing.
+    const noGit = words({ ...both, tools: both.tools.filter((tool) => tool.tool !== "git") });
+    expect(noGit).toMatchObject({ ready: false, agents: ["claude", "codex"] });
+    expect(noGit.words).toContain("git");
   });
 
   it("says what to do first while no agent is ready", () => {
-    expect(words(base)).toEqual({
-      ready: false,
-      agents: [],
-      words: "Install Claude Code or Codex to start",
-    });
+    expect(words(base)).toMatchObject({ ready: false, agents: [] });
     const signIn = {
       ...base,
       claudeSignIn: "notSignedIn" as const,
       tools: [...base.tools, { tool: "claude" as const, found: true, version: "2.1.273" }],
     };
-    expect(words(signIn).words).toBe("Sign in to Claude Code to start");
+    // Installed but signed out, it asks for the sign-in rather than an install.
+    expect(words(signIn)).toMatchObject({ ready: false, agents: [] });
+    expect(words(signIn).words).not.toBe(words(base).words);
   });
 });

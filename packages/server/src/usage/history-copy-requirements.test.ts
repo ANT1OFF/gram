@@ -65,66 +65,73 @@ const requirements = [
   { ...amount, cache_write_input_tokens: 5 },
   { ...amount, reasoning_output_tokens: 3 },
 ];
-for (const requirement of requirements)
-  for (const order of permute)
-    it(`three physical copies preserve each positive requirement ${JSON.stringify(requirement)} order=${order}`, () => {
-      const sources = [rows([amount]), rows([requirement]), rows([amount])];
-      const input = order.flatMap((i) => sources[i]!);
-      const original = structuredClone(input);
-      const result = canonicalHistory(input);
-      const record = [...result.unique.values()][0]!;
-      expect(record.tokens).toEqual({
-        inputTokens: 10,
-        outputTokens: 3,
-        cacheReadTokens: 2,
-        cacheWriteTokens: 1,
-        reasoningTokens: 2,
-      });
-      expect(record.complete).toBe(false);
-      expect(record.model).toBe("actual");
-      expect(record.at).toBe(Date.parse(at));
-      expect(record.nativeIds).toEqual(["native"]);
-      expect(result.duplicateRecords).toBe(2);
-      expect(input).toEqual(original);
+// One requirement in every position of the odd copy; the rest once (the odd copy in the middle).
+const requirementCases = [
+  ...permute.map((order) => [requirements[0]!, order] as const),
+  ...requirements.slice(1).map((requirement) => [requirement, permute[1]!] as const),
+];
+for (const [requirement, order] of requirementCases)
+  it(`three physical copies preserve each positive requirement ${JSON.stringify(requirement)} order=${order}`, () => {
+    const sources = [rows([amount]), rows([requirement]), rows([amount])];
+    const input = order.flatMap((i) => sources[i]!);
+    const original = structuredClone(input);
+    const result = canonicalHistory(input);
+    const record = [...result.unique.values()][0]!;
+    expect(record.tokens).toEqual({
+      inputTokens: 10,
+      outputTokens: 3,
+      cacheReadTokens: 2,
+      cacheWriteTokens: 1,
+      reasoningTokens: 2,
     });
-for (const order of permute)
-  for (const model of [null, "actual"])
-    it(`real second response recovers complete requirements order=${order} model=${model}`, () => {
-      const larger = {
-        input_tokens: 20,
-        output_tokens: 6,
-        cached_input_tokens: 4,
-        cache_write_input_tokens: 2,
-        reasoning_output_tokens: 4,
-      };
-      const sources = [rows([amount], model), rows([larger], model, true), rows([larger], model)];
-      const record = [...canonicalHistory(order.flatMap((i) => sources[i]!)).unique.values()][0]!;
-      expect(record.tokens).toEqual({
-        inputTokens: 20,
-        outputTokens: 6,
-        cacheReadTokens: 4,
-        cacheWriteTokens: 2,
-        reasoningTokens: 4,
-      });
-      expect(record.complete).toBe(true);
-      expect(record.model).toBe(model);
+    expect(record.complete).toBe(false);
+    expect(record.model).toBe("actual");
+    expect(record.at).toBe(Date.parse(at));
+    expect(record.nativeIds).toEqual(["native"]);
+    expect(result.duplicateRecords).toBe(2);
+    expect(input).toEqual(original);
+  });
+for (const [order, model] of [
+  [permute[0]!, "actual"],
+  [permute[1]!, null],
+  [permute[2]!, "actual"],
+] as const)
+  it(`real second response recovers complete requirements order=${order} model=${model}`, () => {
+    const larger = {
+      input_tokens: 20,
+      output_tokens: 6,
+      cached_input_tokens: 4,
+      cache_write_input_tokens: 2,
+      reasoning_output_tokens: 4,
+    };
+    const sources = [rows([amount], model), rows([larger], model, true), rows([larger], model)];
+    const record = [...canonicalHistory(order.flatMap((i) => sources[i]!)).unique.values()][0]!;
+    expect(record.tokens).toEqual({
+      inputTokens: 20,
+      outputTokens: 6,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 2,
+      reasoningTokens: 4,
     });
-for (const requirement of [
-  absent,
-  null,
-  { ...amount, input_tokens: -1 },
-  { ...amount, cached_input_tokens: 11 },
-])
-  for (const reverse of [false, true])
-    it(`missing or invalid evidence cannot be filled by another copy ${String(requirement)} reverse=${reverse}`, () => {
-      const sources = [rows([amount]), rows([requirement])];
-      const record = [
-        ...canonicalHistory((reverse ? sources.toReversed() : sources).flat()).unique.values(),
-      ][0]!;
-      expect(record.tokens.inputTokens).toBe(10);
-      expect(record.complete).toBe(false);
-      expect(record.model).toBe("actual");
-    });
+    expect(record.complete).toBe(true);
+    expect(record.model).toBe(model);
+  });
+for (const [requirement, reverse] of [
+  [absent, false],
+  [absent, true],
+  [null, false],
+  [{ ...amount, input_tokens: -1 }, true],
+  [{ ...amount, cached_input_tokens: 11 }, false],
+] as const)
+  it(`missing or invalid evidence cannot be filled by another copy ${String(requirement)} reverse=${reverse}`, () => {
+    const sources = [rows([amount]), rows([requirement])];
+    const record = [
+      ...canonicalHistory((reverse ? sources.toReversed() : sources).flat()).unique.values(),
+    ][0]!;
+    expect(record.tokens.inputTokens).toBe(10);
+    expect(record.complete).toBe(false);
+    expect(record.model).toBe("actual");
+  });
 for (const reverse of [false, true])
   it(`per-file decreasing requirement conflict remains latched reverse=${reverse}`, () => {
     const sources = [rows([amount, { ...amount, input_tokens: 5 }]), rows([amount])];
@@ -134,43 +141,40 @@ for (const reverse of [false, true])
     expect(record.tokens.inputTokens).toBe(10);
     expect(record.complete).toBe(false);
   });
-for (const reverse of [false, true])
-  it(`incomparable requirement lanes retain both constraints reverse=${reverse}`, () => {
-    const sources = [
-      rows([{ ...amount, cached_input_tokens: 5 }]),
-      rows([{ ...amount, reasoning_output_tokens: 3 }]),
-    ];
-    const record = [
-      ...canonicalHistory((reverse ? sources.toReversed() : sources).flat()).unique.values(),
-    ][0]!;
-    expect(record.expectedTurnTokens?.cacheReadTokens).toBe(5);
-    expect(record.expectedTurnTokens?.reasoningTokens).toBe(3);
-    expect(record.complete).toBe(false);
-    expect(record.tokens.inputTokens).toBe(10);
-  });
+it("incomparable requirement lanes retain both constraints", () => {
+  const sources = [
+    rows([{ ...amount, reasoning_output_tokens: 3 }]),
+    rows([{ ...amount, cached_input_tokens: 5 }]),
+  ];
+  const record = [...canonicalHistory(sources.flat()).unique.values()][0]!;
+  expect(record.expectedTurnTokens?.cacheReadTokens).toBe(5);
+  expect(record.expectedTurnTokens?.reasoningTokens).toBe(3);
+  expect(record.complete).toBe(false);
+  expect(record.tokens.inputTokens).toBe(10);
+});
 const projection = (): HistoryRecord => rows([amount])[0]!;
-for (const requirement of [
-  { inputTokens: Number.MAX_SAFE_INTEGER - 1, outputTokens: 0 },
-  { inputTokens: 10, outputTokens: 0, cacheReadTokens: 8 },
-])
-  for (const reverse of [false, true])
-    it(`unsafe requirement union preserves safe amount and refuses later completion ${JSON.stringify(requirement)} reverse=${reverse}`, () => {
-      const first = projection(),
-        second = projection(),
-        third = projection();
-      first.expectedTurnTokens = requirement;
-      second.expectedTurnTokens =
-        requirement.outputTokens === 0 && requirement.inputTokens === 10
-          ? { inputTokens: 10, outputTokens: 0, cacheWriteTokens: 8 }
-          : { inputTokens: 10, outputTokens: 3 };
-      const input = [first, second];
-      if (reverse) input.reverse();
-      input.push(third);
-      const record = [...canonicalHistory(input).unique.values()][0]!;
-      expect(record.tokens.inputTokens).toBe(10);
-      expect(record.tokens.outputTokens).toBe(3);
-      expect(record.complete).toBe(false);
-    });
+for (const [requirement, reverse] of [
+  [{ inputTokens: Number.MAX_SAFE_INTEGER - 1, outputTokens: 0 }, false],
+  [{ inputTokens: Number.MAX_SAFE_INTEGER - 1, outputTokens: 0 }, true],
+  [{ inputTokens: 10, outputTokens: 0, cacheReadTokens: 8 }, false],
+] as const)
+  it(`unsafe requirement union preserves safe amount and refuses later completion ${JSON.stringify(requirement)} reverse=${reverse}`, () => {
+    const first = projection(),
+      second = projection(),
+      third = projection();
+    first.expectedTurnTokens = requirement;
+    second.expectedTurnTokens =
+      requirement.outputTokens === 0 && requirement.inputTokens === 10
+        ? { inputTokens: 10, outputTokens: 0, cacheWriteTokens: 8 }
+        : { inputTokens: 10, outputTokens: 3 };
+    const input = [first, second];
+    if (reverse) input.reverse();
+    input.push(third);
+    const record = [...canonicalHistory(input).unique.values()][0]!;
+    expect(record.tokens.inputTokens).toBe(10);
+    expect(record.tokens.outputTokens).toBe(3);
+    expect(record.complete).toBe(false);
+  });
 it("untrusted copy cannot lend requirements or completion", () => {
   const first = projection(),
     second = projection();

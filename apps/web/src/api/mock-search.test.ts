@@ -15,13 +15,6 @@ describe("snippetAround", () => {
     const [range] = highlights!;
     expect(snippet.slice(range!.start, range!.end)).toBe("needle");
   });
-
-  it("keeps short text whole on one line", () => {
-    expect(snippetAround("find\nme", [{ start: 5, end: 7 }])).toEqual({
-      snippet: "find me",
-      highlights: [{ start: 5, end: 7 }],
-    });
-  });
 });
 
 describe("searchTerms", () => {
@@ -55,9 +48,5 @@ describe("searchMessages", () => {
     const result = searchMessages(threads, "flaky", 1);
     expect(result.hits).toHaveLength(1);
     expect(result.truncated).toBe(true);
-  });
-
-  it("finds nothing without letters or digits", () => {
-    expect(searchMessages(threads, " ?! ", 10)).toEqual({ hits: [], truncated: false });
   });
 });

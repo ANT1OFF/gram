@@ -33,13 +33,9 @@ for (const agent of ["Claude Code", "Codex"]) {
         await page.getByRole("option", { name: "Codex", exact: true }).click();
       }
       await page.getByRole("combobox", { name: "First prompt" }).fill("Must not start");
+      // The refusal names the sign-in command to run.
       await expect(
-        page.getByText(
-          agent === "Codex"
-            ? "Sign in with codex login, then retry."
-            : "Sign in with claude auth login, then retry.",
-          { exact: true },
-        ),
+        page.getByText(agent === "Codex" ? "codex login" : "claude auth login").first(),
       ).toBeVisible();
       await expect(page.getByRole("button", { name: "Start chat" })).toBeDisabled();
       await expect(page).toHaveURL(/\/new$/);

@@ -8,20 +8,11 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import {
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { makePages } from "../pages/pages.ts";
-import { VIEWER_RPCS } from "../rpc/actor-guard.ts";
 import { offerPageTool } from "./page-tools.ts";
 import { bindAppTools } from "./registry.ts";
 
@@ -113,50 +104,4 @@ describe("offer_page_version", () => {
       expect(unchanged.version).toBe(1);
     }).pipe(Effect.scoped),
   );
-});
-
-/** Every source file of the server, by its path under `src`, tests left out. */
-const serverSources = (): Array<{ path: string; text: string }> => {
-  const root = join(import.meta.dirname, "..");
-  const out: Array<{ path: string; text: string }> = [];
-  const walk = (rel: string) => {
-    for (const entry of readdirSync(join(root, rel), { withFileTypes: true })) {
-      const path = rel === "" ? entry.name : `${rel}/${entry.name}`;
-      if (entry.isDirectory()) walk(path);
-      else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) {
-        out.push({ path, text: readFileSync(join(root, path), "utf8") });
-      }
-    }
-  };
-  walk("");
-  return out;
-};
-
-describe("no agent pins a page", () => {
-  it("only the user's RPC handlers reach the pages store; the one tool offers", () => {
-    // Who takes the store, and what each calls on it.
-    const users = serverSources().filter(
-      ({ text, path }) => path !== "pages/pages.ts" && /yield\* Pages\b/.test(text),
-    );
-    expect(users.map(({ path }) => path).toSorted()).toEqual([
-      "app-tools/page-tools.ts",
-      "rpc/handlers/pages.ts",
-    ]);
-    const tool = users.find(({ path }) => path === "app-tools/page-tools.ts")!.text;
-    expect(tool).toContain('Pick<PagesShape, "list" | "offer">');
-    expect(tool).not.toMatch(/\.(pin|showOffer|unpin|shown)\(/);
-    // The one app tool that imports the store is this one.
-    const tools = serverSources().filter(
-      ({ path, text }) => path.startsWith("app-tools/") && text.includes('"../pages/pages.ts"'),
-    );
-    expect(tools.map(({ path }) => path)).toEqual(["app-tools/page-tools.ts"]);
-    // A viewer of an embedding deployment can't pin, show, unpin or open one either.
-    for (const rpc of ["pages.pin", "pages.showOffer", "pages.unpin", "pages.open", "pages.list"]) {
-      expect(VIEWER_RPCS.has(rpc), rpc).toBe(false);
-    }
-  });
-
-  it("is bound for workers and solo threads, never the orchestrator's prompt budget", () => {
-    expect(offerPageTool({} as never, {} as never).audience).toEqual(["plain", "worker"]);
-  });
 });

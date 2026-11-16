@@ -67,7 +67,9 @@ describe("dialForever", () => {
       const fiber = yield* Effect.forkScoped(
         dialForever(refused(), service, { retryFirstMs: 200, detachedMs: 100 }),
       );
-      yield* Effect.sleep("600 millis");
+      yield* Effect.gen(function* () {
+        while (counts.ended < 1 || counts.built < 2) yield* Effect.sleep("20 millis");
+      }).pipe(Effect.timeout("5 seconds"));
       expect(counts.ended).toBeGreaterThanOrEqual(1);
       // Built afresh for the dial after it ended.
       expect(counts.built).toBeGreaterThanOrEqual(2);
@@ -180,7 +182,9 @@ describe("dialForever over a link that went quiet", () => {
     Effect.gen(function* () {
       const main = yield* mainGram(undefined);
       const fiber = yield* Effect.forkScoped(dialling(main));
-      yield* Effect.sleep("1500 millis");
+      yield* Effect.gen(function* () {
+        while (main.dials() < 2) yield* Effect.sleep("20 millis");
+      }).pipe(Effect.timeout("5 seconds"));
       // Before this change the host waited on the first socket for good: one dial, ever.
       expect(main.dials()).toBeGreaterThanOrEqual(2);
       yield* Fiber.interrupt(fiber);

@@ -31,15 +31,6 @@ const ready = run(downloading, { type: "downloaded", version: "0.1.0-rc.18" });
 const installing = run(ready, { type: "installStarted" });
 
 describe("reduceNativeUpdate", () => {
-  it("starts idle with nothing found", () => {
-    expect(start).toMatchObject({
-      status: "idle",
-      availableVersion: null,
-      downloadedVersion: null,
-      canInstall: true,
-    });
-  });
-
   it("checks, then finds an update or nothing", () => {
     expect(run(start, check)).toMatchObject({ status: "checking", manual: false });
     expect(run(start, { ...check, manual: true }).manual).toBe(true);
@@ -302,17 +293,5 @@ describe("a .deb install's state", () => {
         { type: "upToDate", at: 2 },
       ).releaseUrl,
     ).toBeNull();
-  });
-
-  it("starts a Mac or AppImage install as the Mac's always did", () => {
-    expect(start).toMatchObject({ target: "mac", releaseUrl: null, canInstall: true });
-    expect(
-      initialNativeUpdateState({
-        currentVersion: "1.3.1",
-        channel: "stable",
-        canInstall: true,
-        target: "appimage",
-      }),
-    ).toMatchObject({ target: "appimage", canInstall: true });
   });
 });

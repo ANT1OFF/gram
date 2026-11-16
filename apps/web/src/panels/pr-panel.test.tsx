@@ -129,9 +129,8 @@ describe("PrPanel", () => {
     // Reviewers, labels and watching wait folded under the blockers, their counts in one line.
     const manage = within(panel).getByTestId("pr-manage-toggle");
     expect(manage.getAttribute("aria-expanded")).toBe("false");
-    expect(manage.textContent).toBe(
-      "Reviewers, labels and watching · 4 reviewers · 2 labels · not watching",
-    );
+    // Folded, it still says how many reviewers and labels, and whether it is watched.
+    expect(manage.textContent).toMatch(/4 reviewers.*2 labels.*not watching/);
     expect(within(panel).queryByRole("list", { name: "Reviewers" })).toBeNull();
     fireEvent.click(manage);
     expect(within(panel).getByRole("list", { name: "Reviewers" }).textContent).toContain(
@@ -248,11 +247,9 @@ describe("PrPanel", () => {
     renderWithApi(<PrPanel threadId={T} />, withResult(mockPrDetail(T)));
     const panel = await screen.findByTestId("pr-panel");
 
-    expect(within(panel).getByTestId("pr-merge-blocked").textContent).toBe(
-      "Merge blocked · 2 reasons",
-    );
+    expect(within(panel).getByTestId("pr-merge-blocked").textContent).toContain("2 reasons");
     const next = within(panel).getByTestId("pr-next-action");
-    expect(next.textContent).toBe("Inspect test (windows) job");
+    expect(next.textContent).toContain("test (windows)");
     // The next step is the action row's one button; the reasons above already say it's blocked.
     const row = within(within(panel).getByTestId("pr-actions")).getAllByRole("button");
     expect(row.map((button) => button.textContent)).toEqual(["Inspect test (windows) job"]);

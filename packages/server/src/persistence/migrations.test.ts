@@ -34,6 +34,11 @@ const applied = Effect.gen(function* () {
     FROM ${sql(MIGRATIONS_TABLE)} ORDER BY migration_id`;
 });
 
+/** Every migration of the production registry, as `[id, name]`, in order. */
+const everyMigration = Object.keys(migrations)
+  .toSorted()
+  .map((key) => [Number(key.slice(0, 4)), key.slice(5)] as const);
+
 const storedMessage = (parts: ReadonlyArray<unknown>) => JSON.stringify({ parts });
 
 const tempDir = Effect.acquireRelease(
@@ -228,20 +233,7 @@ describe("the baseline", () => {
         "trigger threads_version_insert",
         "trigger threads_version_update",
       ]);
-      expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
-        [1, "baseline"],
-        [2, "merge_freezes"],
-        [3, "message_receipts"],
-        [4, "merge_fences"],
-        [5, "usage_limit_history"],
-        [6, "message_parts"],
-        [7, "hosts"],
-        [8, "actor_events"],
-        [9, "queue_actor"],
-        [10, "person_settings"],
-        [11, "wait_person"],
-        [12, "user_messages"],
-      ]);
+      expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual(everyMigration);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
       expect(yield* sql`SELECT id, length(token) AS bytes FROM threads_version`).toEqual([
@@ -260,20 +252,9 @@ describe("the baseline", () => {
       yield* Effect.gen(function* () {
         const store = yield* ThreadStore;
         expect((yield* store.listProjects).map((p) => p.root)).toEqual(["/invented/baseline"]);
-        expect((yield* applied).map((row) => row.name)).toEqual([
-          "baseline",
-          "merge_freezes",
-          "message_receipts",
-          "merge_fences",
-          "usage_limit_history",
-          "message_parts",
-          "hosts",
-          "actor_events",
-          "queue_actor",
-          "person_settings",
-          "wait_person",
-          "user_messages",
-        ]);
+        expect((yield* applied).map((row) => row.name)).toEqual(
+          everyMigration.map(([, name]) => name),
+        );
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
     }),
   );
@@ -303,20 +284,9 @@ describe("the baseline", () => {
           expect(yield* sql`SELECT id, name FROM projects`).toEqual([
             { id: "prior-project", name: "before receipts" },
           ]);
-          expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
-            [1, "baseline"],
-            [2, "merge_freezes"],
-            [3, "message_receipts"],
-            [4, "merge_fences"],
-            [5, "usage_limit_history"],
-            [6, "message_parts"],
-            [7, "hosts"],
-            [8, "actor_events"],
-            [9, "queue_actor"],
-            [10, "person_settings"],
-            [11, "wait_person"],
-            [12, "user_messages"],
-          ]);
+          expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual(
+            everyMigration,
+          );
           // A closed thread has no live row, but must retain its permanent safety identity.
           if (reopen === 0) {
             yield* sql`INSERT INTO message_receipts(thread_id, client_message_id, fingerprint, retired)
@@ -476,17 +446,9 @@ describe("the baseline", () => {
       for (let reopen = 0; reopen < 2; reopen++) {
         yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
-          expect((yield* applied).map((row) => row.name).slice(-9)).toEqual([
-            "merge_fences",
-            "usage_limit_history",
-            "message_parts",
-            "hosts",
-            "actor_events",
-            "queue_actor",
-            "person_settings",
-            "wait_person",
-            "user_messages",
-          ]);
+          expect((yield* applied).map((row) => row.name).slice(3)).toEqual(
+            everyMigration.slice(3).map(([, name]) => name),
+          );
           expect(yield* sql`SELECT key, data FROM usage_limits`).toEqual([
             { key: "codex//five_hour", data: '{"synthetic":true}' },
           ]);
@@ -599,12 +561,9 @@ describe("the baseline", () => {
           expect(yield* sql`SELECT id, name FROM projects`).toEqual([
             { id: "released", name: "from 1.24.0" },
           ]);
-          expect((yield* applied).slice(-4).map((row) => [row.migration_id, row.name])).toEqual([
-            [9, "queue_actor"],
-            [10, "person_settings"],
-            [11, "wait_person"],
-            [12, "user_messages"],
-          ]);
+          expect((yield* applied).slice(8).map((row) => [row.migration_id, row.name])).toEqual(
+            everyMigration.slice(8),
+          );
           expect(
             yield* sql`SELECT name FROM sqlite_master WHERE name = 'messages_thread_user'`,
           ).toEqual([{ name: "messages_thread_user" }]);

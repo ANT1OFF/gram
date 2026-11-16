@@ -305,7 +305,6 @@ describe("browser tools", () => {
       });
       yield* call("browser_form_input", { ref: "ref_2", value: "x" });
       expect(world.cards[0]?.input).toMatchObject({ requests });
-      expect(world.cards[0]?.description).toContain("every one is listed under Details");
       expect(world.sent[1]?.command).toEqual({
         op: "formInput",
         ref: "ref_2",

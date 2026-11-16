@@ -572,3 +572,60 @@ test("Motion Off stops every CSS animation and transition; Reduced keeps fades o
     "buttons don't transition at Off",
   ).toMatch(/^0s/);
 });
+
+// What forced colours take away (background images and fills), the motion styles give back as text
+// colour or a system outline, or the shimmering label, the segment and list selection vanish. The
+// draw-on rests drawn, so Off, which drops its animation, still shows the whole check.
+test("forced colours keep the shimmer's words and outline the selections; a draw-on rests drawn", async ({
+  page,
+}) => {
+  await seed(page, { look: "glass", mode: "dark", contrast: "standard" }, "system");
+  await page.goto("/t/t-docs");
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
+  const styles = () =>
+    page.evaluate(() => {
+      // oxlint-disable-next-line unicorn/consistent-function-scoping -- runs inside the browser evaluation
+      const add = (html: string) => {
+        const host = document.createElement("div");
+        host.innerHTML = html;
+        document.body.append(host);
+        return host.firstElementChild!;
+      };
+      const shimmer = add('<span class="gram-shimmer" data-active="true">Thinking</span>');
+      const slab = add('<div class="gram-segment-slab"></div>');
+      const highlight = add('<div class="gram-list-highlight"></div>');
+      const draw = add('<svg><path class="gram-draw" d="M0 0L1 1" pathLength="1"></path></svg>');
+      const lit = getComputedStyle(shimmer);
+      const result = {
+        clip: lit.backgroundClip,
+        fill: lit.webkitTextFillColor,
+        overlay: [
+          getComputedStyle(shimmer, "::after").content,
+          getComputedStyle(shimmer, "::before").content,
+        ],
+        slab: getComputedStyle(slab).outlineStyle,
+        highlight: getComputedStyle(highlight).outlineStyle,
+        drawn: getComputedStyle(draw.firstElementChild!).strokeDashoffset,
+      };
+      for (const el of [shimmer, slab, highlight, draw]) el.parentElement!.remove();
+      return result;
+    });
+
+  // At Full the gradient is clipped to the glyphs, with no overlay box over the label.
+  const full = await styles();
+  expect(full.clip).toBe("text");
+  expect(full.fill).toBe("rgba(0, 0, 0, 0)");
+  expect(full.overlay.every((content) => content === "none" || content === "normal")).toBe(true);
+
+  await page.emulateMedia({ forcedColors: "active" });
+  const forced = await styles();
+  expect(forced.fill).not.toBe("rgba(0, 0, 0, 0)");
+  expect(forced.slab).toBe("solid");
+  expect(forced.highlight).toBe("solid");
+  await page.emulateMedia({ forcedColors: "none" });
+
+  await page.goto("/settings/appearance");
+  await page.getByRole("group", { name: "Motion" }).getByRole("button", { name: "off" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
+  expect((await styles()).drawn).toMatch(/^0(px)?$/);
+});

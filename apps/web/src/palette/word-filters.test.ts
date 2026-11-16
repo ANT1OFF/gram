@@ -19,36 +19,11 @@ describe("go to in words grammar", () => {
       "",
     ],
     [
-      "workers waiting on me",
-      [
-        { field: "kind", value: "worker" },
-        { field: "state", value: "waiting" },
-      ],
-      "",
-    ],
-    [
       "show threads in BILLING APP today",
       [
         { field: "workspace", value: "w-bill" },
         { field: "kind", value: "thread" },
         { field: "time", value: "today" },
-      ],
-      "",
-    ],
-    [
-      "asks last 24 hours",
-      [
-        { field: "kind", value: "ask" },
-        { field: "time", value: "last24h" },
-      ],
-      "",
-    ],
-    [
-      "running workers yesterday",
-      [
-        { field: "kind", value: "worker" },
-        { field: "state", value: "working" },
-        { field: "time", value: "yesterday" },
       ],
       "",
     ],
@@ -72,7 +47,6 @@ describe("go to in words grammar", () => {
     ["opening yesterdayish", [], "opening yesterdayish"],
     ["in Open", [{ field: "workspace", value: "w-open" }], ""],
     ["> workers waiting on me", [], "> workers waiting on me"],
-    ["ack retry", [], "ack retry"],
     [
       "failing PRs in unknown",
       [

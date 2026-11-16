@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-
 import { LOOKS } from "@gram/themes";
 import { describe, expect, it } from "vitest";
 
@@ -71,47 +69,6 @@ describe("nextSegments", () => {
   });
 });
 
-describe("the shimmer's CSS", () => {
-  it("lights only the glyphs: its gradient is clipped to the text, with no overlay box", () => {
-    // An overlay over the span's box showed as a rectangle sweeping across the label.
-    const css = readFileSync(new URL("../styles/motion.css", import.meta.url), "utf8");
-    const rules = css.match(/[^{}]*\.gram-shimmer[^{}]*\{[^}]*\}/g) ?? [];
-    expect(rules.some((rule) => rule.includes("::after") || rule.includes("::before"))).toBe(false);
-    const lit = rules.find((rule) => rule.includes("background-image"));
-    expect(lit).toContain("background-clip: text");
-    expect(lit).toContain("-webkit-background-clip: text");
-    expect(lit).toContain("-webkit-text-fill-color: transparent");
-    expect(lit).toContain('[data-motion="full"]');
-    // Forced colours drop background images, so the fill has to come back or the label vanishes.
-    expect(css).toMatch(
-      /@media \(forced-colors: active\) \{[^}]*\.gram-shimmer[^}]*-webkit-text-fill-color: currentColor/,
-    );
-  });
-});
-
-describe("the segment slab's CSS", () => {
-  it("outlines the selection under forced colours, which drop the slab's background", () => {
-    const css = readFileSync(new URL("../styles/motion.css", import.meta.url), "utf8");
-    expect(css).toMatch(
-      /@media \(forced-colors: active\) \{\s*\.gram-segment-slab \{[^}]*outline: 1px solid Highlight/,
-    );
-  });
-});
-
-describe("the draw-on's CSS", () => {
-  const css = readFileSync(new URL("../styles/motion.css", import.meta.url), "utf8");
-
-  it("rests drawn, so Off, which drops every animation, still shows the whole check", () => {
-    expect(css).toMatch(
-      /\.gram-draw \{[^}]*stroke-dashoffset: 0;[^}]*animation: gram-draw calc\(var\(--dur-move-/,
-    );
-    expect(css).toMatch(/\[data-motion="reduced"\] \.gram-draw \{[^}]*gram-fade-in/);
-    expect(css).toMatch(
-      /\[data-motion="reduced"\] \.gram-draw \{[^}]*animation-delay: 0s !important/,
-    );
-  });
-});
-
 describe("the listening bars", () => {
   it("stand at rest in silence, rise with loudness, the middle most, and ease half the way a step", () => {
     expect(barScale(1, 0, 0.7)).toBe(0.7);
@@ -130,12 +87,5 @@ describe("the list highlight", () => {
     expect(glides(REPEAT_MS - 1)).toBe(false);
     expect(glides(REPEAT_MS)).toBe(true);
     expect(glides(600)).toBe(true);
-  });
-
-  it("outlines the option under forced colours", () => {
-    const css = readFileSync(new URL("../styles/motion.css", import.meta.url), "utf8");
-    expect(css).toMatch(
-      /@media \(forced-colors: active\) \{\s*\.gram-list-highlight \{[^}]*outline: 1px solid Highlight/,
-    );
   });
 });

@@ -359,47 +359,48 @@ describe("merge_when_ready shared card", () => {
       }).pipe(Effect.scoped),
   );
 
-  const scoped: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
-    ["a hold", { hold: "release order" }],
-    ["a hold on an agent", { hold: "re-review", holdWaitsOn: "agent" }],
-    ["a release", { release: true }],
-    ["a cleared hold", { hold: null }],
-    ["an after", { after: ["acme/app#13"] }],
+  // Each scoped input once, the first caller alternating: every input runs the same sharing path.
+  const scoped: ReadonlyArray<
+    readonly [string, Record<string, unknown>, "worker" | "orchestrator"]
+  > = [
+    ["a hold", { hold: "release order" }, "worker"],
+    ["a hold on an agent", { hold: "re-review", holdWaitsOn: "agent" }, "orchestrator"],
+    ["a release", { release: true }, "worker"],
+    ["a cleared hold", { hold: null }, "orchestrator"],
+    ["an after", { after: ["acme/app#13"] }, "worker"],
   ];
-  for (const [what, input] of scoped) {
-    for (const first of ["worker", "orchestrator"] as const) {
-      it.effect.skipIf(!hasGit)(
-        `${what} from the ${first} shares no card across roles, nor settles the other's`,
-        () =>
-          Effect.gen(function* () {
-            const world = yield* makeWorld;
-            yield* withServer(
-              world,
-              Effect.gen(function* () {
-                const store = yield* ThreadStore;
-                const runtimes = yield* ThreadRuntimes;
-                const { orchestrator, worker, workerMerge, orchestratorMerge } =
-                  yield* ownWorkerPr(world);
-                const calls = {
-                  worker: [worker.id, workerMerge.run(input)] as const,
-                  orchestrator: [
-                    orchestrator.id,
-                    orchestratorMerge.run({ ...input, threadId: worker.id }),
-                  ] as const,
-                };
-                const [firstId, firstRun] = calls[first];
-                const [secondId, secondRun] = calls[first === "worker" ? "orchestrator" : "worker"];
-                const firstCall = yield* Effect.forkScoped(firstRun);
-                const card = yield* cardIn(firstId);
-                expect((yield* secondCall(secondId, secondRun)).card).toBeDefined();
-                yield* runtimes.respond(firstId, card.id, allow);
-                yield* Effect.exit(Fiber.join(firstCall));
-                expect(yield* store.listRequests(secondId)).toHaveLength(1);
-              }),
-            );
-          }).pipe(Effect.scoped),
-      );
-    }
+  for (const [what, input, first] of scoped) {
+    it.effect.skipIf(!hasGit)(
+      `${what} from the ${first} shares no card across roles, nor settles the other's`,
+      () =>
+        Effect.gen(function* () {
+          const world = yield* makeWorld;
+          yield* withServer(
+            world,
+            Effect.gen(function* () {
+              const store = yield* ThreadStore;
+              const runtimes = yield* ThreadRuntimes;
+              const { orchestrator, worker, workerMerge, orchestratorMerge } =
+                yield* ownWorkerPr(world);
+              const calls = {
+                worker: [worker.id, workerMerge.run(input)] as const,
+                orchestrator: [
+                  orchestrator.id,
+                  orchestratorMerge.run({ ...input, threadId: worker.id }),
+                ] as const,
+              };
+              const [firstId, firstRun] = calls[first];
+              const [secondId, secondRun] = calls[first === "worker" ? "orchestrator" : "worker"];
+              const firstCall = yield* Effect.forkScoped(firstRun);
+              const card = yield* cardIn(firstId);
+              expect((yield* secondCall(secondId, secondRun)).card).toBeDefined();
+              yield* runtimes.respond(firstId, card.id, allow);
+              yield* Effect.exit(Fiber.join(firstCall));
+              expect(yield* store.listRequests(secondId)).toHaveLength(1);
+            }),
+          );
+        }).pipe(Effect.scoped),
+    );
   }
 
   it.effect.skipIf(!hasGit)(
@@ -468,9 +469,7 @@ describe("merge_when_ready shared card", () => {
 
             const refused = yield* Fiber.join(call).pipe(Effect.flip);
             // Before: the card stayed up, to be answered for a PR that had already ended.
-            expect(refused.message).toBe(
-              `acme/app#12 ${state.toLowerCase()} while the user was being asked, so there is nothing to merge: the card was withdrawn. Check it with pr_status.`,
-            );
+            expect(refused.message).toContain(`acme/app#12 ${state.toLowerCase()}`);
             expect(yield* store.listRequests(orchestrator.id)).toEqual([]);
             expect(yield* runtimes.status(orchestrator.id)).not.toBe("needsApproval");
             expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);

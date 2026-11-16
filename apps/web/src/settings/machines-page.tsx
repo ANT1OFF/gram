@@ -64,7 +64,7 @@ const STATUS_COMMAND = "gram-host status";
  * app there and joins with the link, handed over on stdin.
  */
 export const installCommand = (link: string): string =>
-  `curl -fsSL ${new URL(link).origin}/host/install | sh -s -- '${link.replaceAll("'", "")}'`;
+  `curl -fsSL '${new URL(link).origin.replaceAll("'", "")}/host/install' | sh -s -- '${link.replaceAll("'", "")}'`;
 
 const message = (error: unknown) =>
   error instanceof MachinesError ? error.message : "Couldn't reach Gram's server";

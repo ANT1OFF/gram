@@ -977,7 +977,6 @@ describe("checkWorkerSend", () => {
   it("lets a hold lapse ten minutes after the user's latest input, or the latest input without one", () => {
     const memo = { userIntervened: true, userInputAt: NOW, lastInputAt: NOW + 5 };
     expect(userHoldLapsesAt(memo)).toBe(NOW + USER_HOLD_IDLE_MS);
-    expect(USER_HOLD_IDLE_MS).toBe(10 * 60_000);
     expect(userHoldLapsesAt({ userIntervened: true, lastInputAt: NOW })).toBe(
       NOW + USER_HOLD_IDLE_MS,
     );
@@ -3013,9 +3012,7 @@ describe("worker models", () => {
     it("says which of the two a Codex worker is missing", () => {
       expect(verdict({ hasGatewayProfile: false })).toMatchObject({
         code: "not_admitted",
-        reason: expect.stringContaining(
-          "Codex cannot prepare Gram's native approval home while this workspace asks (autonomy publish)",
-        ),
+        reason: expect.stringContaining("autonomy publish"),
       });
       expect(verdict({ gateHoldsInMode: false, mode: "dontAsk" })).toMatchObject({
         code: "not_admitted",

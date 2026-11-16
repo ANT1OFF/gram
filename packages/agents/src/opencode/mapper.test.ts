@@ -140,3 +140,56 @@ describe("the OpenCode mapper", () => {
     });
   });
 });
+
+describe("a long OpenCode session", () => {
+  // `stream.perf.test.ts` measures the heap this keeps; here, cheaply, that a call's input (a whole
+  // file, for a write) goes with its turn rather than staying for the session's life.
+  it("keeps no tool call's input past its turn", () => {
+    const sessionId = "ses_long";
+    const mapper = mapperFor(sessionId);
+    const e = (type: string, fields: Record<string, unknown>): OpenCodeEvent => ({
+      type,
+      data: { sessionID: sessionId, ...fields },
+    });
+    const content = "x".repeat(64 * 1024);
+    const call = (id: string) => [
+      e("session.tool.input.started", { assistantMessageID: "msg_1", id, name: "write" }),
+      e("session.tool.called", {
+        assistantMessageID: "msg_1",
+        id,
+        input: { filePath: `src/${id}.ts`, content },
+        executed: false,
+      }),
+    ];
+    const asked = (id: string, source: string) =>
+      mapper
+        .map(
+          e("permission.asked", {
+            id,
+            action: "edit",
+            resources: [`src/${source}.ts`],
+            source: { type: "tool", messageID: "msg_1", id: source },
+          }),
+        )
+        .find((event) => event.type === "request");
+    const start = [
+      e("session.execution.started", {}),
+      e("session.step.started", { assistantMessageID: "msg_1" }),
+    ];
+    for (const ended of ["call_0", "call_1", "call_2"])
+      [
+        ...start,
+        ...call(ended),
+        e("session.tool.success", { assistantMessageID: "msg_1", id: ended, content: [] }),
+        e("session.execution.succeeded", {}),
+      ].forEach((event) => mapper.map(event));
+    [...start, ...call("call_live")].forEach((event) => mapper.map(event));
+
+    // A permission the running call raises shows what it was called with...
+    expect(JSON.stringify(asked("per_live", "call_live"))).toContain(content);
+    // ...but one naming a call of a turn that ended finds nothing of its input kept.
+    const late = asked("per_late", "call_0");
+    expect(late).toBeDefined();
+    expect(JSON.stringify(late)).not.toContain(content);
+  });
+});

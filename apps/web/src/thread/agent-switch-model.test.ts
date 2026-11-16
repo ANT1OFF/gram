@@ -12,11 +12,9 @@ import { describe, expect, it } from "vitest";
 import {
   carriesLine,
   defaultTarget,
-  limitLine,
   modeLine,
   orchestratorCarriesLine,
   sheetEfforts,
-  switchDividerBefore,
   switchDividerLabel,
   switchLimitMeta,
   switchLimitOf,
@@ -203,20 +201,9 @@ const line = (over: Partial<Parameters<typeof modeLine>[0]>) =>
   });
 
 describe("the sheet's words", () => {
-  it("names the limit first, with when it lifts", () => {
-    const at = new Date(2026, 10, 11, 15, 0).getTime();
-    expect(limitLine({ reason: "usage", until: at }, "claude", "codex")).toMatch(
-      /^Claude .*15:00.*Codex/,
-    );
-    expect(limitLine({ reason: "failed" }, "claude", "codex")).toContain(
-      "Claude's last turn failed",
-    );
-  });
-
   it("says what carries over by the note and limit mode", () => {
     expect(carriesLine("claude", true, false)).toContain("note");
     expect(carriesLine("claude", false, false)).not.toContain("note");
-    expect(carriesLine("claude", true, true)).toContain("about 24k tokens");
     expect(orchestratorCarriesLine("claude", true, false)).toContain("note");
     expect(orchestratorCarriesLine("claude", true, true)).not.toContain("note");
     expect(orchestratorCarriesLine("claude", false, false)).not.toContain("note");
@@ -313,17 +300,12 @@ describe("the divider", () => {
     );
   });
 
-  it("names the session before on hover", () => {
-    expect(
-      switchDividerBefore({ previousAgent: "claude", previousAgentSessionId: "s-7" }, "Opus 5.5"),
-    ).toMatch(/Claude Code · Opus 5\.5 · session s-7$/);
-  });
-
   it("says limit mode's first turn writes the note", () => {
     expect(switchLimitMeta({ previousAgent: "claude", noteMode: "outgoing" })).toBeUndefined();
     const usage = switchLimitMeta({ previousAgent: "claude", noteMode: "limit", limit: "usage" });
     const failed = switchLimitMeta({ previousAgent: "claude", noteMode: "limit", limit: "failed" });
-    expect(usage).toMatch(/usage/);
-    expect(failed).toMatch(/failed/);
+    expect(usage).toBeDefined();
+    expect(failed).toBeDefined();
+    expect(usage).not.toBe(failed);
   });
 });

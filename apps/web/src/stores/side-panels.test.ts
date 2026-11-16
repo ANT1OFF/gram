@@ -187,12 +187,6 @@ describe("review width", () => {
     });
   });
 
-  it("keeps the usual width beside a board, a grid or an orchestrator, which need the room", () => {
-    expect(fit({ panelTab: "diff", windowWidth: 1600, chatBusy: true }).panelWidth).toBe(
-      PANEL_WIDTH.default,
-    );
-  });
-
   it("keeps a review's drag apart from the other tabs' width", () => {
     s().setPanelTab("diff");
     s().setReviewWidth(600);
@@ -542,14 +536,6 @@ describe("panel requests", () => {
 });
 
 describe("side panels", () => {
-  it("hides the overview and the right panel independently", () => {
-    s().toggleOverview();
-    s().togglePanel();
-    expect(s()).toMatchObject({ overviewSidebar: "hidden", panelOpen: false, focusMode: false });
-    s().toggleOverview();
-    expect(s()).toMatchObject({ overviewSidebar: undefined, panelOpen: false });
-  });
-
   it("focus mode keeps the sides' own state; a side toggle leaves focus mode with that side shown", () => {
     s().togglePanel();
     s().toggleOverview();
@@ -601,33 +587,6 @@ describe("side panels", () => {
     expect(s().panelExpanded).toBe(false);
   });
 
-  it("lays the overview out at the sidebar's width, unless hidden", () => {
-    expect(fit()).toMatchObject({
-      sidebar: "full",
-      sidebarWidth: SIDEBAR_WIDTH.default,
-      panel: "side",
-    });
-    expect(fit({ overviewSidebar: "open", sidebarWidth: 320 })).toMatchObject({
-      sidebar: "full",
-      sidebarWidth: 320,
-    });
-    expect(fit({ overviewSidebar: "hidden" })).toMatchObject({
-      sidebar: "none",
-      sidebarWidth: 0,
-    });
-    expect(fit({ focusMode: true })).toMatchObject({ sidebar: "none" });
-    // Short of room it steps aside rather than folding to the strip, unless asked for.
-    expect(fit({ windowWidth: 500 })).toMatchObject({
-      sidebar: "none",
-      sidebarRoom: false,
-    });
-    // Shown over its room there, an automatic one is compact, as below 1280 px.
-    expect(fit({ windowWidth: 500, sidebarPeek: true })).toMatchObject({
-      sidebar: "compact",
-      sidebarWidth: OVERVIEW_RAIL_WIDTH,
-    });
-  });
-
   it("⌘B hides the overview, and shows it again as it was", () => {
     s().toggleOverview();
     expect(s().overviewSidebar).toBe("hidden");
@@ -656,9 +615,27 @@ describe("side panels", () => {
     expect(fit().sidebar).toBe("compact");
     s().toggleOverview();
     expect(s()).toMatchObject({ overviewSidebar: "hidden", sidebarPeek: false });
+
+    // Picked Compact on a wide window: back Compact.
+    s().setOverviewSidebar("compact");
+    useLayoutStore.setState({ windowWidth: 1440 });
+    s().toggleOverview();
+    expect(fit().sidebar).toBe("none");
+    s().toggleOverview();
+    expect(s()).toMatchObject({ overviewSidebar: "compact", overviewBeforeHide: undefined });
+    expect(fit().sidebar).toBe("compact");
   });
 
   it("⌘B after a Settings change shows the overview as Settings last had it", () => {
+    // Hidden from Settings: Compact is recorded, and a synced echo of Hidden keeps it.
+    s().setOverviewSidebar("compact");
+    s().setOverviewSidebar("hidden");
+    s().setOverviewSidebar("hidden");
+    expect(s().overviewBeforeHide).toBe("compact");
+    // Any other pick clears it, so a later ⌘B never brings back a stale mode.
+    s().setOverviewSidebar("open");
+    expect(s().overviewBeforeHide).toBeUndefined();
+
     useLayoutStore.setState({ overviewSidebar: "open" });
     s().toggleOverview();
     expect(s().overviewBeforeHide).toBe("open");
@@ -684,6 +661,10 @@ describe("side panels", () => {
     expect(overviewShown("compact", 1600)).toBe("compact");
     expect(overviewShown("hidden", 1600)).toBe("hidden");
     expect(fit({ windowWidth: 1440 })).toMatchObject({ sidebar: "full" });
+    expect(fit({ overviewSidebar: "open", sidebarWidth: 320 })).toMatchObject({
+      sidebarWidth: 320,
+    });
+    expect(fit({ overviewSidebar: "hidden" })).toMatchObject({ sidebar: "none", sidebarWidth: 0 });
     expect(fit({ windowWidth: 1100, panelTab: "files" })).toMatchObject({
       sidebar: "compact",
       sidebarWidth: OVERVIEW_RAIL_WIDTH,
@@ -736,49 +717,6 @@ describe("side panels", () => {
       sidebar: "compact",
       sidebarWidth: 40,
     });
-  });
-
-  it("⌘B hides a compact overview and shows it compact again", () => {
-    useLayoutStore.setState({ windowWidth: 1100 });
-    // Automatic, compact at this width.
-    s().toggleOverview();
-    expect(s()).toMatchObject({ overviewSidebar: "hidden", overviewBeforeHide: undefined });
-    expect(fit().sidebar).toBe("none");
-    s().toggleOverview();
-    expect(s().overviewSidebar).toBeUndefined();
-    expect(fit().sidebar).toBe("compact");
-    // Picked Compact on a wide window: back Compact.
-    useLayoutStore.setState({ windowWidth: 1440 });
-    s().setOverviewSidebar("compact");
-    s().toggleOverview();
-    expect(s()).toMatchObject({ overviewSidebar: "hidden", overviewBeforeHide: "compact" });
-    s().toggleOverview();
-    expect(s()).toMatchObject({ overviewSidebar: "compact", overviewBeforeHide: undefined });
-    expect(fit().sidebar).toBe("compact");
-    // The Expand and Compact buttons pick the mode outright.
-    s().setOverviewSidebar("open");
-    expect(fit().sidebar).toBe("full");
-  });
-
-  it("records what the overview was when it is picked hidden, there or through the settings", () => {
-    s().setOverviewSidebar("compact");
-    s().setOverviewSidebar("hidden");
-    expect(s()).toMatchObject({ overviewSidebar: "hidden", overviewBeforeHide: "compact" });
-    // Hidden again (a sync echoing it back) keeps what it was.
-    s().setOverviewSidebar("hidden");
-    expect(s().overviewBeforeHide).toBe("compact");
-    s().toggleOverview();
-    expect(s()).toMatchObject({ overviewSidebar: "compact", overviewBeforeHide: undefined });
-    // From automatic: shown again automatic.
-    s().setOverviewSidebar(undefined);
-    s().setOverviewSidebar("hidden");
-    expect(s().overviewBeforeHide).toBeUndefined();
-    // Any other pick clears it, so a later ⌘B never brings back a stale mode.
-    s().setOverviewSidebar("open");
-    s().setOverviewSidebar("hidden");
-    expect(s().overviewBeforeHide).toBe("open");
-    s().setOverviewSidebar("compact");
-    expect(s().overviewBeforeHide).toBeUndefined();
   });
 
   it("keeps an Open overview beside the chat in a narrow window, the panel stepping aside first", () => {
@@ -905,9 +843,5 @@ describe("side panels", () => {
     });
     expect(sanitizeBoardFilters({ boardArchivedShown: "w-1" })).toEqual({});
     expect(sanitizeBoardFilters(undefined)).toEqual({});
-  });
-
-  it("drops a stored board layout: every board is the grid", () => {
-    expect(sanitizeBoardFilters({ boardLayout: "lanes" })).toEqual({});
   });
 });

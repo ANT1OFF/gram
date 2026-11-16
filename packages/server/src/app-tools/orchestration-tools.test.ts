@@ -132,7 +132,7 @@ describe("orchestration app tools", () => {
       }).pipe(Effect.provide(TestLayer)),
   );
 
-  it.effect("send_message delivers with its origin and refuses self and back-to-back sends", () =>
+  it.effect("send_message delivers with its origin and refuses a back-to-back send", () =>
     Effect.gen(function* () {
       const runtimes = yield* ThreadRuntimes;
       const planner = yield* createThread("Planner");
@@ -151,9 +151,7 @@ describe("orchestration app tools", () => {
       const [delivered] = yield* userMessages(worker.id);
       expect(delivered === undefined ? undefined : originOf(delivered)).toEqual(origin);
 
-      expect(yield* refusal(planner.id, "send_message", { threadId: planner.id, text: "me" })).toBe(
-        "A thread can't send a message to itself.",
-      );
+      // The rules are loop-guard.test.ts's; here, that the tool reads the target's own history.
       expect(
         yield* refusal(planner.id, "send_message", { threadId: worker.id, text: "Again?" }),
       ).toContain("already came from this thread");

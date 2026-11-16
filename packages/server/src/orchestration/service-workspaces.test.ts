@@ -66,7 +66,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           expect(session.options).not.toHaveProperty("mcpAllowlist");
           // Claude Code's own peer messaging stays off unless the user lets orchestrators send.
           expect(session.options).not.toHaveProperty("peerMessaging");
-          expect(session.options.instructions).toContain('orchestrator of the "shop" workspace');
+          expect(session.options.instructions).toContain('"shop"');
           expect(session.options.instructions).toContain(world.repo);
 
           const [boot] = session.sent;
@@ -381,7 +381,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           audience: "worker",
           outwardGate: "irreversible",
         });
-        expect(worker.session.options.instructions).toContain('worker on "mail-trigger"');
+        expect(worker.session.options.instructions).toContain('"mail-trigger"');
         expect(worker.session.options.instructions).toContain(thread.title);
         expect(yield* runtimes.audienceOf(worker.thread.id)).toBe("worker");
         expect(yield* runtimes.audienceOf(thread.id)).toBe("orchestrator");

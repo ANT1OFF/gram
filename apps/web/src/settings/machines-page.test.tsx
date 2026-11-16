@@ -315,7 +315,13 @@ describe("machines page", () => {
 describe("installCommand", () => {
   it("joins with one command that carries the link, without its quotes", () => {
     expect(installCommand("https://studio.example-tailnet.ts.net/host/join#code=ab'cd")).toBe(
-      "curl -fsSL https://studio.example-tailnet.ts.net/host/install | sh -s -- 'https://studio.example-tailnet.ts.net/host/join#code=abcd'",
+      "curl -fsSL 'https://studio.example-tailnet.ts.net/host/install' | sh -s -- 'https://studio.example-tailnet.ts.net/host/join#code=abcd'",
+    );
+  });
+
+  it("quotes the installer's URL, so shell characters in the origin are not run", () => {
+    expect(installCommand("https://a;id;$(x).ts.net/host/join#code=ab")).toMatch(
+      /^curl -fsSL 'https:\/\/a;id;\$\(x\)\.ts\.net\/host\/install' \| sh -s -- '/,
     );
   });
 });
@@ -360,7 +366,7 @@ describe("adding a machine while access over Tailscale is off", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Add a machine" }));
     fireEvent.click(await screen.findByRole("button", { name: "Turn on access over Tailscale" }));
     const command = await screen.findByTestId("machines-command");
-    expect(command.textContent).toContain("/host/install | sh -s --");
+    expect(command.textContent).toContain("/host/install' | sh -s --");
     expect(command.textContent).not.toContain("a".repeat(64));
     expect(calls).toContain("/remote/enable");
   });

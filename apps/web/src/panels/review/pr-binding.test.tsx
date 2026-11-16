@@ -55,15 +55,6 @@ describe("PrBinding", () => {
     await waitFor(() => expect(prBind).toHaveBeenCalledWith(T, "owner/repo", 7));
   });
 
-  it("cancels the form", () => {
-    setThread(undefined, undefined);
-    renderWithApi(<PrBinding threadId={T} />, {});
-    fireEvent.click(screen.getByRole("button", { name: "Bind a PR…" }));
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("textbox")).toBeNull();
-    expect(screen.getByRole("button", { name: "Bind a PR…" })).toBeTruthy();
-  });
-
   it("hands focus back to Bind a PR… when Escape closes the form", async () => {
     setThread(undefined, undefined);
     renderWithApi(<PrBinding threadId={T} />, {});

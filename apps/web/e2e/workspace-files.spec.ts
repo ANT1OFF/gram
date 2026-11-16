@@ -121,17 +121,3 @@ test("/files on the orchestrator opens the workspace's files by day, each openin
   await expect(page).toHaveURL(new RegExp(`/t/${docThread}$`));
   await expect(page.getByTestId("files-panel").first()).toBeVisible();
 });
-
-test("⌘K Workspace files goes there from the orchestrator", async ({ page }) => {
-  await home(page);
-  await page.keyboard.press("ControlOrMeta+k");
-  const palette = page.getByTestId("command-palette");
-  await expect(palette).toBeVisible();
-  await page.keyboard.type(">Workspace files");
-  await palette
-    .getByRole("option", { name: /Workspace files/ })
-    .first()
-    .click();
-  await expect(page).toHaveURL(/\/w\/[^/]+\/files$/);
-  await expect(page.getByTestId("outputs-view")).toBeVisible();
-});

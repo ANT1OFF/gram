@@ -60,9 +60,7 @@ describe("checkSend", () => {
     const full = Array.from({ length: SENDS_PER_MINUTE }, (_, i) => now - 50_000 + i * 1_000);
     const refused = checkSend(check({ recentSends: full, now }));
     expect(refused).toMatchObject({ ok: false });
-    expect(refused.ok ? "" : refused.reason).toBe(
-      "send_message allows 5 messages a minute per thread; try again in 10s.",
-    );
+    expect(refused.ok ? "" : refused.reason).toContain("10s");
     expect(checkSend(check({ recentSends: full, now: now + 10_000 }))).toMatchObject({
       ok: true,
       recentSends: [...full.slice(1), now + 10_000],

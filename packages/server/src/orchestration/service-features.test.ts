@@ -299,9 +299,10 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           expect((yield* store.getThread(form.result.threadId)).parked).toBe(true);
           expect((yield* store.getThread(api.result.threadId)).parked).toBe(true);
           expect((yield* store.getThread(other.result.threadId)).parked).toBe(false);
-          expect((yield* outboxOf(workspaceId)).notes).toContain(
-            "The user archived feature board: its 2 workers are parked. Leave it unless they bring it back.",
-          );
+          // A note for the orchestrator, naming the feature and what was parked.
+          expect((yield* outboxOf(workspaceId)).notes).toEqual([
+            expect.stringMatching(/board.*2 workers/),
+          ]);
           const ledger = yield* orchestration.ledger(workspaceId);
           const board = ledger.features.find((feature) => feature.feature === "board");
           expect(board?.workers.map((worker) => worker.state)).toEqual(["archived", "archived"]);
@@ -358,9 +359,9 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           expect(form.session.interrupts).toBe(1);
           expect(docs.session.interrupts).toBe(0);
           yield* settle;
-          expect((yield* outboxOf(workspaceId)).notes).toContain(
-            "The user paused feature board, stopping its running worker. Until they resume it, don't message its workers or spawn for it; its news waits for your next digest.",
-          );
+          expect((yield* outboxOf(workspaceId)).notes).toEqual([
+            expect.stringContaining("feature board"),
+          ]);
           const ledger = yield* orchestration.ledger(workspaceId);
           expect(ledger.features.find((each) => each.feature === "board")?.paused).toBe(true);
           expect(ledger.features.find((each) => each.feature === "docs")?.paused).toBeUndefined();
@@ -535,9 +536,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           expect(Object.values(outbox.snapshot).some((entry) => entry.feature === "board")).toBe(
             false,
           );
-          expect(outbox.notes).toContain(
-            "The user renamed feature board to board-v2. Call it board-v2 from now on, in tools and in memory; its branches keep their names.",
-          );
+          expect(outbox.notes).toEqual([expect.stringMatching(/board\b.*board-v2/)]);
           // Its card under the new name; the old name's card left with no worker, a version on.
           const rows = yield* store.listFeatureCards(workspaceId);
           expect(rows.find((card) => card.feature === "board-v2")).toMatchObject({

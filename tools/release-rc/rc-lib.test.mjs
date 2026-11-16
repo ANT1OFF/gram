@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { releaseAsset } from "../../packages/server/src/host/self-update.ts";
+import { macArtifactName } from "../../packages/shell/src/modules/update/mac-artifacts.ts";
 import {
   assetNames,
   checksumLines,
@@ -360,8 +362,20 @@ describe("signing", () => {
   const base = { mode: "auto", teamId: TEAM, identityLines: lines, profile: "gram-notary" };
 
   it("names the signed ZIP apart from the unsigned one", () => {
-    expect(assetNames("0.1.0-rc.17", true)[0]).toBe("gram_0.1.0-rc.17_darwin-arm64_signed.zip");
+    expect(assetNames("0.1.0-rc.17", true)[0]).not.toBe(assetNames("0.1.0-rc.17")[0]);
     expect(assetNames("0.1.0-rc.17", true).slice(1)).toEqual(assetNames("0.1.0-rc.17").slice(1));
+  });
+
+  // The upload and its readers name the ZIP each on their own: a rename on one side alone would
+  // pass every suite but leave the app and the host installer finding no update.
+  it("uploads the ZIP under the name the updater and the host installer look for", () => {
+    for (const version of ["0.1.0-rc.17", "1.2.0"]) {
+      expect(assetNames(version, true)[0]).toBe(macArtifactName(version, "signed-native-macos-v1"));
+      expect(assetNames(version, false)[0]).toBe(
+        macArtifactName(version, "unsigned-private-helper"),
+      );
+      expect(assetNames(version, true)[0]).toBe(releaseAsset(version, "darwin", "arm64"));
+    }
   });
 
   it("signs automatically with the one identity of the source's team and a working profile", () => {

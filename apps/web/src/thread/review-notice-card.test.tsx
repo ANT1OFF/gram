@@ -15,7 +15,7 @@ describe("ReviewNoticeCard", () => {
     render(<ReviewNoticeCard notice={notice} text={serializeReviewNotice(notice)} />);
     const card = screen.getByRole("article", { name: /#412/ });
     expect(card.textContent).toContain("17");
-    expect(within(card).getByTestId("notice-verdict").textContent).toBe("Changes requested");
+    expect(within(card).getByTestId("notice-verdict").dataset.verdict).toBe("changesRequested");
     expect(card.textContent).toContain(notice.mergeState);
     const checks = within(card).getByRole("list", { name: "Failing checks" });
     expect(
@@ -33,9 +33,9 @@ describe("ReviewNoticeCard", () => {
     expect(
       within(blockers).getByRole("link", { name: "src/retry.ts:42" }).getAttribute("href"),
     ).toBe("https://github.com/example/api/pull/412#discussion_PRRC_1");
-    expect(within(blockers).getByText(/swallows the last error/)).toBeTruthy();
-    const suggestions = screen.getByRole("region", { name: "Suggestions" });
-    expect(within(suggestions).getByText("src/retry.test.ts:18")).toBeTruthy();
+    // The finding's body, from the bot's review.
+    expect(blockers.textContent).toContain("swallows the last error");
+    expect(screen.getByRole("region", { name: "Suggestions" })).toBeTruthy();
   });
 
   it("says when there is no verdict and renders unlinked findings as text", () => {
@@ -51,7 +51,7 @@ describe("ReviewNoticeCard", () => {
         text=""
       />,
     );
-    expect(screen.getByTestId("notice-verdict").textContent).toBe("No verdict yet");
+    expect(screen.getByTestId("notice-verdict").dataset.verdict).toBe("none");
     expect(screen.queryByRole("region", { name: "Blockers" })).toBeNull();
     expect(screen.queryByRole("list", { name: "Failing checks" })).toBeNull();
     const suggestions = screen.getByRole("region", { name: "Suggestions" });
@@ -77,10 +77,9 @@ describe("HumanReviewNoticeCard", () => {
     const card = screen.getByRole("article", { name: /#412/ });
     const [first, second] = within(card).getAllByRole("listitem");
     expect(first?.textContent).toContain("octocat");
-    expect(within(first!).getByTestId("notice-verdict").textContent).toBe("Changes requested");
+    expect(within(first!).getByTestId("notice-verdict").dataset.verdict).toBe("changesRequested");
     expect(within(first!).getByText("New")).toBeTruthy();
-    expect(first?.textContent).toContain("needs a test for the last attempt");
-    expect(within(second!).getByTestId("notice-verdict").textContent).toBe("Approved");
+    expect(within(second!).getByTestId("notice-verdict").dataset.verdict).toBe("approved");
     expect(within(second!).queryByText("New")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Text sent to the agent" }));
     expect((await screen.findByTestId("notice-text")).textContent).toBe(text);

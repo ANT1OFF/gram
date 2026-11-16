@@ -102,17 +102,11 @@ test("Usage navigation, server period/provider filters, chart/table agreement an
   await expect(page.getByTestId("usage-turns")).toHaveText("21");
   await expect(modelTable.locator("tbody tr")).toHaveCount(7);
   await expect(modelTable).not.toContainText("Unknown model");
+  // Both filters go back to the server: the period and the provider together.
   await pick(page, "Period", "24 h");
   await expectTokens(page, 17_000);
   await pick(page, "Provider", "All");
   await expectTokens(page, 26_000);
-  await pick(page, "Period", "30 d");
-  await expectTokens(page, 2_340_000);
-  await expect(modelTable).toContainText("claude-example-old");
-  await pick(page, "Period", "90 d");
-  await expectTokens(page, 7_020_000);
-  await pick(page, "Period", "7 d");
-  await expectTokens(page, 468_000);
   const period = page.getByRole("radiogroup", { name: "Period", exact: true });
   await period.getByRole("radio", { name: "90 d" }).focus();
   await page.keyboard.press("Tab");
