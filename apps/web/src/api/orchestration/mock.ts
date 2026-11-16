@@ -107,7 +107,7 @@ export function createOrchestrationMock(
       throw new Error("This invented mock has no failed startup owner to retry.");
     },
     cancelOrchestratorSwitch: (workspaceId) => orchestration.cancelSwitch(workspaceId),
-    orchestratorHandoff: (workspaceId) => orchestration.handoff(workspaceId),
+    orchestratorHandoff: (workspaceId, options) => orchestration.handoff(workspaceId, options),
     threadDetach: (threadId) => orchestration.detach(threadId),
     threadJoinWorkspace: ({ threadId, workspaceId, ...options }) =>
       orchestration.join(threadId, workspaceId, options),

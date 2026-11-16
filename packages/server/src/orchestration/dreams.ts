@@ -205,6 +205,8 @@ interface Gathered extends DreamSessionFile {
   readonly kind?: string;
   /** The digest its file opens with, when some of it was consolidated before. */
   readonly digest?: string;
+  /** `Unread.unsaved`. */
+  readonly unsaved?: boolean;
 }
 
 /** One thread's unread part, taken from the live thread or its archive. */
@@ -233,6 +235,11 @@ export interface Unread {
    * sharing a project has one too, and it doesn't come first here.
    */
   readonly ownOrchestrator: boolean;
+  /**
+   * A session in it was replaced without saving to memory first (`Handoff.unsaved`): what it was
+   * doing is in the transcript alone.
+   */
+  readonly unsaved?: boolean;
 }
 
 /**
@@ -397,6 +404,7 @@ const gatheredOf = (unread: Unread, maxChars = DELTA_MAX_CHARS): Gathered => {
     threadId: unread.threadId,
     kind: kindOf(unread),
     ...(digest === undefined ? {} : { digest }),
+    ...(unread.unsaved === true ? { unsaved: true } : {}),
     read: {
       threadId: unread.threadId,
       source: unread.source,
@@ -437,6 +445,9 @@ export const sessionIndex = (
           ? tokensText(estimateTokens(one.text))
           : `${plural(one.read.messages, "new message")}, ${tokensText(one.read.estimatedTokens)}`,
         one.digest === undefined ? undefined : "earlier part already in memory",
+        one.unsaved === true
+          ? "a session in it ended without saving to memory first: read it early"
+          : undefined,
       ].filter((part): part is string => part !== undefined && part !== "");
       const digest =
         one.digest === undefined
@@ -570,8 +581,14 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             selection.before[0]?.seq ?? first.seq,
           );
           const wanted = new Set(selection.read.map((mark) => mark.seq));
-          const blocks = blocksOf(fromStoredMessages(rows.filter((row) => wanted.has(row.seq))));
+          const fresh = rows.filter((row) => wanted.has(row.seq));
+          const blocks = blocksOf(fromStoredMessages(fresh));
           if (blocks.length === 0) return undefined;
+          const unsaved = fresh.some((row) =>
+            row.message.parts.some(
+              (part) => part.type === "data-handoff" && part.data.unsaved === true,
+            ),
+          );
           return {
             threadId: thread.id,
             source: "thread",
@@ -590,6 +607,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             marks,
             held,
             ...(selection.rewound ? { rewound: true } : {}),
+            ...(unsaved ? { unsaved: true } : {}),
           };
         });
 

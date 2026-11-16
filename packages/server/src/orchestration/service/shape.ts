@@ -539,13 +539,15 @@ export interface OrchestrationShape {
    * An orchestrator in `error` skips the checkpoint. With a `target` it is a switch: the
    * checkpoint also writes the handoff note (unless `note` is false), and the boot digest carries
    * it with the last exchanges with the user; out of usage or in `error`, it is limit mode, the
-   * new session writing the note in its boot turn.
+   * new session writing the note in its boot turn. Without a `target`, `checkpoint: false` skips
+   * the checkpoint: the running turn is stopped as Stop does (its open cards declined) and the
+   * fresh session starts at once.
    */
   handoff(
     workspaceId: WorkspaceId,
     reason: OrchestratorHandoffReason,
     target?: ModelRef,
-    options?: { readonly note?: boolean },
+    options?: { readonly note?: boolean; readonly checkpoint?: boolean },
   ): Effect.Effect<Thread, NotFound | InvalidState>;
   retrySwitch(workspaceId: WorkspaceId): Effect.Effect<Thread, NotFound | InvalidState>;
   cancelSwitch(workspaceId: WorkspaceId): Effect.Effect<void, NotFound | InvalidState>;

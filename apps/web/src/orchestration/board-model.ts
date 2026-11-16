@@ -11,14 +11,11 @@ import {
   type Thread,
   type ThreadStatus,
   type ThreadSummary,
-  type UsageSummary,
   type WorkerLedgerEntry,
   type WorkerState,
   type WorkspaceId,
   type WorkspaceState,
 } from "@gram/contracts";
-
-import { contextPercent } from "@/thread/context-usage";
 
 // Pure derivations for the orchestration board: which column a worker stands in, what a feature's
 // row holds, and which workspace's board a thread opens. No React, so it is tested without a browser.
@@ -170,23 +167,6 @@ export const wakeWhenText = (
     : wake.onPr === undefined
       ? `Wakes at ${time(wake.at)}`
       : `Wakes when ${prWakeWhen(wake.onPr, wake.on ?? DEFAULT_PR_WAKE_EVENTS)}, else at ${time(wake.at)}`;
-
-/**
- * From this much of its context window on, an orchestrator is offered a fresh session:
- * the usage bar's warning, and the server's context note.
- */
-const FRESH_SESSION_CONTEXT_PCT = 90;
-
-/**
- * The orchestrator's context fill (`contextPercent`, the usage bar's own) when it is worth a fresh
- * session, else `undefined`, read from the usage the thread already reports.
- */
-export const freshSessionPct = (
-  usage: Pick<UsageSummary, "contextTokens" | "contextWindow"> | undefined,
-): number | undefined => {
-  const pct = usage === undefined ? undefined : contextPercent(usage);
-  return pct !== undefined && pct >= FRESH_SESSION_CONTEXT_PCT ? pct : undefined;
-};
 
 /** What a handoff in flight is known by: the session it is leaving, and when it was asked for. */
 export interface HandoffMark {
