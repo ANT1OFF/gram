@@ -323,16 +323,55 @@ describe("moving a profile thread keeps whose it is (REVIEW-477 1)", () => {
   );
 
   it.effect(
-    "moves a thread from a machine registered before kinds onto one for threads placed by name",
+    "moves no thread from a machine registered before kinds onto one for threads placed by name",
     () =>
       Effect.gen(function* () {
-        // An embedder's run host, kept from before it said its kind, restarted as one that says it.
+        // A machine of no kind is open to every caller, so a thread on it is anyone's: a host for
+        // one run's threads, which always names its owner, takes none of them.
         const { starter, cleanup } = setup({
-          records: { [GONE]: { id: GONE }, [NEXT]: { onDemand: "thread" } },
+          records: { [GONE]: { id: GONE }, [NEXT]: { onDemand: "thread", owner: "run/1" } },
         });
         yield* Effect.addFinalizer(() => Effect.sync(cleanup));
-        expect((yield* starter.moveOne(ID, NEXT)).moved).toBe(true);
+        expect((yield* starter.moveOne(ID, NEXT).pipe(Effect.flip)).message).toBe(
+          NOT_THE_THREADS_OWNER,
+        );
       }),
+  );
+
+  // Kept from before an on-demand host had to name its owner: no one may reach the thread but
+  // the server, and its embedder's move gives it the owner the new host names, once.
+  it.effect("moves a thread from an ownerless on-demand machine only onto an owned one", () =>
+    Effect.gen(function* () {
+      const claimed = setup({
+        records: { [GONE]: { onDemand: "thread" }, [NEXT]: { onDemand: "thread", owner: "run/1" } },
+      });
+      yield* Effect.addFinalizer(() => Effect.sync(claimed.cleanup));
+      expect((yield* claimed.starter.moveOne(ID, NEXT)).moved).toBe(true);
+      const ownerless = setup({
+        records: { [GONE]: { onDemand: "thread" }, [NEXT]: { onDemand: "thread" } },
+      });
+      yield* Effect.addFinalizer(() => Effect.sync(ownerless.cleanup));
+      expect((yield* ownerless.starter.moveOne(ID, NEXT).pipe(Effect.flip)).message).toBe(
+        NOT_THE_THREADS_OWNER,
+      );
+    }),
+  );
+
+  it.effect("never moves a run's thread onto another run's host, nor its person's own", () =>
+    Effect.gen(function* () {
+      for (const next of [
+        { onDemand: "thread", owner: "run/2", person: "ada" },
+        { onDemand: "personal", owner: "ada" },
+      ]) {
+        const { starter, cleanup } = setup({
+          records: { [GONE]: { onDemand: "thread", owner: "run/1", person: "ada" }, [NEXT]: next },
+        });
+        yield* Effect.addFinalizer(() => Effect.sync(cleanup));
+        expect((yield* starter.moveOne(ID, NEXT).pipe(Effect.flip)).message).toBe(
+          NOT_THE_THREADS_OWNER,
+        );
+      }
+    }),
   );
 
   it.effect(

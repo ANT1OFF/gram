@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { makeDurableWork } from "./durable-work.ts";
 import {
+  asServer,
   callerPerson,
   currentCaller,
   recordActor,
@@ -104,7 +105,8 @@ it.effect("runs one attempt per key at a time, so a retry never repeats the one 
 );
 
 // The durable-intent choke point (`host/ownership.ts`): an attempt runs as who the work was saved
-// for, whichever fiber makes it. A retry at start, with no caller, is never the server's own.
+// for, whichever fiber makes it. A retry at start, with no caller, is never the server's own, nor
+// is work written by a fiber that holds no `ServerWork`.
 it.effect("runs every attempt as the actor the intent was saved with, a retry included", () =>
   Effect.gen(function* () {
     const seen: Array<string | undefined | "server"> = [];
@@ -121,8 +123,10 @@ it.effect("runs every attempt as the actor the intent was saved with, a retry in
       .pipe(Effect.provideService(RoutedFor, { person: "grace" }));
     save("ada-retry", { person: "ada" });
     save("unsigned", {});
-    save("server", yield* recordActor);
-    yield* work.resume(["ada-retry", "unsigned", "server"]);
-    expect(seen).toEqual(["ada", "ada", undefined, "server"]);
+    // The server's own only where it holds the capability; a fiber that says nothing is no one.
+    save("server", yield* recordActor.pipe(asServer));
+    save("silent", yield* recordActor);
+    yield* work.resume(["ada-retry", "unsigned", "server", "silent"]);
+    expect(seen).toEqual(["ada", "ada", undefined, "server", undefined]);
   }),
 );

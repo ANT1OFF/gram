@@ -69,10 +69,19 @@ export interface PairedMachine {
   readonly kind?: MachineKind;
   /**
    * A provisioned host started for one person, by an embedder that provisions hosts on demand:
-   * the stable subject that person signs in with (fronted sign-in). Only that person's threads are
-   * placed on it, and only they see it. Absent: any work may go on it, as before.
+   * the stable subject that person signs in with (fronted sign-in), or one no person signs in
+   * with, which leaves it to the server's own work. Only that owner's threads are placed on it,
+   * and only they reach it. Always given with `onDemand`; absent, with no kind, any work may go on
+   * it, as before. One on demand from before owners were required is closed (`holderOf`).
    */
   readonly owner?: string;
+  /**
+   * The one person who may reach it beside its owner's own threads, where its owner is no
+   * person's subject: a host started for a run that acts for someone, owned by the run so that
+   * its threads link to nothing of that person's, and reached by that person alone. Only with an
+   * owner; never makes it theirs to place new work on or to link to (`host/ownership.ts`).
+   */
+  readonly person?: string;
   /**
    * What an on-demand host is for: `personal`, the person's own host for work in a folder or a
    * repository, or `thread`, a host for the threads placed on it by name (and their workers),
@@ -158,8 +167,10 @@ export interface ProvisionRequest {
   readonly name: string;
   readonly platform: string;
   readonly publicKey: string;
-  /** The person the host is for, when an embedder started it on demand for one. */
+  /** Whom the host is for (`PairedMachine.owner`): always with `onDemand`. */
   readonly owner?: string;
+  /** The person who may reach it beside its owner (`PairedMachine.person`): only with an owner. */
+  readonly person?: string;
   readonly onDemand?: OnDemandKind;
 }
 
@@ -581,6 +592,16 @@ export const createPairedMachines = (
           status: 400,
           message: "The host's key isn't valid.",
         };
+      // One started on demand with no owner would be open to every caller (`host/ownership.ts`).
+      if (
+        (request.onDemand === undefined) !== (request.owner === undefined) ||
+        (request.person !== undefined && request.owner === undefined)
+      )
+        return {
+          kind: "refused",
+          status: 400,
+          message: "An on-demand host names its kind and its owner.",
+        };
       const id = hostIdOf(request.publicKey);
       const existing = byId(id);
       if (existing !== undefined) {
@@ -595,6 +616,7 @@ export const createPairedMachines = (
         return existing.name === request.name &&
           existing.platform === request.platform &&
           existing.owner === request.owner &&
+          existing.person === request.person &&
           existing.onDemand === request.onDemand
           ? { kind: "provisioned", machine: existing, created: false }
           : {
@@ -631,6 +653,7 @@ export const createPairedMachines = (
         confirmedAt: at,
         kind: "provisioned",
         ...(request.owner === undefined ? {} : { owner: request.owner }),
+        ...(request.person === undefined ? {} : { person: request.person }),
         ...(request.onDemand === undefined ? {} : { onDemand: request.onDemand }),
       };
       save([...machines, machine]);
@@ -835,6 +858,7 @@ export const machineView = (
     ...(machine.sshTarget === undefined ? {} : { sshTarget: machine.sshTarget }),
     ...(machine.kind === undefined ? {} : { kind: machine.kind }),
     ...(machine.owner === undefined ? {} : { owner: machine.owner }),
+    ...(machine.person === undefined ? {} : { person: machine.person }),
     ...(machine.onDemand === undefined ? {} : { onDemand: machine.onDemand }),
     ...(online?.selfUpdate === true ? { selfUpdate: true } : {}),
     ...(status.update === undefined ? {} : { update: status.update }),

@@ -153,7 +153,10 @@ const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body
 const refuse = (message: string, status = 403) => HttpServerResponse.text(message, { status });
 
 const JOIN_BODY_MAX = 512;
-/** A person's stable subject, as fronted sign-in names them: printable, at most 128 characters. */
+/**
+ * An owner's or a person's subject, as fronted sign-in names people (or one no person signs in
+ * with): printable, at most 128 characters.
+ */
 const OWNER = /^[\x21-\x7e]{1,128}$/;
 /** A folder request's body: a machine's id, a path and a limit. */
 const FOLDER_BODY_MAX = 8_192;
@@ -444,17 +447,18 @@ export const machineManagement = (
             409,
           );
         const body = yield* jsonBody(JOIN_BODY_MAX);
-        const { name, publicKey, platform = "linux", owner, onDemand } = body ?? {};
+        const { name, publicKey, platform = "linux", owner, person, onDemand } = body ?? {};
         if (
           typeof name !== "string" ||
           typeof publicKey !== "string" ||
           typeof platform !== "string"
         )
           return json({ message: "Give the host's name and its public key." }, 400);
-        // A host started on demand: for one person (`personal`, which names its owner), or for
-        // the threads placed on it by name (`thread`, with or without an owner), or for an
-        // orchestrator's workers (`worker`, which names whose). An owner always comes with a kind,
-        // and a person's own host and a worker host always with their owner.
+        // A host started on demand: for one person (`personal`), for the threads placed on it by
+        // name (`thread`), or for an orchestrator's workers (`worker`). An owner always comes
+        // with a kind, and a host of any kind always with its owner: the subject of the person it
+        // is for, or one no person signs in with, which leaves it to the server's own work. One
+        // with no owner would be open to every caller, so it is refused (`host/ownership.ts`).
         if (
           (owner !== undefined && (typeof owner !== "string" || !OWNER.test(owner))) ||
           (onDemand !== undefined &&
@@ -462,12 +466,12 @@ export const machineManagement = (
             onDemand !== "thread" &&
             onDemand !== "worker") ||
           (owner !== undefined && onDemand === undefined) ||
-          ((onDemand === "personal" || onDemand === "worker") && owner === undefined)
+          (onDemand !== undefined && owner === undefined) ||
+          // The one person beside its owner who may reach it, only for a host with an owner.
+          (person !== undefined &&
+            (typeof person !== "string" || !OWNER.test(person) || owner === undefined))
         )
-          return json(
-            { message: "An on-demand host names its kind, and a person's its owner." },
-            400,
-          );
+          return json({ message: "An on-demand host names its kind and its owner." }, 400);
         const result = (() => {
           try {
             return hosts.machines.provision({
@@ -475,6 +479,7 @@ export const machineManagement = (
               publicKey,
               platform,
               ...(typeof owner === "string" ? { owner } : {}),
+              ...(typeof person === "string" ? { person } : {}),
               ...(onDemand === "personal" || onDemand === "thread" || onDemand === "worker"
                 ? { onDemand }
                 : {}),

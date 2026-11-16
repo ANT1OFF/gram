@@ -63,6 +63,7 @@ import { parsePrRef } from "../git/merge-when-ready.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { OnDemand, choicesFor } from "../embedding/on-demand.ts";
+import { ownerSubject } from "../host/ownership.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import {
@@ -221,7 +222,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           .getThread(caller)
           .pipe(Effect.mapError(() => fail("Your thread can't be read now.")));
         const ownHost = hostOf(effectiveCheckout(orchestrator));
-        const owner = workerHosts?.ownerOf(ownHost);
+        // A closed machine's holder is no one's to start machines for (`host/ownership.ts`).
+        const owner = ownerSubject(workerHosts?.ownerOf(ownHost));
         if (onDemand === undefined || owner === undefined)
           return yield* fail(
             "Workers can't have machines of their own here: leave out sandbox, and the worker runs on your machine.",

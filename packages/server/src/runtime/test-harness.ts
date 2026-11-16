@@ -3,6 +3,7 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { ServerWork } from "../host/ownership.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ServerConfig, type ServerConfigShape } from "../config.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
@@ -55,6 +56,8 @@ export const makeRuntimeTestLayer = (
     Layer.provideMerge(hooks),
     Layer.provideMerge(checkouts),
     Layer.provideMerge(ServerConfig.layer(config)),
+    // As the server runs: its own work holds the capability (`host/ownership.ts`).
+    Layer.provideMerge(Layer.succeed(ServerWork)(true)),
     Layer.orDie,
   );
 

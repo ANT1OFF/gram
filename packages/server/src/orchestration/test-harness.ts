@@ -22,6 +22,7 @@ import {
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { ServerWork } from "../host/ownership.ts";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import type * as Scope from "effect/Scope";
@@ -605,69 +606,74 @@ export const serverLayer = (
       Layer.provideMerge(MergeWhenReadyLive.pipe(Layer.provide(fakeGh(world)))),
       Layer.provide(fakeGh(world)),
     ),
-  ).pipe(
-    Layer.provideMerge(machinesOf(world)),
-    Layer.provideMerge(RoutinesLive.pipe(Layer.provide(fakeRoutineEvents(world)))),
-    Layer.provideMerge(OrchestrationLive),
-    Layer.provideMerge(ComposerPresence.layer),
-    Layer.provideMerge(localChecksOf(world)),
-    Layer.provideMerge(ThreadWakesLive),
-    Layer.provideMerge(conditionsOf(world)),
-    Layer.provideMerge(OrchestrationMemory.layerAt(nodePath.join(world.dir, "memory"))),
-    Layer.provideMerge(fakePublisher(world)),
-    Layer.provideMerge(AppToolRegistry.layer),
-    Layer.provideMerge(runtimesOf(world)),
-    // As the server has it: the runtime reads the limits (`limitedUntil`, early releases).
-    Layer.provideMerge(
-      ThreadRuntimes.layerOnLocalHost.pipe(Layer.provideMerge(UsageLimitReadings.layer)),
-    ),
-    Layer.provideMerge(GitCheckoutLive),
-    Layer.provideMerge(hubOf(world)),
-    Layer.provideMerge(ThreadStore.layerSqlite(nodePath.join(world.dir, "gram.db"), store)),
-    Layer.provideMerge(agents),
-    // Who `world.owners` says each machine was started for, beside the hooks: a pipe takes twenty.
-    Layer.provideMerge(
-      Layer.mergeAll(
-        TurnHooks.layerNoop,
-        Layer.succeed(MachineOwnersForTests)({ ownerOf: (id: HostId) => world.owners?.get(id) }),
+  )
+    .pipe(
+      Layer.provideMerge(machinesOf(world)),
+      Layer.provideMerge(RoutinesLive.pipe(Layer.provide(fakeRoutineEvents(world)))),
+      Layer.provideMerge(OrchestrationLive),
+      Layer.provideMerge(ComposerPresence.layer),
+      Layer.provideMerge(localChecksOf(world)),
+      Layer.provideMerge(ThreadWakesLive),
+      Layer.provideMerge(conditionsOf(world)),
+      Layer.provideMerge(OrchestrationMemory.layerAt(nodePath.join(world.dir, "memory"))),
+      Layer.provideMerge(fakePublisher(world)),
+      Layer.provideMerge(AppToolRegistry.layer),
+      Layer.provideMerge(runtimesOf(world)),
+      // As the server has it: the runtime reads the limits (`limitedUntil`, early releases).
+      Layer.provideMerge(
+        ThreadRuntimes.layerOnLocalHost.pipe(Layer.provideMerge(UsageLimitReadings.layer)),
       ),
-    ),
-    Layer.provideMerge(
-      gitPlatformTest({
-        proc: countedProc,
-        pr: Layer.succeed(Pr, {
-          status: (cwd, bound, _checkout, options) =>
-            Effect.sync(() => {
-              if (options?.fresh === true && bound !== undefined)
-                world.freshPrReads.push(prKey(bound));
-              return (
-                (bound === undefined ? undefined : world.prBadges.get(prKey(bound))) ??
-                world.states.get(cwd)?.pr ??
-                (bound === undefined
-                  ? undefined
-                  : [...world.states.values()]
-                      .map((state) => state.pr)
-                      .find(
-                        (badge) =>
-                          badge?.number === bound.number &&
-                          repoFromPrUrl(badge.url)?.toLowerCase() === bound.repo.toLowerCase(),
-                      ))
-              );
-            }).pipe(
-              Effect.tap(() =>
-                options?.fresh === true ? (world.freshPrRead ?? Effect.void) : Effect.void,
+      Layer.provideMerge(GitCheckoutLive),
+      Layer.provideMerge(hubOf(world)),
+      Layer.provideMerge(ThreadStore.layerSqlite(nodePath.join(world.dir, "gram.db"), store)),
+      Layer.provideMerge(agents),
+      // Who `world.owners` says each machine was started for, beside the hooks: a pipe takes twenty.
+      Layer.provideMerge(
+        Layer.mergeAll(
+          TurnHooks.layerNoop,
+          Layer.succeed(MachineOwnersForTests)({ ownerOf: (id: HostId) => world.owners?.get(id) }),
+        ),
+      ),
+      Layer.provideMerge(
+        gitPlatformTest({
+          proc: countedProc,
+          pr: Layer.succeed(Pr, {
+            status: (cwd, bound, _checkout, options) =>
+              Effect.sync(() => {
+                if (options?.fresh === true && bound !== undefined)
+                  world.freshPrReads.push(prKey(bound));
+                return (
+                  (bound === undefined ? undefined : world.prBadges.get(prKey(bound))) ??
+                  world.states.get(cwd)?.pr ??
+                  (bound === undefined
+                    ? undefined
+                    : [...world.states.values()]
+                        .map((state) => state.pr)
+                        .find(
+                          (badge) =>
+                            badge?.number === bound.number &&
+                            repoFromPrUrl(badge.url)?.toLowerCase() === bound.repo.toLowerCase(),
+                        ))
+                );
+              }).pipe(
+                Effect.tap(() =>
+                  options?.fresh === true ? (world.freshPrRead ?? Effect.void) : Effect.void,
+                ),
               ),
-            ),
-          checks: () => Effect.succeed([]),
-          prime: () => Effect.void,
-          seenChecks: () => Effect.succeed(undefined),
-          detail: () => Effect.succeed({ available: false }),
+            checks: () => Effect.succeed([]),
+            prime: () => Effect.void,
+            seenChecks: () => Effect.succeed(undefined),
+            detail: () => Effect.succeed({ available: false }),
+          }),
         }),
-      }),
-    ),
-    Layer.provideMerge(ServerConfig.layer({ ...TEST_CONFIG, ...config, dataDir: world.dir })),
-    Layer.orDie,
-  );
+      ),
+      Layer.provideMerge(ServerConfig.layer({ ...TEST_CONFIG, ...config, dataDir: world.dir })),
+      Layer.orDie,
+      // As the server runs: its own work holds the capability (`host/ownership.ts`), and a call
+      // made for someone says whom for over it. The bodies run in it too (`withServer`). Its own
+      // pipe: one takes twenty.
+    )
+    .pipe(Layer.provide(Layer.succeed(ServerWork)(true)));
 
 export type Server = Layer.Success<ReturnType<typeof serverLayer>>;
 
@@ -683,7 +689,7 @@ export const withServer = <A, E>(
   Effect.scoped(
     Effect.gen(function* () {
       const context = yield* Layer.build(serverLayer(world, config));
-      return yield* body.pipe(Effect.provide(context));
+      return yield* body.pipe(Effect.provide(context), Effect.provideService(ServerWork, true));
     }),
   );
 

@@ -7,7 +7,13 @@ import {
 } from "@gram/contracts";
 import { ANSWER_OVER_HTTP } from "../embedding/answer-proof.ts";
 import { ActingPerson } from "../embedding/person.ts";
-import { mayReachThread, NOT_YOUR_MACHINE, ownersOf, RoutedFor } from "../host/ownership.ts";
+import {
+  holderOf,
+  mayReachThread,
+  NOT_YOUR_MACHINE,
+  ownersOf,
+  RoutedFor,
+} from "../host/ownership.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -337,8 +343,8 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
        */
       const onAnothersMachine = (person: string | undefined, payload: unknown) =>
         Effect.gen(function* () {
-          // Looked up only while some machine is someone's.
-          if (machines?.list().some((machine) => machine.owner !== undefined) !== true)
+          // Looked up only while some machine is someone's, or closed (`holderOf`).
+          if (machines?.list().some((machine) => holderOf(machine) !== undefined) !== true)
             return false;
           const threads = [...threadsNamed(payload)];
           for (const workspaceId of workspacesNamed(payload)) {

@@ -3,7 +3,13 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { defineAppTool } from "../app-tools/definition.ts";
 import { bindAppTools } from "../app-tools/registry.ts";
-import { asThreadOwner, callerPerson, MOVE_CHANGES_OWNER, RoutedFor } from "../host/ownership.ts";
+import {
+  asServer,
+  asThreadOwner,
+  callerPerson,
+  MOVE_CHANGES_OWNER,
+  RoutedFor,
+} from "../host/ownership.ts";
 import { ownedRuntimes } from "../runtime/owned-runtimes.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import { describe, expect, it } from "vitest";
@@ -519,7 +525,9 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
   it("lets the owner, and the server's own work, through", async () => {
     const { reached, owned } = recording();
     await Effect.runPromise(as("ada")(owned.send(adaWorker, { text: "Ada's" })));
-    await Effect.runPromise(owned.steer(adaWorker, { text: "the server's" }));
+    await Effect.runPromise(asServer(owned.steer(adaWorker, { text: "the server's" })));
+    // A fiber that says nothing and holds no capability is no one's, never the server's.
+    expect(await outcome(owned.steer(adaWorker, { text: "no one's" }))).toBe(NOT_YOUR_MACHINE);
     await Effect.runPromise(as("grace")(owned.send(sharedThread, { text: "anyone's" })));
     expect(reached).toEqual([`send:${adaWorker}`, `steer:${adaWorker}`, `send:${sharedThread}`]);
   });
@@ -528,13 +536,15 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
   it("moves a thread only onto a machine started for the same person", async () => {
     const { reached, owned } = recording();
     const orchestrator = ThreadId.make("ada-orchestrator");
-    await Effect.runPromise(owned.moveCheckout(orchestrator, onto("m-ada")));
-    await Effect.runPromise(owned.moveCheckout(sharedThread, onto("m-shared")));
+    await Effect.runPromise(asServer(owned.moveCheckout(orchestrator, onto("m-ada"))));
+    await Effect.runPromise(asServer(owned.moveCheckout(sharedThread, onto("m-shared"))));
     for (const [threadId, hostId] of [
       [orchestrator, "m-shared"],
       [sharedThread, "m-ada"],
     ] as const) {
-      const exit = await Effect.runPromiseExit(owned.moveCheckout(threadId, onto(hostId)));
+      const exit = await Effect.runPromiseExit(
+        asServer(owned.moveCheckout(threadId, onto(hostId))),
+      );
       expect(String(exit)).toContain(MOVE_CHANGES_OWNER);
     }
     // And never for someone else, wherever to.
@@ -551,8 +561,10 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
     const orchestrator = ThreadId.make("ada-orchestrator");
     const from = onto("m-ada");
     const plan = (hostId: string) => ({ from, prepare: Effect.succeed(onto(hostId)) });
-    await Effect.runPromise(owned.relocate(orchestrator, plan("m-ada")));
-    const changed = await Effect.runPromiseExit(owned.relocate(orchestrator, plan("m-shared")));
+    await Effect.runPromise(asServer(owned.relocate(orchestrator, plan("m-ada"))));
+    const changed = await Effect.runPromiseExit(
+      asServer(owned.relocate(orchestrator, plan("m-shared"))),
+    );
     expect(String(changed)).toContain(MOVE_CHANGES_OWNER);
     const refused = await Effect.runPromise(
       as("grace")(owned.relocate(orchestrator, plan("m-ada"))).pipe(Effect.flip),
@@ -568,11 +580,11 @@ describe("hosts provisioned on demand: what reaches a person's threads", () => {
     const ada = ThreadId.make("waiting-ada");
     const grace = ThreadId.make("waiting-grace");
     const anyone = ThreadId.make("waiting-anyone");
-    await Effect.runPromise(owned.relocate(ada, plan("m-ada")));
-    await Effect.runPromise(owned.relocate(ada, plan("m-shared")));
-    await Effect.runPromise(owned.relocate(anyone, plan("m-ada")));
+    await Effect.runPromise(asServer(owned.relocate(ada, plan("m-ada"))));
+    await Effect.runPromise(asServer(owned.relocate(ada, plan("m-shared"))));
+    await Effect.runPromise(asServer(owned.relocate(anyone, plan("m-ada"))));
     // Never onto a machine started for someone else than its starter.
-    const changed = await Effect.runPromiseExit(owned.relocate(grace, plan("m-ada")));
+    const changed = await Effect.runPromiseExit(asServer(owned.relocate(grace, plan("m-ada"))));
     expect(String(changed)).toContain(MOVE_CHANGES_OWNER);
     // And while it waits, nobody else reaches it: to them it isn't there.
     const refused = await Effect.runPromise(

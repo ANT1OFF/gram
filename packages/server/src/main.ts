@@ -27,6 +27,7 @@ import { ownedCodexProvider, prepareOwnedCodexHome } from "./gateway/codex-owned
 import { GatewayCredentials } from "./gateway/credentials.ts";
 import { GitPlatformLive } from "./git/platform.ts";
 import { GitTurnHooksLive } from "./git/turn-hooks.ts";
+import { ServerWork } from "./host/ownership.ts";
 import { bootLine, LaunchToken, serverPort, ServerLayer } from "./http/server.ts";
 import { embeddingEnabled } from "./settings/embedding.ts";
 import { createLogger, logDirFor } from "./logging/logger.ts";
@@ -324,6 +325,9 @@ program.pipe(
       ),
     ),
   ),
+  // The server's own work, from its layers' fibers to its listeners', holds the capability; every
+  // RPC, route and tool call made for someone says whom for over it (`host/ownership.ts`).
+  Effect.provideService(ServerWork, true),
   // After the layers have closed, so it times the whole teardown. The exit is explicit: `runMain`
   // leaves a program that ends without a signal to the event loop, which `parentPort` keeps alive.
   Effect.onExit((exit) =>

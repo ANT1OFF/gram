@@ -96,7 +96,15 @@ with a browser's `Origin`.
    - `"personal"`: one person's own host ([Hosts on demand](EMBEDDING.md#hosts-on-demand)), which
      also names them in `"owner"`;
    - `"thread"`: a host for the threads placed on it by name and their workers, such as one an
-     embedder starts for a single automated run. It names an `owner` only if it is one person's.
+     embedder starts for a single automated run.
+
+   A host of any kind names its `"owner"`: the subject of the person it is for, or one no person
+   signs in with (a run's, say), which leaves it to the server's own work and its own threads. A
+   host whose owner is no person may name, in `"person"`, the one person who may reach it besides,
+   such as the person a run acts for; that makes it theirs to reach, never to place new work on or
+   to link to. A host started on demand with no owner is refused (`400`): it would be open to every
+   signed-in person. One registered by an older build with none is reached by the server's own
+   work alone.
 
    Either kind is never anyone's default machine, so no thread that names no machine lands on it.
    An `owner` always comes with a kind. The same key registered again must name the same ones.

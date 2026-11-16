@@ -19,7 +19,13 @@ import {
   LOCAL_HOST_ID,
   type ProfileFile,
 } from "@gram/contracts";
-import { keepsOwner, mayPlaceAwaited, sameOwner } from "../host/ownership.ts";
+import {
+  claimsUnowned,
+  holderOf,
+  keepsOwner,
+  mayPlaceAwaited,
+  sameOwner,
+} from "../host/ownership.ts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -512,7 +518,13 @@ export const makeProfileStarter = ({
       const target = machines.get(to);
       if (
         target === undefined ||
-        !mayPlaceAwaited((id) => (id === to ? stringField(target, "owner") : undefined), thread, to)
+        !mayPlaceAwaited(
+          Object.assign((id: HostId) => (id === to ? holderOfRecord(to, target) : undefined), {
+            personOf: (id: HostId) => (id === to ? personOfRecord(target) : undefined),
+          }),
+          thread,
+          to,
+        )
       )
         return yield* refuse(NOT_THE_THREADS_OWNER);
       let files: ReadonlyArray<ProfileFile> = [];
@@ -694,11 +706,20 @@ export const makeProfileStarter = ({
           if (source === undefined) return yield* refuse(OWNER_UNKNOWN);
           const target = machines.get(to);
           const ownerOf = (id: HostId) =>
-            stringField((id === from ? source : id === to ? target : undefined) ?? {}, "owner");
+            id === from
+              ? holderOfRecord(from, source)
+              : id === to && target !== undefined
+                ? holderOfRecord(to, target)
+                : undefined;
+          // A thread no one owned, on a machine registered before owners were required, takes the
+          // owner its new machine names when its embedder moves it (`claimsUnowned`).
+          const keeps =
+            claimsUnowned(ownerOf, from, to) ||
+            (keepsOwner(ownerOf, thread, { hostId: to }) &&
+              sameOwner(ownerOf, checkout, { hostId: to }));
           if (
             target === undefined ||
-            !keepsOwner(ownerOf, thread, { hostId: to }) ||
-            !sameOwner(ownerOf, checkout, { hostId: to }) ||
+            !keeps ||
             !sameKind(stringField(source, "onDemand"), stringField(target, "onDemand"))
           )
             return yield* refuse(NOT_THE_THREADS_OWNER);
@@ -775,6 +796,18 @@ const ownFolder = (checkout: Thread["checkout"], threadId: ThreadId): boolean =>
  */
 const sameKind = (from: string | undefined, to: string | undefined): boolean =>
   from === to || (from === undefined && to === "thread");
+
+/** Whose a machine's record says it is, as the rule compares it (`holderOf`). */
+const holderOfRecord = (id: HostId, record: object): string | undefined =>
+  holderOf({
+    id,
+    owner: stringField(record, "owner"),
+    onDemand: stringField(record, "onDemand"),
+  });
+
+/** Who a machine's record says may reach it beside its owner (`PairedMachine.person`). */
+const personOfRecord = (record: object): string | undefined =>
+  stringField(record, "owner") === undefined ? undefined : stringField(record, "person");
 
 /** A record's string field, where it has one: a machine's `owner` or `onDemand`, say. */
 const stringField = (record: object, field: string): string | undefined => {
