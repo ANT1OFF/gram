@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.29.0](https://github.com/ANT1OFF/gram/compare/v1.28.0...v1.29.0) (2026-11-16)
+
+
+### Features
+
+* **app-tools:** list app tools with MCP annotations from their safety class ([#708](https://github.com/ANT1OFF/gram/issues/708)) ([22c4bad](https://github.com/ANT1OFF/gram/commit/22c4bad606dd18124ffc14f7ddf65fd5af50481c))
+* **host:** hosts can keep work in progress under a namespace of their own ([#709](https://github.com/ANT1OFF/gram/issues/709)) ([82b0207](https://github.com/ANT1OFF/gram/commit/82b0207143167d245865cbbfe2383c0e3214bf3d))
+* **memory:** memory updates choose what to read, write as they go and stop when they judge they're done ([#698](https://github.com/ANT1OFF/gram/issues/698)) ([122dd61](https://github.com/ANT1OFF/gram/commit/122dd6138b13c76b5461258a2defbc07aa810a97))
+* New task goes to an orchestrator or a chat, no worker straight away ([#712](https://github.com/ANT1OFF/gram/issues/712)) ([aad9da0](https://github.com/ANT1OFF/gram/commit/aad9da00fbd503c9c3acd95e0bcfd1d805899489))
+* **orchestration:** council reviews and other worker models ([#710](https://github.com/ANT1OFF/gram/issues/710)) ([311a7cc](https://github.com/ANT1OFF/gram/commit/311a7cc14c1def73b2e8821293eb3f30349ae2e5))
+* **orchestration:** fresh session with an option to skip saving to memory first ([#711](https://github.com/ANT1OFF/gram/issues/711)) ([a7b4711](https://github.com/ANT1OFF/gram/commit/a7b47118b38415bdbed441095dfd9e5275bfe442))
+* steer past an approval card, and one delivery button beside Stop ([#702](https://github.com/ANT1OFF/gram/issues/702)) ([0e469ae](https://github.com/ANT1OFF/gram/commit/0e469ae3aba4e131e384ad3fde36a713e3e58212))
+* **themes:** light palettes set the sidebar and title bar a visible step off the page ([#699](https://github.com/ANT1OFF/gram/issues/699)) ([a02d72e](https://github.com/ANT1OFF/gram/commit/a02d72eb98c1d3fe4d67027a985b73999ba3a613))
+* **web:** a light kit for pages shown before Gram mounts ([#707](https://github.com/ANT1OFF/gram/issues/707)) ([0b8330a](https://github.com/ANT1OFF/gram/commit/0b8330ac86a191f2df603cefbc2fc19097aa3f58))
+* **web:** kit feedback and states: EmptyState, Skeleton, Shimmer, success and warning tones, plain SettingsGroup on phones ([#703](https://github.com/ANT1OFF/gram/issues/703)) ([ef2368a](https://github.com/ANT1OFF/gram/commit/ef2368abf1dd75722ea81133a4157db6083d9d73))
+* **web:** kit form controls: Textarea, Checkbox, RadioGroup, described OptionGroup ([#700](https://github.com/ANT1OFF/gram/issues/700)) ([72ca1cc](https://github.com/ANT1OFF/gram/commit/72ca1cc099a1dda346e2f865bd4f247711bef043))
+* **web:** kit overlays: Dialog, Sheet and Menu ([#701](https://github.com/ANT1OFF/gram/issues/701)) ([15b45d8](https://github.com/ANT1OFF/gram/commit/15b45d8beca9b5f491379ceeb7cc59ec212f4589))
+* **web:** kit rich setting labels, and Page's above slot, heading level and phone title ([#706](https://github.com/ANT1OFF/gram/issues/706)) ([9a1a712](https://github.com/ANT1OFF/gram/commit/9a1a71253eb71102c46a7c27db907ae1e224ce9b))
+
+
+### Bug Fixes
+
+* **orchestration:** fix non-git claims and full-auto ownership refusals ([#704](https://github.com/ANT1OFF/gram/issues/704)) ([f981be8](https://github.com/ANT1OFF/gram/commit/f981be8fc6ba76887ace2ef7c6e36baeb329874c))
+
 ## [1.28.0](https://github.com/ANT1OFF/gram/compare/v1.27.0...v1.28.0) (2026-11-16)
 
 
