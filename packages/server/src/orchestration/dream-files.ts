@@ -6,11 +6,12 @@
  *   dreams/<dreamId>/            the dream thread's cwd; an `acceptEdits` session may write all of it
  *     input/memory/…             a disposable copy of memory, written read-only
  *     input/sessions/NNN-….md    one rendered, scrubbed transcript each, written read-only
+ *     input/INDEX.md             one line per session, newest first, for the dream to choose from
  *     input/INSTRUCTIONS.md      the user's steering, when there is any
  *     input/seed/NNN-….md        Claude Code's own memory for the repos, on an import that asked
- *     work/                      the agent's notes per session (pass 1)
+ *     work/                      the agent's scratch notes, if it wants any
  *     work/digests/<session>.md  its rolling digest of each thread, kept with the watermark on adopt
- *     output/…                   starts as a copy of memory; rewritten by the agent (pass 2)
+ *     output/…                   starts as a copy of memory; the agent updates it as it goes
  *     output/REPORT.md           what was merged, dropped and added; never memory
  *   dream-manifests/<dreamId>.json   input hashes and the baseline memory, OUTSIDE the dream folder
  *   dream-merges/<dreamId>/<runId>/  one empty cwd per merge run, removed after it; nothing is read back
@@ -65,6 +66,8 @@ const DREAM_DIGEST_READ_MAX_BYTES = 64 * 1024;
 export const DREAM_REPORT = "REPORT.md";
 
 const INSTRUCTIONS = "INSTRUCTIONS.md";
+/** Gram's listing of `input/sessions/`, newest first. */
+export const SESSION_INDEX = "INDEX.md";
 const READ_ONLY = 0o444;
 const DREAM_ID = /^[A-Za-z0-9-]{8,64}$/;
 
@@ -85,6 +88,8 @@ export interface PrepareDream {
   /** The current version's files: the baseline, and what `input/memory` and `output` start as. */
   readonly memory: ReadonlyArray<MemorySetFile>;
   readonly sessions: ReadonlyArray<DreamSessionFile>;
+  /** `input/INDEX.md`: Gram's one-line-per-session listing, so the dream can choose what to read. */
+  readonly index?: string | undefined;
   readonly instructions?: string | undefined;
   /**
    * Seed material for `input/seed/`: read-only copies, hashed into the manifest like every
@@ -168,7 +173,7 @@ export interface DreamFilesShape {
     dreamId: string,
   ): Effect.Effect<string, MemoryError, Scope.Scope>;
   /**
-   * The digests pass 1 wrote, `work/digests/<file>` for each of `files` (their `input/sessions/`
+   * The digests the dream wrote, `work/digests/<file>` for each of `files` (their `input/sessions/`
    * names), scrubbed. One missing, too big or not a regular file is left out: the thread keeps the
    * digest it had.
    */
@@ -417,6 +422,9 @@ const make = (root: string): DreamFilesShape => {
             ...(input.instructions === undefined || input.instructions.trim() === ""
               ? []
               : [{ rel: `input/${INSTRUCTIONS}`, text: redactText(input.instructions) }]),
+            ...(input.index === undefined
+              ? []
+              : [{ rel: `input/${SESSION_INDEX}`, text: redactText(input.index) }]),
           ];
           const now = yield* Clock.currentTimeMillis;
           const manifest: DreamManifest = {

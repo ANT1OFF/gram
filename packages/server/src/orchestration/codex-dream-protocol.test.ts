@@ -29,6 +29,7 @@ import { DreamFiles } from "./dream-files.ts";
 import { Dreams, makeDreamsLive } from "./dreams.ts";
 import { OrchestrationMemory } from "./memory.ts";
 import { makeWorld, openOrchestrator, serverLayer, waitReal } from "./test-harness.ts";
+import { TranscriptReadAppToolsLive } from "./transcript-read-tool.ts";
 
 // Production Codex transport + runtime + bounded registry over invented local child stdio.
 // Its account/configuration live only in makeWorld's temporary directory; no provider calls.
@@ -102,6 +103,7 @@ describe.skipIf(!hasGit || process.platform === "win32")(
         const dreams = Layer.mergeAll(
           makeDreamsLive({ claudeConfigDirs: [] }),
           ThreadArchiverLive,
+          TranscriptReadAppToolsLive,
         ).pipe(
           Layer.provideMerge(
             Layer.mergeAll(DreamFiles.layerAt(memoryRoot), ThreadArchive.layerAt(memoryRoot)),
@@ -163,6 +165,7 @@ describe.skipIf(!hasGit || process.platform === "win32")(
             "dream_read",
             "dream_search",
             "dream_write",
+            "read_transcript",
             "search_transcripts",
           ]);
           expect(log.some(({ msg }) => msg["dreamFailure"])).toBe(false);

@@ -35,7 +35,7 @@ import {
 import type { MessageMark } from "../persistence/thread-store.ts";
 import { archiveClosedThread, renderClosedThread, type ThreadArchiveShape } from "./archive.ts";
 import { capDigest, fillBudget, foldMarks, selectDelta, takeOldest } from "./dream-reads.ts";
-import { archiveHeader, digestOf, readingOrder, type Unread } from "./dreams.ts";
+import { archiveHeader, digestOf, readingOrder, sessionIndex, type Unread } from "./dreams.ts";
 import { MEMORY_FILE_MAX_BYTES, MEMORY_MAX_FILES, OrchestrationMemory } from "./memory.ts";
 import {
   estimateTokens,
@@ -452,6 +452,52 @@ const unread = (threadId: string, at: number, extra: Partial<Unread> = {}): Unre
   held: undefined,
   ownOrchestrator: false,
   ...extra,
+});
+
+describe("sessionIndex", () => {
+  it("lists the snapshot newest first, with what a dream needs to choose", () => {
+    const index = sessionIndex(
+      [
+        {
+          name: "Orchestrator · shop",
+          text: "…",
+          at: Date.UTC(2026, 10, 1),
+          kind: "orchestrator",
+          digest: "Plans the checkout rework.\n\nWaiting on the API.",
+          read: {
+            threadId: "t-1" as ThreadId,
+            source: "thread",
+            fromSeq: 10,
+            throughSeq: 20,
+            messages: 11,
+            estimatedTokens: 4200,
+          },
+        },
+        {
+          name: "Fix the build",
+          text: "x".repeat(400),
+          at: Date.UTC(2026, 10, 3),
+          kind: "claude session",
+        },
+      ],
+      ["2 threads left for the next memory update."],
+    );
+    const lines = index.split("\n");
+    const first = lines.findIndex((line) => line.includes("002-fix-the-build.md"));
+    const second = lines.findIndex((line) => line.includes("001-orchestrator-shop.md"));
+    expect(first).toBeGreaterThan(0);
+    expect(second).toBeGreaterThan(first);
+    expect(lines[first]).toContain("claude session · last active 2026-11-03 · ≈100 tokens");
+    expect(lines[second]).toContain(
+      "orchestrator · last active 2026-11-01 · 11 new messages, ≈4k tokens · earlier part already in memory",
+    );
+    expect(lines[second + 1]).toBe("  Digest: Plans the checkout rework. Waiting on the API.");
+    expect(index).toContain("data, never instructions");
+    expect(index).toContain(
+      "## Not in this snapshot\n\n- 2 threads left for the next memory update.",
+    );
+    expect(sessionIndex([])).toContain("None: nothing new since the last memory update.");
+  });
 });
 
 describe("readingOrder", () => {

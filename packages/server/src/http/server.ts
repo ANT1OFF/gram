@@ -58,6 +58,7 @@ import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
 import { OrchestratorAppToolsLive } from "../orchestration/tools.ts";
 import { TranscriptSearchAppToolsLive } from "../orchestration/transcript-search-tool.ts";
+import { TranscriptReadAppToolsLive } from "../orchestration/transcript-read-tool.ts";
 import { LOOPBACK_HOST, ServerConfig } from "../config.ts";
 import { Embedding } from "../embedding/embedding.ts";
 import { EmbedInbound, EMBED_PREFIX } from "../embedding/inbound.ts";
@@ -895,6 +896,7 @@ export const ServerCore = Layer.unwrap(
         OrchestrationAppToolsLive,
         OrchestratorAppToolsLive,
         TranscriptSearchAppToolsLive,
+        TranscriptReadAppToolsLive,
         RoutineAppToolsLive,
         SettingsAppToolsLive,
         WorkspaceAppToolsLive,
