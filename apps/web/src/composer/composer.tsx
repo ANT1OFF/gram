@@ -241,8 +241,9 @@ export function Composer({
   // A turn whose folder is gone is being stopped: the server's steer would hand the message to an
   // agent that can't run there, while its send refuses and says why, so the send key sends.
   const steerable = busy && summary?.capabilities?.steer === true && !folderGone;
-  // Codex can't stop its turn for a message: there an interrupt goes in as a steer.
-  const interruptible = steerable && summary?.capabilities?.steerInterrupt === true;
+  // Codex can't stop its turn for a message: there an interrupt goes in as a steer. At a card it is
+  // a stop, then the message, which every agent can do.
+  const interruptible = steerable && (atCard || summary?.capabilities?.steerInterrupt === true);
   // Why nothing goes into the open turn now, said on Steer and Interrupt rather than dropping them.
   const steerRefusal =
     !busy || steerable
@@ -1607,14 +1608,14 @@ function DeliveryButton({
       )}
     >
       <Hint
-        label={label.hint}
+        // With nothing typed the face only puts the caret in the field, and says so.
+        label={hasDraft ? label.hint : `${label.hint}. Type a message first`}
         render={
           <button
             type="button"
             aria-label={label.aria}
-            aria-disabled={hasDraft ? undefined : true}
             disabled={hasDraft && !canSend}
-            className={cn(part, "gap-1.5 rounded-l-full pr-1.5 pl-2.5")}
+            className={cn(part, "gap-1.5 rounded-l-full pr-1.5 pl-2.5 phone:min-w-11")}
             onClick={onClick}
           />
         }
@@ -1639,7 +1640,11 @@ function DeliveryButton({
               data-testid="delivery-menu"
               data-picked={mode}
               aria-label={`${word}. Steer, queue or interrupt`}
-              className={cn(part, "rounded-r-full pr-2 pl-1", !filled && "text-muted-foreground")}
+              className={cn(
+                part,
+                "rounded-r-full pr-2 pl-1 phone:min-w-11 phone:justify-center",
+                !filled && "text-muted-foreground",
+              )}
             />
           }
         >
@@ -1676,9 +1681,12 @@ function DeliveryButton({
                         {lines[delivery]}
                       </span>
                     </span>
-                    <kbd className="pl-3 font-mono text-caption text-muted-foreground phone:hidden">
-                      {keys[delivery]}
-                    </kbd>
+                    {/* A way the turn can't take has no key: the one it would go by sends otherwise. */}
+                    {(delivery === "queue" || steerable) && (
+                      <kbd className="pl-3 font-mono text-caption text-muted-foreground phone:hidden">
+                        {keys[delivery]}
+                      </kbd>
+                    )}
                   </Menu.RadioItem>
                 ))}
               </Menu.RadioGroup>

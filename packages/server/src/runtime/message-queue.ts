@@ -10,6 +10,7 @@ import * as Exit from "effect/Exit";
 import {
   type Runtime,
   type Turn,
+  type StopClaim,
   makeTurnId,
   makeQueueItemId,
   locked,
@@ -948,6 +949,13 @@ export const makeMessageQueue = ({
  */
 const WAITING_ON_USER: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput"]);
 
+/**
+ * Input the user wrote themselves, as `authored` marks it: no other thread's (`origin`), no notice,
+ * not Gram's. An edit keeps who wrote an item, so an agent's text never becomes the user's.
+ */
+const usersOwnWord = (input: UserInput) =>
+  input.author === "user" && input.origin === undefined && input.notice === undefined;
+
 const waitingOnUser = (threadId: ThreadId, status: ThreadStatus) =>
   new InvalidState({
     message: "the turn is waiting on you; answer it, or queue the message",
@@ -974,8 +982,12 @@ export interface QueueMethodsDeps {
   readonly switchHold: MessageQueue["switchHold"];
   readonly pumpDeliveries: MessageQueue["pumpDeliveries"];
   readonly scheduleAccount: LimitResume["scheduleAccount"];
-  /** Stops the open turn, as the user's Stop does: an interrupt past a card goes this way. */
-  readonly interrupt: ThreadRuntimesShape["interrupt"];
+  /**
+   * The user's Stop in two halves (`thread-runtimes.ts`): claimed under the lock, so an interrupt
+   * past a card stops the very turn its message was queued behind, then run without it.
+   */
+  readonly claimStop: (rt: Runtime, turnId?: TurnId) => Effect.Effect<StopClaim | undefined>;
+  readonly runStop: (rt: Runtime, target: StopClaim) => Effect.Effect<void>;
   /**
    * Whether a machine is still paired (`WorkerHostsShape.paired`). A thread placed on one removed
    * for good keeps its queue, but the boot doesn't send it: the session can't open there, and each
@@ -1023,7 +1035,8 @@ export const makeQueueMethods = ({
   switchHold,
   pumpDeliveries,
   scheduleAccount,
-  interrupt,
+  claimStop,
+  runStop,
   paired = () => true,
 }: QueueMethodsDeps): Pick<
   ThreadRuntimesShape,
@@ -1156,15 +1169,27 @@ export const makeQueueMethods = ({
     withSession(threadId, (rt, session) => {
       const turn = rt.turn;
       const input = authored(typedInput(sent));
+      const stopping = (claim: StopClaim | undefined) => ({ rt, claim });
       // As a send is: the turn running there is being stopped, and would fail every tool it calls.
       return refuseMissingFolder(rt).pipe(
-        Effect.andThen((): Effect.Effect<"steered" | "stop", InvalidState> => {
+        Effect.andThen((): Effect.Effect<StopClaim | undefined, InvalidState> => {
           if (turn === undefined)
             return Effect.fail(
               new InvalidState({ message: "nothing to steer", threadId, status: rt.status }),
             );
           const interrupting = options?.interrupt === true;
-          if (interrupting && rt.capabilities?.steerInterrupt !== true)
+          if (WAITING_ON_USER.has(rt.status)) {
+            // Only the user's own word goes past a card, never another agent's or Gram's.
+            if (options?.pastCard !== true || !usersOwnWord(input))
+              return Effect.fail(waitingOnUser(threadId, rt.status));
+            // An interrupt past a card is a stop, which withdraws the card as Stop does, and the
+            // message goes first in the queue, sent once the turn has ended. Stop needs no
+            // interrupting steer, so it is the same for every agent, Codex's too.
+            if (interrupting)
+              return queueFirst({ switchHold, syncQueue }, rt, input).pipe(
+                Effect.andThen(claimStop(rt, turn.id)),
+              );
+          } else if (interrupting && rt.capabilities?.steerInterrupt !== true)
             return Effect.fail(
               new InvalidState({
                 message: "this agent can't be interrupted for input; stop it and send instead",
@@ -1172,15 +1197,6 @@ export const makeQueueMethods = ({
                 status: rt.status,
               }),
             );
-          if (WAITING_ON_USER.has(rt.status)) {
-            if (options?.pastCard !== true) return Effect.fail(waitingOnUser(threadId, rt.status));
-            // An interrupt past a card is a stop, which withdraws the card as Stop does, and the
-            // message goes first in the queue, sent once the turn has ended.
-            if (interrupting)
-              return queueFirst({ switchHold, syncQueue }, rt, input).pipe(
-                Effect.as("stop" as const),
-              );
-          }
           // A plain steer past a card waits in the agent for the tool call the card holds: it is
           // read with the card's answer, never before it (`WAITING_ON_USER`).
           return steerNow(
@@ -1192,7 +1208,7 @@ export const makeQueueMethods = ({
           ).pipe(
             Effect.flatMap((taken) =>
               taken
-                ? Effect.succeed("steered" as const)
+                ? Effect.succeed(undefined)
                 : Effect.fail(
                     new InvalidState({
                       message: "the agent couldn't take mid-turn input; send it instead",
@@ -1203,9 +1219,12 @@ export const makeQueueMethods = ({
             ),
           );
         }),
+        Effect.map(stopping),
       );
     }).pipe(
-      Effect.flatMap((done) => (done === "stop" ? interrupt(threadId) : Effect.void)),
+      // The stop was claimed with the message queued, under one lock, for the turn it was aimed
+      // at; the turn's own end, if it came first, is left be (`runStop`).
+      Effect.flatMap(({ rt, claim }) => (claim === undefined ? Effect.void : runStop(rt, claim))),
       Effect.tap(() => userTyped(threadId, sent)),
     ),
   editQueued: (threadId, itemId, input) =>
@@ -1281,7 +1300,19 @@ export const makeQueueMethods = ({
             yield* syncQueue(rt);
             return yield* drainQueue(rt);
           }
-          // Past a card it waits in the agent for the tool call the card holds (`WAITING_ON_USER`).
+          // Past a card it waits in the agent for the tool call the card holds (`WAITING_ON_USER`),
+          // and only the user's own words go: not another agent's, nor Gram's notice, whoever
+          // pressed Steer on it.
+          if (
+            WAITING_ON_USER.has(rt.status) &&
+            (!usersOwnWord(rt.queue[index]!.input) || rt.noticeKeys.has(itemId))
+          )
+            return yield* new InvalidState({
+              message:
+                "only your own message goes in past a card; this one waits for the turn to end",
+              threadId,
+              status: rt.status,
+            });
           if (session === undefined || turn === undefined || rt.capabilities?.steer !== true) {
             return yield* new InvalidState({
               message:

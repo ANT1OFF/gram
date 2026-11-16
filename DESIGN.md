@@ -280,7 +280,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     stays listed, greyed, its line saying why ("This agent can't take a message mid-turn…"), so
     an option never silently goes. Stop keeps the round button beside it, typed or not. At a card
     Steer says the agent reads it once the card is answered, and Interrupt that it stops the turn,
-    withdrawing the card, then sends.
+    withdrawing the card, then sends, for every agent (one with no interrupting steer, Codex, too).
+    Only the user's own words go past a card: a queued message another thread or Gram wrote keeps
+    its Steer greyed there, saying it waits for the turn to end.
 - **The Inbox is one dialog over the work**, the same list and keys in Quiet and out of it and at
   every window size. It never takes the side panel's column: the chat and the panel stay as they
   were under it, and opening an item's thread closes it.

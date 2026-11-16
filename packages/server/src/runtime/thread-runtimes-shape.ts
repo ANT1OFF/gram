@@ -242,7 +242,14 @@ export interface ThreadRuntimesShape {
   /** Takes every notice `sendNotice` queued under a key `drop` picks out of the queue. */
   dropNotices(threadId: ThreadId, drop: (key: string) => boolean): Effect.Effect<void>;
   /** Interrupts the running turn; after the watchdog, closes the session and resumes it. */
-  interrupt(threadId: ThreadId): Effect.Effect<void, ThreadNotFound>;
+  interrupt(
+    threadId: ThreadId,
+    /**
+     * Stops only this turn: once it has ended, a later turn (the one a queued message started,
+     * say) is left running, and so are background agents.
+     */
+    options?: { readonly turnId?: TurnId },
+  ): Effect.Effect<void, ThreadNotFound>;
   /**
    * Asks the open turn to stop at its next tool boundary, never interrupting it: the session's
    * tool gate closes, so every call from now on is refused with `PAUSE_STOP_TEXT` (with no gate the

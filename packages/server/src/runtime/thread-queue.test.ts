@@ -10,13 +10,16 @@ import {
   type ServerEvent,
   type ThreadId,
 } from "@gram/contracts";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { FakeAgentControl } from "./fake-agent.ts";
-import { RuntimeTestLayer, waitFor } from "./test-harness.ts";
+import { AgentHosts } from "./agent-hosts.ts";
+import { FAKE_CAPABILITIES, FakeAgentAdapter, FakeAgentControl } from "./fake-agent.ts";
+import { makeRuntimeTestLayer, RuntimeTestLayer, waitFor } from "./test-harness.ts";
 import { ThreadRuntimes, type JoinQueued } from "./thread-runtimes.ts";
 
 /** An input another thread sent, as `send_message` makes one. */
@@ -809,10 +812,12 @@ describe("ThreadRuntimes queue", () => {
         "the identity event",
         Effect.sync(() => events.some((e) => e.type === "thread.identity")),
       );
+      // With what its agent can do: a thread created after a window subscribed has no snapshot of it.
       expect(events).toContainEqual({
         type: "thread.identity",
         threadId: thread.id,
         identity: { model: "fake", commands: [] },
+        capabilities: FAKE_CAPABILITIES,
       });
       const [summary] = yield* runtimes.snapshot;
       expect(summary?.identity).toEqual({ model: "fake", commands: [] });
@@ -855,6 +860,26 @@ describe("ThreadRuntimes queue", () => {
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 });
+
+/** The fake agent as Codex reports itself: it steers, but has no interrupting steer. */
+const noInterruptingSteer = Layer.effectContext(
+  Effect.gen(function* () {
+    const hosts = yield* AgentHosts;
+    const control = yield* FakeAgentControl;
+    return Context.make(
+      AgentHosts,
+      AgentHosts.of({
+        get: (kind) =>
+          hosts.get(kind).pipe(
+            Effect.map((host) => ({
+              ...host,
+              capabilities: { ...host.capabilities, steerInterrupt: false },
+            })),
+          ),
+      }),
+    ).pipe(Context.add(FakeAgentControl, control));
+  }),
+).pipe(Layer.provide(FakeAgentAdapter));
 
 describe("ThreadRuntimes into a turn waiting on the user", () => {
   const atCard = Effect.gen(function* () {
@@ -910,13 +935,45 @@ describe("ThreadRuntimes into a turn waiting on the user", () => {
 
         const ci = yield* runtimes.sendNotice(thread.id, "ci:o/r#7", { text: "CI passed" });
         expect(ci).toEqual({ queued: true, steered: false, replaced: false });
+        // So is another agent's text given as the user's, and anything queued that isn't theirs,
+        // even when the user presses its Steer: only their own words cross a card.
+        const fromAgent = {
+          text: "From the orchestrator",
+          origin: {
+            threadId: "t-orch" as ThreadId,
+            title: "Orchestrator",
+            depth: 1,
+            role: "orchestrator" as const,
+            mode: "queue" as const,
+          },
+        };
+        const posing = yield* runtimes
+          .steer(thread.id, fromAgent, { pastCard: true })
+          .pipe(Effect.flip);
+        expect(posing).toMatchObject({ _tag: "InvalidState" });
+        yield* runtimes.send(thread.id, fromAgent);
         yield* runtimes.send(thread.id, { text: "mine" });
         const [summary] = yield* runtimes.snapshot;
+        for (const text of ["CI passed", "From the orchestrator"]) {
+          const item = summary!.queue.find((q) => q.input.text.includes(text))!;
+          expect(yield* runtimes.steerQueued(thread.id, item.id).pipe(Effect.flip)).toMatchObject({
+            _tag: "InvalidState",
+            message:
+              "only your own message goes in past a card; this one waits for the turn to end",
+          });
+        }
+        expect(session.steered.map((i) => i.text)).toEqual(["and then the docs"]);
         const mine = summary!.queue.find((q) => q.input.text === "mine")!;
         yield* runtimes.steerQueued(thread.id, mine.id);
         expect(session.steered.map((i) => i.text)).toEqual(["and then the docs", "mine"]);
         const [after] = yield* runtimes.snapshot;
-        expect(after!.queue.map((q) => q.input.text)).toEqual(["CI passed"]);
+        expect(after!.queue.map((q) => q.input.text)).toEqual([
+          "CI passed",
+          expect.stringContaining("From the orchestrator"),
+        ]);
+
+        expect(session.responses).toEqual([]);
+        expect(yield* runtimes.status(thread.id)).toBe("needsApproval");
 
         // Once it ends, the notice goes, once.
         yield* session.completeTurn();
@@ -952,5 +1009,104 @@ describe("ThreadRuntimes into a turn waiting on the user", () => {
         const [summary] = yield* runtimes.snapshot;
         expect(summary!.queue.map((q) => q.input.text)).toEqual(["queued earlier"]);
       }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect(
+    "interrupts past a card on an agent with no interrupting steer (Codex) by stopping, then sending",
+    () =>
+      Effect.gen(function* () {
+        const { runtimes, thread, session } = yield* atCard;
+        yield* runtimes.steer(
+          thread.id,
+          { text: "Cancel and do this" },
+          { interrupt: true, pastCard: true },
+        );
+        expect(session.interrupts).toBe(1);
+        expect(session.steered).toEqual([]);
+        yield* waitFor(
+          "the message",
+          Effect.sync(() => session.sent.length === 2),
+        );
+        expect(session.sent.map((i) => i.text)).toEqual(["one", "Cancel and do this"]);
+        // Running, the same agent still refuses an interrupting steer: it has none.
+        const refused = yield* runtimes
+          .steer(thread.id, { text: "now" }, { interrupt: true, pastCard: true })
+          .pipe(Effect.flip);
+        expect(refused).toMatchObject({
+          message: "this agent can't be interrupted for input; stop it and send instead",
+        });
+      }).pipe(
+        Effect.provide(makeRuntimeTestLayer(undefined, undefined, undefined, noInterruptingSteer)),
+      ),
+  );
+
+  it.effect(
+    "leaves the next turn running when the card's turn ends as an interrupt past it queues",
+    () => {
+      // The card is answered and its turn ends just as the interrupt's message is queued: that
+      // message then starts the next turn, which the interrupt, aimed at the old turn, must spare.
+      let finishOld: Effect.Effect<void> = Effect.void;
+      let fired = false;
+      const store = Layer.effect(
+        ThreadStore,
+        Effect.gen(function* () {
+          const base = yield* ThreadStore;
+          return ThreadStore.of({
+            ...base,
+            putQueue: (id, queue) =>
+              base.putQueue(id, queue).pipe(
+                Effect.andThen(() => {
+                  if (fired || !queue.some((q) => q.input.text === "Interrupt race"))
+                    return Effect.void;
+                  fired = true;
+                  return finishOld.pipe(
+                    Effect.andThen(
+                      Effect.forEach(Array.from({ length: 20 }), () => Effect.yieldNow, {
+                        discard: true,
+                      }),
+                    ),
+                  );
+                }),
+              ),
+          });
+        }),
+      ).pipe(Layer.provideMerge(ThreadStore.layerSqlite(":memory:")));
+      return Effect.gen(function* () {
+        const { runtimes, thread, session } = yield* atCard;
+        const scope = yield* Effect.scope;
+        finishOld = Effect.forkIn(
+          runtimes
+            .respond(thread.id, "req-1" as RequestId, {
+              kind: "approval",
+              decision: "deny",
+              scope: "once",
+            })
+            .pipe(Effect.andThen(session.completeTurn()), Effect.ignore),
+          scope,
+        ).pipe(Effect.asVoid);
+        yield* runtimes.steer(
+          thread.id,
+          { text: "Interrupt race" },
+          { pastCard: true, interrupt: true },
+        );
+        yield* waitFor(
+          "the message's turn",
+          Effect.sync(() => session.sent.length >= 2),
+        );
+        expect({
+          interrupts: session.interrupts,
+          sent: session.sent.map((i) => i.text),
+          status: yield* runtimes.status(thread.id),
+        }).toEqual({
+          // The stop was claimed with the message, so the card was withdrawn and the old turn
+          // stopped; never the new one.
+          interrupts: 1,
+          sent: ["one", "Interrupt race"],
+          status: "running",
+        });
+      }).pipe(
+        Effect.provide(makeRuntimeTestLayer(undefined, undefined, undefined, undefined, store)),
+      );
+    },
   );
 });

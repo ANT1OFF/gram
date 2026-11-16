@@ -60,9 +60,15 @@ test("steers one queued message into the running turn and keeps the rest queued"
   await expect(items.nth(0)).toContainText("first, for later");
   await expect(items.nth(1)).toContainText("Background: the API is v2.");
 
-  // The held turn takes the steer as soon as it moves on. Nothing holds the turns after it, so the
-  // queue's being kept shows in the order they all arrive in, not in a count caught on the way.
+  // The held turn takes the steer as soon as it moves on, cancelling nothing: it goes on to its
+  // approval card, and what is queued waits for the turn's end. Nothing holds the turns after it,
+  // so the queue's being kept shows in the order they all arrive in, not in a count caught on the
+  // way.
   await page.evaluate(() => window.gramMock?.release("flaky-read"));
+  await expect(
+    page.getByTestId("message-user").filter({ hasText: /^second, needed now/ }),
+  ).toBeVisible();
+  await page.getByTestId("approval-allow").click();
   const sent = page
     .getByTestId("message-user")
     .filter({ hasText: /^(second, needed now|first, for later|Background: the API is v2\.)/ });

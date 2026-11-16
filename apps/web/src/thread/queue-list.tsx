@@ -73,6 +73,51 @@ export const steerBlocked = (
   return "No turn is running to steer into";
 };
 
+/**
+ * Why this queued message can't go in past the card the turn waits on, or `undefined`: only the
+ * user's own words do, never another thread's or Gram's notice, as the server holds it.
+ */
+export const pastCardBlocked = (
+  status: ThreadStatus | undefined,
+  input: QueuedInput["input"],
+): string | undefined => {
+  if (status === undefined || !AT_CARD.has(status)) return undefined;
+  if (input.author === "user" && input.origin === undefined && input.notice === undefined)
+    return undefined;
+  return "Only your own message goes in past a card: this one waits for the turn to end";
+};
+
+/** A queued message's Steer: enabled, or greyed with why in its hint and name. */
+function QueueSteer({
+  blocked,
+  sendLabel,
+  onSteer,
+}: {
+  blocked: string | undefined;
+  sendLabel: string;
+  onSteer: () => void;
+}) {
+  return (
+    <Hint
+      label={blocked ?? sendLabel}
+      render={
+        <Button
+          size="icon-xs"
+          variant="ghost"
+          data-testid="queue-steer"
+          aria-label={blocked === undefined ? sendLabel : `Steer now (${blocked})`}
+          disabled={blocked !== undefined}
+          focusableWhenDisabled
+          className={cn(blocked !== undefined && "opacity-50")}
+          onClick={onSteer}
+        />
+      }
+    >
+      <Send />
+    </Hint>
+  );
+}
+
 /** Why another thread's message sits in the queue, as the card's byline puts it. */
 const queuedBecause = (origin: MessageOrigin): string | undefined =>
   origin.mode === "queue"
@@ -190,7 +235,8 @@ export function QueueList({ threadId }: { threadId: ThreadId }) {
     const summary = s.byId[threadId];
     return steerBlocked(summary?.status, summary?.capabilities?.steer, summary?.thread.model.agent);
   });
-  const sendLabel = useThreadsStore((s) => queueSendLabel(s.byId[threadId]?.status));
+  const status = useThreadsStore((s) => s.byId[threadId]?.status);
+  const sendLabel = queueSendLabel(status);
   const [editing, setEditing] = useState<{ id: string; text: string }>();
 
   const getState = useThreadsStore.getState;
@@ -276,27 +322,13 @@ export function QueueList({ threadId }: { threadId: ThreadId }) {
                             </div>
                             <div className="flex shrink-0 flex-wrap items-center justify-end">
                               {!held && (
-                                <Hint
-                                  label={blocked ?? sendLabel}
-                                  render={
-                                    <Button
-                                      size="icon-xs"
-                                      variant="ghost"
-                                      data-testid="queue-steer"
-                                      aria-label={
-                                        blocked === undefined ? sendLabel : `Steer now (${blocked})`
-                                      }
-                                      disabled={blocked !== undefined}
-                                      focusableWhenDisabled
-                                      className={cn(blocked !== undefined && "opacity-50")}
-                                      onClick={() =>
-                                        run(queueOps.steer(api, getState, threadId, item.id))
-                                      }
-                                    />
+                                <QueueSteer
+                                  blocked={blocked ?? pastCardBlocked(status, item.input)}
+                                  sendLabel={sendLabel}
+                                  onSteer={() =>
+                                    run(queueOps.steer(api, getState, threadId, item.id))
                                   }
-                                >
-                                  <Send />
-                                </Hint>
+                                />
                               )}
                               <Hint
                                 label="Move up"

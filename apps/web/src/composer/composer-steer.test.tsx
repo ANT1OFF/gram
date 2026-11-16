@@ -241,11 +241,11 @@ describe("Composer steer", () => {
     const { textarea } = setup();
     fireEvent.change(textarea, { target: { value: "" } });
     expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+    // Nothing typed: the face says the way in and puts the caret in the field, sending nothing.
     const empty = screen.getByRole("button", { name: "Steer" });
-    expect(empty.getAttribute("aria-disabled")).toBe("true");
+    expect(empty.hasAttribute("disabled")).toBe(false);
     expect(screen.getByTestId("delivery-button").hasAttribute("data-filled")).toBe(false);
     fireEvent.change(textarea, { target: { value: "use vitest" } });
-    expect(screen.getByRole("button", { name: "Steer" }).hasAttribute("aria-disabled")).toBe(false);
     expect(screen.getByTestId("delivery-button").hasAttribute("data-filled")).toBe(true);
     // One send control: no second Steer or Queue button, and Stop stays.
     expect(screen.getAllByRole("button", { name: /^(Steer|Queue|Interrupt)$/ })).toHaveLength(1);
@@ -391,6 +391,21 @@ describe("Composer steer", () => {
       expect(await screen.findByText("Stopping the turn, then sending…")).toBeTruthy();
     },
   );
+
+  it("interrupts at a card on an agent with no interrupting steer, as a stop then the message", async () => {
+    const { steer, textarea } = setup({ status: "needsApproval", interrupts: false });
+    fireEvent.click(screen.getByTestId("delivery-menu"));
+    const interrupt = await screen.findByTestId("delivery-interrupt");
+    expect(interrupt.hasAttribute("data-disabled")).toBe(false);
+    expect(interrupt.textContent).toContain("Stops the turn, withdrawing the card, then sends");
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    fireEvent.change(textarea, { target: { value: "wrong branch" } });
+    fireEvent.keyDown(textarea, { key: ".", code: "Period", ctrlKey: true });
+    await waitFor(() =>
+      expect(steer).toHaveBeenCalledWith(THREAD, { text: "wrong branch" }, { interrupt: true }),
+    );
+    expect(await screen.findByText("Stopping the turn, then sending…")).toBeTruthy();
+  });
 
   it("steers an interrupt into an agent that can't stop for a message, and says so", async () => {
     const { steer, textarea } = setup({ interrupts: false });

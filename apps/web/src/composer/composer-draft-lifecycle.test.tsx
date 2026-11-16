@@ -129,9 +129,7 @@ describe("composer draft lifetime", () => {
     stash();
     stash();
     // The composer is empty now, so the button no longer offers to send the captured draft.
-    expect(screen.getByRole("button", { name: /^Steer$/ }).getAttribute("aria-disabled")).toBe(
-      "true",
-    );
+    expect(screen.getByTestId("delivery-button").hasAttribute("data-filled")).toBe(false);
     await s.finishStash();
     expect(s.stashDraft).toHaveBeenCalledTimes(1);
     expect(s.send).not.toHaveBeenCalled();

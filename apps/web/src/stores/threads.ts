@@ -232,7 +232,12 @@ export const createThreadsSlice = (
         return;
       case "thread.identity":
         set((s) => ({
-          byId: patch(s.byId, event.threadId, (t) => ({ ...t, identity: event.identity })),
+          byId: patch(s.byId, event.threadId, (t) => ({
+            ...t,
+            identity: event.identity,
+            // A thread first seen after the snapshot learns what its agent can do here.
+            ...(event.capabilities === undefined ? {} : { capabilities: event.capabilities }),
+          })),
         }));
         return;
       case "thread.usage":

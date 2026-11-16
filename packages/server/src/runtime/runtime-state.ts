@@ -90,6 +90,14 @@ export const openLane = (rt: Runtime, toolCallId: string) =>
     (inFlight) => inFlight.parentToolUseId === toolCallId && !inFlight.finished,
   );
 
+/**
+ * A stop claimed under the runtime's lock (`claimStop` in `thread-runtimes.ts`): the open turn's,
+ * or between turns the background agents'. `runStop` carries it out once the lock is let go.
+ */
+export type StopClaim =
+  | { readonly background: AgentSession }
+  | { readonly session: AgentSession; readonly turn: Turn };
+
 export interface Turn {
   readonly id: TurnId;
   /** Epoch ms it opened: only a turn opened after an account's limit says it lifted. */
