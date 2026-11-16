@@ -231,15 +231,18 @@ export function UpdateRun({
   parts,
   renderMerged,
   renderReply,
+  endWord,
 }: {
   parts: readonly RunPart[];
   renderMerged: (feature: string) => ReactNode;
   renderReply?: ((reply: GramUIMessage) => ReactNode) | undefined;
+  /** A finished feature's word, `delivered` when nothing of it merged (`endWordOf`). */
+  endWord?: ((feature: string) => "merged" | "delivered") | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const [everOpened, setOpened] = useState(false);
   const bodyId = useId();
-  const words = runWords(parts);
+  const words = runWords(parts, undefined, endWord);
   const said = words.counts.map((count) => count.text);
   if (words.digest !== undefined) said.push(words.digest);
   // Merged lines alone need no heading: "6 merged" says it.

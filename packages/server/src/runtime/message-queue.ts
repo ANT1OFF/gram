@@ -32,6 +32,8 @@ import {
   type AgentUnavailable,
   type Thread,
   type ThreadStatus,
+  effectiveCheckout,
+  hostOf,
 } from "@gram/contracts";
 import {
   typedText,
@@ -989,6 +991,7 @@ export const makeQueueMethods = ({
 }: QueueMethodsDeps): Pick<
   ThreadRuntimesShape,
   | "sendQueuedAtBoot"
+  | "sendQueuedOn"
   | "sendOrJoin"
   | "sendNotice"
   | "dropNotices"
@@ -1038,6 +1041,32 @@ export const makeQueueMethods = ({
       );
     }
   }),
+  sendQueuedOn: (hostId) =>
+    Effect.gen(function* () {
+      // A send to a thread whose machine was offline failed and left its message queued, with
+      // nothing to send it once the machine is back: `drainQueue` waits for the folder, and nothing
+      // told it the folder came back. Its machine joining does.
+      const threads = yield* store.listThreads;
+      for (const thread of threads) {
+        if (thread.parked) continue;
+        if (hostOf(thread.checkout) !== hostId && hostOf(effectiveCheckout(thread)) !== hostId)
+          continue;
+        const live = runtimes.get(thread.id);
+        const waiting =
+          live === undefined
+            ? (yield* store.listQueue(thread.id)).length > 0
+            : live.queue.length > 0 || live.launch !== undefined;
+        if (!waiting) continue;
+        yield* (live === undefined ? getRuntime(thread.id) : Effect.succeed(live)).pipe(
+          Effect.flatMap((rt) => locked(rt, drainQueue(rt))),
+          Effect.catchCause((cause) =>
+            Effect.logWarning("couldn't send what waited for its machine").pipe(
+              Effect.annotateLogs({ threadId: thread.id, hostId, cause: Cause.pretty(cause) }),
+            ),
+          ),
+        );
+      }
+    }),
   sendOrJoin: (threadId, input, join, joinsWith) =>
     sendInput(threadId, input, join, undefined, joinsWith).pipe(
       Effect.tap(() => userTyped(threadId, input)),

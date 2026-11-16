@@ -8,6 +8,7 @@ import {
   isWorkerMachineName,
   overTotalWords,
   parseOverTotal,
+  resolveWorkerPicks,
   startWorkerMachine,
   workerMachineName,
   placementOf,
@@ -193,6 +194,76 @@ describe("placementOf", () => {
     expect(placementOf("w-ab12", { shareWith: "t-1" })).toEqual({
       machine: "w-ab12",
       shared: true,
+    });
+  });
+});
+
+describe("resolveWorkerPicks", () => {
+  const offered = [
+    {
+      id: "size",
+      label: "Size",
+      default: "small",
+      options: [
+        { id: "small", label: "Small", short: "S", available: true },
+        { id: "large", label: "Large", short: "L", available: false },
+      ],
+    },
+    {
+      id: "isolation",
+      label: "Kind",
+      default: "vm",
+      options: [
+        { id: "vm", label: "Virtual machine", short: "VM", available: true },
+        { id: "container", label: "Shared container", short: "Container", available: true },
+      ],
+    },
+    {
+      id: "environment",
+      label: "Environment",
+      default: "workspace",
+      options: [
+        { id: "workspace", label: "The workspace's", available: true },
+        { id: "4d3e38fb-a85c-4ef3-861e-176ff82c0dbf", label: "No Internet", available: true },
+        { id: "1585b998-71d0-4dcb-b922-e420f0e74f5c", label: "Trusted", available: true },
+      ],
+    },
+  ];
+
+  it("takes an option's id, label or short label, case and punctuation aside", () => {
+    expect(
+      resolveWorkerPicks(offered, {
+        size: "S",
+        isolation: "shared container",
+        environment: "No Internet",
+      }),
+    ).toEqual({
+      picks: {
+        size: "small",
+        isolation: "container",
+        environment: "4d3e38fb-a85c-4ef3-861e-176ff82c0dbf",
+      },
+    });
+    expect(
+      resolveWorkerPicks(offered, { environment: "1585b998-71d0-4dcb-b922-e420f0e74f5c" }),
+    ).toEqual({ picks: { environment: "1585b998-71d0-4dcb-b922-e420f0e74f5c" } });
+  });
+
+  it("leaves a limit the person's own machine has to the provider", () => {
+    expect(resolveWorkerPicks(offered, { size: "large" })).toEqual({ picks: { size: "large" } });
+  });
+
+  it("refuses a pick not offered with the options that are", () => {
+    const answer = resolveWorkerPicks(offered, { environment: "Offline" });
+    expect(answer).toHaveProperty("refused");
+    const refused = (answer as { refused: string }).refused;
+    expect(refused).toContain("Environment: Offline isn't offered here");
+    expect(refused).toContain("No Internet (4d3e38fb-a85c-4ef3-861e-176ff82c0dbf)");
+  });
+
+  it("passes picks through as written when the provider offers no choice for them", () => {
+    expect(resolveWorkerPicks(undefined, { architecture: "arm64" })).toEqual({
+      picks: { architecture: "arm64" },
     });
   });
 });

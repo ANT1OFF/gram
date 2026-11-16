@@ -339,15 +339,32 @@ export function FeatureCardView({
 }
 
 /**
- * A merged feature, flat: one line of quiet meta like the stream's other quiet lines, with no box,
+ * What a worker at the last station did: `merged` when a PR of its merged or the ledger says so,
+ * else `delivered` (finished where no PR could be opened, or archived before one merged).
+ */
+export const workerEndWord = (
+  worker: Pick<FeatureCardWorker, "state" | "prs">,
+): "merged" | "delivered" =>
+  worker.state === "merged" || worker.prs.some((pr) => pr.state === "merged")
+    ? "merged"
+    : "delivered";
+
+/** A finished feature's word: `merged` when any of its workers merged, else `delivered`. */
+export const endWordOf = (card: Pick<FeatureCard, "workers">): "merged" | "delivered" =>
+  card.workers.some((worker) => workerEndWord(worker) === "merged") ? "merged" : "delivered";
+
+/**
+ * A finished feature, flat (merged, or delivered where nothing merged): one line of quiet meta like the stream's other quiet lines, with no box,
  * "history-sort · Stable sort in History merged gram#141". Its PR chip carries the merged glyph,
  * the line's one coloured mark; the name still opens the feature's sheet.
  */
 function MergedFeatureLine({ card }: { card: FeatureCard }) {
+  // The last station holds delivered work too (`stationOf`): say merged only when something merged.
+  const word = endWordOf(card);
   return (
     <div
       role="group"
-      aria-label={`Feature ${card.feature}, merged`}
+      aria-label={`Feature ${card.feature}, ${word}`}
       data-testid="feature-card"
       data-flat="true"
       data-feature={card.feature}
@@ -372,13 +389,13 @@ function MergedFeatureLine({ card }: { card: FeatureCard }) {
         >
           <span aria-hidden>·</span>
           <WorkerLink threadId={worker.threadId}>{worker.title}</WorkerLink>
-          {worker.prs.length > 0 && <span>merged</span>}
+          {worker.prs.length > 0 && <span>{workerEndWord(worker)}</span>}
           {worker.prs.map((pr) => (
             <PrChip key={`${pr.repo}#${pr.number}`} pr={pr} threadId={worker.threadId} />
           ))}
         </span>
       ))}
-      {card.workers.every((worker) => worker.prs.length === 0) && <span>merged</span>}
+      {card.workers.every((worker) => worker.prs.length === 0) && <span>{word}</span>}
     </div>
   );
 }

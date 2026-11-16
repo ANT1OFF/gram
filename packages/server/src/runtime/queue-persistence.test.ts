@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { fenceThreadMessage, type ThreadId } from "@gram/contracts";
+import { fenceThreadMessage, hostOf, type HostId, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
@@ -178,6 +178,49 @@ describe("queue persistence", () => {
         expect(byId.get(cut)?.queue).toEqual([]);
         expect(byId.get(archived)?.queue.map((q) => q.input.text)).toEqual(["archived queued"]);
         expect(byId.get(archived)?.status).toBe("cold");
+      }).pipe(Effect.provide(layerAt(file)));
+    }),
+  );
+
+  it.effect("sends what waited queued when the thread's machine comes online, not another's", () =>
+    Effect.gen(function* () {
+      const dir = mkdtempSync(join(tmpdir(), "gram-queue-"));
+      yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+      const file = join(dir, "gram.db");
+
+      const threadId = yield* Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const fake = yield* FakeAgentControl;
+        const thread = yield* runtimes.create({
+          projectRoot: "/work/repo",
+          checkout: { kind: "main", path: "/work/repo" },
+          input: { text: "one" },
+        });
+        yield* waitFor(
+          "the first send",
+          fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1)),
+        );
+        yield* runtimes.send(thread.id, { text: "waited", origin });
+        return thread.id;
+      }).pipe(Effect.provide(layerAt(file)));
+
+      yield* Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const fake = yield* FakeAgentControl;
+        // Another machine joining leaves it queued.
+        yield* runtimes.sendQueuedOn("another-machine" as HostId);
+        const [before] = yield* runtimes.snapshot;
+        expect(before?.queue.map((q) => q.input.text)).toEqual(["waited"]);
+        expect(before?.status).toBe("cold");
+
+        yield* runtimes.sendQueuedOn(hostOf({}));
+        const session = yield* waitFor(
+          "the send once its machine is back",
+          fake.latest(threadId).pipe(Effect.map((s) => s.sent.length === 1 && s)),
+        );
+        expect(session.sent.map((i) => i.text)).toEqual([fenceThreadMessage(origin, "waited")]);
+        const [after] = yield* runtimes.snapshot;
+        expect(after?.queue).toEqual([]);
       }).pipe(Effect.provide(layerAt(file)));
     }),
   );
