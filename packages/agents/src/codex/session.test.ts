@@ -1569,6 +1569,18 @@ describe("CodexHost confined sessions", () => {
       }),
   );
 
+  it.effect("refuses an untrusted tree before acquiring the child", () =>
+    Effect.gen(function* () {
+      const h = harness();
+      const error = yield* Effect.flip(
+        openSession({ untrustedTree: true }).pipe(Effect.provide(h.layer)),
+      );
+      expect(error).toMatchObject({ _tag: "AgentUnavailable", reason: "startup-failed" });
+      expect(error.message).toContain("fork's pull request");
+      expect(h.calls).toEqual([]);
+    }),
+  );
+
   it.effect("requires a bounded bridge for guided Dream before acquiring the child", () =>
     Effect.gen(function* () {
       const h = harness();

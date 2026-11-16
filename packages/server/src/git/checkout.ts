@@ -14,6 +14,7 @@ import {
   Proc,
   samePath,
   worktreeCleanliness,
+  worktreeTrust,
   Worktrees,
   type RestoredWorktree,
 } from "@gram/git";
@@ -101,6 +102,7 @@ export const GitCheckoutLive = Layer.effect(
                 branch: request.branch,
                 ...(request.base === undefined ? {} : { base: request.base }),
                 openCheckouts,
+                trust: request.trust ?? "trusted",
               })
               .pipe(
                 Effect.catch(
@@ -138,10 +140,15 @@ export const GitCheckoutLive = Layer.effect(
               });
             }
             const branch = entry.branch === undefined ? {} : { branch: entry.branch };
+            // A worktree made untrusted (a fork's PR head) stays so for every thread opened on it.
+            const trust =
+              !entry.isMain && (yield* provide(worktreeTrust(entry.path))) === "untrusted"
+                ? { trust: "untrusted" as const }
+                : {};
             return (
               entry.isMain
                 ? { kind: "main", path: entry.path, ...branch }
-                : { kind: "worktree", path: entry.path, ...branch, repoRoot: main.path }
+                : { kind: "worktree", path: entry.path, ...branch, repoRoot: main.path, ...trust }
             ) satisfies Checkout;
           }
         }
@@ -296,6 +303,7 @@ export const GitCheckoutLive = Layer.effect(
             branch: checkout.branch,
             fromPr,
             openCheckouts: others,
+            trust: checkout.trust ?? thread.checkout.trust ?? "trusted",
           })
           .pipe(
             Effect.catch((error): Effect.Effect<never, GitError | InvalidState | CheckoutInUse> =>

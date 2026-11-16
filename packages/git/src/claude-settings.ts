@@ -84,6 +84,17 @@ const extract = (settings: JsonObject): Buckets => {
   return { allow: list("allow"), deny: list("deny"), ask: list("ask") };
 };
 
+/** The permission lists of a parsed settings value; none when it isn't a settings object. */
+export const extractRules = (value: unknown): Buckets =>
+  isObject(value) ? extract(value) : emptyBuckets;
+
+/** `rules` with every entry of `minus` taken out of the same bucket. */
+export const withoutRules = (rules: Buckets, minus: Buckets): Buckets => ({
+  allow: rules.allow.filter((rule) => !minus.allow.includes(rule)),
+  deny: rules.deny.filter((rule) => !minus.deny.includes(rule)),
+  ask: rules.ask.filter((rule) => !minus.ask.includes(rule)),
+});
+
 export const readPermissionRules = (dir: string): Buckets => {
   const settings = readSettings(dir);
   return settings ? extract(settings) : emptyBuckets;

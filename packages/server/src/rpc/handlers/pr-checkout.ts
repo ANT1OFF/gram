@@ -30,8 +30,14 @@ export const prCheckoutHandlers = Effect.gen(function* () {
         const head = yield* provide(prHead(top, number, repo)).pipe(Effect.mapError(toGitError));
         const branch = yield* provide(fetchPrHead(top, head)).pipe(Effect.mapError(toGitError));
         const open = heldCheckoutPaths(yield* store.listThreads, LOCAL_HOST_ID);
+        // A head from another repository is its author's tree, not the user's: nothing of the main
+        // checkout's goes into it, and its agent loads none of its settings.
         const checkout = yield* checkouts
-          .prepare({ kind: "newWorktree", branch }, open, root)
+          .prepare(
+            { kind: "newWorktree", branch, ...(head.fork ? { trust: "untrusted" as const } : {}) },
+            open,
+            root,
+          )
           .pipe(
             Effect.catchTag("WorktreeDirty", (e) =>
               Effect.fail(new InvalidState({ message: `${e.path} has uncommitted changes` })),

@@ -18,6 +18,7 @@ import { FsSearchResult } from "../fs-search.ts";
 import {
   AgentKind,
   Checkout,
+  CheckoutTrust,
   ModelRef,
   PermissionMode,
   ReasoningVariant,
@@ -1075,6 +1076,8 @@ export const HostRpcs = RpcGroup.make(
       branch: Schema.optionalKey(Schema.String),
       base: Schema.optionalKey(Schema.String),
       openCheckouts,
+      /** `untrusted`: nothing of the main checkout's is copied in; absent is `trusted`. */
+      trust: Schema.optionalKey(CheckoutTrust),
     },
     success: HostCreatedWorktree,
     error: worktreeErrors,
@@ -1098,6 +1101,8 @@ export const HostRpcs = RpcGroup.make(
       branch: Schema.String,
       fromPr: Schema.optionalKey(Schema.Int),
       openCheckouts,
+      /** As `host.worktrees.create`'s. */
+      trust: Schema.optionalKey(CheckoutTrust),
     },
     success: HostRestoredWorktree,
     error: worktreeErrors,

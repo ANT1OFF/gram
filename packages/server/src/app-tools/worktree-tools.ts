@@ -1,4 +1,4 @@
-import { AppToolError, LOCAL_HOST_ID } from "@gram/contracts";
+import { AppToolError, isUntrustedCheckout, LOCAL_HOST_ID } from "@gram/contracts";
 import { samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -41,9 +41,16 @@ export const moveToWorktreeTool = (
           (yield* store.listThreads).filter((t) => t.id !== threadId),
           LOCAL_HOST_ID,
         );
+        // An agent working on someone else's tree takes that trust with it: the worktree it moves
+        // to is furnished with nothing of the main checkout's, and its settings stay unloaded.
         const checkout = yield* checkouts
           .prepare(
-            { kind: "newWorktree", branch, ...(base === undefined ? {} : { base }) },
+            {
+              kind: "newWorktree",
+              branch,
+              ...(base === undefined ? {} : { base }),
+              ...(isUntrustedCheckout(thread.checkout) ? { trust: "untrusted" as const } : {}),
+            },
             others,
             thread.checkout.repoRoot ?? project.root,
           )

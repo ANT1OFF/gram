@@ -65,7 +65,13 @@ describe("joined clone base creation", () => {
       yield* Deferred.await(entered);
       const create = yield* Effect.forkScoped(
         cloneWorktrees(proc, worktrees())
-          .create({ repoPath: path, branch: "feat/new", base: "origin/main", openCheckouts: [] })
+          .create({
+            repoPath: path,
+            branch: "feat/new",
+            base: "origin/main",
+            openCheckouts: [],
+            trust: "trusted",
+          })
           .pipe(Effect.ensuring(Deferred.succeed(created, undefined))),
       );
       yield* Effect.yieldNow;
@@ -94,7 +100,13 @@ describe("joined clone base creation", () => {
         worktrees((base) => {
           passed = base;
         }),
-      ).create({ repoPath: dir, branch: "feat/new", base: "origin/main", openCheckouts: [] });
+      ).create({
+        repoPath: dir,
+        branch: "feat/new",
+        base: "origin/main",
+        openCheckouts: [],
+        trust: "trusted",
+      });
       expect(passed).toBe(OID);
       expect(made.checkout.base).toBe("origin/main");
     }).pipe(Effect.scoped),
@@ -117,7 +129,13 @@ describe("joined clone base creation", () => {
           ),
       };
       const error = yield* cloneWorktrees(proc, worktrees())
-        .create({ repoPath: dir, branch: "feat/new", base: "origin/main", openCheckouts: [] })
+        .create({
+          repoPath: dir,
+          branch: "feat/new",
+          base: "origin/main",
+          openCheckouts: [],
+          trust: "trusted",
+        })
         .pipe(Effect.flip);
       expect(error.reason).toBe("failed");
       expect(error.message).toContain("Couldn't fetch base");

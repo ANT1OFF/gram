@@ -74,13 +74,16 @@ export const machineAwayEnded = (machine: string): AgentEvent => ({
  * Whether a session can open in the host process. What can't cross as data keeps it in the server:
  * a gateway profile (its keys live here), Codex (its homes and shared servers live here), a
  * workspace switch or a wait for a previous child (their proof is the server's own child), a dream
- * (its file bridge is in-process), and app tools with no MCP endpoint to reach them over.
+ * (its file bridge is in-process), app tools with no MCP endpoint to reach them over, and an
+ * untrusted tree (a joined machine's host may predate the option that keeps its settings out).
  */
 export const opensOnHost = (agent: AgentKind, options: OpenSessionOptions): boolean =>
   agent === "claude" && options.waitForPreviousSession === undefined && crossesAsData(options);
 
 /** What both kinds of host need of a session's options: nothing that only the server holds. */
 const crossesAsData = (options: OpenSessionOptions): boolean =>
+  // A host from before `untrustedTree` would open on the tree's own settings: kept here.
+  options.untrustedTree !== true &&
   options.model?.profileId === undefined &&
   options.switchStartup === undefined &&
   options.audience !== "dream" &&

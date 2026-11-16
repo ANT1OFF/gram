@@ -349,6 +349,14 @@ export type Project = typeof Project.Type;
 export const CheckoutKind = Schema.Literals(["main", "worktree"]);
 export type CheckoutKind = typeof CheckoutKind.Type;
 
+/**
+ * Whether a checkout's content is the user's own. `untrusted` is a tree someone else wrote, such
+ * as a pull request's head from another repository: nothing of the main checkout's is copied into
+ * it and its agent session loads none of its project or local settings.
+ */
+export const CheckoutTrust = Schema.Literals(["trusted", "untrusted"]);
+export type CheckoutTrust = typeof CheckoutTrust.Type;
+
 export const Checkout = Schema.Struct({
   kind: CheckoutKind,
   path: Schema.String,
@@ -368,8 +376,14 @@ export const Checkout = Schema.Struct({
    * to confirm it; absent on a checkout made before it was recorded.
    */
   cloneIdentity: Schema.optionalKey(Schema.String),
+  /** `untrusted` for a tree someone else wrote (`CheckoutTrust`); absent is the user's own. */
+  trust: Schema.optionalKey(CheckoutTrust),
 });
 export type Checkout = typeof Checkout.Type;
+
+/** Whether `checkout` holds a tree the user hasn't vouched for. */
+export const isUntrustedCheckout = (checkout: Pick<Checkout, "trust">): boolean =>
+  checkout.trust === "untrusted";
 
 export { CompactionActivity, ThreadStatus };
 

@@ -832,6 +832,16 @@ export const makeCodexHost = (
 
     const switchAttempts = new Map<string, { delegated: boolean; notStarted: boolean }>();
     const openSession = Effect.fnUntraced(function* (o: OpenSessionOptions) {
+      // Codex reads a trusted project's `.codex/config.toml`, hooks and rules from the folder, and
+      // decides that trust by the repository the worktree belongs to; nothing Gram passes keeps a
+      // checked-out tree's own configuration out.
+      if (o.untrustedTree === true)
+        return yield* new AgentUnavailable({
+          agent: "codex",
+          reason: "startup-failed",
+          message:
+            "Codex can't open on a branch someone else wrote, such as a fork's pull request: it would load that branch's own Codex configuration. Choose Claude Code.",
+        });
       if (o.dreamFilesOnly === true)
         return yield* new AgentUnavailable({
           agent: "codex",

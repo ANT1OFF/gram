@@ -38,6 +38,7 @@ import {
   type ThreadId,
   effectiveCheckout,
   isLocalHost,
+  isUntrustedCheckout,
   hostOf,
 } from "@gram/contracts";
 import { UNKNOWN_FAILURE } from "./thread-error.ts";
@@ -601,6 +602,8 @@ export const makeSessionLifecycle = ({
             cwd: thread.checkout.path,
             model: thread.model,
             permissionMode: thread.mode,
+            // Someone else's tree (a fork's PR head): none of its own agent settings load.
+            ...(isUntrustedCheckout(thread.checkout) ? { untrustedTree: true } : {}),
             ...options,
             // Only Codex owns the shared app-server wait protocol. Other providers
             // finish their scoped child teardown before this open.

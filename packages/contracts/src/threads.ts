@@ -26,6 +26,12 @@ export const CheckoutRequest = Schema.Union([
     branch: Schema.String,
     base: Schema.optionalKey(Schema.String),
     /**
+     * `untrusted` for a branch someone else wrote, such as a fork's pull request head: nothing is
+     * copied in from the main checkout and the thread's agent loads none of the tree's settings.
+     * Absent is the user's own. A request can only lower trust, never raise an untrusted tree's.
+     */
+    trust: Schema.optionalKey(Schema.Literal("untrusted")),
+    /**
      * The joined machine the worktree is made on, from its own clone of the project's repository;
      * absent for this machine.
      */

@@ -338,6 +338,13 @@ export const makeOpenCodeHost = (
           return yield* Effect.fail(
             unavailable("OpenCode can't keep a session's writes, shell and network bounded."),
           );
+        // OpenCode reads the folder's own `opencode.json` and agents, with no trust step of its own.
+        if (options.untrustedTree === true)
+          return yield* Effect.fail(
+            unavailable(
+              "OpenCode can't open on a branch someone else wrote, such as a fork's pull request: it would load that branch's own OpenCode configuration. Choose Claude Code.",
+            ),
+          );
         const server = yield* serverFor(options.model?.profileId);
         const client: OpenCodeClient = server.client;
         let mode = options.permissionMode ?? "default";

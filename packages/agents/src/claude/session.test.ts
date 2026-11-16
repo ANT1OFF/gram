@@ -603,6 +603,72 @@ describe("ClaudeHost.open", () => {
     }),
   );
 
+  it.effect("opens an untrusted tree on the user's settings alone and writes it no rule", () =>
+    Effect.gen(function* () {
+      // A fork's PR head that tracks a project MCP server; the tree's own settings never load.
+      const tree = mkdtempSync(join(tmpdir(), "gram-claude-untrusted-"));
+      writeFileSync(
+        join(tree, ".mcp.json"),
+        JSON.stringify({ mcpServers: { "from-pr": { command: "echo", args: ["fixture"] } } }),
+      );
+      const h = harness();
+      const session = yield* openSession({ cwd: tree, untrustedTree: true }).pipe(
+        Effect.provide(h.layer),
+      );
+      expect(query(h).options.settingSources).toEqual(["user"]);
+      expect(query(h).options.settings).toMatchObject({
+        deniedMcpServers: [{ serverName: "from-pr" }],
+      });
+      // Sources the host was configured with are narrowed to the user's, never widened.
+      for (const settingSources of [["user", "project", "local"], []] as const) {
+        const configured = harness({ config: { settingSources } });
+        yield* openSession({ untrustedTree: true }).pipe(Effect.provide(configured.layer));
+        expect(query(configured).options.settingSources).toEqual(
+          settingSources.length === 0 ? [] : ["user"],
+        );
+      }
+      // A trusted tree keeps the SDK default and its project servers.
+      const trusted = harness();
+      yield* openSession({ cwd: tree }).pipe(Effect.provide(trusted.layer));
+      expect(query(trusted).options).not.toHaveProperty("settingSources");
+      expect(query(trusted).options.settings).not.toHaveProperty("deniedMcpServers");
+
+      yield* take(session, 2);
+      const suggestion = {
+        type: "addRules" as const,
+        rules: [{ toolName: "Bash", ruleContent: "echo hello *" }],
+        behavior: "allow" as const,
+        destination: "localSettings" as const,
+      };
+      const result = query(h).canUseTool(
+        "Bash",
+        { command: "echo hello" },
+        {
+          signal: signal(),
+          suggestions: [suggestion],
+          displayName: "Bash",
+          toolUseID: "toolu_1",
+          requestId: "req-1",
+        },
+      );
+      expect(yield* take(session, 1)).toMatchObject([
+        { type: "request", request: { scopes: ["once", "session"] } },
+      ]);
+      // Even an "always" sent anyway lasts the session and lands in no settings file.
+      yield* session.respond(RequestId.make("req-1"), {
+        kind: "approval",
+        decision: "allow",
+        scope: "always",
+      });
+      expect(yield* Effect.promise(() => result)).toEqual({
+        behavior: "allow",
+        updatedInput: { command: "echo hello" },
+        updatedPermissions: [{ ...suggestion, destination: "session" }],
+        toolUseID: "toolu_1",
+      });
+    }),
+  );
+
   it.effect("reports a resume without a transcript as session-not-found", () =>
     Effect.gen(function* () {
       const missing = harness({ startupStderr: "No conversation found with session ID: r1" });

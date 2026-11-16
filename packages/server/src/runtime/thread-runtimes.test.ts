@@ -527,6 +527,42 @@ describe("ThreadRuntimes", () => {
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
+  it.effect("opens a thread on an untrusted tree as one, again after its session went cold", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const fake = yield* FakeAgentControl;
+      const checkout = {
+        kind: "worktree",
+        path: "/work/repo/.worktrees/pr-7-feature",
+        branch: "pr-7-feature",
+        repoRoot: "/work/repo",
+        trust: "untrusted",
+      } as const;
+      const thread = yield* runtimes.create({ projectRoot: "/work/repo", checkout });
+      yield* waitStatus(thread.id, "idle");
+      const first = yield* fake.latest(thread.id);
+      expect(first.options.untrustedTree).toBe(true);
+      // Kept with the thread, so the next session (after a restart too) opens the same way.
+      expect((yield* store.getThread(thread.id)).checkout.trust).toBe("untrusted");
+      yield* TestClock.adjust("15 minutes");
+      yield* waitStatus(thread.id, "cold");
+      yield* runtimes.send(thread.id, { text: "review this" });
+      const reopened = yield* waitFor(
+        "the fresh session's send",
+        Effect.sync(() => fake.sessions.length === 2 && fake.sessions[1]!.sent.length === 1),
+      ).pipe(Effect.as(fake.sessions[1]!));
+      expect(reopened.options.untrustedTree).toBe(true);
+
+      const own = yield* runtimes.create({
+        projectRoot: "/work/repo",
+        checkout: { kind: "main", path: "/work/repo" },
+      });
+      yield* waitStatus(own.id, "idle");
+      expect((yield* fake.latest(own.id)).options).not.toHaveProperty("untrustedTree");
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
   it.effect("queues sends while running and sends the next one only after idle", () =>
     Effect.gen(function* () {
       const runtimes = yield* ThreadRuntimes;

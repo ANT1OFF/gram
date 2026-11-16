@@ -188,6 +188,12 @@ export const machineCheckouts = (
           return yield* new InvalidState({
             message: `A worker on ${machine.name} works in a new worktree there.`,
           });
+        // A joined machine may run a host from before trust levels, which would furnish the tree
+        // as the user's own: someone else's branch is checked out on this machine only.
+        if (request.kind === "newWorktree" && request.trust === "untrusted")
+          return yield* new InvalidState({
+            message: `A branch someone else wrote, such as a fork's pull request, isn't checked out on ${machine.name}.`,
+          });
         const url = yield* originOf(projectRoot);
         const { path: repoPath } = yield* connection.repos
           .ensure(url)
@@ -226,6 +232,7 @@ export const machineCheckouts = (
             branch: request.branch,
             ...(request.base === undefined ? {} : { base: request.base }),
             openCheckouts,
+            trust: "trusted",
           })
           .pipe(
             Effect.mapError((error) =>
@@ -332,6 +339,7 @@ export const machineCheckouts = (
             branch: checkout.branch,
             fromPr,
             openCheckouts: yield* others(thread),
+            trust: "trusted",
           })
           .pipe(
             Effect.mapError((error) =>

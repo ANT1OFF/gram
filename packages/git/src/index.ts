@@ -42,6 +42,7 @@ export * from "./tools.ts";
 export * from "./upstream-sync.ts";
 export * from "./watch.ts";
 export * from "./worktree-include.ts";
+export * from "./worktree-trust.ts";
 export * from "./worktrees.ts";
 
 const Base = Layer.mergeAll(ProcLive, PathProbeLive, ReviewBots.layer);

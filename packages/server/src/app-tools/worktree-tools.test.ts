@@ -5,7 +5,8 @@ import * as fs from "node:fs";
 import { ServerConfig } from "../config.ts";
 import { gitPlatformTest } from "../git/platform.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
-import { eventually, hasGit, makeRepo, removeDir, tempDir } from "../git/test-repo.ts";
+import { readPermissionRules, settingsPath } from "@gram/git";
+import { eventually, hasGit, makeRepo, removeDir, tempDir, write } from "../git/test-repo.ts";
 import { GitTurnHooksLive } from "../git/turn-hooks.ts";
 import { ServerCore } from "../http/server.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -86,5 +87,51 @@ describe.skipIf(!hasGit)("move_to_worktree", () => {
         );
         expect(reopened.options.cwd).toBe(moved.checkout.path);
       }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.live("keeps a thread on someone else's tree untrusted in the worktree it moves to", () =>
+    Effect.gen(function* () {
+      const dir = tempDir();
+      dirs.push(dir);
+      const repo = makeRepo(dir);
+      write(settingsPath(repo), JSON.stringify({ permissions: { allow: ["Bash(npm test)"] } }));
+      const runtimes = yield* ThreadRuntimes;
+      const registry = yield* AppToolRegistry;
+      const store = yield* ThreadStore;
+      const fake = yield* FakeAgentControl;
+      const publisher = yield* GitStatePublisher;
+      const thread = yield* runtimes.create({
+        projectRoot: repo,
+        checkout: { kind: "main", path: repo, trust: "untrusted" },
+        input: { text: "move yourself" },
+      });
+      yield* Effect.addFinalizer(() =>
+        Effect.gen(function* () {
+          const current = yield* store.getThread(thread.id);
+          const release = yield* publisher.hold(current.checkout.path);
+          yield* runtimes
+            .close(thread.id, { removeWorktree: { force: true } })
+            .pipe(Effect.ensuring(release));
+        }).pipe(Effect.ignore),
+      );
+      const session = yield* eventually(
+        "the first send",
+        fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
+      );
+      expect(session.options.untrustedTree).toBe(true);
+      const tool = registry
+        .forThread(thread.id)
+        .find((t) => t.descriptor.name === "move_to_worktree");
+      yield* tool!.run({ branch: "feat-move" });
+      const moved = yield* store.getThread(thread.id);
+      expect(moved.checkout).toMatchObject({ kind: "worktree", trust: "untrusted" });
+      expect(readPermissionRules(moved.checkout.path).allow).toEqual([]);
+      yield* session.completeTurn();
+      const reopened = yield* eventually(
+        "the reopened session",
+        Effect.sync(() => fake.sessions.length === 2 && fake.sessions[1]),
+      );
+      expect(reopened.options).toMatchObject({ cwd: moved.checkout.path, untrustedTree: true });
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 });

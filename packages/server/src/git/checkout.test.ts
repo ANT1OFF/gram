@@ -133,6 +133,54 @@ describe.skipIf(!hasGit)("GitCheckoutLive", () => {
       }).pipe(Effect.provide(TestLayer)),
   );
 
+  it.live("keeps an untrusted worktree untrusted through reopening, restoring and release", () =>
+    Effect.gen(function* () {
+      const root = repo();
+      const checkouts = yield* CheckoutService;
+      write(nodePath.join(root, ".worktreeinclude"), ".env\n");
+      write(nodePath.join(root, ".gitignore"), ".worktrees/\n.claude/settings.local.json\n.env\n");
+      run(root, "add", "-A");
+      run(root, "commit", "-qm", "include");
+      write(nodePath.join(root, ".env"), "KEY=dummy");
+      write(settingsPath(root), JSON.stringify({ permissions: { allow: ["Bash(npm test)"] } }));
+
+      const checkout = yield* checkouts.prepare(
+        { kind: "newWorktree", branch: "pr-7-feature", trust: "untrusted" },
+        [],
+        root,
+      );
+      const dir = checkout.path;
+      expect(checkout).toMatchObject({ kind: "worktree", repoRoot: root, trust: "untrusted" });
+      expect(fs.existsSync(nodePath.join(dir, ".env"))).toBe(false);
+      expect(readPermissionRules(dir).allow).toEqual([]);
+      // Opened again as an existing worktree, it is still someone else's tree.
+      expect(yield* checkouts.prepare({ kind: "existingWorktree", path: dir }, [], root)).toEqual({
+        kind: "worktree",
+        path: dir,
+        branch: "pr-7-feature",
+        repoRoot: root,
+        trust: "untrusted",
+      });
+      // Deleted outside Gram and restored from the thread's record: furnished as untrusted again.
+      const thread = threadAt(checkout);
+      fs.rmSync(dir, { recursive: true, force: true });
+      expect(yield* checkouts.restore(thread, undefined)).toEqual({
+        kind: "restored",
+        source: "local",
+      });
+      expect(fs.existsSync(nodePath.join(dir, ".env"))).toBe(false);
+      expect(readPermissionRules(dir).allow).toEqual([]);
+      // A rule that turned up in its settings is never merged into the main checkout's.
+      write(settingsPath(dir), JSON.stringify({ permissions: { allow: ["Bash(curl:*)"] } }));
+      yield* release(thread, {
+        removeWorktree: { force: true },
+        permissionRules: ["Bash(curl:*)"],
+      });
+      expect(fs.existsSync(dir)).toBe(false);
+      expect(readPermissionRules(root).allow).toEqual(["Bash(npm test)"]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.live(
     "releases: refuses dirty work, then prunes checkpoints and merges picked rules after removal",
     () =>

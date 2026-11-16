@@ -1,7 +1,12 @@
-import { Checkpoints, Proc, samePath, seedWorktreePermissions } from "@gram/git";
+import { Checkpoints, Proc, samePath, seedWorktreePermissions, worktreeTrust } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { effectiveCheckout, isLocalHost } from "@gram/contracts";
+import {
+  effectiveCheckout,
+  isLocalHost,
+  isUntrustedCheckout,
+  type Checkout,
+} from "@gram/contracts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { GitRefresh } from "./platform.ts";
 import { resolveWorktreeMove } from "./worktree-move.ts";
@@ -41,17 +46,29 @@ export const GitTurnHooksLive = Layer.effect(
       onRemoteCommand: (_threadId, cwd) => refresh.request(cwd, true, { expectChange: true }),
       onFilesChanged: (_threadId, cwd) => refresh.request(cwd, false),
       // A worktree the agent entered on its own gets the repo root's permission rules, as ones we
-      // create do.
+      // create do, unless it is untrusted (it is followed as such) or the thread itself is, whose
+      // agent works on someone else's content.
       resolveCwd: (thread, cwd, follow) =>
         (isLocalHost(effectiveCheckout(thread))
           ? resolveWorktreeMove(thread, cwd, follow)
           : Effect.succeed(undefined)
         ).pipe(
-          Effect.tap((next) =>
-            next == null || next.repoRoot === undefined || samePath(next.repoRoot, next.path)
-              ? Effect.void
-              : seedWorktreePermissions(next.repoRoot, next.path),
-          ),
+          Effect.flatMap((next) => {
+            if (next == null) return Effect.succeed(next);
+            const repoRoot = next.repoRoot;
+            if (repoRoot === undefined || samePath(repoRoot, next.path)) {
+              return Effect.succeed(next);
+            }
+            return worktreeTrust(next.path).pipe(
+              Effect.flatMap((trust): Effect.Effect<Checkout, never, Proc> =>
+                trust === "untrusted"
+                  ? Effect.succeed({ ...next, trust })
+                  : isUntrustedCheckout(thread.checkout)
+                    ? Effect.succeed(next)
+                    : seedWorktreePermissions(repoRoot, next.path).pipe(Effect.as(next)),
+              ),
+            );
+          }),
           Effect.provideService(Proc, proc),
         ),
     };

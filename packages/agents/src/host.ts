@@ -126,6 +126,13 @@ export interface OpenSessionOptions {
    * sandbox) still drops the user's MCP servers, which neither holds, whatever `mcpAllowlist` says.
    */
   readonly confineWrites?: boolean;
+  /**
+   * `cwd` is a tree someone else wrote, such as a fork's pull request head: the session loads none
+   * of the settings, hooks, instructions or MCP servers the tree carries, only the user's own, and
+   * an approval writes no rule into it. A host that can't keep the tree's own configuration out
+   * refuses to open.
+   */
+  readonly untrustedTree?: boolean;
   /** Only the bounded Dream MCP file bridge; no native tools. Unsupported hosts refuse. */
   readonly dreamFilesOnly?: boolean;
   /** Prompt-guided Dream using normal native permissions; never a file-only guarantee. */

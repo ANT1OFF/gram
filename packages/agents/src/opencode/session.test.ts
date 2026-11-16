@@ -254,6 +254,18 @@ describe("the OpenCode host", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("refuses an untrusted tree, whose own configuration it would load", () =>
+    Effect.gen(function* () {
+      const stand = standIn();
+      const host = yield* hostWith(stand);
+      const error = yield* host
+        .open({ threadId: THREAD, cwd: "/w", untrustedTree: true })
+        .pipe(Effect.flip);
+      expect(error).toMatchObject({ _tag: "AgentUnavailable", agent: "opencode" });
+      expect(stand.started).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+
   it.live("answers a command the gate lets through itself, and shows a push", () =>
     Effect.gen(function* () {
       const stand = standIn();

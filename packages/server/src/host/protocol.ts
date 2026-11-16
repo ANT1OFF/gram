@@ -421,12 +421,19 @@ const handlersFor = (host: HostService) => {
         host.worktrees.list(repoPath, { openCheckouts }).pipe(Effect.mapError(worktreeToWire)),
       "host.worktrees.baseBranches": ({ repoPath }) =>
         host.worktrees.baseBranches(repoPath).pipe(Effect.mapError(worktreeToWire)),
+      // A request with no level is from a build before trust levels, which made only the user's own.
       "host.worktrees.create": (request) =>
-        gated(host.worktrees.create(request).pipe(Effect.mapError(worktreeToWire))),
+        gated(
+          host.worktrees
+            .create({ ...request, trust: request.trust ?? "trusted" })
+            .pipe(Effect.mapError(worktreeToWire)),
+        ),
       "host.worktrees.remove": (request) =>
         host.worktrees.remove(request).pipe(Effect.mapError(worktreeToWire)),
       "host.worktrees.restore": (request) =>
-        host.worktrees.restore(request).pipe(Effect.mapError(worktreeToWire)),
+        host.worktrees
+          .restore({ ...request, trust: request.trust ?? "trusted" })
+          .pipe(Effect.mapError(worktreeToWire)),
       "host.worktrees.pendingPermissions": ({ repoPath, worktreeDir }) =>
         host.worktrees
           .pendingPermissions(repoPath, worktreeDir)
@@ -1252,6 +1259,7 @@ export const connectHost = (
               branch: request.branch,
               base: request.base,
               openCheckouts: request.openCheckouts,
+              trust: request.trust,
             }),
           ),
         ),
@@ -1276,6 +1284,7 @@ export const connectHost = (
               branch: request.branch,
               fromPr: request.fromPr,
               openCheckouts: request.openCheckouts,
+              trust: request.trust,
             }),
           ),
         ),

@@ -205,6 +205,36 @@ const otherAllowlists = async (
 };
 
 /**
+ * The settings a session on an untrusted tree (`OpenSessionOptions.untrustedTree`) reads: the
+ * user's own and nothing of the folder's (`project`: `.claude/settings.json`, its hooks, skills,
+ * commands, agents and `CLAUDE.md`; `local`: `.claude/settings.local.json`), since a branch
+ * someone else wrote decides what those hold.
+ */
+export const untrustedTreeSources = (
+  sources: ReadonlyArray<SettingSource> | undefined,
+): ReadonlyArray<SettingSource> => (sources ?? ["user"]).filter((source) => source === "user");
+
+/**
+ * The servers a folder's `.mcp.json` names, as `deniedMcpServers` entries: for a session on an
+ * untrusted tree, whose project servers would each start a command the branch's author chose. A
+ * file that can't be read or parsed names none, as Claude Code then loads none from it.
+ */
+export const projectMcpDenials = async (
+  cwd: string,
+): Promise<ReadonlyArray<{ serverName: string }>> => {
+  const text = await readFile(join(cwd, ".mcp.json"), "utf8").catch(() => undefined);
+  if (text === undefined) return [];
+  try {
+    const servers = (JSON.parse(text) as { mcpServers?: unknown }).mcpServers;
+    return typeof servers === "object" && servers !== null && !Array.isArray(servers)
+      ? Object.keys(servers).map((serverName) => ({ serverName }))
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+/**
  * Claude in Chrome for a session given the browser: `--chrome`, the only switch that turns it on
  * for a session the SDK starts (CLI 2.1.322; there is no Agent SDK option of its own). Every other
  * session gets `--no-chrome`, which outranks the CLI's "Enabled by default" and
@@ -606,6 +636,11 @@ export const makeClaudeHost = (
           reason: "startup-failed",
           message: "Memory update file bridge is unavailable; no session was started",
         });
+      // An untrusted tree's own settings never load, whatever the host was configured with.
+      const sources =
+        o.untrustedTree === true
+          ? untrustedTreeSources(config.settingSources)
+          : config.settingSources;
       const prepared = yield* environment.prepare;
       // A thread on a gateway profile runs `claude` against the gateway with the user's key, so the
       // subscription guard doesn't apply to it; every other thread keeps the guard.
@@ -660,15 +695,17 @@ export const makeClaudeHost = (
       };
       // Another source's allowlist would widen the session's, so what it adds is denied
       // (`widenedEntries`).
-      const widened =
-        o.confineWrites !== true && lists.mcpAllowlist !== undefined
+      const widened = [
+        ...(o.confineWrites !== true && lists.mcpAllowlist !== undefined
           ? widenedEntries(
               lists.mcpAllowlist,
-              yield* Effect.promise(() =>
-                otherAllowlists(o.cwd, claudeSettingsDir(env), config.settingSources),
-              ),
+              yield* Effect.promise(() => otherAllowlists(o.cwd, claudeSettingsDir(env), sources)),
             )
-          : [];
+          : []),
+        ...(o.confineWrites !== true && o.untrustedTree === true
+          ? yield* Effect.promise(() => projectMcpDenials(o.cwd))
+          : []),
+      ];
       // The one server the session was given by address, as a remote server of this session
       // alone: nothing is written to the user's or the folder's config. Never when confined.
       const extraServer =
@@ -952,6 +989,8 @@ export const makeClaudeHost = (
             // "Always" would write an allow rule, and the gate's hook asks again whatever the
             // rules say.
             gateAsksAbout(toolName, toolInput) || asksAboutConnector(toolName),
+            // An untrusted tree's settings are its author's: no rule is written into them.
+            o.untrustedTree === true,
           );
           const settle = (result: PermissionResult) => {
             if (!pending.delete(request.id)) return;
@@ -1104,9 +1143,9 @@ export const makeClaudeHost = (
         },
         ...(o.dreamFilesOnly === true
           ? { settingSources: [] }
-          : config.settingSources === undefined
+          : sources === undefined
             ? {}
-            : { settingSources: [...config.settingSources] }),
+            : { settingSources: [...sources] }),
         // Agent SDK 0.3.286 leaves an omitted mode to Claude Code, which starts a gateway session
         // in auto mode, decided by its classifier instead of by `canUseTool`.
         permissionMode: o.permissionMode ?? "default",
@@ -1695,7 +1734,7 @@ export const makeClaudeHost = (
             }
             const p = pending.get(requestId);
             if (p === undefined) return;
-            const resolution = resolveRequest(p.request, p.input, answer, config.settingSources);
+            const resolution = resolveRequest(p.request, p.input, answer, sources);
             const mode = resolution.setMode;
             // Switch before returning from `canUseTool`, so the next tool call sees the new mode.
             // A refused mode must not strand the answer: the request settles either way, and the

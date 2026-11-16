@@ -395,6 +395,17 @@ const codexMachineWith = (features: ReadonlyArray<string>, kind: AgentKind = "co
     return { onHost, inServer, agent };
   });
 
+describe("a session on an untrusted tree", () => {
+  it("opens in the server, never on a host that might predate keeping its settings out", () => {
+    const plain = { threadId: THREAD, cwd: "/work" };
+    expect(opensOnHost("claude", plain)).toBe(true);
+    for (const agent of ["claude", "codex", "opencode"] as const) {
+      expect(opensOnHost(agent, { ...plain, untrustedTree: true })).toBe(false);
+      expect(opensOnMachine(agent, { ...plain, untrustedTree: true })).toBe(false);
+    }
+  });
+});
+
 describe("a joined machine's OpenCode sessions", () => {
   it("open there as Codex's do, and what only the server holds stays here", () => {
     const plain = { threadId: THREAD, cwd: "/work" };

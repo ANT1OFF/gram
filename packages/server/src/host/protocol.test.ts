@@ -292,6 +292,7 @@ describe("host protocol", () => {
         repoPath: repo,
         branch: "feature/host",
         openCheckouts: [],
+        trust: "trusted",
       });
       expect(created).toMatchObject({ reused: false, checkout: { branch: "feature/host" } });
       const listed = yield* host.worktrees.list(repo, { openCheckouts: [created.checkout.path] });
@@ -324,6 +325,7 @@ describe("host protocol", () => {
         worktreeDir: created.checkout.path,
         branch: "feature/host",
         openCheckouts: [],
+        trust: "trusted",
       });
       expect(restored).toEqual({ kind: "restored", source: "local" });
       yield* host.worktrees.remove({
@@ -344,7 +346,7 @@ describe("host protocol", () => {
       const repo = makeRepo(tmp);
       const host = yield* connected();
       const error = yield* host.worktrees
-        .create({ repoPath: repo, branch: "  ", openCheckouts: [] })
+        .create({ repoPath: repo, branch: "  ", openCheckouts: [], trust: "trusted" })
         .pipe(Effect.flip);
       expect(error).toMatchObject({
         _tag: "WorktreeError",

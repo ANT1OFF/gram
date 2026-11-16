@@ -1536,6 +1536,19 @@ Source: [storage](../packages/server/src/git/storage.ts),
 [sweep](../packages/server/src/git/worktree-gc.ts),
 [Storage page](../apps/web/src/settings/storage-page.tsx).
 
+## Pull requests from forks
+
+**Check out PR** on a pull request whose head is in another repository makes its worktree
+untrusted: the branch is its author's, so nothing of the main checkout's goes in (no
+`.worktreeinclude` files, no permission rules), and the thread's Claude session reads only your
+user settings, none of the branch's `.claude/settings.json`, `.claude/settings.local.json`,
+`CLAUDE.md` or `.mcp.json` servers. Approval cards there offer once and for the session, and the
+close checklist offers none of the worktree's rules for the main checkout. Codex and OpenCode
+don't open on such a tree, since both would load its own configuration. The trust is kept with
+the thread and in the worktree's git folder, so reopening, restoring or reusing it, and a restart,
+keep it; a thread on it moving to a new worktree takes it along. There is no way to trust such a
+tree from Gram yet.
+
 ## Browser, notifications and dictation
 
 The Preview tab opens your app's dev server, a Markdown or HTML file, or any web page you type

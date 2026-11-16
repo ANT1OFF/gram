@@ -182,6 +182,7 @@ describe.skipIf(!hasGit)("worktrees", () => {
           repoPath: repo,
           branch: "feat/a",
           openCheckouts: [],
+          trust: "trusted",
         }),
       );
       expect(error.reason).toBe("invalidRequest");
@@ -206,7 +207,7 @@ describe.skipIf(!hasGit)("worktrees", () => {
         "HEAD",
       ]) {
         const error = yield* Effect.flip(
-          createWorktree({ repoPath: repo, branch, openCheckouts: [] }),
+          createWorktree({ repoPath: repo, branch, openCheckouts: [], trust: "trusted" }),
         );
         expect(error.reason, branch).toBe("invalidRequest");
       }
@@ -219,7 +220,7 @@ describe.skipIf(!hasGit)("worktrees", () => {
       Effect.gen(function* () {
         const repo = makeRepo(tmp());
         const wt = nodePath.join(nodePath.dirname(repo), "wt-new");
-        yield* addWorktree(repo, "feature/x", wt, undefined);
+        yield* addWorktree(repo, "feature/x", wt, undefined, "trusted");
         expect(fs.existsSync(nodePath.join(wt, "tracked.txt"))).toBe(true);
         expect(run(wt, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("feature/x");
       }).pipe(provide),
@@ -230,7 +231,7 @@ describe.skipIf(!hasGit)("worktrees", () => {
         const repo = makeRepo(tmp());
         run(repo, "branch", "existing");
         const wt = nodePath.join(nodePath.dirname(repo), "wt-existing");
-        yield* addWorktree(repo, "existing", wt, undefined);
+        yield* addWorktree(repo, "existing", wt, undefined, "trusted");
         expect(run(wt, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("existing");
       }).pipe(provide),
     );
@@ -240,7 +241,7 @@ describe.skipIf(!hasGit)("worktrees", () => {
         const repo = makeRepo(tmp());
         allowRules(repo, "Bash(npm test)", "Bash(git push)");
         const wt = nodePath.join(nodePath.dirname(repo), "wt-seeded");
-        yield* addWorktree(repo, "seeded", wt, undefined);
+        yield* addWorktree(repo, "seeded", wt, undefined, "trusted");
         expect(readPermissionRules(wt).allow).toEqual(["Bash(npm test)"]);
       }).pipe(provide),
     );
@@ -249,8 +250,8 @@ describe.skipIf(!hasGit)("worktrees", () => {
       Effect.gen(function* () {
         const repo = makeRepo(tmp());
         const wt = nodePath.join(nodePath.dirname(repo), "wt-dup");
-        yield* addWorktree(repo, "dup", wt, undefined);
-        const error = yield* Effect.flip(addWorktree(repo, "dup2", wt, undefined));
+        yield* addWorktree(repo, "dup", wt, undefined, "trusted");
+        const error = yield* Effect.flip(addWorktree(repo, "dup2", wt, undefined, "trusted"));
         expect(error.reason).toBe("invalidRequest");
         expect(error.message.startsWith("git worktree failed:")).toBe(true);
       }).pipe(provide),
@@ -265,7 +266,7 @@ describe.skipIf(!hasGit)("worktrees", () => {
         run(repo, "commit", "-qm", "on develop");
         run(repo, "checkout", "-q", "-");
         const wt = nodePath.join(nodePath.dirname(repo), "wt-based");
-        yield* addWorktree(repo, "feature/from-develop", wt, "develop");
+        yield* addWorktree(repo, "feature/from-develop", wt, "develop", "trusted");
         expect(fs.existsSync(nodePath.join(wt, "only-on-develop.txt"))).toBe(true);
       }).pipe(provide),
     );
@@ -402,6 +403,7 @@ describe.skipIf(!hasGit)("worktrees", () => {
           repoPath: repo,
           branch: "feat/x",
           openCheckouts: [],
+          trust: "trusted",
         });
         const dir = checkout.path;
         write(nodePath.join(dir, "a.txt"), "a\n");
@@ -415,6 +417,7 @@ describe.skipIf(!hasGit)("worktrees", () => {
             branch: "feat/x",
             fromPr,
             openCheckouts: [],
+            trust: "trusted",
           });
 
         // Still there: nothing to restore.
@@ -460,6 +463,7 @@ describe.skipIf(!hasGit)("worktrees", () => {
             worktreeDir: nodePath.join(repo, ".worktrees", "gone"),
             branch: "feat/y",
             openCheckouts: [],
+            trust: "trusted",
           }),
         );
         expect(error).toMatchObject({ reason: "conflict" });
@@ -476,6 +480,7 @@ describe.skipIf(!hasGit)("worktrees", () => {
           repoPath: repo,
           branch: "feat/x",
           openCheckouts: [],
+          trust: "trusted",
         });
         const dir = nodePath.join(repo, ".worktrees", "feat-x");
         expect(created.reused).toBe(false);
@@ -489,14 +494,25 @@ describe.skipIf(!hasGit)("worktrees", () => {
           repoPath: repo,
           branch: "feat/x",
           openCheckouts: [],
+          trust: "trusted",
         });
         expect(again.reused).toBe(true);
         expect(fs.realpathSync(again.checkout.path)).toBe(fs.realpathSync(dir));
         const error = yield* Effect.flip(
-          createWorktree({ repoPath: repo, branch: "feat/x", openCheckouts: [dir] }),
+          createWorktree({
+            repoPath: repo,
+            branch: "feat/x",
+            openCheckouts: [dir],
+            trust: "trusted",
+          }),
         );
         expect(error.reason).toBe("conflict");
-        const main = yield* createWorktree({ repoPath: repo, branch: "main", openCheckouts: [] });
+        const main = yield* createWorktree({
+          repoPath: repo,
+          branch: "main",
+          openCheckouts: [],
+          trust: "trusted",
+        });
         expect(main.checkout.kind).toBe("main");
       }).pipe(provide),
     );
@@ -504,8 +520,18 @@ describe.skipIf(!hasGit)("worktrees", () => {
     it.live("keeps the worktrees folder out of the main checkout's status, listed once", () =>
       Effect.gen(function* () {
         const repo = makeRepo(tmp());
-        yield* createWorktree({ repoPath: repo, branch: "feat/a", openCheckouts: [] });
-        yield* createWorktree({ repoPath: repo, branch: "feat/b", openCheckouts: [] });
+        yield* createWorktree({
+          repoPath: repo,
+          branch: "feat/a",
+          openCheckouts: [],
+          trust: "trusted",
+        });
+        yield* createWorktree({
+          repoPath: repo,
+          branch: "feat/b",
+          openCheckouts: [],
+          trust: "trusted",
+        });
         expect(run(repo, "status", "--porcelain")).toBe("");
         const exclude = fs.readFileSync(nodePath.join(repo, ".git", "info", "exclude"), "utf8");
         expect(exclude.split(/\r?\n/).filter((line) => line === ".worktrees/")).toHaveLength(1);
@@ -520,12 +546,22 @@ describe.skipIf(!hasGit)("worktrees", () => {
         // Windows-written, without a final newline.
         fs.writeFileSync(exclude, "# local\r\n*.log");
         write(nodePath.join(repo, "debug.log"), "x");
-        yield* createWorktree({ repoPath: repo, branch: "feat/a", openCheckouts: [] });
+        yield* createWorktree({
+          repoPath: repo,
+          branch: "feat/a",
+          openCheckouts: [],
+          trust: "trusted",
+        });
         expect(fs.readFileSync(exclude, "utf8")).toBe("# local\r\n*.log\r\n.worktrees/\r\n");
         expect(run(repo, "status", "--porcelain")).toBe("");
 
         fs.rmSync(exclude);
-        yield* createWorktree({ repoPath: repo, branch: "feat/b", openCheckouts: [] });
+        yield* createWorktree({
+          repoPath: repo,
+          branch: "feat/b",
+          openCheckouts: [],
+          trust: "trusted",
+        });
         expect(fs.readFileSync(exclude, "utf8")).toBe(".worktrees/\n");
       }).pipe(provide),
     );
@@ -543,6 +579,7 @@ describe.skipIf(!hasGit)("worktrees", () => {
           repoPath: repo,
           branch: "feat/x",
           openCheckouts: [],
+          trust: "trusted",
         });
         expect(created.checkout.base).toMatch(/main$/);
         // With no upstream, publishing pushes `-u origin feat/x` instead of refusing origin/main.
@@ -574,13 +611,19 @@ describe.skipIf(!hasGit)("worktrees", () => {
         const repo = makeRepo(tmp());
         expect(
           (yield* Effect.flip(
-            createWorktree({ repoPath: repo, branch: "bad branch", openCheckouts: [] }),
+            createWorktree({
+              repoPath: repo,
+              branch: "bad branch",
+              openCheckouts: [],
+              trust: "trusted",
+            }),
           )).reason,
         ).toBe("invalidRequest");
         const plain = tmp();
         expect(
-          (yield* Effect.flip(createWorktree({ repoPath: plain, branch: "x", openCheckouts: [] })))
-            .message,
+          (yield* Effect.flip(
+            createWorktree({ repoPath: plain, branch: "x", openCheckouts: [], trust: "trusted" }),
+          )).message,
         ).toBe("repoPath is not a git repository");
       }).pipe(provide),
     );

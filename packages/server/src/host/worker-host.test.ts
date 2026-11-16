@@ -236,6 +236,7 @@ describe("WorkerHosts", () => {
           repoPath: repo,
           branch: "made-by-the-host",
           openCheckouts: [],
+          trust: "trusted",
         });
         expect(created).toMatchObject({ reused: false, checkout: { branch: "made-by-the-host" } });
       }).pipe(

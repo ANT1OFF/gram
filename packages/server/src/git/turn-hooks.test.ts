@@ -1,7 +1,7 @@
 import * as nodePath from "node:path";
 import { afterEach, describe, expect, it } from "@effect/vitest";
-import type { ThreadId, TurnId } from "@gram/contracts";
-import { Checkpoints } from "@gram/git";
+import type { Checkout, ProjectId, Thread, ThreadId, TurnId } from "@gram/contracts";
+import { Checkpoints, markWorktreeUntrusted, readPermissionRules, settingsPath } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
@@ -12,6 +12,22 @@ import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-repo.ts
 import { GitTurnHooksLive } from "./turn-hooks.ts";
 
 const TestLayer = GitTurnHooksLive.pipe(Layer.provideMerge(gitPlatformTest()));
+
+const threadAt = (checkout: Checkout): Thread => ({
+  id: "thread-1" as ThreadId,
+  projectId: "project-1" as ProjectId,
+  title: "t",
+  userNamed: false,
+  model: { agent: "claude", model: "default" },
+  mode: "default",
+  checkout,
+  labels: [],
+  pinned: false,
+  parked: false,
+  unread: false,
+  createdAt: 0,
+  lastActivityAt: 0,
+});
 
 describe.skipIf(!hasGit)("GitTurnHooksLive", () => {
   const dirs: Array<string> = [];
@@ -77,6 +93,47 @@ describe.skipIf(!hasGit)("GitTurnHooksLive", () => {
       expect(yield* Queue.take(refresh.requests)).toMatchObject({ priority: "background" });
 
       yield* hooks.onTurnStart(threadId, "turn-2" as TurnId, tmp());
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.live("seeds a followed worktree only when it and the thread are trusted", () =>
+    Effect.gen(function* () {
+      const repo = makeRepo(tmp());
+      const hooks = yield* TurnHooks;
+      write(settingsPath(repo), JSON.stringify({ permissions: { allow: ["Bash(npm test)"] } }));
+      const add = (name: string) => {
+        const dir = nodePath.join(nodePath.dirname(repo), name);
+        run(repo, "worktree", "add", "-q", "-b", name, dir);
+        return dir;
+      };
+      const fork = add("pr-7-feature");
+      yield* markWorktreeUntrusted(fork);
+      const own = add("own");
+      const other = add("other");
+      const main = threadAt({ kind: "main", path: repo, branch: "main" });
+
+      // Someone else's worktree is followed as untrusted and given none of the root's rules.
+      expect(yield* hooks.resolveCwd(main, fork, true)).toEqual({
+        kind: "worktree",
+        path: fork,
+        branch: "pr-7-feature",
+        repoRoot: repo,
+        trust: "untrusted",
+      });
+      expect(readPermissionRules(fork).allow).toEqual([]);
+      // The user's own is seeded, as before.
+      expect(yield* hooks.resolveCwd(main, own, true)).toMatchObject({ path: own });
+      expect(readPermissionRules(own).allow).toEqual(["Bash(npm test)"]);
+      // A thread working on someone else's tree seeds nothing anywhere it goes.
+      const untrusted = threadAt({
+        kind: "worktree",
+        path: fork,
+        branch: "pr-7-feature",
+        repoRoot: repo,
+        trust: "untrusted",
+      });
+      expect(yield* hooks.resolveCwd(untrusted, other, true)).toMatchObject({ path: other });
+      expect(readPermissionRules(other).allow).toEqual([]);
     }).pipe(Effect.provide(TestLayer)),
   );
 });

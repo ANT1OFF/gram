@@ -60,12 +60,15 @@ export const isOutwardBash = (toolName: string, input: unknown): boolean =>
  * The card for a `canUseTool` call: `AskUserQuestion` → question, `ExitPlanMode` → plan, anything
  * else → approval. `suppressAlways` (set by the SDK, and for a `Bash` command the session's outward
  * gate asks about) limits the card to "once" and drops the suggestions, so no rule can be written.
+ * `sessionOnly` (a session on an untrusted tree) keeps "once" and "session": a rule lasts the
+ * session and is never written to a settings file.
  */
 export const toPendingRequest = (
   toolName: string,
   input: Record<string, unknown>,
   options: Omit<CanUseToolOptions, "signal">,
   suppressAlways = false,
+  sessionOnly = false,
 ): PendingRequest => {
   const common = { id: RequestId.make(options.requestId), toolUseId: options.toolUseID };
   if (toolName === "AskUserQuestion") {
@@ -91,7 +94,7 @@ export const toPendingRequest = (
     ...(options.decisionReason === undefined ? {} : { decisionReason: options.decisionReason }),
     ...(options.blockedPath === undefined ? {} : { blockedPath: options.blockedPath }),
     suggestions: suppress ? [] : (options.suggestions ?? []),
-    scopes: suppress ? ["once"] : ["once", "session", "always"],
+    scopes: suppress ? ["once"] : sessionOnly ? ["once", "session"] : ["once", "session", "always"],
   };
 };
 
@@ -145,10 +148,17 @@ export const resolveRequest = (
       };
     }
     const suggestions = request.suggestions.map(toSdkUpdate);
+    // A card that didn't offer "always" (`sessionOnly`) never writes a rule, whatever it is sent.
+    const scope =
+      answer.scope === "always" &&
+      request.scopes !== undefined &&
+      !request.scopes.includes("always")
+        ? "session"
+        : answer.scope;
     const updatedPermissions =
-      answer.scope === "once"
+      scope === "once"
         ? []
-        : answer.scope === "session"
+        : scope === "session"
           ? suggestions.map((u) => ({ ...u, destination: "session" as const }))
           : loadsLocalSettings(settingSources)
             ? suggestions
