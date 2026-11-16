@@ -291,9 +291,9 @@ listed is refused as not settable by chat.
 `workspace.maxConcurrentWorkers`, `workspace.pauseAtLimitPct`,
 `workspace.mergeReviewPolicy`, `workspace.automaticDreamThreshold`,
 `workspace.orchestratorModel`, `workspace.orchestratorEffort`, `workspace.workerModels`,
-`workspace.workerBriefFooter` (text, `null` or blank clears it), `workspace.routeAtLimit`
-(`true`, or `false` to turn it off), and idle compaction's `workspace.idleAutoCompact` and
-`workspace.idleAutoCompactKinds`.
+`workspace.workerBriefFooter` (text, `null` or blank clears it), `workspace.routeAtLimit` and
+`workspace.otherWorkerModels` (each `true`, or `false` to turn it off), and idle compaction's
+`workspace.idleAutoCompact` and `workspace.idleAutoCompactKinds`.
 
 The card is raised by the tool's own handler, whichever binding runs it. The gate's
 `bypassPermissions` skip, "allow for session" and `delegatedAtFullAutonomy` therefore never

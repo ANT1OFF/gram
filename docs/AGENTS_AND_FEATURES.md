@@ -49,7 +49,11 @@ configured pass.
 - **Models by assignment.** Each workspace lists the models its workers may use, with a note in
   your own words on what each is for, and the orchestrator picks by those notes: for example,
   implementation on Claude, independent reviews on Codex, small chores on a fast model and
-  specialised work on a model you choose for it.
+  specialised work on a model you choose for it. A worker can ask for a **council**: up to three
+  reviewers on different harnesses or tiers, each read-only by its brief, sending its findings and
+  a score straight to the author, for at most three rounds before you are asked. With
+  [other worker models](#other-worker-models) on, the orchestrator may go beyond the list when none
+  of it fits.
 - **Questions and approvals.** A worker asks a decision with options and its recommendation, and
   keeps working on what doesn't depend on it. The orchestrator answers only when the brief, a
   standing ruling or its memory settles it; otherwise the question reaches you as written.
@@ -816,6 +820,23 @@ neither at its limit nor paused by the user. Other models on the same login are 
 because they share its limit. The orchestrator is told to respect notes that rule work out, such
 as "never UI". A spawn that goes ahead returns `model`, the model the worker runs on. What makes
 the hold and pause gates fire is owned by the limit-wait work, not by this setting.
+
+### Other worker models
+
+The workspace setting **Use other models** (`otherWorkerModels`, under the roster in Settings →
+Workspaces → Models) is on for a new workspace and off for one made before it existed. While it is
+off, the roster is the whole allow-list, and a spawn or a model switch on anything else is refused
+with a refusal that names the setting. While it is on, the roster stays the preferred models: the
+orchestrator picks by their notes first, and goes beyond them only when none fits the work or a
+council needs a model they lack. It names such a model as `agent:model`, and says which and why.
+
+- **Which models.** One the harness lists on your own login, or one on a gateway profile a roster
+  entry of that harness already runs on. Never a profile no entry uses, so gateways stay opt-in.
+- **How it runs.** At Standard speed, and at high effort or below: `spawn_worker` runs an effort
+  asked above high at high and says so, and `set_thread_model` refuses a switch at Fast or above
+  high. `manage_held_spawn` `retarget` follows the same rule.
+- **Where the rule is told.** In the charter lines of the orchestrator's boot digest, and in its
+  next digest when you turn the setting on or off. Settings by chat sets it with the usual card.
 
 ### Watching the default branch after merges
 

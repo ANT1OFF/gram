@@ -334,6 +334,14 @@ export const OrchestratorCharter = Schema.Struct({
   workerMode: Schema.optionalKey(PermissionMode),
   /** The models a worker may be spawned on, the roster; absent allows the orchestrator's own only. */
   workerModels: Schema.optionalKey(Schema.Array(WorkerModel)),
+  /**
+   * Let the orchestrator spawn on models outside `workerModels` when none of them fits the work (or
+   * a council needs a model the roster lacks): one a harness lists on the user's own login, or one
+   * on a gateway profile a roster entry already uses, at high effort or below and Standard speed.
+   * The roster stays the preferred models. Absent is off: the roster is the whole allow-list. New
+   * workspaces start with it on (`newWorkspaceCharter`).
+   */
+  otherWorkerModels: Schema.optionalKey(Schema.Boolean),
   /** The model a new orchestrator opens on; absent follows `agents.defaultModel`. */
   orchestratorModel: Schema.optionalKey(ModelSlot),
   /**
@@ -415,6 +423,14 @@ export const DEFAULT_CHARTER: OrchestratorCharter = {
   autonomy: "full",
 };
 
+/**
+ * What a new workspace starts with on beside `DEFAULT_CHARTER`, kept out of it so a charter that
+ * never wrote them down (one made before they existed) keeps them off.
+ */
+export const NEW_WORKSPACE_CHOICES: Pick<OrchestratorCharter, "otherWorkerModels"> = {
+  otherWorkerModels: true,
+};
+
 /** What a new workspace's orchestrator runs on until the user saves another: Claude's Opus, high effort. */
 export const DEFAULT_ORCHESTRATOR_MODEL: ModelRef = {
   speed: "standard",
@@ -465,7 +481,7 @@ export interface NewWorkspaceModels {
 }
 
 /**
- * The charter a new workspace is made with: `DEFAULT_CHARTER`, workers in Auto (Bypass on a
+ * The charter a new workspace is made with: `DEFAULT_CHARTER` and `NEW_WORKSPACE_CHOICES`, workers in Auto (Bypass on a
  * harness with no Auto), the orchestrator model and the roster. Only a profile the user picked is
  * ever stored on an entry: a Codex entry with none is put on a gateway that can run it
  * each time the server reads the roster (`bindGateway`), so one made usable later takes it up.
@@ -479,6 +495,7 @@ export const newWorkspaceCharter = (saved: NewWorkspaceModels): OrchestratorChar
     orchestratorModel:
       saved.recommended === true ? { tier: "lead" } : defaultOrchestratorModel(saved.available),
     ...(roster.length === 0 ? {} : { workerModels: roster }),
+    ...NEW_WORKSPACE_CHOICES,
   };
 };
 

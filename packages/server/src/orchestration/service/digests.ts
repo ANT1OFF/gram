@@ -78,6 +78,7 @@ import {
   footerLine,
   pausedFeatureOf,
   type OrchestrationKit,
+  OTHER_WORKER_MODELS_LINE,
 } from "./kit.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
@@ -138,6 +139,7 @@ const charterLines = (
         here.unavailable,
         here.catalogue,
       ),
+  ...(charter.otherWorkerModels === true ? [OTHER_WORKER_MODELS_LINE] : []),
 ];
 
 /** Reports as a digest names them; one from a thread that is no longer a worker is left out. */

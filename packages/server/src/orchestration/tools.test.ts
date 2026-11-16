@@ -26,6 +26,7 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { emptyWorkerMemo, encodeOutbox, workerThreadId } from "./outbox.ts";
 import { memoryRevision } from "./memory.ts";
 import { Orchestration } from "./service.ts";
+import { OTHER_WORKER_MODELS_SETTING } from "./service/kit.ts";
 import {
   GIT_HEAVY,
   atAutonomy,
@@ -1964,7 +1965,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           })
           .pipe(Effect.flip);
         expect(refused.message).toBe(
-          "not_admitted: The charter doesn't allow workers on claude:fake-sonnet. Allowed: claude:fake-opus (Fake Opus (echo)), claude:fake-haiku (Fake Haiku (echo)).",
+          `not_admitted: The charter doesn't allow workers on claude:fake-sonnet. Allowed: claude:fake-opus (Fake Opus (echo)), claude:fake-haiku (Fake Haiku (echo)). Others need the workspace setting "${OTHER_WORKER_MODELS_SETTING}"; if none of these fits, ask the user to turn it on.`,
         );
         // The picker's name for a model names the entry, as its id does.
         const byName = yield* spawn(session, {

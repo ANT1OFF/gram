@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
-import { DEFAULT_CHARTER } from "@gram/contracts";
+import { DEFAULT_CHARTER, newWorkspaceCharter } from "@gram/contracts";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { OtherWorkerModelsField } from "./other-worker-models-field";
 import { RouteAtLimitField } from "./route-at-limit-field";
 import { WatchDefaultBranchField } from "./watch-default-branch-field";
 import { WorkerBriefFooterField } from "./worker-brief-footer-field";
 import {
+  withOtherWorkerModels,
   withRouteAtLimit,
   withWatchDefaultBranch,
   withWorkerBriefFooter,
@@ -109,5 +111,47 @@ describe("watching the default branch after merges", () => {
       ...DEFAULT_CHARTER,
       pauseAtLimitPct: 90,
     });
+  });
+});
+
+describe("letting the orchestrator use other models", () => {
+  const name = "Use other models";
+
+  it("is off where it was never set, and turns on and off without leaving a stored false", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <OtherWorkerModelsField charter={DEFAULT_CHARTER} disabled={false} onChange={onChange} />,
+    );
+    const toggle = screen.getByRole("switch", { name });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    expect(onChange).toHaveBeenLastCalledWith(
+      { ...DEFAULT_CHARTER, otherWorkerModels: true },
+      "Other worker models allowed",
+    );
+    rerender(
+      <OtherWorkerModelsField
+        charter={{ ...DEFAULT_CHARTER, otherWorkerModels: true }}
+        disabled={false}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("switch", { name }));
+    expect(onChange).toHaveBeenLastCalledWith(DEFAULT_CHARTER, "Workers only on these models");
+    expect(withOtherWorkerModels({ ...DEFAULT_CHARTER, pauseAtLimitPct: 90 }, false)).toEqual({
+      ...DEFAULT_CHARTER,
+      pauseAtLimitPct: 90,
+    });
+  });
+
+  it("is on for a new workspace", () => {
+    render(
+      <OtherWorkerModelsField
+        charter={newWorkspaceCharter({})}
+        disabled={false}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("switch", { name }).getAttribute("aria-checked")).toBe("true");
   });
 });

@@ -760,6 +760,32 @@ describe("settings by chat: the worker brief footer and routing at a limit", () 
     );
   });
 
+  it("turns other worker models on and off, stored only while on", () => {
+    expect(readSettingsRows(world, "workspace")).toContainEqual(
+      expect.objectContaining({ key: "workspace.otherWorkerModels", value: false }),
+    );
+    const on = plan([{ op: "set", key: "workspace.otherWorkerModels", value: true }]);
+    expect(on.ok && on.plan.rows).toEqual([
+      {
+        key: "workspace.otherWorkerModels",
+        label: "Let the orchestrator use other models",
+        before: "off (default)",
+        after: "on",
+      },
+    ]);
+    expect(charterAfter(on)).toMatchObject({ otherWorkerModels: true });
+    const open = { ...world, workspace: { ...workspace, charter: charterAfter(on)! } };
+    expect(
+      charterAfter(
+        plan([{ op: "set", key: "workspace.otherWorkerModels", value: false }], open),
+        open,
+      ),
+    ).not.toHaveProperty("otherWorkerModels");
+    expect(errorsOf([{ op: "set", key: "workspace.otherWorkerModels", value: "yes" }])).toContain(
+      "expected true",
+    );
+  });
+
   it("turns watching the default branch on and off, stored only while on", () => {
     expect(readSettingsRows(world, "workspace")).toContainEqual(
       expect.objectContaining({ key: "workspace.watchDefaultBranch", value: false }),

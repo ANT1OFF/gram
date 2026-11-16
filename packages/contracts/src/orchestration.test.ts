@@ -306,8 +306,11 @@ describe("orchestration schemas", () => {
       ...DEFAULT_CHARTER,
       workerMode: "auto",
       orchestratorModel: { agent: "claude", model: "opus", variant: "high", speed: "standard" },
+      // A new workspace lets the orchestrator go beyond the roster when none of it fits.
+      otherWorkerModels: true,
     });
     expect(fresh).not.toHaveProperty("workerModels");
+    expect(newWorkspaceCharter({ recommended: true }).otherWorkerModels).toBe(true);
     // A saved roster keeps its model and the profile the user picked.
     const picked = { agent: "codex", model: "gpt-6-sol", profileId: "gw" as ProfileId } as const;
     expect(newWorkspaceCharter({ workerModels: [picked] }).workerModels).toEqual([picked]);
@@ -315,7 +318,7 @@ describe("orchestration schemas", () => {
     expectRoundTrip(OrchestratorCharter, fresh);
   });
 
-  it("reads a charter without the brief footer and routing as having neither", () => {
+  it("reads a charter without the brief footer, routing or other worker models as having none", () => {
     const stored = decode(OrchestratorCharter)({
       maxConcurrentWorkers: 4,
       pauseAtLimitPct: 90,
@@ -323,6 +326,9 @@ describe("orchestration schemas", () => {
     });
     expect(stored).not.toHaveProperty("workerBriefFooter");
     expect(stored).not.toHaveProperty("routeAtLimit");
+    // One made before other worker models existed keeps the roster as its whole allow-list.
+    expect(stored).not.toHaveProperty("otherWorkerModels");
+    expect(DEFAULT_CHARTER).not.toHaveProperty("otherWorkerModels");
     expect(briefFooterOf(stored)).toBeUndefined();
     expect(newWorkspaceCharter({})).not.toHaveProperty("workerBriefFooter");
     expect(newWorkspaceCharter({})).not.toHaveProperty("routeAtLimit");

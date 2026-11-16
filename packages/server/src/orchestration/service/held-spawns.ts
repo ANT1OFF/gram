@@ -130,6 +130,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
     limitReadings,
     authorityOf,
     rosterHere,
+    workerModelsHere,
     plans,
     findThread,
     heldLock,
@@ -424,9 +425,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
         caller,
         state.charter,
         input.model,
-        state.charter.workerModels === undefined
-          ? undefined
-          : yield* rosterHere(state.charter.workerModels, state.charter),
+        yield* workerModelsHere(caller, state.charter),
       ).pipe(Effect.option);
       if (Option.isNone(picked) || picked.value.model.profileId !== undefined) return;
       const agent = picked.value.model.agent;
@@ -489,9 +488,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
         caller,
         state.charter,
         input.model,
-        state.charter.workerModels === undefined
-          ? undefined
-          : yield* rosterHere(state.charter.workerModels, state.charter),
+        yield* workerModelsHere(caller, state.charter),
       ).pipe(Effect.option);
       if (Option.isNone(picked) || picked.value.model.profileId !== undefined) return undefined;
       const now = yield* Clock.currentTimeMillis;
@@ -934,9 +931,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
         caller,
         state.charter,
         input.model,
-        state.charter.workerModels === undefined
-          ? undefined
-          : yield* rosterHere(state.charter.workerModels, state.charter),
+        yield* workerModelsHere(caller, state.charter),
       );
       // By the entry's name, so the release finds the same entry, a tier's included.
       const model = picked.name;

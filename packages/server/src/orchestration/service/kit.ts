@@ -11,7 +11,9 @@ import {
   NotFound,
   customModelsOf,
   withCustomModels,
+  type AgentModel,
   type CatalogueRow,
+  resolveModel,
   isLocalHost,
   requiredChecksOf,
   type AgentKind,
@@ -97,6 +99,7 @@ import {
 } from "../outbox.ts";
 import { ComposerPresence } from "../../runtime/composer-presence.ts";
 import {
+  ADMITTED,
   admittedForRole,
   checkWorkerSend,
   gateNeeds,
@@ -117,6 +120,7 @@ import {
   matchWorkerModel,
   closestWorkerModel,
   rosterNames,
+  workerModelLabel,
 } from "../rules.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import { RemoteHosts } from "../../host/remote-hosts.ts";
@@ -251,28 +255,78 @@ export const refuseConnectorEntries = (charter: OrchestratorCharter) => {
   return Effect.void;
 };
 
+/** The charter line, and the setting's name in Settings, of `otherWorkerModels`. */
+export const OTHER_WORKER_MODELS_LINE =
+  "other worker models: allowed. Prefer the worker models below and their notes; go beyond them only when none fits the work or a council needs a model they lack, on a model a harness lists on the user's own login or on a gateway profile one of them uses, named as agent:model, at effort high or below. Say which model and why";
+export const OTHER_WORKER_MODELS_SETTING =
+  "Let the orchestrator use other models when none of these fit (Settings → Workspaces → Models)";
+
+/**
+ * A model off the roster `named` resolves to (`otherWorkerModels`): the model to run, at Standard
+ * speed and high effort or below, or why the one it names can't run here. `undefined` when no
+ * harness here lists it.
+ */
+export type OtherWorkerModel = { readonly model: ModelRef } | { readonly why: string } | undefined;
+
+/** High, as a model off the roster runs, where it takes efforts at all (`OtherWorkerModel`). */
+const atHigh = (efforts: ReadonlyArray<string> | undefined) =>
+  efforts?.includes("high") === true ? { variant: "high" as const } : {};
+
+/** The charter's roster as it runs here (`rosterHere`), which `workerModel` picks from. */
+export interface WorkerModelsHere {
+  /** In the charter's order. */
+  readonly roster: ReadonlyArray<RosterModel>;
+  readonly unavailable: RosterUnavailable;
+  /** Its agents' model catalogues, which name a model by alias, pinned id or display name. */
+  readonly catalogue?: RosterCatalogue | undefined;
+  /** Resolves a model off the roster, for a charter with `otherWorkerModels` on. */
+  readonly other?:
+    | ((named: string, profileId?: string | undefined) => Effect.Effect<OtherWorkerModel>)
+    | undefined;
+}
+
 /**
  * `named` as one of the charter's worker models, of an agent kind admitted for workers. An entry
  * in `unavailable` is stood in for by the default (`matchWorkerModel`), which `instead` says.
+ * With `otherWorkerModels` on, a name no entry matches may be a model off the roster (`other`),
+ * on `profileId` when one is given.
  */
 export const workerModel = (
   tool: string,
   caller: Pick<Thread, "model">,
-  _charter: OrchestratorCharter,
+  charter: OrchestratorCharter,
   named: string | undefined,
-  here?: {
-    /** The charter's roster as it runs here (`rosterHere`), in its order; absent with none. */
-    readonly roster: ReadonlyArray<RosterModel>;
-    readonly unavailable: RosterUnavailable;
-    /** Its agents' model catalogues, which name a model by alias, pinned id or display name. */
-    readonly catalogue?: RosterCatalogue | undefined;
-  },
+  /** Absent with no roster, and `otherWorkerModels` off: the orchestrator's own model only. */
+  here?: WorkerModelsHere,
+  profileId?: string,
 ) =>
   Effect.gen(function* () {
     const allowed = here?.roster ?? ownWorkerModel(caller);
     const unavailable = here?.unavailable ?? new Map<number, string>();
     const catalogue = here?.catalogue;
     const match = matchWorkerModel(allowed, named, caller.model, unavailable, catalogue);
+    const others = charter.otherWorkerModels === true ? here?.other : undefined;
+    if (!match.ok && match.why === "unknown" && named !== undefined && others !== undefined) {
+      const found = yield* others(named, profileId);
+      if (found !== undefined && "why" in found) {
+        return yield* toolError(
+          tool,
+          refusal(
+            "not_admitted",
+            `${named} isn't one of the charter's worker models, and it can't run here: ${found.why}.`,
+          ),
+        );
+      }
+      if (found !== undefined) {
+        return {
+          model: found.model,
+          name: workerModelLabel(found.model),
+          follows: false,
+          other: true,
+          instead: undefined,
+        };
+      }
+    }
     if (!match.ok) {
       const labels = rosterNames(allowed, catalogue);
       const closest =
@@ -287,7 +341,11 @@ export const workerModel = (
             ? `${named} names more than one of the charter's worker models. Say which by its name: agent:model, or tier:<tier> for one that follows a tier. Allowed: ${labels}.`
             : match.why === "unavailable"
               ? `The selected worker model cannot run here, so no worker is spawned. ${match.reasons}. Tell the user.`
-              : `The charter doesn't allow workers on ${named ?? "that model"}.${closest === undefined ? "" : ` Did you mean ${closest}?`} Allowed: ${labels}.`,
+              : `The charter doesn't allow workers on ${named ?? "that model"}.${closest === undefined ? "" : ` Did you mean ${closest}?`} Allowed: ${labels}.${
+                  charter.otherWorkerModels === true
+                    ? " No harness here lists it either: name another as agent:model."
+                    : ` Others need the workspace setting "${OTHER_WORKER_MODELS_SETTING}"; if none of these fits, ask the user to turn it on.`
+                }`,
         ),
       );
     }
@@ -297,7 +355,13 @@ export const workerModel = (
         refusal("not_admitted", `${match.model.agent} threads can't be workers yet.`),
       );
     }
-    return { model: match.model, name: match.name, follows: match.follows, instead: match.instead };
+    return {
+      model: match.model,
+      name: match.name,
+      follows: match.follows,
+      other: false,
+      instead: match.instead,
+    };
   });
 
 /** What the consumer fiber works through, one at a time, in the order things happened. */
@@ -619,6 +683,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       const settings = yield* store.getSettings;
       const own = new Map<AgentKind, ReadonlyArray<string> | undefined>();
       const catalogue = new Map<AgentKind, ReadonlyArray<CatalogueRow>>();
+      const listings = new Map<AgentKind, ReadonlyArray<AgentModel>>();
       /**
        * `agent`'s own catalogue, as its picker lists it, once per call. Codex's is what an entry's
        * availability is read from, as before; Claude's only names models (aliases, pinned ids,
@@ -639,11 +704,53 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           const listed = Option.isNone(found)
             ? undefined
             : withCustomModels(found.value, customModelsOf(settings, agent));
-          if (listed !== undefined) catalogue.set(agent, listed);
+          if (listed !== undefined) {
+            catalogue.set(agent, listed);
+            listings.set(agent, listed);
+          }
           const ids = listed?.map((each) => each.id);
           own.set(agent, ids);
           return ids;
         }).pipe(Effect.orElseSucceed(() => undefined));
+      /** Why `model` can't be spawned on here, as one line ending in its fix; `undefined` when it can. */
+      const unavailableHere = (model: Pick<ModelRef, "agent" | "model" | "profileId">) =>
+        Effect.gen(function* () {
+          if (model.profileId === undefined) yield* catalogueOf(model.agent);
+          const context = {
+            profiles,
+            ownModels: own.get(model.agent),
+            customModels: customModelsOf(settings, model.agent).map((each) => each.id),
+            gated: gateOfAutonomy(autonomyOf(charter)) !== undefined,
+            gateReady: yield* nativeGateReady(model.agent),
+          };
+          const mode = startModeFor(
+            model.agent,
+            settings,
+            charter,
+            yield* autoHere(
+              model.agent,
+              gateOfAutonomy(autonomyOf(charter)),
+              model.profileId !== undefined,
+            ),
+          );
+          // A mode the gate can't ask in is as unrunnable as a missing key, so a spawn on it falls
+          // back too rather than being refused by `workerModelVerdict`.
+          const cantAsk =
+            admittedForRole(model.agent, "worker") &&
+            gateNeeds({
+              model,
+              gate: gateOfAutonomy(autonomyOf(charter)),
+              mode,
+              hasGatewayProfile: true,
+              gateHoldsInMode: gateHoldsIn(model.agent, mode),
+            }) === "mode";
+          return (
+            workerModelUnavailable({ model, ...context }) ??
+            (cantAsk
+              ? `workers start in ${mode} mode here, in which a ${kindName(model.agent)} worker can't ask before a push; pick another worker mode in Settings → Workspaces, or set the workspace's autonomy to Full`
+              : undefined)
+          );
+        });
       const roster: Array<RosterModel> = [];
       const unavailable = new Map<number, string>();
       const following = allowed.some((entry) => "tier" in entry);
@@ -697,50 +804,95 @@ export const makeOrchestrationKit = Effect.gen(function* () {
           );
           continue;
         }
-        if (entry.profileId === undefined) yield* catalogueOf(entry.agent);
-        const context = {
-          profiles,
-          ownModels: own.get(entry.agent),
-          customModels: customModelsOf(settings, entry.agent).map((each) => each.id),
-          gated: gateOfAutonomy(autonomyOf(charter)) !== undefined,
-          gateReady: yield* nativeGateReady(entry.agent),
-        };
-        const model = entry;
-        roster.push(model);
-        const mode = startModeFor(
-          model.agent,
-          settings,
-          charter,
-          yield* autoHere(
-            model.agent,
-            gateOfAutonomy(autonomyOf(charter)),
-            model.profileId !== undefined,
-          ),
-        );
-        // A mode the gate can't ask in is as unrunnable as a missing key, so a spawn on it falls
-        // back too rather than being refused by `workerModelVerdict`.
-        const cantAsk =
-          admittedForRole(model.agent, "worker") &&
-          gateNeeds({
-            model,
-            gate: gateOfAutonomy(autonomyOf(charter)),
-            mode,
-            hasGatewayProfile: true,
-            gateHoldsInMode: gateHoldsIn(model.agent, mode),
-          }) === "mode";
-        const why =
-          workerModelUnavailable({ model, ...context }) ??
-          (cantAsk
-            ? `workers start in ${mode} mode here, in which a ${kindName(model.agent)} worker can't ask before a push; pick another worker mode in Settings → Workspaces, or set the workspace's autonomy to Full`
-            : undefined);
+        roster.push(entry);
+        const why = yield* unavailableHere(entry);
         if (why !== undefined) unavailable.set(index, why);
       }
+      /**
+       * A model off the roster (`otherWorkerModels`): one a harness lists on the user's own login,
+       * else one a gateway profile lists that an entry of the same harness already runs on. Never a
+       * profile no entry uses, so a gateway stays opt-in. It runs at Standard speed and, where the
+       * model takes efforts, at high; `spawn_worker` keeps an effort asked of it at high or below.
+       */
+      const other = (named: string, profileId?: string): Effect.Effect<OtherWorkerModel> =>
+        Effect.gen(function* () {
+          const wanted = named.trim();
+          const prefixed = /^([a-z]+):(.+)$/i.exec(wanted);
+          const scoped = ADMITTED.worker.find((agent) => agent === prefixed?.[1]?.toLowerCase());
+          const asked = scoped === undefined ? wanted : prefixed![2]!.trim();
+          const found: Array<ModelRef> = [];
+          for (const agent of scoped === undefined ? ADMITTED.worker : [scoped]) {
+            if (profileId === undefined) {
+              yield* catalogueOf(agent);
+              const listed = resolveModel(listings.get(agent), asked);
+              if (listed.ok) {
+                found.push({
+                  agent,
+                  model: listed.row.id,
+                  speed: "standard",
+                  ...atHigh(listed.row.efforts),
+                });
+              }
+            }
+            const used = new Set(
+              roster.flatMap((entry) =>
+                entry.agent === agent && entry.profileId !== undefined ? [entry.profileId] : [],
+              ),
+            );
+            for (const profile of profiles) {
+              if (!used.has(profile.id) || (profileId !== undefined && profile.id !== profileId))
+                continue;
+              const row = profile.models.find((each) => each.id === asked);
+              if (row === undefined) continue;
+              found.push({
+                agent,
+                model: row.id,
+                profileId: profile.id,
+                speed: "standard",
+                ...atHigh(row.variants),
+              });
+            }
+          }
+          if (found.length === 0) return undefined;
+          const agents = new Set(found.map((each) => each.agent));
+          if (agents.size > 1) {
+            return {
+              why: `more than one harness lists it, so name it as agent:model (${[...agents].map((agent) => `${agent}:${asked}`).join(" or ")})`,
+            };
+          }
+          let first: string | undefined;
+          for (const model of found) {
+            const why = yield* unavailableHere(model);
+            if (why === undefined) return { model };
+            first ??= why;
+          }
+          return { why: first! };
+        });
       return {
         roster,
         unavailable: unavailable as RosterUnavailable,
         catalogue: catalogue as RosterCatalogue,
+        other,
       };
     });
+
+  /**
+   * What `workerModel` picks from for `caller` in a workspace with `charter`: the roster as it runs
+   * here, with models off it when `otherWorkerModels` is on. With no roster it is the caller's own
+   * model; `undefined` then, with the switch off, as `workerModel` takes it.
+   */
+  const workerModelsHere = (
+    caller: Pick<Thread, "model">,
+    charter: OrchestratorCharter,
+    hostId?: HostId,
+  ): Effect.Effect<WorkerModelsHere | undefined> =>
+    charter.workerModels !== undefined
+      ? rosterHere(charter.workerModels, charter, hostId)
+      : charter.otherWorkerModels !== true
+        ? Effect.succeed(undefined)
+        : rosterHere([], charter, hostId).pipe(
+            Effect.map((here) => ({ ...here, roster: ownWorkerModel(caller) })),
+          );
 
   /** The roster `caller` picks workers from, as it runs here: the charter's, else its own model. */
   const rosterFor = (caller: Pick<Thread, "model">, charter: OrchestratorCharter) =>
@@ -1355,6 +1507,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     creator,
     rosterHere,
     rosterFor,
+    workerModelsHere,
     debounce,
     maxWait,
     signals,
