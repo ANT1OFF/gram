@@ -1181,6 +1181,12 @@ test("a menu taller than the window scrolls in place, its submenu too, on a desk
 
     await page.getByTestId("fixture-long-menu").click();
     const menu = await fits("fixture-long-menu-popup");
+    // The keys go where focus is: wait for it inside the popup, which takes it as it opens.
+    const focusIn = (popup: typeof menu) =>
+      expect
+        .poll(() => popup.evaluate((element) => element.contains(document.activeElement)))
+        .toBe(true);
+    await focusIn(menu);
     // The last row is reached inside the menu; the page behind doesn't move.
     await page.keyboard.press("End");
     await expect(menu.getByRole("menuitem", { name: "Member 45" })).toBeInViewport();
@@ -1191,6 +1197,7 @@ test("a menu taller than the window scrolls in place, its submenu too, on a desk
     await menu.getByTestId("fixture-long-submenu").hover();
     await page.keyboard.press("ArrowRight");
     const submenu = await fits("fixture-long-submenu-popup");
+    await focusIn(submenu);
     await page.keyboard.press("End");
     await expect(submenu.getByRole("menuitem", { name: "Member 45" })).toBeInViewport();
     expect(await submenu.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
