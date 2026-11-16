@@ -104,11 +104,14 @@ test("a finished worker's outcome finds it in History, or resumes from its repor
 
   await outcome.getByRole("button", { name: "Resume from report" }).click();
   // The normal New form, with the report as its brief: nothing starts until the user starts it.
+  // It goes to the workspace's orchestrator, so its button sends to the team.
   await expect(page).toHaveURL(/\/new-task/);
   const brief = page.getByLabel("What needs doing", { exact: true });
   await expect(brief).toHaveValue(/^Pick up where "Release notes for 0.9" left off\./);
   await expect(brief).toHaveValue(/0\.9 notes cover undo, empty states and the new shortcuts\./);
-  await expect(page.getByRole("button", { name: /^Start/ }).first()).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Team" })).toBeChecked();
+  await expect(page.getByText("Planned by the Gram orchestrator")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Send to team/ })).toBeVisible();
 });
 
 test("a new orchestrator's empty chat says so as every empty view does, with what to do", async ({
