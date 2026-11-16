@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
+import { EMPTY_SHELL, useEmbedShell } from "@/embed/store";
 import { dispatchShortcut } from "@/keyboard/registry";
 import { renderWithApi } from "@/panels/test-utils";
 import { autonomyLevel } from "@/settings/workspace-settings-model";
@@ -73,6 +74,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   useServerSettings.setState({ settings: undefined });
+  useEmbedShell.setState(EMPTY_SHELL);
+  vi.unstubAllGlobals();
 });
 
 describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
@@ -368,5 +371,38 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     // Discover went once, with the open that worked.
     expect(send).toHaveBeenCalledOnce();
     expect(first).toEqual([{ workspaceId: (await save.mock.results[0]!.value).workspace.id }]);
+  });
+  it("starts the person's own machine where none is up, and opens the workspace once it is", async () => {
+    useEmbedShell.setState({
+      ...EMPTY_SHELL,
+      hosted: true,
+      machines: { noun: "sandbox", repositories: "theirs" },
+    });
+    let started = false;
+    const posts: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === "POST") {
+          posts.push(url);
+          started = true;
+          return Response.json({ progress: { hostKey: "k", phase: "starting", at: 1 } });
+        }
+        return Response.json(
+          started
+            ? { available: true, machine: { id: "m-1", name: "sbx", online: true } }
+            : { available: true },
+        );
+      }),
+    );
+    const { api, render } = await mount(settingsWith({ welcomeSeen: true }));
+    const open = vi.spyOn(api, "openOrchestrator");
+    render({ repo: DOCS });
+    await screen.findByText("Start a sandbox to run this");
+    fireEvent.click(screen.getByTestId("new-workspace-start"));
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect(posts).toEqual([expect.stringContaining("/machines/on-demand/start")]);
+    expect(open).toHaveBeenCalledOnce();
   });
 });

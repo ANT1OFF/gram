@@ -234,6 +234,33 @@ describe("headlessAgentHosts", () => {
       });
     }),
   );
+
+  it.live("waits on a machine just online for what it offers, rather than failing at once", () =>
+    Effect.gen(function* () {
+      let machines = [machine("m-first", { name: "build box", onlineSince: 1 })];
+      let asked = 0;
+      const answering = {
+        list: () => machines,
+        checkSignIn: () => {
+          asked += 1;
+          machines = [machine("m-first", { onlineSince: 1, models: MODELS })];
+          return Promise.resolve(undefined);
+        },
+      } as unknown as Pick<RemoteHostsShape, "list" | "checkSignIn">;
+      const claude = yield* headlessAgentHosts(answering).get("claude");
+      expect(yield* claude.listModels()).toEqual(MODELS);
+      expect(asked).toBe(1);
+      // One that never answers is waited on only so long, then said not to have listed yet.
+      const silent = {
+        list: () => [machine("m-first", { name: "build box", onlineSince: 1 })],
+        checkSignIn: () => new Promise(() => {}),
+      } as unknown as Pick<RemoteHostsShape, "list" | "checkSignIn">;
+      const quiet = yield* headlessAgentHosts(silent, false, 10).get("claude");
+      expect(yield* Effect.flip(quiet.listModels())).toMatchObject({
+        message: expect.stringContaining("build box hasn't said which models"),
+      });
+    }),
+  );
 });
 
 const OTHER = [{ id: "fake-sonnet", displayName: "Fake Sonnet", supportsEffort: false }];

@@ -25,6 +25,14 @@ import { FormError } from "@/components/form-error";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { useModelsSettled } from "@/composer/models";
+import {
+  needsMachine,
+  ON_DEMAND_QUERY_KEY,
+  StartMachineCard,
+  useOnDemandMachine,
+} from "@/composer/start-machine-card";
+import { fetchOnDemandStatus, isComing, startOnDemand } from "@/api/on-demand";
+import { useMachineNoun, useMachineReachesTheirs } from "@/embed/store";
 import { useShortcut } from "@/keyboard/registry";
 import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
 import { focusIfConnected } from "@/lib/use-return-focus";
@@ -52,6 +60,9 @@ import { RepositoryChecklist } from "./repository-checklist";
 import { sendDiscover } from "./use-board-actions";
 import { useWorkspacesQuery } from "./use-orchestration";
 import { parentFolder } from "./workspace-repos";
+
+/** How often a sheet waiting for the person's machine asks whether it is up. */
+const MACHINE_POLL_MS = 1000;
 
 /** Where a key press belongs to an open menu, list or dialog rather than to the sheet. */
 const inPopup = (target: EventTarget) =>
@@ -203,6 +214,50 @@ function SheetForm({
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<{ state: WorkspaceState; text: string | undefined }>();
   const [pending, setPending] = useState(false);
+  // Where the deployment starts machines on demand, the person's own runs the orchestrator: with
+  // none online the card to start it shows here, and a workspace started meanwhile opens once it
+  // is up, rather than failing for want of one.
+  const onDemand = useOnDemandMachine();
+  const machineWanted = needsMachine(onDemand.status);
+  const [waiting, setWaiting] = useState(false);
+  const noun = useMachineNoun();
+  const reachesTheirs = useMachineReachesTheirs();
+  // Stops a wait for the machine when the sheet goes.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  /**
+   * Opens `state` once the person's machine is online, starting it with their defaults where it
+   * reaches all their repositories and none is on its way: Start is then the one click. Where
+   * repositories are picked for it, the card above starts it. A start that fails says so on the
+   * card, with Try again, and Start stops waiting on it.
+   */
+  const openOnceUp = async (state: WorkspaceState, text: string | undefined) => {
+    setWaiting(true);
+    try {
+      if (reachesTheirs && !isComing(onDemand.status)) await startOnDemand([]);
+      for (;;) {
+        const status = await queryClient.fetchQuery({
+          queryKey: ON_DEMAND_QUERY_KEY,
+          queryFn: fetchOnDemandStatus,
+          staleTime: 0,
+        });
+        if (!alive.current) return;
+        if (!needsMachine(status)) break;
+        if (status?.progress?.phase === "failed") return setWaiting(false);
+        await new Promise((resolve) => setTimeout(resolve, MACHINE_POLL_MS));
+      }
+    } catch (e) {
+      setWaiting(false);
+      return setIssue(errorMessage(e) || `Couldn't start your ${noun}.`);
+    }
+    setWaiting(false);
+    await open(state, text);
+  };
   // With nothing picked yet, adding a repository is the first thing to do.
   const [adding, setAdding] = useState(initial.projectIds.length === 0);
   const repositoryRef = useRef<AddRepositoryHandle>(null);
@@ -249,7 +304,8 @@ function SheetForm({
 
   const start = async () => {
     if (busy) return;
-    if (created !== undefined) return void open(created.state, created.text);
+    if (created !== undefined)
+      return void (machineWanted ? openOnceUp : open)(created.state, created.text);
     // A repository typed but not added yet is added first, as Enter would.
     const typed = repositoryRef.current?.submit();
     if (typed !== undefined) {
@@ -283,6 +339,10 @@ function SheetForm({
       save({ onboarding: { welcomeSeen: true } }).catch((e: unknown) =>
         console.error("new workspace: welcome", e),
       );
+    }
+    if (machineWanted) {
+      setBusy(false);
+      return void openOnceUp(state, text);
     }
     await open(state, text);
   };
@@ -380,11 +440,21 @@ function SheetForm({
         />
       </Field>
       {issue !== undefined && <FormError message={issue} />}
+      {machineWanted && <StartMachineCard />}
       <div className="flex flex-wrap items-center gap-2">
         <PressScale>
-          <Button type="submit" data-testid="new-workspace-start" disabled={busy}>
-            {busy && <Spinner aria-hidden />}
-            {created === undefined ? "Start" : "Open orchestrator"}
+          <Button
+            type="submit"
+            data-testid="new-workspace-start"
+            disabled={busy || waiting}
+            aria-label={waiting ? `Start, waiting for your ${noun}` : undefined}
+          >
+            {(busy || waiting) && <Spinner aria-hidden />}
+            {waiting
+              ? `Opens once your ${noun} is up…`
+              : created === undefined
+                ? "Start"
+                : "Open orchestrator"}
             <ShortcutKbd id="draft.create" cap />
           </Button>
         </PressScale>

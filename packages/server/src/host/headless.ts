@@ -48,6 +48,8 @@ export interface PlaceableMachine {
   readonly joinedAt: number;
   readonly onlineSince?: number | undefined;
   readonly models?: ReadonlyArray<AgentModel> | undefined;
+  /** When it last said what it can run, while online: absent until its first check answers. */
+  readonly claudeSignInCheckedAt?: number | undefined;
   /** Its Codex, from a host that runs Codex sessions (`HostStatus.codex`). */
   readonly codex?: MachineCodex | undefined;
   /** Its OpenCode, from a host that runs OpenCode sessions (`HostStatus.opencode`). */
@@ -214,6 +216,34 @@ export const placeRequest = (
     return { ...request, hostId };
   });
 
+/**
+ * How long a list waits on a machine online that hasn't said what its CLIs offer: about what a
+ * fresh machine takes to ask them.
+ */
+export const STATUS_WAIT_MS = 20_000;
+
+/**
+ * The machine `person`'s work goes on, when it is online and lists nothing for `agent` though it
+ * may yet: absent when it has a list, or has said why it can't (a CLI not installed, not signed
+ * in), so that a fact isn't waited on.
+ */
+export const unlisted = (
+  machines: ReadonlyArray<PlaceableMachine>,
+  person: string | undefined,
+  onDemand: boolean,
+  agent: MachineAgent,
+): HostId | undefined => {
+  const picked = machineFor(machines, person, onDemand);
+  if ("error" in picked) return undefined;
+  const machine = machines.find((each) => each.id === picked.id);
+  if (machine === undefined || machine.onlineSince === undefined) return undefined;
+  if (listOf(machine, agent) !== undefined) return undefined;
+  // Claude Code's list is absent until the machine answers, or when its listing failed: asked
+  // again. A machine that has answered without a Codex or OpenCode runs none: nothing to wait on.
+  if (agent !== "claude" && machine.claudeSignInCheckedAt !== undefined) return undefined;
+  return machine.id;
+};
+
 const unavailable = (agent: AgentKind, message: string) =>
   new AgentUnavailable({ agent, reason: "startup-failed", message });
 
@@ -269,8 +299,12 @@ export const modelsFor = (
  * what the machine a new thread goes on says of its Codex.
  */
 export const headlessAgentHosts = (
-  remote: Pick<RemoteHostsShape, "list"> | undefined,
+  remote:
+    | (Pick<RemoteHostsShape, "list"> & Partial<Pick<RemoteHostsShape, "checkSignIn">>)
+    | undefined,
   onDemand = false,
+  /** How long a list waits on a machine online that hasn't said yet (`STATUS_WAIT_MS`). */
+  statusWaitMs = STATUS_WAIT_MS,
 ): AgentHosts["Service"] => {
   // Each person's own machine's last list, per agent, kept while this server runs.
   const remembered = {
@@ -281,7 +315,20 @@ export const headlessAgentHosts = (
   const listModels = (agent: MachineAgent) =>
     Effect.gen(function* () {
       const person = yield* callerPerson;
-      const listed = modelsFor(remote?.list() ?? [], person, onDemand, remembered[agent], agent);
+      const machines = remote?.list() ?? [];
+      let listed = modelsFor(machines, person, onDemand, remembered[agent], agent);
+      // The machine the work goes on is online but hasn't said yet: one just started is still
+      // asking its CLIs, and an earlier listing may have failed. Its check, or the one under way,
+      // is waited on briefly, so the first question after a start isn't answered "not yet".
+      const asking = "error" in listed ? unlisted(machines, person, onDemand, agent) : undefined;
+      if (asking !== undefined && remote?.checkSignIn !== undefined) {
+        const check = remote.checkSignIn;
+        yield* Effect.tryPromise(() => check(asking)).pipe(
+          Effect.timeoutOption(statusWaitMs),
+          Effect.ignore,
+        );
+        listed = modelsFor(remote.list(), person, onDemand, remembered[agent], agent);
+      }
       return "error" in listed
         ? yield* Effect.fail(unavailable(agent, listed.error))
         : listed.models;
