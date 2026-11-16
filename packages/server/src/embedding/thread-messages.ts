@@ -8,7 +8,13 @@
 //       200 { "queued": true }                  a turn was running: it waits behind it
 //   thread-interrupt { "threadId", "person": { "id", "name"? } }
 //     → 200 { "interrupted": true }
-//   either → 404 no such thread, 409 { "error" } one that can't take it now, 400 a body that isn't one
+//   thread-fresh-session { "threadId", "person": { "id", "name"? }, "checkpoint"? }
+//     → 200 { "started": true }                 an orchestrator's fresh session is under way
+//   each → 404 no such thread, 409 { "error" } one that can't take it now, 400 a body that isn't one
+//
+// A fresh session is for a workspace's orchestrator only (`orchestrator.handoff`, the web app's
+// Fresh session): its agent session is replaced, with memory, charter and ledger as the bridge.
+// `checkpoint` (default true) has the orchestrator save to memory first; false is a hard cut.
 //
 // The message is the person's, exactly as one they typed in the web app: the same receipt, so a
 // `key` sent again is one message (`thread.send`'s `clientMessageId`), the same record of who
@@ -21,6 +27,7 @@
 // (`/threads/from-profile`'s `startedBy`): it proves itself with the embed token, never a cookie.
 
 import { ThreadRpcs, type ThreadId, type UserInput } from "@gram/contracts";
+import { Orchestration } from "../orchestration/service.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -71,6 +78,7 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
     const store = yield* ThreadStore;
     const machines = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts))?.machines;
     const ownerOf = ownersOf(machines);
+    const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
 
     /**
      * `effect` as `person`, for the thread: refused for a thread on a machine started for someone
@@ -171,6 +179,50 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
         ).pipe(
           Effect.map((result) =>
             result === "not-yours" ? refusal(409, NOT_YOUR_MACHINE) : answer({ interrupted: true }),
+          ),
+          Effect.catch((error) => Effect.succeed(failed(error))),
+        );
+      }),
+    );
+
+    yield* inbound.route("POST", "thread-fresh-session", (body) =>
+      Effect.gen(function* () {
+        const threadId = body?.["threadId"];
+        if (typeof threadId !== "string" || !THREAD.test(threadId))
+          return refusal(400, "`threadId` is a thread's id");
+        const person = personOf(body?.["person"]);
+        if (typeof person === "string") return refusal(400, person);
+        const checkpoint = body?.["checkpoint"];
+        if (checkpoint !== undefined && typeof checkpoint !== "boolean")
+          return refusal(400, "`checkpoint` is true or false");
+        const id = threadId as ThreadId;
+        const thread = Option.getOrUndefined(yield* store.getThread(id).pipe(Effect.option));
+        if (thread === undefined) return refusal(404, "there is no such thread");
+        if (thread.role !== "orchestrator" || thread.workspaceId === undefined)
+          return refusal(409, "only a workspace's orchestrator starts a fresh session");
+        if (orchestration === undefined)
+          return refusal(409, "this server runs no orchestration");
+        const workspaceId = thread.workspaceId;
+        const holder = yield* store.getWorkspace(workspaceId).pipe(
+          Effect.map((state) => state.workspace.orchestratorThreadId),
+          Effect.orElseSucceed(() => undefined),
+        );
+        if (holder !== id)
+          return refusal(409, "this thread no longer holds its workspace's orchestrator");
+        return yield* asPerson(
+          person,
+          id,
+          "orchestrator.handoff",
+          { workspaceId, ...(checkpoint === undefined ? {} : { checkpoint }) },
+          orchestration.handoff(
+            workspaceId,
+            "user",
+            undefined,
+            checkpoint === undefined ? {} : { checkpoint },
+          ),
+        ).pipe(
+          Effect.map((result) =>
+            result === "not-yours" ? refusal(409, NOT_YOUR_MACHINE) : answer({ started: true }),
           ),
           Effect.catch((error) => Effect.succeed(failed(error))),
         );

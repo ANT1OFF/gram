@@ -451,6 +451,15 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
             body: { threadId: "no-such-thread", person },
           })).status,
         ).toBe(404);
+
+        // A fresh session is an orchestrator's alone, and the body is checked first.
+        const fresh = (body: Record<string, unknown>) =>
+          call(at, "/embed/v1/thread-fresh-session", { token: TOKEN, body });
+        expect((yield* fresh({ threadId: thread.id, person, checkpoint: "no" })).status).toBe(400);
+        expect((yield* fresh({ threadId: "no-such-thread", person })).status).toBe(404);
+        const plain = yield* fresh({ threadId: thread.id, person, checkpoint: false });
+        expect(plain.status).toBe(409);
+        expect(JSON.parse(plain.body).error).toContain("orchestrator");
       }).pipe(Effect.scoped),
   );
 
