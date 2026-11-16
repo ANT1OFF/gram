@@ -200,8 +200,7 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
         if (thread === undefined) return refusal(404, "there is no such thread");
         if (thread.role !== "orchestrator" || thread.workspaceId === undefined)
           return refusal(409, "only a workspace's orchestrator starts a fresh session");
-        if (orchestration === undefined)
-          return refusal(409, "this server runs no orchestration");
+        if (orchestration === undefined) return refusal(409, "this server runs no orchestration");
         const workspaceId = thread.workspaceId;
         const holder = yield* store.getWorkspace(workspaceId).pipe(
           Effect.map((state) => state.workspace.orchestratorThreadId),
