@@ -35,6 +35,11 @@ export const MACHINES_STOP_CANCEL_PATH = "/machines/stop/cancel";
  * `kept` is the `kept` of the stop's answer, given back.
  */
 export const MACHINES_STOP_RESUME_PATH = "/machines/stop/resume";
+/**
+ * Says a machine is being started on another disk: `{ id }`. Once it dials in, its sessions wait
+ * for its resume, as after a stop this Gram saw, so none opens before its folders are back.
+ */
+export const MACHINES_STOP_EXPECT_PATH = "/machines/stop/expect";
 
 /** Local only, as every `/machines/*` route: never a paired browser, never a machine. */
 export const HOST_STOP_PATHS: ReadonlySet<string> = new Set([
@@ -42,6 +47,7 @@ export const HOST_STOP_PATHS: ReadonlySet<string> = new Set([
   MACHINES_STOP_PREPARE_PATH,
   MACHINES_STOP_CANCEL_PATH,
   MACHINES_STOP_RESUME_PATH,
+  MACHINES_STOP_EXPECT_PATH,
 ]);
 
 const BODY_MAX = 4_096;
@@ -155,6 +161,9 @@ export const hostStopRoute = (
         return yield* cancelStop(deps, hostId).pipe(
           Effect.match({ onFailure: failed, onSuccess: () => json({ ok: true }) }),
         );
+      case MACHINES_STOP_EXPECT_PATH:
+        deps.hosts.stops.expect(hostId);
+        return json({ ok: true });
       case MACHINES_STOP_RESUME_PATH: {
         const kept = body["kept"] === undefined ? undefined : keptBefore(body["kept"]);
         if (body["kept"] !== undefined && kept === undefined) return refuse("bad request", 400);

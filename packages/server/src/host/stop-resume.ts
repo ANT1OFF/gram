@@ -319,6 +319,9 @@ const madeFrom = (thread: Thread, id: HostId, cwd: string) => {
  * answer, given back by whoever asks) before what this Gram remembers of its own stops. With
  * neither, as after this Gram restarted, the remote's ref is taken as it is.
  */
+/** How many of a machine's folders a resume puts back at once. */
+export const RESTORE_CONCURRENCY = 4;
+
 export const resumeHost = (
   deps: StopResumeDeps,
   id: HostId,
@@ -333,58 +336,64 @@ export const resumeHost = (
     const missing: Array<HostResumed["missing"][number]> = [];
     const restored: Array<HostResumed["restored"][number]> = [];
     const restore = connection.stop.restore;
-    for (const { thread, cwds } of placed)
-      for (const cwd of cwds) {
-        if (yield* connection.git.present(cwd)) continue;
-        const entry = { threadId: thread.id, cwd };
-        const made = madeFrom(thread, id, cwd);
-        if (restore === undefined || made === undefined) {
-          missing.push(entry);
-          continue;
-        }
-        const before =
-          options.kept?.find((kept) => kept.threadId === thread.id && kept.cwd === cwd) ??
-          deps.hosts.stops.keptOf(id, thread.id, cwd);
-        const commit =
-          before?.commit !== undefined && OID.test(before.commit) ? before.commit : undefined;
-        // The branch the machine said the folder was on at the stop, before the one recorded here.
-        const branch = (commit === undefined ? undefined : before?.branch) ?? made.branch;
-        // Where the stop pushed, unless this resume names somewhere else.
-        const remote = options.remote ?? (commit === undefined ? undefined : before?.remote);
-        const answer = yield* restore({
-          threadId: thread.id,
-          cwd,
-          url: made.url,
-          ...(branch === undefined ? {} : { branch }),
-          ...(remote === undefined ? {} : { remote }),
-          ...(commit === undefined ? {} : { commit }),
-          ...(commit !== undefined && before?.caughtUp === true ? { caughtUp: true } : {}),
-        }).pipe(
-          Effect.timeoutOrElse({
-            duration: RESTORE_WITHIN,
-            orElse: () => Effect.succeed({ restored: false, note: "The machine didn't answer." }),
-          }),
-          Effect.catch((error) => Effect.succeed({ restored: false, note: error.message })),
-        );
-        const note = answer.note === undefined ? {} : { note: answer.note };
-        if (!answer.restored) {
-          missing.push({ ...entry, ...note });
-          continue;
-        }
-        const put =
-          "commit" in answer && answer.commit !== undefined && OID.test(answer.commit)
-            ? { commit: answer.commit }
-            : {};
-        restored.push({
-          ...entry,
-          ...put,
-          ...("uncommitted" in answer && answer.uncommitted !== undefined
-            ? { uncommitted: answer.uncommitted }
-            : {}),
-          ...("source" in answer && answer.source !== undefined ? { source: answer.source } : {}),
-          ...note,
-        });
-      }
+    const folders = placed.flatMap(({ thread, cwds }) => cwds.map((cwd) => ({ thread, cwd })));
+    // A few at once: each is a clone and a fetch on the host, and sessions wait for them all.
+    yield* Effect.forEach(
+      folders,
+      ({ thread, cwd }) =>
+        Effect.gen(function* () {
+          if (yield* connection.git.present(cwd)) return;
+          const entry = { threadId: thread.id, cwd };
+          const made = madeFrom(thread, id, cwd);
+          if (restore === undefined || made === undefined) {
+            missing.push(entry);
+            return;
+          }
+          const before =
+            options.kept?.find((kept) => kept.threadId === thread.id && kept.cwd === cwd) ??
+            deps.hosts.stops.keptOf(id, thread.id, cwd);
+          const commit =
+            before?.commit !== undefined && OID.test(before.commit) ? before.commit : undefined;
+          // The branch the machine said the folder was on at the stop, before the one recorded here.
+          const branch = (commit === undefined ? undefined : before?.branch) ?? made.branch;
+          // Where the stop pushed, unless this resume names somewhere else.
+          const remote = options.remote ?? (commit === undefined ? undefined : before?.remote);
+          const answer = yield* restore({
+            threadId: thread.id,
+            cwd,
+            url: made.url,
+            ...(branch === undefined ? {} : { branch }),
+            ...(remote === undefined ? {} : { remote }),
+            ...(commit === undefined ? {} : { commit }),
+            ...(commit !== undefined && before?.caughtUp === true ? { caughtUp: true } : {}),
+          }).pipe(
+            Effect.timeoutOrElse({
+              duration: RESTORE_WITHIN,
+              orElse: () => Effect.succeed({ restored: false, note: "The machine didn't answer." }),
+            }),
+            Effect.catch((error) => Effect.succeed({ restored: false, note: error.message })),
+          );
+          const note = answer.note === undefined ? {} : { note: answer.note };
+          if (!answer.restored) {
+            missing.push({ ...entry, ...note });
+            return;
+          }
+          const put =
+            "commit" in answer && answer.commit !== undefined && OID.test(answer.commit)
+              ? { commit: answer.commit }
+              : {};
+          restored.push({
+            ...entry,
+            ...put,
+            ...("uncommitted" in answer && answer.uncommitted !== undefined
+              ? { uncommitted: answer.uncommitted }
+              : {}),
+            ...("source" in answer && answer.source !== undefined ? { source: answer.source } : {}),
+            ...note,
+          });
+        }),
+      { concurrency: RESTORE_CONCURRENCY, discard: true },
+    );
     const gone = new Set(missing.map((entry) => entry.threadId));
     const live = new Set(placed.filter(({ session }) => session).map(({ thread }) => thread.id));
     const reopened: Array<ThreadId> = [];

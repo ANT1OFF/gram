@@ -17,6 +17,9 @@ export const STOPPED_RECENTLY_MS = 15 * 60_000;
  */
 export const RESUME_WAIT_MS = 3 * 60_000;
 
+/** How long a machine told to come back on another disk (`expect`) is taken at its word. */
+export const EXPECT_FOR_MS = 15 * 60_000;
+
 /** What a stop said it kept of one folder at a remote, for a resume to hold the remote to. */
 export interface KeptRecord {
   /** The commit under the thread's ref, or the branch's tip when `caughtUp`. */
@@ -52,6 +55,11 @@ export interface StopMarks {
    * had left after it was readied is owed a resume from then (`resuming`).
    */
   readonly back: (id: HostId) => void;
+  /**
+   * The machine will dial in on another disk, whatever this Gram remembers of its stop (none, after
+   * a restart): once it is back, it is owed a resume as one that left after a stop is.
+   */
+  readonly expect: (id: HostId) => void;
   /** Dialled in after a stop, its threads not yet resumed, within `RESUME_WAIT_MS`. */
   readonly resuming: (id: HostId) => boolean;
   /** Its threads were resumed, or the resume gave up: sessions open on it as on any machine. */
@@ -90,6 +98,8 @@ export const makeStopMarks = (
   const cancels = new Map<HostId, number>();
   const kept = new Map<HostId, Map<string, KeptRecord>>();
   const owed = new Map<HostId, number>();
+  /** Told to come back on another disk (`expect`), since when. */
+  const expected = new Map<HostId, number>();
   /** The mark, unless its hold ran out with the machine there all along. */
   const markOf = (id: HostId) => {
     const mark = marks.get(id);
@@ -123,8 +133,14 @@ export const makeStopMarks = (
       if (mark !== undefined) mark.left = true;
     },
     back: (id) => {
-      if (markOf(id)?.left === true) owed.set(id, now());
+      const told = expected.get(id);
+      expected.delete(id);
+      if (markOf(id)?.left === true || (told !== undefined && now() - told < EXPECT_FOR_MS))
+        owed.set(id, now());
       marks.delete(id);
+    },
+    expect: (id) => {
+      expected.set(id, now());
     },
     resuming: (id) => {
       const at = owed.get(id);
@@ -139,6 +155,7 @@ export const makeStopMarks = (
     cancel: (id) => {
       marks.delete(id);
       owed.delete(id);
+      expected.delete(id);
       rested.delete(id);
       last.delete(id);
       cancels.set(id, (cancels.get(id) ?? 0) + 1);
@@ -174,6 +191,7 @@ export const makeStopMarks = (
     forget: (id) => {
       marks.delete(id);
       owed.delete(id);
+      expected.delete(id);
       last.delete(id);
       rested.delete(id);
       cancels.delete(id);
