@@ -86,9 +86,9 @@ test("a stopped turn says so", async ({ page }) => {
   const approval = page.getByTestId("approval-card");
   await expect(approval).toBeVisible({ timeout: 20_000 });
   await clockAt(page, 20_000);
-  // The mock takes a stop at the turn's next step, which here is the answer.
+  // Stop withdraws the card the turn waits on, as the server's does, and the turn ends there.
   await page.getByRole("button", { name: "Stop", exact: true }).click();
-  await approval.getByTestId("approval-allow").click();
+  await expect(approval).toHaveCount(0);
   const row = page.getByTestId("turn-fold");
   await expect(row).toHaveAttribute("data-state", "stopped");
   await expect(row).toHaveText("Stopped after 20s · 4 tools");
@@ -110,8 +110,8 @@ test("Stop names its shortcut, and the shortcut stops the turn", async ({ page }
 
   await page.getByLabel("Message", { exact: true }).focus();
   await page.keyboard.press("ControlOrMeta+Period");
-  // As with a click, the mock takes the stop at the turn's next step.
-  await approval.getByTestId("approval-allow").click();
+  // As with a click, the card is withdrawn and the turn stops.
+  await expect(approval).toHaveCount(0);
   await expect(page.getByTestId("turn-fold")).toHaveAttribute("data-state", "stopped");
   await expect(stop).toBeHidden();
 });

@@ -175,6 +175,15 @@ describe("threads store events", () => {
     expect(s.byId[T]!.pendingRequests.map((r) => r.id)).toEqual(["r1"]);
     expect(s.byId[T]!.queue).toEqual([]);
     expect(s.byId[T]!.identity?.model).toBe("sonnet");
+    // A thread first seen after the snapshot has no capabilities until its session reports them.
+    expect(s.byId[T]!.capabilities).toBeUndefined();
+    applyEvent({
+      type: "thread.identity",
+      threadId: T,
+      identity: { model: "sonnet", commands: [] },
+      capabilities: { steer: true, steerInterrupt: true } as never,
+    });
+    expect(store.getState().byId[T]!.capabilities).toMatchObject({ steer: true });
 
     applyEvent({ type: "thread.requestResolved", threadId: T, requestId: "r1" as RequestId });
     expect(store.getState().byId[T]!.pendingRequests).toEqual([]);

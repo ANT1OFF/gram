@@ -23,6 +23,7 @@ import type {
   ReopenedClosedThread,
   PanelKind,
   TerminalProcess,
+  AgentCapabilities,
   AgentModel,
   ModelRef,
   PendingRequest,
@@ -679,7 +680,10 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       status,
       ...(detail === undefined ? {} : { detail }),
       ...(compaction === undefined ? {} : { compaction }),
-    });
+    }); // A thread at work has a session, which reported its identity (and what its agent can do) as
+    // it opened: a scenario's worker set running by hand is one too. A card alone isn't: an
+    // independent approval comes to a thread at rest.
+    if (status === "starting" || status === "running") this.#ensureIdentity(runtime);
   }
 
   /** Like the server's plan writer: the summary keeps both, and `thread.plan` carries both. */
@@ -716,7 +720,13 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     if (runtime.summary.identity) return;
     const identity = identityFor(runtime.summary.thread.model);
     runtime.summary = { ...runtime.summary, identity };
-    this.#emit({ type: "thread.identity", threadId: runtime.summary.thread.id, identity });
+    const { capabilities } = runtime.summary;
+    this.#emit({
+      type: "thread.identity",
+      threadId: runtime.summary.thread.id,
+      identity,
+      ...(capabilities === undefined ? {} : { capabilities }),
+    });
   }
 
   #delay(ms: number) {
@@ -729,7 +739,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
 
   async #runSteps(runtime: ThreadRuntime, steps: Step[]): Promise<void> {
     for (const step of steps) {
-      if (runtime.steer || runtime.interrupted) throw new Interrupted();
+      this.#takeSteer(runtime);
       switch (step.kind) {
         case "chunk": {
           const event: ThreadFeedEvent = {
@@ -766,7 +776,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
           runtime.heldAt = step.name;
           await new Promise<void>((resolve) => this.#gates.set(step.name, resolve));
           runtime.heldAt = undefined;
-          if (runtime.steer || runtime.interrupted) throw new Interrupted();
+          this.#takeSteer(runtime);
           break;
         case "status":
           this.#setStatus(runtime, step.status, step.detail, step.compaction);
@@ -816,6 +826,29 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
         }
       }
     }
+  }
+
+  /**
+   * Between steps, as the server's agent takes input between tool rounds: an interrupt (or Stop)
+   * ends the turn here, and a plain steer joins it, cancelling nothing. Its message goes in now and
+   * the agent answers it before the turn ends (`#continue`).
+   */
+  #takeSteer(runtime: ThreadRuntime) {
+    if (runtime.interrupted || (runtime.steer && runtime.steerDelivery === "interrupt")) {
+      throw new Interrupted();
+    }
+    const steered = runtime.steer;
+    if (steered === undefined) return;
+    runtime.steer = undefined;
+    runtime.steerDelivery = undefined;
+    const id = this.#ids();
+    this.#putMessage(runtime, {
+      id,
+      role: "user",
+      metadata: { createdAt: Date.now(), delivery: "steer" },
+      parts: [{ type: "text", text: steered.text }],
+    });
+    runtime.steeredInTurn = [...(runtime.steeredInTurn ?? []), steered];
   }
 
   /** Aborts every still-streaming message, as the server does on interrupt. */
@@ -970,11 +1003,16 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     runtime.running = true;
     try {
       await this.#runSteps(runtime, steps);
+      // What was steered in is answered in the same turn, before it ends.
+      for (let next = runtime.steeredInTurn?.shift(); next; next = runtime.steeredInTurn?.shift()) {
+        await this.#runSteps(runtime, echoScript(next, this.#ids));
+      }
     } catch (error) {
       if (!(error instanceof Interrupted)) throw error;
       this.#abortInflight(runtime);
     } finally {
       runtime.running = false;
+      runtime.steeredInTurn = undefined;
     }
     const steer = runtime.steer;
     const delivery = runtime.steerDelivery;
@@ -982,7 +1020,13 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     runtime.steer = undefined;
     runtime.steerDelivery = undefined;
     runtime.interrupted = false;
-    this.#stampTurnEnd(runtime, steer || interrupted ? "interrupted" : "completed");
+    // A steer that came after the turn's last step goes as the turn after, as the CLI runs one.
+    this.#stampTurnEnd(
+      runtime,
+      interrupted || (steer !== undefined && delivery === "interrupt")
+        ? "interrupted"
+        : "completed",
+    );
     // `#stopInMissingFolder` stopped it and rested the thread cold: nothing more runs there.
     if (runtime.folderGone === true) {
       runtime.folderGone = false;
@@ -1314,7 +1358,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     if (runtime.running || runtime.summary.thread.awaitingMachine !== undefined) {
       this.#setQueue(runtime, [
         ...runtime.summary.queue,
-        { id: this.#ids() as QueueItemId, input },
+        { id: this.#ids() as QueueItemId, input: authoredInput(input) },
       ]);
       return { queued: true };
     }
@@ -1335,6 +1379,11 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     }
     runtime.steer = input;
     runtime.steerDelivery = options?.interrupt === true ? "interrupt" : "steer";
+    // As the server's: an interrupt past a card is a stop, the message going once the turn ends. A
+    // plain steer waits for the card's answer.
+    if (options?.interrupt === true && runtime.summary.pendingRequests.length > 0) {
+      await this.interrupt(threadId);
+    }
   }
 
   async interrupt(threadId: ThreadId) {
@@ -1343,6 +1392,14 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     runtime.interrupted = true;
     // A turn held at a gate stops there, as a real turn stops wherever it is.
     if (runtime.heldAt !== undefined) this.release(runtime.heldAt);
+    // As the server's, Stop answers every open card.
+    const { thread, pendingRequests } = runtime.summary;
+    for (const request of pendingRequests) {
+      this.#waiters.delete(request.id);
+      this.#dropRequest.get(request.id)?.();
+      this.#emit({ type: "thread.requestResolved", threadId: thread.id, requestId: request.id });
+    }
+    if (pendingRequests.length > 0) runtime.summary = { ...runtime.summary, pendingRequests: [] };
   }
 
   /**
@@ -1459,6 +1516,22 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   /** `simulateLastActivity` (`mock-thread-sims.ts`). */
   simulateLastActivity(threadId: ThreadId, at: number) {
     return simulateLastActivity(this.#scenes, threadId, at);
+  }
+
+  /**
+   * Dev and e2e hook: what the thread's agent can do, as a fresh session reports it, e.g. an agent
+   * that takes no input mid-turn (`steer: false`). Sent as the snapshot a reconnect would carry.
+   */
+  simulateCapabilities(threadId: ThreadId, capabilities: Partial<AgentCapabilities>) {
+    const runtime = this.#runtime(threadId);
+    runtime.summary = {
+      ...runtime.summary,
+      capabilities: { ...runtime.summary.capabilities, ...capabilities } as AgentCapabilities,
+    };
+    this.#emit({
+      type: "threads.snapshot",
+      threads: [...this.#threads.values()].map((r) => r.summary),
+    });
   }
 
   /** `simulateTurnPlan` (`mock-thread-sims.ts`). */
@@ -2657,6 +2730,17 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     const item = runtime.summary.queue.find((q) => q.id === itemId);
     // As the server: a thread that waits for its machine holds its queue until it is placed.
     if (runtime.summary.thread.awaitingMachine !== undefined) return;
+    // As the server: only the user's own words go in past a card, whoever pressed Steer.
+    const status = runtime.summary.status;
+    if (
+      (status === "needsApproval" || status === "needsInput") &&
+      item !== undefined &&
+      authoredInput(item.input).author !== "user"
+    ) {
+      throw new Error(
+        "only your own message goes in past a card; this one waits for the turn to end",
+      );
+    }
     // As the server: with nothing running there is nothing to steer into, so it goes now.
     if (!runtime.running) {
       this.#setQueue(
@@ -3004,3 +3088,13 @@ export type MockApi = ReturnType<typeof createMockApi>;
 
 /** What `window.gramMock` offers beyond `Api`: the dev and e2e scenario controls. */
 export type MockControls = Omit<MockApi, keyof Api>;
+
+/**
+ * `input` as the server's `authored` marks it: Gram's with a notice, the user's unless another
+ * thread sent it, which is what lets the user's own queued words, and only those, past a card.
+ */
+function authoredInput(input: UserInput): UserInput {
+  if (input.author !== undefined) return input;
+  if (input.notice !== undefined) return { ...input, author: "server" };
+  return input.origin === undefined ? { ...input, author: "user" } : input;
+}

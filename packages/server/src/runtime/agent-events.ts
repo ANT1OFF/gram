@@ -525,6 +525,7 @@ export const makeAgentEvents = ({
             type: "thread.identity",
             threadId: rt.threadId,
             identity: rt.identity,
+            ...(rt.capabilities === undefined ? {} : { capabilities: rt.capabilities }),
           });
           if (rt.switchOpening !== undefined && rt.session !== undefined) {
             const switching = (yield* store.getThread(rt.threadId).pipe(Effect.orDie))

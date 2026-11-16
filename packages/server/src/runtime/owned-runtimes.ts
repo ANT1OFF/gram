@@ -92,7 +92,8 @@ export const ownedRuntimes = (
       Effect.andThen(admitOrAbsent(threadId), runtimes.removeQueued(threadId, ...rest)),
     markCompleted: (threadId, ...rest) =>
       Effect.andThen(admitOrAbsent(threadId), runtimes.markCompleted(threadId, ...rest)),
-    interrupt: (threadId) => Effect.andThen(admitOrAbsent(threadId), runtimes.interrupt(threadId)),
+    interrupt: (threadId, options) =>
+      Effect.andThen(admitOrAbsent(threadId), runtimes.interrupt(threadId, options)),
     stopAtToolBoundary: (threadId) =>
       Effect.andThen(admitOrAbsent(threadId), runtimes.stopAtToolBoundary(threadId)),
     // Before the request is taken: an answer refused here leaves it open for its owner.

@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { rateLimitFields, StartupDiagnostic } from "./agent.ts";
+import { AgentCapabilities, rateLimitFields, StartupDiagnostic } from "./agent.ts";
 import { SessionRestartReason, UIMessageChunkSchema, UIMessageSchema } from "./ui-message.ts";
 import { ThreadSuggestions } from "./assist.ts";
 import { KeybindingsState } from "./depth.ts";
@@ -73,6 +73,12 @@ export const ServerEvent = Schema.Union([
     type: Schema.Literal("thread.identity"),
     threadId: ThreadId,
     identity: ThreadIdentity,
+    /**
+     * What the session's agent can do (steer mid-turn, interrupt for a message, fork), sent as the
+     * session reports its identity. Otherwise only a snapshot carries them, and a thread created
+     * after a window subscribed (a worker spawned meanwhile) would have none there.
+     */
+    capabilities: Schema.optionalKey(AgentCapabilities),
   }),
   /** Same shape as `ThreadSummary.usage`; pushed after each turn's usage report. */
   Schema.Struct({

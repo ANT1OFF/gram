@@ -14,7 +14,14 @@ import { ApiProvider } from "@/api/context";
 import type { Api } from "@/api/types";
 import { useThreadsStore } from "@/stores/threads";
 
-import { QueueList, SEND_NOW_LABEL, STEER_LABEL, steerBlocked } from "./queue-list";
+import {
+  QueueList,
+  SEND_NOW_LABEL,
+  STEER_AT_CARD_LABEL,
+  STEER_LABEL,
+  pastCardBlocked,
+  steerBlocked,
+} from "./queue-list";
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
@@ -205,9 +212,49 @@ describe("QueueList", () => {
     expect(steerOf(1).getAttribute("aria-disabled")).toBe("true");
 
     expect(steerBlocked("running", true, "claude")).toBeUndefined();
-    expect(steerBlocked("needsApproval", true, "claude")).toBe(
-      "The turn is waiting on you: steer once it's running again",
+    // A turn at a card takes the steer: the agent reads it with the card's answer.
+    expect(steerBlocked("needsApproval", true, "claude")).toBeUndefined();
+    expect(steerBlocked("needsInput", true, "codex")).toBeUndefined();
+    expect(steerBlocked("needsApproval", false, "claude")).toContain(
+      "can't take a message mid-turn",
     );
+
+    // Only the user's own words go past a card: another thread's or Gram's waits, greyed, saying so.
+    expect(pastCardBlocked("needsApproval", { text: "mine", author: "user" })).toBeUndefined();
+    expect(pastCardBlocked("running", { text: "theirs" })).toBeUndefined();
+    for (const input of [
+      { text: "theirs", origin: { threadId: "t-orch" as ThreadId, title: "Orch", depth: 1 } },
+      { text: "CI passed", author: "server" as const },
+      { text: "no author" },
+    ]) {
+      expect(pastCardBlocked("needsInput", input)).toBe(
+        "Only your own message goes in past a card: this one waits for the turn to end",
+      );
+    }
+
+    cleanup();
+    seed({
+      status: "needsApproval",
+      queue: [
+        { id: "q1" as QueueItemId, input: { text: "mine", author: "user" } },
+        {
+          id: "q2" as QueueItemId,
+          input: {
+            text: "From the orchestrator",
+            origin: { threadId: "t-orch" as ThreadId, title: "Orch", depth: 1 },
+          },
+        },
+      ],
+    });
+    const atCard = fakeApi();
+    renderQueue(atCard.api);
+    expect(steerOf(1).getAttribute("aria-disabled")).toBe("true");
+    expect(steerOf(1).getAttribute("aria-label")).toContain("Only your own message goes in");
+    fireEvent.click(steerOf(1));
+    expect(atCard.ops.queueSteer).not.toHaveBeenCalled();
+    expect(steerOf(0).getAttribute("aria-label")).toBe(STEER_AT_CARD_LABEL);
+    fireEvent.click(steerOf(0));
+    expect(atCard.ops.queueSteer).toHaveBeenCalledTimes(1);
   });
 
   it("says which thread queued a message and why, and nothing on the user's own", () => {

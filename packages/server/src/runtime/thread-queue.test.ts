@@ -10,13 +10,17 @@ import {
   type ServerEvent,
   type ThreadId,
 } from "@gram/contracts";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { FakeAgentControl } from "./fake-agent.ts";
-import { RuntimeTestLayer, waitFor } from "./test-harness.ts";
+import { AgentHosts } from "./agent-hosts.ts";
+import { FAKE_CAPABILITIES, FakeAgentAdapter, FakeAgentControl } from "./fake-agent.ts";
+import { makeRuntimeTestLayer, RuntimeTestLayer, waitFor } from "./test-harness.ts";
 import { ThreadRuntimes, type JoinQueued } from "./thread-runtimes.ts";
 
 /** An input another thread sent, as `send_message` makes one. */
@@ -809,10 +813,12 @@ describe("ThreadRuntimes queue", () => {
         "the identity event",
         Effect.sync(() => events.some((e) => e.type === "thread.identity")),
       );
+      // With what its agent can do: a thread created after a window subscribed has no snapshot of it.
       expect(events).toContainEqual({
         type: "thread.identity",
         threadId: thread.id,
         identity: { model: "fake", commands: [] },
+        capabilities: FAKE_CAPABILITIES,
       });
       const [summary] = yield* runtimes.snapshot;
       expect(summary?.identity).toEqual({ model: "fake", commands: [] });
@@ -856,38 +862,63 @@ describe("ThreadRuntimes queue", () => {
   );
 });
 
+/** The fake agent as Codex reports itself: it steers, but has no interrupting steer. */
+const noInterruptingSteer = Layer.effectContext(
+  Effect.gen(function* () {
+    const hosts = yield* AgentHosts;
+    const control = yield* FakeAgentControl;
+    return Context.make(
+      AgentHosts,
+      AgentHosts.of({
+        get: (kind) =>
+          hosts.get(kind).pipe(
+            Effect.map((host) => ({
+              ...host,
+              capabilities: { ...host.capabilities, steerInterrupt: false },
+            })),
+          ),
+      }),
+    ).pipe(Context.add(FakeAgentControl, control));
+  }),
+).pipe(Layer.provide(FakeAgentAdapter));
+
 describe("ThreadRuntimes into a turn waiting on the user", () => {
+  const atCard = Effect.gen(function* () {
+    const runtimes = yield* ThreadRuntimes;
+    const fake = yield* FakeAgentControl;
+    const thread = yield* runtimes.create({
+      projectRoot: "/work/repo",
+      checkout: { kind: "main", path: "/work/repo" },
+      input: { text: "one" },
+    });
+    const session = yield* waitFor(
+      "the first send",
+      fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
+    );
+    yield* session.emit({
+      type: "request",
+      request: {
+        kind: "approval",
+        id: "req-1" as RequestId,
+        toolName: "Bash",
+        displayName: "Bash",
+        input: { command: "git push" },
+        suggestions: [],
+      },
+    });
+    yield* waitFor(
+      "the card",
+      runtimes.status(thread.id).pipe(Effect.map((s) => s === "needsApproval")),
+    );
+    return { runtimes, thread, session };
+  });
+
   it.effect(
-    "steers nothing past an approval card: a steer is refused, and a notice or queued item waits",
+    "takes the user's steer past an approval card, while Gram's notice waits for the turn's end",
     () =>
       Effect.gen(function* () {
-        const runtimes = yield* ThreadRuntimes;
-        const fake = yield* FakeAgentControl;
-        const thread = yield* runtimes.create({
-          projectRoot: "/work/repo",
-          checkout: { kind: "main", path: "/work/repo" },
-          input: { text: "one" },
-        });
-        const session = yield* waitFor(
-          "the first send",
-          fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
-        );
-        yield* session.emit({
-          type: "request",
-          request: {
-            kind: "approval",
-            id: "req-1" as RequestId,
-            toolName: "Bash",
-            displayName: "Bash",
-            input: { command: "git push" },
-            suggestions: [],
-          },
-        });
-        yield* waitFor(
-          "the card",
-          runtimes.status(thread.id).pipe(Effect.map((s) => s === "needsApproval")),
-        );
-
+        const { runtimes, thread, session } = yield* atCard;
+        // Anyone else's steer (another agent's, an embedder's) is refused there, and so queues.
         for (const options of [undefined, { interrupt: true }] as const) {
           const refused = yield* runtimes
             .steer(thread.id, { text: "skip it" }, options)
@@ -897,28 +928,283 @@ describe("ThreadRuntimes into a turn waiting on the user", () => {
             message: "the turn is waiting on you; answer it, or queue the message",
           });
         }
+        // The user's goes in, and the agent holds it for the tool call the card is on: the card
+        // stays, waiting.
+        yield* runtimes.steer(thread.id, { text: "and then the docs" }, { pastCard: true });
+        expect(session.steered.map((i) => i.text)).toEqual(["and then the docs"]);
+        expect(yield* runtimes.status(thread.id)).toBe("needsApproval");
+
         const ci = yield* runtimes.sendNotice(thread.id, "ci:o/r#7", { text: "CI passed" });
         expect(ci).toEqual({ queued: true, steered: false, replaced: false });
+        // So is another agent's text given as the user's, and anything queued that isn't theirs,
+        // even when the user presses its Steer: only their own words cross a card.
+        const fromAgent = {
+          text: "From the orchestrator",
+          origin: {
+            threadId: "t-orch" as ThreadId,
+            title: "Orchestrator",
+            depth: 1,
+            role: "orchestrator" as const,
+            mode: "queue" as const,
+          },
+        };
+        const posing = yield* runtimes
+          .steer(thread.id, fromAgent, { pastCard: true })
+          .pipe(Effect.flip);
+        expect(posing).toMatchObject({ _tag: "InvalidState" });
+        yield* runtimes.send(thread.id, fromAgent);
         yield* runtimes.send(thread.id, { text: "mine" });
         const [summary] = yield* runtimes.snapshot;
+        for (const text of ["CI passed", "From the orchestrator"]) {
+          const item = summary!.queue.find((q) => q.input.text.includes(text))!;
+          expect(yield* runtimes.steerQueued(thread.id, item.id).pipe(Effect.flip)).toMatchObject({
+            _tag: "InvalidState",
+            message:
+              "only your own message goes in past a card; this one waits for the turn to end",
+          });
+        }
+        expect(session.steered.map((i) => i.text)).toEqual(["and then the docs"]);
         const mine = summary!.queue.find((q) => q.input.text === "mine")!;
-        expect(yield* runtimes.steerQueued(thread.id, mine.id).pipe(Effect.flip)).toMatchObject({
-          _tag: "InvalidState",
-        });
-        expect(session.steered).toEqual([]);
+        yield* runtimes.steerQueued(thread.id, mine.id);
+        expect(session.steered.map((i) => i.text)).toEqual(["and then the docs", "mine"]);
+        const [after] = yield* runtimes.snapshot;
+        expect(after!.queue.map((q) => q.input.text)).toEqual([
+          "CI passed",
+          expect.stringContaining("From the orchestrator"),
+        ]);
 
-        // Once it ends, what waited goes in order, each once.
+        expect(session.responses).toEqual([]);
+        expect(yield* runtimes.status(thread.id)).toBe("needsApproval");
+
+        // Once it ends, the notice goes, once.
         yield* session.completeTurn();
         yield* waitFor(
           "the notice",
           Effect.sync(() => session.sent.length === 2),
         );
-        yield* session.completeTurn();
-        yield* waitFor(
-          "the queued message",
-          Effect.sync(() => session.sent.length === 3),
-        );
-        expect(session.sent.map((i) => i.text)).toEqual(["one", "CI passed", "mine"]);
+        expect(session.sent.map((i) => i.text)).toEqual(["one", "CI passed"]);
       }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect(
+    "interrupts past an approval card by stopping the turn, then sending the message first",
+    () =>
+      Effect.gen(function* () {
+        const { runtimes, thread, session } = yield* atCard;
+        yield* runtimes.send(thread.id, { text: "queued earlier" });
+        yield* runtimes.steer(
+          thread.id,
+          { text: "stop, do this" },
+          { interrupt: true, pastCard: true },
+        );
+        // A stop, not an interrupting steer: the card is withdrawn with the turn.
+        expect(session.interrupts).toBe(1);
+        expect(session.steered).toEqual([]);
+        const [stopped] = yield* runtimes.snapshot;
+        expect(stopped!.pendingRequests).toEqual([]);
+        yield* waitFor(
+          "the message",
+          Effect.sync(() => session.sent.length === 2),
+        );
+        expect(session.sent.map((i) => i.text)).toEqual(["one", "stop, do this"]);
+        const [summary] = yield* runtimes.snapshot;
+        expect(summary!.queue.map((q) => q.input.text)).toEqual(["queued earlier"]);
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect(
+    "interrupts past a card on an agent with no interrupting steer (Codex) by stopping, then sending",
+    () =>
+      Effect.gen(function* () {
+        const { runtimes, thread, session } = yield* atCard;
+        yield* runtimes.steer(
+          thread.id,
+          { text: "Cancel and do this" },
+          { interrupt: true, pastCard: true },
+        );
+        expect(session.interrupts).toBe(1);
+        expect(session.steered).toEqual([]);
+        yield* waitFor(
+          "the message",
+          Effect.sync(() => session.sent.length === 2),
+        );
+        expect(session.sent.map((i) => i.text)).toEqual(["one", "Cancel and do this"]);
+        // Running, the same agent still refuses an interrupting steer: it has none.
+        const refused = yield* runtimes
+          .steer(thread.id, { text: "now" }, { interrupt: true, pastCard: true })
+          .pipe(Effect.flip);
+        expect(refused).toMatchObject({
+          message: "this agent can't be interrupted for input; stop it and send instead",
+        });
+      }).pipe(
+        Effect.provide(makeRuntimeTestLayer(undefined, undefined, undefined, noInterruptingSteer)),
+      ),
+  );
+
+  it.effect(
+    "leaves the next turn running when the card's turn ends as an interrupt past it queues",
+    () => {
+      // The card is answered and its turn ends just as the interrupt's message is queued: that
+      // message then starts the next turn, which the interrupt, aimed at the old turn, must spare.
+      let finishOld: Effect.Effect<void> = Effect.void;
+      let fired = false;
+      const store = Layer.effect(
+        ThreadStore,
+        Effect.gen(function* () {
+          const base = yield* ThreadStore;
+          return ThreadStore.of({
+            ...base,
+            putQueue: (id, queue) =>
+              base.putQueue(id, queue).pipe(
+                Effect.andThen(() => {
+                  if (fired || !queue.some((q) => q.input.text === "Interrupt race"))
+                    return Effect.void;
+                  fired = true;
+                  return finishOld.pipe(
+                    Effect.andThen(
+                      Effect.forEach(Array.from({ length: 20 }), () => Effect.yieldNow, {
+                        discard: true,
+                      }),
+                    ),
+                  );
+                }),
+              ),
+          });
+        }),
+      ).pipe(Layer.provideMerge(ThreadStore.layerSqlite(":memory:")));
+      return Effect.gen(function* () {
+        const { runtimes, thread, session } = yield* atCard;
+        const scope = yield* Effect.scope;
+        finishOld = Effect.forkIn(
+          runtimes
+            .respond(thread.id, "req-1" as RequestId, {
+              kind: "approval",
+              decision: "deny",
+              scope: "once",
+            })
+            .pipe(Effect.andThen(session.completeTurn()), Effect.ignore),
+          scope,
+        ).pipe(Effect.asVoid);
+        yield* runtimes.steer(
+          thread.id,
+          { text: "Interrupt race" },
+          { pastCard: true, interrupt: true },
+        );
+        yield* waitFor(
+          "the message's turn",
+          Effect.sync(() => session.sent.length >= 2),
+        );
+        expect({
+          interrupts: session.interrupts,
+          sent: session.sent.map((i) => i.text),
+          status: yield* runtimes.status(thread.id),
+        }).toEqual({
+          // The stop was claimed with the message, so the card was withdrawn and the old turn
+          // stopped; never the new one.
+          interrupts: 1,
+          sent: ["one", "Interrupt race"],
+          status: "running",
+        });
+      }).pipe(
+        Effect.provide(makeRuntimeTestLayer(undefined, undefined, undefined, undefined, store)),
+      );
+    },
+  );
+
+  it.effect(
+    "holds the queue while a stop's interrupt is on its way, so it never reaches the next turn",
+    () => {
+      // The session's interrupt arrives late (a remote machine, a slow SDK): meanwhile the card the
+      // stop withdrew lets its turn end on its own. The message must not start a turn the late
+      // interrupt would then cut off: it waits for the stop to settle, and then runs on. Arriving
+      // with no turn open, the interrupt does nothing, as a real adapter's does (Codex's
+      // interrupts its own current turn and has none then); the fake's would end one regardless.
+      let duringStop: Effect.Effect<void> = Effect.void;
+      let ended = false;
+      const lateInterrupt = Layer.effectContext(
+        Effect.gen(function* () {
+          const hosts = yield* AgentHosts;
+          const control = yield* FakeAgentControl;
+          return Context.make(
+            AgentHosts,
+            AgentHosts.of({
+              get: (kind) =>
+                hosts.get(kind).pipe(
+                  Effect.map((host) => ({
+                    ...host,
+                    open: (options: Parameters<typeof host.open>[0]) =>
+                      host.open(options).pipe(
+                        Effect.map((session) => ({
+                          ...session,
+                          interrupt: Effect.suspend(() => duringStop).pipe(
+                            Effect.andThen(
+                              Effect.suspend(() => (ended ? Effect.void : session.interrupt)),
+                            ),
+                          ),
+                        })),
+                      ),
+                  })),
+                ),
+            }),
+          ).pipe(Context.add(FakeAgentControl, control));
+        }),
+      ).pipe(Layer.provide(FakeAgentAdapter));
+      return Effect.gen(function* () {
+        const { runtimes, thread, session } = yield* atCard;
+        yield* runtimes.respond(thread.id, "req-1" as RequestId, {
+          kind: "approval",
+          decision: "deny",
+          scope: "once",
+        });
+        // A card of Gram's own: withdrawn, its tool call is answered at once and can finish.
+        const asking = yield* Effect.forkScoped(
+          runtimes.requestApproval(thread.id, {
+            toolName: "mcp__gram__probe",
+            displayName: "probe",
+            input: {},
+            suggestions: [],
+          }),
+        );
+        yield* waitFor(
+          "the server's card",
+          runtimes.status(thread.id).pipe(Effect.map((s) => s === "needsApproval")),
+        );
+        let startedDuringStop: number | undefined;
+        duringStop = Fiber.join(asking).pipe(
+          Effect.andThen(session.completeTurn()),
+          Effect.tap(() => Effect.sync(() => (ended = true))),
+          // Time for the old turn's end to be handled, and for anything it would start.
+          Effect.andThen(
+            Effect.forEach(Array.from({ length: 50 }), () => Effect.yieldNow, { discard: true }),
+          ),
+          Effect.tap(() => Effect.sync(() => (startedDuringStop = session.sent.length))),
+          Effect.ignore,
+        );
+        yield* runtimes.steer(
+          thread.id,
+          { text: "Keep this correction running" },
+          { pastCard: true, interrupt: true },
+        );
+        // Nothing started while the interrupt was on its way…
+        expect(startedDuringStop).toBe(1);
+        // …and once it settled, the message went, and its turn runs on.
+        yield* waitFor(
+          "the message",
+          Effect.sync(() => session.sent.length === 2),
+        );
+        expect(session.sent.map((i) => i.text)).toEqual(["one", "Keep this correction running"]);
+        const store = yield* ThreadStore;
+        const turns = yield* waitFor(
+          "both turns recorded",
+          store
+            .listTurns(thread.id)
+            .pipe(Effect.map((recorded) => recorded.length === 2 && recorded)),
+        );
+        expect(turns[0]!.endedAt).toBeDefined();
+        expect(turns[1]!.endedAt).toBeUndefined();
+        for (let i = 0; i < 50; i++) yield* Effect.yieldNow;
+        expect(yield* runtimes.status(thread.id)).toBe("running");
+      }).pipe(Effect.provide(makeRuntimeTestLayer(undefined, undefined, undefined, lateInterrupt)));
+    },
   );
 });

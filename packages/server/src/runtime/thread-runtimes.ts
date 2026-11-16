@@ -81,6 +81,8 @@ import {
 import { retryFacts, RETRY_DEADLINE } from "./retrying.ts";
 import {
   type Turn,
+  type StopClaim,
+  stopHeld,
   type Runtime,
   BUSY,
   makeTurnId,
@@ -945,6 +947,9 @@ const make = Effect.gen(function* () {
         }
         return yield* reopenWhenIdle(rt);
       }
+      // A stop still under way holds the queue and the deliveries: its interrupt mustn't reach
+      // the next turn. Its end sends them (`runStop`).
+      if (stopHeld(rt)) return;
       // The queue and the deliveries wait for the limit's resume, which sends them.
       if (rt.limitWait !== undefined) return yield* startIdleTimer(rt);
       // And for a queue hold to let go (`releaseQueue`).
@@ -1143,41 +1148,75 @@ const make = Effect.gen(function* () {
     openSession: (rt, thread, resumeAt, switchAttempt) =>
       openSession(rt, thread, resumeAt, switchAttempt),
   });
-  const interrupt: ThreadRuntimesShape["interrupt"] = (threadId) =>
+  /**
+   * Called with the lock held: claims the stop of the open turn (or, between turns, of background
+   * agents) for `runStop`. Aimed at `turnId`, it claims nothing once that turn has ended.
+   */
+  const claimStop = (rt: Runtime, turnId?: TurnId): Effect.Effect<StopClaim | undefined> =>
     Effect.gen(function* () {
-      const rt = yield* getRuntime(threadId);
-      const target = yield* locked(
-        rt,
-        Effect.gen(function* () {
-          if (rt.session === undefined) return undefined;
-          // Between turns there is nothing to interrupt, but a background subagent can still be
-          // working, and to the user that is the agent running. Stop means stop that too.
-          if (rt.turn === undefined) return { background: rt.session };
-          // Stop answers every open card: drop them now rather than when the turn winds down.
-          yield* clearPendingRequests(rt, "stop-requested");
-          // A machine restart that cuts the turn short now doesn't carry it on.
-          rt.stopAsked = rt.turn.id;
-          return { session: rt.session, turn: rt.turn };
-        }),
-      );
-      if (target === undefined) return;
+      if (rt.session === undefined) return undefined;
+      // Aimed at one turn, which has ended: whatever runs now isn't what the caller meant.
+      if (turnId !== undefined && rt.turn?.id !== turnId) return undefined;
+      // Between turns there is nothing to interrupt, but a background subagent can still be
+      // working, and to the user that is the agent running. Stop means stop that too.
+      if (rt.turn === undefined) return { background: rt.session };
+      // Stop answers every open card: drop them now rather than when the turn winds down.
+      yield* clearPendingRequests(rt, "stop-requested");
+      // A machine restart that cuts the turn short now doesn't carry it on.
+      rt.stopAsked = rt.turn.id;
+      rt.stopsPending = (rt.stopsPending ?? 0) + 1;
+      return { session: rt.session, turn: rt.turn };
+    });
+
+  /** Stops what `claimStop` claimed, without the lock; a turn that ended meanwhile is left be. */
+  const runStop = (rt: Runtime, target: StopClaim) =>
+    Effect.gen(function* () {
       if ("background" in target) {
         // Each stopped task reports back through its own `task_notification`, which closes its
         // transcript and clears the activity line as any finished subagent does.
         yield* target.background.stopBackgroundTasks ?? Effect.void;
         return;
       }
-      yield* target.session.interrupt.pipe(
-        Effect.andThen(Deferred.await(target.turn.done)),
-        Effect.timeoutOrElse({
-          duration: config.interruptWatchdog,
-          orElse: () =>
-            Effect.fail(
-              new InterruptHung({ timeoutMs: Duration.toMillis(config.interruptWatchdog) }),
-            ),
-        }),
-        Effect.catchTag("InterruptHung", () => recoverOwned(rt, target.turn.id)),
+      const turnId = target.turn.id;
+      // Every claim is counted; the last to settle lets the queue go.
+      yield* Effect.gen(function* () {
+        if (yield* Deferred.isDone(target.turn.done)) return;
+        yield* target.session.interrupt.pipe(
+          Effect.andThen(Deferred.await(target.turn.done)),
+          Effect.timeoutOrElse({
+            duration: config.interruptWatchdog,
+            orElse: () =>
+              Effect.fail(
+                new InterruptHung({ timeoutMs: Duration.toMillis(config.interruptWatchdog) }),
+              ),
+          }),
+          Effect.catchTag("InterruptHung", () => recoverOwned(rt, turnId)),
+        );
+      }).pipe(
+        // The stop has settled, the turn with it: what waited behind it goes now, as a turn's end
+        // would have sent it.
+        Effect.ensuring(
+          locked(
+            rt,
+            Effect.gen(function* () {
+              // Every stop claimed holds the queue until it has settled: the last one sends.
+              rt.stopsPending = Math.max(0, (rt.stopsPending ?? 0) - 1);
+              if (stopHeld(rt)) return;
+              if (rt.turn === undefined && rt.session !== undefined && rt.status === "idle")
+                yield* becomeIdle(rt);
+              else if (rt.queue.length > 0 || rt.launch !== undefined) yield* drainQueue(rt);
+              else yield* pumpDeliveries(rt);
+            }),
+          ),
+        ),
       );
+    });
+
+  const interrupt: ThreadRuntimesShape["interrupt"] = (threadId, options) =>
+    Effect.gen(function* () {
+      const rt = yield* getRuntime(threadId);
+      const target = yield* locked(rt, claimStop(rt, options?.turnId));
+      if (target !== undefined) yield* runStop(rt, target);
     });
 
   /**
@@ -1458,6 +1497,8 @@ const make = Effect.gen(function* () {
     switchHold,
     pumpDeliveries,
     scheduleAccount,
+    claimStop,
+    runStop,
     paired: (id) => workerHosts.paired(id),
   });
 

@@ -10,6 +10,8 @@ import * as Exit from "effect/Exit";
 import {
   type Runtime,
   type Turn,
+  type StopClaim,
+  stopHeld,
   makeTurnId,
   makeQueueItemId,
   locked,
@@ -548,6 +550,9 @@ export const makeMessageQueue = ({
       if (rt.closing) return yield* failPendingDeliveries(rt, "ended");
       // Held for `whileAtRest`, which pumps again once it lets go.
       if (rt.reserved) return;
+      // Held while a stop is under way, so its late interrupt can't reach the turn a delivery
+      // would start; its end pumps again (`runStop`).
+      if (stopHeld(rt)) return;
       // Held until the thread's machine is named: the placement pumps again (`relocate`).
       if (yield* awaitsMachine(rt)) return;
       // Held for the limit's resume, which pumps again.
@@ -796,6 +801,8 @@ export const makeMessageQueue = ({
                 yield* becomeIdle(rt);
                 return result;
               }
+              // A stop under way: this waits for it to settle, which sends it (`runStop`).
+              if (stopHeld(rt)) return yield* enqueue();
               if (rt.session !== undefined && rt.turn === undefined) {
                 const kept = yield* sendNow(rt, rt.session, input).pipe(
                   Effect.as(false),
@@ -891,6 +898,8 @@ export const makeMessageQueue = ({
     Effect.gen(function* () {
       if (
         (rt.queue.length === 0 && rt.launch === undefined) ||
+        // A stop under way sends what waited once it has settled (`runStop`).
+        stopHeld(rt) ||
         rt.closing ||
         rt.reserved ||
         rt.limitWait !== undefined ||
@@ -940,10 +949,20 @@ export const makeMessageQueue = ({
 };
 
 /**
- * A turn held on a card the user must answer (an approval, a question). Nothing is steered into it:
- * the agent would read the message before the user's answer. It is queued for the turn's end.
+ * A turn held on a card the user must answer (an approval, a question). The user's own steer still
+ * goes in (`pastCard`): the agent takes a steer between tool rounds (Claude's `next` priority) or at
+ * its next model call (Codex's `turn/steer`), so it reads it after the tool call the card holds has
+ * its answer. Their interrupt there is a stop, then the message. Anything else is refused, so Gram's
+ * and other agents' messages queue for the turn's end.
  */
 const WAITING_ON_USER: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput"]);
+
+/**
+ * Input the user wrote themselves, as `authored` marks it: no other thread's (`origin`), no notice,
+ * not Gram's. An edit keeps who wrote an item, so an agent's text never becomes the user's.
+ */
+const usersOwnWord = (input: UserInput) =>
+  input.author === "user" && input.origin === undefined && input.notice === undefined;
 
 const waitingOnUser = (threadId: ThreadId, status: ThreadStatus) =>
   new InvalidState({
@@ -972,12 +991,41 @@ export interface QueueMethodsDeps {
   readonly pumpDeliveries: MessageQueue["pumpDeliveries"];
   readonly scheduleAccount: LimitResume["scheduleAccount"];
   /**
+   * The user's Stop in two halves (`thread-runtimes.ts`): claimed under the lock, so an interrupt
+   * past a card stops the very turn its message was queued behind, then run without it.
+   */
+  readonly claimStop: (rt: Runtime, turnId?: TurnId) => Effect.Effect<StopClaim | undefined>;
+  readonly runStop: (rt: Runtime, target: StopClaim) => Effect.Effect<void>;
+  /**
    * Whether a machine is still paired (`WorkerHostsShape.paired`). A thread placed on one removed
    * for good keeps its queue, but the boot doesn't send it: the session can't open there, and each
    * restart would fail the thread again and count as its activity. Moving the thread sends it.
    */
   readonly paired?: (id: HostId) => boolean;
 }
+
+/**
+ * Called with the lock held: puts the user's `input` at the head of the queue, so it is the first
+ * thing sent once the open turn ends. Refused while a switch holds the thread's input.
+ */
+const queueFirst = (
+  { switchHold, syncQueue }: Pick<QueueMethodsDeps, "switchHold" | "syncQueue">,
+  rt: Runtime,
+  input: UserInput,
+) =>
+  Effect.gen(function* () {
+    if ((yield* switchHold(rt)) !== undefined)
+      return yield* new InvalidState({
+        threadId: rt.threadId,
+        message:
+          "Input is held for the orchestrator switch. Wait for it to finish or cancel it before interrupting.",
+      });
+    const id = makeQueueItemId();
+    rt.queue.unshift({ id, input });
+    rt.actors.set(id, yield* storedActor);
+    rt.queuedAt.set(id, { at: yield* Clock.currentTimeMillis, messages: 1 });
+    yield* syncQueue(rt);
+  });
 
 /** The `ThreadRuntimes` methods that queue, edit, steer or deliver a thread's input. */
 export const makeQueueMethods = ({
@@ -995,6 +1043,8 @@ export const makeQueueMethods = ({
   switchHold,
   pumpDeliveries,
   scheduleAccount,
+  claimStop,
+  runStop,
   paired = () => true,
 }: QueueMethodsDeps): Pick<
   ThreadRuntimesShape,
@@ -1126,40 +1176,65 @@ export const makeQueueMethods = ({
   steer: (threadId, sent, options) =>
     withSession(threadId, (rt, session) => {
       const turn = rt.turn;
+      const input = authored(typedInput(sent));
+      const stopping = (claim: StopClaim | undefined) => ({ rt, claim });
       // As a send is: the turn running there is being stopped, and would fail every tool it calls.
       return refuseMissingFolder(rt).pipe(
-        Effect.andThen(() =>
-          turn === undefined
-            ? Effect.fail(
-                new InvalidState({ message: "nothing to steer", threadId, status: rt.status }),
-              )
-            : WAITING_ON_USER.has(rt.status)
-              ? Effect.fail(waitingOnUser(threadId, rt.status))
-              : options?.interrupt === true && rt.capabilities?.steerInterrupt !== true
-                ? Effect.fail(
+        Effect.andThen((): Effect.Effect<StopClaim | undefined, InvalidState> => {
+          if (turn === undefined)
+            return Effect.fail(
+              new InvalidState({ message: "nothing to steer", threadId, status: rt.status }),
+            );
+          const interrupting = options?.interrupt === true;
+          if (WAITING_ON_USER.has(rt.status)) {
+            // Only the user's own word goes past a card, never another agent's or Gram's.
+            if (options?.pastCard !== true || !usersOwnWord(input))
+              return Effect.fail(waitingOnUser(threadId, rt.status));
+            // An interrupt past a card is a stop, which withdraws the card as Stop does, and the
+            // message goes first in the queue, sent once the turn has ended. Stop needs no
+            // interrupting steer, so it is the same for every agent, Codex's too.
+            if (interrupting)
+              return queueFirst({ switchHold, syncQueue }, rt, input).pipe(
+                Effect.andThen(claimStop(rt, turn.id)),
+              );
+          } else if (interrupting && rt.capabilities?.steerInterrupt !== true)
+            return Effect.fail(
+              new InvalidState({
+                message: "this agent can't be interrupted for input; stop it and send instead",
+                threadId,
+                status: rt.status,
+              }),
+            );
+          // A plain steer past a card waits in the agent for the tool call the card holds: it is
+          // read with the card's answer, never before it (`WAITING_ON_USER`).
+          return steerNow(
+            rt,
+            session,
+            turn,
+            input,
+            interrupting ? { interrupt: true } : undefined,
+          ).pipe(
+            Effect.flatMap((taken) =>
+              taken
+                ? Effect.succeed(undefined)
+                : Effect.fail(
                     new InvalidState({
-                      message:
-                        "this agent can't be interrupted for input; stop it and send instead",
+                      message: "the agent couldn't take mid-turn input; send it instead",
                       threadId,
                       status: rt.status,
                     }),
-                  )
-                : steerNow(rt, session, turn, authored(typedInput(sent)), options).pipe(
-                    Effect.flatMap((taken) =>
-                      taken
-                        ? Effect.void
-                        : Effect.fail(
-                            new InvalidState({
-                              message: "the agent couldn't take mid-turn input; send it instead",
-                              threadId,
-                              status: rt.status,
-                            }),
-                          ),
-                    ),
                   ),
-        ),
+            ),
+          );
+        }),
+        Effect.map(stopping),
       );
-    }).pipe(Effect.tap(() => userTyped(threadId, sent))),
+    }).pipe(
+      // The stop was claimed with the message queued, under one lock, for the turn it was aimed
+      // at; the turn's own end, if it came first, is left be (`runStop`).
+      Effect.flatMap(({ rt, claim }) => (claim === undefined ? Effect.void : runStop(rt, claim))),
+      Effect.tap(() => userTyped(threadId, sent)),
+    ),
   editQueued: (threadId, itemId, input) =>
     withQueue(threadId, (rt) =>
       queueIndex(rt, itemId).pipe(
@@ -1233,7 +1308,19 @@ export const makeQueueMethods = ({
             yield* syncQueue(rt);
             return yield* drainQueue(rt);
           }
-          if (WAITING_ON_USER.has(rt.status)) return yield* waitingOnUser(threadId, rt.status);
+          // Past a card it waits in the agent for the tool call the card holds (`WAITING_ON_USER`),
+          // and only the user's own words go: not another agent's, nor Gram's notice, whoever
+          // pressed Steer on it.
+          if (
+            WAITING_ON_USER.has(rt.status) &&
+            (!usersOwnWord(rt.queue[index]!.input) || rt.noticeKeys.has(itemId))
+          )
+            return yield* new InvalidState({
+              message:
+                "only your own message goes in past a card; this one waits for the turn to end",
+              threadId,
+              status: rt.status,
+            });
           if (session === undefined || turn === undefined || rt.capabilities?.steer !== true) {
             return yield* new InvalidState({
               message:

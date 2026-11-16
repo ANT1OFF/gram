@@ -32,6 +32,7 @@ const bootWith = (threads: ReadonlyArray<Thread>, paired?: (id: HostId) => boole
           drained.push(rt.threadId);
         }),
       scheduleAccount: () => Effect.void,
+      interrupt: () => Effect.void,
       ...(paired === undefined ? {} : { paired }),
     } as unknown as QueueMethodsDeps;
     yield* makeQueueMethods(deps).sendQueuedAtBoot;

@@ -49,6 +49,17 @@ import type { SystemDelivery } from "./system-delivery.ts";
 import type { HandoffLimit } from "./switch-handoff.ts";
 import type { RuntimeObserver } from "./runtime-observer.ts";
 
+/** How `ThreadRuntimes.steer` delivers: the agent's own options, and whether a card stops it. */
+export interface ThreadSteerOptions extends SteerOptions {
+  /**
+   * The user's own word, from their composer: it goes in past a card the turn waits on (an
+   * approval, a question). A plain steer waits in the agent for the tool call the card holds, so it
+   * is read with the card's answer; an interrupt stops the turn, as Stop does, and the message goes
+   * first in the queue. Without it such a turn refuses the steer, and Gram's own messages queue.
+   */
+  readonly pastCard?: boolean;
+}
+
 export interface CreateThreadInput {
   /** A thread id chosen by the caller; a new one when absent. */
   readonly id?: ThreadId;
@@ -201,12 +212,13 @@ export interface ThreadRuntimesShape {
   /**
    * Delivers input into the running turn. A steer cancels nothing: it lands once the tool call or
    * batch under way finishes. With `interrupt`, the turn stops now (cutting off its tool calls)
-   * and the agent answers the input; refused where the agent can't (`steerInterrupt`).
+   * and the agent answers the input; refused where the agent can't (`steerInterrupt`). A turn
+   * waiting on a card refuses it unless `pastCard` says it is the user's own word.
    */
   steer(
     threadId: ThreadId,
     input: UserInput,
-    options?: SteerOptions,
+    options?: ThreadSteerOptions,
   ): Effect.Effect<void, ThreadNotFound | InvalidState>;
   /**
    * Delivers a server-authored notice (a PR monitor's). It is steered, cancelling nothing, into a
@@ -230,7 +242,14 @@ export interface ThreadRuntimesShape {
   /** Takes every notice `sendNotice` queued under a key `drop` picks out of the queue. */
   dropNotices(threadId: ThreadId, drop: (key: string) => boolean): Effect.Effect<void>;
   /** Interrupts the running turn; after the watchdog, closes the session and resumes it. */
-  interrupt(threadId: ThreadId): Effect.Effect<void, ThreadNotFound>;
+  interrupt(
+    threadId: ThreadId,
+    /**
+     * Stops only this turn: once it has ended, a later turn (the one a queued message started,
+     * say) is left running, and so are background agents.
+     */
+    options?: { readonly turnId?: TurnId },
+  ): Effect.Effect<void, ThreadNotFound>;
   /**
    * Asks the open turn to stop at its next tool boundary, never interrupting it: the session's
    * tool gate closes, so every call from now on is refused with `PAUSE_STOP_TEXT` (with no gate the
