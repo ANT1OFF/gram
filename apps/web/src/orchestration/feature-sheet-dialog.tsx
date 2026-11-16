@@ -3,7 +3,7 @@ import { useEffect, useId, useRef } from "react";
 
 import { lazyPart } from "@/lib/lazy-part";
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
-import { Dialog } from "@/thread/dialog-shell";
+import { Dialog, DIALOG_BACKDROP, SHEET_POPUP } from "@/thread/dialog-shell";
 
 import { useFeatureSheet } from "./feature-sheet-store";
 
@@ -31,7 +31,7 @@ export function FeatureSheet() {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-40 scrim transition-opacity duration-(--dur-fast) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
+        <Dialog.Backdrop className={DIALOG_BACKDROP} />
         <Dialog.Popup
           data-testid={FEATURE_SHEET_TEST_ID}
           data-surface="overlay"
@@ -41,7 +41,7 @@ export function FeatureSheet() {
           finalFocus={() =>
             useFeatureSheet.getState().returnFocus ? returnFocusTo(opener)() : false
           }
-          className="fixed inset-y-2 end-2 z-50 flex w-[min(28rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay outline-none transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out) data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0 data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0"
+          className={SHEET_POPUP}
         >
           {target !== undefined && body !== undefined && (
             <body.SheetBody

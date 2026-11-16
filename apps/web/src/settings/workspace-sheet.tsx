@@ -4,7 +4,8 @@ import { lazy, Suspense, useEffect, useId, useRef } from "react";
 import { create } from "zustand";
 
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
-import { Dialog } from "@/thread/dialog-shell";
+import { cn } from "@/lib/utils";
+import { Dialog, DIALOG_BACKDROP, SHEET_POPUP, SHEET_WIDE } from "@/thread/dialog-shell";
 
 import type * as WorkspacePage from "./workspace-page";
 
@@ -64,15 +65,14 @@ export function WorkspaceSheet() {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-40 scrim transition-opacity duration-(--dur-fast) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
+        <Dialog.Backdrop className={DIALOG_BACKDROP} />
         <Dialog.Popup
           data-testid={WORKSPACE_SHEET_TEST_ID}
           data-surface="overlay"
           aria-labelledby={titleId}
           finalFocus={returnFocusTo(opener)}
-          // A dialog opened from the sheet, a routine's editor say, dims the sheet under it as the
-          // scrim dims the window: Base UI draws no second backdrop for a nested dialog.
-          className="fixed inset-y-2 end-2 z-50 flex w-[min(36rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay outline-none transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out) after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:opacity-0 after:transition-opacity after:duration-(--dur-fast) after:scrim data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0 data-[nested-dialog-open]:after:opacity-100 data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0"
+          // A dialog opened from the sheet, a routine's editor say, dims the sheet under it.
+          className={cn(SHEET_POPUP, SHEET_WIDE)}
         >
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             {workspaceId !== undefined && (

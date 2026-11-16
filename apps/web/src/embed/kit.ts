@@ -16,6 +16,21 @@ export { ButtonGroup } from "@/components/ui/button-group";
 export { Checkbox, RadioGroup, type RadioOption } from "@/components/ui/checkbox";
 export { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 export { Input, InputGroup, Textarea } from "@/components/ui/input";
+export {
+  Menu,
+  MenuCheckboxItem,
+  MenuContent,
+  MenuGroup,
+  MenuItem,
+  MenuLabel,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuSub,
+  MenuSubContent,
+  MenuSubTrigger,
+  MenuTrigger,
+} from "@/components/ui/menu";
 export { Meter, meterTone, type MeterTone } from "@/components/ui/meter";
 export {
   Select,
@@ -33,6 +48,8 @@ export { Field, OptionGroup, SettingRow, Toggle, type OptionGroupOption } from "
 export { SettingsGroup } from "@/settings/settings-group";
 // A popover hung from a button, as the title bar's own are: for a switcher or a short menu.
 export { TitlebarPopover as Popover } from "@/shell/titlebar-popover";
+// A centred dialog, mounted while it is open, and a sheet from the window's end edge.
+export { DialogShell as Dialog, Sheet } from "@/thread/dialog-shell";
 
 export { Page } from "./page";
 

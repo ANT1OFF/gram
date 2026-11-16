@@ -494,6 +494,26 @@ For forms:
   New's autonomy picker is; without, it is the segmented control. Either way it is one Tab stop,
   and the arrow keys, Home and End move the pick. It also takes a `className`.
 
+For what opens over the page:
+
+- `Dialog`: a centred modal, as Gram's are. Mount it while it is open; closing (Esc, the
+  backdrop) calls `onClose`, and focus goes back to what had it, or to `returnFocus()` when that
+  is gone. Props: `title`, `description?`, `onClose`, `children` (its body and its buttons; a
+  Cancel calls `onClose`), and optional `testId`, `returnFocus`, `initialFocus` and `className`
+  (on the popup). It opens a fifth of the way down and scrolls before it runs past the window.
+- `Sheet`: a sheet from the window's end edge, as the workspace sheet is: `open`, `onClose`,
+  `title`, `children` (its body, which scrolls), and optional `actions` (in the header, before
+  Close), `wide` (36 rem rather than 28, for a page of settings), `testId`, `closeLabel`,
+  `returnFocus` and `className` (on the body). It stays mounted while closed, so it slides away
+  with its content. A `Dialog` opened from it dims it.
+- `Menu`: a menu hung from a button, with Gram's popup and rows. `Menu` holds a `MenuTrigger`
+  (give it a `render`, such as a `Button`) and a `MenuContent` (`side`, `align`, default under
+  the trigger at its end, and `sideOffset`). Rows: `MenuItem` (`onClick`, `disabled`, `danger`
+  for a removal), `MenuCheckboxItem` (`checked`, `onCheckedChange`; the menu stays open),
+  `MenuRadioGroup` (`value`, `onValueChange`) of `MenuRadioItem`s (`value`), `MenuGroup` with a
+  `MenuLabel`, `MenuSeparator`, and a submenu as `MenuSub` with a `MenuSubTrigger` and a
+  `MenuSubContent`. They take Base UI's Menu props beside these.
+
 The package's declarations (`gram-web-kit.d.ts` and `types/`) type every one of these, `render`
 on `Button`, `Badge` and the tooltip's trigger included, so an app needs no declarations of its
 own for the kit: resolve `@gram/web/kit` to the package and its `exports` find them. A test
