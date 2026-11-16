@@ -31,7 +31,9 @@ const PLAIN = {
   section: "phone:gap-0!",
   head: "phone:items-center!",
   caption:
-    "phone:flex-nowrap! phone:items-center! phone:after:h-px phone:after:flex-1 phone:after:bg-border",
+    "phone:items-center! phone:after:order-1 phone:after:h-px phone:after:min-w-6 phone:after:flex-1 phone:after:bg-border",
+  // The rule runs out after the title on its line; a description takes the line under both.
+  description: "phone:order-2 phone:basis-full!",
   title:
     "phone:font-sans! phone:text-body! phone:font-normal! phone:whitespace-nowrap! phone:text-muted-foreground!",
   card: "phone:rounded-none! phone:border-0! phone:bg-transparent! phone:[&>*]:border-t-0! phone:[&>*]:px-0! phone:[&>*]:py-1.5!",
@@ -116,6 +118,7 @@ export function SettingsGroup({
             <div
               className={cn(
                 "min-w-0",
+                plainOnPhone && PLAIN.description,
                 action !== undefined && "phone:order-last phone:-mt-2 phone:basis-full!",
               )}
             >
