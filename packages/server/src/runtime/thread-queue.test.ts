@@ -1196,7 +1196,7 @@ describe("ThreadRuntimes into a turn waiting on the user", () => {
         const store = yield* ThreadStore;
         const turns = yield* waitFor(
           "both turns recorded",
-          store.listTurns(thread.id).pipe(Effect.map((turns) => turns.length === 2 && turns)),
+          store.listTurns(thread.id).pipe(Effect.map((recorded) => recorded.length === 2 && recorded)),
         );
         expect(turns[0]!.endedAt).toBeDefined();
         expect(turns[1]!.endedAt).toBeUndefined();
