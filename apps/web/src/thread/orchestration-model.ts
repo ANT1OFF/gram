@@ -297,8 +297,10 @@ const HANDOFF_REASON: Record<Handoff["reason"], string> = {
 };
 
 /** The handoff divider's words. */
-export const handoffLabel = (handoff: Pick<Handoff, "reason">): string =>
-  `New session · ${known(HANDOFF_REASON, handoff.reason) ?? handoff.reason}`;
+export const handoffLabel = (handoff: Pick<Handoff, "reason" | "unsaved">): string =>
+  `New session · ${known(HANDOFF_REASON, handoff.reason) ?? handoff.reason}${
+    handoff.unsaved === true ? ", without saving first" : ""
+  }`;
 
 /**
  * A worker-authored URL when it is safe to make a link of: `https` only, so a `javascript:` or

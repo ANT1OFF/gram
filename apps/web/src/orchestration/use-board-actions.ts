@@ -188,7 +188,8 @@ export function useHandoff(state: WorkspaceState | undefined) {
   const running = handoffRunning(mark, summary?.thread, now);
   const starting = useRef(false);
 
-  const start = async (): Promise<boolean> => {
+  /** `checkpoint: false` skips saving to memory first: a hard cut. */
+  const start = async (options?: { readonly checkpoint?: boolean }): Promise<boolean> => {
     if (workspaceId === undefined || starting.current) return false;
     starting.current = true;
     useHandoffStore.getState().mark(workspaceId, {
@@ -196,7 +197,7 @@ export function useHandoff(state: WorkspaceState | undefined) {
       startedAt: Date.now(),
     });
     try {
-      await api.orchestratorHandoff(workspaceId);
+      await api.orchestratorHandoff(workspaceId, options);
       return true;
     } catch (error) {
       useHandoffStore.getState().clear(workspaceId);

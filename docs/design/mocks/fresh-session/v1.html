@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fresh session from the context chip · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .pane {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-width: 0;
+      }
+      .pane-head {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .pane-head h2 {
+        font-size: var(--text-md, 14px);
+        font-weight: 600;
+        margin: 0 8px 0 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .seg {
+        display: inline-flex;
+        gap: 2px;
+        padding: 2px;
+        border-radius: var(--radius-md);
+        background: var(--surface-hover);
+      }
+      .seg span {
+        padding: 2px 10px;
+        border-radius: var(--radius-sm);
+        font-size: var(--text-sm);
+        color: var(--fg-muted);
+      }
+      .seg span[aria-current] {
+        background: var(--surface-1);
+        color: var(--fg);
+      }
+      .grow {
+        flex: 1;
+      }
+      .ib {
+        display: inline-grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border: 0;
+        border-radius: var(--radius-md);
+        background: transparent;
+        color: var(--fg-muted);
+      }
+      .ib:hover,
+      .ib[aria-expanded="true"] {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .ib.warn {
+        color: var(--warning-text);
+      }
+      .ib svg.pie {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.75;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .handing {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: var(--text-sm);
+        color: var(--fg-muted);
+        padding: 0 6px;
+      }
+      .convo {
+        flex: 1;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 20px 24px;
+        max-width: 760px;
+        width: 100%;
+        margin: 0 auto;
+      }
+      .msg-user {
+        align-self: flex-end;
+        max-width: 70%;
+        padding: 8px 12px;
+        border-radius: var(--radius-xl);
+        background: var(--surface-hover);
+      }
+      .msg-agent {
+        color: var(--fg);
+        line-height: 1.55;
+      }
+      .divider {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--fg-muted);
+        font-size: var(--text-sm);
+      }
+      .divider::before,
+      .divider::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--border-subtle);
+      }
+      .composer {
+        margin: 0 auto 16px;
+        width: min(760px, calc(100% - 32px));
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl);
+        background: var(--surface-1);
+        padding: 12px 16px;
+        color: var(--fg-subtle);
+      }
+      .pop {
+        position: absolute;
+        top: 44px;
+        right: 72px;
+        width: 320px;
+        max-width: calc(100% - 24px);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 14px;
+        border-radius: var(--radius-xl);
+        background: var(--surface-3);
+        box-shadow: var(--shadow-overlay);
+        z-index: 4;
+      }
+      .pop-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .pop-head strong {
+        font-weight: 600;
+      }
+      .meter {
+        height: 4px;
+        border-radius: 999px;
+        background: color-mix(in oklab, var(--fg) 12%, transparent);
+        overflow: hidden;
+      }
+      .meter span {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+        background: var(--fg-muted);
+      }
+      .meter.warn span {
+        background: var(--warning);
+      }
+      .muted {
+        color: var(--fg-muted);
+        font-size: var(--text-sm);
+        line-height: 1.5;
+        margin: 0;
+      }
+      .opt {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 2px 8px;
+        align-items: start;
+      }
+      .opt input {
+        margin-top: 2px;
+        accent-color: var(--accent);
+        width: 15px;
+        height: 15px;
+      }
+      .opt .muted {
+        grid-column: 2;
+      }
+      .pop-actions {
+        display: flex;
+        justify-content: flex-end;
+      }
+      .withdrawn {
+        font-size: var(--text-sm);
+        color: var(--warning-text);
+        margin: 0;
+      }
+      .phone .pane-head {
+        padding: 10px 12px;
+      }
+      .phone .ib {
+        width: 44px;
+        height: 44px;
+      }
+      .phone .pop {
+        top: 62px;
+        right: 12px;
+        left: 12px;
+        width: auto;
+      }
+      .phone .convo {
+        padding: 16px;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        The context chip is always in the orchestrator's header and opens one popover. Save to
+        memory first stays ticked by default; unticked, Start fresh session cuts over at once. Step
+        through the states on each board: at rest, open, unticked, nearly full, handing off, and
+        after.
+      </p>
+
+      <section
+        class="board"
+        data-name="Orchestrator"
+        data-size="1280x800"
+        data-states="rest,open,cutoff,full,handing,after"
+      >
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>gram</span>
+            </div>
+            <div class="app-body">
+              <nav class="sidebar" aria-label="Primary">
+                <div class="section-label">Workspaces</div>
+                <a class="nav-item" href="#" aria-current="page"
+                  ><i data-icon="orch"></i>payments</a
+                >
+                <a class="nav-item" href="#"><i data-icon="branch"></i>retry-webhooks</a>
+                <a class="nav-item" href="#"><i data-icon="branch"></i>ledger-export</a>
+                <a class="nav-item" href="#"><i data-icon="orch"></i>docs-site</a>
+                <a class="nav-item" href="#"><i data-icon="settings"></i>Settings</a>
+              </nav>
+              <div class="main">
+                <div class="pane">
+                  <header class="pane-head">
+                    <i data-icon="orch"></i>
+                    <h2>payments</h2>
+                    <span class="seg"><span aria-current="page">Chat</span><span>Board</span></span>
+                    <span class="grow"></span>
+
+                    <button
+                      class="ib"
+                      type="button"
+                      aria-label="Context 64% — start a fresh session"
+                      data-when="rest,after"
+                    >
+                      <svg class="pie" viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"
+                        />
+                        <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
+                      </svg>
+                    </button>
+                    <button
+                      class="ib"
+                      type="button"
+                      aria-expanded="true"
+                      aria-label="Context 64% — start a fresh session"
+                      data-when="open,cutoff"
+                    >
+                      <svg class="pie" viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"
+                        />
+                        <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
+                      </svg>
+                    </button>
+                    <button
+                      class="ib warn"
+                      type="button"
+                      aria-expanded="true"
+                      aria-label="Context 93% — start a fresh session"
+                      data-when="full"
+                    >
+                      <svg class="pie" viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"
+                        />
+                        <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
+                      </svg>
+                    </button>
+                    <span class="handing" role="status" data-when="handing"
+                      ><span class="spinner" aria-hidden="true"></span>Handing off…</span
+                    >
+
+                    <button class="ib" type="button" aria-label="Memory">
+                      <i data-icon="layers"></i>
+                    </button>
+                    <button class="ib" type="button" aria-label="Workspace settings">
+                      <i data-icon="more"></i>
+                    </button>
+                  </header>
+
+                  <div class="pop" role="dialog" aria-label="Fresh session" data-when="open">
+                    <div class="pop-head">
+                      <strong>Context 64%</strong><span class="muted">of 200k</span>
+                    </div>
+                    <div class="meter"><span style="width: 64%"></span></div>
+                    <p class="muted">
+                      A fresh session starts again from memory, the charter and the ledger. Workers
+                      keep running, and what's waiting on you carries over.
+                    </p>
+                    <label class="opt">
+                      <input type="checkbox" checked />
+                      <span>Save to memory first</span>
+                      <span class="muted"
+                        >The orchestrator writes down what it hasn't saved, then hands off.</span
+                      >
+                    </label>
+                    <div class="pop-actions">
+                      <button class="btn primary sm" type="button" data-goto="Orchestrator@handing">
+                        Start fresh session
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="pop" role="dialog" aria-label="Fresh session" data-when="cutoff">
+                    <div class="pop-head">
+                      <strong>Context 64%</strong><span class="muted">of 200k</span>
+                    </div>
+                    <div class="meter"><span style="width: 64%"></span></div>
+                    <p class="muted">
+                      A fresh session starts again from memory, the charter and the ledger. Workers
+                      keep running, and what's waiting on you carries over.
+                    </p>
+                    <label class="opt">
+                      <input type="checkbox" />
+                      <span>Save to memory first</span>
+                      <span class="muted"
+                        >Off: its current turn stops now, and anything not in memory is left behind.
+                        A later memory update can still read it from the transcript.</span
+                      >
+                    </label>
+                    <p class="withdrawn">
+                      Its approval waiting on you, “Run: gh pr merge 412”, is declined. Its
+                      questions stay open.
+                    </p>
+                    <div class="pop-actions">
+                      <button class="btn primary sm" type="button" data-goto="Orchestrator@after">
+                        Start fresh session
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="pop" role="dialog" aria-label="Fresh session" data-when="full">
+                    <div class="pop-head">
+                      <strong>Context 93%</strong><span class="muted">of 200k</span>
+                    </div>
+                    <div class="meter warn"><span style="width: 93%"></span></div>
+                    <p class="muted">
+                      Nearly full. The orchestrator compacts by itself, or a fresh session starts
+                      again from memory, the charter and the ledger. Workers keep running.
+                    </p>
+                    <label class="opt">
+                      <input type="checkbox" checked />
+                      <span>Save to memory first</span>
+                      <span class="muted"
+                        >The orchestrator writes down what it hasn't saved, then hands off.</span
+                      >
+                    </label>
+                    <div class="pop-actions">
+                      <button class="btn primary sm" type="button" data-goto="Orchestrator@handing">
+                        Start fresh session
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="convo">
+                    <div class="msg-user">How's the webhook retry work going?</div>
+                    <div class="msg-agent">
+                      retry-webhooks has its PR up (#412) and CI is green. ledger-export is still
+                      writing tests. I asked you whether to merge #412 now or wait for the 18:00
+                      freeze.
+                    </div>
+                    <div class="msg-agent" data-when="handing">
+                      Saving to memory: the merge question, the freeze at 18:00, and ledger-export's
+                      remaining tests.
+                    </div>
+                    <div class="divider" data-when="after">
+                      New session · you asked for one, without saving first · 04:41
+                    </div>
+                    <div class="msg-agent" data-when="after">
+                      Picked up from memory and the ledger: 2 workers running, 1 PR green. The merge
+                      command you hadn't approved was declined. Still open: merge #412 now or after
+                      the freeze?
+                    </div>
+                  </div>
+                  <div class="composer">Message the orchestrator, or type / for actions</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="From the menu" data-size="1280x800">
+        <div class="board-frame">
+          <div class="app" style="position: relative">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>gram</span>
+            </div>
+            <div class="app-body">
+              <nav class="sidebar" aria-label="Primary">
+                <div class="section-label">Workspaces</div>
+                <a class="nav-item" href="#" aria-current="page"
+                  ><i data-icon="orch"></i>payments</a
+                >
+                <a class="nav-item" href="#"><i data-icon="orch"></i>docs-site</a>
+              </nav>
+              <div class="main"></div>
+            </div>
+            <div class="scrim">
+              <div class="dialog" role="dialog" aria-labelledby="fresh-title">
+                <div class="stack">
+                  <h3 id="fresh-title">Start a fresh session?</h3>
+                  <span class="muted">Orchestrator of payments · context 64%</span>
+                </div>
+                <p class="muted">
+                  A fresh session starts again from memory, the charter and the ledger. Workers keep
+                  running, and what's waiting on you carries over.
+                </p>
+                <label class="opt">
+                  <input type="checkbox" checked />
+                  <span>Save to memory first</span>
+                  <span class="muted"
+                    >The orchestrator writes down what it hasn't saved, then hands off.</span
+                  >
+                </label>
+                <div class="dialog-actions">
+                  <button class="btn ghost sm" type="button">Cancel</button>
+                  <button class="btn primary sm" type="button">Start fresh session</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="Phone" data-size="390x844" data-states="open,cutoff">
+        <div class="board-frame">
+          <div class="phone" style="position: relative">
+            <header class="pane-head">
+              <i data-icon="orch"></i>
+              <h2>payments</h2>
+              <span class="grow"></span>
+              <button
+                class="ib"
+                type="button"
+                aria-expanded="true"
+                aria-label="Context 64% — start a fresh session"
+              >
+                <svg class="pie" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"
+                  />
+                  <path d="M21.21 15.89A10 10 0 1 1 8 2.83" />
+                </svg>
+              </button>
+              <button class="ib" type="button" aria-label="More"><i data-icon="more"></i></button>
+            </header>
+            <div class="pop" role="dialog" aria-label="Fresh session">
+              <div class="pop-head">
+                <strong>Context 64%</strong><span class="muted">of 200k</span>
+              </div>
+              <div class="meter"><span style="width: 64%"></span></div>
+              <p class="muted">
+                A fresh session starts again from memory, the charter and the ledger. Workers keep
+                running.
+              </p>
+              <label class="opt" data-when="open">
+                <input type="checkbox" checked />
+                <span>Save to memory first</span>
+                <span class="muted"
+                  >The orchestrator writes down what it hasn't saved, then hands off.</span
+                >
+              </label>
+              <label class="opt" data-when="cutoff">
+                <input type="checkbox" />
+                <span>Save to memory first</span>
+                <span class="muted"
+                  >Off: its current turn stops now, and anything not in memory is left behind.</span
+                >
+              </label>
+              <div class="pop-actions">
+                <button class="btn primary" type="button">Start fresh session</button>
+              </div>
+            </div>
+            <div class="convo">
+              <div class="msg-user">How's the webhook retry work going?</div>
+              <div class="msg-agent">retry-webhooks has its PR up (#412) and CI is green.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

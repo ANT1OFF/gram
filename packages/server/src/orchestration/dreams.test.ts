@@ -498,6 +498,15 @@ describe("sessionIndex", () => {
     );
     expect(sessionIndex([])).toContain("None: nothing new since the last memory update.");
   });
+
+  it("flags an orchestrator thread whose session was cut off before saving to memory", () => {
+    const index = sessionIndex([
+      { name: "Orchestrator · shop", text: "…", at: 0, kind: "orchestrator", unsaved: true },
+    ]);
+    expect(index).toContain(
+      "orchestrator · ≈1 tokens · a session in it ended without saving to memory first: read it early",
+    );
+  });
 });
 
 describe("readingOrder", () => {

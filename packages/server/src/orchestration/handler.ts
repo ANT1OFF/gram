@@ -151,7 +151,13 @@ export const orchestrationHandlers = Effect.gen(function* () {
       orchestration.handoff(workspaceId, "user", model, note === undefined ? {} : { note }),
     "orchestrator.retrySwitch": ({ workspaceId }) => orchestration.retrySwitch(workspaceId),
     "orchestrator.cancelSwitch": ({ workspaceId }) => orchestration.cancelSwitch(workspaceId),
-    "orchestrator.handoff": ({ workspaceId }) => orchestration.handoff(workspaceId, "user"),
+    "orchestrator.handoff": ({ workspaceId, checkpoint }) =>
+      orchestration.handoff(
+        workspaceId,
+        "user",
+        undefined,
+        checkpoint === undefined ? {} : { checkpoint },
+      ),
     "orchestrator.releaseWorker": ({ threadId }) => orchestration.releaseWorker(threadId),
     "orchestrator.releaseHeldBrief": ({ workspaceId, id }) =>
       orchestration.releaseHeldBrief(workspaceId, id),

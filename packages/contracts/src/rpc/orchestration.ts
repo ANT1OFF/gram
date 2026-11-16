@@ -219,11 +219,14 @@ export const OrchestrationRpcs = RpcGroup.make(
   /**
    * Replaces the orchestrator's agent session with a fresh one under the same thread, the memory
    * as the bridge. Returns once it is under way. `InvalidState` while the setting is off, without
-   * an orchestrator, and while another handoff is running.
+   * an orchestrator, and while another handoff is running. `checkpoint: false` skips the turn that
+   * saves to memory first: the running turn is stopped, as Stop does (its open cards are
+   * declined), and the fresh session starts at once (on by default).
    */
   Rpc.make("orchestrator.handoff", {
     payload: {
       workspaceId: WorkspaceId,
+      checkpoint: Schema.optionalKey(Schema.Boolean),
       // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
       // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
       after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),

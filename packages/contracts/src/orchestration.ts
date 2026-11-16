@@ -1614,6 +1614,11 @@ export type HandoffNote = typeof HandoffNote.Type;
 export const Handoff = Schema.Struct({
   previousAgentSessionId: Schema.optionalKey(Schema.String),
   reason: Schema.Literals(["context", "compactions", "user", "switch"]),
+  /**
+   * The old session wrote nothing to memory first: the user skipped the checkpoint, or the session
+   * was in error and couldn't take one.
+   */
+  unsaved: Schema.optionalKey(Schema.Boolean),
   /** A switch's: the agent the thread left. */
   previousAgent: Schema.optionalKey(AgentKind),
   /** A switch's: the model id the thread left, and the one it continued on. */
