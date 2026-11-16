@@ -21,8 +21,9 @@ configured pass.
   workflow; **Full** asks about nothing and lets the orchestrator merge. A merge under Full covers
   a worker's own pull request, one whose head branch is checked out in its worktree; for one
   opened elsewhere, such as a release script's deploy PR, the agent is told to check the branch out
-  instead of you being asked. A fork, another thread's pull request or a repository outside the
-  workspace still asks you. How the orchestrator
+  instead of you being asked. Every unverified ownership check at Full, including a fork, another
+  thread's PR or a repository outside the workspace, refuses to the agent with repair steps.
+  It must fix the cause and call again; ownership doubts never raise a user card at Full. How the orchestrator
   works with its workers is the same at every level: it answers a worker's waiting question when
   your brief, its memory or your own words settle it, workers message it and each other, and it
   restarts a worker's session. Approvals and plan requests stay yours. Only you can
@@ -681,10 +682,12 @@ and preparation/rule installation failures still stop thread startup.
 
 Gram's app-tool approvals are separate from a CLI's native permissions. Full Auto
 waives an own-worker merge card only after verifying the held workspace worktree
-and branch; following a PR or checkout grants no ownership. When that check fails,
-the card says why under its summary, the orchestrator's ledger line leads with a
-`full auto, PR ownership unverified` tag, and the calling agent's result (declined,
-withdrawn or approved) carries the reason and the fix. Explicitly name a
+and branch; following a PR or checkout grants no ownership. When that check fails
+at Full, `merge_when_ready`, `set_auto_merge` and `local_check` refuse to the calling
+agent with the reason and repair steps, without asking you. The agent fixes the
+worktree or PR and calls again; for another thread's claim, its orchestrator should
+merge on the thread that holds it. Unreadable or uncertain state stays blocked and
+can be retried. Supervised and Publish keep their approval cards. Explicitly name a
 follow-on PR when the thread still binds an older main PR. Root pauses, user/worker
 holds, scoped approval provenance and current-head merge checks remain authoritative.
 

@@ -1149,7 +1149,7 @@ describe("merge_when_ready", () => {
   );
 
   it.effect.skipIf(!hasGit)(
-    "local_check runs only the worker's own PR, asks the user otherwise, and nothing while paused",
+    "local_check runs only the worker's own PR, refuses ownership doubts at full, and nothing while paused",
     () =>
       Effect.gen(function* () {
         const world = yield* makeWorld;
@@ -1176,8 +1176,11 @@ describe("merge_when_ready", () => {
             run(world.repo, "checkout", "-q", "main");
             world.prHeads.set(12, { headRefName: "contributor", headRefOid: evil, fork: true });
             yield* pr.publish(base, evil);
-            // The user is asked, and even an approved call runs none of its code.
+            // The tool refuses to the agent; the runner also refuses even an approved call.
             expect(yield* pr.tool("local_check").delegatedAtFullAutonomy!({})).toBe(false);
+            const refusal = yield* pr.tool("local_check").run({}).pipe(Effect.flip);
+            expect(refusal.message).toContain("its branch is on a fork");
+            expect(yield* store.listRequests(pr.threadId)).toEqual([]);
             expect(yield* merges.runLocalCheck(pr.threadId)).toEqual({
               refused:
                 "acme/app#12 isn't this worker's own pull request: its branch is on a fork, not in the repository itself. Push the branch to the repository from the worktree Gram gave you and open the pull request from there",
