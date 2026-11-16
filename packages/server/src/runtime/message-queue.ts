@@ -32,6 +32,7 @@ import {
   type AgentUnavailable,
   type Thread,
   type ThreadStatus,
+  type HostId,
   effectiveCheckout,
   hostOf,
 } from "@gram/contracts";
@@ -970,6 +971,12 @@ export interface QueueMethodsDeps {
   readonly switchHold: MessageQueue["switchHold"];
   readonly pumpDeliveries: MessageQueue["pumpDeliveries"];
   readonly scheduleAccount: LimitResume["scheduleAccount"];
+  /**
+   * Whether a machine is still paired (`WorkerHostsShape.paired`). A thread placed on one removed
+   * for good keeps its queue, but the boot doesn't send it: the session can't open there, and each
+   * restart would fail the thread again and count as its activity. Moving the thread sends it.
+   */
+  readonly paired?: (id: HostId) => boolean;
 }
 
 /** The `ThreadRuntimes` methods that queue, edit, steer or deliver a thread's input. */
@@ -988,6 +995,7 @@ export const makeQueueMethods = ({
   switchHold,
   pumpDeliveries,
   scheduleAccount,
+  paired = () => true,
 }: QueueMethodsDeps): Pick<
   ThreadRuntimesShape,
   | "sendQueuedAtBoot"
@@ -1022,9 +1030,15 @@ export const makeQueueMethods = ({
     // This is the resume of the input in flight (`handover` in `thread-runtimes.ts`): a send a
     // crash cut off is still the stored queue's head, with its turn, and `drainQueue` opens a
     // session and sends it once, as the same message (`queue-persistence.test.ts`).
+    let unplaced = 0;
     for (const thread of threads) {
       const queued = yield* store.listQueue(thread.id);
       if (thread.parked || queued.length === 0) continue;
+      // A thread waiting for its machine to be named has no machine yet, which is not one removed.
+      if (thread.awaitingMachine === undefined && !paired(hostOf(effectiveCheckout(thread)))) {
+        unplaced++;
+        continue;
+      }
       sent++;
       yield* getRuntime(thread.id).pipe(
         Effect.flatMap((rt) => locked(rt, drainQueue(rt))),
@@ -1038,6 +1052,11 @@ export const makeQueueMethods = ({
     if (sent > 0) {
       yield* Effect.logInfo("sent what the previous run left queued").pipe(
         Effect.annotateLogs({ threads: sent }),
+      );
+    }
+    if (unplaced > 0) {
+      yield* Effect.logInfo("left queued: the threads' machines are no longer paired").pipe(
+        Effect.annotateLogs({ threads: unplaced }),
       );
     }
   }),

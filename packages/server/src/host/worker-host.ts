@@ -170,6 +170,13 @@ export interface WorkerHostsShape {
    * records work there without reaching it, such as a fork in its source's checkout (`admitHost`).
    */
   readonly ownerOf: OwnerOf;
+  /**
+   * Whether `id` is a machine this server still knows: this one, a host it was given, or a joined
+   * machine still paired. A machine removed for good (`POST /machines/remove`) is not, and no session
+   * of a thread placed on it can open again until the thread is moved. Without joined machines to
+   * ask, every id counts as paired.
+   */
+  paired(id: HostId): boolean;
 }
 
 /** How long a session about to open waits for a stopped machine to be started. */
@@ -253,6 +260,7 @@ const joinedMachines = Effect.gen(function* () {
     forSession: ownedMachines(ownerOf, awaitedMachines(get, remote, store)),
     any: () => placedBefore || remote.machines.list().length > 0,
     ownerOf,
+    paired: (id: HostId) => remote.machines.get(id) !== undefined,
   };
 });
 
@@ -282,6 +290,11 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
     sessionMachines?: (id: HostId) => Effect.Effect<WorkerHost, HostUnavailable>,
     /** Who each joined machine was started for, where one was (`ownership.ts`). */
     ownerOf: OwnerOf = () => undefined,
+    /**
+     * Whether a joined machine is still paired. With none given, nothing here knows which machines
+     * are, so none counts as removed.
+     */
+    pairedMachine: (id: HostId) => boolean = () => true,
   ) => {
     const byId = new Map<HostId, WorkerHost>([
       [local.id, local],
@@ -317,6 +330,7 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
       placeOf: placed.placeOf,
       ...(headless === undefined ? {} : { headless }),
       ownerOf,
+      paired: (id) => byId.has(id) || pairedMachine(id),
     });
   };
 
@@ -379,6 +393,7 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
         headless,
         machines?.forSession,
         machines?.ownerOf,
+        machines?.paired,
       );
     }),
   );
@@ -443,6 +458,7 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
         undefined,
         machines?.forSession,
         owners ?? machines?.ownerOf,
+        machines?.paired,
       );
     }),
   );
