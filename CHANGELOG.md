@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.28.0](https://github.com/ANT1OFF/gram/compare/v1.27.0...v1.28.0) (2026-11-16)
+
+
+### Features
+
+* **embedding:** a GitHub relay for a headless control plane ([#690](https://github.com/ANT1OFF/gram/issues/690)) ([719ade5](https://github.com/ANT1OFF/gram/commit/719ade5a788f50827458fe872912dd7aae0dcfa7))
+* **embedding:** a person's thread started in repositories, and other repositories on its machine ([#683](https://github.com/ANT1OFF/gram/issues/683)) ([c86d52c](https://github.com/ANT1OFF/gram/commit/c86d52c0e0cc6b0d44dc669ba428fa7e29e3300b))
+* **embedding:** one Runs on chip for a person's on-demand machine, picks kept as theirs, and starting it again with a change ([#689](https://github.com/ANT1OFF/gram/issues/689)) ([012a5df](https://github.com/ANT1OFF/gram/commit/012a5df4fc4e19f7791846f36467e8fa40f12a25))
+* **host:** OpenCode sessions run on joined machines and through a headless Gram ([#672](https://github.com/ANT1OFF/gram/issues/672)) ([25f8c51](https://github.com/ANT1OFF/gram/commit/25f8c516fd1e5265d0922de822b21c04df7423c0))
+* **memory:** workers write workspace memory too, from the revision they read ([#677](https://github.com/ANT1OFF/gram/issues/677)) ([1fb1aeb](https://github.com/ANT1OFF/gram/commit/1fb1aebf28a300e3633e9ddcf860d333d57c8caf))
+* **new-thread:** other repositories get a worktree of their own on the thread's branch ([#678](https://github.com/ANT1OFF/gram/issues/678)) ([55990d6](https://github.com/ANT1OFF/gram/commit/55990d6ab08d1816e905c0cd0e3e623deaa37cb2))
+* **new-thread:** repositories by owner/name, and more than one for a solo thread ([#676](https://github.com/ANT1OFF/gram/issues/676)) ([ebbda8b](https://github.com/ANT1OFF/gram/commit/ebbda8b6920f4d5680dbbee293b57ad6f4eaa294))
+* **orchestration:** a worker's row says where its orchestrator put it, and why ([#694](https://github.com/ANT1OFF/gram/issues/694)) ([11d50e8](https://github.com/ANT1OFF/gram/commit/11d50e8b41d55f8b10dafd71feeb53a99e617c2b))
+* **orchestration:** intent-first pull requests, weighed reviews, and quick rechecks after a merge ([#680](https://github.com/ANT1OFF/gram/issues/680)) ([b3f659d](https://github.com/ANT1OFF/gram/commit/b3f659d9398df89437330e7869b8abf91d5e9914))
+* **orchestration:** list_workers names only the machines a worker may go on ([#687](https://github.com/ANT1OFF/gram/issues/687)) ([29751b8](https://github.com/ANT1OFF/gram/commit/29751b839c4c21c8937f8c23add6f76bedb18d6d))
+* **orchestration:** pick the orchestrator's agent and model on New task ([#688](https://github.com/ANT1OFF/gram/issues/688)) ([1b65a62](https://github.com/ANT1OFF/gram/commit/1b65a6285295eb5aabf9dfb30981fbbdc284aa99))
+* **orchestration:** search the workspace's own transcripts, and check memory updates before review ([#691](https://github.com/ANT1OFF/gram/issues/691)) ([814844e](https://github.com/ANT1OFF/gram/commit/814844ec9f2645246209b4778ed372446cbc37ce))
+* **orchestration:** watch a workspace's default branches after merges ([#681](https://github.com/ANT1OFF/gram/issues/681)) ([95f395f](https://github.com/ANT1OFF/gram/commit/95f395f16c0292ff86049ab7be5140b9e7039cdc))
+* **settings:** a toggle for watching the default branch after merges ([#682](https://github.com/ANT1OFF/gram/issues/682)) ([8758446](https://github.com/ANT1OFF/gram/commit/8758446f2bffe8685cacd11faed2059e11228360))
+* **web:** say a thread's machine is starting again while a message waits on it ([#695](https://github.com/ANT1OFF/gram/issues/695)) ([388b753](https://github.com/ANT1OFF/gram/commit/388b753030b8e3dc647002da94b12cf6744d26bb))
+* **workspaces:** a shared folder each workspace's threads read and write, mirrored to their machines ([#675](https://github.com/ANT1OFF/gram/issues/675)) ([5b9f82b](https://github.com/ANT1OFF/gram/commit/5b9f82b0f5b825761ac69501a3e2ad27970c38f1))
+
+
+### Bug Fixes
+
+* **host:** compare a clone's stored origin, not the insteadOf-rewritten one ([#684](https://github.com/ANT1OFF/gram/issues/684)) ([198f916](https://github.com/ANT1OFF/gram/commit/198f916f3ad6b76227b727bcfdecf459d3c71035))
+* **on-demand:** a ready start whose machine is gone ends, so a new one can start ([#674](https://github.com/ANT1OFF/gram/issues/674)) ([08360f4](https://github.com/ANT1OFF/gram/commit/08360f44d1519bf8e3fc36ec4e3369e9e67da9ae))
+* **server:** leave a removed machine's threads queued at boot instead of failing them each start ([#696](https://github.com/ANT1OFF/gram/issues/696)) ([7d56b19](https://github.com/ANT1OFF/gram/commit/7d56b19fc34cd22fde76eba7ecf4a57cd71d6b0d))
+* **web:** keep the new-workspace sheet inside its card and read errors as repositories ([#685](https://github.com/ANT1OFF/gram/issues/685)) ([68b6505](https://github.com/ANT1OFF/gram/commit/68b6505189fbe40c3a6bf0348211f8309fed5ede))
+* **web:** start card sends only the choices a person changed ([#686](https://github.com/ANT1OFF/gram/issues/686)) ([8967678](https://github.com/ANT1OFF/gram/commit/8967678b61df0d9b12b728687b2c4ecf0544ec67))
+
 ## [1.27.0](https://github.com/ANT1OFF/gram/compare/v1.26.0...v1.27.0) (2026-11-15)
 
 
