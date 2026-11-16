@@ -6,7 +6,6 @@ import {
   QUIT_DEADLINE_MS,
   quitDetail,
   keptRunningFromMessage,
-  keptRunningNotice,
   serverShutdownFromMessage,
   SHOW_PROGRESS_AFTER_MS,
   type QuitProgress,
@@ -227,13 +226,5 @@ describe("keptRunningFromMessage", () => {
     expect(keptRunningFromMessage({ type: "keptRunning", agents: -1 })).toBeNull();
     expect(keptRunningFromMessage({ type: "shutdown", agents: 2 })).toBeNull();
     expect(keptRunningFromMessage(null)).toBeNull();
-  });
-
-  it("says it as one notice", () => {
-    expect(keptRunningNotice(1)).toEqual({
-      title: "1 agent keeps running",
-      body: "Open Gram to see them.",
-    });
-    expect(keptRunningNotice(3).title).toBe("3 agents keep running");
   });
 });

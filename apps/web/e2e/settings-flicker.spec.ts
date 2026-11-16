@@ -88,10 +88,8 @@ const settledBodyAlpha = async (page: Page) =>
     }),
   );
 
-for (const [look, mode] of [
-  ["glass", "light"],
-  ["glass", "dark"],
-] as const) {
+// Light only: a saved mode other than the default dark is the one a flash of the default shows in.
+for (const [look, mode] of [["glass", "light"]] as const) {
   test(`opening and scrolling Settings doesn't flicker (${look}, ${mode})`, async ({ page }) => {
     await useLook(page, look, mode);
     await page.addInitScript(INSTRUMENT);

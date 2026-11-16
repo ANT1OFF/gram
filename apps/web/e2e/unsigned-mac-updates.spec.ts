@@ -2,7 +2,8 @@ import { expect, test } from "@playwright/test";
 
 // A synthetic unsigned macOS shell: main gives it no signed updater (`native.state` is null) and
 // its checks answer unavailable, as `unavailableUpdater` does. Nothing here reads host gh state.
-for (const width of [1280, 390]) {
+// One width: nothing here depends on it.
+for (const width of [1280]) {
   test(`an unsigned Mac shows updates as unavailable, with nothing to opt into, at ${width}px`, async ({
     page,
   }) => {

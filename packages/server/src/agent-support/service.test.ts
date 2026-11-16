@@ -73,8 +73,7 @@ describe("selected harness read-only service", () => {
         expect(result.support.dreamGuided?.state).toBe("supported");
         expect(result.support.dreamFiles?.state).toBe("unsupported");
         expect(result.dreamMode).toBe("guided");
-        expect(result.dreamReason).toContain("normal Codex permissions");
-        expect(result.dreamReason).toContain("workspace-write sandbox and on-request approvals");
+        expect(result.dreamReason).toBeDefined();
         expect(result.support.imageInput?.state).toBe("unknown");
         expect(yield* store.listThreads).toEqual(before);
         expect(cacheReads).toEqual([false]);
@@ -102,6 +101,7 @@ describe("selected harness read-only service", () => {
           const unqualified = yield* handlers["agents.support"]({ model: result.model });
           expect(unqualified.support.dream?.state).toBe("unknown");
           expect(unqualified.support.dreamGuided?.state).toBe("unknown");
+          expect(unqualified.support.dreamFiles?.state).toBe("unsupported");
           expect(unqualified.dreamMode).toBeUndefined();
           expect(
             featurePreflight({

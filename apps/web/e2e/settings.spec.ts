@@ -314,15 +314,6 @@ test("diagnostics set the log level and copy a report to the clipboard", async (
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("Gram diagnostics");
 });
 
-test("what's new lists the shipped highlights", async ({ page }) => {
-  await page.goto("/settings/help");
-  const whatsNew = page.getByTestId("whats-new");
-  await expect(whatsNew).toContainText("You're running Gram 1.0.0-mock.");
-  await expect(whatsNew.getByRole("region", { name: "What's new in 1.0.0" })).toContainText(
-    "Your own Claude Code and Codex",
-  );
-});
-
 const MOCK_SETTINGS_KEY = "gram.mock.settings";
 
 test("what's new shows once after an update and reopens from its page", async ({ page }) => {

@@ -113,82 +113,84 @@ async function open(page: Page, provider: "claude" | "codex") {
   return card;
 }
 
-for (const provider of ["claude", "codex"] as const) {
-  for (const mode of ["dark", "light"] as const) {
-    test(`${provider} expanded command in ${mode} preserves characters, selection and output`, async ({
-      page,
-    }) => {
-      await page.setViewportSize({ width: 1200, height: 900 });
-      await seedTheme(page, {
-        mode,
-        palette: mode === "dark" ? "tokyo-night" : "tokyo-light",
-        motion: "off",
-      });
-      await seed(page, provider);
-      const errors: string[] = [];
-      page.on("pageerror", (error) => errors.push(error.message));
-      page.on("console", (message) => {
-        if (message.type() === "error") errors.push(message.text());
-      });
-      const card = await open(page, provider);
-      if (phase === "before") {
-        await expect(card.locator("code[data-language=shellscript]")).toHaveCount(0);
-        await expect(card.locator("pre").first()).toHaveText(
-          provider === "claude"
-            ? `$ ${command}`
-            : JSON.stringify({ command, cwd: "/synthetic/project" }, null, 2),
-        );
-      } else {
-        const code = card.locator("code[data-language=shellscript]");
-        await expect(code).toHaveText(command);
-        await expect(code.locator('[style*="--shiki-dark"]')).not.toHaveCount(0);
-        const colors = await code
-          .locator('[style*="--shiki-dark"]')
-          .evaluateAll((tokens) =>
-            Array.from(new Set(tokens.map((token) => getComputedStyle(token).color))),
-          );
-        expect(colors.length).toBeGreaterThanOrEqual(3);
-        const selection = await code.evaluate((el) => {
-          // oxlint-disable-next-line unicorn/consistent-function-scoping -- runs inside the browser evaluation
-          const select = (node: Node) => {
-            const range = document.createRange();
-            range.selectNodeContents(node);
-            const current = window.getSelection()!;
-            current.removeAllRanges();
-            current.addRange(range);
-            return { selected: current.toString(), source: range.toString() };
-          };
-          const highlighted = select(el);
-          // Native selection omits a terminal newline in plain pre text too.
-          const plain = el.closest("pre")!.cloneNode(false) as HTMLElement;
-          plain.textContent = el.textContent;
-          el.closest("pre")!.after(plain);
-          const reference = select(plain);
-          plain.remove();
-          window.getSelection()!.removeAllRanges();
-          return { highlighted, reference };
-        });
-        expect(selection.highlighted.source).toBe(command);
-        expect(selection.highlighted.selected).toBe(selection.reference.selected);
-        expect(selection.highlighted.selected).toContain(".items[] | select(. > 1)");
-      }
-      if (provider === "claude") {
-        await expect(card.locator("pre").last()).toHaveText(stdout + stderr);
-        await expect(card.locator("pre .text-destructive")).toHaveText(stderr);
-      } else {
-        await expect(card).toContainText('"cwd": "/synthetic/project"');
-        await expect(card.locator("pre").last()).toHaveText(
-          JSON.stringify({ stdout, stderr: "", interrupted: false, exitCode: 0 }, null, 2),
-        );
-      }
-      await expect(page.locator("html")).toHaveAttribute("data-mode", mode);
-      await card.scrollIntoViewIfNeeded();
-      await page.screenshot({
-        path: `e2e/__screenshots__/command-${provider}-${mode}.${phase}.png`,
-      });
-      expect(errors).toEqual([]);
+// Each provider and each mode once between two cases: neither changes the other's path.
+for (const [provider, mode] of [
+  ["claude", "dark"],
+  ["codex", "light"],
+] as const) {
+  test(`${provider} expanded command in ${mode} preserves characters, selection and output`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await seedTheme(page, {
+      mode,
+      palette: mode === "dark" ? "tokyo-night" : "tokyo-light",
+      motion: "off",
     });
-  }
+    await seed(page, provider);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    const card = await open(page, provider);
+    if (phase === "before") {
+      await expect(card.locator("code[data-language=shellscript]")).toHaveCount(0);
+      await expect(card.locator("pre").first()).toHaveText(
+        provider === "claude"
+          ? `$ ${command}`
+          : JSON.stringify({ command, cwd: "/synthetic/project" }, null, 2),
+      );
+    } else {
+      const code = card.locator("code[data-language=shellscript]");
+      await expect(code).toHaveText(command);
+      await expect(code.locator('[style*="--shiki-dark"]')).not.toHaveCount(0);
+      const colors = await code
+        .locator('[style*="--shiki-dark"]')
+        .evaluateAll((tokens) =>
+          Array.from(new Set(tokens.map((token) => getComputedStyle(token).color))),
+        );
+      expect(colors.length).toBeGreaterThanOrEqual(3);
+      const selection = await code.evaluate((el) => {
+        // oxlint-disable-next-line unicorn/consistent-function-scoping -- runs inside the browser evaluation
+        const select = (node: Node) => {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          const current = window.getSelection()!;
+          current.removeAllRanges();
+          current.addRange(range);
+          return { selected: current.toString(), source: range.toString() };
+        };
+        const highlighted = select(el);
+        // Native selection omits a terminal newline in plain pre text too.
+        const plain = el.closest("pre")!.cloneNode(false) as HTMLElement;
+        plain.textContent = el.textContent;
+        el.closest("pre")!.after(plain);
+        const reference = select(plain);
+        plain.remove();
+        window.getSelection()!.removeAllRanges();
+        return { highlighted, reference };
+      });
+      expect(selection.highlighted.source).toBe(command);
+      expect(selection.highlighted.selected).toBe(selection.reference.selected);
+      expect(selection.highlighted.selected).toContain(".items[] | select(. > 1)");
+    }
+    if (provider === "claude") {
+      await expect(card.locator("pre").last()).toHaveText(stdout + stderr);
+      await expect(card.locator("pre .text-destructive")).toHaveText(stderr);
+    } else {
+      await expect(card).toContainText('"cwd": "/synthetic/project"');
+      await expect(card.locator("pre").last()).toHaveText(
+        JSON.stringify({ stdout, stderr: "", interrupted: false, exitCode: 0 }, null, 2),
+      );
+    }
+    await expect(page.locator("html")).toHaveAttribute("data-mode", mode);
+    await card.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: `e2e/__screenshots__/command-${provider}-${mode}.${phase}.png`,
+    });
+    expect(errors).toEqual([]);
+  });
 }
 
 if (phase === "after") {

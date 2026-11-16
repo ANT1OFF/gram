@@ -18,7 +18,6 @@ const HEAVY = [
   "glass-gutters",
   "grid",
   "grid-ergonomics",
-  "light-mode",
   "looks",
   "looks-audit-2",
   "multiwindow",

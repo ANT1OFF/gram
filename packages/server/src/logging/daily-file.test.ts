@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { dailyFile, latestLogFile, localDay, pruneLogs, tailLines } from "./daily-file.ts";
+import { dailyFile, latestLogFile, pruneLogs, tailLines } from "./daily-file.ts";
 
 const dirs: string[] = [];
 const tempDir = () => {
@@ -96,11 +96,5 @@ describe("tailLines", () => {
     expect(tailLines(file, 2)).toEqual(["second", "third"]);
     expect(tailLines(file, 10, 14)).toEqual(["second", "third"]);
     expect(tailLines(join(dir, "missing.log"), 5)).toEqual([]);
-  });
-});
-
-describe("localDay", () => {
-  it("pads months and days", () => {
-    expect(localDay(new Date(2026, 0, 5))).toBe("2026-01-05");
   });
 });

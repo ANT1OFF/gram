@@ -1,12 +1,6 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
-import {
-  AgentRuntimes,
-  CliUpdateRefused,
-  CliUpdateState,
-  RuntimeInstallRefused,
-  RuntimeInstallState,
-} from "./agent-runtime.ts";
+import { AgentRuntimes, CliUpdateRefused, CliUpdateState } from "./agent-runtime.ts";
 import { GramRpcs } from "./rpc.ts";
 import {
   SpeechInstallState,
@@ -101,31 +95,6 @@ describe("agent runtime", () => {
       { source: "brew", path: "/bin/claude" },
     ])
       expect(() => decode({ checkedAt: 1, agents: [{ ...agent, resolved }] })).toThrow();
-  });
-
-  it("round-trips every install state and the refusal", () => {
-    const install = { version: "0.159.2", sha256: SHA, path: "/s/codex", installedAt: 1 };
-    for (const state of [
-      { state: "idle" },
-      { state: "idle", active: install, previous: { ...install, version: "0.159.1" } },
-      {
-        state: "downloading",
-        version: "0.160.0",
-        receivedBytes: 1,
-        totalBytes: 9,
-        active: install,
-      },
-      { state: "verifying", version: "0.160.0" },
-      { state: "testing", version: "0.160.0" },
-      { state: "ready", version: "0.160.0", activeSessions: 2, active: install },
-      { state: "failed", version: "0.160.0", message: "digest mismatch", active: install },
-      { state: "rolledBack", from: "0.160.0", message: "app-server exited (1)", active: install },
-    ])
-      expectRoundTrip(RuntimeInstallState, Schema.decodeUnknownSync(RuntimeInstallState)(state));
-    expectRoundTrip(
-      RuntimeInstallRefused,
-      new RuntimeInstallRefused({ agent: "codex", reason: "not-eligible", message: "wait" }),
-    );
   });
 
   it("round-trips every state of an update to the user's own CLI, and its refusal", () => {

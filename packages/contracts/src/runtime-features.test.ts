@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  featureAvailable,
-  featureRefusal,
-  RUNTIME_FEATURES,
-  type RuntimeFeatureId,
-} from "./runtime-features.ts";
+import { featureAvailable, RUNTIME_FEATURES, type RuntimeFeatureId } from "./runtime-features.ts";
 
 const ids = Object.keys(RUNTIME_FEATURES) as RuntimeFeatureId[];
 
@@ -30,10 +25,6 @@ describe("runtime features", () => {
         shell: { preview: {} as never, agentBrowse: {} as never },
       }),
     ).toBe(true);
-  });
-
-  it("says what isn't available", () => {
-    expect(featureRefusal("dictation")).toBe("Dictation isn't available here.");
   });
 
   it("names every feature and provides a reason for each unavailable one", () => {

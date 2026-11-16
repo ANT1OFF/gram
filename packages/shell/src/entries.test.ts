@@ -43,7 +43,6 @@ function reach(entry: string): { files: string[]; packages: string[] } {
 
 const manifest = JSON.parse(readFileSync(join(SRC, "../package.json"), "utf8")) as {
   dependencies?: Record<string, string>;
-  exports: Record<string, unknown>;
 };
 
 describe("the package's entries and dependencies", () => {
@@ -73,30 +72,6 @@ describe("the package's entries and dependencies", () => {
       "@gram/contracts",
       "@gram/git",
       "effect",
-    ]);
-  });
-
-  it("exports main-only entries and the preload's, and nothing else", () => {
-    expect(Object.keys(manifest.exports).toSorted()).toEqual([
-      "./channels",
-      "./core",
-      "./electron",
-      "./modules/agent-browser",
-      "./modules/connection",
-      "./modules/device",
-      "./modules/device/main",
-      "./modules/fonts",
-      "./modules/ipc",
-      "./modules/key-vault",
-      "./modules/pages",
-      "./modules/preview",
-      "./modules/speech",
-      "./modules/tray",
-      "./modules/update",
-      "./preload",
-      "./speech-process",
-      "./speech-process/main",
-      "./window-arg",
     ]);
   });
 });

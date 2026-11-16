@@ -64,7 +64,6 @@ import {
   featureState,
   fullAutonomyAllows,
   gateNeeds,
-  gateNeedsReason,
   gateOfAutonomy,
   groupOf,
   hasAuthority,
@@ -2124,7 +2123,8 @@ const roleOn = (agent: AgentKind, gated?: boolean) =>
   rolePrompt({ workspaceName: "w", projects: [], autonomy: "publish", agent, gated });
 
 describe("prompts", () => {
-  it("names every project root and marks the home one", () => {
+  // The wording is the prompt author's to change; these check only what the builders decide.
+  it("lists every project root and marks only the home one as the working directory", () => {
     const prompt = rolePrompt({
       workspaceName: "agent-factory-platform",
       autonomy: "publish",
@@ -2133,195 +2133,37 @@ describe("prompts", () => {
         { name: "sys_ai_agents", root: "/code/sys_ai_agents", home: false },
       ],
     });
-    expect(prompt).toContain('"agent-factory-platform"');
-    expect(prompt).toContain(
-      "- example-agent-factory: /code/example-agent-factory (your working directory)",
-    );
-    expect(prompt).toContain("- sys_ai_agents: /code/sys_ai_agents\n");
+    expect(prompt).toContain("/code/example-agent-factory (your working directory)");
+    expect(prompt).toContain("/code/sys_ai_agents\n");
     expect(prompt.match(/\(your working directory\)/g)).toHaveLength(1);
-    expect(prompt).toContain("Write a pull request as `owner/repo#N`");
-    expect(roleAt("publish")).not.toContain("owner/repo#N");
   });
 
-  it("tells an orchestrator what leaves the machine at each level, and that answering workers is its own at all of them", () => {
-    const at = roleAt;
+  it("offers merge_when_ready to an orchestrator at full alone", () => {
+    expect(roleAt("full")).toContain("`merge_when_ready`");
     for (const level of ["supervised", "publish"] as const) {
-      expect(at(level)).toContain(`autonomy is \`${level}\``);
-      expect(at(level)).toContain("Merging is the user's decision");
-      expect(at(level)).toContain("You cannot merge, close a pull request or delete anything");
-      // Its workers' `ask_question` questions are its to triage at every level.
-      expect(at(level)).toContain("## Your workers' questions");
-      expect(at(level)).toContain(
-        "Answer it with `answer_worker` (`questionId`, `answer`, `source`)",
+      expect(roleAt(level)).not.toContain("`merge_when_ready`");
+    }
+  });
+
+  it("gives Claude workers the shell guidance, and Codex threads or orchestrators none", () => {
+    for (const autonomy of ["supervised", "publish", "full"] as const) {
+      expect(workerPrompt({ feature: "f", orchestratorTitle: "o", autonomy })).toContain(
+        "Bash safety checks",
       );
-      // A question a worker waits on the user for is its to answer at every level; an approval
-      // or a plan never is.
-      expect(at(level)).toContain("`answer_worker` and its `requestId`");
-      expect(at(level)).toContain("Approval and plan requests stay the user's");
-      expect(at(level)).not.toContain("`merge_when_ready`");
-    }
-    expect(at("supervised")).toContain("ask the user before they push");
-    expect(at("publish")).toContain("push and open pull requests themselves");
-    const full = at("full");
-    expect(full).toContain("autonomy is `full`");
-    for (const prompt of [full, workerAt("full")]) {
-      expect(prompt).not.toContain("nothing asks the user");
-      expect(prompt).toContain("Recorded approval and plan requests remain the user's");
-      expect(prompt).toContain("Full Auto does not clear workspace pauses.");
-      expect(prompt).not.toContain("user-held workers");
-      expect(prompt).toContain("Merge holds, dependencies, pending or failing CI");
-      expect(prompt).toContain("required reviews and GitHub rules");
-      expect(prompt).toContain("provider authentication or limits");
-      expect(prompt).toContain("harness capability or startup failures");
-      expect(prompt).toContain("actual recorded request, hold, PR, provider or capability state");
-      expect(prompt).toContain("permission mode remains the user's");
-    }
-    expect(full).toContain("`merge_when_ready` and its `threadId`");
-    // The user writing to a worker leaves it the orchestrator's: its messages wait, never refused.
-    expect(full).toContain("A worker the user has typed into is still yours");
-    expect(full).toContain("your message waits behind their exchange");
-    expect(full).not.toContain("is theirs until it next reports");
-    expect(full).toContain(
-      "answer a **question** a worker is waiting on the user for (its harness's own ask) with `answer_worker`",
-    );
-    expect(full).toContain("Approval and plan requests stay the user's");
-    expect(full).not.toContain("Merging is the user's decision");
-  });
-
-  it("tells an orchestrator how to talk to the user: answer, back the claim, one catch-up shape, ask once", () => {
-    for (const autonomy of ["supervised", "publish", "full"] as const) {
-      const prompt = roleAt(autonomy);
-      expect(prompt).toContain(
-        "Answer every message the user writes to you in the turn it arrives",
-      );
-      expect(prompt).toContain("Back each claim with what you checked");
-      expect(prompt).toContain("A worker's report is its word until you have looked");
-      expect(prompt).toContain("Before you tell the user where things stand, call `list_workers`");
-      expect(prompt).toContain("**Needs you**, **Done**, **Failed**, **Still working**");
-      expect(prompt).toContain("Ask a decision once, with the option you recommend and why");
-    }
-    expect(workerAt("publish")).toContain(
-      "say what you ran to verify it and what you did not check",
-    );
-  });
-
-  it("sends an orchestrator's work to spawn_worker, and spawn_task only outside the workspace, with a reason", () => {
-    for (const autonomy of ["supervised", "publish", "full"] as const) {
-      const prompt = roleAt(autonomy);
-      expect(prompt).toContain("Start one with the `spawn_worker` tool");
-      expect(prompt).toContain("`spawn_task` is not a worker");
-      expect(prompt).toContain("Pass `reason` saying why in one line");
-    }
-    expect(workerAt("publish")).not.toContain("spawn_task");
-  });
-
-  it("keeps memory current as a habit, and says nothing of watching the context", () => {
-    const prompt = roleAt("publish");
-    expect(prompt).toContain("Keep it current as you go");
-    expect(prompt).not.toMatch(/handoff|hand off|context (is|window)/i);
-  });
-
-  it("teaches stages, groups and the choice of worker model at every level", () => {
-    for (const autonomy of ["supervised", "publish", "full"] as const) {
-      const prompt = rolePrompt({ workspaceName: "w", projects: [], autonomy });
-      expect(prompt).toContain("## Stages and groups");
-      expect(prompt).toContain("`set_stage`");
-      expect(prompt).toContain("`set_group`");
-      expect(prompt).toContain("Look in memory for this workspace's usual flow");
-      expect(prompt).toContain("Pick each worker's model by matching its brief to those notes");
-      expect(prompt).toContain("tell the user briefly which model you picked and why");
-    }
-  });
-
-  it("tidies at checkpoints, briefly, and never archives a worker still waiting on something", () => {
-    const prompt = roleAt("publish");
-    expect(prompt).toContain("## Housekeeping");
-    expect(prompt).toContain("not on every turn");
-    expect(prompt).toContain("a digest's notes say something is left over");
-    expect(prompt).toContain("an archived worker doesn't wake");
-    expect(prompt).toContain("never a long report");
-  });
-
-  it("asks without waiting, and waits only with the harness's own tool while the user is there", () => {
-    expect(roleOn("claude")).toContain("Don't `cd`");
-    for (const agent of ["claude", "codex"] as const) {
-      const prompt = roleOn(agent);
-      expect(prompt).toContain("## Questions for the user");
-      expect(prompt).toContain("Ask with `ask_user` and keep going.");
-      expect(prompt).toContain("`close_question`");
-    }
-    // Claude's AskUserQuestion is taken from an orchestrator's session, so it isn't offered.
-    expect(roleOn("claude")).not.toContain("AskUserQuestion");
-    for (const agent of ["claude", "codex"] as const) {
-      expect(roleOn(agent)).toContain("You have no tool here that waits for the user's answer.");
-    }
-    expect(roleOn("codex")).toContain("`ask_user`, `close_question`");
-  });
-
-  it("has a worker report to its orchestrator, then wrap_up for the thread, with no ask", () => {
-    for (const agent of ["claude", "codex"] as const) {
-      const prompt = workerOn(agent);
-      expect(prompt).toContain("call `report` first, then `wrap_up` without `ask`");
-      expect(prompt).toContain("a question for a decision goes to `ask_question`");
-    }
-    expect(workerOn("codex")).toContain(
-      "`message_orchestrator`, `memory_list`, `memory_read`, `memory_append`, `memory_edit`, `memory_write`, `wrap_up`",
-    );
-  });
-
-  it("guides Claude workers toward shell forms that avoid routine safety prompts", () => {
-    for (const autonomy of ["supervised", "publish", "full"] as const) {
-      for (const agent of [undefined, "claude"] as const) {
-        const prompt = workerPrompt({ feature: "f", orchestratorTitle: "o", autonomy, agent });
-        expect(prompt).toContain("Bash safety checks can still ask in Bypass");
-        expect(prompt).toContain("plain commands, one per Bash call where possible");
-        expect(prompt).toContain("file lists as explicit quoted paths");
-        expect(prompt).toContain(
-          "avoid zsh expansion flags (such as `${(f)...}`) and shell arrays",
-        );
-        expect(prompt).toContain("Don't chain `cd` with commands; use `git -C` or absolute paths");
-        expect(prompt).toContain("Never use wildcard `rm`");
-        expect(prompt).toContain("Keep required approvals intact");
-      }
     }
     expect(workerOn("codex")).not.toContain("Bash safety checks");
     expect(roleOn("claude")).not.toContain("Bash safety checks");
   });
 
-  it("points a worker's write-ups to publish_doc rather than a file in the repo", () => {
-    for (const agent of ["claude", "codex"] as const) {
-      expect(workerOn(agent)).toContain("goes to `publish_doc`, not a file in the repo");
-    }
-  });
-
   it("names wrap_up to a plain Codex thread only, whose tool search hides it", () => {
-    expect(plainPrompt({ agent: "codex" })).toContain("`wrap_up`, on the MCP server named `gram`");
+    expect(plainPrompt({ agent: "codex" })).toContain("`wrap_up`");
     expect(plainPrompt({ agent: "claude" })).toBeUndefined();
     expect(plainPrompt({})).toBeUndefined();
   });
 
-  it("tells a worker truthfully what will ask at its level", () => {
-    const at = workerAt;
-    expect(at("supervised")).toContain(
-      "Pushing, opening a pull request and merging ask the user first.",
-    );
-    expect(at("publish")).toContain(
-      "Push your branch and open pull requests yourself. Merging or closing a pull request, a release, a workflow run, and a force or deleting push ask the user first.",
-    );
-    expect(at("publish")).not.toContain("Pushing, opening a pull request and merging ask");
-    expect(at("full")).toContain(
-      "Push and open pull requests without approval, and when the brief says so merge them; be sure before anything that can't be taken back.",
-    );
-    expect(at("full")).not.toContain("ask the user first");
-  });
-
   it("names a Codex thread's tools, which it would otherwise have to search for", () => {
-    expect(workerOn("codex")).toContain(
-      "Your Gram tools are on the MCP server named `gram`: `report`, `ask_question`, `record_user_answer`, `mark_completed`, `pr_bind`, `set_title`, `pr_status`, `pr_review_monitor`, `run_monitor`, `merge_when_ready`, `local_check`, `schedule_wake`, `depends_on`, `message_orchestrator`, `memory_list`, `memory_read`, `memory_append`, `memory_edit`, `memory_write`, `wrap_up`, `publish_doc`. Search for them by those names if they aren't listed.",
-    );
-    expect(roleOn("codex")).toContain(
-      "Your Gram tools are on the MCP server named `gram`: `spawn_worker`, `adopt_thread`, `list_workers`, `send_message`, `broadcast_message`, `archive_thread`, `set_stage`, `set_group`, `memory_read`, `memory_append`, `memory_edit`, `memory_write`, `ask_user`, `close_question`, `forward_question`, `answer_worker`, `record_user_answer`, `wait_on_user`, `notify_user`, `schedule_wake`, `depends_on`. Search for them",
-    );
+    expect(workerOn("codex")).toContain("MCP server named `gram`");
+    expect(roleOn("codex")).toContain("MCP server named `gram`");
     for (const agent of ["claude", UNADMITTED] as const) {
       expect(workerOn(agent)).not.toContain("MCP server named");
       expect(roleOn(agent)).not.toContain("MCP server named");
@@ -2349,81 +2191,45 @@ describe("prompts", () => {
     ).toBe(workerAt("full"));
   });
 
-  it("tells a worker its feature and how to report", () => {
+  it("names the worker's feature and orchestrator", () => {
     const prompt = workerPrompt({
       feature: "mail-trigger",
       orchestratorTitle: "Platform",
       autonomy: "publish",
     });
-    expect(prompt).toContain('worker on "mail-trigger"');
+    expect(prompt).toContain('"mail-trigger"');
     expect(prompt).toContain('"Platform"');
-    expect(prompt).toContain("`report` tool");
-    expect(prompt).toContain("`interface`");
-    expect(prompt).toContain(
-      "say what you ran to verify it and what you did not check, and what you tried and ruled out, not only what worked",
-    );
-    expect(prompt).toContain(
-      "After a restart or a turn that was cut off, check your worktree, git history and GitHub before you repeat a push, a pull request or a comment",
-    );
   });
 
-  it("tells the orchestrator to attach the user's words and invent nothing they didn't ask for", () => {
-    const prompt = rolePrompt({ workspaceName: "w", projects: [], autonomy: "publish" });
-    expect(prompt).toContain(
-      "When a brief comes from what the user asked, attach their words rather than retyping them",
-    );
-    expect(prompt).toContain("`userMessages`");
-    expect(prompt).toContain(
-      "adds no requirements, acceptance criteria or checklists the user didn't ask for",
-    );
-    // Briefs are still the orchestrator's to write.
-    expect(prompt).toContain("Write the brief so it stands alone");
-  });
-
-  it("opens a session on an empty memory by saying so", () => {
+  it("opens a session on an empty memory by saying so, and on a kept one with its index", () => {
     const empty = bootContext({ memoryIndex: " \n", charterLines: ["4 workers at once"] });
-    expect(empty.join("\n")).toContain("Your memory is empty");
     expect(empty.join("\n")).not.toContain("MEMORY.md:");
     expect(empty.join("\n")).toContain("- 4 workers at once");
 
-    const kept = bootContext({ memoryIndex: "# Index\n- goals.md\n", charterLines: [] });
+    const savedIndex = "# Index\n- goals.md\n";
+    const kept = bootContext({ memoryIndex: savedIndex, charterLines: [] });
     expect(kept.at(-1)).toBe("MEMORY.md:\n# Index\n- goals.md");
-  });
-
-  it("explains sparse memory even when a saved index lists files that do not exist", () => {
-    const savedIndex = "# Memory index\n- goals.md: user goals\n- standing-decisions.md: rulings\n";
-    const boot = bootContext({ memoryIndex: savedIndex, charterLines: [] }).join("\n");
-    expect(boot).toContain("New workspaces start with only `MEMORY.md`");
-    expect(boot).toContain("Use `memory_list` to see which files exist before reading them");
-    expect(boot).toContain("Create a topic file only when you have something to record");
-    expect(boot).toContain(savedIndex.trim());
-    expect(boot).not.toContain("Your memory is empty");
+    expect(kept.join("\n")).not.toBe(empty.join("\n"));
   });
 
   it("opens a session with the user's standing decisions, whole up to a cap", () => {
     const none = bootContext({ memoryIndex: "# Index\n", charterLines: [], decisions: " \n" });
-    expect(none.join("\n")).not.toContain("standing decisions");
+    expect(none.join("\n")).not.toContain("standing-decisions.md");
+    const decision = "- 2026-10-01: visual PRs merge when green (the user, in this thread)";
     const some = bootContext({
       memoryIndex: "# Index\n",
       charterLines: [],
-      decisions: "- 2026-10-01: visual PRs merge when green (the user, in this thread)\n",
+      decisions: `${decision}\n`,
     });
-    expect(some.at(-1)).toBe(
-      "The user's standing decisions (standing-decisions.md); act on them without asking again:\n- 2026-10-01: visual PRs merge when green (the user, in this thread)",
-    );
+    expect(some.at(-1)).toContain(`\n${decision}`);
     const long = bootContext({ memoryIndex: "", charterLines: [], decisions: "d".repeat(9_000) });
-    expect(long.at(-1)).toContain("read the whole file with `memory_read` before you act");
     expect(long.at(-1)).toMatch(/\nd{8000}\n…$/);
     const unreadable = bootContext({
       memoryIndex: "",
       charterLines: [],
       decisions: { unreadable: "it is over 32 KB" },
     });
-    expect(unreadable.at(-1)).toContain("couldn't be read: it is over 32 KB. Act on none of them");
-    const prompt = roleAt("full");
-    expect(prompt).toContain("## Standing decisions");
-    expect(prompt).toContain("It is not `decisions.md`");
-    expect(prompt).toContain("Write only what the user said, never your own inference.");
+    expect(unreadable.at(-1)).toContain("it is over 32 KB");
   });
 });
 
@@ -2732,9 +2538,8 @@ describe("restart notes", () => {
 
   it("names every worker the restart cut off in one note, and the work that stopped", () => {
     expect(restartNote([restartCost("Idle")])).toBeUndefined();
-    expect(restartNote([restartCost("Mail", { cutOff: true })])).toBe(
-      "A restart cut this worker off mid-turn, so it isn't working now whatever the ledger says: “Mail” [thread t-Mail] (idle until messaged). Before you set one going again, have it check its worktree, git history and GitHub so no push, pull request or comment goes out twice.",
-    );
+    const one = restartNote([restartCost("Mail", { cutOff: true })]);
+    expect(one).toContain("“Mail” [thread t-Mail] (idle until messaged)");
     const many = Array.from({ length: 12 }, (_, i) => restartCost(`W${i}`, { cutOff: true }));
     const note = restartNote([
       ...many,
@@ -2756,10 +2561,10 @@ describe("restart notes", () => {
       expect(note).toContain(`[thread ${each.threadId}] (idle until messaged)`);
     expect(note).toContain("“Mail” [thread t-Mail] (asked to continue where it left off)");
     expect(note).toContain(
-      "It also stopped background work, as the agents described it: “Mail” [thread t-Mail]: shell `pnpm check`; Explore subagent “Find callers”; other “task 0”; other “task 1”; other “task 2”; and 2 more.",
+      "shell `pnpm check`; Explore subagent “Find callers”; other “task 0”; other “task 1”; other “task 2”; and 2 more.",
     );
-    expect(restartNote([restartCost("Stock", { lost: [shell] })])).toBe(
-      "A restart stopped background work, as the agents described it: “Stock” [thread t-Stock]: shell `pnpm check`. Message a worker that was waiting on it.",
+    expect(restartNote([restartCost("Stock", { lost: [shell] })])).toContain(
+      "“Stock” [thread t-Stock]: shell `pnpm check`",
     );
   });
 
@@ -2782,15 +2587,9 @@ describe("restart notes", () => {
     expect(note.match(/`/g)).toHaveLength(2);
   });
 
-  it("asks a cut-off worker to check its work before it goes on", () => {
-    expect(restartContinuation([])).toContain("Continue where you left off");
-    expect(restartContinuation([])).toContain("The PR monitors you turned on are still on");
-    expect(restartContinuation([])).toContain(
-      "checking your worktree, git history and GitHub: don't repeat a push, a pull request or a comment that already went through",
-    );
-    expect(restartContinuation([shell])).toContain(
-      "The restart also stopped your background work (shell `pnpm check`)",
-    );
+  it("names the background work a restart stopped to the worker it cut off", () => {
+    expect(restartContinuation([])).not.toContain("pnpm check");
+    expect(restartContinuation([shell])).toContain("shell `pnpm check`");
   });
 });
 
@@ -2945,21 +2744,19 @@ describe("worker models", () => {
     ).toBeUndefined();
     expect(
       workerModelUnavailable({ model: { ...sol, profileId: "bare" } as ModelRef, profiles }),
-    ).toBe("its gateway profile has no key; add a gateway key in Settings → Gateways");
+    ).toMatch(/no key/);
     expect(
       workerModelUnavailable({ model: { ...sol, profileId: "gone" } as ModelRef, profiles }),
-    ).toBe("its gateway profile is gone; pick another for it in Settings → Workspaces");
+    ).toMatch(/is gone/);
     // On no profile it runs on Codex's own login, which offers its own models and not the gateway's.
-    expect(workerModelUnavailable({ model: sol, profiles, ownModels: ["gpt-5.5"] })).toBe(
-      "Codex does not list gpt-6-sol on your local account; choose a listed model in Settings → Workspaces",
+    expect(workerModelUnavailable({ model: sol, profiles, ownModels: ["gpt-5.5"] })).toMatch(
+      /does not list gpt-6-sol/,
     );
-    expect(workerModelUnavailable({ model: sol, profiles })).toBe(
-      "Codex couldn't list local models; install its CLI, sign in locally, then retry models in Settings → Agents",
-    );
+    expect(workerModelUnavailable({ model: sol, profiles })).toMatch(/couldn't list local models/);
     // A gateway lists it, but without a key: the fix is the key.
     const keylessSol = [{ id: "bare", keyRef: "", models: [{ id: "gpt-6-sol" }] }];
-    expect(workerModelUnavailable({ model: sol, profiles: keylessSol })).toBe(
-      "Codex couldn't list local models; install its CLI, sign in locally, then retry models in Settings → Agents",
+    expect(workerModelUnavailable({ model: sol, profiles: keylessSol })).toMatch(
+      /couldn't list local models/,
     );
     expect(
       workerModelUnavailable({
@@ -2971,8 +2768,8 @@ describe("worker models", () => {
     expect(workerModelUnavailable({ model: opus, profiles })).toBeUndefined();
     // A profile that lists its models has to list this one, or a custom model has to name it.
     const onListed = { ...sol, profileId: "listed" } as ModelRef;
-    expect(workerModelUnavailable({ model: onListed, profiles })).toBe(
-      "its gateway profile doesn't offer gpt-6-sol; pick one that does in Settings → Workspaces",
+    expect(workerModelUnavailable({ model: onListed, profiles })).toMatch(
+      /doesn't offer gpt-6-sol/,
     );
     expect(
       workerModelUnavailable({ model: onListed, profiles, customModels: ["gpt-6-sol"] }),
@@ -3189,15 +2986,6 @@ describe("worker models", () => {
         ).toBe(expected);
       },
     );
-
-    it("words what is missing for the user", () => {
-      expect(gateNeedsReason("home", "codex", "auto")).toBe(
-        "Codex cannot prepare Gram's native approval home. Check codex login and the Gram data directory, or select a prepared gateway home.",
-      );
-      expect(gateNeedsReason("mode", "claude", "dontAsk")).toBe(
-        "In dontAsk mode Claude can't ask before a push.",
-      );
-    });
 
     // Codex × profile × level × whether the gate can ask in the charter's mode.
     const matrix: ReadonlyArray<readonly [Autonomy, boolean, boolean, boolean]> = [

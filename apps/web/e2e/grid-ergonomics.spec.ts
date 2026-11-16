@@ -40,8 +40,10 @@ test("grid: cycle panes, double-click to maximize, drag to swap, close focus, re
   await expect(panes.nth(2)).toHaveAttribute("data-focused", "true");
   await expect(page).toHaveURL(/\/t\/t-deps$/);
 
-  // Let the debounced layout save land before reloading.
-  await page.waitForTimeout(800);
+  // Reload once the debounced layout save has landed in the settings.
+  await expect
+    .poll(async () => (await page.evaluate(() => window.gramMock!.getSettings())).layout?.grid)
+    .toMatchObject({ panes: ["t-docs", null, "t-deps"], focused: 2 });
   await page.reload();
   await expect(panes).toHaveCount(3);
   await expect(panes.nth(0)).toHaveAttribute("data-thread-id", "t-docs");

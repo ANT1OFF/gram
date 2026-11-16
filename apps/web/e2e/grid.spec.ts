@@ -50,8 +50,10 @@ test("grid: preset, drag to pane, focus shortcuts, independent sends, maximize, 
   await page.keyboard.press("ControlOrMeta+Shift+Enter");
   await expect(panes.nth(0)).toBeVisible();
 
-  // Let the debounced layout save land before reloading.
-  await page.waitForTimeout(800);
+  // Reload once the debounced layout save has landed in the settings.
+  await expect
+    .poll(async () => (await page.evaluate(() => window.gramMock!.getSettings())).layout?.grid)
+    .toMatchObject({ panes: ["t-deps", "t-release", "t-docs", null], focused: 1 });
   await page.reload();
   await expect(panes).toHaveCount(4);
   await expect(panes.nth(0)).toHaveAttribute("data-thread-id", "t-deps");

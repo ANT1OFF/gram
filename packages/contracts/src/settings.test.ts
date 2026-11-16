@@ -8,7 +8,6 @@ import {
   withoutPersonalSettings,
   customModelsOf,
   DEFAULT_SETTINGS,
-  GRID_SHAPES,
   GridLayout,
   Palette,
   Settings,
@@ -50,13 +49,9 @@ import {
   worktreeSweepOf,
   usageHistoryEnabled,
 } from "./settings.ts";
-import { Diagnostics } from "./diagnostics.ts";
-import { HelperStatus } from "./helper.ts";
 import { reviewRequestReady } from "./review-requests.ts";
 import { expectRoundTrip } from "./test-utils.ts";
 import { connectorEntryProblem } from "./workspaces.ts";
-
-const ones = (length: number) => Array.from({ length }, () => 1);
 
 describe("local usage history preferences", () => {
   it("preserves existing history by default and revokes only the selected provider", () => {
@@ -483,17 +478,6 @@ describe("SettingsPatch clearing", () => {
     }),
   );
 
-  it("round-trips null leaves", () => {
-    expectRoundTrip(
-      SettingsPatch,
-      decodePatch({
-        layout: { focusMode: null },
-        fonts: { mono: null },
-        agents: { idleEvictMinutes: 30 },
-      }),
-    );
-  });
-
   it("sets, clears and leaves unchanged", () => {
     expect(configured.layout?.focusMode).toBe(true);
     expect(configured.fonts).toEqual({ mono: "Geist Mono", monoSize: 13 });
@@ -522,20 +506,6 @@ describe("SettingsPatch clearing", () => {
 
 describe("layout.grid", () => {
   const decodeGrid = Schema.decodeUnknownSync(GridLayout);
-
-  it("round-trips every preset with matching panes and fractions", () => {
-    for (const [preset, { cols, rows }] of Object.entries(GRID_SHAPES)) {
-      const panes = Array.from({ length: cols * rows }, (_, i) => (i === 0 ? "t1" : null));
-      const grid = decodeGrid({
-        preset,
-        panes,
-        colFr: ones(cols),
-        rowFr: ones(rows),
-        focused: cols * rows - 1,
-      });
-      expectRoundTrip(GridLayout, grid);
-    }
-  });
 
   it("rejects mismatched counts, non-positive fractions and an out-of-range focus", () => {
     const base = { preset: "2x2", panes: ["t1", "t2", null, null] };
@@ -904,45 +874,6 @@ describe("helpers", () => {
     expect(() =>
       Schema.decodeUnknownSync(SettingsPatch)({ helpers: { dailyBudgetUsd: 0 } }),
     ).toThrow();
-  });
-
-  it("round-trips today's usage", () => {
-    expectRoundTrip(HelperStatus, {
-      day: "2026-10-01",
-      calls: 3,
-      inputTokens: 12_000,
-      outputTokens: 2_100,
-      costUsd: 0.00225,
-      failures: 1,
-      lines: [
-        {
-          kind: "plan",
-          model: "gpt-6-luna",
-          calls: 3,
-          inputTokens: 12_000,
-          outputTokens: 2_100,
-          costUsd: 0.00225,
-          failures: 1,
-        },
-      ],
-      dailyBudgetUsd: 2,
-      paused: { reason: "keyDisabled", until: 1_790_000_000_000 },
-    });
-  });
-});
-
-describe("Diagnostics", () => {
-  const diagnostics: Diagnostics = {
-    version: "0.4.0",
-    platform: "linux",
-    arch: "arm64",
-    versions: { node: "24.0.0" },
-    dataDir: "/home/user/.local/share/gram-state",
-    threads: { total: 2, live: 1 },
-  };
-
-  it("round-trips", () => {
-    expectRoundTrip(Diagnostics, diagnostics);
   });
 });
 

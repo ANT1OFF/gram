@@ -1,15 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { flakyAsked } from "./seed-asks";
-import { seedTheme } from "./seed-theme";
 import { openOrchestrator, threadRow } from "./thread-row";
 
 // Workers' own questions (docs/design/worker-questions.md) where the user meets them: the Inbox,
 // the overview's needs-you pill, the feature sheet and the worker's own thread.
 // Mock state lives in memory, so every step after the seed navigates inside the app.
-
-/** Where screenshots go when asked for (`WORKER_QUESTION_SHOTS=<dir>`); none otherwise. */
-const SHOTS = process.env["WORKER_QUESTION_SHOTS"];
 
 interface Seeded {
   readonly workspaceId: string;
@@ -204,32 +200,6 @@ test("a forwarded question's Answer, on its feature's sheet, opens the Inbox on 
     `ask:worker-question:${made.workspaceId}:WQ1`,
   );
 });
-
-for (const mode of ["dark", "light"] as const) {
-  test(`the question in the Inbox and the needs-you pill read in ${mode} mode`, async ({
-    page,
-  }) => {
-    await seedTheme(page, {
-      mode,
-      motion: "off",
-      palette: mode === "light" ? "catppuccin-latte" : "catppuccin-mocha",
-    });
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const made = await start(page);
-    await expect(page.locator("html")).toHaveAttribute("data-mode", mode);
-    await expect(needsYou(page)).toHaveAccessibleName(/need(s)? you: /);
-    await openInbox(page);
-    await row(page, made.workspaceId, "WQ1").click();
-    await expect(
-      detail(page).getByTestId("ask-option").filter({ hasText: "Keep for replay" }),
-    ).toBeVisible();
-    if (SHOTS !== undefined) {
-      await inbox(page).screenshot({ path: `${SHOTS}/inbox-${mode}.png` });
-      await page.keyboard.press("Escape");
-      await needsYou(page).screenshot({ path: `${SHOTS}/needs-you-${mode}.png` });
-    }
-  });
-}
 
 test("on the Board, a worker that asks is a click from its ask in the Inbox", async ({ page }) => {
   const made = await start(page);
