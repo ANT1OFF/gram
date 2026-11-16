@@ -30,19 +30,35 @@ const run = (op: Promise<void>) => void op.catch((error: unknown) => console.err
 /** What a queued message's Steer button says, enabled. */
 export const STEER_LABEL = "Steer now: deliver before the turn ends";
 
+/**
+ * What it says while the turn waits on a card: the agent holds the message for the tool call the
+ * card is on, so it reads it with the card's answer.
+ */
+export const STEER_AT_CARD_LABEL = "Steer now: the agent reads it once the card is answered";
+
 /** What the same button says with no turn running, when pressing it sends the message now. */
 export const SEND_NOW_LABEL = "Send now: no turn is running";
 
 /** Statuses with no turn for a queued message to wait on, where its button sends it. */
 const NOTHING_RUNNING: ReadonlySet<ThreadStatus> = new Set(["idle", "error", "cold"]);
 
+/** Statuses whose turn waits on a card the user answers. */
+const AT_CARD: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput"]);
+
 /** What a queued message's button says, enabled. */
 const queueSendLabel = (status: ThreadStatus | undefined): string =>
-  status !== undefined && NOTHING_RUNNING.has(status) ? SEND_NOW_LABEL : STEER_LABEL;
+  status === undefined
+    ? STEER_LABEL
+    : NOTHING_RUNNING.has(status)
+      ? SEND_NOW_LABEL
+      : AT_CARD.has(status)
+        ? STEER_AT_CARD_LABEL
+        : STEER_LABEL;
 
 /**
- * Why a queued message can't go into the thread now, or `undefined` when it can. A running turn
- * takes one only from an agent that reads input mid-turn; with no turn running, it is sent.
+ * Why a queued message can't go into the thread now, or `undefined` when it can. A running turn,
+ * or one waiting on a card, takes one only from an agent that reads input mid-turn; with no turn
+ * running, it is sent.
  */
 export const steerBlocked = (
   status: ThreadStatus | undefined,
@@ -53,10 +69,7 @@ export const steerBlocked = (
   if (steer !== true) {
     return `${agent === undefined ? "This agent" : agentLabel(agent)} can't take a message mid-turn, so this one waits for the turn to end`;
   }
-  if (status === "running") return undefined;
-  if (status === "needsApproval" || status === "needsInput") {
-    return "The turn is waiting on you: steer once it's running again";
-  }
+  if (status === "running" || (status !== undefined && AT_CARD.has(status))) return undefined;
   return "No turn is running to steer into";
 };
 

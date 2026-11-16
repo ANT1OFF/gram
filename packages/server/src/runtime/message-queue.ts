@@ -940,8 +940,11 @@ export const makeMessageQueue = ({
 };
 
 /**
- * A turn held on a card the user must answer (an approval, a question). Nothing is steered into it:
- * the agent would read the message before the user's answer. It is queued for the turn's end.
+ * A turn held on a card the user must answer (an approval, a question). The user's own steer still
+ * goes in (`pastCard`): the agent takes a steer between tool rounds (Claude's `next` priority) or at
+ * its next model call (Codex's `turn/steer`), so it reads it after the tool call the card holds has
+ * its answer. Their interrupt there is a stop, then the message. Anything else is refused, so Gram's
+ * and other agents' messages queue for the turn's end.
  */
 const WAITING_ON_USER: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput"]);
 
@@ -971,6 +974,8 @@ export interface QueueMethodsDeps {
   readonly switchHold: MessageQueue["switchHold"];
   readonly pumpDeliveries: MessageQueue["pumpDeliveries"];
   readonly scheduleAccount: LimitResume["scheduleAccount"];
+  /** Stops the open turn, as the user's Stop does: an interrupt past a card goes this way. */
+  readonly interrupt: ThreadRuntimesShape["interrupt"];
   /**
    * Whether a machine is still paired (`WorkerHostsShape.paired`). A thread placed on one removed
    * for good keeps its queue, but the boot doesn't send it: the session can't open there, and each
@@ -978,6 +983,29 @@ export interface QueueMethodsDeps {
    */
   readonly paired?: (id: HostId) => boolean;
 }
+
+/**
+ * Called with the lock held: puts the user's `input` at the head of the queue, so it is the first
+ * thing sent once the open turn ends. Refused while a switch holds the thread's input.
+ */
+const queueFirst = (
+  { switchHold, syncQueue }: Pick<QueueMethodsDeps, "switchHold" | "syncQueue">,
+  rt: Runtime,
+  input: UserInput,
+) =>
+  Effect.gen(function* () {
+    if ((yield* switchHold(rt)) !== undefined)
+      return yield* new InvalidState({
+        threadId: rt.threadId,
+        message:
+          "Input is held for the orchestrator switch. Wait for it to finish or cancel it before interrupting.",
+      });
+    const id = makeQueueItemId();
+    rt.queue.unshift({ id, input });
+    rt.actors.set(id, yield* storedActor);
+    rt.queuedAt.set(id, { at: yield* Clock.currentTimeMillis, messages: 1 });
+    yield* syncQueue(rt);
+  });
 
 /** The `ThreadRuntimes` methods that queue, edit, steer or deliver a thread's input. */
 export const makeQueueMethods = ({
@@ -995,6 +1023,7 @@ export const makeQueueMethods = ({
   switchHold,
   pumpDeliveries,
   scheduleAccount,
+  interrupt,
   paired = () => true,
 }: QueueMethodsDeps): Pick<
   ThreadRuntimesShape,
@@ -1126,40 +1155,59 @@ export const makeQueueMethods = ({
   steer: (threadId, sent, options) =>
     withSession(threadId, (rt, session) => {
       const turn = rt.turn;
+      const input = authored(typedInput(sent));
       // As a send is: the turn running there is being stopped, and would fail every tool it calls.
       return refuseMissingFolder(rt).pipe(
-        Effect.andThen(() =>
-          turn === undefined
-            ? Effect.fail(
-                new InvalidState({ message: "nothing to steer", threadId, status: rt.status }),
-              )
-            : WAITING_ON_USER.has(rt.status)
-              ? Effect.fail(waitingOnUser(threadId, rt.status))
-              : options?.interrupt === true && rt.capabilities?.steerInterrupt !== true
-                ? Effect.fail(
+        Effect.andThen((): Effect.Effect<"steered" | "stop", InvalidState> => {
+          if (turn === undefined)
+            return Effect.fail(
+              new InvalidState({ message: "nothing to steer", threadId, status: rt.status }),
+            );
+          const interrupting = options?.interrupt === true;
+          if (interrupting && rt.capabilities?.steerInterrupt !== true)
+            return Effect.fail(
+              new InvalidState({
+                message: "this agent can't be interrupted for input; stop it and send instead",
+                threadId,
+                status: rt.status,
+              }),
+            );
+          if (WAITING_ON_USER.has(rt.status)) {
+            if (options?.pastCard !== true) return Effect.fail(waitingOnUser(threadId, rt.status));
+            // An interrupt past a card is a stop, which withdraws the card as Stop does, and the
+            // message goes first in the queue, sent once the turn has ended.
+            if (interrupting)
+              return queueFirst({ switchHold, syncQueue }, rt, input).pipe(
+                Effect.as("stop" as const),
+              );
+          }
+          // A plain steer past a card waits in the agent for the tool call the card holds: it is
+          // read with the card's answer, never before it (`WAITING_ON_USER`).
+          return steerNow(
+            rt,
+            session,
+            turn,
+            input,
+            interrupting ? { interrupt: true } : undefined,
+          ).pipe(
+            Effect.flatMap((taken) =>
+              taken
+                ? Effect.succeed("steered" as const)
+                : Effect.fail(
                     new InvalidState({
-                      message:
-                        "this agent can't be interrupted for input; stop it and send instead",
+                      message: "the agent couldn't take mid-turn input; send it instead",
                       threadId,
                       status: rt.status,
                     }),
-                  )
-                : steerNow(rt, session, turn, authored(typedInput(sent)), options).pipe(
-                    Effect.flatMap((taken) =>
-                      taken
-                        ? Effect.void
-                        : Effect.fail(
-                            new InvalidState({
-                              message: "the agent couldn't take mid-turn input; send it instead",
-                              threadId,
-                              status: rt.status,
-                            }),
-                          ),
-                    ),
                   ),
-        ),
+            ),
+          );
+        }),
       );
-    }).pipe(Effect.tap(() => userTyped(threadId, sent))),
+    }).pipe(
+      Effect.flatMap((done) => (done === "stop" ? interrupt(threadId) : Effect.void)),
+      Effect.tap(() => userTyped(threadId, sent)),
+    ),
   editQueued: (threadId, itemId, input) =>
     withQueue(threadId, (rt) =>
       queueIndex(rt, itemId).pipe(
@@ -1233,7 +1281,7 @@ export const makeQueueMethods = ({
             yield* syncQueue(rt);
             return yield* drainQueue(rt);
           }
-          if (WAITING_ON_USER.has(rt.status)) return yield* waitingOnUser(threadId, rt.status);
+          // Past a card it waits in the agent for the tool call the card holds (`WAITING_ON_USER`).
           if (session === undefined || turn === undefined || rt.capabilities?.steer !== true) {
             return yield* new InvalidState({
               message:

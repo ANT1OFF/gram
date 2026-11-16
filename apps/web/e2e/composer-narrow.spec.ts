@@ -39,7 +39,7 @@ const rowSpread = (page: Page) =>
 test("the choices chip names the model on one row as it narrows, its name every value", async ({
   page,
 }) => {
-  // Held running, so Stop and Steer stay offered: the script's later approval takes Steer away.
+  // Held running, so the turn stays open and Stop and Steer stay offered.
   await page.addInitScript(() => {
     window.gramMockHoldGates = true;
   });
@@ -91,8 +91,8 @@ test("the choices chip names the model on one row as it narrows, its name every 
   const edge = await right(message);
   expect(await right(stop)).toBeLessThanOrEqual(edge);
 
-  // With a draft the one button takes Steer, its chevron beside it, and both stay inside the
-  // composer however narrow it gets.
+  // With a draft the delivery button sends as Steer, its chevron in it and Stop beside it, all
+  // inside the composer however narrow it gets.
   await message.fill("use the fake clock");
   await squeeze(page, 230);
   // Once the toolbar has laid itself out for the new width, a frame after the resize.
@@ -101,6 +101,7 @@ test("the choices chip names the model on one row as it narrows, its name every 
     .poll(() => right(page.getByRole("button", { name: "Steer", exact: true })))
     .toBeLessThanOrEqual(edge230);
   await expect.poll(() => right(page.getByTestId("delivery-menu"))).toBeLessThanOrEqual(edge230);
+  await expect.poll(() => right(stop)).toBeLessThanOrEqual(edge230);
   // Narrow, every section is still there: Speed's says what Fast costs.
   await openChoices(page, toolbar, "speed");
   await expect(choicesPopup(page)).toContainText("separately billed usage credits");
@@ -165,7 +166,7 @@ test("beside a review in a 1024 px window, the chip keeps the model's name and i
 test("right-click on Send offers the three deliveries and sending into a new draft", async ({
   page,
 }) => {
-  // Steer disappears when the scripted turn reaches approval; keep the turn running until clicked.
+  // Hold the scripted turn running until clicked.
   await page.addInitScript(() => {
     window.gramMockHoldGates = true;
   });
@@ -218,8 +219,8 @@ test("the newest message is followed clear of the fade into the composer", async
     .toEqual({ scrolls: true, atEnd: true, isLast: true, clear: true });
 });
 
-// Stop and Queue stay quiet while the agent works; the border says it instead, and Steer shows only
-// once there is something to steer in.
+// Stop stays quiet while the agent works; the border says it instead, and the delivery button beside
+// it takes the accent only once there is something to steer in.
 test("a running turn lights the border, and Steer waits for a draft", async ({ page }) => {
   await page.addInitScript(() => {
     window.gramMockHoldGates = true;
@@ -235,9 +236,12 @@ test("a running turn lights the border, and Steer waits for a draft", async ({ p
   const first = await light.evaluate((el) => el.style.translate);
   await expect.poll(() => light.evaluate((el) => el.style.translate)).not.toBe(first);
 
+  const delivery = page.getByTestId("delivery-button");
+  await expect(delivery).not.toHaveAttribute("data-filled");
   await message.fill("use the fake clock");
   await expect(page.getByRole("button", { name: "Steer", exact: true })).toBeVisible();
-  await expect(stop).toBeHidden();
+  await expect(delivery).toHaveAttribute("data-filled");
+  await expect(stop).toBeVisible();
   await message.fill("");
 
   await stop.click();
@@ -247,9 +251,7 @@ test("a running turn lights the border, and Steer waits for a draft", async ({ p
   await expect(page.getByTestId("running-edge")).toHaveCount(0);
 });
 
-test("one send button: Stop while empty, Steer with a draft, Queue on ⌥, Interrupt on ⌘", async ({
-  page,
-}) => {
+test("one delivery button beside Stop: Steer, Queue on ⌥, Interrupt on ⌘", async ({ page }) => {
   await page.addInitScript(() => {
     window.gramMockHoldGates = true;
   });
@@ -263,7 +265,9 @@ test("one send button: Stop while empty, Steer with a draft, Queue on ⌥, Inter
   const message = page.getByLabel("Message", { exact: true });
   await message.fill("use the fake clock");
   await expect(button("Steer")).toBeVisible();
-  await expect(button("Stop")).toHaveCount(0);
+  // One send control, never a Steer and a Queue side by side, and Stop stays beside it.
+  await expect(page.getByRole("button", { name: /^(Steer|Queue|Interrupt)$/ })).toHaveCount(1);
+  await expect(button("Stop")).toBeVisible();
 
   await page.keyboard.down("Alt");
   await expect(button("Queue")).toBeVisible();

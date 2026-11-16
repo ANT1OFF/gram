@@ -2858,6 +2858,46 @@ export const SHOTS: readonly Shot[] = [
     element: composerSurface,
   },
   {
+    name: "send-button-at-card",
+    title: "The composer's send controls with a draft while the turn waits on an approval card",
+    open: async (page) => {
+      await openFlakyAtApproval(page);
+      await page.getByLabel("Message", { exact: true }).fill("and update the changelog too");
+      await page.mouse.move(0, 0);
+    },
+    element: composerSurface,
+  },
+  {
+    name: "queue-at-card",
+    title: "A queued message and a new draft while the turn waits on an approval card",
+    open: async (page) => {
+      await openFlakyAtApproval(page);
+      const message = page.getByLabel("Message", { exact: true });
+      await message.fill("Give the light themes a bit more contrast between sidebar and page");
+      await message.press("Alt+Enter");
+      await page.getByTestId("queue-item").waitFor();
+      await message.fill("and the dark ones");
+      // The queued message's own Steer, hovered: what it does, or why it can't.
+      await page.getByTestId("queue-steer").hover();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "delivery-menu-at-card",
+    title: "The delivery button's three ways while the turn waits on an approval card",
+    open: async (page) => {
+      await openFlakyAtApproval(page);
+      await page.getByLabel("Message", { exact: true }).fill("and update the changelog too");
+      // The base has no delivery button at a card: it shows the composer as it was.
+      const menu = page.getByTestId("delivery-menu");
+      if ((await menu.count()) > 0) {
+        await menu.click();
+        await page.getByTestId("delivery-interrupt").waitFor();
+      }
+      await page.waitForTimeout(300);
+    },
+  },
+  {
     name: "send-button-menu",
     title: "The send button's right-click menu during a turn, with a draft",
     open: async (page) => {

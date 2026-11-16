@@ -857,37 +857,42 @@ describe("ThreadRuntimes queue", () => {
 });
 
 describe("ThreadRuntimes into a turn waiting on the user", () => {
+  const atCard = Effect.gen(function* () {
+    const runtimes = yield* ThreadRuntimes;
+    const fake = yield* FakeAgentControl;
+    const thread = yield* runtimes.create({
+      projectRoot: "/work/repo",
+      checkout: { kind: "main", path: "/work/repo" },
+      input: { text: "one" },
+    });
+    const session = yield* waitFor(
+      "the first send",
+      fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
+    );
+    yield* session.emit({
+      type: "request",
+      request: {
+        kind: "approval",
+        id: "req-1" as RequestId,
+        toolName: "Bash",
+        displayName: "Bash",
+        input: { command: "git push" },
+        suggestions: [],
+      },
+    });
+    yield* waitFor(
+      "the card",
+      runtimes.status(thread.id).pipe(Effect.map((s) => s === "needsApproval")),
+    );
+    return { runtimes, thread, session };
+  });
+
   it.effect(
-    "steers nothing past an approval card: a steer is refused, and a notice or queued item waits",
+    "takes the user's steer past an approval card, while Gram's notice waits for the turn's end",
     () =>
       Effect.gen(function* () {
-        const runtimes = yield* ThreadRuntimes;
-        const fake = yield* FakeAgentControl;
-        const thread = yield* runtimes.create({
-          projectRoot: "/work/repo",
-          checkout: { kind: "main", path: "/work/repo" },
-          input: { text: "one" },
-        });
-        const session = yield* waitFor(
-          "the first send",
-          fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
-        );
-        yield* session.emit({
-          type: "request",
-          request: {
-            kind: "approval",
-            id: "req-1" as RequestId,
-            toolName: "Bash",
-            displayName: "Bash",
-            input: { command: "git push" },
-            suggestions: [],
-          },
-        });
-        yield* waitFor(
-          "the card",
-          runtimes.status(thread.id).pipe(Effect.map((s) => s === "needsApproval")),
-        );
-
+        const { runtimes, thread, session } = yield* atCard;
+        // Anyone else's steer (another agent's, an embedder's) is refused there, and so queues.
         for (const options of [undefined, { interrupt: true }] as const) {
           const refused = yield* runtimes
             .steer(thread.id, { text: "skip it" }, options)
@@ -897,28 +902,55 @@ describe("ThreadRuntimes into a turn waiting on the user", () => {
             message: "the turn is waiting on you; answer it, or queue the message",
           });
         }
+        // The user's goes in, and the agent holds it for the tool call the card is on: the card
+        // stays, waiting.
+        yield* runtimes.steer(thread.id, { text: "and then the docs" }, { pastCard: true });
+        expect(session.steered.map((i) => i.text)).toEqual(["and then the docs"]);
+        expect(yield* runtimes.status(thread.id)).toBe("needsApproval");
+
         const ci = yield* runtimes.sendNotice(thread.id, "ci:o/r#7", { text: "CI passed" });
         expect(ci).toEqual({ queued: true, steered: false, replaced: false });
         yield* runtimes.send(thread.id, { text: "mine" });
         const [summary] = yield* runtimes.snapshot;
         const mine = summary!.queue.find((q) => q.input.text === "mine")!;
-        expect(yield* runtimes.steerQueued(thread.id, mine.id).pipe(Effect.flip)).toMatchObject({
-          _tag: "InvalidState",
-        });
-        expect(session.steered).toEqual([]);
+        yield* runtimes.steerQueued(thread.id, mine.id);
+        expect(session.steered.map((i) => i.text)).toEqual(["and then the docs", "mine"]);
+        const [after] = yield* runtimes.snapshot;
+        expect(after!.queue.map((q) => q.input.text)).toEqual(["CI passed"]);
 
-        // Once it ends, what waited goes in order, each once.
+        // Once it ends, the notice goes, once.
         yield* session.completeTurn();
         yield* waitFor(
           "the notice",
           Effect.sync(() => session.sent.length === 2),
         );
-        yield* session.completeTurn();
-        yield* waitFor(
-          "the queued message",
-          Effect.sync(() => session.sent.length === 3),
+        expect(session.sent.map((i) => i.text)).toEqual(["one", "CI passed"]);
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect(
+    "interrupts past an approval card by stopping the turn, then sending the message first",
+    () =>
+      Effect.gen(function* () {
+        const { runtimes, thread, session } = yield* atCard;
+        yield* runtimes.send(thread.id, { text: "queued earlier" });
+        yield* runtimes.steer(
+          thread.id,
+          { text: "stop, do this" },
+          { interrupt: true, pastCard: true },
         );
-        expect(session.sent.map((i) => i.text)).toEqual(["one", "CI passed", "mine"]);
+        // A stop, not an interrupting steer: the card is withdrawn with the turn.
+        expect(session.interrupts).toBe(1);
+        expect(session.steered).toEqual([]);
+        const [stopped] = yield* runtimes.snapshot;
+        expect(stopped!.pendingRequests).toEqual([]);
+        yield* waitFor(
+          "the message",
+          Effect.sync(() => session.sent.length === 2),
+        );
+        expect(session.sent.map((i) => i.text)).toEqual(["one", "stop, do this"]);
+        const [summary] = yield* runtimes.snapshot;
+        expect(summary!.queue.map((q) => q.input.text)).toEqual(["queued earlier"]);
       }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 });

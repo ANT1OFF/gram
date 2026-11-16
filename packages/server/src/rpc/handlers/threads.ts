@@ -357,7 +357,12 @@ export const threadHandlers = Effect.gen(function* () {
         interrupt === true ? ["interrupt", input] : ["steer", input],
         steerRpc.successSchema,
         steerRpc.errorSchema,
-        runtimes.steer(threadId, input, interrupt === true ? { interrupt } : undefined),
+        // The user's own composer: their steer goes in past a card too.
+        runtimes.steer(
+          threadId,
+          input,
+          interrupt === true ? { interrupt, pastCard: true } : { pastCard: true },
+        ),
       ),
     "thread.interrupt": ({ threadId }) => runtimes.interrupt(threadId),
     "thread.resumeLimitWait": ({ threadId }) => runtimes.resumeLimitWait(threadId),

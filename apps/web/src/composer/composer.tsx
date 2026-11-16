@@ -36,6 +36,7 @@ import {
   type DragEvent,
   type KeyboardEvent,
   type MouseEvent,
+  type ReactElement,
   type RefObject,
 } from "react";
 
@@ -126,7 +127,7 @@ import { useOrchestratorVerbs, VerbMenu } from "./verb-menu";
 import { filterVerbs, gridIndexForKey, VERB_COLUMNS, type Verb } from "./verbs";
 import {
   GHOST_MIRROR,
-  GHOST_TRIGGER,
+  PHONE_HIT,
   ROUND,
   SEND_FILL,
   SLAB,
@@ -220,6 +221,7 @@ export function Composer({
   const history = usePromptHistory(threadId);
   const status = summary?.status ?? "cold";
   const running = RUNNING.has(status);
+  const busy = BUSY.has(status);
   // Unknown until settings load, and Enter doesn't send till then: assuming the default would post
   // the first line of someone who chose "Shortcut only" and started typing at once.
   const sendKey = useServerSettings((s) => (s.settings ? sendKeyOf(s.settings) : undefined));
@@ -228,15 +230,25 @@ export function Composer({
   const background = useThreadsStore((s) =>
     backgroundWorking(status, activityLine(status, s.statusDetail[threadId], summary?.activity)),
   );
-  const busy = BUSY.has(status);
   // Stop steps back while the turn only waits on an answer; a background agent still works.
   const waitingOnYou = WAITING_ON_YOU.has(status) && !background;
+  // A turn held at a card (an approval, a question) still takes the user's steer: the agent reads it
+  // with the card's answer, once the tool call the card is on returns. An interrupt there stops the
+  // turn, withdrawing the card, and the message goes first once it has ended.
+  const atCard = WAITING_ON_YOU.has(status);
+  const folderGone = worktreeMissing(summary?.git);
   // A turn whose folder is gone is being stopped: the server's steer would hand the message to an
   // agent that can't run there, while its send refuses and says why, so the send key sends.
-  const steerable =
-    running && summary?.capabilities?.steer === true && !worktreeMissing(summary.git);
+  const steerable = busy && summary?.capabilities?.steer === true && !folderGone;
   // Codex can't stop its turn for a message: there an interrupt goes in as a steer.
   const interruptible = steerable && summary?.capabilities?.steerInterrupt === true;
+  // Why nothing goes into the open turn now, said on Steer and Interrupt rather than dropping them.
+  const steerRefusal =
+    !busy || steerable
+      ? undefined
+      : folderGone
+        ? "This thread's folder is gone, so its turn takes nothing more"
+        : "This agent can't take a message mid-turn, so it waits for the turn to end";
   // The way the next message goes into the running turn, as the delivery chip says it. It holds for
   // one message: a delivery, or the turn ending, puts it back to a steer.
   const [picked, setPicked] = useState<Delivery>("steer");
@@ -584,10 +596,14 @@ export function Composer({
       if (active()) {
         flash(
           stops
-            ? "Interrupting…"
+            ? atCard
+              ? "Stopping the turn, then sending…"
+              : "Interrupting…"
             : interrupt
               ? "This agent can't be interrupted for a message, so it was steered in"
-              : "Steering…",
+              : atCard
+                ? "Steered: the agent reads it once the card is answered"
+                : "Steering…",
         );
       }
     } catch (error) {
@@ -1017,36 +1033,46 @@ export function Composer({
   const stopLabel = background ? "Stop the background agents" : "Stop";
   const held = useHeldDelivery(steerable && hasDraft);
   const action = sendAction({ hasDraft, busy, background, steerable, held, picked });
+  // The way a message goes into the open turn, as the delivery button shows it, typed or not.
+  const way: Delivery = steerable ? (held ?? picked) : "queue";
   const sendKeyHint = sendKey === "enter" ? "↵" : sendHint;
-  const queueLabel = "Queue: sends when the turn ends";
   const deliveryKeys: Record<Delivery, string> = {
     steer: sendKeyHint ?? "",
-    queue: queueHint ?? "⌥↵",
+    queue: (steerable ? queueHint : sendKeyHint) ?? "⌥↵",
     interrupt: stopHint ?? "",
+  };
+  // What each way does now, as the delivery menu and the button's hint say it.
+  const deliveryLines: Record<Delivery, string> = {
+    steer:
+      steerRefusal ??
+      (atCard
+        ? "After you answer the card, cancelling nothing"
+        : "After the current tool call, cancelling nothing"),
+    queue: "After the turn ends",
+    interrupt:
+      steerRefusal ??
+      (!interruptible
+        ? "This agent can't stop for a message, so it steers in"
+        : atCard
+          ? "Stops the turn, withdrawing the card, then sends"
+          : "Stops the turn now, cutting off tool calls"),
   };
   // Into a worker the orchestrator directs, the send is also a take-over: its name says so.
   const control = takesControl ? " and take over from the orchestrator" : "";
   const queueControl = takesControl ? `. ${TAKES_OVER_LINE}` : "";
-  const interruptLine = interruptible
-    ? DELIVERY_WORDS.interrupt.line
-    : "Interrupt: this agent can't stop for a message, so it steers in";
+  const deliveryHint = (delivery: Delivery) =>
+    withHint(
+      `${DELIVERY_WORDS[delivery]}: ${lowerFirst(deliveryLines[delivery])}${queueControl}`,
+      deliveryKeys[delivery],
+    );
   const actionLabels = {
     send: {
       aria: `Send${control}`,
       hint: withHint(`Send${control}`, sendKeyHint),
     },
-    queue: {
-      aria: `Queue${control}`,
-      hint: withHint(`${queueLabel}${queueControl}`, steerable ? queueHint : sendKeyHint),
-    },
-    steer: {
-      aria: `Steer${control}`,
-      hint: withHint(`${DELIVERY_WORDS.steer.line}${queueControl}`, sendKeyHint),
-    },
-    interrupt: {
-      aria: `Interrupt${control}`,
-      hint: withHint(`${interruptLine}${queueControl}`, stopHint),
-    },
+    queue: { aria: `Queue${control}`, hint: deliveryHint("queue") },
+    steer: { aria: `Steer${control}`, hint: deliveryHint("steer") },
+    interrupt: { aria: `Interrupt${control}`, hint: deliveryHint("interrupt") },
     // The word and its key, "Stop (⌘.)": an icon button's tooltip names it and its shortcut.
     stop: {
       aria: "Stop",
@@ -1064,6 +1090,9 @@ export function Composer({
     },
     focused && (busy || background),
   );
+  // While a turn is open the round button is Stop, and the delivery button beside it sends; at rest
+  // the round button sends, or with only background agents at work and nothing typed, stops them.
+  const roundAction: "send" | "stop" = busy || action === "stop" ? "stop" : "send";
   const runAction = (event: MouseEvent<HTMLButtonElement>) => {
     const clicked = sendAction({
       hasDraft,
@@ -1078,6 +1107,57 @@ export function Composer({
     if (event.detail > 1) return;
     return void stopTurn(api, threadId);
   };
+  // The delivery button with nothing typed says the way in and puts the caret in the field.
+  const runDelivery = (event: MouseEvent<HTMLButtonElement>) => {
+    if (!hasDraft) return void fieldRef.current?.focus();
+    return runAction(event);
+  };
+  /** The send control's right-click menu: every way to send, and Stop, which a draft can hide. */
+  const withSendMenu = (trigger: ReactElement) => (
+    <ContextMenu>
+      <ContextMenuTrigger data-testid="send-menu-trigger" render={<span className="inline-flex" />}>
+        {trigger}
+      </ContextMenuTrigger>
+      <ContextMenuContent data-testid="send-menu" className="[&_svg]:size-icon-row">
+        {busy ? (
+          DELIVERIES.map((delivery) => (
+            <ContextMenuItem
+              key={delivery}
+              disabled={!canSend || (delivery !== "queue" && !steerable)}
+              onClick={() => deliver(delivery)}
+            >
+              <DeliveryGlyph action={delivery} />
+              {DELIVERY_WORDS[delivery]}
+              <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
+                {deliveryKeys[delivery]}
+              </kbd>
+            </ContextMenuItem>
+          ))
+        ) : (
+          <ContextMenuItem disabled={!canSend} onClick={() => void send()}>
+            <ArrowUp aria-hidden />
+            Send
+            <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
+              {sendKeyHint}
+            </kbd>
+          </ContextMenuItem>
+        )}
+        <ContextMenuItem disabled={!canSend} onClick={() => void send(true)}>
+          <SquarePen aria-hidden />
+          Send and start a new draft
+          <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
+            {newDraftHint}
+          </kbd>
+        </ContextMenuItem>
+        {(busy || background) && (
+          <ContextMenuItem onClick={() => void stopTurn(api, threadId)}>
+            <Square aria-hidden className="fill-current" />
+            {stopLabel}
+          </ContextMenuItem>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
 
   const onModel = (value: string) => {
     if (!model) return;
@@ -1262,7 +1342,7 @@ export function Composer({
                 ? ""
                 : (placeholder ??
                   // A phone's line holds the words alone: no keys to hint at on a touch keyboard.
-                  `${placeholderLead({ takesControl, running, steerable, picked })}…${
+                  `${placeholderLead({ takesControl, busy, steerable, picked })}…${
                     phone ? "" : " (/ for commands, @ for files)"
                   }`)
             }
@@ -1357,104 +1437,79 @@ export function Composer({
             )}
             <PendingRestart threadId={threadId} />
             <ContextRing threadId={threadId} countUp={focused} />
-            {/* While a turn takes input, typed or not, the chip says which way the message goes in
-                (steer, queue or interrupt) and opens the three; the round button sends that way. */}
-            {steerable && (
-              <DeliveryChip
-                picked={picked}
-                keys={deliveryKeys}
-                interruptLine={interruptLine}
-                stopLabel={stopLabel}
-                stopKey={stopHint ?? ""}
-                focusAfter={fieldRef}
-                onPick={setPicked}
-                onStop={() => void stopTurn(api, threadId)}
-              />
-            )}
-            {/* One button for what the composer can do now, its word on hover. Right-click for the
-                rest: Stop stays reachable there while a draft has the button. */}
-            <ContextMenu>
-              <ContextMenuTrigger
-                data-testid="send-menu-trigger"
-                render={<span className="inline-flex" />}
-              >
+            {/* While a turn is open, typed or not, one delivery button says which way a message goes
+                in (Steer, Queue or Interrupt) and sends that way; its chevron picks among the three.
+                Stop keeps the round button beside it. */}
+            {busy &&
+              withSendMenu(
+                <DeliveryButton
+                  mode={way}
+                  hasDraft={hasDraft}
+                  canSend={canSend}
+                  label={actionLabels[way]}
+                  steerable={steerable}
+                  lines={deliveryLines}
+                  keys={deliveryKeys}
+                  focusAfter={fieldRef}
+                  onPick={setPicked}
+                  onClick={runDelivery}
+                />,
+              )}
+            {roundAction === "send" ? (
+              withSendMenu(
                 <PressScale hover={canSend ? 1.05 : undefined}>
                   <Hint
-                    label={actionLabels[action].hint}
+                    label={actionLabels[action === "stop" ? "send" : action].hint}
                     render={
                       <button
                         type="button"
-                        aria-label={actionLabels[action].aria}
-                        disabled={action !== "stop" && !canSend}
-                        data-waiting={action === "stop" && waitingOnYou ? "" : undefined}
-                        className={cn(
-                          ROUND,
-                          action !== "stop" ? SEND_FILL : waitingOnYou ? STOP_QUIET : STOP_FILL,
-                        )}
+                        aria-label={actionLabels[action === "stop" ? "send" : action].aria}
+                        disabled={!canSend}
+                        className={cn(ROUND, SEND_FILL)}
                         onClick={runAction}
                       />
                     }
                   >
-                    {action === "stop" ? (
-                      // While it runs, the ring turns round the square: the button says the agent
-                      // is at work, not only how to end it. Still under Reduced and Off. Its word
-                      // and key are in its tooltip, as every icon button's are.
-                      <span aria-hidden className="relative grid size-4 place-items-center">
-                        {!waitingOnYou && (
-                          <RingSpinner
-                            data-testid="stop-ring"
-                            className="pointer-events-none absolute inset-0 size-4"
-                          />
-                        )}
-                        <Square className="size-2 fill-current" />
-                      </span>
-                    ) : (
-                      <Swap swapKey={action}>
-                        <SendGlyph action={action} />
-                      </Swap>
-                    )}
+                    <Swap swapKey={action}>
+                      <SendGlyph action={action === "stop" ? "send" : action} />
+                    </Swap>
                   </Hint>
-                </PressScale>
-              </ContextMenuTrigger>
-              <ContextMenuContent data-testid="send-menu" className="[&_svg]:size-icon-row">
-                {steerable ? (
-                  DELIVERIES.map((delivery) => (
-                    <ContextMenuItem
-                      key={delivery}
-                      disabled={!canSend}
-                      onClick={() => deliver(delivery)}
-                    >
-                      <DeliveryGlyph action={delivery} />
-                      {DELIVERY_WORDS[delivery].label}
-                      <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
-                        {deliveryKeys[delivery]}
-                      </kbd>
-                    </ContextMenuItem>
-                  ))
-                ) : (
-                  <ContextMenuItem disabled={!canSend} onClick={() => void send()}>
-                    {busy ? <ListPlus aria-hidden /> : <ArrowUp aria-hidden />}
-                    {busy ? "Queue" : "Send"}
-                    <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
-                      {sendKeyHint}
-                    </kbd>
-                  </ContextMenuItem>
-                )}
-                <ContextMenuItem disabled={!canSend} onClick={() => void send(true)}>
-                  <SquarePen aria-hidden />
-                  Send and start a new draft
-                  <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
-                    {newDraftHint}
-                  </kbd>
-                </ContextMenuItem>
-                {(busy || background) && (
-                  <ContextMenuItem onClick={() => void stopTurn(api, threadId)}>
-                    <Square aria-hidden className="fill-current" />
-                    {stopLabel}
-                  </ContextMenuItem>
-                )}
-              </ContextMenuContent>
-            </ContextMenu>
+                </PressScale>,
+              )
+            ) : (
+              <PressScale>
+                <Hint
+                  label={actionLabels.stop.hint}
+                  render={
+                    <button
+                      type="button"
+                      aria-label={actionLabels.stop.aria}
+                      data-waiting={waitingOnYou ? "" : undefined}
+                      className={cn(ROUND, waitingOnYou ? STOP_QUIET : STOP_FILL)}
+                      onClick={(event) => {
+                        // The second click of a double click on Send lands here once the composer
+                        // has emptied.
+                        if (event.detail > 1) return;
+                        void stopTurn(api, threadId);
+                      }}
+                    />
+                  }
+                >
+                  {/* While it runs, the ring turns round the square: the button says the agent is
+                      at work, not only how to end it. Still under Reduced and Off. Its word and key
+                      are in its tooltip, as every icon button's are. */}
+                  <span aria-hidden className="relative grid size-4 place-items-center">
+                    {!waitingOnYou && (
+                      <RingSpinner
+                        data-testid="stop-ring"
+                        className="pointer-events-none absolute inset-0 size-4"
+                      />
+                    )}
+                    <Square className="size-2 fill-current" />
+                  </span>
+                </Hint>
+              </PressScale>
+            )}
           </div>
         </div>
       </SharedSlab>
@@ -1475,12 +1530,14 @@ function SendGlyph({ action }: { action: Exclude<SendAction, "stop"> }) {
 const DELIVERIES = ["steer", "queue", "interrupt"] as const;
 type Delivery = (typeof DELIVERIES)[number];
 
-/** Each way's word and what it does, as the delivery menu and the button's hint say them. */
-const DELIVERY_WORDS: Record<Delivery, { label: string; line: string }> = {
-  steer: { label: "Steer", line: "Steer: after the current tool call, cancelling nothing" },
-  queue: { label: "Queue", line: "Queue: after the turn ends" },
-  interrupt: { label: "Interrupt", line: "Interrupt: stops the turn now, cutting off tool calls" },
+/** Each way's word, as the delivery button, its menu and the button's hint say it. */
+const DELIVERY_WORDS: Record<Delivery, string> = {
+  steer: "Steer",
+  queue: "Queue",
+  interrupt: "Interrupt",
 };
+
+const lowerFirst = (line: string) => line.replace(/^./, (c) => c.toLowerCase());
 
 function DeliveryGlyph({ action }: { action: Delivery }) {
   switch (action) {
@@ -1497,125 +1554,145 @@ const DELIVERY_ITEM =
   "flex cursor-default items-center gap-2.5 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor phone:min-h-11";
 
 /**
- * The chip before the round button while a turn takes input, empty or not: the way the message goes
- * in (Steer, Queue or Interrupt) in a word, so the choice shows before anything is typed. It opens
- * the three, each with its key and what it does, and Stop for a turn that needs no message. Its own
- * 44 px target on a phone, where no key is held.
+ * The send control while a turn is open, beside Stop: one button in two parts. Its face says the way
+ * a message goes in (Steer, Queue or Interrupt), in a word, and sends that way, the accent's fill
+ * once there is something to send; its chevron opens the three, each with what it does now and its
+ * key. A way the turn can't take now stays listed, greyed, with why in its line. With nothing typed
+ * the face puts the caret in the field. Each part is its own 44 px target on a phone.
  */
-function DeliveryChip({
-  picked,
+function DeliveryButton({
+  mode,
+  hasDraft,
+  canSend,
+  label,
+  steerable,
+  lines,
   keys,
-  interruptLine,
-  stopLabel,
-  stopKey,
   focusAfter,
   onPick,
-  onStop,
+  onClick,
 }: {
-  picked: Delivery;
+  mode: Delivery;
+  hasDraft: boolean;
+  canSend: boolean;
+  label: { aria: string; hint: string };
+  steerable: boolean;
+  lines: Record<Delivery, string>;
   keys: Record<Delivery, string>;
-  interruptLine: string;
-  stopLabel: string;
-  stopKey: string;
   /** The field, where focus goes back once a way is picked, ready to type. */
   focusAfter: RefObject<HTMLTextAreaElement | null>;
   onPick: (delivery: Delivery) => void;
-  onStop: () => void;
+  onClick: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
-  const lines: Record<Delivery, string> = {
-    steer: "After the current tool call, cancelling nothing",
-    queue: "After the turn ends",
-    interrupt: interruptLine.replace(/^Interrupt: /, "").replace(/^./, (c) => c.toUpperCase()),
-  };
-  const word = DELIVERY_WORDS[picked].label;
-  // Stop leaves focus where the menu opened; a picked way returns it to the field, ready to type.
-  const stopped = useRef(false);
+  const word = DELIVERY_WORDS[mode];
+  const filled = hasDraft && canSend;
+  const part = cn(
+    "inline-flex h-full items-center outline-none select-none focus-visible:focus-ring disabled:cursor-default",
+    PHONE_HIT,
+    filled ? "hover:bg-primary-foreground/12" : "hover:bg-accent",
+  );
   return (
-    <Menu.Root onOpenChange={(open) => open && (stopped.current = false)}>
+    <div
+      data-testid="delivery-button"
+      data-mode={mode}
+      data-filled={filled ? "" : undefined}
+      className={cn(
+        "inline-flex h-8 shrink-0 items-stretch overflow-hidden rounded-full border text-meta font-medium transition-[background-color,color,border-color] phone:h-11",
+        filled
+          ? "border-transparent bg-primary text-primary-foreground shadow-raised shadow-primary/24"
+          : "border-edge text-foreground",
+      )}
+    >
       <Hint
-        label={`${word}: ${lines[picked].toLowerCase()}. Steer, queue or interrupt`}
+        label={label.hint}
         render={
-          <Menu.Trigger
-            data-testid="delivery-menu"
-            data-picked={picked}
-            aria-label={`${word}. Steer, queue or interrupt`}
-            className={cn(
-              GHOST_TRIGGER,
-              "inline-flex shrink-0 items-center rounded-full border border-edge pr-1.5 pl-2 text-foreground outline-none select-none",
-            )}
+          <button
+            type="button"
+            aria-label={label.aria}
+            aria-disabled={hasDraft ? undefined : true}
+            disabled={hasDraft && !canSend}
+            className={cn(part, "gap-1.5 pr-1.5 pl-2.5")}
+            onClick={onClick}
           />
         }
       >
-        <Swap swapKey={picked}>
-          <DeliveryGlyph action={picked} />
+        <Swap swapKey={mode}>
+          <DeliveryGlyph action={mode} />
         </Swap>
         <span data-testid="delivery-word" className="@max-[20rem]/composer:sr-only">
           {word}
         </span>
-        <ChevronDown aria-hidden className="size-icon-chip text-muted-foreground" />
       </Hint>
-      <Menu.Portal>
-        <Menu.Positioner
-          side="top"
-          align="end"
-          sideOffset={6}
-          className="isolate z-50 outline-none"
+      <span
+        aria-hidden
+        className={cn("my-1.5 w-px", filled ? "bg-primary-foreground/30" : "bg-edge")}
+      />
+      <Menu.Root>
+        <Hint
+          label={`Steer, queue or interrupt: ${lowerFirst(lines[mode])}`}
+          render={
+            <Menu.Trigger
+              data-testid="delivery-menu"
+              data-picked={mode}
+              aria-label={`${word}. Steer, queue or interrupt`}
+              className={cn(part, "pr-2 pl-1", !filled && "text-muted-foreground")}
+            />
+          }
         >
-          <Menu.Popup
-            finalFocus={() => (stopped ? true : (focusAfter.current ?? true))}
-            className="min-w-72 max-w-[calc(100vw-1rem)] rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none"
+          <ChevronDown aria-hidden className="size-icon-chip" />
+        </Hint>
+        <Menu.Portal>
+          <Menu.Positioner
+            side="top"
+            align="end"
+            sideOffset={6}
+            className="isolate z-50 outline-none"
           >
-            <Menu.RadioGroup value={picked} onValueChange={(value) => onPick(value as Delivery)}>
-              {DELIVERIES.map((delivery) => (
-                <Menu.RadioItem
-                  key={delivery}
-                  value={delivery}
-                  closeOnClick
-                  data-testid={`delivery-${delivery}`}
-                  className={cn(DELIVERY_ITEM, "data-[checked]:bg-accent")}
-                >
-                  <DeliveryGlyph action={delivery} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block">{DELIVERY_WORDS[delivery].label}</span>
-                    <span className="block text-meta text-muted-foreground">{lines[delivery]}</span>
-                  </span>
-                  <kbd className="pl-3 font-mono text-caption text-muted-foreground phone:hidden">
-                    {keys[delivery]}
-                  </kbd>
-                </Menu.RadioItem>
-              ))}
-            </Menu.RadioGroup>
-            <Menu.Separator className="mx-1.5 my-1 border-t border-edge" />
-            <Menu.Item
-              data-testid="delivery-stop"
-              onClick={() => {
-                stopped.current = true;
-                onStop();
-              }}
-              className={cn(DELIVERY_ITEM, "text-destructive")}
+            <Menu.Popup
+              finalFocus={() => focusAfter.current ?? true}
+              className="max-w-[calc(100vw-1rem)] min-w-72 rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none"
             >
-              <Square aria-hidden className="size-icon-row" />
-              <span className="min-w-0 flex-1">{stopLabel} without a message</span>
-              <kbd className="pl-3 font-mono text-caption text-muted-foreground phone:hidden">
-                {stopKey}
-              </kbd>
-            </Menu.Item>
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+              <Menu.RadioGroup value={mode} onValueChange={(value) => onPick(value as Delivery)}>
+                {DELIVERIES.map((delivery) => (
+                  <Menu.RadioItem
+                    key={delivery}
+                    value={delivery}
+                    closeOnClick
+                    // A turn that can't take a message now still lists the way, saying why not.
+                    disabled={delivery !== "queue" && !steerable}
+                    data-testid={`delivery-${delivery}`}
+                    className={cn(DELIVERY_ITEM, "data-[checked]:bg-accent")}
+                  >
+                    <DeliveryGlyph action={delivery} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block">{DELIVERY_WORDS[delivery]}</span>
+                      <span className="block text-meta text-muted-foreground">
+                        {lines[delivery]}
+                      </span>
+                    </span>
+                    <kbd className="pl-3 font-mono text-caption text-muted-foreground phone:hidden">
+                      {keys[delivery]}
+                    </kbd>
+                  </Menu.RadioItem>
+                ))}
+              </Menu.RadioGroup>
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.Root>
+    </div>
   );
 }
 
-/** The empty field's words: where a typed message will go, as the delivery chip says. */
+/** The empty field's words: where a typed message will go, as the delivery button says. */
 function placeholderLead({
   takesControl,
-  running,
+  busy,
   steerable,
   picked,
 }: {
   takesControl: boolean;
-  running: boolean;
+  busy: boolean;
   steerable: boolean;
   picked: Delivery;
 }): string {
@@ -1630,7 +1707,7 @@ function placeholderLead({
         return takesControl ? "Interrupt this worker" : "Interrupt with a message";
     }
   }
-  if (running) return takesControl ? "Queue a message for this worker" : "Queue a message";
+  if (busy) return takesControl ? "Queue a message for this worker" : "Queue a message";
   return takesControl ? "Message this worker" : "Message";
 }
 

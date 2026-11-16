@@ -210,7 +210,7 @@ test("Take over holds a worker without a message, and Hand back returns it", asy
   );
   await composerOf(page, made.asking).fill("Draft only");
   await expect(
-    page.getByRole("button", { name: /^(Send|Queue) and take over from the orchestrator$/ }),
+    page.getByRole("button", { name: /^(Send|Queue|Steer) and take over from the orchestrator$/ }),
   ).toBeVisible();
   await expect(page.getByText("Sending takes over from the orchestrator")).toBeVisible();
   await composerOf(page, made.asking).fill("");

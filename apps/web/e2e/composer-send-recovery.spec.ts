@@ -64,6 +64,13 @@ const open = async (page: Page) => {
   return field;
 };
 
+/** Queues the draft: the turn at the script's card takes a steer, so Queue is picked first. */
+const queue = async (page: Page) => {
+  await page.getByTestId("delivery-menu").click();
+  await page.getByTestId("delivery-queue").click();
+  await page.getByRole("button", { name: "Queue", exact: true }).click();
+};
+
 test.use({ viewport: { width: 1440, height: 900 } });
 
 test("failed queue restores sent files beside a draft typed during streaming and retry keeps references", async ({
@@ -88,7 +95,7 @@ test("failed queue restores sent files beside a draft typed during streaming and
   await field.fill("First direction");
   await paste(field, "first.txt");
   await expect(page.getByTestId("attachment-chip")).toHaveAttribute("data-status", "ready");
-  await page.getByRole("button", { name: "Queue", exact: true }).click();
+  await queue(page);
   await expect(field).toHaveValue("");
   await expect(page.getByTestId("attachment-chip")).toHaveCount(0);
   await field.fill("Newer direction");
@@ -134,7 +141,7 @@ test("failed queue restores sent files beside a draft typed during streaming and
   expect(receipt.calls).toEqual([
     { threadId: "t-flaky", input: { text: "First direction", attachments: [first] } },
   ]);
-  await page.getByRole("button", { name: "Queue", exact: true }).click();
+  await queue(page);
   await expect(field).toHaveValue("");
   await expect(page.getByTestId("attachment-chip")).toHaveCount(0);
   const calls = await page.evaluate(() => window.composerRecovery.calls);

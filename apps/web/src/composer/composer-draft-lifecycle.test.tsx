@@ -129,7 +129,9 @@ describe("composer draft lifetime", () => {
     stash();
     stash();
     // The composer is empty now, so the button no longer offers to send the captured draft.
-    expect(screen.queryByRole("button", { name: /^Steer$/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /^Steer$/ }).getAttribute("aria-disabled")).toBe(
+      "true",
+    );
     await s.finishStash();
     expect(s.stashDraft).toHaveBeenCalledTimes(1);
     expect(s.send).not.toHaveBeenCalled();
@@ -171,9 +173,9 @@ describe("composer draft lifetime", () => {
     expect(screen.queryByTestId("attachment-chip")).toBeNull();
     s.switchTo(A);
     expect(screen.getByTestId("attachment-chip").getAttribute("data-status")).toBe("uploading");
-    // A draft waiting on its upload holds the button: a click must not stop the turn instead.
-    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    // A draft waiting on its upload holds the delivery button; Stop stays its own button beside it.
     expect(screen.getByRole("button", { name: /^Steer$/ }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Remove pending.txt" }));
     await act(async () =>
       pendingUpload.resolve({ path: "/invented/pending.txt", name: "pending.txt" }),

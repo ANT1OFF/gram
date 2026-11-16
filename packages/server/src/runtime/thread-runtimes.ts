@@ -1458,6 +1458,7 @@ const make = Effect.gen(function* () {
     switchHold,
     pumpDeliveries,
     scheduleAccount,
+    interrupt,
     paired: (id) => workerHosts.paired(id),
   });
 

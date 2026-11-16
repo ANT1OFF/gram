@@ -1341,6 +1341,11 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     }
     runtime.steer = input;
     runtime.steerDelivery = options?.interrupt === true ? "interrupt" : "steer";
+    // As the server's: an interrupt past a card is a stop, the message going once the turn ends. A
+    // plain steer waits for the card's answer.
+    if (options?.interrupt === true && runtime.summary.pendingRequests.length > 0) {
+      await this.interrupt(threadId);
+    }
   }
 
   async interrupt(threadId: ThreadId) {
@@ -1349,6 +1354,14 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     runtime.interrupted = true;
     // A turn held at a gate stops there, as a real turn stops wherever it is.
     if (runtime.heldAt !== undefined) this.release(runtime.heldAt);
+    // As the server's, Stop answers every open card.
+    const { thread, pendingRequests } = runtime.summary;
+    for (const request of pendingRequests) {
+      this.#waiters.delete(request.id);
+      this.#dropRequest.get(request.id)?.();
+      this.#emit({ type: "thread.requestResolved", threadId: thread.id, requestId: request.id });
+    }
+    if (pendingRequests.length > 0) runtime.summary = { ...runtime.summary, pendingRequests: [] };
   }
 
   /**
