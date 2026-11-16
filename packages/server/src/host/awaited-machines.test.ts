@@ -53,6 +53,23 @@ describe("a session on a machine started again after a stop", () => {
     ),
   );
 
+  it.effect("waits too when this Gram never saw the stop but was told the disk is new", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        // As after a restart: nothing remembered of the stop, only what the starter said.
+        const { stops, forSession } = setup();
+        stops.expect(ID);
+        stops.back(ID);
+        const opening = yield* Effect.forkScoped(forSession(ID));
+        yield* TestClock.adjust("5 seconds");
+        expect(opening.pollUnsafe()).toBeUndefined();
+        stops.resumed(ID);
+        yield* TestClock.adjust("1 second");
+        expect(yield* Fiber.join(opening)).toBe(HOST);
+      }),
+    ),
+  );
+
   it.effect("opens at once on a machine that was only readied and taken back", () =>
     Effect.gen(function* () {
       const { stops, forSession } = setup();

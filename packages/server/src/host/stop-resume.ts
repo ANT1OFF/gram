@@ -319,6 +319,9 @@ const madeFrom = (thread: Thread, id: HostId, cwd: string) => {
  * answer, given back by whoever asks) before what this Gram remembers of its own stops. With
  * neither, as after this Gram restarted, the remote's ref is taken as it is.
  */
+/** How many of a machine's folders a resume puts back at once. */
+export const RESTORE_CONCURRENCY = 4;
+
 export const resumeHost = (
   deps: StopResumeDeps,
   id: HostId,
@@ -333,14 +336,15 @@ export const resumeHost = (
     const missing: Array<HostResumed["missing"][number]> = [];
     const restored: Array<HostResumed["restored"][number]> = [];
     const restore = connection.stop.restore;
-    for (const { thread, cwds } of placed)
-      for (const cwd of cwds) {
-        if (yield* connection.git.present(cwd)) continue;
+    const folders = placed.flatMap(({ thread, cwds }) => cwds.map((cwd) => ({ thread, cwd })));
+    const putBack = ({ thread, cwd }: (typeof folders)[number]) =>
+      Effect.gen(function* () {
+        if (yield* connection.git.present(cwd)) return;
         const entry = { threadId: thread.id, cwd };
         const made = madeFrom(thread, id, cwd);
         if (restore === undefined || made === undefined) {
           missing.push(entry);
-          continue;
+          return;
         }
         const before =
           options.kept?.find((kept) => kept.threadId === thread.id && kept.cwd === cwd) ??
@@ -368,8 +372,10 @@ export const resumeHost = (
         );
         const note = answer.note === undefined ? {} : { note: answer.note };
         if (!answer.restored) {
+          // Made meanwhile, by a resume beside this one: there, so not missing.
+          if (yield* connection.git.present(cwd)) return;
           missing.push({ ...entry, ...note });
-          continue;
+          return;
         }
         const put =
           "commit" in answer && answer.commit !== undefined && OID.test(answer.commit)
@@ -384,7 +390,14 @@ export const resumeHost = (
           ...("source" in answer && answer.source !== undefined ? { source: answer.source } : {}),
           ...note,
         });
-      }
+      });
+    // A few folders at once: each is a clone and a fetch on the host, and sessions wait for them
+    // all. Threads sharing a folder take it in turn, so the first makes it and the rest find it.
+    yield* Effect.forEach(
+      Map.groupBy(folders, ({ cwd }) => cwd).values(),
+      (sharing) => Effect.forEach(sharing, putBack, { discard: true }),
+      { concurrency: RESTORE_CONCURRENCY, discard: true },
+    );
     const gone = new Set(missing.map((entry) => entry.threadId));
     const live = new Set(placed.filter(({ session }) => session).map(({ thread }) => thread.id));
     const reopened: Array<ThreadId> = [];
