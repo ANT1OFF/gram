@@ -347,6 +347,9 @@ describe.skipIf(!hasGit)("a headless control plane", () => {
           "content-type": "application/json",
         };
         const app = yield* appClient(GramRpcs, port, cookie);
+        // The fake agent's models fill no tier of the recommended setup a headless server starts
+        // with, so this one runs on the models it lists.
+        yield* app["settings.set"]({ patch: { agents: { recommendedSetup: { enabled: false } } } });
 
         const added = yield* app["projects.add"]({ root: project.root });
 
