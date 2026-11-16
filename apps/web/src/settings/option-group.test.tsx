@@ -119,7 +119,7 @@ describe("OptionGroup keyboard", () => {
     render(<Harness described />);
     const group = screen.getByRole("radiogroup", { name: "Pick" });
     expect(group.parentElement!.className).toContain("@container/options");
-    expect(group.className).toContain("@min-[30rem]/options:grid-flow-col");
+    expect(group.className).toContain("@min-[26rem]/options:grid-flow-col");
     expect(group.className).not.toContain("sm:");
   });
 });

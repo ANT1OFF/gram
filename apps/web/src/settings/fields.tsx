@@ -338,7 +338,7 @@ export interface OptionGroupOption<T extends string> {
   /**
    * One line on what picking it does: words, as it is also the choice's `aria-description`. When
    * any choice has one, the group draws its choices as cards, side by side where the column has
-   * room (30 rem) and one above the next where it hasn't, the line under each name.
+   * room (26 rem, as New workspace's column has) and one above the next where it hasn't, the line under each name.
    */
   readonly description?: string;
   readonly testId?: string;
@@ -380,7 +380,7 @@ export function OptionGroup<T extends string>({
           onKeyDown={disabled ? undefined : radios.onKeyDown}
           className={cn(
             SEGMENT_TRACK,
-            "grid grid-cols-1 @min-[30rem]/options:auto-cols-fr @min-[30rem]/options:grid-flow-col",
+            "grid grid-cols-1 @min-[26rem]/options:auto-cols-fr @min-[26rem]/options:grid-flow-col",
           )}
         >
           {options.map((option) => {

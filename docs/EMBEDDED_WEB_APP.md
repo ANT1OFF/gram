@@ -489,7 +489,7 @@ For forms:
   form), `autoFocusFirst`, `className` and `testId`.
 - `OptionGroup` choices take a `description` (words: it is also the choice's
   `aria-description`) and a `testId` (the `OptionGroupOption<T>` type). When any choice has a
-  description, the group draws them as choice cards, side by side where its column is 30 rem or
+  description, the group draws them as choice cards, side by side where its column is 26 rem or
   wider and one above the next where it is narrower, each with its line and the pick's check, as
   New's autonomy picker is; without, it is the segmented control. Either way it is one Tab stop,
   and the arrow keys, Home and End move the pick. It also takes a `className`.
