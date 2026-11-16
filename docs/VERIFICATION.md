@@ -6,6 +6,51 @@ Select checks to resolve the changed risk. Preserve complete application and
 release gates; avoid repeating passing broad suites without a new change, failure
 or unresolved concern. This guide owns check selection and commands.
 
+## What earns a test
+
+A test costs every run of CI, every reader, and every intended change that has to edit it. Write one
+when it guards behaviour that could plausibly break and that someone would mind: a state machine, a
+parser, a refusal, a race, a recovery, a contract another part depends on, a bug that already
+happened once.
+
+Always test, and never delete to save time:
+
+- security, auth and scope checks; policy and approval decisions; what a model may and may not do
+- credential isolation and egress; untrusted input reaching a prompt (fencing, escaping)
+- migrations, row-level security, and anything that can lose or corrupt data
+- the API and MCP contract other code or embedders depend on; the merge and release paths
+- a regression test that names the bug it pins
+
+Don't write, and delete when you meet one:
+
+- **Wording checks.** A test that a prompt, skill, doc, tool description or UI label contains a
+  phrase fails exactly when someone edits it on purpose. Test the logic that builds the text (a
+  section appears or not, data is filled in and escaped, a cap holds), not the sentence. Whether a
+  prompt makes a model behave is an eval's job, not a unit test's.
+- **Copy and markup pins.** Exact sentences, class names, DOM shape, uncompared screenshots,
+  snapshots of copy. Assert the state, role, value or data attribute the behaviour depends on.
+- **Tests that cannot fail.** Restating a constant table, checking that two values built to differ
+  differ, `.catch`-ing the error you meant to require, an `expect([...]).toContain` that accepts
+  either outcome.
+- **Mirrors.** Mocking the unit under test, asserting call order or call counts of internals, or a
+  fake that makes the decision being asserted.
+- **Duplicates.** The same behaviour at two layers (keep the cheaper one that still catches the
+  break), or many cases on one path with trivially different inputs (keep the boundaries, as one
+  `it.each`).
+
+Keep it cheap:
+
+- No real sleeps. Use the test clock, fake timers, or wait on the signal itself.
+- Expensive setup once per file (a started system, a server, a repo, a rendered chart), not once per
+  case.
+- Push a check to the cheapest layer that catches it: a unit or component test before an integration
+  test, an integration test before a browser journey. A browser journey earns its place by a real
+  flow across screens, not by checking one component.
+- A slow test that guards something critical stays; make it faster, don't drop it.
+
+When you review a test, ask: what bug would make this fail, and would anyone else notice it first?
+If the answer is "someone changed the wording" or "nothing", it shouldn't be there.
+
 ## Task verification matrix
 
 Find neighboring tests with `rg --files <changed-area>` and narrow an existing

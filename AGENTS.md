@@ -23,6 +23,11 @@ Codex CLIs on their own subscriptions. [README](README.md) introduces it,
 - Fix demonstrated causes, with a before/after reproduction where feasible. Never weaken
   assertions, skips, timeouts or permission guards to get a pass. Claim only what was tested:
   synthetic success is not live-provider qualification.
+- A test earns its place by guarding behaviour that could break and that someone would mind.
+  Don't test wording (prompts, skills, tool descriptions, UI copy), mirrors of the implementation
+  or the same thing at two layers; never cut security, approvals, egress, migrations, data loss,
+  the API/MCP contract or the merge and release paths. See
+  [what earns a test](docs/VERIFICATION.md#what-earns-a-test).
 - Use 24-hour times in product UI and documentation.
 - For a UI change whose look is open, follow [DESIGN.md](DESIGN.md) and the
   [mock-first playbook](docs/orchestration/playbooks/mock-first.md); most tasks skip the mock.
