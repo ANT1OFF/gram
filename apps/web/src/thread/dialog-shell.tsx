@@ -1,6 +1,6 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
@@ -66,14 +66,38 @@ export function PhoneSheetHeader({
 export const DIALOG_BACKDROP =
   "fixed inset-0 z-50 scrim transition-opacity duration-(--dur-fast) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0";
 
+/** Whether what renders here is inside one of these overlays, so a dialog opened in it is nested. */
+const InsideOverlay = createContext(false);
+
+/** Wraps an overlay's content, so the dialogs opened from it know they are nested. */
+export function OverlayContent({ children }: { children: ReactNode }) {
+  return <InsideOverlay value>{children}</InsideOverlay>;
+}
+
+/**
+ * An overlay's backdrop. On its own, the scrim over the window. Nested in another overlay, Base
+ * UI draws no backdrop and the overlay under it dims itself, so this is a clear one in its place:
+ * a click on what is under the dialog lands here, outside the dialog, and closes the dialog alone
+ * rather than acting on the overlay under it.
+ */
+export function OverlayBackdrop() {
+  const nested = useContext(InsideOverlay);
+  return nested ? (
+    <Dialog.Backdrop forceRender data-slot="nested-backdrop" className="fixed inset-0 z-50" />
+  ) : (
+    <Dialog.Backdrop className={DIALOG_BACKDROP} />
+  );
+}
+
 /**
  * A sheet's popup: the window's height less a margin, against its end edge, sliding in from it.
  * `SHEET_WIDE` for one that holds a page of settings. A dialog opened from the sheet dims the
  * sheet under it as the scrim dims the window: Base UI draws no second backdrop for a nested one.
- * The dim takes the clicks meant for the sheet under it, so one only closes the dialog.
+ * A click on the dimmed sheet lands on the dialog's own clear backdrop (`OverlayBackdrop`) and
+ * closes only the dialog.
  */
 export const SHEET_POPUP =
-  "fixed inset-y-2 end-2 z-50 flex w-[min(28rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay outline-none transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out) after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:opacity-0 after:transition-opacity after:duration-(--dur-fast) after:scrim data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0 data-[nested-dialog-open]:after:pointer-events-auto data-[nested-dialog-open]:after:opacity-100 data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0";
+  "fixed inset-y-2 end-2 z-50 flex w-[min(28rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay outline-none transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out) after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:opacity-0 after:transition-opacity after:duration-(--dur-fast) after:scrim data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0 data-[nested-dialog-open]:after:opacity-100 data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0";
 export const SHEET_WIDE = "w-[min(36rem,calc(100vw-1rem))]";
 
 /**
@@ -170,29 +194,31 @@ export function Sheet({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className={DIALOG_BACKDROP} />
+        <OverlayBackdrop />
         <Dialog.Popup
           data-testid={testId}
           data-surface="overlay"
           finalFocus={returnFocusTo(opener, returnFocus)}
           className={cn(SHEET_POPUP, wide && SHEET_WIDE)}
         >
-          <SheetHeader title={title} beside={beside} actions={actions} closeLabel={closeLabel} />
-          <div
-            // Scrolls by keyboard where it holds nothing to focus, as a page read in it may.
-            tabIndex={0}
-            className={cn(
-              "min-h-0 flex-1 overflow-y-auto p-5 outline-none focus-visible:focus-ring-inset",
-              className,
-            )}
-          >
-            {description !== undefined && (
-              <Dialog.Description className="mb-4 text-meta text-muted-foreground">
-                {description}
-              </Dialog.Description>
-            )}
-            {children}
-          </div>
+          <OverlayContent>
+            <SheetHeader title={title} beside={beside} actions={actions} closeLabel={closeLabel} />
+            <div
+              // Scrolls by keyboard where it holds nothing to focus, as a page read in it may.
+              tabIndex={0}
+              className={cn(
+                "min-h-0 flex-1 overflow-y-auto p-5 outline-none focus-visible:focus-ring-inset",
+                className,
+              )}
+            >
+              {description !== undefined && (
+                <Dialog.Description className="mb-4 text-meta text-muted-foreground">
+                  {description}
+                </Dialog.Description>
+              )}
+              {children}
+            </div>
+          </OverlayContent>
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
@@ -247,7 +273,7 @@ export function DialogShell({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className={DIALOG_BACKDROP} />
+        <OverlayBackdrop />
         <Dialog.Popup
           data-testid={testId}
           data-surface="overlay"
@@ -258,13 +284,15 @@ export function DialogShell({
             className,
           )}
         >
-          <Dialog.Title className="font-heading text-title">{title}</Dialog.Title>
-          {description !== undefined && (
-            <Dialog.Description className="text-meta text-muted-foreground">
-              {description}
-            </Dialog.Description>
-          )}
-          {children}
+          <OverlayContent>
+            <Dialog.Title className="font-heading text-title">{title}</Dialog.Title>
+            {description !== undefined && (
+              <Dialog.Description className="text-meta text-muted-foreground">
+                {description}
+              </Dialog.Description>
+            )}
+            {children}
+          </OverlayContent>
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>

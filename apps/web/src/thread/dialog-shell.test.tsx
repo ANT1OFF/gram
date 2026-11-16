@@ -198,7 +198,7 @@ describe("Sheet and Dialog together", () => {
     expect(last.compareDocumentPosition(dialog) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("describes the sheet, scrolls its body by keyboard, and lets a nested dialog's dim take clicks", async () => {
+  it("describes the sheet and scrolls its body by keyboard", async () => {
     render(<Both />);
     const sheet = await screen.findByTestId("member-sheet");
     expect(screen.getByRole("dialog", { name: "Ada", description: "Owner since 2024" })).toBe(
@@ -206,7 +206,6 @@ describe("Sheet and Dialog together", () => {
     );
     const body = screen.getByText("Rows").parentElement!;
     expect(body.tabIndex).toBe(0);
-    expect(sheet.className).toContain("data-[nested-dialog-open]:after:pointer-events-auto");
   });
 
   it("keeps a Dialog given `open` mounted while closed, so it can fade out", async () => {
@@ -244,5 +243,59 @@ describe("SheetHeader", () => {
     const close = screen.getByRole("button", { name: "Close" });
     expect(beside.compareDocumentPosition(more) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(more.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+function Nested({ onSheetClose }: { onSheetClose: () => void }) {
+  const [confirm, setConfirm] = useState(false);
+  return (
+    <Sheet open title="Ada" testId="member-sheet" onClose={onSheetClose}>
+      <button type="button" onClick={() => setConfirm(true)}>
+        Remove
+      </button>
+      {/* Inside the sheet: Base UI nests it, and draws no backdrop of its own for it. */}
+      <DialogShell
+        testId="nested-confirm"
+        title="Remove Ada?"
+        open={confirm}
+        onClose={() => setConfirm(false)}
+      >
+        <p>Sure?</p>
+      </DialogShell>
+    </Sheet>
+  );
+}
+
+describe("a dialog nested in a sheet", () => {
+  it("closes alone on a click beside it, on the dimmed sheet, which stays open", async () => {
+    const onSheetClose = vi.fn();
+    render(<Nested onSheetClose={onSheetClose} />);
+    const sheet = await screen.findByTestId("member-sheet");
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    await screen.findByTestId("nested-confirm");
+    // Its own clear backdrop, over the sheet, takes the click instead of the sheet's controls.
+    const backdrop = document.querySelector<HTMLElement>('[data-slot="nested-backdrop"]')!;
+    expect(backdrop).not.toBeNull();
+    expect(backdrop.className).not.toContain("scrim");
+    expect(sheet.compareDocumentPosition(backdrop) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.pointerDown(backdrop);
+    fireEvent.mouseDown(backdrop);
+    fireEvent.pointerUp(backdrop);
+    fireEvent.mouseUp(backdrop);
+    fireEvent.click(backdrop);
+    await waitFor(() => expect(screen.queryByTestId("nested-confirm")).toBeNull());
+    expect(onSheetClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId("member-sheet")).toBe(sheet);
+  });
+
+  it("dims the window itself on its own, outside any overlay", async () => {
+    render(
+      <DialogShell testId="alone" title="Alone" onClose={() => {}}>
+        <p>Body</p>
+      </DialogShell>,
+    );
+    await screen.findByTestId("alone");
+    expect(document.querySelector('[data-slot="nested-backdrop"]')).toBeNull();
+    expect(document.querySelector(".scrim")).not.toBeNull();
   });
 });

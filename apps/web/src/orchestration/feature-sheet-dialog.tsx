@@ -3,7 +3,7 @@ import { useEffect, useId, useRef } from "react";
 
 import { lazyPart } from "@/lib/lazy-part";
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
-import { Dialog, DIALOG_BACKDROP, SHEET_POPUP } from "@/thread/dialog-shell";
+import { Dialog, OverlayBackdrop, OverlayContent, SHEET_POPUP } from "@/thread/dialog-shell";
 
 import { useFeatureSheet } from "./feature-sheet-store";
 
@@ -31,7 +31,7 @@ export function FeatureSheet() {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className={DIALOG_BACKDROP} />
+        <OverlayBackdrop />
         <Dialog.Popup
           data-testid={FEATURE_SHEET_TEST_ID}
           data-surface="overlay"
@@ -43,13 +43,15 @@ export function FeatureSheet() {
           }
           className={SHEET_POPUP}
         >
-          {target !== undefined && body !== undefined && (
-            <body.SheetBody
-              workspaceId={target.workspaceId}
-              feature={target.feature}
-              titleId={titleId}
-            />
-          )}
+          <OverlayContent>
+            {target !== undefined && body !== undefined && (
+              <body.SheetBody
+                workspaceId={target.workspaceId}
+                feature={target.feature}
+                titleId={titleId}
+              />
+            )}
+          </OverlayContent>
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>

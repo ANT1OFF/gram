@@ -5,7 +5,13 @@ import { create } from "zustand";
 
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
-import { Dialog, DIALOG_BACKDROP, SHEET_POPUP, SHEET_WIDE } from "@/thread/dialog-shell";
+import {
+  Dialog,
+  OverlayBackdrop,
+  OverlayContent,
+  SHEET_POPUP,
+  SHEET_WIDE,
+} from "@/thread/dialog-shell";
 
 import type * as WorkspacePage from "./workspace-page";
 
@@ -65,7 +71,7 @@ export function WorkspaceSheet() {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className={DIALOG_BACKDROP} />
+        <OverlayBackdrop />
         <Dialog.Popup
           data-testid={WORKSPACE_SHEET_TEST_ID}
           data-surface="overlay"
@@ -74,16 +80,18 @@ export function WorkspaceSheet() {
           // A dialog opened from the sheet, a routine's editor say, dims the sheet under it.
           className={cn(SHEET_POPUP, SHEET_WIDE)}
         >
-          <div className="min-h-0 flex-1 overflow-y-auto p-5">
-            {workspaceId !== undefined && (
-              <Suspense fallback={null}>
-                <WorkspaceSettingsPage
-                  workspaceId={workspaceId}
-                  sheet={{ titleId, onClose: close }}
-                />
-              </Suspense>
-            )}
-          </div>
+          <OverlayContent>
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              {workspaceId !== undefined && (
+                <Suspense fallback={null}>
+                  <WorkspaceSettingsPage
+                    workspaceId={workspaceId}
+                    sheet={{ titleId, onClose: close }}
+                  />
+                </Suspense>
+              )}
+            </div>
+          </OverlayContent>
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
