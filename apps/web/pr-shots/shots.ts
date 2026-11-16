@@ -344,8 +344,10 @@ const README_PARKED = ["t-flaky", "t-question", "t-plan", "t-background", "t-edi
 /**
  * The README's scene (`simulateReadme`): `storefront`'s orchestrator in the default look, the right
  * panel closed and no usage limits reported, at `width` × `height`. The README's images in
- * `docs/assets/` are `readme-hero`, `readme-board`, `readme-inbox` and `readme-quiet` (`openReadmeQuiet`), resized
- * to 1600 px wide and palette-quantised.
+ * `docs/assets/` are `readme-hero`, `readme-board`, `readme-inbox`, `readme-quiet` (`openReadmeQuiet`),
+ * `readme-beside`, `readme-steer`, `readme-new-task` and `readme-palettes`, resized to at most 1600 px
+ * wide and palette-quantised. `bun run --filter @gram/web pr:shots --shot readme-hero,… --mode dark
+ * --after-only` retakes them in one run.
  */
 const openReadme = async (page: Page, width: number, height: number) => {
   await page.addInitScript(() => sessionStorage.setItem("gram.mock.limits", "none"));
@@ -402,6 +404,47 @@ const openReadmeQuiet = async (page: Page, width: number, height: number) => {
   await page.getByTestId("quiet-empty").waitFor();
   await page.mouse.move(width - 4, height - 4);
   await page.waitForTimeout(800);
+};
+
+/**
+ * The realistic scenario (`simulateRealistic`) in the README's look: no usage limits, the right
+ * panel closed, the launch banner folded as a working day's is, at `width` × `height`. Resolves to
+ * what it made. In-page navigation from here keeps the scenario, which lives in memory.
+ */
+const openReadmeRealistic = async (page: Page, width: number, height: number) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem("gram.mock.limits", "none");
+    sessionStorage.setItem("gram.mock.orchestration", "realistic");
+    // `useBannerFold`'s keys, as the tour folds them: gh signed out is not the README's story.
+    const seen = ["gh-signed-out", "gh-missing", "claude-signed-out", "codex-signed-out"];
+    localStorage.setItem(
+      "gram.launch-banner",
+      JSON.stringify({ version: 0, state: { folded: seen.map((id) => `1.0.0-mock:${id}`) } }),
+    );
+  });
+  await seedMockSettings(page, {
+    panel: { open: false },
+    onboarding: { takeOverHintSeen: true },
+  });
+  await page.setViewportSize({ width, height });
+  await page.goto("/");
+  await page.getByTestId("app-shell").waitFor();
+  const made = await page.evaluate(async () => {
+    const started = await window.gramMock!.startedRealistic();
+    if (started === undefined)
+      throw new Error("the mock did not start with the realistic scenario");
+    return started;
+  });
+  return made;
+};
+
+/** Goes to `path` in the page, so the mock's in-memory scenario stays. */
+const goInApp = async (page: Page, path: string) => {
+  await page.evaluate((to) => {
+    history.pushState({}, "", to);
+    dispatchEvent(new PopStateEvent("popstate"));
+  }, path);
+  await page.waitForURL(new RegExp(`${path.replace("?", "\\?")}$`));
 };
 
 /** Board in the title bar's view switcher. */
@@ -3750,6 +3793,76 @@ export const SHOTS: readonly Shot[] = [
     title: "README: Quiet at rest over `casefiles`, its workers busy and nothing asked",
     modes: ["dark"],
     open: (page) => openReadmeQuiet(page, 1024, 640),
+  },
+  {
+    name: "readme-beside",
+    title:
+      "README: the realistic orchestrator's chat with a worker open beside it to read and steer",
+    modes: ["dark"],
+    open: async (page) => {
+      const made = await openReadmeRealistic(page, 1520, 900);
+      await goInApp(page, `/t/${made.orchestratorThreadId}`);
+      await page.getByLabel("Message", { exact: true }).first().waitFor();
+      await page.getByRole("button", { name: "Hide sidebar" }).click();
+      await page.keyboard.press("ControlOrMeta+KeyJ");
+      await page
+        .getByTestId("workers-panel")
+        .locator(`[data-testid="workers-panel-row"][data-thread-id="${made.searchWorker}"]`)
+        .click({ modifiers: ["ControlOrMeta"] });
+      await page.getByTestId("worker-crumbs").waitFor();
+      await page.keyboard.press("ControlOrMeta+Backslash");
+      await page.getByTestId("beside-dock").waitFor();
+      await page.mouse.move(1516, 896);
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "readme-steer",
+    title:
+      "README: a draft into a running turn, the send button's menu open on Steer, Queue and Interrupt",
+    modes: ["dark"],
+    open: async (page) => {
+      await page.addInitScript(() => sessionStorage.setItem("gram.mock.limits", "none"));
+      await seedMockSettings(page, { panel: { open: false } });
+      await page.setViewportSize({ width: 1040, height: 600 });
+      await openRunningComposer(page);
+      await page.getByRole("button", { name: "Hide sidebar" }).click();
+      await page
+        .getByLabel("Message", { exact: true })
+        .fill("Use the fake clock, not a longer timeout.");
+      await openDelivery(page);
+    },
+  },
+  {
+    name: "readme-new-task",
+    title: "README: New task over `storefront`, a task typed in and Team chosen",
+    modes: ["dark"],
+    open: async (page) => {
+      await openReadme(page, 1280, 760);
+      await goInApp(page, "/new-task");
+      await page.getByRole("form", { name: "New task" }).waitFor();
+      await page
+        .getByLabel("What needs doing", { exact: true })
+        .fill("Let customers save a default payment method at checkout, like addresses.");
+      await page.mouse.move(1276, 756);
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "readme-palettes",
+    title: "README: Settings → Appearance on its palettes, each a light and dark pair",
+    modes: ["dark"],
+    open: async (page) => {
+      await page.addInitScript(() => sessionStorage.setItem("gram.mock.limits", "none"));
+      await page.setViewportSize({ width: 1180, height: 720 });
+      await page.goto("/settings/appearance");
+      const heading = page.getByRole("heading", { name: "Palette", exact: true });
+      await heading.waitFor();
+      // The palettes at the top of the page, under the section's own title.
+      await heading.evaluate((el) => el.scrollIntoView({ block: "start" }));
+      await page.mouse.move(1176, 716);
+      await page.waitForTimeout(600);
+    },
   },
   {
     name: "sidebar-waiting",
