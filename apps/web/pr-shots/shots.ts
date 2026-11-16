@@ -3782,17 +3782,22 @@ export const SHOTS: readonly Shot[] = [
       await page.setViewportSize({ width: 390, height: 844 });
       await page.getByTestId("phone-menu").click();
       await page.getByTestId("phone-drawer").waitFor();
+      // Down to the workers that watch runs, the drawer's last rows.
+      await page
+        .getByTestId("phone-drawer")
+        .getByTestId("overview-worker")
+        .last()
+        .evaluate((row) => row.scrollIntoView({ block: "end" }));
       await page.waitForTimeout(600);
     },
   },
   {
     name: "sidebar-waiting-kinds-compact",
-    title: "Every kind of wait in the compact strip's flyout, at 1100 px",
+    title: "The compact strip at 1100 px over the same waits: its tiles, no wait drawn there",
     open: async (page) => {
       await openWaitingOn(page, true);
       await page.setViewportSize({ width: 1100, height: 900 });
-      await page.locator('[data-testid="overview-tile"][aria-current="true"]').hover();
-      await page.locator('[data-testid="overview-flyout"][data-open]').waitFor();
+      await page.getByTestId("overview-rail").waitFor();
       await page.waitForTimeout(600);
     },
   },

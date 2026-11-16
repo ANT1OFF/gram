@@ -184,7 +184,9 @@ test("lists the workspaces in the switcher's order, the current one opened into 
     // The now line is always in the row's name, or what it waits on in its place (`rowWaiting`);
     // on the row only if it says more than the dot.
     const waits = row.getByTestId("overview-worker-waiting");
-    const waiting = (await waits.count()) === 0 ? undefined : await waits.getAttribute("title");
+    // Its title is the wait's label, then its whole words on the next line.
+    const waiting =
+      (await waits.count()) === 0 ? undefined : (await waits.getAttribute("title"))?.split("\n")[0];
     const now = asking ? "asks you" : (waiting ?? each.now);
     expect(await row.getAttribute("aria-label")).toContain(`, ${now}`);
     const line = row.getByTestId("overview-worker-now");
