@@ -477,17 +477,22 @@ For forms:
   its column, 64 px tall at least (a `min-h-*` of yours wins) and resizable down the page. Every
   `<textarea>` prop goes to it; `rows` sets how tall it opens.
 - `Checkbox`: a native checkbox with its `label` and an optional `description` line under it, the
-  box on the label's first line at any text size. Every `<input>` prop (`checked`, `onChange`,
-  `name`, `disabled`, `data-testid`) goes to the box and `className` to the row; without a
-  `label` it is the bare box, named by your `aria-label`.
-- `RadioGroup<T>`: one choice out of a list, as a column of radio buttons with a line each:
-  `label` (the group's name for a screen reader), `options` (`{ value, label, description?,
-  disabled? }`, the `RadioOption<T>` type), `value`, `onChange(value)`, and optional `disabled`,
-  `name` (for a form), `className` and `testId`.
-- `OptionGroup` choices take a `description` and a `testId` (the `OptionGroupOption<T>` type).
-  When any choice has a description, the group draws them as choice cards side by side, one
-  above the next on a phone, each with its line and the pick's check, as New's autonomy picker
-  is; without, it is the segmented control. It also takes a `className`.
+  box on the label's first line at any text size and its name in UI text unless your
+  `className` gives another step. Every `<input>` prop (`checked`, `onChange`, `name`,
+  `disabled`, `data-testid`) goes to the box and `className` to the row; `onCheckedChange`
+  gives the new state, as `Switch` does. Without a `label` it is the bare box, named by your
+  `aria-label`, and takes no description.
+- `RadioGroup<T>`: one choice out of a list, as a column of native radio buttons with a line
+  each: `label` (the group's name for a screen reader) or `labelledBy` (the id of a visible
+  heading that names it), `options` (`{ value, label, description?, disabled? }`, the
+  `RadioOption<T>` type), `value`, `onChange(value)`, and optional `disabled`, `name` (for a
+  form), `autoFocusFirst`, `className` and `testId`.
+- `OptionGroup` choices take a `description` (words: it is also the choice's
+  `aria-description`) and a `testId` (the `OptionGroupOption<T>` type). When any choice has a
+  description, the group draws them as choice cards, side by side where its column is 30 rem or
+  wider and one above the next where it is narrower, each with its line and the pick's check, as
+  New's autonomy picker is; without, it is the segmented control. Either way it is one Tab stop,
+  and the arrow keys, Home and End move the pick. It also takes a `className`.
 
 The package's declarations (`gram-web-kit.d.ts` and `types/`) type every one of these, `render`
 on `Button`, `Badge` and the tooltip's trigger included, so an app needs no declarations of its
