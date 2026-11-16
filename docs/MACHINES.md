@@ -506,7 +506,8 @@ the local app, as the other `/machines/*` routes are.
   replace the first's work.
 - `POST /machines/stop/cancel` takes a stop back: the host takes new work again.
 - `POST /machines/stop/status` lists each joined machine: `online`, `stoppedAt` when it was
-  readied and hasn't dialled in since, and `wanted` when a thread waits on it now. A message sent
+  readied and hasn't dialled in since, `wanted` when a thread waits on it now, and `resuming`
+  when it dialled in after a stop and hasn't been resumed: resume it, however it was started. A message sent
   to a thread on a machine that is away, or readied and not yet stopped, waits up to five minutes
   for it, so start a host (or take the stop back) when `wanted` turns true. With the setting on,
   this wait applies to any joined machine that is away. A thread started

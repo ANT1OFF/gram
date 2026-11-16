@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
 import { makeStopMarks } from "./stop-marks.ts";
+import { stopStatus } from "./stop-resume.ts";
 import { awaitedMachines, type WorkerHost } from "./worker-host.ts";
 
 // A session about to open on a joined machine that was stopped and started on another disk waits
@@ -58,6 +59,27 @@ describe("a session on a machine started again after a stop", () => {
       stops.stopped(ID, []);
       stops.back(ID);
       expect(yield* forSession(ID)).toBe(HOST);
+    }),
+  );
+});
+
+describe("the stop status of a machine back after a stop", () => {
+  it.effect("says it is owed a resume until it has one, however it was started", () =>
+    Effect.gen(function* () {
+      const stops = makeStopMarks();
+      const deps = {
+        hosts: {
+          machines: { list: () => [{ id: ID, name: "box", confirmedAt: 1 }] },
+          connection: () => Effect.succeed({}),
+          stops,
+        } as never,
+      };
+      stops.stopped(ID, []);
+      stops.away(ID);
+      stops.back(ID);
+      expect((yield* stopStatus(deps))[0]).toMatchObject({ online: true, resuming: true });
+      stops.resumed(ID);
+      expect((yield* stopStatus(deps))[0]?.resuming).toBeUndefined();
     }),
   );
 });
