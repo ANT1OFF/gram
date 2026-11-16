@@ -1,3 +1,5 @@
+import type { AppToolClass } from "@gram/contracts";
+
 /** The MCP server name each thread's app tools are registered under, in every agent's config. */
 export const APP_TOOLS_SERVER_NAME = "gram";
 
@@ -32,3 +34,24 @@ export const appToolResultContent = (output: unknown): AppToolPart[] =>
           text: typeof output === "string" ? output : JSON.stringify(output ?? null),
         },
       ];
+
+/** MCP tool annotations, as the `gram` server lists a tool. */
+export interface AppToolAnnotations {
+  readonly readOnlyHint: boolean;
+  readonly openWorldHint?: boolean;
+}
+
+/**
+ * What an app tool's safety class tells an agent about it, as MCP tool annotations, so an agent
+ * can run reads side by side and skip its own prompt for them, and warn before what reaches
+ * outside. A *read* changes nothing; *outward* acts past the app. The rest is left to MCP's
+ * defaults (a write may destroy, and may reach outside), since a class doesn't say: a read can
+ * still bring in a web page or a review comment, and a *self* tool can delete a note. Hints only:
+ * the registry's gate decides every call.
+ */
+export const appToolAnnotations = (toolClass: AppToolClass): AppToolAnnotations =>
+  toolClass === "read"
+    ? { readOnlyHint: true }
+    : toolClass === "outward" || toolClass === "outwardGated"
+      ? { readOnlyHint: false, openWorldHint: true }
+      : { readOnlyHint: false };

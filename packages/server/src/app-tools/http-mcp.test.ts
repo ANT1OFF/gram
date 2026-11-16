@@ -383,6 +383,9 @@ layer(McpServer, { excludeTestServices: true })("HTTP MCP transport", (it) => {
         },
       });
       expect(tools[1]?.inputSchema.type).toBe("object");
+      // The class becomes MCP annotations: a read says so, and the rest keeps MCP's defaults.
+      expect(tools[0]?.annotations).toEqual({ readOnlyHint: false });
+      expect(tools[1]?.annotations).toEqual({ readOnlyHint: true });
     }),
   );
 
