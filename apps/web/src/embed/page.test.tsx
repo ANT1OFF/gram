@@ -46,4 +46,18 @@ describe("Page", () => {
     );
     expect(screen.getByRole("heading", { name: "Limits" }).className).toContain("phone:sr-only");
   });
+
+  it("keeps Settings' reading column unless it is wide", () => {
+    render(<Page title="Narrow">Rows</Page>);
+    expect(document.querySelector('[data-slot="page"]')!.className).toContain("settings-column");
+    cleanup();
+    render(
+      <Page title="Wide" wide>
+        Rows
+      </Page>,
+    );
+    const page = document.querySelector('[data-slot="page"]')!;
+    expect(page.className).not.toContain("settings-column");
+    expect(page.className).toContain("w-full");
+  });
 });

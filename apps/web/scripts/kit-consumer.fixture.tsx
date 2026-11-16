@@ -138,6 +138,7 @@ export function KitPage({ pick }: { pick: (level: Level) => void }) {
         above={<a href="/members">Members</a>}
         headingLevel={2}
         hideTitleOnPhone
+        wide
       >
         <SettingsGroup label="Keys">
           <SettingRow
@@ -149,7 +150,14 @@ export function KitPage({ pick }: { pick: (level: Level) => void }) {
             labelText="Deploy key"
             description={<a href="/docs">How keys work</a>}
           />
-          <Field label={<b>Name</b>} labelText="Name">
+          <Toggle
+            label={<i>Digest</i>}
+            labelText="Digest"
+            testId="digest"
+            checked={false}
+            onChange={() => {}}
+          />
+          <Field label={<b>Name</b>} labelText="Name" testId="name">
             <Input />
           </Field>
         </SettingsGroup>

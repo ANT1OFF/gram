@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-import { Field, SettingRow } from "./fields";
+import { Field, SettingRow, Toggle } from "./fields";
 import { SettingsSearchProvider } from "./search-scope";
 
 afterEach(cleanup);
@@ -68,5 +68,34 @@ describe("rich setting labels", () => {
     rows("plain");
     expect(settingOf("Plain name").hasAttribute("hidden")).toBe(false);
     expect(settingOf("Deploy key").hasAttribute("hidden")).toBe(true);
+  });
+
+  it("gives a row, a field and a toggle a test id, and a toggle a rich name too", () => {
+    render(
+      <TooltipProvider>
+        <SettingRow label="Region" testId="row-region" />
+        <Field label="Name" testId="field-name">
+          <input aria-label="Name" />
+        </Field>
+        <Toggle
+          label={
+            <>
+              Weekly digest <em>beta</em>
+            </>
+          }
+          labelText="Weekly digest"
+          testId="toggle-digest"
+          checked
+          onChange={() => {}}
+          onReset={() => {}}
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.getByTestId("row-region").hasAttribute("data-setting")).toBe(true);
+    expect(screen.getByTestId("field-name").hasAttribute("data-setting")).toBe(true);
+    const toggle = screen.getByTestId("toggle-digest");
+    expect(toggle.querySelector("em")?.textContent).toBe("beta");
+    expect(screen.getByRole("switch", { name: /Weekly digest/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reset Weekly digest to default" })).toBeTruthy();
   });
 });

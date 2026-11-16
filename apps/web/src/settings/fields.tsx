@@ -100,10 +100,13 @@ export function Field({
   action,
   hint,
   undoKey,
+  testId,
   children,
 }: RichLabel & {
   /** Extra words Settings search finds this by. */
   keywords?: readonly string[];
+  /** On the field, for specs to find it by. */
+  testId?: string;
   /** The control's id, when it's a single form element the label should name. */
   htmlFor?: string;
   /** What the one line leaves out, behind the ⓘ beside the name. */
@@ -123,7 +126,13 @@ export function Field({
   const search = useSettingSearch({ ...words, keywords });
   const row = useId();
   return (
-    <div {...search} {...touchHandlers(row)} data-setting="" className="flex flex-col gap-1.5">
+    <div
+      {...search}
+      {...touchHandlers(row)}
+      data-setting=""
+      data-testid={testId}
+      className="flex flex-col gap-1.5"
+    >
       <div className="flex items-start gap-1">
         <RowLabel
           label={label}
@@ -167,10 +176,13 @@ export function SettingRow({
   hint,
   undoKey,
   nested = false,
+  testId,
   children,
 }: RichLabel & {
   /** Extra words Settings search finds this by. */
   keywords?: readonly string[];
+  /** On the row, for specs to find it by. */
+  testId?: string | undefined;
   /**
    * A part of the row above it: set in from the card's edge under that row's name, with no hairline
    * between the two.
@@ -205,6 +217,7 @@ export function SettingRow({
       {...search}
       {...touchHandlers(row)}
       data-setting=""
+      data-testid={testId}
       className={cn("@container/row flex flex-col gap-2", nested && NESTED_ROW)}
     >
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
@@ -528,6 +541,7 @@ function useRovingRadios<T extends string>(
 /** An on/off setting: a row with a switch on the right. */
 export function Toggle({
   label,
+  labelText,
   description,
   keywords,
   checked,
@@ -539,11 +553,12 @@ export function Toggle({
   detail,
   learnMore,
   nested = false,
-}: {
-  label: string;
-  description?: string;
+  testId,
+}: RichLabel & {
   /** Extra words Settings search finds this by. */
   keywords?: readonly string[];
+  /** On the row, for specs to find it by. */
+  testId?: string;
   /** A part of the switch above it; see `SettingRow`. */
   nested?: boolean;
   checked: boolean;
@@ -562,7 +577,9 @@ export function Toggle({
   return (
     <SettingRow
       label={label}
+      labelText={labelText}
       htmlFor={id}
+      testId={testId}
       {...(description === undefined ? {} : { description })}
       {...(keywords === undefined ? {} : { keywords })}
       onReset={onReset}

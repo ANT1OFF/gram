@@ -16,6 +16,7 @@ export function Page({
   above,
   headingLevel = 1,
   hideTitleOnPhone = false,
+  wide = false,
   children,
 }: {
   title: string;
@@ -34,6 +35,11 @@ export function Page({
    * page's heading for a screen reader, but not drawn. Wider windows show it.
    */
   hideTitleOnPhone?: boolean;
+  /**
+   * The pane's whole width rather than Settings' reading column: for a page laid out beside a
+   * tree or a list of its own.
+   */
+  wide?: boolean;
   children: ReactNode;
 }) {
   const Heading = headingLevel === 2 ? "h2" : "h1";
@@ -62,7 +68,10 @@ export function Page({
       <div
         key={title}
         data-slot="page"
-        className="gram-stagger settings-column flex flex-col gap-6 px-8 py-6 @max-2xl/settings:p-4"
+        className={cn(
+          "gram-stagger flex flex-col gap-6 px-8 py-6 @max-2xl/settings:p-4",
+          wide ? "w-full" : "settings-column",
+        )}
       >
         {above === undefined ? (
           header

@@ -474,10 +474,12 @@ pages need more; a control added to it keeps its props.
 `Page` also takes `above` (over the title: a back link, a line on where the page sits, or the
 tabs it belongs to), `headingLevel` (`2` where the page sits under an `h1` of your own; the look
 is the same) and `hideTitleOnPhone` (on a phone the title is left to your own bar, which names the
-page already; it stays the heading for a screen reader). `SettingRow`'s and `Field`'s `label` and
-`description` may be more than words (a code span, a link, a badge beside the name); give a label
-that isn't a string its words in `labelText`, which Settings search, the reset's name and the ⓘ
-use.
+page already; it stays the heading for a screen reader) and `wide` (the pane's whole width
+rather than Settings' reading column, for a page laid out beside a tree of its own).
+`SettingRow`'s, `Field`'s and `Toggle`'s `label` and `description` may be more than words (a
+code span, a link, a badge or a status beside the name); give a label that isn't a string its
+words in `labelText`, which Settings search, the reset's name and the ⓘ use. All three take a
+`testId` on their row.
 
 For forms:
 
