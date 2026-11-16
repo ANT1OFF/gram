@@ -1,5 +1,5 @@
 import { Outlet } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
 import { useAutoReviewFocus } from "@/components/review-room";
 import { RightPanel, useShowPanelRequests } from "@/components/right-panel";
@@ -10,9 +10,7 @@ import { cn } from "@/lib/utils";
 import { useMotionLevel } from "@/motion";
 import { OverviewRail } from "@/orchestration/overview-rail";
 import { OverviewSidebar, useCarryOverviewFocus } from "@/orchestration/overview-sidebar";
-import { AutoHide } from "@/shell/auto-hide";
 import { ConnectionBanner } from "@/shell/connection-banner";
-import { DockSheet, NavDock } from "@/shell/nav-dock";
 import { PhoneDrawer } from "@/shell/phone-drawer";
 import { PhonePanelRow, PhoneWorkspaceRow } from "@/shell/phone-panels";
 import { useWorkspacePlaces } from "@/shell/titlebar-path";
@@ -31,6 +29,14 @@ import {
 import { UpdateNotice } from "@/updates/update-notice";
 import { QuietLayer, ViewOutlet } from "@/views/view-frame";
 import { useViewStore } from "@/views/view-store";
+
+// The dock and the auto-hidden navigation, loaded only where an app or a person picks them: Gram's
+// own sidebar needs none of it before first paint.
+const loadNavAway = () => import("@/shell/nav-away");
+const DockRow = lazy(() => loadNavAway().then((m) => ({ default: m.DockRow })));
+const AutoHideDock = lazy(() => loadNavAway().then((m) => ({ default: m.AutoHideDock })));
+const DockSheet = lazy(() => loadNavAway().then((m) => ({ default: m.DockSheet })));
+const AutoHideSidebar = lazy(() => loadNavAway().then((m) => ({ default: m.AutoHideSidebar })));
 
 /**
  * Overview, chat or grid, right panel; either side hides and focus mode hides both. An expanded
@@ -222,49 +228,37 @@ export function AppShell() {
       </a>
       {dock !== undefined && !nav.autoHide ? (
         <div data-testid="nav-docked" className="flex h-dvh flex-col bg-background">
-          {dock === "top" && <DockRow edge="top" inert={quiet} />}
+          {dock === "top" && (
+            <Suspense fallback={null}>
+              <DockRow edge="top" inert={quiet} />
+            </Suspense>
+          )}
           {grid}
-          {dock === "bottom" && <DockRow edge="bottom" inert={quiet} />}
+          {dock === "bottom" && (
+            <Suspense fallback={null}>
+              <DockRow edge="bottom" inert={quiet} />
+            </Suspense>
+          )}
         </div>
       ) : (
         grid
       )}
-      {dock !== undefined && nav.autoHide && (
-        <AutoHide edge={dock} inert={quiet}>
-          <NavDock edge={dock} />
-        </AutoHide>
-      )}
-      {dock !== undefined && <DockSheet edge={dock} />}
-      {autoHidden !== "none" && (
-        <AutoHide
-          edge="left"
-          width={autoHidden === "full" ? sidebarWidth : OVERVIEW_RAIL_WIDTH}
-          inert={quiet}
-        >
-          {autoHidden === "full" ? <OverviewSidebar /> : <OverviewRail />}
-        </AutoHide>
+      {(dock !== undefined || autoHidden !== "none") && (
+        <Suspense fallback={null}>
+          {dock !== undefined && nav.autoHide && <AutoHideDock edge={dock} inert={quiet} />}
+          {dock !== undefined && <DockSheet edge={dock} />}
+          {autoHidden !== "none" && (
+            <AutoHideSidebar
+              compact={autoHidden === "compact"}
+              width={autoHidden === "full" ? sidebarWidth : OVERVIEW_RAIL_WIDTH}
+              inert={quiet}
+            />
+          )}
+        </Suspense>
       )}
       {phone && <PhoneDrawer />}
       <QuietLayer />
       <MenuBar />
     </>
-  );
-}
-
-/** The dock's row at the window's top or bottom edge, the bar centred in it. */
-function DockRow({ edge, inert }: { edge: "top" | "bottom"; inert: boolean }) {
-  return (
-    <div
-      data-testid="nav-dock-row"
-      inert={inert}
-      className={cn(
-        "flex shrink-0 justify-center bg-background px-2",
-        edge === "top" ? "pt-1.5 pb-1 [-webkit-app-region:drag]" : "pt-1 pb-1.5",
-      )}
-    >
-      <div className="flex max-w-full [-webkit-app-region:no-drag]">
-        <NavDock edge={edge} />
-      </div>
-    </div>
   );
 }
