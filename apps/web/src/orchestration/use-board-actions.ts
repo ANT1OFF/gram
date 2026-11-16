@@ -10,7 +10,6 @@ import { useNow } from "@/lib/use-now";
 import { useThreadsStore } from "@/stores/threads";
 
 import {
-  freshSessionPct,
   DISCOVER_MESSAGE,
   handoffRunning,
   TIDY_UP_MESSAGE,
@@ -163,10 +162,10 @@ export const useHandoffStore = create<HandoffState>()((set) => ({
 
 /** What the confirmation says before a handoff, wherever it is asked for. */
 export const FRESH_SESSION_EXPLANATION =
-  "Starts a fresh agent session on this thread. The orchestrator first writes anything unsaved to its memory, then starts again from memory and the current ledger.";
+  "Drops the conversation and starts again from memory, the charter and the ledger. Workers keep running, and what's waiting on you carries over.";
 
 /**
- * A workspace's handoff: whether one is running, the context fill that suggests one, and the call
+ * A workspace's handoff: whether one is running, and the call
  * that starts it. `running` is true from the click until the orchestrator's thread shows another
  * agent session.
  */
@@ -176,9 +175,6 @@ export function useHandoff(state: WorkspaceState | undefined) {
   const orchestratorId = state?.workspace.orchestratorThreadId;
   const summary = useThreadsStore((s) =>
     orchestratorId === undefined ? undefined : s.byId[orchestratorId],
-  );
-  const usage = useThreadsStore((s) =>
-    orchestratorId === undefined ? undefined : s.usage[orchestratorId],
   );
   const mark = useHandoffStore((s) =>
     workspaceId === undefined ? undefined : s.marks[workspaceId],
@@ -212,8 +208,6 @@ export function useHandoff(state: WorkspaceState | undefined) {
     /** Whether there is an orchestrator to hand off at all. */
     available: summary !== undefined,
     running,
-    /** The orchestrator's context fill once it is worth a fresh session; `undefined` below that. */
-    suggestedAtPct: running ? undefined : freshSessionPct(usage),
     start,
   };
 }

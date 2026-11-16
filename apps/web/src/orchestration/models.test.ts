@@ -39,10 +39,8 @@ import { agoText } from "@/lib/time";
 import { useAttentionStore } from "@/sidebar/attention";
 import { rollupOf, splitForTree } from "@/sidebar/grouping";
 import { closeThread, useThreadsStore } from "@/stores/threads";
-import { contextPercent } from "@/thread/context-usage";
 
 import {
-  freshSessionPct,
   HANDOFF_GIVE_UP_MS,
   handoffRunning,
   boardWorkspaceFor,
@@ -465,18 +463,7 @@ describe("board columns", () => {
     expect(workerTitle({ title: "From the ledger" }, undefined)).toBe("From the ledger");
   });
 
-  it("offers a fresh session from 90 % context, and knows a handoff by the session it leaves", () => {
-    expect(freshSessionPct(undefined)).toBeUndefined();
-    expect(freshSessionPct({ contextTokens: 100_000 })).toBeUndefined();
-    expect(freshSessionPct({ contextTokens: 144_000, contextWindow: 200_000 })).toBeUndefined();
-    expect(freshSessionPct({ contextTokens: 178_000, contextWindow: 200_000 })).toBeUndefined();
-    expect(freshSessionPct({ contextTokens: 180_000, contextWindow: 200_000 })).toBe(90);
-    expect(freshSessionPct({ contextTokens: 184_000, contextWindow: 200_000 })).toBe(92);
-    expect(freshSessionPct({ contextTokens: 900_000, contextWindow: 200_000 })).toBe(100);
-    // The usage bar's own percent, so the offer and the bar never disagree.
-    const nearlyFull = { contextTokens: 181_100, contextWindow: 200_000 };
-    expect(freshSessionPct(nearlyFull)).toBe(contextPercent(nearlyFull));
-
+  it("knows a handoff by the session it leaves", () => {
     const mark = { fromSession: "s-1", startedAt: 1_000 };
     expect(handoffRunning(undefined, { agentSessionId: "s-1" }, 2_000)).toBe(false);
     expect(handoffRunning(mark, undefined, 2_000)).toBe(false);

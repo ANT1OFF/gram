@@ -1402,7 +1402,7 @@ test("a click sets a stage, a plan is edited in place, and a feature changes gro
   await expect(board.locator('[data-testid="rail-group"][data-group="docs-push"]')).toBeVisible();
 });
 
-test("a fresh session is offered at 90 % context, confirmed in place, and shows while it runs", async ({
+test("a fresh session is always offered from the header, saves to memory first unless unticked, and shows while it runs", async ({
   page,
 }) => {
   // Hold each handoff until its running indicator is observed on every surface.
@@ -1413,7 +1413,7 @@ test("a fresh session is offered at 90 % context, confirmed in place, and shows 
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   const made = await simulateBoard(page);
 
-  // The orchestrator's header offers it: a quiet icon, which only opens the confirmation.
+  // The orchestrator's header offers it: a quiet icon, which only opens the popover.
   await openOrchestrator(page, made.orchestratorThreadId);
   const paneHeader = page.getByTestId("pane-header");
   await expect(paneHeader.getByRole("heading")).toHaveAccessibleName(
@@ -1421,26 +1421,38 @@ test("a fresh session is offered at 90 % context, confirmed in place, and shows 
   );
   // Its questions are the sidebar pill's, not a chip of their own here.
   await expect(paneHeader.getByTestId("banner-questions")).toHaveCount(0);
-  const chip = paneHeader.getByTestId("context-chip");
-  await expect(chip).toHaveAccessibleName("Context 92 % — start a fresh session");
+  const chip = paneHeader.getByTestId("fresh-session-chip");
+  await expect(chip).toHaveAccessibleName("Fresh session");
   await expect(chip).toHaveText("");
   await chip.click();
-  const dialog = page.getByTestId("fresh-session-dialog");
-  await expect(dialog).toContainText(
-    "Starts a fresh agent session on this thread. The orchestrator first writes anything unsaved to its memory, then starts again from memory and the current ledger.",
+  const popup = page.getByTestId("fresh-session-popup");
+  await expect(popup).toContainText(
+    "Drops the conversation and starts again from memory, the charter and the ledger.",
   );
-  await dialog.getByRole("button", { name: "Cancel" }).click();
-  await expect(dialog).toHaveCount(0);
+  const saveFirst = popup.getByTestId("fresh-session-save-first");
+  await expect(saveFirst).toBeChecked();
+  await saveFirst.uncheck();
+  await expect(popup.getByTestId("fresh-session-save-first-detail")).toContainText(
+    "Its current turn stops now",
+  );
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0);
 
+  // Opened again it is back to saving first; this one is a hard cut.
   await chip.click();
-  await dialog.getByTestId("fresh-session-start").click();
+  await expect(saveFirst).toBeChecked();
+  await saveFirst.uncheck();
+  await popup.getByTestId("fresh-session-start").click();
   await expect(paneHeader.getByTestId("handing-off")).toBeVisible();
   await page.evaluate(() => window.gramMock?.release("handoff"));
   // Over once the thread carries a new agent session; the divider is in its transcript.
   await expect(paneHeader.getByTestId("handing-off")).toHaveCount(0, {
     timeout: 10_000 * slowdown,
   });
-  await expect(page.getByTestId("handoff")).toHaveText("New session · you asked for one");
+  await expect(page.getByTestId("handoff")).toHaveText(
+    "New session · you asked for one, without saving first",
+  );
+  const dialog = page.getByTestId("fresh-session-dialog");
 
   // Its menus and the palette ask the same way.
 

@@ -1119,11 +1119,13 @@ server makes (delivery failure, parking, re-enabling) stop only the orchestrator
 
 ## A fresh orchestrator session
 
-Fresh session (the orchestrator's `/` menu, the palette, the thread menu and the context chip)
-replaces the orchestrator's agent session with a new one under the same thread. The new session
+Fresh session (the refresh icon in the orchestrator's header, its `/` menu, the palette and the
+thread menu) replaces the orchestrator's agent session with a new one under the same thread. The new session
 boots from its role, `MEMORY.md`, the standing decisions, the charter and the ledger, so workers,
 features, pull requests, held briefs, questions, what waits on the user and queued messages all
-carry over; the conversation, tool output and prompt cache don't. Workers keep their own sessions.
+carry over; the conversation, tool output and prompt cache don't, compacted or not. Workers keep
+their own sessions. It is offered whatever the context fill: compaction handles a full context, and
+this is for dropping what the conversation holds.
 
 **Save to memory first** is on by default: the old session gets one checkpoint turn to write down
 what isn't in memory yet, and the cut follows when that turn ends. Turned off, it is a hard cut
