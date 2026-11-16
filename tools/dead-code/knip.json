@@ -27,6 +27,8 @@
         "src/main.tsx!",
         "src/embed/index.ts!",
         "src/embed/kit.ts!",
+        "src/embed/kit-lite.ts!",
+        "vite.kit-lite.config.ts!",
         "vite.embed.config.ts!",
         "scripts/build-embed.mjs!",
         "e2e-embed/playwright.config.ts",

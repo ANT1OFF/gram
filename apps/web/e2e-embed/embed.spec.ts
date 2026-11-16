@@ -1202,3 +1202,49 @@ test("a menu taller than the window scrolls in place, its submenu too, on a desk
     expect(errors).toEqual([]);
   }
 });
+
+test("a page drawn with the light kit loads none of Gram's app, and looks as Gram does", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const scripts: { path: string; bytes: number }[] = [];
+  page.on("response", async (response) => {
+    const path = new URL(response.url()).pathname;
+    if (path.endsWith(".js")) scripts.push({ path, bytes: (await response.body()).byteLength });
+  });
+  await page.goto("/lite.html");
+  await expect(page.getByTestId("lite-title")).toBeVisible();
+  // The person's stored look on <html>, with the app's own palette standing in for Gram's default.
+  const html = page.locator("html");
+  await expect(html).toHaveAttribute("data-palette", "host-dark");
+  await expect(html).toHaveAttribute("data-mode", "dark");
+  await expect(html).not.toHaveAttribute("data-theme-booting", "");
+  // The page is the app's palette, and Gram's controls are drawn as Gram draws them.
+  const look = await page.evaluate(() => {
+    const submit = getComputedStyle(document.querySelector('[data-testid="lite-submit"]')!);
+    const keep = getComputedStyle(document.querySelector('[data-testid="lite-keep"]')!);
+    return {
+      page: getComputedStyle(document.body).backgroundColor,
+      font: getComputedStyle(document.body).fontFamily,
+      button: submit.backgroundColor,
+      radius: submit.borderTopLeftRadius,
+      box: keep.accentColor,
+    };
+  });
+  expect(look.page).toBe("rgb(11, 12, 13)");
+  expect(look.font).toContain("Inter");
+  expect(look.button).not.toBe("rgba(0, 0, 0, 0)");
+  expect(look.radius).not.toBe("0px");
+  expect(look.box).not.toBe("auto");
+  const edge = () =>
+    page.getByTestId("lite-email").evaluate((element) => getComputedStyle(element).borderColor);
+  const valid = await edge();
+  await page.getByTestId("lite-email").fill("not an address");
+  await expect(page.getByTestId("lite-email")).toHaveAttribute("aria-invalid", "true");
+  expect(await edge()).not.toBe(valid);
+  // None of Gram's app came with it: a fraction of the app's code, React included.
+  const total = scripts.reduce((sum, each) => sum + each.bytes, 0);
+  expect(total).toBeLessThan(600_000);
+  expect(errors).toEqual([]);
+});

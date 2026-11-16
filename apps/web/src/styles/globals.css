@@ -25,81 +25,11 @@
 
 /* The variants, the token names Tailwind takes and the app's own utilities. */
 @import "./theme.css";
+/* The page's base styles, shared with the kit's light entry. */
+@import "./base.css";
 
 /* The fixture app of the embeddable package's acceptance run builds its own styles. */
 @source not "../../e2e-embed";
-
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  html,
-  body,
-  #root {
-    height: 100%;
-  }
-  body {
-    @apply bg-background font-sans text-foreground antialiased;
-    transition:
-      background-color var(--dur-base) var(--ease-out),
-      color var(--dur-base) var(--ease-out);
-  }
-  /* A menu, list or dialog that takes focus as it opens shows the keyboard on its rows and
-     controls, never as a ring round the whole popup. */
-  :where([role="menu"], [role="listbox"], [role="dialog"], [role="alertdialog"]):focus-visible {
-    outline: none;
-  }
-  ::selection {
-    background-color: var(--selection);
-  }
-  /* One optical stroke for every icon: Lucide draws on a 24-unit grid, so a fixed stroke would thin
-     a 14 px chip glyph and thicken an 18 px toolbar one. Each size token takes the stroke that draws
-     the same line as --icon-stroke does at 16 px (about 1.33 px), so a chip, a row and the title
-     bar's glyphs carry one weight. */
-  .lucide {
-    stroke-width: var(--icon-stroke);
-  }
-  .lucide:where(.size-icon-chip, .size-3\.5) {
-    stroke-width: calc(var(--icon-stroke) * 16 / 14);
-  }
-  .lucide:where(.size-3) {
-    stroke-width: calc(var(--icon-stroke) * 16 / 12);
-  }
-  .lucide:where(.size-icon-bar, .size-4\.5) {
-    stroke-width: calc(var(--icon-stroke) * 16 / 18);
-  }
-  .lucide:where(.size-5) {
-    stroke-width: calc(var(--icon-stroke) * 16 / 20);
-  }
-  .lucide:where(.size-icon-empty, .size-6) {
-    stroke-width: calc(var(--icon-stroke) * 16 / 24);
-  }
-  .lucide:where(.size-7) {
-    stroke-width: calc(var(--icon-stroke) * 16 / 28);
-  }
-  /* A setting a link into Settings points at (`?highlight=`), marked until a click or a key. */
-  [data-setting-spotlight] {
-    border-radius: var(--radius-md);
-    background-color: color-mix(in oklab, var(--color-primary) 10%, transparent);
-    box-shadow: 0 0 0 6px color-mix(in oklab, var(--color-primary) 10%, transparent);
-    scroll-margin-top: 1.5rem;
-  }
-  /* Find in thread's matches (thread/find-highlight.ts), the current one stronger. */
-  ::highlight(gram-find) {
-    background-color: color-mix(in oklab, var(--color-highlight) 18%, transparent);
-  }
-  ::highlight(gram-find-current) {
-    background-color: color-mix(in oklab, var(--color-highlight) 60%, transparent);
-    color: var(--color-foreground);
-    text-decoration: underline 2px var(--color-highlight);
-    text-underline-offset: 3px;
-  }
-  /* The card a Needs you jump lands on (orchestration/use-needs-you.ts), ringed for a moment. */
-  [data-needs-you-flash="true"] {
-    outline: 2px solid var(--color-status-needs-mark);
-    outline-offset: 2px;
-  }
-}
 
 /* Settings → Appearance → Reading (thread/reading.ts): a transcript's messages at the reading size,
    and the markdown in them scaled with it, so headings, code and tables keep their proportions.

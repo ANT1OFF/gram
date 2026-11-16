@@ -12,7 +12,7 @@ import { CHOICE_CARD } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { SegmentSlab } from "@/motion";
 
-import { HelpTip, SettingDescription } from "./help-tip";
+import { FieldLayout, RowLabel, wordsOf, type FieldProps, type RichLabel } from "./field-frame";
 import { isLongError } from "./long-error";
 import { parseNumberDraft } from "./number-draft";
 import { DraftActions, dropUndo, offerUndo, SaveHint, UndoSave } from "./save-hint";
@@ -32,133 +32,31 @@ export const rowInputCls = cn(inputCls, "w-64 max-w-full");
  */
 export const LONG_COPY = "data-long-copy";
 
-/**
- * A setting's name, its ⓘ for what the description leaves out, what sits beside them, such as the
- * reset and "Saved", and the one line of description under them.
- */
-function RowLabel({
-  label,
-  labelText,
-  htmlFor,
-  description,
-  learnMore,
-  children,
-}: {
-  label: ReactNode;
-  labelText: string;
-  htmlFor: string | undefined;
-  description: ReactNode;
-  learnMore: ReactNode;
-  /** After the name, on its line. */
-  children?: ReactNode;
-}) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <div className="flex min-h-5 items-center gap-1">
-        {htmlFor === undefined ? (
-          <span data-setting-label="" className="font-medium">
-            {label}
-          </span>
-        ) : (
-          <label data-setting-label="" htmlFor={htmlFor} className="font-medium">
-            {label}
-          </label>
-        )}
-        <HelpTip label={labelText} help={learnMore} />
-        {children}
-      </div>
-      {description !== undefined && <SettingDescription>{description}</SettingDescription>}
-    </div>
-  );
-}
-
-/**
- * A setting's name and line may be rich (a link, a code span, a badge beside the words). Settings
- * search, the reset's and the ⓘ's names need their words: a string is its own, and a name that
- * isn't one must give them in `labelText`.
- */
-type RichLabel = { description?: ReactNode } & (
-  | { label: string; labelText?: string | undefined }
-  | {
-      label: Exclude<ReactNode, string>;
-      /** The name's words: Settings search, the reset's name and the ⓘ use them. */
-      labelText: string;
-    }
-);
-
-const wordsOf = ({
-  label,
-  labelText,
-  description,
-}: {
-  label: ReactNode;
-  labelText: string | undefined;
-  description: ReactNode;
-}) => ({
-  label: labelText ?? (typeof label === "string" ? label : ""),
-  description: typeof description === "string" ? description : undefined,
-});
-
 /** A labelled setting in a form: its name and one line of description, then the control below. */
 export function Field({
-  label,
-  labelText,
-  description,
   keywords,
-  htmlFor,
-  learnMore,
-  action,
-  hint,
   undoKey,
-  testId,
-  children,
-}: RichLabel & {
+  ...props
+}: FieldProps & {
   /** Extra words Settings search finds this by. */
   keywords?: readonly string[];
-  /** On the field, for specs to find it by. */
-  testId?: string;
-  /** The control's id, when it's a single form element the label should name. */
-  htmlFor?: string;
-  /** What the one line leaves out, behind the ⓘ beside the name. */
-  learnMore?: ReactNode;
-  /** On the label's line, at its end. */
-  action?: ReactNode;
-  /**
-   * Under the control: such as how to keep a draft not saved yet. Kept off the name's line, which
-   * holds only the name and "Saved".
-   */
-  hint?: ReactNode;
   /** A typed setting's key for `offerUndo`, whose Undo shows after "Saved". */
   undoKey?: string;
-  children: ReactNode;
 }) {
-  const words = wordsOf({ label, labelText, description });
+  const words = wordsOf(props);
   const search = useSettingSearch({ ...words, keywords });
   const row = useId();
   return (
-    <div
-      {...search}
-      {...touchHandlers(row)}
-      data-setting=""
-      data-testid={testId}
-      className="flex flex-col gap-1.5"
-    >
-      <div className="flex items-start gap-1">
-        <RowLabel
-          label={label}
-          labelText={words.label}
-          htmlFor={htmlFor}
-          description={description}
-          learnMore={learnMore}
-        >
+    <FieldLayout
+      {...props}
+      rootProps={{ ...search, ...touchHandlers(row) }}
+      receipt={
+        <>
           <SavedMark row={row} />
           {undoKey !== undefined && <UndoSave undoKey={undoKey} />}
-        </RowLabel>
-        {action !== undefined && <div className="ms-auto flex items-center">{action}</div>}
-      </div>
-      {children}
-      {hint}
-    </div>
+        </>
+      }
+    />
   );
 }
 

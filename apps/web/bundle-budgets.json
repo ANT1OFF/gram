@@ -1,6 +1,7 @@
 {
   "firstPaintKb": 2200,
   "lazyChunkKb": 1000,
+  "kitLiteKb": 215,
   "routeKb": {
     "default": 140,
     "t/$threadId": 920,

@@ -17,6 +17,8 @@ export default defineConfig({
     alias: [
       { find: "gram-web/style.css", replacement: dist("gram-web.css") },
       { find: "gram-web/theme.css", replacement: dist("theme.css") },
+      { find: "gram-web/kit-lite.css", replacement: dist("gram-web-kit-lite.css") },
+      { find: "gram-web/kit-lite", replacement: dist("gram-web-kit-lite.js") },
       { find: "gram-web/kit", replacement: dist("gram-web-kit.js") },
       { find: "gram-web", replacement: dist("gram-web.js") },
     ],
@@ -26,7 +28,14 @@ export default defineConfig({
   build: {
     outDir: fileURLToPath(new URL("../../dist-embed-fixture", import.meta.url)),
     emptyOutDir: true,
+    // The app's pages, and its sign-in, which shows before Gram mounts and loads only the light kit.
+    rolldownOptions: {
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        lite: fileURLToPath(new URL("./lite.html", import.meta.url)),
+      },
+      checks: { pluginTimings: false },
+    },
     chunkSizeWarningLimit: 2050,
-    rolldownOptions: { checks: { pluginTimings: false } },
   },
 });
