@@ -68,6 +68,8 @@ const badge: PrStatus = {
   baseRefOid: BASE,
   baseRef: "main",
   headRef: "feat/seven",
+  crossRepository: false,
+  headRepo: "example/project",
   mergeState: "UNSTABLE",
 };
 
@@ -239,7 +241,18 @@ const placed = (dir: string) =>
         repo: "example/project",
         number: 7,
         monitor: true,
-        mergeWhenReady: { method: "squash", allowedBy: "user", setAt: 1 },
+        mergeWhenReady: {
+          method: "squash",
+          allowedBy: "user",
+          // The user approved this head, a branch of the repository itself, into main.
+          approved: {
+            head: HEAD,
+            baseRef: "main",
+            headRepo: "example/project",
+            crossRepository: false,
+          },
+          setAt: 1,
+        },
       },
     }));
     return { thread: updated, site: checkSiteOf(updated.checkout, updated.checkout.path) };

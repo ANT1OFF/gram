@@ -36,6 +36,8 @@ const badgeWith = (checks: PrStatus["checks"]): PrStatus => ({
   baseRefOid: BASE,
   baseRef: "main",
   headRef: "feat/seven",
+  crossRepository: false,
+  headRepo: "example/project",
   mergeState: checks === "passing" ? "CLEAN" : "UNSTABLE",
 });
 
@@ -167,7 +169,18 @@ describe("an armed merge after Gram's own check fails", () => {
             repo: "example/project",
             number: 7,
             monitor: true,
-            mergeWhenReady: { method: "squash", allowedBy: "user", setAt: 1 },
+            mergeWhenReady: {
+              method: "squash",
+              allowedBy: "user",
+              // The user approved this head of the repository's own branch, into main.
+              approved: {
+                head: HEAD,
+                baseRef: "main",
+                headRepo: "example/project",
+                crossRepository: false,
+              },
+              setAt: 1,
+            },
           },
         }));
         const service = yield* MergeWhenReady;

@@ -88,6 +88,13 @@ export const PrStatus = Schema.Struct({
   baseRef: Schema.optionalKey(Schema.String),
   /** `headRefName`: the PR's own branch, which a bound or followed PR needn't share with the checkout. */
   headRef: Schema.optionalKey(Schema.String),
+  /**
+   * GitHub's `isCrossRepository`: the head branch lives in another repository than the base, a
+   * fork. Absent when it wasn't read, which every merge and check decision treats as a fork.
+   */
+  crossRepository: Schema.optionalKey(Schema.Boolean),
+  /** The head branch's repository as `owner/name`; absent when unread or the fork was deleted. */
+  headRepo: Schema.optionalKey(Schema.String),
   /** The author's login. */
   author: Schema.optionalKey(Schema.String),
   additions: Schema.optionalKey(Schema.Int),

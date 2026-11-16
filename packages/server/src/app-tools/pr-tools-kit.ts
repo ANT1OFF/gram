@@ -47,7 +47,11 @@ export const current: {
 export const ghCalls: Array<ReadonlyArray<string>> = [];
 /** The directory each of `ghCalls` ran in. */
 export const ghDirs: Array<string> = [];
-export type GhReply = { readonly status: number; readonly stdout: string; readonly stderr: string };
+export type GhReply = {
+  readonly status: number;
+  readonly stdout: string;
+  readonly stderr: string;
+};
 export const ok: GhReply = { status: 0, stdout: "", stderr: "" };
 /** What the fake `gh` answers a call with; every call succeeds with no output unless a test says. */
 export const gh: { answer: (args: ReadonlyArray<string>) => GhReply } = { answer: () => ok };
@@ -61,6 +65,9 @@ export const badge = (overrides: Partial<PrStatus> = {}): PrStatus => ({
   checks: "pending",
   headMatches: true,
   aheadOfPr: false,
+  // A branch of the repository itself, into main: what a merge approval names.
+  baseRef: "main",
+  crossRepository: false,
   ...overrides,
 });
 

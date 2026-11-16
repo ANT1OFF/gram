@@ -415,6 +415,19 @@ export type ThreadLabels = typeof ThreadLabels.Type;
 /** The most pull requests a merge intent waits on. */
 export const MERGE_AFTER_MAX = 8;
 
+/** What a user's `merge_when_ready` approval covers (`MergeIntent.approved`). */
+export const MergeApprovedChange = Schema.Struct({
+  /** The head commit the card named. */
+  head: Schema.String,
+  /** The base branch the card named. */
+  baseRef: Schema.String,
+  /** The repository the head branch lives in, `owner/name`. */
+  headRepo: Schema.String,
+  /** The head is on a fork: then no other head is covered. */
+  crossRepository: Schema.Boolean,
+});
+export type MergeApprovedChange = typeof MergeApprovedChange.Type;
+
 /**
  * `merge_when_ready`: squash (or merge, or rebase) the bound PR once the review bot's approval is on
  * its exact head, its required checks are green and GitHub would merge it, pinned to that head.
@@ -460,6 +473,14 @@ export const MergeIntent = Schema.Struct({
       reused: Schema.optionalKey(Schema.Literal(true)),
     }),
   ),
+  /**
+   * The change a user approval covers, as its card named it: the head commit, the base branch and
+   * the repository the head lives in. A new head on a fork, a new base or another head repository
+   * drops the approval, and nothing is checked or merged until a new card approves again. Absent
+   * on an `autonomy` intent, whose ownership is asked again instead, and on a user intent stored
+   * before approvals recorded it, which merges only a PR GitHub says is not from a fork.
+   */
+  approved: Schema.optionalKey(MergeApprovedChange),
   /** Epoch ms. */
   setAt: Schema.Number,
   /** The head a merge was refused on; it is tried again once the head moves. */

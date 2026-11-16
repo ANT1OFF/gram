@@ -129,6 +129,12 @@ changes into events that wake the thread that cares:
   pinned to the head it checked. An approval stands for the call it was given on: the same call
   again from the same caller joins its waiting card (`askedElsewhere`), while a worker's call and
   its orchestrator's are asked apart. A card is withdrawn if its PR merges or closes first.
+  The card says whether the PR comes from a fork or from a branch of the repository, and names
+  its head commit and base branch; the approval covers that change. A new push to a fork's head, a
+  retarget to another base or a head in another repository drops the intent, and nothing is
+  checked or merged until a new card approves again. A head that moves on a branch of the
+  repository itself stays covered, since only someone with write access can push there. An intent
+  approved before Gram recorded this merges only a PR GitHub says is not from a fork.
 - **Digests.** Worker reports, finished turns, errors, long-open requests and pull request changes
   wake the orchestrator with one digest built from the current ledger.
 - **Routines.** A workspace's [routines](#routines) start a fresh worker (or brief the orchestrator)
@@ -910,7 +916,9 @@ the alternative under the merge policy.
 ### How the gate runs
 
 `merge_when_ready` runs the check when a passing check is all a merge lacks; `local_check` starts
-it early for a worker's own bound PR. Gram fetches the pinned head and base into its own bare
+it early for a worker's own bound PR. Either runs it only on an open PR's head that is not from a
+fork and whose branch the thread holds, or on the exact head the user approved on the merge's card;
+otherwise no check starts and the thread is told why. Gram fetches the pinned head and base into its own bare
 repository (hashing objects again and ignoring agent-writable config, attributes, hooks,
 replace refs and grafts), merges them and creates a fresh checkout with an unpredictable name.
 A stored pass is specific to the project, command, setup, timeout, exact head and base, and

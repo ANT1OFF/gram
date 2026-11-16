@@ -201,11 +201,41 @@ export interface World {
         readonly identifies?: boolean;
         readonly worktrees: Map<
           string,
-          { readonly clone: string; readonly origin: string; readonly branch?: string }
+          {
+            readonly clone: string;
+            readonly origin: string;
+            readonly branch?: string;
+          }
         >;
       }
     | undefined;
 }
+
+/** A PR as `world.prHeads` describes it, into main: pending checks, reviews unread. */
+const headBadgeOf = (
+  world: World,
+  bound: { readonly repo: string; readonly number: number },
+): PrStatus | undefined => {
+  const head = world.prHeads.get(bound.number);
+  if (head === undefined) return undefined;
+  return {
+    number: bound.number,
+    state: head.state === "MERGED" || head.state === "CLOSED" ? head.state : "OPEN",
+    url: `https://${world.prHost ?? "github.com"}/${bound.repo}/pull/${bound.number}`,
+    title: "t",
+    isDraft: false,
+    checks: "pending",
+    headMatches: false,
+    aheadOfPr: false,
+    headRefOid: head.headRefOid ?? "h1",
+    baseRef: "main",
+    headRef: head.headRefName,
+    crossRepository: head.fork === true,
+    // An invented outside account's copy for a fork.
+    headRepo: head.fork === true ? `outsider/${bound.repo.split("/")[1]}` : bound.repo,
+    reviewUnread: true,
+  };
+};
 
 const prKey = (pr: { readonly repo: string; readonly number: number }) =>
   `${pr.repo.toLowerCase()}#${pr.number}`;
@@ -651,7 +681,12 @@ export const serverLayer = (
                         (badge) =>
                           badge?.number === bound.number &&
                           repoFromPrUrl(badge.url)?.toLowerCase() === bound.repo.toLowerCase(),
-                      ))
+                      )) ??
+                // Nothing published of it: what `gh pr view` says (`prHeads`), as GitHub would
+                // answer a cached read. A fresh read at a merge's launch never makes one up.
+                (bound === undefined || options?.fresh === true
+                  ? undefined
+                  : headBadgeOf(world, bound))
               );
             }).pipe(
               Effect.tap(() =>

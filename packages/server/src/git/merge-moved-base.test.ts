@@ -54,6 +54,8 @@ const badgeOf = (number: number, tip: string): PrStatus => ({
   baseTipOid: tip,
   baseRef: "main",
   headRef: `feat/${number}`,
+  crossRepository: false,
+  headRepo: "example/project",
   mergeState: "CLEAN",
 });
 
@@ -302,7 +304,18 @@ const scenario = <E, R>(
             repo: "example/project",
             number,
             monitor: true,
-            mergeWhenReady: { method: "squash", allowedBy: "user", setAt: index + 1 },
+            mergeWhenReady: {
+              method: "squash",
+              allowedBy: "user",
+              // The user approved this head, a branch of the repository itself, into main.
+              approved: {
+                head: headOf(number),
+                baseRef: "main",
+                headRepo: "example/project",
+                crossRepository: false,
+              },
+              setAt: index + 1,
+            },
           },
         }));
         threads.push(thread.id);
@@ -595,7 +608,17 @@ describe("armed merges on a base that moved", () => {
                     ...t,
                     boundPr: {
                       ...t.boundPr!,
-                      mergeWhenReady: { method: "squash", allowedBy: "user", setAt: 99 },
+                      mergeWhenReady: {
+                        method: "squash",
+                        allowedBy: "user",
+                        approved: {
+                          head: headOf(5),
+                          baseRef: "main",
+                          headRepo: "example/project",
+                          crossRepository: false,
+                        },
+                        setAt: 99,
+                      },
                     },
                   })),
                 ),

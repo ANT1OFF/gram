@@ -147,7 +147,10 @@ const soloPr = (world: World, configured = true) =>
               (
                 ledger as {
                   features: ReadonlyArray<{
-                    workers: ReadonlyArray<{ threadId: string; pr?: Record<string, unknown> }>;
+                    workers: ReadonlyArray<{
+                      threadId: string;
+                      pr?: Record<string, unknown>;
+                    }>;
                   }>;
                 }
               ).features
@@ -1434,7 +1437,7 @@ describe("merge_when_ready", () => {
       `clears a merge hold explicitly with ${JSON.stringify(hold)} without dropping dependencies`,
       () =>
         Effect.gen(function* () {
-          current.badge = badge();
+          current.badge = badge({ headRefOid: "h1" });
           current.fresh = undefined;
           gh.answer = () => ok;
           const store = yield* ThreadStore;
@@ -1462,6 +1465,8 @@ describe("merge_when_ready", () => {
 
   it.live.skipIf(!hasGit)("says whom a hold waits on, and keeps it with the hold", () =>
     Effect.gen(function* () {
+      current.badge = badge({ headRefOid: "h1" });
+      current.fresh = undefined;
       const store = yield* ThreadStore;
       const { thread, hosted } = yield* liveThread;
       const intent = () =>
@@ -1481,4 +1486,61 @@ describe("merge_when_ready", () => {
       expect(yield* intent()).not.toHaveProperty("holdWaitsOn");
     }).pipe(Effect.scoped, Effect.provide(MergeTestLayer)),
   );
+
+  describe("the change an approval covers", () => {
+    const FORK_HEAD = "f".repeat(40);
+    for (const fork of [true, false]) {
+      it.live.skipIf(!hasGit)(
+        `names ${fork ? "the fork" : "the repository's own branch"}, its head and base, and records them`,
+        () =>
+          Effect.gen(function* () {
+            current.badge = badge({
+              headRefOid: FORK_HEAD,
+              baseRef: "main",
+              crossRepository: fork,
+              ...(fork ? { headRepo: "outsider/web" } : {}),
+            });
+            current.fresh = undefined;
+            gh.answer = () => ok;
+            const store = yield* ThreadStore;
+            const { thread, hosted } = yield* liveThread;
+            yield* hosted("pr_bind").run({ repo: "acme/web", number: 7 });
+            const card = yield* hosted("merge_when_ready").describe!({
+              hold: "review",
+            });
+            expect(card).toContain(FORK_HEAD.slice(0, 7));
+            expect(card).toContain("into main");
+            expect(card).toContain(
+              fork ? "from the fork outsider/web" : "from a branch of the repository itself",
+            );
+            yield* hosted("merge_when_ready").run({ hold: "review" });
+            expect((yield* store.getThread(thread.id)).boundPr?.mergeWhenReady).toMatchObject({
+              allowedBy: "user",
+              approved: {
+                head: FORK_HEAD,
+                baseRef: "main",
+                headRepo: fork ? "outsider/web" : "acme/web",
+                crossRepository: fork,
+              },
+            });
+          }).pipe(Effect.scoped, Effect.provide(MergeTestLayer)),
+      );
+    }
+
+    it.live.skipIf(!hasGit)("refuses to approve a change GitHub didn't name", () =>
+      Effect.gen(function* () {
+        const { crossRepository: _unread, ...unsaid } = badge({
+          headRefOid: "h1",
+        });
+        current.badge = unsaid;
+        current.fresh = undefined;
+        const store = yield* ThreadStore;
+        const { thread, hosted } = yield* liveThread;
+        yield* hosted("pr_bind").run({ repo: "acme/web", number: 7 });
+        const refused = yield* hosted("merge_when_ready").run({}).pipe(Effect.flip);
+        expect(refused.message).toContain("whether its head is on a fork");
+        expect((yield* store.getThread(thread.id)).boundPr?.mergeWhenReady).toBeUndefined();
+      }).pipe(Effect.scoped, Effect.provide(MergeTestLayer)),
+    );
+  });
 });

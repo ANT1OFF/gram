@@ -12,6 +12,7 @@ import {
   reviewBotsOf,
   samePr,
   type BoundPr,
+  type MergeApprovedChange,
   type MergeIntent,
   type Thread,
   type ThreadId,
@@ -21,6 +22,7 @@ import {
   gitFailMsg,
   invalidatePrBadges,
   originOwnerRepo,
+  Pr,
   Proc,
   repoFromPrUrl,
   type ProcOutput,
@@ -53,6 +55,8 @@ import { GitRefresh } from "../git/platform.ts";
 import { checkSiteOf, LocalChecks } from "../git/local-checks.ts";
 import { MergeFreezes } from "../git/merge-freezes.ts";
 import {
+  approvableChange,
+  approvedChangeText,
   mergeBlocker,
   MergeWhenReady,
   parsePrRef,
@@ -185,6 +189,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const runMonitor = Option.getOrUndefined(yield* Effect.serviceOption(RunMonitor));
     const mergeWhenReady = Option.getOrUndefined(yield* Effect.serviceOption(MergeWhenReady));
+    const providerPr = Option.getOrUndefined(yield* Effect.serviceOption(Pr));
     const freezes = yield* MergeFreezes;
     /**
      * Refuses a merge, or GitHub's auto-merge, onto a frozen base: once armed, GitHub would merge
@@ -970,8 +975,36 @@ export const PrAppToolsLive = Layer.effectDiscard(
             });
           }
           if (input.enabled === false) yield* refuseOverHold(MERGE, caller, thread);
+          // What an approval of this call covers, read before its card so the card names it: the
+          // head, the base and the repository the head is in. Unreadable, no card goes up
+          // (`refuseInsteadOfAsking`) and no user approval is recorded (`handle`).
+          let change: MergeApprovedChange | undefined;
+          let changeUnknown: string | undefined;
+          if (input.enabled !== false) {
+            const published = yield* publisher.badgeFor(thread);
+            const read =
+              published !== undefined && isBadgeOf(published, { repo, number })
+                ? published
+                : providerPr === undefined
+                  ? undefined
+                  : yield* providerPr
+                      .status(yield* ghFolderOf(thread.checkout), {
+                        repo,
+                        number,
+                      })
+                      .pipe(Effect.orElseSucceed(() => undefined));
+            const covered = approvableChange(
+              repo,
+              read !== undefined && isBadgeOf(read, { repo, number }) ? read : undefined,
+            );
+            if ("unknown" in covered)
+              changeUnknown = `Gram couldn't read ${covered.unknown} for ${repo}#${number} from GitHub, and the merge's approval must name its head, its base and whether it is from a fork. Nobody was asked; call merge_when_ready again in a moment.`;
+            else change = covered.change;
+          }
           return {
             ...input,
+            change,
+            changeUnknown,
             method:
               input.method ??
               (thread.boundPr !== undefined && samePr(thread.boundPr, { repo, number })
@@ -1036,7 +1069,10 @@ export const PrAppToolsLive = Layer.effectDiscard(
           }
           return yield* workerOwnsPr(thread, pr.repo, pr.number);
         }).pipe(Effect.catchCause(() => Effect.succeed(false))),
-      describe: (caller, { thread, pr, enabled = true, method, afterRefs, hold, clearHold }) =>
+      describe: (
+        caller,
+        { thread, pr, enabled = true, method, afterRefs, hold, clearHold, change },
+      ) =>
         Effect.gen(function* () {
           if (!enabled) return `Stop merging ${prName(pr)} when it is ready`;
           const policy = yield* reviewPolicyFor(thread, pr.repo);
@@ -1044,14 +1080,22 @@ export const PrAppToolsLive = Layer.effectDiscard(
             policy === "solo"
               ? "fresh CI passes, or Gram's own full check of it merged onto its base passes, and GitHub allows it"
               : "it is approved on its head, green and clean";
-          return `Merge ${prName(pr)} (${method ?? thread.boundPr?.mergeWhenReady?.method ?? "squash"}) once ${condition}${afterRefs.length === 0 ? "" : `, after ${afterRefs.map(prName).join(", ")}`}${clearHold ? ", no hold" : hold === undefined ? "" : `, held: ${hold}`}${thread.id === caller ? "" : `, on “${thread.title}”`}`;
+          // A fork's code is checked on this machine only for the head approved here.
+          const scope =
+            change === undefined
+              ? ""
+              : ` ${approvedChangeText(change)}${change.crossRepository ? `; a new push to the fork or another base needs a new approval${policy === "solo" ? ", and Gram's own check runs this head's code on this machine" : ""}` : "; another base needs a new approval"},`;
+          return `Merge ${prName(pr)} (${method ?? thread.boundPr?.mergeWhenReady?.method ?? "squash"})${scope} once ${condition}${afterRefs.length === 0 ? "" : `, after ${afterRefs.map(prName).join(", ")}`}${clearHold ? ", no hold" : hold === undefined ? "" : `, held: ${hold}`}${thread.id === caller ? "" : `, on “${thread.title}”`}`;
         }),
       // Ownership doubts refuse even over a hold. With ownership verified, the orchestrator's
       // hold still asks its worker; an ended PR needs no card at any autonomy.
-      refuseInsteadOfAsking: (caller, { thread, pr, enabled = true }) =>
+      refuseInsteadOfAsking: (caller, { thread, pr, enabled = true, changeUnknown }) =>
         !enabled
           ? Effect.succeed(undefined)
-          : refusalForAgent(caller, thread, pr, MERGE, "merges it once its checks pass", true),
+          : refusalForAgent(caller, thread, pr, MERGE, "merges it once its checks pass", true).pipe(
+              // A card that can't name the head and base it approves isn't raised.
+              Effect.map((refusal) => refusal ?? changeUnknown),
+            ),
       // A merge card is one caller's decision: who calls decides who holds the merge (`heldBy`),
       // whether a worker's call is `locked` under its orchestrator's hold, and whether the approval
       // carries the orchestrator's `userAuthorization`. So only the same caller's identical call
@@ -1059,7 +1103,18 @@ export const PrAppToolsLive = Layer.effectDiscard(
       // when its PR merges or closes.
       sharedCard: (
         caller,
-        { thread, pr, enabled = true, method, afterRefs, hold, holdWaitsOn, release, clearHold },
+        {
+          thread,
+          pr,
+          enabled = true,
+          method,
+          afterRefs,
+          hold,
+          holdWaitsOn,
+          release,
+          clearHold,
+          change,
+        },
       ) =>
         Effect.succeed({
           key: JSON.stringify([
@@ -1074,6 +1129,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
             holdWaitsOn ?? null,
             release === true,
             clearHold,
+            // A card names its head and base: another change is another decision.
+            change ?? null,
           ]),
           moot: mergeCardEnded(thread.id, pr),
         }),
@@ -1090,6 +1147,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
           release,
           clearHold,
           reuseApproval,
+          change,
+          changeUnknown,
         },
         call,
       ) =>
@@ -1106,6 +1165,16 @@ export const PrAppToolsLive = Layer.effectDiscard(
           // waived for this very PR as things stand now, not for whatever was bound when it asked.
           const reusing = call.carded === false && reuseApproval !== undefined;
           const allowedBy = call.carded === false && !reusing ? "autonomy" : "user";
+          // A user's approval covers the change its card named, and only that (`approvalLapse`). A
+          // reused one keeps the change of the approval it reuses.
+          const approved = reusing ? reuseApproval.approved : change;
+          if (enabled && allowedBy === "user" && !reusing && approved === undefined)
+            return yield* new AppToolError({
+              tool: MERGE,
+              message:
+                changeUnknown ??
+                "Gram couldn't name the head and base this approval covers; call merge_when_ready again.",
+            });
           const reuseWorkspace =
             reusing && latest.workspaceId !== undefined
               ? yield* store.getWorkspace(latest.workspaceId)
@@ -1271,6 +1340,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
                         locked || byOrchestrator ? ("orchestrator" as const) : ("thread" as const),
                     }),
                 allowedBy,
+                ...(allowedBy === "user" && approved !== undefined ? { approved } : {}),
                 ...(reusing
                   ? {
                       userAuthorization: {

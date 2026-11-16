@@ -34,6 +34,7 @@ const workerBadge = (ready: boolean): PrStatus =>
     url: "https://github.com/acme/app/pull/12",
     headRefOid: "h1",
     baseRef: "main",
+    crossRepository: false,
     ...(ready
       ? {
           checks: "passing",

@@ -26,6 +26,7 @@ import {
   type LocalCheckPass,
   type ReviewBot,
   type GitState,
+  type MergeApprovedChange,
   type MergeIntent,
   type PrStatus,
   type Thread,
@@ -136,6 +137,102 @@ export const mergeBlocker = (
         : "not fresh, green (or locally checked on its head) and allowed by GitHub yet";
   return undefined;
 };
+
+/** Whether two `owner/name`s are one repository, as GitHub compares them: ignoring case. */
+const sameRepoName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+/**
+ * The change a user approval of `badge`'s PR covers, as its card names it and its intent records it
+ * (`MergeIntent.approved`): the head commit, the base branch and the repository the head lives in.
+ * `unknown` says which of them GitHub didn't give, and then nothing can be approved.
+ */
+export const approvableChange = (
+  repo: string,
+  badge: PrStatus | undefined,
+): { readonly change: MergeApprovedChange } | { readonly unknown: string } => {
+  if (badge === undefined) return { unknown: "its state" };
+  if (badge.headRefOid === undefined) return { unknown: "its head commit" };
+  if (badge.baseRef === undefined) return { unknown: "its base branch" };
+  if (badge.crossRepository === undefined) return { unknown: "whether its head is on a fork" };
+  // Not cross-repository is GitHub's word that the head branch is in the base repository itself.
+  const headRepo = badge.crossRepository ? badge.headRepo : (badge.headRepo ?? repo);
+  if (headRepo === undefined) return { unknown: "which repository its head is on" };
+  return {
+    change: {
+      head: badge.headRefOid,
+      baseRef: badge.baseRef,
+      headRepo,
+      crossRepository: badge.crossRepository,
+    },
+  };
+};
+
+/** The approved change in words, for its card: fork or not, and its head and base. */
+export const approvedChangeText = (change: MergeApprovedChange) =>
+  change.crossRepository
+    ? `from the fork ${change.headRepo} (not this repository), head ${change.head.slice(0, 7)}, into ${change.baseRef}`
+    : `from a branch of the repository itself, head ${change.head.slice(0, 7)}, into ${change.baseRef}`;
+
+/**
+ * Whether a user's approval in `intent` still covers what `badge` shows of the PR in `repo`:
+ * `undefined` when it does (or the intent isn't a user's), `drop` when the PR became another change
+ * than the card named, `wait` when GitHub didn't say enough to tell.
+ *
+ * A head that moves on a fork is a new change: whoever controls the fork pushed it, and only a new
+ * card covers it. A head that moves on a branch of the repository itself stays covered: only
+ * someone with write access to the repository can push there, and they could merge it themselves;
+ * the merge is still pinned to the head that passed the gate, and Gram's own check still runs only
+ * a head the thread holds or the user approved (`checkProvenance`). A new base branch, or a head
+ * now in another repository, is never what was approved. An intent stored before approvals
+ * recorded their change merges only a PR GitHub says is not from a fork, and follows no retarget.
+ */
+export const approvalLapse = (
+  intent: MergeIntent,
+  badge: PrStatus,
+  repo: string,
+): { readonly drop: string } | { readonly wait: string } | undefined => {
+  if (intent.allowedBy !== "user") return undefined;
+  const approved = intent.approved;
+  if (approved === undefined) {
+    if (badge.crossRepository === false) return undefined;
+    if (badge.crossRepository === true)
+      return {
+        drop: `its head is on a fork${badge.headRepo === undefined ? "" : `, ${badge.headRepo}`}, and the approval was given before Gram recorded which head and base an approval covers`,
+      };
+    return { wait: "GitHub hasn't said whether its head is on a fork" };
+  }
+  if (badge.baseRef === undefined) return { wait: "GitHub hasn't said its base branch" };
+  if (badge.baseRef !== approved.baseRef)
+    return {
+      drop: `its base changed from ${approved.baseRef} to ${badge.baseRef} after the approval`,
+    };
+  if (badge.crossRepository === undefined)
+    return { wait: "GitHub hasn't said whether its head is on a fork" };
+  if (badge.crossRepository !== approved.crossRepository)
+    return {
+      drop: badge.crossRepository
+        ? "its head is on a fork now, and the approval was for a branch of the repository itself"
+        : "its head is no longer on the fork the approval named",
+    };
+  const headRepo = badge.headRepo ?? (badge.crossRepository ? undefined : repo);
+  if (headRepo === undefined) return { wait: "GitHub hasn't said which repository its head is on" };
+  if (!sameRepoName(headRepo, approved.headRepo))
+    return {
+      drop: `its head is in ${headRepo} now, and the approval named ${approved.headRepo}`,
+    };
+  if (approved.crossRepository) {
+    if (badge.headRefOid === undefined) return { wait: "its head isn't known yet" };
+    if (badge.headRefOid !== approved.head)
+      return {
+        drop: `the fork ${approved.headRepo} moved its head to ${badge.headRefOid.slice(0, 7)} after the approval of ${approved.head.slice(0, 7)}`,
+      };
+  }
+  return undefined;
+};
+
+/** What the thread is told when its approval no longer covers the PR. */
+const approvalDroppedText = (bound: Pick<BoundPr, "repo" | "number">, why: string) =>
+  `merge_when_ready on ${prName(bound)} was dropped: ${why}. Nothing more is checked or merged on that approval. Ask for it again if it should still merge: the user approves the new head and base on a new card.`;
 
 /**
  * Why a solo merge whose local gate is off (`localGate`, "no local check configured for …") can't go
@@ -663,6 +760,63 @@ export const MergeWhenReadyLive = Layer.effect(
         );
 
     /**
+     * The one gate in front of `LocalChecks.ensure`, which runs the repository's own commands on a
+     * machine of the user's, unsandboxed: why Gram may not check `head` of the PR `badge` shows, or
+     * `undefined` when it may. It may when the PR is open and either the user approved exactly this
+     * head (`intent.approved`, an approval that still covers the PR), or the PR is not from a fork and
+     * its head branch is one the thread holds (`workerPrBlocker`, which reads GitHub afresh). A
+     * badge that says fork is refused before any read.
+     */
+    const checkProvenance = (
+      thread: Thread,
+      bound: BoundPr,
+      intent: MergeIntent | undefined,
+      badge: PrStatus,
+      head: string,
+    ): Effect.Effect<string | undefined> =>
+      Effect.gen(function* () {
+        if (badge.state !== "OPEN") return `${prName(bound)} is ${badge.state.toLowerCase()}`;
+        if (badge.headRefOid !== head)
+          return `${prName(bound)}'s head is no longer ${head.slice(0, 7)}`;
+        if (
+          intent?.allowedBy === "user" &&
+          intent.approved?.head === head &&
+          approvalLapse(intent, badge, bound.repo) === undefined
+        )
+          return undefined;
+        const ownership =
+          badge.crossRepository === true
+            ? OWNERSHIP_BLOCKERS.fork
+            : yield* workerPrBlocker(thread, bound.repo, bound.number, head).pipe(
+                Effect.provideService(ThreadStore, store),
+                Effect.provideService(Proc, proc),
+                withMachines(machines),
+                Effect.orElseSucceed(() => OWNERSHIP_BLOCKERS.unverified),
+              );
+        if (ownership === undefined) return undefined;
+        const { reason, fix, unblocks } = explainOwnershipBlocker(ownership);
+        return `${prName(bound)} isn't this worker's own pull request: ${reason}${unblocks ? `. ${fix.replace(/\.$/, "")}` : ""}`;
+      });
+
+    /** Heads whose check `checkProvenance` refused, per thread, so the thread is told once each. */
+    const provenanceTold = new Set<string>();
+
+    /** Drops a user's approval that no longer covers the PR (`approvalLapse`), and says why. */
+    const dropApproval = (
+      thread: Thread,
+      bound: BoundPr,
+      intent: MergeIntent,
+      why: string,
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        yield* setIntent(thread.id, bound, () => undefined, intent.setAt);
+        yield* Effect.logInfo("merge_when_ready approval lapsed").pipe(
+          Effect.annotateLogs({ threadId: thread.id, pr: prName(bound), why }),
+        );
+        yield* tell(thread, bound, approvalDroppedText(bound, why));
+      });
+
+    /**
      * Keeps on the PR what its armed merge waits for (`undefined`: nothing), since which the wait is
      * dated. When `loud`, one that outlasts a few rechecks is logged and told to the thread, once.
      */
@@ -952,9 +1106,30 @@ export const MergeWhenReadyLive = Layer.effect(
                       fresh.headRefOid !== head
                     )
                       return undefined;
+                    // What GitHub says now must still be the change the user approved: a fork's new
+                    // head, a retarget or another head repository launches nothing.
+                    const lapsed = approvalLapse(standingIntent, fresh, bound.repo);
+                    if (lapsed !== undefined) return { lapsed } as const;
                     // Another base branch than the lock's (a retarget, or a badge that didn't name it):
-                    // the launch goes through that branch's lock instead.
-                    if (fresh.baseRef !== baseRef) return { retarget: fresh.baseRef } as const;
+                    // the launch goes through that branch's lock instead. Never for a user's approval
+                    // that recorded no base: what it was given for can't be told apart from this one.
+                    if (fresh.baseRef !== baseRef) {
+                      if (
+                        standingIntent.allowedBy === "user" &&
+                        standingIntent.approved === undefined
+                      )
+                        return {
+                          lapsed:
+                            baseRef === undefined
+                              ? ({
+                                  wait: "GitHub hasn't said its base branch",
+                                } as const)
+                              : ({
+                                  drop: `its base changed from ${baseRef} to ${fresh.baseRef ?? "an unnamed branch"} while Gram looked`,
+                                } as const),
+                        } as const;
+                      return { retarget: fresh.baseRef } as const;
+                    }
                     const settled = yield* settle(key, ghCwd);
                     if (settled === "merged") foundMerged = true;
                     else if (settled !== undefined) return { unsettled: settled.pr } as const;
@@ -1280,6 +1455,10 @@ export const MergeWhenReadyLive = Layer.effect(
           return yield* recheck.pipe(Effect.andThen(Effect.suspend(() => attempt(threadId, head))));
         }
         if ("frozen" in launched) return yield* noteWait(thread.value, bound, launched.frozen);
+        if ("lapsed" in launched)
+          return "drop" in launched.lapsed
+            ? yield* dropApproval(thread.value, bound, intent, launched.lapsed.drop)
+            : yield* noteWait(thread.value, bound, launched.lapsed.wait, true);
         if ("recheck" in launched) {
           // Its badge still names the old base until the publisher reads the new one.
           yield* refreshes.request(cwd, true, { expectChange: true });
@@ -1548,6 +1727,31 @@ export const MergeWhenReadyLive = Layer.effect(
         // Read before the turn is taken, so nothing stands between taking it and the check that
         // hands it on.
         const dir = yield* checkSiteFor(thread, repoDirOf(thread));
+        // No check configured: nothing would run, and there is nothing to refuse.
+        if ((yield* localChecks.configuration(dir, thread.projectId)).config === undefined)
+          return undefined;
+        const refused = yield* checkProvenance(thread, bound, intent, badge, head);
+        if (refused !== undefined) {
+          const told = `${thread.id}\u0000${head}`;
+          if (!provenanceTold.has(told)) {
+            provenanceTold.add(told);
+            yield* Effect.logInfo("merge_when_ready local check refused").pipe(
+              Effect.annotateLogs({
+                threadId: thread.id,
+                pr: prName(bound),
+                head,
+                why: refused,
+              }),
+            );
+            yield* tell(
+              thread,
+              bound,
+              `Gram didn't start its own check of ${prName(bound)} at ${head.slice(0, 7)}: ${refused}. It runs a pull request's code on this machine only for an open PR whose head branch this thread holds, not a fork's, or for the exact head the user approved. merge_when_ready stays armed and waits for CI and GitHub's rules instead.`,
+              "local-check",
+            );
+          }
+          return `Gram's own check wasn't started: ${refused}`;
+        }
         const claim = yield* claimTurn(key, thread.id, bound, listener);
         if (claim === "running") return undefined;
         if (claim !== "claimed") return claim.waits;
@@ -1608,6 +1812,14 @@ export const MergeWhenReadyLive = Layer.effect(
               `merge_when_ready on ${prName(bound)} was dropped: the pull request is closed.`,
             );
           return;
+        }
+        // The PR is no longer the change the user approved: nothing is checked or merged on it.
+        const lapsed = approvalLapse(intent, badge, bound.repo);
+        if (lapsed !== undefined) {
+          yield* stop(thread.id);
+          return "drop" in lapsed
+            ? yield* dropApproval(thread, bound, intent, lapsed.drop)
+            : yield* noteWait(thread, bound, lapsed.wait, true);
         }
         const head = badge.headRefOid;
         // Frozen: it waits, saying who froze the base and why, and the freeze's end looks again.
@@ -1758,20 +1970,19 @@ export const MergeWhenReadyLive = Layer.effect(
         const head = badge.headRefOid;
         const base = currentBaseOf(badge);
         if (head === undefined || base === undefined)
-          return { refused: `GitHub didn't give ${prName(bound)}'s head and base commits` };
-        // Its own PR alone: never a fork's or another branch's code on this machine.
-        const ownership = yield* workerPrBlocker(thread.value, bound.repo, bound.number, head).pipe(
-          Effect.provideService(ThreadStore, store),
-          Effect.provideService(Proc, proc),
-          withMachines(machines),
-          Effect.orElseSucceed(() => OWNERSHIP_BLOCKERS.unverified),
-        );
-        if (ownership !== undefined) {
-          const { reason, fix, unblocks } = explainOwnershipBlocker(ownership);
           return {
-            refused: `${prName(bound)} isn't this worker's own pull request: ${reason}${unblocks ? `. ${fix.replace(/\.$/, "")}` : ""}`,
+            refused: `GitHub didn't give ${prName(bound)}'s head and base commits`,
           };
-        }
+        // Its own PR, or the exact head the user approved: never a fork's or another branch's code
+        // on this machine otherwise.
+        const provenance = yield* checkProvenance(
+          thread.value,
+          bound,
+          bound.mergeWhenReady,
+          badge,
+          head,
+        );
+        if (provenance !== undefined) return { refused: provenance };
         const site = yield* checkSiteFor(thread.value, Effect.succeed(cwd));
         const configuration = yield* localChecks.configuration(site, thread.value.projectId);
         if (configuration.config === undefined) return { refused: configuration.reason };

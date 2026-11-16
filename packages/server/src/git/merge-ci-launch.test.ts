@@ -32,7 +32,10 @@ const published: PrStatus = {
   aheadOfPr: false,
   headRefOid: HEAD,
   baseRefOid: base,
+  baseRef: "main",
   headRef: "feat/topic",
+  crossRepository: false,
+  headRepo: "example/project",
   mergeState: "CLEAN",
 };
 const policy = {
@@ -274,6 +277,8 @@ describe("actual merge launch with GitHub CI evidence", () => {
                         headRefOid: HEAD,
                         baseRefOid: base,
                         baseRef: { target: { oid: base } },
+                        isCrossRepository: false,
+                        headRepository: { nameWithOwner: "example/project" },
                         mergeStateStatus: "CLEAN",
                         commits: {
                           nodes: [

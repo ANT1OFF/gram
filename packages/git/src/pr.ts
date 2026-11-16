@@ -416,6 +416,22 @@ export const buildPrStatus = (
     gitIsAncestor(inputs.workTree, inputs.localTip),
   ).pipe(Effect.map((chosen) => (chosen ? toPrStatus(chosen.pr, chosen, bots) : undefined)));
 
+/**
+ * The head branch's repository as `owner/name`: GraphQL's `headRepository{nameWithOwner}`, or the
+ * REST shape's `headRepository{name}` with `headRepositoryOwner{login}`. Undefined when unread or
+ * the fork is gone.
+ */
+const headRepoOf = (p: Json): string | undefined => {
+  const repo = p["headRepository"];
+  if (!isJson(repo)) return undefined;
+  const full = str(repo, "nameWithOwner");
+  if (full !== "") return full;
+  const owner = p["headRepositoryOwner"];
+  const name = str(repo, "name");
+  const ownerLogin = isJson(owner) ? str(owner, "login") : "";
+  return name === "" || ownerLogin === "" ? undefined : `${ownerLogin}/${name}`;
+};
+
 /** One PR in the `gh pr list --json` shape as the badge, anchored as `anchoring` says. */
 const toPrStatus = (
   p: Json,
@@ -425,6 +441,9 @@ const toPrStatus = (
   const optional = {
     baseRef: optionalStr(p, "baseRefName"),
     headRef: optionalStr(p, "headRefName"),
+    crossRepository:
+      typeof p["isCrossRepository"] === "boolean" ? p["isCrossRepository"] : undefined,
+    headRepo: headRepoOf(p),
     author: login(p) || undefined,
     additions: optionalCount(p, "additions"),
     deletions: optionalCount(p, "deletions"),
@@ -561,7 +580,8 @@ const REVIEW_REQUESTS_GQL_FIELD =
  * these unless a review monitor is on it.
  */
 const badgeGqlFields = (number: string) =>
-  "number state url isDraft headRefOid baseRefOid baseRef{target{oid}} title baseRefName headRefName author{login} additions " +
+  "number state url isDraft headRefOid baseRefOid baseRef{target{oid}} title baseRefName headRefName " +
+  "isCrossRepository headRepository{nameWithOwner} author{login} additions " +
   "deletions changedFiles updatedAt mergeStateStatus reviewDecision " +
   REVIEW_REQUESTS_GQL_FIELD +
   rollupGqlField(number);
@@ -649,6 +669,8 @@ const reshapeBadgeNode = (node: Json): Json => ({
   title: node["title"],
   baseRefName: node["baseRefName"],
   headRefName: node["headRefName"],
+  isCrossRepository: node["isCrossRepository"],
+  headRepository: node["headRepository"],
   author: node["author"],
   additions: node["additions"],
   deletions: node["deletions"],
@@ -767,7 +789,7 @@ const runBlocks = (
   });
 
 const REST_PR_FIELDS =
-  "number,state,url,isDraft,headRefOid,baseRefOid,title,statusCheckRollup,baseRefName,headRefName,author,additions,deletions,changedFiles,updatedAt,reviewDecision,reviewRequests";
+  "number,state,url,isDraft,headRefOid,baseRefOid,title,statusCheckRollup,baseRefName,headRefName,isCrossRepository,headRepository,headRepositoryOwner,author,additions,deletions,changedFiles,updatedAt,reviewDecision,reviewRequests";
 
 const restPrList = (inputs: PrInputs): Effect.Effect<ReadonlyArray<Json>, PrLookupError, Proc> =>
   gh(inputs.workTree, [
