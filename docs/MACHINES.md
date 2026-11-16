@@ -522,7 +522,8 @@ the local app, as the other `/machines/*` routes are.
   on another disk has its folders only once the resume has made them again. `"remote"` names where
   the hidden refs are fetched from; left out, it is where the stop pushed them. `"kept"` gives
   the stop's `kept` back, as it was answered: see [what a resume is held to](#what-a-resume-is-held-to).
-  Folders are made again a few at a time.
+  Folders are made again a few at a time, threads sharing one in turn; one found there by then
+  (made by a resume beside it) counts as there, not missing.
 - `POST /machines/stop/expect` says a machine is being started on another disk: `{ "id" }`. Once
   it dials in, it waits for its resume as above, though this Gram saw no stop of it (it was
   restarted since, or the machine was stopped some other way). Call it before the host starts; it
