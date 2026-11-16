@@ -83,6 +83,7 @@ import { useSwitchOffer } from "@/thread/use-switch-offer";
 
 import { AttachmentChips } from "./attachment-chips";
 import { ContextRing } from "./context-ring";
+import { aboveComposer } from "./above-composer";
 import { onModelPickerAsked } from "./model-picker-request";
 import { PendingRestart } from "./pending-restart";
 import { DiffCommentChips } from "./diff-comment-chips";
@@ -1586,6 +1587,7 @@ function DeliveryButton({
 }) {
   const word = DELIVERY_WORDS[mode];
   const filled = hasDraft && canSend;
+  const chevron = useRef<HTMLButtonElement>(null);
   const part = cn(
     "inline-flex h-full items-center outline-none select-none focus-visible:focus-ring disabled:cursor-default",
     PHONE_HIT,
@@ -1597,7 +1599,8 @@ function DeliveryButton({
       data-mode={mode}
       data-filled={filled ? "" : undefined}
       className={cn(
-        "inline-flex h-8 shrink-0 items-stretch overflow-hidden rounded-full border text-meta font-medium transition-[background-color,color,border-color] phone:h-11",
+        // No clipping here: each part rounds its own outer end, so a focus ring shows whole.
+        "inline-flex h-8 shrink-0 items-stretch rounded-full border text-meta font-medium transition-[background-color,color,border-color] phone:h-11",
         filled
           ? "border-transparent bg-primary text-primary-foreground shadow-raised shadow-primary/24"
           : "border-edge text-foreground",
@@ -1611,7 +1614,7 @@ function DeliveryButton({
             aria-label={label.aria}
             aria-disabled={hasDraft ? undefined : true}
             disabled={hasDraft && !canSend}
-            className={cn(part, "gap-1.5 pr-1.5 pl-2.5")}
+            className={cn(part, "gap-1.5 rounded-l-full pr-1.5 pl-2.5")}
             onClick={onClick}
           />
         }
@@ -1629,23 +1632,26 @@ function DeliveryButton({
       />
       <Menu.Root>
         <Hint
-          label={`Steer, queue or interrupt: ${lowerFirst(lines[mode])}`}
+          label="Steer, Queue or Interrupt"
           render={
             <Menu.Trigger
+              ref={chevron}
               data-testid="delivery-menu"
               data-picked={mode}
               aria-label={`${word}. Steer, queue or interrupt`}
-              className={cn(part, "pr-2 pl-1", !filled && "text-muted-foreground")}
+              className={cn(part, "rounded-r-full pr-2 pl-1", !filled && "text-muted-foreground")}
             />
           }
         >
           <ChevronDown aria-hidden className="size-icon-chip" />
         </Hint>
         <Menu.Portal>
+          {/* Above the whole composer, as the choices popover is, so it never covers the draft. */}
           <Menu.Positioner
             side="top"
             align="end"
-            sideOffset={6}
+            sideOffset={4}
+            anchor={() => aboveComposer(chevron.current)}
             className="isolate z-50 outline-none"
           >
             <Menu.Popup

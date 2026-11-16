@@ -23,6 +23,7 @@ import type {
   ReopenedClosedThread,
   PanelKind,
   TerminalProcess,
+  AgentCapabilities,
   AgentModel,
   ModelRef,
   PendingRequest,
@@ -1478,6 +1479,22 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   /** `simulateLastActivity` (`mock-thread-sims.ts`). */
   simulateLastActivity(threadId: ThreadId, at: number) {
     return simulateLastActivity(this.#scenes, threadId, at);
+  }
+
+  /**
+   * Dev and e2e hook: what the thread's agent can do, as a fresh session reports it, e.g. an agent
+   * that takes no input mid-turn (`steer: false`). Sent as the snapshot a reconnect would carry.
+   */
+  simulateCapabilities(threadId: ThreadId, capabilities: Partial<AgentCapabilities>) {
+    const runtime = this.#runtime(threadId);
+    runtime.summary = {
+      ...runtime.summary,
+      capabilities: { ...runtime.summary.capabilities, ...capabilities } as AgentCapabilities,
+    };
+    this.#emit({
+      type: "threads.snapshot",
+      threads: [...this.#threads.values()].map((r) => r.summary),
+    });
   }
 
   /** `simulateTurnPlan` (`mock-thread-sims.ts`). */

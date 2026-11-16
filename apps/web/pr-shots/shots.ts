@@ -778,6 +778,140 @@ async function openRunningComposer(page: Page) {
 
 const composerSurface = (page: Page) => page.locator('[data-surface="composer"]');
 
+/**
+ * The composer's send controls in each state a turn can be in, for the visual check of the
+ * delivery button and Stop: at rest, running, at a card, an agent that can't steer, menus, hover,
+ * keyboard focus and a phone's width.
+ */
+const typed = (page: Page, text = "and update the changelog too") =>
+  page.getByLabel("Message", { exact: true }).fill(text);
+const openDelivery = async (page: Page) => {
+  await page.getByTestId("delivery-menu").click();
+  await page.getByTestId("delivery-interrupt").waitFor();
+  await page.waitForTimeout(300);
+};
+const atPhone = async (page: Page) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+};
+const capabilities = (page: Page, caps: Record<string, boolean>) =>
+  page.evaluate((c) => window.gramMock!.simulateCapabilities("t-flaky" as never, c), caps);
+const STEER_STATE_SHOTS: readonly Shot[] = [
+  {
+    name: "steer-idle",
+    title: "At rest, a draft typed: the round Send alone",
+    open: async (page) => {
+      await page.goto("/t/t-release");
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await typed(page, "Is rc5 ready to soak?");
+    },
+    element: (page) => page.locator('[data-surface="composer"]'),
+  },
+  {
+    name: "steer-running-hover",
+    title: "Running, a draft: the delivery button's hint on hover",
+    open: async (page) => {
+      await openRunningComposer(page);
+      await typed(page);
+      await page.getByRole("button", { name: "Steer", exact: true }).hover();
+      await page.locator('[data-slot="tooltip-content"]').waitFor();
+    },
+  },
+  {
+    name: "steer-running-chevron-hover",
+    title: "Running, nothing typed: the chevron's hint on hover",
+    open: async (page) => {
+      await openRunningComposer(page);
+      await page.getByTestId("delivery-menu").hover();
+      await page.locator('[data-slot="tooltip-content"]').waitFor();
+    },
+  },
+  {
+    name: "steer-running-focus",
+    title: "Running, a draft: keyboard focus on the delivery button's face, then its chevron",
+    open: async (page) => {
+      await openRunningComposer(page);
+      await typed(page);
+      await page.getByTestId("delivery-menu").focus();
+      await page.keyboard.press("Shift+Tab");
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.locator('[data-surface="composer"]'),
+  },
+  {
+    name: "steer-running-menu",
+    title: "Running: the delivery menu, Steer picked",
+    open: async (page) => {
+      await openRunningComposer(page);
+      await typed(page);
+      await openDelivery(page);
+    },
+  },
+  {
+    name: "steer-question",
+    title: "At a question card, a draft typed",
+    open: async (page) => {
+      await page.goto("/t/t-question");
+      await page.getByTestId("delivery-button").waitFor();
+      await typed(page, "Prefer the smaller one");
+      await openDelivery(page);
+    },
+  },
+  {
+    name: "steer-no-steer",
+    title: "An agent that takes no input mid-turn: Queue, Steer and Interrupt greyed with why",
+    open: async (page) => {
+      await openRunningComposer(page);
+      await capabilities(page, { steer: false, steerInterrupt: false });
+      await page.getByTestId("delivery-button").and(page.locator('[data-mode="queue"]')).waitFor();
+      await typed(page);
+      await openDelivery(page);
+    },
+  },
+  {
+    name: "steer-codex-interrupt",
+    title: "An agent that can't stop for a message (Codex): Interrupt says it steers in",
+    open: async (page) => {
+      await openRunningComposer(page);
+      await capabilities(page, { steerInterrupt: false });
+      await typed(page);
+      await openDelivery(page);
+    },
+  },
+  {
+    name: "steer-phone",
+    title: "At a phone's width, running with a draft",
+    open: async (page) => {
+      await atPhone(page);
+      await openRunningComposer(page);
+      await typed(page);
+    },
+  },
+  {
+    name: "steer-phone-menu",
+    title: "At a phone's width, the delivery menu open at a card",
+    open: async (page) => {
+      await atPhone(page);
+      await openFlakyAtApproval(page);
+      await typed(page);
+      await openDelivery(page);
+    },
+  },
+  {
+    name: "steer-narrow",
+    title: "A 260 px composer, running with a draft",
+    open: async (page) => {
+      await openRunningComposer(page);
+      await page.locator('[data-surface="composer"]').evaluate((el) => {
+        el.style.maxWidth = "260px";
+      });
+      await typed(page);
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.locator('[data-surface="composer"]'),
+  },
+];
+
 /** t-flaky stopped at its approval, with what the turn has done so far above it. */
 async function openFlakyAtApproval(page: Page) {
   await page.goto("/t/t-flaky");
@@ -2897,6 +3031,7 @@ export const SHOTS: readonly Shot[] = [
       await page.waitForTimeout(300);
     },
   },
+  ...STEER_STATE_SHOTS,
   {
     name: "send-button-menu",
     title: "The send button's right-click menu during a turn, with a draft",
