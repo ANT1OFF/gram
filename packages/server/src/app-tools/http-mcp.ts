@@ -12,7 +12,7 @@ import {
   type Tool,
   type RequestId,
 } from "@modelcontextprotocol/sdk/types.js";
-import { appToolResultContent, type AppTool } from "@gram/agents";
+import { appToolAnnotations, appToolResultContent, type AppTool } from "@gram/agents";
 import { CORE_APP_TOOLS } from "@gram/agents/claude";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -77,6 +77,7 @@ export const makeMcpServer = (tools: () => ReadonlyArray<AppTool>, calls?: McpCa
       name: tool.descriptor.name,
       description: tool.descriptor.description,
       inputSchema: toolInputSchema(tool),
+      annotations: appToolAnnotations(tool.descriptor.class),
       // Claude Code loads these up front rather than behind its tool search, as it does the same
       // tools served in-process; other agents ignore the hint.
       ...(CORE_APP_TOOLS.has(tool.descriptor.name)

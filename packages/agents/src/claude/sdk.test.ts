@@ -66,6 +66,8 @@ describe("the app tool server on the installed SDK", () => {
 
     const [listed] = (await client.listTools()).tools;
     expect(listed?.inputSchema.properties).toHaveProperty("number");
+    // The class reaches the SDK's server as MCP annotations: outward reaches past the app.
+    expect(listed?.annotations).toMatchObject({ readOnlyHint: false, openWorldHint: true });
     await client.callTool({ name: "merge", arguments: { pr: 13 } });
     await client.callTool({ name: "merge", arguments: { number: 13 } });
     expect(seen).toEqual([{ pr: 13 }, { number: 13 }]);

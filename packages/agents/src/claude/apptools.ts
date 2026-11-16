@@ -8,7 +8,7 @@ import type { ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as z from "zod";
-import { appToolResultContent } from "../app-tools.ts";
+import { appToolAnnotations, appToolResultContent } from "../app-tools.ts";
 import type { AppTool, AppToolRegistryPort, RemoteAppTools, ToolAudience } from "../host.ts";
 
 export const APP_TOOL_SERVER = "gram";
@@ -122,7 +122,10 @@ export const buildAppToolServer = (
             signal === undefined ? undefined : { signal },
           );
         },
-        { alwaysLoad: CORE_APP_TOOLS.has(appTool.descriptor.name) },
+        {
+          alwaysLoad: CORE_APP_TOOLS.has(appTool.descriptor.name),
+          annotations: appToolAnnotations(appTool.descriptor.class),
+        },
       ),
     ),
   });
@@ -157,7 +160,10 @@ export const buildRemoteAppToolServer = (
             .catch((error: unknown) =>
               textResult(error instanceof Error ? error.message : String(error), true),
             ),
-        { alwaysLoad: listed.alwaysLoad },
+        {
+          alwaysLoad: listed.alwaysLoad,
+          ...(listed.annotations === undefined ? {} : { annotations: listed.annotations }),
+        },
       );
     }),
   });

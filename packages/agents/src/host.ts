@@ -219,6 +219,8 @@ export interface RemoteAppTools {
     readonly inputSchema: Readonly<Record<string, unknown>>;
     /** Load it up front rather than behind the agent's tool search. */
     readonly alwaysLoad: boolean;
+    /** The listing's MCP tool annotations, when it gave any. */
+    readonly annotations?: Readonly<Record<string, unknown>>;
   }>;
   /** Runs one; never rejects with a tool's own failure, which comes back as an error result. */
   call(name: string, args: unknown, signal?: AbortSignal): Promise<CallToolResult>;
