@@ -76,9 +76,7 @@ test("Tidy up in the title bar says why it can't go while there is nobody to ask
   await expect(idle).not.toHaveAttribute("data-sent", /.*/);
 });
 
-test("Tidy up in the title bar asks the orchestrator, as the board's does", async ({
-  page,
-}, testInfo) => {
+test("Tidy up in the title bar asks the orchestrator, as the board's does", async ({ page }) => {
   await start(page);
   const made = await page.evaluate(() => window.gramMock!.simulateOneThread());
   await pressFirstWorkspaceKey(page);
@@ -86,16 +84,6 @@ test("Tidy up in the title bar asks the orchestrator, as the board's does", asyn
   const tidy = await openTidy(page);
   await expect(tidy).toHaveAccessibleName("Tidy up");
   await expect(tidy).not.toHaveAttribute("aria-disabled", "true");
-  // Past the arrivals' motion, so both shots are still frames.
-  await page.waitForTimeout(800);
-  for (const colorScheme of ["dark", "light"] as const) {
-    await page.emulateMedia({ colorScheme });
-    await page.waitForTimeout(300);
-    const path = testInfo.outputPath(`titlebar-tidy-${colorScheme}.png`);
-    await page.screenshot({ path });
-    await testInfo.attach(`titlebar-tidy-${colorScheme}`, { path, contentType: "image/png" });
-  }
-
   await tidy.click();
   await expect(page.getByTestId("titlebar-overflow-menu")).toBeHidden();
   // Reopened, it says it asked, and rests: a second press doesn't queue a second sweep.

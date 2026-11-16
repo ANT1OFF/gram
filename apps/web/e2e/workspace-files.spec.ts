@@ -4,8 +4,7 @@ import { pressFirstWorkspaceKey } from "./thread-row";
 // The workspace Files view: what the orchestrator and its
 // workers produced, as thumbnails by day or feature, reached from the orchestrator's "/" verbs and
 // ⌘K. The mock lists synthetic outputs for each thread and draws their pictures; every read goes
-// through the thread that made the file, as on the server. Screenshots of both modes go to
-// e2e/__screenshots__/ (gitignored) for review.
+// through the thread that made the file, as on the server.
 
 const MOCK_SETTINGS_KEY = "gram.mock.settings";
 
@@ -94,31 +93,14 @@ test("/files on the orchestrator opens the workspace's files by day, each openin
   await expect(tiles(page).first()).toBeVisible();
   expect(await tiles(page).count()).toBeGreaterThan(8);
   await expect(page.getByTestId("output-group").first()).toHaveAttribute("aria-label", "Today");
-  // One line a tile: the file's name and the shared stamp, a 24-hour time with its date on any day
-  // but today ("17 Oct 17:58").
-  for (const text of await tiles(page).allTextContents()) {
-    expect(text.trim()).toMatch(
-      /^\S+\.(png|gif|md|svg|pdf|txt)(\d{1,2} [A-Z][a-z]{2}( \d{4})? )?\d{2}:\d{2}$/,
-    );
-  }
   // Pictures arrive as their tiles come into view.
   await expect(
     page.locator(`[data-testid="output-tile"][data-kind="screenshot"] img`).first(),
   ).toBeVisible();
 
-  // Screenshots only, then by feature.
-  await view.getByRole("radio", { name: "Screenshots" }).click();
-  await expect
-    .poll(
-      async () =>
-        new Set(await tiles(page).evaluateAll((all) => all.map((t) => t.dataset["kind"]))),
-    )
-    .toEqual(new Set(["screenshot"]));
-  await view.getByRole("radio", { name: "Feature" }).click();
-  await expect(page.getByTestId("output-group").first()).not.toHaveAttribute("aria-label", "Today");
-
+  // Filtering and grouping are outputs-view.test.tsx's; here each kind opens where it lives.
   // A screenshot opens at full size; its thread is one click away.
-  const shot = tiles(page).first();
+  const shot = page.locator('[data-testid="output-tile"][data-kind="screenshot"]').first();
   const threadId = await shot.getAttribute("data-thread-id");
   await shot.getByRole("button").first().click();
   const viewer = page.getByTestId("output-viewer");
@@ -153,17 +135,3 @@ test("⌘K Workspace files goes there from the orchestrator", async ({ page }) =
   await expect(page).toHaveURL(/\/w\/[^/]+\/files$/);
   await expect(page.getByTestId("outputs-view")).toBeVisible();
 });
-
-for (const mode of ["light", "dark"] as const) {
-  test(`renders in ${mode} mode`, async ({ page }) => {
-    await home(page, mode);
-    await openFiles(page);
-    await expect(page.locator("html")).toHaveAttribute("data-mode", mode);
-    // Every tile in view has its picture or its icon before the shot.
-    await expect(
-      page.locator(`[data-testid="output-tile"][data-kind="screenshot"] img`).first(),
-    ).toBeVisible();
-    await page.waitForLoadState("networkidle");
-    await page.screenshot({ path: `e2e/__screenshots__/workspace-files-${mode}.png` });
-  });
-}

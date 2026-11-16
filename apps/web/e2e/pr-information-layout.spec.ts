@@ -66,9 +66,10 @@ async function replace(page: Page, labels = false) {
   await expect(page.getByTestId("reviews-tab-count")).toHaveText("1");
 }
 
-for (const mode of ["light", "dark"] as const) {
-  // The right panel's narrowest and its default.
-  for (const width of [240, 352]) {
+// One mode and the right panel's narrowest width: the fit is what can break, and the palette
+// changes nothing it measures.
+for (const mode of ["dark"] as const) {
+  for (const width of [240]) {
     test(`large counts at ${width}px in ${mode}`, async ({ page }, info) => {
       await openFixture(page, width, mode);
       await replace(page);

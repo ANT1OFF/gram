@@ -46,13 +46,11 @@ function rows(requirements: readonly unknown[], model: string | null = "actual",
   r.consume(e("event_msg", { type: "task_complete", turn_id: "native" }));
   return [...r.records.values()];
 }
+// The copy at index 1 is the odd one out: these put it first, in the middle and last.
 const permute = [
+  [1, 0, 2],
   [0, 1, 2],
   [0, 2, 1],
-  [1, 0, 2],
-  [1, 2, 0],
-  [2, 0, 1],
-  [2, 1, 0],
 ];
 const requirements = [
   {

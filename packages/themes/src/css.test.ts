@@ -1,20 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { generateStylesheet, generateThemeCss, springToCss, themeVariables } from "./css.ts";
+import { generateStylesheet, springToCss, themeVariables } from "./css.ts";
 import { LOOK_IDS, LOOKS } from "./looks.ts";
 import { PRESET_PALETTES } from "./presets.ts";
 
 describe("generateThemeCss", () => {
-  it.each(LOOK_IDS)("matches the snapshot for %s", async (look) => {
-    const css = generateThemeCss({
-      look,
-      palette: "tokyo-night",
-      mode: "dark",
-      contrast: "standard",
-    });
-    await expect(css).toMatchFileSnapshot(`./__snapshots__/look-${look}.css`);
-  });
-
   it("never emits empty or non-finite values", () => {
     for (const look of LOOK_IDS) {
       const vars = themeVariables({

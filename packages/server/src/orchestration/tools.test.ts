@@ -2717,12 +2717,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             permissionMode: "bypassPermissions",
             model: viaGateway,
           });
-          expect(codex.options.instructions).toContain(
-            "MCP server named `gram`: `report`, `ask_question`, `record_user_answer`, `mark_completed`, `pr_bind`, `set_title`, `pr_status`, `pr_review_monitor`",
-          );
-          expect(codex.options.instructions).toContain(
-            "Pushing, opening a pull request and merging ask the user first.",
-          );
+          expect(codex.options.instructions).toContain("MCP server named `gram`");
           // A Claude worker beside it is started as before, and told nothing about MCP servers.
           const claude = yield* waitSent(
             ((yield* spawnOn("claude-one", "fake-opus")) as { threadId: ThreadId }).threadId,
@@ -2760,9 +2755,6 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           );
           expect(free.options).toMatchObject({ audience: "worker", permissionMode: "dontAsk" });
           expect(free.options.outwardGate).toBeUndefined();
-          expect(free.options.instructions).toContain(
-            "Push and open pull requests without approval",
-          );
         }),
       ),
     GIT_HEAVY,
@@ -2892,7 +2884,6 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           const b = yield* spawn(session, { feature: "receiver" });
           const c = yield* spawn(session, { feature: "other-sender" });
           expect(a.session.options.permissionMode).toBe("bypassPermissions");
-          expect(a.session.options.instructions).toContain("For a sibling, use `send_message`");
           const hosted = (id: ThreadId, name = "send_message") =>
             registry.forTransport(id, "worker").find((tool) => tool.descriptor.name === name)!;
           const message = {

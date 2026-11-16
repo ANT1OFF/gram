@@ -24,16 +24,17 @@ import { armedWorkerBadge } from "../app-tools/pr-tools-kit.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 
 /**
- * The line of the attempt's initial thread read, found in the source so the stack filter follows
- * the statement, not a frozen number: the review's own extraction recipe did the same. The
- * dependency must land right after this read and before the per-thread lock the attempt then takes.
+ * The line of the attempt's initial thread read: the first `store.getThread(` after the attempt
+ * starts. It is found in the source so the stack filter follows the call, not a frozen number, and
+ * only the call itself is matched so a rename or reshaping of the statement around it doesn't
+ * break the test. The dependency must land right after this read and before the per-thread lock
+ * the attempt then takes.
  */
 const initialReadLine = (() => {
   const source = readFileSync(new URL("./merge-when-ready.ts", import.meta.url), "utf8");
-  const start = source.indexOf("const attempt = ");
-  const statement = "const thread = yield* store.getThread(threadId).pipe(Effect.option);";
-  const at = source.indexOf(statement, start);
-  if (at < 0) throw new Error("merge-ordering-race: initial attempt read statement not found");
+  const start = source.search(/\battempt\s*=/);
+  const at = start < 0 ? -1 : source.indexOf("store.getThread(", start);
+  if (at < 0) throw new Error("merge-ordering-race: the attempt's initial read was not found");
   return source.slice(0, at).split("\n").length;
 })();
 

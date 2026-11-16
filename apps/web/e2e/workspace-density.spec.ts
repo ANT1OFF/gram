@@ -33,7 +33,8 @@ const rowStep = (page: Page) =>
     return height;
   });
 
-for (const mode of ["light", "dark"] as const) {
+// One mode: the palette changes nothing measured here.
+for (const mode of ["dark"] as const) {
   test(`workspace names, workers and keyboard details survive overview resizing in ${mode}`, async ({
     page,
   }) => {

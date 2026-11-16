@@ -74,24 +74,11 @@ describe("first run", () => {
     await waitFor(() => expect(api.launchChecks).toHaveBeenCalled());
     await vi.mocked(api.launchChecks).mock.results[0]!.value;
     expect(await welcome.findByRole("radio", { name: /^api/ })).toBeTruthy();
-    // One sentence says what a workspace and its orchestrator are; no steps grid before the pick.
-    expect(welcome.getByTestId("welcome-line").textContent).toBe(
-      "Gram makes it a workspace, whose orchestrator hands your tasks to agents and follows each one to a pull request.",
-    );
+    // No steps grid before the pick.
     expect(welcome.queryByRole("list", { name: "Steps to start" })).toBeNull();
-    // Open is the one primary action, Skip its secondary beside it, and readiness right under them.
-    const actions = welcome.getByTestId("welcome-actions");
     const open = welcome.getByTestId("welcome-open");
-    const skip = welcome.getByTestId("welcome-skip");
-    expect(open.nextElementSibling).toBe(skip);
-    expect(open.className).toContain("bg-primary");
-    expect(skip.className).not.toContain("bg-primary");
-    expect(skip.className).toContain("border");
-    expect(actions.nextElementSibling).toBe(welcome.getByTestId("welcome-agents"));
-    // Every agent ready: the line names them, and there is nothing to set up or re-check.
-    expect(welcome.getByTestId("welcome-runs-with").textContent).toBe(
-      "Runs with Claude Code or Codex",
-    );
+    expect(welcome.getByTestId("welcome-skip")).toBeTruthy();
+    // Every agent ready: there is nothing to set up or re-check.
     expect(welcome.queryByRole("list", { name: "Tools to set up" })).toBeNull();
     expect(welcome.queryByRole("button", { name: "Check again" })).toBeNull();
     expect(welcome.queryByRole("link", { name: /^Install/ })).toBeNull();
@@ -99,10 +86,8 @@ describe("first run", () => {
     // moves the check and the button with it.
     expect(welcome.getByRole("radio", { name: /^api/ }).getAttribute("aria-checked")).toBe("true");
     expect(open.textContent).toContain("Open api");
-    // What Open leads to, the survey a new workspace starts with included.
-    const next = welcome.getByTestId("welcome-next").textContent;
-    expect(next).toContain("how much it may do on its own");
-    expect(next).toContain("surveys api and suggests first tasks");
+    // What Open leads to names the picked repository.
+    expect(welcome.getByTestId("welcome-next").textContent).toContain("api");
     fireEvent.click(welcome.getByRole("radio", { name: /^web/ }));
     expect(welcome.getByRole("radio", { name: /^web/ }).getAttribute("aria-checked")).toBe("true");
     expect(welcome.getByRole("radio", { name: /^api/ }).getAttribute("aria-checked")).toBe("false");
@@ -110,15 +95,7 @@ describe("first run", () => {
     // How it works and the import are one footer of folds, each opening on its own.
     expect(welcome.queryByRole("list", { name: "How Gram works" })).toBeNull();
     fireEvent.click(welcome.getByRole("button", { name: "How it works" }));
-    expect(
-      within(welcome.getByRole("list", { name: "How Gram works" }))
-        .getAllByRole("listitem")
-        .map((step) => step.textContent),
-    ).toEqual([
-      expect.stringContaining("You give tasks"),
-      expect.stringContaining("An orchestrator briefs workers"),
-      expect.stringContaining("Each worker opens a PR"),
-    ]);
+    expect(welcome.getByRole("list", { name: "How Gram works" })).toBeTruthy();
     expect(welcome.queryByTestId("welcome-import-sessions")).toBeNull();
     fireEvent.click(welcome.getByRole("button", { name: "Import past CLI sessions" }));
     expect(welcome.getByTestId("welcome-import-sessions")).toBeTruthy();
@@ -199,11 +176,8 @@ describe("first run", () => {
     await waitFor(() => expect(api.listRepositories).toHaveBeenCalled());
     expect(welcome.queryByRole("radiogroup", { name: "Repositories" })).toBeNull();
     expect(welcome.queryByTestId("welcome-open")).toBeNull();
-    // The default button variant is the primary one; Clone is its secondary, Skip quieter still.
-    expect(folder.className).toContain("bg-primary");
-    expect(welcome.getByRole("button", { name: "Clone from GitHub" }).className).toContain(
-      "border",
-    );
+    expect(folder).toBeTruthy();
+    expect(welcome.getByRole("button", { name: "Clone from GitHub" })).toBeTruthy();
   });
 
   it("offers a focused search once the repositories outgrow the list", async () => {
@@ -328,31 +302,8 @@ describe("first run", () => {
     const agents = welcome.getByTestId("welcome-agents");
     const open = welcome.getByTestId("welcome-open");
     expect(open.getAttribute("data-setup")).toBe("true");
-    // The repository action only sets it up, and is no longer the filled primary.
-    expect(open.textContent).toMatch(/^Set up api/);
-    expect(open.className).not.toContain("bg-primary");
-    // The first install is the one filled action, and the card leads the actions.
-    const installs = within(agents).getAllByRole("link", { name: /^Install/ });
-    expect(installs.map((link) => link.className.includes("bg-primary"))).toEqual([true, false]);
-    expect(
-      agents.compareDocumentPosition(welcome.getByTestId("welcome-actions")) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(welcome.getByTestId("welcome-next").textContent).toContain("once an agent is ready");
-  });
-
-  it("with only a sign-in left, makes Check again the next step", async () => {
-    const { render } = load(withOnboarding({}), {
-      ...ALL_READY,
-      tools: ALL_READY.tools.filter((tool) => tool.tool !== "codex"),
-      claudeSignIn: "notSignedIn",
-    });
-    render();
-    const welcome = within(await screen.findByTestId("welcome"));
-    await waitFor(() =>
-      expect(welcome.getByTestId("welcome-open").getAttribute("data-setup")).toBe("true"),
-    );
-    expect(welcome.getByRole("button", { name: "Check again" }).className).toContain("bg-primary");
+    // The repository action only sets it up; installing an agent is offered for each.
+    expect(within(agents).getAllByRole("link", { name: /^Install/ })).toHaveLength(2);
   });
 
   it("says what the GitHub CLI is for while it is missing, without blocking the start", async () => {

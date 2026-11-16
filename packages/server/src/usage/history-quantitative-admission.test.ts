@@ -53,8 +53,12 @@ const seed = () => {
   expect(ledger.observe(stable, stable).tokens).toBeUndefined();
   return { ledger, reducer, stable };
 };
+// Every gap with both lanes growing; a zero-growth lane only behind one gap, since the gap's kind
+// is settled before the growth is read.
 for (const gap of ["null", "invalid", "contradictory", "discard"] as const) {
-  for (const growth of [primary(5, 10), primary(5, 0), primary(0, 10)]) {
+  for (const growth of gap === "null"
+    ? [primary(5, 10), primary(5, 0), primary(0, 10)]
+    : [primary(5, 10)]) {
     for (const candidate of [
       "smaller",
       "equal",

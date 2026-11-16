@@ -53,7 +53,8 @@ test("fresh helpers prefer local Haiku with independent destination consent", as
   ).toContainText("Opening message");
 });
 
-for (const width of [1440, 640]) {
+// The narrow window: saving doesn't depend on the width, and the pickers must fit there.
+for (const width of [640]) {
   test(`harness, model and effort save and reload at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/settings/ai-helpers");

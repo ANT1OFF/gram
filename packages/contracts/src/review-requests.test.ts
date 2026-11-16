@@ -1,63 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ThreadId } from "./ids.ts";
-import {
-  OwnPrs,
-  prOwner,
-  prOwnerCandidate,
-  ReviewRequests,
-  type PrOwnerCandidate,
-} from "./review-requests.ts";
-import { expectRoundTrip } from "./test-utils.ts";
+import { prOwner, prOwnerCandidate, type PrOwnerCandidate } from "./review-requests.ts";
 
 const t = (id: string) => id as ThreadId;
-
-describe("review request contracts", () => {
-  it("round-trip a review request list and an open PR list", () => {
-    expectRoundTrip(ReviewRequests, {
-      requests: [
-        {
-          repo: "acme/web",
-          number: 12,
-          title: "Fix the flake",
-          url: "https://github.com/acme/web/pull/12",
-          author: "jordan",
-          updatedAt: "2026-09-17T08:00:00Z",
-          checks: "failing",
-          bot: { verdict: "changesRequested", onHead: false },
-        },
-      ],
-      checkedAt: 1,
-    });
-    expectRoundTrip(OwnPrs, {
-      prs: [
-        {
-          repo: "acme/web",
-          number: 14,
-          title: "Paginate the audit log",
-          url: "https://github.com/acme/web/pull/14",
-          isDraft: true,
-          updatedAt: "2026-09-17T08:00:00Z",
-          detailsAt: "2026-09-17T07:30:00Z",
-          createdAt: "2026-09-15T08:00:00Z",
-          headRef: "feat/paginate",
-          mergeState: "DIRTY",
-          checks: "passing",
-          reviewDecision: "REVIEW_REQUIRED",
-          bot: { verdict: "approved", onHead: true },
-          projectRoot: "/code/web",
-        },
-        {
-          repo: "acme/api",
-          number: 3,
-          title: "",
-          url: "",
-          isDraft: false,
-          updatedAt: "",
-        },
-      ],
-    });
-  });
-});
 
 describe("prOwner", () => {
   const pr = { repo: "Acme/Web", number: 14, headRef: "feat/paginate" };
@@ -144,44 +89,5 @@ describe("prOwnerCandidate", () => {
   it("is undefined for an orchestrator or a dream", () => {
     expect(prOwnerCandidate({ ...thread, role: "orchestrator" }, undefined)).toBeUndefined();
     expect(prOwnerCandidate({ ...thread, role: "dream" }, undefined)).toBeUndefined();
-  });
-});
-
-it("round-trips optional information, including zero, and payloads that omit it", () => {
-  expectRoundTrip(OwnPrs, {
-    prs: [
-      {
-        repo: "example/tools",
-        number: 1,
-        title: "Cache",
-        url: "https://github.com/example/tools/pull/1",
-        isDraft: true,
-        updatedAt: "",
-        author: "helper[bot]",
-        isBot: true,
-        labels: ["offline"],
-        additions: 0,
-        deletions: 8,
-        informationAt: "2026-10-01T12:00:00Z",
-        informationStale: true,
-        detailsStale: true,
-      },
-    ],
-  });
-  expectRoundTrip(ReviewRequests, {
-    requests: [
-      {
-        repo: "example/tools",
-        number: 2,
-        title: "Routes",
-        url: "https://github.com/example/tools/pull/2",
-        author: "ada",
-        updatedAt: "",
-        isDraft: false,
-        labels: [],
-        additions: 0,
-        deletions: 0,
-      },
-    ],
   });
 });

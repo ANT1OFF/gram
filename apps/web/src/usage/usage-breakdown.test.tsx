@@ -38,17 +38,18 @@ describe("By workspace", () => {
       "usage-breakdown-row",
     );
     expect(
-      rows.map((row) => [
-        row.dataset["key"],
-        row.querySelector(".truncate")?.textContent,
-        row.textContent?.match(/\d+ threads?/)?.[0],
-      ]),
+      rows.map((row) => [row.dataset["key"], row.textContent?.match(/\d+ threads?/)?.[0]]),
     ).toEqual([
-      ["ws-alpha", "Invented alpha", "68 threads"],
-      ["ws-gone-1", "Removed workspace", "3 threads"],
-      ["ws-beta", "Invented beta", "1 thread"],
-      ["ws-gone-2", "Removed workspace", "2 threads"],
-      ["solo", "Solo threads", "1 thread"],
+      ["ws-alpha", "68 threads"],
+      ["ws-gone-1", "3 threads"],
+      ["ws-beta", "1 thread"],
+      ["ws-gone-2", "2 threads"],
+      ["solo", "1 thread"],
     ]);
+    // Live workspaces show their own names; removed ones never borrow a neighbour's.
+    expect(rows[0]!.textContent).toContain("Invented alpha");
+    expect(rows[2]!.textContent).toContain("Invented beta");
+    for (const removed of [rows[1]!, rows[3]!])
+      expect(removed.textContent).not.toMatch(/Invented (alpha|beta)/);
   });
 });

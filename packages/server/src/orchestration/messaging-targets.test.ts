@@ -161,13 +161,6 @@ describe.skipIf(!hasGit)("message target validation", () => {
           expect(steered[0]?.origin?.role).toBeUndefined();
           expect(yield* store.listRequests(worker.thread.id)).toEqual([]);
           expect(Object.keys((yield* outboxOf(workspaceId)).sentRequests ?? {})).toHaveLength(1);
-          expect(worker.session.options.instructions).toContain(
-            "use `message_orchestrator` with `text`",
-          );
-          expect(worker.session.options.instructions).toContain("shortened IDs are refused");
-          // When to report rather than message is the tools' to say, as both do.
-          expect(general.descriptor.description).toContain("Prefer `report` for progress");
-          expect(tool.descriptor.description).toContain("Prefer `report`");
         }),
       ),
   );

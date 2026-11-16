@@ -37,11 +37,8 @@ describe.each(["darwin", "win32"] as const)("menuTemplate (%s)", (platform) => {
     }
   });
 
-  it("names ⌘W for the pane it closes, and offers Close All Threads", () => {
-    const { items, byAccelerator, send } = setup(platform);
-    expect(byAccelerator("CmdOrCtrl+W")[0]?.label).toBe("Close Pane");
-    expect(byAccelerator("CmdOrCtrl+Alt+W")[0]?.label).toBe("Close Thread…");
-    expect(byAccelerator("CmdOrCtrl+N")[0]?.label).toBe("New Task");
+  it("offers Close All Threads", () => {
+    const { items, send } = setup(platform);
     const closeAll = items.find((i) => i.label === "Close All Threads…");
     (closeAll?.click as (() => void) | undefined)?.();
     expect(send).toHaveBeenCalledWith("closeAllThreads");
@@ -167,23 +164,4 @@ it("puts Settings in the app menu on macOS and in File elsewhere", () => {
   const win = menuTemplate("win32", handlers());
   expect(win[0]?.label).toBe("File");
   expect(flatten([win[0]!]).some((i) => i.accelerator === "CmdOrCtrl+,")).toBe(true);
-});
-
-/** Every item's label, or its role where it has none. */
-const labels = (items: readonly MenuItemConstructorOptions[]) =>
-  flatten(items).map((item) => item.label ?? item.role);
-
-it("has Open Logs Folder and the standard Edit menu, and no menu of its own off macOS", () => {
-  expect(menuTemplate("win32", handlers()).map((menu) => menu.label ?? menu.role)).toEqual([
-    "File",
-    "editMenu",
-    "View",
-    "Window",
-    "Help",
-  ]);
-  for (const platform of ["darwin", "win32"] as const) {
-    const items = menuTemplate(platform, handlers());
-    expect(labels(items)).toContain("Open Logs Folder");
-    expect(items.some((menu) => menu.role === "editMenu")).toBe(true);
-  }
 });

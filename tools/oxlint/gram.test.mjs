@@ -7,12 +7,16 @@ import { describe, expect, it } from "vitest";
 import { ALLOWLISTS } from "./allowlists.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const lint = (source, rule = "gram/no-bare-fork") => {
+/** Lints each source as a file of its own in one oxlint run, and returns each file's diagnostics. */
+const lintEach = (sources, rule = "gram/no-bare-fork") => {
   const dir = mkdtempSync(join(tmpdir(), "gram-fork-rule-"));
   try {
-    const file = join(dir, "fixture.ts");
+    const files = sources.map((source, i) => {
+      const file = join(dir, `fixture-${i}.ts`);
+      writeFileSync(file, source);
+      return file;
+    });
     const config = join(dir, "oxlint.json");
-    writeFileSync(file, source);
     writeFileSync(
       config,
       JSON.stringify({
@@ -25,17 +29,27 @@ const lint = (source, rule = "gram/no-bare-fork") => {
     // Bound the direct Node subprocess independently of Vitest's event-loop timeout.
     const result = spawnSync(
       process.execPath,
-      [join(root, "node_modules/oxlint/bin/oxlint"), "--config", config, "--format", "json", file],
+      [
+        join(root, "node_modules/oxlint/bin/oxlint"),
+        "--config",
+        config,
+        "--format",
+        "json",
+        ...files,
+      ],
       { encoding: "utf8", timeout: 10_000, killSignal: "SIGKILL", maxBuffer: 2 * 1024 * 1024 },
     );
     if (result.error) throw result.error;
     const output = JSON.parse(result.stdout);
     expect(result.status, result.stderr).toBe(output.diagnostics.length ? 1 : 0);
-    return output.diagnostics;
+    return files.map((file) =>
+      output.diagnostics.filter((d) => resolve(dir, d.filename) === file || d.filename === file),
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 };
+const lint = (source, rule) => lintEach([source], rule)[0];
 
 /** The rule codes the repository's own config reports for a probe file placed in `dir`. */
 const probeConfig = (dir) => {
@@ -55,30 +69,35 @@ const probeConfig = (dir) => {
 };
 
 describe("no-bare-fork", () => {
-  it.each(["fork", "forkChild", "forkDetach", "forkDaemon", "runFork", "runForkWith"])(
-    "rejects Effect.%s, including aliases and computed access",
-    (name) => {
-      const diagnostics = lint(
-        `import * as E from "effect/Effect";\nE.${name}(task);\nE["${name}"](task);`,
-      );
-      expect(diagnostics).toHaveLength(2);
-      expect(diagnostics.every((value) => value.message.includes(`Effect.${name}`))).toBe(true);
-    },
-  );
-
-  it.each([
-    'import { Effect } from "effect"; Effect.runFork(task);',
-    'import { Runtime as R } from "effect"; R.runFork(runtime)(task);',
-    'import * as R from "effect/Runtime"; R["runFork"](runtime)(task);',
-    'import { runFork as launch } from "effect/Effect"; launch(task);',
-    'import { runFork as launch } from "effect/Runtime"; launch(runtime)(task);',
-    'import { runFork as launch } from "effect/Effect"; task.pipe(launch);',
-    'import { runForkWith as launch } from "effect/Effect"; task.pipe(launch(context));',
-    'import { runFork as launch } from "effect/Runtime"; pipe(runtime, launch);',
-    'import * as effect from "effect"; effect.Effect.runFork(task);',
-    'import * as effect from "effect"; effect.Runtime.runFork(runtime)(task);',
-  ])("rejects imported runners: %s", (source) => {
-    expect(lint(source)).toHaveLength(1);
+  it("rejects every bare fork and runner, including aliases and computed access", () => {
+    const names = ["fork", "forkChild", "forkDetach", "forkDaemon", "runFork", "runForkWith"];
+    const direct = lintEach(
+      names.map(
+        (name) => `import * as E from "effect/Effect";\nE.${name}(task);\nE["${name}"](task);`,
+      ),
+    );
+    names.forEach((name, i) => {
+      expect(direct[i], name).toHaveLength(2);
+      expect(
+        direct[i].every((value) => value.message.includes(`Effect.${name}`)),
+        name,
+      ).toBe(true);
+    });
+    const imported = [
+      'import { Effect } from "effect"; Effect.runFork(task);',
+      'import { Runtime as R } from "effect"; R.runFork(runtime)(task);',
+      'import * as R from "effect/Runtime"; R["runFork"](runtime)(task);',
+      'import { runFork as launch } from "effect/Effect"; launch(task);',
+      'import { runFork as launch } from "effect/Runtime"; launch(runtime)(task);',
+      'import { runFork as launch } from "effect/Effect"; task.pipe(launch);',
+      'import { runForkWith as launch } from "effect/Effect"; task.pipe(launch(context));',
+      'import { runFork as launch } from "effect/Runtime"; pipe(runtime, launch);',
+      'import * as effect from "effect"; effect.Effect.runFork(task);',
+      'import * as effect from "effect"; effect.Runtime.runFork(runtime)(task);',
+    ];
+    lintEach(imported).forEach((diagnostics, i) =>
+      expect(diagnostics, imported[i]).toHaveLength(1),
+    );
   });
 
   it("allows scoped forks, managed runtimes and unrelated or shadowed objects", () => {

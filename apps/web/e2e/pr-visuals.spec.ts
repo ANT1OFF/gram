@@ -198,10 +198,13 @@ const seedPrs = (page: Page, made: MockOneThreadSimulation) =>
 
 const shot = async (name: string, target: ReturnType<Page["locator"]>) => {
   if (SHOTS === undefined) return;
+  // Past the hover card's and chips' motion, so the shot is a still frame.
+  await target.page().waitForTimeout(300);
   await target.screenshot({ path: `${SHOTS}/${name}.png`, animations: "disabled" });
 };
 
-for (const mode of ["dark", "light"] as const) {
+// One mode: the marks are data attributes and names, the same in either palette.
+for (const mode of ["dark"] as const) {
   test(`PRs read at a glance in the overview and on the feature card, ${mode}`, async ({
     page,
   }) => {
@@ -239,7 +242,6 @@ for (const mode of ["dark", "light"] as const) {
     // The asking one's words and its chip share its second line; the Workers tab, a status line
     // wide, shows its held merge too.
     await expect(chipOf(made.asking)).toHaveCount(1);
-    await page.waitForTimeout(300);
     await shot(`${mode}-overview`, overview);
     const panel = page.getByTestId("workers-panel");
     const panelChipOf = (threadId: string) =>
@@ -266,7 +268,6 @@ for (const mode of ["dark", "light"] as const) {
     await expect(card.getByTestId("pr-mark-lines")).toContainText("its worker is fixing them");
     await expect(card.getByTestId("pr-mark-lines")).toContainText("Merges when ready");
     await expect(card.getByTestId("pr-diff-stat")).toHaveText("+120−146 files");
-    await page.waitForTimeout(300);
     await shot(`${mode}-overview-card`, card);
     await page.mouse.move(800, 10);
     await shot(`${mode}-feature-card`, page.getByTestId("feature-card").first());

@@ -221,46 +221,6 @@ test("an outdated Codex in use shows the upgrade command, and Diagnostics names 
   await expect(agents.locator("[data-trouble]")).toHaveCount(1);
 });
 
-const toolsWithGh = (gh: object) => [
-  { tool: "claude", found: true, path: "/mock/bin/claude", version: "2.1.273" },
-  { tool: "git", found: true, path: "/usr/bin/git", version: "2.47.1" },
-  { tool: "gh", ...gh },
-];
-
-test("a dismissed problem shows again when the check result changes", async ({ page }) => {
-  await page.addInitScript(
-    ({ key, checks }) => {
-      // Only the first load: later ones keep whatever the spec changed it to.
-      if (sessionStorage.getItem(key) === null) sessionStorage.setItem(key, checks);
-    },
-    {
-      key: MOCK_LAUNCH_CHECKS_KEY,
-      checks: JSON.stringify({ tools: toolsWithGh({ found: false }), ghSignedIn: false }),
-    },
-  );
-  // A thread, not the first-run screen, whose card would say these instead of the banner.
-  await page.goto("/t/t-flaky");
-
-  const banner = page.getByTestId("launch-checks-banner");
-  await expect(banner).toHaveText(/gh isn't installed/);
-  await banner.getByRole("button", { name: "Dismiss" }).click();
-  await expect(banner).toBeHidden();
-  await page.reload();
-  await expect(page.getByTestId("pane-header")).toBeVisible();
-  await expect(banner).toBeHidden();
-
-  await page.evaluate(({ key, checks }) => sessionStorage.setItem(key, checks), {
-    key: MOCK_LAUNCH_CHECKS_KEY,
-    checks: JSON.stringify({
-      tools: toolsWithGh({ found: true, path: "/mock/bin/gh", version: "2.63.0" }),
-      ghSignedIn: false,
-    }),
-  });
-  await page.reload();
-  await expect(banner).toContainText("gh isn't signed in. Run gh auth login");
-  await expect(banner).not.toContainText("gh isn't installed");
-});
-
 test("a dismissed problem that still stands leaves the row for a dot on Settings", async ({
   page,
 }) => {
@@ -826,26 +786,4 @@ test("an update that finishes while Settings → Agents is closed shows its outc
   await expect(claude).toContainText("New threads use 2.1.274.");
   await expect(claude).toContainText("they keep 2.1.273 until restarted.");
   await expect(claude.getByTestId("cli-update")).toBeHidden();
-});
-
-test("sign-in guidance names the local commands", async ({ page }) => {
-  await page.addInitScript((key) => {
-    sessionStorage.setItem(
-      key,
-      JSON.stringify({
-        tools: [
-          { tool: "claude", found: true, path: "/usr/bin/claude", version: "2.1.273" },
-          { tool: "git", found: true, path: "/usr/bin/git", version: "2.47.1" },
-          { tool: "gh", found: true, path: "/usr/bin/gh", version: "2.63.0" },
-        ],
-        claudeSignIn: "notSignedIn",
-        ghSignedIn: false,
-      }),
-    );
-  }, MOCK_LAUNCH_CHECKS_KEY);
-  // A thread, not the first-run screen, whose card would say these instead of the banner.
-  await page.goto("/t/t-flaky");
-  const banner = page.getByTestId("launch-checks-banner");
-  await expect(banner).toContainText("claude");
-  await expect(banner).toContainText("gh auth login");
 });

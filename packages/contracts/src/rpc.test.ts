@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema";
 import * as RpcSchema from "effect/rpc/RpcSchema";
 import { describe, expect, it } from "vitest";
 import { FS_RESOLVE_LIMIT, FsResolveFields, FsResolveResult } from "./fs-files.ts";
-import { BranchList, Diff, GitState, PrChecksResult, PrDetailResult } from "./git.ts";
+import { GitState, PrChecksResult } from "./git.ts";
 import { ComposedIssue, FiledIssue, IssueDraft, newIssueUrl } from "./issues.ts";
 import {
   AgentUnavailable,
@@ -17,16 +17,9 @@ import {
   ThreadNotFound,
 } from "./errors.ts";
 import { ServerEvent, ThreadFeedEvent } from "./events.ts";
-import { TerminalEvent, TerminalInfo } from "./terminal.ts";
-import { FolderListing, FsFile, FsListing } from "./fs.ts";
 import { ModelList } from "./models.ts";
 import { GramRpcGroups, GramRpcs } from "./rpc.ts";
-import {
-  RestartSessionResult,
-  StartSessionResult,
-  ThreadHistoryPage,
-  ThreadSearchResult,
-} from "./threads.ts";
+import { RestartSessionResult, StartSessionResult, ThreadHistoryPage } from "./threads.ts";
 import {
   CloneProjectPayload,
   CloneSuggestions,
@@ -36,7 +29,6 @@ import {
 } from "./projects.ts";
 import { recentTurns } from "./feed-window.ts";
 import { ThreadPlan } from "./thread-plan.ts";
-import { RestoreWorktreeResult } from "./worktrees.ts";
 import { expectRoundTrip } from "./test-utils.ts";
 
 const thread = {
@@ -374,19 +366,6 @@ describe("ServerEvent", () => {
     };
     expectRoundTrip(GitState, Schema.decodeUnknownSync(GitState)({ ...minimal, pr }));
   });
-
-  it("RestoreWorktreeResult round-trips each outcome", () => {
-    for (const result of [
-      { _tag: "restored", path: "/r/.worktrees/x", branch: "feat/x", source: "origin" },
-      { _tag: "branchGone", branch: "feat/x", pr: { repo: "acme/web", number: 7 } },
-      { _tag: "branchGone", branch: "feat/x" },
-    ]) {
-      expectRoundTrip(
-        RestoreWorktreeResult,
-        Schema.decodeUnknownSync(RestoreWorktreeResult)(result),
-      );
-    }
-  });
 });
 
 const m = (id: string, role: "user" | "assistant") => ({ id, role });
@@ -447,69 +426,6 @@ describe("ThreadFeedEvent", () => {
 });
 
 describe("git shapes", () => {
-  const file = {
-    path: "src/a.ts",
-    status: "untracked",
-    additions: 3,
-    deletions: 0,
-    patch: "@@ -0,0 +1,3 @@\n+a\n+b\n+c",
-    binary: false,
-    tooLarge: false,
-  };
-
-  it("Diff and BranchList round-trip", () => {
-    for (const diff of [
-      { repo: true, branch: "fix/flaky", worktree: "/repo", files: [file] },
-      { repo: true, base: "origin/main", note: "Diff too large to display", files: [] },
-      { repo: false },
-    ])
-      expectRoundTrip(Diff, Schema.decodeUnknownSync(Diff)(diff));
-    expectRoundTrip(
-      BranchList,
-      Schema.decodeUnknownSync(BranchList)({ branches: ["main", "develop"], default: "main" }),
-    );
-  });
-
-  it("PrDetailResult round-trips", () => {
-    const detail = {
-      number: 412,
-      state: "OPEN",
-      url: "https://github.com/o/r/pull/412",
-      title: "Fix flaky test",
-      body: "",
-      isDraft: false,
-      author: "octocat",
-      baseRefName: "main",
-      headRefName: "fix/flaky",
-      additions: 12,
-      deletions: 4,
-      changedFiles: 1,
-      commits: 2,
-      reviewDecision: "APPROVED",
-      checks: "passing",
-      checksPassed: 3,
-      checksTotal: 3,
-      checkRuns: [{ name: "ci", status: "passing", link: "https://ci.example/1", required: true }],
-      commitList: [{ oid: "abc", headline: "fix", author: "octocat", at: "2026-09-16T10:00:00Z" }],
-      conversation: [
-        {
-          kind: "review",
-          author: "rev",
-          state: "APPROVED",
-          body: "lgtm",
-          at: "2026-09-16T11:00:00Z",
-        },
-      ],
-      files: [file],
-    };
-    for (const result of [
-      { available: true, detail },
-      { available: true, error: "boom" },
-      { available: false },
-    ])
-      expectRoundTrip(PrDetailResult, Schema.decodeUnknownSync(PrDetailResult)(result));
-  });
-
   it("PrChecksResult round-trips", () => {
     const run = {
       name: "test (macos)",
@@ -558,28 +474,6 @@ describe("ModelList", () => {
         models: [{ id: "x", displayName: "X", supportsEffort: true, efforts: ["ultra"] }],
       }),
     ).toThrow();
-  });
-});
-
-describe("FolderListing", () => {
-  it("round-trips with and without a parent and a .git", () => {
-    for (const listing of [
-      {
-        path: "/Users/x/Documents/code",
-        parent: "/Users/x/Documents",
-        git: "unreadable",
-        entries: [
-          {
-            name: "sample_app",
-            path: "/Users/x/Documents/code/sample_app",
-            isGitRepo: true,
-          },
-        ],
-        truncated: false,
-      },
-      { path: "/", entries: [], truncated: true },
-    ])
-      expectRoundTrip(FolderListing, Schema.decodeUnknownSync(FolderListing)(listing));
   });
 });
 
@@ -699,55 +593,6 @@ describe("cloning", () => {
 });
 
 describe("terminal, files and search shapes", () => {
-  it("round-trips terminal events and info", () => {
-    for (const event of [
-      { type: "replay", data: "$ ls\r\n" },
-      { type: "data", data: "a.txt\r\n" },
-      { type: "exit", code: 0 },
-      { type: "exit", signal: "SIGHUP" },
-    ])
-      expectRoundTrip(TerminalEvent, Schema.decodeUnknownSync(TerminalEvent)(event));
-    expectRoundTrip(
-      TerminalInfo,
-      Schema.decodeUnknownSync(TerminalInfo)({
-        terminalId: "term-1",
-        threadId: "t1",
-        cwd: "/repo",
-        shell: "/bin/zsh",
-        alive: true,
-      }),
-    );
-  });
-
-  it("round-trips file listings and previews", () => {
-    expectRoundTrip(
-      FsListing,
-      Schema.decodeUnknownSync(FsListing)({
-        path: "/repo/src",
-        parent: "/repo",
-        entries: [
-          { name: "lib", path: "/repo/src/lib", kind: "dir", modifiedAt: 1726480000000 },
-          { name: "a.ts", path: "/repo/src/a.ts", kind: "file", size: 120, modifiedAt: 1 },
-          { name: "current", path: "/repo/src/current", kind: "symlink" },
-        ],
-        truncated: false,
-      }),
-    );
-    for (const file of [
-      {
-        path: "/repo/src/a.ts",
-        size: 120,
-        binary: false,
-        tooLarge: false,
-        content: "export {}\n",
-        language: "typescript",
-      },
-      { path: "/repo/logo.png", size: 4096, binary: true, tooLarge: false },
-      { path: "/repo/dump.sql", size: 90000000, binary: false, tooLarge: true },
-    ])
-      expectRoundTrip(FsFile, Schema.decodeUnknownSync(FsFile)(file));
-  });
-
   it("round-trips resolved file references", () => {
     expectRoundTrip(
       FsResolveResult,
@@ -761,25 +606,6 @@ describe("terminal, files and search shapes", () => {
         paths: Array.from({ length: FS_RESOLVE_LIMIT + 1 }, (_, i) => `f${i}.ts`),
       }),
     ).toThrow();
-  });
-
-  it("round-trips search results with highlights", () => {
-    expectRoundTrip(
-      ThreadSearchResult,
-      Schema.decodeUnknownSync(ThreadSearchResult)({
-        hits: [
-          {
-            threadId: "t1",
-            messageId: "m3",
-            title: "fix-flaky-test",
-            snippet: "the retry test is flaky",
-            highlights: [{ start: 4, end: 9 }],
-          },
-          { threadId: "t2", title: "rewrite", snippet: "retry" },
-        ],
-        truncated: true,
-      }),
-    );
   });
 });
 

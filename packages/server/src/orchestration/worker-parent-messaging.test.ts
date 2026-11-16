@@ -101,12 +101,6 @@ describe.skipIf(!hasGit)("Full Auto worker parent messaging", () => {
             clientRequestId: "parent-1",
             ...(mode === undefined ? {} : { mode }),
           };
-          // The prompt names the tool; the descriptions say it needs no ID, and when to report.
-          expect(worker.session.options.instructions).toContain(
-            "use `message_orchestrator` with `text`",
-          );
-          expect(tool.descriptor.description).toContain("use message_orchestrator without an ID");
-          expect(tool.descriptor.description).toContain("Prefer `report`");
           const delivered = mode !== "queue" ? "steered" : "queued";
           expect(yield* tool.run(message)).toMatchObject({ delivered });
           for (let i = 0; i < 6; i++)

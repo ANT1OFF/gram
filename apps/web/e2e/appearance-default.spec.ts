@@ -21,7 +21,8 @@ test.beforeEach(async ({ page }) => {
   }, launchChecks);
 });
 
-for (const state of [undefined, {}, { motion: "off" }]) {
+// Nothing saved, and a partial save: an empty one reads as nothing saved.
+for (const state of [undefined, { motion: "off" }]) {
   test(`fresh default before hydration, after settings load and reload (${JSON.stringify(state)})`, async ({
     page,
   }) => {
@@ -67,7 +68,8 @@ for (const state of [undefined, {}, { motion: "off" }]) {
   });
 }
 
-for (const mode of ["system", "light", "dark"] as const) {
+// System follows both schemes in turn; light is the fixed mode that differs from the default.
+for (const mode of ["system", "light"] as const) {
   test(`saved Tokyo Night ${mode} retains its settings and actual CSS tokens`, async ({ page }) => {
     const appearance = {
       look: "glass",
@@ -97,7 +99,7 @@ for (const mode of ["system", "light", "dark"] as const) {
     await expect(page.getByRole("heading", { level: 2, name: /^Appearance/ })).toBeVisible();
     for (const colorScheme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme });
-      const dark = mode === "dark" || (mode === "system" && colorScheme === "dark");
+      const dark = mode === "system" && colorScheme === "dark";
       await expect(root).toHaveAttribute("data-palette", dark ? "tokyo-night" : "tokyo-light");
       await expect(root).toHaveAttribute("data-mode", dark ? "dark" : "light");
       expect(

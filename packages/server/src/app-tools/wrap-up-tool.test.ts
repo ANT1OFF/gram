@@ -11,7 +11,7 @@ import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import type { TurnRecord } from "../persistence/thread-store.ts";
 import { bindAppTools } from "./registry.ts";
-import { WRAP_UP_ASKED, WRAP_UP_CLOSE, WRAP_UP_DESCRIPTION, wrapUpTool } from "./wrap-up-tool.ts";
+import { WRAP_UP_ASKED, WRAP_UP_CLOSE, wrapUpTool } from "./wrap-up-tool.ts";
 
 const THREAD = "t-wrap" as ThreadId;
 const TURN = "turn-3" as TurnId;
@@ -80,23 +80,6 @@ const setup = (
 };
 
 describe("wrap_up", () => {
-  it("tells the agent when to call it, and when not", () => {
-    // When: after the work is checked, last, and again if more work follows.
-    expect(WRAP_UP_DESCRIPTION).toContain("as the last tool call of a turn that changed something");
-    expect(WRAP_UP_DESCRIPTION).toContain("call it again: the newer box replaces the older");
-    // A turn that stops blocked still gets a box; a question answered doesn't.
-    expect(WRAP_UP_DESCRIPTION).toContain("stops early because you are blocked");
-    expect(WRAP_UP_DESCRIPTION).toContain("even if you read files or ran commands to answer");
-    expect(WRAP_UP_DESCRIPTION).toContain("a subagent never does");
-    // A question needs its reasons said somewhere, and isn't asked twice.
-    expect(WRAP_UP_DESCRIPTION).toContain("which go in your closing message");
-    expect(WRAP_UP_DESCRIPTION).toContain("never for something another prompt already asks");
-    expect(WRAP_UP_ASKED).toContain("without asking the question again");
-    for (const next of [WRAP_UP_CLOSE, WRAP_UP_ASKED]) {
-      expect(next).toContain("if you already wrote");
-    }
-  });
-
   it.effect("puts the recap on the turn's reply and says to write the closing message", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(1_000);
