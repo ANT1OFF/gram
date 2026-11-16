@@ -23,6 +23,7 @@ import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { FormError } from "@/components/form-error";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/input";
 import { useModelsSettled } from "@/composer/models";
 import { useShortcut } from "@/keyboard/registry";
 import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
@@ -30,7 +31,7 @@ import { focusIfConnected } from "@/lib/use-return-focus";
 import { Expand, PressScale, Spinner } from "@/motion";
 import { AddRepository, type AddRepositoryHandle } from "@/new-thread/add-repository";
 import { AutonomyChoice } from "@/new-thread/autonomy-choice";
-import { Field, inputCls } from "@/settings/fields";
+import { Field } from "@/settings/fields";
 import { useSaveSettings } from "@/settings/use-save-settings";
 import { projectNameOf, withAutonomy } from "@/settings/workspace-settings-model";
 import { useServerSettings } from "@/settings-sync/store";
@@ -363,13 +364,13 @@ function SheetForm({
           </span>
         }
       >
-        <textarea
+        <Textarea
           ref={focusTask}
           id={taskId}
           data-testid="new-workspace-task"
           rows={3}
           // As wide as the rows above it: a settings field's own width stopped it short of them.
-          className={`${inputCls} h-auto max-w-none min-h-18 resize-y py-1.5`}
+          className="min-h-18"
           value={draft.task}
           placeholder="Optional"
           onChange={(event) => {

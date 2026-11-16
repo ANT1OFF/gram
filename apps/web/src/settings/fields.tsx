@@ -1,12 +1,14 @@
 import { Undo2 } from "lucide-react";
-import { useId, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 
+import { ChoiceCheck } from "@/components/choice-check";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { inputCls } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { CHOICE_CARD } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { SegmentSlab } from "@/motion";
 
@@ -329,35 +331,107 @@ export const SEGMENT_SLAB = "choice-selected";
  */
 export const SEGMENT_ROOMY = "h-8 px-3";
 
-/** One choice out of a few, as a row of radio buttons. */
+/** One of an `OptionGroup`'s choices. */
+export interface OptionGroupOption<T extends string> {
+  readonly value: T;
+  readonly label: string;
+  /**
+   * One line on what picking it does: words, as it is also the choice's `aria-description`. When
+   * any choice has one, the group draws its choices as cards, side by side where the column has
+   * room (26 rem, as New workspace's column has) and one above the next where it hasn't, the line under each name.
+   */
+  readonly description?: string;
+  readonly testId?: string;
+}
+
+/**
+ * One choice out of a few, as a row of radio buttons: a segmented control of short words, or,
+ * where the choices carry a `description`, a row of choice cards as New's autonomy has, the pick
+ * with its check beside its name so it never shows by colour alone. Either way it is one Tab stop,
+ * and the arrow keys, Home and End move the pick, as radios do.
+ */
 export function OptionGroup<T extends string>({
   label,
   options,
   value,
   onChange,
   disabled = false,
+  className,
 }: {
   label: string;
-  options: readonly { readonly value: T; readonly label: string }[];
+  options: readonly OptionGroupOption<T>[];
   value: T | undefined;
   onChange: (value: T) => void;
   disabled?: boolean;
+  /** On the group's outermost element. */
+  className?: string;
 }) {
   const slab = useId();
+  const cards = options.some((option) => option.description !== undefined);
+  const radios = useRovingRadios(options, value, onChange);
+  if (cards)
+    return (
+      // Side by side once the column the group sits in has room, not the window: an embedding
+      // app's side panel is narrow in a wide window.
+      <div className={cn("@container/options w-full", className)}>
+        <div
+          role="radiogroup"
+          aria-label={label}
+          onKeyDown={disabled ? undefined : radios.onKeyDown}
+          className={cn(
+            SEGMENT_TRACK,
+            "grid grid-cols-1 @min-[26rem]/options:auto-cols-fr @min-[26rem]/options:grid-flow-col",
+          )}
+        >
+          {options.map((option) => {
+            const checked = option.value === value;
+            return (
+              <button
+                key={option.value}
+                {...radios.itemProps(option.value)}
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                aria-label={option.label}
+                {...(option.description === undefined
+                  ? {}
+                  : { "aria-description": option.description })}
+                data-testid={option.testId}
+                disabled={disabled}
+                className={CHOICE_CARD}
+              >
+                {checked && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
+                <span className="flex w-full items-center gap-1.5 text-reading font-medium">
+                  {option.label}
+                  <ChoiceCheck checked={checked} className="ml-auto" />
+                </span>
+                {option.description !== undefined && (
+                  <span className="text-meta text-muted-foreground">{option.description}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
   return (
-    <div role="radiogroup" aria-label={label} className={OPTION_GROUP}>
+    <div
+      role="radiogroup"
+      aria-label={label}
+      onKeyDown={disabled ? undefined : radios.onKeyDown}
+      className={cn(OPTION_GROUP, className)}
+    >
       {options.map((option) => (
         <Button
           key={option.value}
+          {...radios.itemProps(option.value)}
           size="sm"
           role="radio"
           aria-checked={option.value === value}
           variant="ghost"
           className={cn(SEGMENT, SEGMENT_ROOMY)}
+          data-testid={option.testId}
           disabled={disabled}
-          onClick={() => {
-            if (option.value !== value) onChange(option.value);
-          }}
         >
           {option.value === value && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
           {option.label}
@@ -365,6 +439,59 @@ export function OptionGroup<T extends string>({
       ))}
     </div>
   );
+}
+
+/** The arrow keys that move a radio group's pick, and which way. */
+const STEP: Readonly<Record<string, number>> = {
+  ArrowRight: 1,
+  ArrowDown: 1,
+  ArrowLeft: -1,
+  ArrowUp: -1,
+};
+
+/**
+ * A group of `role="radio"` buttons that behaves as radios do: one Tab stop, on the picked choice
+ * (the first while none is), and the arrow keys, Home and End move to the next choice and pick
+ * it, wrapping at the ends.
+ */
+function useRovingRadios<T extends string>(
+  options: readonly { readonly value: T }[],
+  value: T | undefined,
+  onChange: (value: T) => void,
+) {
+  const buttons = useRef(new Map<T, HTMLButtonElement>());
+  const stop = options.some((option) => option.value === value) ? value : options[0]?.value;
+  const pick = (next: T) => {
+    if (next !== value) onChange(next);
+  };
+  return {
+    itemProps: (choice: T) => ({
+      ref: (element: HTMLButtonElement | null) => {
+        if (element) buttons.current.set(choice, element);
+        else buttons.current.delete(choice);
+      },
+      tabIndex: choice === stop ? 0 : -1,
+      onClick: () => pick(choice),
+    }),
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+      const at = options.findIndex((option) => buttons.current.get(option.value) === event.target);
+      if (at === -1 || options.length === 0) return;
+      const last = options.length - 1;
+      const to =
+        event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? last
+            : STEP[event.key] === undefined
+              ? undefined
+              : (at + STEP[event.key]! + options.length) % options.length;
+      if (to === undefined) return;
+      event.preventDefault();
+      const next = options[to]!.value;
+      buttons.current.get(next)?.focus();
+      pick(next);
+    },
+  };
 }
 
 /** An on/off setting: a row with a switch on the right. */

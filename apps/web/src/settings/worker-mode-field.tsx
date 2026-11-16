@@ -1,6 +1,8 @@
 import type { PermissionMode } from "@gram/contracts";
 import { useId } from "react";
 
+import { RadioGroup } from "@/components/ui/checkbox";
+
 import {
   FOLLOW_DEFAULT_CHOICE,
   FOLLOW_DEFAULT_MODE,
@@ -34,33 +36,23 @@ export function WorkerModeField({
   return (
     // A radiogroup named by its own line, not a fieldset: a legend sits on the fieldset's top
     // edge, so in a card of rows the hairline between rows ran through the name.
-    <div
-      role="radiogroup"
-      aria-labelledby={`${name}-label`}
-      data-testid={testId}
-      data-value={checked}
-      className="flex flex-col gap-1.5"
-    >
+    <div data-testid={testId} data-value={checked} className="flex flex-col gap-1.5">
       <div id={`${name}-label`} className="font-medium">
         Worker mode
       </div>
-      {choices.map((choice, i) => (
-        <label key={choice.value} className="flex cursor-pointer items-start gap-2">
-          <input
-            type="radio"
-            name={name}
-            className="mt-0.5 size-4 accent-primary"
-            {...(autofocus && i === 0 ? { "data-autofocus": true } : {})}
-            checked={checked === choice.value}
-            disabled={disabled}
-            onChange={() => onChange(choice.value)}
-          />
-          <span className="flex min-w-0 flex-col">
-            <span>{choice.label}</span>
-            <span className="text-meta text-muted-foreground">{choice.line}</span>
-          </span>
-        </label>
-      ))}
+      <RadioGroup<WorkerModeChoice>
+        labelledBy={`${name}-label`}
+        name={name}
+        options={choices.map((choice) => ({
+          value: choice.value,
+          label: choice.label,
+          description: choice.line,
+        }))}
+        value={checked}
+        onChange={onChange}
+        disabled={disabled}
+        autoFocusFirst={autofocus}
+      />
     </div>
   );
 }

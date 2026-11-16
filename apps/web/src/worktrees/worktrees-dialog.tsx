@@ -7,6 +7,7 @@ import { useRef, useState } from "react";
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { formatRelative } from "@/lib/time";
 import { focusIfConnected, focusLost } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
@@ -289,13 +290,7 @@ function WorktreeRow({
     >
       <div className="flex min-w-0 items-center gap-2 text-reading">
         {onToggle ? (
-          <input
-            type="checkbox"
-            aria-label={`Select ${name}`}
-            checked={selected === true}
-            onChange={onToggle}
-            className="size-3.5 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          />
+          <Checkbox aria-label={`Select ${name}`} checked={selected === true} onChange={onToggle} />
         ) : (
           <FolderGit2 aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         )}
