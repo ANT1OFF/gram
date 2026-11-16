@@ -930,6 +930,41 @@ test("a collapsible group starts closed, keeps its place in view, and stays as i
   expect(errors).toEqual([]);
 });
 
+test("a roomy sidebar with a collapsible group never scrolls sideways", async ({ page }) => {
+  const errors = await mounted(page);
+  await page.evaluate(() => {
+    const w = window as unknown as Update & { fixtureSidebar: object };
+    w.embed.update({
+      sidebar: w.fixtureSidebar,
+      navigation: [
+        {
+          id: "manage",
+          label: "Manage",
+          placement: "main",
+          collapsible: true,
+          items: [{ id: "policies", label: "Policies", to: "/govern/policies" }],
+        },
+      ],
+    });
+  });
+  const sidebar = page.getByTestId("overview-sidebar");
+  const toggle = sidebar.getByTestId("embed-navigation-toggle");
+  await expect(toggle).toBeVisible();
+  // The heading's button stays inside the list, so the list shows no sideways scrollbar.
+  const list = await sidebar.getByTestId("embed-navigation-main").boundingBox();
+  const heading = await toggle.boundingBox();
+  expect((heading?.x ?? 0) + (heading?.width ?? 0)).toBeLessThanOrEqual(
+    (list?.x ?? 0) + (list?.width ?? 0),
+  );
+  const overflow = await sidebar.evaluate((root) =>
+    [root, ...root.querySelectorAll("*")]
+      .filter((el) => /auto|scroll/.test(getComputedStyle(el).overflowX))
+      .some((el) => el.scrollWidth > el.clientWidth),
+  );
+  expect(overflow).toBe(false);
+  expect(errors).toEqual([]);
+});
+
 test("with the peek off, a resting pointer leaves the strip alone and its Expand tile opens it", async ({
   page,
 }) => {
