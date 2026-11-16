@@ -14,7 +14,8 @@ import {
 import type { ThemeAttributes } from "./theme";
 
 // The look's parts that are written at run time, for the palette actually rendered: an accent laid
-// over it (its own `[data-palette]` block), and a background picture behind the app with the levels
+// over it (its own `[data-palette]` block), and a background picture behind the app (the page,
+// `--thread-bg`, goes clear) with the levels
 // that keep the palette's text readable over it (theme/looks.css draws the layer).
 
 const STYLE_ID = "gram-look";
@@ -53,7 +54,7 @@ export function lookCss(
     // More contrast keeps its own, solid surfaces: its `[data-contrast]` block is more specific.
     parts.push(
       `:root[data-backdrop="${scene}"] {` +
-        ` --surface-2: transparent;` +
+        ` --thread-bg: transparent;` +
         ` --surface-3: ${rgba(colors["surface-3"], alpha)};` +
         ` --surface-alpha: ${alpha};` +
         ` --backdrop-scrim: ${rgba(colors["surface-2"], scrim)}; }`,

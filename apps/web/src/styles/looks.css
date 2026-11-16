@@ -99,8 +99,9 @@
 }
 
 /* A background picture (`data-backdrop`, see theme/backdrop.ts): a fixed layer under the app with
-   the scene for the mode in use, under a wash of the page colour. The page colour itself goes
-   clear and surfaces take the opacity the palette's text allows (`--surface-alpha`, and cards'
+   the scene for the mode in use, under a wash of the page colour. The page (body and
+   `--thread-bg`) goes clear, while controls that fill with the page colour stay solid, and
+   surfaces take the opacity the palette's text allows (`--surface-alpha`, and cards'
    `--surface-3`, written with the palette at run time). Frosted and see-through blur what is
    behind cards as the glass look already does behind the sidebar and title bar. */
 #gram-backdrop {

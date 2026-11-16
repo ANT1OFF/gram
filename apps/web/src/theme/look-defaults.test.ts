@@ -58,7 +58,7 @@ describe("the look's run-time stylesheet", () => {
   it("clears the page and makes surfaces see-through over a picture", () => {
     const css = lookCss(attrs("petrol", "fjord", "clear"), presets);
     expect(css).toContain(':root[data-backdrop="fjord"]');
-    expect(css).toContain("--surface-2: transparent");
+    expect(css).toContain("--thread-bg: transparent");
     expect(css).toContain("--surface-alpha: 0.62");
     expect(css).toContain("--backdrop-scrim: rgba(243, 241, 236, 0.6)");
   });

@@ -30,6 +30,8 @@ const HELP = `bun run --filter @gram/web pr:shots [flags]
   --mode <mode>     dark or light (default: both)
   --palette <id>    a palette from @gram/themes' presets, such as minimal-ocean (default: the
                     default pair); its partner is shown in the other mode
+  --look <json>     the appearance's other choices for every shot, such as
+                    '{"backdrop":"fjord","surfaces":"frosted","sidebar":"inset"}'
   --base <ref>      what "before" is the merge base with (default: origin/main)
   --after-only      skip the base checkout
   --list            print the shots and exit
@@ -211,6 +213,7 @@ async function main() {
       path: { type: "string", multiple: true, default: [] },
       mode: { type: "string", multiple: true, default: [] },
       palette: { type: "string" },
+      look: { type: "string" },
       size: { type: "string" },
       base: { type: "string", default: "origin/main" },
       "after-only": { type: "boolean", default: false },
@@ -239,6 +242,7 @@ async function main() {
     GRAM_PR_SHOTS_MODES: modes.length === 0 && (flows || tasks) ? "dark" : modes.join(","),
     GRAM_PR_SHOTS_SIZE: namedSet || values.size !== undefined ? size : "",
     GRAM_PR_SHOTS_PALETTE: values.palette ?? "",
+    GRAM_PR_SHOTS_LOOK: values.look ?? "",
   };
   if (values.list) return playwright(["--list"], env);
 
