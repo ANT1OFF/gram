@@ -16,6 +16,9 @@ const DEFAULT_PAIR: ReadonlySet<string> = new Set(
   ),
 );
 
+/** The look's parts a person chooses, which an app's defaults fill until then. */
+type LookPart = "accent" | "backdrop" | "surfaces" | "sidebar" | "sidebarIcons";
+
 let current: LookDefaults | undefined;
 
 /** The defaults the page was mounted with, if any. */
@@ -54,13 +57,17 @@ export function effectivePrefs<T extends ThemePrefs>(
   host: HostTheme | undefined = undefined,
   defaults: LookDefaults | undefined = current,
 ): T {
+  const pick = <K extends LookPart>(key: K) => {
+    const value = prefs[key] ?? defaults?.[key];
+    return value === undefined ? {} : { [key]: value };
+  };
   return {
     ...prefs,
     palette: paletteToRender(prefs.palette, host, defaults),
-    accent: prefs.accent ?? defaults?.accent,
-    backdrop: prefs.backdrop ?? defaults?.backdrop,
-    surfaces: prefs.surfaces ?? defaults?.surfaces,
-    sidebar: prefs.sidebar ?? defaults?.sidebar,
-    sidebarIcons: prefs.sidebarIcons ?? defaults?.sidebarIcons,
+    ...pick("accent"),
+    ...pick("backdrop"),
+    ...pick("surfaces"),
+    ...pick("sidebar"),
+    ...pick("sidebarIcons"),
   };
 }

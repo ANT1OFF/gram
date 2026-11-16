@@ -1,30 +1,20 @@
 import {
   ACCENT_SEPARATOR,
-  backdropLevels,
-  derivePalette,
   isAccentId,
   isSceneId,
   paletteCss,
-  sceneSvg,
   withAccent,
   type Palette,
-  type SurfacesId,
 } from "@gram/themes";
 
+import type { syncScene } from "./backdrop-scene";
 import type { ThemeAttributes } from "./theme";
 
 // The look's parts that are written at run time, for the palette actually rendered: an accent laid
-// over it (its own `[data-palette]` block), and a background picture behind the app (the page,
-// `--thread-bg`, goes clear) with the levels
-// that keep the palette's text readable over it (theme/looks.css draws the layer).
+// over it (its own `[data-palette]` block), and a background picture behind the app, whose scenes
+// and levels load only once one is chosen (backdrop-scene.ts).
 
 const STYLE_ID = "gram-look";
-const LAYER_ID = "gram-backdrop";
-
-const rgba = (hex: string, alpha: number) => {
-  const [r, g, b] = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
-  return alpha >= 1 ? hex : `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
 
 /** The palette `attrs` render, the accent laid over it where the id names one. */
 export function renderedPalette(
@@ -37,39 +27,22 @@ export function renderedPalette(
   return isAccentId(accent) ? withAccent(palette, accent) : palette;
 }
 
-/** The stylesheet for the accent and the picture's levels, empty when neither is set. */
-export function lookCss(
-  attrs: Pick<ThemeAttributes, "data-palette" | "data-backdrop" | "data-surfaces">,
+/** The accented palette's block, empty with no accent. */
+export function accentCss(
+  attrs: Pick<ThemeAttributes, "data-palette">,
   palettes: readonly Palette[],
 ): string {
   const palette = renderedPalette(attrs, palettes);
-  if (!palette) return "";
-  const parts: string[] = [];
-  if (palette.id.includes(ACCENT_SEPARATOR)) parts.push(paletteCss(palette));
-  const scene = attrs["data-backdrop"];
-  if (isSceneId(scene)) {
-    const { colors } = derivePalette(palette);
-    const surfaces = attrs["data-surfaces"] as SurfacesId;
-    const { scrim, alpha } = backdropLevels(colors, palette.mode, scene, surfaces);
-    // More contrast keeps its own, solid surfaces: its `[data-contrast]` block is more specific.
-    parts.push(
-      `:root[data-backdrop="${scene}"] {` +
-        ` --thread-bg: transparent;` +
-        ` --surface-3: ${rgba(colors["surface-3"], alpha)};` +
-        ` --surface-alpha: ${alpha};` +
-        ` --backdrop-scrim: ${rgba(colors["surface-2"], scrim)}; }`,
-    );
-  }
-  return parts.join("\n");
+  return palette?.id.includes(ACCENT_SEPARATOR) ? paletteCss(palette) : "";
 }
 
-/** Writes the look's run-time stylesheet and the picture layer for `attrs`. */
+/** Writes the accent's stylesheet, and the picture and its levels for `attrs`. */
 export function syncLookStyle(
   doc: Document,
   attrs: Pick<ThemeAttributes, "data-palette" | "data-backdrop" | "data-surfaces" | "data-mode">,
   palettes: readonly Palette[],
 ): void {
-  const css = lookCss(attrs, palettes);
+  const css = accentCss(attrs, palettes);
   let style = doc.getElementById(STYLE_ID);
   if (css) {
     if (!style) {
@@ -81,21 +54,21 @@ export function syncLookStyle(
   } else style?.remove();
 
   const scene = attrs["data-backdrop"];
-  let layer = doc.getElementById(LAYER_ID);
-  if (!isSceneId(scene)) {
-    layer?.remove();
-    return;
-  }
-  const key = `${scene}:${attrs["data-mode"]}`;
-  if (!layer) {
-    layer = doc.createElement("div");
-    layer.id = LAYER_ID;
-    layer.setAttribute("aria-hidden", "true");
-    doc.body.prepend(layer);
-  }
-  if (layer.dataset["scene"] !== key) {
-    layer.dataset["scene"] = key;
-    // Drawn from code, never from anything a person typed.
-    layer.innerHTML = sceneSvg(scene, attrs["data-mode"] === "dark", "gram-backdrop");
+  const palette = renderedPalette(attrs, palettes);
+  const draw = (sync: typeof syncScene) => {
+    // A choice made while the module loaded wins: draw only what the page still asks for.
+    const asked = doc.documentElement.getAttribute("data-backdrop") ?? scene;
+    sync(
+      doc,
+      asked === scene ? palette : undefined,
+      scene,
+      attrs["data-surfaces"],
+      attrs["data-mode"],
+    );
+  };
+  if (isSceneId(scene)) void import("./backdrop-scene").then((loaded) => draw(loaded.syncScene));
+  else {
+    doc.getElementById("gram-backdrop")?.remove();
+    doc.getElementById("gram-backdrop-style")?.remove();
   }
 }

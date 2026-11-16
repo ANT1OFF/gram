@@ -1,7 +1,8 @@
 import { PRESET_PALETTES, type Palette } from "@gram/themes";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { lookCss, renderedPalette } from "./backdrop";
+import { accentCss, renderedPalette } from "./backdrop";
+import { backdropCss } from "./backdrop-scene";
 import {
   effectivePrefs,
   installLookDefaults,
@@ -46,17 +47,19 @@ describe("the embedding app's defaults", () => {
 });
 
 describe("the look's run-time stylesheet", () => {
-  it("writes nothing for a plain palette with no picture", () => {
-    expect(lookCss(attrs("petrol"), presets)).toBe("");
+  it("writes nothing for a plain palette", () => {
+    expect(accentCss(attrs("petrol"), presets)).toBe("");
   });
 
   it("writes the accented palette's block, built from the chosen palette's seeds", () => {
     expect(renderedPalette(attrs("neutral~forest"), presets)?.seeds.accent).toBe("#1f5c3e");
-    expect(lookCss(attrs("neutral~forest"), presets)).toContain('[data-palette="neutral~forest"]');
+    expect(accentCss(attrs("neutral~forest"), presets)).toContain(
+      '[data-palette="neutral~forest"]',
+    );
   });
 
   it("clears the page and makes surfaces see-through over a picture", () => {
-    const css = lookCss(attrs("petrol", "fjord", "clear"), presets);
+    const css = backdropCss(renderedPalette(attrs("petrol"), presets)!, "fjord", "clear");
     expect(css).toContain(':root[data-backdrop="fjord"]');
     expect(css).toContain("--thread-bg: transparent");
     expect(css).toContain("--surface-alpha: 0.62");

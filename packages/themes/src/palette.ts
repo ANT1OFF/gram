@@ -149,7 +149,10 @@ const LIGHT_BG_THRESHOLD = 0.6;
 
 /** Only the newly added families opt into text-grade SGR colors; existing presets stay unchanged. */
 const TEXT_GRADE_ANSI_IDS = new Set(
-  ["neutral", "rose", "forest", "ocean", "ember", "violet", "petrol"].flatMap((id) => [id, `${id}-dark`]),
+  ["neutral", "rose", "forest", "ocean", "ember", "violet", "petrol"].flatMap((id) => [
+    id,
+    `${id}-dark`,
+  ]),
 );
 
 /**
