@@ -15,10 +15,24 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
+  Dialog,
   Field,
   Hint,
   Input,
   InputGroup,
+  Menu,
+  MenuCheckboxItem,
+  MenuContent,
+  MenuGroup,
+  MenuItem,
+  MenuLabel,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuSub,
+  MenuSubContent,
+  MenuSubTrigger,
+  MenuTrigger,
   Meter,
   meterTone,
   OptionGroup,
@@ -33,6 +47,7 @@ import {
   SelectValue,
   SettingRow,
   SettingsGroup,
+  Sheet,
   Switch,
   Tabs,
   TabsContent,
@@ -129,6 +144,41 @@ export function KitPage({ pick }: { pick: (level: Level) => void }) {
         Acme
       </Popover>
       <AgentIcon agent="claude" labelled />
+      <Menu>
+        <MenuTrigger render={<Button size="icon-xs" variant="ghost" aria-label="Actions" />} />
+        <MenuContent align="start" data-testid="menu">
+          <MenuGroup>
+            <MenuLabel>Member</MenuLabel>
+            <MenuItem onClick={() => {}}>Rename</MenuItem>
+            <MenuItem danger disabled>
+              Remove
+            </MenuItem>
+          </MenuGroup>
+          <MenuSeparator />
+          <MenuCheckboxItem checked onCheckedChange={() => {}}>
+            Pinned
+          </MenuCheckboxItem>
+          <MenuRadioGroup value="a" onValueChange={() => {}}>
+            <MenuRadioItem value="a">A</MenuRadioItem>
+          </MenuRadioGroup>
+          <MenuSub>
+            <MenuSubTrigger>More</MenuSubTrigger>
+            <MenuSubContent>
+              <MenuItem>Deep</MenuItem>
+            </MenuSubContent>
+          </MenuSub>
+        </MenuContent>
+      </Menu>
+      <Dialog title="Remove member?" description="They lose access." onClose={() => {}}>
+        <Button variant="destructive">Remove</Button>
+      </Dialog>
+      <Sheet open title="Member" onClose={() => {}} wide actions={<Button size="sm">Edit</Button>}>
+        Body
+      </Sheet>
+      {/* @ts-expect-error: a sheet is open or not */}
+      <Sheet title="Member" onClose={() => {}}>
+        Body
+      </Sheet>
       {/* @ts-expect-error: a variant the kit doesn't have */}
       <Button variant="huge">No</Button>
       {/* @ts-expect-error: a page needs its title */}

@@ -1151,3 +1151,54 @@ test("navigate with replace takes the current entry's place in the history", asy
   await expect(page).toHaveURL(/\/w\/acme\/$/);
   expect(errors).toEqual([]);
 });
+
+test("a menu taller than the window scrolls in place, its submenu too, on a desktop and a phone", async ({
+  page,
+}) => {
+  for (const size of [
+    { width: 1280, height: 800 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(size);
+    const errors = await mounted(page, "/govern/members");
+    const fits = async (testId: string) => {
+      const popup = page.getByTestId(testId);
+      await expect(popup).toBeVisible();
+      const box = (await popup.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(size.height);
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(size.width);
+      const scroll = await popup.evaluate((element) => ({
+        overflow: getComputedStyle(element).overflowY,
+        scrollable: element.scrollHeight > element.clientHeight,
+      }));
+      expect(scroll).toEqual({ overflow: "auto", scrollable: true });
+      return popup;
+    };
+    const pageScroll = () =>
+      page.evaluate(() => [document.scrollingElement?.scrollTop ?? 0, window.scrollY]);
+    const before = await pageScroll();
+
+    await page.getByTestId("fixture-long-menu").click();
+    const menu = await fits("fixture-long-menu-popup");
+    // The last row is reached inside the menu; the page behind doesn't move.
+    await page.keyboard.press("End");
+    await expect(menu.getByRole("menuitem", { name: "Member 45" })).toBeInViewport();
+    expect(await menu.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    expect(await pageScroll()).toEqual(before);
+
+    await page.keyboard.press("Home");
+    await menu.getByTestId("fixture-long-submenu").hover();
+    await page.keyboard.press("ArrowRight");
+    const submenu = await fits("fixture-long-submenu-popup");
+    await page.keyboard.press("End");
+    await expect(submenu.getByRole("menuitem", { name: "Member 45" })).toBeInViewport();
+    expect(await submenu.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    expect(await pageScroll()).toEqual(before);
+
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    expect(errors).toEqual([]);
+  }
+});

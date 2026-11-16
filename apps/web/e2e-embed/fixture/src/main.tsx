@@ -15,6 +15,13 @@ import {
   Badge,
   Button,
   Hint,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuSub,
+  MenuSubContent,
+  MenuSubTrigger,
+  MenuTrigger,
   Input,
   InputGroup,
   Meter,
@@ -145,6 +152,41 @@ function Limits() {
         </SettingRow>
       </SettingsGroup>
     </Page>
+  );
+}
+
+/** Forty-five members: more rows than any window holds, and one name longer than a phone. */
+const MEMBERS = Array.from({ length: 45 }, (_, index) =>
+  index === 0
+    ? "Member 1, whose name is far longer than a phone is wide and has to wrap inside the menu"
+    : `Member ${index + 1}`,
+);
+
+/** A page with a menu and a submenu far taller than the window, which have to scroll in place. */
+function Members() {
+  return (
+    <div className="flex justify-end p-6">
+      <Menu>
+        <MenuTrigger
+          render={<Button data-testid="fixture-long-menu" variant="outline" size="sm" />}
+        >
+          Members
+        </MenuTrigger>
+        <MenuContent data-testid="fixture-long-menu-popup">
+          <MenuSub>
+            <MenuSubTrigger data-testid="fixture-long-submenu">Everyone</MenuSubTrigger>
+            <MenuSubContent data-testid="fixture-long-submenu-popup">
+              {MEMBERS.map((name) => (
+                <MenuItem key={name}>{name}</MenuItem>
+              ))}
+            </MenuSubContent>
+          </MenuSub>
+          {MEMBERS.map((name) => (
+            <MenuItem key={name}>{name}</MenuItem>
+          ))}
+        </MenuContent>
+      </Menu>
+    </div>
   );
 }
 
@@ -329,6 +371,7 @@ mountGram({
     routes: [
       { path: "/govern/policies", title: "Policies", component: Policies },
       { path: "/govern/limits", title: "Limits", component: Limits },
+      { path: "/govern/members", title: "Members", component: Members },
       { path: "/govern/agents/$agentId", component: Agent },
       { path: "/govern/beside/$threadId", title: "Beside", component: Beside },
       { path: "/govern/changes/$threadId", title: "Changes", component: Changes },

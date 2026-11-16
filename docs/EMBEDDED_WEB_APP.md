@@ -494,6 +494,34 @@ For forms:
   New's autonomy picker is; without, it is the segmented control. Either way it is one Tab stop,
   and the arrow keys, Home and End move the pick. It also takes a `className`.
 
+For what opens over the page:
+
+- `Dialog`: a centred modal, as Gram's are. Mount it to open it, or give `open` to keep it
+  mounted so it fades out as it closes. Closing (Esc, the backdrop) calls `onClose`, and focus
+  goes back to what had it, or to `returnFocus()` when that is gone. Props: `title`,
+  `description?`, `onClose`, `children` (its body and its buttons; a Cancel calls `onClose`), and
+  optional `open`, `testId`, `returnFocus`, `initialFocus` and `className` (on the popup). It
+  opens a fifth of the way down and scrolls before it runs past the window; focus starts on its
+  first control, so for a long body whose first control is at its end, give `initialFocus`.
+- `Sheet`: a sheet from the window's end edge, as the workspace sheet is: `open`, `onClose`,
+  `title`, `children` (its body, which scrolls, by keyboard too), and optional `description` (a
+  line at the top of the body, which describes the dialog), `beside` (after the title: a badge, a
+  count), `actions` (in the header, before Close), `wide` (36 rem rather than 28, for a page of
+  settings), `testId`, `closeLabel`, `returnFocus` and `className` (on the body). It stays
+  mounted while closed, so it slides away with its content. A `Dialog` rendered inside it dims
+  it, and a click on the dim only closes the dialog; one rendered beside it covers it with its
+  own backdrop.
+- `Menu`: a menu hung from a button, with Gram's popup and rows. `Menu` holds a `MenuTrigger`
+  (give it a `render`, such as a `Button`) and a `MenuContent` (`side`, `align`, default under
+  the trigger at its end, and `sideOffset`). Rows: `MenuItem` (`onClick`, `disabled`, `danger`
+  for a removal), `MenuCheckboxItem` (`checked`, `onCheckedChange`; the menu stays open),
+  `MenuRadioGroup` (`value`, `onValueChange`) of `MenuRadioItem`s (`value`), `MenuGroup` with a
+  `MenuLabel`, `MenuSeparator`, and a submenu as `MenuSub` with a `MenuSubTrigger` and a
+  `MenuSubContent`. They take Base UI's Menu props beside these. A menu never runs past the
+  window: a long one scrolls and a long row wraps. A row that opens a `Dialog` (a removal's
+  confirm) opens it best once the menu has closed, from `Menu`'s `onOpenChangeComplete`, so the
+  two don't both hold focus for a moment.
+
 The package's declarations (`gram-web-kit.d.ts` and `types/`) type every one of these, `render`
 on `Button`, `Badge` and the tooltip's trigger included, so an app needs no declarations of its
 own for the kit: resolve `@gram/web/kit` to the package and its `exports` find them. A test
@@ -588,6 +616,7 @@ one lands, and carry its "Embedders" line into the merge's description.
 [separate app](../apps/web/e2e-embed/fixture/src/main.tsx) that consumes only the build, and
 drives it in a browser: the whole app mounts, an added page opens from the sidebar, the palette
 and its address and is named in the title bar and on a phone, the switcher moves between the
-sidebar and the title bar, pages of its own use the kit (a page of settings among them) and the
-theme's names, and all of it works
+sidebar and the title bar, pages of its own use the kit (a page of settings among them, and a
+menu and submenu taller than the window, which scroll in place) and the theme's names, and all of
+it works
 under a base path. CI runs it in the first e2e shard.

@@ -27,6 +27,7 @@ export const TYPES = [
   "components/ui/checkbox",
   "components/ui/collapsible",
   "components/ui/input",
+  "components/ui/menu",
   "components/ui/meter",
   "components/ui/select",
   "components/ui/switch",
@@ -35,6 +36,7 @@ export const TYPES = [
   "settings/fields",
   "settings/settings-group",
   "shell/titlebar-popover",
+  "thread/dialog-shell",
 ];
 
 /** The libraries a kept declaration may name: they become the package's dependencies. */

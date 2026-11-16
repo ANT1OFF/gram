@@ -18,6 +18,16 @@ export const MENU_POPUP =
 export const MENU_ITEM =
   "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor [&_svg]:size-icon-row [&_svg]:shrink-0";
 
+/**
+ * A menu kept inside the window: no taller or wider than the room Base UI finds beside its trigger
+ * (`--available-height`, `--available-width`), scrolling when its rows don't fit.
+ */
+export const MENU_FITS =
+  "max-h-(--available-height) max-w-(--available-width) overflow-y-auto overscroll-contain";
+
+/** A removal's row: in the destructive colour, highlighted or not. It should confirm first. */
+export const MENU_DANGER = "text-destructive data-[highlighted]:text-destructive";
+
 /** A menu's group heading. */
 export const MENU_LABEL = "px-2 pt-1.5 pb-0.5 text-caption font-medium text-muted-foreground";
 

@@ -6,7 +6,7 @@ import {
   type ThreadId,
   type WorkspaceId,
 } from "@gram/contracts";
-import { ChevronRight, Ellipsis, Pencil, X } from "lucide-react";
+import { ChevronRight, Ellipsis, Pencil } from "lucide-react";
 import { useMemo, useState, type MouseEvent } from "react";
 
 import { useApi } from "@/api/context";
@@ -18,7 +18,7 @@ import { useOpenThread } from "@/shell/thread-switcher";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { useSame } from "@/stores/use-same";
-import { Dialog, DialogShell } from "@/thread/dialog-shell";
+import { Dialog, DialogShell, SheetHeader } from "@/thread/dialog-shell";
 import { useViewStore } from "@/views/view-store";
 
 import { keepBeside } from "./beside-store";
@@ -537,34 +537,26 @@ export function SheetBody({
     [card, facts],
   );
   const onOpen = useOpenWorker();
-  const close = useFeatureSheet((s) => s.close);
   return (
     <>
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
-        <h2 id={titleId} className="min-w-0 truncate text-title">
-          {feature}
-        </h2>
-        {sheet !== undefined && sheet.needs > 0 && (
-          <span
-            data-testid="feature-sheet-needs"
-            className="shrink-0 rounded-sm border border-status-needs-mark/60 px-1.5 text-meta text-status-needs tabular-nums"
-          >
-            {sheet.needs} need you
-          </span>
-        )}
-        {card?.paused === true && <PausedBadge testId="feature-sheet-paused" />}
-        <span className="flex-1" />
-        {sheet !== undefined && <FeatureMenu row={sheet.row} inSheet />}
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          aria-label="Close"
-          title="Close"
-          onClick={() => close()}
-        >
-          <X />
-        </Button>
-      </header>
+      <SheetHeader
+        title={feature}
+        titleId={titleId}
+        beside={
+          <>
+            {sheet !== undefined && sheet.needs > 0 && (
+              <span
+                data-testid="feature-sheet-needs"
+                className="shrink-0 rounded-sm border border-status-needs-mark/60 px-1.5 text-meta text-status-needs tabular-nums"
+              >
+                {sheet.needs} need you
+              </span>
+            )}
+            {card?.paused === true && <PausedBadge testId="feature-sheet-paused" />}
+          </>
+        }
+        actions={sheet !== undefined && <FeatureMenu row={sheet.row} inSheet />}
+      />
       {sheet === undefined ? (
         <p role="status" className="p-5 text-reading text-muted-foreground">
           No workers left on it.
