@@ -209,7 +209,7 @@ describe("Settings → Machines", () => {
       expect(on.body).toMatchObject({
         protocol: HOST_PROTOCOL_VERSION,
         release: "1.15.2",
-        updateCommand: `curl -fsSL ${ORIGIN}/host/install | sh`,
+        updateCommand: `curl -fsSL '${ORIGIN}/host/install' | sh`,
         machines: [{ name: "cachyos", offline: { kind: "never" } }],
       });
       const off = yield* post(hosts, MACHINES_LIST_PATH, {}, { remote: undefined });

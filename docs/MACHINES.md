@@ -145,7 +145,7 @@ joined first of those online.
 2. On the new machine, run it in a terminal:
 
    ```sh
-   curl -fsSL https://<device>.<tailnet>.ts.net/host/install | sh -s -- '<join link>'
+   curl -fsSL 'https://<device>.<tailnet>.ts.net/host/install' | sh -s -- '<join link>'
    ```
 
    The installer comes from your own Gram over the tailnet. It uses the Gram app installed there
@@ -184,7 +184,7 @@ brings it to a release that does. An existing join is kept and its background se
 updated app; no new join link or confirmation is needed:
 
 ```sh
-curl -fsSL https://<device>.<tailnet>.ts.net/host/install | sh
+curl -fsSL 'https://<device>.<tailnet>.ts.net/host/install' | sh
 ```
 
 The repository identity and explicit-base fixes run in that machine's host. Updating the main
@@ -363,7 +363,7 @@ to a release that can:
 - For any other machine, it shows the command to run there, with no link in it:
 
   ```sh
-  curl -fsSL https://<device>.<tailnet>.ts.net/host/install | sh
+  curl -fsSL 'https://<device>.<tailnet>.ts.net/host/install' | sh
   ```
 
   On a machine still joined, that moves the service and keeps the join, so there is nothing to

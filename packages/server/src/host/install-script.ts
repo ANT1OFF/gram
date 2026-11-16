@@ -1,7 +1,7 @@
 /**
  * The installer a new machine runs to join this Gram, as one command:
  *
- *   curl -fsSL https://<device>.<tailnet>.ts.net/host/install | sh -s -- '<join link>'
+ *   curl -fsSL 'https://<device>.<tailnet>.ts.net/host/install' | sh -s -- '<join link>'
  *
  * Gram's own app carries `gram-host` (`gram-host.js` beside the server, run by the app's binary as
  * plain Node), so the machine needs no Node, checkout or package of its own. The script uses a Gram
@@ -19,15 +19,18 @@ export const RELEASES = "https://github.com/ANT1OFF/gram/releases/download";
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/;
 const ORIGIN = /^https:\/\/[0-9A-Za-z.-]+(?::\d+)?$/;
 
+/** The installer's URL, quoted for the shell so nothing in the origin is read as a command. */
+const installUrl = (origin: string): string => `'${origin.replaceAll("'", "")}/host/install'`;
+
 /** The one command Settings → Machines shows, for this Gram at `origin` and its join link. */
 export const installCommand = (origin: string, link: string): string =>
-  `curl -fsSL ${origin}/host/install | sh -s -- '${link.replaceAll("'", "")}'`;
+  `curl -fsSL ${installUrl(origin)} | sh -s -- '${link.replaceAll("'", "")}'`;
 
 /**
  * The command that updates a machine already joined to this Gram at `origin`: the same installer
  * with no link, which moves its service to this Gram's release and keeps the join.
  */
-export const updateCommand = (origin: string): string => `curl -fsSL ${origin}/host/install | sh`;
+export const updateCommand = (origin: string): string => `curl -fsSL ${installUrl(origin)} | sh`;
 
 /**
  * The script, for this Gram at `origin` running release `version` (undefined for a Gram run from
