@@ -64,6 +64,17 @@ export interface StopMarks {
   readonly resuming: (id: HostId) => boolean;
   /** Its threads were resumed, or the resume gave up: sessions open on it as on any machine. */
   readonly resumed: (id: HostId) => void;
+  /**
+   * While the machine is `resuming`: this thread's folders are back (or the resume is done with
+   * them), so its session may open before the others' are.
+   */
+  readonly threadBack: (id: HostId, threadId: ThreadId) => void;
+  /** Whether `threadBack` said so of this thread since the machine was last owed a resume. */
+  readonly isThreadBack: (id: HostId, threadId: ThreadId) => boolean;
+  /** A session of this thread waits for the machine's resume: its folders go first. */
+  readonly awaiting: (id: HostId, threadId: ThreadId) => void;
+  /** The threads a session waits on the machine's resume for, as `awaiting` said. */
+  readonly awaited: (id: HostId) => ReadonlySet<ThreadId>;
   /** The stop was taken back: nothing is remembered of it. */
   readonly cancel: (id: HostId) => void;
   /** How many times the machine's stops were taken back. */
@@ -79,6 +90,13 @@ export interface StopMarks {
   /** The machine was removed: nothing is remembered of it. */
   readonly forget: (id: HostId) => void;
 }
+
+/** Adds `threadId` to the machine's set in `map`. */
+const add = (map: Map<HostId, Set<ThreadId>>, id: HostId, threadId: ThreadId) => {
+  const set = map.get(id) ?? new Set<ThreadId>();
+  set.add(threadId);
+  map.set(id, set);
+};
 
 /** One folder of one thread, as a key. */
 const folder = (threadId: ThreadId, cwd: string) => `${threadId}\0${cwd}`;
@@ -100,6 +118,13 @@ export const makeStopMarks = (
   const owed = new Map<HostId, number>();
   /** Told to come back on another disk (`expect`), since when. */
   const expected = new Map<HostId, number>();
+  const threadsBack = new Map<HostId, Set<ThreadId>>();
+  const threadsAwaiting = new Map<HostId, Set<ThreadId>>();
+  const settle = (id: HostId) => {
+    owed.delete(id);
+    threadsBack.delete(id);
+    threadsAwaiting.delete(id);
+  };
   /** The mark, unless its hold ran out with the machine there all along. */
   const markOf = (id: HostId) => {
     const mark = marks.get(id);
@@ -135,8 +160,10 @@ export const makeStopMarks = (
     back: (id) => {
       const told = expected.get(id);
       expected.delete(id);
-      if (markOf(id)?.left === true || (told !== undefined && now() - told < EXPECT_FOR_MS))
+      if (markOf(id)?.left === true || (told !== undefined && now() - told < EXPECT_FOR_MS)) {
         owed.set(id, now());
+        threadsBack.delete(id);
+      }
       marks.delete(id);
     },
     expect: (id) => {
@@ -146,15 +173,17 @@ export const makeStopMarks = (
       const at = owed.get(id);
       if (at === undefined) return false;
       if (now() - at < resumeWaitMs) return true;
-      owed.delete(id);
+      settle(id);
       return false;
     },
-    resumed: (id) => {
-      owed.delete(id);
-    },
+    resumed: settle,
+    threadBack: (id, threadId) => add(threadsBack, id, threadId),
+    isThreadBack: (id, threadId) => threadsBack.get(id)?.has(threadId) === true,
+    awaiting: (id, threadId) => add(threadsAwaiting, id, threadId),
+    awaited: (id) => threadsAwaiting.get(id) ?? new Set(),
     cancel: (id) => {
       marks.delete(id);
-      owed.delete(id);
+      settle(id);
       expected.delete(id);
       rested.delete(id);
       last.delete(id);
@@ -190,7 +219,7 @@ export const makeStopMarks = (
     wantedSince: (id) => waitingSince.get(id),
     forget: (id) => {
       marks.delete(id);
-      owed.delete(id);
+      settle(id);
       expected.delete(id);
       last.delete(id);
       rested.delete(id);

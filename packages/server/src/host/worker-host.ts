@@ -200,15 +200,18 @@ export const awaitedMachines =
     store: Pick<ThreadStore["Service"], "getSettings">,
     waitMs: number = WAKE_WAIT_MS,
   ) =>
-  (id: HostId): Effect.Effect<WorkerHost, HostUnavailable> =>
+  (id: HostId, threadId?: ThreadId): Effect.Effect<WorkerHost, HostUnavailable> =>
     Effect.gen(function* () {
       const first = yield* get(id).pipe(
         Effect.map((host) => ({ host, away: undefined })),
         Effect.catch((away) => Effect.succeed({ host: undefined, away })),
       );
       // Readied to stop, or back after one and not yet resumed (its folders maybe not there yet):
-      // it takes no new session until then.
-      const settled = () => !remote.stops.holding(id) && !remote.stops.resuming(id);
+      // it takes no new session until then, but a thread's own once its own folders are back.
+      const settled = () =>
+        !remote.stops.holding(id) &&
+        (!remote.stops.resuming(id) ||
+          (threadId !== undefined && remote.stops.isThreadBack(id, threadId)));
       if (first.host !== undefined && settled()) return first.host;
       const asIs = first.host === undefined ? Effect.fail(first.away) : Effect.succeed(first.host);
       if (remote.machines.get(id)?.confirmedAt === undefined) return yield* asIs;
@@ -216,6 +219,7 @@ export const awaitedMachines =
       yield* Effect.logInfo("a session waits for its machine to be started").pipe(
         Effect.annotateLogs({ hostId: id }),
       );
+      if (threadId !== undefined) remote.stops.awaiting(id, threadId);
       const ready = get(id).pipe(
         Effect.filterOrFail(
           settled,
@@ -297,7 +301,10 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
     /** A headless Gram's placement; `local` is then already the one that refuses (`headlessLocal`). */
     headless?: HeadlessPlacement,
     /** The joined machines' hosts for a session about to open, when that differs from `machines`. */
-    sessionMachines?: (id: HostId) => Effect.Effect<WorkerHost, HostUnavailable>,
+    sessionMachines?: (
+      id: HostId,
+      threadId?: ThreadId,
+    ) => Effect.Effect<WorkerHost, HostUnavailable>,
     /** Who each joined machine was started for, where one was (`ownership.ts`). */
     ownerOf: OwnerOf = () => undefined,
     /**
@@ -322,7 +329,10 @@ export class WorkerHosts extends Context.Service<WorkerHosts, WorkerHostsShape>(
       get,
       ...(sessionMachines === undefined
         ? {}
-        : { forSession: (id: HostId) => (byId.has(id) ? get(id) : sessionMachines(id)) }),
+        : {
+            forSession: (id: HostId, threadId?: ThreadId) =>
+              byId.has(id) ? get(id) : sessionMachines(id, threadId),
+          }),
     };
     const placed = placedHost(
       hosts,

@@ -123,7 +123,10 @@ export const placedHost = (
      * The host a session is about to open on, when that is looked up another way than `get`: one
      * that waits for a stopped machine to be started (`awaitedMachines`).
      */
-    readonly forSession?: WorkerHostsShape["get"];
+    readonly forSession?: (
+      id: HostId,
+      threadId?: ThreadId,
+    ) => Effect.Effect<WorkerHost, HostUnavailable>;
   },
   store: Pick<ThreadStore["Service"], "listThreads" | "getThread">,
   /** Whether any machine is joined: with none, every call is this machine's, looked up for free. */
@@ -504,7 +507,7 @@ export const placedHost = (
             Effect.repeat({ schedule: Schedule.spaced(MOVE_LOOK), until: (now) => now !== id }),
           );
           const found = yield* Effect.raceFirst(
-            wait(id).pipe(Effect.map((ready) => ({ host: ready }) as const)),
+            wait(id, threadId).pipe(Effect.map((ready) => ({ host: ready }) as const)),
             movedOff.pipe(Effect.map((to) => ({ to }) as const)),
           );
           if ("host" in found) host = found.host;

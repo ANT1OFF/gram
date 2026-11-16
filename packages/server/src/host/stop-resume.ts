@@ -393,9 +393,30 @@ export const resumeHost = (
       });
     // A few folders at once: each is a clone and a fetch on the host, and sessions wait for them
     // all. Threads sharing a folder take it in turn, so the first makes it and the rest find it.
+    // A thread whose folders are all done opens its session then, before the rest are.
+    const toGo = new Map<ThreadId, number>();
+    for (const { thread } of folders) toGo.set(thread.id, (toGo.get(thread.id) ?? 0) + 1);
+    const done = (threadId: ThreadId) =>
+      Effect.sync(() => {
+        const more = (toGo.get(threadId) ?? 1) - 1;
+        toGo.set(threadId, more);
+        if (more === 0) deps.hosts.stops.threadBack(id, threadId);
+      });
+    // The folders of threads a session waits for first.
+    const awaited = deps.hosts.stops.awaited(id);
+    const groups = [...Map.groupBy(folders, ({ cwd }) => cwd).values()].toSorted(
+      (a, b) =>
+        Number(b.some(({ thread }) => awaited.has(thread.id))) -
+        Number(a.some(({ thread }) => awaited.has(thread.id))),
+    );
     yield* Effect.forEach(
-      Map.groupBy(folders, ({ cwd }) => cwd).values(),
-      (sharing) => Effect.forEach(sharing, putBack, { discard: true }),
+      groups,
+      (sharing) =>
+        Effect.forEach(
+          sharing,
+          (folder) => putBack(folder).pipe(Effect.ensuring(done(folder.thread.id))),
+          { discard: true },
+        ),
       { concurrency: RESTORE_CONCURRENCY, discard: true },
     );
     const gone = new Set(missing.map((entry) => entry.threadId));
