@@ -112,56 +112,65 @@ it("live auxiliary conflict updates known primary usage without fabricating anot
 });
 
 describe("Codex telemetry continuity at actual turn boundaries", () => {
-  for (const end of ["completed", "interrupted", "failed", "flush", "next-start"] as const) {
-    for (const gap of ["absent", "null", "invalid", "zero"] as const) {
-      it(`preserves known prior usage across ${gap} telemetry with ${end}`, () => {
-        const { mapper, boundary, report } = setup();
-        boundary("prior", "inProgress");
-        report("prior", counts(100, 10), counts(100, 10));
-        expect(usage(boundary("prior", "completed"))[0]).toMatchObject({
-          tokens: { inputTokens: 100, outputTokens: 10 },
-          telemetryVersion: "codex-request-delta-v1",
-        });
-        boundary("gap", "inProgress");
-        if (gap === "null") report("gap", null, null);
-        if (gap === "invalid") report("gap", counts(-1, 0), counts(-1, 0));
-        if (gap === "zero") report("gap", counts(100, 10), counts(0, 0));
-        if (end !== "next-start") {
-          const ended = end === "flush" ? mapper.flush() : boundary("gap", end);
-          expect(usage(ended)).toHaveLength(gap === "zero" ? 1 : 0);
-          expect(finish(ended)).toEqual([
-            "finish-step",
-            "finish",
-            end === "interrupted"
-              ? "interrupted"
-              : end === "failed" || end === "flush"
-                ? "error"
-                : "completed",
-          ]);
-        }
-        const opened = boundary("current", "inProgress");
-        if (end === "next-start") {
-          expect(usage(opened)).toHaveLength(gap === "zero" ? 1 : 0);
-          expect(finish(opened)).toEqual(["finish-step", "finish", "completed"]);
-        }
-        // Ended-turn replay and wrong-owner reports must not restore a stale baseline.
-        expect(report("gap", counts(200, 20), counts(100, 10))).toEqual([]);
-        expect(report("current", counts(200, 20), counts(100, 10), "other")).toEqual([]);
-        const total = gap === "zero" ? counts(110, 11) : counts(210, 21);
-        report("current", total, counts(10, 1));
-        expect(usage(boundary("current", "completed"))[0]).toMatchObject({
-          tokens: { inputTokens: 10, outputTokens: 1 },
-          telemetryVersion: gap === "zero" ? "codex-request-delta-v1" : "codex-last-request-v1",
-          ...(gap === "zero" ? {} : { partial: true }),
-        });
-        boundary("recovered", "inProgress");
-        report("recovered", counts(total.inputTokens + 10, total.outputTokens + 1), counts(10, 1));
-        expect(usage(boundary("recovered", "completed"))[0]).toMatchObject({
-          tokens: { inputTokens: 10, outputTokens: 1 },
-          telemetryVersion: "codex-request-delta-v1",
-        });
+  // Every gap and every end, paired rather than crossed; "zero" (a real zero request) is the gap
+  // that still counts, so it meets each kind of end: a boundary, a flush and the next start.
+  const continuity = [
+    ["absent", "completed"],
+    ["absent", "next-start"],
+    ["null", "interrupted"],
+    ["invalid", "failed"],
+    ["zero", "completed"],
+    ["zero", "flush"],
+    ["zero", "next-start"],
+  ] as const;
+  for (const [gap, end] of continuity) {
+    it(`preserves known prior usage across ${gap} telemetry with ${end}`, () => {
+      const { mapper, boundary, report } = setup();
+      boundary("prior", "inProgress");
+      report("prior", counts(100, 10), counts(100, 10));
+      expect(usage(boundary("prior", "completed"))[0]).toMatchObject({
+        tokens: { inputTokens: 100, outputTokens: 10 },
+        telemetryVersion: "codex-request-delta-v1",
       });
-    }
+      boundary("gap", "inProgress");
+      if (gap === "null") report("gap", null, null);
+      if (gap === "invalid") report("gap", counts(-1, 0), counts(-1, 0));
+      if (gap === "zero") report("gap", counts(100, 10), counts(0, 0));
+      if (end !== "next-start") {
+        const ended = end === "flush" ? mapper.flush() : boundary("gap", end);
+        expect(usage(ended)).toHaveLength(gap === "zero" ? 1 : 0);
+        expect(finish(ended)).toEqual([
+          "finish-step",
+          "finish",
+          end === "interrupted"
+            ? "interrupted"
+            : end === "failed" || end === "flush"
+              ? "error"
+              : "completed",
+        ]);
+      }
+      const opened = boundary("current", "inProgress");
+      if (end === "next-start") {
+        expect(usage(opened)).toHaveLength(gap === "zero" ? 1 : 0);
+        expect(finish(opened)).toEqual(["finish-step", "finish", "completed"]);
+      }
+      // Ended-turn replay and wrong-owner reports must not restore a stale baseline.
+      expect(report("gap", counts(200, 20), counts(100, 10))).toEqual([]);
+      expect(report("current", counts(200, 20), counts(100, 10), "other")).toEqual([]);
+      const total = gap === "zero" ? counts(110, 11) : counts(210, 21);
+      report("current", total, counts(10, 1));
+      expect(usage(boundary("current", "completed"))[0]).toMatchObject({
+        tokens: { inputTokens: 10, outputTokens: 1 },
+        telemetryVersion: gap === "zero" ? "codex-request-delta-v1" : "codex-last-request-v1",
+        ...(gap === "zero" ? {} : { partial: true }),
+      });
+      boundary("recovered", "inProgress");
+      report("recovered", counts(total.inputTokens + 10, total.outputTokens + 1), counts(10, 1));
+      expect(usage(boundary("recovered", "completed"))[0]).toMatchObject({
+        tokens: { inputTokens: 10, outputTokens: 1 },
+        telemetryVersion: "codex-request-delta-v1",
+      });
+    });
   }
   it("refuses delayed ended-turn telemetry even while idle, but accepts a new idle observed baseline", () => {
     const { boundary, report } = setup();
@@ -335,54 +344,57 @@ for (const last of [counts(0, 0), undefined]) {
   });
 }
 
-for (const gap of ["absent", "null", "invalid"] as const) {
-  for (const end of ["completed", "interrupted", "failed", "flush", "next-start"] as const) {
-    it(`suppressed last remains inadmissible through ${gap} and ${end}, then real telemetry recovers`, () => {
-      const { mapper, boundary, report } = setup();
-      boundary("prior", "inProgress");
-      expect(usage(report("prior", counts(10, 0), counts(10, 0)))[0]?.tokens.inputTokens).toBe(10);
-      expect(finish(boundary("prior", "completed"))).toEqual([
+// Every gap and every end, paired rather than crossed.
+const suppressed = [
+  ["absent", "completed"],
+  ["absent", "flush"],
+  ["null", "interrupted"],
+  ["null", "next-start"],
+  ["invalid", "failed"],
+  ["invalid", "next-start"],
+] as const;
+for (const [gap, end] of suppressed) {
+  it(`suppressed last remains inadmissible through ${gap} and ${end}, then real telemetry recovers`, () => {
+    const { mapper, boundary, report } = setup();
+    boundary("prior", "inProgress");
+    expect(usage(report("prior", counts(10, 0), counts(10, 0)))[0]?.tokens.inputTokens).toBe(10);
+    expect(finish(boundary("prior", "completed"))).toEqual(["finish-step", "finish", "completed"]);
+    boundary("suppressed", "inProgress");
+    const refined = { ...counts(10, 0), cachedInputTokens: 5 };
+    expect(usage(report("suppressed", refined, refined))).toEqual([]);
+    if (gap === "null") expect(usage(report("suppressed", null, null))).toEqual([]);
+    if (gap === "invalid")
+      expect(usage(report("suppressed", counts(-1, 0), counts(-1, 0)))).toEqual([]);
+    const stale = { ...refined, cachedInputTokens: 4 };
+    expect(report("suppressed", undefined, stale, "foreign")).toEqual([]);
+    expect(usage(report("suppressed", undefined, stale))).toEqual([]);
+    expect(usage(report("suppressed", undefined, stale))).toEqual([]);
+    if (end !== "next-start") {
+      const ended = end === "flush" ? mapper.flush() : boundary("suppressed", end);
+      expect(usage(ended)).toEqual([]);
+      expect(finish(ended)).toEqual([
         "finish-step",
         "finish",
-        "completed",
+        end === "failed" || end === "flush" ? "error" : end,
       ]);
-      boundary("suppressed", "inProgress");
-      const refined = { ...counts(10, 0), cachedInputTokens: 5 };
-      expect(usage(report("suppressed", refined, refined))).toEqual([]);
-      if (gap === "null") expect(usage(report("suppressed", null, null))).toEqual([]);
-      if (gap === "invalid")
-        expect(usage(report("suppressed", counts(-1, 0), counts(-1, 0)))).toEqual([]);
-      const stale = { ...refined, cachedInputTokens: 4 };
-      expect(report("suppressed", undefined, stale, "foreign")).toEqual([]);
-      expect(usage(report("suppressed", undefined, stale))).toEqual([]);
-      expect(usage(report("suppressed", undefined, stale))).toEqual([]);
-      if (end !== "next-start") {
-        const ended = end === "flush" ? mapper.flush() : boundary("suppressed", end);
-        expect(usage(ended)).toEqual([]);
-        expect(finish(ended)).toEqual([
-          "finish-step",
-          "finish",
-          end === "failed" || end === "flush" ? "error" : end,
-        ]);
-      }
-      const opened = boundary("current", "inProgress");
-      if (end === "next-start")
-        expect(finish(opened)).toEqual(["finish-step", "finish", "completed"]);
-      expect(report("suppressed", counts(999, 0), counts(999, 0))).toEqual([]);
-      expect(usage(report("current", undefined, refined))).toEqual([]);
-      const actual = usage(report("current", { ...counts(20, 0), cachedInputTokens: 10 }, refined));
-      expect(actual).toHaveLength(1);
-      expect(actual[0]).toMatchObject({
-        tokens: { inputTokens: 10, outputTokens: 0 },
-        telemetryVersion: "codex-last-request-v1",
-        partial: true,
-      });
-      const ended = boundary("current", "completed");
-      expect(usage(ended)[0]?.tokens.inputTokens).toBe(10);
-      expect(finish(ended)).toEqual(["finish-step", "finish", "completed"]);
-      expect(report("current", counts(999, 0), counts(999, 0))).toEqual([]);
+    }
+    const opened = boundary("current", "inProgress");
+    if (end === "next-start")
+      expect(finish(opened)).toEqual(["finish-step", "finish", "completed"]);
+    expect(report("suppressed", counts(999, 0), counts(999, 0))).toEqual([]);
+    expect(usage(report("current", undefined, refined))).toEqual([]);
+    const actual = usage(report("current", { ...counts(20, 0), cachedInputTokens: 10 }, refined));
+    expect(actual).toHaveLength(1);
+    expect(actual[0]).toMatchObject({
+      tokens: { inputTokens: 10, outputTokens: 0 },
+      telemetryVersion: "codex-last-request-v1",
+      partial: true,
     });
-  }
+    const ended = boundary("current", "completed");
+    expect(usage(ended)[0]?.tokens.inputTokens).toBe(10);
+    expect(finish(ended)).toEqual(["finish-step", "finish", "completed"]);
+    expect(report("current", counts(999, 0), counts(999, 0))).toEqual([]);
+  });
 }
 
 for (const end of ["completed", "interrupted", "failed", "flush", "next-start"] as const) {

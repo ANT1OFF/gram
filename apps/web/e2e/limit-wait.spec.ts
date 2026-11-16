@@ -204,7 +204,9 @@ test("a full window carried on credits reads as credits in the meter, not a stop
   await expect(page.getByTestId("usage-limit-credits")).toHaveText(
     "Past the limit on credits; turns go on",
   );
-  // Let the popover finish opening before the picture.
-  await page.waitForTimeout(400);
-  if (CLEARED_SHOTS !== undefined) await page.screenshot({ path: `${CLEARED_SHOTS}/meter.png` });
+  if (CLEARED_SHOTS !== undefined) {
+    // Let the popover finish opening before the picture.
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${CLEARED_SHOTS}/meter.png` });
+  }
 });

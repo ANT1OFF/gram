@@ -19,8 +19,13 @@ test("collapses the sidebar, hides the right panel, focus mode, and reload resto
   await expect(panel).toBeHidden();
   await expect(page.getByTestId("thread-view")).toBeVisible();
 
-  // Let the debounced settings save land before reloading.
-  await page.waitForTimeout(1200);
+  // The debounced settings save lands before reloading.
+  await expect
+    .poll(async () => {
+      const saved = await page.evaluate(() => window.gramMock!.getSettings());
+      return [saved.layout?.overviewSidebar, saved.panel?.open];
+    })
+    .toEqual(["hidden", false]);
   // Drop the first-paint cache so only the saved settings can restore the panels.
   await page.evaluate(() => window.localStorage.removeItem("gram.layout"));
   await page.reload();

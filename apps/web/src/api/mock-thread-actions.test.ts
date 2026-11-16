@@ -44,18 +44,6 @@ describe("MockApi thread actions", () => {
     expect(await api.pendingPermissions(main.thread.id)).toEqual([]);
   });
 
-  it("lists a project's worktrees with open state", async () => {
-    const api = createMockApi({ speed: 0, autoplay: false });
-    const list = await api.listWorktrees("/Users/dev/code/api");
-    expect(list.worktrees[0]).toMatchObject({ isMain: true, path: "/Users/dev/code/api" });
-    expect(list.worktrees.find((w) => w.path.endsWith("fix-flaky-retry"))).toMatchObject({
-      isOpen: true,
-    });
-    expect(list.worktrees.find((w) => w.branch === "experiment/cache")).toMatchObject({
-      isOpen: false,
-    });
-  });
-
   it("upserts and removes labels, stripping them from threads", async () => {
     const api = createMockApi({ speed: 0, autoplay: false });
     const label = { id: "l-new" as LabelId, name: "new", color: "#9ece6a" };

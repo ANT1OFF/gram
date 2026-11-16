@@ -199,9 +199,9 @@ describe("mcp_server_propose", () => {
           scope: "user",
         });
         expect(card.targets.map((t) => t.label)).toEqual(["Claude Code", "Codex"]);
-        expect(request.description).toBe(
-          "Add the MCP server “docs-index”, a program run on this machine, in Claude Code and Codex.",
-        );
+        // The card names what the user is agreeing to: the server, that it runs here, and where.
+        for (const part of ["docs-index", "this machine", "Claude Code", "Codex"])
+          expect(request.description).toContain(part);
         // Nothing is written while the card waits.
         expect(cli.calls).toEqual([]);
         yield* answer(thread.id, request, "allow");

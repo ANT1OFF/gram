@@ -250,8 +250,9 @@ describe.skipIf(!hasGit)("worker questions", () => {
           answered: true,
           delivered: "steered",
         });
+        expect(worker.session.steered.at(-1)?.text).toContain("WQ1");
         expect(worker.session.steered.at(-1)?.text).toContain(
-          "Your orchestrator answered your question WQ1 (“Should a deleted cart answer 404 or 410?”), settled by the brief: deleted carts are gone for good: 410",
+          "deleted carts are gone for good: 410",
         );
         yield* settle;
 
@@ -496,9 +497,8 @@ describe.skipIf(!hasGit)("worker questions", () => {
           answer: "410, and log it",
           delivered: "steered",
         });
-        expect(worker.session.steered.at(-1)?.text).toContain(
-          "The user answered your question WQ1 (“Should a deleted cart answer 404 or 410?”): 410, and log it",
-        );
+        expect(worker.session.steered.at(-1)?.text).toContain("WQ1");
+        expect(worker.session.steered.at(-1)?.text).toContain(": 410, and log it");
         expect(worker.session.steered.at(-1)?.text).toContain("Your orchestrator has a copy.");
         yield* settle;
         // An answer isn't the user typing into the worker: it stays the orchestrator's.
@@ -1321,9 +1321,8 @@ describe.skipIf(!hasGit)("worker questions", () => {
           }),
         ).toEqual({ id: "WQ1", closed: true });
         const withdrawnText = worker.session.steered.at(-1)?.text ?? "";
-        expect(withdrawnText).toContain(
-          "Your orchestrator closed your question WQ1 (“Should a deleted cart answer 404 or 410?”) as withdrawn: The cart worker it was for was closed.",
-        );
+        expect(withdrawnText).toContain("WQ1");
+        expect(withdrawnText).toContain("The cart worker it was for was closed.");
         expect(withdrawnText).toContain("Don't wait for an answer to it");
         expect(yield* stored(workspaceId, "WQ1")).toMatchObject({
           stage: "dismissed",

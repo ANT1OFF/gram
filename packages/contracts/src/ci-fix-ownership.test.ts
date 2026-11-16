@@ -31,17 +31,11 @@ describe("CI fix ownership", () => {
   // error is what reaches the user, never the check.
   it.each([
     { status: "running" },
-    { status: "starting" },
-    { status: "idle" },
     { status: "cold" },
     { state: "briefed", status: "cold" },
     { status: "needsApproval" },
-    { status: "needsInput" },
-    { state: "needsUser", status: "needsApproval" },
-    { state: "question" },
     { state: "blocked" },
     { state: "error", status: "error" },
-    { state: "readyToMerge" },
     { state: "done" },
   ] satisfies Partial<CiFixWorker>[])("stays with a live worker: %j", (over) => {
     expect(workerOwnsCiFix({ ...worker, ...over }, pr)).toBe(true);

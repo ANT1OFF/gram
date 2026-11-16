@@ -19,7 +19,7 @@ test("turns babysit on from the PR panel and the first review notice arrives", a
   await expect(toggle).toHaveAttribute("aria-checked", "false");
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
-  await expect(panel.getByTestId("babysit-status")).toContainText("Watching");
+  await expect(panel.getByTestId("babysit-status")).toHaveAttribute("data-phase", "watching");
   // The PR row carries babysitting in a glyph of its own.
   const marks = page.getByTestId("pr-row").getByTestId("pr-row-marks");
   await expect(marks.getByTestId("babysit-glyph")).toHaveAttribute("data-phase", "watching");
@@ -27,6 +27,6 @@ test("turns babysit on from the PR panel and the first review notice arrives", a
 
   const notice = page.getByRole("article", { name: "Review update on #412" });
   await expect(notice).toBeVisible();
-  // What the notice says is review-notice-card.test.tsx's.
+  // What the notice says is review-notice-card.test.tsx's; the round it counts is said here.
   await expect(panel.getByTestId("babysit-status")).toContainText("round 1");
 });

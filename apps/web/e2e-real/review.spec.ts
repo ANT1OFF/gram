@@ -219,7 +219,10 @@ test("babysit asks for a re-review, relays a round, then reports ready to merge"
     ];
   });
   await expect(inRound(1)).toHaveCount(1, { timeout: 20_000 });
-  await expect(inRound(1).getByTestId("notice-verdict")).toHaveText("Changes requested");
+  await expect(inRound(1).getByTestId("notice-verdict")).toHaveAttribute(
+    "data-verdict",
+    "changesRequested",
+  );
   await expect(inRound(1).getByRole("region", { name: "Blockers" })).toContainText(
     "Export a function, not a value.",
   );

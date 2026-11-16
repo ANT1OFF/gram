@@ -172,7 +172,7 @@ describe("LaunchChecksBanner", () => {
       renderWith({ launchChecks, ...appAt("0.4.0") }, shell());
       fireEvent.click(await screen.findByTestId("launch-issues-chip"));
       const banner = await screen.findByTestId("launch-checks-banner");
-      expect(banner.textContent).toContain("Claude Code isn't signed in");
+      expect(banner.querySelector('[data-issue="claude-signed-out"]')).toBeTruthy();
     } finally {
       useWelcome.setState({ onScreen: false });
     }
@@ -223,9 +223,11 @@ describe("LaunchChecksBanner", () => {
     renderWith({ launchChecks, ...app }, <LaunchChecksBanner />);
 
     const banner = await screen.findByTestId("launch-checks-banner");
-    expect(banner.textContent).toContain("Claude Code isn't signed in. Run claude in a terminal");
+    expect(
+      [...banner.querySelectorAll("[data-issue]")].map((li) => li.getAttribute("data-issue")),
+    ).toEqual(["claude-signed-out", "gh-missing"]);
+    // The command to run is set as code.
     expect(banner.querySelector("code")?.textContent).toBe("claude");
-    expect(banner.textContent).toContain("gh isn't installed. PR badges and reviews are off.");
     expect(screen.getByRole("link", { name: "Details" }).getAttribute("href")).toBe(
       "/settings/diagnostics",
     );
@@ -253,17 +255,19 @@ describe("LaunchChecksBanner", () => {
       <LaunchChecksBanner />,
     );
     const banner = await screen.findByTestId("launch-checks-banner");
-    expect(banner.textContent).toContain("Claude Code is using an API key");
-    expect(banner.textContent).not.toContain("gh isn't installed");
+    expect(banner.querySelector('[data-issue="claude-api-key"]')).toBeTruthy();
+    expect(banner.querySelector('[data-issue="gh-missing"]')).toBeNull();
     cleanup();
 
     renderWith(
       { launchChecks: vi.fn(async () => SIGNED_OUT), ...appAt("0.5.0") },
       <LaunchChecksBanner />,
     );
-    expect((await screen.findByTestId("launch-checks-banner")).textContent).toContain(
-      "gh isn't installed",
-    );
+    expect(
+      (await screen.findByTestId("launch-checks-banner")).querySelector(
+        '[data-issue="gh-missing"]',
+      ),
+    ).toBeTruthy();
   });
 
   it("drops other versions' dismissals and cleared problems' when saving a new one", async () => {
@@ -357,10 +361,9 @@ describe("LaunchChecksBanner", () => {
     renderWith({ launchChecks, ...appAt("0.4.0") }, <LaunchChecksBanner />);
 
     const banner = await screen.findByTestId("launch-checks-banner");
-    expect(banner.textContent).toContain("Claude Code isn't signed in. Run claude in a terminal");
-    expect(banner.textContent).toContain(
-      "gh isn't signed in. Run gh auth login to turn on PR badges and reviews.",
-    );
+    expect(
+      [...banner.querySelectorAll("[data-issue]")].map((li) => li.getAttribute("data-issue")),
+    ).toEqual(["claude-signed-out", "gh-signed-out"]);
     expect([...banner.querySelectorAll("code")].map((code) => code.textContent)).toEqual([
       "claude",
       "gh auth login",

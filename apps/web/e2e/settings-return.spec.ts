@@ -43,12 +43,30 @@ async function readHalfway(page: Page) {
   await transcript.hover();
   let place = await readingPlace(page);
   for (let notch = 0; notch < 12 && (place.following || place.past <= 8); notch++) {
+    const before = place;
     await page.mouse.wheel(0, -90);
-    await page.waitForTimeout(150);
-    place = await readingPlace(page);
+    // The notch has landed once the view has moved off where it was.
+    await expect
+      .poll(async () => {
+        place = await readingPlace(page);
+        return place.id !== before.id || place.past !== before.past;
+      })
+      .toBe(true);
   }
-  await page.waitForTimeout(300);
-  place = await readingPlace(page);
+  // Settled: two reads in a row agree.
+  let last: typeof place | undefined;
+  await expect
+    .poll(
+      async () => {
+        const now = await readingPlace(page);
+        const same = last !== undefined && now.id === last.id && now.past === last.past;
+        last = now;
+        return same;
+      },
+      { intervals: [100] },
+    )
+    .toBe(true);
+  place = last!;
   expect(place.following).toBe(false);
   expect(place.past).toBeGreaterThan(8);
   return { made, place };

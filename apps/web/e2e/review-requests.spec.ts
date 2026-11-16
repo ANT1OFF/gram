@@ -37,11 +37,7 @@ test("review requests list in the overview, notify when new and open on GitHub",
       updatedAt: "2026-09-17T09:00:00Z",
     }),
   );
-  await expect(
-    page
-      .getByTestId("toast")
-      .filter({ hasText: "Review requested: example/web#77 Tighten the CSP" }),
-  ).toBeVisible();
+  await expect(page.getByTestId("toast").filter({ hasText: "example/web#77" })).toBeVisible();
   await expect(requests).toHaveCount(3);
 
   await requests.filter({ hasText: "Tighten the CSP" }).click();

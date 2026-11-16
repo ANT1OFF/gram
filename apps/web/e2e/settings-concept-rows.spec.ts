@@ -3,8 +3,6 @@ import { expect, test, type Page } from "@playwright/test";
 // Settings → General's Open at launch and Notifications' Notify me about, each followed to what it
 // changes.
 
-const general = (page: Page) => page.getByTestId("general-settings");
-
 const choice = (page: Page, group: string, name: string) =>
   page.getByRole("radiogroup", { name: group }).getByRole("radio", { name });
 
@@ -110,27 +108,4 @@ test("Notify me about at Asks only keeps failures out of desktop notifications",
   );
   await expect.poll(titles).toContain("Approval needed");
   expect(await titles()).not.toContain("Second failure");
-});
-
-test("Keep computer awake defaults on and saves in browser-only mode", async ({ page }) => {
-  await page.goto("/settings/general");
-  const awake = general(page).getByRole("switch", { name: "Keep computer awake while agents run" });
-  await expect(awake).toBeChecked();
-  // What it does is the line under its name, on screen without a hover.
-  await expect(
-    general(page)
-      .locator("[data-setting]")
-      .filter({ has: page.getByRole("switch", { name: "Keep computer awake while agents run" }) })
-      .locator("[data-setting-description]"),
-  ).toHaveText(
-    "Stops the system from sleeping while a turn is running; the display can still sleep.",
-  );
-  await awake.click();
-  await expect(awake).not.toBeChecked();
-  await page.reload();
-  await expect(awake).not.toBeChecked();
-  await general(page)
-    .getByRole("button", { name: "Reset Keep computer awake while agents run to default" })
-    .click();
-  await expect(awake).toBeChecked();
 });

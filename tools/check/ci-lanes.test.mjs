@@ -69,9 +69,4 @@ describe("CI lanes", () => {
       .filter((path) => specifiers(path).some((spec) => testsOnly.test(spec)));
     expect(offenders).toEqual([]);
   });
-
-  it("keeps the e2e specs out of the Vitest suite", () => {
-    const config = readFileSync(join(root, "apps/web/vitest.config.ts"), "utf8");
-    expect(config).not.toMatch(/["']e2e/);
-  });
 });

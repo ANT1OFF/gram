@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { HostedDevice } from "@gram/shell/modules/device";
 import {
   agentHomes,
-  askColorsFor,
   createDeviceHost,
   embeddingFromMessage,
   type MadeDevice,
@@ -104,14 +103,10 @@ describe("the personal device in the main process", () => {
     expect(attempts).toBe(2);
   });
 
-  it("names the agents' homes and the ask's colours", () => {
+  it("names the agents' homes, never a relative one", () => {
     expect(
       agentHomes({ CLAUDE_CONFIG_DIR: "/opt/claude", CODEX_HOME: "relative", HOME: "/home/a" }),
     ).toEqual(process.platform === "win32" ? [] : ["/opt/claude"]);
-    expect(askColorsFor({ background: "#000", foreground: "#fff" }, true)).toMatchObject({
-      background: "#000",
-      foreground: "#fff",
-    });
   });
 });
 

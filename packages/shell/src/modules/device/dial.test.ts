@@ -55,13 +55,8 @@ describe("a device's dial", () => {
       nonce: headers[DEVICE_NONCE_HEADER] ?? "",
     };
     const signature = headers[DEVICE_SIGNATURE_HEADER] ?? "";
+    // What a changed field does to the signature is keys.test.ts's: here, the headers carry it.
     expect(deviceDialHolds(publicKey, signed, signature, NOW)).toBe(true);
-    for (const other of [
-      { ...signed, tokenHash: hashAccessToken("token-b") },
-      { ...signed, workspace: "w2" },
-      { ...signed, subject: "bo" },
-    ])
-      expect(deviceDialHolds(publicKey, other, signature, NOW)).toBe(false);
     expect(deviceDialHeaders(key, dial)[DEVICE_NONCE_HEADER]).not.toBe(signed.nonce);
   });
 });

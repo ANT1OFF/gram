@@ -201,7 +201,11 @@ export function LaunchChecksBanner() {
       <Wrench aria-hidden className="mt-0.5 size-icon-row shrink-0 text-warning" />
       <ul className="flex min-w-0 flex-1 flex-col gap-0.5">
         {issues.map((issue) => (
-          <li key={issue.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <li
+            key={issue.id}
+            data-issue={issue.id}
+            className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+          >
             <span className="min-w-0">
               <CommandText text={issue.text} />
             </span>

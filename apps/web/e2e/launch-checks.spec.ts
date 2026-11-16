@@ -104,28 +104,26 @@ test("launch checks show what's missing, link to details and dismiss for the ses
   await page.goto("/t/t-flaky");
 
   const banner = page.getByTestId("launch-checks-banner");
-  await expect(banner).toContainText("Claude Code isn't signed in. Run claude in a terminal");
-  await expect(banner).toContainText("gh isn't installed. PR badges and reviews are off.");
+  await expect(banner.locator("[data-issue]")).toHaveCount(2);
+  await expect(banner.locator('[data-issue="claude-signed-out"]')).toBeVisible();
+  await expect(banner.locator('[data-issue="gh-missing"]')).toBeVisible();
 
   // The app's link-styled buttons (`Button render={<Link />}`) carry the button role.
   await banner.getByText("Details", { exact: true }).click();
   const tools = page.getByTestId("tool-checks");
-  await expect(tools).toContainText("2.1.273 at /mock/bin/claude, not signed in");
-  await expect(tools).toContainText("not found on the login-shell PATH");
+  await expect(tools).toContainText("/mock/bin/claude");
   // Seen once and moved on from, it folds to the title bar's Setup chip, and stays folded after a
   // reload; the chip shows it again.
   const chip = page.getByTestId("launch-issues-chip");
   await expect(banner).toBeHidden();
-  await expect(chip).toHaveAccessibleName(
-    /^2 setup problems: Claude Code isn't signed in\..* Show them$/,
-  );
+  await expect(chip).toHaveAccessibleName(/^2 setup problems/);
   // Never an unexplained glyph, and never a bare number beside the needs-you pill's: setup's glyph
   // alone, the count in its name and hover, which names the problems the moment it is hovered.
   await expect(chip).toHaveText("");
   await expect(chip).toHaveAttribute("data-count", "2");
   await chip.hover();
   await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toContainText(
-    "2 setup problems: Claude Code isn't signed in.",
+    "2 setup problems",
   );
   await page.mouse.move(0, 400);
   await page.reload();
@@ -198,17 +196,15 @@ test("an outdated Codex in use shows the upgrade command, and Diagnostics names 
   await page.goto("/");
 
   const banner = page.getByTestId("launch-checks-banner");
-  await expect(banner).toContainText(
-    "Codex 0.153.4 is older than the 0.154.0 Gram is tested with. Some features may not work. Upgrade with npm i -g @openai/codex@0.154.0.",
+  // The upgrade command to copy, at the version Gram is tested with.
+  await expect(banner.locator('[data-issue="codex-outdated-0.153.4"]')).toContainText(
+    "npm i -g @openai/codex@0.154.0",
   );
 
   await banner.getByText("Details", { exact: true }).click();
   const tools = page.getByTestId("tool-checks");
-  await expect(tools).toContainText(
-    "0.153.4 at /mock/nvm/bin/codex, ChatGPT login, tested with 0.154.0",
-  );
-
-  await expect(tools).toContainText("gateway threads use your skills in /mock/home/.codex/skills");
+  await expect(tools).toContainText("/mock/nvm/bin/codex");
+  await expect(tools).toContainText("/mock/home/.codex/skills");
 
   // Settings → Agents marks only the trouble, with the upgrade to copy.
   await page.goto("/settings/agents");
@@ -257,7 +253,7 @@ test("a dismissed problem that still stands leaves the row for a dot on Settings
   await expect(settings).toHaveAccessibleName("Settings, 1 setup problem");
   await settings.hover();
   await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toContainText(
-    "gh isn't signed in. Run gh auth login to turn on PR badges and reviews.",
+    "gh auth login",
   );
   await settings.click();
   await expect(page).toHaveURL(/\/settings\/diagnostics$/);
@@ -396,9 +392,9 @@ test("first run with no agent warns once and leads with installing one", async (
   await page.goto("/settings");
   await expect(page.getByTestId("launch-checks-banner")).toHaveCount(0);
   await page.getByTestId("launch-issues-chip").click();
-  await expect(page.getByTestId("launch-checks-banner")).toContainText(
-    "Neither Claude Code nor Codex is installed",
-  );
+  await expect(
+    page.getByTestId("launch-checks-banner").locator('[data-issue="agents-missing"]'),
+  ).toBeVisible();
 });
 
 test("first run can be skipped for good", async ({ page }) => {

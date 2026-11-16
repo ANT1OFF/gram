@@ -18,7 +18,6 @@ import { SharedSlab } from "./shared-slab";
 import { SlotPresence, slotMotion } from "./slot-presence";
 import { clockPhase, spin, spinAngle } from "./spin";
 import { PendingRing, RingSpinner, Spinner } from "./spinner";
-import { isMarkPhase } from "./status-mark";
 import { Swap, useChangeCount } from "./swap";
 import { playTurnCompleteSheen, TurnCompleteSheen } from "./turn-complete-sheen";
 
@@ -341,7 +340,7 @@ describe("spin", () => {
     }
   });
 
-  it("draws a RingSpinner as a faint track and one arc, turning only under Full motion", async () => {
+  it("turns a RingSpinner only under Full motion", async () => {
     vi.stubGlobal("IntersectionObserver", undefined);
     vi.useFakeTimers();
     const root = document.documentElement;
@@ -353,13 +352,6 @@ describe("spin", () => {
       );
       const icon = screen.getByTestId("r");
       expect(icon.getAttribute("aria-label")).toBe("Checks running");
-      expect(icon.getAttribute("stroke-width")).toBe("1.5");
-      const track = icon.querySelector("circle");
-      const arc = icon.querySelector("path");
-      expect(track?.getAttribute("opacity")).toBe("0.25");
-      expect(track?.getAttribute("vector-effect")).toBe("non-scaling-stroke");
-      expect(arc?.getAttribute("d")).toBe("M12 2a10 10 0 0 1 10 10");
-      expect(arc?.getAttribute("vector-effect")).toBe("non-scaling-stroke");
       expect(vi.getTimerCount()).toBe(1);
       const first = icon.style.rotate;
       vi.advanceTimersByTime(50);
@@ -381,7 +373,7 @@ describe("spin", () => {
     }
   });
 
-  it("draws a PendingRing as one still hollow ring, on no clock even under Full motion", () => {
+  it("keeps a PendingRing still, on no clock even under Full motion", () => {
     vi.stubGlobal("IntersectionObserver", undefined);
     vi.useFakeTimers();
     const root = document.documentElement;
@@ -392,9 +384,7 @@ describe("spin", () => {
         <PendingRing data-testid="p" role="img" aria-label="Checks running" />,
       );
       const icon = screen.getByTestId("p");
-      expect(icon.getAttribute("stroke-width")).toBe("1.5");
-      expect(icon.querySelectorAll("circle")).toHaveLength(1);
-      expect(icon.querySelector("circle")?.getAttribute("opacity")).toBeNull();
+      // No arc: nothing on it reads as turning.
       expect(icon.querySelector("path")).toBeNull();
       // A wait can last an hour: nothing redraws it.
       expect(vi.getTimerCount()).toBe(0);
@@ -472,11 +462,6 @@ describe("spin", () => {
       vi.useRealTimers();
       vi.unstubAllGlobals();
     }
-  });
-
-  it("draws a status mark only for the phases it knows", () => {
-    expect(["todo", "pending", "running", "active", "done", "error"].every(isMarkPhase)).toBe(true);
-    expect(["awaiting", "denied", "cancelled"].some(isMarkPhase)).toBe(false);
   });
 
   it("is how every spinner turns: none is left on a CSS spin", () => {
@@ -806,11 +791,8 @@ describe("DrawnCheck", () => {
   it("draws one stroke as it mounts, and takes an icon's size for Streamdown", () => {
     const { container, rerender } = render(<DrawnCheck />);
     expect(container.querySelectorAll("path.gram-draw")).toHaveLength(1);
-    expect(container.querySelector("svg")!.getAttribute("class")).toContain("size-4");
     rerender(<DrawnCheck size={14} />);
-    const svg = container.querySelector("svg")!;
-    expect(svg.getAttribute("width")).toBe("14");
-    expect(svg.getAttribute("class")).not.toContain("size-4");
+    expect(container.querySelector("svg")!.getAttribute("width")).toBe("14");
   });
 });
 

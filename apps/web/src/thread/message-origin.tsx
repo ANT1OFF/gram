@@ -66,14 +66,19 @@ export function MessageOriginLabel({ origin }: { origin: MessageOrigin }) {
       <SenderAvatar agent={sender?.model.agent} />
       <span className="sr-only">Received from </span>
       <span
+        data-origin-part="title"
         className={
           gone ? "truncate line-through" : "truncate font-medium text-foreground underline-offset-4"
         }
       >
         {sender?.title ?? origin.title}
       </span>
-      {role !== undefined && <span className="shrink-0">· {role}</span>}
-      <span className="shrink-0" title={delivery.hint}>
+      {role !== undefined && (
+        <span data-origin-part="role" className="shrink-0">
+          · {role}
+        </span>
+      )}
+      <span data-origin-part="mode" className="shrink-0" title={delivery.hint}>
         · {delivery.label}
       </span>
       {!gone && (

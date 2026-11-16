@@ -47,6 +47,12 @@ const withSender = (thread: Record<string, unknown>) =>
     },
   });
 
+/** The label's title and tags (role, place, mode), whatever words join them. */
+const parts = (row: HTMLElement) =>
+  [...row.querySelectorAll<HTMLElement>("[data-origin-part]")].map((part) =>
+    part.textContent?.replace(/^·\s*/, ""),
+  );
+
 describe("MessageOriginLabel", () => {
   it("is one link to the sending thread, under its current title", () => {
     withSender({ title: "Auth middleware split" });
@@ -54,7 +60,7 @@ describe("MessageOriginLabel", () => {
     const row = screen.getByTestId("message-origin");
     expect(row.tagName).toBe("A");
     expect(row.getAttribute("href")).toBe("/t/t-planner");
-    expect(row.textContent).toBe("Received from Auth middleware split· queued");
+    expect(parts(row)).toEqual(["Auth middleware split", "queued"]);
   });
 
   it("names the embedding app's place the sender opens in, and links there", () => {
@@ -65,22 +71,22 @@ describe("MessageOriginLabel", () => {
     render(<MessageOriginLabel origin={origin} />);
     const row = screen.getByTestId("message-origin");
     expect(row.getAttribute("href")).toBe("/chat/t-planner");
-    expect(row.textContent).toBe("Received from Why the retry test is flaky· Chat· queued");
+    expect(parts(row)).toEqual(["Why the retry test is flaky", "Chat", "queued"]);
   });
 
   it("names an orchestrator, a worker and a steer", () => {
     withSender({ title: "Orchestrator" });
     render(<MessageOriginLabel origin={{ ...origin, role: "orchestrator", mode: "steer" }} />);
-    expect(screen.getByTestId("message-origin").textContent).toBe(
-      "Received from Orchestrator· orchestrator· steer",
-    );
+    expect(parts(screen.getByTestId("message-origin"))).toEqual([
+      "Orchestrator",
+      "orchestrator",
+      "steer",
+    ]);
     cleanup();
 
     withSender({ title: "Fix login", spawnedBy: { threadId: "o" as ThreadId, feature: "login" } });
     render(<MessageOriginLabel origin={{ ...origin, mode: "queue" }} />);
-    expect(screen.getByTestId("message-origin").textContent).toBe(
-      "Received from Fix login· worker· queued",
-    );
+    expect(parts(screen.getByTestId("message-origin"))).toEqual(["Fix login", "worker", "queued"]);
   });
 
   it("keeps the title it was sent under, muted and unlinked, once the sender is gone", () => {
@@ -100,9 +106,11 @@ describe("MessageOriginLabel", () => {
 
     useThreadsStore.setState({ ready: true, byId: {} });
     render(<MessageOriginLabel origin={{ ...origin, feature: "login" }} />);
-    expect(screen.getByTestId("message-origin").textContent).toBe(
-      "Received from Split the auth middleware· worker· queued",
-    );
+    expect(parts(screen.getByTestId("message-origin"))).toEqual([
+      "Split the auth middleware",
+      "worker",
+      "queued",
+    ]);
   });
 });
 

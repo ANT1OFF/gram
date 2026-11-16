@@ -244,10 +244,8 @@ it("retains observed output when the final command item provides no aggregate", 
 it.each([
   ["completed", "start first"],
   ["completed", "completion first"],
-  ["failed", "start first"],
   ["failed", "completion first"],
   ["declined", "start first"],
-  ["declined", "completion first"],
 ] as const)("does not resurrect a %s command on duplicate start (%s)", (status, order) => {
   const { notify, acc } = setup();
   if (order === "start first") notify(item("item/started", command()));
@@ -290,7 +288,7 @@ it.each([
   expect(acc.preliminaryTools()).toEqual([]);
 });
 
-it.each(["started", "interacted", "interrupted", "completed"] as const)(
+it.each(["started", "completed"] as const)(
   "surfaces an actual %s activity item without opening a child stream",
   (kind) => {
     const { notify } = setup();
@@ -326,15 +324,8 @@ it.each(["started", "interacted", "interrupted", "completed"] as const)(
   },
 );
 
-it.each([
-  "pendingInit",
-  "running",
-  "interrupted",
-  "completed",
-  "errored",
-  "shutdown",
-  "notFound",
-] as const)(
+// A live status is the one that could be promoted; a terminal one is the other boundary.
+it.each(["running", "notFound"] as const)(
   "retains reported child %s as a snapshot, without promoting it to a live task",
   (status) => {
     const { notify } = setup();

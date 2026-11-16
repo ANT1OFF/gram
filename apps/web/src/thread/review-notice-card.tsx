@@ -29,7 +29,11 @@ const NO_VERDICT = { icon: CircleDashed, label: "No verdict yet", tone: "text-mu
 export function VerdictLabel({ verdict }: { verdict: ReviewVerdict | undefined }) {
   const display = verdict ? NOTICE_VERDICT[verdict] : NO_VERDICT;
   return (
-    <span data-testid="notice-verdict" className={cn("flex items-center gap-1", display.tone)}>
+    <span
+      data-testid="notice-verdict"
+      data-verdict={verdict ?? "none"}
+      className={cn("flex items-center gap-1", display.tone)}
+    >
       <display.icon aria-hidden className="size-icon-row" />
       {display.label}
     </span>

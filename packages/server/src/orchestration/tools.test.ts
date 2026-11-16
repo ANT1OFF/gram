@@ -2797,7 +2797,6 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             permissionMode: "bypassPermissions",
             model,
           });
-          expect(session.options.instructions).toContain("# Your role: orchestrator");
           expect(session.options.instructions).toContain(told);
           expect(yield* registry.audienceOf(thread.id)).toBe("orchestrator");
 

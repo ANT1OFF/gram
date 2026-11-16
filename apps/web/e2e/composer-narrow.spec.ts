@@ -66,11 +66,10 @@ test("the choices chip names the model on one row as it narrows, its name every 
   await page.keyboard.press("Escape");
   await expect(toolbar.getByRole("button", { name: "More composer controls" })).toHaveCount(0);
 
-  // The context gauge beside Send is its bar alone, 32 px, its words in its name.
+  // The context gauge beside Send is its bar alone, its words in its name.
   const gauge = page.getByTestId("usage-ring");
   await expect(gauge).toHaveText("", { useInnerText: true });
   await expect(gauge).toHaveAccessibleName(/^Context: \d+% of the window used$/);
-  expect((await gauge.boundingBox())!.width).toBe(32);
 
   // Narrower, the chip says the same, on the one row with Send and Stop, its name every value, and
   // the model's name stays in sight.

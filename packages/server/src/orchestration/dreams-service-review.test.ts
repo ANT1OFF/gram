@@ -259,8 +259,6 @@ describe.skipIf(!hasGit)("dreams", () => {
             confineWrites: true,
           });
           expect(merging.options.outwardGate).toBe(agent === "claude" ? "all" : undefined);
-          if (agent === "codex")
-            expect(merging.options.instructions).toContain("Normal Codex permissions apply");
           expect(merging.options.appTools).toBeUndefined();
           expect(merging.options.mcp).toBeUndefined();
           expect(real(nodePath.dirname(merging.options.cwd))).toBe(

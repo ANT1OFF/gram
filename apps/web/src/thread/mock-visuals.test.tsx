@@ -107,7 +107,6 @@ describe("OptionGallery", () => {
       fsFile,
     });
     const open = screen.getByTestId("question-open-mocks");
-    expect(open.textContent).toBe("Open mocks");
     await waitFor(() => expect((open as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(open);
     expect(shown).toHaveBeenCalledWith(T, `${FOLDER}/v2.html`, expect.anything());
@@ -127,9 +126,9 @@ describe("OptionGallery", () => {
     renderWithApi(<OptionGallery threadId={T} options={OPTIONS.slice(0, 1)} />, {
       fsImage: refused,
     });
-    expect((await screen.findByTestId("mock-thumb-missing")).textContent).toBe(
-      "a-inbox-dark.png can't be shown",
-    );
+    const missing = await screen.findByTestId("mock-thumb-missing");
+    expect(missing.textContent).toContain("a-inbox-dark.png");
+    expect(missing.textContent).not.toContain(FOLDER);
   });
 });
 
