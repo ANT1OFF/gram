@@ -247,9 +247,11 @@
   --scrim-strength: 0.82;
   --edge-group: var(--border-subtle);
   /* On pale chrome a 14% accent and a surface-3 fill barely show: the open thread's row, its
-     workspace's line and the sidebar's group lines take a step more, still restrained. */
+     workspace's line and the sidebar's group lines take a step more, still restrained. The current
+     row is a step of text over the chrome itself, so it shows however far the chrome sits from the
+     page: over surface-3 it came out the chrome's own tone on a palette whose chrome is darker. */
   --selected-bg: color-mix(in oklab, var(--accent) 20%, var(--surface-3));
-  --sidebar-row-active: color-mix(in oklab, var(--fg) 7%, var(--surface-3));
+  --sidebar-row-active: color-mix(in oklab, var(--fg) 8%, var(--surface-1));
   --surface-fill: color-mix(in oklab, var(--fg) 5%, var(--surface-3));
   --sidebar-divider: color-mix(in srgb, var(--border-strong) 40%, var(--border-subtle));
   --shell-divider: color-mix(in srgb, var(--border-strong) 30%, var(--border-subtle));
