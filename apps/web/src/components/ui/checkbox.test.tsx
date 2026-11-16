@@ -41,11 +41,25 @@ describe("Checkbox", () => {
     expect(box.className).toContain("ms-2");
   });
 
-  it("dims its row while disabled", () => {
-    render(<Checkbox label="Locked" disabled />);
-    const box = screen.getByRole("checkbox", { name: "Locked" });
+  it("dims its words while disabled, not the box a second time", () => {
+    render(<Checkbox label="Locked" description="Your role can't change this." disabled />);
+    const box = screen.getByRole("checkbox", { name: /Locked/ });
     expect((box as HTMLInputElement).disabled).toBe(true);
-    expect(box.closest("label")?.className).toContain("has-disabled:opacity-50");
+    const row = box.closest("label")!;
+    expect(row.className).not.toContain("opacity");
+    expect(box.className).not.toContain("opacity");
+    expect(screen.getByText("Locked").parentElement!.className).toContain(
+      "group-has-disabled/choice:opacity-50",
+    );
+  });
+
+  it("gives the new state to onCheckedChange, beside onChange", () => {
+    const onChange = vi.fn();
+    const onCheckedChange = vi.fn();
+    render(<Checkbox label="Pinned" onChange={onChange} onCheckedChange={onCheckedChange} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Pinned" }));
+    expect(onCheckedChange).toHaveBeenCalledWith(true);
+    expect(onChange).toHaveBeenCalledOnce();
   });
 });
 
@@ -67,6 +81,26 @@ describe("RadioGroup", () => {
     expect(radios[0]!.closest("label")?.textContent).toBe("Ask firstEvery change waits for you.");
     fireEvent.click(radios[1]!);
     expect(onChange).toHaveBeenCalledWith("auto");
+  });
+
+  it("is named by a visible heading and marks its first choice for focus when asked", () => {
+    render(
+      <>
+        <div id="mode-heading">Worker mode</div>
+        <RadioGroup
+          labelledBy="mode-heading"
+          options={options}
+          value="ask"
+          onChange={() => {}}
+          autoFocusFirst
+        />
+      </>,
+    );
+    const group = screen.getByRole("radiogroup", { name: "Worker mode" });
+    expect(group.hasAttribute("aria-label")).toBe(false);
+    const radios = within(group).getAllByRole("radio");
+    expect(radios[0]!.hasAttribute("data-autofocus")).toBe(true);
+    expect(radios[1]!.hasAttribute("data-autofocus")).toBe(false);
   });
 
   it("takes a form's name and disables every choice at once", () => {
