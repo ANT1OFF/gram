@@ -78,8 +78,9 @@ export type Palette = typeof Palette.Type;
 export const LogLevel = Schema.Literals(["error", "warn", "info", "debug", "trace"]);
 export type LogLevel = typeof LogLevel.Type;
 
-/** Accents laid over the palette (`ACCENTS` in `@gram/themes`). */
+/** Accents laid over the palette (`ACCENTS` in `@gram/themes`); `palette` keeps the palette's own. */
 export const AccentId = Schema.Literals([
+  "palette",
   "ink",
   "indigo",
   "plum",

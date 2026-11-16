@@ -42,8 +42,8 @@ export interface ThemePrefs {
    * The look's parts below are left out until the person picks one: then the app embedding Gram
    * may give its own default (`MountOptions.defaults`), and otherwise Gram's applies.
    */
-  /** An accent laid over the palette's own. */
-  accent?: AccentId;
+  /** An accent laid over the palette, or `palette` for the palette's own. */
+  accent?: AccentId | "palette";
   /** A background picture behind the app. Gram's default is `off`. */
   backdrop?: BackdropPref;
   /** How opaque surfaces are over a picture. Gram's default is `solid`. */
@@ -134,7 +134,10 @@ export function themeAttributes(
     "data-look": prefs.look,
     // With an accent, the palette rendered is the chosen one with the accent laid over it; its
     // `[data-palette]` block is written at run time (`syncLookStyle`).
-    "data-palette": prefs.accent ? `${palette.id}${ACCENT_SEPARATOR}${prefs.accent}` : palette.id,
+    "data-palette":
+      prefs.accent && prefs.accent !== "palette"
+        ? `${palette.id}${ACCENT_SEPARATOR}${prefs.accent}`
+        : palette.id,
     "data-mode": palette.mode,
     "data-density": prefs.density,
     "data-contrast": resolveContrast(prefs.contrast, system.prefersMoreContrast),
@@ -168,7 +171,7 @@ export function sanitizePrefs(input: unknown): Partial<ThemePrefs> {
   if (oneOf(CONTRAST_PREFS, raw["contrast"])) out.contrast = raw["contrast"];
   else if (raw["contrast"] === "standard") out.contrast = "system";
   if (oneOf(MOTION_PREFS, raw["motion"])) out.motion = raw["motion"];
-  if (isAccentId(raw["accent"])) out.accent = raw["accent"];
+  if (raw["accent"] === "palette" || isAccentId(raw["accent"])) out.accent = raw["accent"];
   if (raw["backdrop"] === "off" || isSceneId(raw["backdrop"])) out.backdrop = raw["backdrop"];
   if (oneOf(SURFACES_IDS, raw["surfaces"])) out.surfaces = raw["surfaces"];
   if (oneOf(SIDEBAR_PREFS, raw["sidebar"])) out.sidebar = raw["sidebar"];

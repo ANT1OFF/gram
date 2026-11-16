@@ -304,7 +304,7 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
   pref("appearance.density", "Density"),
   pref("appearance.contrast", "Contrast"),
   pref("appearance.motion", "Motion"),
-  pref("appearance.accent", "Accent", (s) => s.appearance.accent, "palette's own"),
+  pref("appearance.accent", "Accent", (s) => s.appearance.accent ?? "palette"),
   pref("appearance.backdrop", "Background picture", (s) => s.appearance.backdrop ?? "off"),
   pref("appearance.surfaces", "Surfaces over a picture", (s) => s.appearance.surfaces ?? "solid"),
   pref("appearance.sidebar", "Sidebar", (s) => s.appearance.sidebar ?? "flush"),
