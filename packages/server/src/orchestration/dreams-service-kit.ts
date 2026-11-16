@@ -27,6 +27,7 @@ import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { FakeAgentControl, type FakeSession } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { ThreadArchive, ThreadArchiverLive, type ArchiveCaps } from "./archive.ts";
+import { TranscriptReadAppToolsLive } from "./transcript-read-tool.ts";
 import { DreamFiles } from "./dream-files.ts";
 import { type AnswerDelivery } from "./dream-handler.ts";
 import { Dreams, makeDreamsLive } from "./dreams.ts";
@@ -162,6 +163,7 @@ const dreamLayer = (world: World, options: DreamWorld) =>
       ),
     ),
     ThreadArchiverLive,
+    TranscriptReadAppToolsLive,
   ).pipe(
     Layer.provideMerge(
       Layer.mergeAll(

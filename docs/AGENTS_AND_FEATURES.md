@@ -1202,11 +1202,23 @@ strict file-only policy refuses this route. Newer installed Codex versions are a
 for memory updates with a compatibility warning. Older or unknown versions remain unavailable
 for memory updates while ordinary sessions stay available.
 
+A memory update is given a goal and tools rather than a procedure. Gram lays out what is new
+since the last update, with `input/INDEX.md` listing each session newest first (what it is, when it
+was last active, how much is new, the digest of what came before). The memory update decides what
+to read and how deeply, favouring recent sessions and the orchestrator's own thread, and skips what
+holds nothing durable. `dream_search` finds text in one file or across a whole folder;
+`search_transcripts` and `read_transcript` follow a lead into the workspace's older conversations,
+open or archived, which only a running memory update can read this way. It writes the candidate as
+it learns, keeping it a whole memory at every point, never asks or waits for the user (questions go
+to `questions.md`), and stops when it judges it has covered what is relevant rather than reading
+everything. Source: [memory update prompt](../packages/server/src/orchestration/dream-prompt.ts),
+[transcript reader](../packages/server/src/orchestration/transcript-read-tool.ts).
+
 A memory update writes memory as notes with front matter and `[[links]]`, and checks it before it
 finishes: `dream_check` lints the candidate as a whole (links that name no note, two notes on one
 subject, notes the index doesn't name, an index over its 4 KB target, long index lines, notes with
-no description), and the prompt asks it to check each claim it keeps against the sessions or
-`search_transcripts` and say on the entry how it was verified. When it says it is done, Gram runs
+no description), and the prompt asks it to say on each new or changed entry a later session will
+act on how it was verified. When it says it is done, Gram runs
 the same check; a broken link, a split subject or an oversized index sends it back once with the
 list, and whatever is left after that is appended to the report under "Checks by Gram" for the
 reviewer. The check never refuses output; the caps and path rules do that. Source:

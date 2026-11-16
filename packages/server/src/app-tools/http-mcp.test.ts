@@ -658,6 +658,7 @@ describe("mounted in ServerLayer", () => {
               "dream_read",
               "dream_search",
               "dream_write",
+              "read_transcript",
               "search_transcripts",
             ]);
             yield* runtimes.close(thread.id);

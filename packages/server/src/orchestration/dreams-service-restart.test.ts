@@ -302,6 +302,7 @@ describe.skipIf(!hasGit)("dreams", () => {
             ),
           ).toBe(true);
           expect(filesUnder(dream.outputDir)).toEqual([
+            "input/INDEX.md",
             "input/seed/001-feedback-testing-md.md",
             "input/sessions/001-session-c-1.md",
             "input/sessions/002-session-s-new.md",

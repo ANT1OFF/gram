@@ -226,9 +226,13 @@ it("reads and searches full-depth memory snapshots relative to their root", asyn
     kind: "file",
   });
   expect(await s.call("dream_read", { path })).toBe("valid memory");
-  expect(await s.call("dream_search", { path, text: "memory" })).toEqual([
-    { line: 1, text: "valid memory" },
-  ]);
+  expect(await s.call("dream_search", { path, text: "MEMORY" })).toEqual({
+    hits: [{ path, line: 1, text: "valid memory" }],
+  });
+  // A folder is searched with everything below it.
+  expect(await s.call("dream_search", { path: "input", text: "valid" })).toEqual({
+    hits: [{ path, line: 1, text: "valid memory" }],
+  });
   await expect(
     s.call("dream_read", { path: "input/memory/repos/gram/deeper/notes.md" }),
   ).rejects.toThrow("Path is outside");
