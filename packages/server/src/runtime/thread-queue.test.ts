@@ -12,6 +12,7 @@ import {
 } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -1107,6 +1108,101 @@ describe("ThreadRuntimes into a turn waiting on the user", () => {
       }).pipe(
         Effect.provide(makeRuntimeTestLayer(undefined, undefined, undefined, undefined, store)),
       );
+    },
+  );
+
+  it.effect(
+    "holds the queue while a stop's interrupt is on its way, so it never reaches the next turn",
+    () => {
+      // The session's interrupt arrives late (a remote machine, a slow SDK): meanwhile the card the
+      // stop withdrew lets its turn end on its own. The message must not start a turn the late
+      // interrupt would then cut off: it waits for the stop to settle, and then runs on. Arriving
+      // with no turn open, the interrupt does nothing, as a real adapter's does (Codex's
+      // interrupts its own current turn and has none then); the fake's would end one regardless.
+      let duringStop: Effect.Effect<void> = Effect.void;
+      let ended = false;
+      const lateInterrupt = Layer.effectContext(
+        Effect.gen(function* () {
+          const hosts = yield* AgentHosts;
+          const control = yield* FakeAgentControl;
+          return Context.make(
+            AgentHosts,
+            AgentHosts.of({
+              get: (kind) =>
+                hosts.get(kind).pipe(
+                  Effect.map((host) => ({
+                    ...host,
+                    open: (options: Parameters<typeof host.open>[0]) =>
+                      host.open(options).pipe(
+                        Effect.map((session) => ({
+                          ...session,
+                          interrupt: Effect.suspend(() => duringStop).pipe(
+                            Effect.andThen(
+                              Effect.suspend(() => (ended ? Effect.void : session.interrupt)),
+                            ),
+                          ),
+                        })),
+                      ),
+                  })),
+                ),
+            }),
+          ).pipe(Context.add(FakeAgentControl, control));
+        }),
+      ).pipe(Layer.provide(FakeAgentAdapter));
+      return Effect.gen(function* () {
+        const { runtimes, thread, session } = yield* atCard;
+        yield* runtimes.respond(thread.id, "req-1" as RequestId, {
+          kind: "approval",
+          decision: "deny",
+          scope: "once",
+        });
+        // A card of Gram's own: withdrawn, its tool call is answered at once and can finish.
+        const asking = yield* Effect.forkScoped(
+          runtimes.requestApproval(thread.id, {
+            toolName: "mcp__gram__probe",
+            displayName: "probe",
+            input: {},
+            suggestions: [],
+          }),
+        );
+        yield* waitFor(
+          "the server's card",
+          runtimes.status(thread.id).pipe(Effect.map((s) => s === "needsApproval")),
+        );
+        let startedDuringStop: number | undefined;
+        duringStop = Fiber.join(asking).pipe(
+          Effect.andThen(session.completeTurn()),
+          Effect.tap(() => Effect.sync(() => (ended = true))),
+          // Time for the old turn's end to be handled, and for anything it would start.
+          Effect.andThen(
+            Effect.forEach(Array.from({ length: 50 }), () => Effect.yieldNow, { discard: true }),
+          ),
+          Effect.tap(() => Effect.sync(() => (startedDuringStop = session.sent.length))),
+          Effect.ignore,
+        );
+        yield* runtimes.steer(
+          thread.id,
+          { text: "Keep this correction running" },
+          { pastCard: true, interrupt: true },
+        );
+        // Nothing started while the interrupt was on its way…
+        expect(startedDuringStop).toBe(1);
+        // …and once it settled, the message went, and its turn runs on.
+        yield* waitFor(
+          "the message",
+          Effect.sync(() => session.sent.length === 2),
+        );
+        expect(session.sent.map((i) => i.text)).toEqual(["one", "Keep this correction running"]);
+        const store = yield* ThreadStore;
+        const turns = yield* waitFor(
+          "both turns recorded",
+          store.listTurns(thread.id).pipe(Effect.map((turns) => turns.length === 2 && turns)),
+        );
+        expect(turns[0]!.endedAt).toBeDefined();
+        expect(turns[1]!.endedAt).toBeUndefined();
+        for (let i = 0; i < 50; i++) yield* Effect.yieldNow;
+        expect(yield* runtimes.status(thread.id)).toBe("running");
+      }).pipe(Effect.provide(makeRuntimeTestLayer(undefined, undefined, undefined, lateInterrupt)));
     },
   );
 });

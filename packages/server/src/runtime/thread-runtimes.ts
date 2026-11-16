@@ -946,6 +946,9 @@ const make = Effect.gen(function* () {
         }
         return yield* reopenWhenIdle(rt);
       }
+      // A stop still under way holds the queue and the deliveries: its interrupt mustn't reach
+      // the next turn. Its end sends them (`runStop`).
+      if (rt.stopPending !== undefined) return;
       // The queue and the deliveries wait for the limit's resume, which sends them.
       if (rt.limitWait !== undefined) return yield* startIdleTimer(rt);
       // And for a queue hold to let go (`releaseQueue`).
@@ -1160,6 +1163,7 @@ const make = Effect.gen(function* () {
       yield* clearPendingRequests(rt, "stop-requested");
       // A machine restart that cuts the turn short now doesn't carry it on.
       rt.stopAsked = rt.turn.id;
+      rt.stopPending = rt.turn.id;
       return { session: rt.session, turn: rt.turn };
     });
 
@@ -1172,17 +1176,35 @@ const make = Effect.gen(function* () {
         yield* target.background.stopBackgroundTasks ?? Effect.void;
         return;
       }
-      if (yield* Deferred.isDone(target.turn.done)) return;
-      yield* target.session.interrupt.pipe(
-        Effect.andThen(Deferred.await(target.turn.done)),
-        Effect.timeoutOrElse({
-          duration: config.interruptWatchdog,
-          orElse: () =>
-            Effect.fail(
-              new InterruptHung({ timeoutMs: Duration.toMillis(config.interruptWatchdog) }),
-            ),
-        }),
-        Effect.catchTag("InterruptHung", () => recoverOwned(rt, target.turn.id)),
+      const turnId = target.turn.id;
+      yield* Effect.gen(function* () {
+        if (yield* Deferred.isDone(target.turn.done)) return;
+        yield* target.session.interrupt.pipe(
+          Effect.andThen(Deferred.await(target.turn.done)),
+          Effect.timeoutOrElse({
+            duration: config.interruptWatchdog,
+            orElse: () =>
+              Effect.fail(
+                new InterruptHung({ timeoutMs: Duration.toMillis(config.interruptWatchdog) }),
+              ),
+          }),
+          Effect.catchTag("InterruptHung", () => recoverOwned(rt, turnId)),
+        );
+      }).pipe(
+        // The stop has settled, the turn with it: what waited behind it goes now, as a turn's end
+        // would have sent it.
+        Effect.ensuring(
+          locked(
+            rt,
+            Effect.gen(function* () {
+              if (rt.stopPending !== turnId) return;
+              rt.stopPending = undefined;
+              if (rt.turn === undefined && rt.session !== undefined && rt.status === "idle")
+                yield* becomeIdle(rt);
+              else yield* drainQueue(rt);
+            }),
+          ),
+        ),
       );
     });
 

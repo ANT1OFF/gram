@@ -222,6 +222,12 @@ export interface Runtime {
   machineRestart: { readonly machine: string; readonly continued: "turn" | "queue" } | undefined;
   /** The turn the user asked to stop, which a machine restart under it never continues. */
   stopAsked: TurnId | undefined;
+  /**
+   * A claimed stop of this turn still under way (`claimStop`, `runStop`): until it settles nothing
+   * queued starts a turn, so the session's interrupt, which can arrive late, never reaches the next
+   * turn instead of this one.
+   */
+  stopPending?: TurnId | undefined;
   /** The checkout or granted folders changed mid-turn; reopen the session once it's idle. */
   reopenOnIdle: boolean;
   /**

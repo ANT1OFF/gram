@@ -797,6 +797,8 @@ export const makeMessageQueue = ({
                 yield* becomeIdle(rt);
                 return result;
               }
+              // A stop under way: this waits for it to settle, which sends it (`runStop`).
+              if (rt.stopPending !== undefined) return yield* enqueue();
               if (rt.session !== undefined && rt.turn === undefined) {
                 const kept = yield* sendNow(rt, rt.session, input).pipe(
                   Effect.as(false),
@@ -892,6 +894,8 @@ export const makeMessageQueue = ({
     Effect.gen(function* () {
       if (
         (rt.queue.length === 0 && rt.launch === undefined) ||
+        // A stop under way sends what waited once it has settled (`runStop`).
+        rt.stopPending !== undefined ||
         rt.closing ||
         rt.reserved ||
         rt.limitWait !== undefined ||
