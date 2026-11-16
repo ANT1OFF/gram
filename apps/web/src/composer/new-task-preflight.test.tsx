@@ -7,7 +7,7 @@ import {
 } from "@gram/contracts";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/api/mock";
 import { renderWithApi } from "@/panels/test-utils";
@@ -25,20 +25,9 @@ afterEach(() => {
   useTaskDraftStore.setState({ last: undefined, autonomy: undefined, entry: undefined });
 });
 const projectId = "synthetic-project" as ProjectId;
-function EntryFixture({ initialWay }: { initialWay?: "direct" | undefined }) {
-  const [entry, setEntry] = useState(initialWay);
-  return (
-    <>
-      <button onClick={() => setEntry(undefined)}>Generic entry</button>
-      <button onClick={() => setEntry("direct")}>Worker entry</button>
-      <NewTaskDraft initialWay={entry} />
-    </>
-  );
-}
 const setup = (
   selection: () => Promise<TaskModelSelection>,
   observation: (agent: string) => Partial<SelectedHarnessSupport> = () => ({}),
-  initialWay?: "direct",
 ) => {
   const api = createMockApi({ speed: 0, autoplay: false, persist: false });
   vi.spyOn(api, "listWorkspaces").mockResolvedValue([]);
@@ -62,7 +51,7 @@ const setup = (
   }));
   useServerSettings.setState({ settings: DEFAULT_SETTINGS });
   useTaskDraftStore.setState({ last: undefined, autonomy: undefined, entry: undefined });
-  renderWithApi(<EntryFixture initialWay={initialWay} />, api);
+  renderWithApi(<NewTaskDraft />, api);
   return { api, preview, start };
 };
 
@@ -87,6 +76,23 @@ describe("new-task authoritative preflight", () => {
     expect(start).toHaveBeenCalledWith(
       expect.objectContaining({ selection, target: { projectId } }),
     );
+    // Always the orchestrator's: New starts no worker of its own.
+    expect(start.mock.calls[0]?.[0]).not.toHaveProperty("direct");
+  });
+
+  it("asks only between the orchestrator and one agent", async () => {
+    setup(async () => ({ orchestrator: { agent: "claude", model: "synthetic-model" } }));
+    const who = await screen.findByRole("radiogroup", { name: "Who does it" });
+    expect(
+      within(who)
+        .getAllByRole("radio")
+        .map((radio) => radio.getAttribute("aria-label")),
+    ).toEqual(["Team", "Chat"]);
+    expect(screen.getByRole("radio", { name: "Team" }).getAttribute("aria-checked")).toBe("true");
+    // No worker model, repository, checkout or hold of a worker's own.
+    expect(screen.queryByRole("group", { name: "Worker" })).toBeNull();
+    expect(screen.queryByTestId("task-checkout")).toBeNull();
+    expect(screen.queryByTestId("task-hold")).toBeNull();
   });
 
   it("picks the orchestrator's agent in the prompt box, previews the pick and starts on it", async () => {
@@ -170,34 +176,6 @@ describe("new-task authoritative preflight", () => {
       ).toBe(false),
     );
   });
-
-  it("checks and shows the actual direct worker separately from its orchestrator", async () => {
-    const selection: TaskModelSelection = {
-      orchestrator: { agent: "claude", model: "synthetic-model" },
-      worker: { agent: "codex", model: "synthetic-model" },
-    };
-    const { start } = setup(
-      async () => selection,
-      (agent) =>
-        agent === "codex"
-          ? { availability: { state: "signedOut", reason: "Synthetic worker needs codex login." } }
-          : {},
-      "direct",
-    );
-    await screen.findByText("Worker: Codex · synthetic-model");
-    await screen.findByText("Synthetic worker needs codex login.");
-    // The footer follows who does it: a direct worker's form names no orchestrator.
-    expect(screen.queryByText(/^Orchestrator:/)).toBeNull();
-    fireEvent.change(screen.getByLabelText("What needs doing"), {
-      target: { value: "Synthetic task" },
-    });
-    fireEvent.submit(screen.getByRole("form", { name: "New task" }));
-    expect(start).not.toHaveBeenCalled();
-    expect(
-      (screen.getByRole("button", { name: /Start workspace and task/ }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
-  });
 });
 
 describe("an orchestrator slot that can't run here", () => {
@@ -227,40 +205,9 @@ describe("an orchestrator slot that can't run here", () => {
   });
 });
 
-describe("worker entry intent", () => {
-  it("preflights direct mode immediately, preserves text on entry changes and submits the server selection", async () => {
-    const selection: TaskModelSelection = {
-      orchestrator: { agent: "claude", model: "synthetic-model" },
-      worker: { agent: "codex", model: "synthetic-model" },
-    };
-    const { preview, start } = setup(async () => selection, undefined, "direct");
-    await screen.findByText("Worker: Codex · synthetic-model");
-    expect(preview.mock.calls[0]?.[0]).toMatchObject({ direct: { projectId } });
-    fireEvent.change(screen.getByLabelText("What needs doing"), {
-      target: { value: "Review this synthetic change" },
-    });
-    fireEvent.click(screen.getByText("Generic entry"));
-    expect(screen.getByRole("radio", { name: "Team" }).getAttribute("aria-checked")).toBe("true");
-    fireEvent.click(screen.getByText("Worker entry"));
-    expect(screen.getByRole("radio", { name: "Task" }).getAttribute("aria-checked")).toBe("true");
-    expect((screen.getByLabelText("What needs doing") as HTMLTextAreaElement).value).toBe(
-      "Review this synthetic change",
-    );
-    await waitFor(() =>
-      expect(
-        (screen.getByRole("button", { name: /Start workspace and task/ }) as HTMLButtonElement)
-          .disabled,
-      ).toBe(false),
-    );
-    fireEvent.submit(screen.getByRole("form", { name: "New task" }));
-    await screen.findByText("Synthetic start boundary");
-    expect(start).toHaveBeenCalledWith(
-      expect.objectContaining({ selection, direct: { projectId }, target: { projectId } }),
-    );
-  });
-
-  it("cannot send an initial direct draft while authoritative selection is loading", async () => {
-    const { start, preview } = setup(() => new Promise(() => {}), undefined, "direct");
+describe("Start while the check runs", () => {
+  it("cannot send a draft while authoritative selection is loading", async () => {
+    const { start, preview } = setup(() => new Promise(() => {}));
     await waitFor(() => expect(preview).toHaveBeenCalled());
     fireEvent.change(screen.getByLabelText("What needs doing"), {
       target: { value: "Synthetic pending draft" },
@@ -269,7 +216,7 @@ describe("worker entry intent", () => {
     expect(start).not.toHaveBeenCalled();
     // Start says what it waits on, on the button itself, keeping its action as its name.
     const button = screen.getByRole("button", {
-      name: "Start workspace and task, Checking agents…",
+      name: "Start workspace and send, Checking agents…",
     }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(button.textContent).toBe("Checking agents…");
@@ -277,14 +224,7 @@ describe("worker entry intent", () => {
   });
 
   it("enables Start, in its own words, once the check passes", async () => {
-    setup(
-      async () => ({
-        orchestrator: { agent: "claude", model: "synthetic-model" },
-        worker: { agent: "codex", model: "synthetic-model" },
-      }),
-      undefined,
-      "direct",
-    );
+    setup(async () => ({ orchestrator: { agent: "claude", model: "synthetic-model" } }));
     fireEvent.change(screen.getByLabelText("What needs doing"), {
       target: { value: "Synthetic task" },
     });
@@ -292,7 +232,7 @@ describe("worker entry intent", () => {
       const button = screen.getByTestId("task-submit") as HTMLButtonElement;
       expect(button.disabled).toBe(false);
       expect(button.hasAttribute("data-checking")).toBe(false);
-      expect(button.textContent).toMatch(/^Start workspace and task/);
+      expect(button.textContent).toMatch(/^Start workspace and send/);
     });
   });
 });

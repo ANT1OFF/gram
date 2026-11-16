@@ -10,7 +10,8 @@ workers for you, each in its own git worktree, from task to merged pull request.
 ![Gram on a workspace's orchestrator. The sidebar has a 1 question pill, then the workspace and its four workers: one asks you, one is editing code, one waits on review and one on checks, then a few solo threads. The title bar holds Chat and Board, the orchestrator's mark and its Memory, with the usage button on the right. Above the chat, 1 running, 2 in review and 2 merged today. In the chat, the task given to the orchestrator, its reply that it started six workers, and a card per feature with each worker's state and pull request, two of them merged.](docs/assets/gram-orchestrator.png)
 
 - **An orchestrator per workspace.** You give it tasks; it writes a brief for each, starts a
-  worker on it and answers what it can, passing the rest to you.
+  worker on it and answers what it can, passing the rest to you. New task (⌘N) goes either to an
+  orchestrator, which decides how to run it, or to a chat with one agent (⌘T).
 - **Isolated workers.** Each worker is a normal Claude Code or Codex thread in its own worktree
   and branch, so your checkout stays as it was. Open any of them beside the orchestrator's chat
   to read, steer or answer it.

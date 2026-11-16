@@ -42,13 +42,12 @@ export interface OrchestrationApi {
   openOrchestrator(target: OpenOrchestratorTarget): Promise<Thread>;
   /**
    * ⌘N's New task: opens the target's orchestrator as `openOrchestrator` does and hands it the
-   * input as the user's message, steered while it runs, or with `direct` starts one worker from
-   * it, held as the user's. Resolves to the thread to open: the orchestrator, or the worker.
-   * Rejects with `InvalidState` for a repo not in the target.
+   * input as the user's message, steered while it runs; the orchestrator decides how to run it.
+   * Resolves to the orchestrator's thread.
    */
   startTask(input: StartTaskInput): Promise<Thread>;
   taskPreflight(
-    input: Pick<StartTaskInput, "target" | "direct" | "autonomy" | "orchestrator">,
+    input: Pick<StartTaskInput, "target" | "autonomy" | "orchestrator">,
   ): Promise<TaskModelSelection>;
   /** Replaces the budgets the workspace's orchestrator works inside. */
   setOrchestratorCharter(

@@ -196,8 +196,8 @@ test("each top-left icon names itself and its key on hover", async ({ page }) =>
     ["Compact sidebar", /^Compact sidebar: a strip that opens on hover$/],
     // Settings, at the foot beside History, says its key too.
     ["Settings", /^Settings \((⌘|Ctrl\+),\)/],
-    // New opens a menu, whose Task, Team and Chat each show their own key.
-    ["New task", /^New task, team or chat$/],
+    // New opens a menu, whose Team and Chat each show their own key.
+    ["New task", /^New task or chat$/],
   ];
   for (const [name, label] of expected) {
     await sidebar.locator(`[aria-label="${name}"]`).first().hover();

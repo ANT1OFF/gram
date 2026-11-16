@@ -92,7 +92,7 @@ const jumpSearch = async (page: Page) => {
 const steps: readonly Shot[] = [
   {
     name: "new-menu",
-    title: "Start: the sidebar's New menu: Task, Team or Chat, each with its shortcut",
+    title: "Start: the sidebar's New menu: Team or Chat, each with its shortcut",
     open: async (page) => {
       await openApproval(page);
       await page.getByRole("button", { name: "New task", exact: true }).click();
@@ -103,41 +103,40 @@ const steps: readonly Shot[] = [
   },
   {
     name: "new-task",
-    title: "Start: direct worker task form with a drafted goal",
+    title: "Start: the task form for an orchestrator, with a drafted goal",
     open: async (page) => {
-      await page.goto("/new-task?way=direct");
+      await page.goto("/new-task");
       await page.getByLabel("What needs doing").fill("Add retry coverage for the queue consumer.");
     },
   },
   {
     name: "task-started",
-    title: "Start: submit the task and land on its new thread, its agent still starting",
+    title: "Start: submit the task and land on its orchestrator, which has it",
     open: async (page) => {
-      // Held while its session opens, so the frame shows the new worker as it starts.
+      // Held on its turn, so the frame shows the orchestrator working on the task.
       await page.addInitScript(() => {
         window.gramMockHoldGates = true;
-        window.gramMockHoldWorkerStart = true;
       });
-      await page.goto("/new-task?way=direct");
+      await page.goto("/new-task");
       await page.getByLabel("What needs doing").fill("Add retry coverage for the queue consumer.");
-      await page.getByRole("button", { name: /Start (workspace and )?task/ }).click();
+      await page.getByTestId("task-submit").click();
       await expect(page).toHaveURL(/\/t\//);
       await page.getByLabel("Message", { exact: true }).waitFor();
       await page.getByTestId("message-user").first().waitFor();
-      await page.getByTestId("overview-worker-starting").first().waitFor();
     },
   },
   {
     name: "new-task-again",
-    title: "Start again: the next worker's form folds to the brief and the remembered place",
+    title: "Start again: the next task's form folds to the brief and the remembered place",
     open: async (page) => {
-      await page.goto("/new-task?way=direct");
+      await page.goto("/new-task");
       await page.getByLabel("What needs doing").fill("Add retry coverage for the queue consumer.");
-      await page.getByRole("button", { name: /Start (workspace and )?task/ }).click();
+      await page.getByTestId("task-submit").click();
       await expect(page).toHaveURL(/\/t\//);
       await page.getByLabel("Message", { exact: true }).waitFor();
-      // The next one, by its shortcut, in the same session: the last target is remembered.
-      await page.keyboard.press("ControlOrMeta+Alt+n");
+      // The next one, from New's Team, in the same session: the last target is remembered.
+      await page.getByRole("button", { name: "New task", exact: true }).first().click();
+      await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Team/ }).click();
       await page.getByLabel("What needs doing").waitFor();
       await page.getByLabel("What needs doing").fill("Cover the dead-letter path too.");
     },

@@ -24,11 +24,11 @@ export const TASKS: readonly Task[] = [
     id: "01-start",
     title: "Start a task",
     start: "A finished solo thread, realistic workspaces",
-    goal: "Submit a direct worker task and see its thread",
+    goal: "Send a task to an orchestrator and see its thread",
     run: async (p, r) => {
-      await r.key("ControlOrMeta+Alt+n");
+      await r.key("ControlOrMeta+n");
       await r.text(p.getByLabel("What needs doing"), "Add retry coverage for the queue consumer.");
-      await r.click(p.getByRole("button", { name: /Start (workspace and )?task/ }));
+      await r.click(p.getByRole("button", { name: /Send to team|Start workspace and send/ }));
       await expect(p).toHaveURL(/\/t\//);
       await expect(p.getByLabel("Message", { exact: true })).toBeVisible();
       await expect(

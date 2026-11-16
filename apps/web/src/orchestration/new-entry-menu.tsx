@@ -22,13 +22,15 @@ const NEW_ICON =
 const PILL =
   "inline-flex h-13 shrink-0 items-center gap-2.5 rounded-full bg-foreground pr-6 pl-5 text-reading font-medium text-background shadow-overlay outline-none transition-[scale,opacity] duration-(--dur-fast) ease-(--ease-out) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-safe:active:scale-[0.97] [&_svg]:size-5";
 
-/** What the New form opens on by itself: the choice used last, the orchestrator's task at first. */
-export const newEntryOf = (remembered: NewEntry | undefined): Exclude<NewEntry, "workspace"> =>
-  remembered === undefined || remembered === "workspace" ? "task" : remembered;
+/**
+ * What the New form opens on by itself: the choice used last, the orchestrator's task at first.
+ * Anything else remembered, a worker straight away from before New had only two, is the task.
+ */
+export const newEntryOf = (remembered: string | undefined): Exclude<NewEntry, "workspace"> =>
+  remembered === "oneOff" ? "oneOff" : "task";
 
 /** The New form each of Who does it's choices opens on. */
 const ENTRY_OF: Readonly<Record<(typeof WHO_CHOICES)[number]["value"], NewEntry>> = {
-  worker: "worker",
   orchestrator: "task",
   me: "oneOff",
 };
@@ -36,7 +38,7 @@ const ENTRY_OF: Readonly<Record<(typeof WHO_CHOICES)[number]["value"], NewEntry>
 /**
  * The overview header's `+` and, where the header has room for them beside its icons, the words
  * "New task", so the way to start work is read rather than recognised: a menu of what New starts,
- * Task, Team and Chat, each with its shortcut, in Who does it's words and order. A pick opens the
+ * Team and Chat, each with its shortcut, in Who does it's words and order. A pick opens the
  * one New form on that choice; where it runs, a new workspace included, is the form's own row.
  */
 export function NewEntryMenu({
@@ -86,7 +88,7 @@ export function NewEntryMenu({
   return (
     <Menu.Root>
       <Hint
-        label="New task, team or chat"
+        label="New task or chat"
         side="bottom"
         render={
           <Menu.Trigger

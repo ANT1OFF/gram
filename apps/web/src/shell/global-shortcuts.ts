@@ -9,7 +9,6 @@ import { paneMoveKeys, THREAD_STEP_KEYS } from "@/keyboard/catalog";
 import { keyLabel, registerShortcut, useShortcut } from "@/keyboard/registry";
 import { besideToggle, closeBeside, keepBeside } from "@/orchestration/beside-store";
 import { boardWorkspaceFor } from "@/orchestration/board-model";
-import { newEntryRoute } from "@/orchestration/new-entry";
 import { useOpenBoard } from "@/orchestration/open-board";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { toggleWorkersTab } from "@/orchestration/workers-tab";
@@ -104,14 +103,6 @@ export function useGlobalShortcuts() {
     label: "New task",
     group: "Navigation",
     run: () => startNewTask((to) => void navigate({ to })),
-  });
-
-  useShortcut({
-    id: "thread.newWorker",
-    keys: "mod+alt+n",
-    label: "New worker",
-    group: "Navigation",
-    run: () => void navigate(newEntryRoute("worker")),
   });
 
   useShortcut({

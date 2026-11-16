@@ -11,7 +11,6 @@ import {
   effectiveCheckout,
   type HostId,
   hostOf,
-  InvalidState,
   LOCAL_HOST_ID,
   type Checkout,
   type ModelRef,
@@ -24,8 +23,6 @@ import {
   type WorkspaceId,
   aboveHigh,
   browserUseAllowed,
-  modelRefOf,
-  rosterName,
   hostListing,
   workerBrowserOn,
 } from "@gram/contracts";
@@ -33,7 +30,6 @@ import { OWNERS_DIFFER, sameOwner } from "../../host/ownership.ts";
 import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
-import { sameTaskModel } from "../task-selection.ts";
 import { heldCheckoutPaths } from "../../runtime/create-in-checkout.ts";
 import { selectableModels } from "../../runtime/model-efforts.ts";
 import { limitQueuedNote } from "../../runtime/limit-wait.ts";
@@ -42,19 +38,16 @@ import { LOCAL_MACHINE_NAMES, namesThisMachine } from "../../host/paired-machine
 import { type RouteOffer } from "../limit-pause.ts";
 import { ASKED_BY_LOOK_BACK, askedByOf } from "../asked-by.ts";
 import { findUserMessages } from "../../persistence/thread-store.ts";
-import { withBriefFooter } from "../user-words.ts";
 import { emptyWorkerMemo, withNotes, workerThreadId, type WorkerMemo } from "../outbox.ts";
 import {
   budgetVerdict,
   featureBranch,
   featureSlug,
   gateOfAutonomy,
-  taskFeature,
   refusal,
   regroup,
   scopeOverlap,
   startModeFor,
-  USER_HOLD_IDLE_MS,
   workerModelLabel,
   workerModelVerdict,
 } from "../rules.ts";
@@ -78,8 +71,6 @@ import {
 } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Projects } from "./projects.ts";
-import type { TaskStartup } from "./task-startup.ts";
-import type { Workers } from "./workers.ts";
 import type { HeldSpawns } from "./held-spawns.ts";
 
 const spawnedResult = (
@@ -214,8 +205,6 @@ export interface SpawningDeps {
   readonly repoNames: Projects["repoNames"];
   readonly joinWorkspace: Projects["joinWorkspace"];
   readonly resolveProject: Projects["resolveProject"];
-  readonly taskWorkers: TaskStartup["taskWorkers"];
-  readonly armHold: Workers["armHold"];
   readonly projectCall: Projects["projectCall"];
   readonly pausedSpawnGate: HeldSpawns["pausedSpawnGate"];
   readonly spawnBreaker: Effect.Success<ReturnType<typeof makeSpawnBreaker>>;
@@ -235,7 +224,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
   const {
     authorityOf,
     requireAuthority,
-    rosterHere,
     workerModelsHere,
     spawnLock,
     checkoutLock,
@@ -257,7 +245,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     creator,
     checkouts,
     openedInAuto,
-    briefedByUser,
     joinedMachines,
     headless,
     ownerOf,
@@ -497,8 +484,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     repoNames,
     joinWorkspace,
     resolveProject,
-    taskWorkers,
-    armHold,
     projectCall,
     pausedSpawnGate,
     spawnBreaker,
@@ -590,12 +575,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       }
     });
 
-  /**
-   * `spawn_worker`, and the user's own worker from New task (`byUser`): that one takes the user's
-   * input as it came, attachments and all, with no origin, so it starts held as theirs and
-   * the runtime titles it from its first line. A pause or a rate limit is the orchestrator's to
-   * wait out, not the user's.
-   */
   /** The routines engine's admission, once it has started (`setRoutineAdmission`). */
   let routineAdmission: RoutineAdmission | undefined;
   const setRoutineAdmission = (admit: RoutineAdmission) =>
@@ -603,16 +582,10 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       routineAdmission = admit;
     });
 
+  /** `spawn_worker`, an orchestrator's own spawn or a routine's launch. */
   const spawnFor = (
     callerId: ThreadId,
     given: SpawnWorkerInput,
-    byUser?: {
-      readonly id: ThreadId;
-      readonly input: UserInput;
-      readonly model?: ModelRef;
-      /** Started under the user's control, as one they took over; else the orchestrator's. */
-      readonly hold?: boolean;
-    },
   ): Effect.Effect<SpawnedWorker, AppToolError> => {
     let recorded: { key: string; id: ThreadId; workspaceId: WorkspaceId } | undefined;
     // A routine's run is admitted below, under the spawn lock, and spawned as admitted.
@@ -625,7 +598,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           const tool = "spawn_worker";
           const { thread: caller, state } = yield* requireAuthority(tool, callerId);
           const workspaceId = state.workspace.id;
-          if (byUser === undefined && state.paused !== undefined) {
+          if (state.paused !== undefined) {
             return yield* toolError(
               tool,
               refusal(
@@ -653,13 +626,13 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           // A retry, or a call the last run crashed in, finds the worker by the id its request
           // gives it, and makes it under that id if the first attempt got no further.
           const requestedId =
-            byUser !== undefined || input.clientRequestId === undefined
+            input.clientRequestId === undefined
               ? undefined
               : ((yield* readOutbox(workspaceId)).requests[input.clientRequestId] ??
                 workerThreadId(workspaceId, input.clientRequestId));
-          // Only the orchestrator's own spawn answers an ask; the user's and a routine's are theirs.
+          // Only the orchestrator's own spawn answers an ask; a routine's is its own.
           const askedBy =
-            byUser === undefined && input.routine === undefined
+            input.routine === undefined
               ? askedByOf(
                   yield* findUserMessages(store, caller.id, {
                     from: "newest",
@@ -823,7 +796,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             }
             return { ...spawnedResult(existing, projects), existing: true as const };
           }
-          const limited = byUser === undefined ? retryingIn(workspaceId) : undefined;
+          const limited = retryingIn(workspaceId);
           if (limited !== undefined) {
             const name = (yield* findThread(limited))?.title || limited;
             return yield* toolError(
@@ -846,7 +819,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               ),
             );
           }
-          if (byUser === undefined && state.pausedFeatures?.includes(slug) === true) {
+          if (state.pausedFeatures?.includes(slug) === true) {
             return yield* toolError(
               tool,
               refusal(
@@ -916,47 +889,15 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           // Where it runs, first: a tier resolves against what that machine lists.
           const hostId = yield* placedMachine(tool, input.machine, caller);
           // Without a roster the one model is the orchestrator's own, which it runs on.
-          const picked =
-            byUser === undefined
-              ? yield* workerModel(
-                  tool,
-                  caller,
-                  state.charter,
-                  input.model,
-                  yield* workerModelsHere(caller, state.charter, hostId),
-                )
-              : yield* Effect.gen(function* () {
-                  // The user's pick, checked against the roster as it runs now, else its default.
-                  const model = yield* taskWorkers(state.charter, caller.model, byUser.model).pipe(
-                    Effect.mapError((error) => toolError(tool, error.message)),
-                    Effect.flatMap((workers) =>
-                      workers.worker === undefined
-                        ? Effect.fail(
-                            toolError(tool, workers.refusal ?? "No worker model can run here."),
-                          )
-                        : Effect.succeed(workers.worker),
-                    ),
-                  );
-                  const entry = (
-                    state.charter.workerModels === undefined
-                      ? undefined
-                      : yield* rosterHere(state.charter.workerModels, state.charter)
-                  )?.roster.find((each) => sameTaskModel(modelRefOf(each), model));
-                  return {
-                    model,
-                    name: entry === undefined ? workerModelLabel(model) : rosterName(entry),
-                    follows: entry?.tier !== undefined,
-                    other: false,
-                    instead: undefined,
-                  };
-                });
+          const picked = yield* workerModel(
+            tool,
+            caller,
+            state.charter,
+            input.model,
+            yield* workerModelsHere(caller, state.charter, hostId),
+          );
           const chosen = picked.model;
           yield* admitMachineModel(tool, hostId, chosen);
-          if (byUser?.model !== undefined && !sameTaskModel(chosen, byUser.model))
-            return yield* toolError(
-              tool,
-              "The task's selected worker changed. Check the task preview and start again.",
-            );
           const mode = startModeFor(
             chosen.agent,
             settings,
@@ -1168,25 +1109,11 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                     ...extraCheckouts.map((extra) => extra.path),
                     ...readAlso,
                   ],
-                  ...(byUser === undefined
-                    ? {
-                        title: input.title.trim(),
-                        input: brief,
-                      }
-                    : { id: byUser.id, input: byUser.input }),
+                  title: input.title.trim(),
+                  input: brief,
                   ...(requestedId === undefined ? {} : { id: requestedId }),
                 })
-                .pipe(
-                  // The user's retry names the same feature, whose worktree would be in the way.
-                  Effect.onError(() =>
-                    byUser === undefined
-                      ? Effect.void
-                      : Effect.forEach([checkout, ...extraCheckouts], checkouts.discard, {
-                          discard: true,
-                        }),
-                  ),
-                  Effect.mapError((e) => toolError(tool, e.message)),
-                );
+                .pipe(Effect.mapError((e) => toolError(tool, e.message)));
             }),
           );
 
@@ -1197,7 +1124,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             // The thread was live, its brief sent, before this records it: a message the user typed
             // into it meanwhile took it over (`onUserInput`), and that stands.
             const taken = outbox.workers[worker.id];
-            const held = byUser?.hold === true || taken?.userIntervened === true;
             return [
               withNotes(
                 {
@@ -1217,26 +1143,15 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                               ? {}
                               : { userInputAt: taken.userInputAt }),
                           }
-                        : byUser?.hold === true
-                          ? { userIntervened: true, userInputAt: now }
-                          : {}),
+                        : {}),
                     },
                   },
                 },
-                byUser === undefined
-                  ? []
-                  : held
-                    ? [
-                        `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} ${byUser.hold === true ? "under their own control" : "and wrote to it as it started"}, for feature ${slug}. It is your worker: while they talk to it, your messages wait behind their exchange. Follow its pull request like your own workers'.`,
-                      ]
-                    : [
-                        `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} for you, for feature ${slug}, with their words as its brief. It is your worker: direct it and follow its pull request like your own.`,
-                      ],
+                [],
               ),
               undefined,
             ];
           });
-          if (byUser?.hold === true) yield* armHold(worker.id, USER_HOLD_IDLE_MS);
           yield* joinWorkspace(state, caller.id, [project, ...others]);
           if (group !== undefined) yield* joinGroup(workspaceId, slug, group);
           yield* sampleExtras(worker);
@@ -1337,58 +1252,6 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       ),
     );
 
-  const startWorker: OrchestrationShape["startWorker"] = (workspaceId, input) =>
-    Effect.gen(function* () {
-      const state = yield* store.getWorkspace(workspaceId);
-      const holder = state.workspace.orchestratorThreadId;
-      if (holder === undefined || (yield* findThread(holder)) === undefined) {
-        return yield* new InvalidState({
-          message: "This workspace has no orchestrator open to follow the worker.",
-        });
-      }
-      if (!state.workspace.projectIds.includes(input.projectId)) {
-        return yield* new InvalidState({
-          message: `That repo isn't one of the "${state.workspace.name}" workspace's.`,
-        });
-      }
-      const taken = new Set(
-        (yield* store.listThreads).flatMap((thread) =>
-          thread.workspaceId === workspaceId && thread.spawnedBy !== undefined
-            ? [thread.spawnedBy.feature]
-            : [],
-        ),
-      );
-      const feature = taskFeature(input.name ?? input.input.text, taken);
-      // The workspace's standing instructions reach a worker the user starts too.
-      const text = withBriefFooter(input.input.text, briefFooterOf(state.charter));
-      const hold = input.hold === true;
-      // Its first input is the user's typing, which would otherwise take it over: set before the
-      // send it starts with is heard, and dropped again if it never starts.
-      if (!hold) briefedByUser.add(input.id);
-      const spawned = yield* spawnFor(
-        holder,
-        {
-          project: input.projectId,
-          feature,
-          title: feature,
-          brief: text,
-          ...(input.base === undefined ? {} : { base: input.base }),
-          ...(input.hostId === undefined ? {} : { machine: input.hostId }),
-        },
-        {
-          id: input.id,
-          input: { ...input.input, text },
-          hold,
-          ...(input.model === undefined ? {} : { model: input.model }),
-        },
-      ).pipe(
-        Effect.onError(() => Effect.sync(() => void briefedByUser.delete(input.id))),
-        // Worded for the orchestrator, whose code the user has no use for.
-        Effect.mapError((e) => new InvalidState({ message: e.message.replace(/^[a-z_]+: /, "") })),
-      );
-      return yield* store.getThread(spawned.threadId);
-    });
-
   return {
     setRoutineAdmission,
     spawnNeedsApproval,
@@ -1399,6 +1262,5 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     joinGroup,
     spawnWorker,
     briefFooter,
-    startWorker,
   };
 };

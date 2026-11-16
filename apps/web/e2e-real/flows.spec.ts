@@ -185,7 +185,7 @@ test("after a restart ↑ recalls the prompt, ⌘⇧T reopens a closed thread, a
   await expect(page.getByTestId("checkout-in-use")).toBeVisible();
 });
 
-test("⌘N's New task makes the repo's workspace, hands its orchestrator the task, or starts a worker", async () => {
+test("⌘N's New task makes the repo's workspace and hands its orchestrator the task", async () => {
   await h.open(page, `/t/${threadId}`);
   await expect(page.getByTestId("pane-header")).toContainText(PROMPT);
   await page.keyboard.press("ControlOrMeta+KeyN");
@@ -200,37 +200,11 @@ test("⌘N's New task makes the repo's workspace, hands its orchestrator the tas
     timeout: 30_000,
   });
 
-  // On an orchestrator, New task's shortcut now focuses its composer; the sidebar's New opens the
-  // New form, on One worker → PR.
+  // On an orchestrator, New task's shortcut now focuses its composer: the next task is a message.
   const orchestratorUrl = page.url();
   await page.keyboard.press("ControlOrMeta+KeyN");
   await expect(page.getByRole("combobox", { name: "Message", exact: true })).toBeFocused();
   await expect(page).toHaveURL(orchestratorUrl);
-  const startWorker = async (text: string, hold: boolean) => {
-    await page.getByRole("button", { name: "New", exact: true }).click();
-    await page.getByRole("radio", { name: "One worker to PR" }).click();
-    await expect(page).toHaveURL(/\/new-task\?way=direct/);
-    const control = page.getByRole("switch", { name: "Start under my control" });
-    await expect(control).not.toBeChecked();
-    if (hold) await control.click();
-    await page.getByLabel("What needs doing").fill(text);
-    await page.getByRole("button", { name: /Start task/ }).click();
-    await expect(page.getByTestId("pane-header")).toContainText(text, { timeout: 30_000 });
-    await expect(transcript.getByText(`echo: ${text}`)).toBeVisible();
-  };
-
-  // By default it is the orchestrator's worker, running on your words as its brief: not held.
-  await startWorker("Write the needle notes", false);
-  await expect(page.getByTestId("worker-hold")).toHaveCount(0);
-  await expect(page.getByTestId("worker-banner-held")).toHaveCount(0);
-
-  // Asked for before starting, it starts under your control, with the way to hand it back.
-  await startWorker("Check the needle notes", true);
-  const hold = page.getByTestId("worker-hold");
-  await expect(hold).toContainText("Under your control");
-  await expect(hold.getByTestId("worker-hand-back")).toBeVisible();
-  expect(worktreeOnBranch("feat/write-the-needle-notes")).not.toBe("");
-  expect(worktreeOnBranch("feat/check-the-needle-notes")).not.toBe("");
 });
 
 test("a GitHub name typed on /new is cloned into the clone folder, and adopted after", async () => {

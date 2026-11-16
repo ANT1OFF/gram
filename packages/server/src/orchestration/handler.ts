@@ -1,14 +1,12 @@
 import {
   InvalidState,
   OrchestrationRpcs,
-  ThreadId,
   type DraftId,
+  type ThreadId,
   type UserInput,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
-import { randomUUID } from "node:crypto";
 import { attachmentsDir, withDraftAttachments } from "../attachments/attachments.ts";
 import { ServerConfig } from "../config.ts";
 import { logDefects, type Handlers } from "../rpc/handlers/common.ts";
@@ -57,7 +55,6 @@ export const orchestrationHandlers = Effect.gen(function* () {
       target,
       input,
       draftId,
-      direct,
       autonomy,
       orchestrator: picked,
       selection,
@@ -72,7 +69,6 @@ export const orchestrationHandlers = Effect.gen(function* () {
         return yield* orchestration.withTaskStartup(
           {
             target,
-            ...(direct === undefined ? {} : { direct }),
             ...(autonomy === undefined ? {} : { autonomy }),
             ...(picked === undefined ? {} : { orchestrator: picked }),
           },
@@ -87,33 +83,17 @@ export const orchestrationHandlers = Effect.gen(function* () {
                   ? undefined
                   : current.orchestrator,
               );
-              const workspaceId = orchestrator.workspaceId;
-              if (workspaceId === undefined) {
+              if (orchestrator.workspaceId === undefined) {
                 return yield* new InvalidState({ message: "The orchestrator has no workspace." });
               }
-              if (direct === undefined) {
-                // Mid-switch it is queued, never steered into the checkpoint turn: the switch holds
-                // the queue and gives it to the new session.
-                yield* adopted(draftId, orchestrator.id, input, (task) =>
-                  orchestrator.sessionSwitch === undefined
-                    ? deliver(orchestrator.id, task)
-                    : runtimes.send(orchestrator.id, task).pipe(Effect.asVoid),
-                );
-                return orchestrator;
-              }
-              // Chosen here so the draft's attachments move into the worker before its first send.
-              const id = Schema.decodeSync(ThreadId)(randomUUID());
-              return yield* adopted(draftId, id, input, (task) =>
-                orchestration.startWorker(workspaceId, {
-                  id,
-                  projectId: direct.projectId,
-                  base: direct.base,
-                  input: task,
-                  hold: direct.hold === true,
-                  ...(direct.hostId === undefined ? {} : { hostId: direct.hostId }),
-                  ...(current.worker === undefined ? {} : { model: current.worker }),
-                }),
+              // Mid-switch it is queued, never steered into the checkpoint turn: the switch holds
+              // the queue and gives it to the new session.
+              yield* adopted(draftId, orchestrator.id, input, (task) =>
+                orchestrator.sessionSwitch === undefined
+                  ? deliver(orchestrator.id, task)
+                  : runtimes.send(orchestrator.id, task).pipe(Effect.asVoid),
               );
+              return orchestrator;
             }),
         );
       }),

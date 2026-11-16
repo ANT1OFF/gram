@@ -24,7 +24,8 @@ const HELP = `bun run --filter @gram/web pr:shots [flags]
   --set flows       key interaction steps; after-only, dark by default, writes out/flows/
   --set tasks       measured UI tasks; after-only, dark by default; out/tasks/{tasks.json,tasks.md,*.webm,*.png}
   --size <WxH>      the tour's and flows' window in CSS px, captured at 2× (default: 1728x1095,
-                    a real window; 1440x900 is the older size)
+                    a real window; 1440x900 is the older size). With --shot, a phone-sized one
+                    only gives the page a touch screen; each shot sets its own window
   --path <route>    an ad-hoc shot of a route that only needs loading, e.g. /settings/agents
   --mode <mode>     dark or light (default: both)
   --palette <id>    a palette from @gram/themes' presets, such as minimal-ocean (default: the
@@ -226,7 +227,6 @@ async function main() {
   if (tasks) outDir = join(outDir, "tasks");
   if (flows) outDir = join(outDir, "flows");
   if (namedSet && values.path.length > 0) throw new Error("--set cannot be combined with --path");
-  if (values.size !== undefined && !namedSet) throw new Error("--size goes with --set");
   const size = values.size ?? "1728x1095";
   if (!/^\d{3,4}x\d{3,4}$/.test(size)) throw new Error(`--size is <width>x<height>, not "${size}"`);
   const modes = split(values.mode);
@@ -237,7 +237,7 @@ async function main() {
     GRAM_PR_SHOTS_ONLY: split(values.shot).join(","),
     GRAM_PR_SHOTS_PATHS: split(values.path).join(","),
     GRAM_PR_SHOTS_MODES: modes.length === 0 && (flows || tasks) ? "dark" : modes.join(","),
-    GRAM_PR_SHOTS_SIZE: namedSet ? size : "",
+    GRAM_PR_SHOTS_SIZE: namedSet || values.size !== undefined ? size : "",
     GRAM_PR_SHOTS_PALETTE: values.palette ?? "",
   };
   if (values.list) return playwright(["--list"], env);

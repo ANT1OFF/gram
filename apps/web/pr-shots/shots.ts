@@ -692,34 +692,32 @@ const UPDATE_PILL_SHOTS: readonly Shot[] = [
   },
 ];
 
-/** New task, straight to a worker, in the mock's one-repo world. */
-const openDirectTask = async (page: Page, width: number) => {
-  await page.setViewportSize({ width, height: 860 });
-  await page.goto("/new-task?way=direct");
-  await page.getByRole("form", { name: "New task" }).waitFor();
-  await page.getByTestId("task-authority").waitFor();
-  await page.getByRole("button", { name: /Start (workspace and )?task/ }).waitFor();
+/**
+ * The New form at a phone's width, on `path`: `/new-task` (Team) or `/new` (Chat). Captured with
+ * `--size 390x844`, whose touch screen Gram's phone layout keys on.
+ */
+const openNewOnPhone = async (page: Page, path: "/new-task" | "/new") => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(path);
+  await page.getByRole("form", { name: path === "/new" ? "New thread" : "New task" }).waitFor();
   await page.waitForTimeout(600);
 };
 
-/**
- * The New form over the board scenario's workspace, opened from the header's `+`, with its "in"
- * chip's menu open (before: the four-row New menu, which the base shows instead).
- */
+/** The header's New over the board scenario's workspace: its menu open, Team and Chat. */
 const openNewEntry = async (page: Page) => {
   await openOverviewDensity(page, 280);
   await page.setViewportSize({ width: 1440, height: 860 });
   await page.getByTestId("new-entry").click();
-  const menu = page.getByTestId("new-entry-menu");
-  const target = page.getByTestId("task-target");
-  await expect(menu.or(target)).toBeVisible();
-  if (await target.isVisible()) {
-    await target.click();
-    await page.getByTestId("task-target-menu").waitFor();
-  } else {
-    await page.getByTestId("new-entry-task").hover();
-    await page.getByTestId("new-entry-task-to").waitFor();
-  }
+  await page.getByTestId("new-entry-menu").waitFor();
+  await page.waitForTimeout(400);
+};
+
+/** New → Team with its workspace chip open: which workspace's orchestrator the task goes to. */
+const openTaskPicker = async (page: Page) => {
+  await openNewEntry(page);
+  await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Team/ }).click();
+  await page.getByTestId("task-target").click();
+  await page.getByTestId("task-target-menu").waitFor();
   await page.waitForTimeout(400);
 };
 
@@ -730,7 +728,8 @@ const openNewEntry = async (page: Page) => {
 const NEW_ENTRY_LANDINGS: readonly Shot[] = (
   [
     ["new-entry-task", "the task for an orchestrator", "/new-task"],
-    ["new-entry-worker", "the worker straight away", "/new-task?way=direct"],
+    // A link from before New had two choices: it opens on the orchestrator now.
+    ["new-entry-worker", "an old link to a worker straight away", "/new-task?way=direct"],
     ["new-entry-one-off", "the one-off thread", "/new"],
     ["new-entry-workspace", "the new workspace", "/new-workspace"],
   ] as const
@@ -2473,22 +2472,6 @@ const MACHINE_SHOTS: readonly Shot[] = [
     open: (page) => openNewWithMachines(page, "new-box"),
   },
   {
-    name: "machine-new-worker",
-    title: "New task → Worker: Machine beside the repository",
-    open: async (page) => {
-      await stageMachines(page);
-      await openOverviewDensity(page, 280);
-      await page.setViewportSize({ width: 1440, height: 860 });
-      await page.evaluate(() => {
-        history.pushState({}, "", "/new-task?way=direct");
-        dispatchEvent(new PopStateEvent("popstate"));
-      });
-      await expect(page).toHaveURL(/\/new-task\?way=direct$/);
-      await page.mouse.move(1100, 700);
-      await page.waitForTimeout(800);
-    },
-  },
-  {
     name: "machines-signed-out",
     title:
       "Settings → Machines: versions found, a machine not signed in (Sign in icon), one without Claude Code",
@@ -3169,8 +3152,13 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "new-entry-menu",
-    title: "The header's New: the one New form, with its workspace chip open",
+    title: "The header's New: its menu of what New starts",
     open: openNewEntry,
+  },
+  {
+    name: "new-task-picker",
+    title: "New task on Team, its workspace chip open: which orchestrator the task goes to",
+    open: openTaskPicker,
   },
   ...NEW_ENTRY_LANDINGS,
   proposalCard("Please change the settings", "A settings change by chat's card", "settings-card"),
@@ -3184,20 +3172,15 @@ export const SHOTS: readonly Shot[] = [
     "A workspace change by chat's card: projects kept, removed and added, then before → after",
     "workspace-update-card",
   ),
-  ...[1200, 520].map((width): Shot => ({
-    name: width === 1200 ? "new-task-direct-worker" : "new-task-direct-worker-narrow",
-    title: `New task, straight to a worker, at ${width} px: the worker's agent and model`,
-    open: (page) => openDirectTask(page, width),
-  })),
   {
-    name: "new-task-worker-models",
-    title: "New task, straight to a worker: the roster's models, each with what it is for",
-    open: async (page) => {
-      await openDirectTask(page, 1200);
-      await page.getByRole("combobox", { name: "Worker model" }).click();
-      await page.getByRole("listbox").waitFor();
-      await page.waitForTimeout(300);
-    },
+    name: "new-task-phone",
+    title: "New task on a phone, on Team: its orchestrator decides how to run it",
+    open: (page) => openNewOnPhone(page, "/new-task"),
+  },
+  {
+    name: "new-chat-phone",
+    title: "New on a phone, on Chat: one agent in a folder",
+    open: (page) => openNewOnPhone(page, "/new"),
   },
   {
     name: "settings-window",

@@ -1,5 +1,5 @@
 import { useNewForm, useSoloWord } from "@/embed/store";
-import { MessageSquare, Network, User, type LucideIcon } from "lucide-react";
+import { MessageSquare, Network, type LucideIcon } from "lucide-react";
 import { useId, type ReactNode } from "react";
 
 import { ChoiceCheck } from "@/components/choice-check";
@@ -13,22 +13,20 @@ import type { NewEntry } from "@/orchestration/new-entry";
 import { SEGMENT_SLAB, SEGMENT_TRACK } from "@/settings/fields";
 
 /**
- * Who picks up what the New form starts: a workspace's orchestrator, one worker straight away, or
- * the user with one agent in a one-off thread. Each is one of the New menu's old entries.
+ * Who picks up what the New form starts: a workspace's orchestrator, which decides how to run it,
+ * or the user with one agent in a one-off thread. Each is one of the New menu's entries.
  */
-export type Who = "orchestrator" | "worker" | "me";
+export type Who = "orchestrator" | "me";
 
 export const WHO_ENTRY: Readonly<Record<Who, Exclude<NewEntry, "workspace">>> = {
   orchestrator: "task",
-  worker: "worker",
   me: "oneOff",
 };
 
 /**
  * Each choice named plainly for the work it starts, with what comes of it in one sentence: a team,
- * whose orchestrator plans and briefs workers (`deliver`); a task, one worker of that orchestrator
- * in its own worktree through to a pull request (`startWorker`); and a chat, a one-off thread with
- * one agent and no workspace.
+ * whose orchestrator plans it and runs workers when it needs them (`deliver`); and a chat, a
+ * one-off thread with one agent and no workspace.
  */
 export const WHO_CHOICES: readonly {
   readonly value: Who;
@@ -42,16 +40,9 @@ export const WHO_CHOICES: readonly {
   readonly shortcut: string;
 }[] = [
   {
-    value: "worker",
-    label: "Task",
-    line: "One worker does it in its own worktree and opens a pull request.",
-    icon: User,
-    shortcut: "thread.newWorker",
-  },
-  {
     value: "orchestrator",
     label: "Team",
-    line: "An orchestrator splits it up, runs workers and sees their pull requests merged.",
+    line: "An orchestrator plans it, runs workers as needed and sees their pull requests merged.",
     icon: Network,
     tone: "text-orchestrator",
     shortcut: "thread.new",
@@ -178,11 +169,8 @@ export function NewFormHeader({
   const labelId = useId();
   const soloWord = useSoloWord();
   const newForm = useNewForm();
-  // An embedding app narrows the choices and gives them its words; a choice it left out that is
-  // the one in use stays, so the form never shows nothing picked.
-  const choices = WHO_CHOICES.filter(
-    (choice) => choice.value !== "worker" || newForm?.task !== "hidden" || who === "worker",
-  ).map((choice) => {
+  // An embedding app gives the choices its words.
+  const choices = WHO_CHOICES.map((choice) => {
     if (choice.value === "me") {
       const label = newForm?.solo?.label ?? soloWord;
       if (label === undefined) return choice;
@@ -240,11 +228,7 @@ export function NewFormHeader({
         <div
           role="radiogroup"
           aria-labelledby={labelId}
-          className={cn(
-            SEGMENT_TRACK,
-            "grid grid-cols-1",
-            choices.length === 2 ? "sm:grid-cols-2" : "sm:grid-cols-3",
-          )}
+          className={cn(SEGMENT_TRACK, "grid grid-cols-1 sm:grid-cols-2")}
         >
           {choices.map((choice) => (
             <Choice

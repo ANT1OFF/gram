@@ -5,7 +5,6 @@ import {
   type InvalidState,
   type NotFound,
   type WorkspaceId,
-  type HostId,
   type FeatureCards,
   type AgentUnavailable,
   type Autonomy,
@@ -24,7 +23,6 @@ import {
   type Thread,
   type ThreadId,
   type ThreadNotFound,
-  type UserInput,
   type WorkerAnswer,
   type WorkerQuestion,
   type WithdrawnHow,
@@ -360,7 +358,7 @@ export interface OrchestrationShape {
     requireNew?: boolean,
   ): Effect.Effect<Thread, NotFound | InvalidState | AgentUnavailable>;
   taskPreflight(
-    input: Pick<StartTaskInput, "target" | "direct" | "autonomy" | "orchestrator">,
+    input: Pick<StartTaskInput, "target" | "autonomy" | "orchestrator">,
   ): Effect.Effect<TaskModelSelection, NotFound | InvalidState | AgentUnavailable>;
   /**
    * Carries out a task's orchestrator pick before the task starts: a running orchestrator on
@@ -372,7 +370,7 @@ export interface OrchestrationShape {
   ): Effect.Effect<void, NotFound | InvalidState>;
   /** Resolve outside the edit lock, then refuse stale evidence before startup side effects. */
   withTaskStartup<A, E>(
-    input: Pick<StartTaskInput, "target" | "direct" | "autonomy" | "orchestrator">,
+    input: Pick<StartTaskInput, "target" | "autonomy" | "orchestrator">,
     selected: TaskModelSelection | undefined,
     run: (current: TaskModelSelection) => Effect.Effect<A, E>,
   ): Effect.Effect<A, E | NotFound | InvalidState | AgentUnavailable>;
@@ -688,28 +686,6 @@ export interface OrchestrationShape {
     workspaceId: WorkspaceId,
     id: string,
   ): Effect.Effect<Thread, NotFound | InvalidState>;
-  /**
-   * New task, straight to a worker: one worker of the workspace's orchestrator, started from what
-   * the user wrote in a new worktree of `projectId`, on a feature of its own named from it. It is
-   * the orchestrator's from the start, the user's words its brief rather than a takeover, unless
-   * `hold` starts it under the user's control. Refused without an orchestrator.
-   */
-  startWorker(
-    workspaceId: WorkspaceId,
-    input: {
-      readonly id: ThreadId;
-      readonly projectId: ProjectId;
-      readonly base?: string | undefined;
-      readonly input: UserInput;
-      readonly model?: ModelRef;
-      /** "Start under my control": held as the user's from its first input. */
-      readonly hold?: boolean;
-      /** The joined machine its worktree is made on; absent is this one. */
-      readonly hostId?: HostId | undefined;
-      /** What its feature and title are named from, in place of the input's text. */
-      readonly name?: string;
-    },
-  ): Effect.Effect<Thread, NotFound | InvalidState | ThreadNotFound>;
   /** Whether `add_worker_repo` needs a card: only for a project outside the workspace. Reads only. */
   addRepoNeedsApproval(callerId: ThreadId, input: AddWorkerRepoInput): Effect.Effect<boolean>;
   describeAddRepo(callerId: ThreadId, input: AddWorkerRepoInput): Effect.Effect<string>;

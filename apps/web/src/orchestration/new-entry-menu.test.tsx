@@ -18,7 +18,7 @@ const studio = "w-studio" as WorkspaceId;
 
 beforeEach(() => {
   navigate.mockReset();
-  useTaskDraftStore.setState({ last: undefined, entry: undefined, workers: {} });
+  useTaskDraftStore.setState({ last: undefined, entry: undefined });
   useLayoutStore.setState({ grid: { ...EMPTY_GRID, panes: [null] } });
 });
 afterEach(cleanup);
@@ -30,10 +30,6 @@ describe("newEntryRoute", () => {
       to: "/new-task",
       search: { workspace: studio },
     });
-    expect(newEntryRoute("worker", studio)).toEqual({
-      to: "/new-task",
-      search: { way: "direct", workspace: studio },
-    });
     expect(newEntryRoute("oneOff", studio)).toEqual({ to: "/new" });
     expect(newEntryRoute("workspace")).toEqual({ to: "/new-workspace" });
   });
@@ -41,13 +37,14 @@ describe("newEntryRoute", () => {
   it("opens on the orchestrator until another choice was used", () => {
     expect(newEntryOf(undefined)).toBe("task");
     expect(newEntryOf("workspace")).toBe("task");
-    expect(newEntryOf("worker")).toBe("worker");
+    // A worker straight away, remembered from before New had two choices, is the orchestrator's.
+    expect(newEntryOf("worker")).toBe("task");
     expect(newEntryOf("oneOff")).toBe("oneOff");
   });
 });
 
 describe("NewEntryMenu", () => {
-  it("is New task, a menu of Task, Team and Chat, each with its shortcut", async () => {
+  it("is New task, a menu of Team and Chat, each with its shortcut", async () => {
     renderWithApi(<NewEntryMenu />, {});
     const add = screen.getByRole("button", { name: "New task" });
     expect(add.getAttribute("aria-haspopup")).toBe("menu");
@@ -56,13 +53,8 @@ describe("NewEntryMenu", () => {
     fireEvent.click(add);
     const menu = await screen.findByRole("menu", { name: "New" });
     const items = within(menu).getAllByRole("menuitem");
-    expect(items.map((item) => item.getAttribute("data-who"))).toEqual([
-      "worker",
-      "orchestrator",
-      "me",
-    ]);
+    expect(items.map((item) => item.getAttribute("data-who"))).toEqual(["orchestrator", "me"]);
     expect(items.map((item) => item.textContent)).toEqual([
-      expect.stringMatching(/^Task.+N$/),
       expect.stringMatching(/^Team.+N$/),
       expect.stringMatching(/^Chat.+T$/),
     ]);
@@ -71,7 +63,6 @@ describe("NewEntryMenu", () => {
 
   it("opens the New form on the choice picked", async () => {
     for (const [who, route] of [
-      ["Task", { to: "/new-task", search: { way: "direct" } }],
       ["Team", { to: "/new-task", search: {} }],
       ["Chat", { to: "/new" }],
     ] as const) {

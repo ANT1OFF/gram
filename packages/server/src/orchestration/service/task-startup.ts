@@ -1,16 +1,13 @@
 // Task startup: the user's start of a task in a workspace, with
-// the model it opens on, the workers it may use, its preflight and the lock against a charter commit.
+// the model it opens on, its preflight and the lock against a charter commit.
 import {
   autonomyOf,
   InvalidState,
   type ModelRef,
   type OrchestratorCharter,
   type ProjectId,
-  type RosterModel,
   type StartTaskInput,
   type TaskModelSelection,
-  type TaskWorkerChoice,
-  modelRefOf,
   defaultSlotOf,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
@@ -23,18 +20,10 @@ import {
   gateNeedsReason,
   gateOfAutonomy,
   kindName,
-  fallbackOf,
   startModeFor,
   workerModelLabel,
-  workerModelVerdict,
 } from "../rules.ts";
-import {
-  gateHoldsIn,
-  type OrchestrationKit,
-  underKeysOf,
-  projectKey,
-  startupKeysOf,
-} from "./kit.ts";
+import { type OrchestrationKit, underKeysOf, projectKey, startupKeysOf } from "./kit.ts";
 import { type OrchestrationShape } from "./shape.ts";
 
 /** Planning and starting a user's task, and the model a thread opens on. */
@@ -43,8 +32,6 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
     store,
     hosts,
     needsUnderGate,
-    rosterHere,
-    nativeGateReady,
     autoHere,
     projectsOf,
     findThread,
@@ -92,95 +79,7 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
       return { model, mode, ...(note === undefined ? {} : { note }) };
     });
 
-  /**
-   * A direct task's worker: the model `picked` from the preview's choices, else the one a worker
-   * gets with nothing named, and every model it may be started on. An unavailable default with
-   * nothing picked is a `refusal`, which only starting refuses, so the preview still offers the
-   * rest; a pick that isn't one of the choices, or can't run here, is refused outright.
-   */
-  const taskWorkers = (
-    charter: OrchestratorCharter,
-    orchestrator: ModelRef,
-    picked: ModelRef | undefined,
-  ): Effect.Effect<
-    {
-      readonly choices: ReadonlyArray<TaskWorkerChoice>;
-      readonly worker?: ModelRef;
-      readonly refusal?: string;
-    },
-    InvalidState
-  > =>
-    Effect.gen(function* () {
-      const here =
-        charter.workerModels === undefined
-          ? undefined
-          : yield* rosterHere(charter.workerModels, charter);
-      const settings = yield* store.getSettings;
-      const profiles = yield* store.listProfiles;
-      // Match worker creation: without a roster, inherit the harness/model but not the
-      // orchestrator's role-specific effort. Explicit roster entries retain their effort.
-      const { variant: _variant, ...bare } = orchestrator;
-      const roster: ReadonlyArray<RosterModel> = here?.roster ?? [bare];
-      const fallback = fallbackOf(roster, orchestrator);
-      const gateReady = yield* nativeGateReady("codex");
-      const codexAuto = yield* autoHere("codex", gateOfAutonomy(autonomyOf(charter)));
-      const choices = roster.map((entry, index): TaskWorkerChoice => {
-        const model = modelRefOf(entry);
-        const mode = startModeFor(
-          model.agent,
-          settings,
-          charter,
-          model.agent === "codex" ? codexAuto && model.profileId === undefined : undefined,
-        );
-        const verdict = workerModelVerdict({
-          model,
-          autonomy: autonomyOf(charter),
-          gateReady: model.agent === "codex" && gateReady,
-          hasGatewayProfile:
-            model.profileId !== undefined &&
-            profiles.some((profile) => profile.id === model.profileId),
-          mode,
-          gateHoldsInMode: gateHoldsIn(model.agent, mode),
-        });
-        const unavailable =
-          here?.unavailable.get(index) ?? (verdict.ok ? undefined : verdict.reason);
-        const note = entry.useFor?.replace(/\s+/g, " ").trim() ?? "";
-        return {
-          model,
-          ...(note === "" ? {} : { useFor: note }),
-          ...(entry === fallback ? { default: true as const } : {}),
-          ...(unavailable === undefined ? {} : { unavailable }),
-        };
-      });
-      if (picked !== undefined) {
-        const chosen = choices.find((choice) => sameTaskModel(choice.model, picked));
-        if (chosen === undefined)
-          return yield* new InvalidState({
-            message:
-              "The picked worker model isn't on this workspace's roster any more. Check the task preview and start again.",
-          });
-        if (chosen.unavailable !== undefined)
-          return yield* new InvalidState({
-            message: `${workerModelLabel(chosen.model)} can't start a worker here: ${chosen.unavailable}.`,
-          });
-        return { choices, worker: chosen.model };
-      }
-      const standing = choices.find((choice) => choice.default === true);
-      if (standing === undefined)
-        return {
-          choices,
-          refusal:
-            "This workspace's roster has no worker models. Add one in Settings → Workspaces.",
-        };
-      if (standing.unavailable !== undefined)
-        return {
-          choices,
-          refusal: `${workerModelLabel(standing.model)} is unavailable here (${standing.unavailable}). Pick another worker model, or change the roster in Settings → Workspaces; this task will not switch providers.`,
-        };
-      return { choices, worker: standing.model };
-    });
-
-  const taskContext = (input: Pick<StartTaskInput, "target" | "direct" | "autonomy">) =>
+  const taskContext = (input: Pick<StartTaskInput, "target" | "autonomy">) =>
     Effect.gen(function* () {
       const settings = yield* store.getSettings;
       const state =
@@ -232,12 +131,10 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
           : { id: context.holder.id, model: context.holder.model },
     });
 
-  const taskPlan = (
-    input: Pick<StartTaskInput, "target" | "direct" | "autonomy" | "orchestrator">,
-  ) =>
+  const taskPlan = (input: Pick<StartTaskInput, "target" | "autonomy" | "orchestrator">) =>
     Effect.gen(function* () {
       const context = yield* taskContext(input);
-      const { charter, holder, projectIds } = context;
+      const { charter, holder } = context;
       const picked = input.orchestrator;
       if (picked !== undefined && !admittedForRole(picked.agent, "orchestrator"))
         return yield* new InvalidState({
@@ -259,19 +156,9 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
         (switching === undefined || !sameTaskModel(switching, picked));
       const orchestrator =
         holder === undefined ? opened!.model : picked !== undefined ? picked : holder.model;
-      if (input.direct !== undefined && !projectIds.includes(input.direct.projectId))
-        return yield* new InvalidState({
-          message: "The selected worker repository isn't one of this workspace's repositories.",
-        });
-      const workers =
-        input.direct === undefined
-          ? undefined
-          : yield* taskWorkers(charter, orchestrator, input.direct.worker);
       const selection: TaskModelSelection = {
         orchestrator,
         ...(holder === undefined ? {} : { orchestratorThreadId: holder.id }),
-        ...(workers?.worker === undefined ? {} : { worker: workers.worker }),
-        ...(workers === undefined ? {} : { workerChoices: workers.choices }),
         ...(opened?.note === undefined ? {} : { orchestratorNote: opened.note }),
         ...(moves ? { orchestratorFrom: holder.model } : {}),
       };
@@ -279,13 +166,10 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
         const current = yield* taskContext(input);
         if (taskContextKey(current) !== taskContextKey(context))
           return yield* new InvalidState({
-            message:
-              JSON.stringify(current.charter.workerModels) !== JSON.stringify(charter.workerModels)
-                ? "The task's selected worker changed. Check the task preview and start again."
-                : "The task's selected harness changed. Check the task preview and start again.",
+            message: "The task's selected harness changed. Check the task preview and start again.",
           });
       });
-      return { selection, fresh, workerRefusal: workers?.refusal };
+      return { selection, fresh };
     });
 
   const taskPreflight: OrchestrationShape["taskPreflight"] = (input) =>
@@ -322,8 +206,6 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
         startupKeys(input),
         Effect.gen(function* () {
           yield* plan.fresh;
-          if (plan.workerRefusal !== undefined)
-            return yield* new InvalidState({ message: plan.workerRefusal });
           if (selected !== undefined && !sameTaskSelection(plan.selection, selected))
             return yield* new InvalidState({
               message:
@@ -334,7 +216,7 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
       );
     });
 
-  return { openModel, taskWorkers, taskPreflight, withTaskStartup };
+  return { openModel, taskPreflight, withTaskStartup };
 };
 
 /** What `makeTaskStartup` makes, for the parts whose `deps` take some of it. */

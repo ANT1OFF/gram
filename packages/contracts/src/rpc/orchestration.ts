@@ -74,9 +74,8 @@ export const OrchestrationRpcs = RpcGroup.make(
   }),
   /**
    * ⌘N's New task. Opens the target's orchestrator as `orchestrator.open` does, then hands it the
-   * input as the user's message, steered while it runs; with `direct`, starts a worker of its
-   * orchestrator from it instead, held as the user's only when `direct.hold` asks. The thread to
-   * open: the orchestrator, or the new worker.
+   * input as the user's message, steered while it runs; the orchestrator decides how to run it.
+   * The thread to open is the orchestrator.
    */
   Rpc.make("workspace.startTask", {
     payload: StartTaskInput,
@@ -86,7 +85,6 @@ export const OrchestrationRpcs = RpcGroup.make(
   Rpc.make("workspace.taskPreflight", {
     payload: {
       target: StartTaskInput.fields.target,
-      direct: StartTaskInput.fields.direct,
       autonomy: StartTaskInput.fields.autonomy,
       orchestrator: StartTaskInput.fields.orchestrator,
     },

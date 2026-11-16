@@ -1,14 +1,10 @@
 import {
   newWorkspaceCharter,
-  modelRefOf,
   type StartTaskInput,
   type TaskModelSelection,
-  type TaskWorkerChoice,
   type ThreadId,
   type UserInput,
   firstChoiceOf,
-  rosterModelHere,
-  type RosterModel,
 } from "@gram/contracts";
 
 import type { createMockOrchestration } from "../mock-orchestration";
@@ -34,7 +30,7 @@ export function createOrchestrationMock(
 ): OrchestrationApi {
   // Read only the synthetic world's stored choices; no fixture preview creates a holder.
   const taskPreflight = async (
-    input: Pick<StartTaskInput, "target" | "direct" | "autonomy" | "orchestrator">,
+    input: Pick<StartTaskInput, "target" | "autonomy" | "orchestrator">,
   ): Promise<TaskModelSelection> => {
     const state = orchestration
       .peek()
@@ -62,37 +58,10 @@ export function createOrchestrationMock(
       throw new MockInvalidState(
         "This synthetic workspace has no model choice. Select one in Settings → Workspaces & merging.",
       );
-    const { variant: _variant, ...bare } = orchestrator;
-    // The synthetic world runs every harness, so a tier is its first choice.
-    const roster: readonly RosterModel[] = charter.workerModels?.map(
-      (row) => rosterModelHere(row, {}).entry,
-    ) ?? [bare];
-    const standing = roster.find((row) => row.default === true) ?? roster[0];
-    // The synthetic world runs every harness.
-    const workerChoices: TaskWorkerChoice[] = roster.map((row) => ({
-      model: modelRefOf(row),
-      ...(row.useFor === undefined ? {} : { useFor: row.useFor }),
-      ...(row === standing ? { default: true as const } : {}),
-    }));
-    const picked = input.direct?.worker;
-    const chosen =
-      picked === undefined
-        ? workerChoices.find((choice) => choice.default === true)
-        : workerChoices.find(
-            (choice) => JSON.stringify(choice.model) === JSON.stringify(modelRefOf(picked)),
-          );
-    if (input.direct !== undefined && picked !== undefined && chosen === undefined)
-      throw new MockInvalidState("The picked worker model isn't on this workspace's roster.");
-    if (picked !== undefined && chosen?.unavailable !== undefined)
-      throw new MockInvalidState(`${chosen.model.model} can't start a worker here.`);
-    const worker =
-      input.direct === undefined || chosen?.unavailable !== undefined ? undefined : chosen?.model;
     return {
       orchestrator,
       ...(held === undefined ? {} : { orchestratorThreadId: held.id }),
       ...(moves ? { orchestratorFrom: held.model } : {}),
-      ...(worker === undefined ? {} : { worker }),
-      ...(input.direct === undefined ? {} : { workerChoices }),
     };
   };
   return {
@@ -108,17 +77,6 @@ export function createOrchestrationMock(
       const orchestrator = { ...created, model: shown.orchestrator };
       world.replaceThread(orchestrator);
       const adoptedBy = (threadId: ThreadId) => adoptDraft(input.input, input.draftId, threadId);
-      if (input.direct !== undefined) {
-        const worker = await orchestration.startWorker(
-          orchestrator,
-          input.direct.projectId,
-          input.input.text,
-          input.direct.hold === true,
-        );
-        if (shown.worker !== undefined) world.replaceThread({ ...worker, model: shown.worker });
-        await world.send(worker.id, adoptedBy(worker.id));
-        return shown.worker === undefined ? worker : { ...worker, model: shown.worker };
-      }
       const task = adoptedBy(orchestrator.id);
       if (world.running(orchestrator.id)) await world.steer(orchestrator.id, task);
       else await world.send(orchestrator.id, task);
