@@ -59,23 +59,23 @@ describe("OptionGroup", () => {
   });
 });
 
-describe("OptionGroup keyboard", () => {
-  function Harness({ described }: { described: boolean }) {
-    const [value, setValue] = useState<"a" | "b" | "c">("b");
-    return (
-      <OptionGroup
-        label="Pick"
-        value={value}
-        onChange={setValue}
-        options={(["a", "b", "c"] as const).map((each) => ({
-          value: each,
-          label: each.toUpperCase(),
-          ...(described ? { description: `About ${each}` } : {}),
-        }))}
-      />
-    );
-  }
+function Harness({ described }: { described: boolean }) {
+  const [value, setValue] = useState<"a" | "b" | "c">("b");
+  return (
+    <OptionGroup
+      label="Pick"
+      value={value}
+      onChange={setValue}
+      options={(["a", "b", "c"] as const).map((each) => ({
+        value: each,
+        label: each.toUpperCase(),
+        ...(described ? { description: `About ${each}` } : {}),
+      }))}
+    />
+  );
+}
 
+describe("OptionGroup keyboard", () => {
   it.each([
     ["segmented", false],
     ["cards", true],
