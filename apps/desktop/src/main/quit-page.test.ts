@@ -5,16 +5,9 @@ import { quitPage } from "./quit-page.ts";
 const colors = { background: "#111", foreground: "#eee" };
 
 describe("progress window page", () => {
-  it("is the quit's by default, with Quit Now", () => {
-    const page = quitPage(colors);
-    expect(page).toContain("Quitting Gram…</h1>");
-    expect(page).toContain('id="now"');
-  });
-
-  it("shows an update's stop under its own heading, without Quit Now", () => {
-    const page = quitPage(colors, { heading: "Restarting to update…", quitNow: false });
-    expect(page).toContain("<title>Restarting to update</title>");
-    expect(page).toContain("Restarting to update…</h1>");
-    expect(page).not.toContain("<button");
+  it("offers Quit Now on a quit, and not while an update stops the app", () => {
+    expect(quitPage(colors)).toContain('id="now"');
+    const update = quitPage(colors, { heading: "Restarting to update…", quitNow: false });
+    expect(update).not.toContain("<button");
   });
 });

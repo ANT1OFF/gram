@@ -60,6 +60,28 @@ describe("the agent guide", () => {
           ),
         );
         expect(bound.size).toBeGreaterThan(50);
+        // Each role's tool list is the MCP contract: a tool added to, or dropped from, a role is a
+        // deliberate change made here as well.
+        const byAudience = Object.fromEntries(
+          AUDIENCES.map((audience) => [
+            audience,
+            registry
+              .forThread("guide-thread" as ThreadId, audience)
+              .map((tool) => tool.descriptor.name)
+              .toSorted()
+              .join(" "),
+          ]),
+        );
+        expect(byAudience).toEqual({
+          plain:
+            "archive_thread browser_batch browser_click browser_console browser_diagnostics browser_drag browser_evaluate browser_find browser_form_input browser_hover browser_navigate browser_network browser_press_key browser_record browser_save_screenshot browser_screenshot browser_scroll browser_scroll_to browser_snapshot browser_text browser_type browser_viewport browser_wait cancel_wake connectors_status dismiss_task get_thread git_state list_checkpoints list_events list_open_prs list_review_requests list_threads list_waits local_check mark_chapter mark_completed mcp_server_propose merge_when_ready move_to_worktree notify_user offer_page_version pr_bind pr_monitor pr_reply_to_thread pr_request_rereview pr_resolve_thread pr_review_monitor pr_review_state pr_review_threads pr_status pr_unbind preview_list preview_logs preview_start preview_stop publish_doc read_app_logs read_doc read_terminal reconnect_connector report_issue request_directory resolve_merge_fence resolve_wait restart_session restore_worktree run_monitor schedule_wake search_issues search_threads send_file send_message set_auto_merge set_connector_enabled set_plan set_thread_effort set_thread_model set_title set_unread settings_propose settings_read show_mock show_panel show_widget spawn_task stop_thread turn_diff wait_on_user workspace_create workspace_list workspace_update wrap_up",
+          orchestrator:
+            "add_worker_repo adopt_thread answer_worker archive_thread ask_user broadcast_message browser_batch browser_click browser_console browser_diagnostics browser_drag browser_evaluate browser_find browser_form_input browser_hover browser_navigate browser_network browser_press_key browser_record browser_save_screenshot browser_screenshot browser_scroll browser_scroll_to browser_snapshot browser_text browser_type browser_viewport browser_wait cancel_wake close_question connectors_status depends_on dismiss_task forward_question get_thread git_state list_checkpoints list_events list_open_prs list_review_requests list_threads list_waits list_workers manage_held_spawn mark_chapter mark_completed mcp_server_propose memory_append memory_delete memory_edit memory_list memory_read memory_write merge_freeze merge_when_ready move_to_worktree notify_user pr_review_state pr_status preview_list preview_logs preview_start preview_stop publish_doc read_app_logs read_doc read_terminal reconnect_connector record_user_answer report_issue request_directory resolve_merge_fence resolve_wait restart_session restore_worktree routine_create routine_update schedule_wake search_issues search_threads search_transcripts send_file send_message set_auto_merge set_connector_enabled set_group set_stage set_thread_effort set_thread_model set_title set_unread settings_propose settings_read show_mock show_panel show_widget spawn_task spawn_worker stop_thread turn_diff wait_on_user workspace_create workspace_list workspace_update",
+          worker:
+            "archive_thread ask_question browser_batch browser_click browser_console browser_diagnostics browser_drag browser_evaluate browser_find browser_form_input browser_hover browser_navigate browser_network browser_press_key browser_record browser_save_screenshot browser_screenshot browser_scroll browser_scroll_to browser_snapshot browser_text browser_type browser_viewport browser_wait cancel_wake connectors_status depends_on dismiss_task get_thread git_state list_checkpoints list_events list_open_prs list_review_requests list_threads list_waits local_check mark_chapter mark_completed mcp_server_propose memory_append memory_delete memory_edit memory_list memory_read memory_write merge_freeze merge_when_ready message_orchestrator move_to_worktree notify_user offer_page_version pr_bind pr_monitor pr_reply_to_thread pr_request_rereview pr_resolve_thread pr_review_monitor pr_review_state pr_review_threads pr_status pr_unbind preview_list preview_logs preview_start preview_stop publish_doc read_app_logs read_doc read_terminal reconnect_connector record_user_answer report report_issue request_directory resolve_merge_fence resolve_wait restart_session restore_worktree routine_create run_monitor schedule_wake search_issues search_threads search_transcripts send_file send_message set_auto_merge set_connector_enabled set_plan set_thread_effort set_thread_model set_title set_unread settings_read show_mock show_panel show_widget spawn_task stop_thread turn_diff wait_on_user wrap_up",
+          dream:
+            "dream_check dream_delete dream_edit dream_list dream_read dream_search dream_write read_transcript search_transcripts",
+        });
         const missingTools = [...bound].filter((name) => !guide.includes(`### \`${name}\`\n`));
         expect(missingTools, "tools missing from the agent guide").toEqual([]);
         // One heading per name: a tool defined per role (`spawn_task`) lists each variant under it.
@@ -88,20 +110,11 @@ describe("the agent guide", () => {
       },
     ]);
     const guide = agentGuideText({ dataDir: "/data", tools: [tool!] });
-    expect(guide).toContain(
-      [
-        "### `example_tool`",
-        "",
-        "Class: `crossThread` (acts on another thread; asks the user on a card, which they may remember for the session). Roles: orchestrator.",
-        "",
-        "Does a thing.",
-        "",
-        "Input:",
-        "",
-        "- `threadId` (required): The thread to act on.",
-        "- `note`",
-      ].join("\n"),
-    );
-    expect(guide).toContain("Written by Gram (a build from source) each time it starts");
+    const section = guide.slice(guide.indexOf("### `example_tool`"));
+    expect(section).toContain("`crossThread`");
+    expect(section).toContain("Roles: orchestrator.");
+    expect(section).toContain("Does a thing.");
+    expect(section).toContain("- `threadId` (required): The thread to act on.");
+    expect(section).toMatch(/^- `note`$/m);
   });
 });

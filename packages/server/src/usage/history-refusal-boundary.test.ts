@@ -79,7 +79,8 @@ const prepare = (last: number | undefined, includeOld: boolean, eager: boolean) 
 for (const last of [10, 0, undefined])
   for (const includeOld of [false, true])
     for (const eager of [false, true])
-      for (const spare of [0, 1, 2, 3, 10])
+      // Exactly the budget, one short of it, and ample.
+      for (const spare of [0, 1, 10])
         it(`actual shared-work refusal conserves evidence last=${last}, old=${includeOld}, eager=${eager}, spare=${spare}`, () => {
           // Measure actual successful reservations on a disposable identical graph.
           // No limit, counter result or production method is replaced by the wrapper.

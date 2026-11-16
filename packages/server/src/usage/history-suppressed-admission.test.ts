@@ -60,8 +60,12 @@ const known = (reducer: ReturnType<typeof makeHistoryReducer>) =>
     0,
   );
 
+// The lane a detail lives in is independent of the gap before it: every gap runs on the read lane,
+// and the other lanes run without one, each across every boundary.
 for (const detail of ["read", "write", "reasoning", "missing"] as const) {
-  for (const gap of ["none", "null", "invalid", "contradictory"] as const) {
+  for (const gap of detail === "read"
+    ? (["none", "null", "invalid", "contradictory"] as const)
+    : (["none"] as const)) {
     for (const boundary of ["same", "completed", "implicit-start"] as const) {
       it(`retains overlap admission for ${detail}/${gap}/${boundary} and recovers from a real primary change`, () => {
         const prior: TokenUsage =

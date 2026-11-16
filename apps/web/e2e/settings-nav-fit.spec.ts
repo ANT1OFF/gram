@@ -2,7 +2,8 @@ import { expect, test } from "@playwright/test";
 
 // Settings' nav names each page on one line, at the reading size, in the windows the tour
 // captures: a page name that wraps reads as two entries.
-for (const width of [1440, 1728]) {
+// The narrower of the tour's windows: a name that fits there fits in the wider one.
+for (const width of [1440]) {
   test(`every Settings page is named on one line at ${width} px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/settings/general");

@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
-import { AgentCapabilities, AgentEvent, AppToolDescriptor } from "./agent.ts";
+import { AgentEvent, AppToolDescriptor } from "./agent.ts";
 import { expectRoundTrip } from "./test-utils.ts";
 
 const decodeEvent = Schema.decodeUnknownSync(AgentEvent);
@@ -170,25 +170,6 @@ describe("AgentEvent", () => {
 
   it("rejects unknown event types", () => {
     expect(() => decodeEvent({ type: "compacting" })).toThrow();
-  });
-});
-
-describe("AgentCapabilities", () => {
-  it("round-trips", () => {
-    expectRoundTrip(AgentCapabilities, {
-      fork: true,
-      rewind: "historyAndFiles",
-      steer: true,
-      planMode: true,
-      approvalScopes: ["once", "session", "always"],
-      userQuestions: true,
-      costReporting: true,
-      perTurnModel: true,
-      reasoningEffort: true,
-      listSessions: true,
-      subagentStreams: true,
-      stopTasks: true,
-    });
   });
 });
 

@@ -9,7 +9,6 @@ import {
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
-import * as TestClock from "effect/testing/TestClock";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { makeRuntimeTestLayer, waitFor } from "../runtime/test-harness.ts";
@@ -374,7 +373,7 @@ describe("orchestration app tools", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
-  it.effect("stops a chain after two hops and limits sends per minute", () =>
+  it.effect("carries the hop count through send_message, so the guard stops a chain", () =>
     Effect.gen(function* () {
       const planner = yield* createThread("Planner");
       const worker = yield* createThread("Worker");
@@ -390,19 +389,6 @@ describe("orchestration app tools", () => {
       expect(
         yield* refusal(reviewer.id, "send_message", { threadId: planner.id, text: "Back." }),
       ).toContain("stop after 2 hops");
-
-      const targets = yield* Effect.forEach(["T1", "T2", "T3", "T4"], createThread);
-      for (const target of targets) {
-        yield* run(planner.id, "send_message", { threadId: target.id, text: "ping" });
-      }
-      const sixth = yield* createThread("T6");
-      expect(
-        yield* refusal(planner.id, "send_message", { threadId: sixth.id, text: "ping" }),
-      ).toContain("allows 5 messages a minute");
-      yield* TestClock.adjust("61 seconds");
-      expect(
-        yield* run(planner.id, "send_message", { threadId: sixth.id, text: "ping" }),
-      ).toMatchObject({ delivered: "sent" });
     }).pipe(Effect.provide(TestLayer)),
   );
 

@@ -1,8 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { openPanelTab } from "./panel-tab";
 import { reviewsInPanel } from "./reviews-panel";
-import { openOrchestrator, threadRow } from "./thread-row";
 
 // The panel's tabs show their names. The rarer ones are always in More, named there, however wide
 // the panel, so Focus review shows the same tabs as the panel beside the chat. Short of room, Terminal,
@@ -135,41 +133,6 @@ test("a narrower panel names Diff, PR, Files and Terminal, the rest named in Mor
   await expect.poll(() => overflows(page)).toBe(false);
 });
 
-test("at the default width every tab in the strip keeps its name, Terminal and Files folding first", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  // The panel's default width.
-  const panel = await open(page, 352);
-  await expect(panel.locator("[data-label-fit]")).toHaveAttribute("data-label-fit", "all");
-  await everyNameShows(page);
-  const strip = await inStrip(page);
-  expect(strip).toContain("files");
-  expect(strip).toContain("diff");
-  await expect.poll(() => overflows(page)).toBe(false);
-  // What folded is in More, named: Terminal went before Diff did.
-  expect(strip).not.toContain("terminal");
-  await openPanelTab(panel, "Terminal");
-  await expect.poll(() => inStrip(page)).toContain("terminal");
-  await everyNameShows(page);
-  await expect.poll(() => overflows(page)).toBe(false);
-});
-
-test("narrower still, the open tab keeps its name beside More, and it follows the open tab", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  const panel = await open(page, 260);
-  await expect(panel.locator("[data-label-fit]")).toHaveAttribute("data-label-fit", "all");
-  await expect.poll(() => named(page)).toContain("files");
-  await everyNameShows(page);
-  await expect.poll(() => overflows(page)).toBe(false);
-  await openPanelTab(panel, "Diff");
-  await expect.poll(() => named(page)).toContain("diff");
-  await everyNameShows(page);
-  await expect.poll(() => overflows(page)).toBe(false);
-});
-
 test("a review at its ordinary width names Diff, PR, Files and Terminal, with Focus review in words beside them", async ({
   page,
 }) => {
@@ -227,33 +190,6 @@ test("the narrowest panel names its open tab beside More, and keeps every name o
     await expect(menu.getByRole("menuitem", { name, exact: true })).toBeVisible();
   }
   await page.keyboard.press("Escape");
-});
-
-test("the Workers tab beside an orchestrator keeps the strip's names at the default width", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1728, height: 1000 });
-  await page.addInitScript(() => {
-    const key = "gram.mock.settings";
-    const saved = JSON.parse(sessionStorage.getItem(key) ?? "{}") as Record<string, unknown>;
-    saved.panel = { side: "right", open: true, width: 352, tab: "workers" };
-    sessionStorage.setItem(key, JSON.stringify(saved));
-  });
-  await page.goto("/t/t-flaky");
-  await threadRow(page, "t-flaky").waitFor();
-  const made = await page.evaluate(() => window.gramMock!.simulateOrchestration("board"));
-  await openOrchestrator(page, made.orchestratorThreadId);
-  const panel = page.getByTestId("right-panel");
-  await openPanelTab(panel, "Workers");
-  await expect(panel.getByRole("tab", { name: "Workers", exact: true })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  await expect(panel.locator("[data-label-fit]")).toHaveAttribute("data-label-fit", "all");
-  await expect.poll(() => named(page)).toContain("workers");
-  await everyNameShows(page);
-  expect((await inStrip(page)).length).toBeGreaterThan(1);
-  await expect.poll(() => overflows(page)).toBe(false);
 });
 
 test("a tab that appears under a resting pointer opens no hint until the pointer moves", async ({

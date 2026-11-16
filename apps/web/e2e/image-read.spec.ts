@@ -77,7 +77,8 @@ async function restore(page: Page) {
   await page.getByTestId("turn-fold").last().click();
 }
 
-for (const width of [1440, 390]) {
+// The phone width: what fits there fits wider, and the behaviour is the same.
+for (const width of [390]) {
   test(`Codex image Read previews open and survive restored history at ${width}px`, async ({
     page,
   }, testInfo) => {

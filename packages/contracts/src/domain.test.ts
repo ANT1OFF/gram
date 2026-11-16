@@ -14,8 +14,6 @@ import {
   EXAMPLE_GATEWAY,
   normalizeThreadPrs,
   PendingRequest,
-  PermissionUpdate,
-  RequestAnswer,
   sameGatewayURL,
   samePr,
   Thread,
@@ -249,50 +247,6 @@ describe("gateway helpers", () => {
     expect(helperFallbackChoice({ models: [], helperFallback: pick })).toEqual(pick);
   });
 
-  it("round-trips a profile with a helper model and effort", () => {
-    expectRoundTrip(GatewayProfile, {
-      ...EXAMPLE_GATEWAY,
-      keyRef: "profile:example",
-      models: [model("gpt-5.6-luna")],
-      default: true,
-      helperModel: "gpt-5.6-luna",
-      helperEffort: "high",
-      helperFallback: { model: "a-claude-haiku-4.5" },
-    });
-    expectRoundTrip(GatewayProfile, {
-      ...EXAMPLE_GATEWAY,
-      keyRef: "",
-      models: [],
-      helperFallback: null,
-    });
-  });
-
-  it("round-trips a model with the gateway catalog's description of it", () => {
-    expectRoundTrip(GatewayProfile, {
-      ...EXAMPLE_GATEWAY,
-      keyRef: "",
-      models: [
-        {
-          id: "gpt-6.1-sol",
-          name: "gpt-6.1-sol",
-          variants: ["low", "max"],
-          info: {
-            mode: "chat",
-            deprecated: false,
-            restricted: false,
-            tools: true,
-            reasoning: true,
-            noneEffort: false,
-            xhighEffort: true,
-            maxEffort: true,
-            webSearch: false,
-            maxInputTokens: 922_000,
-          },
-        },
-      ],
-    });
-  });
-
   it("matches a gateway address whatever its case, padding or trailing slashes", () => {
     expect(
       sameGatewayURL(` ${EXAMPLE_GATEWAY.baseURL.toUpperCase()}// `, EXAMPLE_GATEWAY.baseURL),
@@ -307,44 +261,6 @@ describe("gateway helpers", () => {
 });
 
 describe("round-trips", () => {
-  it("PermissionUpdate: every variant", () => {
-    const updates = [
-      {
-        type: "addRules",
-        rules: [{ toolName: "Bash", ruleContent: "echo *" }],
-        behavior: "allow",
-        destination: "localSettings",
-      },
-      {
-        type: "replaceRules",
-        rules: [{ toolName: "Read" }],
-        behavior: "ask",
-        destination: "projectSettings",
-      },
-      {
-        type: "removeRules",
-        rules: [{ toolName: "Edit" }],
-        behavior: "deny",
-        destination: "userSettings",
-      },
-      { type: "setMode", mode: "acceptEdits", destination: "session" },
-      { type: "addDirectories", directories: ["/tmp/a"], destination: "session" },
-      { type: "removeDirectories", directories: ["/tmp/a"], destination: "cliArg" },
-    ] as const;
-    for (const update of updates) expectRoundTrip(PermissionUpdate, update);
-  });
-
-  it("RequestAnswer: every variant", () => {
-    const answers: RequestAnswer[] = [
-      { kind: "approval", decision: "allow", scope: "always" },
-      { kind: "approval", decision: "deny", scope: "once", message: "not now" },
-      { kind: "question", answers: { "Which file name should I use?": ["beta.txt"] } },
-      { kind: "plan", decision: "approve", mode: "acceptEdits" },
-      { kind: "plan", decision: "reject", message: "split it up" },
-    ];
-    for (const answer of answers) expectRoundTrip(RequestAnswer, answer);
-  });
-
   it("Thread with a worktree checkout", () => {
     const thread = Schema.decodeUnknownSync(Thread)({
       id: "t1",

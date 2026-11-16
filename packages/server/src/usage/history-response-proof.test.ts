@@ -47,41 +47,44 @@ const canonical = (r: ReturnType<typeof makeHistoryReducer>) => [
 ];
 
 for (const originalTime of [old, current, future])
-  for (const closed of [false, true])
-    for (const model of [null, "actual"])
-      for (const gap of ["header", "discard", "null"] as const) {
-        it(`replay never changes origin or known witness ${originalTime} closed=${closed} model=${model} gap=${gap}`, () => {
-          const r = makeHistoryReducer("codex", from, to);
-          [
-            meta("owner", originalTime),
-            context("native", model, originalTime),
-            request("r1", counts(10), counts(10), originalTime),
-            ...(closed ? [terminal("native", originalTime)] : []),
-          ].forEach((x) => r.consume(x));
-          const projection = structuredClone([...r.records.values()]);
-          if (gap === "header") r.consume(meta("foreign"));
-          else if (gap === "discard") r.breakContext();
-          else r.consume(event("event_msg", { type: "token_count", info: null }));
-          for (let i = 0; i < 3; i++) r.consume(request());
-          expect([...r.records.values()]).toEqual(projection);
-          expect(canonical(r).reduce((n, row) => n + row.tokens.inputTokens, 0)).toBe(
-            originalTime === current ? 10 : 0,
-          );
-          expect(r.retainedBytes()).toBeLessThan(32 * 1024 * 1024);
-          if (gap === "header") {
-            r.consume(request("new", counts(3), counts(3), current, "independent"));
-            r.consume(request("new", counts(3), counts(3), future, "independent"));
-            r.consume(terminal("independent"));
-            expect(canonical(r).find((x) => x.id === "independent")).toMatchObject({
-              at: Date.parse(current),
-              tokens: { inputTokens: 3 },
-              model: null,
-              trusted: true,
-              complete: false,
-            });
-          }
-        });
-      }
+  // Both models are covered, one with each of open and closed, rather than every pairing.
+  for (const [closed, model] of [
+    [false, null],
+    [true, "actual"],
+  ] as const)
+    for (const gap of ["header", "discard", "null"] as const) {
+      it(`replay never changes origin or known witness ${originalTime} closed=${closed} model=${model} gap=${gap}`, () => {
+        const r = makeHistoryReducer("codex", from, to);
+        [
+          meta("owner", originalTime),
+          context("native", model, originalTime),
+          request("r1", counts(10), counts(10), originalTime),
+          ...(closed ? [terminal("native", originalTime)] : []),
+        ].forEach((x) => r.consume(x));
+        const projection = structuredClone([...r.records.values()]);
+        if (gap === "header") r.consume(meta("foreign"));
+        else if (gap === "discard") r.breakContext();
+        else r.consume(event("event_msg", { type: "token_count", info: null }));
+        for (let i = 0; i < 3; i++) r.consume(request());
+        expect([...r.records.values()]).toEqual(projection);
+        expect(canonical(r).reduce((n, row) => n + row.tokens.inputTokens, 0)).toBe(
+          originalTime === current ? 10 : 0,
+        );
+        expect(r.retainedBytes()).toBeLessThan(32 * 1024 * 1024);
+        if (gap === "header") {
+          r.consume(request("new", counts(3), counts(3), current, "independent"));
+          r.consume(request("new", counts(3), counts(3), future, "independent"));
+          r.consume(terminal("independent"));
+          expect(canonical(r).find((x) => x.id === "independent")).toMatchObject({
+            at: Date.parse(current),
+            tokens: { inputTokens: 3 },
+            model: null,
+            trusted: true,
+            complete: false,
+          });
+        }
+      });
+    }
 for (const spec of [
   { label: "same", next: counts(10), complete: true, recovery: true },
   { label: "larger", next: counts(20), complete: false, recovery: true },

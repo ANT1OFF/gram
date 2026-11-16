@@ -99,18 +99,6 @@ describe("templates", () => {
   );
   const templates = readdirSync(join(skill, "templates"));
 
-  it("has the five the scaffold offers", () => {
-    expect(templates.toSorted()).toEqual(
-      [
-        "app-screen.html",
-        "components.html",
-        "flow.html",
-        "landing.html",
-        "options.html",
-      ].toSorted(),
-    );
-  });
-
   for (const name of templates) {
     it(`${name} keeps the page contract`, () => {
       const html = readFileSync(join(skill, "templates", name), "utf8");

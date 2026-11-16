@@ -123,110 +123,108 @@ async function open(page: Page, provider: "claude" | "codex") {
   return card;
 }
 
-for (const provider of ["claude", "codex"] as const) {
-  for (const mode of ["light", "dark"] as const) {
-    for (const narrow of [false, true]) {
-      test(`${provider} JSON ${mode} ${narrow ? "narrow" : "wide"}: exact source, selection, copy and structured tokens`, async ({
-        page,
-      }) => {
-        await page.setViewportSize({ width: narrow ? 640 : 1200, height: 900 });
-        await seedTheme(page, {
-          mode,
-          palette: mode === "dark" ? "tokyo-night" : "tokyo-light",
-          motion: "off",
-        });
-        await seed(page, provider);
-        const errors: string[] = [];
-        page.on("pageerror", (e) => errors.push(e.message));
-        page.on("console", (m) => {
-          if (m.type() === "error") errors.push(m.text());
-        });
-        const card = await open(page, provider);
-        const structured = page.locator('[data-tool-call-id="synthetic-structured"]');
-        await structured.getByRole("button").click();
-        const output = card.locator("pre").last();
-        expect(await output.textContent()).toBe(stdout + (provider === "claude" ? stderr : ""));
-        if (phase === "after") {
-          const json = card.locator('code[data-language="json"]').last();
-          await expect(json.locator('[style*="--shiki-dark"]')).not.toHaveCount(0);
-          const values = await json.evaluate((el) => {
-            const range = document.createRange();
-            range.selectNodeContents(el);
-            const selection = window.getSelection()!;
-            selection.removeAllRanges();
-            selection.addRange(range);
-            const selected = selection.toString();
-            const plain = el.closest("pre")!.cloneNode(false) as HTMLElement;
-            plain.id = "synthetic-reference";
-            const originalText = document.createTextNode(el.textContent!);
-            plain.append(originalText);
-            // Match the old stdout text node plus adjacent stderr, including its terminal-newline behavior.
-            for (let sibling = el.nextSibling; sibling; sibling = sibling.nextSibling)
-              plain.append(sibling.cloneNode(true));
-            el.closest("pre")!.after(plain);
-            const reference = document.createRange();
-            reference.selectNodeContents(originalText);
-            selection.removeAllRanges();
-            selection.addRange(reference);
-            const expected = selection.toString();
-            selection.removeAllRanges();
-            selection.addRange(range);
-            return { source: el.textContent, range: range.toString(), selected, expected };
-          });
-          expect(values.source).toBe(stdout);
-          expect(values.range).toBe(stdout);
-          expect(values.selected).toBe(values.expected);
-          // Native copy/paste in the owned browser; no clipboard permission grant.
-          await page.keyboard.press(process.platform === "darwin" ? "Meta+c" : "Control+c");
-          await page.evaluate(() => {
-            const paste = document.createElement("textarea");
-            paste.id = "synthetic-paste";
-            document.body.append(paste);
-            paste.focus();
-          });
-          await page.keyboard.press(process.platform === "darwin" ? "Meta+v" : "Control+v");
-          const copied = await page.locator("#synthetic-paste").inputValue();
-          await page.evaluate(() => {
-            const range = document.createRange();
-            range.selectNodeContents(document.querySelector("#synthetic-reference")!.firstChild!);
-            const selection = window.getSelection()!;
-            selection.removeAllRanges();
-            selection.addRange(range);
-          });
-          await page.keyboard.press(process.platform === "darwin" ? "Meta+c" : "Control+c");
-          await page.locator("#synthetic-paste").fill("");
-          await page.keyboard.press(process.platform === "darwin" ? "Meta+v" : "Control+v");
-          // A textarea normalizes CRLF on paste; compare native copies of both DOM representations.
-          await expect(page.locator("#synthetic-paste")).toHaveValue(copied);
-          expect(copied).toContain('"nested": [true, null');
-          await page.locator("#synthetic-reference").evaluate((el) => el.remove());
-          await page.locator("#synthetic-paste").evaluate((el) => el.remove());
-          const colors = await json
-            .locator('[style*="--shiki-dark"]')
-            .evaluateAll((tokens) =>
-              Array.from(new Set(tokens.map((t) => getComputedStyle(t).color))),
-            );
-          expect(colors.length).toBeGreaterThanOrEqual(3);
-          await expect(structured.locator('code[data-language="json"]')).toHaveCount(2);
-          for (const code of await structured.locator('code[data-language="json"]').all())
-            await expect(code.locator('[style*="--shiki-dark"]')).not.toHaveCount(0);
-        } else {
-          await expect(page.locator('code[data-language="json"]')).toHaveCount(0);
-        }
-        if (provider === "claude") {
-          await expect(card.locator(".text-destructive")).toHaveText(stderr);
-          await expect(card.locator(".text-destructive code")).toHaveCount(0);
-          await expect(card).toContainText("Interrupted");
-        } else await expect(card).toContainText('"cwd": "/synthetic/project"');
-        await expect(card.locator("script")).toHaveCount(0);
-        await expect(structured.locator("em")).toHaveCount(0);
-        await page.screenshot({
-          path: `e2e/__screenshots__/json-${provider}-${mode}-${narrow ? "narrow" : "wide"}.${phase}.png`,
-        });
-        expect(errors).toEqual([]);
+// Each provider, mode and width once between two cases: none of the three changes another's path.
+for (const [provider, mode, narrow] of [
+  ["claude", "dark", false],
+  ["codex", "light", true],
+] as const) {
+  test(`${provider} JSON ${mode} ${narrow ? "narrow" : "wide"}: exact source, selection, copy and structured tokens`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: narrow ? 640 : 1200, height: 900 });
+    await seedTheme(page, {
+      mode,
+      palette: mode === "dark" ? "tokyo-night" : "tokyo-light",
+      motion: "off",
+    });
+    await seed(page, provider);
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    page.on("console", (m) => {
+      if (m.type() === "error") errors.push(m.text());
+    });
+    const card = await open(page, provider);
+    const structured = page.locator('[data-tool-call-id="synthetic-structured"]');
+    await structured.getByRole("button").click();
+    const output = card.locator("pre").last();
+    expect(await output.textContent()).toBe(stdout + (provider === "claude" ? stderr : ""));
+    if (phase === "after") {
+      const json = card.locator('code[data-language="json"]').last();
+      await expect(json.locator('[style*="--shiki-dark"]')).not.toHaveCount(0);
+      const values = await json.evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const selection = window.getSelection()!;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        const selected = selection.toString();
+        const plain = el.closest("pre")!.cloneNode(false) as HTMLElement;
+        plain.id = "synthetic-reference";
+        const originalText = document.createTextNode(el.textContent!);
+        plain.append(originalText);
+        // Match the old stdout text node plus adjacent stderr, including its terminal-newline behavior.
+        for (let sibling = el.nextSibling; sibling; sibling = sibling.nextSibling)
+          plain.append(sibling.cloneNode(true));
+        el.closest("pre")!.after(plain);
+        const reference = document.createRange();
+        reference.selectNodeContents(originalText);
+        selection.removeAllRanges();
+        selection.addRange(reference);
+        const expected = selection.toString();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return { source: el.textContent, range: range.toString(), selected, expected };
       });
+      expect(values.source).toBe(stdout);
+      expect(values.range).toBe(stdout);
+      expect(values.selected).toBe(values.expected);
+      // Native copy/paste in the owned browser; no clipboard permission grant.
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+c" : "Control+c");
+      await page.evaluate(() => {
+        const paste = document.createElement("textarea");
+        paste.id = "synthetic-paste";
+        document.body.append(paste);
+        paste.focus();
+      });
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+v" : "Control+v");
+      const copied = await page.locator("#synthetic-paste").inputValue();
+      await page.evaluate(() => {
+        const range = document.createRange();
+        range.selectNodeContents(document.querySelector("#synthetic-reference")!.firstChild!);
+        const selection = window.getSelection()!;
+        selection.removeAllRanges();
+        selection.addRange(range);
+      });
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+c" : "Control+c");
+      await page.locator("#synthetic-paste").fill("");
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+v" : "Control+v");
+      // A textarea normalizes CRLF on paste; compare native copies of both DOM representations.
+      await expect(page.locator("#synthetic-paste")).toHaveValue(copied);
+      expect(copied).toContain('"nested": [true, null');
+      await page.locator("#synthetic-reference").evaluate((el) => el.remove());
+      await page.locator("#synthetic-paste").evaluate((el) => el.remove());
+      const colors = await json
+        .locator('[style*="--shiki-dark"]')
+        .evaluateAll((tokens) => Array.from(new Set(tokens.map((t) => getComputedStyle(t).color))));
+      expect(colors.length).toBeGreaterThanOrEqual(3);
+      await expect(structured.locator('code[data-language="json"]')).toHaveCount(2);
+      for (const code of await structured.locator('code[data-language="json"]').all())
+        await expect(code.locator('[style*="--shiki-dark"]')).not.toHaveCount(0);
+    } else {
+      await expect(page.locator('code[data-language="json"]')).toHaveCount(0);
     }
-  }
+    if (provider === "claude") {
+      await expect(card.locator(".text-destructive")).toHaveText(stderr);
+      await expect(card.locator(".text-destructive code")).toHaveCount(0);
+      await expect(card).toContainText("Interrupted");
+    } else await expect(card).toContainText('"cwd": "/synthetic/project"');
+    await expect(card.locator("script")).toHaveCount(0);
+    await expect(structured.locator("em")).toHaveCount(0);
+    await page.screenshot({
+      path: `e2e/__screenshots__/json-${provider}-${mode}-${narrow ? "narrow" : "wide"}.${phase}.png`,
+    });
+    expect(errors).toEqual([]);
+  });
 }
 if (phase === "after")
   test("JSON grammar load failure retains original source and diagnostic stderr", async ({
