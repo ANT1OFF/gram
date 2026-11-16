@@ -10,6 +10,12 @@ import { STOP_HOLD_MS } from "./stop.ts";
 
 /** How long after a readied machine's hold its sessions are still waited for as a stopped one's. */
 export const STOPPED_RECENTLY_MS = 15 * 60_000;
+/**
+ * How long a machine that dialled in after a stop is waited on to have its threads resumed
+ * (`resumeHost`) before sessions open on it anyway: a host on another disk gets its folders back
+ * there, and a session opened before then finds its folder missing.
+ */
+export const RESUME_WAIT_MS = 3 * 60_000;
 
 /** What a stop said it kept of one folder at a remote, for a resume to hold the remote to. */
 export interface KeptRecord {
@@ -41,8 +47,15 @@ export interface StopMarks {
   readonly recently: (id: HostId) => boolean;
   /** The machine's connection was lost. */
   readonly away: (id: HostId) => void;
-  /** The machine dialled in: it is no longer stopped. The threads rested for it are kept. */
+  /**
+   * The machine dialled in: it is no longer stopped. The threads rested for it are kept. One that
+   * had left after it was readied is owed a resume from then (`resuming`).
+   */
   readonly back: (id: HostId) => void;
+  /** Dialled in after a stop, its threads not yet resumed, within `RESUME_WAIT_MS`. */
+  readonly resuming: (id: HostId) => boolean;
+  /** Its threads were resumed, or the resume gave up: sessions open on it as on any machine. */
+  readonly resumed: (id: HostId) => void;
   /** The stop was taken back: nothing is remembered of it. */
   readonly cancel: (id: HostId) => void;
   /** How many times the machine's stops were taken back. */
@@ -67,6 +80,7 @@ export const makeStopMarks = (
   holdMs: number = STOP_HOLD_MS,
   /** Told when a machine starts or stops being waited on (`wantedSince`). */
   onWanted: (id: HostId) => void = () => {},
+  resumeWaitMs: number = RESUME_WAIT_MS,
 ): StopMarks => {
   const marks = new Map<HostId, { readonly at: number; left: boolean }>();
   const last = new Map<HostId, number>();
@@ -75,6 +89,7 @@ export const makeStopMarks = (
   const waitingSince = new Map<HostId, number>();
   const cancels = new Map<HostId, number>();
   const kept = new Map<HostId, Map<string, KeptRecord>>();
+  const owed = new Map<HostId, number>();
   /** The mark, unless its hold ran out with the machine there all along. */
   const markOf = (id: HostId) => {
     const mark = marks.get(id);
@@ -108,11 +123,22 @@ export const makeStopMarks = (
       if (mark !== undefined) mark.left = true;
     },
     back: (id) => {
-      markOf(id);
+      if (markOf(id)?.left === true) owed.set(id, now());
       marks.delete(id);
+    },
+    resuming: (id) => {
+      const at = owed.get(id);
+      if (at === undefined) return false;
+      if (now() - at < resumeWaitMs) return true;
+      owed.delete(id);
+      return false;
+    },
+    resumed: (id) => {
+      owed.delete(id);
     },
     cancel: (id) => {
       marks.delete(id);
+      owed.delete(id);
       rested.delete(id);
       last.delete(id);
       cancels.set(id, (cancels.get(id) ?? 0) + 1);
@@ -147,6 +173,7 @@ export const makeStopMarks = (
     wantedSince: (id) => waitingSince.get(id),
     forget: (id) => {
       marks.delete(id);
+      owed.delete(id);
       last.delete(id);
       rested.delete(id);
       cancels.delete(id);

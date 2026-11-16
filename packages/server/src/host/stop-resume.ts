@@ -414,7 +414,10 @@ export const resumeHost = (
       }),
     );
     return { reopened, left, missing, restored };
-  });
+  }).pipe(
+    // Sessions held for it (`StopMarks.resuming`) open now, their folders back or not.
+    Effect.ensuring(Effect.sync(() => deps.hosts.stops.resumed(id))),
+  );
 
 export interface StopState {
   readonly id: HostId;

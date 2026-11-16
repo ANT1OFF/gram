@@ -516,7 +516,9 @@ the local app, as the other `/machines/*` routes are.
 - `POST /machines/stop/resume` opens again the sessions the stop put to rest, once a host has
   dialled in, and answers which it reopened, which folders it made again (`restored`) and which
   are still missing from the disk (`missing`, with why when the machine was asked). Threads that
-  had no session open at the stop open with their next message, as ever. `"remote"` names where
+  had no session open at the stop open with their next message, as ever. A machine that dialled
+  in after a stop takes no new session until it is resumed, or for at most three minutes: a host
+  on another disk has its folders only once the resume has made them again. `"remote"` names where
   the hidden refs are fetched from; left out, it is where the stop pushed them. `"kept"` gives
   the stop's `kept` back, as it was answered: see [what a resume is held to](#what-a-resume-is-held-to).
 - A branch whose tip is already on the remote's branch of the same name, with nothing
