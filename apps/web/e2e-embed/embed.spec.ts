@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { shot } from "../e2e/shots";
+
 // The acceptance run for mounting Gram in an app of another's: the fixture app consumes only the
 // built package, mounts it against the in-memory server, and adds two pages, a navigation group
 // and a switcher.
@@ -1188,6 +1190,85 @@ test("an added page is a page of settings, from the kit's pieces", async ({ page
   await expect(page.getByTestId("fixture-popover")).toContainText("Acme / Data");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("fixture-popover")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("a page edits code, shows its changes and picks a colour, from the kit", async ({ page }) => {
+  const errors = await mounted(page, "/govern/source");
+  const editor = page.getByTestId("fixture-editor");
+  const code = page.getByRole("textbox", { name: "Code of total.js" });
+  await expect(code).toBeVisible();
+  await expect(page.getByTestId("fixture-diff")).toContainText("No changes.");
+
+  // The host's marker is on its line and listed under the editor.
+  await expect(code).toHaveAttribute("aria-invalid", "true");
+  await expect(editor.locator("[data-marked-line='4']")).toBeVisible();
+  await editor.getByRole("button", { name: /Line 4\./ }).click();
+  await expect(code).toBeFocused();
+
+  // Typing at the line's start, Tab indents, and the diff marks the changed words.
+  await page.keyboard.press("End");
+  await page.keyboard.type(";");
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Tab");
+  await expect(code).toBeFocused();
+  expect(await code.inputValue()).toContain("    return sum;");
+  const diff = page.getByRole("region", { name: "Your changes" });
+  await expect(diff.locator("del")).toContainText("return sum");
+  await expect(diff.locator("ins")).toContainText("return sum;");
+  await expect(diff.locator('[data-word="add"]').first()).toBeVisible();
+  // Escape, then Tab, moves on from the editor.
+  await code.focus();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Tab");
+  await expect(code).not.toBeFocused();
+
+  // Find, from the keyboard and from the host's handle.
+  await code.focus();
+  await page.keyboard.press("ControlOrMeta+f");
+  const find = editor.getByRole("textbox", { name: "Find" });
+  await expect(find).toBeFocused();
+  await find.fill("sum");
+  await expect(editor.getByRole("search")).toContainText("1 of 5");
+  await page.keyboard.press("Enter");
+  await expect(editor.getByRole("search")).toContainText("2 of 5");
+  await expect(editor.locator("[data-match='current']")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(editor.getByRole("search")).toHaveCount(0);
+  await expect(code).toBeFocused();
+  await page.getByRole("button", { name: "Find item" }).click();
+  await expect(find).toHaveValue("item");
+  await expect(editor.getByRole("search")).toContainText("1 of 4");
+
+  // The colour field commits a valid code, normalised, and refuses another.
+  const hex = page.getByRole("textbox", { name: "Accent", exact: true });
+  await hex.fill("#C36");
+  await hex.press("Enter");
+  await expect(page.getByTestId("fixture-accent")).toHaveText("#cc3366");
+  await expect(page.getByRole("button", { name: "#cc3366" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await hex.fill("blue");
+  await hex.press("Tab");
+  await expect(hex).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByTestId("fixture-accent")).toHaveText("#cc3366");
+  await hex.press("Escape");
+  await expect(hex).toHaveValue("#cc3366");
+  await page.getByRole("button", { name: "#2e9e5b" }).click();
+  await expect(page.getByTestId("fixture-accent")).toHaveText("#2e9e5b");
+  await expect(page.getByLabel(/Accent: pick a colour, now #2e9e5b/)).toBeVisible();
+
+  await shot(page.locator("main").first(), { path: "e2e/__screenshots__/kit-source-dark.png" });
+  await page.evaluate(() => window.embed?.navigate("/settings/appearance"));
+  await page.getByRole("group", { name: "Mode" }).getByRole("button", { name: "light" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-mode", "light");
+  await page.evaluate(() => window.embed?.navigate("/govern/source"));
+  await editor.getByRole("button", { name: /Line 4\./ }).click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(";");
+  await expect(diff.locator('[data-word="add"]')).toHaveText(";");
+  await shot(page.locator("main").first(), { path: "e2e/__screenshots__/kit-source-light.png" });
   expect(errors).toEqual([]);
 });
 

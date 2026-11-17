@@ -14,6 +14,9 @@ import {
 import {
   Badge,
   Button,
+  CodeEditor,
+  ColorField,
+  Diff,
   Hint,
   Menu,
   MenuContent,
@@ -30,9 +33,10 @@ import {
   Popover,
   SettingRow,
   SettingsGroup,
+  type CodeEditorHandle,
 } from "gram-web/kit";
 import "gram-web/style.css";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import "./style.css";
 
@@ -310,6 +314,51 @@ function Beside({ params }: ShellPageProps) {
   );
 }
 
+const SOURCE = [
+  "export function total(items) {",
+  "  let sum = 0;",
+  "  for (const item of items) sum += item.price;",
+  "  return sum",
+  "}",
+  "",
+  "export const label = (sum) => `Total: ${sum}`;",
+].join("\n");
+
+/** A page of the app's with the kit's code editor, a diff against what it started from, and a colour field. */
+function Source() {
+  const [code, setCode] = useState(SOURCE);
+  const [accent, setAccent] = useState("#3366cc");
+  const editor = useRef<CodeEditorHandle>(null);
+  return (
+    <div className="mx-auto flex max-w-4xl flex-col gap-section px-5 py-6">
+      <h1 className="font-heading text-heading">Source</h1>
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" onClick={() => editor.current?.find("item")}>
+          Find item
+        </Button>
+      </div>
+      <CodeEditor
+        ref={editor}
+        label="Code of total.js"
+        value={code}
+        onChange={setCode}
+        markers={[{ line: 4, message: "Missing semicolon." }]}
+        className="h-64"
+        testId="fixture-editor"
+      />
+      <Diff before={SOURCE} after={code} words label="Your changes" testId="fixture-diff" />
+      <ColorField
+        label="Accent"
+        value={accent}
+        onChange={setAccent}
+        swatches={["#3366cc", "#cc3366", "#2e9e5b"]}
+        testId="fixture-color"
+      />
+      <p data-testid="fixture-accent">{accent}</p>
+    </div>
+  );
+}
+
 /** A page of the app's with a thread's working panels beside the thread. */
 function Changes({ params }: ShellPageProps) {
   const threadId = params["threadId"] ?? "";
@@ -399,6 +448,7 @@ mountGram({
       { path: "/govern/agents/$agentId", component: Agent },
       { path: "/govern/beside/$threadId", title: "Beside", component: Beside },
       { path: "/govern/changes/$threadId", title: "Changes", component: Changes },
+      { path: "/govern/source", title: "Source", component: Source },
     ],
     home: { title: "Home", component: Home },
     navigation: [BUILD, GOVERN],
