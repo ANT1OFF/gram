@@ -72,6 +72,8 @@ async function settled(page: Page, target: Page | Locator): Promise<Buffer> {
 const modes = list("GRAM_PR_SHOTS_MODES") as ShotMode[];
 /** A palette to show the shots in (`--palette`); the theme pairs it to each mode itself. */
 const palette = env["GRAM_PR_SHOTS_PALETTE"] || undefined;
+/** `--look`: the accent, picture, surfaces and sidebar for every shot, as settings name them. */
+const look = JSON.parse(env["GRAM_PR_SHOTS_LOOK"] || "{}") as Record<string, string>;
 
 for (const shot of selected()) {
   for (const mode of shot.modes ?? (["dark", "light"] as const)) {
@@ -84,7 +86,7 @@ for (const shot of selected()) {
       // replace it once they load: `animations: "disabled"` stops CSS, not the motion library's
       // pulses and glides, and the default mode is Dark whatever the system's scheme.
       await page.addInitScript(
-        ([shotMode, shotPalette]) => {
+        ([shotMode, shotPalette, shotLook]) => {
           const cache = JSON.parse(localStorage.getItem("gram.theme") ?? '{"version":1}') as {
             state?: object;
           };
@@ -93,13 +95,14 @@ for (const shot of selected()) {
             motion: "off",
             mode: shotMode,
             ...(shotPalette ? { palette: shotPalette } : {}),
+            ...shotLook,
           };
           localStorage.setItem("gram.theme", JSON.stringify(cache));
         },
-        [mode, palette] as const,
+        [mode, palette, look] as const,
       );
       await seedMockSettings(page, {
-        appearance: { motion: "off", mode, ...(palette ? { paletteId: palette } : {}) },
+        appearance: { motion: "off", mode, ...(palette ? { paletteId: palette } : {}), ...look },
       });
       // A seeded Math.random, so whatever the mock or the UI draws at random draws the same.
       await page.addInitScript(() => {

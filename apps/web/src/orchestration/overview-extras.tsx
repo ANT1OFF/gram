@@ -233,7 +233,7 @@ export function OverviewSearch({
       aria-keyshortcuts={hint === "" ? undefined : hint}
       title={withHint("Search threads, workers and commands", hint)}
       onClick={() => useLayoutStore.getState().openPalette()}
-      className="flex h-8 w-full shrink-0 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground in-data-phone-drawer:h-11 in-data-phone-drawer:min-w-0 in-data-phone-drawer:flex-1 in-data-phone-drawer:gap-2 in-data-phone-drawer:rounded-(--radius-md) in-data-phone-drawer:border in-data-phone-drawer:border-border in-data-phone-drawer:px-3"
+      className="flex h-8 w-full shrink-0 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-muted-foreground [:where(&)_svg]:text-sidebar-icon outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground in-data-phone-drawer:h-11 in-data-phone-drawer:min-w-0 in-data-phone-drawer:flex-1 in-data-phone-drawer:gap-2 in-data-phone-drawer:rounded-(--radius-md) in-data-phone-drawer:border in-data-phone-drawer:border-border in-data-phone-drawer:px-3"
     >
       <Search aria-hidden className="size-icon-row shrink-0" />
       <span className="min-w-0 flex-1 truncate">
@@ -401,7 +401,7 @@ export function OverviewHistory({ showHistory = true }: { showHistory?: boolean 
           aria-keyshortcuts={hint === "" ? undefined : hint}
           title={withHint("Finished workers, done and archived threads, past CLI sessions", hint)}
           onClick={() => useHistoryStore.getState().show()}
-          className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-body text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground in-data-phone-drawer:h-11 in-data-phone-drawer:gap-2.5 in-data-phone-drawer:px-2"
+          className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-body text-muted-foreground [:where(&)_svg]:text-sidebar-icon outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground in-data-phone-drawer:h-11 in-data-phone-drawer:gap-2.5 in-data-phone-drawer:px-2"
         >
           {/* An inline glyph, on Search's and the rows' marks. Its key is on its hover: beside
               Settings the foot has no room for it on one line. */}
@@ -412,7 +412,11 @@ export function OverviewHistory({ showHistory = true }: { showHistory?: boolean 
         <span className="flex-1" />
       )}
       {/* Settings beside History, the sidebar's places to go, clear of its header's toggles. */}
-      <TopLeftNav update={false} hintSide="top" className="shrink-0" />
+      <TopLeftNav
+        update={false}
+        hintSide="top"
+        className="shrink-0 [:where(&)_svg]:text-sidebar-icon"
+      />
     </div>
   );
 }

@@ -32,6 +32,7 @@ import type {
 } from "./contract";
 import { EMPTY_SHELL, routeProblem, shellFor, useEmbedShell } from "./store";
 import { installHostTheme } from "@/theme/host-theme";
+import { installLookDefaults } from "@/theme/look-defaults";
 
 import { bootTheme } from "./theme-boot";
 
@@ -86,7 +87,14 @@ export const mountGram: MountGram = async (options) => {
     setAppBasePath(options.basePath);
     // The host's look first, so the boot attributes already name its palette.
     installHostTheme(document, options.theme);
-    bootTheme(document.documentElement, window.localStorage, undefined, options.theme);
+    installLookDefaults(options.defaults);
+    bootTheme(
+      document.documentElement,
+      window.localStorage,
+      undefined,
+      options.theme,
+      options.defaults,
+    );
 
     const api = await createApi(
       mock ? "mock" : "rpc",

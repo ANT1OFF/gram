@@ -375,7 +375,12 @@ export function OverviewSidebar({
       {...{ [OVERVIEW_ROOT]: "open" }}
       data-overlay={onPin === undefined ? undefined : ""}
       data-look={roomy ? "roomy" : undefined}
-      className="flex min-h-0 flex-1 flex-col border-r border-sidebar-divider bg-sidebar text-sidebar-foreground"
+      className={cn(
+        "flex min-h-0 flex-1 flex-col border-r border-sidebar-divider bg-sidebar text-sidebar-foreground",
+        !phone &&
+          onPin === undefined &&
+          "m-(--sidebar-inset) rounded-(--sidebar-radius) border-y-(length:--sidebar-edge) border-l-(length:--sidebar-edge)",
+      )}
     >
       {roomy ? (
         // The embedding app's mark and name, with New beside it; the toggles are at the foot.
@@ -392,7 +397,7 @@ export function OverviewSidebar({
                   size="icon-sm"
                   aria-label="Keep sidebar open"
                   data-testid="overview-pin"
-                  className="text-muted-foreground"
+                  className="text-muted-foreground [:where(&)_svg]:text-sidebar-icon"
                   onClick={onPin}
                 />
               }
@@ -410,7 +415,7 @@ export function OverviewSidebar({
                   size="icon-sm"
                   aria-label="Collapse sidebar"
                   data-testid="overview-compact"
-                  className="text-muted-foreground"
+                  className="text-muted-foreground [:where(&)_svg]:text-sidebar-icon"
                   onClick={() => switchOverview("compact")}
                 />
               }
@@ -443,7 +448,7 @@ export function OverviewSidebar({
                     size="icon-sm"
                     aria-label="Keep sidebar open"
                     data-testid="overview-pin"
-                    className="text-muted-foreground [-webkit-app-region:no-drag]"
+                    className="text-muted-foreground [:where(&)_svg]:text-sidebar-icon [-webkit-app-region:no-drag]"
                     onClick={onPin}
                   />
                 }
@@ -462,7 +467,7 @@ export function OverviewSidebar({
                       size="icon-sm"
                       aria-label="Hide sidebar"
                       data-testid="overview-hide"
-                      className="text-muted-foreground [-webkit-app-region:no-drag]"
+                      className="text-muted-foreground [:where(&)_svg]:text-sidebar-icon [-webkit-app-region:no-drag]"
                       onClick={toggleOverviewSidebar}
                     />
                   }
@@ -480,7 +485,7 @@ export function OverviewSidebar({
                       size="icon-sm"
                       aria-label="Compact sidebar"
                       data-testid="overview-compact"
-                      className="text-muted-foreground [-webkit-app-region:no-drag]"
+                      className="text-muted-foreground [:where(&)_svg]:text-sidebar-icon [-webkit-app-region:no-drag]"
                       onClick={() => switchOverview("compact")}
                     />
                   }
@@ -879,7 +884,7 @@ function WorkspaceRow({
                 }
                 // In the tab: the chevron leads there, with the keys on its rows.
                 onClick={() => (inTab ? showWorkersTab() : fold(!folded))}
-                className="grid size-7 shrink-0 cursor-default place-items-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring"
+                className="grid size-7 shrink-0 cursor-default place-items-center rounded-(--radius-sm) text-muted-foreground [:where(&)_svg]:text-sidebar-icon outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring"
               />
             }
           >

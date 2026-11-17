@@ -1,4 +1,11 @@
 import {
+  ACCENT_SEPARATOR,
+  isAccentId,
+  isSceneId,
+  SURFACES_IDS,
+  type AccentId,
+  type SceneId,
+  type SurfacesId,
   DEFAULT_LOOK_ID,
   DEFAULT_PALETTE_ID,
   LOOKS,
@@ -20,6 +27,10 @@ export type DensityPref = Density;
 /** `system` is standard contrast unless the OS asks for more. */
 export type ContrastPref = "system" | "more";
 
+export type BackdropPref = "off" | SceneId;
+export type SidebarPref = "flush" | "inset";
+export type SidebarIconsPref = "plain" | "accent";
+
 export interface ThemePrefs {
   look: LookId;
   palette: string;
@@ -27,7 +38,27 @@ export interface ThemePrefs {
   density: DensityPref;
   contrast: ContrastPref;
   motion: MotionPref;
+  /**
+   * The look's parts below are left out until the person picks one: then the app embedding Gram
+   * may give its own default (`MountOptions.defaults`), and otherwise Gram's applies.
+   */
+  /** An accent laid over the palette, or `palette` for the palette's own. */
+  accent?: AccentId | "palette";
+  /** A background picture behind the app. Gram's default is `off`. */
+  backdrop?: BackdropPref;
+  /** How opaque surfaces are over a picture. Gram's default is `solid`. */
+  surfaces?: SurfacesId;
+  /** The open sidebar flush with the window or inset as a rounded panel. Gram's is `flush`. */
+  sidebar?: SidebarPref;
+  /** The sidebar's icons in their row's colour or in the accent. Gram's is `plain`. */
+  sidebarIcons?: SidebarIconsPref;
 }
+
+export const SIDEBAR_PREFS = ["flush", "inset"] as const satisfies readonly SidebarPref[];
+export const SIDEBAR_ICON_PREFS = [
+  "plain",
+  "accent",
+] as const satisfies readonly SidebarIconsPref[];
 
 export const DEFAULT_THEME: ThemePrefs = {
   look: DEFAULT_LOOK_ID,
@@ -72,7 +103,17 @@ export function resolveContrast(pref: ContrastPref, prefersMoreContrast: boolean
   return pref;
 }
 
-type ThemeAttributeName = `data-${"look" | "palette" | "mode" | "density" | "contrast" | "motion"}`;
+type ThemeAttributeName = `data-${
+  | "look"
+  | "palette"
+  | "mode"
+  | "density"
+  | "contrast"
+  | "motion"
+  | "backdrop"
+  | "surfaces"
+  | "sidebar"
+  | "sidebar-icons"}`;
 export type ThemeAttributes = Record<ThemeAttributeName, string>;
 
 /**
@@ -91,11 +132,20 @@ export function themeAttributes(
     resolvePalette(PRESET_PALETTES, DEFAULT_PALETTE_ID, requestedMode)!;
   return {
     "data-look": prefs.look,
-    "data-palette": palette.id,
+    // With an accent, the palette rendered is the chosen one with the accent laid over it; its
+    // `[data-palette]` block is written at run time (`syncLookStyle`).
+    "data-palette":
+      prefs.accent && prefs.accent !== "palette"
+        ? `${palette.id}${ACCENT_SEPARATOR}${prefs.accent}`
+        : palette.id,
     "data-mode": palette.mode,
     "data-density": prefs.density,
     "data-contrast": resolveContrast(prefs.contrast, system.prefersMoreContrast),
     "data-motion": resolveMotion(prefs.motion, system.prefersReducedMotion),
+    "data-backdrop": prefs.backdrop ?? "off",
+    "data-surfaces": prefs.surfaces ?? "solid",
+    "data-sidebar": prefs.sidebar ?? "flush",
+    "data-sidebar-icons": prefs.sidebarIcons ?? "plain",
   };
 }
 
@@ -121,6 +171,11 @@ export function sanitizePrefs(input: unknown): Partial<ThemePrefs> {
   if (oneOf(CONTRAST_PREFS, raw["contrast"])) out.contrast = raw["contrast"];
   else if (raw["contrast"] === "standard") out.contrast = "system";
   if (oneOf(MOTION_PREFS, raw["motion"])) out.motion = raw["motion"];
+  if (raw["accent"] === "palette" || isAccentId(raw["accent"])) out.accent = raw["accent"];
+  if (raw["backdrop"] === "off" || isSceneId(raw["backdrop"])) out.backdrop = raw["backdrop"];
+  if (oneOf(SURFACES_IDS, raw["surfaces"])) out.surfaces = raw["surfaces"];
+  if (oneOf(SIDEBAR_PREFS, raw["sidebar"])) out.sidebar = raw["sidebar"];
+  if (oneOf(SIDEBAR_ICON_PREFS, raw["sidebarIcons"])) out.sidebarIcons = raw["sidebarIcons"];
   return out;
 }
 

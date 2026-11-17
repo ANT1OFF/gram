@@ -97,3 +97,42 @@
 [data-look="glass"] [data-surface="overlay"] {
   border-radius: var(--radius-xl);
 }
+
+/* A background picture (`data-backdrop`, see theme/backdrop.ts): a fixed layer under the app with
+   the scene for the mode in use, under a wash of the page colour. The page (body and
+   `--thread-bg`) goes clear, while controls that fill with the page colour stay solid, and
+   surfaces take the opacity the palette's text allows (`--surface-alpha`, and cards'
+   `--surface-3`, written with the palette at run time). Frosted and see-through blur what is
+   behind cards as the glass look already does behind the sidebar and title bar. */
+#gram-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+#gram-backdrop svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#gram-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--backdrop-scrim, transparent);
+}
+:root[data-backdrop]:not([data-backdrop="off"]) body {
+  background: transparent;
+}
+:root[data-backdrop]:not([data-backdrop="off"]):not([data-surfaces="solid"])
+  :is([data-surface="card"], .bg-card, .bg-surface-3) {
+  -webkit-backdrop-filter: blur(var(--surface-blur)) saturate(1.4);
+  backdrop-filter: blur(var(--surface-blur)) saturate(1.4);
+}
+@media (forced-colors: active) {
+  #gram-backdrop {
+    display: none;
+  }
+}

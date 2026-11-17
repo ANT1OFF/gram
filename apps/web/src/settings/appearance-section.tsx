@@ -45,8 +45,10 @@ import {
   SettingRow,
 } from "./fields";
 import { FontsSection } from "./fonts-section";
+import { LookRows } from "./look-section";
 import { PaletteEditor } from "./palette-editor";
 import { hostTheme } from "@/theme/host-theme";
+import { effectivePrefs } from "@/theme/look-defaults";
 
 import { paletteChoices, type PaletteChoice } from "./palette-choices";
 import { ReadingSection } from "./reading-section";
@@ -68,7 +70,28 @@ function useThemePrefs(): ThemePrefs {
   const density = useThemeStore((s) => s.density);
   const contrast = useThemeStore((s) => s.contrast);
   const motion = useThemeStore((s) => s.motion);
-  return { look, palette, mode, density, contrast, motion };
+  const accent = useThemeStore((s) => s.accent);
+  const backdrop = useThemeStore((s) => s.backdrop);
+  const surfaces = useThemeStore((s) => s.surfaces);
+  const sidebar = useThemeStore((s) => s.sidebar);
+  const sidebarIcons = useThemeStore((s) => s.sidebarIcons);
+  // What shows: the person's choices, and the embedding app's defaults for the rest.
+  return effectivePrefs(
+    {
+      look,
+      palette,
+      mode,
+      density,
+      contrast,
+      motion,
+      ...(accent ? { accent } : {}),
+      ...(backdrop ? { backdrop } : {}),
+      ...(surfaces ? { surfaces } : {}),
+      ...(sidebar ? { sidebar } : {}),
+      ...(sidebarIcons ? { sidebarIcons } : {}),
+    },
+    hostTheme(),
+  );
 }
 
 function useThemeAttributes() {
@@ -105,6 +128,7 @@ function AppearancePage({ preview }: { preview: boolean }) {
   return (
     <div className={cn("@container", SETTINGS_STACK)}>
       <ThemeRows />
+      <LookSection />
       <SettingsGroup
         label="Reading"
         description="The size and width of the conversation in threads."
@@ -158,6 +182,12 @@ const PALETTE_HINT = "Each has a light and a dark version; Mode picks which one 
 const FONT_KEYWORDS = ["typeface", "family", "monospace"];
 const READING_KEYWORDS = ["transcript", "conversation", "text size", "line width"];
 const PALETTE_EDITOR_KEYWORDS = ["custom palette", "edit palette", "colour", "color", "seed"];
+
+/** Accent, picture, surfaces and the sidebar, for the mode on screen. */
+function LookSection() {
+  const { prefs, attrs } = useThemeAttributes();
+  return <LookRows prefs={prefs} mode={attrs["data-mode"] === "light" ? "light" : "dark"} />;
+}
 
 /** Mode, Density, Contrast and Motion: one row each, as every other Settings page's rows. */
 function ThemeRows() {

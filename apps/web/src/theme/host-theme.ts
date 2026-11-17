@@ -71,6 +71,7 @@ export function hostThemeCss(theme: HostTheme | undefined): string {
     const selector = `[data-palette="${palette.id}"]`;
     const over = colorVariables(theme.colors?.[palette.mode]);
     const chart = chartVariables(theme.chart?.[palette.mode]);
+    const sidebar = sidebarColorVariables(theme.sidebar, palette.mode);
     parts.push(
       cssBlock([selector], { ...paletteVariables(derivePalette(palette)), ...over, ...chart }),
       // More contrast keeps the derived colours: the host's own are tuned for standard contrast.
@@ -79,12 +80,16 @@ export function hostThemeCss(theme: HostTheme | undefined): string {
         ...chart,
       }),
     );
+    if (Object.keys(sidebar).length) parts.push(cssBlock([`html${selector}`], sidebar));
   }
   // Charts follow the mode on Gram's own palettes too, when the host names no palette of its own.
   if (!theme.palettes) {
     for (const mode of ["dark", "light"] as const) {
-      const chart = chartVariables(theme.chart?.[mode]);
-      if (Object.keys(chart).length) parts.push(cssBlock([`:root[data-mode="${mode}"]`], chart));
+      const vars = {
+        ...chartVariables(theme.chart?.[mode]),
+        ...sidebarColorVariables(theme.sidebar, mode),
+      };
+      if (Object.keys(vars).length) parts.push(cssBlock([`:root[data-mode="${mode}"]`], vars));
     }
   }
   const look: CssVariables = {};
@@ -98,6 +103,7 @@ export function hostThemeCss(theme: HostTheme | undefined): string {
     look["--shadow-raised"] = "none";
     look["--shadow-overlay"] = "0 0 0 var(--hairline) var(--border-subtle)";
   }
+  Object.assign(look, sidebarShapeVariables(theme.sidebar));
   // Over the look's own block (`[data-look]`); the fonts setting is inline on `<html>` and wins.
   if (Object.keys(look).length) parts.push(cssBlock(["html[data-look]"], look));
   return parts.join("\n");
@@ -106,6 +112,29 @@ export function hostThemeCss(theme: HostTheme | undefined): string {
 function colorVariables(colors: Readonly<Record<string, string>> | undefined) {
   const vars: CssVariables = {};
   for (const [key, value] of Object.entries(colors ?? {})) if (value) vars[`--${key}`] = value;
+  return vars;
+}
+
+/** The inset sidebar's margin from the window's edges when the host gives none, in pixels. */
+export const SIDEBAR_INSET_MARGIN = 8;
+
+function sidebarShapeVariables(sidebar: HostTheme["sidebar"]) {
+  const vars: CssVariables = {};
+  if (sidebar?.mode === "inset") {
+    vars["--sidebar-inset"] = px(sidebar.margin ?? SIDEBAR_INSET_MARGIN);
+    vars["--sidebar-radius"] = "var(--radius-lg)";
+    vars["--sidebar-edge"] = "1px";
+  }
+  if (typeof sidebar?.radius === "number") vars["--sidebar-radius"] = px(sidebar.radius);
+  return vars;
+}
+
+function sidebarColorVariables(sidebar: HostTheme["sidebar"], mode: Mode) {
+  const vars: CssVariables = {};
+  const icon = sidebar?.icon?.[mode];
+  const background = sidebar?.background?.[mode];
+  if (icon) vars["--sidebar-icon"] = icon;
+  if (background) vars["--sidebar-bg"] = background;
   return vars;
 }
 

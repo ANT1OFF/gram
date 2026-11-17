@@ -44,6 +44,8 @@ describe("presets", () => {
       ["minimal-graphite-dark", "minimal-graphite"],
       ["neutral", "neutral-dark"],
       ["neutral-dark", "neutral"],
+      ["petrol", "petrol-dark"],
+      ["petrol-dark", "petrol"],
       ["rose", "rose-dark"],
       ["rose-dark", "rose"],
       ["forest", "forest-dark"],

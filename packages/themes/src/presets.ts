@@ -433,6 +433,45 @@ export const PRESET_PALETTES = [
       cyan: "#94e2d5",
     },
   },
+  // Petrol: a calm petrol accent on a warm stone page in light and a blue-black page in dark. The
+  // sidebar is a step lighter than the page in both, so cards (raised from the lighter of the two)
+  // are white on stone and a step up from blue-black.
+  {
+    id: "petrol",
+    name: "Petrol",
+    mode: "light",
+    pairId: "petrol-dark",
+    seeds: {
+      bg: "#f3f1ec",
+      surface: "#ffffff",
+      text: "#27272a",
+      muted: "#71717b",
+      accent: "#1d5563",
+      accent2: "#1d5563",
+      red: "#c10007",
+      yellow: "#c98500",
+      green: "#16b364",
+      cyan: "#00b8d4",
+    },
+  },
+  {
+    id: "petrol-dark",
+    name: "Petrol Dark",
+    mode: "dark",
+    pairId: "petrol",
+    seeds: {
+      bg: "#0b0d12",
+      surface: "#12151c",
+      text: "#f5f5f5",
+      muted: "#818181",
+      accent: "#246676",
+      accent2: "#246676",
+      red: "#ff6467",
+      yellow: "#ffb900",
+      green: "#a6e3a1",
+      cyan: "#94e2d5",
+    },
+  },
   {
     id: "rose",
     name: "Rose",

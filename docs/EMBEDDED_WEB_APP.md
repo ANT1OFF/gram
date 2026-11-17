@@ -441,6 +441,7 @@ await mountGram({
     radii: { sm: 4, md: 6, lg: 8 },
     shadows: "none",
     chart: { dark: ["#6f6d66", "#c2a878", "#d27a6e"], light: ["#b5b2a8", "#8c6d3a", "#c4685b"] },
+    sidebar: { mode: "inset", margin: 8, radius: 12, icon: { dark: "#c2a878", light: "#8c6d3a" } },
   },
 });
 ```
@@ -454,8 +455,53 @@ await mountGram({
   hold.
 - `fonts`, `radii` and `shadows: "none"` set the look's values. The Fonts setting still wins.
 - `chart` names colours for charts on your pages, `--chart-1` onwards. Gram's screens draw none.
+- `sidebar` shapes the open sidebar. `mode: "inset"` draws it as a panel apart from the window's
+  edges, `margin` pixels from them (8 by default), with its corners rounded and an outline all
+  round; `flush`, the default, runs it to the edges. `radius` sets its corners in pixels (0 when
+  flush, the `lg` radius when inset). `icon` colours the glyphs of its places and controls and
+  `background` its surface, the compact strip's too, per mode, on your palettes or, without them,
+  on Gram's. The current place's glyph keeps the accent and status marks keep their tones. The
+  compact strip, the sidebar shown over the page from it and a phone's drawer stay flush. For your
+  own markup, `theme.css` names the glyph colour `text-sidebar-icon`.
 
 Leave `theme` out and the app looks exactly as it does on its own.
+
+### Gram's look, with your default picked by name
+
+`defaults` picks the look a person sees until they choose their own in Settings → Appearance, by
+name only. It carries no colours, so an app that follows Gram's palettes rather than shipping its
+own can still choose where a person starts:
+
+```tsx
+await mountGram({
+  element,
+  server,
+  defaults: {
+    palette: "petrol-dark",
+    accent: "petrol",
+    sidebar: "inset",
+    sidebarIcons: "accent",
+    backdrop: "off",
+    surfaces: "frosted",
+  },
+});
+```
+
+- `palette` is a built-in palette's id. It stands in for Gram's default pair, as a `theme`'s
+  palettes do, and follows Mode through its pair. An id that isn't built in is ignored. With a
+  `theme` that gives palettes, the theme's win.
+- `accent` lays one of the accents over the palette (`ACCENTS` in `@gram/themes`); `palette` keeps
+  the palette's own.
+- `backdrop` is a background picture (`fjord`, `dunes`, `pines`, `coast`, `peaks`, `waves`) or
+  `off`, and `surfaces` how opaque cards, the sidebar and the title bar are over it (`solid`,
+  `frosted`, `clear`). Gram raises the wash over the picture and the surfaces' opacity as far as
+  the palette's text needs to hold the contrast target over the scene.
+- `sidebar: "inset"` draws the open sidebar as the panel `theme.sidebar.mode: "inset"` does, and
+  `sidebarIcons: "accent"` puts its glyphs in the accent's text colour.
+
+Each part applies only while the person hasn't chosen it; their own choice always wins. Pass the
+same `defaults` to `applyGramTheme` on the pages you draw before Gram mounts, so they paint the
+same palette.
 
 ## Pages that look like Gram's
 
@@ -568,7 +614,7 @@ Gram without loading it. `@gram/web/kit-lite` has the basics: `Button`, `buttonV
 `ButtonGroup`, `Input`, `InputGroup`, `Textarea`, `Field`, `Checkbox`, `RadioGroup`, `Badge`,
 `Alert`, `Skeleton`, `Shimmer` and `cn`. They are the full kit's own controls from the same
 sources, with the same props; the light kit's `Field` is Settings' field as it is drawn, without
-the search and "Saved" a page of settings adds. `applyGramTheme(theme?)` puts the person's
+the search and "Saved" a page of settings adds. `applyGramTheme(theme?, defaults?)` puts the person's
 stored look on `<html>` as Gram's own theme sync does once it mounts: their mode, palette (one of
 their own palettes too, its colours written for the page), contrast, density and motion, resolved
 against the OS's preferences, with your app's `theme` (the one you mount with) over them. So the

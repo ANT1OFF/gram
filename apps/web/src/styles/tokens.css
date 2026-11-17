@@ -142,6 +142,14 @@
 
   --sidebar-bg: var(--chrome-bg);
   --sidebar-fg: var(--fg);
+  /* The glyphs of the sidebar's places and controls. currentColor keeps each its row's colour; a
+     host theme may give them one of their own. The current place's glyph keeps the accent. */
+  --sidebar-icon: currentColor;
+  /* Flush to the window's edge by default: no margin round the open sidebar, square corners and a
+     divider on its right only. An inset sidebar sets a margin, a radius and its outline's width. */
+  --sidebar-inset: 0px;
+  --sidebar-radius: 0px;
+  --sidebar-edge: 0px;
   --sidebar-row-height: var(--space-row);
   --sidebar-row-radius: var(--radius-sm);
   --sidebar-row-hover: var(--surface-hover);
@@ -238,6 +246,18 @@
     var(--danger-text) calc(var(--danger-tint-hover-strength) * 100%),
     transparent
   );
+}
+
+/* A person's sidebar setting, or the embedding app's default (`data-sidebar`, `data-sidebar-icons`):
+   the inset panel, and the glyphs in the accent's text colour. Flush and plain set nothing, so a
+   host theme's own sidebar values still apply under them. */
+:root[data-sidebar="inset"] {
+  --sidebar-inset: 8px;
+  --sidebar-radius: var(--radius-lg);
+  --sidebar-edge: 1px;
+}
+:root[data-sidebar-icons="accent"] {
+  --sidebar-icon: var(--accent-text);
 }
 
 /* Light dims toward white, so the page behind a dialog fades rather than darkens: it takes a

@@ -78,6 +78,34 @@ export type Palette = typeof Palette.Type;
 export const LogLevel = Schema.Literals(["error", "warn", "info", "debug", "trace"]);
 export type LogLevel = typeof LogLevel.Type;
 
+/** Accents laid over the palette (`ACCENTS` in `@gram/themes`); `palette` keeps the palette's own. */
+export const AccentId = Schema.Literals([
+  "palette",
+  "ink",
+  "indigo",
+  "plum",
+  "forest",
+  "sage",
+  "clay",
+  "ochre",
+  "petrol",
+  "graphite",
+  "navy",
+]);
+export type AccentId = typeof AccentId.Type;
+
+/** A background picture (`SCENES` in `@gram/themes`), or none. */
+export const BackdropId = Schema.Literals([
+  "off",
+  "fjord",
+  "dunes",
+  "pines",
+  "coast",
+  "peaks",
+  "waves",
+]);
+export type BackdropId = typeof BackdropId.Type;
+
 export const AppearanceSettings = Schema.Struct({
   look: Look,
   paletteId: PaletteId,
@@ -85,6 +113,19 @@ export const AppearanceSettings = Schema.Struct({
   density: Density,
   contrast: Contrast,
   motion: MotionPreference,
+  /**
+   * The person's own choices of the look's parts below. Absent means not chosen yet: the palette's
+   * own accent, no picture, solid surfaces, the flush sidebar with plain icons, or what the app
+   * embedding Gram sets as its default.
+   */
+  accent: Schema.optionalKey(AccentId),
+  backdrop: Schema.optionalKey(BackdropId),
+  /** How opaque cards, the sidebar and the title bar are over a picture. */
+  surfaces: Schema.optionalKey(Schema.Literals(["solid", "frosted", "clear"])),
+  /** The open sidebar flush with the window, or inset as a rounded panel. */
+  sidebar: Schema.optionalKey(Schema.Literals(["flush", "inset"])),
+  /** The sidebar's icons in their row's colour, or in the accent. */
+  sidebarIcons: Schema.optionalKey(Schema.Literals(["plain", "accent"])),
   /**
    * Dollar cost for threads on a gateway profile's own API key. Off when absent: subscriptions are
    * limits, which the usage meter shows, not bills.

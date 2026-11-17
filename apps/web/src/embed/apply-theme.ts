@@ -1,6 +1,7 @@
 import { PRESET_PALETTES } from "@gram/themes";
 
-import { hostPaletteFor, hostPalettes, installHostTheme } from "@/theme/host-theme";
+import { hostPalettes, installHostTheme } from "@/theme/host-theme";
+import { paletteToRender } from "@/theme/look-defaults";
 import { syncCustomPaletteStyle } from "@/theme/sync";
 import {
   applyAttributes,
@@ -11,7 +12,7 @@ import {
   type SystemPrefs,
 } from "@/theme/theme";
 
-import type { HostTheme } from "./contract";
+import type { HostTheme, LookDefaults } from "./contract";
 
 /** Where Gram keeps the person's theme, as its theme store persists it. */
 const STORAGE_KEY = "gram.theme";
@@ -50,9 +51,11 @@ function systemPrefs(): SystemPrefs {
  * preferences, on `<html>`, and your app's own `theme` (the one you mount with) over them. For a
  * page of yours drawn with the light kit (sign-in, a landing page) that should look as Gram will
  * once it mounts. The OS's preferences are read once, as the page opens; call it again to follow
- * a change. The same pure steps as Gram's own theme sync, without its stores.
+ * a change. The same pure steps as Gram's own theme sync, without its stores. With `defaults` (the
+ * ones you mount with), their palette stands in until the person picks one; their accent, picture
+ * and sidebar are Gram's once it mounts.
  */
-export function applyGramTheme(theme?: HostTheme): void {
+export function applyGramTheme(theme?: HostTheme, defaults?: LookDefaults): void {
   if (typeof document === "undefined") return;
   const state = storedState();
   const prefs = { ...DEFAULT_THEME, ...sanitizePrefs(state) };
@@ -66,7 +69,7 @@ export function applyGramTheme(theme?: HostTheme): void {
   applyAttributes(
     root,
     themeAttributes(
-      { ...prefs, palette: hostPaletteFor(prefs.palette, theme) },
+      { ...prefs, palette: paletteToRender(prefs.palette, theme, defaults) },
       systemPrefs(),
       palettes,
     ),

@@ -658,6 +658,74 @@ export interface HostTheme {
     readonly dark?: readonly string[];
     readonly light?: readonly string[];
   };
+  /** How the open sidebar is drawn. Left out, it is Gram's own. */
+  readonly sidebar?: HostSidebarTheme;
+}
+
+/**
+ * The sidebar's part of a host theme. Each value left out keeps Gram's own: flush to the window's
+ * edge, square, its places' glyphs in their row's colour on the chrome surface.
+ */
+export interface HostSidebarTheme {
+  /**
+   * `flush` (the default) runs the open sidebar to the window's edges with a divider on its right.
+   * `inset` draws it as a panel apart from them: a margin round it, its corners rounded and an
+   * outline all round. The compact strip, the sidebar shown over the page from it and a phone's
+   * drawer stay flush.
+   */
+  readonly mode?: "flush" | "inset";
+  /** The `inset` sidebar's margin from the window's edges, in pixels. Defaults to 8. */
+  readonly margin?: number;
+  /**
+   * The open sidebar's corner radius in pixels. Defaults to 0 when `flush` and to the theme's `lg`
+   * radius when `inset`.
+   */
+  readonly radius?: number;
+  /**
+   * The glyphs of the sidebar's places and controls, per mode. The current place's glyph keeps the
+   * accent, and status marks keep their tones.
+   */
+  readonly icon?: {
+    readonly dark?: string;
+    readonly light?: string;
+  };
+  /** The sidebar's surface, per mode, the compact strip's too. */
+  readonly background?: {
+    readonly dark?: string;
+    readonly light?: string;
+  };
+}
+
+/**
+ * The look a person sees until they choose their own in Settings, by name only: no colour values.
+ * Each part applies only while the person hasn't picked it; their own choice always wins.
+ */
+export interface LookDefaults {
+  /**
+   * A built-in palette, by its id (`"petrol-dark"`): it takes the place of Gram's default pair,
+   * and follows Mode through its pair. An id that isn't built in is ignored.
+   */
+  readonly palette?: string;
+  /** An accent laid over the palette (`ACCENTS` in `@gram/themes`). */
+  readonly accent?:
+    | "ink"
+    | "indigo"
+    | "plum"
+    | "forest"
+    | "sage"
+    | "clay"
+    | "ochre"
+    | "petrol"
+    | "graphite"
+    | "navy";
+  /** A background picture, or `"off"`. */
+  readonly backdrop?: "off" | "fjord" | "dunes" | "pines" | "coast" | "peaks" | "waves";
+  /** How opaque cards, the sidebar and the title bar are over a picture. */
+  readonly surfaces?: "solid" | "frosted" | "clear";
+  /** The open sidebar flush with the window, or inset as a rounded panel apart from its edges. */
+  readonly sidebar?: "flush" | "inset";
+  /** The sidebar's icons in their row's colour, or in the accent. */
+  readonly sidebarIcons?: "plain" | "accent";
 }
 
 export interface MountOptions {
@@ -678,10 +746,17 @@ export interface MountOptions {
   readonly shell?: ShellContributions;
   /**
    * The app's look in this page: a palette for each mode that takes the place of Gram's default
-   * one, colours set over it, fonts, radii, shadows and chart colours (`--chart-1` onwards). A
+   * one, colours set over it, fonts, radii, shadows, chart colours (`--chart-1` onwards) and the
+   * sidebar's shape, glyph colour and surface. A
    * person's own palette and fonts, picked in Settings, still win. Left out, the look is Gram's.
    */
   readonly theme?: HostTheme;
+  /**
+   * The look a person sees until they choose their own, by name: a built-in palette, an accent, a
+   * background picture, the surfaces and the sidebar's shape and icons. Unlike `theme` it carries
+   * no colours, so an app can follow Gram's own palettes and still pick its default look.
+   */
+  readonly defaults?: LookDefaults;
 }
 
 export interface GramHandle {

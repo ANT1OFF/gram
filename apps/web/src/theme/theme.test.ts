@@ -79,7 +79,26 @@ describe("themeAttributes", () => {
       "data-density": "comfortable",
       "data-contrast": "standard",
       "data-motion": "full",
+      "data-backdrop": "off",
+      "data-surfaces": "solid",
+      "data-sidebar": "flush",
+      "data-sidebar-icons": "plain",
     });
+  });
+
+  it("renders the chosen palette with the accent laid over it, in the requested mode", () => {
+    const attrs = themeAttributes(
+      { ...DEFAULT_THEME, palette: "petrol-dark", mode: "light", accent: "plum" },
+      DEFAULT_SYSTEM_PREFS,
+    );
+    expect(attrs["data-palette"]).toBe("petrol~plum");
+    expect(attrs["data-mode"]).toBe("light");
+  });
+
+  it("keeps only the look's parts it knows", () => {
+    expect(
+      sanitizePrefs({ accent: "neon", backdrop: "moon", surfaces: "clear", sidebar: "inset" }),
+    ).toEqual({ surfaces: "clear", sidebar: "inset" });
   });
 
   it("switches to the paired palette for the requested mode", () => {
