@@ -14,6 +14,9 @@ const EXPORTS = [
   "Button",
   "ButtonGroup",
   "Checkbox",
+  "CodeEditor",
+  "ColorField",
+  "Diff",
   "Collapsible",
   "Dialog",
   "CollapsibleContent",
@@ -64,7 +67,9 @@ const EXPORTS = [
   "TooltipTrigger",
   "buttonVariants",
   "cn",
+  "lineDiff",
   "meterTone",
+  "parseHex",
 ];
 
 describe("@gram/web/kit", () => {

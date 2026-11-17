@@ -507,6 +507,38 @@ For forms:
   New's autonomy picker is; without, it is the segmented control. Either way it is one Tab stop,
   and the arrow keys, Home and End move the pick. It also takes a `className`.
 
+For code and colour:
+
+- `CodeEditor`: a plain code editor, on the theme's names in light and dark: line numbers, a
+  monospace text that scrolls both ways, no syntax colours. Props: `value`, `onChange` (left out,
+  it is read only), `label` (its name for a screen reader), and optional `readOnly`, `markers`,
+  `tabSize` (2), `onKeyDown`, `className` (give it a height; it scrolls inside) and `testId`.
+  `markers` (`{ line, message }`, the `CodeEditorMarker` type, lines from 1) are the host's
+  problems: each marked line has a red number and a tint, the list under the editor names them and
+  goes to one, and the text is marked invalid. Ctrl or ⌘ F opens Find (case-insensitive; Enter and
+  Shift+Enter step, Escape closes it and selects the match). Tab indents and Shift+Tab outdents
+  the lines a selection touches; Escape, then Tab, moves on from the editor, and a read-only one
+  lets Tab through. `onKeyDown` sees each key first, for a shortcut of yours such as Ctrl+S;
+  `preventDefault` stops the editor's own. Its `ref` is a `CodeEditorHandle`: `focus()`,
+  `find(query?)`, `closeFind()` and `goToLine(line)`.
+- `Diff`: a unified line diff of `before` against `after`: removed lines over the ones that
+  replaced them, each with its old and new number, in the diff colours. `words` also marks what
+  changed within a changed line paired with the line it replaced. Unchanged lines more than
+  `context` (3) from a change fold into a row that opens them; `context="all"` shows every line.
+  Past `maxLines` (5000) on either side the texts are not compared and it says `tooLarge`;
+  identical texts say `unchanged`. A change too large to match line by line is drawn as removed,
+  then added, and words are left out of a line too long to compare. Also `label`, `className`
+  and `testId`. `lineDiff(before, after, { words?, maxLines? })` is the same diff as data (the
+  `DiffLine` type), for counting what changed.
+- `ColorField`: a colour as a hex code: a swatch that opens the system's colour picker, the code
+  in a monospace field, and optional preset `swatches`. Props: `value` (`#rrggbb`), `onChange`,
+  and optional `label` (the colour's name; the field's and the swatch's accessible name, the
+  swatch's saying the current code), `swatches`, `invalid`, `disabled`, `id` (the field's, for a
+  `<label htmlFor>` of yours, which then names it), `className` and `testId`. The field takes
+  `#rgb` or `#rrggbb`, with or without `#`, and commits it as lowercase `#rrggbb` on Enter or
+  when it loses focus; anything else is marked invalid and never reaches `onChange`, and Escape
+  puts the value back. `parseHex(text)` is the same check, giving `#rrggbb` or `undefined`.
+
 For what opens over the page:
 
 - `Dialog`: a centred modal, as Gram's are. Mount it to open it, or give `open` to keep it

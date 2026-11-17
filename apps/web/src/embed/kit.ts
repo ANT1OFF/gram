@@ -7,6 +7,13 @@ import type { ReactElement } from "react";
 
 import { AgentIcon as AppAgentIcon } from "@/agents/agent-display";
 
+export {
+  CodeEditor,
+  type CodeEditorHandle,
+  type CodeEditorMarker,
+} from "@/components/code/code-editor";
+export { Diff } from "@/components/code/diff";
+export { lineDiff, type DiffLine, type DiffSpan } from "@/components/code/text-diff";
 export { EmptyState, type EmptyAction, type EmptyIcon } from "@/components/empty-state";
 export { Hint } from "@/components/hint";
 export { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -14,6 +21,7 @@ export { Badge } from "@/components/ui/badge";
 export { Button, buttonVariants } from "@/components/ui/button";
 export { ButtonGroup } from "@/components/ui/button-group";
 export { Checkbox, RadioGroup, type RadioOption } from "@/components/ui/checkbox";
+export { ColorField, parseHex } from "@/components/ui/color-field";
 export { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 export { Input, InputGroup, Textarea } from "@/components/ui/input";
 export {
