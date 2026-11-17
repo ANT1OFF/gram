@@ -421,11 +421,11 @@ mountGram({
         },
       }
     : {}),
-  // The shell's layout: `?nav=dock-top`, `?nav=dock-bottom` or `?nav=side`, and `&auto-hide`.
+  // The navigation's default: `?nav=dock-top`, `?nav=dock-bottom` or `?nav=side`, and `&auto-hide`.
   ...(new URLSearchParams(location.search).has("nav") ||
   new URLSearchParams(location.search).has("auto-hide")
     ? {
-        layout: {
+        defaults: {
           navigation: {
             ...(new URLSearchParams(location.search).get("nav")?.startsWith("dock")
               ? {
@@ -473,6 +473,10 @@ mountGram({
     home: { title: "Home", component: Home },
     navigation: [BUILD, GOVERN],
     workspaceSwitcher: Switcher,
+    // `?switcher-titlebar`: the switcher kept to the title bar, out of the navigation.
+    ...(new URLSearchParams(location.search).has("switcher-titlebar")
+      ? { sidebar: { switcher: "titlebar" as const } }
+      : {}),
   },
 })
   .then((handle) => {

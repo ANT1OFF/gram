@@ -212,3 +212,21 @@ test("a person's pick in Appearance wins over the embedding app's default", asyn
   await page.evaluate(() => localStorage.removeItem("gram.navigation"));
   expect(errors).toEqual([]);
 });
+
+test("the switcher can be kept to the title bar, out of the navigation", async ({ page }) => {
+  const errors = await mounted(page);
+  await expect(page.getByTestId("overview-sidebar").getByTestId("embed-switcher")).toHaveCount(1);
+  await expect(page.getByTestId("shell-titlebar").getByTestId("embed-switcher")).toHaveCount(0);
+
+  errors.push(...(await mounted(page, "/?switcher-titlebar")));
+  await expect(page.getByTestId("overview-sidebar")).toBeVisible();
+  await expect(page.getByTestId("overview-sidebar").getByTestId("embed-switcher")).toHaveCount(0);
+  const inBar = page.getByTestId("shell-titlebar").getByTestId("embed-switcher");
+  await expect(inBar).toHaveAttribute("data-placement", "titlebar");
+  await expect(inBar.getByTestId("fixture-switcher")).toBeVisible();
+
+  errors.push(...(await mounted(page, "/?switcher-titlebar&nav=dock-bottom")));
+  await expect(page.getByTestId("embed-switcher")).toHaveCount(1);
+  await expect(page.getByTestId("shell-titlebar").getByTestId("embed-switcher")).toHaveCount(1);
+  expect(errors).toEqual([]);
+});

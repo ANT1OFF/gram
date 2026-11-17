@@ -173,6 +173,14 @@ export interface ShellSidebar {
    * then stays open as the person left it.
    */
   readonly peek?: boolean;
+  /**
+   * Where the workspace switcher sits. `sidebar` (the default) is at the sidebar's head, the
+   * compact strip's and a phone's menu, and in the title bar while no sidebar shows. `titlebar`
+   * keeps it out of the navigation and draws it at the start of the title bar always (placement
+   * `titlebar`), as a short label of the current workspace: put the full switcher on a page of
+   * your own in `settings.pages`, and have the label lead there.
+   */
+  readonly switcher?: "sidebar" | "titlebar";
 }
 
 /**

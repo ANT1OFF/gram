@@ -279,6 +279,11 @@ the sidebar, as a tile in the compact sidebar, and at the start of the title bar
 is hidden; `placement` tells it which. Gram's own workspace switcher stays where it is and lists
 the workspaces of the one server.
 
+`sidebar.switcher: "titlebar"` keeps it out of the navigation (the sidebar, the strip, the dock and
+a phone's menu) and draws it at the start of the title bar always, with `placement: "titlebar"`.
+Draw it there as a short label of the current workspace that leads to a page of your own in
+`settings.pages`, where the full switcher is.
+
 Inside your pages and switcher, `ShellLink` is a link to a path under the app that doesn't load
 the page again, and `useShellLocation()` gives the path the window is on (without `basePath`) and
 a `navigate`. A page that sends the window on by itself (a redirect, or dropping a query it has
