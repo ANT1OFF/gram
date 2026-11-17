@@ -122,7 +122,15 @@ function trees(y: number, h: number, color: string, step: number, seed: number) 
   }
   return `<path d="${d} L1460 1240 L0 1240Z" fill="${color}"/>`;
 }
-export function sceneSvg(kind: SceneId, dark: boolean, id = "s"): string {
+/**
+ * A scene as SVG markup, its dawn or its night version. Everything in the markup is this module's
+ * own: an unknown scene draws nothing, and `id` (which keeps the gradient's id apart when several
+ * scenes share a page) keeps only letters, digits, `-` and `_`, so no caller's text reaches the
+ * markup unescaped.
+ */
+export function sceneSvg(kind: SceneId, dark: boolean, gradientId = "s"): string {
+  if (!isSceneId(kind)) return "";
+  const id = gradientId.replace(/[^A-Za-z0-9_-]/g, "") || "s";
   const sky = (a: string, b: string) =>
     `<defs><linearGradient id="${id}sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${a}"/><stop offset=".62" stop-color="${b}"/></linearGradient></defs><rect width="1440" height="1240" fill="url(#${id}sky)"/>`;
   const stars = dark

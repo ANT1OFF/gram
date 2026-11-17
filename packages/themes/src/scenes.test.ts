@@ -14,6 +14,14 @@ import {
 } from "./scenes.ts";
 
 describe("scenes", () => {
+  it("lets no caller's text into the markup", () => {
+    expect(sceneSvg("<img src=x onerror=alert(1)>" as never, false)).toBe("");
+    const svg = sceneSvg("fjord", false, '"><script>alert(1)</script>');
+    expect(svg).not.toContain("<script");
+    expect(svg).not.toContain("alert(1)");
+    expect(svg).toContain('id="scriptalert1scriptsky"');
+  });
+
   it("draws a dawn and a night version of every scene", () => {
     for (const id of SCENE_IDS) {
       expect(sceneSvg(id, false)).toMatch(/^<svg /);
