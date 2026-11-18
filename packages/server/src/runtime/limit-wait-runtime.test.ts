@@ -854,6 +854,56 @@ describe("limit wait", () => {
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
+  it.effect("a person's Stop ends a backoff wait, and no retry comes after it", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW);
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const { thread } = yield* running();
+      yield* fail(thread.id, {
+        type: "turnEnd",
+        reason: "error",
+        error: "Too many requests",
+        failure: BARE_429,
+      });
+      expect(yield* waitOf(thread.id)).toMatchObject({ kind: "backoff", attempt: 1 });
+
+      yield* runtimes.interrupt(thread.id, { endLimitWait: true });
+      expect(yield* waitOf(thread.id)).toMatchObject({ kind: "backoff", cancelled: true });
+      expect((yield* store.getThread(thread.id)).lastError?.kind).toBe("rateLimit");
+      expect(yield* runtimes.status(thread.id)).toBe("error");
+
+      yield* TestClock.adjust("1 hour");
+      yield* settle;
+      expect(yield* sentTo(thread.id)).toEqual(["one"]);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("a turn stopped as it meets a limit stands as an error, never a wait", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW);
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const fake = yield* FakeAgentControl;
+      const { thread } = yield* running();
+      // The stop is asked, and the turn ends on the limit before the interrupt lands.
+      yield* fake.setInterruptBehavior("hang");
+      const session = yield* sessionOf(thread.id);
+      yield* Effect.forkScoped(runtimes.interrupt(thread.id, { endLimitWait: true }));
+      yield* waitFor(
+        "the interrupt call",
+        Effect.sync(() => session.interrupts === 1),
+      );
+      yield* fail(thread.id, CLAUDE_LIMIT);
+
+      expect(yield* waitOf(thread.id)).toBeUndefined();
+      expect((yield* store.getThread(thread.id)).lastError?.kind).toBe("rateLimit");
+      yield* TestClock.setTime(FIRST_BATCH + 3 * LIMIT_RESUME_BATCH_GAP_MS);
+      yield* settle;
+      expect(yield* sentTo(thread.id)).toEqual(["one"]);
+    }).pipe(Effect.scoped, Effect.provide(RuntimeTestLayer)),
+  );
+
   it.effect("queues a new thread's first message while its account is limited", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW);

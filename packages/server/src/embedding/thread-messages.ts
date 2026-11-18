@@ -175,7 +175,7 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
           id,
           "thread.interrupt",
           { threadId: id },
-          runtimes.interrupt(id),
+          runtimes.interrupt(id, { endLimitWait: true }),
         ).pipe(
           Effect.map((result) =>
             result === "not-yours" ? refusal(409, NOT_YOUR_MACHINE) : answer({ interrupted: true }),

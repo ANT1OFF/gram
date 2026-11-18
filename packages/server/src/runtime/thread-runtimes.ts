@@ -1216,6 +1216,8 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
       const target = yield* locked(rt, claimStop(rt, options?.turnId));
+      // Stop means stop: a limit's resume, timed or already queued, never starts the thread again.
+      if (options?.endLimitWait === true) yield* cancelLimitWait(threadId);
       if (target !== undefined) yield* runStop(rt, target);
     });
 

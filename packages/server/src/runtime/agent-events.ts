@@ -943,9 +943,14 @@ export const makeAgentEvents = ({
         case "turnEnd": {
           const turnId = rt.turn?.id;
           const replyId = replyOf(rt, turnId);
-          // A provider limit is waited out, not failed on: the thread rests until it resumes.
+          // A provider limit is waited out, not failed on: the thread rests until it resumes. A
+          // turn someone stopped is never resumed on its own: its limit stands as an error.
+          const stopped = turnId !== undefined && rt.stopAsked === turnId;
           const wait =
-            event.reason === "error" && event.error !== undefined && event.failure !== undefined
+            event.reason === "error" &&
+            event.error !== undefined &&
+            event.failure !== undefined &&
+            !stopped
               ? yield* limitWaitOf(rt, event.failure, event.error, turnId)
               : undefined;
           const failed =

@@ -617,6 +617,48 @@ describe("event sink", () => {
     }),
   );
 
+  it.live("a thread waiting out a provider limit says when it resumes, so idle isn't done", () =>
+    Effect.gen(function* () {
+      const dir = mkdtempSync(join(tmpdir(), "gram-sink-"));
+      yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
+      const to = yield* receiver;
+      const waiting = {
+        ...sinkThread("thread-limited", 1),
+        limitWait: {
+          kind: "backoff",
+          account: "claude/",
+          resumeAt: 5_000,
+          since: 1_000,
+          attempt: 2,
+          detail: "You have reached the usage limit of your Claude login.",
+        },
+      } as unknown as Thread;
+      yield* makeEventSink({
+        endpoint: { url: to.url, token: "sink-token" },
+        file: join(dir, "event-sink.db"),
+        on: Effect.succeed(true),
+        threads: Effect.succeed([waiting, sinkThread("thread-free", 2)]),
+        retryBase: Duration.millis(5),
+        retryMax: Duration.millis(20),
+        recheck: Duration.millis(5),
+      });
+      const started = yield* eventually(
+        "sink.started",
+        Effect.sync(() => to.held.find((event) => event.type === "sink.started")),
+      );
+      const threads = started.data["threads"] as ReadonlyArray<Record<string, unknown>>;
+      expect(threads.find((thread) => thread["id"] === "thread-limited")?.["limitWait"]).toEqual({
+        kind: "backoff",
+        resumeAt: 5_000,
+        since: 1_000,
+        detail: "You have reached the usage limit of your Claude login.",
+      });
+      expect(threads.find((thread) => thread["id"] === "thread-free")).not.toHaveProperty(
+        "limitWait",
+      );
+    }),
+  );
+
   it.live("does not believe an ack past what it sent, and keeps sending the same events", () =>
     Effect.gen(function* () {
       const held: Array<SinkEvent> = [];

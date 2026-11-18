@@ -399,6 +399,7 @@ POST /embed/v1/thread-interrupt
 - `mode` is `queue` (the default: sent now on a thread at rest, else after the running turn, `queued: true`), `steer` (into the running turn, cancelling nothing) or `interrupt` (the turn stops and the agent answers this). A steer the thread can't take now, with no turn running or an agent that can't, is sent as `queue` would send it.
 - `key` names the message, 1 to 128 letters, digits, `_` or `-`. Sent again, it is the same message and answers what the first answered, so a caller that retries delivers once. Unlike a note's, it is kept with the thread.
 - A thread on a machine started for one person is written in and stopped only for that person: anyone else gets `409` with why.
+- A stop is a person's Stop: a thread waiting out a provider limit stops waiting too, and a turn that meets a limit as it stops ends with the limit as its error. Nothing resumes the thread on its own after it; the person's next message does.
 - `404` for a thread the server doesn't have, `409` when it can't take the message now (it ended, or its agent couldn't start), `400` for a body that isn't one. `text` is 1 to 20,000 characters.
 
 ## A fresh orchestrator session for a person

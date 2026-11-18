@@ -248,7 +248,14 @@ export interface ThreadRuntimesShape {
      * Stops only this turn: once it has ended, a later turn (the one a queued message started,
      * say) is left running, and so are background agents.
      */
-    options?: { readonly turnId?: TurnId },
+    options?: {
+      readonly turnId?: TurnId;
+      /**
+       * A person's Stop: a wait on a provider limit ends too, as `cancelLimitWait` ends it, so
+       * nothing resumes the thread on its own afterwards.
+       */
+      readonly endLimitWait?: boolean;
+    },
   ): Effect.Effect<void, ThreadNotFound>;
   /**
    * Asks the open turn to stop at its next tool boundary, never interrupting it: the session's
