@@ -281,6 +281,25 @@ describe("useSaveSettings", () => {
 });
 
 describe("choiceFromModel", () => {
+  it("uses the current subscription models for an unset choice, preserving explicit picks", () => {
+    const old = {
+      id: "gpt-6.1-sol",
+      displayName: "GPT-6.1-Sol",
+      supportsEffort: true,
+      isDefault: true,
+    };
+    const sol = { ...old, id: "gpt-6.2-sol", displayName: "GPT-6.2-Sol", isDefault: false };
+    const astra = { ...sol, id: "gpt-6.2-astra", displayName: "GPT-6.2-Astra" };
+    expect(choiceFromModel(undefined, [], [old, astra, sol])).toMatchObject({
+      model: "gpt-6.2-sol",
+    });
+    expect(choiceFromModel(undefined, [], [old, astra])).toMatchObject({ model: "gpt-6.2-astra" });
+    expect(choiceFromModel(undefined, [], [old])).toMatchObject({ model: "gpt-6.1-sol" });
+    expect(choiceFromModel({ agent: "codex", model: old.id }, [], [old, sol])).toEqual({
+      agent: "codex",
+      model: old.id,
+    });
+  });
   it("waits for the CLI default when unset, and preserves an explicit gateway profile", () => {
     expect(choiceFromModel(undefined)).toEqual({ agent: "claude", model: "", speed: "standard" });
     expect(choiceFromModel({ agent: "codex", model: "gpt-5", profileId: "gw" } as never)).toEqual({

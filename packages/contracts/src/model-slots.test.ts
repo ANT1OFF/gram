@@ -98,7 +98,7 @@ describe("model slots", () => {
   it("are a synthetic world's first choice", () => {
     expect(firstChoiceOf({ tier: "scoped" })).toEqual({
       agent: "codex",
-      model: "gpt-6.1-sol",
+      model: "gpt-6.2-sol",
       variant: "medium",
     });
     expect(firstChoiceOf({ tier: "lead", agent: "codex" })).toMatchObject({ variant: "high" });
@@ -130,7 +130,7 @@ describe("rosterModelHere", () => {
 
   it("says why a tier nothing here fills can't run, naming its first choice", () => {
     const here = rosterModelHere({ tier: "top" }, { codex: [sol] });
-    expect(here.entry).toMatchObject({ agent: "codex", model: "gpt-6-astra", tier: "top" });
+    expect(here.entry).toMatchObject({ agent: "codex", model: "gpt-6.2-astra", tier: "top" });
     expect(here.missing).toContain("fills the Top tier");
   });
 });
@@ -243,7 +243,9 @@ describe("a slot on a tier only a newer Gram knows", () => {
 describe("slotHere", () => {
   it("says why a known tier can't run here", () => {
     expect(slotHere({ tier: "top" }, { codex: [sol] })).toEqual({
-      missing: expect.stringContaining("nothing here fills the Top tier: Codex (gpt-6-astra)"),
+      missing: expect.stringContaining(
+        "nothing here fills the Top tier: Codex (gpt-6.2-astra, gpt-6-astra)",
+      ),
     });
     expect(slotHere({ tier: "scoped" }, { codex: [sol] }).model).toMatchObject({
       model: "gpt-6.1-sol",

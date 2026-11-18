@@ -32,7 +32,7 @@ export type AgentModel = typeof AgentModel.Type;
 export const ModelList = Schema.Struct({ models: Schema.Array(AgentModel) });
 export type ModelList = typeof ModelList.Type;
 
-/** An unset choice follows a discovered local CLI default, never a saved gateway or guessed id. */
+/** An unset choice prefers current, discovered subscription models; never invents account access. */
 export const localSubscriptionDefault = (
   claude: ReadonlyArray<AgentModel> | undefined,
   codex: ReadonlyArray<AgentModel> | undefined,
@@ -41,7 +41,13 @@ export const localSubscriptionDefault = (
     ["claude", claude],
     ["codex", codex],
   ] as const) {
-    const model = models?.find((row) => row.isDefault) ?? models?.[0];
+    const current =
+      agent === "codex"
+        ? ["gpt-6.2-sol", "gpt-6.2-astra"]
+            .map((id) => models?.find((row) => row.id === id))
+            .find(Boolean)
+        : undefined;
+    const model = current ?? models?.find((row) => row.isDefault) ?? models?.[0];
     if (model !== undefined) return { agent, model: model.id, speed: "standard" };
   }
   return undefined;
