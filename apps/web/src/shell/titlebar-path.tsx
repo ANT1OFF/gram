@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { SegmentSlab } from "@/motion/segment-slab";
 import { SEGMENT_SLAB, SEGMENT_TRACK } from "@/settings/fields";
 import { useOpenBoard } from "@/orchestration/open-board";
+import { isNewForm, newFormName } from "@/shell/new-form-name";
 import { WorkspaceSwitcher } from "@/shell/workspace-switcher";
 import { useLayoutStore } from "@/stores/layout";
 import { useViewStore } from "@/views/view-store";
@@ -23,10 +24,6 @@ const NO_DRAG = "[-webkit-app-region:no-drag]";
 const PLACE =
   "relative h-6 px-2 text-muted-foreground hover:bg-transparent hover:text-foreground aria-[current=page]:text-foreground aria-pressed:text-foreground";
 
-/** Whether `pathname` is one of the New form's pages. */
-const creating = (pathname: string) =>
-  pathname === "/new" || pathname === "/new-task" || pathname === "/new-workspace";
-
 /** Whether `pathname` is a workspace's Memory, one of its three places. */
 const onMemory = (pathname: string) => pathname.startsWith("/w/") && pathname.endsWith("/memory");
 
@@ -38,7 +35,7 @@ const onMemory = (pathname: string) => pathname.startsWith("/w/") && pathname.en
 export function usePathBar(): boolean {
   const asked = useEmbedShell((s) => s.threadsPage.bar === "path");
   const pathname = useLocation({ select: (location) => location.pathname });
-  return asked && (pathname.startsWith("/t/") || onMemory(pathname) || creating(pathname));
+  return asked && (pathname.startsWith("/t/") || onMemory(pathname) || isNewForm(pathname));
 }
 
 function Step() {
@@ -53,7 +50,7 @@ function Step() {
 export function TitlebarPath({ solo, narrow }: { solo: boolean; narrow: boolean }) {
   const title = useThreadsTitle();
   const pathname = useLocation({ select: (location) => location.pathname });
-  const fresh = creating(pathname);
+  const fresh = isNewForm(pathname);
   const noun = useThreadsWorkspaceNoun();
   // The workspace is the path's end on its Board and on its orchestrator's thread, which the
   // buttons beside the path name: a step after it would lead nowhere.
@@ -80,7 +77,7 @@ export function TitlebarPath({ solo, narrow }: { solo: boolean; narrow: boolean 
       <Step />
       {fresh && (
         <span aria-current="page" className="px-2 text-body font-medium text-foreground">
-          {pathname === "/new-workspace" ? `New ${noun.toLowerCase()}` : "New task"}
+          {newFormName(pathname, noun)}
         </span>
       )}
       {!fresh && !solo && (
@@ -114,7 +111,7 @@ export function useWorkspacePlaces(solo: boolean): readonly WorkspacePlace[] | u
   const route = useParams({ strict: false }).threadId as ThreadId | undefined;
   const navigate = useNavigate();
   const openBoard = useOpenBoard();
-  if (solo || creating(pathname) || workspace === undefined) return undefined;
+  if (solo || isNewForm(pathname) || workspace === undefined) return undefined;
   const orchestrator = workspace.workspace.orchestratorThreadId;
   const workspaceId = workspace.workspace.id;
   return [
