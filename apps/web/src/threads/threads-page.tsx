@@ -70,6 +70,9 @@ export function ThreadsPage() {
   const workspaceWords = useEmbedShell((s) => s.threadsPage.workspaces);
   const view = useThreadsView((s) => s.view);
   const onWorkspaces = workspaceWords !== undefined && view === "workspaces";
+  // With no workspace yet, the empty list below offers the two ways in (a new workspace, or a
+  // thread in none): the header doesn't offer them a second time.
+  const firstOne = onWorkspaces && workspaces.length === 0;
   const listings = useMemo(() => {
     const workspaceNames = new Map(
       workspaces.map((state) => [state.workspace.id as string, state.workspace.name]),
@@ -169,7 +172,7 @@ export function ThreadsPage() {
           )}
           {/* A phone's row holds the two lists and one button: on the list of threads that is the
               thread's, and making a workspace is on the workspaces' own list, a tap away. */}
-          {workspaceWords !== undefined && (onWorkspaces || !phone) && (
+          {workspaceWords !== undefined && (onWorkspaces || !phone) && !firstOne && (
             <Button
               size="sm"
               variant="outline"
@@ -180,15 +183,21 @@ export function ThreadsPage() {
               New {workspaceWords.noun.toLowerCase()}
             </Button>
           )}
-          <Button
-            size="sm"
-            className={cn((workspaceWords === undefined || (phone && !onWorkspaces)) && "ms-auto")}
-            data-testid="threads-new"
-            // Worded by the embedding app, it starts a chat; Gram's own opens the choice used last.
-            onClick={() => void navigate(newEntryRoute(newLabel === undefined ? entry : "oneOff"))}
-          >
-            {newLabel ?? "New task"}
-          </Button>
+          {!firstOne && (
+            <Button
+              size="sm"
+              className={cn(
+                (workspaceWords === undefined || (phone && !onWorkspaces)) && "ms-auto",
+              )}
+              data-testid="threads-new"
+              // Worded by the embedding app, it starts a chat; Gram's own opens the choice used last.
+              onClick={() =>
+                void navigate(newEntryRoute(newLabel === undefined ? entry : "oneOff"))
+              }
+            >
+              {newLabel ?? "New task"}
+            </Button>
+          )}
         </header>
         {onWorkspaces ? (
           <WorkspacesList
