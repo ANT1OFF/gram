@@ -536,7 +536,7 @@ export const makeRestartMethods = ({
         return reached.map(({ rt }) => rt.threadId);
       }),
     ),
-  freshSession: (threadId) =>
+  freshSession: (threadId, model) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
       const before = yield* locked(
@@ -577,7 +577,8 @@ export const makeRestartMethods = ({
             void agentSessionId;
             void agentSessionUnused;
             void codexHome;
-            return rest;
+            // Onto another model: the new session opens on it, as a new thread on it would.
+            return model === undefined ? rest : { ...rest, model };
           });
           yield* publishUpsert(thread);
           // The context meter was the old session's; the first turn of the new one refills it.

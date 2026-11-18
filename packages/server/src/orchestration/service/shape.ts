@@ -38,6 +38,7 @@ import {
   type SettingsRequirement,
   type SettingsWrite,
   type WorkerPlacement,
+  type UserInput,
 } from "@gram/contracts";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
@@ -367,7 +368,7 @@ export interface OrchestrationShape {
    */
   prepareTaskOrchestrator(
     input: Pick<StartTaskInput, "target" | "orchestrator">,
-  ): Effect.Effect<void, NotFound | InvalidState>;
+  ): Effect.Effect<"switch" | "fresh" | undefined, NotFound | InvalidState>;
   /** Resolve outside the edit lock, then refuse stale evidence before startup side effects. */
   withTaskStartup<A, E>(
     input: Pick<StartTaskInput, "target" | "autonomy" | "orchestrator">,
@@ -547,8 +548,21 @@ export interface OrchestrationShape {
     workspaceId: WorkspaceId,
     reason: OrchestratorHandoffReason,
     target?: ModelRef,
-    options?: { readonly note?: boolean; readonly checkpoint?: boolean },
+    options?: {
+      readonly note?: boolean;
+      readonly checkpoint?: boolean;
+      /**
+       * With `target`: a fresh session that opens on it (`HandoffMarker.freshOn`) rather than a
+       * switch that carries this session over. For where the switch can't happen.
+       */
+      readonly fresh?: boolean;
+    },
   ): Effect.Effect<Thread, NotFound | InvalidState>;
+  /**
+   * Holds `input` for the session a running fresh session opens, sent once it is open: a task that
+   * started the orchestrator fresh on its pick. False, holding nothing, without one running.
+   */
+  sendAfterHandoff(workspaceId: WorkspaceId, input: UserInput): Effect.Effect<boolean>;
   retrySwitch(workspaceId: WorkspaceId): Effect.Effect<Thread, NotFound | InvalidState>;
   cancelSwitch(workspaceId: WorkspaceId): Effect.Effect<void, NotFound | InvalidState>;
   /** Refuses a model change that would leave a role-bearing or spawned thread on an unadmitted agent. */

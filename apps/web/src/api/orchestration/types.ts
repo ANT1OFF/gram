@@ -113,11 +113,12 @@ export interface OrchestrationApi {
    * Replaces the orchestrator's agent session with a fresh one under the same thread, the memory as
    * the bridge. Resolves once it is under way. Rejects with `InvalidState` without an orchestrator
    * and while another handoff runs. `checkpoint: false` skips saving to memory first: the running
-   * turn stops as Stop does and the fresh session starts at once.
+   * turn stops as Stop does and the fresh session starts at once. With `model`, the fresh session
+   * opens on it and it becomes the workspace's orchestrator model.
    */
   orchestratorHandoff(
     workspaceId: WorkspaceId,
-    options?: { readonly checkpoint?: boolean },
+    options?: { readonly checkpoint?: boolean; readonly model?: ModelRef },
   ): Promise<Thread>;
   /**
    * Continues the orchestrator in `model`: its checkpoint saves memory and, unless `note` is false,

@@ -16,6 +16,11 @@ export const TaskModelSelection = Schema.Struct({
    * moves it to `orchestrator` as the task starts. Absent when it stays as it is.
    */
   orchestratorFrom: Schema.optionalKey(ModelRef),
+  /**
+   * With `orchestratorFrom`: the running session can't carry over to the pick, so the move is a
+   * fresh session on it, from memory, its conversation kept above a divider.
+   */
+  orchestratorFresh: Schema.optionalKey(Schema.Boolean),
 });
 export type TaskModelSelection = typeof TaskModelSelection.Type;
 

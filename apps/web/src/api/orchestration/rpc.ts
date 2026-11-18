@@ -82,6 +82,7 @@ export const orchestrationRpc = ({ client, connection }: RpcContext): Orchestrat
       client["orchestrator.handoff"]({
         workspaceId,
         ...(options?.checkpoint === undefined ? {} : { checkpoint: options.checkpoint }),
+        ...(options?.model === undefined ? {} : { model: options.model }),
       }),
     ),
   threadDetach: (threadId) => run(client["thread.detach"]({ threadId })),

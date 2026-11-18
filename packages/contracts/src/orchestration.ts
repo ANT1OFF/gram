@@ -1621,6 +1621,11 @@ export const Handoff = Schema.Struct({
   unsaved: Schema.optionalKey(Schema.Boolean),
   /** A switch's: the agent the thread left. */
   previousAgent: Schema.optionalKey(AgentKind),
+  /**
+   * A fresh session onto another model's: the agent it opened on. With `previousAgent`,
+   * `previousModel` and `model`, which a switch also sets.
+   */
+  agent: Schema.optionalKey(AgentKind),
   /** A switch's: the model id the thread left, and the one it continued on. */
   previousModel: Schema.optionalKey(Schema.String),
   model: Schema.optionalKey(Schema.String),

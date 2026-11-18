@@ -23,6 +23,7 @@ import {
   ThreadId,
   type PendingWake,
   TurnId,
+  UserInput,
   WorkerState,
   WorkerQuestion,
   WorkerQuiet,
@@ -203,6 +204,17 @@ export type CostBucket = typeof CostBucket.Type;
 export const HandoffMarker = Schema.Struct({
   reason: Schema.Literals(["context", "compactions", "user"]),
   target: Schema.optionalKey(ModelRef),
+  /**
+   * A fresh session onto another model, where the running session can't carry over to it (a
+   * gateway account, OpenCode, Windows): the new session opens on it, from memory as any fresh
+   * session does, and it becomes the workspace's orchestrator model. Never with `target`.
+   */
+  freshOn: Schema.optionalKey(ModelRef),
+  /**
+   * What the user sent for the new session while this one saves to memory: a task that started
+   * the orchestrator fresh on its pick. Sent once the new session is open, never to the old one.
+   */
+  after: Schema.optionalKey(Schema.Array(UserInput)),
   /** Epoch ms; also the `at` of the transcript's handoff part, which is how a restart finds it. */
   at: Schema.Number,
   phase: Schema.Literals(["checkpoint", "fresh"]),

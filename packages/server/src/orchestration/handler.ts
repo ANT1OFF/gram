@@ -62,7 +62,7 @@ export const orchestrationHandlers = Effect.gen(function* () {
       Effect.gen(function* () {
         // The orchestrator the user picked: a running one starts moving to it, under the locks a
         // switch and a charter change take, before the task's own startup takes them.
-        yield* orchestration.prepareTaskOrchestrator({
+        const move = yield* orchestration.prepareTaskOrchestrator({
           target,
           ...(picked === undefined ? {} : { orchestrator: picked }),
         });
@@ -89,9 +89,19 @@ export const orchestrationHandlers = Effect.gen(function* () {
               // Mid-switch it is queued, never steered into the checkpoint turn: the switch holds
               // the queue and gives it to the new session.
               yield* adopted(draftId, orchestrator.id, input, (task) =>
-                orchestrator.sessionSwitch === undefined
-                  ? deliver(orchestrator.id, task)
-                  : runtimes.send(orchestrator.id, task).pipe(Effect.asVoid),
+                orchestrator.sessionSwitch !== undefined
+                  ? runtimes.send(orchestrator.id, task).pipe(Effect.asVoid)
+                  : move === "fresh"
+                    ? // Held for the fresh session on the pick: sent now, it would reach the
+                      // session that is saving to memory and about to go.
+                      orchestration
+                        .sendAfterHandoff(orchestrator.workspaceId!, task)
+                        .pipe(
+                          Effect.flatMap((held) =>
+                            held ? Effect.void : deliver(orchestrator.id, task),
+                          ),
+                        )
+                    : deliver(orchestrator.id, task),
               );
               return orchestrator;
             }),
@@ -131,13 +141,11 @@ export const orchestrationHandlers = Effect.gen(function* () {
       orchestration.handoff(workspaceId, "user", model, note === undefined ? {} : { note }),
     "orchestrator.retrySwitch": ({ workspaceId }) => orchestration.retrySwitch(workspaceId),
     "orchestrator.cancelSwitch": ({ workspaceId }) => orchestration.cancelSwitch(workspaceId),
-    "orchestrator.handoff": ({ workspaceId, checkpoint }) =>
-      orchestration.handoff(
-        workspaceId,
-        "user",
-        undefined,
-        checkpoint === undefined ? {} : { checkpoint },
-      ),
+    "orchestrator.handoff": ({ workspaceId, checkpoint, model }) =>
+      orchestration.handoff(workspaceId, "user", model, {
+        ...(checkpoint === undefined ? {} : { checkpoint }),
+        ...(model === undefined ? {} : { fresh: true }),
+      }),
     "orchestrator.releaseWorker": ({ threadId }) => orchestration.releaseWorker(threadId),
     "orchestrator.releaseHeldBrief": ({ workspaceId, id }) =>
       orchestration.releaseHeldBrief(workspaceId, id),

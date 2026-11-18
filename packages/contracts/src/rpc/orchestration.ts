@@ -219,12 +219,15 @@ export const OrchestrationRpcs = RpcGroup.make(
    * as the bridge. Returns once it is under way. `InvalidState` while the setting is off, without
    * an orchestrator, and while another handoff is running. `checkpoint: false` skips the turn that
    * saves to memory first: the running turn is stopped, as Stop does (its open cards are
-   * declined), and the fresh session starts at once (on by default).
+   * declined), and the fresh session starts at once (on by default). With `model`, the fresh
+   * session opens on it and it becomes the workspace's orchestrator model: the one way onto a
+   * model the running session can't carry over to (`orchestrator.switch` refuses those).
    */
   Rpc.make("orchestrator.handoff", {
     payload: {
       workspaceId: WorkspaceId,
       checkpoint: Schema.optionalKey(Schema.Boolean),
+      model: Schema.optionalKey(ModelRef),
       // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
       // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
       after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),

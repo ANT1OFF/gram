@@ -613,8 +613,15 @@ export interface ThreadRuntimesShape {
     threadId: ThreadId,
     attemptId: string,
   ): Effect.Effect<void, ThreadNotFound | InvalidState>;
+  /**
+   * Stops the thread's session and opens a new one that remembers nothing of it, in the same
+   * thread and checkout. With `model`, the new one opens on it, another agent's or account's
+   * included: the thread's model becomes it. Nothing carries over but what the caller gives the
+   * new session. Returns the session left behind.
+   */
   freshSession(
     threadId: ThreadId,
+    model?: ModelRef,
   ): Effect.Effect<string | undefined, ThreadNotFound | InvalidState>;
   /**
    * Moves a plain thread or worker to the other agent, on `target`: claimed and refused as

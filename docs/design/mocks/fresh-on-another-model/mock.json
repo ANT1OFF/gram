@@ -1,0 +1,33 @@
+{
+  "title": "Start fresh on another model",
+  "slug": "fresh-on-another-model",
+  "status": "approved",
+  "template": "options",
+  "current": 1,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-18"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A Sheet",
+      "board": "a-sheet"
+    },
+    {
+      "name": "B Popover",
+      "board": "b-popover"
+    },
+    {
+      "name": "C In place",
+      "board": "c-in-place"
+    },
+    {
+      "name": "D After",
+      "board": "d-after"
+    }
+  ]
+}

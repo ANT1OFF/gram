@@ -1,12 +1,23 @@
-import { type ModelRef, type SessionSwitch, type Thread } from "@gram/contracts";
+import {
+  type ModelRef,
+  type SessionSwitch,
+  type Thread,
+  type WorkspaceState,
+} from "@gram/contracts";
+import { Check, Layers, TriangleAlert, X } from "lucide-react";
+import { useState } from "react";
 
 import { agentLabel } from "@/agents/agent-display";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
+import { modelDisplayName, useModels } from "@/composer/models";
 import { useThreadsStore } from "@/stores/threads";
-import { continueLabel } from "@/thread/agent-switch-model";
+import { continueLabel, leavesLine } from "@/thread/agent-switch-model";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 import { useSwitchOffer } from "@/thread/use-switch-offer";
+
+import { HandingOff, SaveFirst } from "./fresh-session";
+import { useHandoff } from "./use-board-actions";
 
 const name = (model: ModelRef) =>
   `${agentLabel(model.agent)} · ${model.model}${model.variant ? ` · ${model.variant}` : ""}`;
@@ -63,17 +74,32 @@ export const switchCurrentText = (
  */
 export function SwitchOrchestratorAction({
   thread,
+  state,
   saved,
   disabled = false,
 }: {
   thread: Thread;
+  /** The orchestrator's workspace, whose fresh session it starts where a switch can't move it. */
+  state?: WorkspaceState | undefined;
   /** The model the workspace's settings name for its orchestrator, when one of its own. */
   saved?: ModelRef | undefined;
   disabled?: boolean;
 }) {
-  const current = useThreadsStore((state) => state.byId[thread.id]?.thread) ?? thread;
-  const identity = useThreadsStore((state) => state.byId[thread.id]?.identity);
+  const current = useThreadsStore((s) => s.byId[thread.id]?.thread) ?? thread;
+  const identity = useThreadsStore((s) => s.byId[thread.id]?.identity);
   const offer = useSwitchOffer(thread.id);
+  const pending =
+    saved !== undefined && current.sessionSwitch === undefined && savedDiffers(saved, current.model)
+      ? saved
+      : undefined;
+  // Continue in… carries this session over only to the other agent, on the CLI's own sign-in.
+  const carries =
+    pending !== undefined &&
+    offer.offered &&
+    offer.refusal === undefined &&
+    offer.to === pending.agent &&
+    pending.profileId === undefined &&
+    current.model.profileId === undefined;
   const open = () => useThreadDialogs.getState().open({ kind: "continueIn", threadId: thread.id });
   const button = (refusal: string | undefined) => (
     <Button
@@ -100,18 +126,23 @@ export function SwitchOrchestratorAction({
           {switchCurrentText(current, identity?.model)}
         </p>
         {/* A saved model the running session isn't on: saving doesn't move it, so say what does. */}
-        {saved !== undefined &&
-          current.sessionSwitch === undefined &&
-          savedDiffers(saved, current.model) && (
-            <p data-testid="orchestrator-saved" className="text-meta text-description">
-              Saved: {name(saved)}. The running session stays on {current.model.model}
-              {offer.offered && offer.refusal === undefined
-                ? `; ${continueLabel(offer.to)}… moves it.`
-                : "; the next orchestrator session opens on the saved model."}
-            </p>
-          )}
+        {pending !== undefined && (
+          <p data-testid="orchestrator-saved" className="text-meta text-description">
+            Saved: {name(pending)}. The running session stays on {current.model.model}
+            {carries ? `; ${continueLabel(offer.to)}… moves it.` : " until it starts fresh on it."}
+          </p>
+        )}
       </div>
-      {offer.offered &&
+      {pending !== undefined && !carries && state !== undefined ? (
+        <StartFreshOn
+          state={state}
+          running={current}
+          onto={pending}
+          why={offer.offered ? offer.refusal : undefined}
+          disabled={disabled}
+        />
+      ) : (
+        offer.offered &&
         (offer.refusal === undefined ? (
           button(undefined)
         ) : (
@@ -119,7 +150,99 @@ export function SwitchOrchestratorAction({
           <Hint label={offer.refusal} side="bottom" render={<span tabIndex={0} />}>
             {button(offer.refusal)}
           </Hint>
-        ))}
+        ))
+      )}
+    </div>
+  );
+}
+
+/**
+ * Start fresh on the saved model, where the running session can't carry over to it: a button that
+ * opens in place what happens (why not a carry-over, what the new session gets, what stays and what
+ * is lost), Save to memory first, and the one action that starts it.
+ */
+function StartFreshOn({
+  state,
+  running,
+  onto,
+  why,
+  disabled,
+}: {
+  state: WorkspaceState;
+  running: Thread;
+  onto: ModelRef;
+  /** The server's words for why this session can't move there, where it said. */
+  why: string | undefined;
+  disabled: boolean;
+}) {
+  const handoff = useHandoff(state);
+  const models = useModels(onto.agent);
+  const [open, setOpen] = useState(false);
+  const [saveFirst, setSaveFirst] = useState(true);
+  const model = modelDisplayName(models, onto.agent, onto.model);
+  const action = `Start fresh on ${model}`;
+  if (handoff.running) return <HandingOff />;
+  if (!open)
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={disabled || !handoff.available}
+        onClick={() => {
+          setSaveFirst(true);
+          setOpen(true);
+        }}
+        data-testid="start-fresh-on-open"
+      >
+        {action}
+      </Button>
+    );
+  const line = "grid grid-cols-[1rem_1fr] items-start gap-2";
+  const icon = "mt-0.5 size-icon-row text-muted-foreground";
+  return (
+    <div
+      data-testid="start-fresh-on"
+      className="flex w-full flex-col gap-3 rounded-lg border border-edge bg-muted/40 p-3 text-meta"
+    >
+      <div className="flex flex-col gap-2">
+        <p className={line}>
+          <TriangleAlert aria-hidden className={icon} />
+          <span>
+            This session can't carry over to {agentLabel(onto.agent)} · {model}, so it starts a
+            fresh one in the same thread.
+            {why !== undefined && <span className="block text-muted-foreground">{why}</span>}
+          </span>
+        </p>
+        <p className={line}>
+          <Check aria-hidden className="mt-0.5 size-icon-row text-success" />
+          <span>Memory, the charter and the ledger carry over. Workers keep running.</span>
+        </p>
+        <p className={line}>
+          <Layers aria-hidden className={icon} />
+          <span>This conversation stays in the thread, above a divider.</span>
+        </p>
+        <p className={line}>
+          <X aria-hidden className={icon} />
+          <span>{leavesLine(running.model.agent)}</span>
+        </p>
+      </div>
+      <SaveFirst checked={saveFirst} onChange={setSaveFirst} />
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+          Not now
+        </Button>
+        <Button
+          size="sm"
+          data-testid="start-fresh-on-start"
+          disabled={disabled || !handoff.available}
+          onClick={() => {
+            setOpen(false);
+            void handoff.start({ checkpoint: saveFirst, model: onto });
+          }}
+        >
+          {action}
+        </Button>
+      </div>
     </div>
   );
 }

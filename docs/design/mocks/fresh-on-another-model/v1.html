@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Start fresh on another model · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .frame {
+        position: relative;
+        height: 100%;
+      }
+      .nav {
+        flex: 0 0 200px;
+        padding: 10px 8px;
+        border-right: 1px solid var(--border-subtle);
+        background: var(--surface-1);
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .page-col {
+        flex: 1;
+        min-width: 0;
+        padding: 24px 32px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        max-width: 720px;
+      }
+      .page-col h2 {
+        margin: 0;
+        font-size: var(--text-lg);
+      }
+      .row-set {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .row-set p {
+        margin: 0;
+      }
+      .desc {
+        font-size: var(--text-xs);
+        color: var(--fg-muted);
+      }
+      .lines {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        font-size: var(--text-sm);
+      }
+      .line {
+        display: grid;
+        grid-template-columns: 16px 1fr;
+        gap: 8px;
+        align-items: start;
+      }
+      .line .icon {
+        width: 14px;
+        height: 14px;
+        margin-top: 2px;
+        color: var(--fg-muted);
+      }
+      .line.yes .icon {
+        color: var(--success-text);
+      }
+      .why {
+        font-size: var(--text-xs);
+        color: var(--fg-muted);
+      }
+      .savefirst {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 2px 8px;
+        font-size: var(--text-sm);
+      }
+      .savefirst .desc {
+        grid-column: 2;
+      }
+      .pop {
+        position: absolute;
+        width: 340px;
+        padding: 12px;
+        border-radius: var(--radius-lg, 8px);
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-3);
+        box-shadow: var(--shadow-overlay);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        z-index: 4;
+      }
+      .pop h4 {
+        margin: 0;
+        font-size: var(--text-sm);
+      }
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .inline-open {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 12px;
+        border-radius: var(--radius-lg, 8px);
+        background: var(--surface-1);
+        border: 1px solid var(--border-subtle);
+      }
+      /* The New task form. */
+      .task {
+        max-width: 640px;
+        margin: 0 auto;
+        padding: 28px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        width: 100%;
+      }
+      .task h2 {
+        margin: 0;
+        font-size: var(--text-lg);
+      }
+      .prompt {
+        min-height: 96px;
+        padding: 10px 12px;
+        border-radius: var(--radius-lg, 8px);
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-3);
+        font-size: var(--text-md);
+      }
+      .where {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        font-size: var(--text-sm);
+        color: var(--fg-muted);
+      }
+      .stop {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 8px;
+        border-radius: var(--radius-md, 7px);
+        background: var(--surface-1);
+        color: var(--fg);
+      }
+      .orch-line {
+        font-size: var(--text-xs);
+        color: var(--fg-muted);
+        margin: 0;
+      }
+      .err {
+        font-size: var(--text-xs);
+        color: var(--danger-text);
+        margin: 0;
+      }
+      .linkbtn {
+        border: 0;
+        background: none;
+        padding: 0;
+        color: var(--accent-text);
+        font: inherit;
+        cursor: pointer;
+      }
+      /* The thread after. */
+      .col {
+        max-width: 720px;
+        margin: 0 auto;
+        width: 100%;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        flex: 1;
+      }
+      .bubble {
+        align-self: flex-end;
+        max-width: 80%;
+        padding: 8px 12px;
+        border-radius: var(--radius-xl, 10px);
+        background: var(--surface-1);
+        font-size: var(--text-md);
+      }
+      .reply {
+        font-size: var(--text-md);
+        line-height: 1.55;
+      }
+      .reply p {
+        margin: 0;
+      }
+      .old {
+        opacity: 0.85;
+      }
+      .hand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: var(--text-xs);
+        color: var(--fg-muted);
+      }
+      .hand::before,
+      .hand::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--border-subtle);
+      }
+      .hand .icon {
+        width: 13px;
+        height: 13px;
+      }
+      .tipline {
+        font-size: var(--text-xs);
+        color: var(--fg-subtle);
+        text-align: center;
+        margin-top: -6px;
+      }
+      .composer {
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl, 10px);
+        background: var(--surface-3);
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .composer .ph {
+        color: var(--fg-subtle);
+        font-size: var(--text-md);
+      }
+      .chip {
+        align-self: flex-start;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        padding: 0 8px;
+        border-radius: var(--radius-md, 7px);
+        background: var(--surface-1);
+        font-size: var(--text-xs);
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        Where does "Start fresh on another model" live, when the running session can't carry over to
+        the model you saved? A asks in a dialog, B in a small popover beside the button, C opens in
+        place and lets the task's Start do it. D is what every direction leaves in the thread. Pick
+        one by name.
+      </p>
+
+      <!-- ===================== A Sheet ===================== -->
+      <section
+        class="board"
+        data-name="A Sheet"
+        data-size="960x620"
+        data-states="settings,sheet,task"
+      >
+        <div class="board-frame">
+          <div class="app frame">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="strong" data-when="settings,sheet">Settings · gram</span>
+              <span class="strong" data-when="task">New task</span>
+            </div>
+
+            <div class="app-body" data-when="settings,sheet">
+              <nav class="nav">
+                <span class="section-label">Workspace</span>
+                <a class="nav-item" href="#">General</a>
+                <a class="nav-item" href="#" aria-current="page">Models</a>
+                <a class="nav-item" href="#">Autonomy &amp; merging</a>
+                <a class="nav-item" href="#">Memory</a>
+              </nav>
+              <div class="page-col">
+                <h2>Models</h2>
+                <div class="card">
+                  <div class="row-set">
+                    <div>
+                      <p class="strong">Current orchestrator</p>
+                      <p class="desc">Codex · GPT-6.1-Sol · high</p>
+                      <p class="desc">
+                        Saved: Claude Code · Opus 5.5. The running session stays on GPT-6.1-Sol.
+                      </p>
+                    </div>
+                    <a class="btn sm" href="#" data-goto="A Sheet@sheet"
+                      >Start fresh on Opus 5.5…</a
+                    >
+                  </div>
+                  <hr class="divider" />
+                  <div class="row-set">
+                    <div>
+                      <p class="strong">Orchestrator model</p>
+                      <p class="desc">Opens every new orchestrator session.</p>
+                    </div>
+                    <span class="select" style="min-width: 220px">Claude Code · Opus 5.5</span>
+                  </div>
+                  <div class="row-set">
+                    <div>
+                      <p class="strong">Worker models</p>
+                      <p class="desc">The roster the orchestrator picks from.</p>
+                    </div>
+                    <span class="muted small">3 models</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="scrim" data-when="sheet">
+              <div class="dialog" role="dialog" aria-labelledby="a-title">
+                <h3 id="a-title" style="margin: 0">Start fresh on Claude Code · Opus 5.5</h3>
+                <p class="why" style="margin: 0">
+                  This session can't carry over: switching uses the CLI's own sign-in, and this one
+                  runs on a gateway account.
+                </p>
+                <div class="lines">
+                  <div class="line yes">
+                    <i data-icon="check"></i
+                    ><span>Its memory, the charter and the ledger. Workers keep running.</span>
+                  </div>
+                  <div class="line">
+                    <i data-icon="layers"></i
+                    ><span>This conversation stays in the thread, above a divider.</span>
+                  </div>
+                  <div class="line">
+                    <i data-icon="x"></i
+                    ><span
+                      >GPT-6.1-Sol's tool output, reasoning and cache: the first reply is
+                      slower.</span
+                    >
+                  </div>
+                </div>
+                <label class="savefirst">
+                  <input type="checkbox" checked />
+                  <span>Save to memory first</span>
+                  <span class="desc"
+                    >The orchestrator writes down what it hasn't saved, then hands off.</span
+                  >
+                </label>
+                <div class="dialog-actions">
+                  <a class="btn ghost" href="#" data-goto="A Sheet@settings">Cancel</a>
+                  <a class="btn primary" href="#" data-goto="D After@orchestrator">Start fresh</a>
+                </div>
+              </div>
+            </div>
+
+            <div class="task" data-when="task">
+              <h2>New task</h2>
+              <div class="prompt">Sort History by last activity, pinned threads on top.</div>
+              <div class="where">
+                <span>Workspace</span><span class="stop"><i data-icon="folder"></i>gram</span>
+                <span class="stop"><i data-icon="sparkle"></i>Claude Code · Opus 5.5</span>
+              </div>
+              <p class="err">
+                The orchestrator can't move to Claude Code · Opus 5.5 as this task starts. Switching
+                uses the CLI's own sign-in; it doesn't move gateway accounts.
+              </p>
+              <p class="orch-line">
+                <a class="linkbtn" href="#" data-goto="A Sheet@sheet">Start fresh on Opus 5.5…</a>
+                first, then start the task.
+              </p>
+              <div class="row">
+                <button class="btn primary" type="button" disabled>Start</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== B Popover ===================== -->
+      <section
+        class="board"
+        data-name="B Popover"
+        data-size="960x620"
+        data-states="settings,popover,task"
+      >
+        <div class="board-frame">
+          <div class="app frame">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="strong" data-when="settings,popover">Settings · gram</span>
+              <span class="strong" data-when="task">New task</span>
+            </div>
+
+            <div class="app-body" data-when="settings,popover">
+              <nav class="nav">
+                <span class="section-label">Workspace</span>
+                <a class="nav-item" href="#">General</a>
+                <a class="nav-item" href="#" aria-current="page">Models</a>
+                <a class="nav-item" href="#">Autonomy &amp; merging</a>
+                <a class="nav-item" href="#">Memory</a>
+              </nav>
+              <div class="page-col" style="position: relative">
+                <h2>Models</h2>
+                <div class="card">
+                  <div class="row-set">
+                    <div>
+                      <p class="strong">Current orchestrator</p>
+                      <p class="desc">Codex · GPT-6.1-Sol · high</p>
+                      <p class="desc">Saved: Claude Code · Opus 5.5.</p>
+                    </div>
+                    <a class="btn sm" href="#" data-goto="B Popover@popover" aria-expanded="false"
+                      ><i data-icon="refresh"></i>Start fresh on Opus 5.5</a
+                    >
+                  </div>
+                  <hr class="divider" />
+                  <div class="row-set">
+                    <div>
+                      <p class="strong">Orchestrator model</p>
+                      <p class="desc">Opens every new orchestrator session.</p>
+                    </div>
+                    <span class="select" style="min-width: 220px">Claude Code · Opus 5.5</span>
+                  </div>
+                  <div class="row-set">
+                    <div>
+                      <p class="strong">Worker models</p>
+                      <p class="desc">The roster the orchestrator picks from.</p>
+                    </div>
+                    <span class="muted small">3 models</span>
+                  </div>
+                </div>
+
+                <div class="pop" data-when="popover" style="top: 132px; right: 32px">
+                  <h4>Fresh session on Opus 5.5</h4>
+                  <p class="desc" style="margin: 0">
+                    A new session in this thread, from its memory, charter and ledger. The
+                    conversation stays above a divider; workers keep running.
+                  </p>
+                  <label class="savefirst">
+                    <input type="checkbox" checked />
+                    <span>Save to memory first</span>
+                    <span class="desc"
+                      >The orchestrator writes down what it hasn't saved, then hands off.</span
+                    >
+                  </label>
+                  <p class="why" style="margin: 0">
+                    Not a carry-over: this session runs on a gateway account.
+                  </p>
+                  <div class="actions">
+                    <a class="btn sm primary" href="#" data-goto="D After@orchestrator"
+                      >Start fresh session</a
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="task" data-when="task" style="position: relative">
+              <h2>New task</h2>
+              <div class="prompt">Sort History by last activity, pinned threads on top.</div>
+              <div class="where">
+                <span>Workspace</span><span class="stop"><i data-icon="folder"></i>gram</span>
+                <span class="stop"><i data-icon="sparkle"></i>Claude Code · Opus 5.5</span>
+              </div>
+              <p class="orch-line">
+                The orchestrator runs Codex · GPT-6.1-Sol and can't carry over to Opus 5.5.
+                <a class="linkbtn" href="#" data-goto="B Popover@popover">Start fresh on it</a>
+                or keep GPT-6.1-Sol for this task.
+              </p>
+              <div class="row">
+                <button class="btn primary" type="button">Start on GPT-6.1-Sol</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== C In place ===================== -->
+      <section
+        class="board"
+        data-name="C In place"
+        data-size="960x620"
+        data-states="settings,open,task"
+      >
+        <div class="board-frame">
+          <div class="app frame">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="strong" data-when="settings,open">Settings · gram</span>
+              <span class="strong" data-when="task">New task</span>
+            </div>
+
+            <div class="app-body" data-when="settings,open">
+              <nav class="nav">
+                <span class="section-label">Workspace</span>
+                <a class="nav-item" href="#">General</a>
+                <a class="nav-item" href="#" aria-current="page">Models</a>
+                <a class="nav-item" href="#">Autonomy &amp; merging</a>
+                <a class="nav-item" href="#">Memory</a>
+              </nav>
+              <div class="page-col">
+                <h2>Models</h2>
+                <div class="card">
+                  <div class="row-set">
+                    <div>
+                      <p class="strong">Current orchestrator</p>
+                      <p class="desc">Running Codex · GPT-6.1-Sol. Saved Claude Code · Opus 5.5.</p>
+                    </div>
+                    <a class="btn sm" href="#" data-goto="C In place@open" data-when="settings"
+                      >Move to Opus 5.5</a
+                    >
+                  </div>
+                  <div class="inline-open" data-when="open">
+                    <div class="lines">
+                      <div class="line">
+                        <i data-icon="alert"></i
+                        ><span
+                          >It can't carry this session over (it runs on a gateway account), so it
+                          starts a fresh one in the same thread.</span
+                        >
+                      </div>
+                      <div class="line yes">
+                        <i data-icon="check"></i
+                        ><span>Memory, charter and ledger carry. Workers keep running.</span>
+                      </div>
+                      <div class="line">
+                        <i data-icon="layers"></i
+                        ><span>This conversation stays in the thread, above a divider.</span>
+                      </div>
+                    </div>
+                    <label class="savefirst">
+                      <input type="checkbox" checked />
+                      <span>Save to memory first</span>
+                      <span class="desc"
+                        >The orchestrator writes down what it hasn't saved, then hands off.</span
+                      >
+                    </label>
+                    <div class="actions">
+                      <a class="btn sm ghost" href="#" data-goto="C In place@settings">Not now</a>
+                      <a class="btn sm primary" href="#" data-goto="D After@orchestrator"
+                        >Start fresh on Opus 5.5</a
+                      >
+                    </div>
+                  </div>
+                  <hr class="divider" />
+                  <div class="row-set">
+                    <div>
+                      <p class="strong">Orchestrator model</p>
+                      <p class="desc">Opens every new orchestrator session.</p>
+                    </div>
+                    <span class="select" style="min-width: 220px">Claude Code · Opus 5.5</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="task" data-when="task">
+              <h2>New task</h2>
+              <div class="prompt">Sort History by last activity, pinned threads on top.</div>
+              <div class="where">
+                <span>Workspace</span><span class="stop"><i data-icon="folder"></i>gram</span>
+                <span class="stop"><i data-icon="sparkle"></i>Claude Code · Opus 5.5</span>
+              </div>
+              <p class="orch-line">
+                The orchestrator starts fresh on Claude Code · Opus 5.5 as this task starts. It
+                saves to memory first; its conversation stays above a divider.
+              </p>
+              <div class="row">
+                <a class="btn primary" href="#" data-goto="D After@orchestrator">Start</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== D After ===================== -->
+      <section
+        class="board"
+        data-name="D After"
+        data-size="960x620"
+        data-states="orchestrator,thread"
+      >
+        <div class="board-frame">
+          <div class="app frame">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="strong" data-when="orchestrator">gram · Orchestrator</span>
+              <span class="strong" data-when="thread">Usage clocks</span>
+            </div>
+            <div class="col">
+              <div class="bubble old" data-when="orchestrator">
+                Take the History sort next, after the usage clocks land.
+              </div>
+              <div class="reply old" data-when="orchestrator">
+                <p>
+                  Noted. The clocks worker is on its checks; I'll brief History once it reports.
+                </p>
+              </div>
+              <div class="bubble old" data-when="thread">
+                Make the usage clocks count down to the reset, not up from the start.
+              </div>
+              <div class="reply old" data-when="thread">
+                <p>
+                  The countdown is in and its tests pass. The phone layout still clips the second
+                  clock.
+                </p>
+              </div>
+
+              <div class="hand" role="separator" data-when="orchestrator">
+                <i data-icon="refresh"></i>Fresh session on Claude Code · Opus 5.5 · 14:02
+              </div>
+              <div class="tipline" data-when="orchestrator">
+                Before: Codex · GPT-6.1-Sol · session [session id] · saved to memory
+              </div>
+              <div class="hand" role="separator" data-when="thread">
+                <i data-icon="refresh"></i>Fresh session on Claude Code · Opus 5.5 · 14:02
+              </div>
+              <div class="tipline" data-when="thread">
+                Before: OpenCode · GLM 5 · same branch and checkout · note written from the
+                transcript
+              </div>
+
+              <div class="reply" data-when="orchestrator">
+                <p>
+                  Picked up from memory: the clocks worker is on its checks, and History sort is
+                  next once it reports.
+                </p>
+              </div>
+              <div class="reply" data-when="thread">
+                <p>
+                  From the transcript: the countdown is done on
+                  <span class="mono">feat/usage-countdown</span>, and the phone layout clips the
+                  second clock. I'll fix that next.
+                </p>
+              </div>
+
+              <div style="flex: 1"></div>
+              <div class="composer">
+                <span class="ph">Message the orchestrator</span>
+                <span class="chip"><i data-icon="sparkle"></i>Opus 5.5</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

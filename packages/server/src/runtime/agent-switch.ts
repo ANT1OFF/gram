@@ -146,6 +146,57 @@ export const checkSwitchTarget = (
   });
 
 /**
+ * Whether a fresh session can open on `target`: a model its CLI lists (on its account, a gateway
+ * profile's included), an effort and a speed it offers. What a fresh session asks of a model is a
+ * new thread's: it carries no session over, so none of the switch's handover checks apply. Returns
+ * nothing; each refusal is an `InvalidState` the user reads.
+ */
+export const checkFreshTarget = (
+  store: Pick<ThreadStoreShape, "listProfiles" | "getSettings">,
+  hosts: AgentHosts["Service"],
+  target: ModelRef,
+) =>
+  Effect.gen(function* () {
+    const name = AGENT_NAMES[target.agent];
+    const models = yield* selectableModels(store, hosts, target.agent, target.profileId).pipe(
+      Effect.mapError((e) => new InvalidState({ message: e.message })),
+    );
+    const selected = listedRow(models, target.model);
+    if (selected === undefined)
+      return yield* new InvalidState({
+        message: `${name} does not list ${target.model} here. Select a listed model. No model was substituted.`,
+      });
+    if (target.variant !== undefined && !selected.efforts.includes(target.variant))
+      return yield* new InvalidState({
+        message:
+          "The selected model does not support that effort. Choose one offered by its model picker.",
+      });
+    if (target.speed === "fast" && !selected.speeds.includes("fast"))
+      return yield* new InvalidState({
+        message:
+          "The selected model does not support that speed. Choose one offered by its model picker.",
+      });
+  });
+
+/**
+ * How `thread` gets onto `target` when asked to: `switch` where its session can carry over
+ * (`checkSwitchTarget`), else `fresh`, a fresh session that opens on it, where it can open
+ * (`checkFreshTarget`). Refused, in the fresh session's words, where neither can happen.
+ */
+export const moveKindOf = (
+  store: Pick<ThreadStoreShape, "listProfiles" | "getSettings">,
+  hosts: AgentHosts["Service"],
+  thread: Pick<Thread, "model" | "mode">,
+  target: ModelRef,
+) =>
+  checkSwitchTarget(store, hosts, thread, target).pipe(
+    Effect.as("switch" as const),
+    Effect.catchTag("InvalidState", () =>
+      checkFreshTarget(store, hosts, target).pipe(Effect.as("fresh" as const)),
+    ),
+  );
+
+/**
  * Why `thread`, as its runtime stands, can't move to `target` now, in the words the user reads; or
  * `undefined`. Holds the lock: the turn, requests and background work it reads are the runtime's.
  */
