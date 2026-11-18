@@ -391,6 +391,11 @@ export const OrchestratorCharter = Schema.Struct({
    */
   watchDefaultBranch: Schema.optionalKey(Schema.Boolean),
   /**
+   * The orchestrator may send a worker to run on a server signed in to, as a thread of a
+   * workspace there under that server's rules (`send_worker`). Absent is off.
+   */
+  sendWork: Schema.optionalKey(Schema.Boolean),
+  /**
    * Compact a large idle thread's context just before its prompt cache expires, so the next wake
    * starts from a summary rather than rewriting the whole conversation. Absent is on, by the user's
    * decision; read it through `idleCompactOf`.

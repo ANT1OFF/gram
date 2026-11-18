@@ -113,6 +113,11 @@ export interface CreateThreadInput {
    */
   readonly awaitingMachine?: NonNullable<Thread["awaitingMachine"]>;
   /**
+   * The thread runs on a server signed in to (`Thread.sentTo`): this record follows it and no
+   * session opens here. Server-only: only `send_worker` gives one.
+   */
+  readonly sentTo?: NonNullable<Thread["sentTo"]>;
+  /**
    * The one person who may see the thread (`Thread.readableBy`). A thread spawned by one that has
    * it, in a workspace whose orchestrator has it, or made in a tool call of an agent whose thread
    * has it, gets that one instead, whatever this says.

@@ -15,6 +15,7 @@ import * as Fiber from "effect/Fiber";
 import * as Scope from "effect/Scope";
 import {
   AWAITS_MACHINE,
+  RUNS_ON_SERVER,
   type Runtime,
   locked,
   feedLocked,
@@ -584,6 +585,12 @@ export const makeSessionLifecycle = ({
           agent: thread.model.agent,
           reason: "startup-failed",
           message: AWAITS_MACHINE,
+        });
+      if (thread.sentTo !== undefined)
+        return yield* new AgentUnavailable({
+          agent: thread.model.agent,
+          reason: "startup-failed",
+          message: RUNS_ON_SERVER,
         });
       if (
         thread.sessionSwitch !== undefined &&

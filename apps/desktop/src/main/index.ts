@@ -86,6 +86,7 @@ import {
   filterEnvironment,
   makeAskQueue,
   makeHostedDevice,
+  serveSentWorkMessage,
   vaultSecrets,
   watchPresence,
 } from "@gram/shell/modules/device";
@@ -399,6 +400,8 @@ const server = createServerHost({
       if (response) reply(response);
     });
     servePaneMessage(message, agentPanes, reply);
+    // Work an orchestrator sends to a hosted server: the app holds the sign-in, so it calls.
+    serveSentWorkMessage(message, deviceHost.device(), reply);
     const announced = pagesOriginFromMessage(message);
     if (announced !== undefined) {
       pagesOrigin = announced;
