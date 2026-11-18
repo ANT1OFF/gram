@@ -16,6 +16,7 @@ the folder is dirty. A lost machine then loses at most the last few minutes. The
 tells Gram why a machine went (`lost`, not `idle`), so the thread says so.
 
 **Must show.**
+
 - What happened, in a sentence: the machine was lost at 08:14 while `bun run check` ran. Not idle.
 - What was saved: the last save's time (08:12), the files changed (6), the commits on the branch
   (none yet), and that anything after 08:12 is lost. Each file can be opened as a diff.
@@ -31,6 +32,7 @@ tells Gram why a machine went (`lost`, not `idle`), so the thread says so.
 Start, model switch, autonomy summary, following a task to its PR).
 
 **Open questions, with the defaults taken.**
+
 - Resume as a fresh session or the same one? Default: the same conversation, with a note from
   Gram as the turn's first message; the agent's session is opened again on the restored folder.
 - Should the save be visible before anything goes wrong ("Saved 08:12" in the thread's header)?

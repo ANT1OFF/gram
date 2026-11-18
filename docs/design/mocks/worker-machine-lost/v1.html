@@ -298,8 +298,8 @@
       <p class="mock-note">
         A worker's machine was lost mid-turn while its checks ran. Each direction puts one recovery
         in a different place: what happened, what of its edits was saved, and Resume worker, which
-        brings the same worker back on its folder as saved. Step through lost, resuming, resumed
-        and nothing saved. Pick one by name.
+        brings the same worker back on its folder as saved. Step through lost, resuming, resumed and
+        nothing saved. Pick one by name.
       </p>
 
       <!-- A: the recovery is a card in the conversation, where the turn was cut off. -->
@@ -378,7 +378,9 @@
                         <button class="btn primary sm" type="button">
                           <i data-icon="play"></i>Resume worker
                         </button>
-                        <button class="btn sm" type="button"><i data-icon="diff"></i>View diff</button>
+                        <button class="btn sm" type="button">
+                          <i data-icon="diff"></i>View diff
+                        </button>
                         <span class="note"
                           >Starts its machine, puts the 6 files back, and tells the worker what was
                           cut off.</span
@@ -411,7 +413,9 @@
                     <div class="wl-card" role="status" data-when="resuming">
                       <h4><span class="spinner" aria-hidden="true"></span>Resuming this worker</h4>
                       <div class="wl-steps">
-                        <span class="wl-step on"><i data-icon="check"></i>Machine started · 08:52</span>
+                        <span class="wl-step on"
+                          ><i data-icon="check"></i>Machine started · 08:52</span
+                        >
                         <span class="wl-step on"
                           ><span class="spinner" aria-hidden="true"></span>Putting back 6 files as
                           saved at 08:12</span
@@ -423,9 +427,10 @@
                     <div class="wl-gram" data-when="resumed">
                       <strong>Resumed at 08:53 on its folder as saved at 08:12</strong>
                       <span
-                        >Your machine was lost at 08:14 while <span class="mono">bun run check</span>
-                        ran. 6 files were put back as saved at 08:12; anything after that is gone.
-                        Run the checks again and carry on.</span
+                        >Your machine was lost at 08:14 while
+                        <span class="mono">bun run check</span> ran. 6 files were put back as saved
+                        at 08:12; anything after that is gone. Run the checks again and carry
+                        on.</span
                       >
                     </div>
                     <div class="wl-reply" data-when="resumed">
@@ -595,7 +600,11 @@
                   <div class="wl-workers" role="listbox" aria-label="Workers">
                     <span class="section-label">Workers</span>
                     <button class="wl-worker" type="button" role="option" aria-selected="true">
-                      <span class="dot needs" aria-hidden="true" data-when="lost,nothing-saved"></span>
+                      <span
+                        class="dot needs"
+                        aria-hidden="true"
+                        data-when="lost,nothing-saved"
+                      ></span>
                       <span class="spinner" aria-hidden="true" data-when="resuming"></span>
                       <span class="dot working" aria-hidden="true" data-when="resumed"></span>
                       <span class="truncate">Rename portal coding section</span>
@@ -644,7 +653,9 @@
                       <button class="btn sm" type="button">Stop it for good</button>
                     </div>
                     <div class="wl-steps" data-when="resuming">
-                      <span class="wl-step on"><i data-icon="check"></i>Machine started · 08:52</span>
+                      <span class="wl-step on"
+                        ><i data-icon="check"></i>Machine started · 08:52</span
+                      >
                       <span class="wl-step on"
                         ><span class="spinner" aria-hidden="true"></span>Putting back 6 files</span
                       >
@@ -652,7 +663,10 @@
                     </div>
                     <div class="callout" data-when="resumed">
                       <i data-icon="okcircle"></i>
-                      <span>Resumed at 08:53 on its folder as saved at 08:12. It is running the checks again.</span>
+                      <span
+                        >Resumed at 08:53 on its folder as saved at 08:12. It is running the checks
+                        again.</span
+                      >
                     </div>
                     <span class="muted xsmall"
                       >The worker's own thread shows a one-line banner that links here.</span
