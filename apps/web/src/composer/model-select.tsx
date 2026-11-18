@@ -6,7 +6,8 @@ import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
-import { type EmbedShellState, useEmbedShell } from "@/embed/store";
+import type { ShellAgent, ShellModelsNone } from "@/embed/contract";
+import { useEmbedShell } from "@/embed/store";
 import { useLaunchChecks } from "@/launch-checks/use-launch-checks";
 import { Button } from "@/components/ui/button";
 import {
@@ -88,7 +89,7 @@ function useModelsAcross(
       staleTime: 5 * 60_000,
     })),
   });
-  const { offered, listed: served } = useEmbedShell((s) => s.models);
+  const { offered, listed: served, paidBy } = useEmbedShell((s) => s.models);
   const own: PickerOption<string>[] = [];
   const custom: PickerOption<string>[] = [];
   agents.forEach((agent, index) => {
@@ -101,6 +102,8 @@ function useModelsAcross(
               (listings[index]?.isError === true ? servedRows(served?.[agent]) : undefined),
             agent,
             offered,
+            undefined,
+            paidBy,
           ),
           undefined,
           [],
@@ -117,8 +120,20 @@ function useModelsAcross(
   return [...own, ...custom, ...gateway];
 }
 
+/** The embedding app's words for `agent`'s empty Model row: its own, or the one for every agent. */
+const noneOf = (
+  none: ShellModelsNone | ((agent: ShellAgent) => ShellModelsNone | undefined) | undefined,
+  agent: AgentKind,
+): ShellModelsNone | undefined => {
+  try {
+    return typeof none === "function" ? none(agent as ShellAgent) : none;
+  } catch {
+    return undefined;
+  }
+};
+
 /** The embedding app's words for a Model row with nothing to pick, and where to put it right. */
-function NoModels({ none }: { none: NonNullable<EmbedShellState["models"]["none"]> }) {
+function NoModels({ none }: { none: ShellModelsNone }) {
   return (
     <>
       <span className="min-w-0 whitespace-normal">{none.text}</span>
@@ -149,8 +164,9 @@ function useModelListing(
 ) {
   const listing = useModelsQuery(agent, profileId);
   const provider = useProviderLabel(agent, profileId);
-  const { offered, none } = useEmbedShell((s) => s.models);
-  const listed = offeredModels(listing.data?.models, agent, offered, profileId);
+  const { offered, none: noneFor, paidBy } = useEmbedShell((s) => s.models);
+  const none = noneOf(noneFor, agent);
+  const listed = offeredModels(listing.data?.models, agent, offered, profileId, paidBy);
   const replacement = offeredReplacement(listed, offered !== undefined, value);
   const notOffered =
     offered !== undefined &&
