@@ -703,7 +703,8 @@ export interface HostSidebarTheme {
 export interface LookDefaults {
   /**
    * A built-in palette, by its id (`"petrol-dark"`): it takes the place of Gram's default pair,
-   * and follows Mode through its pair. An id that isn't built in is ignored.
+   * and follows Mode through its pair. Settings offers it first in that pair's place, so every
+   * palette card renders the palette it shows. An id that isn't built in is ignored.
    */
   readonly palette?: string;
   /** An accent laid over the palette (`ACCENTS` in `@gram/themes`). */

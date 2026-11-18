@@ -30,6 +30,9 @@ export const FEATURED_PALETTES: readonly { readonly id: string; readonly name: s
   { id: "catppuccin-mocha", name: "Catppuccin" },
 ];
 
+const isDefaultPair = (p: Palette) =>
+  p.id === DEFAULT_PALETTE_ID || p.pairId === DEFAULT_PALETTE_ID;
+
 const byId = (palettes: readonly Palette[], id: string | undefined) =>
   id === undefined ? undefined : palettes.find((p) => p.id === id);
 
@@ -60,6 +63,22 @@ function choiceOf(palette: Palette, palettes: readonly Palette[], name = palette
 }
 
 /**
+ * The featured list with an app's default palette in the place of Gram's default pair, which it
+ * renders as (`LookDefaults.palette`): picking the default card would show that palette, so the
+ * card is that palette's own, under its family name, and Gram's default pair is not offered.
+ */
+function featuredFor(appDefault: Palette | undefined) {
+  if (!appDefault) return FEATURED_PALETTES;
+  const pair = new Set([appDefault.id, appDefault.pairId]);
+  const own = FEATURED_PALETTES.find((f) => pair.has(f.id));
+  const light = appDefault.mode === "light" ? appDefault : byId(PRESET_PALETTES, appDefault.pairId);
+  return [
+    { id: appDefault.id, name: own?.name ?? light?.name ?? appDefault.name },
+    ...FEATURED_PALETTES.filter((f) => f.id !== DEFAULT_PALETTE_ID && f !== own),
+  ];
+}
+
+/**
  * The picker's cards: the featured pairs, then the user's own palettes, with the active preset
  * added when it isn't one of the featured.
  */
@@ -67,10 +86,12 @@ export function paletteChoices(
   activeId: string,
   customPalettes: readonly Palette[],
   host?: HostTheme,
+  appDefaultId?: string,
 ): PaletteChoice[] {
   const palettes = [...PRESET_PALETTES, ...customPalettes];
   const hosted = hostPalettes(host);
-  const featured = FEATURED_PALETTES.flatMap(({ id, name }) => {
+  const appDefault = hosted.length ? undefined : byId(PRESET_PALETTES, appDefaultId);
+  const featured = featuredFor(appDefault).flatMap(({ id, name }) => {
     const palette = byId(palettes, id);
     if (!palette) return [];
     const choice = choiceOf(palette, palettes, name);
@@ -80,6 +101,8 @@ export function paletteChoices(
     return [{ ...choice, name: host?.name ?? choice.name, swatch: shown.swatch }];
   });
   const covered = new Set(featured.flatMap((c) => c.ids));
+  // Gram's default pair renders as the app's default, whose card stands for it.
+  if (appDefault) for (const p of PRESET_PALETTES) if (isDefaultPair(p)) covered.add(p.id);
   const active = byId(PRESET_PALETTES, activeId);
   const extra = active && !covered.has(active.id) ? [choiceOf(active, palettes)] : [];
   return [...featured, ...extra, ...customPalettes.map((p) => choiceOf(p, palettes))];
