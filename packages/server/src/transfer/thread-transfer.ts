@@ -87,6 +87,26 @@ const MID_TURN: ReadonlySet<ThreadStatus> = new Set([
 
 const refuse = (message: string) => new InvalidState({ message });
 
+/** An id that may name a folder or a file: what Gram's own ids are, and nothing a path could use. */
+const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+/** Why a bundle can't be taken in as it is, or `undefined`. Read before anything is written. */
+export const threadBundleProblem = (bundle: ThreadBundle): string | undefined => {
+  if (!SAFE_ID.test(bundle.thread.id)) return "The bundle's thread id is not one Gram makes.";
+  const messages = new Set(bundle.messages.map(({ message }) => message.id));
+  if (messages.size !== bundle.messages.length)
+    return "The bundle's conversation has a message twice.";
+  const turns = new Set<string>(bundle.turns.map((turn) => turn.id));
+  if (turns.size !== bundle.turns.length) return "The bundle's conversation has a turn twice.";
+  if (bundle.turns.some((turn) => !SAFE_ID.test(turn.id)))
+    return "A turn id in the bundle is not one Gram makes.";
+  if (bundle.messages.some(({ turnId }) => turnId !== undefined && !turns.has(turnId)))
+    return "A message in the bundle belongs to a turn the bundle doesn't have.";
+  if (bundle.wip === undefined && bundle.branch !== undefined && bundle.tip === undefined)
+    return "The bundle names a branch but not the commit it was at.";
+  return undefined;
+};
+
 export interface ThreadTransferShape {
   /**
    * The thread as a bundle, its edits kept on its hidden ref and pushed to its repository's
@@ -204,10 +224,10 @@ const make = (options: ThreadTransferOptions) =>
                 "origin",
                 protocols,
               ).pipe(Effect.orElseSucceed(() => false));
-              if (caughtUp) return undefined;
+              if (caughtUp) return { tip: snapshot.commit };
             }
             yield* pushWip(checkout.path, snapshot, "origin", protocols);
-            return snapshot;
+            return { snapshot };
           }),
         );
         const history = yield* store.exportHistory(thread.id);
@@ -230,9 +250,15 @@ const make = (options: ThreadTransferOptions) =>
           repository: { name: cut(project.name, 2_000), remote: cut(remote, 2_000) },
           ...(checkout.branch === undefined ? {} : { branch: cut(checkout.branch, 2_000) }),
           ...(checkout.base === undefined ? {} : { base: cut(checkout.base, 2_000) }),
-          ...(kept === undefined
-            ? {}
-            : { wip: { ref: kept.ref, commit: kept.commit, uncommitted: kept.uncommitted } }),
+          ...("tip" in kept
+            ? { tip: kept.tip }
+            : {
+                wip: {
+                  ref: kept.snapshot.ref,
+                  commit: kept.snapshot.commit,
+                  uncommitted: kept.snapshot.uncommitted,
+                },
+              }),
           notes,
         } satisfies ThreadBundle);
       });
@@ -259,8 +285,8 @@ const make = (options: ThreadTransferOptions) =>
                   bundle.wip.commit,
                   bundle.wip.ref,
                 )
-              : branch !== undefined
-                ? yield* fetchBranchTip(top, branch, "origin", protocols)
+              : branch !== undefined && bundle.tip !== undefined
+                ? yield* fetchBranchTip(top, branch, "origin", protocols, bundle.tip)
                 : undefined;
           if (kept === undefined) {
             return yield* refuse(
@@ -323,18 +349,21 @@ const make = (options: ThreadTransferOptions) =>
             `This thread was exported by a newer Gram (${cut(bundle.app.version, 40)}) than this server runs. Update this server, then move it again.`,
           );
         }
+        const problem = threadBundleProblem(bundle);
+        if (problem !== undefined) return yield* refuse(problem);
         const conflict = yield* store.movedThreadConflict(
           bundle.thread.id,
           bundle.turns.map((turn) => turn.id),
         );
         if (conflict !== undefined) return yield* refuse(conflict);
-        const { project } = yield* registerRepo(store, input.root);
-        const here = yield* remoteOf(project.root);
+        // Before the folder becomes a project here: a wrong one leaves nothing behind.
+        const here = yield* remoteOf(input.root);
         if (here === undefined || here !== bundle.repository.remote) {
           return yield* refuse(
-            `${project.root} isn't a clone of ${cut(bundle.repository.remote, 200)}. Give the folder of that repository here.`,
+            `${input.root} isn't a clone of ${cut(bundle.repository.remote, 200)}. Give the folder of that repository here.`,
           );
         }
+        const { project } = yield* registerRepo(store, input.root);
         const top = project.root;
         const placed = yield* placeWork(top, bundle);
         const { dir } = placed;
@@ -355,10 +384,18 @@ const make = (options: ThreadTransferOptions) =>
         const settings = yield* store.getSettings;
         const now = yield* Clock.currentTimeMillis;
         const { role: _role, workspaceId: _workspace, ...thread } = portableThread(bundle.thread);
+        // The bundle names its agent and model; how it runs here (a gateway profile, its
+        // effort, its speed) is this server's to say.
+        const model = { agent: thread.model.agent, model: thread.model.model };
+        const base =
+          bundle.base !== undefined && sanitizeBranch(bundle.base) === bundle.base
+            ? bundle.base
+            : undefined;
         yield* store
           .stageMovedThread({
             thread: {
               ...thread,
+              model,
               projectId: project.id,
               // This server's rules from here on: never a mode the bundle names.
               mode: settings.agents.defaultMode,
@@ -369,7 +406,7 @@ const make = (options: ThreadTransferOptions) =>
                 ...(bundle.branch === undefined || placed.detached
                   ? {}
                   : { branch: bundle.branch }),
-                ...(bundle.base === undefined ? {} : { base: bundle.base }),
+                ...(base === undefined ? {} : { base }),
               },
               transferredFrom: { name: input.from, at: now },
             },
@@ -396,6 +433,11 @@ const make = (options: ThreadTransferOptions) =>
         yield* requireOn;
         const before = yield* store.getThread(input.threadId);
         if (before.transferredTo !== undefined) return before;
+        if (before.lastActivityAt > input.exportedAt) {
+          return yield* refuse(
+            "This thread carried on after it was exported, so its copy there is behind. Move it again.",
+          );
+        }
         const rested = yield* runtimes.restSession(input.threadId);
         if (rested === "working") {
           return yield* refuse(

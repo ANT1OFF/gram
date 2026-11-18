@@ -43,7 +43,9 @@ files in the edits that look like they hold one are named on the review so the p
    the thread opens on that Gram's default mode. Its first session reads the recent turns ahead
    of the next message (`renderMovedSession`), once.
 4. **Settle** (`thread.transfer.settle`) back here, once the other side answers: the thread here
-   becomes read-only and archived, with `transferredTo` naming where it went. A move that fails
+   becomes read-only and archived, with `transferredTo` naming where it went. It names the
+   bundle's `exportedAt`, and a thread that carried on since stays as it is. Like the
+   workspace's, these calls are the local app's or the platform's in front, never a page's. A move that fails
    before this changes nothing here, and the pushed ref is dropped (`host.stop.drop`).
 
 Bringing a thread back is the same four steps in the other direction. Before the edits land, a

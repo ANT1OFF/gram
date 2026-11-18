@@ -326,14 +326,19 @@ export const fetchBranchTip = (
   branch: string,
   remote = "origin",
   protocols: string = WIP_PUSH_PROTOCOLS,
+  expected?: string,
 ) =>
   Effect.gen(function* () {
     if (!isPushRemote(remote)) return yield* fail("invalid remote");
+    if (expected !== undefined && !OID.test(expected)) return yield* fail("invalid commit");
     const top = yield* repoTopOrFail(repo);
     if (!(yield* isBranchName(top, branch))) return yield* fail("invalid branch");
     const ref = `refs/heads/${branch}`;
     const tip = yield* remoteRef(top, remote, ref, protocols);
     if (tip === undefined) return undefined;
+    // Given the commit the branch was seen at, the remote's branch must still name it.
+    if (expected !== undefined && tip !== expected)
+      return yield* fail(`${ref} at the remote is not the commit that was kept`);
     const fetched = yield* networkGit(
       top,
       [

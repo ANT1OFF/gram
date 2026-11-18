@@ -56,6 +56,8 @@ export const ThreadBundle = Schema.Struct({
   base: Schema.optionalKey(Line),
   /** Absent when nothing was kept: no change beyond the branch, pushed. */
   wip: Schema.optionalKey(BundleWip),
+  /** Without `wip`: the branch's commit at the remote, which the other side must find there. */
+  tip: Schema.optionalKey(Oid),
   /** What the export left behind or could not read, for whoever moves it to see. */
   notes: Schema.Array(Line).check(Schema.isMaxLength(50)),
 });
@@ -89,6 +91,8 @@ export type ImportThreadResult = typeof ImportThreadResult.Type;
  */
 export const SettleThreadInput = Schema.Struct({
   threadId: ThreadId,
+  /** The bundle's `exportedAt`: a thread that moved on since stays here. */
+  exportedAt: Schema.Number,
   to: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
   url: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
 });

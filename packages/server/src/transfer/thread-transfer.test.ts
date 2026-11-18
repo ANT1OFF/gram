@@ -117,7 +117,28 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
           const runtimes = yield* ThreadRuntimes;
           const transfer = yield* ThreadTransfer;
           yield* hostedFeatures(true);
-          const { thread } = yield* transfer.importThread(overTheWire(bundle, clone));
+          // A bundle is input from elsewhere: an id that could name a path is refused, and how
+          // the model runs here is this server's.
+          const unsafe = yield* transfer
+            .importThread(
+              overTheWire({ ...bundle, thread: { ...bundle.thread, id: ".." as ThreadId } }, clone),
+            )
+            .pipe(Effect.flip);
+          expect(unsafe.message).toContain("not one Gram makes");
+          const { thread } = yield* transfer.importThread(
+            overTheWire(
+              {
+                ...bundle,
+                thread: {
+                  ...bundle.thread,
+                  model: { ...bundle.thread.model, profileId: "elsewhere" as never, speed: "fast" },
+                },
+              },
+              clone,
+            ),
+          );
+          expect(thread.model.profileId).toBeUndefined();
+          expect(thread.model.speed).toBeUndefined();
           expect(thread.id).toBe(exported.threadId);
           expect(thread.transferredFrom?.name).toBe("Laptop");
           expect(thread.agentSessionId).toBeUndefined();
@@ -151,7 +172,16 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
         Effect.gen(function* () {
           const runtimes = yield* ThreadRuntimes;
           const transfer = yield* ThreadTransfer;
-          const settled = yield* transfer.settleThread({ threadId, to: "Hosted" });
+          // A thread that carried on after the bundle was made stays here.
+          const behind = yield* transfer
+            .settleThread({ threadId, to: "Hosted", exportedAt: bundle.exportedAt - 60_000 })
+            .pipe(Effect.flip);
+          expect(behind.message).toContain("carried on after it was exported");
+          const settled = yield* transfer.settleThread({
+            threadId,
+            to: "Hosted",
+            exportedAt: bundle.exportedAt,
+          });
           expect(settled.parked).toBe(true);
           expect(settled.transferredTo?.name).toBe("Hosted");
           const refused = yield* runtimes
