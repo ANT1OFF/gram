@@ -24,6 +24,7 @@ import {
   aboveHigh,
   browserUseAllowed,
   hostListing,
+  profileFilesOf,
   workerBrowserOn,
 } from "@gram/contracts";
 import { OWNERS_DIFFER, sameOwner } from "../../host/ownership.ts";
@@ -72,6 +73,9 @@ import {
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Projects } from "./projects.ts";
 import type { HeldSpawns } from "./held-spawns.ts";
+import { type HomeWorker, readHomeProfile } from "../../thread-profiles/home.ts";
+import { makeOwnFolder } from "../../thread-profiles/own-folder.ts";
+import { makeThreadId } from "../../runtime/runtime-state.ts";
 
 const spawnedResult = (
   worker: Thread,
@@ -246,6 +250,8 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     checkouts,
     openedInAuto,
     joinedMachines,
+    workerHosts,
+    config,
     headless,
     ownerOf,
   } = kit;
@@ -881,6 +887,23 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             }
             others.push(other);
           }
+          // In the folder of a workspace a profile made: a folder of the worker's own, with the
+          // profile's files, skills, server and level (`thread-profiles/home.ts`).
+          const scratch =
+            state.workspace.fromProfile === true && project.id === state.workspace.homeProjectId
+              ? yield* readHomeProfile(project.root).pipe(
+                  Effect.mapError((e) => toolError(tool, e.message)),
+                )
+              : undefined;
+          if (scratch !== undefined && others.length > 0) {
+            return yield* toolError(
+              tool,
+              refusal(
+                "not_allowed",
+                `A worker in ${project.name} works in a folder of its own, with no repository. Spawn it in a repository to give it others in alsoIn.`,
+              ),
+            );
+          }
           const found = yield* survey(state, true);
           // At the concurrency cap, or outside the workspace: the approval gate asked the user
           // before this handler ran (`spawnNeedsApproval`), and they said yes to this one. Nothing
@@ -1062,60 +1085,94 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               undefined,
             ]);
           }
-          // From git's check to the thread holding them, beside a spawn in another workspace that
-          // shares these repos.
-          const worker = yield* checkoutLock.withLocks(
-            yield* Effect.forEach([project, ...others], (repo) => checkoutKey(repo.root)),
+          const spawnedBy = {
+            threadId: caller.id,
+            feature: slug,
+            ...(input.routine === undefined
+              ? {}
+              : { routine: { id: input.routine.id, name: input.routine.name } }),
+            ...(askedBy === undefined ? {} : { askedBy }),
+            ...(input.placement === undefined ? {} : { placement: input.placement }),
+          };
+          // A worker in a profile's workspace: its own new folder on the machine it was placed on,
+          // with no branch, held to the profile's server and level. A start that fails takes the
+          // folder back.
+          const inFolder = (home: HomeWorker) =>
             Effect.gen(function* () {
-              const checkout = yield* prepareIn(project);
-              const extraCheckouts: Array<Checkout> = [];
-              for (const other of others) {
-                // No half-made worker: a repo that refuses takes the worktrees made so far with it.
-                const made = yield* prepareIn(other).pipe(
-                  Effect.catch((e) =>
-                    Effect.forEach([checkout, ...extraCheckouts], checkouts.discard, {
-                      discard: true,
-                    }).pipe(
-                      Effect.andThen(
-                        toolError(
-                          tool,
-                          `No worker was started, because ${other.name} couldn't give it a worktree: ${e.message}`,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-                extraCheckouts.push(made);
-              }
+              const id = requestedId ?? makeThreadId();
+              const folder = yield* makeOwnFolder(
+                { dataDir: config.dataDir, hosts: workerHosts },
+                id,
+                profileFilesOf(home.profile),
+                hostId,
+              ).pipe(Effect.mapError((e) => toolError(tool, e.message)));
               return yield* runtimes
                 .create({
+                  id,
                   projectRoot: project.root,
-                  checkout,
+                  checkout: folder.checkout,
                   model,
                   mode,
                   workspaceId,
-                  spawnedBy: {
-                    threadId: caller.id,
-                    feature: slug,
-                    ...(input.routine === undefined
-                      ? {}
-                      : { routine: { id: input.routine.id, name: input.routine.name } }),
-                    ...(askedBy === undefined ? {} : { askedBy }),
-                    ...(input.placement === undefined ? {} : { placement: input.placement }),
-                  },
-                  extraCheckouts,
-                  ...(browser ? { browser: true } : {}),
-                  additionalDirectories: [
-                    ...extraCheckouts.map((extra) => extra.path),
-                    ...readAlso,
-                  ],
+                  spawnedBy,
+                  profile: home.binding,
+                  ...(readAlso.length === 0 ? {} : { additionalDirectories: readAlso }),
                   title: input.title.trim(),
                   input: brief,
-                  ...(requestedId === undefined ? {} : { id: requestedId }),
                 })
-                .pipe(Effect.mapError((e) => toolError(tool, e.message)));
-            }),
-          );
+                .pipe(
+                  Effect.mapError((e) => toolError(tool, e.message)),
+                  Effect.tapError(() => folder.remove),
+                );
+            });
+          // From git's check to the thread holding them, beside a spawn in another workspace that
+          // shares these repos.
+          const worker = yield* scratch !== undefined
+            ? inFolder(scratch)
+            : checkoutLock.withLocks(
+                yield* Effect.forEach([project, ...others], (repo) => checkoutKey(repo.root)),
+                Effect.gen(function* () {
+                  const checkout = yield* prepareIn(project);
+                  const extraCheckouts: Array<Checkout> = [];
+                  for (const other of others) {
+                    // No half-made worker: a repo that refuses takes the worktrees made so far with it.
+                    const made = yield* prepareIn(other).pipe(
+                      Effect.catch((e) =>
+                        Effect.forEach([checkout, ...extraCheckouts], checkouts.discard, {
+                          discard: true,
+                        }).pipe(
+                          Effect.andThen(
+                            toolError(
+                              tool,
+                              `No worker was started, because ${other.name} couldn't give it a worktree: ${e.message}`,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                    extraCheckouts.push(made);
+                  }
+                  return yield* runtimes
+                    .create({
+                      projectRoot: project.root,
+                      checkout,
+                      model,
+                      mode,
+                      workspaceId,
+                      spawnedBy,
+                      extraCheckouts,
+                      ...(browser ? { browser: true } : {}),
+                      additionalDirectories: [
+                        ...extraCheckouts.map((extra) => extra.path),
+                        ...readAlso,
+                      ],
+                      title: input.title.trim(),
+                      input: brief,
+                      ...(requestedId === undefined ? {} : { id: requestedId }),
+                    })
+                    .pipe(Effect.mapError((e) => toolError(tool, e.message)));
+                }),
+              );
 
           workerWorkspaces.set(worker.id, workspaceId);
           if (mode === "auto") openedInAuto.add(worker.id);
@@ -1162,7 +1219,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               threadId: worker.id,
               feature: slug,
               projectId: project.id,
-              branch,
+              ...(scratch === undefined ? { branch } : {}),
               ...(others.length === 0 ? {} : { alsoIn: others.map((other) => other.id) }),
               ...(group === undefined ? {} : { group }),
             },

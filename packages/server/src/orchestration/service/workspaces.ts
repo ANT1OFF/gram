@@ -14,6 +14,7 @@ import {
   type ModelRef,
   type Project,
   type ProjectId,
+  type Thread,
   type ThreadId,
   type WorkspaceState,
   slotAgent,
@@ -567,6 +568,23 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
             GitError: (e) => Effect.fail(new InvalidState({ message: e.message })),
           }),
         );
+      return yield* seat(workspace.id, thread, mode, note, requireNew);
+    });
+
+  /**
+   * `thread`, just made with `deferOpen` as `workspaceId`'s orchestrator, given the slot and set
+   * going: its outbox, its memory, and the boot digest that opens its session. Another thread that
+   * won the slot meanwhile is answered instead, and `thread` leaves no trace.
+   */
+  const seat = (
+    workspaceId: WorkspaceId,
+    thread: Thread,
+    mode: Thread["mode"],
+    note: string | undefined,
+    requireNew: boolean,
+  ) =>
+    Effect.gen(function* () {
+      const workspace = { id: workspaceId };
       if (!(yield* store.claimOrchestratorSlot(workspace.id, thread.id))) {
         // Another open won the slot while this thread was being made; it must leave no trace,
         // not even on the reopen list.
@@ -621,6 +639,57 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       return thread;
     });
 
+  const openFromProfile: OrchestrationShape["openFromProfile"] = (input) =>
+    Effect.gen(function* () {
+      const id = input.workspaceId;
+      // Made once, under the id its start gave it: a start asked for again finds it, and a start
+      // that failed after making it leaves one to try again in.
+      const made = yield* registryLock.withPermits(1)(
+        Effect.gen(function* () {
+          const existing = yield* store.getWorkspace(id).pipe(Effect.option);
+          if (Option.isSome(existing)) return { state: existing.value, created: false };
+          yield* refuseConnectorEntries(input.charter);
+          const project = yield* store.ensureProject({ root: input.projectRoot, name: input.name });
+          const taken = (yield* store.listWorkspaces).map(({ workspace }) => workspace.name);
+          const state: WorkspaceState = {
+            workspace: {
+              id,
+              name: availableWorkspaceName(input.name, taken),
+              projectIds: [project.id],
+              homeProjectId: project.id,
+              createdAt: yield* Clock.currentTimeMillis,
+              fromProfile: true,
+            },
+            charter: input.charter,
+          };
+          yield* store.putWorkspace(state);
+          return { state, created: true };
+        }),
+      );
+      if (made.created) yield* workspacesChanged;
+      const { workspace } = made.state;
+      if (workspace.fromProfile !== true)
+        return yield* new InvalidState({ message: "That workspace wasn't made from a profile." });
+      const holder =
+        workspace.orchestratorThreadId === undefined
+          ? undefined
+          : yield* findThread(workspace.orchestratorThreadId);
+      if (holder !== undefined) return holder;
+      const { model, mode, note } = yield* openModel(made.state.charter);
+      // The profile's model or none: a stand-in would run work its supplier never chose.
+      if (!sameTaskModel(model, input.model))
+        return yield* new InvalidState({
+          message: `The profile's orchestrator can't run on ${input.model.model} here${note === undefined ? "." : `: ${note}`}`,
+        });
+      const thread = yield* input.create({
+        model,
+        mode,
+        title: `Orchestrator · ${workspace.name}`,
+        workspaceId: id,
+      });
+      return yield* seat(id, thread, mode, undefined, true);
+    });
+
   const arrive: OrchestrationShape["arrive"] = (write) =>
     registryLock
       .withPermits(1)(
@@ -631,5 +700,13 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       )
       .pipe(Effect.tap(() => workspacesChanged));
 
-  return { saveWorkspace, commitWorkspace, whileWorkspaceStays, removeWorkspace, open, arrive };
+  return {
+    saveWorkspace,
+    commitWorkspace,
+    whileWorkspaceStays,
+    removeWorkspace,
+    open,
+    openFromProfile,
+    arrive,
+  };
 };

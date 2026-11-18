@@ -95,6 +95,32 @@ export const ProfileWorkplace = Schema.Union([
 ]);
 export type ProfileWorkplace = typeof ProfileWorkplace.Type;
 
+/** The longest name a profile gives the workspace its orchestrator is started for. */
+export const PROFILE_WORKSPACE_NAME_MAX = 120;
+
+/**
+ * What the thread is. `worker`, the default, works on its own. `orchestrator` is the orchestrator
+ * of a workspace made for it, named here: the profile's charter is the orchestrator's, and every
+ * worker it spawns in that workspace's folder gets a new folder of its own with the profile's
+ * files, skills, MCP server and level (`docs/THREAD_PROFILES.md#an-orchestrator`).
+ */
+export const ProfileRole = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("worker") }),
+  Schema.Struct({
+    kind: Schema.Literal("orchestrator"),
+    workspace: Schema.Struct({
+      name: Schema.String.check(Schema.isMaxLength(PROFILE_WORKSPACE_NAME_MAX)),
+    }),
+  }),
+]);
+export type ProfileRole = typeof ProfileRole.Type;
+
+/** Whether `profile` starts the orchestrator of a workspace of its own. */
+export const orchestratorProfile = (
+  profile: Pick<ThreadProfile, "role">,
+): profile is ThreadProfile & { readonly role: Extract<ProfileRole, { kind: "orchestrator" }> } =>
+  profile.role?.kind === "orchestrator";
+
 export const ThreadProfile = Schema.Struct({
   /** The shape's version. A profile of another version is refused, never guessed at. */
   version: Schema.Literal(1),
@@ -124,6 +150,8 @@ export const ThreadProfile = Schema.Struct({
   workplace: ProfileWorkplace,
   /** The first message; absent opens the thread's session and waits. */
   input: Schema.optionalKey(Schema.String),
+  /** Absent is `worker`. */
+  role: Schema.optionalKey(ProfileRole),
 });
 export type ThreadProfile = typeof ThreadProfile.Type;
 
@@ -248,6 +276,14 @@ export const profileProblems = (profile: ThreadProfile): ReadonlyArray<string> =
     if (entry !== undefined) problems.push(entry);
     else if (server.url.includes("*"))
       problems.push("An MCP server's address is one address, without a wildcard.");
+  }
+  if (profile.role?.kind === "orchestrator") {
+    if (profile.role.workspace.name.trim() === "")
+      problems.push("An orchestrator's profile names the workspace it orchestrates.");
+    if (profile.workplace.kind === "repositories")
+      problems.push(
+        "An orchestrator's profile works in a folder of its own (none or scratch). Its workers are given repositories when it spawns them.",
+      );
   }
   if (profile.workplace.kind === "repositories") {
     const count = profile.workplace.repositories.length;

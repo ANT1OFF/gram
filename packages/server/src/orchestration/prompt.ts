@@ -15,6 +15,11 @@ interface PromptProject {
   readonly root: string;
   /** The project whose root is the orchestrator's working directory. */
   readonly home: boolean;
+  /**
+   * The folder of a workspace a profile made (`Workspace.fromProfile`): no repository, and a
+   * worker spawned in it gets a new folder of its own.
+   */
+  readonly folder?: boolean | undefined;
 }
 
 export interface RolePromptInput {
@@ -162,9 +167,10 @@ const ORCHESTRATOR_OUTWARD: Record<Autonomy, string> = {
 
 const repoLines = (projects: ReadonlyArray<PromptProject>): string =>
   projects
-    .map(
-      (project) =>
-        `- ${project.name}: ${project.root}${project.home ? " (your working directory)" : ""}`,
+    .map((project) =>
+      project.folder === true
+        ? `- ${project.name}: no repository. A worker spawned with \`project\` "${project.name}" gets a new folder of its own, with this workspace's files and skills, and no branch: use it for work that isn't in a repository.`
+        : `- ${project.name}: ${project.root}${project.home ? " (your working directory)" : ""}`,
     )
     .join("\n");
 

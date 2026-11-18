@@ -7,7 +7,6 @@ import {
   decodeThreadProfile,
   embeddingOn,
   InvalidState,
-  type ModelRef,
   orchestrationMode,
   profileBindingOf,
   profileFilesOf,
@@ -18,6 +17,10 @@ import {
   type HostId,
   LOCAL_HOST_ID,
   type ProfileFile,
+  type Checkout,
+  orchestratorProfile,
+  type ProfileRole,
+  WorkspaceId,
 } from "@gram/contracts";
 import {
   claimsUnowned,
@@ -37,13 +40,32 @@ import { join } from "node:path";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
 import { ActingPerson } from "../embedding/person.ts";
 import { SUBJECT } from "../embedding/readable-by.ts";
-import { olderHost } from "../host/folders.ts";
-import { HOST_THREADS_DIR, type HostThreadPlaces } from "../host/thread-places.ts";
+import { HOST_THREADS_DIR } from "../host/thread-places.ts";
 import { WAKE_WAIT_MS, type WorkerHostsShape } from "../host/worker-host.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
-import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
+import type { CreateThreadInput, ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import { layProfileFiles } from "./lay.ts";
+import {
+  homeCharter,
+  modelOf,
+  NO_ORCHESTRATION,
+  PROFILE_HOMES_DIR,
+  writeHomeProfile,
+} from "./home.ts";
+import {
+  makeOwnFolder,
+  NOT_PLACED_HERE,
+  PROFILE_THREADS_DIR,
+  placesOn as sharedPlacesOn,
+} from "./own-folder.ts";
 import type { ProfileRepositories } from "./repositories.ts";
+import type { OrchestrationShape } from "../orchestration/service/shape.ts";
+
+/** What a start gives every thread it makes, wherever it is made. */
+type StartBase = Pick<
+  CreateThreadInput,
+  "model" | "mode" | "title" | "kept" | "input" | "profile" | "readableBy"
+> & { readonly id: ThreadId };
 
 export { layProfileFiles } from "./lay.ts";
 
@@ -51,8 +73,7 @@ export { layProfileFiles } from "./lay.ts";
 export const PROFILES_OFF =
   "Starting a thread from a profile is one of the hosted features, which are off here.";
 
-/** Where the folders of threads whose workplace is none or scratch are made, under the data folder. */
-export const PROFILE_THREADS_DIR = "profile-threads";
+export { NOT_PLACED_HERE, PROFILE_THREADS_DIR } from "./own-folder.ts";
 
 /** The name of the project those threads are filed under. */
 export const PROFILE_THREADS_PROJECT = "Profile threads";
@@ -73,6 +94,10 @@ export const NOW_OR_LATER = "Name the thread's machine, or ask for it to be name
 /** What a start with its machine named later is told for a workplace of repositories. */
 export const REPOSITORIES_NEED_A_MACHINE =
   "A profile whose workplace is repositories is started on its machine: its checkouts are made there. Start the thread once the machine is online, and name it.";
+
+/** What a start with its machine named later is told for an orchestrator's profile. */
+export const ORCHESTRATOR_NEEDS_A_MACHINE =
+  "An orchestrator's profile is started on its machine. Start it once the machine is online, and name it.";
 
 /** What a start is told that names who started it without asking for the machine later. */
 export const STARTED_BY_NEEDS_LATER =
@@ -132,9 +157,6 @@ export interface ProfileStarted {
   readonly created: boolean;
 }
 
-/** What a caller hears where a thread's machine can't be reached from here (a test layer). */
-export const NOT_PLACED_HERE = "This server has no joined machines to place the thread on.";
-
 /** A thread moved, and whether this call moved it. */
 export interface ProfileMoved {
   readonly thread: Thread;
@@ -172,7 +194,7 @@ export interface ProfileStarterDeps {
    * where one can wait for its machine.
    */
   readonly runtimes: Pick<ThreadRuntimesShape, "create" | "close"> &
-    Partial<Pick<ThreadRuntimesShape, "relocate" | "updateThread" | "startSession">>;
+    Partial<Pick<ThreadRuntimesShape, "relocate" | "updateThread" | "startSession" | "send">>;
   /**
    * The joined machines' records, for whom each was started (`owner`, `onDemand`, where the
    * server records them): a thread moves only between machines started for the same person and
@@ -188,22 +210,16 @@ export interface ProfileStarterDeps {
    * goes on the joined machine it places what names none on; absent, or anywhere else, on this one.
    */
   readonly hosts?: Pick<WorkerHostsShape, "headless" | "get"> | undefined;
+  /** Where orchestrators are started (`ThreadProfile.role`); absent, a profile can't start one. */
+  readonly orchestration?:
+    | Pick<OrchestrationShape, "openFromProfile" | "removeWorkspace">
+    | undefined;
 }
 
 const refuse = (message: string) => new InvalidState({ message });
 
 /** An id a caller may give its thread: a UUID, as Gram's own are, since it names folders too. */
 const SUPPLIED_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-/** The model a profile names, as a thread runs on it. */
-const modelOf = (profile: ThreadProfile): ModelRef => ({
-  agent: profile.agent,
-  model: profile.model.model,
-  ...(profile.model.effort === undefined ? {} : { variant: profile.model.effort }),
-  ...(profile.model.gatewayProfile === undefined
-    ? {}
-    : { profileId: profile.model.gatewayProfile }),
-});
 
 export const makeProfileStarter = ({
   store,
@@ -212,22 +228,10 @@ export const makeProfileStarter = ({
   repositories,
   hosts,
   machines,
+  orchestration,
 }: ProfileStarterDeps) => {
-  /**
-   * A joined machine's places for the thread, looked up at each use since a machine's host lasts
-   * only as long as its connection. Refused for a machine that went, or whose host is older.
-   */
-  const placesOn = (hostId: HostId): Effect.Effect<HostThreadPlaces, InvalidState> =>
-    hosts === undefined
-      ? Effect.fail(refuse(NOT_PLACED_HERE))
-      : hosts.get(hostId).pipe(
-          Effect.mapError((error) => refuse(error.message)),
-          Effect.flatMap((host) =>
-            host.threadPlaces === undefined
-              ? Effect.fail(refuse(olderHost({ name: host.name ?? hostId })))
-              : Effect.succeed(host.threadPlaces),
-          ),
-        );
+  /** A joined machine's places for the thread, looked up at each use. */
+  const placesOn = (hostId: HostId) => sharedPlacesOn(hosts, hostId);
 
   // One start per supplied id at a time, so two asks for the same id make one thread.
   const starting = makeKeyedLock<ThreadId>();
@@ -330,10 +334,10 @@ export const makeProfileStarter = ({
       // The machine named, checked before anything is cloned or made: joined, online now, and
       // with a host that makes thread folders.
       if (on === LOCAL_HOST_ID) return yield* refuse(NAME_A_MACHINE);
-      const named = on === undefined ? undefined : yield* placesOn(on);
+      if (on !== undefined) yield* placesOn(on);
 
       const files = profileFilesOf(profile);
-      const base = {
+      const base: StartBase = {
         id,
         model: modelOf(profile),
         // It runs with nobody at the composer, as an orchestrator's worker does.
@@ -387,63 +391,110 @@ export const makeProfileStarter = ({
         );
       }
 
+      // On the machine named, or, on a headless server that runs nothing here, the one that takes
+      // what names none: the folder is made there by its host. Anywhere else, here.
+      const hostId =
+        on ?? (hosts?.headless === undefined ? undefined : yield* hosts.headless.machine);
+      if (orchestratorProfile(profile)) return yield* startOrchestrator(profile, base, hostId);
       const root = join(dataDir, PROFILE_THREADS_DIR);
-      if (on !== undefined || hosts?.headless !== undefined) {
-        // On the machine named, or, on a headless server that runs nothing here, the one that
-        // takes what names none: the folder is made there by its host, and the thread is filed
-        // under the same project.
-        const hostId = on ?? (yield* hosts!.headless!.machine);
-        const places = named ?? (yield* placesOn(hostId));
-        // Before anything is taken back: a folder this start didn't make isn't its to remove.
-        const { path } = yield* places.make(id, files);
-        const made = Effect.gen(function* () {
-          // The project's folder here holds nothing; it is what the threads are filed under.
+      return yield* inOwnFolder(id, files, hostId, (checkout) =>
+        Effect.gen(function* () {
+          // The project's folder holds nothing of theirs; it is what the threads are filed under.
+          // Named once here; `create` would otherwise name the project for its folder.
           yield* Effect.promise(() => mkdir(root, { recursive: true }).catch(() => undefined));
           yield* store.ensureProject({ root, name: PROFILE_THREADS_PROJECT });
-          return yield* runtimes.create({
-            ...base,
-            projectRoot: root,
-            checkout: { kind: "main", path, hostId },
-          });
-        });
-        return yield* made.pipe(
-          Effect.onExit((exit) =>
-            Exit.isSuccess(exit)
-              ? Effect.void
-              : runtimes.close(id).pipe(Effect.ignore, Effect.andThen(places.remove(id))),
-          ),
-        );
-      }
-      const folder = join(root, id);
-      const made = Effect.gen(function* () {
-        yield* layProfileFiles(folder, files);
-        // Named once here; `create` would otherwise name the project for its folder.
-        yield* store.ensureProject({ root, name: PROFILE_THREADS_PROJECT });
-        return yield* runtimes.create({
-          ...base,
-          projectRoot: root,
-          checkout: { kind: "main", path: folder },
-        });
-      });
-      // A start that fails, at whatever step, leaves nothing: a supplier that tries again would
-      // otherwise pile up threads that never ran and folders nothing owns. The thread goes first,
-      // if it got as far as being stored, then its folder.
-      return yield* made.pipe(
+          return yield* runtimes.create({ ...base, projectRoot: root, checkout });
+        }),
+      );
+    });
+
+  /**
+   * `make` run in `id`'s own new folder, made on `hostId` or here. A start that fails, at whatever
+   * step, leaves nothing: a supplier that tries again would otherwise pile up threads that never
+   * ran and folders nothing owns. The thread goes first, if it got as far as being stored, then its
+   * folder. A folder this start didn't make (refused before) isn't its to remove.
+   */
+  const inOwnFolder = <E>(
+    id: ThreadId,
+    files: ReadonlyArray<ProfileFile>,
+    hostId: HostId | undefined,
+    make: (checkout: Checkout) => Effect.Effect<Thread, E>,
+  ): Effect.Effect<Thread, E | InvalidState> =>
+    Effect.gen(function* () {
+      const folder = yield* makeOwnFolder({ dataDir, hosts }, id, files, hostId);
+      return yield* make(folder.checkout).pipe(
         Effect.onExit((exit) =>
           Exit.isSuccess(exit)
             ? Effect.void
-            : runtimes
-                .close(id)
-                .pipe(
-                  Effect.ignore,
-                  Effect.andThen(
-                    Effect.promise(() =>
-                      rm(folder, { recursive: true, force: true }).catch(() => undefined),
-                    ),
-                  ),
-                ),
+            : runtimes.close(id).pipe(Effect.ignore, Effect.andThen(folder.remove)),
         ),
       );
+    });
+
+  /**
+   * The orchestrator `profile` starts (`ThreadProfile.role`): the workspace made for it, filed
+   * under a folder of its own here (`PROFILE_HOMES_DIR`) that also keeps the profile its workers
+   * are started with, and the thread in its own folder on `hostId` given the workspace's slot. The
+   * profile's first message is sent once it holds it.
+   */
+  const startOrchestrator = (
+    profile: ThreadProfile & { readonly role: { readonly kind: "orchestrator" } },
+    base: StartBase,
+    hostId: HostId | undefined,
+  ): Effect.Effect<Thread, InvalidState | AgentUnavailable> =>
+    Effect.gen(function* () {
+      const send = runtimes.send;
+      if (orchestration === undefined || send === undefined) return yield* refuse(NO_ORCHESTRATION);
+      const role = profile.role as Extract<ProfileRole, { kind: "orchestrator" }>;
+      const id = base.id;
+      const home = join(dataDir, PROFILE_HOMES_DIR, id);
+      yield* writeHomeProfile(home, profile);
+      const { input, model: _model, mode: _mode, title: _title, kept: _kept, ...rest } = base;
+      const thread = yield* orchestration
+        .openFromProfile({
+          workspaceId: Schema.decodeSync(WorkspaceId)(id),
+          name: role.workspace.name.trim(),
+          projectRoot: home,
+          charter: homeCharter(profile),
+          model: modelOf(profile),
+          create: ({ model, mode, title, workspaceId }) =>
+            inOwnFolder(id, profileFilesOf(profile), hostId, (checkout) =>
+              runtimes.create({
+                ...rest,
+                model,
+                mode,
+                title,
+                projectRoot: home,
+                checkout,
+                role: "orchestrator",
+                workspaceId,
+                // The slot is claimed once the row exists, and only then may its session open.
+                deferOpen: true,
+              }),
+            ),
+        })
+        .pipe(
+          Effect.catchTag("NotFound", (error) => Effect.fail(refuse(error.message))),
+          // A start that fails leaves no workspace and no folder behind, as it leaves no thread.
+          Effect.onError(() =>
+            orchestration
+              .removeWorkspace(Schema.decodeSync(WorkspaceId)(id))
+              .pipe(
+                Effect.ignore,
+                Effect.andThen(
+                  Effect.promise(() =>
+                    rm(home, { recursive: true, force: true }).catch(() => undefined),
+                  ),
+                ),
+              ),
+          ),
+        );
+      if (input !== undefined) {
+        yield* send(thread.id, input).pipe(
+          Effect.catch((error) => Effect.fail(refuse(error.message))),
+        );
+      }
+      return thread;
     });
 
   /**
@@ -469,6 +520,7 @@ export const makeProfileStarter = ({
       const { profile } = decoded;
       if (profile.workplace.kind === "repositories")
         return yield* refuse(REPOSITORIES_NEED_A_MACHINE);
+      if (orchestratorProfile(profile)) return yield* refuse(ORCHESTRATOR_NEEDS_A_MACHINE);
       const gateway = profile.model.gatewayProfile;
       if (gateway !== undefined && !(yield* store.listProfiles).some((p) => p.id === gateway)) {
         return yield* refuse(

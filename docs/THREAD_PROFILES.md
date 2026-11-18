@@ -27,6 +27,39 @@ was applied that this version doesn't know. A profile that is refused leaves not
 | `autonomy`   | `supervised`, `publish` or `full`; `publish` when absent   | The thread's outward gate, as a workspace's autonomy sets a worker's.                                                                                       |
 | `workplace`  | `none`, `scratch`, or one to eight repositories            | `none` and `scratch` get a new folder of the thread's own under the data folder. Repositories are cloned and the thread works in worktrees of them (below). |
 | `input`      | The first message                                          | Sent once the thread exists. Without it the session opens and waits.                                                                                        |
+| `role`       | `worker`, or `orchestrator` with the workspace's name      | `worker` when absent. `orchestrator` starts the orchestrator of a workspace made for it ([An orchestrator](#an-orchestrator)).                              |
+
+## An orchestrator
+
+A profile whose `role` is `{ "kind": "orchestrator", "workspace": { "name": "..." } }` starts the
+orchestrator of a workspace of its own, rather than a thread that works alone. It is how a service
+in front of Gram keeps a long-lived agent: everything for the agent arrives at the orchestrator as
+a message, and it answers small things itself and hands real work to workers.
+
+- **The workspace.** Made by the first start, under the thread's own id, and marked `fromProfile`
+  (`Workspace` in `@gram/contracts`). It is named as the profile says, with a number after the
+  name where another workspace has it. Its charter is a new workspace's at the profile's
+  `autonomy`, with the profile's model as the orchestrator's and as the one model its workers run
+  on. Its one project is a folder of no repository under `profile-homes` in the data folder, which
+  also keeps the profile for its workers.
+- **The orchestrator.** In a folder of its own, made where a profile thread's folder is made (on
+  `hostId`, or a headless server's default machine), laid with the profile's files and skills. It
+  holds the workspace's slot, keeps the profile as any profile thread does, and so opens with the
+  charter after the orchestrator's own instructions, held to the profile's MCP server beside
+  Gram's own and to the stricter of the two levels. The profile's `input` is sent once it holds the
+  slot. Gram refuses to open it on another model than the profile's.
+- **Its workers.** A worker it spawns in the workspace's folder (`project` named as the workspace)
+  gets a new folder of its own on the orchestrator's machine, laid with the profile's files and
+  skills, held to its MCP server and level, and without its charter, which is the orchestrator's:
+  the brief is the worker's. It works on no branch, and can't be given repositories beside it. A
+  worker spawned in a repository works in a worktree, as in any workspace, once the repository is
+  in the workspace.
+- **Memory** is the workspace's, as any orchestrator's, and so are memory updates: each workspace
+  a profile made reads only its own threads.
+- **Asked again** under the same id, the start answers the orchestrator as it is, and makes
+  nothing. A start that fails takes back the workspace, its folder and the thread.
+- **What is refused.** A workplace of repositories (`profileProblems` says so), and a start with
+  the machine named later: start it once the machine is online, with `hostId`.
 
 ## Asking again
 
