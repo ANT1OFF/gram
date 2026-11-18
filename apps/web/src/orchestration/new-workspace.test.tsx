@@ -44,7 +44,7 @@ const mount = async (settings: Settings) => {
   useServerSettings.setState({ settings });
   return {
     api,
-    render: (props: { from?: WorkspaceId; repo?: ProjectId } = {}) =>
+    render: (props: { from?: WorkspaceId; repo?: ProjectId; read?: boolean } = {}) =>
       renderWithApi(<NewWorkspaceSheet {...props} />, api),
   };
 };
@@ -170,6 +170,21 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     expect(steps.textContent).not.toContain("reads the repositories");
     fireEvent.click(screen.getByLabelText(/Read the repositories first/));
     expect(steps.textContent).toContain("reads the repositories");
+    fireEvent.click(screen.getByTestId("new-workspace-start"));
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    const thread = await open.mock.results[0]!.value;
+    expect(send).toHaveBeenCalledExactlyOnceWith(thread.id, { text: DISCOVER_MESSAGE });
+  });
+
+  it("opened from the first-run card, starts ticked to read the repositories, as the card promises", async () => {
+    const { api, render } = await mount(settingsWith({ welcomeSeen: true }));
+    const open = vi.spyOn(api, "openOrchestrator");
+    const send = vi.spyOn(api, "send");
+    render({ repo: API, read: true });
+    await screen.findByRole("form", { name: "New workspace" });
+    expect(screen.getByTestId("new-workspace-steps").textContent).toContain(
+      "reads the repositories",
+    );
     fireEvent.click(screen.getByTestId("new-workspace-start"));
     await waitFor(() => expect(navigate).toHaveBeenCalled());
     const thread = await open.mock.results[0]!.value;

@@ -167,7 +167,8 @@ function FirstRun() {
 
   const start = async (project: Project) => {
     await keepRecommended();
-    await navigate({ to: "/new-workspace", search: { repo: project.id } });
+    // The card's line promises the survey, so the form opens with it ticked.
+    await navigate({ to: "/new-workspace", search: { repo: project.id, read: true } });
   };
 
   /** Registers a folder Gram doesn't know yet, then starts on it. */
