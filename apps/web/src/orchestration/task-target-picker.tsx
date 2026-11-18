@@ -2,6 +2,7 @@ import { Menu } from "@base-ui/react/menu";
 import type { Project, WorkspaceState } from "@gram/contracts";
 import { Check, ChevronDown, FolderGit2, Network, Plus } from "lucide-react";
 
+import { useThreadsWorkspaceNoun } from "@/embed/store";
 import { cn } from "@/lib/utils";
 
 import { reposWithoutWorkspace, taskTargetKey, type TaskTarget } from "./task-model";
@@ -44,6 +45,7 @@ export function TaskTargetPicker({
   open?: boolean | undefined;
   onOpenChange?: ((open: boolean) => void) | undefined;
 }) {
+  const kind = useThreadsWorkspaceNoun();
   const repos = reposWithoutWorkspace(workspaces, projects);
   const current = value === undefined ? undefined : taskTargetKey(value);
   const workspace =
@@ -133,7 +135,7 @@ export function TaskTargetPicker({
                 onClick={() => onPick({ kind: "newWorkspace" })}
               >
                 <Plus aria-hidden className="size-icon-row shrink-0" />
-                <span className="flex-1">New workspace</span>
+                <span className="flex-1">New {kind.toLowerCase()}</span>
               </Menu.Item>
             </Menu.Group>
           </Menu.Popup>

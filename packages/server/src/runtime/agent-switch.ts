@@ -85,11 +85,18 @@ export const checkSwitchTarget = (
     const targetHost = yield* hosts
       .get(target.agent)
       .pipe(Effect.mapError((e) => new InvalidState({ message: e.message })));
-    if (!sourceHost.supportsWorkspaceSwitch || !targetHost.supportsWorkspaceSwitch)
+    if (!sourceHost.supportsWorkspaceSwitch || !targetHost.supportsWorkspaceSwitch) {
+      // Name what can't: a harness that has no switch at all, or the machine (Windows).
+      const lacking = [sourceHost, targetHost].find(
+        (host) => host.supportsWorkspaceSwitch === undefined,
+      );
       return yield* new InvalidState({
         message:
-          "Switching an existing session is unavailable on this platform or harness build. Windows cannot currently guarantee a graceful stop. Your current session and preferences have not changed.",
+          lacking !== undefined
+            ? `${AGENT_NAMES[lacking.kind]} can't hand a session to another agent yet. Start a new thread on ${name} instead. Your current session and preferences have not changed.`
+            : "Switching an existing session is unavailable on Windows, which cannot currently guarantee a graceful stop. Your current session and preferences have not changed.",
       });
+    }
     if (target.profileId !== undefined)
       return yield* new InvalidState({
         message:

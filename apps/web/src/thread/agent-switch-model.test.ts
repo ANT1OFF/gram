@@ -101,6 +101,10 @@ describe("switchOffer", () => {
       false,
     );
     expect(offer(summary(), checks(), { platform: "win32" }).offered).toBe(false);
+    // OpenCode can't hand its session over, however the machine is set up.
+    expect(
+      offer(summary({}, { model: { agent: "opencode", model: "openai/gpt-5.5" } })).offered,
+    ).toBe(false);
     expect(offer(summary(), checks(), { listed: false }).offered).toBe(false);
     expect(
       offer(

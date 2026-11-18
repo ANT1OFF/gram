@@ -26,6 +26,7 @@ import { errorMessage } from "@/api/errors";
 import { FOLD, FoldSummary } from "@/components/fold-summary";
 import { FormError } from "@/components/form-error";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/input";
 import { useModelNames, useModelsSettled } from "@/composer/models";
 import {
@@ -35,7 +36,7 @@ import {
   useOnDemandMachine,
 } from "@/composer/start-machine-card";
 import { fetchOnDemandStatus, isComing, startOnDemand } from "@/api/on-demand";
-import { useMachineNoun, useMachineReachesTheirs } from "@/embed/store";
+import { useMachineNoun, useMachineReachesTheirs, useThreadsWorkspaceNoun } from "@/embed/store";
 import { useShortcut } from "@/keyboard/registry";
 import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
 import { focusIfConnected } from "@/lib/use-return-focus";
@@ -97,6 +98,8 @@ export function NewWorkspaceSheet({
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
+  // The embedding app's word for a workspace ("Project"), so the sheet is named as its list is.
+  const kind = useThreadsWorkspaceNoun();
   const settings = useServerSettings((s) => s.settings);
   const { data: projects = [], isSuccess: projectsLoaded } = useQuery({
     queryKey: ["projects"],
@@ -135,7 +138,7 @@ export function NewWorkspaceSheet({
           data-testid="new-workspace"
           className="flex w-full max-w-lg flex-col gap-5 rounded-lg border border-edge bg-card p-5 text-reading text-card-foreground"
         >
-          <h1 className="font-heading text-title">New workspace</h1>
+          <h1 className="font-heading text-title">New {kind.toLowerCase()}</h1>
           {loadError && !shown ? (
             <div role="alert" data-testid="sheet-load-error" className="flex flex-col gap-2">
               <p className="text-destructive">
@@ -233,6 +236,7 @@ function SheetForm({
   const machineWanted = needsMachine(onDemand.status);
   const [waiting, setWaiting] = useState(false);
   const noun = useMachineNoun();
+  const kind = useThreadsWorkspaceNoun();
   const reachesTheirs = useMachineReachesTheirs();
   // Stops a wait for the machine when the sheet goes.
   const alive = useRef(true);
@@ -275,6 +279,10 @@ function SheetForm({
   const repositoryRef = useRef<AddRepositoryHandle>(null);
   // Discover goes once per workspace made here, however many times opening it is retried.
   const discovered = useRef(false);
+  // Whether Start has the orchestrator read the repositories first. Until the person says, it
+  // follows the task: with one it reads first, with none nothing runs until a task is sent.
+  const [survey, setSurvey] = useState<boolean>();
+  const reads = survey ?? firstMessageOf(draft) !== undefined;
   const taskId = useId();
   // With a repo picked, focus goes to the task: what is next.
   const focusTask = useCallback(
@@ -298,9 +306,9 @@ function SheetForm({
         text === undefined
           ? await api.openOrchestrator({ workspaceId: state.workspace.id })
           : await api.startTask({ target: { workspaceId: state.workspace.id }, input: { text } });
-      // A new workspace starts by discovering itself, as the Discover menu item asks: queued
-      // behind the first message, if there is one. A failure here costs only the survey.
-      if (!discovered.current) {
+      // A new workspace discovers itself when the person keeps that on, as the Discover menu item
+      // asks: queued behind the first message, if there is one. A failure costs only the survey.
+      if (reads && !discovered.current) {
         discovered.current = true;
         await sendDiscover(api, thread.id).catch((e: unknown) =>
           console.error("new workspace: discover", e),
@@ -314,22 +322,25 @@ function SheetForm({
     }
   };
 
-  const start = async () => {
-    if (busy) return;
-    if (created !== undefined)
-      return void (machineWanted ? openOnceUp : open)(created.state, created.text);
+  /** Makes the workspace from the sheet, once: its state and first message, or nothing on a refusal. */
+  const create = async (): Promise<
+    { state: WorkspaceState; text: string | undefined } | undefined
+  > => {
+    if (created !== undefined) return created;
     // A repository typed but not added yet is added first, as Enter would.
     const typed = repositoryRef.current?.submit();
     if (typed !== undefined) {
-      if (!(await typed)) return;
+      if (!(await typed)) return undefined;
     } else if (pending) {
-      return setIssue("Wait for the repository to finish adding.");
+      setIssue("Wait for the repository to finish adding.");
+      return undefined;
     }
     const current = draftRef.current;
     const result = createInput(current, starting, [...projects, ...addedRef.current], workspaces);
     if ("error" in result) {
       setAdding(true);
-      return setIssue(result.error);
+      setIssue(result.error);
+      return undefined;
     }
     setBusy(true);
     setIssue(undefined);
@@ -339,10 +350,10 @@ function SheetForm({
     } catch (e) {
       setBusy(false);
       setIssue(errorMessage(e) || "Couldn't create the workspace.");
-      return;
+      return undefined;
     }
-    const text = firstMessageOf(current);
-    setCreated({ state, text });
+    const made = { state, text: firstMessageOf(current) };
+    setCreated(made);
     await queryClient.invalidateQueries({ queryKey: ["workspaces"] });
     // The first run is done once there is a workspace, not when the sheet opens: leaving it by
     // Esc keeps the first-run screen for next time.
@@ -352,11 +363,27 @@ function SheetForm({
         console.error("new workspace: welcome", e),
       );
     }
+    return made;
+  };
+
+  const start = async () => {
+    if (busy) return;
+    const made = await create();
+    if (made === undefined) return;
     if (machineWanted) {
       setBusy(false);
-      return void openOnceUp(state, text);
+      return void openOnceUp(made.state, made.text);
     }
-    await open(state, text);
+    await open(made.state, made.text);
+  };
+
+  /** Saves the workspace and runs nothing: no machine, no orchestrator, no model call. */
+  const saveOnly = async () => {
+    if (busy || waiting) return;
+    const made = await create();
+    if (made === undefined) return;
+    setBusy(false);
+    await navigate({ to: "/threads" });
   };
 
   useShortcut({
@@ -388,7 +415,7 @@ function SheetForm({
 
   return (
     <form
-      aria-label="New workspace"
+      aria-label={`New ${kind.toLowerCase()}`}
       aria-busy={pending || undefined}
       className="flex flex-col gap-5"
       noValidate
@@ -430,17 +457,7 @@ function SheetForm({
         disabled={busy || waiting || created !== undefined}
         onChange={(next) => setDraft((current) => ({ ...current, charter: next }))}
       />
-      <Field
-        label="What should it work on?"
-        htmlFor={taskId}
-        // The survey Start sends anyway, so the field reads as optional, not as the only way to
-        // begin. On the label's line, so the sheet is no taller for it.
-        action={
-          <span data-testid="new-workspace-discover" className="text-meta text-muted-foreground">
-            It surveys the repositories first either way
-          </span>
-        }
-      >
+      <Field label="What should it work on?" htmlFor={taskId}>
         <Textarea
           ref={focusTask}
           id={taskId}
@@ -456,8 +473,22 @@ function SheetForm({
           }}
         />
       </Field>
+      <Checkbox
+        data-testid="new-workspace-discover"
+        label="Read the repositories first"
+        description="The orchestrator surveys them before the first task. A few minutes of model use."
+        checked={reads}
+        disabled={created !== undefined}
+        onCheckedChange={setSurvey}
+      />
+      <StartSteps
+        machine={machineWanted ? noun : undefined}
+        reads={reads}
+        task={firstMessageOf(draft) !== undefined}
+      />
       {issue !== undefined && <FormError message={issue} />}
-      {machineWanted && <StartMachineCard />}
+      {/* Where the machine reaches every repository, Start starts it: no second start. */}
+      {machineWanted && !reachesTheirs && <StartMachineCard />}
       <div className="flex flex-wrap items-center gap-2">
         <PressScale>
           <Button
@@ -475,6 +506,17 @@ function SheetForm({
             <ShortcutKbd id="draft.create" cap />
           </Button>
         </PressScale>
+        {created === undefined && (
+          <Button
+            type="button"
+            variant="outline"
+            data-testid="new-workspace-save"
+            disabled={busy || waiting}
+            onClick={() => void saveOnly()}
+          >
+            Save without starting
+          </Button>
+        )}
         <Button type="button" variant="ghost" onClick={cancel}>
           Cancel
         </Button>
@@ -488,6 +530,47 @@ function SheetForm({
         )}
       </div>
     </form>
+  );
+}
+
+/**
+ * What Start will do, in order, so nothing it starts is a surprise: the machine where one is
+ * needed, the survey where it is on, then the first task, or a wait for one with nothing run.
+ */
+function StartSteps({
+  machine,
+  reads,
+  task,
+}: {
+  /** The machine's word where Start must start one first. */
+  machine: string | undefined;
+  reads: boolean;
+  task: boolean;
+}) {
+  const steps = [
+    ...(machine === undefined ? [] : [`Start a ${machine} and check out the repositories`]),
+    ...(reads ? ["The orchestrator reads the repositories"] : []),
+    task
+      ? "The orchestrator plans the first task and starts workers"
+      : "Wait for your first task. Nothing else runs until you send one.",
+  ];
+  return (
+    <div data-testid="new-workspace-steps" className="flex flex-col gap-1.5">
+      <span className="text-meta font-medium text-muted-foreground">Start will</span>
+      <ol className="flex flex-col gap-1 text-meta">
+        {steps.map((step, index) => (
+          <li key={step} className="flex items-baseline gap-2">
+            <span
+              aria-hidden
+              className="w-4 shrink-0 text-right text-muted-foreground tabular-nums"
+            >
+              {index + 1}.
+            </span>
+            <span>{step}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
