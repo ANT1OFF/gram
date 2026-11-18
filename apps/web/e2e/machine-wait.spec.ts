@@ -60,7 +60,7 @@ test("a thread no machine came for says why, and follows the wait once it begins
   const row = await openWaiting(page, {
     failed: "The machine couldn't be started: no capacity in this region.",
   });
-  await expect(row.getByTestId("overview-solo-status")).toHaveText("No machine");
+  await expect(row.getByTestId("overview-solo-line")).toContainText("No machine");
   await expect(row).toHaveAttribute("title", /No machine started · Try again in the thread/);
   await row.click();
 
