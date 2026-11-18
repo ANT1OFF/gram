@@ -88,6 +88,9 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
                       name: project.name,
                       root: project.root,
                       home: id === state.workspace.homeProjectId,
+                      folder:
+                        state.workspace.fromProfile === true &&
+                        id === state.workspace.homeProjectId,
                     },
                   ];
             }),

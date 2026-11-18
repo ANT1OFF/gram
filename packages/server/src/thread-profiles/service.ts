@@ -9,6 +9,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { ServerConfig } from "../config.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
+import { Orchestration } from "../orchestration/service.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { makeThreadCreator } from "../runtime/create-in-checkout.ts";
@@ -32,12 +33,14 @@ export const profileStarterHere = Effect.gen(function* () {
   const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
   const remote = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
   const proc = Option.getOrUndefined(yield* Effect.serviceOption(Proc));
+  const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
   const creator = makeThreadCreator({ store, checkouts, runtimes });
   return makeProfileStarter({
     store,
     runtimes,
     dataDir: config.dataDir,
     hosts,
+    orchestration,
     ...(remote === undefined ? {} : { machines: { get: (id) => remote.machines.get(id) } }),
     repositories:
       proc === undefined

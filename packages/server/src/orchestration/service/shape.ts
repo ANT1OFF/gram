@@ -357,6 +357,27 @@ export interface OrchestrationShape {
     /** Refuse an existing or concurrently won slot; explicit bot creation cannot adopt it. */
     requireNew?: boolean,
   ): Effect.Effect<Thread, NotFound | InvalidState | AgentUnavailable>;
+  /**
+   * The orchestrator of a workspace made for a thread profile (`ThreadProfile.role`): the
+   * workspace is made under `workspaceId` on the first call, at `charter`, with one project at
+   * `projectRoot`, and marked `fromProfile`; its orchestrator is then the thread `create` makes,
+   * given the slot. Asked again, the workspace is found and a living orchestrator answered as it is.
+   * Refused where the orchestrator would run on another model than `model`.
+   */
+  openFromProfile<E>(input: {
+    readonly workspaceId: WorkspaceId;
+    readonly name: string;
+    readonly projectRoot: string;
+    readonly charter: OrchestratorCharter;
+    readonly model: ModelRef;
+    /** Makes the orchestrator's thread, with `deferOpen`, role `orchestrator` and these. */
+    readonly create: (fields: {
+      readonly model: ModelRef;
+      readonly mode: Thread["mode"];
+      readonly title: string;
+      readonly workspaceId: WorkspaceId;
+    }) => Effect.Effect<Thread, E>;
+  }): Effect.Effect<Thread, E | NotFound | InvalidState | AgentUnavailable>;
   taskPreflight(
     input: Pick<StartTaskInput, "target" | "autonomy" | "orchestrator">,
   ): Effect.Effect<TaskModelSelection, NotFound | InvalidState | AgentUnavailable>;

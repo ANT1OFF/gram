@@ -1496,6 +1496,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
 
   return {
     joinedMachines,
+    workerHosts,
     headless,
     ownerOf,
     store,

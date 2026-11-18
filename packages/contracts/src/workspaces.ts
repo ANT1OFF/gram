@@ -39,6 +39,14 @@ export const Workspace = Schema.Struct({
   orchestratorThreadId: Schema.optionalKey(ThreadId),
   /** Epoch ms. */
   createdAt: Schema.Number,
+  /**
+   * Made for an orchestrator started from a thread profile (`ThreadProfile.role`). Its home
+   * project is a folder of no repository, and a worker spawned there gets a new folder of its own,
+   * laid with the profile's files and skills and held to its MCP server and level, on its
+   * orchestrator's machine. A worker spawned in a repository the workspace takes in works in a
+   * worktree, as anywhere else.
+   */
+  fromProfile: Schema.optionalKey(Schema.Literal(true)),
 });
 export type Workspace = typeof Workspace.Type;
 
