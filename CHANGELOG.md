@@ -12,7 +12,6 @@
 
 ### Bug Fixes
 
-* **gateway:** keep a machine provider's explicit hosted-search opt-out in its gated Codex home ([#746](https://github.com/ANT1OFF/gram/pull/746)).
 * **machines:** start the person's own machine for a new workspace and wait for its model catalogue ([#738](https://github.com/ANT1OFF/gram/pull/738)).
 * **settings:** enable recommended setup on a headless server ([#737](https://github.com/ANT1OFF/gram/pull/737)).
 * **approvals:** bind merge approvals to the reviewed head and base ([#733](https://github.com/ANT1OFF/gram/pull/733)).
@@ -24,6 +23,7 @@
 * **machines:** a thread's session opens once its own folders are back, not the whole machine's ([#742](https://github.com/ANT1OFF/gram/issues/742)) ([2837895](https://github.com/ANT1OFF/gram/commit/28378951ad9cbda8b600ca0e3f2d18d5a5167115))
 * **models:** prefer GPT-6.2 Sol and Astra for subscriptions ([#745](https://github.com/ANT1OFF/gram/issues/745)) ([11e1cd3](https://github.com/ANT1OFF/gram/commit/11e1cd3289711ea45cc0c5583a5fbba10296f6c3))
 * **runtime:** a person's Stop ends a limit wait; embedders see the wait ([#744](https://github.com/ANT1OFF/gram/issues/744)) ([3e3ca8c](https://github.com/ANT1OFF/gram/commit/3e3ca8c661f02b0755b50e1a7ab09c2de261292b))
+* **gateway:** keep a machine provider's explicit hosted-search opt-out in its gated Codex home ([#746](https://github.com/ANT1OFF/gram/pull/746)).
 * **server:** a server with no local user starts no programs, and its program settings are the local app's ([#725](https://github.com/ANT1OFF/gram/issues/725)) ([a985ea9](https://github.com/ANT1OFF/gram/commit/a985ea9ad60abce7f9f7644ba8c34728a8e8a849))
 * **server:** fail closed for on-demand hosts with no owner ([#732](https://github.com/ANT1OFF/gram/issues/732)) ([19e6542](https://github.com/ANT1OFF/gram/commit/19e65421d25a5fc9b66d3a5899f9d5f149ce93a6))
 * **web:** kit Page puts its actions under the line on a phone that hides the title ([#717](https://github.com/ANT1OFF/gram/issues/717)) ([96c709c](https://github.com/ANT1OFF/gram/commit/96c709c8285acd9a6bb2697f5fa66b90aa0c9ef0))
