@@ -541,9 +541,16 @@ const make = (options: ThreadTransferOptions) =>
             "The repository's remote doesn't hold the thread's edits. Move it again from the other server.",
           );
         }
-        const { path: repoPath } = yield* connection.repos
-          .ensure(url)
-          .pipe(Effect.mapError((error) => refuse(cut(error.message, 400))));
+        // Bounded, as the restore is by the host protocol: the import holds this thread's lock
+        // and can't be interrupted, so no call of it may wait forever on a machine that stalls.
+        const { path: repoPath } = yield* connection.repos.ensure(url).pipe(
+          Effect.mapError((error) => refuse(cut(error.message, 400))),
+          Effect.timeoutOrElse({
+            duration: "10 minutes",
+            orElse: () =>
+              Effect.fail(refuse("Your machine took too long to clone the repository.")),
+          }),
+        );
         // The machine's paths, which may not be this server's kind of path.
         const join =
           repoPath.includes("\\") && !repoPath.includes("/")
@@ -583,7 +590,7 @@ const make = (options: ThreadTransferOptions) =>
             force: true,
             openCheckouts: [],
           })
-          .pipe(Effect.ignore);
+          .pipe(Effect.timeout("2 minutes"), Effect.ignore);
         // The branch at the remote may have moved since: only the commit the bundle names is taken.
         if (answer.commit !== expected) {
           yield* undo;

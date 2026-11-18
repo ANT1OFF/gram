@@ -52,6 +52,10 @@ export const ThreadImportsInboundLive = Layer.effectDiscard(
           if (Option.isNone(decoded))
             return refusal(400, "`bundle` is a thread bundle and `from` names where it was");
           const { bundle } = decoded.value;
+          // Here before this call: a refusal then names nothing, since this call made nothing.
+          const before = yield* store
+            .movedThreadConflict(bundle.thread.id, [])
+            .pipe(Effect.orElseSucceed(() => "unknown"));
           const imported = transfer
             .importThreadFor({ bundle, from: decoded.value.from, person: person.id })
             .pipe(
@@ -71,15 +75,17 @@ export const ThreadImportsInboundLive = Layer.effectDiscard(
           return yield* imported.pipe(
             Effect.map(({ thread, notes }) => answer({ threadId: thread.id, notes })),
             Effect.catch((error: { readonly message?: string }) =>
-              // A thread recorded here and then not opened is here, closed: the answer names it,
-              // so the platform doesn't take the move for one that never happened.
+              // A thread this call recorded and then couldn't open is here, closed: the answer
+              // names it, so the platform doesn't take the move for one that never happened.
               store.movedThreadConflict(bundle.thread.id, []).pipe(
                 Effect.orElseSucceed(() => undefined),
                 Effect.map((here) => ({
                   status: 409,
                   body: {
                     error: error.message ?? "the thread couldn't come in now",
-                    ...(here === undefined ? {} : { threadId: bundle.thread.id }),
+                    ...(here === undefined || before !== undefined
+                      ? {}
+                      : { threadId: bundle.thread.id }),
                   },
                 })),
               ),
