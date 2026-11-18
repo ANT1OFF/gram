@@ -40,7 +40,7 @@ test("New is one form: Who does it, an in chip with New workspace, and the short
   for (const [index, name] of ["Team", "Chat"].entries())
     await expect(who.getByRole("radio").nth(index)).toHaveAccessibleName(name);
   await expect(who.getByRole("radio")).toHaveText([
-    /An orchestrator plans it, runs workers as needed/,
+    /An orchestrator plans it and runs workers as needed/,
     /You and one agent in a folder/,
   ]);
   await expect(who.getByRole("radio", { name: "Team", exact: true })).toBeChecked();
