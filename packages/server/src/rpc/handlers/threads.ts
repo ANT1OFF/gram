@@ -364,7 +364,7 @@ export const threadHandlers = Effect.gen(function* () {
           interrupt === true ? { interrupt, pastCard: true } : { pastCard: true },
         ),
       ),
-    "thread.interrupt": ({ threadId }) => runtimes.interrupt(threadId),
+    "thread.interrupt": ({ threadId }) => runtimes.interrupt(threadId, { endLimitWait: true }),
     "thread.resumeLimitWait": ({ threadId }) => runtimes.resumeLimitWait(threadId),
     "thread.cancelLimitWait": ({ threadId }) => runtimes.cancelLimitWait(threadId),
     "thread.stopTask": ({ threadId, taskId }) => runtimes.stopTask(threadId, taskId),

@@ -682,11 +682,14 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
       handle: (caller, { threadId }) =>
         Effect.gen(function* () {
           const target = yield* otherThread("stop_thread", caller, threadId, "stop");
-          if (target.status !== "running" && target.status !== "starting") {
+          // A thread waiting out a provider limit would start again on its own: Stop ends that too.
+          const waiting =
+            target.thread.limitWait !== undefined && target.thread.limitWait.cancelled !== true;
+          if (target.status !== "running" && target.status !== "starting" && !waiting) {
             return { threadId: target.thread.id, stopped: false, status: target.status };
           }
           if (orchestration !== undefined) yield* orchestration.noteStop(caller, target.thread.id);
-          yield* runtimes.interrupt(target.thread.id);
+          yield* runtimes.interrupt(target.thread.id, { endLimitWait: true });
           return { threadId: target.thread.id, stopped: true };
         }).pipe(Effect.mapError(toolError("stop_thread"))),
     });

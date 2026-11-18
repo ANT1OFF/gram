@@ -117,8 +117,12 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  *   `data.openAsks`, the ids of every card open now: any other card a receiver holds open is
  *   withdrawn (a server that restarts drops its cards, so the list is then empty).
  *   `data.restarted` is true on the first one a server process sends.
- * - `thread.upsert` `{id, title?, role?, status?, spawnedByThreadId?, model?, createdBy?}`
- *   (`createdBy` is the id of the signed-in person who started the thread, where known),
+ * - `thread.upsert` `{id, title?, role?, status?, spawnedByThreadId?, model?, createdBy?,
+ *   limitWait?}` (`createdBy` is the id of the signed-in person who started the thread, where
+ *   known; `limitWait` `{kind, resumeAt, since, resetsAt?, cancelled?, detail?}`, epoch ms, while
+ *   the thread waits out a provider limit: idle then, but not done, as it resumes on its own at
+ *   `resumeAt` unless `cancelled`; absent once the wait has ended, and every change to it sends
+ *   the thread again),
  *   `thread.removed` `{id}`, `thread.status` `{id, status, idle}`.
  * - `ask.opened` `{id, kind, title, toolName?, questions?, plan?, planTruncated?, decisionId?,
  *   assignees?}`. A question carries `questions`, each `{question, header?, options: [{label,

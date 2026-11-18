@@ -26,6 +26,7 @@ import {
   type SinkBatch,
   type SinkEvent,
   type SinkEventType,
+  type LimitWait,
   type Thread,
   type ThreadId,
   type WorkerQuestion,
@@ -192,6 +193,20 @@ export const threadData = (thread: Thread, status?: string): Record<string, unkn
   agent: thread.model.agent,
   ...(status === undefined ? {} : { status }),
   ...(thread.spawnedBy === undefined ? {} : { spawnedByThreadId: thread.spawnedBy.threadId }),
+  ...(thread.limitWait === undefined ? {} : { limitWait: limitWaitData(thread.limitWait) }),
+});
+
+/**
+ * A provider limit the thread waits out, as `thread.upsert` carries it: an idle thread with one
+ * isn't done, it resumes on its own at `resumeAt` unless `cancelled`.
+ */
+const limitWaitData = (wait: LimitWait): Record<string, unknown> => ({
+  kind: wait.kind,
+  resumeAt: wait.resumeAt,
+  since: wait.since,
+  ...(wait.resetsAt === undefined ? {} : { resetsAt: wait.resetsAt }),
+  ...(wait.cancelled === true ? { cancelled: true } : {}),
+  ...(wait.detail === undefined ? {} : { detail: wait.detail }),
 });
 
 const askTitle = (request: PendingRequest): string => {
