@@ -1762,3 +1762,60 @@ describe("switchAgent's handoff and an error status (review rev 6 of #433)", () 
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 });
+
+describe("startFreshOn", () => {
+  it.effect("opens a fresh session on the model in place, carrying the recent turns", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const fake = yield* FakeAgentControl;
+      const { thread, session } = yield* idleThread;
+      const previousId = thread.agentSessionId;
+
+      const after = yield* runtimes.startFreshOn(thread.id, CODEX);
+      expect(after.model).toEqual(CODEX);
+      expect(after.sessionSwitch).toBeUndefined();
+      expect(session.closed).toBe(true);
+      expect(yield* handoffParts(thread.id)).toEqual([
+        expect.objectContaining({
+          reason: "user",
+          agent: "codex",
+          model: CODEX.model,
+          previousAgent: "claude",
+          previousModel: thread.model.model,
+          previousAgentSessionId: previousId,
+        }),
+      ]);
+
+      // The next message reaches a new session that resumes nothing, behind the old turns.
+      yield* runtimes.send(thread.id, { text: "two" });
+      const next = yield* waitFor(
+        "the next send",
+        fake.latest(thread.id).pipe(Effect.map((s) => s !== session && s.sent.length === 1 && s)),
+      );
+      expect(next.options.model).toEqual(CODEX);
+      expect(next.options.resumeId).toBeUndefined();
+      const text = next.sent[0]!.text;
+      expect(text).toContain("fresh Codex session");
+      expect(text).toContain("one");
+      expect(text.endsWith("two")).toBe(true);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("refuses mid-turn and on the model it already runs, leaving the thread alone", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const fake = yield* FakeAgentControl;
+      const { thread } = yield* idleThread;
+      const same = yield* Effect.exit(runtimes.startFreshOn(thread.id, thread.model));
+      expect(Exit.isFailure(same)).toBe(true);
+      yield* runtimes.send(thread.id, { text: "two" });
+      yield* waitFor(
+        "the turn",
+        fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 2)),
+      );
+      const busy = yield* Effect.exit(runtimes.startFreshOn(thread.id, CODEX));
+      expect(Exit.isFailure(busy)).toBe(true);
+      yield* unchanged(thread.id, thread);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+});

@@ -395,6 +395,12 @@ export const threadHandlers = Effect.gen(function* () {
         ? Effect.void
         : orchestration.checkModelChange(threadId, model)
       ).pipe(Effect.andThen(runtimes.setModel(threadId, model))),
+    "thread.startFreshOn": ({ threadId, model }) =>
+      // A worker on another model is held to the same admission and gate as on a new model.
+      (orchestration === undefined
+        ? Effect.void
+        : orchestration.checkModelChange(threadId, model)
+      ).pipe(Effect.andThen(runtimes.startFreshOn(threadId, model))),
     "thread.switchAgent": ({ threadId, target, note }) =>
       // A worker on the other agent is held to the same admission and gate as on a new model.
       (orchestration === undefined

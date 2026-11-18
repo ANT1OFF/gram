@@ -93,18 +93,13 @@ describe("switchOffer", () => {
     });
   });
 
-  it("offers nothing with one harness, on Windows or with nothing listed", () => {
+  it("offers nothing with one harness or with nothing listed", () => {
     expect(offer(summary(), checks({ tools: [{ tool: "claude", found: true }] })).offered).toBe(
       false,
     );
     expect(switchOffer({ summary: summary(), checks: undefined, listed: true }).offered).toBe(
       false,
     );
-    expect(offer(summary(), checks(), { platform: "win32" }).offered).toBe(false);
-    // OpenCode can't hand its session over, however the machine is set up.
-    expect(
-      offer(summary({}, { model: { agent: "opencode", model: "openai/gpt-5.5" } })).offered,
-    ).toBe(false);
     expect(offer(summary(), checks(), { listed: false }).offered).toBe(false);
     expect(
       offer(
@@ -136,6 +131,25 @@ describe("switchOffer", () => {
     expect(offer(orchestrator({}, { model: change.target, sessionSwitch: change }))).toEqual({
       offered: true,
       to: "codex",
+    });
+  });
+
+  it("offers a fresh session where the session can't carry over", () => {
+    expect(offer(summary(), checks(), { platform: "win32" })).toMatchObject({
+      offered: true,
+      to: "codex",
+      fresh: expect.stringMatching(/Windows/),
+    });
+    expect(
+      offer(summary({}, { model: { agent: "opencode", model: "openai/gpt-5.5" } })),
+    ).toMatchObject({ offered: true, fresh: expect.stringMatching(/OpenCode/) });
+    const gateway = offer(summary({}, { model: { ...CLAUDE, profileId: "p" as never } }));
+    expect(gateway).toMatchObject({ offered: true, fresh: expect.stringMatching(/gateway/) });
+    expect(gateway.offered && gateway.refusal).toBeFalsy();
+    // A fresh session still waits for the turn.
+    expect(offer(summary({ status: "running" }), checks(), { platform: "win32" })).toMatchObject({
+      fresh: expect.any(String),
+      refusal: expect.stringMatching(/turn/),
     });
   });
 
@@ -173,9 +187,6 @@ describe("switchOffer", () => {
         }),
       ),
     ).toMatch(/background/);
-    expect(refusal(summary({}, { model: { ...CLAUDE, profileId: "p" as never } }))).toMatch(
-      /gateway/,
-    );
     expect(refusal(summary(), checks({ codexSignIn: "notSignedIn" }))).toMatch(/Sign in to Codex/);
     expect(
       refusal(summary({}, { forkedFrom: { threadId: "t-0" as ThreadId } } as Partial<Thread>)),

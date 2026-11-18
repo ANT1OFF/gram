@@ -5,7 +5,7 @@ import {
   type ReasoningVariant,
   type ThreadId,
 } from "@gram/contracts";
-import { Check, Clock, GitPullRequest, Lock, Users, X } from "lucide-react";
+import { Check, Clock, GitPullRequest, Layers, Lock, TriangleAlert, Users, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { AgentIcon } from "@/agents/agent-display";
@@ -33,6 +33,10 @@ import {
   carriesLine,
   continueLabel,
   defaultTarget,
+  FRESH_CARRIES_LINE,
+  FRESH_ORCHESTRATOR_LINE,
+  FRESH_STAYS_LINE,
+  freshLabel,
   leavesLine,
   limitLine,
   modeLine,
@@ -45,6 +49,7 @@ import {
 } from "./agent-switch-model";
 import { DialogShell } from "./dialog-shell";
 import { useSwitchOffer } from "./use-switch-offer";
+import { SaveFirst } from "@/orchestration/fresh-session";
 
 /** One of the sheet's lines: its glyph, whose words are on hover, then the line. */
 function Line({
@@ -167,7 +172,9 @@ export function ContinueInDialog({
   );
   const modelItems = listed.map((m) => ({ value: m.id, label: m.displayName }));
   const refusal = offer.offered ? offer.refusal : undefined;
-  const title = continueLabel(to);
+  // Where this session can't carry over, the sheet starts a fresh one on the pick instead.
+  const fresh = offer.offered && !sent ? offer.fresh : undefined;
+  const title = fresh === undefined ? continueLabel(to) : freshLabel(to);
 
   const pickModel = (id: string) => setChoice(target(id) ?? choice);
   const pickEffort = (variant: ReasoningVariant) =>
@@ -187,6 +194,13 @@ export function ContinueInDialog({
   };
   const confirm = () => {
     if (choice === undefined) return;
+    if (fresh !== undefined)
+      return act(async () => {
+        await (workspaceId === undefined
+          ? api.startFreshOn(threadId, choice)
+          : api.orchestratorHandoff(workspaceId, { checkpoint: note, model: choice }));
+        onClose();
+      }, false);
     const options = limit === undefined ? { note } : {};
     return act(
       () =>
@@ -275,72 +289,110 @@ export function ContinueInDialog({
               </label>
             )}
           </div>
-          <div className="flex flex-col gap-2">
-            {limit !== undefined && (
+          {fresh !== undefined ? (
+            <div className="flex flex-col gap-2">
               <Line
-                testId="continue-in-limit"
-                hint={`${AGENT_SHORT[from]}'s usage`}
-                glyph={<Clock aria-hidden className="size-icon-row" />}
+                testId="continue-in-fresh"
+                hint="Why a fresh session"
+                glyph={<TriangleAlert aria-hidden className="size-icon-row" />}
               >
-                {limitLine(limit, from, to)}
+                This session can't carry over to {AGENT_SHORT[to]}, so it starts a fresh one in this
+                thread. <span className="text-muted-foreground">{fresh}</span>
               </Line>
-            )}
-            <Line
-              testId="continue-in-carries"
-              hint={`What ${AGENT_SHORT[to]} gets`}
-              className="text-success"
-              glyph={<Check aria-hidden className="size-icon-row" />}
-            >
-              {orchestrator
-                ? orchestratorCarriesLine(from, note, limit !== undefined)
-                : carriesLine(from, note, limit !== undefined)}
-            </Line>
-            <Line
-              testId="continue-in-leaves"
-              hint="What doesn't carry over"
-              glyph={<X aria-hidden className="size-icon-row" />}
-            >
-              {leavesLine(from)}
-            </Line>
-            {orchestrator && (
               <Line
-                testId="continue-in-orchestrator"
-                hint="Its workers and model"
-                glyph={<Users aria-hidden className="size-icon-row" />}
+                testId="continue-in-carries"
+                hint={`What ${AGENT_SHORT[to]} gets`}
+                className="text-success"
+                glyph={<Check aria-hidden className="size-icon-row" />}
               >
-                {ORCHESTRATOR_LINE}
+                {orchestrator ? FRESH_ORCHESTRATOR_LINE : FRESH_CARRIES_LINE}
               </Line>
-            )}
-            {worker && (
               <Line
-                testId="continue-in-worker"
-                hint="This worker's pull request"
-                glyph={<GitPullRequest aria-hidden className="size-icon-row" />}
+                testId="continue-in-stays"
+                hint="This conversation"
+                glyph={<Layers aria-hidden className="size-icon-row" />}
               >
-                {WORKER_LINE}
+                {FRESH_STAYS_LINE}
               </Line>
-            )}
-            {mode !== undefined && (
               <Line
-                testId="continue-in-mode"
-                hint="Mode changes"
-                className="text-warning"
-                glyph={<Lock aria-hidden className="size-icon-row" />}
+                testId="continue-in-leaves"
+                hint="What doesn't carry over"
+                glyph={<X aria-hidden className="size-icon-row" />}
               >
-                {mode}
+                {leavesLine(from)}
               </Line>
-            )}
-          </div>
-          {limit === undefined && (
-            <label className="flex items-center gap-2 text-reading">
-              <input
-                type="checkbox"
-                data-testid="continue-in-note"
-                checked={note}
-                onChange={(event) => setNote(event.target.checked)}
-              />
-              Ask {AGENT_SHORT[from]} for a handoff note first
-            </label>
+              {orchestrator && <SaveFirst checked={note} onChange={setNote} />}
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-2">
+                {limit !== undefined && (
+                  <Line
+                    testId="continue-in-limit"
+                    hint={`${AGENT_SHORT[from]}'s usage`}
+                    glyph={<Clock aria-hidden className="size-icon-row" />}
+                  >
+                    {limitLine(limit, from, to)}
+                  </Line>
+                )}
+                <Line
+                  testId="continue-in-carries"
+                  hint={`What ${AGENT_SHORT[to]} gets`}
+                  className="text-success"
+                  glyph={<Check aria-hidden className="size-icon-row" />}
+                >
+                  {orchestrator
+                    ? orchestratorCarriesLine(from, note, limit !== undefined)
+                    : carriesLine(from, note, limit !== undefined)}
+                </Line>
+                <Line
+                  testId="continue-in-leaves"
+                  hint="What doesn't carry over"
+                  glyph={<X aria-hidden className="size-icon-row" />}
+                >
+                  {leavesLine(from)}
+                </Line>
+                {orchestrator && (
+                  <Line
+                    testId="continue-in-orchestrator"
+                    hint="Its workers and model"
+                    glyph={<Users aria-hidden className="size-icon-row" />}
+                  >
+                    {ORCHESTRATOR_LINE}
+                  </Line>
+                )}
+                {worker && (
+                  <Line
+                    testId="continue-in-worker"
+                    hint="This worker's pull request"
+                    glyph={<GitPullRequest aria-hidden className="size-icon-row" />}
+                  >
+                    {WORKER_LINE}
+                  </Line>
+                )}
+                {mode !== undefined && (
+                  <Line
+                    testId="continue-in-mode"
+                    hint="Mode changes"
+                    className="text-warning"
+                    glyph={<Lock aria-hidden className="size-icon-row" />}
+                  >
+                    {mode}
+                  </Line>
+                )}
+              </div>
+              {limit === undefined && (
+                <label className="flex items-center gap-2 text-reading">
+                  <input
+                    type="checkbox"
+                    data-testid="continue-in-note"
+                    checked={note}
+                    onChange={(event) => setNote(event.target.checked)}
+                  />
+                  Ask {AGENT_SHORT[from]} for a handoff note first
+                </label>
+              )}
+            </>
           )}
         </>
       )}
@@ -360,7 +412,7 @@ export function ContinueInDialog({
             disabled={busy || choice === undefined || refusal !== undefined}
             onClick={() => void confirm()}
           >
-            Continue
+            {fresh === undefined ? "Continue" : "Start fresh"}
           </Button>
         )}
         {sent && workspaceId !== undefined && change?.phase === "checkpoint" && (

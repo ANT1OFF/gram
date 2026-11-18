@@ -617,12 +617,26 @@ export interface ThreadRuntimesShape {
    * Stops the thread's session and opens a new one that remembers nothing of it, in the same
    * thread and checkout. With `model`, the new one opens on it, another agent's or account's
    * included: the thread's model becomes it. Nothing carries over but what the caller gives the
-   * new session. Returns the session left behind.
+   * new session, and with `carryTurns` the thread's recent turns, which it reads ahead of its first
+   * input (`renderFreshOn`). Returns the session left behind.
    */
   freshSession(
     threadId: ThreadId,
     model?: ModelRef,
+    options?: { readonly carryTurns?: boolean },
   ): Effect.Effect<string | undefined, ThreadNotFound | InvalidState>;
+  /**
+   * Starts a plain thread or worker fresh on `model`, in the same thread and checkout: for a model
+   * its session can't carry over to (`switchAgent` refuses it: OpenCode, a gateway account,
+   * another machine, Windows). Its session stops, a new one opens on `model` and reads the
+   * thread's recent turns ahead of its first input, and a divider marks it. `InvalidState` while it
+   * can't (a turn, background work, a switch, an unlisted model), with why. The orchestrator's
+   * goes through its handoff.
+   */
+  startFreshOn(
+    threadId: ThreadId,
+    model: ModelRef,
+  ): Effect.Effect<Thread, ThreadNotFound | InvalidState>;
   /**
    * Moves a plain thread or worker to the other agent, on `target`: claimed and refused as
    * `agent-switch.ts` says; the old session asked for a handoff note in one last turn (unless

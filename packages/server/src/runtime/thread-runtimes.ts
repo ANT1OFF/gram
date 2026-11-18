@@ -24,6 +24,7 @@ import {
 } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
+import { randomUUID } from "node:crypto";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -104,7 +105,7 @@ import { DecisionHook } from "../embedding/decision-hook.ts";
 import { EventSink } from "../embedding/event-sink.ts";
 import { makeHookedRequests } from "../embedding/hooked-requests.ts";
 import { makeSessionSwitch, makeSwitchMethods } from "./session-switch.ts";
-import { AGENT_NAMES, makeAgentSwitch } from "./agent-switch.ts";
+import { AGENT_NAMES, checkFreshTarget, makeAgentSwitch } from "./agent-switch.ts";
 import { makeSessionLifecycle } from "./session-lifecycle.ts";
 import type { InputUndelivered } from "./undelivered.ts";
 
@@ -1837,6 +1838,75 @@ const make = Effect.gen(function* () {
         );
       }),
     ...restartMethods,
+    startFreshOn: (threadId, model) =>
+      Effect.gen(function* () {
+        const thread = yield* store.getThread(threadId);
+        const to = AGENT_NAMES[model.agent];
+        if (thread.role === "orchestrator")
+          return yield* new InvalidState({
+            threadId,
+            message: "The orchestrator starts fresh from its own Fresh session or Settings.",
+          });
+        if (
+          thread.model.agent === model.agent &&
+          thread.model.model === model.model &&
+          thread.model.profileId === model.profileId
+        )
+          return yield* new InvalidState({ threadId, message: `This thread already runs on it.` });
+        if (thread.parked)
+          return yield* new InvalidState({
+            threadId,
+            message: "Unarchive this thread before starting it fresh.",
+          });
+        if (thread.sessionSwitch !== undefined)
+          return yield* new InvalidState({
+            threadId,
+            message: "Resolve this thread's switch before starting it fresh.",
+          });
+        const rt = yield* getRuntime(threadId);
+        if (
+          rt.turn !== undefined ||
+          (rt.status !== "idle" && rt.status !== "cold" && rt.status !== "error")
+        )
+          return yield* new InvalidState({
+            threadId,
+            message: "Wait for this turn to finish, or stop it, then start fresh.",
+          });
+        if (rt.background.length > 0 || rt.activity.subagentsRunning)
+          return yield* new InvalidState({
+            threadId,
+            message: `${AGENT_NAMES[thread.model.agent]} still has background work running.`,
+          });
+        yield* checkFreshTarget(store, hosts, model);
+        if (thread.mode === "plan" && model.agent !== thread.model.agent) {
+          const host = yield* hosts
+            .get(model.agent)
+            .pipe(Effect.mapError((e) => new InvalidState({ threadId, message: e.message })));
+          if (!host.capabilities.planMode)
+            return yield* new InvalidState({
+              threadId,
+              message: `${to} can't keep this thread's Plan mode. Finish the plan first.`,
+            });
+        }
+        const previous = yield* restartMethods.freshSession(threadId, model, { carryTurns: true });
+        // The divider: where it opened, and on hover what it left.
+        yield* feedMethods
+          .emitChunk(threadId, {
+            type: "data-handoff",
+            id: randomUUID(),
+            data: {
+              reason: "user",
+              ...(previous === undefined ? {} : { previousAgentSessionId: previous }),
+              agent: model.agent,
+              model: model.model,
+              previousAgent: thread.model.agent,
+              previousModel: thread.model.model,
+              at: yield* Clock.currentTimeMillis,
+            },
+          })
+          .pipe(Effect.ignore);
+        return yield* store.getThread(threadId);
+      }),
     setMode: (threadId, mode) =>
       Effect.gen(function* () {
         const generation = switchGenerations.get(threadId);

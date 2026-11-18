@@ -1893,6 +1893,46 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   }
 
   /**
+   * Like the server's `startFreshOn`, briefly: the same refusals the UI greys for, then the thread
+   * on `model` in a new session, and the divider.
+   */
+  async startFreshOn(threadId: ThreadId, model: ModelRef) {
+    const runtime = this.#runtime(threadId);
+    const { thread, status, pendingRequests } = runtime.summary;
+    if (thread.role === "orchestrator")
+      throw refuse("The orchestrator starts fresh from its own Fresh session or Settings.");
+    if (thread.sessionSwitch !== undefined || !["idle", "cold", "error"].includes(status))
+      throw refuse("Wait for this turn to finish, or stop it, then start fresh.");
+    if (pendingRequests.length > 0) throw refuse("Answer the open approval first.");
+    await this.#delay(150);
+    const { limitWait: _wait, lastError: _error, ...rest } = runtime.summary.thread;
+    runtime.summary = {
+      ...runtime.summary,
+      thread: { ...rest, model, agentSessionId: `mock-session-${this.#ids()}` },
+    };
+    this.#emit({ type: "thread.upsert", thread: runtime.summary.thread });
+    this.#putMessage(runtime, {
+      id: this.#ids(),
+      role: "assistant",
+      metadata: { createdAt: Date.now() },
+      parts: [
+        {
+          type: "data-handoff",
+          id: this.#ids(),
+          data: {
+            reason: "user",
+            agent: model.agent,
+            model: model.model,
+            previousAgent: thread.model.agent,
+            previousModel: thread.model.model,
+            at: Date.now(),
+          },
+        },
+      ],
+    });
+  }
+
+  /**
    * Like the server's `switchAgent`, briefly: the same refusals the UI greys for, then the divider
    * with a synthetic note and facts, and the thread on its new agent with a fresh session. Limit
    * mode (a limit wait or a failed last turn) has the new agent write the note in its first turn.

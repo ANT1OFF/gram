@@ -1,5 +1,7 @@
 // When a session restarts on its own: an MCP config change it reads, once it is at rest.
 
+import { recentTurnsOf } from "./session-lifecycle.ts";
+import { renderFreshOn } from "./switch-handoff.ts";
 import {
   type AgentUnavailable,
   type ThreadId,
@@ -536,7 +538,7 @@ export const makeRestartMethods = ({
         return reached.map(({ rt }) => rt.threadId);
       }),
     ),
-  freshSession: (threadId, model) =>
+  freshSession: (threadId, model, options) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
       const before = yield* locked(
@@ -564,6 +566,18 @@ export const makeRestartMethods = ({
           return thread;
         }),
       );
+      // What the new session reads ahead of its first input: the turns the old one had.
+      const seed =
+        options?.carryTurns === true
+          ? yield* recentTurnsOf(store, rt).pipe(
+              Effect.map((turns) =>
+                turns === undefined
+                  ? undefined
+                  : renderFreshOn(before.model.agent, (model ?? before.model).agent, turns),
+              ),
+              Effect.orElseSucceed(() => undefined),
+            )
+          : undefined;
       // The rewind-to-the-first-message path, without the truncation: stop, forget the session,
       // open. With no `agentSessionId` and no `forkedFrom`, `resumeOptions` resumes nothing.
       yield* stopSession(rt, "rewind");
@@ -583,6 +597,7 @@ export const makeRestartMethods = ({
           yield* publishUpsert(thread);
           // The context meter was the old session's; the first turn of the new one refills it.
           rt.usage = undefined;
+          rt.lostSession = seed;
           yield* openSession(rt, thread).pipe(
             Effect.catchTag("AgentUnavailable", (e) => failUnavailable(rt, e)),
           );

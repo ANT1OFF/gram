@@ -11,7 +11,7 @@ import { lazyPart } from "@/lib/lazy-part";
 import { useAllActivity } from "@/stores/all-activity";
 import { useThreadsStore } from "@/stores/threads";
 
-import { continueLabel } from "./agent-switch-model";
+import { continueLabel, freshLabel } from "./agent-switch-model";
 import { ConversationOnlyItem } from "./conversation-only-toggle";
 import { ThreadMenuItems } from "./thread-action-items";
 import { useThreadDialogs } from "./thread-dialogs-store";
@@ -62,7 +62,7 @@ export function useThreadMenu(threadId: ThreadId): {
               onClick={() => useThreadDialogs.getState().open({ kind: "continueIn", threadId })}
             >
               <ArrowLeftRight aria-hidden className="size-icon-row" />
-              {continueLabel(offer.to)}…
+              {offer.fresh === undefined ? continueLabel(offer.to) : freshLabel(offer.to)}…
             </Menu.Item>
           ) : (
             // Greyed, it says why on hover, in the words the server would refuse with.
@@ -79,7 +79,7 @@ export function useThreadMenu(threadId: ThreadId): {
               }
             >
               <ArrowLeftRight aria-hidden className="size-icon-row" />
-              {continueLabel(offer.to)}…
+              {offer.fresh === undefined ? continueLabel(offer.to) : freshLabel(offer.to)}…
             </Hint>
           )}
           <div role="separator" className="-mx-1 my-1 h-px bg-border" />

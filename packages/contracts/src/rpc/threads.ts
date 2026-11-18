@@ -183,6 +183,17 @@ export const ThreadRpcs = RpcGroup.make(
     error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
   }),
   /**
+   * Starts the thread fresh on `model` in the same thread and checkout, where its session can't
+   * carry over (`thread.switchAgent` refuses): the new session reads the thread's recent turns
+   * ahead of its first input, and a divider marks it. An orchestrator's goes through
+   * `orchestrator.handoff` with its model. `InvalidState`: it can't now, with why.
+   */
+  Rpc.make("thread.startFreshOn", {
+    payload: { ...threadRef, model: ModelRef },
+    success: Thread,
+    error: errors(ThreadNotFound, InvalidState),
+  }),
+  /**
    * Moves the thread to the other agent on `target`: a fresh session there, with a divider in the
    * transcript. Returns once the switch is claimed; `sessionSwitch` follows it. On a failed switch
    * it tries again, onto `target`. `InvalidState`: the thread can't move now, with why.
