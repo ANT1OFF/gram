@@ -505,7 +505,9 @@ const stateInputOf = (facts: WorkerFacts): WorkerStateInput => {
     completedReason: facts.completedReason,
     ...(report === undefined ? {} : { lastReport: { state: report.state, at: report.at } }),
     lastInputAt: memo?.lastInputAt,
-    hasStartedTurn: memo?.started === true || facts.usage !== undefined,
+    // A worker sent to a server started there when it was sent: it is never waiting to begin here.
+    hasStartedTurn:
+      memo?.started === true || facts.usage !== undefined || thread.sentTo !== undefined,
     pendingRequestCount: facts.pendingRequests.length,
     ...(prFacts === undefined ? {} : { pr: prFacts }),
     reopened: reopenedSinceMerge(thread, badges),

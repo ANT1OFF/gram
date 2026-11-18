@@ -115,6 +115,9 @@ import { BrowserChip } from "./browser-chip";
 import { HeaderWakeChip } from "./wake-chip";
 
 /** Only for a thread that moved away, so it loads only then. */
+const SentNotice = lazy(async () => ({
+  default: (await import("./sent-notice")).SentNotice,
+}));
 const MovedAwayNotice = lazy(async () => ({
   default: (await import("./moved-away-notice")).MovedAwayNotice,
 }));
@@ -827,15 +830,22 @@ export function ThreadView({
             onStop={stopTask}
           />
           {thread.role === "orchestrator" && <UndoLine />}
-          <TurnCompleteSheen key={threadId} status={status}>
-            <ThreadComposer
-              thread={thread}
-              focused={focused}
-              {...(beside === undefined
-                ? {}
-                : { placeholder: beside.placeholder ?? "Steer this thread…" })}
-            />
-          </TurnCompleteSheen>
+          {/* Sent to a server: it runs there, and its orchestrator messages it, so no composer. */}
+          {thread.sentTo !== undefined ? (
+            <Suspense fallback={null}>
+              <SentNotice threadId={threadId} />
+            </Suspense>
+          ) : (
+            <TurnCompleteSheen key={threadId} status={status}>
+              <ThreadComposer
+                thread={thread}
+                focused={focused}
+                {...(beside === undefined
+                  ? {}
+                  : { placeholder: beside.placeholder ?? "Steer this thread…" })}
+              />
+            </TurnCompleteSheen>
+          )}
         </div>
       </div>
     </BesideLinkScope.Provider>

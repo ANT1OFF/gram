@@ -331,9 +331,9 @@ export const sendWorker = (
 export const isEnded = (state: SentTo["state"]): boolean =>
   state === "done" || state === "failed" || state === "stopped";
 
-/** One look at a sent worker: wait for what it does next, and record it. Never fails. */
+/** One look at a sent worker: wait for what it does next, and record it (published to windows). Never fails. */
 export const followOnce = (
-  { orchestration, store, port }: Pick<Deps, "orchestration" | "store" | "port">,
+  { orchestration, runtimes, port }: Pick<Deps, "orchestration" | "runtimes" | "port">,
   thread: Thread,
 ) =>
   Effect.gen(function* () {
@@ -347,7 +347,7 @@ export const followOnce = (
     });
     const now = yield* Clock.currentTimeMillis;
     if (!waited.ok) {
-      yield* store
+      yield* runtimes
         .updateThread(thread.id, (current) =>
           current.sentTo === undefined
             ? current
@@ -359,7 +359,7 @@ export const followOnce = (
     const { happened, latest, reply, thread: there } = waited.waited;
     // Asked again while this wait ran: an end it heard may come before the message is taken.
     let heard: SentTo | undefined;
-    yield* store
+    yield* runtimes
       .updateThread(thread.id, (current) => {
         if (current.sentTo === undefined) return current;
         const askedSince = (current.sentTo.askedAt ?? -1) >= began;
@@ -394,7 +394,7 @@ const openSent = (store: ThreadStoreShape) =>
 
 /** Follows every open sent worker, one fiber each, for as long as the server runs. */
 const followAll = (
-  deps: Pick<Deps, "orchestration" | "store" | "port">,
+  deps: Pick<Deps, "orchestration" | "store" | "runtimes" | "port">,
   kicks: Queue.Queue<ThreadId>,
 ) =>
   Effect.gen(function* () {

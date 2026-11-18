@@ -1,17 +1,43 @@
-import type { HostId, ThreadId } from "@gram/contracts";
-import { Server, ServerOff } from "lucide-react";
+import type { HostId, SentTo, ThreadId } from "@gram/contracts";
+import { CloudOff, CloudUpload, Server, ServerOff } from "lucide-react";
 
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
 import { useMachines } from "@/stores/machines";
 import { useThreadsStore } from "@/stores/threads";
 
-import { machineMark, threadHost, type MachineMark } from "./machine-mark";
+import { machineMark, sentMark, threadHost, type MachineMark } from "./machine-mark";
 
-/** The mark of the machine `hostId`, following the machines as the server sends them. */
-export function useMachineMark(hostId: HostId | undefined): MachineMark | undefined {
+/**
+ * The mark of the machine `hostId`, following the machines as the server sends them; for a worker
+ * sent to a server (`sent`), that server's workspace instead.
+ */
+export function useMachineMark(
+  hostId: HostId | undefined,
+  sent?: SentTo | undefined,
+): MachineMark | undefined {
   const machines = useMachines((s) => s.machines);
+  if (sent !== undefined) return sentMark(sent);
   return hostId === undefined ? undefined : machineMark(hostId, machines);
+}
+
+/** Where a worker sent to a server runs, by the thread's id; `undefined` for any other thread. */
+export const useThreadSent = (threadId: ThreadId | undefined): SentTo | undefined =>
+  useThreadsStore((s) => (threadId === undefined ? undefined : s.byId[threadId]?.thread.sentTo));
+
+/** The glyph of a mark: a machine, or a server's cloud for a sent worker; struck when out of reach. */
+export function MarkGlyph({ mark, className }: { mark: MachineMark; className?: string }) {
+  if (mark.sent === true)
+    return mark.state === "signed out" || mark.state === "not heard" ? (
+      <CloudOff aria-hidden className={className} />
+    ) : (
+      <CloudUpload aria-hidden className={className} />
+    );
+  return mark.state === undefined ? (
+    <Server aria-hidden className={className} />
+  ) : (
+    <ServerOff aria-hidden className={className} />
+  );
 }
 
 /** The other machine a thread runs on, by the thread's id; `undefined` on this machine. */
@@ -33,6 +59,7 @@ export const useThreadHost = (threadId: ThreadId | undefined): HostId | undefine
  */
 export function MachineMarker({
   hostId,
+  sent,
   show = "name",
   hover = "hint",
   side = "top",
@@ -41,6 +68,8 @@ export function MachineMarker({
   className,
 }: {
   hostId: HostId | undefined;
+  /** A worker sent to a server: marked by the workspace there, not a machine. */
+  sent?: SentTo | undefined;
   show?: "name" | "glyph";
   hover?: "hint" | "title" | "none";
   side?: "top" | "right" | "bottom" | "left";
@@ -49,13 +78,12 @@ export function MachineMarker({
   testId?: string;
   className?: string | undefined;
 }) {
-  const mark = useMachineMark(hostId);
+  const mark = useMachineMark(hostId, sent);
   if (mark === undefined) return null;
-  const Glyph = mark.state === undefined ? Server : ServerOff;
   const words = show === "name";
   const body = (
     <>
-      <Glyph aria-hidden className="size-icon-chip shrink-0" />
+      <MarkGlyph mark={mark} className="size-icon-chip shrink-0" />
       {words && mark.name !== undefined && <span className="min-w-0 truncate">{mark.name}</span>}
       {words && mark.state !== undefined && <span className="shrink-0">{mark.state}</span>}
     </>
@@ -63,13 +91,18 @@ export function MachineMarker({
   const props = {
     "data-testid": testId,
     "data-machine-state": mark.state ?? "online",
+    "data-sent": mark.sent,
     role: "img" as const,
     "aria-label": `Runs ${mark.words}`,
     className: cn(
       "flex h-lh min-w-0 items-center gap-1 text-meta whitespace-nowrap",
       // The glyph alone never gives way; with its name it shrinks, and the name is cut.
       words ? "shrink" : "shrink-0",
-      mark.state === undefined ? "text-muted-foreground" : "text-foreground",
+      mark.state === undefined
+        ? "text-muted-foreground"
+        : mark.state === "asks you"
+          ? "text-status-needs"
+          : "text-foreground",
       className,
     ),
   };
@@ -91,5 +124,7 @@ export function ThreadMachineMarker({
   threadId,
   ...rest
 }: { threadId: ThreadId } & Omit<Parameters<typeof MachineMarker>[0], "hostId">) {
-  return <MachineMarker hostId={useThreadHost(threadId)} {...rest} />;
+  return (
+    <MachineMarker hostId={useThreadHost(threadId)} sent={useThreadSent(threadId)} {...rest} />
+  );
 }
