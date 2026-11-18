@@ -417,7 +417,9 @@ test("Settings → Workspaces keeps workspaces, charters and pauses", async ({ p
       return state?.charter.autonomy;
     });
   await expect(autonomy.getByRole("radio", { name: "Full" })).toBeChecked();
-  await expect(autonomy.getByTestId("autonomy-description")).toContainText("Asks about nothing.");
+  await expect(autonomy.getByTestId("autonomy-description")).toContainText(
+    "Pushes, opens and merges pull requests without asking.",
+  );
   // Nothing asks at Full, so there is no gate to qualify.
   await expect(autonomy.getByTestId("orchestration-gate-warning")).toHaveCount(0);
   // Stepping down needs no confirming, saves at once, and offers Undo.
@@ -449,7 +451,7 @@ test("Settings → Workspaces keeps workspaces, charters and pauses", async ({ p
   // Full is confirmed in place first, and backing out changes nothing.
   await autonomy.getByRole("radio", { name: "Full" }).click();
   const confirm = autonomy.getByTestId("autonomy-confirm");
-  await expect(confirm).toContainText("Asks about nothing.");
+  await expect(confirm).toContainText("Pushes, opens and merges pull requests without asking.");
   await confirm.getByRole("button", { name: "Keep Supervised" }).click();
   await expect(confirm).toHaveCount(0);
   await expect(autonomy.getByRole("radio", { name: "Supervised" })).toBeChecked();
@@ -461,7 +463,9 @@ test("Settings → Workspaces keeps workspaces, charters and pauses", async ({ p
     "data-autonomy",
     "full",
   );
-  await expect(autonomy.getByTestId("autonomy-description")).toContainText("Asks about nothing.");
+  await expect(autonomy.getByTestId("autonomy-description")).toContainText(
+    "Pushes, opens and merges pull requests without asking.",
+  );
   // Nothing asks at Full, so there is no gate left to qualify.
   await expect(autonomy.getByTestId("orchestration-gate-warning")).toHaveCount(0);
   await expect.poll(storedAutonomy).toBe("full");
