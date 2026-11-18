@@ -265,7 +265,7 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
         title="No messages yet"
         {...(orchestrator
           ? {
-              line: "Say what needs doing. The orchestrator hands it to workers and follows each one to a pull request.",
+              line: "Say what needs doing. The orchestrator hands it to workers.",
             }
           : {})}
       />

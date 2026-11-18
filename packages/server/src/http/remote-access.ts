@@ -17,6 +17,10 @@ export const REMOTE_REVOKE_PATH = "/remote/revoke";
 /** A workspace out of this server as a bundle, and a bundle into it. */
 export const WORKSPACE_EXPORT_PATH = "/workspaces/export";
 export const WORKSPACE_IMPORT_PATH = "/workspaces/import";
+/** One thread out of this server as a bundle, a bundle into it, and the copy left behind. */
+export const THREAD_EXPORT_PATH = "/threads/export";
+export const THREAD_IMPORT_PATH = "/threads/import";
+export const THREAD_SETTLE_PATH = "/threads/settle";
 /** Management routes: only the local app may call them, never a paired browser. */
 export const LOCAL_ONLY_PATHS: ReadonlySet<string> = new Set([
   REMOTE_PAIR_PATH,
@@ -24,6 +28,9 @@ export const LOCAL_ONLY_PATHS: ReadonlySet<string> = new Set([
   REMOTE_DISABLE_PATH,
   WORKSPACE_EXPORT_PATH,
   WORKSPACE_IMPORT_PATH,
+  THREAD_EXPORT_PATH,
+  THREAD_IMPORT_PATH,
+  THREAD_SETTLE_PATH,
   // A thread started from a profile, by the platform in front or the local app, and moved.
   PROFILE_START_PATH,
   PROFILE_MOVE_PATH,

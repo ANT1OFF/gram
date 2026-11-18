@@ -43,7 +43,12 @@ import {
 } from "@gram/contracts";
 import { UNKNOWN_FAILURE } from "./thread-error.ts";
 import { accountOf, machineAccountScope } from "./limit-wait.ts";
-import { HANDOFF_TURNS_TOKENS, renderLostSession, renderRecentTurns } from "./switch-handoff.ts";
+import {
+  HANDOFF_TURNS_TOKENS,
+  renderLostSession,
+  renderMovedSession,
+  renderRecentTurns,
+} from "./switch-handoff.ts";
 import { fromStoredMessages } from "../orchestration/transcripts.ts";
 
 /** How many of a thread's last messages a session that lost its conversation is given from. */
@@ -220,9 +225,15 @@ export const makeSessionLifecycle = ({
    * Input not yet sent to an agent (the queue, a launch, an input on its way) is left out: it
    * follows as itself. Reads the last `LOST_SESSION_MESSAGES` messages and the first, never all.
    */
-  const lostSessionContext = (rt: Runtime, agent: AgentKind) =>
+  const lostSessionContext = (rt: Runtime, agent: AgentKind, movedFrom?: string) =>
     recentTurnsOf(store, rt).pipe(
-      Effect.map((turns) => (turns === undefined ? undefined : renderLostSession(agent, turns))),
+      Effect.map((turns) =>
+        turns === undefined
+          ? undefined
+          : movedFrom === undefined
+            ? renderLostSession(agent, turns)
+            : renderMovedSession(agent, turns, movedFrom),
+      ),
       // The session opens either way: without the turns, as it did before there were any.
       Effect.catchCause((cause) =>
         Effect.logWarning("couldn't read a thread's recent turns for its new session").pipe(
@@ -742,6 +753,20 @@ export const makeSessionLifecycle = ({
             });
           }),
         );
+        // A thread brought in from another Gram opens its first session here fresh: no agent's own
+        // session file travels. That session reads the recent turns, once.
+        const moved = thread.transferredFrom;
+        if (moved !== undefined && moved.seeded !== true && lost === undefined) {
+          lost = yield* lostSessionContext(rt, thread.model.agent, moved.name);
+          const marked = yield* store
+            .updateThread(rt.threadId, (t) =>
+              t.transferredFrom === undefined
+                ? t
+                : { ...t, transferredFrom: { ...t.transferredFrom, seeded: true } },
+            )
+            .pipe(Effect.orDie);
+          yield* publishUpsert(marked);
+        }
         yield* locked(
           rt,
           Effect.gen(function* () {

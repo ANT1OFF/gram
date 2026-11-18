@@ -292,7 +292,7 @@ test("first run is one screen: how Gram works, the agents, a repository and past
   await welcome.getByRole("button", { name: "How it works" }).click();
   await expect(
     welcome.getByRole("list", { name: "How Gram works" }).getByRole("listitem"),
-  ).toHaveText([/^You give tasks/, /^An orchestrator briefs workers/, /^Each worker opens a PR/]);
+  ).toHaveText([/^You give tasks/, /^An orchestrator briefs workers/, /^Workers carry it out/]);
   // Open says what it runs with; before any workspace there is no Board to switch to.
   await expect(welcome.getByTestId("welcome-runs-with")).toHaveText("Runs with Codex");
   await expect(page.getByTestId("view-switcher")).toHaveCount(0);
@@ -387,7 +387,6 @@ test("first run with no agent warns once and leads with installing one", async (
   const open = welcome.getByTestId("welcome-open");
   await expect(open).toHaveText(/^Set up /);
   await expect(open).not.toHaveClass(/bg-primary/);
-  await expect(welcome.getByTestId("welcome-next")).toContainText("once an agent is ready");
 
   // Seen on the card, it counts as seen: off the first run it is the title bar's setup chip,
   // which opens the banner on it.

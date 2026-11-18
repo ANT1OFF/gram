@@ -165,19 +165,20 @@ export interface MovedHistory {
   readonly turns: ReadonlyArray<MovedTurn>;
 }
 
+/** A thread moved here from another Gram, with its conversation, as a closed thread to reopen. */
+export interface MovedThread extends MovedHistory {
+  /** The closed record a reopen opens: this server's project, checkout and mode. */
+  readonly thread: Thread;
+  readonly closedAt: number;
+  readonly plan?: ThreadPlan | undefined;
+  readonly turnPlan?: ReadonlyArray<PlanItem> | undefined;
+}
+
 /** What `stageMovedWorkspace` writes. */
 export interface MovedWorkspace {
   /** As it is stored here: this server's project ids, and no orchestrator in the slot. */
   readonly state: WorkspaceState;
-  readonly orchestrator?:
-    | (MovedHistory & {
-        /** The closed record a reopen opens: this server's project, checkout and mode. */
-        readonly thread: Thread;
-        readonly closedAt: number;
-        readonly plan?: ThreadPlan | undefined;
-        readonly turnPlan?: ReadonlyArray<PlanItem> | undefined;
-      })
-    | undefined;
+  readonly orchestrator?: MovedThread | undefined;
   readonly featureCards: ReadonlyArray<FeatureCard>;
   readonly events: ReadonlyArray<OrchestrationEventEntry>;
   /** The encoded outbox its first digest here is built from. */
@@ -985,6 +986,17 @@ export interface ThreadStoreShape {
    */
   stageMovedWorkspace(moved: MovedWorkspace): Effect.Effect<void, InvalidState>;
   /**
+   * One thread moved here from another Gram (`thread.transfer.import`), written in one
+   * transaction or not at all, as a closed thread with its conversation for a reopen to open.
+   * `InvalidState` when the thread or one of its turns is already here.
+   */
+  stageMovedThread(moved: MovedThread): Effect.Effect<void, InvalidState>;
+  /** Why `stageMovedThread` would refuse these ids, read without writing; `undefined` when none is here. */
+  movedThreadConflict(
+    threadId: string,
+    turnIds: ReadonlyArray<string>,
+  ): Effect.Effect<string | undefined>;
+  /**
    * Why `stageMovedWorkspace` would refuse these ids, read without writing anything, so a move
    * can be refused before its files are written; `undefined` when none of them is here.
    */
@@ -1340,6 +1352,33 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         });
 
       /** Puts a thread on the closed list, dropping the oldest past the limit with what was kept. */
+      /**
+       * Which of a moved thread's ids is already here, as the sentence that refuses it: `whose`
+       * names the thread in it ("This workspace's orchestrator", "This thread").
+       */
+      const movedThreadConflictOf = (
+        threadId: string,
+        turnIds: ReadonlyArray<string>,
+        whose: string,
+      ) =>
+        Effect.gen(function* () {
+          const [taken] = yield* sql<{ id: string }>`SELECT id FROM threads WHERE id = ${threadId}
+            UNION ALL SELECT thread_id FROM closed_threads WHERE thread_id = ${threadId}
+            UNION ALL SELECT thread_id FROM closed_messages WHERE thread_id = ${threadId}
+            UNION ALL SELECT thread_id FROM messages WHERE thread_id = ${threadId}
+            UNION ALL SELECT thread_id FROM thread_plans WHERE thread_id = ${threadId}
+            LIMIT 1`;
+          if (taken !== undefined) return `${whose} is already on this server.`;
+          for (const turnId of turnIds) {
+            const [known] = yield* sql<{ id: string }>`SELECT id FROM turns WHERE id = ${turnId}
+              UNION ALL SELECT id FROM closed_turns WHERE id = ${turnId} LIMIT 1`;
+            if (known !== undefined) {
+              return `A turn of ${whose.charAt(0).toLowerCase()}${whose.slice(1)} is already on this server.`;
+            }
+          }
+          return undefined;
+        });
+
       /** Which of a moved workspace's ids is already here, as the sentence that refuses it. */
       const movedConflictOf = (
         workspaceId: string,
@@ -1352,23 +1391,40 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           }>`SELECT id FROM workspaces WHERE id = ${workspaceId}`;
           if (workspace !== undefined) return "This workspace is already on this server.";
           if (threadId === undefined) return undefined;
-          const [taken] = yield* sql<{ id: string }>`SELECT id FROM threads WHERE id = ${threadId}
-            UNION ALL SELECT thread_id FROM closed_threads WHERE thread_id = ${threadId}
-            UNION ALL SELECT thread_id FROM closed_messages WHERE thread_id = ${threadId}
-            UNION ALL SELECT thread_id FROM messages WHERE thread_id = ${threadId}
-            UNION ALL SELECT thread_id FROM thread_plans WHERE thread_id = ${threadId}
-            LIMIT 1`;
-          if (taken !== undefined) {
-            return "This workspace's orchestrator is already on this server.";
+          return yield* movedThreadConflictOf(threadId, turnIds, "This workspace's orchestrator");
+        });
+
+      /**
+       * A moved thread's record and conversation on the closed list, for a reopen to open. Not
+       * `keepClosed`, whose cap would push this server's oldest closed thread out for an entry
+       * that is taken off the list again as soon as it is opened.
+       */
+      const writeMovedClosed = (moved: MovedThread) =>
+        Effect.gen(function* () {
+          const threadId = moved.thread.id;
+          yield* sql`INSERT INTO closed_threads (thread_id, closed_at, data, workers)
+            VALUES (${threadId}, ${moved.closedAt}, ${toJson(Thread, moved.thread)}, NULL)`;
+          for (const [index, { message, turnId }] of moved.messages.entries()) {
+            yield* sql`INSERT INTO closed_messages
+                (thread_id, id, seq, role, turn_id, message)
+              VALUES (${threadId}, ${message.id}, ${index + 1}, ${message.role},
+                ${turnId ?? null}, ${JSON.stringify(message)})`;
           }
-          for (const turnId of turnIds) {
-            const [known] = yield* sql<{ id: string }>`SELECT id FROM turns WHERE id = ${turnId}
-              UNION ALL SELECT id FROM closed_turns WHERE id = ${turnId} LIMIT 1`;
-            if (known !== undefined) {
-              return "A turn of this workspace's orchestrator is already on this server.";
-            }
+          for (const turn of moved.turns) {
+            yield* sql`INSERT INTO closed_turns
+                (id, thread_id, started_at, ended_at, reason, usage, cost_usd)
+              VALUES (${turn.id}, ${threadId}, ${turn.startedAt}, ${turn.endedAt ?? null},
+                ${turn.reason ?? null},
+                ${turn.usage === undefined ? null : toJson(UsageSummary, turn.usage)},
+                ${turn.usage?.costUsd ?? null})`;
           }
-          return undefined;
+          const plan = moved.plan === undefined ? null : toJson(ThreadPlan, moved.plan);
+          const turnPlan =
+            moved.turnPlan === undefined ? null : toJson(TurnPlanJson, moved.turnPlan);
+          if (plan !== null || turnPlan !== null) {
+            yield* sql`INSERT INTO thread_plans (thread_id, plan, turn_plan, rev)
+              VALUES (${threadId}, ${plan}, ${turnPlan}, 1)`;
+          }
         });
 
       const keepClosed = (
@@ -3666,36 +3722,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                     VALUES (${id}, ${moved.outbox})`;
                   const orchestrator = moved.orchestrator;
                   if (orchestrator === undefined) return;
-                  const threadId = orchestrator.thread.id;
-                  // Not `keepClosed`, whose cap would push this server's oldest closed thread out
-                  // for an entry that is taken off the list again as soon as it is opened.
-                  yield* sql`INSERT INTO closed_threads (thread_id, closed_at, data, workers)
-                    VALUES (${threadId}, ${orchestrator.closedAt},
-                      ${toJson(Thread, orchestrator.thread)}, NULL)`;
-                  for (const [index, { message, turnId }] of orchestrator.messages.entries()) {
-                    yield* sql`INSERT INTO closed_messages
-                        (thread_id, id, seq, role, turn_id, message)
-                      VALUES (${threadId}, ${message.id}, ${index + 1}, ${message.role},
-                        ${turnId ?? null}, ${JSON.stringify(message)})`;
-                  }
-                  for (const turn of orchestrator.turns) {
-                    yield* sql`INSERT INTO closed_turns
-                        (id, thread_id, started_at, ended_at, reason, usage, cost_usd)
-                      VALUES (${turn.id}, ${threadId}, ${turn.startedAt}, ${turn.endedAt ?? null},
-                        ${turn.reason ?? null},
-                        ${turn.usage === undefined ? null : toJson(UsageSummary, turn.usage)},
-                        ${turn.usage?.costUsd ?? null})`;
-                  }
-                  const plan =
-                    orchestrator.plan === undefined ? null : toJson(ThreadPlan, orchestrator.plan);
-                  const turnPlan =
-                    orchestrator.turnPlan === undefined
-                      ? null
-                      : toJson(TurnPlanJson, orchestrator.turnPlan);
-                  if (plan !== null || turnPlan !== null) {
-                    yield* sql`INSERT INTO thread_plans (thread_id, plan, turn_plan, rev)
-                      VALUES (${threadId}, ${plan}, ${turnPlan}, 1)`;
-                  }
+                  yield* writeMovedClosed(orchestrator);
                 }),
               )
               .pipe(
@@ -3706,6 +3733,35 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                         new InvalidState({
                           message:
                             "The workspace couldn't be stored here, and nothing of it was kept. Part of it may already be on this server.",
+                        }),
+                      )
+                    : Effect.fail(e),
+                ),
+              ),
+          ),
+        movedThreadConflict: (threadId, turnIds) =>
+          tx(movedThreadConflictOf(threadId, turnIds, "This thread")),
+        stageMovedThread: (moved) =>
+          run(
+            sql
+              .withTransaction(
+                Effect.gen(function* () {
+                  const conflict = yield* movedThreadConflictOf(
+                    moved.thread.id,
+                    moved.turns.map((turn) => turn.id),
+                    "This thread",
+                  );
+                  if (conflict !== undefined) return yield* alreadyHere(conflict);
+                  yield* writeMovedClosed(moved);
+                }),
+              )
+              .pipe(
+                Effect.catch((e) =>
+                  e instanceof SqlError
+                    ? Effect.fail(
+                        new InvalidState({
+                          message:
+                            "The thread couldn't be stored here, and nothing of it was kept. Part of it may already be on this server.",
                         }),
                       )
                     : Effect.fail(e),

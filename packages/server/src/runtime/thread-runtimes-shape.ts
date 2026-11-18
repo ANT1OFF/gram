@@ -83,7 +83,15 @@ export interface CreateThreadInput {
   readonly kept?: Partial<
     Pick<
       Thread,
-      "userNamed" | "agentNamed" | "labels" | "pinned" | "boundPr" | "extraPrs" | "readableBy"
+      | "userNamed"
+      | "agentNamed"
+      | "labels"
+      | "pinned"
+      | "boundPr"
+      | "extraPrs"
+      | "readableBy"
+      | "transferredFrom"
+      | "transferredTo"
     >
   >;
   /** Orchestration's fields, in the row from its first insert; only `orchestrator.open` gives a role. */

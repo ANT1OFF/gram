@@ -704,7 +704,7 @@ export function ThreadView({
           {/* A helper's summary isn't the conversation, which is all "Conversation only" shows. */}
           {!conversationOnly && <CatchUpCard thread={thread} />}
           <StuckCard thread={thread} />
-          <OrchestratorBanner thread={thread} loaded={phase !== "loading"} />
+          <OrchestratorBanner thread={thread} />
           {thread.role === "orchestrator" && thread.workspaceId !== undefined && (
             <FailuresCard
               workspaceId={thread.workspaceId}

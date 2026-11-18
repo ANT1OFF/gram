@@ -152,7 +152,14 @@ import { shownPrNumbers, useWorkerPrChips, WorkerPrChips } from "./overview-pr-c
 import { threadHost, type MachineMark } from "@/thread/machine-mark";
 import { MachineMarker, useMachineMark, useThreadHost } from "@/thread/machine-marker";
 import { peek } from "./peek-store";
-import { ANSWERED, nowBesidePrs, TONE_DOT, workerStarting, type RailTone } from "./rail-model";
+import {
+  ANSWERED,
+  edgeBesidePrs,
+  nowBesidePrs,
+  TONE_DOT,
+  workerStarting,
+  type RailTone,
+} from "./rail-model";
 import { showWorkersTab } from "./workers-tab";
 import { StatusDot } from "./status-dot";
 import { STARTING, STATUS_WORDS } from "./status-words";
@@ -845,11 +852,12 @@ function WorkspaceRow({
                 <span data-testid="overview-workspace-summary" className="truncate">
                   {workspaceWorkersText({ live, working, inTab })}
                 </span>
-              ) : (
-                <span className="truncate">
-                  {orchestratorBusy ? "At work" : `${ledger?.held?.length ?? 0} held`}
-                </span>
-              )}
+              ) : orchestratorBusy ? (
+                <span className="truncate">At work</span>
+              ) : (ledger?.held?.length ?? 0) > 0 ? (
+                // A count only once there is one: none, or none loaded yet, says nothing.
+                <span className="truncate">{ledger?.held?.length} held</span>
+              ) : null}
               {asks > 0 && (
                 <span
                   data-testid="overview-workspace-asks"
@@ -1506,7 +1514,8 @@ function WaitingLine({
   /** PRs its row's chips show, left out of its words. */
   prs?: readonly { readonly number: number }[];
 }) {
-  const edge = waiting.edge;
+  // A PR its row's chip names already isn't the edge's token as well: its words say the wait.
+  const edge = edgeBesidePrs(waiting.edge, prs);
   const Glyph = edge === undefined ? undefined : WAIT_GLYPH[edge.glyph];
   const detail = waiting.reasons[0]?.detail;
   return (

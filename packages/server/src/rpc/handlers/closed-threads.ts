@@ -142,6 +142,11 @@ export const makeClosedReopener = (
             ...(thread.agentNamed === undefined ? {} : { agentNamed: thread.agentNamed }),
             ...(thread.boundPr === undefined ? {} : { boundPr: thread.boundPr }),
             ...(thread.extraPrs === undefined ? {} : { extraPrs: thread.extraPrs }),
+            // Where it came from or went keeps its meaning after a close: a moved copy stays one.
+            ...(thread.transferredFrom === undefined
+              ? {}
+              : { transferredFrom: thread.transferredFrom }),
+            ...(thread.transferredTo === undefined ? {} : { transferredTo: thread.transferredTo }),
             // Readable by the one person it was readable by before it closed.
             ...(thread.readableBy === undefined ? {} : { readableBy: thread.readableBy }),
           },

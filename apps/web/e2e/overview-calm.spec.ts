@@ -101,10 +101,10 @@ test("every row in the sidebar is one height for its lines; a worker's edge keep
     true,
   );
   expect(rows.some((row) => row.words === "Running")).toBe(false);
-  // A wait keeps its reason at the edge, without the "Waiting" its hollow dot says: on a PR, its
-  // glyph and the PR's number.
+  // A wait keeps its reason at the edge, without the "Waiting" its hollow dot says; on its own PR,
+  // which its chip names already, the reason alone, so the PR reads once.
   const wait = rows.find((row) => row.tone === "waiting");
-  expect(wait?.words).toMatch(/^#\d+$/);
+  expect(wait?.words).toBe("checks");
 });
 test("the compact strip marks each workspace with a monogram of its name, the solo threads with a glyph", async ({
   page,
