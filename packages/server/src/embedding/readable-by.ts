@@ -97,8 +97,22 @@ export interface ThreadFolders {
   readonly extraCheckouts?: ReadonlyArray<CheckoutAt> | undefined;
 }
 
+/**
+ * Told each time a thread readable by one person is first noted on a machine (`undefined`: this
+ * one), with its reader: what was open there for someone else must close (`rpc/handlers/terminal.ts`).
+ */
+const placedListeners = new Set<(reader: string, machine: string | undefined) => void>();
+
+/** Listens for a private thread first noted on a machine; the answer stops listening. */
+export const onPrivatePlaced = (
+  listener: (reader: string, machine: string | undefined) => void,
+): (() => void) => {
+  placedListeners.add(listener);
+  return () => void placedListeners.delete(listener);
+};
+
 /** The machine a checkout is on as the privacy notes key it: `undefined` for this one. */
-const machineKey = (hostId: string | undefined): string | undefined =>
+export const machineKey = (hostId: string | undefined): string | undefined =>
   hostId === undefined || hostId === "local" ? undefined : hostId;
 
 /** Notes whose a thread is, as it is read or written, and where it works. A reader never changes. */
@@ -118,7 +132,11 @@ export const notePrivacy = (
     folders.add(resolve(each.path));
     let machines = machinesOf.get(thread.id);
     if (machines === undefined) machinesOf.set(thread.id, (machines = new Set()));
-    machines.add(machineKey(each.hostId));
+    const machine = machineKey(each.hostId);
+    if (!machines.has(machine)) {
+      machines.add(machine);
+      for (const listener of placedListeners) listener(thread.readableBy, machine);
+    }
     if (typeof each.repoRoot === "string" && isAbsolute(each.repoRoot)) {
       let repos = reposOf.get(thread.id);
       if (repos === undefined) reposOf.set(thread.id, (repos = new Set()));

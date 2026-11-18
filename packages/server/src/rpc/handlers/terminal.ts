@@ -9,11 +9,14 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import {
   anyPrivate,
   currentReader,
   machineHoldsUnreadable,
+  machineKey,
+  onPrivatePlaced,
   NOT_READABLE,
   type Reader,
   readableByOf,
@@ -62,6 +65,44 @@ const terminalHandlers = Effect.gen(function* () {
    * shell, its output and its keystrokes are theirs alone once any thread is readable by one person.
    */
   const openedBy = new Map<string, string | undefined>();
+  /** The machine each terminal opened since the server started runs on (`undefined`: this one). */
+  const openedOn = new Map<string, string | undefined>();
+
+  /**
+   * Once a thread readable by one person is placed on a machine, behind a proxy, the shells
+   * already open there for anyone else close: a shell reads that thread's folder whatever opened
+   * it. On this machine, which holds the database, every shell closes; a terminal whose machine
+   * isn't known (one kept from before the server started) is taken to be on this one.
+   */
+  const placements = yield* Queue.unbounded<{ reader: string; machine: string | undefined }>();
+  const stopListening = onPrivatePlaced((reader, machine) =>
+    Queue.offerUnsafe(placements, { reader, machine }),
+  );
+  yield* Effect.addFinalizer(() => Effect.sync(stopListening));
+  yield* Effect.forkScoped(
+    Effect.forever(
+      Effect.gen(function* () {
+        const { reader, machine } = yield* Queue.take(placements);
+        if (fronted === undefined || !(yield* fronted.active)) return;
+        for (const info of yield* terminals.list(undefined)) {
+          const on = openedOn.has(info.terminalId) ? openedOn.get(info.terminalId) : undefined;
+          const theirs =
+            info.threadId !== undefined
+              ? readableByOf(info.threadId) === reader
+              : openedBy.get(info.terminalId) === reader;
+          if (on === undefined || (on === machine && !theirs))
+            yield* terminals.close(info.terminalId).pipe(
+              Effect.tap(() =>
+                Effect.logInfo("closed a shell on a machine a private thread was placed on").pipe(
+                  Effect.annotateLogs({ terminalId: info.terminalId }),
+                ),
+              ),
+              Effect.ignore,
+            );
+        }
+      }).pipe(Effect.catchCause((cause) => Effect.logWarning("closing shells failed", cause))),
+    ),
+  );
 
   /**
    * Whether `reader` may see a terminal (`embedding/readable-by.ts`): a thread's when it may see
@@ -99,15 +140,18 @@ const terminalHandlers = Effect.gen(function* () {
   ) =>
     Effect.gen(function* () {
       const reader = yield* currentReader;
+      // This server's own machine holds its database, every transcript a private thread's
+      // included, wherever that thread's checkouts are: no one gets a shell here behind a proxy.
       if (
         anyPrivate() &&
         fronted !== undefined &&
         (yield* fronted.active) &&
-        machineHoldsUnreadable(reader, hostId)
+        (machineKey(hostId) === undefined || machineHoldsUnreadable(reader, hostId))
       )
         return yield* new InvalidState({ message: SHARED_MACHINE });
       const made = yield* open;
       if (threadless) openedBy.set(made.terminalId, reader?.subject);
+      openedOn.set(made.terminalId, machineKey(hostId));
       return made;
     });
   const hostOfThread = (threadId: ThreadId | undefined) =>

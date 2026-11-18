@@ -243,10 +243,6 @@ const found = (who: Client, query: string) =>
     ...new Set(result.hits.map((hit) => hit.threadId)),
   ]);
 
-/** The terminals a connection is listed. */
-const terminalsOf = (who: Client) =>
-  Effect.map(who["terminal.list"]({}), (all) => all.map((t) => t.terminalId));
-
 describe("threads readable by one person", () => {
   afterAll(() => {
     for (const dir of dirs) removeDir(dir);
@@ -488,41 +484,14 @@ describe("threads readable by one person", () => {
         const adaClient = yield* as(port, ada);
         const moClient = yield* as(port, mo);
 
-        // A terminal that is no thread's, opened by Ada in her thread's folder: Mo neither lists
-        // it, reads it nor types into it. Nor does he open a shell on the machine that holds it.
-        const privateFolder = (yield* store.getThread(PRIVATE)).checkout.path;
-        const terminal = yield* adaClient["terminal.open"]({
-          cwd: privateFolder,
-          cols: 80,
-          rows: 24,
-        });
-        expect(yield* terminalsOf(adaClient)).toContain(terminal.terminalId);
-        expect(yield* terminalsOf(moClient)).not.toContain(terminal.terminalId);
-        expect(
-          yield* outcome(
-            moClient["terminal.subscribe"]({ terminalId: terminal.terminalId }).pipe(
-              Stream.take(1),
-              Stream.runCollect,
-            ),
-          ),
-        ).toContain(NOT_READABLE);
-        expect(
-          yield* outcome(
-            moClient["terminal.input"]({ terminalId: terminal.terminalId, data: "ls\n" }),
-          ),
-        ).toContain(NOT_READABLE);
-        expect(
-          yield* outcome(moClient["terminal.close"]({ terminalId: terminal.terminalId })),
-        ).toContain(NOT_READABLE);
+        // Behind a proxy, while any thread is private, nobody opens a shell on the server's own
+        // machine, its reader included: it holds the database.
         expect(yield* outcome(moClient["terminal.open"]({ cols: 80, rows: 24 }))).toContain(
           SHARED_MACHINE,
         );
-        expect(
-          yield* outcome(
-            adaClient["terminal.input"]({ terminalId: terminal.terminalId, data: "\n" }),
-          ),
-        ).toBe("the call went through");
-        yield* adaClient["terminal.close"]({ terminalId: terminal.terminalId });
+        expect(yield* outcome(adaClient["terminal.open"]({ cols: 80, rows: 24 }))).toContain(
+          SHARED_MACHINE,
+        );
 
         // A dream of a workspace that is Ada's, asked for by its id alone.
         const runtimes = yield* ThreadRuntimes;
