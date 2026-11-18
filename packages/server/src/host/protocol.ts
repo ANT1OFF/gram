@@ -206,6 +206,7 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "session-retarget",
   "file-parts",
   "wip-restore",
+  "wip-restore-ref",
   "wip-keep",
   "agent-opencode",
   "agent-codex",
@@ -1724,6 +1725,9 @@ export const connectHost = (
                       remote: request.remote,
                       commit: request.commit,
                       caughtUp: request.caughtUp,
+                      // Only to a host that reads another machine's ref: an older one would
+                      // put back its own ref of the thread, or none.
+                      ref: hostServes(hello, "wip-restore-ref") ? request.ref : undefined,
                     }),
                   ).pipe(
                     Effect.timeoutOrElse({

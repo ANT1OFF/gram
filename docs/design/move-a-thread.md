@@ -65,5 +65,8 @@ folder here that changed since is put aside on a branch of its own.
 1. Bundle and the calls, Gram to Gram: `POST /threads/export`, `/threads/import` and
    `/threads/settle`, local-app only like the workspace's, with a test that moves a thread between
    two servers over real git. The agent-written note and the joined-host restore follow.
+   The joined-host restore: `host.stop.restore` reads another machine's ref (`ref`, a host that
+   names `wip-restore-ref`), and the platform in front brings a bundle in for a person
+   (`POST /embed/v1/thread-imports`), placed on their own machine.
 2. The shell's calls to a server signed in to (`hostedDevice.moveThread`), and the dialog.
 3. Bringing back.

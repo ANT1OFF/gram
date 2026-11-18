@@ -40,9 +40,19 @@ export const refusal = (status: number, error: string): EmbedAnswer => ({
   body: { error },
 });
 
+export interface EmbedRouteOptions {
+  /** The largest body this route takes, past the 256 KiB every other route does. */
+  readonly maxBytes?: number;
+}
+
 export interface EmbedInboundShape {
   /** Serves `name` (the path after `/embed/v1/`) for `method`. Called once per route, at start. */
-  readonly route: (method: EmbedMethod, name: string, handler: EmbedHandler) => Effect.Effect<void>;
+  readonly route: (
+    method: EmbedMethod,
+    name: string,
+    handler: EmbedHandler,
+    options?: EmbedRouteOptions,
+  ) => Effect.Effect<void>;
   /**
    * The answer to `request`, whose path is `path`; `undefined` when the inbound paths don't exist
    * just now, so the caller answers it as it would any other request.
@@ -55,11 +65,11 @@ export interface EmbedInboundShape {
 
 const json = ({ status, body }: EmbedAnswer) => HttpServerResponse.jsonUnsafe(body, { status });
 
-const readBody = (request: HttpServerRequest.HttpServerRequest) =>
+const readBody = (request: HttpServerRequest.HttpServerRequest, max: number) =>
   Effect.gen(function* () {
-    if (Number(request.headers["content-length"] ?? 0) > BODY_MAX) return "too-large" as const;
+    if (Number(request.headers["content-length"] ?? 0) > max) return "too-large" as const;
     const text = yield* request.text.pipe(
-      Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(BODY_MAX)),
+      Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(max)),
       Effect.catch(() => Effect.succeed(undefined)),
     );
     if (text === undefined) return "too-large" as const;
@@ -82,6 +92,7 @@ export class EmbedInbound extends Context.Service<EmbedInbound, EmbedInboundShap
     Effect.gen(function* () {
       const embedding = yield* Embedding;
       const routes = new Map<string, Map<EmbedMethod, EmbedHandler>>();
+      const limits = new Map<string, number>();
       const expected = embedding.config.inboundToken;
 
       const respond: EmbedInboundShape["respond"] = (request, path) =>
@@ -100,7 +111,10 @@ export class EmbedInbound extends Context.Service<EmbedInbound, EmbedInboundShap
           if (methods === undefined) return json(refusal(404, "no such path"));
           const handler = methods.get(request.method as EmbedMethod);
           if (handler === undefined) return json(refusal(405, "method not allowed"));
-          const body = yield* readBody(request);
+          const body = yield* readBody(
+            request,
+            limits.get(`${request.method} ${path.slice(EMBED_PREFIX.length)}`) ?? BODY_MAX,
+          );
           if (body === "too-large") return json(refusal(413, "body too large"));
           if (body === "malformed") return json(refusal(400, "body must be a JSON object"));
           return json(
@@ -117,11 +131,12 @@ export class EmbedInbound extends Context.Service<EmbedInbound, EmbedInboundShap
         });
 
       return EmbedInbound.of({
-        route: (method, name, handler) =>
+        route: (method, name, handler, options) =>
           Effect.sync(() => {
             const methods = routes.get(name) ?? new Map<EmbedMethod, EmbedHandler>();
             methods.set(method, handler);
             routes.set(name, methods);
+            if (options?.maxBytes !== undefined) limits.set(`${method} ${name}`, options.maxBytes);
           }),
         respond,
       });

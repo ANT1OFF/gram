@@ -30,6 +30,7 @@ import {
   hasWip,
   isInside,
   isPushRemote,
+  isWipRefOf,
   Proc,
   type ProcShape,
   pushWip,
@@ -94,6 +95,8 @@ export interface RestoreRequest {
   readonly commit?: string | undefined;
   /** The stop kept no ref, the branch at the remote holding everything: made from the branch. */
   readonly caughtUp?: boolean | undefined;
+  /** Another machine's ref of the thread, read in place of this host's own (`isWipRefOf`). */
+  readonly ref?: string | undefined;
 }
 
 export interface KeepRequest {
@@ -403,6 +406,11 @@ export const stopOn = (deps: StopDeps): HostStop => {
       const expected = request.commit;
       if (expected !== undefined && !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(expected))
         return yield* refused("That isn't a commit a stop kept.");
+      // Another machine's ref, as for a thread that moved here: of this thread, at the commit
+      // named, and nothing else in its place.
+      const from = request.ref;
+      if (from !== undefined && (expected === undefined || !isWipRefOf(from, request.threadId)))
+        return yield* refused("That isn't a ref of this thread to put back.");
       const { path: clone } = yield* ensure(request.url).pipe(
         Effect.mapError((error) => refused(error.message)),
       );
@@ -416,12 +424,12 @@ export const stopOn = (deps: StopDeps): HostStop => {
       const ref =
         request.caughtUp === true
           ? undefined
-          : yield* fetchWip(clone, request.threadId, remote, deps.protocols, expected).pipe(
+          : yield* fetchWip(clone, request.threadId, remote, deps.protocols, expected, from).pipe(
               Effect.mapError((error) => refused(error.message)),
             );
       const kept =
         ref ??
-        (request.branch === undefined
+        (request.branch === undefined || from !== undefined
           ? undefined
           : yield* fetchBranchTip(clone, request.branch, remote, deps.protocols).pipe(
               Effect.mapError((error) => refused(error.message)),

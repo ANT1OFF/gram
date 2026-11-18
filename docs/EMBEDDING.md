@@ -434,6 +434,22 @@ POST /embed/v1/thread-starts
 - `key` names the start. Sent again, it answers the thread it made, with `created: false`, and makes nothing.
 - The thread is recorded as made by the person (`thread.create`). A repository that can't give it a worktree makes nothing: `409` with why. `400` for a body that isn't one.
 
+## A thread moved here from another Gram
+
+The platform can bring in a thread that a person moved here from another Gram, such as their own
+laptop's, as a bundle that Gram exported (`POST /threads/export`, [moving a thread](design/move-a-thread.md)).
+
+```
+POST /embed/v1/thread-imports
+{ "person": { "id": "user-7", "name": "Ada" }, "bundle": { ...ThreadBundle }, "from": "Ada's laptop" }
+→ 200 { "threadId": "...", "notes": ["Its uncommitted edits are back as uncommitted files."] }
+```
+
+- The thread is placed as one the person started: on their own machine where machines are started for one person, and refused with `409` while none of theirs runs. A server that runs work itself clones the repository here instead.
+- Its folder is made from the bundle's repository, its edits read only from the ref and the commit the bundle names (the machine's host needs `wip-restore-ref`). A branch that moved since, or a ref that isn't there, makes nothing.
+- A bundle is untrusted input: an id Gram doesn't make, a thread or turn already here, or a newer bundle format is refused before anything is written. The mode, the model's profile, effort and speed are this server's. The thread keeps its id and is recorded as brought in by the person (`thread.import`).
+- The body may be up to 32 MiB. `notes` says what to tell the person. Then the platform asks the other Gram to settle its copy (`POST /threads/settle`).
+
 ## Settings supplied from outside
 
 The deployment can set some of the settings for this server. A supplied setting reads as supplied to everything inside, and nothing inside can change it: the Settings page, a paired phone and an agent's `settings_propose` are each refused, with a message that says the service that runs this Gram set it.

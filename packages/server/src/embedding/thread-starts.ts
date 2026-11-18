@@ -59,7 +59,7 @@ const BRANCH = /^(?!-)(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._/-]{1,200}(?<![./])$/;
 const decodeModel = Schema.decodeUnknownOption(ModelRef);
 
 /** The person a call names, or why the body doesn't name one. */
-const personOf = (value: unknown): Actor | string => {
+export const personOf = (value: unknown): Actor | string => {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return "`person` is the person the platform signed in, with their `id`";
   const { id, name } = value as Record<string, unknown>;

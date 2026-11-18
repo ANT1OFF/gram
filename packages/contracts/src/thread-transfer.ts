@@ -79,6 +79,19 @@ export const ImportThreadInput = Schema.Struct({
 });
 export type ImportThreadInput = typeof ImportThreadInput.Type;
 
+/**
+ * `POST /embed/v1/thread-imports`: the platform in front brings a bundle in for a person it signed
+ * in. The thread is placed by this server's own rules, as a thread that person started would be:
+ * on their own machine where machines are started for one person.
+ */
+export const ImportThreadForPersonInput = Schema.Struct({
+  bundle: ThreadBundle,
+  /** The person, by the id the platform states for them. */
+  person: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+  from: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+});
+export type ImportThreadForPersonInput = typeof ImportThreadForPersonInput.Type;
+
 export const ImportThreadResult = Schema.Struct({
   thread: Thread,
   notes: Schema.Array(Schema.String),
