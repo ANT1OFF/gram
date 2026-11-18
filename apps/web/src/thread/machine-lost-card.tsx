@@ -1,6 +1,6 @@
 import type { ThreadError, ThreadId } from "@gram/contracts";
 import { FileDiff, Play, ServerCrash } from "lucide-react";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
@@ -166,7 +166,9 @@ export function MachineLostCard({
           </span>
         </div>
         {viewing && saved !== undefined && (
-          <SavedDiffDialog threadId={threadId} saved={saved} onClose={() => setViewing(false)} />
+          <Suspense fallback={null}>
+            <SavedDiffDialog threadId={threadId} saved={saved} onClose={() => setViewing(false)} />
+          </Suspense>
         )}
         {failed !== undefined && (
           <p
