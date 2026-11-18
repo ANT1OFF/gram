@@ -499,10 +499,30 @@ export const setAsideFor = (
       tip.oid !== kept.head &&
       !(yield* isAncestor(top, tip.oid, kept.head)) &&
       (kept.uncommitted || !(yield* isAncestor(top, kept.head, tip.oid)));
-    if (!dirty && !diverged) return undefined;
+    // Commits made on a detached HEAD that the kept work doesn't hold and no branch or tag does:
+    // reachable from nothing else once the folder moves on.
+    const stray =
+      head !== undefined &&
+      head !== kept.head &&
+      !(yield* isAncestor(top, head, kept.head)) &&
+      (yield* run(top, ["for-each-ref", "--contains", head, "refs/heads", "refs/tags"])).stdout.trim() ===
+        "";
+    if (!dirty && !diverged && !stray) return undefined;
     if (diverged && tip?.kind === "commit" && head !== tip.oid)
       return yield* fail(`${branch} has commits of its own in another folder`);
-    const putAside = own || diverged;
+    // Never a branch another folder is on: moving it would change that folder under it.
+    if (diverged && branch !== undefined) {
+      const listed = (yield* run(top, ["worktree", "list", "--porcelain", "-z"])).stdout.split(
+        "\0\0",
+      );
+      for (const entry of listed) {
+        const fields = entry.split("\0");
+        const at = fields.find((field) => field.startsWith("worktree "))?.slice(9);
+        if (at !== undefined && !samePath(at, top) && fields.includes(`branch refs/heads/${branch}`))
+          return yield* fail(`${branch} is checked out in ${at}`);
+      }
+    }
+    const putAside = own || diverged || stray;
     if (putAside && (yield* readRef(top, `refs/heads/${aside}`)).kind !== "missing")
       return yield* fail(`${aside} is a branch here already`);
     const at = own

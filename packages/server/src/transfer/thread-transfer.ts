@@ -59,6 +59,7 @@ import {
   restoreWipWorktree,
   sanitizeBranch,
   setAsideFor,
+  type WipKept,
   snapshotWip,
   WIP_PUSH_PROTOCOLS,
   wipCaughtUp,
@@ -625,12 +626,44 @@ const make = (options: ThreadTransferOptions) =>
         const top = project.root;
         const branch = bundle.branch;
         const was = effectiveCheckout(copy.thread);
-        const inPlace =
+        const ours =
           was.kind === "worktree" &&
           was.hostId === undefined &&
           proc !== undefined &&
           (yield* withGit("", ofRepository(was.path, top)).pipe(Effect.orElseSucceed(() => false)));
-        // The copy steps aside first, onto the closed list with its folder kept.
+        // Read before anything here changes, so a refusal leaves the copy as it was: what the
+        // folder held as it left (before the fetch moves the ref), and the work coming back.
+        const left = ours
+          ? (yield* withGit(
+              "",
+              git(top, ["rev-parse", "--verify", "--quiet", `${wipRef(bundle.thread.id)}^{commit}`]),
+            ).pipe(Effect.orElseSucceed(() => ({ stdout: "" })))).stdout.trim()
+          : "";
+        const kept = yield* withGit(
+          "The thread's edits couldn't be fetched here",
+          fetchKept(top, bundle, branch),
+        );
+        // Its branch in another folder of the repository: the folder can't take it back in place,
+        // so it gets a new one, as an import does.
+        const busy =
+          ours && branch !== undefined
+            ? (yield* withGit("", git(top, ["worktree", "list", "--porcelain", "-z"])).pipe(
+                Effect.orElseSucceed(() => ({ stdout: "" })),
+              )).stdout
+                .split("\0\0")
+                .some((entry) => {
+                  const fields = entry.split("\0");
+                  const at = fields.find((field) => field.startsWith("worktree "))?.slice(9);
+                  return (
+                    at !== undefined &&
+                    nodePath.resolve(at) !== nodePath.resolve(was.path) &&
+                    fields.includes(`branch refs/heads/${branch}`)
+                  );
+                })
+            : false;
+        const inPlace = ours && !busy;
+        // The copy steps aside, onto the closed list with its folder kept; anything that fails
+        // from here on opens it again as it was.
         if (copy.open) {
           yield* runtimes
             .close(bundle.thread.id, {})
@@ -640,6 +673,42 @@ const make = (options: ThreadTransferOptions) =>
               ),
             );
         }
+        return yield* placeReturned(input, project, was, inPlace, kept, left, who).pipe(
+          Effect.onError(() => reopenCopy(bundle.thread.id)),
+        );
+      });
+
+    /** The copy, put on the closed list for a return that then failed, open again as it was. */
+    const reopenCopy = (threadId: Thread["id"]) =>
+      Effect.gen(function* () {
+        if (Option.isSome(yield* store.getThread(threadId).pipe(Effect.option))) return;
+        const closed = (yield* store.listClosed).find((each) => each.thread.id === threadId);
+        if (closed?.thread.transferredTo === undefined) return;
+        const taken = yield* store.takeClosed(threadId);
+        if (taken === undefined) return;
+        yield* reopener
+          .reopenTaken(taken.closed, [])
+          .pipe(
+            Effect.catch(() =>
+              store.rememberClosed(taken.closed.thread, taken.closed.closedAt, []),
+            ),
+          );
+      }).pipe(Effect.ignore);
+
+    /** The returning thread's folder made here, and the thread recorded in it and opened. */
+    const placeReturned = (
+      input: ImportThreadInput,
+      project: Project,
+      was: Checkout,
+      inPlace: boolean,
+      kept: WipKept,
+      left: string,
+      who: Who,
+    ) =>
+      Effect.gen(function* () {
+        const { bundle } = input;
+        const top = project.root;
+        const branch = bundle.branch;
         const now = yield* Clock.currentTimeMillis;
         const more: Array<string> = [];
         let checkout: Checkout;
@@ -650,14 +719,6 @@ const make = (options: ThreadTransferOptions) =>
           const put = yield* withGit(
             "The thread's edits couldn't be put back in its folder here",
             Effect.gen(function* () {
-              // What the folder held as it left, before the fetch below moves the ref.
-              const left = (yield* git(top, [
-                "rev-parse",
-                "--verify",
-                "--quiet",
-                `${wipRef(bundle.thread.id)}^{commit}`,
-              ])).stdout.trim();
-              const kept = yield* fetchKept(top, bundle, branch);
               const setAside = yield* setAsideFor(
                 was.path,
                 kept,
