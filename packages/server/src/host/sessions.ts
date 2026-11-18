@@ -31,7 +31,7 @@ import * as PubSub from "effect/PubSub";
 import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appToolsAt } from "./remote-app-tools.ts";
@@ -182,13 +182,11 @@ const optionsFor = (
 };
 
 /**
- * The folder a session opens in: the one asked for, or for a memory update, an empty folder made
- * for it alone and removed with its scope. A memory update's folder is the control plane's, which
+ * The folder a session opens in: the one asked for, or for a memory update, an empty folder of the
+ * host's own for that thread. A memory update's folder is the control plane's, which
  * it reaches through its app tools only, so nothing of this machine's is its working folder.
  */
-const sessionFolder = (
-  request: HostSessionOpen,
-): Effect.Effect<string, AgentUnavailable, Scope.Scope> =>
+const sessionFolder = (request: HostSessionOpen): Effect.Effect<string, AgentUnavailable> =>
   request.dreamFilesOnly !== true
     ? Effect.succeed(request.cwd)
     : // Only Claude Code's session holds its native tools off for one.
@@ -200,21 +198,21 @@ const sessionFolder = (
             message: "This machine runs memory updates in Claude Code only.",
           }),
         )
-      : Effect.acquireRelease(
-          Effect.tryPromise({
-            try: () => mkdtemp(join(tmpdir(), "gram-dream-")),
-            catch: (error) =>
-              new AgentUnavailable({
-                agent: request.agent,
-                reason: "startup-failed",
-                message: `A folder for the memory update couldn't be made: ${error instanceof Error ? error.message : String(error)}`,
-              }),
-          }),
-          (folder) =>
-            Effect.promise(() =>
-              rm(folder, { recursive: true, force: true }).catch(() => undefined),
-            ),
-        );
+      : Effect.tryPromise({
+          // One per thread, and kept: Claude Code keeps a session's conversation by its folder,
+          // so a reopen resumes it only from the same one. It stays empty.
+          try: async () => {
+            const folder = join(tmpdir(), `gram-dream-${request.threadId.replace(/[^\w-]/g, "_")}`);
+            await mkdir(folder, { recursive: true, mode: 0o700 });
+            return folder;
+          },
+          catch: (error) =>
+            new AgentUnavailable({
+              agent: request.agent,
+              reason: "startup-failed",
+              message: `A folder for the memory update couldn't be made: ${error instanceof Error ? error.message : String(error)}`,
+            }),
+        });
 
 /** Reaches a thread's app tools at the server's MCP endpoint. */
 export type AppToolsAt = (

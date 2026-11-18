@@ -63,6 +63,9 @@ const placedOn = (threads: ReadonlyArray<Thread>, id: HostId) =>
           .map((checkout) => checkout.path),
       ),
     ];
+    // A memory update's session runs there with its folder on the control plane: nothing to keep,
+    // and a session to rest and resume.
+    if (thread.dreamHost === id && !thread.parked) return [{ thread, cwds: [], session: true }];
     return cwds.length === 0
       ? []
       : [

@@ -1,5 +1,5 @@
 import { withAnchoredFiles } from "./anchored-files.ts";
-import { readableByOfWorkspace, readerMay } from "../embedding/readable-by.ts";
+import { ReadingAs, readableByOfWorkspace, readerMay, SERVER } from "../embedding/readable-by.ts";
 import {
   AutomaticDreamDeferred,
   defaultDreamModel,
@@ -1318,9 +1318,13 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                     ? undefined
                     : yield* store.getThread(id).pipe(Effect.orElseSucceed(() => undefined));
                 if (orchestrator === undefined) return yield* effect;
-                return yield* Effect.provideService(effect, RoutedFor, {
-                  person: workerHosts.ownerOf(hostOf(effectiveCheckout(orchestrator))),
-                });
+                // Reaching that machine only: what the attempt reads is still the server's to read.
+                return yield* effect.pipe(
+                  Effect.provideService(RoutedFor, {
+                    person: workerHosts.ownerOf(hostOf(effectiveCheckout(orchestrator))),
+                  }),
+                  Effect.provideService(ReadingAs, SERVER),
+                );
               });
 
       const startUnlocked = (

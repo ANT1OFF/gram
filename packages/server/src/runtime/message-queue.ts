@@ -37,6 +37,7 @@ import {
   type HostId,
   effectiveCheckout,
   hostOf,
+  sessionHostOf,
 } from "@gram/contracts";
 import {
   typedText,
@@ -1085,7 +1086,7 @@ export const makeQueueMethods = ({
       const queued = yield* store.listQueue(thread.id);
       if (thread.parked || queued.length === 0) continue;
       // A thread waiting for its machine to be named has no machine yet, which is not one removed.
-      if (thread.awaitingMachine === undefined && !paired(hostOf(effectiveCheckout(thread)))) {
+      if (thread.awaitingMachine === undefined && !paired(sessionHostOf(thread))) {
         unplaced++;
         continue;
       }
@@ -1118,7 +1119,11 @@ export const makeQueueMethods = ({
       const threads = yield* store.listThreads;
       for (const thread of threads) {
         if (thread.parked) continue;
-        if (hostOf(thread.checkout) !== hostId && hostOf(effectiveCheckout(thread)) !== hostId)
+        if (
+          hostOf(thread.checkout) !== hostId &&
+          hostOf(effectiveCheckout(thread)) !== hostId &&
+          sessionHostOf(thread) !== hostId
+        )
           continue;
         const live = runtimes.get(thread.id);
         const waiting =

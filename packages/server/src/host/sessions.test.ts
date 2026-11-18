@@ -40,7 +40,7 @@ import {
 import { isUndelivered } from "../runtime/undelivered.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { reposOn } from "./repos.ts";
@@ -436,27 +436,18 @@ describe("a joined machine's memory updates", () => {
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 
-  it.live("opens in an empty folder of the machine's own, removed when it closes", () =>
+  it.live("opens in an empty folder of the machine's own, the same one again on a reopen", () =>
     Effect.gen(function* () {
       const { onHost, inServer, agent } = yield* codexMachineWith(HOST_FEATURES, "claude");
-      const folder = yield* Effect.scoped(
-        Effect.gen(function* () {
-          yield* agent.open(DREAM);
-          const opened = onHost.opened[0]!;
-          expect(opened).toMatchObject({ audience: "dream", dreamFilesOnly: true });
-          expect(opened.remoteAppTools).toBeDefined();
-          expect(opened.cwd).not.toBe(DREAM.cwd);
-          expect(readdirSync(opened.cwd)).toEqual([]);
-          return opened.cwd;
-        }),
-      );
-      yield* Effect.promise(() =>
-        (async () => {
-          for (let i = 0; i < 50 && existsSync(folder); i++)
-            await new Promise((done) => setTimeout(done, 20));
-        })(),
-      );
-      expect(existsSync(folder)).toBe(false);
+      yield* Effect.scoped(agent.open(DREAM));
+      const opened = onHost.opened[0]!;
+      expect(opened).toMatchObject({ audience: "dream", dreamFilesOnly: true });
+      expect(opened.remoteAppTools).toBeDefined();
+      expect(opened.cwd).not.toBe(DREAM.cwd);
+      expect(readdirSync(opened.cwd)).toEqual([]);
+      // Claude Code finds a conversation to resume by its folder.
+      yield* Effect.scoped(agent.open({ ...DREAM, resumeId: "s-1" }));
+      expect(onHost.opened[1]!.cwd).toBe(opened.cwd);
       expect(inServer.opened).toEqual([]);
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
