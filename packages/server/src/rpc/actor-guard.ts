@@ -15,7 +15,9 @@ import {
   ReadingAs,
   readableByOf,
   pathsMentioned,
+  readableByOfWorkspace,
   readerMay,
+  workspacesMentioned,
   threadsMentioned,
   touchesUnreadable,
   withoutUnreadable,
@@ -394,11 +396,14 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           if (!anyPrivate()) return false;
           for (const threadId of threadsMentioned(payload))
             if (!readerMay(reader, readableByOf(threadId))) return true;
-          for (const workspaceId of workspacesNamed(payload)) {
-            const state = yield* store.getWorkspace(workspaceId).pipe(Effect.option);
+          for (const workspaceId of new Set([
+            ...workspacesNamed(payload),
+            ...workspacesMentioned(payload),
+          ])) {
+            const state = yield* store.getWorkspace(workspaceId as WorkspaceId).pipe(Effect.option);
             const holder =
               state._tag === "Some" ? state.value.workspace.orchestratorThreadId : undefined;
-            if (holder !== undefined && !readerMay(reader, readableByOf(holder))) return true;
+            if (!readerMay(reader, readableByOfWorkspace(workspaceId, holder))) return true;
           }
           return false;
         });

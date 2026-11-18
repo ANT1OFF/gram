@@ -35,6 +35,8 @@ import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { IDENTITY_HEADER, SERVICE_TYP } from "./fronted-identity.ts";
 import { makeTestProxy } from "./fronted-identity.testing.ts";
+import { ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
+import { WORKSPACE_EXPORT_PATH } from "../transfer/routes.ts";
 import { LaunchToken, serverPort, ServerLayer } from "./server.ts";
 
 const proxy = makeTestProxy();
@@ -53,7 +55,7 @@ const folder = () => {
   return made;
 };
 
-const server = (embedding: boolean) =>
+const server = (embedding: boolean, fronted = true) =>
   ServerLayer.pipe(
     Layer.provideMerge(makeFakeAgentAdapter({ reply: "echo" })),
     Layer.provide(TurnHooks.layerNoop),
@@ -62,7 +64,7 @@ const server = (embedding: boolean) =>
       ServerConfig.layer({
         ...TEST_CONFIG,
         dataDir: folder(),
-        frontedIdentity: proxy.config,
+        ...(fronted ? { frontedIdentity: proxy.config } : {}),
         embedding,
       }),
     ),
@@ -437,6 +439,43 @@ describe("threads readable by one person", () => {
       }),
     );
 
+    it.effect("keep their content off the routes outside the socket too", () =>
+      Effect.gen(function* () {
+        const { port } = yield* info;
+        const store = yield* ThreadStore;
+        const privateFolder = (yield* store.getThread(PRIVATE)).checkout.path;
+        writeFileSync(join(privateFolder, "NOTES.md"), "the secret notes");
+        const adaClient = yield* as(port, ada);
+        const moClient = yield* as(port, mo);
+
+        // An answer to one of its asks, over its own HTTP route.
+        const answer = (claims: Record<string, unknown>) =>
+          send(
+            port,
+            "POST",
+            ASK_ANSWER_PATH,
+            JSON.stringify({
+              threadId: PRIVATE,
+              requestId: "no-such-request",
+              answer: { kind: "approval", decision: "allow", scope: "once" },
+            }),
+            { [IDENTITY_HEADER]: proxy.statement(claims) },
+          );
+        const moAnswer = yield* answer(mo);
+        expect(moAnswer.status).toBe(404);
+        expect(moAnswer.body).toContain(NOT_READABLE);
+        expect((yield* answer(ada)).body).not.toContain(NOT_READABLE);
+
+        // A file of its, and an attachment, as the app fetches them to show.
+        const preview = (who: Client) => who["fs.preview"]({ threadId: PRIVATE, path: "NOTES.md" });
+        expect(yield* outcome(preview(moClient))).toContain(NOT_READABLE);
+        expect(JSON.stringify(yield* preview(adaClient))).toContain("the secret notes");
+        expect(
+          yield* outcome(moClient["attachment.read"]({ threadId: PRIVATE, path: "a.png" })),
+        ).toContain(NOT_READABLE);
+      }),
+    );
+
     it.effect("keep their reader for good, and give it to every thread they spawn", () =>
       Effect.gen(function* () {
         const { port } = yield* info;
@@ -540,4 +579,39 @@ describe("threads readable by one person", () => {
       }),
     );
   });
+
+  layer(server(true, false), { excludeTestServices: true })(
+    "with the hosted features on and nobody signed in through a proxy",
+    (it) => {
+      it.effect("are no one's to take out over a route of the local app's", () =>
+        Effect.gen(function* () {
+          const { port, token } = yield* info;
+          const runtimes = yield* ThreadRuntimes;
+          const host = { host: `127.0.0.1:${port}` };
+          const boot = yield* send(port, "GET", `/?boot=${token}`, undefined, host);
+          const local = {
+            ...host,
+            cookie: boot.setCookie.split(";")[0] ?? "",
+            origin: `http://127.0.0.1:${port}`,
+          };
+          // A workspace whose threads are Ada's: the local app, signed in as no one, can't
+          // carry it away, though it may export any other.
+          const workspaceId = "ws-ada-only";
+          yield* runtimes.create({
+            projectRoot: folder(),
+            checkout: { kind: "main", path: folder() },
+            deferOpen: true,
+            readableBy: "ada",
+            workspaceId: workspaceId as never,
+          });
+          const exported = (id: string) =>
+            send(port, "POST", WORKSPACE_EXPORT_PATH, JSON.stringify({ workspaceId: id }), local);
+          const refused = yield* exported(workspaceId);
+          expect(refused.status, refused.body).toBe(404);
+          expect(refused.body).toContain(NOT_READABLE);
+          expect((yield* exported("ws-anyones")).body).not.toContain(NOT_READABLE);
+        }),
+      );
+    },
+  );
 });

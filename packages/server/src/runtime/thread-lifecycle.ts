@@ -3,7 +3,7 @@
 
 import type { EventSinkShape } from "../embedding/event-sink.ts";
 import { ActingPerson } from "../embedding/person.ts";
-import { readableByOf, spawnScope } from "../embedding/readable-by.ts";
+import { readableByOf, readableByOfWorkspace, spawnScope } from "../embedding/readable-by.ts";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Fiber from "effect/Fiber";
@@ -298,6 +298,7 @@ export const makeThreadLifecycle = ({
       const readableBy =
         (yield* parentReader(input.spawnedBy?.threadId)) ??
         (orchestratorOf === thread.id ? undefined : yield* parentReader(orchestratorOf)) ??
+        (input.workspaceId === undefined ? undefined : readableByOfWorkspace(input.workspaceId)) ??
         (yield* spawnScope) ??
         input.readableBy ??
         input.kept?.readableBy;

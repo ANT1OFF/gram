@@ -40,8 +40,11 @@ import {
   pathsMentioned,
   ReadingAs,
   readableByOf,
+  readableByOfWorkspace,
+  readerMay,
   threadsMentioned,
   touchesUnreadable,
+  workspacesMentioned,
 } from "../embedding/readable-by.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { makeActionGuard, type ActionGuard } from "../embedding/guard.ts";
@@ -485,6 +488,13 @@ export const bindAppTools = (
                   return yield* new AppToolError({
                     tool: descriptor.name,
                     message: `unknown thread ${named}`,
+                  });
+              // Nor a workspace of such a thread's.
+              for (const workspaceId of workspacesMentioned(decoded))
+                if (!readerMay(yield* currentReader, readableByOfWorkspace(workspaceId)))
+                  return yield* new AppToolError({
+                    tool: descriptor.name,
+                    message: `unknown workspace ${workspaceId}`,
                   });
               // Nor a path into such a thread's folder, by any spelling.
               if (

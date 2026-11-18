@@ -35,13 +35,23 @@ export interface Reader {
   readonly fromThread?: boolean | undefined;
 }
 
+/** The server's own work, which reads everything: said where a route is the server's own. */
+export const SERVER = "server" as const;
+
 /**
- * Who this fiber reads as, where a route said: set around every RPC and every agent tool call.
- * Absent: read from the caller the fiber is routed for (`currentCaller`).
+ * Who this fiber reads as, where an entry point said: every HTTP request and socket a person can
+ * reach, as their subject or as no one (`http/server.ts`), the platform's own service as the
+ * server; every RPC (`rpc/actor-guard.ts`) and every agent tool call (`app-tools/registry.ts`).
+ * Absent: read from the caller the fiber is routed for (`currentCaller`), which is the server's
+ * only where the server's own work said so (`ServerWork`), and no one otherwise.
  */
-export const ReadingAs = Context.Reference<Reader | undefined>("@gram/server/ReadingAs", {
-  defaultValue: () => undefined,
-});
+export const ReadingAs = Context.Reference<Reader | typeof SERVER | undefined>(
+  "@gram/server/ReadingAs",
+  { defaultValue: () => undefined },
+);
+
+/** No one: a person-facing request with no signed-in person, or a thread without a reader. */
+export const NOBODY: Reader = { subject: undefined };
 
 /** What a reader who may not see a thread is told: as if there were none. */
 export const NOT_READABLE = "That thread isn't there.";
@@ -50,6 +60,13 @@ export const NOT_READABLE = "That thread isn't there.";
 export const SUBJECT = /^[\x21-\x7e]{1,128}$/;
 
 const known = new Map<ThreadId, string>();
+
+/**
+ * The reader of each workspace a thread readable by one person belongs to, noted with the thread:
+ * what the workspace holds (its finished workers, memory, docs, outputs) stays that person's after
+ * its orchestrator has gone. A workspace links only threads of one reader, so a workspace has one.
+ */
+const workspaceReaders = new Map<string, string>();
 
 /**
  * Every folder a thread readable by one person has worked in, as noted: its checkout, the one it
@@ -66,9 +83,14 @@ export interface ThreadFolders {
 }
 
 /** Notes whose a thread is, as it is read or written, and where it works. A reader never changes. */
-export const notePrivacy = (thread: Pick<Thread, "id" | "readableBy"> & ThreadFolders): void => {
+export const notePrivacy = (
+  thread: Pick<Thread, "id" | "readableBy"> &
+    ThreadFolders & { readonly workspaceId?: string | undefined },
+): void => {
   if (thread.readableBy === undefined) return;
   if (!known.has(thread.id)) known.set(thread.id, thread.readableBy);
+  if (typeof thread.workspaceId === "string" && !workspaceReaders.has(thread.workspaceId))
+    workspaceReaders.set(thread.workspaceId, thread.readableBy);
   const paths = [thread.checkout, thread.currentCheckout, ...(thread.extraCheckouts ?? [])];
   for (const each of paths) {
     if (each === undefined || typeof each.path !== "string" || !isAbsolute(each.path)) continue;
@@ -84,9 +106,21 @@ export const anyPrivate = (): boolean => known.size > 0;
 /** The subject a thread is readable by, as noted; undefined for a thread readable by anyone. */
 export const readableByOf = (threadId: ThreadId): string | undefined => known.get(threadId);
 
+/**
+ * The subject a workspace is readable by: its threads' reader, as noted, else its orchestrator's
+ * (`orchestrator`, where the caller knows it); undefined for a workspace anyone may see.
+ */
+export const readableByOfWorkspace = (
+  workspaceId: string,
+  orchestrator?: ThreadId | undefined,
+): string | undefined =>
+  workspaceReaders.get(workspaceId) ??
+  (orchestrator === undefined ? undefined : known.get(orchestrator));
+
 /** This fiber's reader: `ReadingAs`, else its caller's person; undefined for the server's work. */
 export const currentReader: Effect.Effect<Reader | undefined> = Effect.gen(function* () {
   const said = yield* ReadingAs;
+  if (said === SERVER) return undefined;
   if (said !== undefined) return said;
   const caller = yield* currentCaller;
   return caller === undefined ? undefined : { subject: caller.person };
@@ -132,7 +166,9 @@ export const readableOnly = <A>(
  * (`Reader.fromThread`): a private thread's agent makes only threads private to the same person.
  */
 export const spawnScope: Effect.Effect<string | undefined> = Effect.map(ReadingAs, (reader) =>
-  reader?.fromThread === true ? reader.subject : undefined,
+  reader !== undefined && reader !== SERVER && reader.fromThread === true
+    ? reader.subject
+    : undefined,
 );
 
 /** A key that names a thread of this server's, never another service's (a review's on GitHub). */
@@ -160,6 +196,24 @@ export const threadsMentioned = (payload: unknown): ReadonlyArray<ThreadId> => {
       } else {
         walk(field, depth + 1);
       }
+    }
+  };
+  walk(payload, 0);
+  return found;
+};
+
+/** Every workspace a call's payload or a tool's input names by id, anywhere in it. */
+export const workspacesMentioned = (payload: unknown): ReadonlyArray<string> => {
+  const found: Array<string> = [];
+  const walk = (value: unknown, depth: number) => {
+    if (depth > 4 || typeof value !== "object" || value === null) return;
+    if (Array.isArray(value)) {
+      for (const item of value.slice(0, 500)) walk(item, depth + 1);
+      return;
+    }
+    for (const [key, field] of Object.entries(value)) {
+      if (key === "workspaceId" && typeof field === "string") found.push(field);
+      else walk(field, depth + 1);
     }
   };
   walk(payload, 0);
