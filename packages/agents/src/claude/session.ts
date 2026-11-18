@@ -603,7 +603,13 @@ export const makeClaudeHost = (
     >();
     const openSession = Effect.fnUntraced(function* (o: OpenSessionOptions) {
       if (o.dreamFilesOnly === true) o = { ...o, confineWrites: true };
-      if (o.dreamFilesOnly === true && o.audience === "dream" && o.appTools === undefined)
+      // On a joined machine's host the bridge is the control plane's, over its MCP endpoint.
+      if (
+        o.dreamFilesOnly === true &&
+        o.audience === "dream" &&
+        o.appTools === undefined &&
+        o.remoteAppTools === undefined
+      )
         return yield* new AgentUnavailable({
           agent: "claude",
           reason: "startup-failed",

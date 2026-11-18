@@ -68,6 +68,13 @@ export const makeAutomaticDream = (deps: {
     claim: string,
   ) => Effect.Effect<unknown, unknown>;
   changed: (workspaceId: WorkspaceId) => Effect.Effect<void>;
+  /**
+   * Who a workspace's attempt is made for: on a server that runs no work itself, its
+   * orchestrator's machine's owner, whose machine lists the models and runs the session.
+   */
+  asOwner?: (
+    workspace: WorkspaceState,
+  ) => <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
 }) => {
   const { store, hosts, archive } = deps;
   const history = (workspaceId: WorkspaceId) =>
@@ -179,6 +186,8 @@ export const makeAutomaticDream = (deps: {
       ),
     );
   const attempt = (workspace: WorkspaceState, expectedEpoch?: string) =>
+    attemptAs(workspace, expectedEpoch).pipe(deps.asOwner?.(workspace) ?? ((effect) => effect));
+  const attemptAs = (workspace: WorkspaceState, expectedEpoch?: string) =>
     Effect.gen(function* () {
       const id = workspace.workspace.id;
       const state = yield* store.getAutomaticDreamState(id);

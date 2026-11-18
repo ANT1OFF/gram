@@ -88,6 +88,8 @@ export interface CreateThreadInput {
   >;
   /** Orchestration's fields, in the row from its first insert; only `orchestrator.open` gives a role. */
   readonly role?: NonNullable<Thread["role"]>;
+  /** A memory update's machine on a server that runs nothing itself (`Thread.dreamHost`). */
+  readonly dreamHost?: NonNullable<Thread["dreamHost"]>;
   readonly workspaceId?: NonNullable<Thread["workspaceId"]>;
   readonly spawnedBy?: NonNullable<Thread["spawnedBy"]>;
   readonly additionalDirectories?: ReadonlyArray<string>;

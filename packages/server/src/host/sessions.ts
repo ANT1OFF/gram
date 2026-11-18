@@ -31,6 +31,9 @@ import * as PubSub from "effect/PubSub";
 import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { appToolsAt } from "./remote-app-tools.ts";
 
 /** The agents a host runs sessions for, by kind. */
@@ -177,6 +180,41 @@ const optionsFor = (
     onConnectorsSeen,
   };
 };
+
+/**
+ * The folder a session opens in: the one asked for, or for a memory update, an empty folder made
+ * for it alone and removed with its scope. A memory update's folder is the control plane's, which
+ * it reaches through its app tools only, so nothing of this machine's is its working folder.
+ */
+const sessionFolder = (
+  request: HostSessionOpen,
+): Effect.Effect<string, AgentUnavailable, Scope.Scope> =>
+  request.dreamFilesOnly !== true
+    ? Effect.succeed(request.cwd)
+    : // Only Claude Code's session holds its native tools off for one.
+      request.agent !== "claude"
+      ? Effect.fail(
+          new AgentUnavailable({
+            agent: request.agent,
+            reason: "startup-failed",
+            message: "This machine runs memory updates in Claude Code only.",
+          }),
+        )
+      : Effect.acquireRelease(
+          Effect.tryPromise({
+            try: () => mkdtemp(join(tmpdir(), "gram-dream-")),
+            catch: (error) =>
+              new AgentUnavailable({
+                agent: request.agent,
+                reason: "startup-failed",
+                message: `A folder for the memory update couldn't be made: ${error instanceof Error ? error.message : String(error)}`,
+              }),
+          }),
+          (folder) =>
+            Effect.promise(() =>
+              rm(folder, { recursive: true, force: true }).catch(() => undefined),
+            ),
+        );
 
 /** Reaches a thread's app tools at the server's MCP endpoint. */
 export type AppToolsAt = (
@@ -430,11 +468,13 @@ export const sessionsOnHost = (
                       ),
                     ),
                 (remoteAppTools) =>
-                  host.open(
-                    optionsFor(request, remoteAppTools, (report) => {
-                      seen.last = report;
-                      PubSub.publishUnsafe(changes, report);
-                    }),
+                  Effect.flatMap(sessionFolder(request), (cwd) =>
+                    host.open(
+                      optionsFor({ ...request, cwd }, remoteAppTools, (report) => {
+                        seen.last = report;
+                        PubSub.publishUnsafe(changes, report);
+                      }),
+                    ),
                   ),
               ),
             ),

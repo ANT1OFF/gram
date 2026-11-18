@@ -84,6 +84,11 @@ RUN if [ -n "${CHROMIUM}" ]; then \
     && apt-get install -y --no-install-recommends chromium fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*; \
   fi
+# Python, for memory updates: their files are read and written here by a small /usr/bin/python3
+# helper that holds directory handles (`anchored-files.ts`), wherever their session runs.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 \
+  && rm -rf /var/lib/apt/lists/*
 # Owned by root: the agents run as gram and can't rewrite the server they run under.
 COPY --from=server-build /opt/gram /opt/gram
 USER gram

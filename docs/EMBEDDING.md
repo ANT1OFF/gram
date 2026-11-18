@@ -363,6 +363,33 @@ again, a worker reopened, it asks the same with `released: false, reason: "worki
 provider keeps the disk. Each is told once; after a restart it may be told again, which a provider
 takes as the same word. `404` means the provider keeps none of this.
 
+## Memory updates on a headless server
+
+A headless server runs memory updates as the desktop app does, from the same Settings, with Review
+as the default and automatic runs after a number of completed threads. What differs is where the
+agent runs:
+
+- **Its session goes on the workspace's orchestrator's machine.** The memory update's folder (its
+  snapshot of memory and transcripts, and the candidate it writes) stays in this server's data
+  folder, and the agent reaches it only through its app tools (`dream_read`, `dream_write`,
+  `dream_check` and the rest), over the machine's MCP endpoint, as every session there reaches its
+  tools. Nothing of the workspace's transcripts is copied to the machine's disk; what the agent
+  reads passes through its session as any turn does.
+- **Claude Code only.** Its memory update has no native tool, no settings and no MCP server but
+  Gram's, so it never needs the folder itself. The host opens it in an empty folder made for it
+  and removed when it ends (`dream-sessions` in the host's hello; an older host is refused, and
+  says to update it). Codex's memory update reads and writes its folder with native tools, so a
+  headless server refuses one and asks for a Claude Code model.
+- **Whose machine.** The orchestrator's machine's owner may read the workspace, and a memory update
+  reads only threads everyone who sees the workspace may (`readableBy`), so nothing reaches a
+  machine whose owner couldn't read it. An automatic run is made for that owner: their machine's
+  models decide whether it can start, and its session waits for a stopped machine as any thread's
+  session there does. With
+  no orchestrator on a machine yet, a manual start is refused and an automatic one waits, keeping
+  its count.
+- **The server needs `/usr/bin/python3`**, as the desktop app does, for the helper that reads and
+  writes the memory update's files through directory handles. The control-plane image has it.
+
 ## A note for a thread
 
 The platform can give one thread a note, which its agent takes as a turn of its own once the thread is free, as it takes any input the server writes itself. It wakes a thread at rest for something that happened outside it, such as an answer given elsewhere to what the agent was waiting on.

@@ -1244,7 +1244,9 @@ bounded memory output and preserves native permissions. It is a separate
 transport and permission decision from helper generation and ordinary coding.
 Claude Code supports bounded file-tool memory updates on macOS/Linux with
 `/usr/bin/python3`: snapshot inputs read-only, candidate/notes writable, native
-tools disabled.
+tools disabled. On a headless server the session runs on the workspace's orchestrator's machine
+while the files stay on the server
+([Embedding](EMBEDDING.md#memory-updates-on-a-headless-server)).
 
 Codex memory updates are guided at CLI 0.166.0: workspace-write sandbox and on-request
 approvals, with instructions guiding snapshot reads and candidate writes. Native

@@ -93,10 +93,32 @@ const crossesAsData = (options: OpenSessionOptions): boolean =>
  * Whether a session can open on a joined machine's host. As `opensOnHost`, and Codex and OpenCode
  * too (OpenCode's `opencode serve` and config there are that machine's own). Codex: its
  * homes there are that machine's own, and so is the app-server a restart waits for, so the wait
- * goes to the host with the open (`HostSessionOpen.waitForPrevious`).
+ * goes to the host with the open (`HostSessionOpen.waitForPrevious`). And a memory update, as
+ * `dreamOpensOnMachine` admits it.
  */
 export const opensOnMachine = (agent: AgentKind, options: OpenSessionOptions): boolean =>
-  agent === "codex" || agent === "opencode" ? crossesAsData(options) : opensOnHost(agent, options);
+  options.audience === "dream" || options.dreamFilesOnly === true || options.dreamGuided === true
+    ? dreamOpensOnMachine(agent, options)
+    : agent === "codex" || agent === "opencode"
+      ? crossesAsData(options)
+      : opensOnHost(agent, options);
+
+/**
+ * Whether a memory update can open on a joined machine, for a server that runs no work itself: a
+ * Claude Code one with no native tools (`dreamFilesOnly`), whose files it reaches through its app
+ * tools over the MCP endpoint, so they stay this server's. A guided Codex one reads and writes its
+ * folder with native tools, and that folder is here, so it doesn't.
+ */
+const dreamOpensOnMachine = (agent: AgentKind, options: OpenSessionOptions): boolean =>
+  agent === "claude" &&
+  options.audience === "dream" &&
+  options.dreamFilesOnly === true &&
+  options.dreamGuided !== true &&
+  options.confineWrites === true &&
+  options.mcp !== undefined &&
+  options.model?.profileId === undefined &&
+  options.switchStartup === undefined &&
+  options.waitForPreviousSession === undefined;
 
 const defined = <A extends object>(value: A): A =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as A;
@@ -134,6 +156,7 @@ const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): H
     browserAsk: o.browserAsk,
     codexHome: o.codexHome,
     waitForPrevious: o.waitForPreviousSession === undefined ? undefined : true,
+    dreamFilesOnly: o.dreamFilesOnly,
     browserScope:
       o.browserScope === undefined
         ? undefined

@@ -37,9 +37,8 @@ import {
   type Thread,
   type TurnId,
   type ThreadId,
-  effectiveCheckout,
-  isLocalHost,
-  hostOf,
+  sessionHostOf,
+  LOCAL_HOST_ID,
 } from "@gram/contracts";
 import { UNKNOWN_FAILURE } from "./thread-error.ts";
 import { accountOf, machineAccountScope } from "./limit-wait.ts";
@@ -584,11 +583,11 @@ export const makeSessionLifecycle = ({
       rt.accountScope = yield* accountScopeFor(thread);
       rt.quota = accountOf({ ...thread.model, accountScope: rt.accountScope });
       if (
-        isLocalHost(effectiveCheckout(thread)) &&
+        sessionHostOf(thread) === LOCAL_HOST_ID &&
         thread.model.profileId === undefined &&
         Option.isSome(limitReadings)
       ) {
-        const machine = hostOf(effectiveCheckout(thread));
+        const machine = sessionHostOf(thread);
         const meterScope =
           rt.accountScope === machineAccountScope(machine, `thread:${thread.id}`)
             ? (limitReadings.value.scopeFor?.(machine, "unknown") ??

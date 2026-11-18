@@ -43,8 +43,12 @@ import {
   type DreamReport,
   type DreamResolution,
   type DreamReview,
+  effectiveCheckout,
   type FsError,
+  type HostId,
+  hostOf,
   isPinned,
+  LOCAL_HOST_ID,
   type ImportPreview,
   type ModelRef,
   type Project,
@@ -69,6 +73,9 @@ import * as Stream from "effect/Stream";
 import { createHash, randomUUID } from "node:crypto";
 import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore, type MessageMark } from "../persistence/thread-store.ts";
+import { dreamSupportFor } from "@gram/agents";
+import { RoutedFor } from "../host/ownership.ts";
+import { WorkerHosts } from "../host/worker-host.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { ThreadRuntimes, type ObservedTurnEnd } from "../runtime/thread-runtimes.ts";
 import { ThreadArchive, threadSource, type ArchivedThread } from "./archive.ts";
@@ -188,6 +195,9 @@ type Signal =
   | { readonly type: "hub"; readonly event: ServerEvent };
 
 const refuse = (message: string) => new InvalidState({ message });
+/** An automatic launch's refusal is a deferral, which keeps its batch for a later try. */
+const refuseOrDefer = (automatic: boolean, message: string) =>
+  automatic ? new AutomaticDreamDeferred({ message }) : refuse(message);
 
 const plural = (count: number, one: string, many = `${one}s`) =>
   `${count} ${count === 1 ? one : many}`;
@@ -488,6 +498,8 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
       const archive = yield* ThreadArchive;
       const hosts = yield* AgentHosts;
       const orchestration = yield* Orchestration;
+      // Who each joined machine was started for, where one was; absent where none can join.
+      const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
       // Absent in runtime-only layers, where an import asks for each project's root alone.
       const worktrees = Option.getOrUndefined(yield* Effect.serviceOption(Worktrees));
       const importDeps: ImportDeps = {
@@ -1254,6 +1266,63 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           };
         });
 
+      /**
+       * The machine a dream's session runs on, on a server that runs no work itself
+       * (`AgentHosts.elsewhere`): the workspace's orchestrator's, whose owner may read everything
+       * the dream reads (`planDream` keeps to what everyone who sees the workspace may). Its
+       * folder and files stay here, reached through its app tools alone, so only a Claude Code
+       * dream, which has no native tools, goes. `undefined` where dreams run here.
+       */
+      const dreamMachine = (
+        workspace: WorkspaceState["workspace"],
+        model: ModelRef,
+        automatic: boolean,
+      ): Effect.Effect<HostId | undefined, InvalidState> =>
+        Effect.gen(function* () {
+          if (hosts.elsewhere !== true) return undefined;
+          if (dreamSupportFor(model.agent, { kind: "implementation" }).mode !== "confined")
+            return yield* refuseOrDefer(
+              automatic,
+              "This Gram runs no work itself, and a memory update runs on a machine in Claude Code only. Pick a Claude Code model for it.",
+            );
+          const orchestrator =
+            workspace.orchestratorThreadId === undefined
+              ? undefined
+              : yield* store
+                  .getThread(workspace.orchestratorThreadId)
+                  .pipe(Effect.orElseSucceed(() => undefined));
+          const machine =
+            orchestrator === undefined ? undefined : hostOf(effectiveCheckout(orchestrator));
+          if (machine === undefined || machine === LOCAL_HOST_ID)
+            return yield* refuseOrDefer(
+              automatic,
+              `This Gram runs no work itself, and ${workspace.name}'s orchestrator has no machine for a memory update to run on yet. Start the orchestrator, then try again.`,
+            );
+          return machine;
+        });
+
+      /**
+       * `effect` as made for the owner of `workspace`'s orchestrator's machine, on a server that
+       * runs no work itself: an automatic dream's models are that machine's, and its session opens
+       * there. Anywhere else, and for a workspace with no orchestrator on a machine, as it is.
+       */
+      const asWorkspaceOwner =
+        (workspace: WorkspaceState) =>
+        <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+          hosts.elsewhere !== true || workerHosts === undefined
+            ? effect
+            : Effect.gen(function* () {
+                const id = workspace.workspace.orchestratorThreadId;
+                const orchestrator =
+                  id === undefined
+                    ? undefined
+                    : yield* store.getThread(id).pipe(Effect.orElseSucceed(() => undefined));
+                if (orchestrator === undefined) return yield* effect;
+                return yield* Effect.provideService(effect, RoutedFor, {
+                  person: workerHosts.ownerOf(hostOf(effectiveCheckout(orchestrator))),
+                });
+              });
+
       const startUnlocked = (
         input: StartDreamInput,
         automaticThreshold?: number,
@@ -1274,6 +1343,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             );
           }
           const model = input.model ?? (yield* defaultDreamModel(settings, hosts));
+          const dreamHost = yield* dreamMachine(workspace, model, automaticThreshold !== undefined);
           const home = (yield* store.listProjects).find((p) => p.id === workspace.homeProjectId);
           if (home === undefined) {
             return yield* new NotFound({ entity: "project", id: workspace.homeProjectId });
@@ -1385,6 +1455,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                     // tools or guided native permissions through the shared Dream decision.
                     mode: "acceptEdits",
                     role: "dream",
+                    ...(dreamHost === undefined ? {} : { dreamHost }),
                     workspaceId: workspace.id,
                     input: {
                       text: dreamPrompt({
@@ -1429,6 +1500,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
         store,
         hosts,
         archive,
+        asOwner: asWorkspaceOwner,
         changed: dreamsChanged,
         start: (workspaceId, model, threshold, claim) =>
           startUnlocked({ workspaceId, kind: "dream", model }, threshold, claim),

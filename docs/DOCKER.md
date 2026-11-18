@@ -335,7 +335,10 @@ services:
   local tools don't run, and their answer says so (`headless: true`, and no tool listed), so the web app shows no setup
   banner or title-bar chip for tools this container was never asked to have. Each machine's own
   tools and sign-in show in the Machine select and Settings → Machines.
+- A memory update runs its Claude Code session on the workspace's orchestrator's machine, with
+  its files kept here ([how](EMBEDDING.md#memory-updates-on-a-headless-server)). A Codex one
+  isn't available headless.
 - Not on a machine yet, so not available headless: Codex sessions, sessions through a gateway
-  profile, memory updates, and handing an orchestrator over to a new session.
+  profile, and handing an orchestrator over to a new session.
 - The server still keeps a folder for each project (added or cloned in the container), which it
   reads the project's remote and branches from. Nothing is run in it.
