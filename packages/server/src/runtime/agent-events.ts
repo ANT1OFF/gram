@@ -1011,6 +1011,7 @@ export const makeAgentEvents = ({
         case "ended":
           rt.endedReason = event.reason;
           rt.restartedMachine = event.restartedMachine;
+          rt.lostMachine = event.lostMachine;
           return;
         case "backgroundTasks":
           yield* setBackground(rt, event.tasks);

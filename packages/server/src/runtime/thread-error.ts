@@ -143,11 +143,13 @@ export const threadError = (
   context: FailureContext,
   at: number,
   turnId?: TurnId,
+  machineLost?: ThreadError["machineLost"],
 ): ThreadError => ({
   ...failure,
   text: failureText(failure, detail, context),
   ...(turnId === undefined ? {} : { turnId }),
   at,
+  ...(machineLost === undefined ? {} : { machineLost }),
 });
 
 const isAuthProblem = (error: AgentUnavailable): boolean =>

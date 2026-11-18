@@ -232,6 +232,11 @@ export const EndedEvent = Schema.Struct({
    * restarted under it. The conversation is still there to resume on that machine.
    */
   restartedMachine: Schema.optionalKey(Schema.String),
+  /**
+   * The joined machine, by name, that went away under the session and didn't come back in time: the
+   * turn it ran was cut off there, and its work in progress is what was last kept of it.
+   */
+  lostMachine: Schema.optionalKey(Schema.String),
 });
 
 /** The permission mode changed: by the user, a plan approval, or the agent. */

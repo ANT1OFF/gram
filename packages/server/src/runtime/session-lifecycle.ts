@@ -28,6 +28,7 @@ import {
   machineRestartText,
   machineRestartToolText,
 } from "./machine-restart.ts";
+import { commandDuring, machineLostToolText } from "./machine-lost.ts";
 import { missingThreadFolder } from "../fs/folders.ts";
 import {
   type AgentEvent,
@@ -387,6 +388,20 @@ export const makeSessionLifecycle = ({
         const restart = yield* machineRestartPlan(rt, stopping, exit, turnCut);
         if (restart?.kind === "fail") rt.endedReason = restart.reason;
         const carriesOn = restart?.kind === "continue" || restart?.kind === "rest";
+        // A joined machine that went away and didn't come back: the turn fails, saying so.
+        const lostMachine =
+          restart === undefined && stopping === undefined ? rt.lostMachine : undefined;
+        rt.lostMachine = undefined;
+        const lostDuring =
+          lostMachine === undefined
+            ? undefined
+            : commandDuring(
+                [...rt.open.values()].flatMap((inFlight) =>
+                  inFlight.accumulator
+                    .unfinishedTools()
+                    .map((id) => inFlight.accumulator.toolPart(id)?.["input"]),
+                ),
+              );
         // The session's end takes its background tasks with it, and its connectors.
         yield* setBackground(rt, []);
         // Scope termination withdraws live process visibility, without claiming the process
@@ -406,9 +421,16 @@ export const makeSessionLifecycle = ({
               // A machine that restarted under the session took its running tools with it (a
               // foreground shell's process died with the host); none of them is coming back, and
               // the resumed session doesn't run them again. Said as what is known: no exit code.
-              const cut = restart === undefined ? [] : inFlight.accumulator.unfinishedTools();
+              const cut =
+                restart === undefined && lostMachine === undefined
+                  ? []
+                  : inFlight.accumulator.unfinishedTools();
               const errorText =
-                restart === undefined ? "" : machineRestartToolText(restart.machine);
+                restart !== undefined
+                  ? machineRestartToolText(restart.machine)
+                  : lostMachine !== undefined
+                    ? machineLostToolText(lostMachine)
+                    : "";
               for (const toolCallId of cut) {
                 yield* appendChunkLocked(rt, inFlight.messageId, {
                   type: "tool-output-error",
@@ -448,7 +470,18 @@ export const makeSessionLifecycle = ({
           !isShuttingDown() &&
           Option.isNone(unavailable) &&
           (endedMidTurn || Option.isNone(kept))
-            ? yield* recordFailure(rt, UNKNOWN_FAILURE, exitDetail, turnId)
+            ? yield* recordFailure(
+                rt,
+                UNKNOWN_FAILURE,
+                exitDetail,
+                turnId,
+                lostMachine === undefined || !endedMidTurn
+                  ? undefined
+                  : {
+                      machine: lostMachine,
+                      ...(lostDuring === undefined ? {} : { during: lostDuring }),
+                    },
+              )
             : undefined;
         // A shutdown keeps what streamed, a background subagent's transcript under an idle parent
         // too, but leaves the turn itself open (`shutdown`).

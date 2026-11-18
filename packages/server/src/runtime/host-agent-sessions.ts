@@ -68,6 +68,7 @@ export const machineAwayEnded = (machine: string): AgentEvent => ({
   reason: `${machine} stopped or restarted and didn't come back within ${Math.round(
     REATTACH_WITHIN_MS / 60_000,
   )} minutes, so the agent stopped with it.`,
+  lostMachine: machine,
 });
 
 /**

@@ -67,6 +67,8 @@ export interface ThreadsApi {
   interrupt(threadId: ThreadId): Promise<void>;
   /** Resumes a thread waiting out a provider limit now. */
   resumeLimitWait(threadId: ThreadId): Promise<void>;
+  /** Resumes a thread whose last turn a lost machine cut off, with Gram's note of what happened. */
+  resumeAfterMachineLost(threadId: ThreadId): Promise<void>;
   /** Stops a thread's limit wait; it stands failed until the user sends. */
   cancelLimitWait(threadId: ThreadId): Promise<void>;
   /**

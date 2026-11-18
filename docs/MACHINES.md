@@ -511,6 +511,11 @@ the local app, as the other `/machines/*` routes are.
   folder back from that ref when it is resumed, as after a stop, and loses at most the last few
   minutes. Only folders Gram made from a clone are kept, since only those can be made again. A
   host older than this keeps nothing until it is readied to stop.
+- When a lost machine doesn't come back within the session's reattach window, the turn it cut
+  off fails saying so (`ThreadError.machineLost`: the machine, and the command that was running),
+  not as a plain session end. The conversation shows that turn's card with Resume worker
+  (`thread.resumeAfterMachineLost`): the same conversation gets Gram's note of what was cut off,
+  which brings the machine back and its folder as last kept.
 - `POST /machines/stop/cancel` takes a stop back: the host takes new work again.
 - `POST /machines/stop/status` lists each joined machine: `online`, `stoppedAt` when it was
   readied and hasn't dialled in since, `wanted` when a thread waits on it now, and `resuming`

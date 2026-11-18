@@ -51,6 +51,8 @@ export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => {
       ),
     interrupt: (threadId) => run(client["thread.interrupt"]({ threadId })),
     resumeLimitWait: (threadId) => run(client["thread.resumeLimitWait"]({ threadId })),
+    resumeAfterMachineLost: (threadId) =>
+      run(client["thread.resumeAfterMachineLost"]({ threadId })),
     cancelLimitWait: (threadId) => run(client["thread.cancelLimitWait"]({ threadId })),
     restartSession: (threadId, midTurn) =>
       run(
