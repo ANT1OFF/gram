@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pick an element in Preview · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <script type="application/json" id="mock-tweaks">
+      {
+        "density": {
+          "label": "Density",
+          "type": "enum",
+          "options": ["compact", "comfortable"],
+          "default": "compact"
+        }
+      }
+    </script>
+    <style>
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+        min-height: 0;
+        flex: 1;
+      }
+      .convo {
+        display: flex;
+        flex-direction: column;
+        gap: var(--gap);
+        padding: var(--pad);
+        border-right: 1px solid var(--border-subtle);
+        min-width: 0;
+        min-height: 0;
+      }
+      .convo .grow {
+        flex: 1;
+      }
+      .bubble {
+        align-self: flex-end;
+        max-width: 85%;
+        padding: 8px 12px;
+        border-radius: 10px;
+        background: var(--surface-3);
+      }
+      .composer {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--border-strong);
+        border-radius: 12px;
+        background: var(--surface-2);
+      }
+      .composer .typed {
+        min-height: 40px;
+        color: var(--fg);
+      }
+      .composer .typed.hint {
+        color: var(--fg-subtle);
+      }
+      .composer-foot {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 100%;
+        height: 24px;
+        padding: 0 4px 0 8px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 6px;
+        background: var(--surface-3);
+        font-size: 12px;
+        color: var(--fg);
+      }
+      .chip code {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--fg-muted);
+      }
+      .chip .x {
+        display: inline-flex;
+        border: 0;
+        background: transparent;
+        color: var(--fg-subtle);
+        padding: 2px;
+        border-radius: 4px;
+      }
+      .card-pop {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 320px;
+        padding: 10px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 8px;
+        background: var(--surface-2);
+        box-shadow: var(--shadow-overlay);
+        font-size: 12px;
+      }
+      .card-pop pre {
+        margin: 0;
+        padding: 6px 8px;
+        border-radius: 6px;
+        background: var(--surface-1);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        white-space: pre-wrap;
+        color: var(--fg-muted);
+      }
+      .facts {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 2px 10px;
+      }
+      .facts dt {
+        color: var(--fg-subtle);
+      }
+      .facts dd {
+        margin: 0;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--fg-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .panel {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+      }
+      .strip {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .strip .address {
+        flex: 1;
+        min-width: 0;
+        margin: 0 4px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        height: 28px;
+      }
+      .icon-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--fg-muted);
+      }
+      .icon-btn:hover {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .icon-btn[aria-pressed="true"] {
+        background: var(--accent-tint);
+        color: var(--accent);
+      }
+      .activity {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-bottom: 1px solid var(--border-subtle);
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .stage {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        background: var(--surface-1);
+        overflow: hidden;
+      }
+      /* The developer's own page, as Preview shows it: plain, not Gram's look. */
+      .site {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 28px 32px;
+        background: var(--surface-2);
+      }
+      .site h3 {
+        margin: 0;
+        font-size: 18px;
+      }
+      .site .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .site .box {
+        display: block;
+        height: 32px;
+        border: 1px solid var(--border-strong);
+        border-radius: 6px;
+      }
+      .site .total {
+        display: flex;
+        justify-content: space-between;
+        font-size: 14px;
+      }
+      .site .pay {
+        position: relative;
+        align-self: flex-start;
+        margin-left: 6px;
+        padding: 8px 18px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--fg);
+        color: var(--surface-1);
+        font-size: 14px;
+      }
+      .picking .site {
+        cursor: crosshair;
+      }
+      .outline {
+        position: absolute;
+        inset: -3px;
+        border: 2px solid var(--accent);
+        border-radius: 8px;
+        pointer-events: none;
+      }
+      .tag {
+        position: absolute;
+        left: -3px;
+        top: calc(100% + 6px);
+        display: inline-flex;
+        gap: 6px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: var(--accent);
+        color: var(--accent-fg);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .picked-mark {
+        position: absolute;
+        inset: -3px;
+        border: 2px dashed var(--accent);
+        border-radius: 8px;
+        pointer-events: none;
+      }
+      .over {
+        position: absolute;
+        left: 50%;
+        bottom: 16px;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px 6px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 8px;
+        background: var(--surface-2);
+        font-size: 12px;
+        box-shadow: var(--shadow-overlay);
+        white-space: nowrap;
+      }
+      @media (max-width: 700px) {
+        .split {
+          grid-template-columns: 1fr;
+        }
+        .convo {
+          border-right: 0;
+        }
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        A Pick button in Preview's toolbar. Pick, then click an element on your page: it lands in
+        the composer as a chip, like a diff comment, and you write what you want done with it. Look
+        at the toolbar at rest, the page while picking, and the chip with what the agent gets.
+      </p>
+
+      <section
+        class="board"
+        data-name="Thread with Preview"
+        data-size="1280x800"
+        data-states="rest,picking,picked"
+      >
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>Fix the checkout button</span>
+            </div>
+            <div class="app-body">
+              <nav class="sidebar" aria-label="Threads">
+                <div class="section-label">Solo threads</div>
+                <a class="nav-item" href="#" aria-current="page"
+                  ><i data-icon="msg"></i>Fix the checkout button</a
+                >
+                <a class="nav-item" href="#"><i data-icon="msg"></i>Bump dependencies</a>
+                <a class="nav-item" href="#"><i data-icon="msg"></i>Release checklist</a>
+              </nav>
+              <div class="main split">
+                <section class="convo" aria-label="Conversation">
+                  <div class="bubble small">Make the checkout page match the new design.</div>
+                  <p class="small">
+                    Done: the form uses the new spacing, and the total sits above the button. It's
+                    running on localhost:5173/checkout.
+                  </p>
+                  <span class="grow"></span>
+                  <div class="composer">
+                    <div class="chips" data-when="picked">
+                      <span class="chip" title="What the agent gets">
+                        <i data-icon="hand"></i>Pay now <code>button.pay</code>
+                        <button class="x" type="button" aria-label="Remove">
+                          <i data-icon="x"></i>
+                        </button>
+                      </span>
+                    </div>
+                    <div class="typed hint" data-when="rest,picking">
+                      Steer the agent… (/ for commands, @ for files)
+                    </div>
+                    <div class="typed" data-when="picked">
+                      This sits 6 px off the form's left edge; line it up with the fields.
+                    </div>
+                    <div class="composer-foot">
+                      <span>Opus</span>
+                      <span class="grow"></span>
+                      <button class="btn sm primary" type="button">Send</button>
+                    </div>
+                  </div>
+                  <div class="card-pop" data-when="picked" aria-label="What the agent gets">
+                    <strong>Pay now, on localhost:5173/checkout</strong>
+                    <dl class="facts">
+                      <dt>Selector</dt>
+                      <dd>form.checkout &gt; button.pay</dd>
+                      <dt>Size</dt>
+                      <dd>112 × 36 at 38, 412</dd>
+                      <dt>Styles</dt>
+                      <dd>margin-left 6px · padding 8px 18px · font 14px</dd>
+                    </dl>
+                    <pre>&lt;button class="pay" type="submit"&gt;Pay now&lt;/button&gt;</pre>
+                    <span class="muted"
+                      >With a crop of the element. Click the chip to show it in Preview.</span
+                    >
+                  </div>
+                </section>
+
+                <section class="panel" aria-label="Preview">
+                  <div class="tabs" role="tablist">
+                    <button class="tab" role="tab" type="button">Diff</button>
+                    <button class="tab" role="tab" type="button">Files</button>
+                    <button class="tab" role="tab" aria-selected="true" type="button">
+                      Preview
+                    </button>
+                  </div>
+                  <div class="strip">
+                    <button class="icon-btn" type="button" aria-label="Back">
+                      <i data-icon="left"></i>
+                    </button>
+                    <button class="icon-btn" type="button" aria-label="Reload">
+                      <i data-icon="refresh"></i>
+                    </button>
+                    <input
+                      class="input address"
+                      aria-label="Preview address"
+                      value="localhost:5173/checkout"
+                    />
+                    <button
+                      class="icon-btn"
+                      type="button"
+                      aria-label="Pick an element to add to your message"
+                      title="Pick an element to add to your message"
+                      aria-pressed="false"
+                      data-when="rest,picked"
+                    >
+                      <i data-icon="hand"></i>
+                    </button>
+                    <button
+                      class="icon-btn"
+                      type="button"
+                      aria-label="Stop picking"
+                      title="Stop picking (Esc)"
+                      aria-pressed="true"
+                      data-when="picking"
+                    >
+                      <i data-icon="hand"></i>
+                    </button>
+                    <button class="icon-btn" type="button" aria-label="Inspect page capture">
+                      <i data-icon="search"></i>
+                    </button>
+                    <button class="icon-btn" type="button" aria-label="Open in your browser">
+                      <i data-icon="external"></i>
+                    </button>
+                  </div>
+
+                  <div class="stage" data-when="rest">
+                    <div class="site">
+                      <h3>Checkout</h3>
+                      <label class="field">Email<span class="box"></span></label>
+                      <label class="field">Card<span class="box"></span></label>
+                      <div class="total"><span>Total</span><strong>€ 48.00</strong></div>
+                      <button class="pay" type="button">Pay now</button>
+                    </div>
+                  </div>
+
+                  <div class="stage picking" data-when="picking">
+                    <div class="site">
+                      <h3>Checkout</h3>
+                      <label class="field">Email<span class="box"></span></label>
+                      <label class="field">Card<span class="box"></span></label>
+                      <div class="total"><span>Total</span><strong>€ 48.00</strong></div>
+                      <button class="pay" type="button">
+                        Pay now
+                        <span class="outline" aria-hidden="true"></span>
+                        <span class="tag">button.pay <span>112 × 36</span></span>
+                      </button>
+                    </div>
+                    <div class="over" role="status">
+                      Click an element to add it to your message
+                      <span class="kbd">Esc</span>
+                    </div>
+                  </div>
+
+                  <div class="stage" data-when="picked">
+                    <div class="site">
+                      <h3>Checkout</h3>
+                      <label class="field">Email<span class="box"></span></label>
+                      <label class="field">Card<span class="box"></span></label>
+                      <div class="total"><span>Total</span><strong>€ 48.00</strong></div>
+                      <button class="pay" type="button">
+                        Pay now
+                        <span class="picked-mark" aria-hidden="true"></span>
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

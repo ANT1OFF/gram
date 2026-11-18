@@ -6,6 +6,7 @@ import {
   type BrowserRegion,
   type BrowserViewportPreset,
   type PaneResult,
+  type PickedElement,
   type PreviewBounds,
   type PreviewState,
 } from "@gram/contracts";
@@ -188,6 +189,27 @@ export class MockPreview implements DesktopPreview {
 
   takeOver(threadId: string): void {
     this.drive(threadId, "user");
+  }
+
+  readonly #picking = new Map<string, (picked: PickedElement | null) => void>();
+
+  /** As the shell's: one pick per thread at a time, ended by `choose` or `cancelPick`. */
+  pick(threadId: string): Promise<PickedElement | null> {
+    this.cancelPick(threadId);
+    return new Promise((resolve) => this.#picking.set(threadId, resolve));
+  }
+
+  cancelPick(threadId: string): void {
+    this.#picking.get(threadId)?.(null);
+    this.#picking.delete(threadId);
+  }
+
+  /** Dev and e2e hook: the user clicks `element` on `threadId`'s page while picking. */
+  choose(threadId: string, element: Omit<PickedElement, "url">): void {
+    const resolve = this.#picking.get(threadId);
+    if (resolve === undefined) return;
+    this.#picking.delete(threadId);
+    resolve({ ...element, url: this.#pages.get(threadId)?.state.url ?? "" });
   }
 
   // Explicit test replays may replace these methods. The iframe mock has no CDP inspection.

@@ -118,11 +118,16 @@ export function DriverButton({
 export function ToolButton({
   label,
   disabled,
+  pressed,
+  testId,
   onClick,
   children,
 }: {
   label: string;
   disabled: boolean;
+  /** A toggle's state, for one that stays on until pressed again. */
+  pressed?: boolean;
+  testId?: string;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -135,8 +140,10 @@ export function ToolButton({
           size="icon-xs"
           variant="ghost"
           aria-label={label}
+          aria-pressed={pressed}
+          data-testid={testId}
           disabled={disabled}
-          className="shrink-0 text-muted-foreground"
+          className="shrink-0 text-muted-foreground aria-pressed:bg-accent aria-pressed:text-accent-foreground"
           onClick={onClick}
         />
       }
