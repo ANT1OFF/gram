@@ -80,6 +80,8 @@ import { useViewStore } from "@/views/view-store";
 
 import { useReportIssueDialog } from "@/report-issue/report-issue-dialog";
 import { stepNeedsYou } from "@/orchestration/use-needs-you";
+import { threadNeed } from "@/orchestration/needs-you-items";
+import { useDerivedAsks } from "@/orchestration/needs-you-store";
 
 import {
   buildScopedSections,
@@ -103,7 +105,7 @@ import { useWordFilters, WordFilterControls } from "./word-filter-controls";
 import { Snippet } from "./snippet";
 import { openThreadBeside } from "./open-beside";
 import { paletteIcon, paletteIconKind } from "./palette-icons";
-import { paletteDot, paletteStatusWords, statusWord } from "./status-words";
+import { paletteDot, paletteStatusWords, soloPaletteStatus, statusWord } from "./status-words";
 
 /** Steps of "Open in pane…" that keep the palette open for the next pick. */
 /** The pane commands a touch screen goes without, as it shows one pane at a time. */
@@ -175,6 +177,7 @@ export function PaletteBody({
   const currentId = params.threadId as ThreadId | undefined;
   const byId = useThreadsStore((s) => s.byId);
   const statusDetail = useThreadsStore((s) => s.statusDetail);
+  const needGroups = useDerivedAsks((s) => s.needsYou.groups);
   const askHeld = useAskStackStore((s) => s.held);
   const askSent = useAskStackStore((s) => s.sent);
   const { data: projects = [] } = useQuery({
@@ -321,9 +324,24 @@ export function PaletteBody({
     ledgers,
     { byId, statusDetail, now },
   );
+  // A thread outside the workspaces says what its sidebar row says, the Inbox's ask included.
+  const solo = (summary: ThreadSummary) =>
+    statusWords.has(summary.thread.id) || summary.thread.spawnedBy !== undefined
+      ? undefined
+      : soloPaletteStatus(
+          summary,
+          statusDetail[summary.thread.id],
+          threadNeed(needGroups, summary.thread.id),
+        );
+  const threadStatus = (summary: ThreadSummary) => {
+    const own = solo(summary);
+    if (own !== undefined) return own;
+    const word = statusWord(summary, statusWords);
+    return { word, dot: paletteDot(word) };
+  };
   const describe = (summary: ThreadSummary) => ({
     label: summary.thread.title,
-    hint: `${projectNameOf(projects, summary.thread.projectId)} · ${statusWord(summary, statusWords)}`,
+    hint: `${projectNameOf(projects, summary.thread.projectId)} · ${threadStatus(summary).word}`,
     keywords: summary.thread.checkout.branch ?? "",
   });
   const goTo = (threadId: ThreadId) => {
@@ -366,7 +384,7 @@ export function PaletteBody({
     id: `thread:${summary.thread.id}`,
     ...describe(summary),
     ...(summary.thread.role === "orchestrator" ? { icon: "orchestrator" as const } : {}),
-    dot: paletteDot(statusWord(summary, statusWords)),
+    dot: threadStatus(summary).dot,
     scope: threadScope(summary.thread),
     beside: () => openThreadBeside(summary.thread.id),
     run: () => goTo(summary.thread.id),
