@@ -76,6 +76,7 @@ import { forkedFromText } from "./fork-text";
 import { trackWrappedChips } from "./header-chips";
 import { LabelChip, useThreadLabel } from "./label-chip";
 import { AwaitingMachine, MachineStarting, useMachineWait } from "./awaiting-machine";
+import { SentNotice } from "./sent-notice";
 import { WAIT_WORDS } from "./awaiting-machine-model";
 import { MachineChip } from "./machine-chip";
 import { FolderMissingNotice } from "./folder-missing-notice";
@@ -827,15 +828,20 @@ export function ThreadView({
             onStop={stopTask}
           />
           {thread.role === "orchestrator" && <UndoLine />}
-          <TurnCompleteSheen key={threadId} status={status}>
-            <ThreadComposer
-              thread={thread}
-              focused={focused}
-              {...(beside === undefined
-                ? {}
-                : { placeholder: beside.placeholder ?? "Steer this thread…" })}
-            />
-          </TurnCompleteSheen>
+          {/* Sent to a server: it runs there, and its orchestrator messages it, so no composer. */}
+          {thread.sentTo !== undefined ? (
+            <SentNotice threadId={threadId} />
+          ) : (
+            <TurnCompleteSheen key={threadId} status={status}>
+              <ThreadComposer
+                thread={thread}
+                focused={focused}
+                {...(beside === undefined
+                  ? {}
+                  : { placeholder: beside.placeholder ?? "Steer this thread…" })}
+              />
+            </TurnCompleteSheen>
+          )}
         </div>
       </div>
     </BesideLinkScope.Provider>

@@ -399,7 +399,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           // Asked again, it is at work again: followed again if it had ended, and an end heard
           // from a wait that began before this isn't taken as its last.
           const askedAt = yield* Clock.currentTimeMillis;
-          yield* store
+          yield* runtimes
             .updateThread(target.thread.id, (current) =>
               current.sentTo === undefined
                 ? current

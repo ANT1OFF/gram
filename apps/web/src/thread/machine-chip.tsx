@@ -8,8 +8,8 @@ import { tildify } from "@/new-thread/path";
 import { useHome } from "@/new-thread/use-folder";
 
 import { AwaitingMachineChip } from "./awaiting-machine";
-import { threadHost } from "./machine-mark";
-import { useMachineMark } from "./machine-marker";
+import { sentMark, threadHost } from "./machine-mark";
+import { MarkGlyph, useMachineMark } from "./machine-marker";
 
 /**
  * Where a thread on another machine runs, in the pane header: the machine's name, and that it is
@@ -25,6 +25,7 @@ export function MachineChip({ thread, className }: { thread: Thread; className?:
   // On no machine yet: its wait in the machine's place, kept however narrow the pane, since
   // nothing else in the header says why the thread hasn't answered.
   if (thread.awaitingMachine !== undefined) return <AwaitingMachineChip thread={thread} />;
+  if (thread.sentTo !== undefined) return <SentChip thread={thread} className={className} />;
   if (hostId === undefined) return null;
   return <PlacedChip hostId={hostId} path={effectiveCheckout(thread).path} className={className} />;
 }
@@ -96,5 +97,36 @@ function PlacedChip({
         {folder}
       </Hint>
     </>
+  );
+}
+
+/** A worker sent to a server, in the pane header: the workspace there and its host, as a badge. */
+function SentChip({ thread, className }: { thread: Thread; className?: string | undefined }) {
+  const sent = thread.sentTo;
+  if (sent === undefined) return null;
+  const mark = sentMark(sent);
+  const [where] = mark.hint.split("\n");
+  return (
+    <Hint
+      label={mark.hint}
+      side="bottom"
+      render={
+        <span
+          data-testid="pane-sent"
+          data-machine-state={mark.state ?? "online"}
+          role="img"
+          aria-label={mark.state === undefined ? where : `${where}, ${mark.state}`}
+          className={cn(
+            "flex min-w-0 shrink items-center gap-1 text-meta whitespace-nowrap",
+            mark.state === undefined ? "text-muted-foreground" : "text-foreground",
+            className,
+          )}
+        />
+      }
+    >
+      <MarkGlyph mark={mark} className="size-icon-chip shrink-0" />
+      <span className="min-w-0 truncate">{where?.replace(/^Runs on /, "")}</span>
+      {mark.state !== undefined && <span className="shrink-0">{mark.state}</span>}
+    </Hint>
   );
 }

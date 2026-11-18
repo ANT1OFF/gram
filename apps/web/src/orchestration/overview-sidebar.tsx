@@ -151,7 +151,12 @@ import {
 } from "./overview-section";
 import { shownPrNumbers, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
 import { threadHost, type MachineMark } from "@/thread/machine-mark";
-import { MachineMarker, useMachineMark, useThreadHost } from "@/thread/machine-marker";
+import {
+  MachineMarker,
+  useMachineMark,
+  useThreadHost,
+  useThreadSent,
+} from "@/thread/machine-marker";
 import { peek } from "./peek-store";
 import {
   ANSWERED,
@@ -1052,7 +1057,8 @@ export function WorkerRow({
   // The other machine it runs on, if any: named at its edge unless the edge has words of its own,
   // when the glyph alone stands and the name is on its hover card.
   const hostId = useThreadHost(row.threadId);
-  const machine = useMachineMark(hostId);
+  const sent = useThreadSent(row.threadId);
+  const machine = useMachineMark(hostId, sent);
   // What its edge says beyond its dot: "Starting…", an ask, a failure, a wait's reason, real
   // activity. A tone's own word ("Idle") gives way to the machine's name.
   const edgeSays = starting || (!routine && (waiting !== undefined || nowLineShown(row)));
@@ -1125,6 +1131,7 @@ export function WorkerRow({
         {/* Its hover is the row's own: its card, or the flyout's title, says the machine whole. */}
         <MachineMarker
           hostId={hostId}
+          sent={sent}
           show={edgeSays ? "glyph" : "name"}
           hover="none"
           testId="overview-worker-machine"
@@ -1882,7 +1889,7 @@ export function SoloRow({
   // The other machine it runs on, if any: named at its edge before its time, its glyph alone
   // beside an alarm's words.
   const hostId = threadHost(thread);
-  const machine = useMachineMark(hostId);
+  const machine = useMachineMark(hostId, thread.sentTo);
   const where = machine === undefined ? "" : `, ${machine.words}`;
   // What needs you or failed takes a second line of its own, so the title stays whole and the
   // words are never cut against it; the dot becomes a bar beside both lines, as a worker's does.
@@ -1929,6 +1936,7 @@ export function SoloRow({
         <span data-testid="overview-solo-status" className={cn(ROW_TRAIL, WORKER_TRAIL)}>
           <MachineMarker
             hostId={hostId}
+            sent={thread.sentTo}
             show={twoLines ? "glyph" : "name"}
             hover="none"
             testId="overview-solo-machine"
