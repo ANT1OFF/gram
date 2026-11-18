@@ -138,6 +138,11 @@ export interface SpawnWorkerInput {
    * `resolve`, never by the agent directly.
    */
   readonly placement?: WorkerPlacement | undefined;
+  /**
+   * The embedding host's conversations the orchestrator owns and hands to the worker
+   * (`embedding/conversations.ts`), by id.
+   */
+  readonly conversations?: ReadonlyArray<string> | undefined;
 }
 
 /** What `spawn_worker` tells the orchestrator about a low-priority brief it held instead. */

@@ -128,6 +128,7 @@ import { type OrchestrationShape } from "./shape.ts";
 import { RemoteHosts } from "../../host/remote-hosts.ts";
 import type { OwnerOf } from "../../host/ownership.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
+import { Conversations } from "../../embedding/conversations.ts";
 import { heldBriefOf } from "../limit-pause.ts";
 import { type PromptWorktree } from "../prompt.ts";
 
@@ -651,6 +652,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   const remoteHosts = yield* Effect.serviceOption(RemoteHosts);
   // A headless Gram's placement, absent anywhere else: where a worker goes when none is named.
   const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
+  // An embedding host's conversations, where the server keeps them: handed on by `spawn_worker`.
+  const conversations = Option.getOrUndefined(yield* Effect.serviceOption(Conversations));
   const headless = workerHosts?.headless;
   // Who each joined machine was started for, where one was (`host/ownership.ts`).
   const ownerOf: OwnerOf = workerHosts?.ownerOf ?? (() => undefined);
@@ -1497,6 +1500,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   return {
     joinedMachines,
     workerHosts,
+    conversations,
     headless,
     ownerOf,
     store,

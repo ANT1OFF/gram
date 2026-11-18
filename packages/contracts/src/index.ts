@@ -1,5 +1,6 @@
 export * from "./agent-failure.ts";
 export * from "./agent.ts";
+export * from "./conversations.ts";
 export * from "./usage-overview.ts";
 export * from "./usage-limits.ts";
 export * from "./usage-limit-history.ts";

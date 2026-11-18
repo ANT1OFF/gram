@@ -775,6 +775,28 @@ describe("MessageBlock sent time", () => {
     expect(screen.getByTestId("message-copy").getAttribute("aria-label")).toBe("Copy message");
   });
 
+  it("says which conversation outside Gram a message came from", () => {
+    render(
+      {
+        id: "u-chat",
+        role: "user",
+        metadata: { createdAt: AT },
+        parts: [
+          { type: "text", text: "who is on call?" },
+          {
+            type: "data-conversation",
+            id: "u-chat",
+            data: { id: "slack:T1/C2/1", label: "Slack · #runbooks" },
+          },
+        ],
+      },
+      undefined,
+    );
+    const line = screen.getByTestId("message-conversation");
+    expect(line.textContent).toBe("From Slack · #runbooks");
+    expect(hint(line)).toBe("slack:T1/C2/1");
+  });
+
   it("marks a message sent into a running turn as steered or interrupting, beside its time", () => {
     for (const [delivery, label] of [
       ["steer", "Steered"],

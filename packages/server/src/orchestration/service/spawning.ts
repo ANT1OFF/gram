@@ -251,6 +251,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     openedInAuto,
     joinedMachines,
     workerHosts,
+    conversations,
     config,
     headless,
     ownerOf,
@@ -904,6 +905,23 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               ),
             );
           }
+          const handed = [...new Set(input.conversations ?? [])];
+          if (handed.length > 0) {
+            const notOwned = handed.filter(
+              (id) => !(caller.conversations ?? []).some((each) => each.id === id),
+            );
+            if (conversations === undefined || notOwned.length > 0) {
+              return yield* toolError(
+                tool,
+                refusal(
+                  "not_allowed",
+                  conversations === undefined
+                    ? "This server keeps no conversations to hand on."
+                    : `You don't own the conversation ${notOwned.join(", ")}, so no worker started. Hand on only the conversations your messages came from.`,
+                ),
+              );
+            }
+          }
           const found = yield* survey(state, true);
           // At the concurrency cap, or outside the workspace: the approval gate asked the user
           // before this handler ran (`spawnNeedsApproval`), and they said yes to this one. Nothing
@@ -1176,6 +1194,17 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
 
           workerWorkspaces.set(worker.id, workspaceId);
           if (mode === "auto") openedInAuto.add(worker.id);
+          if (handed.length > 0 && conversations !== undefined) {
+            // The worker exists: a conversation that couldn't move stays the orchestrator's, and
+            // it is told so rather than losing the worker.
+            yield* conversations.hand(caller.id, worker.id, handed).pipe(
+              Effect.catch((e) =>
+                Effect.sync(() => {
+                  warnings.push(`The conversations stay yours: ${e.message}`);
+                }),
+              ),
+            );
+          }
           const now = yield* Clock.currentTimeMillis;
           yield* updateOutbox(workspaceId, (outbox) => {
             // The thread was live, its brief sent, before this records it: a message the user typed
@@ -1282,23 +1311,22 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       Effect.flatMap((held): Effect.Effect<HeldSpawn | RouteOffer | undefined> =>
         held === undefined ? routeGate(callerId, input) : Effect.succeed(held),
       ),
-      Effect.flatMap(
-        (offer): Effect.Effect<SpawnedWorker | HeldSpawn | RouteOffer, AppToolError> =>
-          offer !== undefined
-            ? Effect.succeed(offer)
-            : holdGate(callerId, input).pipe(
-                Effect.flatMap(
-                  (held): Effect.Effect<SpawnedWorker | HeldSpawn | RouteOffer, AppToolError> =>
-                    held !== undefined
-                      ? routeHeld(callerId, input, held)
-                      : limitGate(callerId, input).pipe(
-                          Effect.matchEffect({
-                            onFailure: (refused) => routePaused(callerId, input, refused),
-                            onSuccess: () => spawnFor(callerId, input),
-                          }),
-                        ),
-                ),
+      Effect.flatMap((offer): Effect.Effect<SpawnedWorker | HeldSpawn | RouteOffer, AppToolError> =>
+        offer !== undefined
+          ? Effect.succeed(offer)
+          : holdGate(callerId, input).pipe(
+              Effect.flatMap(
+                (held): Effect.Effect<SpawnedWorker | HeldSpawn | RouteOffer, AppToolError> =>
+                  held !== undefined
+                    ? routeHeld(callerId, input, held)
+                    : limitGate(callerId, input).pipe(
+                        Effect.matchEffect({
+                          onFailure: (refused) => routePaused(callerId, input, refused),
+                          onSuccess: () => spawnFor(callerId, input),
+                        }),
+                      ),
               ),
+            ),
       ),
     );
 

@@ -3,7 +3,8 @@
 // of a person it signed in. It is how a person's own API or MCP client writes in a thread without a
 // browser: the platform decided that the person may, and names them.
 //
-//   thread-messages  { "threadId", "person": { "id", "name"? }, "text", "key", "mode"? }
+//   thread-messages  { "threadId", "person": { "id", "name"? }, "text", "key", "mode"?,
+//                      "conversation"?: { "id", "label"? } }
 //     → 200 { "queued": false }                 sent now, or steered into the running turn
 //       200 { "queued": true }                  a turn was running: it waits behind it
 //   thread-interrupt { "threadId", "person": { "id", "name"? } }
@@ -25,12 +26,24 @@
 // nothing) or `interrupt` (the turn stops and the agent answers this); a steer on a thread with no
 // turn it can take it in is sent as `queue` would.
 //
+// `conversation` names the host's own conversation the message came from (a chat thread, say):
+// the transcript shows where it came from, the agent is told so it can `reply` there, and the
+// thread owns the conversation unless another open thread does (`conversations.ts`).
+//
 // The platform is trusted to say who the person is, as it is when it starts a thread for one
 // (`/threads/from-profile`'s `startedBy`): it proves itself with the embed token, never a cookie.
 
 import { readableByOf, readerMay } from "./readable-by.ts";
-import { ModelRef, ThreadRpcs, type ThreadId, type UserInput } from "@gram/contracts";
+import {
+  type ConversationRef,
+  conversationRefProblem,
+  ModelRef,
+  ThreadRpcs,
+  type ThreadId,
+  type UserInput,
+} from "@gram/contracts";
 import * as Schema from "effect/Schema";
+import { Conversations } from "./conversations.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -83,6 +96,7 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
     const machines = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts))?.machines;
     const ownerOf = ownersOf(machines);
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
+    const conversations = Option.getOrUndefined(yield* Effect.serviceOption(Conversations));
 
     /**
      * `effect` as `person`, for the thread: refused for a thread on a machine started for someone
@@ -125,11 +139,27 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
           return refusal(400, `\`text\` is 1 to ${THREAD_MESSAGE_MAX} characters`);
         if (typeof mode !== "string" || !(THREAD_MESSAGE_MODES as readonly string[]).includes(mode))
           return refusal(400, "`mode` is `queue`, `steer` or `interrupt`");
+        const given = body?.["conversation"];
+        const problem = given === undefined ? undefined : conversationRefProblem(given);
+        if (problem !== undefined) return refusal(400, problem);
+        const conversation = given as ConversationRef | undefined;
+        if (conversation !== undefined && conversations === undefined)
+          return refusal(409, "this server keeps no conversations");
         const id = threadId as ThreadId;
         if (Option.isNone(yield* store.getThread(id).pipe(Effect.option)))
           return refusal(404, "there is no such thread");
 
-        const input: UserInput = { text };
+        const input: UserInput = {
+          text,
+          ...(conversation === undefined
+            ? {}
+            : {
+                conversation: {
+                  id: conversation.id,
+                  ...(conversation.label === undefined ? {} : { label: conversation.label.trim() }),
+                },
+              }),
+        };
         // A steer the thread can't take now (no turn running, or an agent that can't) is sent.
         const deliver =
           mode === "queue"
@@ -141,13 +171,17 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
                   Effect.catchTag("InvalidState", () => runtimes.send(id, input)),
                 );
         // One receipt per key, as the web app's: sent again, it answers what the first did.
+        // The thread takes the conversation as the message goes in, and keeps it if it can't be
+        // sent now: the host routed the conversation here.
         const received = store.messageReceipt(
           id,
           key,
           ["embed", mode, input],
           sendRpc.successSchema,
           sendRpc.errorSchema,
-          deliver,
+          input.conversation === undefined || conversations === undefined
+            ? deliver
+            : Effect.andThen(conversations.arrive(id, input.conversation), deliver),
         );
         const outcome = yield* asPerson(
           person,

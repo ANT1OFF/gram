@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { hasGit } from "../git/test-repo.ts";
+import { Conversations } from "../embedding/conversations.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { inServer, sessionsOf } from "../orchestration/service-kit.ts";
 import { completeTurn, waitSent } from "../orchestration/test-harness.ts";
@@ -125,11 +126,16 @@ describe.skipIf(!hasGit)("an orchestrator started from a profile", () => {
         const orchestrator = yield* waitSent(ID, 1);
         yield* completeTurn(orchestrator);
 
+        // A conversation the orchestrator owns, handed to the worker it spawns.
+        const conversations = yield* Conversations;
+        const chat = { id: "chat:42", label: "#on-call" };
+        yield* conversations.arrive(ID, chat);
         const result = (yield* orchestrator.callTool("spawn_worker", {
           project: "Runbooks",
           feature: "rota",
           title: "Draft the on-call rota",
           brief: "Draft next week's rota.",
+          conversations: [chat.id],
         })) as { readonly threadId: ThreadId };
         const session = yield* waitSent(result.threadId, 1);
         const worker = yield* store.getThread(result.threadId);
@@ -138,6 +144,8 @@ describe.skipIf(!hasGit)("an orchestrator started from a profile", () => {
           path: join(world.dir, PROFILE_THREADS_DIR, worker.id),
         });
         expect(worker.spawnedBy).toMatchObject({ threadId: ID, feature: "rota" });
+        expect(worker.conversations).toEqual([chat]);
+        expect((yield* store.getThread(ID)).conversations).toBeUndefined();
         // The profile's files and skills, none of the orchestrator's charter, the same server.
         expect(readFileSync(join(worker.checkout.path, "AGENTS.md"), "utf8")).toBe(
           "# House rules\n",

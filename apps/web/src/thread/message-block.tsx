@@ -34,7 +34,7 @@ import { CompactionMarker, IdleCompactRequest } from "./compaction-marker";
 import { SessionRestartMarker } from "./session-restart-marker";
 import { AttachmentLightbox } from "./attachment-lightbox";
 import { MockCard } from "./mock-visuals";
-import { DeliveryLine, MessageActions, messageText } from "./message-actions";
+import { ConversationLine, DeliveryLine, MessageActions, messageText } from "./message-actions";
 import { FILE_REF_COMPONENTS } from "./file-ref-link";
 import { rehypeFileRefs } from "./file-refs";
 import { PR_REF_COMPONENTS } from "./pr-ref-link";
@@ -365,6 +365,7 @@ export const MessageBlock = memo(function MessageBlock({
           <WaitChip key={part.id} wait={part.data} />
         ))}
         {waitNote && <WaitNoteLine note={waitNote.data} />}
+        <ConversationLine message={message} />
         <DeliveryLine message={message} />
         {topLevel && !besideBubble && <MessageActions threadId={threadId} message={message} />}
       </Message>

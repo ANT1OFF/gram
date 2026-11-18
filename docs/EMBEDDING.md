@@ -451,6 +451,23 @@ POST /embed/v1/thread-interrupt
 - A thread on a machine started for one person is written in and stopped only for that person: anyone else gets `409` with why.
 - A stop is a person's Stop: a thread waiting out a provider limit stops waiting too, and a turn that meets a limit as it stops ends with the limit as its error. Nothing resumes the thread on its own after it; the person's next message does.
 - `404` for a thread the server doesn't have, `409` when it can't take the message now (it ended, or its agent couldn't start), `400` for a body that isn't one. `text` is 1 to 20,000 characters.
+- `conversation` (`{ "id", "label"? }`) says the message came from one of the platform's own conversations: see [Conversations](#conversations).
+
+## Conversations
+
+A platform that brings people's chats, issues or mail threads to Gram names each one with an id of its own and gives it on the messages it sends in. Gram ties the conversation to the thread that answers it, and that thread replies there through the [event sink](DOCKER.md#event-sink).
+
+```
+POST /embed/v1/thread-messages
+{ "threadId": "...", "person": { "id": "slack:U7" }, "key": "Ev1", "text": "Who is on call?",
+  "conversation": { "id": "slack:T1/C2/1700000000.000100", "label": "Slack · #runbooks" } }
+```
+
+- **The id** is the platform's, 1 to 200 printable characters with no space, and opaque to Gram. `label` (at most 120 characters) is how a person and the agent read where it is. The transcript shows "From Slack · #runbooks" under the message, and the agent reads a line above it naming the conversation and how to answer it.
+- **Who owns it.** The thread the platform first sends a message from it to owns it (`Thread.conversations`), unless another open thread already does: then the message is still delivered, and the agent is told another thread answers there. A thread owns at most 50.
+- **A reply** is the owner's `reply` tool, naming the conversation. It is sent as `conversation.reply` `{id, conversation, text}` on the event sink, for the platform to post; `id` is the reply's own. A thread that doesn't own the conversation is refused, so text one conversation's people wrote can't make an agent post in another. A thread at `supervised`, by its profile or its workspace, asks the user before each reply. With no event sink configured, the tool is absent; with hosted features off, it refuses.
+- **Handing one on.** An orchestrator hands conversations it owns to a worker it spawns (`spawn_worker`'s `conversations`) and takes one back from its worker (`take_conversation`). A worker's go back to the orchestrator that spawned it when it closes, or to nobody when that orchestrator is gone. Each change is sent as `conversation.owner` `{conversation, owner?}`: send the conversation's next messages to `owner`.
+- **What it is not.** Ownership says who may reply, not who may read: the platform chooses which thread a message goes to.
 
 ## A fresh orchestrator session for a person
 

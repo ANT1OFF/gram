@@ -46,6 +46,7 @@ import {
   authored,
   typedInput,
   withSender,
+  conversationHeader,
 } from "./user-input.ts";
 import type { AgentSession, SteerOptions } from "@gram/agents";
 import { randomUUID } from "node:crypto";
@@ -224,7 +225,23 @@ export const makeMessageQueue = ({
    */
   const forAgent = (rt: Runtime, stored: UserInput): Effect.Effect<UserInput> => {
     // Who wrote it is the transcript's record, not something the agent is told.
-    const { author: _, ...input } = stored;
+    const { author: _, conversation, ...rest } = stored;
+    if (conversation !== undefined) {
+      // Where it came from, and whether this thread is the one to answer there.
+      return store.getThread(rt.threadId).pipe(
+        Effect.option,
+        Effect.map((thread) => ({
+          ...rest,
+          text: `${conversationHeader(
+            conversation,
+            (Option.getOrUndefined(thread)?.conversations ?? []).some(
+              (each) => each.id === conversation.id,
+            ),
+          )}\n${rest.text}`,
+        })),
+      );
+    }
+    const input = rest;
     const origin = input.origin;
     if (origin === undefined) return Effect.succeed(input);
     return store.getThread(rt.threadId).pipe(

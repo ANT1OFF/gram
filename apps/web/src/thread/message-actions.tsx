@@ -8,6 +8,7 @@ import {
   GitFork,
   History,
   Inbox,
+  MessagesSquare,
   Pencil,
   Send,
   SquareArrowRight,
@@ -169,6 +170,26 @@ export function DeliveryLine({ message }: { message: GramUIMessage }) {
     >
       <Icon aria-hidden className="size-icon-chip" />
       {label}
+    </span>
+  );
+}
+
+/**
+ * "From Slack · #runbooks" under a message an embedding host sent from one of its conversations,
+ * always shown, as the delivery line is; nothing on any other message.
+ */
+export function ConversationLine({ message }: { message: GramUIMessage }) {
+  const part = message.parts.find((p) => p.type === "data-conversation");
+  if (part === undefined) return null;
+  const { id, label } = part.data;
+  return (
+    <span
+      data-testid="message-conversation"
+      title={id}
+      className="flex items-center justify-end gap-1 text-meta text-muted-foreground"
+    >
+      <MessagesSquare aria-hidden className="size-icon-chip" />
+      From {label ?? "a conversation outside Gram"}
     </span>
   );
 }
