@@ -40,7 +40,9 @@ export function EmbedSwitcher({
   className?: string;
 }) {
   const switcher = useEmbedShell((s) => s.workspaceSwitcher);
-  if (switcher === undefined) return null;
+  const inTitlebar = useEmbedShell((s) => s.sidebar.switcher === "titlebar");
+  // Kept to the title bar, the navigation draws none.
+  if (switcher === undefined || (inTitlebar && placement !== "titlebar")) return null;
   return (
     <div
       data-testid="embed-switcher"

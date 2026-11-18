@@ -15,6 +15,7 @@ import {
 
 import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
+import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
 import { Expand } from "@/motion/expand";
 import { GlideItem, GlideList } from "@/motion/glide";
@@ -24,6 +25,7 @@ import { ChoiceCheck } from "@/components/choice-check";
 import { SegmentSlab } from "@/motion/segment-slab";
 import { Shimmer } from "@/motion/shimmer";
 import { Spinner } from "@/motion/spinner";
+import { NAVIGATION_POSITIONS, useNavigationLayout, useNavigationStore } from "@/stores/navigation";
 import { useThemeStore } from "@/theme/store";
 import { useSystemPrefs } from "@/theme/system";
 import {
@@ -128,6 +130,7 @@ function AppearancePage({ preview }: { preview: boolean }) {
   return (
     <div className={cn("@container", SETTINGS_STACK)}>
       <ThemeRows />
+      <NavigationRows />
       <LookSection />
       <SettingsGroup
         label="Reading"
@@ -234,6 +237,43 @@ function ThemeRows() {
     </SettingsGroup>
   );
 }
+
+/**
+ * Where the main navigation sits and whether it hides when not in use. The app Gram is mounted in
+ * may set a default; a pick here wins over it.
+ */
+function NavigationRows() {
+  const { position, autoHide } = useNavigationLayout();
+  const pick = useNavigationStore((s) => s.pick);
+  const hint = useShortcutHint("sidebar.toggle");
+  return (
+    <SettingsGroup
+      label="Navigation"
+      description="Where the sidebar's places sit, and whether they hide when not in use."
+      keywords={["sidebar", "dock", "layout"]}
+      testId="navigation-settings"
+    >
+      <Segmented
+        label="Position"
+        description="The sidebar at the left, or a dock of icons at the top or bottom."
+        keywords={["sidebar", "dock", "top", "bottom"]}
+        value={position}
+        options={NAVIGATION_POSITIONS}
+        onSelect={(next) => pick({ position: next })}
+      />
+      <Segmented
+        label="Auto-hide"
+        description={`Slides it away until you point at its edge, Tab into it or press ${hint === "" ? "the sidebar key" : hint}.`}
+        keywords={["hide", "sidebar", "dock"]}
+        value={autoHide ? "on" : "off"}
+        options={AUTO_HIDE}
+        onSelect={(next) => pick({ autoHide: next === "on" })}
+      />
+    </SettingsGroup>
+  );
+}
+
+const AUTO_HIDE = ["off", "on"] as const;
 
 /** The palette grid with its editor's door, and the desktop app's icon under it. */
 function PaletteControls({ onEditColours }: { onEditColours: () => void }) {
