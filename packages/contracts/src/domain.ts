@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { LimitCleared, LimitWait, THREAD_ERROR_TEXT_MAX, ThreadError } from "./agent-failure.ts";
 import { BabysitState, HumanReviewNotice, ReviewNotice } from "./babysit.ts";
 import { CodexHome } from "./codex-home.ts";
+import { SavedWork } from "./saved-work.ts";
 import { ChecksRollup, PrState } from "./git.ts";
 import {
   HostId,
@@ -862,6 +863,11 @@ export const Thread = Schema.Struct({
   codexHome: Schema.optionalKey(CodexHome),
   /** How the last failed turn failed; cleared when a later turn completes. */
   lastError: Schema.optionalKey(ThreadError),
+  /**
+   * The last save of its work on a joined machine that reached the remote (`wip-keeper.ts`): when,
+   * and the files it held. What a lost machine gives back.
+   */
+  savedWork: Schema.optionalKey(SavedWork),
   /** Waiting out a provider limit, to resume on its own; cleared when it resumes or is cancelled. */
   limitWait: Schema.optionalKey(LimitWait),
   /**
@@ -959,6 +965,14 @@ export const Thread = Schema.Struct({
    * placed. A client that doesn't read it still shows the thread, as one whose machine is away.
    */
   awaitingMachine: Schema.optionalKey(AwaitingMachine),
+  /**
+   * The one person who may see the thread, by the subject fronted sign-in names them with: set by
+   * an embedding host when it starts the thread from a profile (`ProfileStartRequest.readableBy`)
+   * and never changed or cleared after. Every thread it spawns has the same. Nobody else, and no
+   * caller without a signed-in person, sees anything of it: not in a list, a search, an event, a
+   * read or another thread's tools. Absent: the thread is everyone's to see, as ever.
+   */
+  readableBy: Schema.optionalKey(Schema.String),
   /**
    * The workspace the thread belongs to: the one an orchestrator runs, or the one a worker was
    * spawned in or joined (`thread.joinWorkspace`, `adopt_thread`). A worker keeps it when its

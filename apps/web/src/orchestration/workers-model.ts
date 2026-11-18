@@ -14,6 +14,7 @@ import {
   type WorkerState,
 } from "@gram/contracts";
 
+import { machineLostLine } from "@/thread/saved-work-words";
 import { dateTimeFormat } from "@/lib/intl";
 import { formatDay } from "@/lib/time";
 import { threadDisplayTitle } from "@/thread/thread-title";
@@ -417,6 +418,10 @@ export const workerRow = (
     return row(undefined, ANSWERED);
   }
   if (request !== undefined) return row(undefined, requestGist(request, requestCommand(summary)));
+  // A lost machine says so, and what came back of the work: longer than a now line, so not capped.
+  const lost = summary?.thread.lastError;
+  if (live.state === "error" && lost?.machineLost !== undefined)
+    return { ...row(undefined, ""), now: machineLostLine(lost, summary?.thread.savedWork, now) };
   if (live.state === "error") return row(undefined, "stopped on an error");
   if (done) {
     const when = at === undefined ? "" : ` ${finishedWhen(at, now)}`;

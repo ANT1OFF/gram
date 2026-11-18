@@ -28,6 +28,7 @@
 // The platform is trusted to say who the person is, as it is when it starts a thread for one
 // (`/threads/from-profile`'s `startedBy`): it proves itself with the embed token, never a cookie.
 
+import { readableByOf, readerMay } from "./readable-by.ts";
 import { ModelRef, ThreadRpcs, type ThreadId, type UserInput } from "@gram/contracts";
 import * as Schema from "effect/Schema";
 import { Orchestration } from "../orchestration/service.ts";
@@ -97,6 +98,9 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
       Effect.gen(function* () {
         if (!(yield* mayReachThread(store.getThread, ownerOf, threadId)))
           return "not-yours" as const;
+        // A thread readable by one person takes what is sent, interrupted or restarted for them
+        // alone (`embedding/readable-by.ts`).
+        if (!readerMay({ subject: person.id }, readableByOf(threadId))) return "not-yours" as const;
         const result = yield* effect;
         yield* store.appendActorEvents(actorEventsOf(person, action, payload, Date.now(), result));
         return result;

@@ -58,6 +58,8 @@ import { TerminalGate } from "../../terminal/gate.ts";
 import { makeThreadCreator, prepareWithOthers } from "../../runtime/create-in-checkout.ts";
 import { CheckoutService } from "../../runtime/hooks.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
+import { RemoteHosts } from "../../host/remote-hosts.ts";
+import { savedDiffOf } from "../../host/stop-resume.ts";
 import { isLocalApp } from "../../http/local-app.ts";
 import { profileStarter } from "../../thread-profiles/service.ts";
 
@@ -114,6 +116,7 @@ export const threadHandlers = Effect.gen(function* () {
   const checkouts = yield* CheckoutService;
   // Absent in runtime-only test layers, where no machine is joined.
   const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
+  const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
   const checkpoints = yield* Checkpoints;
   const config = yield* ServerConfig;
   // Absent in runtime-only test layers, where no branch is ever deleted.
@@ -376,6 +379,13 @@ export const threadHandlers = Effect.gen(function* () {
           text: machineLostText(lost.machine, lost.during),
           author: "server",
         });
+      }),
+    "thread.savedDiff": ({ threadId }) =>
+      Effect.gen(function* () {
+        const thread = yield* store.getThread(threadId);
+        const saved =
+          remoteHosts === undefined ? undefined : savedDiffOf(remoteHosts.stops, thread);
+        return saved === undefined ? {} : { saved };
       }),
     "thread.stopTask": ({ threadId, taskId }) => runtimes.stopTask(threadId, taskId),
     "thread.restartSession": ({ threadId, midTurn }) => runtimes.restartSession(threadId, midTurn),

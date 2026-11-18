@@ -22,6 +22,7 @@
  * server was told, never on the bundle's. The charter itself is the bundle's, autonomy included,
  * so a bundle is trusted as the workspace it is; its routines arrive switched off.
  */
+import { notePrivacy } from "../embedding/readable-by.ts";
 import {
   availableWorkspaceName,
   BUNDLE_EVENTS_MAX,
@@ -157,6 +158,8 @@ const portableThread = (thread: Thread): Thread => ({
   unread: false,
   ...(thread.role === undefined ? {} : { role: thread.role }),
   ...(thread.workspaceId === undefined ? {} : { workspaceId: thread.workspaceId }),
+  // Readable by the one person it was readable by, wherever it goes (`embedding/readable-by.ts`).
+  ...(thread.readableBy === undefined ? {} : { readableBy: thread.readableBy }),
   createdAt: thread.createdAt,
   lastActivityAt: thread.lastActivityAt,
 });
@@ -703,6 +706,13 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
               },
             };
             const moved = bundle.orchestrator;
+            // The workspace it arrives as is its reader's alone, before anything of it is shown.
+            if (moved?.thread.readableBy !== undefined)
+              notePrivacy({
+                id: moved.thread.id,
+                readableBy: moved.thread.readableBy,
+                workspaceId: state.workspace.id,
+              });
             return store.stageMovedWorkspace({
               state,
               ...(moved === undefined || opening === undefined

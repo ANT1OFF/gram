@@ -55,13 +55,21 @@ const setup = (
   return { api, preview, start };
 };
 
+/** The model a new workspace's orchestrator starts on, as the line beside Start names it. */
+const plannedOn = (model: string | RegExp) =>
+  waitFor(() =>
+    expect(screen.getByTestId("task-destination").textContent).toMatch(
+      typeof model === "string" ? `planned by its orchestrator on ${model}` : model,
+    ),
+  );
+
 describe("new-task authoritative preflight", () => {
   it("shows server-selected Codex for an unset default and pins exactly that selection on submit", async () => {
     const selection: TaskModelSelection = {
       orchestrator: { agent: "codex", model: "synthetic-model" },
     };
     const { start } = setup(async () => selection);
-    await screen.findByText("Orchestrator: Codex · synthetic-model");
+    await plannedOn("synthetic-model");
     fireEvent.change(screen.getByLabelText("What needs doing"), {
       target: { value: "Synthetic task" },
     });
@@ -111,13 +119,13 @@ describe("new-task authoritative preflight", () => {
         },
       ],
     });
-    await screen.findByText(/^Orchestrator: Claude Code · /);
+    await plannedOn(/planned by its orchestrator on /);
     const fields = screen.getByTestId("task-orchestrator-fields");
     expect(fields.textContent).toContain("Orchestrator");
     const user = userEvent.setup();
     await user.click(await within(fields).findByLabelText("Agent"));
     await user.click(await screen.findByRole("option", { name: "Codex" }));
-    await screen.findByText("Orchestrator: Codex · Synthetic");
+    await plannedOn("Synthetic");
     expect(preview).toHaveBeenLastCalledWith(
       expect.objectContaining({
         orchestrator: { agent: "codex", model: "synthetic-model", speed: "standard" },
@@ -168,7 +176,7 @@ describe("new-task authoritative preflight", () => {
     expect(start).not.toHaveBeenCalled();
     refused = false;
     fireEvent.click(screen.getByRole("button", { name: "Retry task check" }));
-    await screen.findByText("Orchestrator: Codex · synthetic-model");
+    await plannedOn("synthetic-model");
     await waitFor(() =>
       expect(
         (screen.getByRole("button", { name: /Start workspace and send/ }) as HTMLButtonElement)

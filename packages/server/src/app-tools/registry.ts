@@ -1,6 +1,7 @@
 import type { AppTool, AppToolRegistryPort, ToolAudience } from "@gram/agents";
 import {
   AppToolError,
+  effectiveCheckout,
   NotFound,
   TaskId,
   type AppToolClass,
@@ -32,6 +33,19 @@ import {
 import { inputLengthProblem } from "./input.ts";
 import { DecisionHook, REFUSAL_FOR_AGENT } from "../embedding/decision-hook.ts";
 import { RoutedFor, threadOwner } from "../host/ownership.ts";
+import {
+  anyPrivate,
+  currentReader,
+  mayReadThread,
+  pathsMentioned,
+  ReadingAs,
+  readableByOf,
+  readableByOfWorkspace,
+  readerMay,
+  threadsMentioned,
+  touchesUnreadable,
+  workspacesMentioned,
+} from "../embedding/readable-by.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { makeActionGuard, type ActionGuard } from "../embedding/guard.ts";
 import { dreamFileTools } from "./dream-tools.ts";
@@ -178,6 +192,10 @@ export const askedElsewhere = (tool: string, askedIn: ThreadId) => ({
   note: `The user is already being asked this same ${tool} call from this thread. That card is the one decision; this call did nothing, raised no card and needn't be repeated.`,
 });
 
+/** What a thread readable by one person is told that writes into a thread of another reader. */
+export const WRITES_STAY_PRIVATE =
+  "This thread is readable by one person, so it sends nothing into a thread readable by others.";
+
 /** Schemas belong to definitions and are reused across thread/session bindings. */
 const inputDocuments = new WeakMap<Schema.Top, ReturnType<typeof Schema.toJsonSchemaDocument>>();
 
@@ -198,7 +216,12 @@ const asLineage = <A, E, R>(
   call: Effect.Effect<A, E, R>,
 ) =>
   Effect.flatMap(lineage === undefined ? Effect.succeed(undefined) : lineage(threadId), (person) =>
-    Effect.provideService(call, RoutedFor, { person }),
+    call.pipe(
+      Effect.provideService(RoutedFor, { person }),
+      // And it reads as its thread's reader: a thread readable by one person sees that person's
+      // threads and makes only theirs; any other sees none of them (`embedding/readable-by.ts`).
+      Effect.provideService(ReadingAs, { subject: readableByOf(threadId), fromThread: true }),
+    ),
   );
 
 /**
@@ -226,6 +249,11 @@ export const bindAppTools = (
    * as theirs, so it reaches their machine and no one else's. Absent: no one's.
    */
   lineage?: (threadId: ThreadId) => Effect.Effect<string | undefined>,
+  /**
+   * The folders the thread works in, which a relative path in a call's input is read against
+   * (`embedding/readable-by.ts`). Absent: none.
+   */
+  foldersOf?: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<string>>,
 ): ReadonlyArray<AppTool> =>
   definitions.toSorted(byToolName).map((definition) => {
     const { descriptor } = definition;
@@ -456,6 +484,54 @@ export const bindAppTools = (
                   }),
               ),
             );
+            // A thread named anywhere in the input that this thread's reader may not see is, to
+            // this agent, not there (`embedding/readable-by.ts`): never read, sent to or stopped.
+            if (anyPrivate()) {
+              for (const named of threadsMentioned(decoded))
+                if (!(yield* mayReadThread(named)))
+                  return yield* new AppToolError({
+                    tool: descriptor.name,
+                    message: `unknown thread ${named}`,
+                  });
+              // A thread readable by one person writes into no thread or workspace of another
+              // reader, everyone's included: what it sends would be read where it isn't private.
+              const caller = yield* currentReader;
+              if (caller?.subject !== undefined && descriptor.class === "crossThread") {
+                const foreign =
+                  threadsMentioned(decoded).some(
+                    (named) => readableByOf(named) !== caller.subject,
+                  ) ||
+                  workspacesMentioned(decoded).some(
+                    (workspaceId) => readableByOfWorkspace(workspaceId) !== caller.subject,
+                  );
+                if (foreign)
+                  return yield* new AppToolError({
+                    tool: descriptor.name,
+                    message: WRITES_STAY_PRIVATE,
+                  });
+              }
+              // Nor a workspace of such a thread's.
+              for (const workspaceId of workspacesMentioned(decoded))
+                if (!readerMay(yield* currentReader, readableByOfWorkspace(workspaceId)))
+                  return yield* new AppToolError({
+                    tool: descriptor.name,
+                    message: `unknown workspace ${workspaceId}`,
+                  });
+              // Nor a path into such a thread's folder, by any spelling.
+              if (
+                touchesUnreadable(
+                  yield* currentReader,
+                  pathsMentioned(
+                    decoded,
+                    foldersOf === undefined ? [] : yield* foldersOf(threadId),
+                  ),
+                )
+              )
+                return yield* new AppToolError({
+                  tool: descriptor.name,
+                  message: "unknown path",
+                });
+            }
             const target = yield* resolve(decoded);
             const decision =
               guard === undefined ? undefined : definition.decision?.(threadId, target);
@@ -675,6 +751,14 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
         store.getThread(threadId).pipe(
           Effect.map((thread) => threadOwner(hosts?.ownerOf ?? (() => undefined), thread)),
           Effect.orElseSucceed(() => undefined),
+        );
+      const foldersOf = (threadId: ThreadId) =>
+        store.getThread(threadId).pipe(
+          Effect.map((thread) => [
+            effectiveCheckout(thread).path,
+            ...(thread.extraCheckouts ?? []).map((extra) => extra.path),
+          ]),
+          Effect.orElseSucceed((): ReadonlyArray<string> => []),
         );
 
       const setTitle = defineAppTool({
@@ -924,6 +1008,7 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
             undefined,
             undefined,
             lineage,
+            foldersOf,
           ),
         forTransport: (threadId, audience = "plain") =>
           bindAppTools(
@@ -932,6 +1017,7 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
             gate,
             guard,
             lineage,
+            foldersOf,
           ),
         // The server's gate is the authority on Claude too: the SDK's permission
         // layer lets a call through unasked in `bypassPermissions`, under an allow rule or an
@@ -944,6 +1030,7 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
             gate,
             guard,
             lineage,
+            foldersOf,
           ),
         audienceOf: runtimes.audienceOf,
       });

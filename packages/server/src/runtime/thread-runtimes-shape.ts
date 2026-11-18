@@ -81,7 +81,10 @@ export interface CreateThreadInput {
    * Its bound PR can restore a worktree deleted since.
    */
   readonly kept?: Partial<
-    Pick<Thread, "userNamed" | "agentNamed" | "labels" | "pinned" | "boundPr" | "extraPrs">
+    Pick<
+      Thread,
+      "userNamed" | "agentNamed" | "labels" | "pinned" | "boundPr" | "extraPrs" | "readableBy"
+    >
   >;
   /** Orchestration's fields, in the row from its first insert; only `orchestrator.open` gives a role. */
   readonly role?: NonNullable<Thread["role"]>;
@@ -99,6 +102,12 @@ export interface CreateThreadInput {
    * a profile gives one.
    */
   readonly awaitingMachine?: NonNullable<Thread["awaitingMachine"]>;
+  /**
+   * The one person who may see the thread (`Thread.readableBy`). A thread spawned by one that has
+   * it, in a workspace whose orchestrator has it, or made in a tool call of an agent whose thread
+   * has it, gets that one instead, whatever this says.
+   */
+  readonly readableBy?: string | undefined;
   /** Worktrees in other repos the thread holds beside `checkout` (`Thread.extraCheckouts`). */
   readonly extraCheckouts?: ReadonlyArray<Checkout>;
   /** Given the user's browser at spawn (`Thread.browser`); its session policy still decides. */

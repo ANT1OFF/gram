@@ -36,6 +36,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
 import { ActingPerson } from "../embedding/person.ts";
+import { SUBJECT } from "../embedding/readable-by.ts";
 import { olderHost } from "../host/folders.ts";
 import { HOST_THREADS_DIR, type HostThreadPlaces } from "../host/thread-places.ts";
 import { WAKE_WAIT_MS, type WorkerHostsShape } from "../host/worker-host.ts";
@@ -100,6 +101,14 @@ export const AWAITED_FOR_MS = WAKE_WAIT_MS;
 /** A person's stable subject, as fronted sign-in names them: printable, at most 128 characters. */
 const PERSON = /^[\x21-\x7e]{1,128}$/;
 
+/** What a start naming a reader that isn't a subject is told. */
+export const NOT_A_READER =
+  "Name the person the thread is readable by by their subject: printable, at most 128 characters.";
+
+/** What a start asked for again, naming another reader than the first, is told. */
+export const READER_DIFFERS =
+  "That thread id is a thread started for another reader, or for every reader.";
+
 /** How a start is asked for, beside its profile. */
 export interface ProfileStartOptions {
   /** The caller's own id for the thread, a lowercase UUID: a start asked for again makes one. */
@@ -113,6 +122,8 @@ export interface ProfileStartOptions {
   readonly machine?: "later" | undefined;
   /** With `machine: "later"`: the signed-in person the thread is started by. */
   readonly startedBy?: string | undefined;
+  /** The one person who may see the thread (`Thread.readableBy`), kept for good. */
+  readonly readableBy?: string | undefined;
 }
 
 /** A thread a start answered, and whether that start made it. */
@@ -241,11 +252,14 @@ export const makeProfileStarter = ({
     options: ProfileStartOptions = {},
   ): Effect.Effect<ProfileStarted, InvalidState | AgentUnavailable> => {
     const { threadId: asked, on } = options;
+    const { readableBy } = options;
     const fresh = (id: ThreadId) =>
       (options.machine === "later"
-        ? startAwaiting(value, id, options.startedBy)
-        : startAs(value, id, on)
+        ? startAwaiting(value, id, options.startedBy, readableBy)
+        : startAs(value, id, on, readableBy)
       ).pipe(Effect.map((thread) => ({ thread, created: true })));
+    if (readableBy !== undefined && !SUBJECT.test(readableBy))
+      return Effect.fail(refuse(NOT_A_READER));
     if (options.machine === "later" && on !== undefined) return Effect.fail(refuse(NOW_OR_LATER));
     if (options.startedBy !== undefined && options.machine !== "later")
       return Effect.fail(refuse(STARTED_BY_NEEDS_LATER));
@@ -269,6 +283,9 @@ export const makeProfileStarter = ({
               return yield* refuse(WAITS_TO_BE_NAMED);
             if (on !== undefined && existing.value.checkout.hostId !== on)
               return yield* refuse(ON_ANOTHER_MACHINE);
+            // Who may see it was settled by the first start, and a repeat neither widens nor
+            // narrows it; nor does it say a thread is there to a caller naming someone else.
+            if (existing.value.readableBy !== readableBy) return yield* refuse(READER_DIFFERS);
             return { thread: existing.value, created: false };
           }
           if ((yield* store.listClosed).some((closed) => closed.thread.id === asked))
@@ -290,6 +307,7 @@ export const makeProfileStarter = ({
     value: unknown,
     id: ThreadId,
     on: HostId | undefined,
+    readableBy: string | undefined,
   ): Effect.Effect<Thread, InvalidState | AgentUnavailable> =>
     Effect.gen(function* () {
       const settings = yield* store.getSettings;
@@ -326,6 +344,7 @@ export const makeProfileStarter = ({
             { title: profile.name.trim(), kept: { userNamed: false } }),
         ...(profile.input === undefined ? {} : { input: { text: profile.input } }),
         profile: profileBindingOf(profile),
+        ...(readableBy === undefined ? {} : { readableBy }),
       };
 
       if (workplace.kind === "repositories" && repositories !== undefined) {
@@ -438,6 +457,7 @@ export const makeProfileStarter = ({
     value: unknown,
     id: ThreadId,
     startedBy: string | undefined,
+    readableBy: string | undefined,
   ): Effect.Effect<Thread, InvalidState | AgentUnavailable> =>
     Effect.gen(function* () {
       const settings = yield* store.getSettings;
@@ -480,6 +500,7 @@ export const makeProfileStarter = ({
           // On no machine: nothing is reached through this id, and no folder is at this path.
           checkout: { kind: "main", path: awaitedFolder(id), hostId: AWAITED_HOST_ID },
           awaitingMachine,
+          ...(readableBy === undefined ? {} : { readableBy }),
         });
       });
       // As the person who started it, where the start named one: the thread's creator on the

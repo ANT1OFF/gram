@@ -6,6 +6,7 @@ import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { MODE_ICONS, MODE_OPTIONS } from "@/composer/options";
 import { FOCUS_RING } from "@/lib/selection";
+import { usePersonMerges } from "@/embed/store";
 import { cn } from "@/lib/utils";
 import { AUTONOMY_ICON } from "@/orchestration/autonomy-chip";
 import { presentAutonomy } from "@/settings/workspace-settings-model";
@@ -30,7 +31,7 @@ const PLAN_MERGE: Readonly<Record<Autonomy, string>> = {
 
 /** The New form's summary beside Start: who owns the task, then, apart, who approves a merge. */
 export interface TaskSummary {
-  /** Where it runs: the workspace, or the one this start makes. */
+  /** Where it runs: the workspace, or the one this start makes, in the app's noun for one. */
   readonly where: string;
   /** Whom it reports to: the orchestrator that plans it. Ownership only; nothing of merging. */
   readonly who: string;
@@ -48,15 +49,18 @@ export function taskSummary({
   workspace,
   makesOne = false,
   autonomy,
+  noun = "workspace",
 }: {
   /** The workspace's name, or the repository's for a workspace this start makes. */
   workspace: string;
   makesOne?: boolean | undefined;
   autonomy: string;
+  /** What the app calls a workspace, lower case ("project" where it says so). */
+  noun?: string | undefined;
 }): TaskSummary {
   const level = presentAutonomy(autonomy);
   return {
-    where: makesOne ? `Runs in a new ${workspace} workspace` : `Runs in ${workspace}`,
+    where: makesOne ? `Runs in a new ${workspace} ${noun}` : `Runs in ${workspace}`,
     who: `Planned by the ${workspace} orchestrator`,
     approval: known(MERGE_APPROVAL, autonomy as Autonomy) ?? level.label,
     merge: known(PLAN_MERGE, autonomy as Autonomy) ?? level.description.replace(/\.$/, ""),
@@ -69,6 +73,11 @@ export function taskSummary({
  * than where the user is, with Change (`onChangeWhere`) to pick another; then whom it reports to;
  * then Merge approval, Ask or Automatic, with what that means for this start (amber at Automatic,
  * as everywhere Full shows). `approval` makes the merge approval a choice; none of it is folded.
+ *
+ * Each fact is said once on the form. A workspace this start makes is one line, with its
+ * orchestrator's model (`model`), and no merge row: the form's Autonomy choice above says it.
+ * Where no agent may merge (`machines.merges: "person"`) there is no merge to approve, and the
+ * autonomy lines already say "You merge", so the row goes too.
  */
 export function TaskAuthorityLine({
   workspace,
@@ -78,8 +87,14 @@ export function TaskAuthorityLine({
   onChangeWhere,
   changeWhereHint,
   approval,
+  noun,
+  model,
 }: {
   workspace: string;
+  /** What the app calls a workspace, lower case. */
+  noun?: string | undefined;
+  /** The orchestrator's model, named in the line of a workspace this start makes. */
+  model?: string | undefined;
   makesOne?: boolean | undefined;
   autonomy: string;
   /** Whether the target is the last task's, kept from before rather than read off this place. */
@@ -99,7 +114,11 @@ export function TaskAuthorityLine({
 }) {
   const level = presentAutonomy(autonomy);
   const icon = known(AUTONOMY_ICON, autonomy as Autonomy) ?? Shield;
-  const summary = taskSummary({ workspace, makesOne, autonomy });
+  const summary = taskSummary({ workspace, makesOne, autonomy, noun });
+  const personMerges = usePersonMerges();
+  // A new workspace's line says who plans it; its merge rule is the Autonomy choice's.
+  const oneLine = makesOne === true && model !== undefined;
+  const showMerge = makesOne !== true && !personMerges;
   return (
     <span
       data-testid="task-authority"
@@ -107,12 +126,15 @@ export function TaskAuthorityLine({
       className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-1.5 gap-y-1 text-reading text-muted-foreground"
     >
       <Network aria-hidden className="col-start-1 mt-1 size-icon-row shrink-0" />
+      {/* Inline, so Remembered and Change follow the words' last line rather than wrap alone. */}
       <span
         data-testid="task-destination"
         data-remembered={remembered ? "true" : undefined}
-        className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+        className="min-w-0 [&>*+*]:ml-2"
       >
-        <span className="min-w-0 text-foreground">{summary.where}</span>
+        <span className="text-foreground">
+          {oneLine ? `${summary.where}, planned by its orchestrator on ${model}` : summary.where}
+        </span>
         {remembered && (
           <Hint
             label="Where your last task went. Change picks another."
@@ -148,51 +170,56 @@ export function TaskAuthorityLine({
           </Button>
         )}
       </span>
-      <span data-testid="task-owner" className="col-start-2">
-        {summary.who}
-      </span>
-      {createElement(icon, {
-        "aria-hidden": true,
-        className: cn("col-start-1 mt-1.5 size-icon-row shrink-0", level.warn && "text-warning"),
-      })}
-      <span
-        data-testid="task-merge-approval"
-        className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
-      >
-        {approval === undefined ? (
-          <span>Merge approval</span>
-        ) : (
-          // Its scope in words beside the choice: the workspace, whose every task it governs.
-          <Hint
-            label={`A workspace setting: every task in ${workspace} follows it, and Settings → Workspaces shows it too.`}
-            render={
-              <span
-                tabIndex={0}
-                data-testid="task-merge-approval-scope"
-                className={cn(
-                  "rounded-xs underline decoration-muted-foreground/60 decoration-dotted underline-offset-2",
-                  FOCUS_RING,
-                )}
-              />
-            }
-          >
-            Merge approval for {workspace}
-          </Hint>
-        )}
-        {approval === undefined ? (
-          <span className={cn("font-medium", level.warn ? "text-warning" : "text-foreground")}>
-            {summary.approval}
-          </span>
-        ) : (
-          <MergeApprovalSegments
-            value={mergeApprovalOf(autonomy)}
-            label={approval.label}
-            onPick={approval.onPick}
-            disabled={approval.disabled}
-          />
-        )}
-        <span className="min-w-0">{summary.merge}.</span>
-      </span>
+      {!oneLine && (
+        <span data-testid="task-owner" className="col-start-2">
+          {summary.who}
+        </span>
+      )}
+      {showMerge &&
+        createElement(icon, {
+          "aria-hidden": true,
+          className: cn("col-start-1 mt-1.5 size-icon-row shrink-0", level.warn && "text-warning"),
+        })}
+      {showMerge && (
+        <span
+          data-testid="task-merge-approval"
+          className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+        >
+          {approval === undefined ? (
+            <span>Merge approval</span>
+          ) : (
+            // Its scope in words beside the choice: the workspace, whose every task it governs.
+            <Hint
+              label={`A workspace setting: every task in ${workspace} follows it, and Settings → Workspaces shows it too.`}
+              render={
+                <span
+                  tabIndex={0}
+                  data-testid="task-merge-approval-scope"
+                  className={cn(
+                    "rounded-xs underline decoration-muted-foreground/60 decoration-dotted underline-offset-2",
+                    FOCUS_RING,
+                  )}
+                />
+              }
+            >
+              Merge approval for {workspace}
+            </Hint>
+          )}
+          {approval === undefined ? (
+            <span className={cn("font-medium", level.warn ? "text-warning" : "text-foreground")}>
+              {summary.approval}
+            </span>
+          ) : (
+            <MergeApprovalSegments
+              value={mergeApprovalOf(autonomy)}
+              label={approval.label}
+              onPick={approval.onPick}
+              disabled={approval.disabled}
+            />
+          )}
+          <span className="min-w-0">{summary.merge}.</span>
+        </span>
+      )}
     </span>
   );
 }

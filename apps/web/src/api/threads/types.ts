@@ -1,5 +1,6 @@
 import type {
   BabysitBudget,
+  SavedDiff,
   CheckoutUsers,
   ClosedThread,
   ReopenedClosedThread,
@@ -69,6 +70,8 @@ export interface ThreadsApi {
   resumeLimitWait(threadId: ThreadId): Promise<void>;
   /** Resumes a thread whose last turn a lost machine cut off, with Gram's note of what happened. */
   resumeAfterMachineLost(threadId: ThreadId): Promise<void>;
+  /** The diff behind `Thread.savedWork`, while this Gram still holds it; `saved` absent if not. */
+  savedDiff(threadId: ThreadId): Promise<{ readonly saved?: SavedDiff }>;
   /** Stops a thread's limit wait; it stands failed until the user sends. */
   cancelLimitWait(threadId: ThreadId): Promise<void>;
   /**

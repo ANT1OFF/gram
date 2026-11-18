@@ -536,6 +536,7 @@ export const workerErrorOf = (thread: Thread): WorkerError | undefined => {
     kind: error.kind,
     ...(error.httpStatus === undefined ? {} : { httpStatus: error.httpStatus }),
     text: error.text,
+    ...(error.machineLost === undefined ? {} : { lostMachine: true as const }),
   };
 };
 

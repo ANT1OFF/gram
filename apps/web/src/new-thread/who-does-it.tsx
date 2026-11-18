@@ -42,7 +42,7 @@ export const WHO_CHOICES: readonly {
   {
     value: "orchestrator",
     label: "Team",
-    line: "An orchestrator plans it, runs workers as needed and sees their pull requests merged.",
+    line: "An orchestrator plans it and runs workers as needed.",
     icon: Network,
     tone: "text-orchestrator",
     shortcut: "thread.new",

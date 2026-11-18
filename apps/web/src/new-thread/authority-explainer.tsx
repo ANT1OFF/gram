@@ -1,33 +1,29 @@
-import { GitMerge, SquareTerminal, type LucideIcon } from "lucide-react";
+import { SquareTerminal, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 /**
- * The two separate authorities over what agents do, as they read at the autonomy choice: a
- * thread's permission mode governs what runs and changes on this machine, and the workspace's
- * autonomy governs what Gram publishes and merges. Neither widens the other.
+ * The other authority over what agents do, beside the autonomy choice it is shown with: a
+ * thread's permission mode governs what runs and changes where the agent works. The autonomy
+ * choice says what its own levels allow, so it isn't said again here. Neither widens the other.
+ * Its words hold wherever an agent works (this machine, or an embedding app's sandbox).
  */
 const ROWS: readonly { icon: LucideIcon; term: string; line: string }[] = [
   {
     icon: SquareTerminal,
     term: "Agent permissions",
-    line: "What agents may run and edit on this machine, set per thread.",
-  },
-  {
-    icon: GitMerge,
-    term: "Workspace autonomy",
-    line: "What Gram may publish and merge without asking you.",
+    line: "What agents may run and edit, set per thread.",
   },
 ];
 
 /**
- * A compact two-row key telling a thread's permission mode apart from the workspace's autonomy,
- * each row as a Settings row reads: its name, and one secondary line under it, on one left edge.
+ * A compact key telling a thread's permission mode apart from the workspace's autonomy beside it,
+ * as a Settings row reads: its name, and one secondary line under it, on one left edge.
  */
 export function AuthorityExplainer({ className }: { className?: string }) {
   return (
     <dl
-      aria-label="Permissions and autonomy"
+      aria-label="Agent permissions"
       data-testid="authority-explainer"
       className={cn("flex flex-col gap-2", className)}
     >

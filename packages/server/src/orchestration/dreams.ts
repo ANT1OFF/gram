@@ -1,4 +1,5 @@
 import { withAnchoredFiles } from "./anchored-files.ts";
+import { readableByOfWorkspace, readerMay } from "../embedding/readable-by.ts";
 import {
   AutomaticDreamDeferred,
   defaultDreamModel,
@@ -749,9 +750,14 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           const unread: Array<Unread> = [];
           const wanted = new Set<ProjectId>(projects.map((project) => project.id));
           const open = new Set<string>();
+          // Never a thread readable by someone the workspace isn't readable by: what a dream
+          // writes, everyone who sees the workspace reads (`embedding/readable-by.ts`).
+          const holder = state.workspace.orchestratorThreadId;
+          const reader = { subject: readableByOfWorkspace(state.workspace.id, holder) };
           for (const thread of yield* store.listThreads) {
             open.add(thread.id);
             if (!wanted.has(thread.projectId) || thread.role === "dream") continue;
+            if (!readerMay(reader, thread.readableBy)) continue;
             const one = yield* unreadOfThread(thread, held.get(thread.id), state.workspace.id);
             if (one !== undefined) unread.push(one);
           }

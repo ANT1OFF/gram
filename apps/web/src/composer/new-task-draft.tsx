@@ -402,8 +402,10 @@ export function NewTaskDraft({
     if (who === "me") toOneOff();
   };
 
+  // The app's own word for a workspace ("Project" where it says so); Gram on its own says Workspace.
+  const noun = kind.toLowerCase();
   const submitLabel = makesOne
-    ? "Start workspace and send"
+    ? `Start ${noun} and send`
     : (newForm?.team?.start ?? "Send to team");
   // What Start waits on while a check runs, in its own words on the button: the task's selection,
   // then each agent's readiness, then the workspace's autonomy the summary beside it names.
@@ -616,7 +618,7 @@ export function NewTaskDraft({
 
         {makesOne && (
           <AutonomyChoice
-            label="Autonomy of the new workspace"
+            label={`Autonomy of the new ${noun}`}
             value={pickedAutonomy ?? autonomyOf(DEFAULT_CHARTER)}
             onChange={(next) => useTaskDraftStore.getState().rememberAutonomy(next)}
           />
@@ -629,14 +631,14 @@ export function NewTaskDraft({
         )}
 
         <div className="flex flex-col gap-3">
-          {/* While the check runs, Start says so itself (`checking`); no line here. */}
-          {orchestratorModel !== undefined && (
+          {/* While the check runs, Start says so itself (`checking`); no line here. The model
+              itself is the Orchestrator picker's, and a new workspace's line beside Start: a line
+              of its own says only a move. */}
+          {orchestratorModel !== undefined && selection.data?.orchestratorFrom !== undefined && (
             <p data-testid="task-orchestrator-line" className="text-meta text-muted-foreground">
-              {selection.data?.orchestratorFrom === undefined
-                ? `Orchestrator: ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)}`
-                : selection.data.orchestratorFresh === true
-                  ? `The orchestrator starts fresh on ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)} as this task starts. It saves to memory first; its conversation stays above a divider, and ${nameOf(selection.data.orchestratorFrom)}'s tool output and cache are left behind.`
-                  : `The orchestrator moves from ${agentLabel(selection.data.orchestratorFrom.agent)} · ${nameOf(selection.data.orchestratorFrom)} to ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)} as the task starts.`}
+              {selection.data.orchestratorFresh === true
+                ? `The orchestrator starts fresh on ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)} as this task starts. It saves to memory first; its conversation stays above a divider, and ${nameOf(selection.data.orchestratorFrom)}'s tool output and cache are left behind.`
+                : `The orchestrator moves from ${agentLabel(selection.data.orchestratorFrom.agent)} · ${nameOf(selection.data.orchestratorFrom)} to ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)} as the task starts.`}
             </p>
           )}
           {/* Its slot follows a tier nothing here fills: why, beside what stands in. */}
@@ -720,6 +722,12 @@ export function NewTaskDraft({
                     // While a pick saves, the line says the level it is saving.
                     autonomy={makesOne ? autonomy : mergeApproval.autonomy}
                     remembered={remembered}
+                    noun={noun}
+                    model={
+                      makesOne && orchestratorModel !== undefined
+                        ? nameOf(orchestratorModel)
+                        : undefined
+                    }
                     onChangeWhere={attachments.uploading ? undefined : changeWhere}
                     changeWhereHint={whereHint || undefined}
                     // A new workspace's level is the Autonomy choice above; an existing one's

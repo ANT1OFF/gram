@@ -11,6 +11,7 @@ import {
   type BoundPr,
   type Diff,
   type ThreadId,
+  type StorageWorktree,
 } from "@gram/contracts";
 import {
   Checkpoints,
@@ -33,6 +34,13 @@ import {
 } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import {
+  anyPrivate,
+  currentReader,
+  readableByOf,
+  readerMay,
+  touchesUnreadable,
+} from "../../embedding/readable-by.ts";
 import { GitRefresh } from "../../git/platform.ts";
 import { deleteMergedBranch } from "../../git/branch-cleanup.ts";
 import {
@@ -83,6 +91,27 @@ import { threadUiHandlers } from "./thread-ui.ts";
 import { upstreamSyncHandlers } from "./upstream-sync.ts";
 
 /** `worktree.*`, `git.*` and `pr.*`. */
+
+/**
+ * `listing` with nothing of a thread the caller may not see (`embedding/readable-by.ts`): no
+ * worktree such a thread holds or has held, by name, path or branch.
+ */
+const unnamed = <L extends { readonly worktrees: ReadonlyArray<StorageWorktree> }>(listing: L) =>
+  Effect.gen(function* () {
+    if (!anyPrivate()) return listing;
+    const reader = yield* currentReader;
+    return {
+      ...listing,
+      // Nor its path or branch: the worktree is left out. A cleanup removes only paths it is
+      // given, which the guard checks against such a thread's folders.
+      worktrees: listing.worktrees.filter(
+        (worktree) =>
+          (worktree.threadId === undefined || readerMay(reader, readableByOf(worktree.threadId))) &&
+          !touchesUnreadable(reader, [worktree.path]),
+      ),
+    };
+  });
+
 export const gitHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
   const runtimes = yield* ThreadRuntimes;
@@ -264,13 +293,13 @@ export const gitHandlers = Effect.gen(function* () {
 
     "worktree.storage": () =>
       Effect.gen(function* () {
-        return yield* provide(storageReport(yield* storageSources));
+        return yield* unnamed(yield* provide(storageReport(yield* storageSources)));
       }),
 
     "worktree.cleanupPlan": ({ inactiveDays }) =>
       Effect.gen(function* () {
         const report = yield* provide(storageReport(yield* storageSources));
-        return yield* cleanupPlan(report, inactiveDays, Date.now());
+        return yield* unnamed(yield* cleanupPlan(report, inactiveDays, Date.now()));
       }),
 
     "worktree.cleanUp": ({ paths, confirmed, prune }) =>

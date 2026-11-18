@@ -1,4 +1,5 @@
 import { reconcileOpenPrs, reviewRequestsDirectOnly, reviewRequestsOn } from "@gram/contracts";
+import { readableOnly } from "../embedding/readable-by.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -78,7 +79,8 @@ export const listOpenPrsTool = (
         const { prs, checkedAt } = yield* poller.own;
         const origins = yield* poller.projectOrigins;
         const roots = new Map((yield* store.listProjects).map((p) => [p.id, p.root]));
-        const threads = yield* store.listThreads;
+        // No thread the caller's reader may not see owns one here (`embedding/readable-by.ts`).
+        const threads = yield* readableOnly(yield* store.listThreads, (thread) => thread);
         const titles = new Map(threads.map((thread) => [thread.id, thread.title]));
         const live = yield* Effect.forEach(threads, (thread) =>
           Effect.map(git.stateForThread(thread), (state) => {

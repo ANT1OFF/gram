@@ -345,6 +345,8 @@ export const makeHistoryMethods = ({
         },
         // A fork of a thread started from a profile is held to the same charter and MCP server.
         ...(source.profile === undefined ? {} : { profile: source.profile }),
+        // And a fork of a thread readable by one person is readable by them alone.
+        ...(source.readableBy === undefined ? {} : { readableBy: source.readableBy }),
         unread: false,
         createdAt: now,
         lastActivityAt: now,

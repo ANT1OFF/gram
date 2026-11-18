@@ -9,6 +9,7 @@
 // server's word for it. The server checks the statement as it checks every request, and nothing
 // more: the extra claims are the receiver's to read.
 
+import { NOT_READABLE, readableByOf, readerMay } from "./readable-by.ts";
 import {
   type AnswerWorkerQuestionInput,
   InvalidState,
@@ -118,6 +119,9 @@ export const answerAsk = (
     if (parsed._tag === "None")
       return refusal(400, "BadRequest", "expected {threadId, requestId, answer}");
     const { threadId, requestId, answer } = parsed.value;
+    // A thread readable by one person is answered by them alone (`embedding/readable-by.ts`).
+    if (!readerMay({ subject: actor.id }, readableByOf(threadId as ThreadId)))
+      return refusal(404, "NotFound", NOT_READABLE);
     const proof: AnswerProof = { statement, method: request.method, path: request.url, body };
     const asActor = <A, E>(effect: Effect.Effect<A, E>) =>
       effect.pipe(

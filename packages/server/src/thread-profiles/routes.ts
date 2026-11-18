@@ -115,30 +115,33 @@ export const profileStartRoute = (
     const input = yield* decodeRequest(value, { onExcessProperty: "error" }).pipe(Effect.option);
     if (input._tag === "None")
       return refuse("Give the profile and the thread's id, and the machine's if it has one.", 400);
-    const { profile, threadId, hostId, machine, startedBy } = input.value;
-    return yield* starter.startOne(profile, { threadId, on: hostId, machine, startedBy }).pipe(
-      Effect.map(({ thread, created }) =>
-        HttpServerResponse.jsonUnsafe(
-          {
-            threadId: thread.id,
-            created,
-            ...(thread.awaitingMachine === undefined ? {} : { awaitingMachine: true }),
-          } satisfies ProfileStartResponse,
-          {
-            headers: {
-              [PROFILE_START_RECORD.thread]: thread.id,
-              [PROFILE_START_RECORD.created]: String(created),
-              // A thread that waits for its machine is on none, and its record names none.
-              ...(thread.checkout.hostId === undefined || thread.awaitingMachine !== undefined
-                ? {}
-                : { [PROFILE_START_RECORD.host]: thread.checkout.hostId }),
+    const { profile, threadId, hostId, machine, startedBy, readableBy } = input.value;
+    return yield* starter
+      .startOne(profile, { threadId, on: hostId, machine, startedBy, readableBy })
+      .pipe(
+        Effect.map(({ thread, created }) =>
+          HttpServerResponse.jsonUnsafe(
+            {
+              threadId: thread.id,
+              created,
+              ...(thread.awaitingMachine === undefined ? {} : { awaitingMachine: true }),
+              ...(thread.readableBy === undefined ? {} : { readableBy: thread.readableBy }),
+            } satisfies ProfileStartResponse,
+            {
+              headers: {
+                [PROFILE_START_RECORD.thread]: thread.id,
+                [PROFILE_START_RECORD.created]: String(created),
+                // A thread that waits for its machine is on none, and its record names none.
+                ...(thread.checkout.hostId === undefined || thread.awaitingMachine !== undefined
+                  ? {}
+                  : { [PROFILE_START_RECORD.host]: thread.checkout.hostId }),
+              },
             },
-          },
+          ),
         ),
-      ),
-      // The starter's own sentence, and nothing of how it failed inside.
-      Effect.catch((error) => Effect.succeed(refuse(error.message, 409))),
-    );
+        // The starter's own sentence, and nothing of how it failed inside.
+        Effect.catch((error) => Effect.succeed(refuse(error.message, 409))),
+      );
   });
 
 /** Answers the move path. `on` is the hosted features setting, read per request. */
