@@ -367,8 +367,12 @@ export const gatedSessions = (
 ): HostSessionsService => ({
   ...sessions,
   open: (request) =>
-    gate.admit(request.cwd, "session").pipe(
-      Effect.mapError((error) => new HostFailed({ message: error.message })),
-      Effect.andThen(sessions.open(request)),
-    ),
+    // A memory update opens in an empty folder the host makes for it, whatever `cwd` names
+    // (`sessionFolder`): no folder of this machine's is asked for, so there is none to admit.
+    request.dreamFilesOnly === true
+      ? sessions.open(request)
+      : gate.admit(request.cwd, "session").pipe(
+          Effect.mapError((error) => new HostFailed({ message: error.message })),
+          Effect.andThen(sessions.open(request)),
+        ),
 });

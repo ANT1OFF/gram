@@ -39,6 +39,7 @@ import {
   InvalidState,
   type Thread,
   type ThreadId,
+  sessionHostOf,
 } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -206,8 +207,8 @@ const checkoutsOf = (thread: Thread) => [
 /** Whose a thread is: its machine's owner, where it is on a machine started for someone. */
 export const threadOwner = (
   ownerOf: OwnerOf,
-  thread: Pick<Thread, "checkout" | "currentCheckout">,
-) => ownerOf(hostOf(effectiveCheckout(thread)));
+  thread: Pick<Thread, "checkout" | "currentCheckout" | "dreamHost">,
+) => ownerOf(sessionHostOf(thread));
 
 /**
  * The rule for a thread: whether this fiber's caller may reach every machine it works on
@@ -228,6 +229,9 @@ export const mayReachThread = (
     if (startedBy !== undefined && (yield* currentCaller)?.person !== startedBy) return false;
     for (const checkout of checkoutsOf(thread))
       if (!(yield* mayReach(ownerOf, hostOf(checkout)))) return false;
+    // A memory update's session runs on a machine its folder isn't on (`Thread.dreamHost`).
+    if (thread.dreamHost !== undefined && !(yield* mayReach(ownerOf, thread.dreamHost)))
+      return false;
     return true;
   });
 

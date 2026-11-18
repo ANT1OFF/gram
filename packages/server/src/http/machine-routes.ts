@@ -2,14 +2,13 @@ import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import type * as Exit from "effect/Exit";
 import {
-  effectiveCheckout,
   HOST_PROTOCOL_VERSION,
   HostFailed,
   HostId,
-  hostOf,
   type InvalidState,
   LOCAL_HOST_ID,
   type NotFound,
+  sessionHostOf,
 } from "@gram/contracts";
 import {
   type ClaudeTokenCapture,
@@ -772,8 +771,8 @@ export const machineManagement = (
   });
 
 /**
- * Whether the request's bearer token is a thread's whose checkout is on a joined machine that is
- * online now: what lets a session there reach its app tools over the tailnet.
+ * Whether the request's bearer token is a thread's whose session is on a joined machine that is
+ * online now (`sessionHostOf`): what lets a session there reach its app tools over the tailnet.
  */
 export const placedOnMachine = (
   tokens: Pick<McpTokens["Service"], "threadFor">,
@@ -794,7 +793,7 @@ export const placedOnMachine = (
     if (threadId === undefined) return false;
     const thread = yield* store.getThread(threadId).pipe(Effect.option);
     if (thread._tag === "None") return false;
-    const hostId = hostOf(effectiveCheckout(thread.value));
+    const hostId = sessionHostOf(thread.value);
     if (hostId === LOCAL_HOST_ID) return false;
     if ((yield* remoteHosts.connection(hostId).pipe(Effect.exit))._tag !== "Success") return false;
     return origin === undefined || remoteHosts.origin?.(hostId) === origin;

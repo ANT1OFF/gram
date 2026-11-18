@@ -12,6 +12,7 @@ import {
   isLocalHost,
   LOCAL_HOST_ID,
   NotFound,
+  sessionHostOf,
   type TerminalId,
   type Thread,
   type ThreadId,
@@ -170,7 +171,9 @@ export const placedHost = (
   // since removed is still that machine's (and unavailable), never this one's.
   const hostIdOfThread = (threadId: ThreadId) =>
     store.getThread(threadId).pipe(
-      Effect.map((thread) => hostOf(effectiveCheckout(thread))),
+      // A memory update on a server that runs nothing itself has its session on a machine and
+      // its folder here (`Thread.dreamHost`); it has no terminal, so this is its session's.
+      Effect.map((thread) => sessionHostOf(thread)),
       // A thread that isn't stored (a dream, a helper) is this machine's.
       Effect.orElseSucceed(() => LOCAL_HOST_ID),
     );

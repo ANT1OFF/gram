@@ -266,6 +266,7 @@ export const makeThreadLifecycle = ({
           ? {}
           : { codexHome: input.codexHome }),
         ...(input.role === undefined ? {} : { role: input.role }),
+        ...(input.dreamHost === undefined ? {} : { dreamHost: input.dreamHost }),
         ...(input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }),
         ...(input.spawnedBy === undefined ? {} : { spawnedBy: input.spawnedBy }),
         ...(input.profile === undefined ? {} : { profile: input.profile }),

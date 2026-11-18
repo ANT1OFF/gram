@@ -992,6 +992,13 @@ export const Thread = Schema.Struct({
    */
   awaitingMachine: Schema.optionalKey(AwaitingMachine),
   /**
+   * A memory update's on a server that runs no work itself (a headless control plane): the
+   * joined machine its session runs on, while its folder stays this server's and its files are
+   * reached through its app tools alone. Set when the dream is made and never changed after;
+   * absent on every other thread, and on a dream that runs here (`sessionHostOf`).
+   */
+  dreamHost: Schema.optionalKey(HostId),
+  /**
    * The one person who may see the thread, by the subject fronted sign-in names them with: set by
    * an embedding host when it starts the thread from a profile (`ProfileStartRequest.readableBy`)
    * and never changed or cleared after. Every thread it spawns has the same. Nobody else, and no

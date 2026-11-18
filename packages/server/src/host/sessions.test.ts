@@ -51,6 +51,7 @@ import {
   HOST_BROWSER_POLICY_MISSING,
   HOST_CAPABILITIES,
   HOST_CODEX_MISSING,
+  HOST_DREAMS_MISSING,
   HOST_FEATURES,
   HOST_OPENCODE_SESSIONS_MISSING,
   HOST_SERVES,
@@ -394,6 +395,63 @@ const codexMachineWith = (features: ReadonlyArray<string>, kind: AgentKind = "co
     );
     return { onHost, inServer, agent };
   });
+
+/** A memory update's session as the server opens it on a headless control plane. */
+const DREAM: OpenSessionOptions = {
+  threadId: THREAD,
+  // The dream's folder on the server, which the machine doesn't have.
+  cwd: "/server/data/dreams/d-1",
+  audience: "dream",
+  dreamFilesOnly: true,
+  confineWrites: true,
+  mcp: { url: "http://127.0.0.1:4317/mcp", headers: { authorization: "Bearer t" } },
+};
+
+describe("a joined machine's memory updates", () => {
+  it("open there only in Claude Code with no native tools, never in this machine's host", () => {
+    expect(opensOnMachine("claude", DREAM)).toBe(true);
+    // This machine's host process leaves them to the server, as before.
+    expect(opensOnHost("claude", DREAM)).toBe(false);
+    // Native tools in a folder that is the server's: Codex's guided route, or no confinement.
+    expect(opensOnMachine("codex", { ...DREAM, dreamFilesOnly: false, dreamGuided: true })).toBe(
+      false,
+    );
+    expect(opensOnMachine("claude", { ...DREAM, dreamFilesOnly: false })).toBe(false);
+    expect(opensOnMachine("claude", { ...DREAM, dreamGuided: true })).toBe(false);
+    // Its files are reached through its app tools alone.
+    const { mcp: _, ...noTools } = DREAM;
+    expect(opensOnMachine("claude", noTools)).toBe(false);
+  });
+
+  it.live("a machine's older host is refused, saying to update it, and opens nothing", () =>
+    Effect.gen(function* () {
+      const { onHost, inServer, agent } = yield* codexMachineWith(
+        HOST_FEATURES.filter((feature) => feature !== "dream-sessions"),
+        "claude",
+      );
+      const error = yield* agent.open(DREAM).pipe(Effect.scoped, Effect.flip);
+      expect(error.message).toBe(`On box: ${HOST_DREAMS_MISSING}`);
+      expect(onHost.opened).toEqual([]);
+      expect(inServer.opened).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("opens in an empty folder of the machine's own, the same one again on a reopen", () =>
+    Effect.gen(function* () {
+      const { onHost, inServer, agent } = yield* codexMachineWith(HOST_FEATURES, "claude");
+      yield* Effect.scoped(agent.open(DREAM));
+      const opened = onHost.opened[0]!;
+      expect(opened).toMatchObject({ audience: "dream", dreamFilesOnly: true });
+      expect(opened.remoteAppTools).toBeDefined();
+      expect(opened.cwd).not.toBe(DREAM.cwd);
+      expect(readdirSync(opened.cwd)).toEqual([]);
+      // Claude Code finds a conversation to resume by its folder.
+      yield* Effect.scoped(agent.open({ ...DREAM, resumeId: "s-1" }));
+      expect(onHost.opened[1]!.cwd).toBe(opened.cwd);
+      expect(inServer.opened).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+});
 
 describe("a joined machine's OpenCode sessions", () => {
   it("open there as Codex's do, and what only the server holds stays here", () => {

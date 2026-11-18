@@ -5,7 +5,6 @@ import {
   type ThreadId,
   type TurnId,
   effectiveCheckout,
-  hostOf,
   fastSelectionProblem,
   isLocalHost,
   InterruptHung,
@@ -21,6 +20,7 @@ import {
   type ThreadStatus,
   type Checkout,
   type WorktreeDirty,
+  sessionHostOf,
 } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -262,8 +262,7 @@ const make = Effect.gen(function* () {
     Option.isSome(limitReadings) && limitReadings.value.scopeFor !== undefined
       ? limitReadings.value.scopeFor
       : ephemeralAccountScope(),
-    (thread) =>
-      workerHosts.get(hostOf(effectiveCheckout(thread))).pipe(Effect.map((host) => host.sessions)),
+    (thread) => workerHosts.get(sessionHostOf(thread)).pipe(Effect.map((host) => host.sessions)),
     (account) => startRelease(account),
   );
   const { scopeFor: accountScopeFor, quotaFor } = accountScopes;

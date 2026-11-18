@@ -859,4 +859,134 @@ describe.skipIf(!hasGit)("a headless control plane", () => {
       }).pipe(Effect.scoped),
     60_000,
   );
+  it.live(
+    "runs a memory update's session on the orchestrator's machine, with its files kept here",
+    () =>
+      Effect.gen(function* () {
+        const project = makeProject("dream-plane");
+        const serverAgents = yield* Layer.build(makeFakeAgentAdapter());
+        const server = yield* Layer.build(
+          headlessServer(serverAgents, { dataDir: join(dir, "dream-data"), embedding: true }),
+        );
+        const { port, token } = yield* Effect.gen(function* () {
+          return {
+            port: serverPort(yield* HttpServer.HttpServer),
+            token: (yield* LaunchToken).token,
+          };
+        }).pipe(Effect.provideContext(server));
+        const booted = yield* raw(port, { path: `/?boot=${token}` });
+        const cookie = booted.headers["set-cookie"]?.[0]?.split(";")[0] ?? "";
+        const local = {
+          cookie,
+          origin: `http://127.0.0.1:${port}`,
+          "content-type": "application/json",
+        };
+        const app = yield* appClient(GramRpcs, port, cookie);
+        yield* app["settings.set"]({ patch: { agents: { recommendedSetup: { enabled: false } } } });
+        const added = yield* app["projects.add"]({ root: project.root });
+
+        const machineAgents = yield* Layer.build(makeFakeAgentAdapter());
+        const machineFake = yield* FakeAgentControl.pipe(Effect.provideContext(machineAgents));
+        const { hostId, tools } = yield* joinMachine(
+          port,
+          local,
+          project,
+          machineAgents,
+          "dream box",
+        );
+        yield* eventually(
+          "the machine online with its models",
+          Effect.map(listMachines(port, local), (machines) =>
+            machines.find(
+              (each) =>
+                each.id === hostId && each.onlineSince !== undefined && each.models !== undefined,
+            ),
+          ),
+        );
+
+        const orchestrator: Thread = yield* app["workspace.startTask"]({
+          target: { projectId: added.id },
+          input: { text: "Remember that releases go out on Tuesdays." },
+        });
+        expect(orchestrator.checkout.hostId).toBe(hostId);
+        yield* eventually(
+          "the orchestrator's first message",
+          Effect.sync(() =>
+            machineFake.sessions.some(
+              (session) => session.options.threadId === orchestrator.id && session.sent.length > 0,
+            ),
+          ),
+        );
+        const toolsBefore = tools.length;
+
+        // A Codex one would read and write its folder, which is here, with native tools.
+        const codex = yield* app["dream.start"]({
+          workspaceId: orchestrator.workspaceId!,
+          kind: "dream",
+          model: { agent: "codex", model: "fake-opus" },
+        }).pipe(Effect.flip);
+        expect(codex.message).toContain("in Claude Code only");
+
+        // The memory update starts as on the desktop, and its session opens on the
+        // orchestrator's machine: no native tools, an empty folder of the machine's own.
+        const dream = yield* app["dream.start"]({
+          workspaceId: orchestrator.workspaceId!,
+          kind: "dream",
+        });
+        const session = yield* eventually(
+          "the memory update's session on the machine",
+          Effect.sync(() =>
+            machineFake.sessions.find((each) => each.options.threadId === dream.threadId),
+          ),
+        );
+        expect(session.options).toMatchObject({ audience: "dream", dreamFilesOnly: true });
+        expect(session.options.cwd).not.toBe(dream.outputDir);
+        expect(session.options.cwd.startsWith(join(tmpdir(), "gram-dream-"))).toBe(true);
+        expect(readdirSync(session.options.cwd)).toEqual([]);
+
+        // Its files are this server's, reached through its app tools from the machine.
+        const dreamTools = yield* eventually(
+          "the memory update's app tools",
+          Effect.sync(() => (tools.length > toolsBefore ? tools.at(-1) : undefined)),
+        );
+        const names = dreamTools.tools.map((tool) => tool.name);
+        expect(names).toContain("dream_write");
+        expect(names).not.toContain("spawn_worker");
+        const wrote = yield* Effect.promise(() =>
+          dreamTools.call("dream_write", {
+            path: "output/MEMORY.md",
+            content: "# Memory\n\n- Releases go out on Tuesdays.\n",
+          }),
+        );
+        expect(wrote.isError, JSON.stringify(wrote.content)).not.toBe(true);
+        expect(readFileSync(join(dream.outputDir, "output", "MEMORY.md"), "utf8")).toContain(
+          "Tuesdays",
+        );
+        const index = yield* Effect.promise(() =>
+          dreamTools.call("dream_read", { path: "input/INDEX.md" }),
+        );
+        expect(index.isError, JSON.stringify(index.content)).not.toBe(true);
+        yield* Effect.promise(() =>
+          dreamTools.call("dream_write", {
+            path: "output/REPORT.md",
+            content: "# Report\n\nAdded the release day.\n",
+          }),
+        );
+
+        // Its turn ends on the machine, and the candidate is judged here, for review.
+        yield* session.completeTurn("Done.");
+        const ready = yield* eventually(
+          "the memory update ready for review",
+          Effect.map(app["dream.list"]({ workspaceId: orchestrator.workspaceId! }), (dreams) =>
+            dreams.find((each) => each.id === dream.id && each.status !== "running"),
+          ),
+        );
+        expect(ready).toMatchObject({ status: "completed", mode: "review" });
+
+        // Nothing ran here.
+        const serverFake = yield* FakeAgentControl.pipe(Effect.provideContext(serverAgents));
+        expect(serverFake.sessions).toHaveLength(0);
+      }).pipe(Effect.scoped),
+    60_000,
+  );
 });

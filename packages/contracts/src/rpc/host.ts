@@ -190,6 +190,13 @@ export const HostFeature = Schema.Literals([
    * plane to keep in step with its own. A host without it runs its threads with no shared folder.
    */
   "shared-folders",
+  /**
+   * Opens a memory update's session (`HostSessionOpen.dreamFilesOnly`): with no native tool and no
+   * settings of its own, its files reached only through the control plane's app tools, in an
+   * empty folder the host makes for it whatever `cwd` says. A control plane sends no memory
+   * update to a host without it, which would drop the field and open an ordinary session.
+   */
+  "dream-sessions",
 ]);
 export type HostFeature = typeof HostFeature.Type;
 
@@ -658,6 +665,12 @@ export const HostSessionOpen = Schema.Struct({
    * (`OpenSessionOptions.waitForPreviousSession`). Sent only to a host that names `agent-codex`.
    */
   waitForPrevious: Schema.optionalKey(Schema.Boolean),
+  /**
+   * A memory update's session (`OpenSessionOptions.dreamFilesOnly`): no native tool, no settings,
+   * only the app tools, in a folder of the host's own. Sent only to a host that names
+   * `dream-sessions`.
+   */
+  dreamFilesOnly: Schema.optionalKey(Schema.Boolean),
 });
 export type HostSessionOpen = typeof HostSessionOpen.Type;
 

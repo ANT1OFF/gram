@@ -1,15 +1,8 @@
 import type { AgentHosts } from "./agent-hosts.ts";
 import { accountOf, machineAccountScope } from "./limit-wait.ts";
-import {
-  effectiveCheckout,
-  hostOf,
-  LOCAL_HOST_ID,
-  type Thread,
-  type HostUnavailable,
-} from "@gram/contracts";
+import { LOCAL_HOST_ID, type Thread, type HostUnavailable, sessionHostOf } from "@gram/contracts";
 import * as Effect from "effect/Effect";
-const keyOf = (thread: Thread) =>
-  JSON.stringify([hostOf(effectiveCheckout(thread)), thread.model.agent]);
+const keyOf = (thread: Thread) => JSON.stringify([sessionHostOf(thread), thread.model.agent]);
 
 /** Remember successful observations. Missing metadata and probe failures are never a switch. */
 export const makeAccountScopes = (
@@ -33,7 +26,7 @@ export const makeAccountScopes = (
     )
       continue;
     const prefix = accountOf(thread.model);
-    if (wait.account === prefix && hostOf(effectiveCheckout(thread)) === LOCAL_HOST_ID)
+    if (wait.account === prefix && sessionHostOf(thread) === LOCAL_HOST_ID)
       known.set(keyOf(thread), undefined);
     else if (wait.account.startsWith(`${prefix}/"`)) {
       try {
@@ -42,7 +35,7 @@ export const makeAccountScopes = (
         const pair: unknown = JSON.parse(scope);
         if (
           Array.isArray(pair) &&
-          pair[0] === hostOf(effectiveCheckout(thread)) &&
+          pair[0] === sessionHostOf(thread) &&
           typeof pair[1] === "string" &&
           !pair[1].startsWith("thread:")
         )
@@ -54,7 +47,7 @@ export const makeAccountScopes = (
   }
   const observe = (thread: Thread) =>
     Effect.gen(function* () {
-      const machine = hostOf(effectiveCheckout(thread));
+      const machine = sessionHostOf(thread);
       const key = keyOf(thread);
       const fallback = () =>
         known.has(key)
@@ -107,7 +100,7 @@ export const makeAccountScopes = (
         ),
       ),
     remember: (thread: Thread, login: string, previous: string | undefined) => {
-      const machine = hostOf(effectiveCheckout(thread));
+      const machine = sessionHostOf(thread);
       const scope = scopeFor(machine, login);
       // A local old process must not replace the fresh CLI observation. On a joined
       // machine, only a new identity for this process updates the shared known login.

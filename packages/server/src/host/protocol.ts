@@ -211,7 +211,12 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "agent-codex",
   "agent-opencode-sessions",
   "shared-folders",
+  "dream-sessions",
 ];
+
+/** Why a memory update isn't opened on a host that doesn't name `dream-sessions`. */
+export const HOST_DREAMS_MISSING =
+  "Its gram-host is older than this Gram and doesn't run memory updates. Update Gram there (Settings → Machines), then try again.";
 
 /** Why a Codex session isn't opened on a host that doesn't name `agent-codex`. */
 export const HOST_CODEX_MISSING =
@@ -1430,6 +1435,7 @@ export const connectHost = (
     const knowsOpenCode = hostServes(hello, "agent-opencode");
     const runsCodex = hostServes(hello, "agent-codex");
     const runsOpenCode = hostServes(hello, "agent-opencode-sessions");
+    const runsDreams = hostServes(hello, "dream-sessions");
     const readable = (input: UserInput) => (knowsOpenCode ? input : withoutOpenCodeAgents(input));
     const sessions: HostSessionsConnection = {
       browserPolicy,
@@ -1468,7 +1474,17 @@ export const connectHost = (
                       message: HOST_OPENCODE_SESSIONS_MISSING,
                     }),
                   )
-                : sessionCall(client["host.sessions.open"](request), isAgentUnavailable),
+                : // An older host would drop the field and open an ordinary session, with its
+                  // native tools, where the dream's prompt asks it to write.
+                  (request.dreamFilesOnly === true || request.audience === "dream") && !runsDreams
+                  ? Effect.fail(
+                      new AgentUnavailable({
+                        agent: request.agent,
+                        reason: "startup-failed",
+                        message: HOST_DREAMS_MISSING,
+                      }),
+                    )
+                  : sessionCall(client["host.sessions.open"](request), isAgentUnavailable),
       events: (handle, afterSeq) =>
         hostStream(client["host.sessions.events"]({ handle, afterSeq })),
       ack: (handle, seq) =>
