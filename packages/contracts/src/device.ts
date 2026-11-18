@@ -441,6 +441,16 @@ export const HostedDiscovery = Schema.Struct({
    */
   thread_export_endpoint: Schema.optionalKey(Address),
   thread_settle_endpoint: Schema.optionalKey(Address),
+  /**
+   * Where work is sent from this machine to run there, as a new thread of a workspace (`POST`,
+   * `HostedThreadStart`), and where what was sent is followed (`HostedThreadWait`), answered
+   * (`HostedThreadMessage`) and stopped (`HostedThreadStop`). All four or none; absent on a server
+   * that runs no work sent to it.
+   */
+  thread_start_endpoint: Schema.optionalKey(Address),
+  thread_wait_endpoint: Schema.optionalKey(Address),
+  thread_message_endpoint: Schema.optionalKey(Address),
+  thread_stop_endpoint: Schema.optionalKey(Address),
 });
 export type HostedDiscovery = typeof HostedDiscovery.Type;
 
@@ -511,6 +521,12 @@ export const checkHostedDiscovery = (origin: string, document: unknown): HostedD
     ...(discovery.thread_import_endpoint === undefined ? [] : [discovery.thread_import_endpoint]),
     ...(discovery.thread_export_endpoint === undefined ? [] : [discovery.thread_export_endpoint]),
     ...(discovery.thread_settle_endpoint === undefined ? [] : [discovery.thread_settle_endpoint]),
+    ...[
+      discovery.thread_start_endpoint,
+      discovery.thread_wait_endpoint,
+      discovery.thread_message_endpoint,
+      discovery.thread_stop_endpoint,
+    ].filter((address) => address !== undefined),
   ];
   if (!calls.every((address) => on(address, secure ? "https:" : "http:")))
     return { ok: false, why: "The server sends Gram to another address." };
@@ -571,6 +587,98 @@ export interface HostedThreadSettle {
   readonly exportedAt: number;
   /** This machine's name, as the copy there says where it went. */
   readonly to: string;
+}
+
+/** Whether the server runs work sent from this machine: it names all four calls for it. */
+export const runsSentWork = (discovery: HostedDiscovery): boolean =>
+  discovery.thread_start_endpoint !== undefined &&
+  discovery.thread_wait_endpoint !== undefined &&
+  discovery.thread_message_endpoint !== undefined &&
+  discovery.thread_stop_endpoint !== undefined;
+
+/**
+ * `POST thread_start_endpoint`: work sent from this machine, as a new thread of a workspace there,
+ * in the repositories it names (`owner/name` or a git URL, the main one first). `clientKey` names
+ * the send: sent again, the server answers the thread it made, so a retry starts one.
+ */
+export interface HostedThreadStart {
+  readonly workspaceId: string;
+  readonly repositories: readonly string[];
+  readonly text: string;
+  readonly title?: string;
+  readonly branch?: string;
+  readonly clientKey: string;
+}
+
+/** Its answer: the thread there, and the branch its work is on. */
+export const HostedThreadStarted = Schema.Struct({
+  threadId: Id,
+  branch: Schema.optionalKey(Text(200)),
+});
+export type HostedThreadStarted = typeof HostedThreadStarted.Type;
+
+/** A message's id there: what a wait starts after. */
+const MessageRef = Schema.String.check(Schema.isPattern(/^[\x21-\x7e]{1,200}$/));
+
+/**
+ * `POST thread_wait_endpoint`: waits, at most `timeoutSeconds` (20 at most), for a thread sent from
+ * here to reply (`reply`), stop working (`idle`), wait on a person (`waiting`) or say anything
+ * (`message`), after the message `after`.
+ */
+export interface HostedThreadWait {
+  readonly workspaceId: string;
+  readonly threadId: string;
+  readonly after?: string;
+  readonly until?: "reply" | "idle" | "waiting" | "message";
+  readonly timeoutSeconds?: number;
+}
+
+/** Where a thread there stands: `waiting` is waiting on a person there. All the server's word. */
+export const HostedThreadState = Schema.Literals([
+  "running",
+  "waiting",
+  "done",
+  "failed",
+  "stopped",
+]);
+export type HostedThreadState = typeof HostedThreadState.Type;
+
+/** Its answer: whether it happened, the last message to wait after, its last reply, and the thread. */
+export const HostedThreadWaited = Schema.Struct({
+  happened: Schema.Boolean,
+  latest: Schema.optionalKey(MessageRef),
+  reply: Schema.optionalKey(Text(8000)),
+  thread: Schema.Struct({
+    title: Text(200),
+    state: HostedThreadState,
+    working: Schema.Boolean,
+  }),
+});
+export type HostedThreadWaited = typeof HostedThreadWaited.Type;
+
+/**
+ * `POST thread_message_endpoint`: a message into a thread sent from here, as the person typed it.
+ * `queue` waits for a running turn to end; `interrupt` stops it and answers this.
+ */
+export interface HostedThreadMessage {
+  readonly workspaceId: string;
+  readonly threadId: string;
+  readonly text: string;
+  readonly mode?: "queue" | "steer" | "interrupt";
+  readonly clientKey: string;
+}
+
+/** Its answer: whether it waits behind a running turn, and the message a wait for its reply starts after. */
+export const HostedThreadMessaged = Schema.Struct({
+  queued: Schema.optionalKey(Schema.Boolean),
+  after: Schema.optionalKey(MessageRef),
+});
+export type HostedThreadMessaged = typeof HostedThreadMessaged.Type;
+
+/** `POST thread_stop_endpoint`: stops the turn a thread sent from here is working on. It stays. */
+export interface HostedThreadStop {
+  readonly workspaceId: string;
+  readonly threadId: string;
 }
 
 /** `POST devices_endpoint/challenge`'s answer: something new to sign, for this person alone. */

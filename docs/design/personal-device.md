@@ -189,7 +189,11 @@ more than the person did.
   "device_connect": "wss://gram.example.com/device/connect",
   "thread_import_endpoint": "https://gram.example.com/api/threads/import",
   "thread_export_endpoint": "https://gram.example.com/api/threads/export",
-  "thread_settle_endpoint": "https://gram.example.com/api/threads/settle"
+  "thread_settle_endpoint": "https://gram.example.com/api/threads/settle",
+  "thread_start_endpoint": "https://gram.example.com/api/threads/start",
+  "thread_wait_endpoint": "https://gram.example.com/api/threads/wait",
+  "thread_message_endpoint": "https://gram.example.com/api/threads/message",
+  "thread_stop_endpoint": "https://gram.example.com/api/threads/stop"
 }
 ```
 
@@ -216,10 +220,15 @@ address, in the browser. If the rule is ever relaxed, the issuer check of
 | `POST thread_import_endpoint` `{ workspaceId, bundle, from }`                                          | access token, scope `workspaces:import`                 | `{ threadId, notes?, url? }`, or a refusal `{ error }` in its words    |
 | `POST thread_export_endpoint` `{ workspaceId, threadId }`                                              | access token, scope `workspaces:export`                 | `{ bundle }`, or a refusal `{ error }` in its words                    |
 | `POST thread_settle_endpoint` `{ workspaceId, threadId, exportedAt, to }`                              | access token, scope `workspaces:export`                 | `{ settled: true }`, or a refusal `{ error }` in its words             |
+| `POST thread_start_endpoint` `{ workspaceId, repositories, text, title?, branch?, clientKey }`         | access token, scope `threads:start`                     | `{ threadId, branch? }`, or a refusal `{ error }` in its words         |
+| `POST thread_wait_endpoint` `{ workspaceId, threadId, after?, until?, timeoutSeconds }`                | access token, scope `threads:start`                     | `{ happened, latest?, reply?, thread: { title, state, working } }`     |
+| `POST thread_message_endpoint` `{ workspaceId, threadId, text, mode?, clientKey }`                     | access token, scope `threads:start`                     | `{ queued?, after? }`, or a refusal `{ error }` in its words           |
+| `POST thread_stop_endpoint` `{ workspaceId, threadId }`                                                | access token, scope `threads:start`                     | `200`, or a refusal `{ error }` in its words                           |
 
 Gram's token answer adds one field to OAuth's: `sub`, the person's subject id, which the dial
 signs and the gate checks each request's actor against. A renewal that names another person ends
-the sign-in. The app signs in once for `workspaces device:register device:connect workspaces:import` and narrows
+the sign-in. The app signs in once for `workspaces device:register device:connect workspaces:import workspaces:export
+threads:start` (each moving or work scope only where the server names its calls) and narrows
 each renewal to one scope; renewals go one at a time, since each rotates the refresh token, and
 the rotated token is in the keychain before it is used. A token is used for fifteen minutes at
 most, whatever the server says. The registration's signature covers, length-prefixed,
@@ -246,6 +255,13 @@ thread that moved there back. The app asks for the bundle, gives it to this mach
 settles the copy there, naming the bundle's `exportedAt` and this machine's name. Whether work may
 leave is the server's to decide, and its refusal is shown in its words. Settling again is safe, so
 a settle with no clear answer is offered again.
+
+The four work calls go together: a server that names all four runs work sent from this machine, as
+a new thread of one of the person's workspaces there, under that workspace's rules. It must let this machine
+follow, answer and stop only the threads it sent, and nothing else of the workspace. `clientKey`
+makes a second send or message the same one, so one with no clear answer is sent again with its
+key. A wait lasts 20 seconds at most; `state` is `running`, `waiting` (on a person there), `done`,
+`failed` or `stopped`. A pause for the server holds new work and waits back, never a stop.
 
 ### The dial
 

@@ -70,6 +70,7 @@ const stateWith = (
       signedIn: true,
       takesThreads: false,
       givesThreads: false,
+      runsWork: false,
       paused,
       workspaces: [workspace(more)],
     },
@@ -262,6 +263,35 @@ describe("the bridge Settings reads the device through", () => {
     expect(asked).toEqual([200]);
     expect(JSON.stringify(read)).not.toContain("t-secret");
     expect(read).toMatchObject({ kept: true, entries: [{ what: "ls", threadTitle: "Fix it" }] });
+  });
+
+  it("sends work only as a server takes it, and shows its words as words", async () => {
+    const sent: Array<unknown> = [];
+    const device = {
+      ...fakeDevice(stateWith(), []),
+      sendWork: async (_origin: string, _workspace: string, work: unknown) => {
+        sent.push(work);
+        return { ok: false, why: "No\u202Ehere.\nTry later." };
+      },
+    } as HostedDevice;
+    const call = served(device);
+    const work = { repositories: ["example/app"], text: "Fix it", clientKey: "k-1" };
+    for (const wrong of [
+      { ...work, repositories: [] },
+      { ...work, repositories: ["example/app\n--upload-pack=x"] },
+      { ...work, text: "  " },
+      { ...work, clientKey: "k 1" },
+      { ...work, branch: "../main" },
+      { ...work, title: 7 },
+    ])
+      expect(
+        await call(Channels.hostedDeviceSendWork, { origin: ORIGIN, workspace: "w1", work: wrong }),
+      ).toMatchObject({ ok: false });
+    expect(sent).toEqual([]);
+    expect(
+      await call(Channels.hostedDeviceSendWork, { origin: ORIGIN, workspace: "w1", work }),
+    ).toEqual({ ok: false, why: "No\\u202ehere. Try later." });
+    expect(sent).toEqual([work]);
   });
 
   it("refuses every call from a decision window", async () => {

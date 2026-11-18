@@ -81,7 +81,22 @@ export const fakeServer = () => {
     /** How an export or a settle is answered, when not with the bundle or a yes. */
     exportAnswer: undefined as { status: number; body: unknown } | undefined,
     settleAnswer: undefined as { status: number; body: unknown } | undefined,
+    /** Run work sent from the device; the sign-in carries `threads:start`. */
+    runsWork: true,
+    /** What was sent, waited on, said and stopped, as the bodies came. */
+    started: [] as Array<Record<string, unknown>>,
+    waited: [] as Array<Record<string, unknown>>,
+    messaged: [] as Array<Record<string, unknown>>,
+    stopped: [] as Array<Record<string, unknown>>,
+    /** How a start is answered, when not with a new thread. */
+    startAnswer: undefined as { status: number; body: unknown } | undefined,
+    /** How a wait is answered, when not with a reply. */
+    waitAnswer: undefined as { status: number; body: unknown } | undefined,
   };
+  /** The threads the device sent, by its key: only these may be followed. */
+  const sent = new Map<string, string>();
+  const ownThread = (asked: Record<string, unknown>) =>
+    [...sent.values()].includes(String(asked["threadId"]));
   let origin = "";
   const handle = async (request: IncomingMessage) => {
     const url = new URL(request.url ?? "/", origin);
@@ -102,6 +117,14 @@ export const fakeServer = () => {
           ? {
               thread_export_endpoint: `${origin}/api/threads/export`,
               thread_settle_endpoint: `${origin}/api/threads/settle`,
+            }
+          : {}),
+        ...(state.runsWork
+          ? {
+              thread_start_endpoint: `${origin}/api/threads/start`,
+              thread_wait_endpoint: `${origin}/api/threads/wait`,
+              thread_message_endpoint: `${origin}/api/threads/message`,
+              thread_stop_endpoint: `${origin}/api/threads/stop`,
             }
           : {}),
       });
@@ -125,7 +148,7 @@ export const fakeServer = () => {
         return json(400, { error: "use_dpop_nonce" }, { "dpop-nonce": state.nonce });
       }
       const form = new URLSearchParams(await readBody(request));
-      let scope = `workspaces device:register device:connect${state.importScope ? " workspaces:import" : ""}${state.givesThreads ? " workspaces:export" : ""}`;
+      let scope = `workspaces device:register device:connect${state.importScope ? " workspaces:import" : ""}${state.givesThreads ? " workspaces:export" : ""}${state.runsWork ? " threads:start" : ""}`;
       if (form.get("grant_type") === "authorization_code") {
         const code = state.codes.get(form.get("code") ?? "");
         state.codes.delete(form.get("code") ?? "");
@@ -237,6 +260,54 @@ export const fakeServer = () => {
       return state.settleAnswer === undefined
         ? json(200, { settled: true })
         : json(state.settleAnswer.status, state.settleAnswer.body);
+    }
+    if (url.pathname === "/api/threads/start" && held.scope === "threads:start") {
+      const asked = JSON.parse(await readBody(request)) as Record<string, unknown>;
+      state.started.push(asked);
+      if (state.startAnswer !== undefined)
+        return json(state.startAnswer.status, state.startAnswer.body);
+      const key = String(asked["clientKey"]);
+      const threadId = sent.get(key) ?? `t-sent-${sent.size + 1}`;
+      sent.set(key, threadId);
+      return json(200, {
+        started: true,
+        workspaceId: asked["workspaceId"],
+        threadId,
+        branch: `thread/${threadId}`,
+      });
+    }
+    if (url.pathname === "/api/threads/wait" && held.scope === "threads:start") {
+      const asked = JSON.parse(await readBody(request)) as Record<string, unknown>;
+      state.waited.push(asked);
+      if (!ownThread(asked)) return json(404, { error: { message: "No such thread." } });
+      return state.waitAnswer === undefined
+        ? json(200, {
+            happened: true,
+            reason: "reply",
+            messages: [],
+            latest: "m-2",
+            reply: "Done: the tests pass.",
+            thread: {
+              id: asked["threadId"],
+              title: "Fix the flaky test",
+              state: "running",
+              working: false,
+              turns: 1,
+            },
+          })
+        : json(state.waitAnswer.status, state.waitAnswer.body);
+    }
+    if (url.pathname === "/api/threads/message" && held.scope === "threads:start") {
+      const asked = JSON.parse(await readBody(request)) as Record<string, unknown>;
+      state.messaged.push(asked);
+      if (!ownThread(asked)) return json(404, { error: { message: "No such thread." } });
+      return json(200, { sent: true, queued: false, clientKey: asked["clientKey"], after: "m-2" });
+    }
+    if (url.pathname === "/api/threads/stop" && held.scope === "threads:start") {
+      const asked = JSON.parse(await readBody(request)) as Record<string, unknown>;
+      state.stopped.push(asked);
+      if (!ownThread(asked)) return json(404, { error: { message: "No such thread." } });
+      return json(200, { stopped: true });
     }
     if (url.pathname.startsWith("/api/devices/") && request.method === "DELETE") {
       state.forgotten.push(decodeURIComponent(url.pathname.slice("/api/devices/".length)));

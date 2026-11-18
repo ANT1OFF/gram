@@ -9,7 +9,11 @@ import {
   HOSTED_TOKEN_RENEW_BEFORE_MS,
   exportHostedThread,
   importHostedThread,
+  messageHostedThread,
   settleHostedThread,
+  startHostedThread,
+  stopHostedThread,
+  waitHostedThread,
   listHostedWorkspaces,
   makeTokenKeeper,
   registerHostedDevice,
@@ -329,10 +333,11 @@ describe("a hosted server", () => {
   it("asks for moving work only of a server that takes threads, or gives them back", async () => {
     await signedIn();
     expect(fake.state.askedScope.split(" ")).toEqual(
-      expect.arrayContaining(["workspaces:import", "workspaces:export"]),
+      expect.arrayContaining(["workspaces:import", "workspaces:export", "threads:start"]),
     );
     fake.state.takesThreads = false;
     fake.state.givesThreads = false;
+    fake.state.runsWork = false;
     await signedIn();
     expect(fake.state.askedScope).toBe("workspaces device:register device:connect");
   });
@@ -372,6 +377,81 @@ describe("a hosted server", () => {
     const before = fake.state.exported.length;
     expect(await exportHostedThread({ ...asked, discovery: without })).toMatchObject({ ok: false });
     expect(fake.state.exported.length).toBe(before);
+  });
+
+  it("sends work there with the person's sign-in, then follows, answers and stops only it", async () => {
+    const { discovery } = await signedIn();
+    const calls = { discovery, keeper: await keeperFor(), key, fetch };
+    const work = {
+      ...calls,
+      workspaceId: "w1",
+      repositories: ["example/app"],
+      text: "Fix the flaky test",
+      clientKey: "send-1",
+    };
+    expect(await startHostedThread(work)).toEqual({
+      ok: true,
+      threadId: "t-sent-1",
+      branch: "thread/t-sent-1",
+    });
+    // Sent again with its key, it is the same send: one thread there.
+    expect(await startHostedThread(work)).toMatchObject({ ok: true, threadId: "t-sent-1" });
+    expect(fake.state.started).toEqual([
+      {
+        workspaceId: "w1",
+        repositories: ["example/app"],
+        text: "Fix the flaky test",
+        clientKey: "send-1",
+      },
+      {
+        workspaceId: "w1",
+        repositories: ["example/app"],
+        text: "Fix the flaky test",
+        clientKey: "send-1",
+      },
+    ]);
+
+    const thread = { ...calls, workspaceId: "w1", threadId: "t-sent-1" };
+    // A wait is bounded by the server's own twenty seconds, whatever is asked.
+    expect(await waitHostedThread({ ...thread, after: "m-1", timeoutSeconds: 600 })).toEqual({
+      ok: true,
+      waited: {
+        happened: true,
+        latest: "m-2",
+        reply: "Done: the tests pass.",
+        thread: { title: "Fix the flaky test", state: "running", working: false },
+      },
+    });
+    expect(fake.state.waited.at(-1)).toEqual({
+      workspaceId: "w1",
+      threadId: "t-sent-1",
+      after: "m-1",
+      timeoutSeconds: 20,
+    });
+    expect(
+      await messageHostedThread({ ...thread, text: "Also the docs.", clientKey: "say-1" }),
+    ).toEqual({ ok: true, queued: false, after: "m-2" });
+    expect(await stopHostedThread(thread)).toEqual({ ok: true });
+
+    // A thread it didn't send is the server's to refuse, in its words.
+    expect(await stopHostedThread({ ...thread, threadId: "t-other" })).toEqual({
+      ok: false,
+      why: "No such thread.",
+    });
+    // No clear answer to a send: sending again with its key is safe.
+    fake.state.startAnswer = { status: 502, body: {} };
+    expect(await startHostedThread(work)).toMatchObject({ ok: false, unknown: true });
+    fake.state.startAnswer = { status: 409, body: { error: "Start your sandbox first." } };
+    expect(await startHostedThread(work)).toEqual({ ok: false, why: "Start your sandbox first." });
+    // A wait whose answer isn't one Gram reads is no answer.
+    fake.state.waitAnswer = { status: 200, body: { happened: true, thread: { state: "lost" } } };
+    expect(await waitHostedThread(thread)).toMatchObject({ ok: false });
+
+    // A server that names the calls only in part is sent nothing.
+    const { thread_stop_endpoint: _stop, ...partly } = discovery;
+    const before = fake.state.started.length;
+    expect(await startHostedThread({ ...work, discovery: partly })).toMatchObject({ ok: false });
+    expect(fake.state.started.length).toBe(before);
   });
 
   it("refuses a token copied without the device key", async () => {
