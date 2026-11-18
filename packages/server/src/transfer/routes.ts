@@ -1,15 +1,20 @@
 // `POST /workspaces/export` and `POST /workspaces/import`: a workspace out of this server as a
-// bundle, and a bundle into it. The auth middleware lets only the local app's own origin reach
+// bundle, and a bundle into it. `POST /threads/export`, `/threads/import` and `/threads/settle`:
+// one thread the same way, and the read-only copy it leaves here. The auth middleware lets only the local app's own origin reach
 // them, never a paired browser or a joined machine; while the hosted features setting is off they
 // answer as a path that isn't there.
 
 import {
   BUNDLE_MAX_BYTES,
   embeddingOn,
+  ExportThreadInput,
   ExportWorkspaceInput,
+  ImportThreadInput,
   ImportWorkspaceInput,
   type InvalidState,
   type NotFound,
+  SettleThreadInput,
+  type ThreadNotFound,
 } from "@gram/contracts";
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
@@ -17,17 +22,36 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { authTarget } from "../http/auth-target.ts";
-import { WORKSPACE_EXPORT_PATH, WORKSPACE_IMPORT_PATH } from "../http/remote-access.ts";
+import {
+  THREAD_EXPORT_PATH,
+  THREAD_IMPORT_PATH,
+  THREAD_SETTLE_PATH,
+  WORKSPACE_EXPORT_PATH,
+  WORKSPACE_IMPORT_PATH,
+} from "../http/remote-access.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
+import { ThreadTransfer, type ThreadTransferShape } from "./thread-transfer.ts";
 import { WorkspaceTransfer, type WorkspaceTransferShape } from "./workspace-transfer.ts";
 
-export { WORKSPACE_EXPORT_PATH, WORKSPACE_IMPORT_PATH };
+export {
+  THREAD_EXPORT_PATH,
+  THREAD_IMPORT_PATH,
+  THREAD_SETTLE_PATH,
+  WORKSPACE_EXPORT_PATH,
+  WORKSPACE_IMPORT_PATH,
+};
 
-/** Reached only from the local app: a bundle is a whole workspace, and an import names folders. */
+/**
+ * Reached only from the local app: a bundle is a whole workspace or a thread with its edits, and
+ * an import names folders.
+ */
 export const WORKSPACE_TRANSFER_PATHS: ReadonlySet<string> = new Set([
   WORKSPACE_EXPORT_PATH,
   WORKSPACE_IMPORT_PATH,
+  THREAD_EXPORT_PATH,
+  THREAD_IMPORT_PATH,
+  THREAD_SETTLE_PATH,
 ]);
 
 /** An export's body: a workspace id and a flag. */
@@ -65,15 +89,17 @@ const body = (max: number) =>
   });
 
 /** What a refused move answers: the service's own sentence, and nothing of how it failed inside. */
-const refusal = (error: NotFound | InvalidState) =>
-  refuse(error.message, error._tag === "NotFound" ? 404 : 409);
+const refusal = (error: NotFound | ThreadNotFound | InvalidState) =>
+  error._tag === "ThreadNotFound"
+    ? refuse("There is no such thread here.", 404)
+    : refuse(error.message, error._tag === "NotFound" ? 404 : 409);
 
 /**
  * Answers one of the two paths. `on` is the hosted features setting, read per request; the body
  * is decoded against the contract before the service sees it, so nothing unknown gets in.
  */
 export const workspaceTransferRoute = (
-  transfer: WorkspaceTransferShape,
+  transfer: WorkspaceTransferShape & ThreadTransferShape,
   on: Effect.Effect<boolean>,
   path: string,
 ): Effect.Effect<
@@ -118,13 +144,48 @@ export const workspaceTransferRoute = (
         Effect.catch((error) => Effect.succeed(refusal(error))),
       );
     }
+    if (path === THREAD_EXPORT_PATH || path === THREAD_SETTLE_PATH) {
+      const read = yield* body(EXPORT_BODY_MAX);
+      if (read.refused !== undefined) return read.refused;
+      if (path === THREAD_EXPORT_PATH) {
+        const input = yield* Schema.decodeUnknownEffect(ExportThreadInput)(read.value).pipe(
+          Effect.option,
+        );
+        if (input._tag === "None") return refuse("Name the thread to export.", 400);
+        return yield* transfer.exportThread(input.value).pipe(
+          Effect.map((bundle) => HttpServerResponse.jsonUnsafe(bundle)),
+          Effect.catch((error) => Effect.succeed(refusal(error))),
+        );
+      }
+      const input = yield* Schema.decodeUnknownEffect(SettleThreadInput)(read.value).pipe(
+        Effect.option,
+      );
+      if (input._tag === "None") return refuse("Name the thread and where it went.", 400);
+      return yield* transfer.settleThread(input.value).pipe(
+        Effect.map((thread) => HttpServerResponse.jsonUnsafe({ thread })),
+        Effect.catch((error) => Effect.succeed(refusal(error))),
+      );
+    }
+    if (path === THREAD_IMPORT_PATH) {
+      const read = yield* body(BUNDLE_MAX_BYTES);
+      if (read.refused !== undefined) return read.refused;
+      const input = yield* Schema.decodeUnknownEffect(ImportThreadInput)(read.value).pipe(
+        Effect.option,
+      );
+      if (input._tag === "None")
+        return refuse("This is not a thread bundle this Gram can read.", 400);
+      return yield* transfer.importThread(input.value).pipe(
+        Effect.map((result) => HttpServerResponse.jsonUnsafe(result)),
+        Effect.catch((error) => Effect.succeed(refusal(error))),
+      );
+    }
     return notThere;
   });
 
-/** The two routes on the server's router, under its auth middleware. */
+/** The routes on the server's router, under its auth middleware. */
 export const WorkspaceTransferRoutes = Layer.unwrap(
   Effect.gen(function* () {
-    const transfer = yield* WorkspaceTransfer;
+    const transfer = { ...(yield* WorkspaceTransfer), ...(yield* ThreadTransfer) };
     const store = yield* ThreadStore;
     const on = store.getSettings.pipe(
       Effect.map(embeddingOn),
@@ -137,6 +198,9 @@ export const WorkspaceTransferRoutes = Layer.unwrap(
     return Layer.mergeAll(
       HttpRouter.add("*", WORKSPACE_EXPORT_PATH, handle(WORKSPACE_EXPORT_PATH)),
       HttpRouter.add("*", WORKSPACE_IMPORT_PATH, handle(WORKSPACE_IMPORT_PATH)),
+      HttpRouter.add("*", THREAD_EXPORT_PATH, handle(THREAD_EXPORT_PATH)),
+      HttpRouter.add("*", THREAD_IMPORT_PATH, handle(THREAD_IMPORT_PATH)),
+      HttpRouter.add("*", THREAD_SETTLE_PATH, handle(THREAD_SETTLE_PATH)),
     );
   }),
 );

@@ -885,6 +885,32 @@ export const Thread = Schema.Struct({
       codexHome: Schema.optionalKey(CodexHome),
     }),
   ),
+  /**
+   * Moved here from another Gram with its conversation (`thread.transfer.import`). Until `seeded`,
+   * its first session here opens fresh and reads the recent turns, since no agent session moves.
+   */
+  transferredFrom: Schema.optionalKey(
+    Schema.Struct({
+      /** The other Gram's name for itself, as the person knows it. */
+      name: Schema.String.check(Schema.isMaxLength(200)),
+      /** Epoch ms it arrived. */
+      at: Schema.Number,
+      seeded: Schema.optionalKey(Schema.Boolean),
+    }),
+  ),
+  /**
+   * Moved from here to another Gram (`thread.transfer.settle`): this record is a read-only copy,
+   * archived, and the thread carries on there.
+   */
+  transferredTo: Schema.optionalKey(
+    Schema.Struct({
+      name: Schema.String.check(Schema.isMaxLength(200)),
+      /** Epoch ms it left. */
+      at: Schema.Number,
+      /** Where to open it there, when the other Gram said. */
+      url: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
+    }),
+  ),
   /** Raised by the user or the `set_unread` app tool; cleared when the thread is viewed. */
   unread: Schema.Boolean,
   /**

@@ -81,7 +81,17 @@ export interface CreateThreadInput {
    * Its bound PR can restore a worktree deleted since.
    */
   readonly kept?: Partial<
-    Pick<Thread, "userNamed" | "agentNamed" | "labels" | "pinned" | "boundPr" | "extraPrs">
+    Pick<
+      Thread,
+      | "userNamed"
+      | "agentNamed"
+      | "labels"
+      | "pinned"
+      | "boundPr"
+      | "extraPrs"
+      | "transferredFrom"
+      | "transferredTo"
+    >
   >;
   /** Orchestration's fields, in the row from its first insert; only `orchestrator.open` gives a role. */
   readonly role?: NonNullable<Thread["role"]>;

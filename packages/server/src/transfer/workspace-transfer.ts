@@ -141,7 +141,7 @@ export const shareableRemote = (url: string): string | undefined => {
  * and nothing else. Its session, folders, limits, pull requests, watches and marks are the
  * machine's; an import fills in the project, model, mode and checkout itself.
  */
-const portableThread = (thread: Thread): Thread => ({
+export const portableThread = (thread: Thread): Thread => ({
   id: thread.id,
   projectId: thread.projectId,
   title: thread.title,
@@ -161,7 +161,7 @@ const portableThread = (thread: Thread): Thread => ({
   lastActivityAt: thread.lastActivityAt,
 });
 
-const cut = (text: string, max: number) => {
+export const cut = (text: string, max: number) => {
   const line = text.replace(/\s+/g, " ").trim();
   return line.length <= max ? line : `${line.slice(0, max - 1)}…`;
 };

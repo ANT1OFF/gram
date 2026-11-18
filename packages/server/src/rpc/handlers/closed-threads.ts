@@ -141,6 +141,11 @@ export const makeClosedReopener = (
             ...(thread.agentNamed === undefined ? {} : { agentNamed: thread.agentNamed }),
             ...(thread.boundPr === undefined ? {} : { boundPr: thread.boundPr }),
             ...(thread.extraPrs === undefined ? {} : { extraPrs: thread.extraPrs }),
+            // Where it came from or went keeps its meaning after a close: a moved copy stays one.
+            ...(thread.transferredFrom === undefined
+              ? {}
+              : { transferredFrom: thread.transferredFrom }),
+            ...(thread.transferredTo === undefined ? {} : { transferredTo: thread.transferredTo }),
           },
           // A session that never received a message has no transcript to continue.
           ...(thread.agentSessionId === undefined || thread.agentSessionUnused === true

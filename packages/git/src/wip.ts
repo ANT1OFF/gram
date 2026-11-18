@@ -239,6 +239,10 @@ const remoteRef = (top: string, remote: string, ref: string, protocols: string) 
  * Whoever can push to the remote can write the ref. Given `expected`, the commit a stop said it
  * kept, the remote's ref must name exactly that commit: any other is refused, before anything of
  * it is fetched.
+ *
+ * `from` reads the thread's work from another host's ref of it (`refs/gram/wip/<name>/<thread>`),
+ * as one written on another Gram's machine is when the thread moved here; it must be a ref of that
+ * thread (`isWipRefOf`). Unset, the ref is this host's own.
  */
 export const fetchWip = (
   repo: string,
@@ -246,13 +250,15 @@ export const fetchWip = (
   remote = "origin",
   protocols: string = WIP_PUSH_PROTOCOLS,
   expected?: string,
+  from?: string,
 ) =>
   Effect.gen(function* () {
     if (!isValidCheckpointId(threadId)) return yield* fail("invalid thread id");
     if (!isPushRemote(remote)) return yield* fail("invalid remote");
     if (expected !== undefined && !OID.test(expected)) return yield* fail("invalid commit");
+    if (from !== undefined && !isWipRefOf(from, threadId)) return yield* fail("invalid ref");
     const top = yield* repoTopOrFail(repo);
-    const ref = wipRef(threadId);
+    const ref = from ?? wipRef(threadId);
     const theirs = yield* remoteRef(top, remote, ref, protocols);
     if (theirs === undefined) return undefined;
     const unexpected = `${ref} at the remote isn't the commit the stop kept, so nothing of it was put back`;

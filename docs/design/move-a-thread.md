@@ -30,15 +30,18 @@ files in the edits that look like they hold one are named on the review so the p
 1. **Check** (`thread.transfer.check`): the thread exists here and is not archived; whether a turn
    runs; its repository's shareable remote; files among the edits that look like a key; the tools
    from this machine its conversation used. Changes nothing.
-2. **Export** (`thread.transfer.export`): waits for the turn to end, or stops it when asked. The
-   agent writes its handoff note in a last short turn; a thread whose agent can't (a limit, a
-   failure) goes with the conversation alone, said so in the note. The host keeps the edits on the
-   hidden ref and pushes it. Answers the bundle. Nothing here changes yet.
+2. **Export** (`thread.transfer.export`): refused mid-turn, so the dialog waits for the turn to
+   end or stops it first. Refused for a thread of a workspace, which moves as a whole. The edits
+   go on the hidden ref and are pushed; when the branch at the remote holds all of them, no ref
+   is needed. Answers the bundle. Nothing here changes but the pushed ref.
 3. **Import** on the other Gram (`thread.transfer.import`): a thread with the conversation, marked
    as brought in (`transferredFrom`), placed by that Gram's own rules on a machine of its own. The
    host makes its folder from the remote and puts the edits back from the named ref and commit
    (`host.stop.restore`, which gains an optional `ref` checked with `isWipRefOf`, since the ref was
-   written under another thread id or namespace). The first message is the handoff.
+   written under another namespace; the thread keeps its id). On a person's own machine the folder
+   is a new worktree of the checkout they named, whose `origin` must be the bundle's remote, and
+   the thread opens on that Gram's default mode. Its first session reads the recent turns ahead
+   of the next message (`renderMovedSession`), once.
 4. **Settle** (`thread.transfer.settle`) back here, once the other side answers: the thread here
    becomes read-only and archived, with `transferredTo` naming where it went. A move that fails
    before this changes nothing here, and the pushed ref is dropped (`host.stop.drop`).
@@ -57,7 +60,8 @@ folder here that changed since is put aside on a branch of its own.
 
 ## Build order
 
-1. Bundle and the four calls, Gram to Gram, with a test that moves a thread between two servers
-   and back over the host protocol's fake.
+1. Bundle and the calls, Gram to Gram: `POST /threads/export`, `/threads/import` and
+   `/threads/settle`, local-app only like the workspace's, with a test that moves a thread between
+   two servers over real git. The agent-written note and the joined-host restore follow.
 2. The shell's calls to a server signed in to (`hostedDevice.moveThread`), and the dialog.
 3. Bringing back.
