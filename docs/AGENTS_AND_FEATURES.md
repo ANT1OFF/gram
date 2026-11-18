@@ -1182,6 +1182,8 @@ and settings by chat can change both with the usual approval card.
   window whose draft reports are 75 seconds stale, a thread that isn't wholly at rest
   (background tasks, subagents, waits), a paused workspace or feature, a worker the user holds,
   or an open worker question. A held compaction looks again every 30 seconds until its deadline.
+- **Before a stop.** A deployment that stops the server when it is idle asks it first
+  ([before an idle stop](EMBEDDING.md#before-an-idle-stop)), and what waits for its time goes then.
 - **Afterwards.** The transcript shows Gram's request and a marker with the outcome and a link
   to the setting. A compaction that didn't complete is retried only after the context has grown
   by a tenth. After an orchestrator's compaction, its next digest carries its boot context again.

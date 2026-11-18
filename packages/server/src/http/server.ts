@@ -73,6 +73,7 @@ import {
 import { ThreadMessagesInboundLive } from "../embedding/thread-messages.ts";
 import { ThreadStartsInboundLive } from "../embedding/thread-starts.ts";
 import { ThreadNotesInboundLive } from "../embedding/thread-notes.ts";
+import { IdleStopInboundLive } from "../embedding/idle-stop.ts";
 import { ObjectStoreLive } from "../embedding/object-store.ts";
 import { TimersLive } from "../embedding/timers.ts";
 import { SuppliedSettingsLive } from "../settings/supplied.ts";
@@ -934,6 +935,7 @@ export const ServerCore = Layer.unwrap(
         ThreadAssistLive,
         RepoEventsInboundLive,
         ThreadNotesInboundLive,
+        IdleStopInboundLive,
         ThreadMessagesInboundLive,
         ThreadStartsInboundLive,
         SuppliedSettingsLive,

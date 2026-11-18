@@ -41,6 +41,8 @@ export const IDLE_COMPACT_MIN_IDLE_MS = 10 * 60_000;
 export const IDLE_COMPACT_LATEST_MS = ONE_HOUR_TTL_MS - 60_000;
 /** While the user types or a draft waits, look again this often until `IDLE_COMPACT_LATEST_MS`. */
 export const IDLE_COMPACT_RETRY_MS = 30_000;
+/** The longest a stop waits on one compaction it asked for: past it, its end went unseen. */
+export const IDLE_COMPACT_STOP_WAIT_MS = 10 * 60_000;
 /** After one that didn't complete, another needs the context to have grown by this share. */
 const IDLE_COMPACT_REGROWTH = 1.1;
 
@@ -167,6 +169,12 @@ const log = (message: string, threadId: ThreadId, fields: Record<string, unknown
 export interface IdleCompactor {
   readonly onTurnStart: (threadId: ThreadId) => Effect.Effect<void>;
   readonly onTurnEnd: (thread: Thread, end: ObservedTurnEnd) => Effect.Effect<void>;
+  /**
+   * The server is about to stop: every waiting compaction whose deadline hasn't passed goes now
+   * instead of at its time, through the same holds. Answers how many threads are compacting or
+   * about to, so a host that stops the server for idleness waits until it hears none.
+   */
+  readonly compactBeforeStop: Effect.Effect<{ readonly compacting: number }>;
 }
 
 export const makeIdleCompactor = (
@@ -178,6 +186,17 @@ export const makeIdleCompactor = (
     const planned = new Map<ThreadId, TurnId>();
     /** The context each thread's last compaction that didn't complete started from. */
     const attempts = new Map<ThreadId, number>();
+    /** Each waiting compaction's plan, so `compactBeforeStop` can bring it forward. */
+    const waiting = new Map<
+      ThreadId,
+      { thread: Thread; scope: IdleCompactScope; plan: IdleCompactPlan; after: TurnId }
+    >();
+    /**
+     * Threads whose compaction was asked for and hasn't ended its turn or been dropped, each with
+     * when. One older than `IDLE_COMPACT_STOP_WAIT_MS` isn't counted: a host never waits on a
+     * compaction whose end went unseen.
+     */
+    const asked = new Map<ThreadId, number>();
 
     /** Everything but the runtime's own state, which only the delivery sees under its lock. */
     const holdNow = (threadId: ThreadId, after: TurnId) =>
@@ -198,40 +217,53 @@ export const makeIdleCompactor = (
       plan: IdleCompactPlan,
       after: TurnId,
     ) =>
-      deps.runtimes
-        // Never steered (no `steer`): compaction is for a thread wholly at rest.
-        .requestSystemDelivery(thread.id, IDLE_COMPACT_KEY, {
-          build: (_turnId, rest) =>
-            Effect.gen(function* () {
-              const now = yield* Clock.currentTimeMillis;
-              const hold =
-                now > plan.deadline
-                  ? "late"
-                  : (restHold(rest) ?? (yield* holdNow(thread.id, after)));
-              if (hold !== undefined) {
-                yield* log("idle compaction dropped at send", thread.id, { hold });
-                planned.delete(thread.id);
-                return undefined;
-              }
-              const input: UserInput = {
-                text: "/compact",
-                notice: {
-                  kind: "idleCompact",
-                  contextTokens: plan.contextTokens,
-                  workspaceId: scope.workspaceId,
-                },
-              };
-              attempts.set(thread.id, plan.contextTokens);
-              return input;
-            }),
-          accepted: () =>
-            log("idle compaction started", thread.id, { context: plan.contextTokens }),
-          failed: (_turnId, reason) =>
-            Effect.sync(() => planned.delete(thread.id)).pipe(
-              Effect.andThen(log("idle compaction not sent", thread.id, { reason })),
-            ),
-        })
-        .pipe(Effect.ignore);
+      Clock.currentTimeMillis.pipe(
+        Effect.flatMap((now) =>
+          Effect.sync(() => {
+            waiting.delete(thread.id);
+            asked.set(thread.id, now);
+          }),
+        ),
+        Effect.andThen(
+          deps.runtimes
+            // Never steered (no `steer`): compaction is for a thread wholly at rest.
+            .requestSystemDelivery(thread.id, IDLE_COMPACT_KEY, {
+              build: (_turnId, rest) =>
+                Effect.gen(function* () {
+                  const now = yield* Clock.currentTimeMillis;
+                  const hold =
+                    now > plan.deadline
+                      ? "late"
+                      : (restHold(rest) ?? (yield* holdNow(thread.id, after)));
+                  if (hold !== undefined) {
+                    yield* log("idle compaction dropped at send", thread.id, { hold });
+                    planned.delete(thread.id);
+                    asked.delete(thread.id);
+                    return undefined;
+                  }
+                  const input: UserInput = {
+                    text: "/compact",
+                    notice: {
+                      kind: "idleCompact",
+                      contextTokens: plan.contextTokens,
+                      workspaceId: scope.workspaceId,
+                    },
+                  };
+                  attempts.set(thread.id, plan.contextTokens);
+                  return input;
+                }),
+              accepted: () =>
+                log("idle compaction started", thread.id, { context: plan.contextTokens }),
+              failed: (_turnId, reason) =>
+                Effect.sync(() => {
+                  planned.delete(thread.id);
+                  asked.delete(thread.id);
+                }).pipe(Effect.andThen(log("idle compaction not sent", thread.id, { reason }))),
+            })
+            // Not asked for (the thread went): nothing to wait for.
+            .pipe(Effect.catchCause(() => Effect.sync(() => asked.delete(thread.id)))),
+        ),
+      );
 
     /** Waits for `plan.at`, then sends unless something holds it; a passing hold is waited out. */
     const arm = (thread: Thread, scope: IdleCompactScope, plan: IdleCompactPlan, after: TurnId) =>
@@ -243,12 +275,14 @@ export const makeIdleCompactor = (
           if (hold === undefined) return yield* dispatch(thread, scope, plan, after);
           if (hold === "turn" || hold === "user") {
             yield* log("idle compaction skipped", thread.id, { hold });
+            waiting.delete(thread.id);
             return;
           }
           const at = yield* Clock.currentTimeMillis;
           if (at + IDLE_COMPACT_RETRY_MS > plan.deadline) {
             yield* log("idle compaction skipped", thread.id, { hold, reason: "deadline" });
             planned.delete(thread.id);
+            waiting.delete(thread.id);
             return;
           }
           yield* Effect.sleep(IDLE_COMPACT_RETRY_MS);
@@ -259,12 +293,39 @@ export const makeIdleCompactor = (
       onTurnStart: (threadId) =>
         Effect.gen(function* () {
           planned.delete(threadId);
+          waiting.delete(threadId);
           yield* FiberMap.remove(timers, threadId);
         }),
+      compactBeforeStop: Effect.gen(function* () {
+        const now = yield* Clock.currentTimeMillis;
+        /** Brought forward now; one something holds keeps its time and isn't waited for. */
+        const going = new Set<ThreadId>();
+        for (const [threadId, entry] of waiting) {
+          if (now > entry.plan.deadline) {
+            waiting.delete(threadId);
+            continue;
+          }
+          if ((yield* holdNow(threadId, entry.after)) !== undefined) continue;
+          going.add(threadId);
+          const plan = { ...entry.plan, at: now };
+          waiting.set(threadId, { ...entry, plan });
+          yield* FiberMap.run(timers, threadId, arm(entry.thread, entry.scope, plan, entry.after));
+        }
+        const recent = [...asked].filter(([, at]) => now - at < IDLE_COMPACT_STOP_WAIT_MS);
+        const compacting = new Set([...going, ...recent.map(([id]) => id)]).size;
+        if (compacting > 0) {
+          yield* Effect.logInfo("idle compactions before a stop").pipe(
+            Effect.annotateLogs({ compacting }),
+          );
+        }
+        return { compacting };
+      }),
       onTurnEnd: (thread, end) =>
         Effect.gen(function* () {
           yield* FiberMap.remove(timers, thread.id);
           planned.delete(thread.id);
+          waiting.delete(thread.id);
+          asked.delete(thread.id);
           const scope = yield* deps.scope(thread);
           if (end.idleCompaction !== undefined) {
             if (end.idleCompaction === "completed") {
@@ -290,6 +351,7 @@ export const makeIdleCompactor = (
             return;
           }
           planned.set(thread.id, end.turnId);
+          waiting.set(thread.id, { thread, scope, plan, after: end.turnId });
           yield* FiberMap.run(timers, thread.id, arm(thread, scope, plan, end.turnId));
         }),
     };
