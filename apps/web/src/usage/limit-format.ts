@@ -100,9 +100,17 @@ export const resetText = (at: number, now: number, intl: IntlOptions = {}): stri
  */
 export const resetAtText = resetText;
 
-/** "1,250": a credit balance as the agent gave it, its whole part grouped by thousands. */
+/**
+ * "1,250.5": a credit balance as the agent gave it, its whole part grouped by thousands and its
+ * fraction cut to two places without trailing zeros (Codex reports ten: "40706.6175120000").
+ */
 const creditBalanceText = (balance: string): string =>
-  balance.replace(/^\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+  balance
+    .replace(/\.(\d*)$/, (_, fraction: string) => {
+      const kept = fraction.slice(0, 2).replace(/0+$/, "");
+      return kept === "" ? "" : `.${kept}`;
+    })
+    .replace(/^\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
 
 /**
  * "On credits · 1,250 left": the account's credits, when the agent reports having them (Codex's
