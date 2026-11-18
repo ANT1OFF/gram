@@ -73,7 +73,7 @@ import { parentFolder } from "./workspace-repos";
 const MACHINE_POLL_MS = 1000;
 
 const RosterEditor = lazy(() =>
-  import("@/settings/roster-editor").then(({ RosterEditor }) => ({ default: RosterEditor })),
+  import("@/settings/roster-editor").then((module) => ({ default: module.RosterEditor })),
 );
 
 /** Where a key press belongs to an open menu, list or dialog rather than to the sheet. */
