@@ -1,0 +1,15 @@
+{
+  "title": "Move a thread to a server, and bring it back",
+  "slug": "hosted-move-a-thread",
+  "status": "in-review",
+  "template": "flow",
+  "current": 1,
+  "approved": null,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-18"
+    }
+  ]
+}

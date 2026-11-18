@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Move a thread to a server, and bring it back · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .sm-label {
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .sm-where {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .sm-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 10px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 999px;
+        background: none;
+        color: var(--fg);
+        font: inherit;
+      }
+      .sm-line {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        color: var(--fg-muted);
+      }
+      .sm-line strong {
+        color: var(--fg);
+        font-weight: 550;
+      }
+      .sm-checks {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg, 8px);
+        background: var(--surface-3);
+      }
+      .sm-check {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 12px;
+      }
+      .sm-check + .sm-check {
+        border-top: 1px solid var(--border-subtle);
+      }
+      .sm-check .text {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        flex: 1;
+        min-width: 0;
+      }
+      .sm-check .text span {
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .sm-ok,
+      .sm-warn,
+      .sm-bad {
+        display: inline-flex;
+      }
+      .sm-ok {
+        color: var(--success);
+      }
+      .sm-warn {
+        color: var(--warning);
+      }
+      .sm-bad {
+        color: var(--danger);
+      }
+      .sm-rows {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .sm-row {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 2px 8px;
+        padding: 7px 8px;
+        border-radius: var(--radius-md, 7px);
+      }
+      .sm-row.sel {
+        background: var(--surface-hover);
+      }
+      .sm-row > span:first-child {
+        display: inline-flex;
+      }
+      .sm-row .edge {
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .sm-row .edge.asks {
+        color: var(--warning);
+      }
+      .sm-pane {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 18px 22px;
+        font-size: var(--text-sm);
+        position: relative;
+      }
+      .sm-headline {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .sm-headline h3 {
+        margin: 0;
+      }
+      .sm-msg {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-width: 640px;
+        color: var(--fg-muted);
+      }
+      .sm-msg strong {
+        color: var(--fg);
+        font-weight: 550;
+      }
+      .sm-ask {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px 14px;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-lg, 8px);
+        background: var(--surface-3);
+        max-width: 680px;
+      }
+      .sm-sheet {
+        width: min(680px, 100%);
+        margin: 24px auto;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 20px 22px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl, 10px);
+        background: var(--surface-3);
+        font-size: var(--text-sm);
+      }
+      .sm-sheet h3 {
+        margin: 0;
+        font-size: var(--text-lg);
+      }
+      .sm-two {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      @media (max-width: 560px) {
+        .sm-two {
+          grid-template-columns: 1fr;
+        }
+      }
+      .sm-box {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 10px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg, 8px);
+      }
+      .sm-box ul {
+        margin: 0;
+        padding-left: 16px;
+        color: var(--fg-muted);
+      }
+      .sm-neighbours {
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .sm-progress {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--surface-hover);
+      }
+      .sm-progress i {
+        display: block;
+        width: 48%;
+        height: 100%;
+        border-radius: 2px;
+        background: var(--accent);
+      }
+      .sm-pane .callout {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        max-width: 680px;
+      }
+      .sm-pane .callout p {
+        margin: 0;
+      }
+      .sm-side {
+        flex: 0 0 290px;
+      }
+      .sm-menu {
+        position: absolute;
+        top: 48px;
+        right: 22px;
+        width: 290px;
+      }
+      .sm-menu .menu-item {
+        height: auto;
+        padding: 6px 8px;
+      }
+      code {
+        font-size: var(--text-xs);
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        One thread, with its live parts, moved between this Mac and a server you are signed in to,
+        and back. Unlike moving a workspace, the agent's session and its edits go too, so the
+        conversation carries on where it stopped. A thread has one home at a time: the side it left
+        keeps a read-only copy. Step through each board's states in its strip.
+      </p>
+
+      <section
+        class="board"
+        data-name="1 Move a thread"
+        data-size="1280x820"
+        data-states="menu,review,secret,moving,moved"
+      >
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>billing-api</span>
+            </div>
+            <div class="app-body">
+              <nav class="sidebar sm-side" aria-label="Threads" data-when="menu,moved">
+                <div class="section-label">billing-api</div>
+                <div class="sm-rows">
+                  <div class="sm-row">
+                    <i data-icon="orch"></i>
+                    <span class="truncate">Orchestrator</span>
+                    <span class="edge"></span>
+                  </div>
+                  <div class="sm-row sel">
+                    <span class="spinner" data-when="menu"></span>
+                    <span data-when="moved"><i data-icon="archive"></i></span>
+                    <span class="truncate">Refund webhook retries</span>
+                    <span class="edge" data-when="moved"><i data-icon="upload"></i>moved</span>
+                  </div>
+                  <div class="sm-row">
+                    <span class="sm-ok"><i data-icon="okcircle"></i></span>
+                    <span class="truncate">Stable sort in History</span>
+                    <span class="edge"><i data-icon="pr"></i>#139</span>
+                  </div>
+                </div>
+                <div class="section-label" data-when="moved">gram.example.com · Platform</div>
+                <div class="sm-rows" data-when="moved">
+                  <div class="sm-row">
+                    <span class="spinner"></span>
+                    <span class="truncate">Refund webhook retries</span>
+                    <span class="edge"><i data-icon="upload"></i>Platform</span>
+                  </div>
+                </div>
+              </nav>
+
+              <div class="sm-pane" data-when="menu,moved">
+                <div class="sm-headline">
+                  <h3>Refund webhook retries</h3>
+                  <span class="badge" data-when="menu"><i data-icon="branch"></i>feat/refund-retries</span>
+                  <span class="badge info" data-when="moved"
+                    ><i data-icon="archive"></i>Moved to Platform</span
+                  >
+                  <span class="grow"></span>
+                  <button class="btn sm ghost" type="button" aria-label="Thread menu" data-when="menu">
+                    <i data-icon="more"></i>
+                  </button>
+                  <button class="btn sm primary" type="button" data-when="moved">
+                    Open it in Platform
+                  </button>
+                </div>
+                <div class="sm-msg">
+                  <strong>You</strong>
+                  <span
+                    >Retries should back off and give up after 6 attempts. Keep the dead ones in a
+                    table so support can replay them.</span
+                  >
+                </div>
+                <div class="sm-msg">
+                  <strong>Claude</strong>
+                  <span
+                    >Added the backoff and a <code>dead_webhooks</code> table. Running the refund
+                    tests now; 2 of 4 suites pass so far.</span
+                  >
+                </div>
+
+                <div class="menu sm-menu" role="menu" data-when="menu">
+                  <button class="menu-item" role="menuitem" type="button">
+                    <i data-icon="refresh"></i>Continue in Codex…
+                  </button>
+                  <div class="divider"></div>
+                  <button class="menu-item" role="menuitem" type="button">
+                    <i data-icon="external"></i>Open folder in editor
+                  </button>
+                  <button class="menu-item" role="menuitem" type="button">
+                    <i data-icon="branch"></i>Fork thread
+                  </button>
+                  <a class="menu-item" role="menuitem" href="#" data-goto="1 Move a thread@review">
+                    <i data-icon="upload"></i>Move to a server…
+                  </a>
+                  <div class="divider"></div>
+                  <button class="menu-item" role="menuitem" type="button">
+                    <i data-icon="pencil"></i>Rename thread…
+                  </button>
+                  <button class="menu-item" role="menuitem" type="button">
+                    <i data-icon="archive"></i>Archive
+                  </button>
+                </div>
+
+                <div class="callout" data-when="moved">
+                  <strong>This thread now runs in Platform on gram.example.com</strong>
+                  <p class="muted">
+                    Moved today at 10:52. It picked up where it stopped, with its edits, on
+                    Example Co's account. Here it is read-only; its folder stays on this Mac until
+                    you remove it.
+                  </p>
+                  <div class="row">
+                    <a class="btn sm" href="#" data-goto="2 Bring it back@review"
+                      >Bring back to this Mac…</a
+                    >
+                  </div>
+                </div>
+              </div>
+
+              <div class="sm-sheet" data-when="review,secret">
+                <h3>Move "Refund webhook retries" to a server</h3>
+                <div class="sm-where">
+                  <span class="sm-label">To</span>
+                  <button class="sm-chip" type="button">
+                    <i data-icon="upload"></i>Platform · gram.example.com<i data-icon="down"></i>
+                  </button>
+                  <span class="sm-label">Example Co · signed in as [Your name]</span>
+                </div>
+                <div class="sm-two">
+                  <div class="sm-box">
+                    <strong>Goes</strong>
+                    <ul>
+                      <li>The conversation (86 messages)</li>
+                      <li>Claude Code's session, so it carries on, not starts over</li>
+                      <li>Its edits as they are now, 7 files, uncommitted ones too</li>
+                      <li>Its branch, feat/refund-retries</li>
+                    </ul>
+                  </div>
+                  <div class="sm-box">
+                    <strong>Stays on this Mac</strong>
+                    <ul>
+                      <li>Your Claude sign-in and any keys</li>
+                      <li>This Mac's agent settings, hooks and MCP servers</li>
+                      <li>Terminals and anything running in them</li>
+                      <li>Build caches and node_modules</li>
+                    </ul>
+                  </div>
+                </div>
+                <div class="sm-checks">
+                  <div class="sm-check">
+                    <span class="sm-ok"><i data-icon="okcircle"></i></span>
+                    <div class="text">
+                      The server reaches example-co/billing-api<span
+                        >Through Example Co's GitHub access there</span
+                      >
+                    </div>
+                  </div>
+                  <div class="sm-check">
+                    <span class="sm-warn"><i data-icon="alert"></i></span>
+                    <div class="text">
+                      It is running its tests<span
+                        >It moves once this turn ends. Stop and move cuts the turn short; the
+                        server tells it what was cut off.</span
+                      >
+                    </div>
+                    <button class="btn sm ghost" type="button">Stop and move</button>
+                  </div>
+                  <div class="sm-check">
+                    <i data-icon="sparkle"></i>
+                    <div class="text">
+                      Runs on Example Co's account there<span
+                        >Claude Opus on your Claude plan here becomes Claude Opus on Example Co's
+                        account. Its budget and model rules apply.</span
+                      >
+                    </div>
+                  </div>
+                  <div class="sm-check">
+                    <i data-icon="shield"></i>
+                    <div class="text">
+                      Autonomy becomes Publish<span
+                        >It is Full here. Example Co allows Publish at most.</span
+                      >
+                    </div>
+                  </div>
+                  <div class="sm-check" data-when="secret">
+                    <span class="sm-warn"><i data-icon="lock"></i></span>
+                    <div class="text">
+                      1 message looks like it holds a key<span
+                        >A command's output at 10:31 printed something like an AWS key. It goes as
+                        [removed].</span
+                      >
+                    </div>
+                    <button class="btn sm ghost" type="button">Show it</button>
+                  </div>
+                </div>
+                <div class="row">
+                  <a class="btn primary" href="#" data-goto="1 Move a thread@moving"
+                    >Move when this turn ends</a
+                  >
+                  <button class="btn ghost" type="button">Cancel</button>
+                  <span class="grow"></span>
+                  <span class="sm-label">Kept here read-only, never deleted.</span>
+                </div>
+                <div class="sm-neighbours">
+                  Example Co's audit records the move, and the conversation is marked as brought in
+                  from [Your name]'s Mac.
+                </div>
+              </div>
+
+              <div class="sm-sheet" data-when="moving">
+                <h3>Moving "Refund webhook retries" to Platform</h3>
+                <div class="sm-checks">
+                  <div class="sm-check">
+                    <span class="sm-ok"><i data-icon="okcircle"></i></span>
+                    <div class="text">The turn ended; edits kept and pushed with the branch</div>
+                  </div>
+                  <div class="sm-check">
+                    <span class="spinner"></span>
+                    <div class="text">Sending the conversation and session<span>1.1 MB of 2.3 MB</span></div>
+                  </div>
+                  <div class="sm-check">
+                    <i data-icon="dashed"></i>
+                    <div class="text">
+                      The server starts your machine there and puts the folder back
+                    </div>
+                  </div>
+                </div>
+                <div class="sm-progress"><i></i></div>
+                <div class="row">
+                  <button class="btn" type="button">Cancel the move</button>
+                  <span class="sm-label">Nothing changes here until the server has it all.</span>
+                  <span class="grow"></span>
+                  <a class="btn sm ghost" href="#" data-goto="1 Move a thread@moved"
+                    >Skip to result</a
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="board"
+        data-name="2 Bring it back"
+        data-size="1280x760"
+        data-states="review,off,back"
+      >
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>Platform · gram.example.com</span>
+            </div>
+            <div class="app-body">
+              <div class="sm-sheet" data-when="review">
+                <h3>Bring "Refund webhook retries" back to this Mac</h3>
+                <div class="sm-where">
+                  <span class="sm-label">Into</span>
+                  <button class="sm-chip" type="button">
+                    <i data-icon="folder"></i>billing-api on this Mac<i data-icon="down"></i>
+                  </button>
+                </div>
+                <div class="sm-two">
+                  <div class="sm-box">
+                    <strong>Comes</strong>
+                    <ul>
+                      <li>The conversation (142 messages)</li>
+                      <li>Claude Code's session</li>
+                      <li>Its edits as they are now, uncommitted ones too</li>
+                      <li>Its branch and pull request #412</li>
+                    </ul>
+                  </div>
+                  <div class="sm-box">
+                    <strong>Stays on the server</strong>
+                    <ul>
+                      <li>Example Co's connections and model account</li>
+                      <li>Approvals and asks still open</li>
+                      <li>Its machine there, which stops</li>
+                    </ul>
+                  </div>
+                </div>
+                <div class="sm-checks">
+                  <div class="sm-check">
+                    <span class="sm-ok"><i data-icon="okcircle"></i></span>
+                    <div class="text">
+                      Example Co lets you bring work back to this Mac<span
+                        >Its audit records that this thread came to [Your name]'s Mac.</span
+                      >
+                    </div>
+                  </div>
+                  <div class="sm-check">
+                    <i data-icon="sparkle"></i>
+                    <div class="text">
+                      Runs on your own Claude plan here<span
+                        >Example Co's account stays on the server. Usage here isn't on its
+                        budget.</span
+                      >
+                    </div>
+                  </div>
+                  <div class="sm-check">
+                    <span class="sm-warn"><i data-icon="alert"></i></span>
+                    <div class="text">
+                      1 approval is waiting<span
+                        >Merging #412 waits on Ana in Example Co. It is cancelled when the thread
+                        leaves.</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <div class="row">
+                  <a class="btn primary" href="#" data-goto="2 Bring it back@back"
+                    >Bring back to this Mac</a
+                  >
+                  <button class="btn ghost" type="button">Cancel</button>
+                  <span class="grow"></span>
+                  <span class="sm-label">Kept on the server read-only.</span>
+                </div>
+              </div>
+
+              <div class="sm-sheet" data-when="off">
+                <h3>Bring "Refund webhook retries" back to this Mac</h3>
+                <div class="sm-checks">
+                  <div class="sm-check">
+                    <span class="sm-bad"><i data-icon="xcircle"></i></span>
+                    <div class="text">
+                      Example Co keeps its threads on the server<span
+                        >Its rules don't allow bringing work back to a computer. Its branch is on
+                        GitHub as usual.</span
+                      >
+                    </div>
+                  </div>
+                </div>
+                <div class="row">
+                  <button class="btn primary" type="button" disabled>Bring back to this Mac</button>
+                  <button class="btn" type="button">Fork it here from the branch</button>
+                  <span class="grow"></span>
+                  <button class="btn ghost" type="button">Close</button>
+                </div>
+                <div class="sm-neighbours">
+                  Fork starts a new thread on this Mac from feat/refund-retries, without the
+                  conversation.
+                </div>
+              </div>
+
+              <div class="sm-sheet" data-when="back">
+                <h3>"Refund webhook retries" is back on this Mac</h3>
+                <span class="muted">
+                  In billing-api, on feat/refund-retries with its edits, on your Claude plan. On
+                  the server it is read-only as "Brought back to [Your name]'s Mac".
+                </span>
+                <div class="row">
+                  <button class="btn primary" type="button">Open it</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="3 A sent worker's approval" data-size="1280x520">
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>billing-api</span>
+            </div>
+            <div class="app-body">
+              <nav class="sidebar sm-side" aria-label="Workers">
+                <div class="section-label">billing-api · workers</div>
+                <div class="sm-rows">
+                  <div class="sm-row sel">
+                    <span class="sm-warn"><i data-icon="hand"></i></span>
+                    <span class="truncate">Idempotent refund webhooks</span>
+                    <span class="edge asks">approval <i data-icon="upload"></i></span>
+                  </div>
+                  <div class="sm-row">
+                    <span class="spinner"></span>
+                    <span class="truncate">Retry failed uploads</span>
+                    <span class="edge"><i data-icon="pr"></i>#141</span>
+                  </div>
+                </div>
+              </nav>
+              <div class="sm-pane">
+                <div class="sm-headline">
+                  <h3>Idempotent refund webhooks</h3>
+                  <span class="badge info"
+                    ><i data-icon="upload"></i>Platform · gram.example.com</span
+                  >
+                </div>
+                <div class="sm-ask">
+                  <strong>Waiting on an approval in Platform</strong>
+                  <span>Merge #412 into main on example-co/billing-api.</span>
+                  <span class="sm-label"
+                    >Example Co decides approvals on its server, so there is nothing to answer here.
+                    You are one of the approvers.</span
+                  >
+                  <div class="row">
+                    <button class="btn sm primary" type="button">
+                      Open in Platform<i data-icon="external"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
