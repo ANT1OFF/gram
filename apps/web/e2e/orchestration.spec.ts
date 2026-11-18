@@ -298,10 +298,8 @@ test("the palette starts a workspace through New task", async ({ page }) => {
   const draft = page.getByRole("form", { name: "New task" });
   const autonomy = draft.getByRole("radiogroup", { name: "Autonomy of the new workspace" });
   await expect(autonomy.getByRole("radio", { name: "Full" })).toBeChecked();
-  await expect(draft.getByTestId("autonomy-full-note")).toBeVisible();
   await autonomy.getByRole("radio", { name: "Publish" }).click();
   await expect(draft.getByTestId("task-autonomy")).toHaveAttribute("data-value", "publish");
-  await expect(draft.getByTestId("autonomy-full-note")).toHaveCount(0);
   await draft.getByLabel("What needs doing").fill("Look around the repo");
   await draft.getByRole("button", { name: /Start workspace and send/ }).click();
   await expect(page.getByTestId("pane-role")).toHaveText("Orchestrator");

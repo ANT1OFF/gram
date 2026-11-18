@@ -451,7 +451,6 @@ function SheetForm({
       />
       <AutonomyChoice
         testId="autonomy"
-        explain
         value={autonomyOf(charter)}
         onChange={(autonomy) =>
           setDraft((current) => ({

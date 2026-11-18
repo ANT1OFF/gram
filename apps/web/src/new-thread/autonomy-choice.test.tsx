@@ -42,17 +42,4 @@ describe("AutonomyChoice", () => {
     fireEvent.click(radios[0]!);
     expect(onChange).toHaveBeenCalledWith("supervised");
   });
-
-  it("says what Full leaves in one calm line, with the rest behind a link", () => {
-    mount("full");
-    const note = screen.getByTestId("autonomy-full-note");
-    expect(note.textContent).toContain("only gate");
-    expect(note.className).not.toMatch(/warning|status-needs|destructive/);
-    expect(within(note).getByRole("button", { name: "What does this allow?" })).toBeTruthy();
-  });
-
-  it("has no Full note at the other levels", () => {
-    mount("publish");
-    expect(screen.queryByTestId("autonomy-full-note")).toBeNull();
-  });
 });
