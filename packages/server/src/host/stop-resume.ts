@@ -247,6 +247,49 @@ export const prepareStop = (
     return { ...answer, idle: prepared.idle && working.length === 0, working };
   });
 
+/**
+ * Keeps one thread's work in progress on the machine off it now, while it works on
+ * (`host.stop.keep`): the thread's folders there that Gram made from a clone, under the thread's
+ * hidden ref at the remote. Remembered as a stop's is, so a resume on another disk is held to it;
+ * after a restart the remote's ref is taken as it is. A host built before it keeps nothing.
+ */
+export const keepThreadWork = (
+  deps: Pick<StopResumeDeps, "hosts">,
+  id: HostId,
+  thread: Thread,
+  options: { readonly remote?: string | undefined } = {},
+): Effect.Effect<ReadonlyArray<KeptWork>, HostFailed | HostUnavailable> =>
+  Effect.gen(function* () {
+    const connection = yield* deps.hosts.connection(id);
+    const keep = connection.stop.keep;
+    if (keep === undefined) return [];
+    // Only folders made from a clone: a resume can put back only those.
+    const asked = [
+      ...new Set(
+        checkoutsOf(thread)
+          .filter((checkout) => hostOf(checkout) === id)
+          .map((checkout) => checkout.path),
+      ),
+    ]
+      .filter((cwd) => madeFrom(thread, id, cwd) !== undefined)
+      .map((cwd) => ({ threadId: thread.id, cwd }));
+    if (asked.length === 0) return [];
+    const said = yield* keep({
+      checkouts: asked,
+      ...(options.remote === undefined ? {} : { remote: options.remote }),
+    });
+    const kept = keptOf(asked, said, options.remote);
+    for (const work of kept)
+      if (work.pushed && work.commit !== undefined)
+        deps.hosts.stops.keep(id, work.threadId, work.cwd, {
+          commit: work.commit,
+          caughtUp: work.caughtUp === true,
+          ...(work.remote === undefined ? {} : { remote: work.remote }),
+          ...(work.branch === undefined ? {} : { branch: work.branch }),
+        });
+    return kept;
+  });
+
 /** Takes a stop back: the machine takes work again and no longer counts as stopped. */
 export const cancelStop = (
   deps: Pick<StopResumeDeps, "hosts">,

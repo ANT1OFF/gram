@@ -14,9 +14,9 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
 import { makeStopMarks, type StopMarks } from "./stop-marks.ts";
-import type { RestoreRequest } from "./stop.ts";
+import type { KeepRequest, RestoreRequest } from "./stop.ts";
 import { cloneIdentityOf, cloneUrlOf } from "./repos.ts";
-import { prepareStop, resumeHost, type StopResumeDeps } from "./stop-resume.ts";
+import { keepThreadWork, prepareStop, resumeHost, type StopResumeDeps } from "./stop-resume.ts";
 
 const MACHINE = "m-1" as HostId;
 const URL = "https://git.example.test/acme/widgets.git";
@@ -327,6 +327,45 @@ describe("resuming a machine on another disk", () => {
       stops.cancel(MACHINE);
       expect(stops.keptOf(MACHINE, "t-worker" as ThreadId, worker)).toMatchObject({
         commit: COMMIT,
+      });
+    }),
+  );
+
+  it.effect("keeps a working thread's folders, and a lost machine's resume is held to them", () =>
+    Effect.gen(function* () {
+      const worker = "/clones/widgets-trees/worker";
+      const { deps, asked } = machine([], true);
+      const keeps: Array<KeepRequest> = [];
+      const connection = yield* deps.hosts.connection(MACHINE);
+      const kept = {
+        ...connection,
+        stop: {
+          ...connection.stop,
+          keep: (request: KeepRequest) =>
+            Effect.sync(() => {
+              keeps.push(request);
+              return request.checkouts.map((checkout) => ({
+                ...checkout,
+                ref: `refs/gram/wip/${checkout.threadId}`,
+                commit: COMMIT,
+                branch: "gram/worker",
+                pushed: true,
+              }));
+            }),
+        },
+      };
+      const hosts = { ...deps.hosts, connection: () => Effect.succeed(kept) };
+      const withKeep = { ...deps, hosts } as unknown as StopResumeDeps;
+      // A folder Gram didn't make from a clone isn't asked: nothing could put it back.
+      expect(yield* keepThreadWork(withKeep, MACHINE, THREADS[2]!)).toEqual([]);
+      expect(keeps).toEqual([]);
+      yield* keepThreadWork(withKeep, MACHINE, THREADS[0]!);
+      expect(keeps).toEqual([{ checkouts: [{ threadId: "t-worker", cwd: worker }] }]);
+      // The machine is lost with no stop; the one that replaces it is held to what was kept.
+      yield* resumeHost(withKeep, MACHINE);
+      expect(asked.find((request) => request.cwd === worker)).toMatchObject({
+        commit: COMMIT,
+        branch: "gram/worker",
       });
     }),
   );
