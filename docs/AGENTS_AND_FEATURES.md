@@ -665,7 +665,13 @@ its config's `model_provider` names a provider the same file defines with
 `requires_openai_auth = false`. Gram writes that provider afresh from a fixed list of
 keys: its name, base URL (no credentials or query in it), wire API, retry and timeout
 settings, and the names of the variables its credentials are in (`env_key`,
-`env_http_headers`, each `^[A-Z_][A-Z0-9_]*$`). Nothing else from the table is read or
+`env_http_headers`, each `^[A-Z_][A-Z0-9_]*$`). An explicit `model_catalog_url` is also
+kept when it has the same scheme, host and port as the inference base URL, with no
+credentials, query, fragment or dot segments. Codex fetches it with that provider's
+authentication and `client_version`; the endpoint must return the complete Codex
+`ModelsResponse`, including instructions and capabilities, scoped to that caller.
+Model metadata does not grant inference access. Gram does not import a local
+`model_catalog_json` file into this home. Nothing else from the table is read or
 written: no inline token, literal headers or query parameters, and no auth command. A
 value it won't write keeps the provider from being used. Only the named variables pass
 the gated home's key scrub. The home holds no `auth.json`: Gram never links or removes

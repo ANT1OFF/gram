@@ -48,6 +48,28 @@ const isCount = (value: unknown): value is number =>
  * is in.
  */
 const invalid = Symbol("invalid");
+
+/** An explicit catalogue endpoint, without inline credentials, query or ambiguous path segments. */
+const catalogUrl = (value: unknown): string | typeof invalid => {
+  if (
+    typeof value !== "string" ||
+    !/^https?:\/\//i.test(value) ||
+    // oxlint-disable-next-line no-control-regex -- refuse controls the URL parser normalizes away
+    /[\s\u0000-\u001f\u007f\\?#]/.test(value) ||
+    /^https?:\/\/[^/]*@/i.test(value) ||
+    value.split("/").some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))
+  )
+    return invalid;
+  try {
+    const url = new URL(value);
+    return url.username === "" && url.password === "" && url.search === "" && url.hash === ""
+      ? value
+      : invalid;
+  } catch {
+    return invalid;
+  }
+};
+
 const PROVIDER_SCHEMA = new Map<string, (value: unknown) => unknown>([
   ["name", (value) => (typeof value === "string" && value.length <= 200 ? value : invalid)],
   [
@@ -68,6 +90,7 @@ const PROVIDER_SCHEMA = new Map<string, (value: unknown) => unknown>([
       }
     },
   ],
+  ["model_catalog_url", catalogUrl],
   ["wire_api", (value) => (value === "responses" || value === "chat" ? value : invalid)],
   ["requires_openai_auth", (value) => (value === false ? false : invalid)],
   ["env_key", (value) => (typeof value === "string" && ENV_NAME.test(value) ? value : invalid)],
@@ -112,6 +135,17 @@ export const ownCodexProvider = (
     const value = write(source[key]);
     if (value === invalid) return undefined;
     table[key] = value;
+  }
+  // Codex fetches this URL with the selected provider's authentication and configured headers.
+  // It may learn metadata only from the inference origin already trusted with those credentials.
+  if (typeof table["model_catalog_url"] === "string") {
+    const base = table["base_url"];
+    if (
+      typeof base !== "string" ||
+      /^https?:\/\/[^/]*@/i.test(base) ||
+      new URL(base).origin !== new URL(table["model_catalog_url"]).origin
+    )
+      return undefined;
   }
   const headers = table["env_http_headers"];
   const env = [

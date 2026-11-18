@@ -45,6 +45,13 @@ const fixture = Effect.gen(function* () {
 const table = (extra: string) =>
   `model_provider = "embedder"\n[model_providers.embedder]\nbase_url = "http://g.invalid"\n${extra}`;
 
+const catalogProviderConfig = (base: unknown, catalogue: unknown) => ({
+  model_provider: "embedder",
+  model_providers: {
+    embedder: { base_url: base, requires_openai_auth: false, model_catalog_url: catalogue },
+  },
+});
+
 describe("Gram-owned native Codex home", () => {
   it.effect(
     "links auth by path, shares refreshes and never imports rules or permission/provider overrides",
@@ -324,11 +331,91 @@ command = "docs"
     }).pipe(Effect.scoped),
   );
 
+  it.effect("keeps only an own provider's explicit same-origin model catalogue", () =>
+    Effect.gen(function* () {
+      const { root, user, data, env } = yield* fixture;
+      rmSync(join(user, "auth.json"));
+      const catalogue = "http://gateway.invalid/codex/models";
+      for (const url of [catalogue, undefined, catalogue]) {
+        const provider = embedderConfig.replace(
+          'wire_api = "responses"',
+          `${url === undefined ? "" : `model_catalog_url = "${url}"\n`}wire_api = "responses"`,
+        );
+        // A local catalogue can replace model instructions: it is never imported into this home.
+        writeFileSync(
+          join(user, "config.toml"),
+          `model_catalog_json = "/untrusted/models.json"\nweb_search = "disabled"\n${provider}`,
+        );
+        const target = yield* prepareOwnedCodexHome(data, root, env);
+        const config = parse(readFileSync(join(target, "config.toml"), "utf8"));
+        const providers = config["model_providers"] as Record<string, Record<string, unknown>>;
+        expect(Object.keys(providers)).toEqual(["embedder"]);
+        expect(providers["embedder"]?.["model_catalog_url"]).toBe(url);
+        expect(config["model_catalog_json"]).toBeUndefined();
+        expect(config["web_search"]).toBe("disabled");
+        expect(config["features"]).toMatchObject({ exec_policy: true, hooks: false });
+        expect(existsSync(join(target, "auth.json"))).toBe(false);
+      }
+    }).pipe(Effect.scoped),
+  );
+
+  it("refuses model catalogues outside the inference origin or with unsafe URL parts", () => {
+    for (const catalogue of [
+      "https://other.invalid/models",
+      "https://gateway.invalid.evil.invalid/models",
+      "http://gateway.invalid/models",
+      "https://gateway.invalid:8443/models",
+      "https://user:password@gateway.invalid/models",
+      "https://@gateway.invalid/models",
+      "https://gateway.invalid/models?key=invented",
+      "https://gateway.invalid/models#fragment",
+      "https://gateway.invalid/models?",
+      "https://gateway.invalid/models#",
+      "https://gateway.invalid/a/../models",
+      "https://gateway.invalid/a/%2e%2e/models",
+      "https://gateway.invalid/\\models",
+      " https://gateway.invalid/models",
+      "//gateway.invalid/models",
+      "/models",
+      "file:///models.json",
+      "",
+      42,
+    ])
+      expect(
+        ownCodexProvider(catalogProviderConfig("https://gateway.invalid/v1", catalogue)),
+      ).toBeUndefined();
+    for (const base of [
+      undefined,
+      "/v1",
+      "https://user:password@gateway.invalid/v1",
+      "https://@gateway.invalid/v1",
+      "https://gateway.invalid/v1?key=invented",
+    ])
+      expect(
+        ownCodexProvider(catalogProviderConfig(base, "https://gateway.invalid/models")),
+      ).toBeUndefined();
+    // An explicit default port and host casing still name the exact same origin.
+    expect(
+      ownCodexProvider(
+        catalogProviderConfig(
+          "https://GATEWAY.invalid:443/v1",
+          "https://gateway.invalid/codex/models",
+        ),
+      )?.table["model_catalog_url"],
+    ).toBe("https://gateway.invalid/codex/models");
+  });
+
   it.effect("keeps a ChatGPT install exactly as before, whatever provider it configures", () =>
     Effect.gen(function* () {
       const { root, user, data, env } = yield* fixture;
       // The fixture's home has a login: its gated home is ChatGPT's, linked by path.
-      writeFileSync(join(user, "config.toml"), `web_search = "disabled"\n${embedderConfig}`);
+      writeFileSync(
+        join(user, "config.toml"),
+        `web_search = "disabled"\nmodel_catalog_json = "/untrusted/models.json"\n${embedderConfig.replace(
+          'wire_api = "responses"',
+          'model_catalog_url = "http://gateway.invalid/codex/models"\nwire_api = "responses"',
+        )}`,
+      );
       expect(yield* ownedCodexProvider(root, env)).toBeUndefined();
       const target = yield* prepareOwnedCodexHome(data, root, env);
       expect(readlinkSync(join(target, "auth.json"))).toBe(join(user, "auth.json"));
@@ -339,6 +426,7 @@ command = "docs"
         openai_base_url: "https://chatgpt.com/backend-api/codex",
       });
       expect(config["model_providers"]).toBeUndefined();
+      expect(config["model_catalog_json"]).toBeUndefined();
       expect(config["web_search"]).toBeUndefined();
     }).pipe(Effect.scoped),
   );
