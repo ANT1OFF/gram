@@ -94,6 +94,15 @@ describe("the recommendation table", () => {
 });
 
 describe("resolveTier", () => {
+  it("prefers the 6.2 subscription models while keeping older CLI fallbacks", () => {
+    const current = [...codex, codexRow("gpt-6.2-astra"), codexRow("gpt-6.2-sol")];
+    for (const tier of ["scoped", "lead"] as const) {
+      expect(resolve(tier, { codex: current })?.model).toBe("gpt-6.2-sol");
+      expect(resolve(tier, { codex })?.model).toBe("gpt-6.1-sol");
+    }
+    expect(resolve("top", { codex: current })?.model).toBe("gpt-6.2-astra");
+    expect(resolve("top", { codex })?.model).toBe("gpt-6-astra");
+  });
   it("keeps a slot on its own harness and at its own effort", () => {
     const both = { claude, codex };
     expect(resolveTier(RECOMMENDED, { tier: "scoped", agent: "claude" }, both)?.ref).toEqual({
@@ -174,15 +183,15 @@ describe("tableDiff", () => {
     };
     next.tiers = {
       ...next.tiers,
-      scoped: { ...next.tiers.scoped, codex: { models: ["gpt-6.2-sol", "gpt-6.1-sol"] } },
+      scoped: { ...next.tiers.scoped, codex: { models: ["gpt-6.3-sol", "gpt-6.2-sol"] } },
       top: { ...next.tiers.top, effort: "high" },
     };
     next.both = { ...next.both, scoped: "claude" };
     expect(tableDiff(RECOMMENDED, next)).toEqual([
-      "Scoped on Codex: gpt-6.1-sol · medium → gpt-6.2-sol · medium",
+      "Scoped on Codex: gpt-6.2-sol · medium → gpt-6.3-sol · medium",
       "Scoped with both installed: Codex → Claude",
       "Top on Claude: claude-fable-5-2 · medium → claude-fable-5-2 · high",
-      "Top on Codex: gpt-6-astra · medium → gpt-6-astra · high",
+      "Top on Codex: gpt-6.2-astra · medium → gpt-6.2-astra · high",
     ]);
     expect(tableDiff(RECOMMENDED, RECOMMENDED)).toEqual([]);
   });
@@ -205,7 +214,7 @@ describe("recommendedChanges", () => {
       ...RECOMMENDED.tiers,
       scoped: {
         ...RECOMMENDED.tiers.scoped,
-        codex: { models: ["gpt-6.2-sol", "gpt-6.1-sol"] as const },
+        codex: { models: ["gpt-6.3-sol", "gpt-6.2-sol"] as const },
       },
     },
   } as RecommendationTable;
@@ -213,7 +222,7 @@ describe("recommendedChanges", () => {
 
   it("lists what changed since the table the user saw", () => {
     expect(recommendedChanges(RECOMMENDED.version, next, history)).toEqual([
-      "Scoped on Codex: gpt-6.1-sol · medium → gpt-6.2-sol · medium",
+      "Scoped on Codex: gpt-6.2-sol · medium → gpt-6.3-sol · medium",
     ]);
   });
 
@@ -221,7 +230,7 @@ describe("recommendedChanges", () => {
     expect(recommendedChanges("2027.01", next, history)).toEqual([]);
     expect(recommendedChanges(undefined, next, history)).toEqual([]);
     expect(recommendedChanges("2099.01", next, history)).toEqual([]);
-    // Today's table is the only one shipped, so nobody is told of a change yet.
+    // Someone who has seen today's table is not told of another change.
     expect(recommendedChanges(RECOMMENDED.version)).toEqual([]);
   });
 });
