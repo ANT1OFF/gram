@@ -31,7 +31,7 @@ import * as PubSub from "effect/PubSub";
 import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import { mkdir } from "node:fs/promises";
+import { lstat, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appToolsAt } from "./remote-app-tools.ts";
@@ -204,6 +204,13 @@ const sessionFolder = (request: HostSessionOpen): Effect.Effect<string, AgentUna
           try: async () => {
             const folder = join(tmpdir(), `gram-dream-${request.threadId.replace(/[^\w-]/g, "_")}`);
             await mkdir(folder, { recursive: true, mode: 0o700 });
+            // A name another user of the machine could make first: only a folder of this user's.
+            const made = await lstat(folder);
+            if (
+              !made.isDirectory() ||
+              (process.getuid !== undefined && made.uid !== process.getuid())
+            )
+              throw new Error(`${folder} isn't a folder of this user's`);
             return folder;
           },
           catch: (error) =>
