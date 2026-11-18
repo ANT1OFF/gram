@@ -224,6 +224,11 @@ export const SwitchBoot = Schema.Struct({
   at: Schema.Number,
   from: AgentKind,
   to: AgentKind,
+  /**
+   * A fresh session on the same agent, not a switch: no note is asked for, and the boot carries the
+   * last exchanges with the user alone, so the new session knows what it already told them.
+   */
+  fresh: Schema.optionalKey(Schema.Literal(true)),
   noteMode: SwitchNoteMode,
   note: Schema.optionalKey(HandoffNote),
   /** Limit mode's: why the old session wrote no note. `detail` is untrusted, for the fence only. */
