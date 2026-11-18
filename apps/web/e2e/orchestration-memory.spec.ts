@@ -541,16 +541,14 @@ test("an import is previewed before it starts, runs as a thread, and is offered 
   await expect(page).toHaveURL(/\/t\//);
   await expect(page.getByTestId("pane-role")).toHaveText("Memory update");
 
-  // A workspace whose memory is empty is offered an import, on its Memory view and its orchestrator.
+  // A workspace whose memory is empty is offered an import on its Memory view, the one place for it.
   const bare = await page.evaluate(async () => {
     const result = await window.gramMock?.simulateOrchestration();
     if (!result) throw new Error("the mock API isn't on this page");
     return result;
   });
   await openOrchestrator(page, bare.orchestratorThreadId);
-  const offer = page.getByTestId("banner-import-offer");
-  await expect(offer).toContainText("Its memory is empty.");
-  await offer.getByRole("link").click();
+  await page.getByTestId("shell-titlebar").getByTestId("orchestrator-memory").click();
   await expect(page).toHaveURL(new RegExp(`/w/${bare.workspaceId}/memory$`));
   await expect(page.getByTestId("dream-start")).toHaveCount(0);
   await page.getByTestId("memory-import-offer").getByRole("button").click();

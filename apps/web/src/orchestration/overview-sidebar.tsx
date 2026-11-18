@@ -852,11 +852,12 @@ function WorkspaceRow({
                 <span data-testid="overview-workspace-summary" className="truncate">
                   {workspaceWorkersText({ live, working, inTab })}
                 </span>
-              ) : (
-                <span className="truncate">
-                  {orchestratorBusy ? "At work" : `${ledger?.held?.length ?? 0} held`}
-                </span>
-              )}
+              ) : orchestratorBusy ? (
+                <span className="truncate">At work</span>
+              ) : (ledger?.held?.length ?? 0) > 0 ? (
+                // A count only once there is one: none, or none loaded yet, says nothing.
+                <span className="truncate">{ledger?.held?.length} held</span>
+              ) : null}
               {asks > 0 && (
                 <span
                   data-testid="overview-workspace-asks"
