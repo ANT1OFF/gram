@@ -115,6 +115,20 @@ afterEach(async () => {
 });
 
 describe("this machine as a personal device", () => {
+  it("moves a thread only to a workspace the server listed, named as this machine", async () => {
+    const { device } = await setUp();
+    const bundle = { format: 1 };
+    expect(await device.moveThread(origin, "w1", bundle)).toMatchObject({ ok: false });
+    expect(await device.signIn(origin)).toEqual({ ok: true });
+    expect(await device.moveThread(origin, "w-other", bundle)).toMatchObject({ ok: false });
+    expect(fake.state.imported).toEqual([]);
+    expect(await device.moveThread(origin, "w1", bundle)).toMatchObject({
+      ok: true,
+      threadId: "t-moved",
+    });
+    expect(fake.state.imported).toEqual([{ workspaceId: "w1", bundle, from: "Ada's laptop" }]);
+  });
+
   it("signs in once the person accepts the server, registers, and lists its workspaces", async () => {
     const { device, store, confirmed } = await setUp();
     expect(await device.signIn(origin)).toEqual({ ok: true });
@@ -133,6 +147,7 @@ describe("this machine as a personal device", () => {
           name: "Example",
           signedIn: true,
           paused: false,
+          takesThreads: true,
           workspaces: [
             {
               id: "w1",

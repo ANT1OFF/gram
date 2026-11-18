@@ -65,6 +65,12 @@ export const fakeServer = () => {
     alwaysTokenNonce: false,
     tokenNonceErrors: 0,
     names: [] as Array<string>,
+    /** Take threads moved from the device; the sign-in carries `workspaces:import`. */
+    takesThreads: true,
+    importScope: true,
+    imported: [] as Array<unknown>,
+    /** How a thread import is answered, when not with the thread. */
+    importAnswer: undefined as { status: number; body: unknown } | undefined,
   };
   let origin = "";
   const handle = async (request: IncomingMessage) => {
@@ -81,6 +87,7 @@ export const fakeServer = () => {
         workspaces_endpoint: `${origin}/api/workspaces`,
         devices_endpoint: `${origin}/api/devices`,
         device_connect: `${origin.replace("http:", "ws:")}/device/connect`,
+        ...(state.takesThreads ? { thread_import_endpoint: `${origin}/api/threads/import` } : {}),
       });
     if (url.pathname === "/oauth/authorize") {
       const code = state.code || randomBytes(12).toString("hex");
@@ -101,7 +108,7 @@ export const fakeServer = () => {
         return json(400, { error: "use_dpop_nonce" }, { "dpop-nonce": state.nonce });
       }
       const form = new URLSearchParams(await readBody(request));
-      let scope = "workspaces device:register device:connect";
+      let scope = `workspaces device:register device:connect${state.importScope ? " workspaces:import" : ""}`;
       if (form.get("grant_type") === "authorization_code") {
         const code = state.codes.get(form.get("code") ?? "");
         state.codes.delete(form.get("code") ?? "");
@@ -116,6 +123,8 @@ export const fakeServer = () => {
         state.refreshes += 1;
         if (!state.refresh.delete(form.get("refresh_token") ?? ""))
           return json(400, { error: "invalid_grant" });
+        if (form.get("scope") === "workspaces:import" && !state.importScope)
+          return json(400, { error: "invalid_scope" });
         scope = form.get("scope") ?? scope;
       } else return json(400, { error: "unsupported_grant_type" });
       const access = randomBytes(16).toString("hex");
@@ -193,6 +202,12 @@ export const fakeServer = () => {
       state.registeredKey = asked.publicKey;
       const other = generateDeviceKey().publicKey;
       return json(201, { deviceId: deviceIdOf(state.lieAboutId ? other : asked.publicKey) });
+    }
+    if (url.pathname === "/api/threads/import" && held.scope === "workspaces:import") {
+      state.imported.push(JSON.parse(await readBody(request)));
+      return state.importAnswer === undefined
+        ? json(200, { workspaceId: "w1", threadId: "t-moved", notes: ["Its edits are back."] })
+        : json(state.importAnswer.status, state.importAnswer.body);
     }
     if (url.pathname.startsWith("/api/devices/") && request.method === "DELETE") {
       state.forgotten.push(decodeURIComponent(url.pathname.slice("/api/devices/".length)));

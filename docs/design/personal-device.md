@@ -186,7 +186,8 @@ more than the person did.
   "token_endpoint": "https://gram.example.com/oauth/token",
   "workspaces_endpoint": "https://gram.example.com/api/workspaces",
   "devices_endpoint": "https://gram.example.com/api/devices",
-  "device_connect": "wss://gram.example.com/device/connect"
+  "device_connect": "wss://gram.example.com/device/connect",
+  "thread_import_endpoint": "https://gram.example.com/api/threads/import"
 }
 ```
 
@@ -210,10 +211,11 @@ address, in the browser. If the rule is ever relaxed, the issuer check of
 | `GET workspaces_endpoint`                                                                              | access token, scope `workspaces`                        | `[{ id, name, organisation, role, devices: "off" \| "read" \| "on" }]` |
 | `POST devices_endpoint/challenge` then `POST devices_endpoint`                                         | access token, scope `device:register`, signed challenge | `{ deviceId }`; the id is derived from the public key                  |
 | `DELETE devices_endpoint/<deviceId>`                                                                   | access token, scope `device:register`                   | forgets the device; the app does this on **Sign out**                  |
+| `POST thread_import_endpoint` `{ workspaceId, bundle, from }`                                          | access token, scope `workspaces:import`                 | `{ threadId, notes?, url? }`, or a refusal `{ error }` in its words    |
 
 Gram's token answer adds one field to OAuth's: `sub`, the person's subject id, which the dial
 signs and the gate checks each request's actor against. A renewal that names another person ends
-the sign-in. The app signs in once for `workspaces device:register device:connect` and narrows
+the sign-in. The app signs in once for `workspaces device:register device:connect workspaces:import` and narrows
 each renewal to one scope; renewals go one at a time, since each rotates the refresh token, and
 the rotated token is in the keychain before it is used. A token is used for fifteen minutes at
 most, whatever the server says. The registration's signature covers, length-prefixed,
@@ -226,6 +228,13 @@ sender-constrained to the device key ([DPoP, RFC 9449](https://www.rfc-editor.or
 so a copied token is useless without the key. A server should ask for a fresh interactive sign-in
 before it accepts a registration. `devices` on a workspace is the organisation's policy as the
 server will enforce it. The app shows it; it never relies on it.
+
+`thread_import_endpoint` is optional: a server that names it takes a thread the person moves from
+this machine ([moving a thread](move-a-thread.md)). The bundle is the one `POST /threads/export`
+wrote, `from` is this machine's name, and the call waits up to 100 seconds, since the server
+places the thread on a machine of its own before it answers. A `url` on another origin is never
+opened. A sign-in from before the server took threads lacks `workspaces:import`, and the app asks
+the person to sign in again.
 
 ### The dial
 

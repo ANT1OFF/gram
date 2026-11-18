@@ -72,6 +72,7 @@ import { MachineChip } from "./machine-chip";
 import { FolderMissingNotice } from "./folder-missing-notice";
 import { LapsedConnectorsNotice } from "./lapsed-connectors-notice";
 import { MergedCleanupNotice } from "./merged-cleanup-notice";
+import { MovedAwayNotice } from "./moved-away-notice";
 import { chaptersOf, sameChapters } from "./parts";
 import { useSplitSubagents } from "./use-split-subagents";
 import { trackPaneHeight } from "./pane-height";
@@ -783,6 +784,7 @@ export function ThreadView({
               <QueueList threadId={threadId} />
             </div>
           </ApprovalSlotsProvider>
+          <MovedAwayNotice threadId={threadId} />
           <FolderMissingNotice threadId={threadId} />
           <MergedCleanupNotice threadId={threadId} />
           <LapsedConnectorsNotice threadId={threadId} />

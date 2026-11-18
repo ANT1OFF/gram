@@ -378,6 +378,19 @@ export const installHostedDeviceIpc = (ipc: ShellIpc, options: HostedDeviceIpcOp
       return origin === undefined ? NONE : device.refresh(origin);
     }),
   );
+  // The person pressed Move in the app's own window; the bundle is the one the local server
+  // exported. The server there decides whether it comes in.
+  serve(
+    Channels.hostedDeviceMoveThread,
+    withDevice((device, arg) => {
+      const { origin, workspace } = target(arg);
+      const bundle =
+        typeof arg === "object" && arg !== null && "bundle" in arg ? arg.bundle : undefined;
+      return origin === undefined || workspace === undefined || bundle === undefined
+        ? { ok: false, why: "Name the server, the workspace and the thread." }
+        : device.moveThread(origin, workspace, bundle);
+    }),
+  );
   serve(
     Channels.hostedDeviceStop,
     withDevice((device, arg) => {

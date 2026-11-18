@@ -68,5 +68,8 @@ folder here that changed since is put aside on a branch of its own.
    The joined-host restore: `host.stop.restore` reads another machine's ref (`ref`, a host that
    names `wip-restore-ref`), and the platform in front brings a bundle in for a person
    (`POST /embed/v1/thread-imports`), placed on their own machine.
-2. The shell's calls to a server signed in to (`hostedDevice.moveThread`), and the dialog.
+2. The shell's calls to a server signed in to (`hostedDevice.moveThread`, a server that names
+   `thread_import_endpoint` in its discovery document), the dialog from a thread's menu, and the
+   read-only copy's notice. The review shows what goes and what stays; the server's own check
+   (whether it reaches the repository, which model it runs) follows.
 3. Bringing back.
