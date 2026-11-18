@@ -528,6 +528,7 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
           key: "s-1",
           repositories: ["acme/api", "https://github.com/acme/web"],
           text: "Rename the endpoint in both.",
+          mode: "bypassPermissions",
         };
         for (const body of [
           { ...start, repositories: [] },
@@ -536,6 +537,7 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
           { ...start, text: "" },
           { ...start, branch: "--force" },
           { ...start, model: "opus" },
+          { ...start, mode: "dontAsk" },
         ]) {
           const refused = yield* call(at, "/embed/v1/thread-starts", { token: TOKEN, body });
           expect(refused.status).toBe(400);
@@ -548,6 +550,7 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
         expect(answered).toMatchObject({ created: true });
         const thread = yield* store.getThread(answered.threadId);
         expect(thread.checkout).toMatchObject({ kind: "worktree", branch: answered.branch });
+        expect(thread.mode).toBe("bypassPermissions");
         expect(thread.extraCheckouts).toEqual([
           expect.objectContaining({ kind: "worktree", branch: answered.branch }),
         ]);

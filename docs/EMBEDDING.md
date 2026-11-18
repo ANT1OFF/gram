@@ -474,13 +474,14 @@ The platform can start a thread for a person it signed in, in one or more reposi
 POST /embed/v1/thread-starts
 { "person": { "id": "user-7", "name": "Ada" }, "key": "s-1",
   "repositories": ["acme/api", "https://github.com/acme/web"], "text": "Rename the endpoint in both.",
-  "title": "Rename the endpoint", "branch": "rename-endpoint", "model": { "agent": "claude", "model": "opus" } }
+  "title": "Rename the endpoint", "branch": "rename-endpoint", "model": { "agent": "claude", "model": "opus" },
+  "mode": "bypassPermissions" }
 → 200 { "threadId": "...", "created": true, "branch": "rename-endpoint" }
 ```
 
 - `repositories` names 1 to 8 repositories as `owner/name` or a git URL, the one the thread works in first. Each is cloned as `projects.clone` clones it, or taken as it is when it is already there; a server that runs no work itself files it as an origin that the machine clones.
 - The thread is placed as one the person started: on their own machine where machines are started for one person. With none of theirs running, it is refused with `409` and why.
-- `branch` defaults to `thread/<the thread id's first 8 characters>`; `title` to one made from the message; `model` to the saved default.
+- `branch` defaults to `thread/<the thread id's first 8 characters>`; `title` to one made from the message; `model` to the saved default; `mode` to the saved default permission mode. `mode` is one New task offers: `default`, `acceptEdits`, `plan`, `auto` or `bypassPermissions`.
 - `key` names the start. Sent again, it answers the thread it made, with `created: false`, and makes nothing.
 - The thread is recorded as made by the person (`thread.create`). A repository that can't give it a worktree makes nothing: `409` with why. `400` for a body that isn't one.
 
