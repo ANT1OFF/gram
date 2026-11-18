@@ -12,6 +12,7 @@
 
 ### Bug Fixes
 
+* **gateway:** keep a machine provider's explicit hosted-search opt-out in its gated Codex home ([#746](https://github.com/ANT1OFF/gram/pull/746)).
 * **machines:** start the person's own machine for a new workspace and wait for its model catalogue ([#738](https://github.com/ANT1OFF/gram/pull/738)).
 * **settings:** enable recommended setup on a headless server ([#737](https://github.com/ANT1OFF/gram/pull/737)).
 * **approvals:** bind merge approvals to the reviewed head and base ([#733](https://github.com/ANT1OFF/gram/pull/733)).
