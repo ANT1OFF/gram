@@ -81,6 +81,8 @@ export interface RosterEditorProps {
    */
   readonly charter: OrchestratorCharter;
   readonly disabled?: boolean | undefined;
+  /** What the model controls here, when editing a draft before a workspace has an orchestrator. */
+  readonly orchestratorDescription?: string | undefined;
   /** The charter with the user's change, every other field as it came in. Called per change. */
   readonly onChange: (charter: OrchestratorCharter) => void;
 }
@@ -263,10 +265,12 @@ function OrchestratorModelField({
   charter,
   disabled,
   onChange,
+  description = "Sets the next orchestrator's model. Continue in… moves the current one.",
 }: {
   charter: OrchestratorCharter;
   disabled: boolean;
   onChange: (charter: OrchestratorCharter) => void;
+  description?: string | undefined;
 }) {
   const selectId = useId();
   const inherited = useDefaultHere();
@@ -309,7 +313,7 @@ function OrchestratorModelField({
   return (
     <Field
       label="Orchestrator model"
-      description="Sets the next orchestrator's model. Continue in… moves the current one."
+      description={description}
       htmlFor={selectId}
       keywords={["orchestrator", "model", "opus", "main model", "effort"]}
     >
@@ -502,7 +506,12 @@ function IssueNote({ issue }: { issue: WorkerModelIssue }) {
  * is the authority; how a harness differs is behind a ? on the list's line while it is in the list or
  * is the default model's.
  */
-export function RosterEditor({ charter, disabled = false, onChange }: RosterEditorProps) {
+export function RosterEditor({
+  charter,
+  disabled = false,
+  onChange,
+  orchestratorDescription,
+}: RosterEditorProps) {
   const api = useApi();
   const { data: profiles } = useQuery({
     queryKey: ["profiles"],
@@ -578,7 +587,12 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
 
   return (
     <>
-      <OrchestratorModelField charter={charter} disabled={disabled} onChange={onChange} />
+      <OrchestratorModelField
+        charter={charter}
+        disabled={disabled}
+        onChange={onChange}
+        description={orchestratorDescription}
+      />
       <Field
         label="Worker models"
         description="Models the orchestrator may give workers, each with a note on when to use it."

@@ -77,3 +77,50 @@ for (const agent of ["claude", "codex"] as const) {
     );
   });
 }
+
+test("the workspace starts on the model and worker roster picked before creation", async ({
+  page,
+}) => {
+  test.slow();
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.agents", "claude,codex"));
+  await seed(page, { agents: { defaultModel: { agent: "claude", model: "sonnet" } } });
+  await page.goto("/new-workspace");
+  const sheet = page.getByRole("form", { name: "New workspace" });
+  await sheet
+    .getByTestId("new-workspace-checklist")
+    .getByRole("checkbox", { name: /^api/ })
+    .click();
+  await sheet.getByText("Models", { exact: true }).click();
+
+  const lead = sheet.getByTestId("orchestrator-model");
+  await lead.getByRole("combobox", { name: "Agent", exact: true }).click();
+  await page.getByRole("option", { name: "Codex", exact: true }).click();
+  await lead.getByRole("combobox", { name: "Model", exact: true }).click();
+  await page.getByRole("option", { name: "GPT-5.5", exact: true }).click();
+
+  const workers = sheet.getByTestId("worker-models");
+  await workers.getByTestId("worker-model-add").click();
+  const workerForm = workers.getByTestId("worker-model-form");
+  const workerAgent = workerForm.getByRole("combobox", { name: "Agent", exact: true });
+  await workerAgent.press("ArrowDown");
+  const agents = page.locator(`[id="${await workerAgent.getAttribute("aria-controls")}"]`);
+  await agents.getByRole("option", { name: "Codex", exact: true }).press("Enter");
+  const workerModel = workerForm.getByRole("combobox", { name: "Model", exact: true });
+  await workerModel.press("ArrowDown");
+  const models = page.locator(`[id="${await workerModel.getAttribute("aria-controls")}"]`);
+  await models.getByRole("option", { name: "GPT-6.1-Sol", exact: true }).press("Enter");
+  await workers.getByTestId("worker-model-save").click();
+  const worker = workers.getByTestId("worker-model").last();
+  await worker.getByRole("button", { name: /^Default worker model: Codex/ }).click();
+  await sheet.getByTestId("new-workspace-start").click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveAccessibleName("Orchestrator: api");
+
+  const model = await page.evaluate(async () => {
+    const [workspace] = await window.gramMock!.listWorkspaces();
+    const { orchestratorModel, workerModels } = workspace!.charter;
+    const defaultWorker = workerModels?.find((entry) => entry.default);
+    return { orchestratorModel, defaultWorker };
+  });
+  expect(model.orchestratorModel).toMatchObject({ agent: "codex", model: "gpt-5.5" });
+  expect(model.defaultWorker).toMatchObject({ agent: "codex", model: "gpt-6.1-sol" });
+});

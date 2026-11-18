@@ -10,6 +10,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useId,
@@ -21,10 +23,11 @@ import {
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
+import { FOLD, FoldSummary } from "@/components/fold-summary";
 import { FormError } from "@/components/form-error";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
-import { useModelsSettled } from "@/composer/models";
+import { useModelNames, useModelsSettled } from "@/composer/models";
 import {
   needsMachine,
   ON_DEMAND_QUERY_KEY,
@@ -40,8 +43,13 @@ import { Expand, PressScale, Spinner } from "@/motion";
 import { AddRepository, type AddRepositoryHandle } from "@/new-thread/add-repository";
 import { AutonomyChoice } from "@/new-thread/autonomy-choice";
 import { Field } from "@/settings/fields";
+import { useDefaultModel, useRosterHere, useSlotModel } from "@/settings/model-slots";
 import { useSaveSettings } from "@/settings/use-save-settings";
-import { projectNameOf, withAutonomy } from "@/settings/workspace-settings-model";
+import {
+  defaultWorkerIndex,
+  projectNameOf,
+  withAutonomy,
+} from "@/settings/workspace-settings-model";
 import { useServerSettings } from "@/settings-sync/store";
 import { useLayoutStore } from "@/stores/layout";
 import { useWelcome } from "@/welcome/welcome-state";
@@ -64,6 +72,10 @@ import { parentFolder } from "./workspace-repos";
 /** How often a sheet waiting for the person's machine asks whether it is up. */
 const MACHINE_POLL_MS = 1000;
 
+const RosterEditor = lazy(() =>
+  import("@/settings/roster-editor").then((module) => ({ default: module.RosterEditor })),
+);
+
 /** Where a key press belongs to an open menu, list or dialog rather than to the sheet. */
 const inPopup = (target: EventTarget) =>
   target instanceof Element &&
@@ -72,8 +84,8 @@ const inPopup = (target: EventTarget) =>
 /**
  * New workspace, on one sheet: its repositories, what it should work on, and how far it goes
  * alone. Start makes the workspace and opens its orchestrator, with "What should it work on?" as
- * its first message when filled in. The name comes from the home repository; models and stages
- * start from the defaults, or from `from`'s charter, and wait for the workspace's settings.
+ * its first message when filled in. The name comes from the home repository. The model defaults
+ * come from settings or `from`'s charter, and can be changed before the first turn.
  * ⌘Enter starts, Esc leaves.
  */
 export function NewWorkspaceSheet({
@@ -118,7 +130,7 @@ export function NewWorkspaceSheet({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="flex min-h-full items-center justify-center p-6">
+      <div className="flex min-h-full items-center-safe justify-center p-6">
         <div
           data-testid="new-workspace"
           className="flex w-full max-w-lg flex-col gap-5 rounded-lg border border-edge bg-card p-5 text-reading text-card-foreground"
@@ -413,6 +425,11 @@ function SheetForm({
           }))
         }
       />
+      <WorkspaceModels
+        charter={charter}
+        disabled={busy || waiting || created !== undefined}
+        onChange={(next) => setDraft((current) => ({ ...current, charter: next }))}
+      />
       <Field
         label="What should it work on?"
         htmlFor={taskId}
@@ -471,6 +488,61 @@ function SheetForm({
         )}
       </div>
     </form>
+  );
+}
+
+function WorkspaceModels({
+  charter,
+  disabled,
+  onChange,
+}: {
+  charter: OrchestratorCharter;
+  disabled: boolean;
+  onChange: (charter: OrchestratorCharter) => void;
+}) {
+  const [opened, setOpened] = useState(false);
+  const own = useSlotModel(charter.orchestratorModel);
+  const inherited = useDefaultModel();
+  const orchestrator = charter.orchestratorModel === undefined ? inherited : own;
+  const workers = charter.workerModels ?? [];
+  const roster = useRosterHere(workers);
+  const defaultIndex = defaultWorkerIndex(workers);
+  const picked = defaultIndex === undefined ? undefined : roster[defaultIndex];
+  const worker =
+    picked === undefined ? orchestrator : picked.missing === undefined ? picked.entry : undefined;
+  const nameOf = useModelNames([orchestrator, worker]);
+
+  return (
+    <details
+      className={FOLD}
+      onToggle={(event) => {
+        if (event.currentTarget.open) setOpened(true);
+      }}
+    >
+      <FoldSummary className="items-baseline text-reading">
+        <span className="font-medium">Models</span>
+        {(orchestrator || worker) && (
+          <span className="flex flex-wrap gap-x-4 text-meta text-description">
+            {orchestrator && <span>Orchestrator · {nameOf(orchestrator)}</span>}
+            {worker && <span>Default worker · {nameOf(worker)}</span>}
+          </span>
+        )}
+      </FoldSummary>
+      {opened && (
+        <div className="mt-3 flex flex-col gap-4">
+          <Suspense
+            fallback={<Spinner aria-label="Loading model settings" className="size-icon-row" />}
+          >
+            <RosterEditor
+              charter={charter}
+              disabled={disabled}
+              onChange={onChange}
+              orchestratorDescription="Used for the repository survey and the first task."
+            />
+          </Suspense>
+        </div>
+      )}
+    </details>
   );
 }
 
