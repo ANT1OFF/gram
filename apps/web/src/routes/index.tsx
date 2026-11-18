@@ -49,7 +49,7 @@ function HomeEmpty() {
         testId="home-empty"
         icon={FolderGit2}
         title="No workspaces yet"
-        line="Open a repository to make one: its orchestrator hands your tasks to agents and follows each one to a pull request."
+        line="Open a repository to make one: its orchestrator hands your tasks to agents."
         action={{
           label: "Open a repository",
           testId: "home-open-repository",

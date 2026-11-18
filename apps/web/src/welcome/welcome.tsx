@@ -120,7 +120,7 @@ const STEPS: readonly { icon: LucideIcon; short: string; line: ReactNode }[] = [
   },
   {
     icon: GitPullRequest,
-    short: "Each worker opens a PR",
+    short: "Workers carry it out",
     line: "Workers run Claude Code or Codex, each in its own worktree, on your own subscription.",
   },
 ];
@@ -231,8 +231,7 @@ function FirstRun() {
           Open a repository
         </h2>
         <p data-testid="welcome-line" className="text-reading text-muted-foreground">
-          Gram makes it a workspace, whose orchestrator hands your tasks to agents and follows each
-          one to a pull request.
+          Gram makes it a workspace, whose orchestrator hands your tasks to agents.
         </p>
       </div>
       <div className="flex flex-col gap-2">
@@ -337,20 +336,14 @@ function FirstRun() {
           </p>
         )}
         {!noAgent && <Readiness />}
-        {picked !== undefined &&
-          (noAgent ? (
-            // What setting up does before an agent is ready, so it isn't taken for a start.
-            <p data-testid="welcome-next" className="text-meta text-muted-foreground">
-              Set up makes {picked.name} a workspace now. Its orchestrator surveys it and suggests
-              first tasks once an agent is ready; nothing starts until you pick one.
-            </p>
-          ) : (
-            // What Open leads to, so the first click holds no surprise, and that the survey comes next.
-            <p data-testid="welcome-next" className="text-meta text-muted-foreground">
-              Next: choose how much it may do on its own. Its orchestrator then surveys{" "}
-              {picked.name} and suggests first tasks; nothing starts until you pick one.
-            </p>
-          ))}
+        {/* With no agent, the install row above says what comes first; Set up says what it does. */}
+        {picked !== undefined && !noAgent && (
+          // What Open leads to, so the first click holds no surprise, and that the survey comes next.
+          <p data-testid="welcome-next" className="text-meta text-muted-foreground">
+            Next: choose how much it may do on its own. Its orchestrator then surveys {picked.name}{" "}
+            and suggests first tasks; nothing starts until you pick one.
+          </p>
+        )}
       </div>
       <MoreAboutGram />
     </section>
