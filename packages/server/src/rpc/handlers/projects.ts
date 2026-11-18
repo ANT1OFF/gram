@@ -78,8 +78,11 @@ const projectHandlers = Effect.gen(function* () {
       Effect.gen(function* () {
         const settings = yield* store.getSettings;
         // Where the user keeps repositories: the folder `/new` starts in, and where clones go.
-        const folders = [settings.agents.defaultFolder, cloneFolderOf(settings)].flatMap((folder) =>
-          folder === undefined || folder.trim() === "" ? [] : [resolve(expandHome(folder.trim()))],
+        const folders = [settings.agents.defaultFolder, cloneFolderOf(settings)].flatMap(
+          (folder) =>
+            folder === undefined || folder.trim() === ""
+              ? []
+              : [resolve(expandHome(folder.trim()))],
         );
         return yield* repositoryCandidates(yield* store.listProjects, folders);
       }),
