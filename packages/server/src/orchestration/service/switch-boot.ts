@@ -47,6 +47,7 @@ export const switchBootNote = (
       from: boot.from,
       to: boot.to,
       noteMode: boot.noteMode,
+      fresh: boot.fresh,
       note: boot.note,
       earlierNote,
       limit: boot.limit,

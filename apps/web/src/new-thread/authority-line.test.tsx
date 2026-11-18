@@ -36,21 +36,6 @@ describe("taskSummary", () => {
     }
   });
 
-  it("names the workspace a start makes", () => {
-    const made = taskSummary({ workspace: "api", makesOne: true, autonomy: "full" });
-    expect(made.where).toBe("Runs in a new api workspace");
-    expect(made.who).toBe("Planned by the api orchestrator");
-    expect(made.approval).toBe("Automatic");
-    expect(made.merge).toBe("Merges pull requests without asking you");
-    const named = taskSummary({
-      workspace: "api",
-      makesOne: true,
-      autonomy: "full",
-      noun: "project",
-    });
-    expect(named.where).toBe("Runs in a new api project");
-  });
-
   it("falls back to the level's own words for a level this build doesn't know", () => {
     const unknown = taskSummary({ workspace: "api", autonomy: "someday" });
     expect(unknown.merge).toBe("This version of Gram doesn't know this level");
@@ -72,15 +57,6 @@ describe("TaskAuthorityLine", () => {
     );
     expect(merge.querySelector("span.text-warning")?.textContent).toBe("Automatic");
     expect(screen.queryByTestId("task-destination-remembered")).toBeNull();
-  });
-
-  it("says a workspace this start makes once: one line with its model, its merging left to Autonomy", () => {
-    render(<TaskAuthorityLine workspace="api" makesOne autonomy="full" model="Claude Opus" />);
-    expect(screen.getByTestId("task-destination").textContent).toBe(
-      "Runs in a new api workspace, planned by its orchestrator on Claude Opus",
-    );
-    expect(screen.queryByTestId("task-owner")).toBeNull();
-    expect(screen.queryByTestId("task-merge-approval")).toBeNull();
   });
 
   it("promises no merge approval where no agent may merge", () => {

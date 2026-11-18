@@ -702,6 +702,10 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           expect(boot?.text).toContain('"Mail trigger"');
           expect(boot?.text).toContain("workers at once");
           expect(boot?.text).not.toContain("% full");
+          // What the user last said comes with it, so it isn't asked or answered twice.
+          expect(boot?.text).toContain("last exchanges with the user");
+          expect(boot?.text).toContain("How is it going?");
+          expect(boot?.text).not.toContain("## Handoff note");
           yield* completeTurn(fresh);
           // A fresh session's first crossing is noted again.
           expect((yield* outboxOf(workspaceId)).contextNoted).not.toBe(true);

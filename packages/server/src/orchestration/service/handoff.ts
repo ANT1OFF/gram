@@ -72,7 +72,7 @@ const HANDOFF_WHY: Record<OrchestratorHandoffReason, string> = {
 
 /** What the checkpoint prompt, a handoff's first step, asks of the session about to be replaced. */
 const checkpointNote = (reason: OrchestratorHandoffReason): string =>
-  `${HANDOFF_WHY[reason]}, so when this turn ends your session is replaced by a fresh one. It starts from your role, MEMORY.md, the ledger and the charter, and remembers nothing else of this conversation. Write down now, with \`memory_write\`, whatever isn't in memory yet and can't be derived: goals and priorities, decisions and why, open questions for the user, what you were in the middle of. Only flush; tidying is for later. Don't spawn or message workers in this turn. When you are done, reply \`ready\` and end your turn.`;
+  `${HANDOFF_WHY[reason]}, so when this turn ends your session is replaced by a fresh one. It starts from your role, MEMORY.md, the ledger, the charter and your last few exchanges with the user, and remembers nothing else of this conversation. Write down now, with \`memory_write\`, whatever isn't in memory yet and can't be derived: goals and priorities, decisions and why, open questions for the user, what you were in the middle of. Only flush; tidying is for later. Don't spawn or message workers in this turn. When you are done, reply \`ready\` and end your turn.`;
 
 /**
  * A switch's checkpoint with a note (§3.4): the memory flush, then the handoff note as its reply,
@@ -354,9 +354,23 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
               : value,
           ),
         ).pipe(Effect.ignore);
+      // A fresh session on the same agent carries the last exchanges with the user too, without a
+      // note: what it already told them isn't always in memory, and it shouldn't say it twice.
+      const agent = (yield* store.getThread(threadId).pipe(Effect.option)).pipe(
+        Option.map((thread) => thread.model.agent),
+        Option.getOrUndefined,
+      );
       const boot: SwitchBoot | undefined =
         carried?.handoff === undefined
-          ? undefined
+          ? agent === undefined
+            ? undefined
+            : {
+                at: marker.at,
+                from: left?.agent ?? agent,
+                to: agent,
+                fresh: true,
+                noteMode: "none",
+              }
           : {
               at: marker.at,
               from: carried.previous.agent,

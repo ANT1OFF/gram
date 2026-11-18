@@ -28,6 +28,7 @@ import { FormError } from "@/components/form-error";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/input";
+import { carriedDraft } from "@/composer/draft-prefill";
 import { useModelNames, useModelsSettled } from "@/composer/models";
 import {
   needsMachine,
@@ -131,6 +132,9 @@ export function NewWorkspaceSheet({
     () => subscriptionWorkspaceCharter(settings, claudeModels, codexModels),
     [settings, claudeModels, codexModels],
   );
+  // What New task carried here, as the first task: it stays carried, so Esc back to New task
+  // finds it there too.
+  const [carried] = useState(() => carriedDraft()?.text);
   // Once shown, the form stays: a later refetch can't take it away mid-edit.
   const [shown, setShown] = useState(false);
   if (loaded && !shown) setShown(true);
@@ -166,7 +170,7 @@ export function NewWorkspaceSheet({
             </p>
           ) : (
             <SheetForm
-              initial={seedDraft(from, repo, projects, workspaces)}
+              initial={seedDraft(from, repo, projects, workspaces, carried)}
               starting={starting}
               projects={projects}
               workspaces={workspaces}
@@ -180,17 +184,21 @@ export function NewWorkspaceSheet({
   );
 }
 
-/** The draft the sheet opens with: the picked repo, and the charter of the workspace it starts from. */
+/**
+ * The draft the sheet opens with: the picked repo, the task New task carried, and the charter of
+ * the workspace it starts from.
+ */
 const seedDraft = (
   from: WorkspaceId | undefined,
   repo: ProjectId | undefined,
   projects: readonly Project[],
   workspaces: readonly WorkspaceState[],
+  task: string | undefined,
 ): NewWorkspaceDraft => {
   const source = workspaces.find((state) => state.workspace.id === from);
   const picked = projects.some((project) => project.id === repo) ? repo : undefined;
-  const withRepo =
-    picked === undefined ? emptyNewWorkspace : toggleRepo(emptyNewWorkspace, picked, true);
+  const empty = task === undefined ? emptyNewWorkspace : { ...emptyNewWorkspace, task };
+  const withRepo = picked === undefined ? empty : toggleRepo(empty, picked, true);
   return source === undefined ? withRepo : startFrom(withRepo, source);
 };
 
@@ -451,7 +459,6 @@ function SheetForm({
       />
       <AutonomyChoice
         testId="autonomy"
-        explain
         value={autonomyOf(charter)}
         onChange={(autonomy) =>
           setDraft((current) => ({

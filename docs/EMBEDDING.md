@@ -380,6 +380,29 @@ POST /embed/v1/thread-notes
 - The agent reads the text after a line saying it comes from the app the workspace runs in and not from a person in the thread. It grants nothing.
 - `404` for a thread the server doesn't have, `409` when the thread couldn't take it (it ended, or its agent couldn't start), `400` for a body that isn't one. `text` is 1 to 4000 characters.
 
+## Before an idle stop
+
+A deployment that stops this server when nothing has used it for a while asks it first, so that
+what an [idle compaction](AGENTS_AND_FEATURES.md#idle-compaction) would have done at its time is done
+before the stop, while the threads' prompt caches are still warm.
+
+```
+POST /embed/v1/idle-stop
+{}
+→ 200 { "compacting": 2 }
+→ 200 { "compacting": 0 }
+```
+
+- Every idle compaction waiting for its time whose deadline hasn't passed goes now, through the same
+  holds: a draft, a typing person, a paused workspace, a held worker or an open question keeps it
+  waiting, and such a thread isn't counted. Nothing else changes: no setting, no other thread.
+- `compacting` is how many threads are compacting or about to. Ask again before stopping, and stop
+  once it is `0`. A compaction whose end the server hasn't seen after ten minutes isn't counted, so a
+  stop never waits on one for longer.
+- The compaction is a turn like any other: its status and usage reach the event sink, which a
+  deployment that reads activity from them will see.
+- It stops nothing itself. Called on a server that will go on running, it only compacts sooner.
+
 ## A person's message for a thread
 
 The platform can write in a thread for a person it signed in, and stop the thread's turn, so that a person's own API or MCP client can do what they would do in the web app without a browser.

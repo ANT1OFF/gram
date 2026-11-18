@@ -918,6 +918,12 @@ export interface OrchestrationShape {
   /** Refuses a delegated `set_thread_model` outside the charter's worker models. */
   checkWorkerModel(callerId: ThreadId, model: ModelRef): Effect.Effect<void, AppToolError>;
 
+  /**
+   * The server is about to stop for idleness: idle compactions waiting for their time go now
+   * (docs/AGENTS_AND_FEATURES.md#idle-compaction). Answers how many threads are compacting.
+   */
+  readonly compactIdleBeforeStop: Effect.Effect<{ readonly compacting: number }>;
+
   // -- Dreams' seam (`dreams.ts`) -----------------------------------------------------------
   /**
    * Puts one line in the workspace's next digest and schedules it, whatever the ledger diff says;

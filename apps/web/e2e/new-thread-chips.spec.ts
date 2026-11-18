@@ -18,19 +18,28 @@ test("a single agent chat opens on the prompt-first controls, not scrolled down 
   await expect(page.getByLabel("First prompt")).toBeFocused();
 });
 
-test("⌘N starts a task: a repo's workspace on send, then its orchestrator", async ({ page }) => {
+test("⌘N starts a task: a repo with no workspace sets one up in New workspace, with the task", async ({
+  page,
+}) => {
   await page.goto("/t/t-flaky");
   await expect(page.getByTestId("pane-header")).toContainText("Fix flaky retry test");
   await page.keyboard.press("ControlOrMeta+KeyN");
   await expect(page).toHaveURL(/\/new-task$/);
   await expect(page.getByRole("radio", { name: "Team", exact: true })).toBeChecked();
-  // The current thread's repo has no workspace yet, so one is made on send, at Full by default.
-  await expect(page.getByTestId("task-target")).toHaveText("api");
-  await expect(page.getByTestId("task-autonomy")).toHaveAttribute("data-value", "full");
-  const send = page.getByRole("button", { name: /Start workspace and send/ });
-  await expect(send).toBeDisabled();
+  // The current thread's repo has no workspace yet: New task sends only to one that exists, so
+  // it says so, and picking the repo opens New workspace on it with what was typed.
+  await expect(page.getByText("api has no workspace yet.")).toBeVisible();
+  await expect(page.getByTestId("task-autonomy")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Send to team/ })).toBeDisabled();
   await page.getByLabel("What needs doing").fill("Add a retry to the mail trigger");
-  await page.keyboard.press("ControlOrMeta+Enter");
+  await page.getByTestId("task-target").click();
+  await page.getByTestId("task-target-menu").getByRole("menuitem", { name: /^api/ }).click();
+  await expect(page).toHaveURL(/\/new-workspace\?repo=/);
+  const form = page.getByRole("form", { name: "New workspace" });
+  await expect(form.getByTestId("new-workspace-task")).toHaveValue(
+    "Add a retry to the mail trigger",
+  );
+  await form.getByTestId("new-workspace-start").click();
   await expect(page).toHaveURL(/\/t\/t-mock-/);
   await expect(page.getByTestId("pane-header").getByRole("heading")).toHaveAccessibleName(
     "Orchestrator: api",
@@ -126,10 +135,9 @@ test("Who does it turns a task into a one-off thread and back, keeping what was 
   await page.getByLabel("What needs doing").fill("Just a quick question");
   await page.getByTestId("task-target").click();
   const menu = page.getByTestId("task-target-menu");
-  await expect(menu.getByRole("menuitem", { name: /web.*makes one on send/ })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "New workspace" })).toBeVisible();
-  await menu.getByRole("menuitem", { name: /web/ }).click();
-  await expect(page.getByTestId("task-target")).toHaveText("web");
+  await expect(menu.getByRole("menuitem", { name: /web.*opens New workspace/ })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "New workspace", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
 
   await page.getByRole("radio", { name: "Chat", exact: true }).click();
   await expect(page).toHaveURL(/\/new$/);
@@ -137,9 +145,9 @@ test("Who does it turns a task into a one-off thread and back, keeping what was 
   await expect(page.getByLabel("First prompt")).toHaveValue("Just a quick question");
   await expect(page.getByRole("button", { name: /Start chat/ })).toBeVisible();
 
-  // Back to the orchestrator, the folder goes along as the repo to make a workspace for.
+  // Back to the orchestrator, the folder goes along: its repo has no workspace, which New task says.
   await page.getByRole("radio", { name: "Team", exact: true }).click();
   await expect(page).toHaveURL(/\/new-task$/);
-  await expect(page.getByTestId("task-target")).toHaveText("web");
+  await expect(page.getByText(/has no workspace yet\./)).toBeVisible();
   await expect(page.getByLabel("What needs doing")).toHaveValue("Just a quick question");
 });

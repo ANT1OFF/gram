@@ -31,7 +31,7 @@ const PLAN_MERGE: Readonly<Record<Autonomy, string>> = {
 
 /** The New form's summary beside Start: who owns the task, then, apart, who approves a merge. */
 export interface TaskSummary {
-  /** Where it runs: the workspace, or the one this start makes, in the app's noun for one. */
+  /** Where it runs: the workspace. */
   readonly where: string;
   /** Whom it reports to: the orchestrator that plans it. Ownership only; nothing of merging. */
   readonly who: string;
@@ -47,20 +47,15 @@ export interface TaskSummary {
  */
 export function taskSummary({
   workspace,
-  makesOne = false,
   autonomy,
-  noun = "workspace",
 }: {
-  /** The workspace's name, or the repository's for a workspace this start makes. */
+  /** The workspace's name. */
   workspace: string;
-  makesOne?: boolean | undefined;
   autonomy: string;
-  /** What the app calls a workspace, lower case ("project" where it says so). */
-  noun?: string | undefined;
 }): TaskSummary {
   const level = presentAutonomy(autonomy);
   return {
-    where: makesOne ? `Runs in a new ${workspace} ${noun}` : `Runs in ${workspace}`,
+    where: `Runs in ${workspace}`,
     who: `Planned by the ${workspace} orchestrator`,
     approval: known(MERGE_APPROVAL, autonomy as Autonomy) ?? level.label,
     merge: known(PLAN_MERGE, autonomy as Autonomy) ?? level.description.replace(/\.$/, ""),
@@ -74,28 +69,18 @@ export function taskSummary({
  * then Merge approval, Ask or Automatic, with what that means for this start (amber at Automatic,
  * as everywhere Full shows). `approval` makes the merge approval a choice; none of it is folded.
  *
- * Each fact is said once on the form. A workspace this start makes is one line, with its
- * orchestrator's model (`model`), and no merge row: the form's Autonomy choice above says it.
- * Where no agent may merge (`machines.merges: "person"`) there is no merge to approve, and the
+ * Each fact is said once on the form. Where no agent may merge (`machines.merges: "person"`) there is no merge to approve, and the
  * autonomy lines already say "You merge", so the row goes too.
  */
 export function TaskAuthorityLine({
   workspace,
-  makesOne,
   autonomy,
   remembered = false,
   onChangeWhere,
   changeWhereHint,
   approval,
-  noun,
-  model,
 }: {
   workspace: string;
-  /** What the app calls a workspace, lower case. */
-  noun?: string | undefined;
-  /** The orchestrator's model, named in the line of a workspace this start makes. */
-  model?: string | undefined;
-  makesOne?: boolean | undefined;
   autonomy: string;
   /** Whether the target is the last task's, kept from before rather than read off this place. */
   remembered?: boolean | undefined;
@@ -114,11 +99,8 @@ export function TaskAuthorityLine({
 }) {
   const level = presentAutonomy(autonomy);
   const icon = known(AUTONOMY_ICON, autonomy as Autonomy) ?? Shield;
-  const summary = taskSummary({ workspace, makesOne, autonomy, noun });
-  const personMerges = usePersonMerges();
-  // A new workspace's line says who plans it; its merge rule is the Autonomy choice's.
-  const oneLine = makesOne === true && model !== undefined;
-  const showMerge = makesOne !== true && !personMerges;
+  const summary = taskSummary({ workspace, autonomy });
+  const showMerge = !usePersonMerges();
   return (
     <span
       data-testid="task-authority"
@@ -132,9 +114,7 @@ export function TaskAuthorityLine({
         data-remembered={remembered ? "true" : undefined}
         className="min-w-0 [&>*+*]:ml-2"
       >
-        <span className="text-foreground">
-          {oneLine ? `${summary.where}, planned by its orchestrator on ${model}` : summary.where}
-        </span>
+        <span className="text-foreground">{summary.where}</span>
         {remembered && (
           <Hint
             label="Where your last task went. Change picks another."
@@ -170,11 +150,9 @@ export function TaskAuthorityLine({
           </Button>
         )}
       </span>
-      {!oneLine && (
-        <span data-testid="task-owner" className="col-start-2">
-          {summary.who}
-        </span>
-      )}
+      <span data-testid="task-owner" className="col-start-2">
+        {summary.who}
+      </span>
       {showMerge &&
         createElement(icon, {
           "aria-hidden": true,

@@ -808,6 +808,7 @@ export const OrchestrationLive = Layer.effect(
     );
 
     return Orchestration.of({
+      compactIdleBeforeStop: idleCompactor.compactBeforeStop,
       routineStates: (workspaceId) =>
         readOutbox(workspaceId).pipe(Effect.map((outbox) => outbox.routineRuns ?? {})),
       updateRoutineState: (workspaceId, id, change) =>

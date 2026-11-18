@@ -76,16 +76,16 @@ export const AUTONOMY_LEVELS: readonly AutonomyLevel[] = [
   {
     value: "full",
     label: "Full",
-    description: "Asks about nothing. Branch protection outside Gram is the only gate.",
+    description: "Pushes, opens and merges pull requests without asking.",
     detail:
-      "The orchestrator may turn on auto-merge. What stands between an agent and your repositories is what you have outside Gram: branch protection, required reviews and your provider's spending limits.",
+      "The orchestrator may turn on auto-merge. Branch protection, required reviews and your provider's spending limits still apply.",
     warn: true,
   },
 ];
 
 /**
  * The levels where a person merges every pull request (an embedding app's `machines.merges`): the
- * deployment refuses an agent's merge, so no level promises one, and Full asks about nothing else.
+ * deployment refuses an agent's merge, so no level promises one.
  */
 export const PERSON_MERGES_LEVELS: readonly AutonomyLevel[] = [
   {
@@ -96,7 +96,7 @@ export const PERSON_MERGES_LEVELS: readonly AutonomyLevel[] = [
     ...AUTONOMY_LEVELS[1]!,
     description: "Pushes branches and opens pull requests. Merging is always yours.",
     detail:
-      "Still asks before closing a pull request, a release, a workflow run, or a force or deleting push. No agent can merge here: you merge on your provider.",
+      "Still asks before a force or deleting push. No agent can merge here: you merge on your provider.",
   },
   {
     ...AUTONOMY_LEVELS[2]!,
