@@ -1573,6 +1573,10 @@ const SOLO_GAP = 1;
 
 const soloKey = (summary: ThreadSummary) => summary.thread.id;
 
+/** A solo row that says what needs you, or a failure, in words: it takes two lines. */
+const soloAlarm = (display: { tone: string }) =>
+  display.tone === "text-status-needs" || display.tone === "text-destructive";
+
 /**
  * The threads outside any workspace, latest first, the parked ones folded under them: a click opens
  * one. Those marked done are in Done, with the finished workers.
@@ -1609,10 +1613,28 @@ function SoloList({
   threads: readonly ThreadSummary[];
   viewed: string | undefined;
 }) {
+  // The rows that take two lines, so a row not drawn yet is guessed from drawn rows of its kind.
+  const groups = useDerivedAsks((s) => s.needsYou.groups);
+  const twoLine = useThreadsStore(
+    useShallow((s) =>
+      threads
+        .filter((summary) =>
+          soloAlarm(
+            soloDisplay(
+              threadStatusOf(summary, s.statusDetail[summary.thread.id]),
+              threadNeed(groups, summary.thread.id),
+            ),
+          ),
+        )
+        .map(soloKey),
+    ),
+  );
+  const tall = new Set(twoLine);
   return (
     <VirtualRows
       items={threads}
       rowKey={soloKey}
+      sizeClass={(summary) => (tall.has(soloKey(summary)) ? "two-line" : "one-line")}
       estimate={SOLO_ROW}
       gap={SOLO_GAP}
       current={threads.findIndex((summary) => summary.thread.id === viewed)}
@@ -1838,8 +1860,8 @@ export function SoloRow({
       ? `Last activity ${formatStamp(thread.lastActivityAt)}`
       : "";
   const faded = settled || settledRow(summary.status, display, thread.lastActivityAt, now);
-  // What needs you, or a failure: said in words at the row's edge, in its colour.
-  const alarm = display.tone === "text-status-needs" || display.tone === "text-destructive";
+  // What needs you, or a failure: said in words on a line of its own, in its colour.
+  const alarm = soloAlarm(display);
   // The other machine it runs on, if any: named at its edge before its time, its glyph alone
   // beside an alarm's words.
   const hostId = threadHost(thread);

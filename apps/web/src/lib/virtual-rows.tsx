@@ -89,7 +89,7 @@ function measureShown(
   }
   const size = entry?.borderBoxSize[0]?.blockSize ?? element.getBoundingClientRect().height;
   // The virtualizer keeps a measure only when it differs from the size it assumed. A row as tall
-  // as the estimate would then follow the estimate when it changes (the drawn rows' median), so
+  // as the estimate would then follow the estimate when it changes (the drawn rows' average), so
   // it is kept here.
   if (!instance.itemSizeCache.has(key) && instance.measurementsCache[index]?.size === size) {
     instance.itemSizeCache.set(key, size);
@@ -97,24 +97,45 @@ function measureShown(
   return size;
 }
 
-/**
- * The median height of the rows measured so far, or undefined before any is: a few taller rows (a
- * two-line row that needs you) don't make every row not drawn yet taller than the many one-line
- * ones, which would put the list's end, and what follows it, past where a scroll to the end lands.
- */
+/** The average height of the rows measured so far, or undefined before any is. */
 function typicalSize(
   instance: Virtualizer<HTMLElement, HTMLElement> | undefined,
 ): number | undefined {
   if (instance === undefined || instance.itemSizeCache.size === 0) return undefined;
-  const sizes = [...instance.itemSizeCache.values()].toSorted((a, b) => a - b);
-  const middle = sizes.length >> 1;
-  return sizes.length % 2 === 1 ? sizes[middle] : (sizes[middle - 1]! + sizes[middle]!) / 2;
+  let sum = 0;
+  for (const size of instance.itemSizeCache.values()) sum += size;
+  return sum / instance.itemSizeCache.size;
+}
+
+/**
+ * The average height of the measured rows of each size class (`sizeClass`), so a few rows of one
+ * kind (a two-line row) don't change the guess for the many of another not drawn yet.
+ */
+function typicalByClass<T>(
+  instance: Virtualizer<HTMLElement, HTMLElement> | undefined,
+  items: readonly T[],
+  rowKey: (item: T) => string,
+  sizeClass: ((item: T) => string) | undefined,
+): ReadonlyMap<string, number> | undefined {
+  if (sizeClass === undefined || instance === undefined || instance.itemSizeCache.size === 0) {
+    return undefined;
+  }
+  const sums = new Map<string, { sum: number; count: number }>();
+  for (const item of items) {
+    const size = instance.itemSizeCache.get(rowKey(item));
+    if (size === undefined) continue;
+    const kind = sizeClass(item);
+    const at = sums.get(kind) ?? { sum: 0, count: 0 };
+    sums.set(kind, { sum: at.sum + size, count: at.count + 1 });
+  }
+  return new Map([...sums].map(([kind, { sum, count }]) => [kind, sum / count]));
 }
 
 export function VirtualRows<T>({
   items,
   rowKey,
   estimate,
+  sizeClass,
   gap = 0,
   current = -1,
   retainedKeys,
@@ -129,6 +150,11 @@ export function VirtualRows<T>({
   rowKey: (item: T) => string;
   /** A row's height before it has drawn, in pixels. */
   estimate: number;
+  /**
+   * The kind of row an item draws, when the kinds differ in height (a one-line or a two-line
+   * row): a row not drawn yet is guessed from the drawn rows of its own kind.
+   */
+  sizeClass?: (item: T) => string;
   /** The space between rows, in pixels, as the list's `gap` would leave it. */
   gap?: number;
   /** The index of the row that counts as current (`aria-current`), for a jump to it; -1 for none. */
@@ -168,6 +194,7 @@ export function VirtualRows<T>({
   const offsetChanged = useRef<(offset: number, isScrolling: boolean) => void>(undefined);
   const scrollWritten = useRef<() => void>(undefined);
   const typical = typicalSize(virtualizerRef.current) ?? estimate;
+  const byClass = typicalByClass(virtualizerRef.current, items, rowKey, sizeClass);
   // oxlint-disable-next-line react/incompatible-library -- opted out of memoization above
   const virtualizer = useVirtualizer<HTMLElement, HTMLElement>({
     count: items.length,
@@ -180,9 +207,14 @@ export function VirtualRows<T>({
       elementScroll(offset, options, instance);
       scrollWritten.current?.();
     },
-    // Rows not drawn yet are as tall as the drawn ones typically are (their median): the given estimate is only a
+    // Rows not drawn yet are as tall as the drawn ones are on average: the given estimate is only a
     // first guess, and each row off from it by half a pixel moves the rows under it.
-    estimateSize: () => typical,
+    // With size classes, a row is guessed from the drawn rows of its own kind, when any is drawn.
+    estimateSize: (index) => {
+      const item = items[index];
+      if (byClass === undefined || sizeClass === undefined || item === undefined) return typical;
+      return byClass.get(sizeClass(item)) ?? typical;
+    },
     getItemKey: (index) => (items[index] === undefined ? index : rowKey(items[index])),
     gap,
     overscan,
