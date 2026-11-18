@@ -3,6 +3,7 @@
 
 import type { EventSinkShape } from "../embedding/event-sink.ts";
 import { ActingPerson } from "../embedding/person.ts";
+import { readableByOf, readableByOfWorkspace, spawnScope } from "../embedding/readable-by.ts";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Fiber from "effect/Fiber";
@@ -278,6 +279,30 @@ export const makeThreadLifecycle = ({
         ...(input.browser === true ? { browser: true } : {}),
         ...input.kept,
       };
+      // Who may see it: its spawner's or its orchestrator's reader where they have one, else the
+      // reader of the agent whose tool call makes it, else what the start says.
+      const parentReader = (id: ThreadId | undefined) =>
+        id === undefined
+          ? Effect.succeed(undefined)
+          : store.getThread(id).pipe(
+              Effect.map((parent) => parent.readableBy ?? readableByOf(parent.id)),
+              Effect.orElseSucceed(() => readableByOf(id)),
+            );
+      const orchestratorOf =
+        input.workspaceId === undefined
+          ? undefined
+          : yield* store.getWorkspace(input.workspaceId).pipe(
+              Effect.map((state) => state.workspace.orchestratorThreadId),
+              Effect.orElseSucceed(() => undefined),
+            );
+      const readableBy =
+        (yield* parentReader(input.spawnedBy?.threadId)) ??
+        (orchestratorOf === thread.id ? undefined : yield* parentReader(orchestratorOf)) ??
+        (input.workspaceId === undefined ? undefined : readableByOfWorkspace(input.workspaceId)) ??
+        (yield* spawnScope) ??
+        input.readableBy ??
+        input.kept?.readableBy;
+      if (readableBy !== undefined) (thread as { readableBy?: string }).readableBy = readableBy;
       const stored = yield* store.insertThread(thread);
       if (input.restoreClosedHistory === true) yield* store.restoreClosedHistory(thread.id);
       if (eventSink !== undefined && thread.spawnedBy === undefined) {

@@ -4,7 +4,7 @@
 // across a restart: a thread asking for a machine that is away says so again, and whoever asks
 // for a resume names what the stop kept (its answer) when it is to be held to that.
 
-import type { HostId, ThreadId } from "@gram/contracts";
+import type { HostId, SavedDiff, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { STOP_HOLD_MS } from "./stop.ts";
 
@@ -30,6 +30,10 @@ export interface KeptRecord {
   readonly remote?: string;
   /** The branch the folder was on, when the machine said. */
   readonly branch?: string;
+  /** Epoch ms this Gram heard it was kept. */
+  readonly at?: number;
+  /** What the save holds against the branch's base, when the machine said. */
+  readonly saved?: SavedDiff;
 }
 
 export interface StopMarks {

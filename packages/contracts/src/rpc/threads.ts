@@ -30,6 +30,7 @@ import { MessageId, QueueItemId, RequestId, TaskId, ThreadId, TurnId } from "../
 import { ThreadWakes } from "../orchestration.ts";
 import { TurnUndoDataSchema } from "../ui-message.ts";
 import { ReviewMonitorResult } from "../review-monitor.ts";
+import { SavedDiff } from "../saved-work.ts";
 import { ReorderThreadsPayload } from "../sidebar.ts";
 import { PlanEdit, ThreadPlan } from "../thread-plan.ts";
 import { WAIT_TITLE_MAX, WaitId, WaitItem, WaitKind, WaitListState } from "../waits.ts";
@@ -125,6 +126,16 @@ export const ThreadRpcs = RpcGroup.make(
   Rpc.make("thread.resumeAfterMachineLost", {
     payload: threadRef,
     error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
+  }),
+  /**
+   * The diff behind `Thread.savedWork`, as the machine last sent it: readable while the machine is
+   * away. `saved` is absent once Gram restarted since (the record outlives it, the diff doesn't),
+   * or when nothing of the thread was saved.
+   */
+  Rpc.make("thread.savedDiff", {
+    payload: threadRef,
+    success: Schema.Struct({ saved: Schema.optionalKey(SavedDiff) }),
+    error: errors(ThreadNotFound),
   }),
   /** Stops a thread's limit wait: no resume comes, and it stands failed until the user sends. */
   Rpc.make("thread.cancelLimitWait", { payload: threadRef, error: errors(ThreadNotFound) }),

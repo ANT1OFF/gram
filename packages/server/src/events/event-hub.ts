@@ -6,6 +6,7 @@ import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { signedInPerson } from "../embedding/person.ts";
+import { anyPrivate, readableByOf, readerMay } from "../embedding/readable-by.ts";
 import { BacklogGauge } from "./backlog.ts";
 import { ClientBuffer, serverEventKey, serverEventOrder } from "./client-buffer.ts";
 
@@ -176,6 +177,35 @@ export const eventFor = (event: ServerEvent, person: string | undefined): Server
 };
 
 /**
+ * `event` as the connections opened for `person` may see it (`embedding/readable-by.ts`): nothing
+ * of a thread readable by someone else, or by anyone at all on a connection with no signed-in
+ * person, whose `person` is the local one. A snapshot keeps the threads it may show; an event of
+ * one thread it may not is dropped (`undefined`). Every event of a thread names it by `threadId`
+ * or carries it whole, so none gets past.
+ */
+export const readableEventFor = (
+  event: ServerEvent,
+  person: string | undefined,
+): ServerEvent | undefined => {
+  if (!anyPrivate()) return event;
+  const reader = { subject: signedInPerson(person) };
+  if (event.type === "threads.snapshot") {
+    const threads = event.threads.filter((summary) =>
+      readerMay(reader, summary.thread.readableBy ?? readableByOf(summary.thread.id)),
+    );
+    return threads.length === event.threads.length ? event : { ...event, threads };
+  }
+  if (event.type === "thread.upsert")
+    return readerMay(reader, event.thread.readableBy ?? readableByOf(event.thread.id))
+      ? event
+      : undefined;
+  const threadId = (event as { readonly threadId?: unknown }).threadId;
+  if (typeof threadId === "string" && !readerMay(reader, readableByOf(threadId as ThreadId)))
+    return undefined;
+  return event;
+};
+
+/**
  * Publishing writes straight into each client's bounded buffer, so there's no per-client backlog
  * anywhere else. Suspended, so a publish effect built ahead of time reaches the clients registered
  * when it runs rather than when it was built.
@@ -313,9 +343,17 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
         publishFeed: (item) => deliver(feedClients, item),
 
         serverEvents: (snapshot, person) => {
+          // A connection says whose it is; the server's own consumers, which say nothing, hear all.
+          const shown = (event: ServerEvent) => {
+            const readable = person === undefined ? event : readableEventFor(event, person);
+            return readable === undefined ? undefined : eventFor(readable, person);
+          };
           const head = snapshot.pipe(
             Effect.map((events): ReadonlyArray<ServerEvent> =>
-              ("type" in events ? [events] : events).map((event) => eventFor(event, person)),
+              ("type" in events ? [events] : events).flatMap((event) => {
+                const each = shown(event);
+                return each === undefined ? [] : [each];
+              }),
             ),
           );
           return clientStream(eventClients, {
@@ -323,7 +361,7 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
             accept: () => true,
             person,
             start: head,
-            emit: (event) => eventFor(event, person),
+            emit: shown,
             resync: head,
           });
         },

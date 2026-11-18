@@ -10,6 +10,8 @@ import {
   CloneProjectPayload,
   CloneSuggestions,
   ForgetProjectPayload,
+  ProjectOrigins,
+  ProjectOriginsPayload,
   RepositoryCandidates,
   SetProjectBookmarkedPayload,
 } from "../projects.ts";
@@ -62,6 +64,12 @@ export const ProjectRpcs = RpcGroup.make(
     payload: CloneProjectPayload,
     success: Project,
     error: errors(InvalidState, GitError),
+  }),
+  /** Which GitHub repository each project's `origin` is, read from its git config. */
+  Rpc.make("projects.origins", {
+    payload: ProjectOriginsPayload,
+    success: ProjectOrigins,
+    error: errors(),
   }),
   /** Repositories to offer for cloning; empty without `gh` or when GitHub can't be asked. */
   Rpc.make("projects.cloneSuggestions", { success: CloneSuggestions, error: errors() }),

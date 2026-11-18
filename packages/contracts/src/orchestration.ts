@@ -443,6 +443,8 @@ export const WorkerError = Schema.Struct({
   kind: AgentFailureKind,
   httpStatus: Schema.optionalKey(Schema.Int),
   text: Schema.String,
+  /** The joined machine it ran on was lost (`ThreadError.machineLost`): Resume, not Retry. */
+  lostMachine: Schema.optionalKey(Schema.Literal(true)),
 });
 export type WorkerError = typeof WorkerError.Type;
 

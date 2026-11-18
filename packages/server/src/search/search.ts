@@ -67,6 +67,8 @@ export interface SearchInput {
   readonly query: string;
   readonly threadId?: ThreadId | undefined;
   readonly limit?: number | undefined;
+  /** Threads the reader may not see (`embedding/readable-by.ts`), left out before the limit. */
+  readonly hidden?: ReadonlyArray<ThreadId> | undefined;
 }
 
 /**
@@ -77,11 +79,18 @@ export const searchThreads = ({
   query,
   threadId,
   limit = DEFAULT_SEARCH_LIMIT,
+  hidden = [],
 }: SearchInput): Effect.Effect<ThreadSearchResult, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const match = toMatchQuery(query);
     if (match === undefined) return { hits: [], truncated: false };
-    const scope = threadId === undefined ? [] : [threadId];
+    if (threadId !== undefined && hidden.includes(threadId)) return { hits: [], truncated: false };
+    const scope = [
+      ...(threadId === undefined ? [] : [threadId]),
+      ...(hidden.length === 0 ? [] : [JSON.stringify(hidden)]),
+    ];
+    const hide = (column: string) =>
+      hidden.length === 0 ? "" : `AND ${column} NOT IN (SELECT value FROM json_each(?))`;
     const orderedRank = threadId === undefined;
 
     // On the read worker when there is one: a global search over a long history takes hundreds of
@@ -98,6 +107,7 @@ export const searchThreads = ({
         WHERE message_search MATCH ?
           ${orderedRank ? "AND message_search.rank MATCH 'bm25(0, 0, 1.0, 0.4)'" : ""}
           ${threadId === undefined ? "" : "AND message_search.thread_id = ?"}
+          ${hide("message_search.thread_id")}
         ORDER BY ${orderedRank ? "message_search.rank" : "bm25(message_search, 0, 0, 1.0, 0.4)"}
         LIMIT ?`,
       [match, ...scope, limit + 1],
@@ -109,6 +119,7 @@ export const searchThreads = ({
         WHERE thread_title_search MATCH ?
           ${orderedRank ? "AND thread_title_search.rank MATCH 'bm25()'" : ""}
           ${threadId === undefined ? "" : "AND thread_id = ?"}
+          ${hide("thread_id")}
         ORDER BY ${orderedRank ? "thread_title_search.rank" : "bm25(thread_title_search)"}
         LIMIT ?`,
       [match, ...scope, limit + 1],

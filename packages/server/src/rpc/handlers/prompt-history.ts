@@ -6,6 +6,7 @@ import {
   type GramUIMessage,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import { readableOnly } from "../../embedding/readable-by.ts";
 import { findUserMessages, ThreadStore } from "../../persistence/thread-store.ts";
 import type { Handlers } from "./common.ts";
 
@@ -17,7 +18,8 @@ export const promptHistoryHandlers = Effect.gen(function* () {
     "thread.promptHistory": ({ threadId, limit }) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);
-        const others = (yield* store.listThreads)
+        // Never the prompts of a thread the caller may not see (`embedding/readable-by.ts`).
+        const others = (yield* readableOnly(yield* store.listThreads, (other) => other))
           .filter((other) => other.id !== threadId && other.projectId === thread.projectId)
           .toSorted((a, b) => b.lastActivityAt - a.lastActivityAt)
           .slice(0, PROMPT_HISTORY_THREADS);

@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { NOBODY, ReadingAs, SERVER } from "../embedding/readable-by.ts";
 import { KeptSessions } from "../runtime/kept-sessions.ts";
 import { answerAsk, ASK_ANSWER_PATH } from "../embedding/ask-answer.ts";
 import { DecisionHook } from "../embedding/decision-hook.ts";
@@ -348,15 +349,21 @@ export const AuthMiddleware = HttpRouter.middleware(
         // own proofs, and nothing a browser or the local app reaches: decided before any of it.
         if (yield* ViaProvisionedListener)
           return HttpServerResponse.setHeaders(
-            yield* provisionedRoute(remoteHosts, path, yield* provisionedOn, (origin) =>
-              Effect.gen(function* () {
-                return remoteHosts !== undefined &&
-                  (yield* placedOnMachine(mcpTokens, store, remoteHosts, request.headers, origin))
-                  ? yield* httpEffect
-                  : HttpServerResponse.text("unauthorized: not a thread on a provisioned host", {
-                      status: 401,
-                    });
-              }),
+            // A host's dial is the server's own; its sessions' tool calls read as their threads.
+            yield* Effect.provideService(
+              ReadingAs,
+              SERVER,
+            )(
+              provisionedRoute(remoteHosts, path, yield* provisionedOn, (origin) =>
+                Effect.gen(function* () {
+                  return remoteHosts !== undefined &&
+                    (yield* placedOnMachine(mcpTokens, store, remoteHosts, request.headers, origin))
+                    ? yield* httpEffect
+                    : HttpServerResponse.text("unauthorized: not a thread on a provisioned host", {
+                        status: 401,
+                      });
+                }),
+              ),
             ),
             securityHeaders,
           );
@@ -441,7 +448,10 @@ export const AuthMiddleware = HttpRouter.middleware(
             const asService = unmarkLocalApp(
               request.modify({ headers: Headers.remove(request.headers, IDENTITY_HEADER) }),
             );
-            const answered = yield* (
+            const answered = yield* Effect.provideService(
+              ReadingAs,
+              SERVER,
+            )(
               HOST_STOP_PATHS.has(servicePath)
                 ? stopDeps === undefined
                   ? Effect.succeed(
@@ -458,7 +468,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                     : manageMachines(remoteHosts, servicePath, true).pipe(
                         Effect.provideService(HttpServerRequest.HttpServerRequest, asService),
                       )
-                  : asCaller(httpEffect, asService)
+                  : asCaller(httpEffect, asService),
             ).pipe(
               Effect.onExit((exit) =>
                 store === undefined
@@ -616,7 +626,11 @@ export const AuthMiddleware = HttpRouter.middleware(
           path !== undefined &&
           path.startsWith(EMBED_PREFIX)
         ) {
-          const answered = yield* embedInbound.respond(request, path);
+          // The platform's own service, which names the person a route acts for in its body, and
+          // each route asks for that person itself (`embedding/thread-messages.ts`).
+          const answered = yield* embedInbound
+            .respond(request, path)
+            .pipe(Effect.provideService(ReadingAs, SERVER));
           if (answered !== undefined) return secureResponse(answered);
         }
         // Remote bootstrap has no app assets and exposes no data. The secret is a fragment.
@@ -692,7 +706,8 @@ export const AuthMiddleware = HttpRouter.middleware(
                   config.appBuild !== undefined && /^[a-f0-9]{40}$/.test(config.appBuild)
                     ? config.appVersion
                     : undefined,
-                ),
+                  // A joined machine's host, by its own proof: the server's own infrastructure.
+                ).pipe(Effect.provideService(ReadingAs, SERVER)),
           );
         const decision = isRemote
           ? remote.authorize(authRequest)
@@ -772,7 +787,12 @@ export const AuthMiddleware = HttpRouter.middleware(
             break;
         }
         return secureResponse(response);
-      });
+      }).pipe(
+        // Every request reads as no one (`embedding/readable-by.ts`) unless it is known whose it
+        // is: a signed-in person's as theirs (`asCaller`), the platform's service and the
+        // machines' own proofs as the server's. A route added later fails closed.
+        Effect.provideService(ReadingAs, NOBODY),
+      );
   }),
   { global: true },
 );
@@ -784,7 +804,10 @@ const asCaller = <A, E, R>(
   actor?: Actor,
 ) =>
   Effect.provideService(
-    effect,
+    actor === undefined
+      ? effect
+      : // A signed-in person reads as themselves, and only so (`embedding/readable-by.ts`).
+        Effect.provideService(effect, ReadingAs, { subject: actor.id }),
     HttpServerRequest.HttpServerRequest,
     // Only a verified statement names an actor: any other caller's word for one is taken off.
     actor === undefined ? unmarkActor(request) : markActor(request, actor),

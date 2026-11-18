@@ -7,7 +7,7 @@ import type {
   WorkerLedgerEntry,
 } from "@gram/contracts";
 import { serializeReviewNotice } from "@gram/contracts";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
@@ -988,6 +988,57 @@ describe("MessageBlock agent errors", () => {
     await userEvent.click(screen.getByRole("button", { name: "Resume worker" }));
     expect(resumeAfterMachineLost).toHaveBeenCalledWith(E);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("shows what the last save held, and its diff even once Gram no longer has it", async () => {
+    const lost = {
+      kind: "unknown",
+      retryable: true,
+      text: "The turn failed: agent session ended: box stopped or restarted.",
+      turnId: "turn-1",
+      at: 9_000,
+      machineLost: { machine: "box" },
+    } as const;
+    const savedWork = {
+      at: 8_000,
+      files: [
+        { path: "src/a.ts", additions: 4, deletions: 1 },
+        { path: "src/b.ts", additions: 2, deletions: 0 },
+        { path: "src/c.ts", additions: 1, deletions: 1 },
+      ],
+      more: 0,
+      additions: 7,
+      deletions: 2,
+      uncommitted: true,
+    };
+    const savedDiff = vi.fn(async () => ({}));
+    useThreadsStore.setState({
+      byId: {
+        [E]: {
+          status: "error",
+          thread: { id: E, lastError: lost, savedWork, checkout: { kind: "main", path: "/r" } },
+        },
+      },
+    } as never);
+    renderWithApi(
+      <MessageBlock
+        threadId={E}
+        message={{ ...failed, parts: [{ ...failed.parts[0], data: lost } as never] }}
+        streamingIds={new Set()}
+        subagents={new Map()}
+        subagentUsage={new Map()}
+      />,
+      { savedDiff } as never,
+    );
+    const files = within(screen.getByTestId("saved-files"));
+    expect(files.getByText("src/a.ts")).toBeTruthy();
+    // Past the first two, the rest are counted.
+    expect(files.queryByText("src/c.ts")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "View diff" }));
+    // Gram restarted since the save: the files are still listed, every one.
+    const gone = within(await screen.findByTestId("saved-diff-gone", {}, { timeout: 5000 }));
+    expect(gone.getByText("src/c.ts")).toBeTruthy();
+    expect(savedDiff).toHaveBeenCalledWith(E);
   });
 
   it("says nothing was sent only for a refusal made before the message was taken", async () => {

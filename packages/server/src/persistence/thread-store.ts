@@ -83,6 +83,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { SqlClient, SqlError } from "../platform/unstable.ts";
 import { MigrationsLayer } from "./migrations.ts";
 import { noteForeignCheckouts } from "../host/foreign-paths.ts";
+import { notePrivacy } from "../embedding/readable-by.ts";
 import { isLockWait, SearchCatchUp } from "../search/catch-up.ts";
 import * as UpdateSeal from "./update-seal.ts";
 import * as WalCheckpointer from "./wal-checkpointer.ts";
@@ -1252,6 +1253,19 @@ const configurePageCache = (sql: SqlClient.SqlClient) =>
 /** What rolls back a workspace change by chat whose workspace moved; never leaves the store. */
 const WORKSPACE_MOVED = { _tag: "WorkspaceMoved" } as const;
 
+/**
+ * `next` with the reader `before` had (`Thread.readableBy`): once set it never changes or clears,
+ * whatever a write says.
+ */
+const keepReader = (before: Thread, next: Thread): Thread => {
+  if (next.readableBy === before.readableBy) return next;
+  if (before.readableBy === undefined) {
+    const { readableBy: _, ...rest } = next;
+    return rest;
+  }
+  return { ...next, readableBy: before.readableBy };
+};
+
 /** A broken database is a defect, not something callers can handle. */
 const run = <A, E, R>(
   effect: Effect.Effect<A, E | SqlError, R>,
@@ -1271,6 +1285,18 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const sql = yield* SqlClient.SqlClient;
       const reads = withReadWorker(yield* captureReadWorker);
       const unreadable = makeUnreadableLog();
+      // Whose each thread is, open or closed, and where it works, noted before anything asks
+      // (`embedding/readable-by.ts`): a thread no read has touched yet since the server started
+      // is still only its reader's, and so are its folders.
+      for (const row of yield* sql<{ id: string; data: string }>`
+        SELECT id, data FROM threads WHERE json_extract(data, '$.readableBy') IS NOT NULL
+        UNION ALL
+        SELECT thread_id AS id, data FROM closed_threads
+          WHERE json_extract(data, '$.readableBy') IS NOT NULL`.pipe(Effect.orDie)) {
+        const stored = JSON.parse(row.data) as Partial<Thread>;
+        if (typeof stored.readableBy === "string")
+          notePrivacy({ ...stored, id: row.id as ThreadId, readableBy: stored.readableBy });
+      }
       const receiptScope = yield* Effect.scope;
       // The data methods below use one statement or one top-level transaction; nothing nests.
       // Message receipts own separate reservation/outcome transactions around the runtime action.
@@ -1698,6 +1724,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             return yield* Effect.die(new Error(`thread ${unstamped.id} has more than one label`));
           const thread: Thread = { ...unstamped, revision: yield* nextRevision };
           noteForeignCheckouts(thread);
+          notePrivacy(thread);
           yield* sql`INSERT INTO threads
             (id, project_id, agent_session_id, pinned, parked, created_at, last_activity_at, data,
               host_id)
@@ -1729,7 +1756,10 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               : readableRow(unreadable, "threads", id, decodeStored(Thread, rows[0].data)),
           ),
           Effect.map((thread) => {
-            if (thread !== undefined) noteForeignCheckouts(thread);
+            if (thread !== undefined) {
+              noteForeignCheckouts(thread);
+              notePrivacy(thread);
+            }
             return thread;
           }),
           Effect.flatMap((thread) =>
@@ -1756,7 +1786,10 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               claimScan === undefined
                 ? base
                 : { ...base!, prClaimedByOther: yield* otherThreadBindsPr(id, claimScan.pr) };
-            const next = yield* holdForReservations(thread, normalizeThreadPrs(f(thread, context)));
+            const next = yield* holdForReservations(
+              thread,
+              keepReader(thread, normalizeThreadPrs(f(thread, context))),
+            );
             return yield* writeThread(stampParked(thread, next, Date.now()));
           }),
         );
@@ -2546,9 +2579,14 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         insertThread: (thread) =>
           tx(
             Effect.gen(function* () {
-              const before = yield* readThread(thread.id).pipe(Effect.option);
+              const before = Option.getOrUndefined(
+                yield* readThread(thread.id).pipe(Effect.option),
+              );
               return yield* writeThread(
-                yield* holdForReservations(Option.getOrUndefined(before), thread),
+                yield* holdForReservations(
+                  before,
+                  before === undefined ? thread : keepReader(before, thread),
+                ),
               );
             }),
           ),
@@ -2628,7 +2666,10 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               (r) => r.id,
               (r) => decodeStored(Thread, r.data),
             );
-            for (const thread of threads) noteForeignCheckouts(thread);
+            for (const thread of threads) {
+              noteForeignCheckouts(thread);
+              notePrivacy(thread);
+            }
             listedThreads = version === undefined ? undefined : { token: version.token, threads };
             return threads;
           }),
@@ -2733,10 +2774,10 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 rows,
                 (r) => r.thread_id,
                 (r) =>
-                  mapDecoded(decodeStored(Thread, r.data), (thread) => ({
-                    thread,
-                    closedAt: Number(r.closed_at),
-                  })),
+                  mapDecoded(decodeStored(Thread, r.data), (thread) => {
+                    notePrivacy(thread);
+                    return { thread, closedAt: Number(r.closed_at) };
+                  }),
               ),
             ),
           ),

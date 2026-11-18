@@ -2,6 +2,7 @@ import type {
   CloneSuggestions,
   Project,
   ProjectId,
+  ProjectOrigins,
   ProjectScript,
   ProjectScripts,
   RepositoryCandidates,
@@ -30,6 +31,8 @@ export interface ProjectsApi {
     remote: string,
     options?: { into?: string | undefined; signal?: AbortSignal | undefined },
   ): Promise<Project>;
+  /** Which GitHub repository each project's `origin` is; a project Gram doesn't know is left out. */
+  projectOrigins(projectIds: readonly ProjectId[]): Promise<ProjectOrigins>;
   /** GitHub repositories to offer for cloning, as `owner/repo`; empty without `gh`. */
   cloneSuggestions(): Promise<CloneSuggestions>;
   /** Adds the project to the `/new` Bookmarks section, or removes it. */

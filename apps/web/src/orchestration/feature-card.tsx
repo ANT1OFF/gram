@@ -17,7 +17,7 @@ import {
   Hand,
   type LucideIcon,
 } from "lucide-react";
-import { use, type MouseEvent, type ReactNode } from "react";
+import { Fragment, use, type MouseEvent, type ReactNode } from "react";
 
 import { useApi } from "@/api/context";
 import { openExternalUrl } from "@/api/open-external";
@@ -32,6 +32,9 @@ import { cn } from "@/lib/utils";
 import { PulseOnce, Swap } from "@/motion";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { ThreadMachineMarker } from "@/thread/machine-marker";
+import { SavedWorkLine } from "@/thread/saved-work";
+import { machineLostLine } from "@/thread/saved-work-words";
+import { useThreadsStore } from "@/stores/threads";
 
 import { useBesideLink } from "./beside-link";
 import {
@@ -258,6 +261,13 @@ function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
   // Its state's dot, the one its sidebar row, the Board and Workers draw: amber beside "asks
   // you", never the running blue of the station it stands at, which the stage line above says.
   const tone = useCardWorkerTone(worker);
+  // A lost machine is said as one, rather than as an error; its save is on the line under it.
+  const lostAt = useThreadsStore((s) => {
+    const summary = s.byId[worker.threadId];
+    const error = summary?.thread.lastError;
+    return summary?.status === "error" && error?.machineLost !== undefined ? error.at : undefined;
+  });
+  const now = lostAt === undefined ? worker.now : machineLostLine({ at: lostAt }, undefined);
   return (
     <li
       data-testid="feature-card-worker"
@@ -280,13 +290,13 @@ function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
         </span>
       )}
       <Swap
-        swapKey={worker.now}
+        swapKey={now}
         className={cn(
           "min-w-0 flex-1 truncate",
           failed ? "text-destructive" : "text-muted-foreground",
         )}
       >
-        <span data-testid="feature-card-now">{worker.now}</span>
+        <span data-testid="feature-card-now">{now}</span>
       </Swap>
       {/* What it needs from the person, where the task is followed: one click to answer it. */}
       {asksYou(worker) && (
@@ -310,6 +320,13 @@ function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
     </li>
   );
 }
+
+/** A worker whose work is over: its saved work says nothing its PR doesn't. */
+const SAVED_DONE: ReadonlySet<FeatureCardWorker["state"]> = new Set([
+  "merged",
+  "delivered",
+  "archived",
+]);
 
 /** "Queue worker and Rate limit: queue/retry.py": each pair of workers that touch the same files, once. */
 const overlapsOf = (card: FeatureCard) => {
@@ -566,7 +583,11 @@ function LiveFeatureCard({
       {stageLineShown(card) && <StageLine card={card} />}
       <ul className="flex flex-col gap-0.5">
         {card.workers.map((worker) => (
-          <WorkerLine key={worker.threadId} worker={worker} />
+          <Fragment key={worker.threadId}>
+            <WorkerLine worker={worker} />
+            {/* What its last save held, and Resume worker once its machine was lost. */}
+            {!SAVED_DONE.has(worker.state) && <SavedWorkLine threadId={worker.threadId} />}
+          </Fragment>
         ))}
         {card.held?.map((held) => (
           <HeldBriefLine key={held.id} workspaceId={card.workspaceId} held={held} />

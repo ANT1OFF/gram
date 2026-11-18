@@ -1,5 +1,6 @@
 import { GramRpcs } from "@gram/contracts";
 import { describe, expect, test } from "vitest";
+import { threadsMentioned } from "../embedding/readable-by.ts";
 import { actorEventsOf, setsOnlyOwnView, UNRECORDED_RPCS, VIEWER_RPCS } from "./actor-guard.ts";
 
 const ada = { id: "user-ada", name: "Ada", role: "member" as const };
@@ -144,5 +145,21 @@ describe("what is recorded of a call", () => {
   test("names the thread a call started", () => {
     const [created] = actorEventsOf(ada, "thread.create", { projectRoot: "/w" }, 5, { id: "t9" });
     expect(created?.threadId).toBe("t9");
+  });
+});
+
+describe("the threads a call names, for who may read them", () => {
+  test("are found wherever the payload names one, and only threads of this server's", () => {
+    expect(
+      threadsMentioned({
+        threadId: "t1",
+        orchestratorThreadId: "t2",
+        threadIds: ["t3"],
+        answers: [{ threadId: "t4", requestId: "r1" }],
+        target: { sourceThreadId: "t5" },
+        reviewThreadId: "github-thread",
+        text: "t6",
+      }),
+    ).toEqual(["t1", "t2", "t3", "t4", "t5"]);
   });
 });

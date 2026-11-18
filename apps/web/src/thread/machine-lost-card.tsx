@@ -1,12 +1,15 @@
 import type { ThreadError, ThreadId } from "@gram/contracts";
-import { ServerCrash } from "lucide-react";
-import { useState } from "react";
+import { FileDiff, Play, ServerCrash } from "lucide-react";
+import { Suspense, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
 import { formatStamp } from "@/lib/time";
 import { useThreadsStore } from "@/stores/threads";
+
+import { SavedDiffDialog, SavedFiles } from "./saved-work";
+import { filesWord, savedBefore, savedWhat } from "./saved-work-words";
 
 type MachineLost = NonNullable<ThreadError["machineLost"]>;
 
@@ -35,6 +38,10 @@ export function MachineLostCard({
   const api = useApi();
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState<string | undefined>();
+  const [viewing, setViewing] = useState(false);
+  // The last save before the loss: its time and its files, as the machine said them.
+  const saved = useThreadsStore((s) => savedBefore(s.byId[threadId]?.thread.savedWork, error));
+  const count = saved === undefined ? 0 : saved.files.length + saved.more;
   const state = useThreadsStore((s): MachineLostState => {
     const summary = s.byId[threadId];
     if (summary === undefined || summary.thread.lastError?.at !== error.at) return "resumed";
@@ -77,7 +84,9 @@ export function MachineLostCard({
         <ServerCrash aria-hidden className="mt-0.5 size-icon-row shrink-0" />
         <p className="min-w-0 flex-1 text-meta">
           <span className="font-medium text-foreground">{machineLostTitle(error.at)}</span>
-          {" · resumed on its folder as last saved"}
+          {saved === undefined
+            ? " · resumed on its folder as last saved"
+            : ` · resumed on its folder as saved at ${formatStamp(saved.at)}`}
         </p>
       </div>
     );
@@ -96,10 +105,37 @@ export function MachineLostCard({
           {machineLostTitle(error.at)}
         </p>
         <p className="break-words">{during} It wasn't idle, and nothing stopped it on purpose.</p>
-        <p className="mt-1 text-meta text-muted-foreground">
-          Its folder is saved every few minutes while it works, so it comes back as last saved:
-          anything in the last few minutes before {formatStamp(error.at)} may be missing.
-        </p>
+        {saved === undefined ? (
+          <p className="mt-1 text-meta text-muted-foreground">
+            Its folder is saved every few minutes while it works, so it comes back as last saved:
+            anything in the last few minutes before {formatStamp(error.at)} may be missing.
+          </p>
+        ) : (
+          <>
+            <dl
+              data-testid="machine-lost-saved"
+              className="mt-1.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-meta"
+            >
+              <dt className="text-muted-foreground">Saved</dt>
+              <dd className="min-w-0">
+                {count === 0 ? (
+                  "Nothing: the turn hadn't changed any files yet"
+                ) : (
+                  <>
+                    <span className="tabular-nums">{formatStamp(saved.at)}</span> ·{" "}
+                    {savedWhat(saved)}
+                  </>
+                )}
+              </dd>
+              <dt className="text-muted-foreground">Lost</dt>
+              <dd className="min-w-0">
+                Anything after <span className="tabular-nums">{formatStamp(saved.at)}</span>
+                {lost.during === undefined ? "" : ", and the command that was running"}
+              </dd>
+            </dl>
+            <SavedFiles saved={saved} />
+          </>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Button
             size="sm"
@@ -107,14 +143,33 @@ export function MachineLostCard({
             disabled={shown === "resuming"}
             onClick={() => void resume()}
           >
+            {shown !== "resuming" && <Play aria-hidden data-icon="inline-start" />}
             {shown === "resuming" ? "Resuming…" : "Resume worker"}
           </Button>
+          {saved !== undefined && count > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="machine-lost-diff"
+              onClick={() => setViewing(true)}
+            >
+              <FileDiff aria-hidden data-icon="inline-start" />
+              View diff
+            </Button>
+          )}
           <span className="text-meta text-muted-foreground">
             {shown === "resuming"
               ? "Starting its machine and putting its folder back."
-              : "Starts its machine, puts its folder back, and tells the worker what was cut off."}
+              : saved !== undefined && count === 0
+                ? "Starts from the branch, with the conversation as it was."
+                : `Starts its machine, puts ${saved === undefined ? "its folder" : `the ${count === 1 ? "file" : filesWord(count)}`} back, and tells the worker what was cut off.`}
           </span>
         </div>
+        {viewing && saved !== undefined && (
+          <Suspense fallback={null}>
+            <SavedDiffDialog threadId={threadId} saved={saved} onClose={() => setViewing(false)} />
+          </Suspense>
+        )}
         {failed !== undefined && (
           <p
             data-testid="machine-lost-failed"

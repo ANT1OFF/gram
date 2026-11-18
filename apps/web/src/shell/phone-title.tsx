@@ -3,7 +3,7 @@ import { useParams, useRouterState } from "@tanstack/react-router";
 import { useMemo } from "react";
 
 import { useEmbedPageGroup, useEmbedPageTitle } from "@/embed/slots";
-import { useEmbedShell, useSoloWord } from "@/embed/store";
+import { useEmbedShell, useSoloWord, useThreadsWorkspaceNoun } from "@/embed/store";
 import { cn } from "@/lib/utils";
 import { askKeysByThread } from "@/orchestration/ask-model";
 import { useWorkspaceAsks } from "@/orchestration/ask-stack";
@@ -15,6 +15,7 @@ import { useWorkerTally } from "@/orchestration/use-workspace-statuses";
 import { threadStatusOf } from "@/sidebar/status";
 import { useThreadsStore } from "@/stores/threads";
 import { threadDisplayTitle } from "@/thread/thread-title";
+import { isNewForm, newFormName } from "@/shell/new-form-name";
 import { useViewStore } from "@/views/view-store";
 import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
 
@@ -32,9 +33,8 @@ export interface PhonePlace {
 /** A thread outside any workspace has no workers to count. */
 const NO_WORKSPACE = "" as WorkspaceId;
 
-/** A page's own name, for the routes that show no thread. */
+/** A page's own name, for the routes that show no thread (the New form's are `newFormName`'s). */
 const PAGE_NAMES: readonly (readonly [RegExp, string])[] = [
-  [/^\/new(\/|$)/, "New task"],
   [/\/memory$/, "Memory"],
   [/^\/settings(\/|$)/, "Settings"],
   [/^\/threads$/, "Threads"],
@@ -76,6 +76,7 @@ export function usePhonePlace(): PhonePlace {
   const hosted = useEmbedShell((s) => s.hosted);
   const soloWord = useSoloWord();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const noun = useThreadsWorkspaceNoun();
   const board = useViewStore((s) => s.view === "board");
   const workspace = useViewWorkspace();
   const solo = useViewSolo();
@@ -136,7 +137,9 @@ export function usePhonePlace(): PhonePlace {
   if (embedTitle !== undefined) {
     return { title: embedTitle, line: embedGroup ?? place, asks: false };
   }
-  const page = PAGE_NAMES.find(([pattern]) => pattern.test(pathname))?.[1];
+  const page = isNewForm(pathname)
+    ? newFormName(pathname, noun)
+    : PAGE_NAMES.find(([pattern]) => pattern.test(pathname))?.[1];
   return {
     title: page ?? (place === "" ? "Home" : place),
     line: page === undefined ? "Chat" : place,

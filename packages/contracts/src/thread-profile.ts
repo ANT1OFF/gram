@@ -323,6 +323,13 @@ export const ProfileStartRequest = Schema.Struct({
    * thread is theirs alone until it is placed.
    */
   startedBy: Schema.optionalKey(Schema.String),
+  /**
+   * The one person who may see the thread, by the subject fronted sign-in names them with
+   * (`Thread.readableBy`): kept for good, and given to every thread it spawns. Asked for again
+   * under the same `threadId`, it must be what the first start gave, or the start is refused.
+   * Absent: the thread is everyone's to see.
+   */
+  readableBy: Schema.optionalKey(Schema.String),
 });
 export type ProfileStartRequest = typeof ProfileStartRequest.Type;
 
@@ -332,6 +339,8 @@ export const ProfileStartResponse = Schema.Struct({
   created: Schema.Boolean,
   /** True while the thread waits for its machine to be named; absent once it is on one. */
   awaitingMachine: Schema.optionalKey(Schema.Boolean),
+  /** The subject the thread is readable by (`Thread.readableBy`), where it has one. */
+  readableBy: Schema.optionalKey(Schema.String),
 });
 export type ProfileStartResponse = typeof ProfileStartResponse.Type;
 

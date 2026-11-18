@@ -1,5 +1,6 @@
 import type {
   CompactionActivity,
+  SavedDiff,
   GitState,
   HeldBrief,
   LimitWait,
@@ -75,6 +76,7 @@ import {
   applyUserEdit,
   withoutCompletion,
   firstChoiceOf,
+  savedWorkOf,
 } from "@gram/contracts";
 
 import { createThreadFeed, syncScheduler } from "@/stores/thread-feed";
@@ -335,6 +337,8 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   readonly kind = "mock";
   readonly #speed: number;
   readonly #threads = new Map<string, ThreadRuntime>();
+  /** `simulateSavedWork`'s diffs, as `thread.savedDiff` reads them back. */
+  readonly #savedDiffs = new Map<string, SavedDiff>();
   readonly #events = new Set<Channel<ApiServerEvent>>();
   readonly #waiters = new Map<string, (answer: RequestAnswer) => void>();
   /** Ends a script's wait on its request unanswered, as a session that stops clears its requests. */
@@ -1781,6 +1785,22 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     const { limitWait: _, ...thread } = runtime.summary.thread;
     this.#replaceThread(thread);
     await this.send(threadId, { text: "The usage limit has reset. Continue where you left off." });
+  }
+
+  /**
+   * Dev and e2e hook: a save of the thread's work on a joined machine, as the server records one
+   * (`Thread.savedWork`), and its diff for `savedDiff`; taken `at` (now when absent).
+   */
+  simulateSavedWork(threadId: ThreadId, diff: SavedDiff, at = Date.now()) {
+    this.#savedDiffs.set(threadId, diff);
+    const runtime = this.#runtime(threadId);
+    this.#replaceThread({ ...runtime.summary.thread, savedWork: savedWorkOf(diff, at) });
+  }
+
+  async savedDiff(threadId: ThreadId) {
+    this.#runtime(threadId);
+    const saved = this.#savedDiffs.get(threadId);
+    return saved === undefined ? {} : { saved };
   }
 
   async resumeAfterMachineLost(threadId: ThreadId) {

@@ -1,6 +1,8 @@
 // Pauses: pausing a workspace for the user, a failed delivery
 // or a read it could not make, what a pause stops, the recovery that lifts a delivery failure by
 // itself, and resuming, which sends what each held worker owes in batches.
+import { personKey } from "../../embedding/person.ts";
+import { readableByOfWorkspace } from "../../embedding/readable-by.ts";
 import {
   InvalidState,
   type OrchestrationPause,
@@ -207,13 +209,17 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
         detail === OUTBOX_UNREADABLE_DETAIL
           ? "Orchestration paused: its delivery state can't be read"
           : PAUSE_TITLES[reason];
-      yield* hub.publish({
-        type: "notify",
-        kind: "needsInput",
+      const notice = {
+        type: "notify" as const,
+        kind: "needsInput" as const,
         title: `${title} (${state.workspace.name})`,
         ...(detail === undefined ? {} : { body: detail }),
         ...(holder === undefined ? {} : { threadId: holder }),
-      });
+      };
+      // A workspace readable by one person is named to their connections alone, its
+      // orchestrator gone or not (`embedding/readable-by.ts`).
+      const reader = readableByOfWorkspace(workspaceId, holder);
+      yield* reader === undefined ? hub.publish(notice) : hub.publishTo(personKey(reader), notice);
     });
 
   /** Arms the next look at a `deliveryFailed` pause, later with every look that finds it can't lift. */

@@ -332,9 +332,11 @@ test("first run is one screen: how Gram works, the agents, a repository and past
     "true",
   );
   await welcome.getByTestId("welcome-open").click();
-  await expect(page).toHaveURL(/\/new-workspace\?repo=p-web$/);
+  await expect(page).toHaveURL(/\/new-workspace\?repo=p-web&read=true$/);
   const sheet = page.getByRole("form", { name: "New workspace" });
   await expect(sheet.getByTestId("new-workspace-repo")).toHaveText(["web"]);
+  // The card promised the survey, so the sheet starts with it on.
+  await expect(sheet.getByTestId("new-workspace-steps")).toContainText("reads the repositories");
   await expect(sheet.getByLabel("What should it work on?")).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(welcome).toBeVisible();

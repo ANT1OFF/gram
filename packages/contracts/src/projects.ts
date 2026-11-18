@@ -54,6 +54,23 @@ export const CloneProjectPayload = Schema.Struct({
 });
 export type CloneProjectPayload = typeof CloneProjectPayload.Type;
 
+/** `projects.origins`: the projects whose origins to read, at most 50. */
+export const ProjectOriginsPayload = Schema.Struct({
+  projectIds: Schema.Array(ProjectId).check(Schema.isMaxLength(50)),
+});
+export type ProjectOriginsPayload = typeof ProjectOriginsPayload.Type;
+
+/**
+ * Where each known project asked about comes from: its `origin` as GitHub's `owner/repo`, absent
+ * for a repository with no origin or one on another host. A project Gram doesn't know is left out.
+ */
+export const ProjectOrigins = Schema.Struct({
+  origins: Schema.Array(
+    Schema.Struct({ projectId: ProjectId, github: Schema.optionalKey(Schema.String) }),
+  ),
+});
+export type ProjectOrigins = typeof ProjectOrigins.Type;
+
 /** `projects.cloneSuggestions`: `owner/repo` names worth offering, most recently pushed first. */
 export const CloneSuggestions = Schema.Struct({ repos: Schema.Array(Schema.String) });
 export type CloneSuggestions = typeof CloneSuggestions.Type;
@@ -166,6 +183,15 @@ export const remoteKey = (remote: RepoRemote): string =>
       GITHUB_HOSTS.has(remote.host)
       ? `github.com/${remote.path}`.toLowerCase()
       : `${remote.host}/${remote.path}`;
+
+/** GitHub's `owner/repo` for a remote on github.com, in any spelling; undefined for another host. */
+export const githubNameOf = (remote: RepoRemote): string | undefined => {
+  if (remote.kind === "github") return `${remote.owner}/${remote.repo}`;
+  const segments = remote.path.split("/");
+  return GITHUB_HOSTS.has(remote.host) && segments.length === 2 && OWNER.test(segments[0]!)
+    ? remote.path
+    : undefined;
+};
 
 /** How a remote is named to the user: `owner/repo` for GitHub's, else the URL. */
 export const remoteLabel = (remote: RepoRemote): string =>

@@ -247,7 +247,8 @@ export const nowLineOf = (
     | "pr"
     | "userIntervened"
     | "compacting"
-  >,
+  > &
+    Partial<Pick<WorkerLedgerEntry, "lastError">>,
   /** The live activity line while it runs ("Running uv run pytest"). */
   activity?: string | undefined,
 ): string => {
@@ -257,7 +258,7 @@ export const nowLineOf = (
     const report = worker.lastReport;
     switch (worker.state) {
       case "error":
-        return "stopped on an error";
+        return worker.lastError?.lostMachine === true ? "machine lost" : "stopped on an error";
       case "merged":
         return worker.pr === undefined ? "merged" : `merged as #${worker.pr.number}`;
       case "delivered":

@@ -485,6 +485,46 @@ export interface ShellRepositoryPage {
   };
 }
 
+/** One thing a workspace's agents may or may not do in a repository, as the embedding app has it. */
+export interface ShellRepositoryAbility {
+  readonly allowed: boolean;
+  /**
+   * A few words for the table's cell: "Its own branches", "No: the app can only read", or "—"
+   * where the question doesn't arise (no pull request without a push), drawn without a mark.
+   */
+  readonly text: string;
+  /** Why, in a sentence, where it is not allowed; shown on the cell's hover and to a screen reader. */
+  readonly detail?: string;
+}
+
+/** What a new workspace's agents can do in one of its GitHub repositories. */
+export interface ShellRepositoryAccess {
+  /** `owner/name`, as asked. */
+  readonly fullName: string;
+  /** Pushing a branch. */
+  readonly push: ShellRepositoryAbility;
+  /** Opening a pull request. */
+  readonly pullRequest: ShellRepositoryAbility;
+  /** Merging one: "You, on GitHub" where a person always does. */
+  readonly merge: ShellRepositoryAbility;
+  /**
+   * The checks that must pass before a pull request merges: empty when none are required, absent
+   * when the app couldn't tell, which the form says rather than claim none.
+   */
+  readonly checks?: readonly string[];
+  /** Where to let the agents do more there, opened in a new tab. */
+  readonly fix?: { readonly label: string; readonly href: string };
+}
+
+/** What the agents can do in the repositories asked about, with a line about all of them. */
+export interface ShellRepositoryAccessPage {
+  /** One for each repository the app could say anything about, in any order. */
+  readonly repositories: readonly ShellRepositoryAccess[];
+  /** Under the table: what holds in every repository ("Never main or release/*"), or why it's empty. */
+  readonly note?: string;
+  readonly link?: { readonly label: string; readonly href: string };
+}
+
 /**
  * Where the repositories offered in "Add repository" come from, in place of the server's own
  * `gh` listing: asked as the person types, a page at a time. A rejection's message is shown in
@@ -496,6 +536,16 @@ export interface ShellRepositories {
     readonly cursor?: string;
     readonly signal: AbortSignal;
   }) => Promise<ShellRepositoryPage>;
+  /**
+   * What the agents of a new workspace can do in its repositories that are on GitHub: push,
+   * open and merge pull requests, and the checks that gate a merge. Asked with the `owner/name` of
+   * each picked repository whenever the picks change; the New form shows the answer under its
+   * autonomy, and a rejection's message in its place. Left out, the form shows nothing of it.
+   */
+  readonly access?: (request: {
+    readonly repositories: readonly string[];
+    readonly signal: AbortSignal;
+  }) => Promise<ShellRepositoryAccessPage>;
 }
 
 /** One page of the embedding app's own in Settings, at `/settings/<id>`. */
