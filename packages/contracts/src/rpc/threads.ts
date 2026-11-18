@@ -117,6 +117,15 @@ export const ThreadRpcs = RpcGroup.make(
   }),
   /** Resumes a thread waiting out a provider limit (`Thread.limitWait`) now; nothing without one. */
   Rpc.make("thread.resumeLimitWait", { payload: threadRef, error: errors(ThreadNotFound) }),
+  /**
+   * Resumes a thread whose last turn was cut off by a lost machine (`ThreadError.machineLost`): the
+   * same conversation gets Gram's note of what happened, which brings the machine back and its
+   * folder as last kept. Nothing for a thread whose last error wasn't that.
+   */
+  Rpc.make("thread.resumeAfterMachineLost", {
+    payload: threadRef,
+    error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
+  }),
   /** Stops a thread's limit wait: no resume comes, and it stands failed until the user sends. */
   Rpc.make("thread.cancelLimitWait", { payload: threadRef, error: errors(ThreadNotFound) }),
   /**

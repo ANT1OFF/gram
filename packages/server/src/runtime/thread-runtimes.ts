@@ -511,6 +511,7 @@ const make = Effect.gen(function* () {
             reserved: false,
             endedReason: undefined,
             restartedMachine: undefined,
+            lostMachine: undefined,
             machineRestart: undefined,
             stopAsked: undefined,
             reopenOnIdle: false,

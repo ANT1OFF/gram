@@ -280,6 +280,7 @@ export const makeTurnLifecycle = ({
     failure: AgentFailure,
     detail: string,
     turnId: TurnId | undefined,
+    machineLost?: ThreadError["machineLost"],
   ) =>
     Effect.gen(function* () {
       const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
@@ -300,6 +301,7 @@ export const makeTurnLifecycle = ({
         },
         at,
         turnId,
+        machineLost,
       );
       yield* Effect.logWarning("turn failed").pipe(
         Effect.annotateLogs({

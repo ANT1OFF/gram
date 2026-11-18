@@ -1783,6 +1783,14 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     await this.send(threadId, { text: "The usage limit has reset. Continue where you left off." });
   }
 
+  async resumeAfterMachineLost(threadId: ThreadId) {
+    const lost = this.#runtime(threadId).summary.thread.lastError?.machineLost;
+    if (lost === undefined) return;
+    await this.send(threadId, {
+      text: `Note: ${lost.machine}, the machine this session runs on, was lost. Continue where you left off.`,
+    });
+  }
+
   async cancelLimitWait(threadId: ThreadId) {
     const runtime = this.#runtime(threadId);
     const wait = runtime.summary.thread.limitWait;

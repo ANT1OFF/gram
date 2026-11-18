@@ -117,6 +117,37 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
     }).pipe(Effect.scoped, live),
   );
 
+  it.live("keeps work while a turn runs, holding nothing, for a machine that is then lost", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      run(repo, "push", "--quiet", "origin", "main");
+      run(repo, "checkout", "--quiet", "-b", "gram/worker");
+      const stop = stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed({ ...IDLE, turns: 1 }),
+        admission: makeAdmission(),
+        protocols: FILE,
+      });
+      const kept = yield* stop.keep({ checkouts: [{ threadId: THREAD, cwd: repo }] });
+      expect(kept).toMatchObject([
+        { threadId: THREAD, cwd: repo, pushed: true, branch: "gram/worker" },
+      ]);
+      // Nothing held: the machine takes work as before.
+      expect(stop.stopping()).toBe(false);
+      // The machine is lost; one on another disk gets the folder back as kept.
+      const { disk, stop: next } = yield* replaced(origin);
+      const cwd = join(disk, "worktrees", "worker");
+      expect(
+        yield* next.restore!({ threadId: THREAD, cwd, url: origin, branch: "gram/worker" }),
+      ).toMatchObject({ restored: true, uncommitted: true, source: "ref" });
+      expect(readFileSync(join(cwd, "tracked.txt"), "utf8")).toBe("work in progress\n");
+      expect(readFileSync(join(cwd, "new.txt"), "utf8")).toBe("untracked\n");
+      // Readied to stop, a keep leaves it to the stop.
+      yield* stop.prepare({ checkouts: [], force: true });
+      expect(yield* stop.keep({ checkouts: [{ threadId: THREAD, cwd: repo }] })).toEqual([]);
+    }).pipe(Effect.scoped, live),
+  );
+
   it.live("changes nothing while something runs, unless the stop is forced", () =>
     Effect.gen(function* () {
       const { repo, origin } = yield* worktree;

@@ -99,6 +99,9 @@ export class LimitCleared extends Schema.Opaque<LimitCleared>()(
   }),
 ) {}
 
+/** The longest `ThreadError.machineLost.during` may be. */
+export const MACHINE_LOST_DURING_MAX = 200;
+
 /** The longest `ThreadError.text` may be. */
 export const THREAD_ERROR_TEXT_MAX = 300;
 
@@ -114,5 +117,16 @@ export const ThreadError = Schema.Struct({
   turnId: Schema.optionalKey(TurnId),
   /** Epoch ms. */
   at: Schema.Number,
+  /**
+   * The turn was cut off because the joined machine it ran on went away and didn't come back: the
+   * machine's name, and the command that was running when it went, if one was. The thread's work
+   * up to its last keep comes back with the machine, so the same conversation can carry on.
+   */
+  machineLost: Schema.optionalKey(
+    Schema.Struct({
+      machine: Schema.String,
+      during: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MACHINE_LOST_DURING_MAX))),
+    }),
+  ),
 });
 export type ThreadError = typeof ThreadError.Type;

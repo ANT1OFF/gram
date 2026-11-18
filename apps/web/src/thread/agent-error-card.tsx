@@ -24,6 +24,7 @@ import {
 } from "./attempt-model";
 import { failureLabel, USAGE_LIMIT, USAGE_LIMIT_SHORT } from "./failure-kinds";
 import { HOLD_UNDER_POINTER } from "./hold-under-pointer";
+import { MachineLostCard } from "./machine-lost-card";
 import { AUTO_RETRY_MS, retryKey, retryTimeOf, useRetrySchedule } from "./retry-time";
 
 /** Failures a gateway profile's settings can fix: its key, its models, or its spending limit. */
@@ -134,6 +135,9 @@ function EarlierAttempts({ earlier }: { earlier: readonly EarlierAttempt[] }) {
 export function AgentErrorCard({ threadId, error }: { threadId: ThreadId; error: ThreadError }) {
   // A thread the server no longer has, a finished worker's, has no feed to read attempts from.
   const live = useThreadsStore((s) => s.byId[threadId] !== undefined);
+  // A lost machine has a card of its own, with its own resume.
+  if (error.machineLost !== undefined)
+    return <MachineLostCard threadId={threadId} error={error} lost={error.machineLost} />;
   return live ? (
     <LiveErrorCard threadId={threadId} error={error} />
   ) : (

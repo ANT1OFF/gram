@@ -504,6 +504,18 @@ the local app, as the other `/machines/*` routes are.
 - The ref is one per thread at the remote. A thread with folders in two clones of one remote has
   one of them kept under it: the second is answered `pushed: false` and says why, rather than
   replace the first's work.
+- A machine that is lost (its node gone, its process killed) gets no stop. So, with the hosted
+  features on, Gram keeps a thread's work on a joined machine under the same hidden ref while it
+  works: five seconds after each of its turns ends, and every five minutes while a turn runs.
+  Nothing is held and nothing waits for the turn. A host started on another disk then gets the
+  folder back from that ref when it is resumed, as after a stop, and loses at most the last few
+  minutes. Only folders Gram made from a clone are kept, since only those can be made again. A
+  host older than this keeps nothing until it is readied to stop.
+- When a lost machine doesn't come back within the session's reattach window, the turn it cut
+  off fails saying so (`ThreadError.machineLost`: the machine, and the command that was running),
+  not as a plain session end. The conversation shows that turn's card with Resume worker
+  (`thread.resumeAfterMachineLost`): the same conversation gets Gram's note of what was cut off,
+  which brings the machine back and its folder as last kept.
 - `POST /machines/stop/cancel` takes a stop back: the host takes new work again.
 - `POST /machines/stop/status` lists each joined machine: `online`, `stoppedAt` when it was
   readied and hasn't dialled in since, `wanted` when a thread waits on it now, and `resuming`
