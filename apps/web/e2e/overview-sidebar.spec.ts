@@ -1521,17 +1521,25 @@ test("a calm worker and its orchestrator say what they wait on, the whole list o
     await expect(waits(threadId)).toHaveText(text);
     await expect(waits(threadId)).toHaveAttribute("data-glyph", glyph);
   };
-  await edge(made.ci, "ci", "#341");
+  // A wait on its own PR, which its chip names already, says the wait in words: the PR once.
+  const ownPr = async (threadId: string, pr: string, text: string) => {
+    await expect(
+      page.locator(`[data-testid="overview-pr-chips"][data-thread-id="${threadId}"]`),
+    ).toContainText(pr);
+    await expect(waits(threadId)).toHaveText(text);
+    await expect(waits(threadId)).not.toHaveAttribute("data-glyph");
+  };
+  await ownPr(made.ci, "#341", "checks");
   await expect(waits(made.ci)).toHaveAttribute(
     "title",
     /^Waiting · checks on #341\nCI is running on #341 in example\/[\w-]+\.$/,
   );
   await expect(waits(made.ci)).toHaveAttribute("data-kind", "checks");
-  await edge(made.reviewing, "review", "#343");
+  await ownPr(made.reviewing, "#343", "review");
   await expect(waits(made.reviewing)).toHaveAttribute("title", /^Waiting · review on #343\n/);
   await edge(made.stacked, "dependency", "#341");
   await expect(waits(made.stacked)).toHaveAttribute("title", /^Waiting · #341 to merge\n/);
-  await edge(made.merging, "merge", "#345");
+  await ownPr(made.merging, "#345", "merge");
   await edge(made.rebase, "dependency", "#341");
   await edge(made.limited, "limit", /^(\w{3} )?\d{2}:\d{2}$/);
   await expect(waits(made.limited)).toHaveAttribute(

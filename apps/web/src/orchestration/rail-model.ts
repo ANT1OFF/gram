@@ -444,14 +444,26 @@ export const groupFolded = (group: Pick<RailGroup, "finished">, listed: boolean)
 
 /**
  * A worker's words beside its PR cell, which already names its PRs: "checks on #142" says
- * "checks", "#142 to merge" says "to merge", so each PR reads once. A PR the cell doesn't show,
+ * "checks", "merge of #142" says "merge", "local check #142" says "local check" and "#142 to
+ * merge" says "to merge", so each PR reads once. A PR the cell doesn't show,
  * another worker's say, stays named.
  */
 export const nowBesidePrs = (now: string, prs: readonly { readonly number: number }[]): string =>
   prs.reduce(
     (text, pr) =>
       text
-        .replace(new RegExp(`\\s+(?:on|for) #${pr.number}\\b`, "u"), "")
+        .replace(new RegExp(`\\s+(?:(?:on|for|of)\\s+)?#${pr.number}$`, "u"), "")
+        .replace(new RegExp(`\\s+(?:on|for|of) #${pr.number}\\b`, "u"), "")
         .replace(new RegExp(`(^|·\\s*)#${pr.number}\\s+`, "u"), "$1"),
     now,
   );
+
+/**
+ * A wait's narrow edge beside the same PR cell: none where its token is a PR the cell already
+ * shows, so the row says the wait in its words instead ("checks", not "#142" a second time).
+ */
+export const edgeBesidePrs = <E extends { readonly token: string }>(
+  edge: E | undefined,
+  prs: readonly { readonly number: number }[],
+): E | undefined =>
+  edge !== undefined && prs.some((pr) => edge.token === `#${pr.number}`) ? undefined : edge;
