@@ -175,6 +175,12 @@ describe("limit formatting", () => {
     expect(creditsText({ creditsAvailable: true, creditsBalance: "1250.5" })).toBe(
       "On credits · 1,250.5 left",
     );
+    expect(creditsText({ creditsAvailable: true, creditsBalance: "40706.6175120000" })).toBe(
+      "On credits · 40,706.61 left",
+    );
+    expect(creditsText({ creditsAvailable: true, creditsBalance: "12.000" })).toBe(
+      "On credits · 12 left",
+    );
     expect(creditsText({ creditsUnlimited: true })).toBe("On credits · unlimited");
   });
 
