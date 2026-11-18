@@ -136,9 +136,12 @@ export const offeredModels = (
   agent: AgentKind,
   offered: OfferCheck | undefined,
   profileId?: ProfileId,
+  paidBy?: PaidBy,
 ): readonly AgentModel[] | undefined => {
-  if (models === undefined || offered === undefined) return models;
-  return models.filter((model) => {
+  if (models === undefined) return models;
+  if (offered === undefined)
+    return paidBy === undefined ? models : withPayer(models, agent, paidBy);
+  const kept = models.filter((model) => {
     const runs = modelRuns(agent, model);
     try {
       return offered({
@@ -151,7 +154,39 @@ export const offeredModels = (
       return true;
     }
   });
+  return paidBy === undefined ? kept : withPayer(kept, agent, paidBy);
 };
+
+/** What the embedding app's `paidBy` is asked of one row. */
+type PaidBy = (model: {
+  readonly agent: AgentKind;
+  readonly id: string;
+  readonly runs?: string;
+}) => string | undefined;
+
+/**
+ * Each row with who pays for it under its name (`ShellModels.paidBy`), after the agent's own
+ * description; a row the app says nothing of, or whose check throws, as it was.
+ */
+const withPayer = (
+  models: readonly AgentModel[],
+  agent: AgentKind,
+  paidBy: PaidBy,
+): readonly AgentModel[] =>
+  models.map((model) => {
+    const runs = modelRuns(agent, model);
+    let payer: string | undefined;
+    try {
+      payer = paidBy({ agent, id: model.id, ...(runs === undefined ? {} : { runs }) })?.trim();
+    } catch {
+      payer = undefined;
+    }
+    if (payer === undefined || payer === "") return model;
+    return {
+      ...model,
+      description: model.description ? `${model.description} · ${payer}` : payer,
+    };
+  });
 
 /**
  * The model a draft moves to when the one it has is not offered: the agent's default among those

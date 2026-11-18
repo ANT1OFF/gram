@@ -11,6 +11,7 @@ import {
   defaultSlotOf,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import { checkSwitchTarget } from "../../runtime/agent-switch.ts";
 import { discoverDefaultModel } from "../../runtime/default-model.ts";
 import { slotHereNow } from "../../runtime/model-slots.ts";
 import { subscriptionTaskCharter } from "../task-models.ts";
@@ -154,6 +155,17 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
         picked !== undefined &&
         !sameTaskModel(holder.model, picked) &&
         (switching === undefined || !sameTaskModel(switching, picked));
+      // Promise a move only where the running session can make one, so the preview says why not
+      // before Start rather than the handoff refusing after it.
+      if (moves)
+        yield* checkSwitchTarget(store, hosts, holder, picked).pipe(
+          Effect.mapError(
+            (e) =>
+              new InvalidState({
+                message: `The orchestrator can't move to ${kindName(picked.agent)} · ${picked.model} as this task starts. ${e.message}`,
+              }),
+          ),
+        );
       const orchestrator =
         holder === undefined ? opened!.model : picked !== undefined ? picked : holder.model;
       const selection: TaskModelSelection = {

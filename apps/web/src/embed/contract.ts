@@ -280,15 +280,25 @@ export interface ShellModels {
   readonly listed?: Partial<Record<ShellAgent, readonly ShellListedModel[]>>;
   /**
    * What the Model row says when the agent has no model to pick: none is offered, or the list could
-   * not be read. Other agents' models stay pickable beside it. Gram's own words, and only them,
-   * when left out.
+   * not be read. Other agents' models stay pickable beside it. Given for each agent, it names that
+   * agent's own cause (no account for it, or the rules); Gram's own words for an agent it gives
+   * nothing for. Gram's own words, and only them, when left out.
    */
-  readonly none?: {
-    /** One short sentence: "Connect a Claude account to pick a model." */
-    readonly text: string;
-    /** Where it is put right: a path under the app, one of `routes` or one of Gram's own. */
-    readonly action?: { readonly label: string; readonly to: string };
-  };
+  readonly none?: ShellModelsNone | ((agent: ShellAgent) => ShellModelsNone | undefined);
+  /**
+   * Who pays for a model the list offers, in a few words, shown under its row: "Your Claude
+   * plan", "The organisation's OpenRouter key". Nothing is shown for a row it gives nothing for,
+   * and when it throws.
+   */
+  readonly paidBy?: (model: ShellModelChoice) => string | undefined;
+}
+
+/** The Model row's words when an agent has nothing to pick (`ShellModels.none`). */
+export interface ShellModelsNone {
+  /** One short sentence: "Connect a Claude account to pick a model." */
+  readonly text: string;
+  /** Where it is put right: a path under the app, one of `routes` or one of Gram's own. */
+  readonly action?: { readonly label: string; readonly to: string };
 }
 
 /** A place of the embedding app's own, and the threads that open in it. */

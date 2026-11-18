@@ -319,6 +319,26 @@ describe("offeredModels", () => {
       { agent: "claude", id: "opus", runs: "claude-opus-5-5", profile: "p-1" },
     ]);
   });
+  it("names who pays for each offered row, and leaves a row it can't place as it was", () => {
+    const rows = offeredModels(
+      [
+        { id: "opus", displayName: "Opus 5.5", supportsEffort: true, description: "Most capable" },
+        { id: "sonnet", displayName: "Sonnet 5.5", supportsEffort: true },
+        { id: "haiku", displayName: "Haiku 5.5", supportsEffort: true },
+      ],
+      "claude",
+      (model) => model.id !== "haiku",
+      undefined,
+      (model) => {
+        if (model.id === "sonnet") throw new Error("unknown");
+        return "Your Claude plan";
+      },
+    );
+    expect(rows?.map((row) => [row.id, row.description])).toEqual([
+      ["opus", "Most capable · Your Claude plan"],
+      ["sonnet", undefined],
+    ]);
+  });
 });
 
 describe("offeredReplacement", () => {

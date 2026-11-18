@@ -11,6 +11,11 @@ import { useSwitchOffer } from "@/thread/use-switch-offer";
 const name = (model: ModelRef) =>
   `${agentLabel(model.agent)} · ${model.model}${model.variant ? ` · ${model.variant}` : ""}`;
 
+const savedDiffers = (saved: ModelRef, running: ModelRef) =>
+  saved.agent !== running.agent ||
+  saved.model !== running.model ||
+  (saved.variant !== undefined && saved.variant !== running.variant);
+
 /** Where a switch of this thread's agent stands, in words for any thread, the orchestrator's included. */
 export const switchStatusText = (change: SessionSwitch): string => {
   switch (change.phase) {
@@ -58,9 +63,12 @@ export const switchCurrentText = (
  */
 export function SwitchOrchestratorAction({
   thread,
+  saved,
   disabled = false,
 }: {
   thread: Thread;
+  /** The model the workspace's settings name for its orchestrator, when one of its own. */
+  saved?: ModelRef | undefined;
   disabled?: boolean;
 }) {
   const current = useThreadsStore((state) => state.byId[thread.id]?.thread) ?? thread;
@@ -91,6 +99,17 @@ export function SwitchOrchestratorAction({
         <p data-testid="orchestrator-current" className="text-meta text-description">
           {switchCurrentText(current, identity?.model)}
         </p>
+        {/* A saved model the running session isn't on: saving doesn't move it, so say what does. */}
+        {saved !== undefined &&
+          current.sessionSwitch === undefined &&
+          savedDiffers(saved, current.model) && (
+            <p data-testid="orchestrator-saved" className="text-meta text-description">
+              Saved: {name(saved)}. The running session stays on {current.model.model}
+              {offer.offered && offer.refusal === undefined
+                ? `; ${continueLabel(offer.to)}… moves it.`
+                : "; the next orchestrator session opens on the saved model."}
+            </p>
+          )}
       </div>
       {offer.offered &&
         (offer.refusal === undefined ? (

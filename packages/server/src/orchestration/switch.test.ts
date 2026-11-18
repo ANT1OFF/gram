@@ -234,6 +234,27 @@ describe("explicit workspace orchestrator switch", () => {
     ),
   );
 
+  it.effect("a task's preview promises no move the running orchestrator can't make", () =>
+    inServer((world) =>
+      runCase(() =>
+        Effect.gen(function* () {
+          const { thread, workspaceId } = yield* setup(world, "claude");
+          const store = yield* ThreadStore;
+          const fake = yield* FakeAgentControl;
+          const handlers = yield* orchestrationHandlers;
+          yield* fake.setSwitchCapability(undefined);
+          const refused = yield* handlers["workspace.taskPreflight"]({
+            target: { workspaceId },
+            orchestrator: { agent: "codex", model: "fake-opus" },
+          }).pipe(Effect.flip);
+          expect(refused.message).toContain("can't move to Codex");
+          yield* fake.setSwitchCapability(true);
+          expect((yield* store.getThread(thread.id)).sessionSwitch).toBeUndefined();
+        }),
+      ),
+    ),
+  );
+
   it.effect("a task's orchestrator pick opens a workspace's first orchestrator on it", () =>
     inServer((world) =>
       runCase(() =>

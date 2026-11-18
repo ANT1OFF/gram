@@ -72,6 +72,10 @@ import {
 
 type Changes = ReturnType<typeof useWorkspaceChanges>;
 
+/** The orchestrator model a charter names itself, not a tier it follows. */
+const ownModel = (model: OrchestratorCharter["orchestratorModel"]) =>
+  model === undefined || "tier" in model ? undefined : model;
+
 /** Shown in the sheet from the orchestrator rather than under Settings. */
 export interface WorkspaceSheetProps {
   /** The heading's id, which names the sheet. */
@@ -153,7 +157,11 @@ export function WorkspaceSettingsPage({
         keywords={["roster", "worker models", "other models", "orchestrator model", "brief footer"]}
       >
         {orchestrator !== undefined && (
-          <SwitchOrchestratorAction thread={orchestrator} disabled={changes.busy} />
+          <SwitchOrchestratorAction
+            thread={orchestrator}
+            saved={ownModel((changes.charter ?? state.charter).orchestratorModel)}
+            disabled={changes.busy}
+          />
         )}
         <RosterEditor
           charter={changes.charter ?? state.charter}
