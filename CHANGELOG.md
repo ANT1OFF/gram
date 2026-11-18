@@ -12,6 +12,12 @@
 
 ### Bug Fixes
 
+* **machines:** start the person's own machine for a new workspace and wait for its model catalogue ([#738](https://github.com/ANT1OFF/gram/pull/738)).
+* **settings:** enable recommended setup on a headless server ([#737](https://github.com/ANT1OFF/gram/pull/737)).
+* **approvals:** bind merge approvals to the reviewed head and base ([#733](https://github.com/ANT1OFF/gram/pull/733)).
+* **reviews:** keep every line of a reviewer's comment inside its quote ([#728](https://github.com/ANT1OFF/gram/pull/728)).
+* **security:** treat a fork's pull-request checkout as untrusted code ([#726](https://github.com/ANT1OFF/gram/pull/726)).
+* **hosts:** push work in progress under the host's namespace ([#722](https://github.com/ANT1OFF/gram/pull/722)).
 * **machines:** a machine back after a stop opens no session until it is resumed ([#740](https://github.com/ANT1OFF/gram/issues/740)) ([7d705ea](https://github.com/ANT1OFF/gram/commit/7d705ead7288f71f410225fcbeac63ab47b29bc3))
 * **machines:** a machine started on another disk can be expected; folders come back a few at once ([#741](https://github.com/ANT1OFF/gram/issues/741)) ([088e90e](https://github.com/ANT1OFF/gram/commit/088e90e031134c6488b14fa474b24ffc4185422f))
 * **machines:** a thread's session opens once its own folders are back, not the whole machine's ([#742](https://github.com/ANT1OFF/gram/issues/742)) ([2837895](https://github.com/ANT1OFF/gram/commit/28378951ad9cbda8b600ca0e3f2d18d5a5167115))
