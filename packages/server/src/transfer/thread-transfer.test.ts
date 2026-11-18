@@ -3,12 +3,8 @@
 // server takes the bundle in as it would arrive over HTTP and carries on in a fresh session that
 // reads the recent turns, and the laptop's copy settles as read-only.
 import { describe, expect, it } from "@effect/vitest";
-import {
-  applySettingsPatch,
-  ImportThreadInput,
-  type ThreadBundle,
-  type ThreadId,
-} from "@gram/contracts";
+import { applySettingsPatch, type ThreadId } from "@gram/contracts";
+import { ImportThreadInput, type ThreadBundle } from "@gram/contracts/thread-transfer";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";

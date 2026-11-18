@@ -22,17 +22,19 @@ import {
   effectiveCheckout,
   embeddingOn,
   InvalidState,
+  type NotFound,
+  type Thread,
+  type ThreadNotFound,
+  type ThreadStatus,
+} from "@gram/contracts";
+import {
   type ExportThreadInput,
   type ImportThreadInput,
   type ImportThreadResult,
-  type NotFound,
   type SettleThreadInput,
-  type Thread,
   type ThreadBundle,
-  type ThreadNotFound,
-  type ThreadStatus,
   THREAD_BUNDLE_FORMAT,
-} from "@gram/contracts";
+} from "@gram/contracts/thread-transfer";
 import {
   cachedOriginUrl,
   copyWorktreeIncludes,

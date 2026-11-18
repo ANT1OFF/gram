@@ -7,15 +7,17 @@
 import {
   BUNDLE_MAX_BYTES,
   embeddingOn,
-  ExportThreadInput,
   ExportWorkspaceInput,
-  ImportThreadInput,
   ImportWorkspaceInput,
   type InvalidState,
   type NotFound,
-  SettleThreadInput,
   type ThreadNotFound,
 } from "@gram/contracts";
+import {
+  ExportThreadInput,
+  ImportThreadInput,
+  SettleThreadInput,
+} from "@gram/contracts/thread-transfer";
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
