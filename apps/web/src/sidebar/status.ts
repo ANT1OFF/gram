@@ -6,6 +6,7 @@ import type {
   ThreadStatus,
   ThreadSummary,
 } from "@gram/contracts";
+import { MACHINE_LOST_TAG, machineLostLine } from "@/thread/saved-work-words";
 import {
   CircleAlert,
   CircleCheck,
@@ -200,6 +201,16 @@ export const rowStatus = (
           title: WAIT_WORDS.rowFailedHint,
           working: false,
         };
+  }
+  // Its machine went away under it: said as that, with what of its work comes back.
+  if (status === "error" && thread.lastError?.machineLost !== undefined) {
+    const line = machineLostLine(thread.lastError, thread.savedWork);
+    return {
+      ...STATUS_DISPLAY.error,
+      label: MACHINE_LOST_TAG,
+      title: `${line.charAt(0).toUpperCase()}${line.slice(1)}`,
+      working: false,
+    };
   }
   if (status === "running" && compaction !== undefined) {
     return {

@@ -1,3 +1,5 @@
+import { MACHINE_LOST_TAG } from "@/thread/saved-work-words";
+
 import type { FailureItem } from "./needs-you-model";
 
 // What the Board's and the orchestrator's failure card says of each failure: its cause in a few
@@ -24,7 +26,7 @@ export type FailureStep =
    * the user, which takes it over; the user does that in the worker, seeing what it did.
    */
   | { readonly kind: "retry"; readonly label: "Open to retry" }
-  | { readonly kind: "open"; readonly label: "Open worker" };
+  | { readonly kind: "open"; readonly label: "Open worker" | "Open to resume" };
 
 /** A failure's row: cause, detail and step. */
 export interface FailureRow {
@@ -61,6 +63,13 @@ export const failureRow = (
     };
   }
   const error = failure.error;
+  // A lost machine: its worker's thread has Resume worker, which takes no retry.
+  if (failure.tag === MACHINE_LOST_TAG)
+    return {
+      cause: failure.tag,
+      detail: error?.text ?? "",
+      step: { kind: "open", label: "Open to resume" },
+    };
   const detail = error?.text === undefined || error.text === "" ? "The turn stopped." : error.text;
   const cause = failure.tag;
   switch (error?.kind) {

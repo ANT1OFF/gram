@@ -18,6 +18,8 @@ import { IDENTITY_ENV, isValidCheckpointId, writeWorktreeTree } from "./checkpoi
 import { CheckpointError } from "./errors.ts";
 import { git, gitFailMsg, STRICT_STATUS_ARGS } from "./exec.ts";
 import { samePath } from "./paths.ts";
+import { MAX_DIFF_READ_BYTES, parseGitDiffCapped, type DiffFile, withinViewCap } from "./diff.ts";
+import { localBaseRef } from "./refs.ts";
 
 export const WIP_REF_PREFIX = "refs/gram/wip";
 
@@ -575,4 +577,64 @@ export const hasWip = (repo: string, threadId: string) =>
     if (!isValidCheckpointId(threadId)) return false;
     const top = yield* repoTopOrFail(repo);
     return (yield* readRef(top, wipRef(threadId))).kind === "commit";
+  });
+
+/** What a kept commit holds against the branch's base (`wipChanges`). */
+export interface WipChanges {
+  /** The ref the files are against; absent when there is none, and only HEAD's are against HEAD. */
+  readonly base?: string;
+  readonly files: ReadonlyArray<DiffFile>;
+  /** Set when the diff was too large to list, or bodies were dropped to fit `maxBytes`. */
+  readonly note?: string;
+}
+
+/**
+ * The files `snapshot`'s commit changes against where its branch left its base (`base...commit`),
+ * so what a save holds can be shown while its machine is away: the branch's commits and what wasn't
+ * committed alike. With no base to go by, against HEAD, which is the uncommitted alone. Bodies
+ * past `maxBytes` are dropped, the largest first, and those files noted `too large`.
+ */
+export const wipChanges = (repo: string, snapshot: Pick<WipSnapshot, "commit">, maxBytes: number) =>
+  Effect.gen(function* () {
+    if (!OID.test(snapshot.commit)) return yield* fail("invalid commit");
+    const top = yield* repoTopOrFail(repo);
+    const base = yield* localBaseRef(top);
+    const head = yield* headOid(top);
+    const range =
+      base !== undefined
+        ? [`${base}...${snapshot.commit}`]
+        : head === undefined
+          ? undefined
+          : [head, snapshot.commit];
+    if (range === undefined) return { files: [] } satisfies WipChanges;
+    const out = yield* git(
+      top,
+      [
+        "-c",
+        "core.quotepath=false",
+        "-c",
+        "diff.mnemonicPrefix=false",
+        "diff",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "-M",
+        ...range,
+        "--",
+      ],
+      { maxOutputBytes: MAX_DIFF_READ_BYTES },
+    ).pipe(Effect.mapError((e) => new CheckpointError({ message: e.message })));
+    if (out.status !== 0) return yield* fail(gitFailMsg(out, "git diff failed"));
+    const capped = parseGitDiffCapped(out.stdout, out.truncated);
+    const files = withinViewCap(capped.files, maxBytes);
+    const cut = files.some(
+      (file, at) => file.note === "too large" && capped.files[at]?.note !== "too large",
+    );
+    const note =
+      capped.note ?? (cut ? "The largest files are listed without their changes." : undefined);
+    return {
+      ...(base === undefined ? {} : { base }),
+      files,
+      ...(note === undefined ? {} : { note }),
+    } satisfies WipChanges;
   });

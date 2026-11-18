@@ -129,6 +129,7 @@ export const VIEWER_RPCS: ReadonlySet<string> = new Set([
   "orchestrator.finishedWorkersPage",
   "git.diff",
   "git.diffChunk",
+  "thread.savedDiff",
   "fs.file",
   "fs.image",
   "fs.search",

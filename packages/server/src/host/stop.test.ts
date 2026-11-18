@@ -104,6 +104,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
           commit: expect.stringMatching(/^[0-9a-f]{40}$/),
           branch: "main",
           pushed: true,
+          saved: expect.objectContaining({ uncommitted: true }),
         },
       ]);
       expect(run(origin, "show", `${wipRef(THREAD)}:tracked.txt`)).toBe("work in progress\n");
@@ -131,6 +132,12 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       const kept = yield* stop.keep({ checkouts: [{ threadId: THREAD, cwd: repo }] });
       expect(kept).toMatchObject([
         { threadId: THREAD, cwd: repo, pushed: true, branch: "gram/worker" },
+      ]);
+      // It says what the save holds against the branch's base, to show while the machine is away.
+      expect(kept[0]!.saved).toMatchObject({ base: "origin/main", uncommitted: true });
+      expect(kept[0]!.saved!.files.map((file) => [file.path, file.status]).toSorted()).toEqual([
+        ["new.txt", "added"],
+        ["tracked.txt", "modified"],
       ]);
       // Nothing held: the machine takes work as before.
       expect(stop.stopping()).toBe(false);
@@ -413,7 +420,15 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
       const caught = yield* stop.prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
       expect(caught.kept).toEqual([
-        { threadId: THREAD, cwd: repo, commit: head, branch: "main", pushed: true, caughtUp: true },
+        {
+          threadId: THREAD,
+          cwd: repo,
+          commit: head,
+          branch: "main",
+          pushed: true,
+          caughtUp: true,
+          saved: { base: "origin/main", files: [], uncommitted: false },
+        },
       ]);
       expect(run(origin, "for-each-ref", "--format=%(refname)").trim()).toBe("refs/heads/main");
     }).pipe(Effect.scoped, live),
@@ -495,6 +510,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
           branch: "gram/worker",
           pushed: true,
           caughtUp: true,
+          saved: expect.objectContaining({ uncommitted: false }),
         },
       ]);
       expect(run(origin, "for-each-ref", "--format=%(refname)", "refs/gram").trim()).toBe("");

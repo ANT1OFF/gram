@@ -9,9 +9,11 @@
 
 import {
   effectiveCheckout,
+  type HostId,
   embeddingOn,
   hostOf,
   LOCAL_HOST_ID,
+  savedWorkOf,
   type Thread,
   type ThreadId,
 } from "@gram/contracts";
@@ -21,7 +23,7 @@ import * as FiberMap from "effect/FiberMap";
 import type * as Scope from "effect/Scope";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
-import { keepThreadWork, type StopResumeDeps } from "./stop-resume.ts";
+import { type KeptWork, keepThreadWork, type StopResumeDeps } from "./stop-resume.ts";
 
 /** How often a running turn's work is kept. */
 export const KEEP_EVERY = Duration.minutes(5);
@@ -31,7 +33,7 @@ export const KEEP_AFTER_TURN = Duration.seconds(5);
 export interface WipKeeperDeps {
   readonly hosts: StopResumeDeps["hosts"];
   readonly store: Pick<ThreadStore["Service"], "getThread" | "getSettings">;
-  readonly runtimes: Pick<ThreadRuntimesShape, "observe">;
+  readonly runtimes: Pick<ThreadRuntimesShape, "observe" | "updateThread">;
 }
 
 /** The joined machine a thread works on, or undefined when it works on this one. */
@@ -56,6 +58,7 @@ export const startWipKeeper = (deps: WipKeeperDeps): Effect.Effect<void, never, 
         const id = machineOf(thread);
         if (id === undefined || thread.parked) return;
         const kept = yield* keepThreadWork(deps, id, thread);
+        yield* noteSaved(thread, id, kept);
         const missed = kept.filter((work) => !work.pushed);
         if (missed.length > 0)
           yield* Effect.logWarning("a thread's work in progress wasn't kept").pipe(
@@ -68,6 +71,20 @@ export const startWipKeeper = (deps: WipKeeperDeps): Effect.Effect<void, never, 
           ),
         ),
       );
+
+    // The thread says when its work was last saved and what that held, its main folder's first.
+    const noteSaved = (thread: Thread, id: HostId, kept: ReadonlyArray<KeptWork>) =>
+      Effect.gen(function* () {
+        const main = effectiveCheckout(thread).path;
+        const record = kept
+          .filter((work) => work.pushed)
+          .toSorted((a, b) => Number(b.cwd === main) - Number(a.cwd === main))
+          .map((work) => deps.hosts.stops.keptOf(id, thread.id, work.cwd))
+          .find((each) => each?.saved !== undefined && each.at !== undefined);
+        if (record?.saved === undefined || record.at === undefined) return;
+        const savedWork = savedWorkOf(record.saved, record.at);
+        yield* deps.runtimes.updateThread(thread.id, (current) => ({ ...current, savedWork }));
+      });
 
     const every = (threadId: ThreadId) =>
       Effect.sleep(KEEP_EVERY).pipe(Effect.andThen(keepNow(threadId)), Effect.forever);
