@@ -18,6 +18,7 @@ import {
   IDLE_COMPACT_MIN_CONTEXT,
   IDLE_COMPACT_MIN_IDLE_MS,
   IDLE_COMPACT_RETRY_MS,
+  IDLE_COMPACT_STOP_WAIT_MS,
   idleCompactionCost,
   makeIdleCompactor,
   planIdleCompact,
@@ -332,6 +333,67 @@ describe("makeIdleCompactor", () => {
       yield* h.compactor.onTurnEnd(thread, ended(MIN, "turn-4"));
       yield* TestClock.adjust(IDLE_COMPACT_AFTER_MS);
       expect(h.requests).toHaveLength(1);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("before a stop, sends a waiting compaction now and counts it until its turn ends", () =>
+    Effect.gen(function* () {
+      const h = yield* harness;
+      yield* h.compactor.onTurnEnd(thread, ended(MIN));
+      yield* TestClock.adjust(30 * MIN);
+      expect(yield* h.compactor.compactBeforeStop).toEqual({ compacting: 1 });
+      yield* TestClock.adjust(0);
+      expect(h.requests).toHaveLength(1);
+      expect(yield* h.build()).toBeDefined();
+      // Still under way: a stop waits.
+      expect(yield* h.compactor.compactBeforeStop).toEqual({ compacting: 1 });
+      expect(h.requests).toHaveLength(1);
+      yield* h.compactor.onTurnEnd(thread, {
+        ...ended(31 * MIN, "turn-c"),
+        idleCompaction: "completed",
+      });
+      expect(yield* h.compactor.compactBeforeStop).toEqual({ compacting: 0 });
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("before a stop, doesn't wait on one something holds or one dropped at send", () =>
+    Effect.gen(function* () {
+      const h = yield* harness;
+      h.state.held = "question";
+      yield* h.compactor.onTurnEnd(thread, ended(MIN));
+      yield* TestClock.adjust(30 * MIN);
+      expect(yield* h.compactor.compactBeforeStop).toEqual({ compacting: 0 });
+      h.state.held = undefined;
+      expect(yield* h.compactor.compactBeforeStop).toEqual({ compacting: 1 });
+      yield* TestClock.adjust(0);
+      h.state.presence = "draft";
+      expect(yield* h.build()).toBeUndefined();
+      expect(yield* h.compactor.compactBeforeStop).toEqual({ compacting: 0 });
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("before a stop, stops waiting on a compaction whose end went unseen", () =>
+    Effect.gen(function* () {
+      const h = yield* harness;
+      yield* h.compactor.onTurnEnd(thread, ended(MIN));
+      yield* TestClock.adjust(30 * MIN);
+      yield* h.compactor.compactBeforeStop;
+      yield* TestClock.adjust(0);
+      expect(yield* h.build()).toBeDefined();
+      yield* TestClock.adjust(IDLE_COMPACT_STOP_WAIT_MS);
+      expect(yield* h.compactor.compactBeforeStop).toEqual({ compacting: 0 });
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("before a stop, has nothing to send once a waiting one's deadline passed", () =>
+    Effect.gen(function* () {
+      const h = yield* harness;
+      h.state.presence = "draft";
+      yield* h.compactor.onTurnEnd(thread, ended(MIN));
+      yield* TestClock.adjust(IDLE_COMPACT_LATEST_MS + MIN);
+      h.state.presence = undefined;
+      expect(yield* h.compactor.compactBeforeStop).toEqual({ compacting: 0 });
+      expect(h.requests).toHaveLength(0);
     }).pipe(Effect.scoped),
   );
 });

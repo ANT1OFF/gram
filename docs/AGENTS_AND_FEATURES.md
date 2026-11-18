@@ -1149,7 +1149,9 @@ Fresh session (the refresh icon in the orchestrator's header, its `/` menu, the 
 thread menu) replaces the orchestrator's agent session with a new one under the same thread. The new session
 boots from its role, `MEMORY.md`, the standing decisions, the charter and the ledger, so workers,
 features, pull requests, held briefs, questions, what waits on the user and queued messages all
-carry over; the conversation, tool output and prompt cache don't, compacted or not. Workers keep
+carry over; the conversation, tool output and prompt cache don't, compacted or not, except the
+last few exchanges with the user, which the boot digest carries fenced as material so the new
+session knows what it already told them. Workers keep
 their own sessions. It is offered whatever the context fill: compaction handles a full context, and
 this is for dropping what the conversation holds.
 
@@ -1182,6 +1184,8 @@ and settings by chat can change both with the usual approval card.
   window whose draft reports are 75 seconds stale, a thread that isn't wholly at rest
   (background tasks, subagents, waits), a paused workspace or feature, a worker the user holds,
   or an open worker question. A held compaction looks again every 30 seconds until its deadline.
+- **Before a stop.** A deployment that stops the server when it is idle asks it first
+  ([before an idle stop](EMBEDDING.md#before-an-idle-stop)), and what waits for its time goes then.
 - **Afterwards.** The transcript shows Gram's request and a marker with the outcome and a link
   to the setting. A compaction that didn't complete is retried only after the context has grown
   by a tenth. After an orchestrator's compaction, its next digest carries its boot context again.
