@@ -28,4 +28,13 @@ describe("paletteChoices", () => {
     ]);
     expect(paletteChoices("tokyo-light", []).map((c) => c.id)).not.toContain("tokyo-light");
   });
+
+  it.each(["petrol", "petrol-dark"])("keeps saved %s available only while selected", (id) => {
+    expect(paletteChoices("neutral-dark", []).some((choice) => choice.ids.includes(id))).toBe(
+      false,
+    );
+    const saved = paletteChoices(id, []).filter((choice) => choice.ids.includes(id));
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.ids).toEqual(["petrol", "petrol-dark"]);
+  });
 });

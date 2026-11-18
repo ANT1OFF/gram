@@ -21,7 +21,6 @@ export interface PaletteChoice {
 export const FEATURED_PALETTES: readonly { readonly id: string; readonly name: string }[] = [
   { id: "neutral-dark", name: "Neutral" },
   { id: "minimal-graphite-dark", name: "Graphite" },
-  { id: "petrol-dark", name: "Petrol" },
   { id: "ocean-dark", name: "Ocean" },
   { id: "forest-dark", name: "Forest" },
   { id: "rose-dark", name: "Rose" },
