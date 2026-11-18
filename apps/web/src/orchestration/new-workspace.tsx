@@ -10,6 +10,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useId,
@@ -42,7 +44,6 @@ import { AddRepository, type AddRepositoryHandle } from "@/new-thread/add-reposi
 import { AutonomyChoice } from "@/new-thread/autonomy-choice";
 import { Field } from "@/settings/fields";
 import { useDefaultModel, useRosterHere, useSlotModel } from "@/settings/model-slots";
-import { RosterEditor } from "@/settings/roster-editor";
 import { useSaveSettings } from "@/settings/use-save-settings";
 import {
   defaultWorkerIndex,
@@ -70,6 +71,10 @@ import { parentFolder } from "./workspace-repos";
 
 /** How often a sheet waiting for the person's machine asks whether it is up. */
 const MACHINE_POLL_MS = 1000;
+
+const RosterEditor = lazy(() =>
+  import("@/settings/roster-editor").then(({ RosterEditor }) => ({ default: RosterEditor })),
+);
 
 /** Where a key press belongs to an open menu, list or dialog rather than to the sheet. */
 const inPopup = (target: EventTarget) =>
@@ -495,6 +500,7 @@ function WorkspaceModels({
   disabled: boolean;
   onChange: (charter: OrchestratorCharter) => void;
 }) {
+  const [opened, setOpened] = useState(false);
   const own = useSlotModel(charter.orchestratorModel);
   const inherited = useDefaultModel();
   const orchestrator = charter.orchestratorModel === undefined ? inherited : own;
@@ -507,7 +513,12 @@ function WorkspaceModels({
   const nameOf = useModelNames([orchestrator, worker]);
 
   return (
-    <details className={FOLD}>
+    <details
+      className={FOLD}
+      onToggle={(event) => {
+        if (event.currentTarget.open) setOpened(true);
+      }}
+    >
       <FoldSummary className="items-baseline text-reading">
         <span className="font-medium">Models</span>
         {(orchestrator || worker) && (
@@ -517,14 +528,20 @@ function WorkspaceModels({
           </span>
         )}
       </FoldSummary>
-      <div className="mt-3 flex flex-col gap-4">
-        <RosterEditor
-          charter={charter}
-          disabled={disabled}
-          onChange={onChange}
-          orchestratorDescription="Used for the repository survey and the first task."
-        />
-      </div>
+      {opened && (
+        <div className="mt-3 flex flex-col gap-4">
+          <Suspense
+            fallback={<Spinner aria-label="Loading model settings" className="size-icon-row" />}
+          >
+            <RosterEditor
+              charter={charter}
+              disabled={disabled}
+              onChange={onChange}
+              orchestratorDescription="Used for the repository survey and the first task."
+            />
+          </Suspense>
+        </div>
+      )}
     </details>
   );
 }

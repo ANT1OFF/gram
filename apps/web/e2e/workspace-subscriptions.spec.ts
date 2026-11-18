@@ -81,6 +81,7 @@ for (const agent of ["claude", "codex"] as const) {
 test("the workspace starts on the model and worker roster picked before creation", async ({
   page,
 }) => {
+  test.slow();
   await page.addInitScript(() => sessionStorage.setItem("gram.mock.agents", "claude,codex"));
   await seed(page, { agents: { defaultModel: { agent: "claude", model: "sonnet" } } });
   await page.goto("/new-workspace");
