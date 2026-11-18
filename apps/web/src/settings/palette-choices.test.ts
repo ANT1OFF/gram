@@ -1,6 +1,8 @@
 import { paletteFromSeeds, PRESET_PALETTES } from "@gram/themes";
 import { describe, expect, it } from "vitest";
 
+import { paletteToRender } from "@/theme/look-defaults";
+
 import { FEATURED_PALETTES, paletteChoices } from "./palette-choices";
 
 describe("paletteChoices", () => {
@@ -36,5 +38,28 @@ describe("paletteChoices", () => {
     const saved = paletteChoices(id, []).filter((choice) => choice.ids.includes(id));
     expect(saved).toHaveLength(1);
     expect(saved[0]?.ids).toEqual(["petrol", "petrol-dark"]);
+  });
+
+  it.each([undefined, "ocean-dark", "ocean", "petrol-dark"])(
+    "renders the palette of each card picked, with the app's default palette %s",
+    (appDefault) => {
+      const defaults = appDefault ? { palette: appDefault } : undefined;
+      for (const active of ["neutral-dark", "neutral", "ocean-dark", "dracula"]) {
+        const choices = paletteChoices(active, [], undefined, appDefault);
+        expect(new Set(choices.map((c) => c.name)).size).toBe(choices.length);
+        for (const choice of choices) {
+          for (const picked of choice.ids) {
+            expect(choice.ids).toContain(paletteToRender(picked, undefined, defaults));
+          }
+        }
+      }
+    },
+  );
+
+  it("offers an app's default palette in the place of Gram's default pair", () => {
+    const choices = paletteChoices("neutral-dark", [], undefined, "ocean-dark");
+    expect(choices[0]).toMatchObject({ name: "Ocean", ids: ["ocean", "ocean-dark"] });
+    expect(choices.map((c) => c.name)).not.toContain("Neutral");
+    expect(paletteChoices("neutral-dark", [], undefined, "petrol-dark")[0]?.name).toBe("Petrol");
   });
 });
