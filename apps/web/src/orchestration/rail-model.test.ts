@@ -15,6 +15,7 @@ import {
   groupFoldKey,
   groupNames,
   hiddenWorkerCount,
+  edgeBesidePrs,
   nowBesidePrs,
   overlapHint,
   railEntries,
@@ -453,8 +454,25 @@ describe("nowBesidePrs", () => {
     expect(nowBesidePrs("Waiting · checks on #142", own)).toBe("Waiting · checks");
     expect(nowBesidePrs("Waiting · #142 to merge", own)).toBe("Waiting · to merge");
     expect(nowBesidePrs("#142 to merge", own)).toBe("to merge");
+    expect(nowBesidePrs("merge of #142", own)).toBe("merge");
+    expect(nowBesidePrs("local check #142", own)).toBe("local check");
+    expect(nowBesidePrs("merge of #1420", own)).toBe("merge of #1420");
     expect(nowBesidePrs("Waiting · #88 to merge", own)).toBe("Waiting · #88 to merge");
     expect(nowBesidePrs("checks on #1420", own)).toBe("checks on #1420");
     expect(nowBesidePrs("running tests", [])).toBe("running tests");
+  });
+});
+
+describe("edgeBesidePrs", () => {
+  it("drops an edge whose token is a PR the chip beside it shows, and keeps any other", () => {
+    const own = [{ number: 142 }];
+    expect(edgeBesidePrs({ glyph: "ci", token: "#142" }, own)).toBeUndefined();
+    expect(edgeBesidePrs({ glyph: "dependency", token: "#88" }, own)).toEqual({
+      glyph: "dependency",
+      token: "#88",
+    });
+    expect(edgeBesidePrs({ glyph: "ci", token: "#1420" }, own)?.token).toBe("#1420");
+    expect(edgeBesidePrs({ glyph: "timer", token: "08:10" }, own)?.token).toBe("08:10");
+    expect(edgeBesidePrs({ glyph: "ci", token: "#142" }, [])?.token).toBe("#142");
   });
 });
