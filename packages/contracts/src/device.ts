@@ -429,6 +429,11 @@ export const HostedDiscovery = Schema.Struct({
   workspaces_endpoint: Address,
   devices_endpoint: Address,
   device_connect: Address,
+  /**
+   * Where a thread moved from this machine is brought in (`POST`, `HostedThreadImport`). Absent on
+   * a server that takes none.
+   */
+  thread_import_endpoint: Schema.optionalKey(Address),
 });
 export type HostedDiscovery = typeof HostedDiscovery.Type;
 
@@ -496,6 +501,7 @@ export const checkHostedDiscovery = (origin: string, document: unknown): HostedD
     discovery.token_endpoint,
     discovery.workspaces_endpoint,
     discovery.devices_endpoint,
+    ...(discovery.thread_import_endpoint === undefined ? [] : [discovery.thread_import_endpoint]),
   ];
   if (!calls.every((address) => on(address, secure ? "https:" : "http:")))
     return { ok: false, why: "The server sends Gram to another address." };
@@ -520,6 +526,24 @@ export type HostedWorkspace = typeof HostedWorkspace.Type;
 
 /** The workspaces endpoint's answer. */
 export const HostedWorkspaces = Schema.Array(HostedWorkspace).check(Schema.isMaxLength(500));
+
+/**
+ * `POST thread_import_endpoint`: a thread this machine exported (`ThreadBundle`), into a workspace
+ * the person picked there, and the name the server shows as where it came from.
+ */
+export interface HostedThreadImport {
+  readonly workspaceId: string;
+  readonly bundle: unknown;
+  readonly from: string;
+}
+
+/** Its answer: the thread there, what to tell the person, and where to open it when the server says. */
+export const HostedThreadImported = Schema.Struct({
+  threadId: Id,
+  notes: Schema.optionalKey(Schema.Array(Text(1000)).check(Schema.isMaxLength(20))),
+  url: Schema.optionalKey(Address),
+});
+export type HostedThreadImported = typeof HostedThreadImported.Type;
 
 /** `POST devices_endpoint/challenge`'s answer: something new to sign, for this person alone. */
 export const HostedDeviceChallenge = Schema.Struct({

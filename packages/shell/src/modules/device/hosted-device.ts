@@ -12,6 +12,7 @@ import {
   discoverHosted,
   type Fetch,
   forgetHostedDevice,
+  importHostedThread,
   listHostedWorkspaces,
   makeTokenKeeper,
   registerHostedDevice,
@@ -122,6 +123,8 @@ export interface HostedServerState {
   readonly name: string;
   readonly signedIn: boolean;
   readonly paused: boolean;
+  /** It takes threads moved from this machine. */
+  readonly takesThreads: boolean;
   readonly workspaces: ReadonlyArray<HostedWorkspaceState>;
   /** The last call that failed, in words. */
   readonly problem?: string;
@@ -136,6 +139,15 @@ export interface HostedDeviceState {
 }
 
 export type Done = { readonly ok: true } | { readonly ok: false; readonly why: string };
+
+export type ThreadMoved =
+  | {
+      readonly ok: true;
+      readonly threadId: string;
+      readonly notes: readonly string[];
+      readonly url?: string;
+    }
+  | { readonly ok: false; readonly why: string; readonly unknown?: true };
 
 export interface LendChoice {
   readonly folders: ReadonlyArray<{
@@ -171,6 +183,11 @@ export interface HostedDevice {
   readonly signOut: (origin: string) => Promise<void>;
   /** Lists a server's workspaces again. */
   readonly refresh: (origin: string) => Promise<Done>;
+  /**
+   * Sends a thread this machine exported to one of the server's workspaces, with the person's
+   * sign-in, named as coming from this machine. Changes nothing here.
+   */
+  readonly moveThread: (origin: string, workspace: string, bundle: unknown) => Promise<ThreadMoved>;
   /** A decision: only from the lending sheet. */
   readonly lend: (origin: string, workspace: string, choice: LendChoice) => Promise<Done>;
   /**
@@ -791,6 +808,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
           name: server.discovery.name,
           signedIn: !server.keeper.signedOut(),
           paused: server.limits.paused(),
+          takesThreads: server.discovery.thread_import_endpoint !== undefined,
           ...(server.problem === undefined ? {} : { problem: server.problem }),
           workspaces: server.workspaces.map((workspace) => {
             const lent = server.lent.get(workspace.id);
@@ -813,6 +831,7 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
           name: hostOf(kept.saved.origin),
           signedIn: false,
           paused: kept.saved.paused,
+          takesThreads: false,
           problem: kept.problem,
           workspaces: [],
         })),
@@ -844,6 +863,29 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       await secrets.remove(keyName(origin)).catch(() => undefined);
       await save().catch(() => undefined);
       changed();
+    },
+
+    moveThread: async (origin, workspace, bundle) => {
+      const server = known(origin);
+      if (server === undefined || server.keeper.signedOut())
+        return { ok: false, why: "Sign in to the server first." };
+      if (server.limits.paused())
+        return {
+          ok: false,
+          why: "You paused this computer for that server. Lift the pause under Settings → Hosted first.",
+        };
+      // Only a workspace the server listed for this person: the server checks again.
+      if (!server.workspaces.some((each) => each.id === workspace))
+        return { ok: false, why: "That workspace isn't one of yours there." };
+      return importHostedThread({
+        discovery: server.discovery,
+        keeper: server.keeper,
+        key: server.key,
+        fetch: options.fetch,
+        workspaceId: workspace,
+        bundle,
+        from: [...options.machineName].slice(0, 200).join("") || "this computer",
+      });
     },
 
     refresh: async (origin) => {

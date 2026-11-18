@@ -8,6 +8,8 @@ import {
   HostedDeviceChallenge,
   HostedDeviceRegistered,
   hostedOrigin,
+  HostedThreadImported,
+  type HostedThreadImport,
   HostedTokenAnswer,
   type HostedWorkspace,
   HostedWorkspaces,
@@ -26,6 +28,11 @@ import { deviceIdOf, devicePublicKeyText } from "./keys.ts";
 
 /** How long one call to the server may take. */
 export const HOSTED_CALL_MS = 15_000;
+/**
+ * A thread brought in is cloned on the person's machine there before the server answers. A call
+ * the server asks to repeat for a nonce gets it again, so the whole may take twice as long.
+ */
+export const HOSTED_THREAD_IMPORT_MS = 100_000;
 /** How long the person has to finish signing in, in the browser. */
 export const HOSTED_SIGN_IN_MS = 5 * 60_000;
 /** The most an answer may hold. */
@@ -38,7 +45,12 @@ export const HOSTED_SAVE_MS = 10_000;
 export const HOSTED_TOKEN_RENEW_BEFORE_MS = 60_000;
 
 /** The scopes a device signs in for. Each use gets a token of its own, narrowed from these. */
-export const HOSTED_SCOPES = ["workspaces", "device:register", "device:connect"] as const;
+export const HOSTED_SCOPES = [
+  "workspaces",
+  "device:register",
+  "device:connect",
+  "workspaces:import",
+] as const;
 export type HostedScope = (typeof HOSTED_SCOPES)[number];
 
 export type Failed = { readonly ok: false; readonly why: string };
@@ -88,9 +100,10 @@ const call = async (
   fetch: Fetch,
   url: string,
   init: RequestInit,
+  waitMs = HOSTED_CALL_MS,
 ): Promise<Response | undefined> => {
   try {
-    const deadline = AbortSignal.timeout(HOSTED_CALL_MS);
+    const deadline = AbortSignal.timeout(waitMs);
     const response = await fetch(url, {
       ...init,
       redirect: "manual",
@@ -186,6 +199,9 @@ const tokenCall = async (
       if (error === "use_dpop_nonce" && nonce !== undefined && attempt === 0) continue;
       if (error === "invalid_grant")
         return { ...failed("The sign-in has ended."), signedOut: true };
+      // A scope the sign-in never had, or the organisation turned off since.
+      if (error === "invalid_scope")
+        return failed("Your sign-in there doesn't cover this. Sign in to the server again.");
       return failed("The server refused the sign-in.");
     }
     const decoded = Schema.decodeUnknownOption(HostedTokenAnswer)(answer);
@@ -319,7 +335,10 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
       response_type: "code",
       client_id: discovery.client_id,
       redirect_uri: redirectUri,
-      scope: HOSTED_SCOPES.join(" "),
+      // Moving work is asked for only of a server that takes it: another may refuse the scope.
+      scope: HOSTED_SCOPES.filter(
+        (scope) => scope !== "workspaces:import" || discovery.thread_import_endpoint !== undefined,
+      ).join(" "),
       state,
       code_challenge: challenge,
       code_challenge_method: "S256",
@@ -545,31 +564,37 @@ const authorizedCall = async (
   method: string,
   url: string,
   body?: unknown,
+  waitMs?: number,
 ): Promise<Response | Failed> => {
   const held = await keeper.token(scope);
   if (!held.ok) return failed(held.why);
   const { token } = held;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await call(fetch, url, {
-      method,
-      headers: {
-        accept: "application/json",
-        authorization: `${token.tokenType} ${token.accessToken}`,
-        ...(token.tokenType === "DPoP"
-          ? {
-              dpop: dpopProof(key, {
-                method,
-                url,
-                accessToken: token.accessToken,
-                now: Date.now(),
-                ...(keeper.nonce.value === undefined ? {} : { nonce: keeper.nonce.value }),
-              }),
-            }
-          : {}),
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
+    const response = await call(
+      fetch,
+      url,
+      {
+        method,
+        headers: {
+          accept: "application/json",
+          authorization: `${token.tokenType} ${token.accessToken}`,
+          ...(token.tokenType === "DPoP"
+            ? {
+                dpop: dpopProof(key, {
+                  method,
+                  url,
+                  accessToken: token.accessToken,
+                  now: Date.now(),
+                  ...(keeper.nonce.value === undefined ? {} : { nonce: keeper.nonce.value }),
+                }),
+              }
+            : {}),
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
+      waitMs,
+    );
     if (response === undefined) return failed(UNREACHABLE);
     const nonce = nonceFrom(response);
     if (nonce !== undefined) keeper.nonce.value = nonce;
@@ -610,6 +635,83 @@ export const listHostedWorkspaces = async (
   if (response.status !== 200) return failed("The server refused the call.");
   const decoded = Schema.decodeUnknownOption(HostedWorkspaces)(await jsonOf(response));
   return decoded._tag === "None" ? failed(UNREADABLE) : { ok: true, workspaces: decoded.value };
+};
+
+/** A refusal's own words, as `{ error: { message } }` or `{ error }` puts them; bounded. */
+const refusalOf = (answer: unknown): string | undefined => {
+  if (typeof answer !== "object" || answer === null || !("error" in answer)) return undefined;
+  const { error } = answer;
+  const said =
+    typeof error === "string"
+      ? error
+      : typeof error === "object" && error !== null && "message" in error
+        ? error.message
+        : undefined;
+  if (typeof said !== "string" || said.trim() === "") return undefined;
+  return [...said.trim()].slice(0, 300).join("");
+};
+
+/** How a thread's send ended. `unknown`: no clear answer, so the server may have taken it. */
+export type HostedThreadSent =
+  | {
+      readonly ok: true;
+      readonly threadId: string;
+      readonly notes: readonly string[];
+      readonly url?: string;
+    }
+  | { readonly ok: false; readonly why: string; readonly unknown?: true };
+
+/**
+ * Sends a thread this machine exported to a workspace there, with the person's sign-in, and
+ * reads what the server made of it. The server decides whether it comes in; a refusal is its word.
+ */
+export const importHostedThread = async (
+  calls: HostedCalls & HostedThreadImport,
+): Promise<HostedThreadSent> => {
+  const endpoint = calls.discovery.thread_import_endpoint;
+  if (endpoint === undefined) return failed("This server doesn't take threads.");
+  const response = await authorizedCall(
+    calls.keeper,
+    calls.key,
+    "workspaces:import",
+    calls.fetch,
+    "POST",
+    endpoint,
+    { workspaceId: calls.workspaceId, bundle: calls.bundle, from: calls.from },
+    HOSTED_THREAD_IMPORT_MS,
+  );
+  if ("why" in response) {
+    // No answer may be one that never came back: the server may have the thread.
+    return response.why === UNREACHABLE ? { ...response, unknown: true } : response;
+  }
+  if (response.status === 413) {
+    await response.body?.cancel().catch(() => undefined);
+    return failed("The thread is larger than the server takes.");
+  }
+  const answer = await jsonOf(response);
+  // A server fault, or a yes it can't read, may still have made the thread there.
+  if (response.status >= 500) return { ...failed(refusalOf(answer) ?? UNREACHABLE), unknown: true };
+  if (response.status !== 200) return failed(refusalOf(answer) ?? "The server refused the thread.");
+  const decoded = Schema.decodeUnknownOption(HostedThreadImported)(answer);
+  if (decoded._tag === "None") return { ...failed(UNREADABLE), unknown: true };
+  const { threadId, notes = [], url } = decoded.value;
+  // Opened only where the server is: never an address it sends elsewhere.
+  const opens = url !== undefined && sameOrigin(url, calls.discovery.issuer) ? url : undefined;
+  return { ok: true, threadId, notes, ...(opens === undefined ? {} : { url: opens }) };
+};
+
+const sameOrigin = (address: string, origin: string): boolean => {
+  try {
+    const url = new URL(address);
+    return (
+      url.origin === origin &&
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      url.username === "" &&
+      url.password === ""
+    );
+  } catch {
+    return false;
+  }
 };
 
 /**

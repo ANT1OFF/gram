@@ -115,6 +115,40 @@ afterEach(async () => {
 });
 
 describe("this machine as a personal device", () => {
+  it("moves a thread only to a workspace the server listed, named as this machine", async () => {
+    const { device } = await setUp();
+    const bundle = { format: 1 };
+    expect(await device.moveThread(origin, "w1", bundle)).toMatchObject({ ok: false });
+    expect(await device.signIn(origin)).toEqual({ ok: true });
+    expect(await device.moveThread(origin, "w-other", bundle)).toMatchObject({ ok: false });
+    expect(fake.state.imported).toEqual([]);
+    expect(await device.moveThread(origin, "w1", bundle)).toMatchObject({
+      ok: true,
+      threadId: "t-moved",
+    });
+    expect(fake.state.imported).toEqual([{ workspaceId: "w1", bundle, from: "Ada's laptop" }]);
+  });
+
+  it("sends no thread to a server this computer is paused for", async () => {
+    const first = await setUp();
+    expect(await first.device.signIn(origin)).toEqual({ ok: true });
+    await first.device.close();
+    const file = join(dataDir, "device-settings.json");
+    const key = settingsKey(first.store);
+    const read = await readDeviceSettings(file, key);
+    if (!read.ok) throw new Error("unreadable");
+    await writeDeviceSettings(file, key, {
+      ...read.settings,
+      servers: read.settings.servers.map((server) => ({ ...server, paused: true })),
+    });
+    const second = await setUp({}, first.store);
+    await second.waitFor(() => (second.device.state().servers[0]?.workspaces.length ?? 0) > 0);
+    expect(await second.device.moveThread(origin, "w1", { format: 1 })).toMatchObject({
+      ok: false,
+    });
+    expect(fake.state.imported).toEqual([]);
+  });
+
   it("signs in once the person accepts the server, registers, and lists its workspaces", async () => {
     const { device, store, confirmed } = await setUp();
     expect(await device.signIn(origin)).toEqual({ ok: true });
@@ -133,6 +167,7 @@ describe("this machine as a personal device", () => {
           name: "Example",
           signedIn: true,
           paused: false,
+          takesThreads: true,
           workspaces: [
             {
               id: "w1",

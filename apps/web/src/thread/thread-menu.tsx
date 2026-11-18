@@ -1,6 +1,13 @@
 import { Menu } from "@base-ui/react/menu";
 import type { ThreadId } from "@gram/contracts";
-import { ArrowLeftRight, Check, Ellipsis, GitFork, SquareArrowUpRightExit } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Check,
+  CloudUpload,
+  Ellipsis,
+  GitFork,
+  SquareArrowUpRightExit,
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
@@ -13,9 +20,11 @@ import { useThreadsStore } from "@/stores/threads";
 
 import { continueLabel, freshLabel } from "./agent-switch-model";
 import { ConversationOnlyItem } from "./conversation-only-toggle";
+import { threadMoveRefusal } from "./move-thread-model";
 import { ThreadMenuItems } from "./thread-action-items";
 import { useThreadDialogs } from "./thread-dialogs-store";
 import { useSwitchOffer } from "./use-switch-offer";
+import { useThreadMove } from "./use-thread-move";
 import { useForkAvailability, useForkThread, WORKTREE_NOTICE } from "./use-fork";
 
 /** The dialogs the menu opens, each loaded the first time it's asked for or once the shell is idle. */
@@ -44,6 +53,11 @@ export function useThreadMenu(threadId: ThreadId): {
   const local = useOpensLocally();
   const { available, reason } = useForkAvailability(threadId);
   const { fork, error, clearError } = useForkThread(threadId);
+  const { mover, view } = useThreadMove();
+  // Offered once the desktop app can send a thread and has read where; greyed with the reason.
+  const moveRefusal =
+    thread === undefined || view === undefined ? undefined : threadMoveRefusal(thread, view);
+  const moveOffered = mover !== undefined && thread !== undefined && view !== undefined;
   const [dialog, setDialog] = useState<{ notice?: string }>();
   const forker = forkDialog.useModule(dialog !== undefined);
 
@@ -102,6 +116,33 @@ export function useThreadMenu(threadId: ThreadId): {
         Fork thread
       </Menu.Item>
       {reason && <p className="px-2 py-1 text-meta text-muted-foreground">{reason}</p>}
+      {moveOffered &&
+        (moveRefusal === undefined ? (
+          <Menu.Item
+            data-testid="menu-move-thread"
+            className={itemClassName}
+            onClick={() => useThreadDialogs.getState().open({ kind: "moveThread", threadId })}
+          >
+            <CloudUpload aria-hidden className="size-icon-row" />
+            Move to a server…
+          </Menu.Item>
+        ) : (
+          <Hint
+            label={moveRefusal}
+            side="bottom"
+            render={
+              <Menu.Item
+                data-testid="menu-move-thread"
+                disabled
+                aria-description={moveRefusal}
+                className={itemClassName}
+              />
+            }
+          >
+            <CloudUpload aria-hidden className="size-icon-row" />
+            Move to a server…
+          </Hint>
+        ))}
       <ThreadMenuItems threadId={threadId} itemClassName={itemClassName} />
     </>
   );

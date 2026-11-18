@@ -252,6 +252,12 @@ describe("checkHostedDiscovery", () => {
 
   it("accepts a document whose every address is on the server's own origin", () => {
     expect(checkHostedDiscovery(origin, document)).toMatchObject({ ok: true });
+    expect(
+      checkHostedDiscovery(origin, {
+        ...document,
+        thread_import_endpoint: `${origin}/v1/operations/threads.import`,
+      }),
+    ).toMatchObject({ ok: true });
   });
 
   it("accepts plain addresses on loopback only", () => {
@@ -279,6 +285,9 @@ describe("checkHostedDiscovery", () => {
       { device_connect: "ws://gram.example.com/device/connect" },
       { device_connect: "wss://gram.example.com:444/device/connect" },
       { device_connect: "https://gram.example.com/device/connect" },
+      // A thread is never sent anywhere but the server itself.
+      { thread_import_endpoint: "https://elsewhere.example.net/threads" },
+      { thread_import_endpoint: "http://gram.example.com/threads" },
       { version: 2 },
       { client_id: undefined },
     ])

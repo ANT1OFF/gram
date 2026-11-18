@@ -333,6 +333,8 @@ export interface HostedDeviceView {
     readonly signedIn: boolean;
     readonly paused: boolean;
     readonly problem?: string;
+    /** It takes threads moved from this computer. Absent from shells older than it. */
+    readonly takesThreads?: boolean;
     readonly workspaces: ReadonlyArray<{
       readonly id: string;
       readonly name: string;
@@ -415,6 +417,23 @@ export type HostedMoveDone =
       readonly left: readonly string[];
     }
   | { readonly ok: false; readonly cancelled?: boolean; readonly why: string };
+
+/** How a thread's move to a server ended: the thread there, or why not, in the server's words. */
+export type HostedThreadMoved =
+  | {
+      readonly ok: true;
+      readonly threadId: string;
+      /** What the server says to tell the person. */
+      readonly notes: readonly string[];
+      /** Where to open it there, when the server says. */
+      readonly url?: string;
+    }
+  | {
+      readonly ok: false;
+      readonly why: string;
+      /** No clear answer: the server may have it. Sending it again answers the thread it made. */
+      readonly unknown?: true;
+    };
 
 export interface DesktopBridge extends DesktopWindows {
   readonly platform: "darwin" | "win32" | "linux" | (string & {});
@@ -526,6 +545,12 @@ export interface DesktopBridge extends DesktopWindows {
       cancel(): Promise<void>;
       onProgress(callback: (progress: HostedMoveProgress) => void): () => void;
     };
+    /**
+     * Sends a thread this computer exported (`POST /threads/export`) to a workspace of a server
+     * signed in to, with the person's sign-in. Nothing changes here: the caller settles the copy
+     * here (`POST /threads/settle`) once this answers. Absent from shells older than it.
+     */
+    moveThread?(origin: string, workspace: string, bundle: unknown): Promise<HostedThreadMoved>;
     onChange(callback: () => void): () => void;
   };
   /**

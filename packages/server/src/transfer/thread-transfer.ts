@@ -711,13 +711,13 @@ const make = (options: ThreadTransferOptions) =>
         if (before.transferredTo !== undefined) return before;
         if (before.lastActivityAt > input.exportedAt) {
           return yield* refuse(
-            "This thread carried on after it was exported, so its copy there is behind. Move it again.",
+            "This thread carried on after it was exported, so its copy there is behind. Carry on in one of the two; moving it again makes another copy there.",
           );
         }
         const rested = yield* runtimes.restSession(input.threadId);
         if (rested === "working") {
           return yield* refuse(
-            "This thread started a turn after it was exported, so its copy there is behind. Move it again.",
+            "This thread started a turn after it was exported, so its copy there is behind. Carry on in one of the two; moving it again makes another copy there.",
           );
         }
         const at = yield* Clock.currentTimeMillis;

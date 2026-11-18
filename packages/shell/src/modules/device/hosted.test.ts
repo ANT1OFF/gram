@@ -7,6 +7,7 @@ import {
   forgetHostedDevice,
   HOSTED_TOKEN_MOST_MS,
   HOSTED_TOKEN_RENEW_BEFORE_MS,
+  importHostedThread,
   listHostedWorkspaces,
   makeTokenKeeper,
   registerHostedDevice,
@@ -247,6 +248,88 @@ describe("a hosted server", () => {
     ).toEqual({ ok: false, why: "The server registered another key." });
     expect(await forgetHostedDevice({ ...calls, deviceId: registered.deviceId })).toBe(true);
     expect(fake.state.forgotten).toEqual([registered.deviceId]);
+  });
+
+  it("moves a thread into a workspace there with the person's sign-in, and reads the server's word", async () => {
+    const { discovery } = await signedIn();
+    const keeper = await keeperFor();
+    const calls = { discovery, keeper, key, fetch, workspaceId: "w1", from: "Ada's laptop" };
+    const bundle = { format: 1, thread: { id: "t-moved" } };
+    expect(await importHostedThread({ ...calls, bundle })).toEqual({
+      ok: true,
+      threadId: "t-moved",
+      notes: ["Its edits are back."],
+    });
+    expect(fake.state.imported.at(-1)).toEqual({ workspaceId: "w1", bundle, from: "Ada's laptop" });
+    // Its refusal, in its words; too large; and an address elsewhere is never opened.
+    fake.state.importAnswer = {
+      status: 409,
+      body: { error: { code: "REFUSED", message: "Start your sandbox first." } },
+    };
+    expect(await importHostedThread({ ...calls, bundle })).toEqual({
+      ok: false,
+      why: "Start your sandbox first.",
+    });
+    fake.state.importAnswer = { status: 413, body: {} };
+    expect(await importHostedThread({ ...calls, bundle })).toMatchObject({ ok: false });
+    fake.state.importAnswer = {
+      status: 200,
+      body: { threadId: "t-moved", url: "https://elsewhere.example.com/t" },
+    };
+    expect(await importHostedThread({ ...calls, bundle })).toEqual({
+      ok: true,
+      threadId: "t-moved",
+      notes: [],
+    });
+    // No clear answer: it may be there, so it says so rather than "refused".
+    fake.state.importAnswer = { status: 502, body: {} };
+    expect(await importHostedThread({ ...calls, bundle })).toMatchObject({
+      ok: false,
+      unknown: true,
+    });
+    fake.state.importAnswer = { status: 200, body: { nothing: true } };
+    expect(await importHostedThread({ ...calls, bundle })).toMatchObject({
+      ok: false,
+      unknown: true,
+    });
+    fake.state.importAnswer = { status: 409, body: { error: "Here already." } };
+    expect(await importHostedThread({ ...calls, bundle })).toEqual({
+      ok: false,
+      why: "Here already.",
+    });
+    // A server that takes no threads is never sent one.
+    const before = fake.state.imported.length;
+    const { thread_import_endpoint: _none, ...without } = discovery;
+    expect(await importHostedThread({ ...calls, discovery: without, bundle })).toMatchObject({
+      ok: false,
+    });
+    expect(fake.state.imported.length).toBe(before);
+  });
+
+  it("asks the person to sign in again when the sign-in doesn't carry moving work", async () => {
+    fake.state.importScope = false;
+    const { discovery } = await signedIn();
+    const keeper = await keeperFor();
+    const answer = await importHostedThread({
+      discovery,
+      keeper,
+      key,
+      fetch,
+      workspaceId: "w1",
+      from: "Ada's laptop",
+      bundle: {},
+    });
+    expect(answer).toMatchObject({ ok: false });
+    expect(answer.ok === false && answer.why).toContain("Sign in to the server again");
+    expect(fake.state.imported).toEqual([]);
+  });
+
+  it("asks for moving work only of a server that takes threads", async () => {
+    await signedIn();
+    expect(fake.state.askedScope.split(" ")).toContain("workspaces:import");
+    fake.state.takesThreads = false;
+    await signedIn();
+    expect(fake.state.askedScope).toBe("workspaces device:register device:connect");
   });
 
   it("refuses a token copied without the device key", async () => {

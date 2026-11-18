@@ -23,6 +23,7 @@ export const Channels = {
   hostedDeviceSignIn: "gram:hosted-device-sign-in",
   hostedDeviceSignOut: "gram:hosted-device-sign-out",
   hostedDeviceRefresh: "gram:hosted-device-refresh",
+  hostedDeviceMoveThread: "gram:hosted-device-move-thread",
   hostedDeviceLend: "gram:hosted-device-lend",
   hostedDeviceResume: "gram:hosted-device-resume",
   hostedDeviceStop: "gram:hosted-device-stop",

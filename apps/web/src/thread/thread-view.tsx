@@ -2,7 +2,16 @@ import type { Thread, ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { GitFork, MessageSquareOff } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { useApi } from "@/api/context";
@@ -104,6 +113,11 @@ import { useUnseenFrom } from "./unread";
 import { SnoozeChip } from "./snooze-chip";
 import { BrowserChip } from "./browser-chip";
 import { HeaderWakeChip } from "./wake-chip";
+
+/** Only for a thread that moved away, so it loads only then. */
+const MovedAwayNotice = lazy(async () => ({
+  default: (await import("./moved-away-notice")).MovedAwayNotice,
+}));
 
 /** The optional turn trace, loaded apart from the conversation. */
 const traceBody = lazyPart(() => import("./trace-view"));
@@ -783,6 +797,11 @@ export function ThreadView({
               <QueueList threadId={threadId} />
             </div>
           </ApprovalSlotsProvider>
+          {thread.transferredTo !== undefined && (
+            <Suspense fallback={null}>
+              <MovedAwayNotice threadId={threadId} />
+            </Suspense>
+          )}
           <FolderMissingNotice threadId={threadId} />
           <MergedCleanupNotice threadId={threadId} />
           <LapsedConnectorsNotice threadId={threadId} />
