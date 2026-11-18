@@ -337,6 +337,8 @@ export interface HostedDeviceView {
     readonly takesThreads?: boolean;
     /** It gives threads that moved there back to this computer. Absent from shells older than it. */
     readonly givesThreads?: boolean;
+    /** It runs work sent from this computer. Absent from shells older than it. */
+    readonly runsWork?: boolean;
     readonly workspaces: ReadonlyArray<{
       readonly id: string;
       readonly name: string;
@@ -448,6 +450,43 @@ export type HostedThreadFetched =
  */
 export type HostedThreadSettled =
   | { readonly ok: true }
+  | { readonly ok: false; readonly why: string; readonly unknown?: true };
+
+/** Work to run on a server, as a new thread of a workspace there. */
+export interface HostedWorkToSend {
+  /** `owner/name` or a git URL, the main one first. */
+  readonly repositories: readonly string[];
+  readonly text: string;
+  readonly title?: string;
+  readonly branch?: string;
+  /** The caller's own id for this send: sent again, it is the same send. */
+  readonly clientKey: string;
+}
+
+/** How sending work ended. `unknown`: no clear answer; sending again with its key is safe. */
+export type HostedWorkSent =
+  | { readonly ok: true; readonly threadId: string; readonly branch?: string }
+  | { readonly ok: false; readonly why: string; readonly unknown?: true };
+
+/** What a wait on a thread sent from here saw. The server's words. */
+export type HostedWorkWaited =
+  | {
+      readonly ok: true;
+      readonly happened: boolean;
+      /** The newest message: the next wait starts after it. */
+      readonly latest?: string;
+      /** Its last reply, when it replied. */
+      readonly reply?: string;
+      readonly title: string;
+      /** `waiting` is waiting on a person there. */
+      readonly state: "running" | "waiting" | "done" | "failed" | "stopped";
+      readonly working: boolean;
+    }
+  | { readonly ok: false; readonly why: string };
+
+/** How a message into a thread sent from here ended. */
+export type HostedWorkMessaged =
+  | { readonly ok: true; readonly queued: boolean; readonly after?: string }
   | { readonly ok: false; readonly why: string; readonly unknown?: true };
 
 export interface DesktopBridge extends DesktopWindows {
@@ -579,6 +618,36 @@ export interface DesktopBridge extends DesktopWindows {
       threadId: string,
       exportedAt: number,
     ): Promise<HostedThreadSettled>;
+    /**
+     * Work sent from this computer to run on a server signed in to, as a thread of a workspace
+     * there, under its rules: `send` starts it, `wait` follows it (at most 20 seconds a call),
+     * `message` answers it and `stop` stops its turn. Only threads sent from here, as the server
+     * checks. Absent from shells older than it.
+     */
+    readonly work?: {
+      send(origin: string, workspace: string, work: HostedWorkToSend): Promise<HostedWorkSent>;
+      wait(
+        origin: string,
+        workspace: string,
+        threadId: string,
+        wait: {
+          readonly after?: string;
+          readonly until?: "reply" | "idle" | "waiting" | "message";
+          readonly timeoutSeconds?: number;
+        },
+      ): Promise<HostedWorkWaited>;
+      message(
+        origin: string,
+        workspace: string,
+        threadId: string,
+        message: {
+          readonly text: string;
+          readonly mode?: "queue" | "steer" | "interrupt";
+          readonly clientKey: string;
+        },
+      ): Promise<HostedWorkMessaged>;
+      stop(origin: string, workspace: string, threadId: string): Promise<HostedDeviceDone>;
+    };
     onChange(callback: () => void): () => void;
   };
   /**

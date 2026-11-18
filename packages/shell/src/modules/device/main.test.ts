@@ -70,6 +70,7 @@ const stateWith = (
       signedIn: true,
       takesThreads: false,
       givesThreads: false,
+      runsWork: false,
       paused,
       workspaces: [workspace(more)],
     },
@@ -262,6 +263,84 @@ describe("the bridge Settings reads the device through", () => {
     expect(asked).toEqual([200]);
     expect(JSON.stringify(read)).not.toContain("t-secret");
     expect(read).toMatchObject({ kept: true, entries: [{ what: "ls", threadTitle: "Fix it" }] });
+  });
+
+  it("sends work only as a server takes it, and shows its words as words", async () => {
+    const sent: Array<unknown> = [];
+    const device = {
+      ...fakeDevice(stateWith(), []),
+      sendWork: async (_origin: string, _workspace: string, work: unknown) => {
+        sent.push(work);
+        return { ok: false, why: "No\u202Ehere.\nTry later." };
+      },
+    } as HostedDevice;
+    const call = served(device);
+    const work = { repositories: ["example/app"], text: "Fix it", clientKey: "k-1" };
+    for (const wrong of [
+      { ...work, repositories: [] },
+      { ...work, repositories: ["example/app\n--upload-pack=x"] },
+      { ...work, repositories: ["--upload-pack=x"] },
+      { ...work, text: "  " },
+      { ...work, clientKey: "k 1" },
+      { ...work, branch: "../main" },
+      { ...work, title: 7 },
+    ])
+      expect(
+        await call(Channels.hostedDeviceSendWork, { origin: ORIGIN, workspace: "w1", work: wrong }),
+      ).toMatchObject({ ok: false });
+    expect(sent).toEqual([]);
+    expect(
+      await call(Channels.hostedDeviceSendWork, { origin: ORIGIN, workspace: "w1", work }),
+    ).toEqual({ ok: false, why: "No\\u202ehere. Try later." });
+    expect(sent).toEqual([work]);
+  });
+
+  it("follows a sent thread by the id the server gave, its title shown as words", async () => {
+    const asked: Array<string> = [];
+    const device = {
+      ...fakeDevice(stateWith(), []),
+      waitWork: async (_origin: string, _workspace: string, threadId: string) => {
+        asked.push(threadId);
+        return {
+          ok: true,
+          waited: {
+            happened: true,
+            latest: "m-2",
+            reply: "Line one.\nLine two.",
+            thread: { title: "Fix\u202E it", state: "waiting", working: false },
+          },
+        };
+      },
+    } as unknown as HostedDevice;
+    const call = served(device);
+    const target = { origin: ORIGIN, workspace: "w1" };
+    expect(
+      await call(Channels.hostedDeviceWaitWork, { ...target, threadId: "ws:1/t" }),
+    ).toMatchObject({ ok: false });
+    expect(
+      await call(Channels.hostedDeviceWaitWork, {
+        ...target,
+        threadId: "thr.01",
+        wait: { until: "never" },
+      }),
+    ).toMatchObject({ ok: false });
+    expect(asked).toEqual([]);
+    expect(
+      await call(Channels.hostedDeviceWaitWork, {
+        ...target,
+        threadId: "thr.01",
+        wait: { after: "m-1", timeoutSeconds: 90 },
+      }),
+    ).toEqual({
+      ok: true,
+      happened: true,
+      latest: "m-2",
+      reply: "Line one.\nLine two.",
+      title: "Fix\\u202e it",
+      state: "waiting",
+      working: false,
+    });
+    expect(asked).toEqual(["thr.01"]);
   });
 
   it("refuses every call from a decision window", async () => {

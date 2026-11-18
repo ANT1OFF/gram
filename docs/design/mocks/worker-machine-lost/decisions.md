@@ -15,7 +15,7 @@ keeps this; the build reads it with the approved version.
   first two files and the rest counted) and View diff, which opens the diff the machine last sent
   in the diff panel's own rows. The worker's rows (Workers, the sidebar, the failures strip) say
   "Machine lost" with what was saved, and the strip opens the worker to resume rather than retry.
-  The task's card, Runheim's board 5, gets a Changes line under the worker ("+25 −21 in 6 files ·
+  The task's card, as an embedding platform's board draws it, gets a Changes line under the worker ("+25 −21 in 6 files ·
   saved 08:12 · Diff") with Resume worker beside it once its machine is lost. Left out: the Branch
   row (whether commits were pushed isn't known without the machine) and the step-by-step resuming
   list.
