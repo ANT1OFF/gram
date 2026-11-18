@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import type { HostedThreadWaited, SentWorkTarget, ThreadId, WorkspaceId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
+import * as TestClock from "effect/testing/TestClock";
 
 import type { SentWorkPortShape } from "../embedding/sent-work-port.ts";
 import { run } from "../git/test-repo.ts";
@@ -146,12 +147,29 @@ describe("a worker sent to a server", () => {
               state: "progress",
               summary: "The handler now keeps seen event ids.",
             });
-            // The next wait starts after what it has read.
+            // The next wait starts after what it has read, a moment later.
+            yield* settle;
+            yield* TestClock.adjust("2 seconds");
             yield* waitReal(
               "the next wait",
               Effect.sync(() =>
                 app.asked.some((each) => each.op === "wait" && each["after"] === "m-2"),
               ),
+            );
+
+            // A question there is reported though it wrote nothing new.
+            yield* Queue.offer(app.waits, {
+              happened: false,
+              latest: "m-2",
+              thread: { title: BRIEF.title, state: "waiting", working: false },
+            });
+            yield* waitReal(
+              "its question",
+              store
+                .listWorkerReports(workspaceId as WorkspaceId, 0)
+                .pipe(
+                  Effect.map((all) => (all.at(-1)?.report.state === "question" ? all : undefined)),
+                ),
             );
 
             // The orchestrator's message and stop go there.
@@ -165,6 +183,26 @@ describe("a worker sent to a server", () => {
               threadId: "t-there-1",
               text: "Add a test for a replayed event.",
             });
+            // Finished there, then asked again: it is followed again.
+            yield* settle;
+            yield* TestClock.adjust("2 seconds");
+            yield* Queue.offer(app.waits, {
+              happened: true,
+              latest: "m-3",
+              reply: "Done.",
+              thread: { title: BRIEF.title, state: "done", working: false },
+            });
+            yield* waitReal(
+              "its end",
+              store
+                .getThread(sent.threadId)
+                .pipe(Effect.map((each) => (each.sentTo?.state === "done" ? each : undefined))),
+            );
+            yield* session.callTool("send_message", {
+              threadId: sent.threadId,
+              text: "Address the review comments.",
+            });
+            expect((yield* store.getThread(sent.threadId)).sentTo?.state).toBe("running");
             expect(
               yield* session.callTool("stop_thread", { threadId: sent.threadId }),
             ).toMatchObject({ stopped: true });

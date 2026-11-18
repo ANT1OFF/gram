@@ -88,6 +88,13 @@ const isResponse = (message: unknown): message is SentWorkResponseMessage =>
 const refusedOf = (result: SentWorkResult): Refused =>
   result.ok ? { ok: false, why: "The desktop app's answer isn't one the server reads." } : result;
 
+const isTarget = (target: unknown): target is SentWorkTarget =>
+  typeof target === "object" &&
+  target !== null &&
+  ["origin", "server", "workspaceId", "workspace", "organisation"].every(
+    (name) => typeof Reflect.get(target, name) === "string",
+  );
+
 /** Requests over `port`, each answered by id, or failed after its time. */
 export const bridgeSentWork = (
   port: SentWorkMessagePort,
@@ -129,7 +136,7 @@ export const bridgeSentWork = (
       ask({ op: "targets" }).pipe(
         Effect.map((result) =>
           result.ok && "targets" in result && Array.isArray(result.targets)
-            ? { ok: true as const, targets: result.targets }
+            ? { ok: true as const, targets: result.targets.filter(isTarget) }
             : refusedOf(result),
         ),
       ),
@@ -150,7 +157,10 @@ export const bridgeSentWork = (
     wait: (origin, workspaceId, threadId, wait) =>
       ask({ op: "wait", origin, workspaceId, threadId, ...wait }).pipe(
         Effect.map((result) =>
-          result.ok && "waited" in result && typeof result.waited === "object"
+          result.ok &&
+          "waited" in result &&
+          typeof result.waited === "object" &&
+          result.waited !== null
             ? { ok: true as const, waited: result.waited }
             : refusedOf(result),
         ),

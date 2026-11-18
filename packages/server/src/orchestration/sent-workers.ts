@@ -42,6 +42,8 @@ const TOOL = "send_worker";
 /** How often the open sent workers are looked for, and how long one unheard waits to try again. */
 export const SENT_LOOK_EVERY = Duration.seconds(30);
 export const SENT_RETRY_AFTER = Duration.seconds(60);
+/** The least time between two waits on one sent worker. */
+export const SENT_WAIT_FLOOR = Duration.seconds(2);
 
 const fail = (message: string) => new AppToolError({ tool: TOOL, message });
 
@@ -168,9 +170,17 @@ export const sendWorkerTool = (deps: Deps) =>
     }),
     // The work leaves this computer, so the user says yes to each, naming where it goes.
     needsApproval: () => Effect.succeed(true),
+    // The card names where it would go now, as the call will pick it.
     describe: (_caller, input) =>
-      Effect.succeed(
-        `Send “${input.title.trim()}” to run on a server${input.workspace === undefined ? "" : ` (${input.workspace})`}, under its rules`,
+      deps.port.targets().pipe(
+        Effect.map((listed) => {
+          const target = listed.ok ? pickTarget(listed.targets, input.workspace) : undefined;
+          const where =
+            target === undefined || typeof target === "string"
+              ? `a server${input.workspace === undefined ? "" : ` (${input.workspace})`}`
+              : targetName(target);
+          return `Send “${input.title.trim()}” from ${input.project.trim()} to run on ${where}, under its rules`;
+        }),
       ),
     handle: (caller, input) => sendWorker(deps, caller, input),
   });
@@ -254,7 +264,9 @@ export const sendWorker = (
         `${target.server} didn't start it: ${started.why}${
           started.unknown === true && input.clientRequestId !== undefined
             ? " It may have started: call again with the same clientRequestId to find out."
-            : ""
+            : started.unknown === true
+              ? ` It may have started there without a record here: tell the user to look in ${target.workspace} on ${target.server} before sending it again.`
+              : ""
         }`,
       );
     const now = yield* Clock.currentTimeMillis;
@@ -285,7 +297,13 @@ export const sendWorker = (
         },
         sentTo,
       })
-      .pipe(Effect.mapError((error) => fail(error.message)));
+      .pipe(
+        // No record here means nothing could follow or stop it, so it is stopped there.
+        Effect.tapError(() =>
+          port.stop(target.origin, target.workspaceId, started.threadId).pipe(Effect.ignore),
+        ),
+        Effect.mapError((error) => fail(error.message)),
+      );
     if (justSent !== undefined) yield* justSent(worker.id);
     return {
       threadId: worker.id,
@@ -335,8 +353,8 @@ export const followOnce = (
         current.sentTo === undefined ? current : { ...current, sentTo: heard },
       )
       .pipe(Effect.ignore);
-    // Something to tell: a reply, a question, or its end. A wait that only ran out says nothing.
-    const changed = happened && (latest !== sent.latest || there.state !== sent.state);
+    // Something to tell: a reply, or a new state (a question, its end) whether or not it wrote.
+    const changed = (happened && latest !== sent.latest) || there.state !== sent.state;
     if (changed) yield* orchestration.recordReport(thread.id, reportOf(heard)).pipe(Effect.ignore);
     return there.state === "done" || there.state === "failed"
       ? ("ended" as const)
@@ -371,7 +389,8 @@ const followAll = (
           if (Option.isNone(thread) || thread.value.parked) return;
           const step = yield* followOnce(deps, thread.value);
           if (step === "ended") return;
-          if (step === "unheard") yield* Effect.sleep(SENT_RETRY_AFTER);
+          // Never back to back: a server that answers at once is asked again only after a pause.
+          yield* Effect.sleep(step === "unheard" ? SENT_RETRY_AFTER : SENT_WAIT_FLOOR);
         }
       }).pipe(Effect.ensuring(Effect.sync(() => following.delete(id))));
     for (;;) {

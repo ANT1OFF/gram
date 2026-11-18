@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   aboveHigh,
   listedRow,
@@ -110,6 +110,8 @@ interface SendInput {
   readonly threadId: string;
   readonly text: string;
   readonly mode?: DeliveryMode;
+  /** The caller's retry id: a message that went to a server goes there once under it. */
+  readonly clientRequestId?: string;
 }
 
 /**
@@ -326,7 +328,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
      */
     const deliver = (
       caller: ThreadId,
-      { threadId, text, mode }: SendInput,
+      { threadId, text, mode, clientRequestId }: SendInput,
       ownWorkerOnly = false,
       uncarded = false,
       parentRoute?: ParentRoute,
@@ -373,7 +375,14 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
             });
           const answer = yield* sentWork.message(sent.origin, sent.workspaceId, sent.threadId, {
             text,
-            clientKey: randomUUID(),
+            // A retry with the same id is the same message there, even after an unknown answer.
+            clientKey:
+              clientRequestId === undefined
+                ? randomUUID()
+                : createHash("sha256")
+                    .update(`${caller}\n${target.thread.id}\n${clientRequestId}`)
+                    .digest("base64url")
+                    .slice(0, 64),
             mode: mode === "queue" ? "queue" : mode === "interrupt" ? "interrupt" : "steer",
           });
           if (!answer.ok)
@@ -386,6 +395,15 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
               }`,
             });
           yield* orchestration.noteMessage(caller, target.thread.id);
+          // A finished worker that is asked again is at work again, so it is followed again.
+          if (sent.state === "done" || sent.state === "failed")
+            yield* store
+              .updateThread(target.thread.id, (current) =>
+                current.sentTo === undefined
+                  ? current
+                  : { ...current, sentTo: { ...current.sentTo, state: "running" } },
+              )
+              .pipe(Effect.ignore);
           return {
             threadId: target.thread.id,
             title: target.thread.title,
@@ -582,7 +600,12 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
       handle: (caller, { threadId, text, mode, clientRequestId }, { carded }) =>
         deliver(
           caller,
-          { threadId, text, ...(mode === undefined ? {} : { mode }) },
+          {
+            threadId,
+            text,
+            ...(mode === undefined ? {} : { mode }),
+            ...(clientRequestId === undefined ? {} : { clientRequestId }),
+          },
           false,
           carded === false,
         ).pipe(
