@@ -37,6 +37,7 @@ import { makeVocabularyCache, projectTerms } from "../../fs/vocabulary.ts";
 import type { HostFileReads, OutsideAllowed } from "../../host/file-reads.ts";
 import { machineNames } from "../../host/machine-name.ts";
 import { SEARCH_MAX_PAGE, SEARCH_PAGE } from "../../fs/search.ts";
+import { readableOnly } from "../../embedding/readable-by.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
@@ -296,7 +297,7 @@ export const fsHandlers = Effect.gen(function* () {
         const thread = yield* threadOf(threadId);
         const checkout = effectiveCheckout(thread);
         // The project's recent threads name what is being worked on; their titles cost no git.
-        const titles = (yield* store.listThreads)
+        const titles = (yield* readableOnly(yield* store.listThreads, (other) => other))
           .filter((other) => other.projectId === thread.projectId)
           .toSorted((a, b) => b.lastActivityAt - a.lastActivityAt)
           .slice(0, VOCABULARY_TITLES)

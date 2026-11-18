@@ -1,6 +1,7 @@
 import { effectiveCheckout } from "@gram/contracts";
 import { samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
+import { readableOnly } from "../../embedding/readable-by.ts";
 import { resolveFolder } from "../../fs/folders.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import type { Handlers } from "./common.ts";
@@ -14,7 +15,7 @@ export const checkoutUseHandlers = Effect.gen(function* () {
       Effect.gen(function* () {
         // A folder that doesn't resolve holds no open thread, but compare its spelling anyway.
         const folder = yield* resolveFolder(path).pipe(Effect.orElseSucceed(() => path));
-        const users = (yield* store.listThreads).filter(
+        const users = (yield* readableOnly(yield* store.listThreads, (thread) => thread)).filter(
           (thread) =>
             samePath(thread.checkout.path, folder) ||
             samePath(effectiveCheckout(thread).path, folder) ||

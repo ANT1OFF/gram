@@ -6,6 +6,8 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
 import { usageHistoryEnabled } from "@gram/contracts";
+import { type ThreadId } from "@gram/contracts";
+import { readableOnly } from "../embedding/readable-by.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import type { Handlers } from "../rpc/handlers/common.ts";
 import { UsageHistoryRoots } from "./history-roots.ts";
@@ -47,6 +49,15 @@ export const usageHandlers = Effect.gen(function* () {
                     Effect.promise((signal) => reader.scan(directories, signal, window)),
                   );
                 }),
+              ),
+        ),
+        // The breakdown names no thread the caller may not see (`embedding/readable-by.ts`).
+        Effect.flatMap((overview) =>
+          overview.breakdown === undefined
+            ? Effect.succeed(overview)
+            : Effect.map(
+                readableOnly(overview.breakdown.threads, (row) => row.threadId as ThreadId),
+                (threads) => ({ ...overview, breakdown: { ...overview.breakdown!, threads } }),
               ),
         ),
       ),

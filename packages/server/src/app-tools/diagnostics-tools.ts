@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { currentReader, logLinesFor } from "../embedding/readable-by.ts";
 import { AppToolError, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -113,6 +114,9 @@ export const readAppLogsTool = (logDir: string) =>
           ...(sinceMs === undefined ? {} : { since: sinceMs }),
         };
         const count = Math.min(Math.max(lines, 1), MAX_LINES);
+        // Nothing of a thread this thread's reader may not see: no line naming it or its folder
+        // (`embedding/readable-by.ts`), before the count is taken.
+        const reader = yield* currentReader;
         const { matching, olderNotRead } = yield* Effect.sync(() => {
           let size = 0;
           try {
@@ -121,8 +125,11 @@ export const readAppLogsTool = (logDir: string) =>
             // Gone between the listing and the read: tailLines reads it as empty too.
           }
           return {
-            matching: tailLines(file, Number.MAX_SAFE_INTEGER, SCAN_BYTES).filter((line) =>
-              logLineMatches(line, filter),
+            matching: logLinesFor(
+              reader,
+              tailLines(file, Number.MAX_SAFE_INTEGER, SCAN_BYTES).filter((line) =>
+                logLineMatches(line, filter),
+              ),
             ),
             olderNotRead: size > SCAN_BYTES,
           };

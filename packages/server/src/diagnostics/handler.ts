@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import { currentReader, logLinesFor } from "../embedding/readable-by.ts";
 import { homedir, release, type as osType } from "node:os";
 import { InvalidState } from "@gram/contracts";
 import * as Effect from "effect/Effect";
@@ -37,12 +38,20 @@ export const diagnosticsHandlers = Effect.gen(function* () {
       Effect.gen(function* () {
         const info = yield* diagnostics;
         const settings = yield* store.getSettings;
+        // Nothing of a thread the caller may not see (`embedding/readable-by.ts`).
+        const reader = yield* currentReader;
         const logs = yield* Effect.sync(() =>
           LOG_NAMES.flatMap((name): LogTail[] => {
             const file = latestLogFile(logDir, name);
             return file === undefined
               ? []
-              : [{ name, file, lines: tailLines(file, logLines ?? DEFAULT_LOG_LINES) }];
+              : [
+                  {
+                    name,
+                    file,
+                    lines: [...logLinesFor(reader, tailLines(file, logLines ?? DEFAULT_LOG_LINES))],
+                  },
+                ];
           }),
         );
         const text = formatDiagnosticsReport({

@@ -14,6 +14,7 @@ import {
   type ThreadId,
   type ThreadSummary,
 } from "@gram/contracts";
+import { hiddenThreads, readableOnly } from "../embedding/readable-by.ts";
 import { checkpointRef, Checkpoints, Proc, tryRepoTop } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -500,7 +501,12 @@ export const ReadAppToolsLive = Layer.effectDiscard(
         Effect.gen(function* () {
           const projects = yield* projectsById;
           const needle = project?.trim().toLowerCase() ?? "";
-          const matching = (yield* runtimes.snapshot).filter((summary) => {
+          // None the caller's reader may not see (`embedding/readable-by.ts`).
+          const readable = yield* readableOnly(
+            yield* runtimes.snapshot,
+            (summary) => summary.thread,
+          );
+          const matching = readable.filter((summary) => {
             if (status !== undefined && summary.status !== status) return false;
             if (needle === "") return true;
             const p = projects.get(summary.thread.projectId);
@@ -594,9 +600,12 @@ export const ReadAppToolsLive = Layer.effectDiscard(
         limit: Schema.optionalKey(Schema.Int),
       }),
       handle: (_threadId, { query, limit = 20 }) =>
-        searchThreads({ query, limit: clamp(limit, 1, 50) }).pipe(
-          Effect.provideService(SqlClient.SqlClient, sql),
-          reads,
+        Effect.flatMap(hiddenThreads, (hidden) =>
+          searchThreads({ query, limit: clamp(limit, 1, 50), hidden }).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            reads,
+          ),
+        ).pipe(
           Effect.map((result) => ({
             hits: result.hits.map((hit) => ({
               threadId: hit.threadId,

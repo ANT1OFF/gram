@@ -4,9 +4,17 @@
 // answer as a path that isn't there.
 
 import {
+  anyPrivate,
+  currentReader,
+  NOT_READABLE,
+  readableByOfWorkspace,
+  readerMay,
+} from "../embedding/readable-by.ts";
+import {
   BUNDLE_MAX_BYTES,
   embeddingOn,
   ExportWorkspaceInput,
+  type WorkspaceId,
   ImportWorkspaceInput,
   type InvalidState,
   type NotFound,
@@ -76,6 +84,8 @@ export const workspaceTransferRoute = (
   transfer: WorkspaceTransferShape,
   on: Effect.Effect<boolean>,
   path: string,
+  /** Whether the caller may see the workspace (`embedding/readable-by.ts`); absent: anyone. */
+  mayExport?: (workspaceId: WorkspaceId) => Effect.Effect<boolean>,
 ): Effect.Effect<
   HttpServerResponse.HttpServerResponse,
   never,
@@ -99,6 +109,8 @@ export const workspaceTransferRoute = (
         Effect.option,
       );
       if (input._tag === "None") return refuse("Name the workspace to export.", 400);
+      if (mayExport !== undefined && !(yield* mayExport(input.value.workspaceId)))
+        return refuse(NOT_READABLE, 404);
       return yield* transfer.exportWorkspace(input.value).pipe(
         Effect.map((bundle) => HttpServerResponse.jsonUnsafe(bundle)),
         Effect.catch((error) => Effect.succeed(refusal(error))),
@@ -132,8 +144,17 @@ export const WorkspaceTransferRoutes = Layer.unwrap(
     );
     // One at a time: a bundle is read whole, and two would each hold their own in memory.
     const one = yield* Semaphore.make(1);
+    // A workspace readable by one person leaves only for them, or for the platform's service.
+    const mayExport = (workspaceId: WorkspaceId) =>
+      Effect.gen(function* () {
+        if (!anyPrivate()) return true;
+        const state = yield* store.getWorkspace(workspaceId).pipe(Effect.option);
+        const holder =
+          state._tag === "Some" ? state.value.workspace.orchestratorThreadId : undefined;
+        return readerMay(yield* currentReader, readableByOfWorkspace(workspaceId, holder));
+      });
     const handle = (path: string) => () =>
-      one.withPermits(1)(workspaceTransferRoute(transfer, on, path));
+      one.withPermits(1)(workspaceTransferRoute(transfer, on, path, mayExport));
     return Layer.mergeAll(
       HttpRouter.add("*", WORKSPACE_EXPORT_PATH, handle(WORKSPACE_EXPORT_PATH)),
       HttpRouter.add("*", WORKSPACE_IMPORT_PATH, handle(WORKSPACE_IMPORT_PATH)),
