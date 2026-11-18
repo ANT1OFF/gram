@@ -1,10 +1,10 @@
 {
   "title": "Move a thread to a server, and bring it back",
   "slug": "hosted-move-a-thread",
-  "status": "draft",
+  "status": "approved",
   "template": "flow",
-  "current": 2,
-  "approved": null,
+  "current": 3,
+  "approved": 3,
   "versions": [
     {
       "n": 1,
@@ -14,6 +14,11 @@
     {
       "n": 2,
       "file": "v2.html",
+      "created": "2026-11-18"
+    },
+    {
+      "n": 3,
+      "file": "v3.html",
       "created": "2026-11-18"
     }
   ]
