@@ -208,6 +208,7 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
                 thread: {
                   ...bundle.thread,
                   model: { ...bundle.thread.model, profileId: "elsewhere" as never, speed: "fast" },
+                  readableBy: "laptop-subject",
                 },
               },
               clone,
@@ -215,6 +216,8 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
           );
           expect(thread.model.profileId).toBeUndefined();
           expect(thread.model.speed).toBeUndefined();
+          // Who reads it is this server's too: another Gram's subject never comes with it.
+          expect(thread.readableBy).toBeUndefined();
           expect(thread.id).toBe(exported.threadId);
           expect(thread.transferredFrom?.name).toBe("Laptop");
           expect(thread.agentSessionId).toBeUndefined();
@@ -313,11 +316,13 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
             })
             .pipe(Effect.flip);
           expect(elsewhere.message).toContain("couldn't be put back on your machine");
+          // A thread only one person could read there is only the importing person's here.
           const { thread } = yield* transfer.importThreadFor({
-            bundle,
+            bundle: { ...bundle, thread: { ...bundle.thread, readableBy: "laptop-subject" } },
             from: "Laptop",
             person: "grace",
           });
+          expect(thread.readableBy).toBe("grace");
           expect(thread.checkout).toMatchObject({ kind: "worktree", hostId: MACHINE });
           const folder = thread.checkout.path;
           expect(folder).toContain(nodePath.join("shop", ".worktrees"));
