@@ -9,7 +9,10 @@ import {
   HostedDeviceRegistered,
   hostedOrigin,
   HostedThreadImported,
+  type HostedThreadExport,
+  HostedThreadExported,
   type HostedThreadImport,
+  type HostedThreadSettle,
   HostedTokenAnswer,
   type HostedWorkspace,
   HostedWorkspaces,
@@ -50,6 +53,7 @@ export const HOSTED_SCOPES = [
   "device:register",
   "device:connect",
   "workspaces:import",
+  "workspaces:export",
 ] as const;
 export type HostedScope = (typeof HOSTED_SCOPES)[number];
 
@@ -337,7 +341,9 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
       redirect_uri: redirectUri,
       // Moving work is asked for only of a server that takes it: another may refuse the scope.
       scope: HOSTED_SCOPES.filter(
-        (scope) => scope !== "workspaces:import" || discovery.thread_import_endpoint !== undefined,
+        (scope) =>
+          (scope !== "workspaces:import" || discovery.thread_import_endpoint !== undefined) &&
+          (scope !== "workspaces:export" || givesThreads(discovery)),
       ).join(" "),
       state,
       code_challenge: challenge,
@@ -698,6 +704,80 @@ export const importHostedThread = async (
   // Opened only where the server is: never an address it sends elsewhere.
   const opens = url !== undefined && sameOrigin(url, calls.discovery.issuer) ? url : undefined;
   return { ok: true, threadId, notes, ...(opens === undefined ? {} : { url: opens }) };
+};
+
+/** Whether the server gives threads that moved there back: it names both calls for it. */
+export const givesThreads = (discovery: HostedDiscovery): boolean =>
+  discovery.thread_export_endpoint !== undefined && discovery.thread_settle_endpoint !== undefined;
+
+/** The longest bundle read back from a server: a long conversation, its edits being at the remote. */
+export const HOSTED_THREAD_EXPORT_MAX_BYTES = 32 * 1024 * 1024;
+
+/**
+ * Asks the server for a thread of a workspace there as a bundle, with the person's sign-in, to
+ * bring it back here. The server decides whether it may go; a refusal is its word. Nothing changes
+ * there but the ref its edits are kept on, so a call with no answer can simply be made again.
+ */
+export const exportHostedThread = async (
+  calls: HostedCalls & HostedThreadExport,
+): Promise<{ readonly ok: true; readonly bundle: unknown } | Failed> => {
+  const endpoint = calls.discovery.thread_export_endpoint;
+  if (endpoint === undefined || !givesThreads(calls.discovery))
+    return failed("This server doesn't give threads back.");
+  const response = await authorizedCall(
+    calls.keeper,
+    calls.key,
+    "workspaces:export",
+    calls.fetch,
+    "POST",
+    endpoint,
+    { workspaceId: calls.workspaceId, threadId: calls.threadId },
+    HOSTED_THREAD_IMPORT_MS,
+  );
+  if ("why" in response) return response;
+  const length = Number(response.headers.get("content-length") ?? "0");
+  if (length > HOSTED_THREAD_EXPORT_MAX_BYTES) {
+    await response.body?.cancel().catch(() => undefined);
+    return failed("The thread is larger than Gram takes back.");
+  }
+  const answer = await jsonOf(response);
+  if (response.status !== 200)
+    return failed(refusalOf(answer) ?? "The server refused to give the thread back.");
+  const decoded = Schema.decodeUnknownOption(HostedThreadExported)(answer);
+  return decoded._tag === "None" ? failed(UNREADABLE) : { ok: true, bundle: decoded.value.bundle };
+};
+
+/**
+ * Tells the server the thread is here now, so its copy there becomes read-only. `unknown` when
+ * there was no clear answer: settling again is safe, since a settled copy stays settled.
+ */
+export const settleHostedThread = async (
+  calls: HostedCalls & HostedThreadSettle,
+): Promise<{ readonly ok: true } | (Failed & { readonly unknown?: true })> => {
+  const endpoint = calls.discovery.thread_settle_endpoint;
+  if (endpoint === undefined || !givesThreads(calls.discovery))
+    return failed("This server doesn't give threads back.");
+  const response = await authorizedCall(
+    calls.keeper,
+    calls.key,
+    "workspaces:export",
+    calls.fetch,
+    "POST",
+    endpoint,
+    {
+      workspaceId: calls.workspaceId,
+      threadId: calls.threadId,
+      exportedAt: calls.exportedAt,
+      to: calls.to,
+    },
+  );
+  if ("why" in response)
+    return response.why === UNREACHABLE ? { ...response, unknown: true } : response;
+  const answer = await jsonOf(response);
+  if (response.status >= 500) return { ...failed(refusalOf(answer) ?? UNREACHABLE), unknown: true };
+  if (response.status !== 200)
+    return failed(refusalOf(answer) ?? "The server refused to settle the thread there.");
+  return { ok: true };
 };
 
 const sameOrigin = (address: string, origin: string): boolean => {

@@ -16,6 +16,10 @@ export const hostedDevicePreload = (ipc: PreloadIpc): Pick<DesktopBridge, "hoste
     refresh: (origin) => ipc.invoke(Channels.hostedDeviceRefresh, { origin }),
     moveThread: (origin, workspace, bundle) =>
       ipc.invoke(Channels.hostedDeviceMoveThread, { origin, workspace, bundle }),
+    fetchThread: (origin, workspace, threadId) =>
+      ipc.invoke(Channels.hostedDeviceFetchThread, { origin, workspace, threadId }),
+    settleThread: (origin, workspace, threadId, exportedAt) =>
+      ipc.invoke(Channels.hostedDeviceSettleThread, { origin, workspace, threadId, exportedAt }),
     lend: (origin, workspace) => ipc.invoke(Channels.hostedDeviceLend, { origin, workspace }),
     resume: (origin, workspace) => ipc.invoke(Channels.hostedDeviceResume, { origin, workspace }),
     stop: (origin, workspace) => ipc.invoke(Channels.hostedDeviceStop, { origin, workspace }),

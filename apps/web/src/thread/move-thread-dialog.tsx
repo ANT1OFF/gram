@@ -95,6 +95,7 @@ export function MoveThreadDialog({
         exportedAt: exported.exportedAt,
         to,
         ...(sent.url === undefined ? {} : { url: sent.url }),
+        server: { origin: target.origin, workspaceId: target.workspace },
       }).then(
         () => undefined,
         (failed: unknown) => wordsOf(failed, "The copy here couldn't be made read-only."),

@@ -73,6 +73,14 @@ export const fakeServer = () => {
     askedScope: "",
     /** How a thread import is answered, when not with the thread. */
     importAnswer: undefined as { status: number; body: unknown } | undefined,
+    /** Give threads that moved there back; the sign-in carries `workspaces:export`. */
+    givesThreads: true,
+    /** What was asked for and settled, as the bodies came. */
+    exported: [] as Array<unknown>,
+    settled: [] as Array<unknown>,
+    /** How an export or a settle is answered, when not with the bundle or a yes. */
+    exportAnswer: undefined as { status: number; body: unknown } | undefined,
+    settleAnswer: undefined as { status: number; body: unknown } | undefined,
   };
   let origin = "";
   const handle = async (request: IncomingMessage) => {
@@ -90,6 +98,12 @@ export const fakeServer = () => {
         devices_endpoint: `${origin}/api/devices`,
         device_connect: `${origin.replace("http:", "ws:")}/device/connect`,
         ...(state.takesThreads ? { thread_import_endpoint: `${origin}/api/threads/import` } : {}),
+        ...(state.givesThreads
+          ? {
+              thread_export_endpoint: `${origin}/api/threads/export`,
+              thread_settle_endpoint: `${origin}/api/threads/settle`,
+            }
+          : {}),
       });
     if (url.pathname === "/oauth/authorize") {
       state.askedScope = url.searchParams.get("scope") ?? "";
@@ -111,7 +125,7 @@ export const fakeServer = () => {
         return json(400, { error: "use_dpop_nonce" }, { "dpop-nonce": state.nonce });
       }
       const form = new URLSearchParams(await readBody(request));
-      let scope = `workspaces device:register device:connect${state.importScope ? " workspaces:import" : ""}`;
+      let scope = `workspaces device:register device:connect${state.importScope ? " workspaces:import" : ""}${state.givesThreads ? " workspaces:export" : ""}`;
       if (form.get("grant_type") === "authorization_code") {
         const code = state.codes.get(form.get("code") ?? "");
         state.codes.delete(form.get("code") ?? "");
@@ -211,6 +225,18 @@ export const fakeServer = () => {
       return state.importAnswer === undefined
         ? json(200, { workspaceId: "w1", threadId: "t-moved", notes: ["Its edits are back."] })
         : json(state.importAnswer.status, state.importAnswer.body);
+    }
+    if (url.pathname === "/api/threads/export" && held.scope === "workspaces:export") {
+      state.exported.push(JSON.parse(await readBody(request)));
+      return state.exportAnswer === undefined
+        ? json(200, { bundle: { format: 1, exportedAt: 1_000 } })
+        : json(state.exportAnswer.status, state.exportAnswer.body);
+    }
+    if (url.pathname === "/api/threads/settle" && held.scope === "workspaces:export") {
+      state.settled.push(JSON.parse(await readBody(request)));
+      return state.settleAnswer === undefined
+        ? json(200, { settled: true })
+        : json(state.settleAnswer.status, state.settleAnswer.body);
     }
     if (url.pathname.startsWith("/api/devices/") && request.method === "DELETE") {
       state.forgotten.push(decodeURIComponent(url.pathname.slice("/api/devices/".length)));

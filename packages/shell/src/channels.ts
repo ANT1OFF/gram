@@ -24,6 +24,8 @@ export const Channels = {
   hostedDeviceSignOut: "gram:hosted-device-sign-out",
   hostedDeviceRefresh: "gram:hosted-device-refresh",
   hostedDeviceMoveThread: "gram:hosted-device-move-thread",
+  hostedDeviceFetchThread: "gram:hosted-device-fetch-thread",
+  hostedDeviceSettleThread: "gram:hosted-device-settle-thread",
   hostedDeviceLend: "gram:hosted-device-lend",
   hostedDeviceResume: "gram:hosted-device-resume",
   hostedDeviceStop: "gram:hosted-device-stop",

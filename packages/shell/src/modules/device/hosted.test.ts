@@ -7,7 +7,9 @@ import {
   forgetHostedDevice,
   HOSTED_TOKEN_MOST_MS,
   HOSTED_TOKEN_RENEW_BEFORE_MS,
+  exportHostedThread,
   importHostedThread,
+  settleHostedThread,
   listHostedWorkspaces,
   makeTokenKeeper,
   registerHostedDevice,
@@ -324,12 +326,52 @@ describe("a hosted server", () => {
     expect(fake.state.imported).toEqual([]);
   });
 
-  it("asks for moving work only of a server that takes threads", async () => {
+  it("asks for moving work only of a server that takes threads, or gives them back", async () => {
     await signedIn();
-    expect(fake.state.askedScope.split(" ")).toContain("workspaces:import");
+    expect(fake.state.askedScope.split(" ")).toEqual(
+      expect.arrayContaining(["workspaces:import", "workspaces:export"]),
+    );
     fake.state.takesThreads = false;
+    fake.state.givesThreads = false;
     await signedIn();
     expect(fake.state.askedScope).toBe("workspaces device:register device:connect");
+  });
+
+  it("asks for a thread back with the person's sign-in, and settles its copy there", async () => {
+    const { discovery } = await signedIn();
+    const calls = { discovery, keeper: await keeperFor(), key, fetch };
+    const asked = { ...calls, workspaceId: "w1", threadId: "t-1" };
+    expect(await exportHostedThread(asked)).toEqual({
+      ok: true,
+      bundle: { format: 1, exportedAt: 1_000 },
+    });
+    expect(fake.state.exported).toEqual([{ workspaceId: "w1", threadId: "t-1" }]);
+    // Its word, when it says no: an organisation that keeps its threads, say.
+    fake.state.exportAnswer = {
+      status: 403,
+      body: { error: { message: "Example keeps its threads." } },
+    };
+    expect(await exportHostedThread(asked)).toEqual({
+      ok: false,
+      why: "Example keeps its threads.",
+    });
+
+    const settle = { ...asked, exportedAt: 1_000, to: "Ada's laptop" };
+    expect(await settleHostedThread(settle)).toEqual({ ok: true });
+    expect(fake.state.settled).toEqual([
+      { workspaceId: "w1", threadId: "t-1", exportedAt: 1_000, to: "Ada's laptop" },
+    ]);
+    // No clear answer: the copy there may still take work, and settling again is safe.
+    fake.state.settleAnswer = { status: 502, body: {} };
+    expect(await settleHostedThread(settle)).toMatchObject({ ok: false, unknown: true });
+    fake.state.settleAnswer = { status: 409, body: { error: "It carried on there." } };
+    expect(await settleHostedThread(settle)).toEqual({ ok: false, why: "It carried on there." });
+
+    // A server that names neither is asked nothing.
+    const { thread_export_endpoint: _e, thread_settle_endpoint: _s, ...without } = discovery;
+    const before = fake.state.exported.length;
+    expect(await exportHostedThread({ ...asked, discovery: without })).toMatchObject({ ok: false });
+    expect(fake.state.exported.length).toBe(before);
   });
 
   it("refuses a token copied without the device key", async () => {

@@ -434,6 +434,13 @@ export const HostedDiscovery = Schema.Struct({
    * a server that takes none.
    */
   thread_import_endpoint: Schema.optionalKey(Address),
+  /**
+   * Where a thread that moved there is asked for, to bring it back to this machine (`POST`,
+   * `HostedThreadExport`), and where its copy there is settled once it is here (`POST`,
+   * `HostedThreadSettle`). Both or neither; absent on a server that gives none back.
+   */
+  thread_export_endpoint: Schema.optionalKey(Address),
+  thread_settle_endpoint: Schema.optionalKey(Address),
 });
 export type HostedDiscovery = typeof HostedDiscovery.Type;
 
@@ -502,6 +509,8 @@ export const checkHostedDiscovery = (origin: string, document: unknown): HostedD
     discovery.workspaces_endpoint,
     discovery.devices_endpoint,
     ...(discovery.thread_import_endpoint === undefined ? [] : [discovery.thread_import_endpoint]),
+    ...(discovery.thread_export_endpoint === undefined ? [] : [discovery.thread_export_endpoint]),
+    ...(discovery.thread_settle_endpoint === undefined ? [] : [discovery.thread_settle_endpoint]),
   ];
   if (!calls.every((address) => on(address, secure ? "https:" : "http:")))
     return { ok: false, why: "The server sends Gram to another address." };
@@ -544,6 +553,25 @@ export const HostedThreadImported = Schema.Struct({
   url: Schema.optionalKey(Address),
 });
 export type HostedThreadImported = typeof HostedThreadImported.Type;
+
+/** `POST thread_export_endpoint`: a thread of a workspace there, to bring back to this machine. */
+export interface HostedThreadExport {
+  readonly workspaceId: string;
+  readonly threadId: string;
+}
+
+/** Its answer: the thread as a bundle, which this machine's own server reads and checks. */
+export const HostedThreadExported = Schema.Struct({ bundle: Schema.Unknown });
+
+/** `POST thread_settle_endpoint`: the thread is here now, so its copy there becomes read-only. */
+export interface HostedThreadSettle {
+  readonly workspaceId: string;
+  readonly threadId: string;
+  /** The bundle's `exportedAt`: a thread that carried on there since stays as it is. */
+  readonly exportedAt: number;
+  /** This machine's name, as the copy there says where it went. */
+  readonly to: string;
+}
 
 /** `POST devices_endpoint/challenge`'s answer: something new to sign, for this person alone. */
 export const HostedDeviceChallenge = Schema.Struct({
