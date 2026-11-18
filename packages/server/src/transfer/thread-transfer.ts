@@ -158,15 +158,21 @@ export interface ThreadTransferShape {
   ): Effect.Effect<Thread, NotFound | ThreadNotFound | InvalidState>;
 }
 
+/** Who alone may read a moved thread here, and who brought it in, when a person did. */
+interface Who {
+  readonly reader?: string;
+  readonly by?: string;
+}
+
 /**
- * Whether the thread here is the one this person's move of `input` brought in: the same thread,
- * from the same Gram, still here and theirs to read.
+ * Whether the thread here is the one this person's move of `input` brought in: the same export,
+ * from the same Gram, brought in by them and still here. A later export of it is another move.
  */
 const sameMove = (thread: Thread, input: ImportThreadForPersonInput): boolean =>
   thread.transferredFrom?.name === input.from &&
-  thread.transferredTo === undefined &&
-  thread.createdAt === input.bundle.thread.createdAt &&
-  (thread.readableBy === undefined || thread.readableBy === input.person);
+  thread.transferredFrom.exportedAt === input.bundle.exportedAt &&
+  thread.transferredFrom.by === input.person &&
+  thread.transferredTo === undefined;
 
 export interface ThreadTransferOptions {
   /** The git transports the ref may travel over. Tests allow `file`. */
@@ -404,7 +410,8 @@ const make = (options: ThreadTransferOptions) =>
     /**
      * The thread recorded in the folder made for it and opened. Until the record is written, any
      * failure runs `undo`, which takes that folder back; after it, the record keeps the folder,
-     * closed, when the thread can't be opened. `reader` is who alone may read it here, if anyone.
+     * closed, when the thread can't be opened. `who` says who alone may read it here, and who
+     * brought it in, if anyone.
      */
     const stage = (
       bundle: ThreadBundle,
@@ -412,10 +419,10 @@ const make = (options: ThreadTransferOptions) =>
       project: Project,
       checkout: Checkout,
       undo: Effect.Effect<void>,
-      reader: string | undefined,
+      who: Who,
     ) =>
       Effect.gen(function* () {
-        yield* record(bundle, from, project, checkout, reader).pipe(Effect.onError(() => undo));
+        yield* record(bundle, from, project, checkout, who).pipe(Effect.onError(() => undo));
         return yield* openMoved(bundle.thread.id);
       });
 
@@ -424,7 +431,7 @@ const make = (options: ThreadTransferOptions) =>
       from: string,
       project: Project,
       checkout: Checkout,
-      reader: string | undefined,
+      who: Who,
     ) =>
       Effect.gen(function* () {
         const settings = yield* store.getSettings;
@@ -455,8 +462,13 @@ const make = (options: ThreadTransferOptions) =>
               ...checkout,
               ...(base === undefined ? {} : { base }),
             },
-            transferredFrom: { name: from, at: now },
-            ...(reader === undefined ? {} : { readableBy: reader }),
+            transferredFrom: {
+              name: from,
+              at: now,
+              exportedAt: bundle.exportedAt,
+              ...(who.by === undefined ? {} : { by: who.by }),
+            },
+            ...(who.reader === undefined ? {} : { readableBy: who.reader }),
           },
           closedAt: now,
           messages: bundle.messages,
@@ -467,7 +479,7 @@ const make = (options: ThreadTransferOptions) =>
       });
 
     /** The thread in a new worktree of the repository at `root`, on this machine. */
-    const importHere = (input: ImportThreadInput, reader?: string) =>
+    const importHere = (input: ImportThreadInput, who: Who = {}) =>
       Effect.gen(function* () {
         const { bundle } = input;
         yield* admit(bundle);
@@ -504,7 +516,7 @@ const make = (options: ThreadTransferOptions) =>
             ...(bundle.branch === undefined || placed.detached ? {} : { branch: bundle.branch }),
           },
           withGit("", removeWorktreeDir(top, dir, true)).pipe(Effect.ignore),
-          reader,
+          who,
         );
         return {
           thread,
@@ -517,7 +529,7 @@ const make = (options: ThreadTransferOptions) =>
      * the repository, if it hasn't, and makes the thread's folder from the ref and commit the
      * bundle names (`host.stop.restore` with `ref`), or from the branch at exactly its commit.
      */
-    const importOnMachine = (input: ImportThreadForPersonInput, reader: string | undefined) =>
+    const importOnMachine = (input: ImportThreadForPersonInput, who: Who) =>
       Effect.gen(function* () {
         const { bundle } = input;
         const url = bundle.repository.remote;
@@ -622,7 +634,7 @@ const make = (options: ThreadTransferOptions) =>
             ...(cloneIdentity === undefined ? {} : { cloneIdentity }),
           },
           undo,
-          reader,
+          who,
         );
         return {
           thread,
@@ -642,8 +654,11 @@ const make = (options: ThreadTransferOptions) =>
           return { thread: here.value, notes: [] } satisfies ImportThreadResult;
         yield* admit(input.bundle);
         // A thread only one person could read stays only theirs: the person bringing it in.
-        const reader = input.bundle.thread.readableBy === undefined ? undefined : input.person;
-        if (config.headless === true) return yield* importOnMachine(input, reader);
+        const who: Who = {
+          by: input.person,
+          ...(input.bundle.thread.readableBy === undefined ? {} : { reader: input.person }),
+        };
+        if (config.headless === true) return yield* importOnMachine(input, who);
         const project = yield* withGit(
           "The repository couldn't be cloned here",
           store.getSettings.pipe(
@@ -657,7 +672,7 @@ const make = (options: ThreadTransferOptions) =>
         );
         return yield* importHere(
           { bundle: input.bundle, root: project.root, from: input.from },
-          reader,
+          who,
         );
       });
 

@@ -350,6 +350,15 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
             .importThreadFor({ bundle: moved, from: "Desktop", person: "grace" })
             .pipe(Effect.flip);
           expect(elsewhereGram.message).toContain("already on this server");
+          // A later export of it is another move, and the copy here is behind it: refused.
+          const later = yield* transfer
+            .importThreadFor({
+              bundle: { ...moved, exportedAt: moved.exportedAt + 1 },
+              from: "Laptop",
+              person: "grace",
+            })
+            .pipe(Effect.flip);
+          expect(later.message).toContain("already on this server");
         }),
       );
     }),

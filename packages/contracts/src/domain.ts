@@ -901,6 +901,10 @@ export const Thread = Schema.Struct({
       name: Schema.String.check(Schema.isMaxLength(200)),
       /** Epoch ms it arrived. */
       at: Schema.Number,
+      /** The bundle's `exportedAt`: which export of it this is. */
+      exportedAt: Schema.optionalKey(Schema.Number),
+      /** The person the platform in front brought it in for, by the id it states for them. */
+      by: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
       seeded: Schema.optionalKey(Schema.Boolean),
     }),
   ),
