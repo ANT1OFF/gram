@@ -4,10 +4,10 @@
 // event, search, another thread's tools or a write, while Ada gets all of it. What it spawns keeps
 // its reader, nothing clears it, and a thread started for nobody in particular is everyone's.
 import { randomBytes } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterAll, describe, expect, layer } from "@effect/vitest";
 import {
   GramRpcs,
@@ -366,6 +366,73 @@ describe("threads readable by one person", () => {
           );
         expect(JSON.stringify(yield* tool(PRIVATE, "get_thread", { threadId: PRIVATE }))).toContain(
           "the secret plan",
+        );
+      }),
+    );
+
+    it.effect("keep their folders from anyone else, by any path that leads there", () =>
+      Effect.gen(function* () {
+        const { port } = yield* info;
+        const store = yield* ThreadStore;
+        const folderOf = (threadId: ThreadId) =>
+          Effect.map(store.getThread(threadId), (thread) => thread.checkout.path);
+        const privateFolder = yield* folderOf(PRIVATE);
+        const openFolder = yield* folderOf(OPEN);
+        writeFileSync(join(privateFolder, "AGENTS.md"), "the secret instructions");
+        const parent = dirname(privateFolder);
+        const linkDir = folder();
+        const link = join(linkDir, "shortcut");
+        symlinkSync(privateFolder, link);
+
+        const adaClient = yield* as(port, ada);
+        const moClient = yield* as(port, mo);
+
+        // Every spelling of the folder: as it is, through a link, with `..`, and relative to a
+        // thread the caller may read.
+        const ways = [
+          { path: privateFolder },
+          { path: link },
+          { path: `${openFolder}/../${basename(privateFolder)}` },
+          { path: `../${basename(privateFolder)}`, threadId: OPEN },
+        ];
+        for (const way of ways) {
+          expect(yield* outcome(moClient["fs.list"](way)), way.path).toContain(NOT_READABLE);
+          expect(yield* outcome(moClient["fs.files"](way)), way.path).toContain(NOT_READABLE);
+        }
+        for (const path of [privateFolder, link, `${openFolder}/../${basename(privateFolder)}`])
+          expect(yield* outcome(moClient["worktree.status"]({ path })), path).toContain(
+            NOT_READABLE,
+          );
+        expect(
+          yield* outcome(moClient["fs.list"]({ path: join(privateFolder, "AGENTS.md") })),
+        ).toContain(NOT_READABLE);
+
+        // A folder above it lists everything but the thread's folder.
+        const listedNames = (who: Client) =>
+          Effect.map(who["fs.list"]({ path: parent, showHidden: true }), (listing) =>
+            listing.entries.map((entry) => entry.name),
+          );
+        expect(yield* listedNames(adaClient)).toEqual(
+          expect.arrayContaining([basename(privateFolder), basename(openFolder)]),
+        );
+        const moNames = yield* listedNames(moClient);
+        expect(moNames).toContain(basename(openFolder));
+        expect(moNames).not.toContain(basename(privateFolder));
+        const moFiles = yield* moClient["fs.files"]({ path: parent });
+        expect(
+          moFiles.entries.filter((entry) => entry.path.startsWith(basename(privateFolder))),
+        ).toEqual([]);
+
+        // Ada reaches it every way a folder outside a thread is reached; the relative way is
+        // the open thread's folder's to refuse, as it refuses anyone.
+        for (const way of ways.slice(0, 3)) {
+          expect(JSON.stringify(yield* adaClient["fs.list"](way)), way.path).toContain("AGENTS.md");
+          expect(JSON.stringify(yield* adaClient["fs.files"](way)), way.path).toContain(
+            "AGENTS.md",
+          );
+        }
+        expect(yield* outcome(adaClient["worktree.status"]({ path: privateFolder }))).not.toContain(
+          NOT_READABLE,
         );
       }),
     );

@@ -18,6 +18,8 @@
 // the store notes each thread's `readableBy` wherever it reads or writes one, and once when it
 // opens (`notePrivacy`). The value never changes, so the note never goes stale.
 
+import { isAbsolute, resolve } from "node:path";
+import { isInside, physicalPath } from "@gram/git";
 import type { Thread, ThreadId } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -49,10 +51,31 @@ export const SUBJECT = /^[\x21-\x7e]{1,128}$/;
 
 const known = new Map<ThreadId, string>();
 
-/** Notes whose a thread is, as it is read or written. A value once noted is never changed. */
-export const notePrivacy = (thread: Pick<Thread, "id" | "readableBy">): void => {
-  if (thread.readableBy !== undefined && !known.has(thread.id))
-    known.set(thread.id, thread.readableBy);
+/**
+ * Every folder a thread readable by one person has worked in, as noted: its checkout, the one it
+ * follows now, and its other worktrees. Only ever added to, so a folder it moved out of stays its
+ * (`touchesUnreadable` fails closed).
+ */
+const foldersOf = new Map<ThreadId, Set<string>>();
+
+/** The folders of a thread as the store keeps it, any of which may be absent. */
+export interface ThreadFolders {
+  readonly checkout?: { readonly path: string } | undefined;
+  readonly currentCheckout?: { readonly path: string } | undefined;
+  readonly extraCheckouts?: ReadonlyArray<{ readonly path: string }> | undefined;
+}
+
+/** Notes whose a thread is, as it is read or written, and where it works. A reader never changes. */
+export const notePrivacy = (thread: Pick<Thread, "id" | "readableBy"> & ThreadFolders): void => {
+  if (thread.readableBy === undefined) return;
+  if (!known.has(thread.id)) known.set(thread.id, thread.readableBy);
+  const paths = [thread.checkout, thread.currentCheckout, ...(thread.extraCheckouts ?? [])];
+  for (const each of paths) {
+    if (each === undefined || typeof each.path !== "string" || !isAbsolute(each.path)) continue;
+    let folders = foldersOf.get(thread.id);
+    if (folders === undefined) foldersOf.set(thread.id, (folders = new Set()));
+    folders.add(resolve(each.path));
+  }
 };
 
 /** Whether any thread here is readable by one person: none, and nothing need be asked. */
@@ -151,3 +174,115 @@ export const sameReaders = (
   a: Pick<Thread, "id" | "readableBy">,
   b: Pick<Thread, "id" | "readableBy">,
 ): boolean => (a.readableBy ?? readableByOf(a.id)) === (b.readableBy ?? readableByOf(b.id));
+
+// Folders. A thread readable by one person has its files in a folder (a profile's AGENTS.md and
+// instructions, its work), which a call taking a path of the caller's choosing could reach. A call
+// naming a path inside such a folder, by any spelling (`..`, a link that leads there), is refused
+// to anyone the thread is unreadable by (`rpc/actor-guard.ts`), and a listing of a folder above it
+// leaves the folder out (`withoutUnreadable`).
+
+/** `path` with every link resolved, as far as it exists; the rest as written (`physicalPath`). */
+export const realOf = (path: string): string => physicalPath(path);
+
+/** Whether `path` is `folder` or inside it, by whole components. */
+const within = (path: string, folder: string): boolean => isInside(folder, path);
+
+/** The folders, as written and with links resolved, of the threads `reader` may not see. */
+const unreadableFolders = (reader: Reader | undefined): ReadonlyArray<string> => {
+  const folders: Array<string> = [];
+  for (const [id, paths] of foldersOf) {
+    if (readerMay(reader, known.get(id))) continue;
+    for (const path of paths) {
+      folders.push(path);
+      const real = realOf(path);
+      if (real !== path) folders.push(real);
+    }
+  }
+  return folders;
+};
+
+/** Whether any of `paths` (absolute) lies in a folder of a thread `reader` may not see. */
+export const touchesUnreadable = (
+  reader: Reader | undefined,
+  paths: ReadonlyArray<string>,
+): boolean => {
+  if (paths.length === 0 || !anyPrivate()) return false;
+  const folders = unreadableFolders(reader);
+  if (folders.length === 0) return false;
+  return paths.some((path) => {
+    const written = resolve(path);
+    const real = realOf(written);
+    return folders.some((folder) => within(written, folder) || within(real, folder));
+  });
+};
+
+/** A key that names a path of the caller's choosing, a folder or a file. */
+const PATH_KEY =
+  /(path|paths|root|roots|cwd|dir|directory|directories|folder|worktree|file|files)$/i;
+
+/**
+ * Every path a call's payload names, anywhere in it: absolute ones as given, relative ones against
+ * `bases` (the folders the call is about: the threads it names, and its own absolute paths).
+ */
+export const pathsMentioned = (
+  payload: unknown,
+  bases: ReadonlyArray<string> = [],
+): ReadonlyArray<string> => {
+  const absolute: Array<string> = [];
+  const relative: Array<string> = [];
+  const take = (value: unknown) => {
+    if (typeof value !== "string" || value === "" || value.length > 4096) return;
+    (isAbsolute(value) ? absolute : relative).push(value);
+  };
+  const walk = (value: unknown, depth: number) => {
+    if (depth > 4 || typeof value !== "object" || value === null) return;
+    if (Array.isArray(value)) {
+      for (const item of value.slice(0, 500)) walk(item, depth + 1);
+      return;
+    }
+    for (const [key, field] of Object.entries(value)) {
+      if (PATH_KEY.test(key)) {
+        if (Array.isArray(field)) for (const item of field.slice(0, 500)) take(item);
+        else take(field);
+      }
+      walk(field, depth + 1);
+    }
+  };
+  walk(payload, 0);
+  const against = [...bases, ...absolute];
+  return [...absolute, ...relative.flatMap((path) => against.map((base) => resolve(base, path)))];
+};
+
+/**
+ * `result` of a listing (`fs.list`, `fs.files`, a worktree list) with no entry inside a folder of a
+ * thread `reader` may not see: each array's objects whose `path`, against `base` where relative,
+ * lies there are left out. Unchanged while no thread is readable by one person.
+ */
+export const withoutUnreadable = (
+  reader: Reader | undefined,
+  result: unknown,
+  base: string | undefined,
+): unknown => {
+  if (!anyPrivate()) return result;
+  const folders = unreadableFolders(reader);
+  if (folders.length === 0) return result;
+  const bases = base === undefined ? [] : [resolve(base), realOf(base)];
+  const hidden = (path: string): boolean => {
+    const spellings = isAbsolute(path) ? [resolve(path)] : bases.map((each) => resolve(each, path));
+    return spellings.some((spelling) => folders.some((folder) => within(spelling, folder)));
+  };
+  const scrub = (value: unknown, depth: number): unknown => {
+    if (depth > 6 || typeof value !== "object" || value === null) return value;
+    if (Array.isArray(value))
+      return value
+        .filter((item) => {
+          const path = (item as { readonly path?: unknown } | null)?.path;
+          return !(typeof path === "string" && hidden(path));
+        })
+        .map((item) => scrub(item, depth + 1));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, field]) => [key, scrub(field, depth + 1)]),
+    );
+  };
+  return scrub(result, 0);
+};

@@ -1,4 +1,5 @@
 import {
+  effectiveCheckout,
   isPersonalSetting,
   settingsPatchPaths,
   type SettingsPatch,
@@ -13,9 +14,13 @@ import {
   type Reader,
   ReadingAs,
   readableByOf,
+  pathsMentioned,
   readerMay,
   threadsMentioned,
+  touchesUnreadable,
+  withoutUnreadable,
 } from "../embedding/readable-by.ts";
+import { isAbsolute, resolve } from "node:path";
 import {
   holderOf,
   mayReachThread,
@@ -227,6 +232,19 @@ export const setsOnlyOwnView = (action: string, payload: unknown): boolean => {
   return paths.length > 0 && paths.every(isPersonalSetting);
 };
 
+/**
+ * The calls that list folders and files: what they list of a folder above a thread the caller may
+ * not see leaves that thread's folder out (`embedding/readable-by.ts`).
+ */
+export const LISTING_RPCS: ReadonlySet<string> = new Set([
+  "fs.browse",
+  "fs.tree",
+  "fs.list",
+  "fs.files",
+  "fs.search",
+  "worktree.list",
+]);
+
 export const VIEWER_REFUSAL = "read-only: a viewer can't change anything here";
 export const NO_ACTOR_REFUSAL = "unauthorized: no signed-in person on this call";
 
@@ -384,6 +402,60 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           }
           return false;
         });
+      /**
+       * Whether the call names a path, of its own choosing or against a thread it names, inside a
+       * folder of a thread `reader` may not see (`touchesUnreadable`): by any spelling, a link
+       * that leads there or `..` included, whatever the call does with it.
+       */
+      const pathsUnreadable = (reader: Reader, payload: unknown) =>
+        Effect.gen(function* () {
+          if (!anyPrivate()) return false;
+          const bases: Array<string> = [];
+          for (const threadId of threadsMentioned(payload)) {
+            const thread = yield* store.getThread(threadId).pipe(Effect.option);
+            if (thread._tag === "Some")
+              bases.push(
+                effectiveCheckout(thread.value).path,
+                ...(thread.value.extraCheckouts ?? []).map((extra) => extra.path),
+              );
+          }
+          return touchesUnreadable(reader, pathsMentioned(payload, bases));
+        });
+      /** The folder a listing's relative entries are under: its own path, or its thread's. */
+      const listedUnder = (payload: unknown) =>
+        Effect.gen(function* () {
+          const fields =
+            typeof payload === "object" && payload !== null
+              ? (payload as Record<string, unknown>)
+              : {};
+          const path = typeof fields["path"] === "string" ? fields["path"] : undefined;
+          if (path !== undefined && isAbsolute(path)) return path;
+          const threadId = fields["threadId"];
+          if (typeof threadId !== "string") return path;
+          const thread = yield* store.getThread(threadId as ThreadId).pipe(Effect.option);
+          if (thread._tag === "None") return undefined;
+          return resolve(effectiveCheckout(thread.value).path, path ?? ".");
+        });
+      /**
+       * `effect` with what a listing shows of folders above a thread `reader` may not see taken
+       * out (`withoutUnreadable`): the thread's folder isn't listed, nor anything in it.
+       */
+      const listedFor = <A, E, R>(
+        reader: Reader,
+        action: string,
+        payload: unknown,
+        effect: Effect.Effect<A, E, R>,
+      ): Effect.Effect<A, E, R> =>
+        !LISTING_RPCS.has(action)
+          ? effect
+          : Effect.flatMap(effect, (result) =>
+              anyPrivate()
+                ? Effect.map(
+                    listedUnder(payload),
+                    (base) => withoutUnreadable(reader, result, base) as A,
+                  )
+                : Effect.succeed(result),
+            );
       return ActorGuard.of((call, { rpc, payload, headers }) =>
         Effect.gen(function* () {
           // A machine started for one person is reached only for them, whatever the route
@@ -391,26 +463,42 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           if (!(yield* fronted.active)) {
             // Nor does it read a thread readable by one person: it has no subject to be them.
             const nobody: Reader = { subject: undefined };
-            if (yield* namesUnreadable(nobody, payload))
+            if (
+              (yield* namesUnreadable(nobody, payload)) ||
+              (yield* pathsUnreadable(nobody, payload))
+            )
               return yield* Effect.die(new Error(NOT_READABLE));
             if (!VIEWER_RPCS.has(rpc._tag) && (yield* onAnothersMachine(undefined, payload)))
               return yield* Effect.die(new Error(NOT_YOUR_MACHINE));
-            return yield* call.pipe(
-              Effect.provideService(RoutedFor, { person: undefined }),
-              Effect.provideService(ReadingAs, nobody),
+            return yield* listedFor(
+              nobody,
+              rpc._tag,
+              payload,
+              call.pipe(
+                Effect.provideService(RoutedFor, { person: undefined }),
+                Effect.provideService(ReadingAs, nobody),
+              ),
             );
           }
           const actor = actorOf(headers);
           if (actor === undefined) return yield* Effect.die(new Error(NO_ACTOR_REFUSAL));
           // A thread readable by one person is theirs alone to read or change, member or viewer.
           const reader: Reader = { subject: actor.id };
-          if (yield* namesUnreadable(reader, payload))
+          if (
+            (yield* namesUnreadable(reader, payload)) ||
+            (yield* pathsUnreadable(reader, payload))
+          )
             return yield* Effect.die(new Error(NOT_READABLE));
           // The call runs as this person, for what asks who acted (`embedding/person.ts`).
-          const effect = call.pipe(
-            Effect.provideService(ActingPerson, actor.id),
-            Effect.provideService(RoutedFor, { person: actor.id }),
-            Effect.provideService(ReadingAs, reader),
+          const effect = listedFor(
+            reader,
+            rpc._tag,
+            payload,
+            call.pipe(
+              Effect.provideService(ActingPerson, actor.id),
+              Effect.provideService(RoutedFor, { person: actor.id }),
+              Effect.provideService(ReadingAs, reader),
+            ),
           );
           const action = rpc._tag;
           if (VIEWER_RPCS.has(action) || setsOnlyOwnView(action, payload)) return yield* effect;

@@ -165,6 +165,7 @@ Content-Type: application/json
   thread has the same reader: its tools leave it out of their lists and searches, and refuse any
   input that names it. Messages, interrupts and answers from the platform's inbound routes and
   `/asks/answer` reach it only for its reader.
+- **Its folder.** A call that names a path inside the thread's folder or worktrees (by any spelling: a link that leads there, `..`, or relative to another thread) is refused for anyone else in the same way. A listing of a folder above it leaves it out. This covers Gram's calls and Gram's own agent tools. An agent's own CLI tools on the same machine are not Gram's to stop, so a private thread belongs on a machine started for its reader.
 - **What still reaches it.** The platform's own service routes (the event sink, moves, the
   export of a workspace), which are the embedder's, not a person's, and the server's own work.
 - **Without it** the thread is everyone's to see, as ever.

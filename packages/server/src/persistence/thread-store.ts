@@ -1273,16 +1273,18 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const sql = yield* SqlClient.SqlClient;
       const reads = withReadWorker(yield* captureReadWorker);
       const unreadable = makeUnreadableLog();
-      // Whose each thread is, open or closed, noted before anything asks (`embedding/readable-by.ts`):
-      // a thread no read has touched yet since the server started is still only its reader's.
-      for (const row of yield* sql<{ id: string; reader: string | null }>`
-        SELECT id, json_extract(data, '$.readableBy') AS reader FROM threads
-          WHERE json_extract(data, '$.readableBy') IS NOT NULL
+      // Whose each thread is, open or closed, and where it works, noted before anything asks
+      // (`embedding/readable-by.ts`): a thread no read has touched yet since the server started
+      // is still only its reader's, and so are its folders.
+      for (const row of yield* sql<{ id: string; data: string }>`
+        SELECT id, data FROM threads WHERE json_extract(data, '$.readableBy') IS NOT NULL
         UNION ALL
-        SELECT thread_id AS id, json_extract(data, '$.readableBy') AS reader FROM closed_threads
-          WHERE json_extract(data, '$.readableBy') IS NOT NULL`.pipe(Effect.orDie))
-        if (typeof row.reader === "string")
-          notePrivacy({ id: row.id as ThreadId, readableBy: row.reader });
+        SELECT thread_id AS id, data FROM closed_threads
+          WHERE json_extract(data, '$.readableBy') IS NOT NULL`.pipe(Effect.orDie)) {
+        const stored = JSON.parse(row.data) as Partial<Thread>;
+        if (typeof stored.readableBy === "string")
+          notePrivacy({ ...stored, id: row.id as ThreadId, readableBy: stored.readableBy });
+      }
       const receiptScope = yield* Effect.scope;
       // The data methods below use one statement or one top-level transaction; nothing nests.
       // Message receipts own separate reservation/outcome transactions around the runtime action.
