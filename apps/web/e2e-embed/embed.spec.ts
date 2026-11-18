@@ -443,10 +443,11 @@ test("the page of every thread can open on the workspaces, in the app's word for
   const view = page.getByTestId("threads-view");
   await expect(view.getByRole("radio", { name: /^Projects \d+/ })).toBeChecked();
   await expect(view.getByRole("radio", { name: /^Threads \d+/ })).not.toBeChecked();
-  await expect(page.getByTestId("threads-new-workspace")).toHaveText("New project");
-  await expect(page.getByTestId("threads-new")).toHaveText("New task");
   await expect(page.getByTestId("threads-search")).toHaveCount(0);
-  // With no workspace yet the list says what one is, and starts one or a thread in none.
+  // With no workspace yet the list says what one is, and starts one or a thread in none: the
+  // header offers neither a second time.
+  await expect(page.getByTestId("threads-new-workspace")).toHaveCount(0);
+  await expect(page.getByTestId("threads-new")).toHaveCount(0);
   const empty = page.getByTestId("workspaces-empty");
   await expect(empty).toContainText("No project yet");
   await expect(empty).toContainText("A project is an orchestrator and its workers");
@@ -460,6 +461,9 @@ test("the page of every thread can open on the workspaces, in the app's word for
       }
     ).gramMock.simulateOrchestration(),
   );
+  // Once there is one, the header offers a new one and a task.
+  await expect(page.getByTestId("threads-new-workspace")).toHaveText("New project");
+  await expect(page.getByTestId("threads-new")).toHaveText("New task");
   // The threads in no workspace are counted under the list, a click from where they are listed.
   await expect(page.getByTestId("workspaces-outside")).toContainText(
     /\d+ threads outside a project/,
