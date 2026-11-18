@@ -22,10 +22,12 @@ import {
   hostOf,
   type HostStopKept,
   type HostUnavailable,
+  type SavedDiff,
   type Thread,
   type ThreadId,
 } from "@gram/contracts";
 import { isWipRefOf } from "@gram/git";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
@@ -153,6 +155,33 @@ const keptOf = (
   });
 
 /**
+ * Remembers what the machine kept and pushed of each folder (`StopMarks.keep`), with when, and what
+ * the save holds as the machine said (`HostStopKept.saved`), so it can be shown while it is away.
+ */
+const remember = (
+  deps: Pick<StopResumeDeps, "hosts">,
+  id: HostId,
+  kept: ReadonlyArray<KeptWork>,
+  said: ReadonlyArray<HostStopKept>,
+  at: number,
+) => {
+  for (const work of kept) {
+    if (!work.pushed || work.commit === undefined) continue;
+    const saved = said.find(
+      (answer) => answer.threadId === work.threadId && answer.cwd === work.cwd,
+    )?.saved;
+    deps.hosts.stops.keep(id, work.threadId, work.cwd, {
+      commit: work.commit,
+      caughtUp: work.caughtUp === true,
+      at,
+      ...(work.remote === undefined ? {} : { remote: work.remote }),
+      ...(work.branch === undefined ? {} : { branch: work.branch }),
+      ...(saved === undefined ? {} : { saved }),
+    });
+  }
+};
+
+/**
  * Readies the machine to stop (`host.stop.prepare`), with every folder its threads hold there to
  * keep. When it says it is idle, the threads' sessions there are put to rest, so each opens again
  * on its conversation with its next message. Forced, whatever runs there is cut off by the stop:
@@ -194,14 +223,7 @@ export const prepareStop = (
       );
     const kept = keptOf(asked, prepared.kept, options.remote);
     // Remembered whether or not the stop holds: the remote has it now, and a resume is held to it.
-    for (const work of kept)
-      if (work.pushed && work.commit !== undefined)
-        deps.hosts.stops.keep(id, work.threadId, work.cwd, {
-          commit: work.commit,
-          caughtUp: work.caughtUp === true,
-          ...(work.remote === undefined ? {} : { remote: work.remote }),
-          ...(work.branch === undefined ? {} : { branch: work.branch }),
-        });
+    remember(deps, id, kept, prepared.kept, yield* Clock.currentTimeMillis);
     const left = folders.length - asked.length;
     const note =
       prepared.note ??
@@ -279,14 +301,7 @@ export const keepThreadWork = (
       ...(options.remote === undefined ? {} : { remote: options.remote }),
     });
     const kept = keptOf(asked, said, options.remote);
-    for (const work of kept)
-      if (work.pushed && work.commit !== undefined)
-        deps.hosts.stops.keep(id, work.threadId, work.cwd, {
-          commit: work.commit,
-          caughtUp: work.caughtUp === true,
-          ...(work.remote === undefined ? {} : { remote: work.remote }),
-          ...(work.branch === undefined ? {} : { branch: work.branch }),
-        });
+    remember(deps, id, kept, said, yield* Clock.currentTimeMillis);
     return kept;
   });
 
@@ -545,3 +560,21 @@ export const stopStatus = (
         };
       }),
   );
+
+/**
+ * The diff behind the thread's `savedWork`, as its machine last sent it (`StopMarks`): its main
+ * folder's first. Undefined once this Gram restarted since, or when nothing was saved.
+ */
+export const savedDiffOf = (
+  stops: Pick<RemoteHostsShape["stops"], "keptOf">,
+  thread: Thread,
+): SavedDiff | undefined => {
+  const main = effectiveCheckout(thread);
+  return checkoutsOf(thread)
+    .toSorted((a, b) => Number(b.path === main.path) - Number(a.path === main.path))
+    .flatMap((checkout) => {
+      const id = hostOf(checkout);
+      const saved = stops.keptOf(id, thread.id, checkout.path)?.saved;
+      return saved === undefined ? [] : [saved];
+    })[0];
+};

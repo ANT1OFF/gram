@@ -18,6 +18,8 @@ import {
   type HostStopKept,
   type HostStopPrepared,
   type HostStopRestored,
+  SAVED_DIFF_BYTES,
+  type SavedDiff,
   type ThreadId,
 } from "@gram/contracts";
 import {
@@ -37,6 +39,7 @@ import {
   snapshotWip,
   tryRepoRoots,
   wipCaughtUp,
+  wipChanges,
 } from "@gram/git";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
@@ -45,6 +48,26 @@ import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 import type { Admission } from "./admission.ts";
 import { redactUrlCredentials } from "./remote-url.ts";
+import { toDiffFile } from "../git/mapping.ts";
+
+/** A snapshot commits untracked files, so none of its files is untracked. */
+const NO_UNTRACKED: ReadonlySet<string> = new Set();
+
+/** What `snapshot` holds against its branch's base, as `HostStopKept.saved`; undefined unread. */
+const savedOf = (
+  top: string,
+  snapshot: { readonly commit: string; readonly uncommitted: boolean },
+): Effect.Effect<SavedDiff | undefined, never, Proc> =>
+  wipChanges(top, snapshot, SAVED_DIFF_BYTES).pipe(
+    Effect.map((changes): SavedDiff => ({
+      ...(changes.base === undefined ? {} : { base: changes.base.slice(0, 1024) }),
+      files: changes.files.slice(0, 5000).map((file) => toDiffFile(file, NO_UNTRACKED)),
+      uncommitted: snapshot.uncommitted,
+      ...(changes.note === undefined ? {} : { note: changes.note.slice(0, 1024) }),
+    })),
+    Effect.orElseSucceed(() => undefined),
+    Effect.catchDefect(() => Effect.succeed(undefined)),
+  );
 
 /** Why new work is refused while the host is readied to stop. */
 export const STOPPING = "This machine is about to stop. Try again once it is back.";
@@ -224,7 +247,15 @@ export const stopOn = (deps: StopDeps): HostStop => {
             Effect.orElseSucceed(() => ""),
           );
           const branch = on === "" || on.length > 1024 ? {} : { branch: on };
-          const local = { ...base, ref: snapshot.ref, commit: snapshot.commit, ...branch };
+          // What the save holds, for a card to show while the machine is away; never in its way.
+          const saved = yield* savedOf(roots.top, snapshot);
+          const local = {
+            ...base,
+            ref: snapshot.ref,
+            commit: snapshot.commit,
+            ...branch,
+            ...(saved === undefined ? {} : { saved }),
+          };
           // The branch at the remote holds all of it: nothing more to keep. A ref this folder
           // left at an earlier stop is out of date, so it goes; one that names anything else is
           // another folder's work of the thread, and stays. Unsure: pushed as ever.
@@ -240,6 +271,7 @@ export const stopOn = (deps: StopDeps): HostStop => {
               ...base,
               commit: snapshot.commit,
               ...branch,
+              ...(saved === undefined ? {} : { saved }),
               pushed: true,
               caughtUp: true,
               ...(dropped === "left"

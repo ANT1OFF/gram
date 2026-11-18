@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { LimitCleared, LimitWait, THREAD_ERROR_TEXT_MAX, ThreadError } from "./agent-failure.ts";
 import { BabysitState, HumanReviewNotice, ReviewNotice } from "./babysit.ts";
 import { CodexHome } from "./codex-home.ts";
+import { SavedWork } from "./saved-work.ts";
 import { ChecksRollup, PrState } from "./git.ts";
 import {
   HostId,
@@ -862,6 +863,11 @@ export const Thread = Schema.Struct({
   codexHome: Schema.optionalKey(CodexHome),
   /** How the last failed turn failed; cleared when a later turn completes. */
   lastError: Schema.optionalKey(ThreadError),
+  /**
+   * The last save of its work on a joined machine that reached the remote (`wip-keeper.ts`): when,
+   * and the files it held. What a lost machine gives back.
+   */
+  savedWork: Schema.optionalKey(SavedWork),
   /** Waiting out a provider limit, to resume on its own; cleared when it resumes or is cancelled. */
   limitWait: Schema.optionalKey(LimitWait),
   /**

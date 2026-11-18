@@ -7,6 +7,7 @@ import {
   HostFailed,
   type HostId,
   type HostStopRestored,
+  type SavedDiff,
   type Thread,
   type ThreadId,
 } from "@gram/contracts";
@@ -16,7 +17,13 @@ import * as TestClock from "effect/testing/TestClock";
 import { makeStopMarks, type StopMarks } from "./stop-marks.ts";
 import type { KeepRequest, RestoreRequest } from "./stop.ts";
 import { cloneIdentityOf, cloneUrlOf } from "./repos.ts";
-import { keepThreadWork, prepareStop, resumeHost, type StopResumeDeps } from "./stop-resume.ts";
+import {
+  keepThreadWork,
+  prepareStop,
+  resumeHost,
+  savedDiffOf,
+  type StopResumeDeps,
+} from "./stop-resume.ts";
 
 const MACHINE = "m-1" as HostId;
 const URL = "https://git.example.test/acme/widgets.git";
@@ -311,12 +318,14 @@ describe("resuming a machine on another disk", () => {
       expect(stops.keptOf(MACHINE, "t-worker" as ThreadId, worker)).toEqual({
         commit: COMMIT,
         caughtUp: false,
+        at: 0,
         remote: "mirror",
         branch: "gram/worker",
       });
       expect(stops.keptOf(MACHINE, "t-nothing" as ThreadId, nothing)).toEqual({
         commit: COMMIT,
         caughtUp: true,
+        at: 0,
         remote: "mirror",
         branch: "gram/nothing",
       });
@@ -330,6 +339,22 @@ describe("resuming a machine on another disk", () => {
       });
     }),
   );
+
+  const SAVED: SavedDiff = {
+    base: "origin/main",
+    uncommitted: true,
+    files: [
+      {
+        path: "src/a.ts",
+        status: "modified",
+        additions: 2,
+        deletions: 1,
+        patch: "@@ -1 +1,2 @@\n-a\n+b\n+c\n",
+        binary: false,
+        tooLarge: false,
+      },
+    ],
+  };
 
   it.effect("keeps a working thread's folders, and a lost machine's resume is held to them", () =>
     Effect.gen(function* () {
@@ -350,6 +375,7 @@ describe("resuming a machine on another disk", () => {
                 commit: COMMIT,
                 branch: "gram/worker",
                 pushed: true,
+                saved: SAVED,
               }));
             }),
         },
@@ -361,6 +387,9 @@ describe("resuming a machine on another disk", () => {
       expect(keeps).toEqual([]);
       yield* keepThreadWork(withKeep, MACHINE, THREADS[0]!);
       expect(keeps).toEqual([{ checkouts: [{ threadId: "t-worker", cwd: worker }] }]);
+      // What the save held stays readable here while the machine is away.
+      expect(savedDiffOf(deps.hosts.stops, THREADS[0]!)).toEqual(SAVED);
+      expect(savedDiffOf(deps.hosts.stops, THREADS[1]!)).toBeUndefined();
       // The machine is lost with no stop; the one that replaces it is held to what was kept.
       yield* resumeHost(withKeep, MACHINE);
       expect(asked.find((request) => request.cwd === worker)).toMatchObject({

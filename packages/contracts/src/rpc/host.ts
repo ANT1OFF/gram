@@ -32,6 +32,7 @@ import { SHARED_PART_BYTES, SharedListing, SharedPart } from "../shared-folder.t
 import { TerminalEvent, TerminalInfo, TerminalOpened } from "../terminal.ts";
 import { ProfileFile } from "../thread-profile.ts";
 import { FileImage } from "../thread-ui.ts";
+import { SavedDiff } from "../saved-work.ts";
 import { WorktreeList } from "../worktrees.ts";
 import { PositiveInt } from "./shared.ts";
 
@@ -351,6 +352,11 @@ export const HostStopKept = Schema.Struct({
   branch: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
   /** Why it wasn't committed or pushed, in the host's words. */
   note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+  /**
+   * What the kept commit holds against the branch's base, so it can be shown while the machine is
+   * away. Absent from a host built before it, and when it couldn't be read.
+   */
+  saved: Schema.optionalKey(SavedDiff),
 });
 export type HostStopKept = typeof HostStopKept.Type;
 

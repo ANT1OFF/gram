@@ -3,6 +3,8 @@ import {
   type OrchestratorLedger,
   type ThreadId,
   type ThreadSummary,
+  type SavedWork,
+  type ThreadError,
   type WorkerError,
   type WorkspaceId,
 } from "@gram/contracts";
@@ -11,6 +13,7 @@ import { STOP_REASON_TEXT } from "@/panels/review/babysit-model";
 import { unseenAttention } from "@/sidebar/attention";
 import { needsYou } from "@/sidebar/grouping";
 import { failureLabel } from "@/thread/failure-kinds";
+import { MACHINE_LOST_TAG, machineLostDetail } from "@/thread/saved-work-words";
 
 import { liveWorkerEntry, workerTitle } from "./board-model";
 
@@ -71,10 +74,29 @@ export interface FailureItem {
 const errorItem = (
   where: Pick<FailureItem, "workspaceId" | "feature">,
   failure: Pick<NeedsYouFailure, "threadId" | "title" | "project">,
-  error: WorkerError,
+  error: WorkerError | ThreadError,
   at: number | undefined,
+  saved?: SavedWork | undefined,
 ): FailureItem => {
   const id = `failure:error:${failure.threadId}:${at ?? error.text}`;
+  // A lost machine is said as one, with what of the work comes back, rather than as a turn failed.
+  const lost =
+    ("machineLost" in error && error.machineLost !== undefined) ||
+    ("lostMachine" in error && error.lostMachine === true);
+  if (lost && at !== undefined)
+    return {
+      ...where,
+      kind: "failure",
+      key: id,
+      ids: [id],
+      failure: {
+        ...failure,
+        kind: "error",
+        tag: MACHINE_LOST_TAG,
+        error: { kind: error.kind, text: machineLostDetail({ at }, saved) },
+        at,
+      },
+    };
   return {
     ...where,
     kind: "failure",
@@ -108,6 +130,7 @@ const failuresOf = (
           },
           error,
           summary?.thread.lastError?.at,
+          summary?.thread.savedWork,
         ),
       ];
     }),

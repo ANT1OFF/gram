@@ -40,6 +40,7 @@ export * from "./file-edit.ts";
 export * from "./languages.ts";
 export * from "./gateway-keys.ts";
 export * from "./git.ts";
+export * from "./saved-work.ts";
 export * from "./diff-chunk.ts";
 export * from "./git-base.ts";
 export * from "./git-upstream.ts";

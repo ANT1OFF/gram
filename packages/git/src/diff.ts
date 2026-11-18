@@ -281,13 +281,16 @@ export const parseGitDiffCapped = (
   };
 };
 
-/** `files` with the largest bodies dropped until the rest fit in `MAX_VIEW_BYTES`. */
-const withinViewCap = (files: ReadonlyArray<DiffFile>): Array<DiffFile> => {
+/** `files` with the largest bodies dropped until the rest fit in `cap` bytes. */
+export const withinViewCap = (
+  files: ReadonlyArray<DiffFile>,
+  cap: number = MAX_VIEW_BYTES,
+): Array<DiffFile> => {
   const sizes = files.map((file) => Buffer.byteLength(file.diff) + Buffer.byteLength(file.path));
   let total = sizes.reduce((sum, size) => sum + size, 0);
   const dropped = new Set<number>();
   for (const at of sizes.map((_, i) => i).toSorted((a, b) => sizes[b]! - sizes[a]!)) {
-    if (total <= MAX_VIEW_BYTES) break;
+    if (total <= cap) break;
     dropped.add(at);
     total -= Buffer.byteLength(files[at]!.diff);
   }

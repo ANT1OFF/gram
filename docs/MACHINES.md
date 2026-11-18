@@ -516,6 +516,14 @@ the local app, as the other `/machines/*` routes are.
   not as a plain session end. The conversation shows that turn's card with Resume worker
   (`thread.resumeAfterMachineLost`): the same conversation gets Gram's note of what was cut off,
   which brings the machine back and its folder as last kept.
+- Each keep says what the save holds (`HostStopKept.saved`): the diff of the kept commit against
+  where its branch left its base, bodies cut to 512 KB with the largest files listed without
+  theirs. Gram records the time and the files on the thread (`Thread.savedWork`), so the
+  machine-lost card says "Saved 08:12 · 6 files changed, not committed" with the first files, and
+  the task's card and the worker's rows say "machine lost 08:14 · 6 files saved". View diff reads
+  the diff back (`thread.savedDiff`) while the machine is away. The record outlives a restart of
+  Gram; the diff doesn't, and the card then lists the files alone. A host older than this sends
+  no `saved`, and the card says the folder comes back as last saved, as before.
 - `POST /machines/stop/cancel` takes a stop back: the host takes new work again.
 - `POST /machines/stop/status` lists each joined machine: `online`, `stoppedAt` when it was
   readied and hasn't dialled in since, `wanted` when a thread waits on it now, and `resuming`

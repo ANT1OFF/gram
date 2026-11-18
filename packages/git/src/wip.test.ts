@@ -15,6 +15,7 @@ import {
   restoreWipWorktree,
   snapshotWip,
   wipCaughtUp,
+  wipChanges,
   WIP_NAMESPACE_ENV,
   wipRef,
 } from "./wip.ts";
@@ -82,6 +83,39 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
       expect(run(origin, "rev-parse", wipRef("thread-1")).trim()).toBe(head);
       expect(run(origin, "log", "-1", "--format=%s", wipRef("thread-1")).trim()).toBe("local only");
     }).pipe(provide),
+  );
+
+  it.live(
+    "lists what a save holds against the base: the branch's commits and the uncommitted",
+    () =>
+      Effect.gen(function* () {
+        const { repo } = withOrigin();
+        run(repo, "fetch", "--quiet", "origin");
+        run(repo, "switch", "--quiet", "-c", "feat/saved");
+        write(nodePath.join(repo, "committed.txt"), "one\ntwo\n");
+        run(repo, "add", "committed.txt");
+        run(repo, "commit", "--quiet", "-m", "on the branch");
+        write(nodePath.join(repo, "tracked.txt"), "edited\n");
+        write(nodePath.join(repo, "src", "new.ts"), "export const made = 1;\n");
+
+        const kept = yield* snapshotWip(repo, "thread-1");
+        const changes = yield* wipChanges(repo, kept, 1024 * 1024);
+        expect(changes.base).toBe("origin/main");
+        expect(
+          changes.files.map((file) => [file.path, file.status, file.added]).toSorted(),
+        ).toEqual([
+          ["committed.txt", "new", 2],
+          ["src/new.ts", "new", 1],
+          ["tracked.txt", "modified", 1],
+        ]);
+        expect(changes.note).toBeUndefined();
+
+        // Past the cap the largest bodies go, each file still listed with its counts.
+        const cut = yield* wipChanges(repo, kept, 10);
+        expect(cut.files).toHaveLength(3);
+        expect(cut.files.every((file) => file.note === "too large")).toBe(true);
+        expect(cut.note).toBeDefined();
+      }).pipe(provide),
   );
 
   it.live("writes that one ref whatever the user's config says of tags", () =>
