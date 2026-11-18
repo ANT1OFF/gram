@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.30.0](https://github.com/ANT1OFF/gram/compare/v1.29.0...v1.30.0) (2026-11-18)
+
+
+### Features
+
+* **embedding:** look defaults by name, Petrol palettes, accents, background pictures and sidebar shape ([#692](https://github.com/ANT1OFF/gram/issues/692)) ([8fa52af](https://github.com/ANT1OFF/gram/commit/8fa52afba7639182c24fde6f1f32855e031ffabd))
+* **web:** CodeEditor, Diff and ColorField in the embedding kit ([#743](https://github.com/ANT1OFF/gram/issues/743)) ([1075116](https://github.com/ANT1OFF/gram/commit/10751169aa418cd6e6c160e27ace1d5f671b5ced))
+* **web:** sidebar waits as glyphs: a run chip, a glyph per wake condition, dated far wakes ([#716](https://github.com/ANT1OFF/gram/issues/716)) ([a558c19](https://github.com/ANT1OFF/gram/commit/a558c194fde9c8971582695e06628fe6fda6afa7))
+
+
+### Bug Fixes
+
+* **machines:** a machine back after a stop opens no session until it is resumed ([#740](https://github.com/ANT1OFF/gram/issues/740)) ([7d705ea](https://github.com/ANT1OFF/gram/commit/7d705ead7288f71f410225fcbeac63ab47b29bc3))
+* **machines:** a machine started on another disk can be expected; folders come back a few at once ([#741](https://github.com/ANT1OFF/gram/issues/741)) ([088e90e](https://github.com/ANT1OFF/gram/commit/088e90e031134c6488b14fa474b24ffc4185422f))
+* **machines:** a thread's session opens once its own folders are back, not the whole machine's ([#742](https://github.com/ANT1OFF/gram/issues/742)) ([2837895](https://github.com/ANT1OFF/gram/commit/28378951ad9cbda8b600ca0e3f2d18d5a5167115))
+* **models:** prefer GPT-6.2 Sol and Astra for subscriptions ([#745](https://github.com/ANT1OFF/gram/issues/745)) ([11e1cd3](https://github.com/ANT1OFF/gram/commit/11e1cd3289711ea45cc0c5583a5fbba10296f6c3))
+* **runtime:** a person's Stop ends a limit wait; embedders see the wait ([#744](https://github.com/ANT1OFF/gram/issues/744)) ([3e3ca8c](https://github.com/ANT1OFF/gram/commit/3e3ca8c661f02b0755b50e1a7ab09c2de261292b))
+* **server:** a server with no local user starts no programs, and its program settings are the local app's ([#725](https://github.com/ANT1OFF/gram/issues/725)) ([a985ea9](https://github.com/ANT1OFF/gram/commit/a985ea9ad60abce7f9f7644ba8c34728a8e8a849))
+* **server:** fail closed for on-demand hosts with no owner ([#732](https://github.com/ANT1OFF/gram/issues/732)) ([19e6542](https://github.com/ANT1OFF/gram/commit/19e65421d25a5fc9b66d3a5899f9d5f149ce93a6))
+* **web:** kit Page puts its actions under the line on a phone that hides the title ([#717](https://github.com/ANT1OFF/gram/issues/717)) ([96c709c](https://github.com/ANT1OFF/gram/commit/96c709c8285acd9a6bb2697f5fa66b90aa0c9ef0))
+* **web:** no stray scrollbars in the panel's tab row or a roomy sidebar ([#739](https://github.com/ANT1OFF/gram/issues/739)) ([d937ef1](https://github.com/ANT1OFF/gram/commit/d937ef1e0db2fdff2547a89c488018590af75879))
+* **web:** quote PowerShell's curly single quotes in dropped paths ([#724](https://github.com/ANT1OFF/gram/issues/724)) ([c7227ee](https://github.com/ANT1OFF/gram/commit/c7227ee68b622a2a562dc773ecda132995bd866f))
+
 ## [1.29.0](https://github.com/ANT1OFF/gram/compare/v1.28.0...v1.29.0) (2026-11-16)
 
 
