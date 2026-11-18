@@ -83,8 +83,37 @@ export const AUTONOMY_LEVELS: readonly AutonomyLevel[] = [
   },
 ];
 
-export const autonomyLevel = (value: Autonomy): AutonomyLevel =>
-  AUTONOMY_LEVELS.find((level) => level.value === value) ?? AUTONOMY_LEVELS[1]!;
+/**
+ * The levels where a person merges every pull request (an embedding app's `machines.merges`): the
+ * deployment refuses an agent's merge, so no level promises one, and Full asks about nothing else.
+ */
+export const PERSON_MERGES_LEVELS: readonly AutonomyLevel[] = [
+  {
+    ...AUTONOMY_LEVELS[0]!,
+    description: "Asks before a push or a pull request. Merging is always yours.",
+  },
+  {
+    ...AUTONOMY_LEVELS[1]!,
+    description: "Pushes branches and opens pull requests. Merging is always yours.",
+    detail:
+      "Still asks before closing a pull request, a release, a workflow run, or a force or deleting push. No agent can merge here: you merge on your provider.",
+  },
+  {
+    ...AUTONOMY_LEVELS[2]!,
+    description: "Pushes and opens pull requests without asking. Merging is always yours.",
+    detail:
+      "No agent can merge here: you merge on your provider. Branch protection, required reviews and your provider's spending limits still apply to everything else.",
+  },
+];
+
+/** The levels as this deployment words them: Gram's own, or with merging kept to people. */
+export const autonomyLevels = (personMerges = false): readonly AutonomyLevel[] =>
+  personMerges ? PERSON_MERGES_LEVELS : AUTONOMY_LEVELS;
+
+export const autonomyLevel = (value: Autonomy, personMerges = false): AutonomyLevel => {
+  const levels = autonomyLevels(personMerges);
+  return levels.find((level) => level.value === value) ?? levels[1]!;
+};
 
 /**
  * A level's words for a chip. One this build doesn't know reads as its own word: `autonomyLevel`'s

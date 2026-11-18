@@ -18,7 +18,7 @@ import {
 } from "@/settings/workspace-settings-model";
 import { known } from "@/thread/orchestration-model";
 
-import { AUTONOMY_LINE } from "./autonomy-choice";
+import { AUTONOMY_LINE, useAutonomyLine } from "./autonomy-choice";
 
 /** The level's glyph, placed as the button places a leading icon. */
 const ICON_PROPS = { "aria-hidden": true, "data-icon": "inline-start" } as const;
@@ -28,8 +28,10 @@ export const workspaceAutonomyLabel = (autonomy: string): string =>
   `Workspace: ${presentAutonomy(autonomy).label.toLowerCase()} autonomy`;
 
 /** What a level lets agents do unasked, in one line: the picker's own words. */
-export const autonomySummary = (autonomy: string): string =>
-  known(AUTONOMY_LINE, autonomy as Autonomy) ?? presentAutonomy(autonomy).description;
+export const autonomySummary = (
+  autonomy: string,
+  lines: Readonly<Record<Autonomy, string>> = AUTONOMY_LINE,
+): string => known(lines, autonomy as Autonomy) ?? presentAutonomy(autonomy).description;
 
 /**
  * The New form's word on the workspace's autonomy where work starts: "Workspace: full autonomy ▾",
@@ -46,6 +48,7 @@ export function WorkspaceAutonomy({
   autonomy: Autonomy;
 }) {
   const changes = useWorkspaceChanges(state);
+  const lines = useAutonomyLine();
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string>();
@@ -131,7 +134,7 @@ export function WorkspaceAutonomy({
                       role="radio"
                       aria-checked={checked}
                       aria-label={each.label}
-                      aria-description={AUTONOMY_LINE[each.value]}
+                      aria-description={lines[each.value]}
                       data-testid={`workspace-autonomy-${each.value}`}
                       disabled={changes.busy}
                       onClick={() => pick(each.value)}
@@ -141,7 +144,7 @@ export function WorkspaceAutonomy({
                         {each.label}
                         <ChoiceCheck checked={checked} className="ml-auto" />
                       </span>
-                      <span className="text-muted-foreground">{AUTONOMY_LINE[each.value]}</span>
+                      <span className="text-muted-foreground">{lines[each.value]}</span>
                     </button>
                   );
                 })}
@@ -183,7 +186,7 @@ export function WorkspaceAutonomy({
         </Popover.Portal>
       </Popover.Root>
       <span data-testid="workspace-autonomy-summary" className="text-muted-foreground">
-        {autonomySummary(value)}
+        {autonomySummary(value, lines)}
       </span>
     </span>
   );

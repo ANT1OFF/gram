@@ -315,6 +315,9 @@ export const useMachineNoun = () =>
 export const useMachineReachesTheirs = () =>
   useEmbedShell((s) => s.machines.repositories === "theirs");
 
+/** Whether the deployment keeps merging to people, whatever the autonomy (`ShellMachines.merges`). */
+export const usePersonMerges = () => useEmbedShell((s) => s.machines.merges === "person");
+
 /** The deployment's lines about a machine started on demand, at most five, each kept short. */
 export const useMachineFacts = () =>
   useEmbedShell((s) => s.machines.facts)

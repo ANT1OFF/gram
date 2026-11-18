@@ -209,6 +209,13 @@ export interface ShellMachines {
    */
   readonly repositories?: "chosen" | "theirs";
   /**
+   * Who merges pull requests here: `person` where the deployment refuses every merge an agent
+   * asks for (it lets one push branches and open pull requests, never merge), so the autonomy
+   * levels say merging stays the person's instead of promising a merge that would be refused.
+   * `agent` when left out, as on Gram's own: a level decides.
+   */
+  readonly merges?: "agent" | "person";
+  /**
    * Asks whoever starts the machines for another, for a thread that was started before its machine
    * and got none (`Thread.awaitingMachine.failed`): the thread's Try again calls it. Gram starts no
    * machine and its page can't begin the wait again itself, so the app's own service does both:

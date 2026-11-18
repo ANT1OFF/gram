@@ -3,14 +3,15 @@ import { ShieldAlert, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { usePersonMerges } from "@/embed/store";
 import { cn } from "@/lib/utils";
 import { Expand } from "@/motion";
 import { AuthorityExplainer } from "@/new-thread/authority-explainer";
 
 import { Field, LONG_COPY, OptionGroup } from "./fields";
 import {
-  AUTONOMY_LEVELS,
   autonomyLevel,
+  autonomyLevels,
   autonomyNeedsConfirm,
   gateNote,
 } from "./workspace-settings-model";
@@ -34,8 +35,9 @@ export function AutonomyField({
   onChange: (autonomy: Autonomy) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
-  const level = autonomyLevel(value);
-  const full = autonomyLevel("full");
+  const personMerges = usePersonMerges();
+  const level = autonomyLevel(value, personMerges);
+  const full = autonomyLevel("full", personMerges);
   const note = gateNote(value);
   return (
     <Field
@@ -62,7 +64,7 @@ export function AutonomyField({
         <AuthorityExplainer />
         <OptionGroup
           label="Autonomy"
-          options={AUTONOMY_LEVELS}
+          options={autonomyLevels(personMerges)}
           value={value}
           disabled={disabled}
           onChange={(next) => {

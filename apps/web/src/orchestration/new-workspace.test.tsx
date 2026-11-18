@@ -154,10 +154,57 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     expect(save.mock.calls[0]![0].name).toBe("docs 2");
     expect(task).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledOnce();
-    // A workspace made with no first message starts by discovering itself.
+    // With no first message, nothing runs: no survey until the person asks for one.
+    expect(send).not.toHaveBeenCalled();
+    expect(api.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("surveys a blank workspace only when the person ticks it, and says so in the steps", async () => {
+    const { api, render } = await mount(settingsWith({ welcomeSeen: true }));
+    const open = vi.spyOn(api, "openOrchestrator");
+    const send = vi.spyOn(api, "send");
+    render({ repo: API });
+    await screen.findByRole("form", { name: "New workspace" });
+    const steps = screen.getByTestId("new-workspace-steps");
+    expect(steps.textContent).toContain("Nothing else runs until you send one");
+    expect(steps.textContent).not.toContain("reads the repositories");
+    fireEvent.click(screen.getByLabelText(/Read the repositories first/));
+    expect(steps.textContent).toContain("reads the repositories");
+    fireEvent.click(screen.getByTestId("new-workspace-start"));
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
     const thread = await open.mock.results[0]!.value;
     expect(send).toHaveBeenCalledExactlyOnceWith(thread.id, { text: DISCOVER_MESSAGE });
-    expect(api.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("saves without starting: no orchestrator, no message, back to the list", async () => {
+    const { api, render } = await mount(settingsWith({ welcomeSeen: true }));
+    const save = vi.spyOn(api, "saveWorkspace");
+    const open = vi.spyOn(api, "openOrchestrator");
+    const task = vi.spyOn(api, "startTask");
+    const send = vi.spyOn(api, "send");
+    render({ repo: API });
+    await screen.findByRole("form", { name: "New workspace" });
+    fireEvent.change(screen.getByLabelText("What should it work on?"), {
+      target: { value: "Add mail triggers" },
+    });
+    fireEvent.click(screen.getByTestId("new-workspace-save"));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: "/threads" }));
+    expect(save).toHaveBeenCalledOnce();
+    expect(open).not.toHaveBeenCalled();
+    expect(task).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("promises no agent merge where the deployment keeps merging to people", async () => {
+    useEmbedShell.setState({ ...EMPTY_SHELL, machines: { merges: "person" } });
+    const { render } = await mount(settingsWith({ welcomeSeen: true }));
+    render({ repo: API });
+    await screen.findByRole("form", { name: "New workspace" });
+    const autonomy = screen.getByTestId("autonomy");
+    expect(autonomy.textContent).not.toMatch(/merges pull requests|auto-merge/);
+    expect(within(autonomy).getByRole("radio", { name: /Full/ }).textContent).toContain(
+      "You merge.",
+    );
   });
 
   it("starts with autonomy picked on the sheet", async () => {
@@ -370,6 +417,7 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     const save = vi.spyOn(api, "saveWorkspace");
     const open = vi.spyOn(api, "openOrchestrator").mockRejectedValueOnce(new Error("no session"));
     const send = vi.spyOn(api, "send");
+    fireEvent.click(screen.getByLabelText(/Read the repositories first/));
     fireEvent.click(screen.getByTestId("new-workspace-start"));
     await screen.findByText("no session");
     // Made, but not opened: Start now opens that workspace only.
@@ -410,7 +458,13 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     const { api, render } = await mount(settingsWith({ welcomeSeen: true }));
     const open = vi.spyOn(api, "openOrchestrator");
     render({ repo: DOCS });
-    await screen.findByText("Start a sandbox to run this");
+    // Start starts it, so there is no second start: the steps say it comes first.
+    await waitFor(() =>
+      expect(screen.getByTestId("new-workspace-steps").textContent).toContain(
+        "1.Start a sandbox and check out the repositories",
+      ),
+    );
+    expect(screen.queryByText("Start a sandbox to run this")).toBeNull();
     fireEvent.click(screen.getByTestId("new-workspace-start"));
     await waitFor(() => expect(navigate).toHaveBeenCalled());
     expect(posts).toEqual([expect.stringContaining("/machines/on-demand/start")]);
