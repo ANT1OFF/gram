@@ -448,6 +448,7 @@ POST /embed/v1/thread-imports
 - The thread is placed as one the person started: on their own machine where machines are started for one person, and refused with `409` while none of theirs runs. A server that runs work itself clones the repository here instead.
 - Its folder is made from the bundle's repository, its edits read only from the ref and the commit the bundle names (the machine's host needs `wip-restore-ref`). A branch that moved since, or a ref that isn't there, makes nothing.
 - A bundle is untrusted input: an id Gram doesn't make, a thread or turn already here, or a newer bundle format is refused before anything is written. The mode, the model's profile, effort and speed are this server's. The thread keeps its id and is recorded as brought in by the person (`thread.import`).
+- The same move sent again, as when the first answer was lost, answers the thread it made: same thread, same Gram, the same person, still here. Anything else already here is refused.
 - The body may be up to 32 MiB. `notes` says what to tell the person. Then the platform asks the other Gram to settle its copy (`POST /threads/settle`).
 
 ## Settings supplied from outside

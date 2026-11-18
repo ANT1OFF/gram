@@ -333,6 +333,23 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
           expect(run(folder, "status", "--porcelain")).toContain("cart.ts");
           expect(thread.transferredFrom?.name).toBe("Laptop");
           expect(machine.removed).toEqual([]);
+          // The same move asked again, its first answer lost: the same thread, nothing made twice.
+          const moved = { ...bundle, thread: { ...bundle.thread, readableBy: "laptop-subject" } };
+          const again = yield* transfer.importThreadFor({
+            bundle: moved,
+            from: "Laptop",
+            person: "grace",
+          });
+          expect(again.thread.checkout.path).toBe(folder);
+          // Someone else, or another Gram, is still refused.
+          const other = yield* transfer
+            .importThreadFor({ bundle: moved, from: "Laptop", person: "ada" })
+            .pipe(Effect.flip);
+          expect(other.message).toContain("already on this server");
+          const elsewhereGram = yield* transfer
+            .importThreadFor({ bundle: moved, from: "Desktop", person: "grace" })
+            .pipe(Effect.flip);
+          expect(elsewhereGram.message).toContain("already on this server");
         }),
       );
     }),

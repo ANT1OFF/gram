@@ -158,6 +158,16 @@ export interface ThreadTransferShape {
   ): Effect.Effect<Thread, NotFound | ThreadNotFound | InvalidState>;
 }
 
+/**
+ * Whether the thread here is the one this person's move of `input` brought in: the same thread,
+ * from the same Gram, still here and theirs to read.
+ */
+const sameMove = (thread: Thread, input: ImportThreadForPersonInput): boolean =>
+  thread.transferredFrom?.name === input.from &&
+  thread.transferredTo === undefined &&
+  thread.createdAt === input.bundle.thread.createdAt &&
+  (thread.readableBy === undefined || thread.readableBy === input.person);
+
 export interface ThreadTransferOptions {
   /** The git transports the ref may travel over. Tests allow `file`. */
   readonly protocols?: string;
@@ -625,6 +635,11 @@ const make = (options: ThreadTransferOptions) =>
     /** For a person: on their machine where this server runs no work, else a clone of it here. */
     const importFor = (input: ImportThreadForPersonInput) =>
       Effect.gen(function* () {
+        // The same move asked again, as when the first answer never reached the platform: the
+        // thread it made, open here, is the answer, and nothing is made twice.
+        const here = yield* store.getThread(input.bundle.thread.id).pipe(Effect.option);
+        if (Option.isSome(here) && sameMove(here.value, input))
+          return { thread: here.value, notes: [] } satisfies ImportThreadResult;
         yield* admit(input.bundle);
         // A thread only one person could read stays only theirs: the person bringing it in.
         const reader = input.bundle.thread.readableBy === undefined ? undefined : input.person;
