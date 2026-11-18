@@ -30,6 +30,7 @@ import {
   isLocalHost,
   type NotFound,
   type Project,
+  type MovedToServer,
   type Thread,
   type ThreadNotFound,
   type ThreadStatus,
@@ -160,13 +161,18 @@ export interface ThreadTransferShape {
   /** The thread here becomes a read-only, archived copy saying where it went. */
   settleThread(
     input: SettleThreadInput,
+    by?: string,
   ): Effect.Effect<Thread, NotFound | ThreadNotFound | InvalidState>;
+  /** The copy on the server the thread came back from is read-only now: it is open only here. */
+  settledThere(threadId: Thread["id"]): Effect.Effect<Thread, ThreadNotFound | InvalidState>;
 }
 
 /** Who alone may read a moved thread here, and who brought it in, when a person did. */
 interface Who {
   readonly reader?: string;
   readonly by?: string;
+  /** The server it came back from, whose copy there is still open. */
+  readonly leftOpen?: MovedToServer;
 }
 
 /**
@@ -576,6 +582,7 @@ const make = (options: ThreadTransferOptions) =>
               at: now,
               exportedAt: bundle.exportedAt,
               ...(who.by === undefined ? {} : { by: who.by }),
+              ...(who.leftOpen === undefined ? {} : { leftOpen: who.leftOpen }),
             },
             ...(who.reader === undefined ? {} : { readableBy: who.reader }),
           },
@@ -636,7 +643,12 @@ const make = (options: ThreadTransferOptions) =>
         const left = ours
           ? (yield* withGit(
               "",
-              git(top, ["rev-parse", "--verify", "--quiet", `${wipRef(bundle.thread.id)}^{commit}`]),
+              git(top, [
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                `${wipRef(bundle.thread.id)}^{commit}`,
+              ]),
             ).pipe(Effect.orElseSucceed(() => ({ stdout: "" })))).stdout.trim()
           : "";
         const kept = yield* withGit(
@@ -766,6 +778,17 @@ const make = (options: ThreadTransferOptions) =>
     const importHere = (input: ImportThreadInput, who: Who = {}) =>
       Effect.gen(function* () {
         const { bundle } = input;
+        // The same move asked again, as when the first answer never came: the thread it made,
+        // open here, is the answer, and nothing is made twice.
+        const open = yield* store.getThread(bundle.thread.id).pipe(Effect.option);
+        if (
+          Option.isSome(open) &&
+          open.value.transferredTo === undefined &&
+          open.value.transferredFrom?.name === input.from &&
+          open.value.transferredFrom.exportedAt === bundle.exportedAt &&
+          open.value.transferredFrom.by === who.by
+        )
+          return { thread: open.value, notes: [] } satisfies ImportThreadResult;
         const copy = yield* copyOf(bundle.thread.id);
         if (copy !== undefined) return yield* returnHere(input, copy, who);
         yield* admit(bundle);
@@ -965,8 +988,13 @@ const make = (options: ThreadTransferOptions) =>
         };
         const copy = yield* copyOf(input.bundle.thread.id);
         if (copy !== undefined) {
-          // Only the person it was theirs: a copy one person could read comes back for them alone.
-          if (copy.thread.readableBy !== undefined && copy.thread.readableBy !== input.person)
+          // Only the person who took it away brings it back: whoever it went for, else whoever
+          // brought it here, else whoever alone could read it.
+          const owner =
+            copy.thread.transferredTo?.by ??
+            copy.thread.transferredFrom?.by ??
+            copy.thread.readableBy;
+          if (owner === undefined || owner !== input.person)
             return yield* refuse("This thread is already on this server.");
           if (config.headless === true) {
             yield* admitShape(input.bundle);
@@ -1022,7 +1050,14 @@ const make = (options: ThreadTransferOptions) =>
           }),
       );
     const importThread: ThreadTransferShape["importThread"] = (input) =>
-      requireOn.pipe(Effect.andThen(oneAtATime(input.bundle.thread.id, importHere(input))));
+      requireOn.pipe(
+        Effect.andThen(
+          oneAtATime(
+            input.bundle.thread.id,
+            importHere(input, input.server === undefined ? {} : { leftOpen: input.server }),
+          ),
+        ),
+      );
     const importThreadFor: ThreadTransferShape["importThreadFor"] = (input) =>
       requireOn.pipe(
         Effect.andThen(oneAtATime(input.bundle.thread.id, importFor(input))),
@@ -1030,7 +1065,7 @@ const make = (options: ThreadTransferOptions) =>
         Effect.provideService(ReadingAs, SERVER),
       );
 
-    const settleThread: ThreadTransferShape["settleThread"] = (input) =>
+    const settleThread: ThreadTransferShape["settleThread"] = (input, by) =>
       Effect.gen(function* () {
         yield* requireOn;
         const before = yield* store.getThread(input.threadId);
@@ -1055,13 +1090,32 @@ const make = (options: ThreadTransferOptions) =>
             at,
             ...(input.url === undefined ? {} : { url: input.url }),
             ...(input.server === undefined ? {} : { server: input.server }),
+            ...(by === undefined ? {} : { by }),
           },
         }));
         yield* hub.publish({ type: "thread.upsert", thread: settled });
         return settled;
       });
 
-    return ThreadTransfer.of({ exportThread, importThread, importThreadFor, settleThread });
+    const settledThere: ThreadTransferShape["settledThere"] = (threadId) =>
+      Effect.gen(function* () {
+        yield* requireOn;
+        const thread = yield* store.updateThread(threadId, (was) => {
+          if (was.transferredFrom?.leftOpen === undefined) return was;
+          const { leftOpen: _settled, ...from } = was.transferredFrom;
+          return { ...was, transferredFrom: from };
+        });
+        yield* hub.publish({ type: "thread.upsert", thread });
+        return thread;
+      });
+
+    return ThreadTransfer.of({
+      exportThread,
+      importThread,
+      importThreadFor,
+      settleThread,
+      settledThere,
+    });
   });
 
 export class ThreadTransfer extends Context.Service<ThreadTransfer, ThreadTransferShape>()(

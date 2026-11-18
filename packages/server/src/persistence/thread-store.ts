@@ -3800,29 +3800,19 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                     if (other !== undefined)
                       return yield* alreadyHere("A turn of this thread is already on this server.");
                   }
-                  // The copy's messages the bundle no longer carries (its oldest, past what a
-                  // bundle holds) stay ahead of the bundle's.
-                  const carried = new Set(moved.messages.map(({ message }) => message.id));
-                  const before = yield* sql<{
-                    id: string;
-                    role: string;
-                    turn_id: string | null;
-                    message: string;
-                    usage_metadata: string | null;
-                  }>`SELECT id, role, turn_id, message, usage_metadata FROM closed_messages
-                    WHERE thread_id = ${threadId} ORDER BY seq`;
-                  const stays = before.filter((row) => !carried.has(row.id));
-                  yield* sql`DELETE FROM closed_messages WHERE thread_id = ${threadId}`;
-                  for (const [index, row] of stays.entries()) {
-                    yield* sql`INSERT INTO closed_messages
-                        (thread_id, id, seq, role, turn_id, message, usage_metadata)
-                      VALUES (${threadId}, ${row.id}, ${index + 1}, ${row.role}, ${row.turn_id},
-                        ${row.message}, ${row.usage_metadata})`;
-                  }
-                  for (const [index, { message, turnId }] of moved.messages.entries()) {
+                  // The copy's messages stay as they are here, unscrubbed and with their usage;
+                  // only what the bundle adds, the turns taken there, goes after them.
+                  const before = yield* sql<{ id: string }>`SELECT id FROM closed_messages
+                    WHERE thread_id = ${threadId}`;
+                  const [last] = yield* sql<{ seq: number | null }>`SELECT MAX(seq) AS seq
+                    FROM closed_messages WHERE thread_id = ${threadId}`;
+                  const onCopy = new Set(before.map((row) => row.id));
+                  const added = moved.messages.filter(({ message }) => !onCopy.has(message.id));
+                  const from = last?.seq ?? 0;
+                  for (const [index, { message, turnId }] of added.entries()) {
                     yield* sql`INSERT INTO closed_messages
                         (thread_id, id, seq, role, turn_id, message)
-                      VALUES (${threadId}, ${message.id}, ${stays.length + index + 1},
+                      VALUES (${threadId}, ${message.id}, ${from + index + 1},
                         ${message.role}, ${turnId ?? null}, ${JSON.stringify(message)})`;
                   }
                   for (const turn of moved.turns) {

@@ -232,9 +232,12 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
             "export const cart = [];\n",
           );
           expect(run(folder, "status", "--porcelain")).toContain("cart.ts");
-          // A second import of the same thread is refused before anything is made.
-          const twice = yield* transfer.importThread(overTheWire(bundle, clone)).pipe(Effect.flip);
-          expect(twice._tag).toBe("InvalidState");
+          // The same import asked again, as when its answer was lost, answers the thread here and
+          // makes nothing more.
+          const twice = yield* transfer.importThread(overTheWire(bundle, clone));
+          expect(twice.thread.id).toBe(thread.id);
+          expect(twice.thread.checkout.path).toBe(folder);
+          expect(run(clone, "worktree", "list").trim().split("\n")).toHaveLength(2);
 
           // The first session here reads the recent turns ahead of the next message, once.
           yield* runtimes.send(thread.id, { text: "Carry on with the tests." });
@@ -372,11 +375,11 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
           expect(out.repository.remote).toBe(REMOTE);
           expect(out.wip).toBeDefined();
           expect(run(bare, "show", `${out.wip!.commit}:cart.test.ts`)).toContain("cart");
-          yield* transfer.settleThread({
-            threadId: thread.id,
-            to: "Laptop",
-            exportedAt: out.exportedAt,
-          });
+          const left = yield* transfer.settleThread(
+            { threadId: thread.id, to: "Laptop", exportedAt: out.exportedAt },
+            "grace",
+          );
+          expect(left.transferredTo?.by).toBe("grace");
           // Moved back here later, it comes onto its copy, for the person whose it was alone.
           const returning = { ...out, exportedAt: out.exportedAt + 1 };
           const notTheirs = yield* transfer
@@ -447,6 +450,10 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
             const transfer = yield* ThreadTransfer;
             yield* hostedFeatures(true);
             yield* transfer.importThread(overTheWire(there.bundle, clone));
+            // Each server's fake agent names its first reply reply-1, as real replies never
+            // share an id: one turn here first, so the reply that matters has an id of its own.
+            yield* runtimes.send(threadId, { text: "Look first." });
+            yield* completeTurn(yield* waitSent(threadId, 1), "Looked.");
             yield* runtimes.send(threadId, { text: "Add the tests." });
             const session = yield* waitSent(threadId, 1);
             const moved = (yield* (yield* ThreadStore).getThread(threadId)).checkout.path;
@@ -479,6 +486,7 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
                       bundle: back,
                       root: laptop.repo,
                       from: "Hosted",
+                      server,
                     }),
                   ),
                 ),
@@ -505,6 +513,11 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
             const texts = JSON.stringify(yield* store.listMessages(threadId));
             expect(texts).toContain("Port the cart.");
             expect(texts).toContain("Tests added.");
+            // Open there too until the copy there is settled, and only here once it is.
+            expect(thread.transferredFrom?.leftOpen).toEqual(server);
+            const settledThere = yield* transfer.settledThere(threadId);
+            expect(settledThere.transferredFrom?.leftOpen).toBeUndefined();
+            expect(settledThere.transferredFrom?.name).toBe("Hosted");
             return thread;
           }),
         );

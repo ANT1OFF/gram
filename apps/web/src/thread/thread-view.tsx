@@ -119,6 +119,11 @@ const MovedAwayNotice = lazy(async () => ({
   default: (await import("./moved-away-notice")).MovedAwayNotice,
 }));
 
+/** Only for a thread back from a server whose copy there is still open. */
+const LeftOpenNotice = lazy(async () => ({
+  default: (await import("./moved-away-notice")).LeftOpenNotice,
+}));
+
 /** The optional turn trace, loaded apart from the conversation. */
 const traceBody = lazyPart(() => import("./trace-view"));
 
@@ -800,6 +805,11 @@ export function ThreadView({
           {thread.transferredTo !== undefined && (
             <Suspense fallback={null}>
               <MovedAwayNotice threadId={threadId} />
+            </Suspense>
+          )}
+          {thread.transferredFrom?.leftOpen !== undefined && (
+            <Suspense fallback={null}>
+              <LeftOpenNotice threadId={threadId} />
             </Suspense>
           )}
           <FolderMissingNotice threadId={threadId} />

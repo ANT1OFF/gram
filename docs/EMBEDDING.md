@@ -522,6 +522,8 @@ POST /embed/v1/thread-settles
 - An export is refused with `409` mid-turn, for a thread of a workspace, and for one that moved already. A thread on the person's machine has its edits kept and pushed by that machine (`host.stop.keep`); nothing else changes.
 - A settle names the export's `exportedAt`: a thread that carried on since stays as it is, with `409`. Settled, the thread here is a read-only copy saying where it went.
 - Whether a person may take work away is the platform's to decide before it asks. Both are recorded as the person's (`thread.export`, `thread.settle`).
+- Only that person brings the copy back here later: a move in of a settled copy is refused for anyone else.
+- On the Gram it went to, the import names the server it came from (`server`), and the thread says its copy there is still open until that Gram hears the settle went through (`POST /threads/settled-there`). Until then it offers to make the copy there read-only.
 
 ## Settings supplied from outside
 

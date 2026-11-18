@@ -72,6 +72,8 @@ export const importThread = async (input: {
   readonly bundle: unknown;
   readonly root: string;
   readonly from: string;
+  /** Where it came back from: the thread says its copy there is open until `settledThere`. */
+  readonly server?: { readonly origin: string; readonly workspaceId: string };
 }): Promise<{ readonly notes: readonly string[]; readonly exportedAt: number }> => {
   const answer = await post("/threads/import", input, "The thread couldn't be put back here.");
   const notes = (
@@ -90,4 +92,9 @@ export const importThread = async (input: {
       ? notes.filter((note): note is string => typeof note === "string")
       : [],
   };
+};
+
+/** The copy on the server the thread came back from is read-only now. */
+export const settledThere = async (threadId: string): Promise<void> => {
+  await post("/threads/settled-there", { threadId }, "This Gram couldn't note it.");
 };

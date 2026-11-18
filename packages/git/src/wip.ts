@@ -505,8 +505,13 @@ export const setAsideFor = (
       head !== undefined &&
       head !== kept.head &&
       !(yield* isAncestor(top, head, kept.head)) &&
-      (yield* run(top, ["for-each-ref", "--contains", head, "refs/heads", "refs/tags"])).stdout.trim() ===
-        "";
+      (yield* run(top, [
+        "for-each-ref",
+        "--contains",
+        head,
+        "refs/heads",
+        "refs/tags",
+      ])).stdout.trim() === "";
     if (!dirty && !diverged && !stray) return undefined;
     if (diverged && tip?.kind === "commit" && head !== tip.oid)
       return yield* fail(`${branch} has commits of its own in another folder`);
@@ -518,7 +523,11 @@ export const setAsideFor = (
       for (const entry of listed) {
         const fields = entry.split("\0");
         const at = fields.find((field) => field.startsWith("worktree "))?.slice(9);
-        if (at !== undefined && !samePath(at, top) && fields.includes(`branch refs/heads/${branch}`))
+        if (
+          at !== undefined &&
+          !samePath(at, top) &&
+          fields.includes(`branch refs/heads/${branch}`)
+        )
           return yield* fail(`${branch} is checked out in ${at}`);
       }
     }

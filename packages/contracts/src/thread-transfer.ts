@@ -76,6 +76,11 @@ export const ImportThreadInput = Schema.Struct({
   bundle: ThreadBundle,
   root: Schema.NonEmptyString,
   from: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+  /**
+   * The server signed in to that it came back from, and the workspace there, while its copy
+   * there is not yet read-only: kept on the thread as `transferredFrom.leftOpen`.
+   */
+  server: Schema.optionalKey(MovedToServer),
 });
 export type ImportThreadInput = typeof ImportThreadInput.Type;
 
@@ -135,3 +140,10 @@ export const SettleThreadForPersonInput = Schema.Struct({
   to: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
 });
 export type SettleThreadForPersonInput = typeof SettleThreadForPersonInput.Type;
+
+/**
+ * `POST /threads/settled-there`: the copy on the server a thread came back from is read-only now,
+ * so the thread here stops saying it is open there too.
+ */
+export const SettledThereInput = Schema.Struct({ threadId: ThreadId });
+export type SettledThereInput = typeof SettledThereInput.Type;

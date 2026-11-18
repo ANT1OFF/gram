@@ -1,10 +1,12 @@
 import type { ThreadId } from "@gram/contracts";
-import { CloudUpload } from "lucide-react";
+import { CloudUpload, TriangleAlert } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useThreadsStore } from "@/stores/threads";
 
 import { bringBackFrom } from "./move-thread-model";
+import { settledThere } from "./thread-transfer-api";
 import { useThreadDialogs } from "./thread-dialogs-store";
 import { useThreadMove } from "./use-thread-move";
 
@@ -60,6 +62,64 @@ export function MovedAwayNotice({ threadId }: { threadId: ThreadId }) {
           onClick={() => window.open(moved.url, "_blank", "noopener")}
         >
           Open it there
+        </Button>
+      )}
+    </aside>
+  );
+}
+
+/**
+ * Above the composer once a thread came back from a server whose copy there is still open, as
+ * when that server didn't answer the settle, or the sheet closed before it did: two places could
+ * carry it on. One click makes the copy there read-only.
+ */
+export function LeftOpenNotice({ threadId }: { threadId: ThreadId }) {
+  const from = useThreadsStore((s) => s.byId[threadId]?.thread.transferredFrom);
+  const settle =
+    typeof window === "undefined" ? undefined : window.gram?.hostedDevice?.settleThread;
+  const [busy, setBusy] = useState(false);
+  const [why, setWhy] = useState<string>();
+  const open = from?.leftOpen;
+  if (from === undefined || open === undefined) return null;
+  const { exportedAt } = from;
+  const settleThere =
+    settle === undefined || exportedAt === undefined
+      ? undefined
+      : async () => {
+          setBusy(true);
+          setWhy(undefined);
+          const settled = await settle(open.origin, open.workspaceId, threadId, exportedAt).catch(
+            () => ({ ok: false as const, why: "The server didn't answer." }),
+          );
+          if (settled.ok) await settledThere(threadId).catch(() => undefined);
+          else setWhy(settled.why);
+          setBusy(false);
+        };
+  return (
+    <aside
+      aria-label="Still open on the server"
+      data-testid="left-open-notice"
+      className="flex w-full thread-column shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-6 py-2 text-reading"
+    >
+      <TriangleAlert aria-hidden className="size-icon-row shrink-0 text-warning-text" />
+      <p className="min-w-0 flex-1">
+        Its copy on {from.name} is still open.{" "}
+        <span className="text-muted-foreground">Carry on here, not there.</span>
+      </p>
+      {why !== undefined && (
+        <span role="alert" className="text-meta text-warning-text">
+          {why}
+        </span>
+      )}
+      {settleThere !== undefined && (
+        <Button
+          size="sm"
+          variant="outline"
+          data-testid="left-open-settle"
+          disabled={busy}
+          onClick={() => void settleThere()}
+        >
+          Make it read-only there
         </Button>
       )}
     </aside>

@@ -136,7 +136,7 @@ export const ThreadImportsInboundLive = Layer.effectDiscard(
           person,
           "thread.settle",
           { threadId, to: decoded.value.to },
-          transfer.settleThread(decoded.value),
+          transfer.settleThread(decoded.value, person.id),
         ).pipe(
           Effect.map(() => answer({ settled: true })),
           Effect.catch((error: { readonly message?: string }) =>

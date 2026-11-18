@@ -14,6 +14,7 @@ import { createMockApi, type MockApi } from "@/api/mock";
 import { renderWithApi } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
+import { LeftOpenNotice } from "@/thread/moved-away-notice";
 import { ThreadDialogs } from "@/thread/thread-dialogs";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
@@ -159,12 +160,18 @@ describe("BringThreadDialog", () => {
     const calls = install({ ok: true, bundle: BUNDLE }, { ok: true });
     await bringIt();
     const after = await screen.findByTestId("bring-thread-after");
-    expect(calls.map((call) => call.split(" ")[0])).toEqual(["fetch", "/threads/import", "settle"]);
+    expect(calls.map((call) => call.split(" ")[0])).toEqual([
+      "fetch",
+      "/threads/import",
+      "settle",
+      "/threads/settled-there",
+    ]);
     expect(calls[0]).toBe(`fetch ${ORIGIN} w1 ${threadId}`);
     expect(JSON.parse(calls[1]!.slice("/threads/import ".length))).toEqual({
       bundle: BUNDLE,
       root,
       from: "Platform on gram.example.com",
+      server: { origin: ORIGIN, workspaceId: "w1" },
     });
     expect(calls[2]).toBe(`settle ${ORIGIN} w1 ${threadId} ${BUNDLE.exportedAt}`);
     expect(after.textContent).toContain("aside/cart");
@@ -188,12 +195,46 @@ describe("BringThreadDialog", () => {
     const after = await screen.findByTestId("bring-thread-after");
     expect(after.textContent).toContain("still open");
     fireEvent.click(screen.getByTestId("bring-thread-settle"));
+    await vi.waitFor(() => expect(calls).toHaveLength(5));
     await vi.waitFor(() => expect(screen.queryByTestId("bring-thread-settle")).toBeNull());
     expect(calls.map((call) => call.split(" ")[0])).toEqual([
       "fetch",
       "/threads/import",
       "settle",
       "settle",
+      "/threads/settled-there",
     ]);
+  });
+});
+
+describe("LeftOpenNotice", () => {
+  it("settles the copy there of a thread back here, and notes it here", async () => {
+    const calls = install({ ok: true, bundle: BUNDLE }, { ok: true });
+    const { byId } = useThreadsStore.getState();
+    const summary = byId[threadId]!;
+    const { transferredTo: _gone, ...thread } = summary.thread;
+    useThreadsStore.setState({
+      byId: {
+        ...byId,
+        [threadId]: {
+          ...summary,
+          thread: {
+            ...thread,
+            parked: false,
+            transferredFrom: {
+              name: "Platform on gram.example.com",
+              at: 1_700_000_100_000,
+              exportedAt: BUNDLE.exportedAt,
+              leftOpen: { origin: ORIGIN, workspaceId: "w1" },
+            },
+          },
+        },
+      },
+    });
+    renderWithApi(<LeftOpenNotice threadId={threadId} />, api);
+    fireEvent.click(await screen.findByTestId("left-open-settle"));
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[0]).toBe(`settle ${ORIGIN} w1 ${threadId} ${BUNDLE.exportedAt}`);
+    expect(calls[1]).toBe(`/threads/settled-there ${JSON.stringify({ threadId })}`);
   });
 });

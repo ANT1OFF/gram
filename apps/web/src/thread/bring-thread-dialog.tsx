@@ -17,7 +17,7 @@ import {
   bringSteps,
   comesLines,
 } from "./move-thread-model";
-import { importThread, ThreadTransferError } from "./thread-transfer-api";
+import { importThread, settledThere, ThreadTransferError } from "./thread-transfer-api";
 import { useThreadMove } from "./use-thread-move";
 
 const machine = () => (window.gram?.platform === "darwin" ? "this Mac" : "this computer");
@@ -46,7 +46,11 @@ export function BringThreadDialog({
   const api = useApi();
   const { view } = useThreadMove();
   const bridge = typeof window === "undefined" ? undefined : window.gram?.hostedDevice;
-  const summary = useThreadsStore((s) => s.byId[threadId]);
+  const live = useThreadsStore((s) => s.byId[threadId]);
+  // Held as last seen: the copy here steps aside while the thread comes back, and the sheet stays.
+  const [seen, setSeen] = useState(live);
+  if (live !== undefined && live !== seen) setSeen(live);
+  const summary = live ?? seen;
   const { data: projects = [] } = useQuery({
     queryKey: ["projects"],
     queryFn: () => api.listProjects(),
@@ -98,6 +102,7 @@ export function BringThreadDialog({
           bundle: fetched.bundle,
           root: project.root,
           from: `${from.name} on ${from.host}`,
+          server: { origin: from.origin, workspaceId: from.workspace },
         });
       }
       setStage("settle");
@@ -105,6 +110,8 @@ export function BringThreadDialog({
         () => ({ ok: false as const, why: "The server didn't answer." }),
       );
       unsettled.current = settled.ok ? undefined : brought;
+      // Noted here too; if that fails, the thread offers to settle again, which is harmless.
+      if (settled.ok) await settledThere(threadId).catch(ignore);
       setBack({ ...brought, ...(settled.ok ? {} : { unsettled: settled.why }) });
       setPhase("back");
     } catch (failed) {
