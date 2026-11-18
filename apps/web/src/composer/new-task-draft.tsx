@@ -52,7 +52,7 @@ import { TaskAuthorityLine } from "@/new-thread/authority-line";
 import { AutonomyChoice } from "@/new-thread/autonomy-choice";
 import { ControlDetails } from "@/new-thread/control-details";
 import { useWorkspaceMergeApproval } from "@/new-thread/merge-approval";
-import { useNewForm } from "@/embed/store";
+import { useNewForm, useThreadsWorkspaceNoun } from "@/embed/store";
 import { NewFormHeader, WhereStop, type Who } from "@/new-thread/who-does-it";
 import { WorkspaceAutonomy } from "@/new-thread/workspace-autonomy";
 import { readCameFrom, type CameFrom } from "@/shell/came-from";
@@ -165,6 +165,7 @@ export function NewTaskDraft({
       ? workspaces.find((state) => state.workspace.id === target.workspaceId)
       : undefined;
   const makesOne = target?.kind === "repo";
+  const kind = useThreadsWorkspaceNoun();
   const name = workspace?.workspace.name ?? repos[0]?.name ?? "";
   const { data: ledger } = useOrchestratorLedger(workspace?.workspace.id);
   const agents = useServerSettings((s) => s.settings?.agents);
@@ -584,7 +585,7 @@ export function NewTaskDraft({
           folded={folded}
           where={
             <>
-              <WhereStop label={makesOne ? "New workspace for" : "Workspace"}>
+              <WhereStop label={makesOne ? `New ${kind.toLowerCase()} for` : kind}>
                 <TaskTargetPicker
                   value={target}
                   open={whereOpen}

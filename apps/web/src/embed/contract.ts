@@ -344,7 +344,11 @@ export interface ShellThreadsPage {
 
 /** The list of workspaces on the page of every thread, in the embedding app's word for one. */
 export interface ShellThreadsWorkspaces {
-  /** One workspace: "Project". It words the button that starts one and the empty list. */
+  /**
+   * One workspace: "Project". It words the button that starts one, the empty list, and the form
+   * that makes one: its heading, its step in the title bar, the task form's target picker and the
+   * palette's command.
+   */
   readonly noun: string;
   /** More than one: "Projects". The list's name on the page's switch. */
   readonly plural: string;

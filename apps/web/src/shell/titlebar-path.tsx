@@ -4,7 +4,7 @@ import { ChevronRight } from "lucide-react";
 import { useId } from "react";
 
 import { Button } from "@/components/ui/button";
-import { useEmbedShell, useThreadsTitle } from "@/embed/store";
+import { useEmbedShell, useThreadsTitle, useThreadsWorkspaceNoun } from "@/embed/store";
 import { cn } from "@/lib/utils";
 import { SegmentSlab } from "@/motion/segment-slab";
 import { SEGMENT_SLAB, SEGMENT_TRACK } from "@/settings/fields";
@@ -54,6 +54,7 @@ export function TitlebarPath({ solo, narrow }: { solo: boolean; narrow: boolean 
   const title = useThreadsTitle();
   const pathname = useLocation({ select: (location) => location.pathname });
   const fresh = creating(pathname);
+  const noun = useThreadsWorkspaceNoun();
   // The workspace is the path's end on its Board and on its orchestrator's thread, which the
   // buttons beside the path name: a step after it would lead nowhere.
   const workspace = useViewWorkspace();
@@ -79,7 +80,7 @@ export function TitlebarPath({ solo, narrow }: { solo: boolean; narrow: boolean 
       <Step />
       {fresh && (
         <span aria-current="page" className="px-2 text-body font-medium text-foreground">
-          New task
+          {pathname === "/new-workspace" ? `New ${noun.toLowerCase()}` : "New task"}
         </span>
       )}
       {!fresh && !solo && (

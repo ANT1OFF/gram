@@ -92,6 +92,17 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     expect(screen.queryByTestId("workspace-guide")).toBeNull();
   });
 
+  it("is named by the embedding app's word for a workspace", async () => {
+    useEmbedShell.setState({
+      ...EMPTY_SHELL,
+      threadsPage: { workspaces: { noun: "Project", plural: "Projects" } },
+    });
+    const { render } = await mount(settingsWith({ welcomeSeen: true }));
+    render({ repo: API });
+    await screen.findByRole("form", { name: "New project" });
+    expect(screen.getByRole("heading", { name: "New project" })).toBeTruthy();
+  });
+
   it("makes what it should work on the orchestrator's first message", async () => {
     const { api, render } = await mount(settingsWith({}));
     const save = vi.spyOn(api, "saveWorkspace");

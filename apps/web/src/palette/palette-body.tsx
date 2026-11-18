@@ -18,7 +18,13 @@ import { createElement, useEffect, useMemo, useRef, useState, type KeyboardEvent
 import { useApi } from "@/api/context";
 import { errorMessage, isNotImplemented } from "@/api/errors";
 import { openExternalUrl } from "@/api/open-external";
-import { gramSettingKept, shownNavigation, useEmbedShell, useThreadsTitle } from "@/embed/store";
+import {
+  gramSettingKept,
+  shownNavigation,
+  useEmbedShell,
+  useThreadsTitle,
+  useThreadsWorkspaceNoun,
+} from "@/embed/store";
 import { showInbox } from "@/inbox/inbox-store";
 import { boardWorkspaceFor } from "@/orchestration/board-model";
 import { useOpenBoard } from "@/orchestration/open-board";
@@ -170,6 +176,7 @@ export function PaletteBody({
   const embedNavigation = shownNavigation(useEmbedShell((s) => s.navigation));
   const hostAttention = useEmbedShell((s) => s.attention !== undefined);
   const hostSettings = useEmbedShell((s) => s.settings);
+  const workspaceNoun = useThreadsWorkspaceNoun();
   const threadsTitle = useThreadsTitle();
   const params = useParams({ strict: false });
   const currentId = params.threadId as ThreadId | undefined;
@@ -651,8 +658,8 @@ export function PaletteBody({
     },
     {
       id: "action:newWorkspace",
-      label: "New workspace…",
-      keywords: "create workspace orchestrator setup wizard repos roster copy",
+      label: `New ${workspaceNoun.toLowerCase()}…`,
+      keywords: `create workspace ${workspaceNoun.toLowerCase()} orchestrator setup wizard repos roster copy`,
       run: () => void navigate({ to: "/new-workspace" }),
     },
     ...(viewThread === undefined

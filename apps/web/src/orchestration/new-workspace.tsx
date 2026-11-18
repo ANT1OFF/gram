@@ -35,7 +35,7 @@ import {
   useOnDemandMachine,
 } from "@/composer/start-machine-card";
 import { fetchOnDemandStatus, isComing, startOnDemand } from "@/api/on-demand";
-import { useMachineNoun, useMachineReachesTheirs } from "@/embed/store";
+import { useMachineNoun, useMachineReachesTheirs, useThreadsWorkspaceNoun } from "@/embed/store";
 import { useShortcut } from "@/keyboard/registry";
 import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
 import { focusIfConnected } from "@/lib/use-return-focus";
@@ -97,6 +97,8 @@ export function NewWorkspaceSheet({
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
+  // The embedding app's word for a workspace ("Project"), so the sheet is named as its list is.
+  const kind = useThreadsWorkspaceNoun();
   const settings = useServerSettings((s) => s.settings);
   const { data: projects = [], isSuccess: projectsLoaded } = useQuery({
     queryKey: ["projects"],
@@ -135,7 +137,7 @@ export function NewWorkspaceSheet({
           data-testid="new-workspace"
           className="flex w-full max-w-lg flex-col gap-5 rounded-lg border border-edge bg-card p-5 text-reading text-card-foreground"
         >
-          <h1 className="font-heading text-title">New workspace</h1>
+          <h1 className="font-heading text-title">New {kind.toLowerCase()}</h1>
           {loadError && !shown ? (
             <div role="alert" data-testid="sheet-load-error" className="flex flex-col gap-2">
               <p className="text-destructive">
@@ -233,6 +235,7 @@ function SheetForm({
   const machineWanted = needsMachine(onDemand.status);
   const [waiting, setWaiting] = useState(false);
   const noun = useMachineNoun();
+  const kind = useThreadsWorkspaceNoun();
   const reachesTheirs = useMachineReachesTheirs();
   // Stops a wait for the machine when the sheet goes.
   const alive = useRef(true);
@@ -388,7 +391,7 @@ function SheetForm({
 
   return (
     <form
-      aria-label="New workspace"
+      aria-label={`New ${kind.toLowerCase()}`}
       aria-busy={pending || undefined}
       className="flex flex-col gap-5"
       noValidate
