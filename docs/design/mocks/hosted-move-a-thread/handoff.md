@@ -29,14 +29,14 @@ All of it sits behind the hosted-features setting and needs a server signed in t
 
 ## Parts
 
-| In the mock | In the build |
-| --- | --- |
-| Menu item, greyed with `.why` | `thread-menu.tsx`, as "Continue in…" is greyed with its reason |
-| `.sm-sheet` | A dialog beside `MoveWorkspaceDialog` (`orchestration/move-workspace.tsx`) |
-| `.sm-checks` | The checks list that dialog already draws |
-| `.sm-progress` | The move dialog's progress |
-| `.callout` | `alert` |
-| `.sm-ask` | The question card a worker's ask draws |
+| In the mock                   | In the build                                                               |
+| ----------------------------- | -------------------------------------------------------------------------- |
+| Menu item, greyed with `.why` | `thread-menu.tsx`, as "Continue in…" is greyed with its reason             |
+| `.sm-sheet`                   | A dialog beside `MoveWorkspaceDialog` (`orchestration/move-workspace.tsx`) |
+| `.sm-checks`                  | The checks list that dialog already draws                                  |
+| `.sm-progress`                | The move dialog's progress                                                 |
+| `.callout`                    | `alert`                                                                    |
+| `.sm-ask`                     | The question card a worker's ask draws                                     |
 
 ## Deviations allowed
 
