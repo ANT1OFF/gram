@@ -5,7 +5,7 @@
 import { realpath, stat } from "node:fs/promises";
 import { basename } from "node:path";
 
-import { displayCommand } from "@gram/contracts";
+import { displayCommand, HOSTED_THREAD_ID } from "@gram/contracts";
 import type {
   HostedDeviceActivity,
   HostedDeviceDone,
@@ -332,8 +332,14 @@ const threadIdOf = (arg: unknown): string | undefined => {
 
 const CLIENT_KEY = /^[A-Za-z0-9_-]{1,100}$/;
 /** A repository as a server takes one: `owner/name` or a git URL, nothing that spans lines. */
-const REPOSITORY = /^[\x21-\x7e]{3,512}$/;
+const REPOSITORY = /^(?!-)[\x21-\x7e]{3,512}$/;
 const BRANCH = /^(?!-)(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._/-]{1,200}(?<![./])$/;
+
+/** A thread's id on a server, as it named one sent from here. */
+const hostedThreadIdOf = (arg: unknown): string | undefined => {
+  const id = field(arg, "threadId", 128);
+  return id !== undefined && HOSTED_THREAD_ID.test(id) ? id : undefined;
+};
 
 const objectOf = (arg: unknown, name: string): object | undefined => {
   const value = typeof arg === "object" && arg !== null ? Reflect.get(arg, name) : undefined;
@@ -539,7 +545,7 @@ export const installHostedDeviceIpc = (ipc: ShellIpc, options: HostedDeviceIpcOp
     Channels.hostedDeviceWaitWork,
     withDevice((device, arg) => {
       const { origin, workspace } = target(arg);
-      const threadId = threadIdOf(arg);
+      const threadId = hostedThreadIdOf(arg);
       const wait = workWaitOf(arg);
       return origin === undefined ||
         workspace === undefined ||
@@ -565,7 +571,7 @@ export const installHostedDeviceIpc = (ipc: ShellIpc, options: HostedDeviceIpcOp
     Channels.hostedDeviceMessageWork,
     withDevice((device, arg) => {
       const { origin, workspace } = target(arg);
-      const threadId = threadIdOf(arg);
+      const threadId = hostedThreadIdOf(arg);
       const message = workMessageOf(arg);
       return origin === undefined ||
         workspace === undefined ||
@@ -581,7 +587,7 @@ export const installHostedDeviceIpc = (ipc: ShellIpc, options: HostedDeviceIpcOp
     Channels.hostedDeviceStopWork,
     withDevice((device, arg) => {
       const { origin, workspace } = target(arg);
-      const threadId = threadIdOf(arg);
+      const threadId = hostedThreadIdOf(arg);
       return origin === undefined || workspace === undefined || threadId === undefined
         ? { ok: false, why: "Name the server, the workspace and the thread." }
         : device

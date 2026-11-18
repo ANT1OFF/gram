@@ -443,8 +443,25 @@ describe("a hosted server", () => {
     expect(await startHostedThread(work)).toMatchObject({ ok: false, unknown: true });
     fake.state.startAnswer = { status: 409, body: { error: "Start your sandbox first." } };
     expect(await startHostedThread(work)).toEqual({ ok: false, why: "Start your sandbox first." });
-    // A wait whose answer isn't one Gram reads is no answer.
-    fake.state.waitAnswer = { status: 200, body: { happened: true, thread: { state: "lost" } } };
+    // A long reply, a long title or a state Gram doesn't know never stops it following the thread.
+    fake.state.waitAnswer = {
+      status: 200,
+      body: {
+        happened: true,
+        latest: "m-3",
+        reply: "x".repeat(9000),
+        thread: { title: "t".repeat(300), state: "archived", working: false },
+      },
+    };
+    const lenient = await waitHostedThread(thread);
+    expect(lenient.ok && lenient.waited.reply?.length).toBe(8000);
+    expect(lenient.ok && lenient.waited.thread).toEqual({
+      title: "t".repeat(200),
+      state: "running",
+      working: false,
+    });
+    // One without the thread isn't an answer.
+    fake.state.waitAnswer = { status: 200, body: { happened: true } };
     expect(await waitHostedThread(thread)).toMatchObject({ ok: false });
 
     // A server that names the calls only in part is sent nothing.

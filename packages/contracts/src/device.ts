@@ -4,6 +4,7 @@
 // bytes a signature or an approval covers, and how a command is drawn before anyone allows it.
 
 import * as Schema from "effect/Schema";
+import * as SchemaGetter from "effect/SchemaGetter";
 
 /**
  * The device protocol's version, in the hello. Its own number, not the host protocol's: a device
@@ -589,6 +590,9 @@ export interface HostedThreadSettle {
   readonly to: string;
 }
 
+/** A thread's id there, as Gram names one in its calls back: no path, no space. */
+export const HOSTED_THREAD_ID = /^[A-Za-z0-9_.:-]{1,128}$/;
+
 /** Whether the server runs work sent from this machine: it names all four calls for it. */
 export const runsSentWork = (discovery: HostedDiscovery): boolean =>
   discovery.thread_start_endpoint !== undefined &&
@@ -612,7 +616,7 @@ export interface HostedThreadStart {
 
 /** Its answer: the thread there, and the branch its work is on. */
 export const HostedThreadStarted = Schema.Struct({
-  threadId: Id,
+  threadId: Schema.String.check(Schema.isPattern(HOSTED_THREAD_ID)),
   branch: Schema.optionalKey(Text(200)),
 });
 export type HostedThreadStarted = typeof HostedThreadStarted.Type;
@@ -634,23 +638,38 @@ export interface HostedThreadWait {
 }
 
 /** Where a thread there stands: `waiting` is waiting on a person there. All the server's word. */
-export const HostedThreadState = Schema.Literals([
-  "running",
-  "waiting",
-  "done",
-  "failed",
-  "stopped",
-]);
-export type HostedThreadState = typeof HostedThreadState.Type;
+export const HOSTED_THREAD_STATES = ["running", "waiting", "done", "failed", "stopped"] as const;
+export type HostedThreadState = (typeof HOSTED_THREAD_STATES)[number];
 
-/** Its answer: whether it happened, the last message to wait after, its last reply, and the thread. */
+const cut = (most: number) =>
+  Schema.String.pipe(
+    Schema.decodeTo(Schema.String, {
+      decode: SchemaGetter.transform((text: string) => [...text].slice(0, most).join("")),
+      encode: SchemaGetter.transform((value) => value),
+    }),
+  );
+
+/**
+ * Its answer: whether it happened, the last message to wait after, its last reply, and the thread.
+ * Read leniently, so a long reply or a state Gram doesn't know never stops it following the thread:
+ * words are cut to length, and a state it doesn't know reads as `running`.
+ */
 export const HostedThreadWaited = Schema.Struct({
   happened: Schema.Boolean,
   latest: Schema.optionalKey(MessageRef),
-  reply: Schema.optionalKey(Text(8000)),
+  reply: Schema.optionalKey(cut(8000)),
   thread: Schema.Struct({
-    title: Text(200),
-    state: HostedThreadState,
+    title: cut(200),
+    state: Schema.String.pipe(
+      Schema.decodeTo(Schema.Literals(HOSTED_THREAD_STATES), {
+        decode: SchemaGetter.transform((state: string) =>
+          (HOSTED_THREAD_STATES as readonly string[]).includes(state)
+            ? (state as HostedThreadState)
+            : "running",
+        ),
+        encode: SchemaGetter.transform((value) => value),
+      }),
+    ),
     working: Schema.Boolean,
   }),
 });
