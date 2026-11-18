@@ -72,4 +72,11 @@ folder here that changed since is put aside on a branch of its own.
    `thread_import_endpoint` in its discovery document), the dialog from a thread's menu, and the
    read-only copy's notice. The review shows what goes and what stays; the server's own check
    (whether it reaches the repository, which model it runs) follows.
-3. Bringing back.
+3. Bringing back. The server: a thread that moved from here comes back onto its read-only copy
+   (`returnMovedThread`), in its old folder when that is still there, with what the person did in
+   it since put aside on a branch of its own (`setAsideFor`); the copy's messages the bundle no
+   longer carries stay. The platform in front asks for a person's thread as a bundle and settles
+   it (`POST /embed/v1/thread-exports`, `/thread-settles`); a thread on the person's machine has
+   its edits kept and pushed there (`host.stop.keep`). Settle records the server and workspace a
+   thread went to (`transferredTo.server`), for the app to ask for it back. The app's side (the
+   shell's calls and "Bring back to this computer…") follows.

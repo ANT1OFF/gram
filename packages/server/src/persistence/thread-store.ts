@@ -991,6 +991,14 @@ export interface ThreadStoreShape {
    * `InvalidState` when the thread or one of its turns is already here.
    */
   stageMovedThread(moved: MovedThread): Effect.Effect<void, InvalidState>;
+  /**
+   * A thread coming back here (`thread.transfer.import` of a thread that moved from here): it takes
+   * the place of its read-only copy, which must be on the closed list, in one transaction or not
+   * at all. The copy's messages and turns the bundle no longer carries stay, ahead of the bundle's,
+   * so nothing the copy held is lost. `InvalidState` when the copy isn't there, the thread is open
+   * here, or one of the bundle's turns is another thread's.
+   */
+  returnMovedThread(moved: MovedThread): Effect.Effect<void, InvalidState>;
   /** Why `stageMovedThread` would refuse these ids, read without writing; `undefined` when none is here. */
   movedThreadConflict(
     threadId: string,
@@ -3762,6 +3770,90 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                         new InvalidState({
                           message:
                             "The thread couldn't be stored here, and nothing of it was kept. Part of it may already be on this server.",
+                        }),
+                      )
+                    : Effect.fail(e),
+                ),
+              ),
+          ),
+        returnMovedThread: (moved) =>
+          run(
+            sql
+              .withTransaction(
+                Effect.gen(function* () {
+                  const threadId = moved.thread.id;
+                  const [open] = yield* sql<{ id: string }>`SELECT id FROM threads
+                    WHERE id = ${threadId}`;
+                  if (open !== undefined) return yield* alreadyHere("This thread is open here.");
+                  const [kept] = yield* sql<{ data: string }>`SELECT data FROM closed_threads
+                    WHERE thread_id = ${threadId}`;
+                  const copy = kept === undefined ? undefined : decodeStored(Thread, kept.data);
+                  if (copy === undefined || !copy.ok || copy.value.transferredTo === undefined)
+                    return yield* alreadyHere(
+                      "This thread's copy here isn't there to come back to.",
+                    );
+                  for (const turn of moved.turns) {
+                    const [other] = yield* sql<{ thread_id: string }>`SELECT thread_id FROM turns
+                      WHERE id = ${turn.id} AND thread_id != ${threadId}
+                      UNION ALL SELECT thread_id FROM closed_turns
+                      WHERE id = ${turn.id} AND thread_id != ${threadId} LIMIT 1`;
+                    if (other !== undefined)
+                      return yield* alreadyHere("A turn of this thread is already on this server.");
+                  }
+                  // The copy's messages the bundle no longer carries (its oldest, past what a
+                  // bundle holds) stay ahead of the bundle's.
+                  const carried = new Set(moved.messages.map(({ message }) => message.id));
+                  const before = yield* sql<{
+                    id: string;
+                    role: string;
+                    turn_id: string | null;
+                    message: string;
+                    usage_metadata: string | null;
+                  }>`SELECT id, role, turn_id, message, usage_metadata FROM closed_messages
+                    WHERE thread_id = ${threadId} ORDER BY seq`;
+                  const stays = before.filter((row) => !carried.has(row.id));
+                  yield* sql`DELETE FROM closed_messages WHERE thread_id = ${threadId}`;
+                  for (const [index, row] of stays.entries()) {
+                    yield* sql`INSERT INTO closed_messages
+                        (thread_id, id, seq, role, turn_id, message, usage_metadata)
+                      VALUES (${threadId}, ${row.id}, ${index + 1}, ${row.role}, ${row.turn_id},
+                        ${row.message}, ${row.usage_metadata})`;
+                  }
+                  for (const [index, { message, turnId }] of moved.messages.entries()) {
+                    yield* sql`INSERT INTO closed_messages
+                        (thread_id, id, seq, role, turn_id, message)
+                      VALUES (${threadId}, ${message.id}, ${stays.length + index + 1},
+                        ${message.role}, ${turnId ?? null}, ${JSON.stringify(message)})`;
+                  }
+                  for (const turn of moved.turns) {
+                    yield* sql`DELETE FROM closed_turns WHERE id = ${turn.id}`;
+                    yield* sql`INSERT INTO closed_turns
+                        (id, thread_id, started_at, ended_at, reason, usage, cost_usd)
+                      VALUES (${turn.id}, ${threadId}, ${turn.startedAt}, ${turn.endedAt ?? null},
+                        ${turn.reason ?? null},
+                        ${turn.usage === undefined ? null : toJson(UsageSummary, turn.usage)},
+                        ${turn.usage?.costUsd ?? null})`;
+                  }
+                  yield* sql`DELETE FROM thread_plans WHERE thread_id = ${threadId}`;
+                  const plan = moved.plan === undefined ? null : toJson(ThreadPlan, moved.plan);
+                  const turnPlan =
+                    moved.turnPlan === undefined ? null : toJson(TurnPlanJson, moved.turnPlan);
+                  if (plan !== null || turnPlan !== null) {
+                    yield* sql`INSERT INTO thread_plans (thread_id, plan, turn_plan, rev)
+                      VALUES (${threadId}, ${plan}, ${turnPlan}, 1)`;
+                  }
+                  yield* sql`UPDATE closed_threads SET closed_at = ${moved.closedAt},
+                      data = ${toJson(Thread, moved.thread)}
+                    WHERE thread_id = ${threadId}`;
+                }),
+              )
+              .pipe(
+                Effect.catch((e) =>
+                  e instanceof SqlError
+                    ? Effect.fail(
+                        new InvalidState({
+                          message:
+                            "The thread couldn't be stored here, and its copy here was kept as it was.",
                         }),
                       )
                     : Effect.fail(e),

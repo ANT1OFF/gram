@@ -84,7 +84,10 @@ const onMachineServer = <A, E>(
           const connection = {
             hello: { capabilities: [], features: ["wip-restore", "wip-restore-ref"] },
             repos: { ensure },
-            stop: { restore: stop.restore },
+            stop: {
+              restore: stop.restore,
+              keep: stop.keep,
+            },
             worktrees: {
               remove: (request: { readonly worktreeDir: string }) =>
                 Effect.sync(() => void machine.removed.push(request.worktreeDir)),
@@ -93,6 +96,7 @@ const onMachineServer = <A, E>(
           return {
             connection: (id: HostId) =>
               id === MACHINE ? Effect.succeed(connection) : Effect.die(new Error(`no ${id}`)),
+            stops: { keep: () => undefined },
           } as never;
         }),
       );
@@ -359,9 +363,174 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
             })
             .pipe(Effect.flip);
           expect(later.message).toContain("already on this server");
+
+          // Back out again for the person: their machine keeps and pushes the edits it holds.
+          write(nodePath.join(folder, "cart.test.ts"), "test('cart', () => {});\n");
+          // The fake machine never opens a session: put the one starting there to rest.
+          yield* (yield* ThreadRuntimes).restSession(thread.id);
+          const out = yield* transfer.exportThread({ threadId: thread.id });
+          expect(out.repository.remote).toBe(REMOTE);
+          expect(out.wip).toBeDefined();
+          expect(run(bare, "show", `${out.wip!.commit}:cart.test.ts`)).toContain("cart");
+          yield* transfer.settleThread({
+            threadId: thread.id,
+            to: "Laptop",
+            exportedAt: out.exportedAt,
+          });
+          // Moved back here later, it comes onto its copy, for the person whose it was alone.
+          const returning = { ...out, exportedAt: out.exportedAt + 1 };
+          const notTheirs = yield* transfer
+            .importThreadFor({ bundle: returning, from: "Laptop", person: "ada" })
+            .pipe(Effect.flip);
+          expect(notTheirs.message).toContain("already on this server");
+          const home = yield* transfer.importThreadFor({
+            bundle: returning,
+            from: "Laptop",
+            person: "grace",
+          });
+          expect(home.thread.transferredTo).toBeUndefined();
+          expect(home.thread.checkout).toMatchObject({ kind: "worktree", hostId: MACHINE });
+          expect(home.thread.checkout.path).not.toBe(folder);
+          expect(
+            readFileSync(nodePath.join(home.thread.checkout.path, "cart.test.ts"), "utf8"),
+          ).toContain("cart");
         }),
       );
     }),
+  );
+
+  it.effect(
+    "a thread comes back onto its copy, in its folder, with what was done there put aside",
+    () =>
+      Effect.gen(function* () {
+        const laptop = yield* makeWorld;
+        const hosted = yield* makeWorld;
+        const bare = nodePath.join(hosted.dir, "remote.git");
+        run(hosted.dir, "init", "-q", "--bare", bare);
+        pointAt(laptop.repo, bare);
+        run(laptop.repo, "push", "-q", "origin", "main");
+        const clone = nodePath.join(hosted.dir, "shop");
+        run(hosted.dir, "clone", "-q", bare, clone);
+        run(clone, "remote", "set-url", "origin", REMOTE);
+        run(clone, "config", `url.${bare}.insteadOf`, REMOTE);
+        const folder = nodePath.join(laptop.dir, "cart-folder");
+        run(laptop.repo, "worktree", "add", "-q", "-b", "feat/cart", folder);
+        const server = { origin: "https://gram.example.test", workspaceId: "w1" };
+
+        const there = yield* onServer(
+          laptop,
+          Effect.gen(function* () {
+            const runtimes = yield* ThreadRuntimes;
+            const transfer = yield* ThreadTransfer;
+            const thread = yield* runtimes.create({
+              projectRoot: laptop.repo,
+              checkout: {
+                kind: "worktree",
+                path: folder,
+                repoRoot: laptop.repo,
+                branch: "feat/cart",
+              },
+              input: { text: "Port the cart." },
+            });
+            write(nodePath.join(folder, "cart.ts"), "export const cart = [];\n");
+            yield* completeTurn(yield* waitSent(thread.id, 1), "Started the cart.");
+            yield* hostedFeatures(true);
+            const bundle = yield* transfer.exportThread({ threadId: thread.id });
+            return { bundle, threadId: thread.id };
+          }),
+        );
+        const { threadId } = there;
+        const back = yield* onServer(
+          hosted,
+          Effect.gen(function* () {
+            const runtimes = yield* ThreadRuntimes;
+            const transfer = yield* ThreadTransfer;
+            yield* hostedFeatures(true);
+            yield* transfer.importThread(overTheWire(there.bundle, clone));
+            yield* runtimes.send(threadId, { text: "Add the tests." });
+            const session = yield* waitSent(threadId, 1);
+            const moved = (yield* (yield* ThreadStore).getThread(threadId)).checkout.path;
+            write(nodePath.join(moved, "cart.test.ts"), "test('cart', () => {});\n");
+            yield* completeTurn(session, "Tests added.");
+            return yield* transfer.exportThread({ threadId });
+          }),
+        );
+
+        yield* onServer(
+          laptop,
+          Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            const transfer = yield* ThreadTransfer;
+            const settled = yield* transfer.settleThread({
+              threadId,
+              to: "Hosted",
+              exportedAt: there.bundle.exportedAt,
+              server,
+            });
+            // Where it went, for bringing it back.
+            expect(settled.transferredTo?.server).toEqual(server);
+            // The person goes on in the old folder meanwhile; nothing of that is lost.
+            write(nodePath.join(folder, "notes.md"), "my own notes\n");
+            const { thread, notes } = yield* transfer.importThread(
+              Schema.decodeUnknownSync(ImportThreadInput)(
+                JSON.parse(
+                  JSON.stringify(
+                    Schema.encodeSync(ImportThreadInput)({
+                      bundle: back,
+                      root: laptop.repo,
+                      from: "Hosted",
+                    }),
+                  ),
+                ),
+              ),
+            );
+            expect(thread.id).toBe(threadId);
+            expect(thread.transferredTo).toBeUndefined();
+            expect(thread.parked).toBe(false);
+            expect(thread.transferredFrom?.name).toBe("Hosted");
+            // In its own folder, on its branch, with the work done there.
+            expect(thread.checkout.path).toBe(folder);
+            expect(run(folder, "branch", "--show-current").trim()).toBe("feat/cart");
+            expect(readFileSync(nodePath.join(folder, "cart.test.ts"), "utf8")).toContain("cart");
+            expect(readFileSync(nodePath.join(folder, "cart.ts"), "utf8")).toContain("cart");
+            // The person's own change since is on a branch of its own, and said so.
+            expect(existsSync(nodePath.join(folder, "notes.md"))).toBe(false);
+            const aside = run(laptop.repo, "branch", "--list", "aside/*")
+              .trim()
+              .replace(/^\*?\s*/, "");
+            expect(aside).toMatch(/^aside\/feat-cart-/);
+            expect(run(laptop.repo, "show", `${aside}:notes.md`)).toBe("my own notes\n");
+            expect(notes.some((note) => note.includes(aside))).toBe(true);
+            // One conversation: what it had here, then what it did there.
+            const texts = JSON.stringify(yield* store.listMessages(threadId));
+            expect(texts).toContain("Port the cart.");
+            expect(texts).toContain("Tests added.");
+            return thread;
+          }),
+        );
+
+        // And out again: the copy there takes it back in its folder there, with nothing put aside.
+        const again = yield* onServer(
+          laptop,
+          Effect.gen(function* () {
+            yield* hostedFeatures(true);
+            return yield* (yield* ThreadTransfer).exportThread({ threadId });
+          }),
+        );
+        yield* onServer(
+          hosted,
+          Effect.gen(function* () {
+            const transfer = yield* ThreadTransfer;
+            const before = (yield* (yield* ThreadStore).getThread(threadId)).checkout.path;
+            yield* transfer.settleThread({ threadId, to: "Laptop", exportedAt: back.exportedAt });
+            const { thread, notes } = yield* transfer.importThread(overTheWire(again, clone));
+            expect(thread.checkout.path).toBe(before);
+            expect(thread.transferredTo).toBeUndefined();
+            expect(notes.some((note) => note.includes("aside/"))).toBe(false);
+            expect(run(clone, "branch", "--list", "aside/*").trim()).toBe("");
+          }),
+        );
+      }),
   );
 
   it.effect("a folder that isn't a clone of the thread's repository is refused", () =>
