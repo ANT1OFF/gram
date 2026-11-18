@@ -122,7 +122,10 @@ describe("first run", () => {
     expect(navigate).not.toHaveBeenCalled();
     fireEvent.click(welcome.getByTestId("welcome-open"));
     await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith({ to: "/new-workspace", search: { repo: "p-api" } }),
+      expect(navigate).toHaveBeenCalledWith({
+        to: "/new-workspace",
+        search: { repo: "p-api", read: true },
+      }),
     );
     // Leaving the sheet with Esc comes back here; the sheet records it done. Going on keeps the
     // Recommended setup, on, so the new workspace starts on it; nothing else is recorded.
@@ -163,7 +166,10 @@ describe("first run", () => {
     await waitFor(() => expect(add).toHaveBeenCalledWith("/Users/dev/Documents/code/infra"));
     const project = await add.mock.results[0]!.value;
     await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith({ to: "/new-workspace", search: { repo: project.id } }),
+      expect(navigate).toHaveBeenCalledWith({
+        to: "/new-workspace",
+        search: { repo: project.id, read: true },
+      }),
     );
   });
 

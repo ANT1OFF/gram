@@ -92,9 +92,12 @@ const inPopup = (target: EventTarget) =>
 export function NewWorkspaceSheet({
   from,
   repo,
+  read = false,
 }: {
   from?: WorkspaceId | undefined;
   repo?: ProjectId | undefined;
+  /** Opens with "Read the repositories first" ticked, as the first-run card promises. */
+  read?: boolean | undefined;
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
@@ -167,6 +170,7 @@ export function NewWorkspaceSheet({
               projects={projects}
               workspaces={workspaces}
               welcomeSeen={settings.onboarding.welcomeSeen}
+              read={read}
             />
           )}
         </div>
@@ -195,12 +199,14 @@ function SheetForm({
   projects,
   workspaces,
   welcomeSeen,
+  read,
 }: {
   initial: NewWorkspaceDraft;
   starting: OrchestratorCharter;
   projects: readonly Project[];
   workspaces: readonly WorkspaceState[];
   welcomeSeen: boolean;
+  read: boolean;
 }) {
   const api = useApi();
   const navigate = useNavigate();
@@ -280,8 +286,9 @@ function SheetForm({
   // Discover goes once per workspace made here, however many times opening it is retried.
   const discovered = useRef(false);
   // Whether Start has the orchestrator read the repositories first. Until the person says, it
-  // follows the task: with one it reads first, with none nothing runs until a task is sent.
-  const [survey, setSurvey] = useState<boolean>();
+  // follows the task: with one it reads first, with none nothing runs until a task is sent. Opened
+  // from the first-run card, whose line promises the survey, it starts ticked.
+  const [survey, setSurvey] = useState<boolean | undefined>(read ? true : undefined);
   const reads = survey ?? firstMessageOf(draft) !== undefined;
   const taskId = useId();
   // With a repo picked, focus goes to the task: what is next.
