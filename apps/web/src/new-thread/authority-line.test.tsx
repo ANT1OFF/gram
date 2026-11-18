@@ -3,10 +3,14 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { EMPTY_SHELL, useEmbedShell } from "@/embed/store";
 
 import { ChatAuthorityLine, TaskAuthorityLine, chatAuthority, taskSummary } from "./authority-line";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useEmbedShell.setState(EMPTY_SHELL);
+});
 
 describe("taskSummary", () => {
   it("says where it runs and whom it reports to, and apart from that who approves a merge", () => {
@@ -38,6 +42,13 @@ describe("taskSummary", () => {
     expect(made.who).toBe("Planned by the api orchestrator");
     expect(made.approval).toBe("Automatic");
     expect(made.merge).toBe("Merges pull requests without asking you");
+    const named = taskSummary({
+      workspace: "api",
+      makesOne: true,
+      autonomy: "full",
+      noun: "project",
+    });
+    expect(named.where).toBe("Runs in a new api project");
   });
 
   it("falls back to the level's own words for a level this build doesn't know", () => {
@@ -61,6 +72,23 @@ describe("TaskAuthorityLine", () => {
     );
     expect(merge.querySelector("span.text-warning")?.textContent).toBe("Automatic");
     expect(screen.queryByTestId("task-destination-remembered")).toBeNull();
+  });
+
+  it("says a workspace this start makes once: one line with its model, its merging left to Autonomy", () => {
+    render(<TaskAuthorityLine workspace="api" makesOne autonomy="full" model="Claude Opus" />);
+    expect(screen.getByTestId("task-destination").textContent).toBe(
+      "Runs in a new api workspace, planned by its orchestrator on Claude Opus",
+    );
+    expect(screen.queryByTestId("task-owner")).toBeNull();
+    expect(screen.queryByTestId("task-merge-approval")).toBeNull();
+  });
+
+  it("promises no merge approval where no agent may merge", () => {
+    useEmbedShell.setState({ ...EMPTY_SHELL, machines: { merges: "person" } });
+    render(<TaskAuthorityLine workspace="api" autonomy="full" />);
+    expect(screen.getByTestId("task-owner").textContent).toBe("Planned by the api orchestrator");
+    expect(screen.queryByTestId("task-merge-approval")).toBeNull();
+    expect(screen.getByTestId("task-authority").textContent).not.toMatch(/merge/i);
   });
 
   it("is calm below Full", () => {
