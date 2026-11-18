@@ -845,6 +845,8 @@ export const SentTo = Schema.Struct({
   heardAt: Schema.optionalKey(Schema.Number),
   /** Why it isn't heard from now, in a sentence: signed out there, say. */
   unheard: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(300))),
+  /** Epoch ms its orchestrator last messaged it: an end heard after it isn't its last. */
+  askedAt: Schema.optionalKey(Schema.Number),
 });
 export type SentTo = typeof SentTo.Type;
 

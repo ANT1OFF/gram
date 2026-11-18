@@ -6,14 +6,15 @@
 
 import { randomUUID } from "node:crypto";
 
-import type {
-  HostedThreadWaited,
-  SentWorkBrief,
-  SentWorkOp,
-  SentWorkRequestMessage,
-  SentWorkResponseMessage,
-  SentWorkResult,
-  SentWorkTarget,
+import {
+  HOSTED_THREAD_STATES,
+  type HostedThreadWaited,
+  type SentWorkBrief,
+  type SentWorkOp,
+  type SentWorkRequestMessage,
+  type SentWorkResponseMessage,
+  type SentWorkResult,
+  type SentWorkTarget,
 } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -88,6 +89,16 @@ const isResponse = (message: unknown): message is SentWorkResponseMessage =>
 const refusedOf = (result: SentWorkResult): Refused =>
   result.ok ? { ok: false, why: "The desktop app's answer isn't one the server reads." } : result;
 
+const isWaited = (waited: unknown): waited is HostedThreadWaited => {
+  const thread =
+    typeof waited === "object" && waited !== null ? Reflect.get(waited, "thread") : undefined;
+  return (
+    typeof thread === "object" &&
+    thread !== null &&
+    (HOSTED_THREAD_STATES as ReadonlyArray<unknown>).includes(Reflect.get(thread, "state"))
+  );
+};
+
 const isTarget = (target: unknown): target is SentWorkTarget =>
   typeof target === "object" &&
   target !== null &&
@@ -157,10 +168,7 @@ export const bridgeSentWork = (
     wait: (origin, workspaceId, threadId, wait) =>
       ask({ op: "wait", origin, workspaceId, threadId, ...wait }).pipe(
         Effect.map((result) =>
-          result.ok &&
-          "waited" in result &&
-          typeof result.waited === "object" &&
-          result.waited !== null
+          result.ok && "waited" in result && isWaited(result.waited)
             ? { ok: true as const, waited: result.waited }
             : refusedOf(result),
         ),

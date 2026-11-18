@@ -172,7 +172,15 @@ describe("a worker sent to a server", () => {
                 ),
             );
 
-            // The orchestrator's message and stop go there.
+            // The orchestrator's message and stop go there. It is sent while a wait is open.
+            const waits = () => app.asked.filter((each) => each.op === "wait").length;
+            const before = waits();
+            yield* settle;
+            yield* TestClock.adjust("2 seconds");
+            yield* waitReal(
+              "a wait open",
+              Effect.sync(() => (waits() > before ? true : undefined)),
+            );
             expect(
               yield* session.callTool("send_message", {
                 threadId: sent.threadId,
@@ -183,12 +191,31 @@ describe("a worker sent to a server", () => {
               threadId: "t-there-1",
               text: "Add a test for a replayed event.",
             });
+            // That wait hears the turn before the message end: not its last, so it is followed on.
+            yield* Queue.offer(app.waits, {
+              happened: true,
+              latest: "m-3",
+              reply: "Turn ended.",
+              thread: { title: BRIEF.title, state: "done", working: false },
+            });
+            yield* waitReal(
+              "the turn's report",
+              store
+                .listWorkerReports(workspaceId as WorkspaceId, 0)
+                .pipe(
+                  Effect.map((all) =>
+                    all.at(-1)?.report.summary === "Turn ended." ? all : undefined,
+                  ),
+                ),
+            );
+            expect((yield* store.getThread(sent.threadId)).sentTo?.state).toBe("running");
+
             // Finished there, then asked again: it is followed again.
             yield* settle;
             yield* TestClock.adjust("2 seconds");
             yield* Queue.offer(app.waits, {
               happened: true,
-              latest: "m-3",
+              latest: "m-4",
               reply: "Done.",
               thread: { title: BRIEF.title, state: "done", working: false },
             });

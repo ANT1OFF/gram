@@ -298,11 +298,24 @@ export const sendWorker = (
         sentTo,
       })
       .pipe(
-        // No record here means nothing could follow or stop it, so it is stopped there.
-        Effect.tapError(() =>
-          port.stop(target.origin, target.workspaceId, started.threadId).pipe(Effect.ignore),
+        Effect.catch((error) =>
+          Effect.gen(function* () {
+            // A call with the same id made the record first: it is that worker, not an orphan.
+            const made =
+              id === undefined ? undefined : yield* store.getThread(id).pipe(Effect.option);
+            if (
+              made !== undefined &&
+              Option.isSome(made) &&
+              made.value.sentTo?.threadId === started.threadId
+            )
+              return made.value;
+            // No record here means nothing could follow or stop it, so it is stopped there.
+            yield* port
+              .stop(target.origin, target.workspaceId, started.threadId)
+              .pipe(Effect.ignore);
+            return yield* fail(`${error.message} It was stopped on ${target.server}.`);
+          }),
         ),
-        Effect.mapError((error) => fail(error.message)),
       );
     if (justSent !== undefined) yield* justSent(worker.id);
     return {
@@ -314,6 +327,10 @@ export const sendWorker = (
     };
   });
 
+/** Done, failed or stopped there: nothing more comes until it is messaged again. */
+export const isEnded = (state: SentTo["state"]): boolean =>
+  state === "done" || state === "failed" || state === "stopped";
+
 /** One look at a sent worker: wait for what it does next, and record it. Never fails. */
 export const followOnce = (
   { orchestration, store, port }: Pick<Deps, "orchestration" | "store" | "port">,
@@ -322,6 +339,7 @@ export const followOnce = (
   Effect.gen(function* () {
     const sent = thread.sentTo;
     if (sent === undefined) return "ended" as const;
+    const began = yield* Clock.currentTimeMillis;
     const waited = yield* port.wait(sent.origin, sent.workspaceId, sent.threadId, {
       ...(sent.latest === undefined ? {} : { after: sent.latest }),
       until: "reply",
@@ -339,26 +357,29 @@ export const followOnce = (
       return "unheard" as const;
     }
     const { happened, latest, reply, thread: there } = waited.waited;
-    const next: SentTo = {
-      ...sent,
-      state: there.state,
-      working: there.working,
-      heardAt: now,
-      ...(latest === undefined ? {} : { latest }),
-      ...(reply === undefined ? {} : { reply }),
-    };
-    const { unheard: _heard, ...heard } = next;
+    // Asked again while this wait ran: an end it heard may come before the message is taken.
+    let heard: SentTo | undefined;
     yield* store
-      .updateThread(thread.id, (current) =>
-        current.sentTo === undefined ? current : { ...current, sentTo: heard },
-      )
+      .updateThread(thread.id, (current) => {
+        if (current.sentTo === undefined) return current;
+        const askedSince = (current.sentTo.askedAt ?? -1) >= began;
+        const { unheard: _heard, ...rest } = current.sentTo;
+        heard = {
+          ...rest,
+          state: askedSince && isEnded(there.state) ? "running" : there.state,
+          working: there.working,
+          heardAt: now,
+          ...(latest === undefined ? {} : { latest }),
+          ...(reply === undefined ? {} : { reply }),
+        };
+        return { ...current, sentTo: heard };
+      })
       .pipe(Effect.ignore);
+    if (heard === undefined) return "unheard" as const;
     // Something to tell: a reply, or a new state (a question, its end) whether or not it wrote.
-    const changed = (happened && latest !== sent.latest) || there.state !== sent.state;
+    const changed = (happened && latest !== sent.latest) || heard.state !== sent.state;
     if (changed) yield* orchestration.recordReport(thread.id, reportOf(heard)).pipe(Effect.ignore);
-    return there.state === "done" || there.state === "failed"
-      ? ("ended" as const)
-      : ("open" as const);
+    return isEnded(heard.state) ? ("ended" as const) : ("open" as const);
   });
 
 /** The sent workers still worth following: open here, and at work or waiting there. */
@@ -366,11 +387,7 @@ const openSent = (store: ThreadStoreShape) =>
   store.listThreads.pipe(
     Effect.map((threads) =>
       threads.filter(
-        (thread) =>
-          thread.sentTo !== undefined &&
-          !thread.parked &&
-          thread.sentTo.state !== "done" &&
-          thread.sentTo.state !== "failed",
+        (thread) => thread.sentTo !== undefined && !thread.parked && !isEnded(thread.sentTo.state),
       ),
     ),
   );

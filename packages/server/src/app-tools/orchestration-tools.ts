@@ -22,6 +22,7 @@ import { isBadgeOf } from "../git/extra-prs.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { restoreThreadWorktree } from "../git/restore-worktree.ts";
 import { isLiveWorker } from "../orchestration/ledger.ts";
+import { isEnded } from "../orchestration/sent-workers.ts";
 import { sendFingerprint } from "../orchestration/outbox.ts";
 import { featureSlug } from "../orchestration/rules.ts";
 import { userMidExchange } from "../orchestration/user-exchange.ts";
@@ -380,7 +381,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
               clientRequestId === undefined
                 ? randomUUID()
                 : createHash("sha256")
-                    .update(`${caller}\n${target.thread.id}\n${clientRequestId}`)
+                    .update(`${caller}\n${target.thread.id}\n${clientRequestId}\n${text}`)
                     .digest("base64url")
                     .slice(0, 64),
             mode: mode === "queue" ? "queue" : mode === "interrupt" ? "interrupt" : "steer",
@@ -395,15 +396,23 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
               }`,
             });
           yield* orchestration.noteMessage(caller, target.thread.id);
-          // A finished worker that is asked again is at work again, so it is followed again.
-          if (sent.state === "done" || sent.state === "failed")
-            yield* store
-              .updateThread(target.thread.id, (current) =>
-                current.sentTo === undefined
-                  ? current
-                  : { ...current, sentTo: { ...current.sentTo, state: "running" } },
-              )
-              .pipe(Effect.ignore);
+          // Asked again, it is at work again: followed again if it had ended, and an end heard
+          // from a wait that began before this isn't taken as its last.
+          const askedAt = yield* Clock.currentTimeMillis;
+          yield* store
+            .updateThread(target.thread.id, (current) =>
+              current.sentTo === undefined
+                ? current
+                : {
+                    ...current,
+                    sentTo: {
+                      ...current.sentTo,
+                      askedAt,
+                      ...(isEnded(current.sentTo.state) ? { state: "running" as const } : {}),
+                    },
+                  },
+            )
+            .pipe(Effect.ignore);
           return {
             threadId: target.thread.id,
             title: target.thread.title,
