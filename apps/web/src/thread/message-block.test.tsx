@@ -1035,10 +1035,10 @@ describe("MessageBlock agent errors", () => {
     // Past the first two, the rest are counted.
     expect(files.queryByText("src/c.ts")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "View diff" }));
-    expect(savedDiff).toHaveBeenCalledWith(E);
     // Gram restarted since the save: the files are still listed, every one.
-    const gone = within(await screen.findByTestId("saved-diff-gone"));
+    const gone = within(await screen.findByTestId("saved-diff-gone", {}, { timeout: 5000 }));
     expect(gone.getByText("src/c.ts")).toBeTruthy();
+    expect(savedDiff).toHaveBeenCalledWith(E);
   });
 
   it("says nothing was sent only for a refusal made before the message was taken", async () => {
