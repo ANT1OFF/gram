@@ -234,22 +234,80 @@ describe("explicit workspace orchestrator switch", () => {
     ),
   );
 
-  it.effect("a task's preview promises no move the running orchestrator can't make", () =>
+  it.effect("a task whose orchestrator can't carry over starts it fresh on the pick", () =>
     inServer((world) =>
       runCase(() =>
         Effect.gen(function* () {
-          const { thread, workspaceId } = yield* setup(world, "claude");
+          const { thread, session, workspaceId } = yield* setup(world, "claude");
           const store = yield* ThreadStore;
           const fake = yield* FakeAgentControl;
           const handlers = yield* orchestrationHandlers;
+          // A harness with no switch at all (OpenCode's today): no carry-over is possible.
           yield* fake.setSwitchCapability(undefined);
-          const refused = yield* handlers["workspace.taskPreflight"]({
-            target: { workspaceId },
-            orchestrator: { agent: "codex", model: "fake-opus" },
+          const target = { workspaceId };
+          // A model its CLI doesn't list is refused before Start, whichever way it would move.
+          const unlisted = yield* handlers["workspace.taskPreflight"]({
+            target,
+            orchestrator: { agent: "codex", model: "not-listed" },
           }).pipe(Effect.flip);
-          expect(refused.message).toContain("can't move to Codex");
-          yield* fake.setSwitchCapability(true);
+          expect(unlisted.message).toContain("can't move to Codex");
+          const picked = { agent: "codex", model: "fake-opus" } as const;
+          const selection = yield* handlers["workspace.taskPreflight"]({
+            target,
+            orchestrator: picked,
+          });
+          expect(selection.orchestratorFrom).toEqual(thread.model);
+          expect(selection.orchestratorFresh).toBe(true);
+          yield* handlers["workspace.startTask"]({
+            target,
+            orchestrator: picked,
+            selection,
+            input: { text: "Synthetic task for the fresh orchestrator" },
+          });
+          // No switch is claimed: the old session saves to memory, then a fresh one opens.
           expect((yield* store.getThread(thread.id)).sessionSwitch).toBeUndefined();
+          yield* waitSent(thread.id, 2);
+          expect(session.sent.at(-1)?.notice).toMatchObject({ variant: "checkpoint" });
+          yield* session.completeTurn("saved");
+          const fresh = yield* waitReal(
+            "fresh session on the pick",
+            Effect.gen(function* () {
+              const all = yield* sessionsFor(thread.id);
+              return all.length === 2 && all[1]!.sent.length > 0 ? all[1] : undefined;
+            }),
+          );
+          expect(session.closed).toBe(true);
+          expect(fresh.options.model).toEqual(picked);
+          expect(fresh.options.resumeId).toBeUndefined();
+          expect(fresh.options.switchStartup).toBeUndefined();
+          expect(fresh.sent[0]?.notice).toMatchObject({ variant: "boot" });
+          expect((yield* store.getThread(thread.id)).model).toEqual(picked);
+          expect((yield* store.getWorkspace(workspaceId)).charter.orchestratorModel).toEqual(
+            picked,
+          );
+          // The conversation stays in the thread, and its divider names both models.
+          const dividers = (yield* store.messagesWithParts(thread.id, ["data-handoff"])).flatMap(
+            (message) => message.parts.filter((part) => part.type === "data-handoff"),
+          );
+          expect(dividers.at(-1)?.data).toMatchObject({
+            reason: "user",
+            agent: "codex",
+            model: "fake-opus",
+            previousAgent: "claude",
+            previousModel: thread.model.model,
+          });
+          yield* fresh.completeTurn();
+          yield* waitReal(
+            "task on the fresh session",
+            Effect.sync(() =>
+              fresh.sent.some((sent) =>
+                (sent.text ?? "").includes("Synthetic task for the fresh orchestrator"),
+              )
+                ? true
+                : undefined,
+            ),
+          );
+          yield* fake.setSwitchCapability(true);
         }),
       ),
     ),

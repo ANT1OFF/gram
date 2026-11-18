@@ -139,5 +139,7 @@ export const ownedRuntimes = (
     startSession: (threadId) => Effect.andThen(admit(threadId), runtimes.startSession(threadId)),
     switchAgent: (threadId, ...rest) =>
       Effect.andThen(admit(threadId), runtimes.switchAgent(threadId, ...rest)),
+    startFreshOn: (threadId, ...rest) =>
+      Effect.andThen(admit(threadId), runtimes.startFreshOn(threadId, ...rest)),
   };
 };

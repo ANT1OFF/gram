@@ -1185,9 +1185,10 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
 
     async handoff(
       workspaceId: WorkspaceId,
-      options?: { readonly checkpoint?: boolean },
+      options?: { readonly checkpoint?: boolean; readonly model?: ModelRef },
     ): Promise<Thread> {
       const unsaved = options?.checkpoint === false;
+      const onto = options?.model;
       const state = find(workspaceId);
       const orchestrator = holder(state);
       if (orchestrator === undefined) {
@@ -1220,12 +1221,32 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
                   : { previousAgentSessionId: current.agentSessionId }),
                 reason: "user",
                 ...(unsaved ? { unsaved: true } : {}),
+                ...(onto === undefined
+                  ? {}
+                  : {
+                      agent: onto.agent,
+                      model: onto.model,
+                      previousAgent: current.model.agent,
+                      previousModel: current.model.model,
+                    }),
                 at: Date.now(),
               },
             },
           ]),
         );
-        host.replace({ ...current, agentSessionId: `mock-session-${host.ids()}` });
+        host.replace({
+          ...current,
+          ...(onto === undefined ? {} : { model: onto }),
+          agentSessionId: `mock-session-${host.ids()}`,
+        });
+        if (onto !== undefined) {
+          workspaces = workspaces.map((each) =>
+            each.workspace.id === workspaceId
+              ? { ...each, charter: { ...each.charter, orchestratorModel: onto } }
+              : each,
+          );
+          host.emit({ type: "workspaces.changed" });
+        }
         host.setStatus(orchestrator.id, "idle");
       };
       // Windows can take longer than the whole mock handoff to finish a click. A spec that checks

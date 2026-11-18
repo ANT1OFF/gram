@@ -145,3 +145,65 @@ test("with only Claude installed, the orchestrator shows nothing new", async ({ 
   await expect(menu.getByTestId("menu-continue-in")).toHaveCount(0);
   await expect(menu.getByTestId("menu-switch-orchestrator")).toHaveCount(0);
 });
+
+test("a saved model the session can't carry over to starts fresh on it from Settings, in place", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Codex not installed, so no Continue in… is offered: the saved Codex model needs a fresh session.
+  await page.addInitScript(() => {
+    sessionStorage.setItem(
+      "gram.mock.launchChecks",
+      JSON.stringify({
+        tools: [{ tool: "claude", found: true, path: "/mock/bin/claude", version: "2.1.273" }],
+        claudeSignIn: "signedIn",
+        codexSignIn: "notSignedIn",
+        ghSignedIn: false,
+      }),
+    );
+    sessionStorage.setItem(
+      "gram.mock.settings",
+      JSON.stringify({ onboarding: { welcomeSeen: true } }),
+    );
+    window.gramMockHoldGates = true;
+  });
+  await page.goto("/settings/workspaces");
+  await expect(page.getByTestId("workspace-settings")).toBeVisible();
+  const made = await page.evaluate(async () => window.gramMock!.simulateOrchestration("board"));
+  const saved = { agent: "codex", model: "synthetic-saved-model" } as const;
+  const before = await page.evaluate(
+    async ({ id, model }) => {
+      const api = window.gramMock!;
+      const state = (await api.listWorkspaces()).find((each) => each.workspace.id === id)!;
+      const thread = await api.openOrchestrator({ workspaceId: id });
+      await api.setOrchestratorCharter(id, { ...state.charter, orchestratorModel: model });
+      return { thread };
+    },
+    { id: made.workspaceId, model: saved },
+  );
+  await page
+    .getByRole("listitem", { name: "Workspace agent-platform" })
+    .getByTestId("workspace-link")
+    .click();
+  const workspace = page.getByTestId("workspace-page");
+  await expect(workspace.getByTestId("orchestrator-saved")).toContainText("until it starts fresh");
+  await expect(workspace.getByTestId("switch-orchestrator-open")).toHaveCount(0);
+  await workspace.getByTestId("start-fresh-on-open").click();
+  const panel = workspace.getByTestId("start-fresh-on");
+  await expect(panel.getByTestId("fresh-session-save-first")).toBeChecked();
+  await panel.getByTestId("start-fresh-on-start").click();
+  await expect(workspace.getByTestId("handing-off")).toBeVisible();
+  await page.evaluate(() => window.gramMock!.release("handoff"));
+  await expect(workspace.getByTestId("orchestrator-current")).toContainText("Codex");
+  const after = await page.evaluate(
+    async (id) => window.gramMock!.openOrchestrator({ workspaceId: id }),
+    made.workspaceId,
+  );
+  // The same thread, on the saved model, in a new session.
+  expect(after.id).toBe(before.thread.id);
+  expect(after.model).toEqual(saved);
+  expect(after.agentSessionId).not.toBe(before.thread.agentSessionId);
+  await expect(workspace.getByTestId("orchestrator-saved")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

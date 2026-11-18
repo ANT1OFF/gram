@@ -47,6 +47,7 @@ import {
 import { makeWorkerQuestions } from "./service/questions.ts";
 import { makeLedgerWatch } from "./service/ledger-watch.ts";
 import { makeHandoff } from "./service/handoff.ts";
+import { moveKindOf } from "../runtime/agent-switch.ts";
 import { makeProjects } from "./service/projects.ts";
 import { makeSends } from "./service/sends.ts";
 import { makeWorkerRepos } from "./service/worker-repos.ts";
@@ -119,6 +120,7 @@ export const OrchestrationLive = Layer.effect(
     const kit = yield* makeOrchestrationKit;
     const {
       store,
+      hosts,
       hub,
       runtimes,
       publisher,
@@ -495,6 +497,7 @@ export const OrchestrationLive = Layer.effect(
       handoffAfterTurn,
       onHandoffFailed,
       handoff,
+      sendAfterHandoff,
       resumeHandoff,
       retrySwitch,
       cancelSwitch,
@@ -511,7 +514,7 @@ export const OrchestrationLive = Layer.effect(
     const prepareTaskOrchestrator: OrchestrationShape["prepareTaskOrchestrator"] = (input) =>
       Effect.gen(function* () {
         const picked = input.orchestrator;
-        if (picked === undefined) return;
+        if (picked === undefined) return undefined;
         const target = input.target;
         const state =
           "workspaceId" in target
@@ -522,19 +525,22 @@ export const OrchestrationLive = Layer.effect(
                   row.workspace.projectIds[0] === target.projectId,
               );
         // Not made yet: the task makes it with the pick as its orchestrator model.
-        if (state === undefined) return;
+        if (state === undefined) return undefined;
         const holderId = state.workspace.orchestratorThreadId;
         const holder = holderId === undefined ? undefined : yield* findThread(holderId);
         if (holder === undefined) {
           const own = state.charter.orchestratorModel;
-          if (own !== undefined && !("tier" in own) && sameTaskModel(own, picked)) return;
+          if (own !== undefined && !("tier" in own) && sameTaskModel(own, picked)) return undefined;
           yield* setCharter(state.workspace.id, { ...state.charter, orchestratorModel: picked });
-          return;
+          return undefined;
         }
         const switching = holder.sessionSwitch?.target;
-        if (sameTaskModel(holder.model, picked)) return;
-        if (switching !== undefined && sameTaskModel(switching, picked)) return;
-        yield* handoff(state.workspace.id, "user", picked);
+        if (sameTaskModel(holder.model, picked)) return undefined;
+        if (switching !== undefined && sameTaskModel(switching, picked)) return undefined;
+        // Where its session can't carry over, it starts fresh on the pick, as the preview said.
+        const move = yield* moveKindOf(store, hosts, holder, picked);
+        yield* handoff(state.workspace.id, "user", picked, move === "fresh" ? { fresh: true } : {});
+        return move;
       });
 
     const {
@@ -858,6 +864,7 @@ export const OrchestrationLive = Layer.effect(
       releaseWorker,
       takeOverWorker,
       handoff,
+      sendAfterHandoff,
       cancelSwitch,
       retrySwitch,
       checkModelChange,

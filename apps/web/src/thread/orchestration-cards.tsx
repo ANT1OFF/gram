@@ -39,6 +39,7 @@ import {
 import { useState, type ReactNode } from "react";
 
 import { MessageResponse } from "@/components/ai-elements/message";
+import { agentLabel } from "@/agents/agent-display";
 import { Hint } from "@/components/hint";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { modelDisplayName, useModels } from "@/composer/models";
@@ -77,6 +78,7 @@ import {
   diffStat,
   digestTitle,
   formatBytes,
+  freshOnDividerLabel,
   handoffLabel,
   known,
   lineDiff,
@@ -688,6 +690,8 @@ export function MemoryWriteRow({ write }: { write: MemoryWrite }) {
  */
 export function HandoffDivider({ handoff }: { handoff: Handoff }) {
   if (handoff.reason === "switch") return <SwitchDivider handoff={handoff} />;
+  if (handoff.agent !== undefined && handoff.model !== undefined)
+    return <FreshOnDivider handoff={handoff} agent={handoff.agent} model={handoff.model} />;
   return (
     <div
       data-testid="handoff"
@@ -695,6 +699,49 @@ export function HandoffDivider({ handoff }: { handoff: Handoff }) {
     >
       <span className="h-px flex-1 bg-border" />
       {handoffLabel(handoff)}
+      <span className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
+/**
+ * A fresh session onto another model: "Fresh session on Claude Code · Opus 5.5 · 14:02", the model
+ * it left on hover.
+ */
+function FreshOnDivider({
+  handoff,
+  agent,
+  model,
+}: {
+  handoff: Handoff;
+  agent: AgentKind;
+  model: string;
+}) {
+  const models = useModels(agent);
+  const previous = handoff.previousAgent;
+  const previousModels = useModels(previous ?? agent);
+  const label = freshOnDividerLabel(
+    handoff,
+    agentLabel(agent),
+    modelDisplayName(models, agent, model),
+  );
+  const before =
+    previous === undefined || handoff.previousModel === undefined
+      ? undefined
+      : `Before: ${agentLabel(previous)} · ${modelDisplayName(previousModels, previous, handoff.previousModel)}`;
+  const line = (
+    <span data-testid="handoff-label" tabIndex={before === undefined ? undefined : 0}>
+      {label}
+    </span>
+  );
+  return (
+    <div
+      data-testid="handoff"
+      data-reason="fresh-on"
+      className="my-3 flex items-center gap-3 text-meta font-medium text-muted-foreground"
+    >
+      <span className="h-px flex-1 bg-border" />
+      {before === undefined ? line : <Hint label={before} side="bottom" render={line} />}
       <span className="h-px flex-1 bg-border" />
     </div>
   );

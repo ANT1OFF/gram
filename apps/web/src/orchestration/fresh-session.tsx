@@ -41,7 +41,7 @@ const SAVE_FIRST_OFF =
   "Its current turn stops now and any approval it waits on is declined. Anything not in memory is left behind; a later memory update can still read it from the transcript.";
 
 /** Save to memory first, ticked by default; unticked, a hard cut. */
-function SaveFirst({
+export function SaveFirst({
   checked,
   onChange,
 }: {

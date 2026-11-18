@@ -159,6 +159,7 @@ export function WorkspaceSettingsPage({
         {orchestrator !== undefined && (
           <SwitchOrchestratorAction
             thread={orchestrator}
+            state={state}
             saved={ownModel((changes.charter ?? state.charter).orchestratorModel)}
             disabled={changes.busy}
           />

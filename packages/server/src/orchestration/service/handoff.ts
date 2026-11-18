@@ -28,7 +28,12 @@ import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Option from "effect/Option";
 import { randomUUID } from "node:crypto";
-import { AGENT_NAMES, checkSwitchTarget, turnNote } from "../../runtime/agent-switch.ts";
+import {
+  AGENT_NAMES,
+  checkFreshTarget,
+  checkSwitchTarget,
+  turnNote,
+} from "../../runtime/agent-switch.ts";
 import {
   type ObservedTurnEnd,
   type SystemDelivery,
@@ -279,6 +284,8 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
     marker: HandoffMarker,
     previous: string | undefined,
     change?: SessionSwitch,
+    /** A fresh session onto another model: the model it left, for the divider. */
+    left?: ModelRef,
   ) =>
     Effect.gen(function* () {
       // A switch's: the divider says where it continued and what it carried, as any thread's does.
@@ -317,6 +324,17 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
                   : { limit: carried.handoff.limit.reason }),
                 ...(note === undefined ? {} : { note }),
               }),
+          // A fresh session onto another model names it, and what it left when that is known (a
+          // restart after the replacement no longer knows), so the divider says where it opened.
+          ...(marker.freshOn === undefined
+            ? {}
+            : {
+                agent: marker.freshOn.agent,
+                model: marker.freshOn.model,
+                ...(left === undefined
+                  ? {}
+                  : { previousAgent: left.agent, previousModel: left.model }),
+              }),
           at: marker.at,
         };
         yield* runtimes
@@ -324,6 +342,18 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
           .pipe(Effect.ignore);
       }
       yield* FiberMap.remove(handoffTimers, workspaceId);
+      // Onto another model: it is now the workspace's orchestrator model, as a switch's is.
+      const freshOn = marker.freshOn;
+      if (freshOn !== undefined)
+        yield* underKeysOf(
+          taskStartupLock,
+          workspaceStartupKeys(workspaceId),
+          store.updateWorkspace(workspaceId, (value) =>
+            value.workspace.orchestratorThreadId === threadId
+              ? { ...value, charter: { ...value.charter, orchestratorModel: freshOn } }
+              : value,
+          ),
+        ).pipe(Effect.ignore);
       // A fresh session on the same agent carries the last exchanges with the user too, without a
       // note: what it already told them isn't always in memory, and it shouldn't say it twice.
       const agent = (yield* store.getThread(threadId).pipe(Effect.option)).pipe(
@@ -334,7 +364,13 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
         carried?.handoff === undefined
           ? agent === undefined
             ? undefined
-            : { at: marker.at, from: agent, to: agent, fresh: true, noteMode: "none" }
+            : {
+                at: marker.at,
+                from: left?.agent ?? agent,
+                to: agent,
+                fresh: true,
+                noteMode: "none",
+              }
           : {
               at: marker.at,
               from: carried.previous.agent,
@@ -343,9 +379,13 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
               ...(note === undefined ? {} : { note }),
               ...(carried.handoff.limit === undefined ? {} : { limit: carried.handoff.limit }),
             };
-      yield* updateOutbox(workspaceId, (outbox) => {
+      // Read with the marker it clears, so nothing held for the new session is lost.
+      const after = yield* updateOutbox(workspaceId, (outbox) => {
         const next = outboxAfterHandoff(outbox);
-        return [boot === undefined ? next : { ...next, switchBoot: boot }, undefined];
+        return [
+          boot === undefined ? next : { ...next, switchBoot: boot },
+          outbox.handoff?.after ?? [],
+        ];
       });
       // As `open` does: a pause for an orchestrator that couldn't be reached was about the
       // session this one replaces. The user's own pause stays, and the boot goes out through it.
@@ -390,7 +430,26 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
       yield* runtimes
         .requestSystemDelivery(threadId, DIGEST_KEY, deliveryFor(workspaceId))
         .pipe(Effect.catchTag("ThreadNotFound", () => Effect.void));
+      // What the user sent for the new session (`HandoffMarker.after`), queued behind its boot.
+      for (const input of after) yield* runtimes.send(threadId, input).pipe(Effect.ignore);
     });
+
+  /**
+   * Holds `input` for the session a running handoff opens (`HandoffMarker.after`). False, holding
+   * nothing, when no handoff is running: the caller sends it as usual.
+   */
+  const sendAfterHandoff = (workspaceId: WorkspaceId, input: UserInput) =>
+    updateOutbox(workspaceId, (outbox) =>
+      outbox.handoff === undefined || outbox.handoff.target !== undefined
+        ? [outbox, false]
+        : [
+            {
+              ...outbox,
+              handoff: { ...outbox.handoff, after: [...(outbox.handoff.after ?? []), input] },
+            },
+            true,
+          ],
+    );
 
   /**
    * The handoff's second step. A thread that can't take a fresh session yet (the user's queued
@@ -409,6 +468,8 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
           const next: HandoffMarker = {
             reason: outbox.handoff.reason,
             ...(outbox.handoff.target === undefined ? {} : { target: outbox.handoff.target }),
+            ...(outbox.handoff.freshOn === undefined ? {} : { freshOn: outbox.handoff.freshOn }),
+            ...(outbox.handoff.after === undefined ? {} : { after: outbox.handoff.after }),
             at: outbox.handoff.at,
             phase: "fresh",
             ...(thread.agentSessionId === undefined
@@ -523,7 +584,8 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
             ),
           ).pipe(Effect.asVoid);
         }
-        const replaced = yield* runtimes.freshSession(threadId).pipe(
+        const freshOn = marker.freshOn;
+        const replaced = yield* runtimes.freshSession(threadId, freshOn).pipe(
           Effect.map((previous) => ({ previous })),
           Effect.catchTag("InvalidState", (e) =>
             Effect.logDebug("orchestration handoff waits for the thread to be free").pipe(
@@ -542,7 +604,14 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
             ),
           ).pipe(Effect.asVoid);
         }
-        yield* finishHandoff(workspaceId, threadId, marker, replaced.previous);
+        yield* finishHandoff(
+          workspaceId,
+          threadId,
+          marker,
+          replaced.previous,
+          undefined,
+          freshOn === undefined ? undefined : thread.model,
+        );
       }),
     );
 
@@ -674,8 +743,43 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
       return mode;
     });
 
-  const handoff: OrchestrationShape["handoff"] = (workspaceId, reason, target, options) =>
+  /**
+   * What a fresh session onto `model` asks: the orchestrator's own thread, an agent admitted for
+   * the role, a model its CLI lists here, and the workspace's gate kept in the thread's mode. None
+   * of the switch's handover checks: nothing of this session is carried over.
+   */
+  const validateFreshOn = (state: WorkspaceState, thread: Thread, model: ModelRef) =>
     Effect.gen(function* () {
+      if (
+        thread.forkedFrom !== undefined ||
+        thread.role !== "orchestrator" ||
+        state.workspace.orchestratorThreadId !== thread.id
+      )
+        return yield* new InvalidState({
+          message: "Only the workspace's orchestrator starts fresh on another model here.",
+        });
+      if (!admittedForRole(model.agent, "orchestrator"))
+        return yield* new InvalidState({
+          message: "Choose Codex or Claude Code for the orchestrator.",
+        });
+      yield* checkFreshTarget(store, hosts, model);
+      const mode = thread.mode;
+      if (mode === "plan" && model.agent !== thread.model.agent)
+        return yield* new InvalidState({
+          message: "Finish the plan in the current session before starting fresh on another agent.",
+        });
+      const needs = yield* needsUnderGate(model, gateOfAutonomy(autonomyOf(state.charter)), mode);
+      if (needs !== undefined)
+        return yield* new InvalidState({
+          message: `A ${kindName(model.agent)} session can't keep this workspace's approval policy in ${mode} mode. ${gateNeedsReason(needs, model.agent, mode)} Nothing was started.`,
+        });
+    });
+
+  const handoff: OrchestrationShape["handoff"] = (workspaceId, reason, asked, options) =>
+    Effect.gen(function* () {
+      // A switch carries the session over to `asked`; a fresh session onto it doesn't.
+      const target = options?.fresh === true ? undefined : asked;
+      const freshOn = options?.fresh === true ? asked : undefined;
       const state = yield* store.getWorkspace(workspaceId);
       const holder = state.workspace.orchestratorThreadId;
       const thread = holder === undefined ? undefined : yield* findThread(holder);
@@ -691,6 +795,7 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
         });
       const switchMode =
         target === undefined ? undefined : yield* validateSwitch(state, thread, target);
+      if (freshOn !== undefined) yield* validateFreshOn(state, thread, freshOn);
       if (target !== undefined) {
         const latest = yield* store.getWorkspace(workspaceId);
         const current = yield* findThread(thread.id);
@@ -741,6 +846,7 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
       const marker: HandoffMarker = {
         reason,
         ...(target === undefined ? {} : { target }),
+        ...(freshOn === undefined ? {} : { freshOn }),
         at,
         phase: broken || skipped ? "fresh" : "checkpoint",
         ...((broken || skipped) && thread.agentSessionId !== undefined
@@ -1015,6 +1121,7 @@ export const makeHandoff = (kit: OrchestrationKit, deps: HandoffDeps) => {
     handoffAfterTurn,
     onHandoffFailed,
     handoff,
+    sendAfterHandoff,
     resumeHandoff,
     retrySwitch,
     cancelSwitch,

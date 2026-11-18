@@ -8,13 +8,15 @@
 //       200 { "queued": true }                  a turn was running: it waits behind it
 //   thread-interrupt { "threadId", "person": { "id", "name"? } }
 //     → 200 { "interrupted": true }
-//   thread-fresh-session { "threadId", "person": { "id", "name"? }, "checkpoint"? }
+//   thread-fresh-session { "threadId", "person": { "id", "name"? }, "checkpoint"?, "model"? }
 //     → 200 { "started": true }                 an orchestrator's fresh session is under way
 //   each → 404 no such thread, 409 { "error" } one that can't take it now, 400 a body that isn't one
 //
 // A fresh session is for a workspace's orchestrator only (`orchestrator.handoff`, the web app's
 // Fresh session): its agent session is replaced, with memory, charter and ledger as the bridge.
 // `checkpoint` (default true) has the orchestrator save to memory first; false is a hard cut.
+// `model` (a `ModelRef`) opens the fresh session on it, and it becomes the workspace's orchestrator
+// model: the way onto a model the running session can't carry over to.
 //
 // The message is the person's, exactly as one they typed in the web app: the same receipt, so a
 // `key` sent again is one message (`thread.send`'s `clientMessageId`), the same record of who
@@ -27,7 +29,8 @@
 // (`/threads/from-profile`'s `startedBy`): it proves itself with the embed token, never a cookie.
 
 import { readableByOf, readerMay } from "./readable-by.ts";
-import { ThreadRpcs, type ThreadId, type UserInput } from "@gram/contracts";
+import { ModelRef, ThreadRpcs, type ThreadId, type UserInput } from "@gram/contracts";
+import * as Schema from "effect/Schema";
 import { Orchestration } from "../orchestration/service.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -199,6 +202,13 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
         const checkpoint = body?.["checkpoint"];
         if (checkpoint !== undefined && typeof checkpoint !== "boolean")
           return refusal(400, "`checkpoint` is true or false");
+        const rawModel = body?.["model"];
+        const model =
+          rawModel === undefined
+            ? undefined
+            : Option.getOrUndefined(Schema.decodeUnknownOption(ModelRef)(rawModel));
+        if (rawModel !== undefined && model === undefined)
+          return refusal(400, "`model` is an agent and a model it lists");
         const id = threadId as ThreadId;
         const thread = Option.getOrUndefined(yield* store.getThread(id).pipe(Effect.option));
         if (thread === undefined) return refusal(404, "there is no such thread");
@@ -216,13 +226,15 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
           person,
           id,
           "orchestrator.handoff",
-          { workspaceId, ...(checkpoint === undefined ? {} : { checkpoint }) },
-          orchestration.handoff(
+          {
             workspaceId,
-            "user",
-            undefined,
-            checkpoint === undefined ? {} : { checkpoint },
-          ),
+            ...(checkpoint === undefined ? {} : { checkpoint }),
+            ...(model === undefined ? {} : { model }),
+          },
+          orchestration.handoff(workspaceId, "user", model, {
+            ...(checkpoint === undefined ? {} : { checkpoint }),
+            ...(model === undefined ? {} : { fresh: true }),
+          }),
         ).pipe(
           Effect.map((result) =>
             result === "not-yours" ? refusal(409, NOT_YOUR_MACHINE) : answer({ started: true }),

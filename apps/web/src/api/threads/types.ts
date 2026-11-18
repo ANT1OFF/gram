@@ -108,6 +108,12 @@ export interface ThreadsApi {
     target: ModelRef,
     options?: { readonly note?: boolean },
   ): Promise<void>;
+  /**
+   * Starts a plain thread or a worker fresh on `model` in the same thread and checkout, where its
+   * session can't carry over ("Start fresh in Claude Code…"): the new session reads the thread's
+   * recent turns. Rejects with `InvalidState`, in words the user reads, when it can't now.
+   */
+  startFreshOn(threadId: ThreadId, model: ModelRef): Promise<void>;
   rename(threadId: ThreadId, title: string): Promise<void>;
   /** Gives the thread a folder outside its checkout; resolves to the folder granted. */
   addDirectory(threadId: ThreadId, path: string): Promise<string>;

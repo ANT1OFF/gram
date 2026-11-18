@@ -54,19 +54,43 @@ export const CODEX_AUTO_VERSION = "0.166.0";
 
 /**
  * Whether the switch is offered on this thread, and if so to which agent and, when it can't move
- * now, why: the server's words. Not offered at all on Windows, from or to OpenCode (its host can't
- * stop and reopen a session for a switch, so the server would refuse it), or while the other CLI
- * isn't installed, so Gram with one harness shows nothing new. The orchestrator's is offered the same way.
+ * now, why: the server's words. Where this session can't carry over at all (OpenCode's, which can't
+ * stop and reopen a session for a switch; on Windows; on a gateway account; on another machine) it
+ * is offered as `fresh`: a fresh session on the other agent in the same thread, which reads the
+ * thread's recent turns (`thread.startFreshOn`, the orchestrator's handoff with a model). Not offered
+ * while the other CLI isn't installed, so Gram with one harness shows nothing new.
  */
 export type SwitchOffer =
   | { readonly offered: false }
-  | { readonly offered: true; readonly to: AgentKind; readonly refusal?: string };
+  | {
+      readonly offered: true;
+      readonly to: AgentKind;
+      readonly refusal?: string;
+      /** Why this session can't carry over, so the move is a fresh session; absent for a switch. */
+      readonly fresh?: string;
+    };
 
 /** The launch checks found `agent`'s CLI. */
 export const installed = (checks: LaunchChecks | undefined, agent: AgentKind): boolean =>
   checks?.tools.find((tool) => tool.tool === agent)?.found === true;
 
 const RUNS_NOW: ReadonlySet<ThreadSummary["status"]> = new Set(["idle", "cold", "error"]);
+
+/** Why this thread's session can't carry over to `to` wherever it is, in the user's words. */
+const noCarryOver = (
+  thread: ThreadSummary["thread"],
+  to: AgentKind,
+  platform: string | undefined,
+): string | undefined => {
+  const name = AGENT_NAMES[to];
+  if (thread.model.agent === "opencode") return "OpenCode can't hand a session to another agent.";
+  if (platform === "win32") return "A session can't be handed over on Windows.";
+  if (thread.model.profileId !== undefined)
+    return "This session runs on a gateway account, which a switch doesn't move.";
+  if (!isLocalHost(effectiveCheckout(thread)))
+    return `This thread's machine can't hand its session to ${name}.`;
+  return undefined;
+};
 
 export const switchOffer = (input: {
   readonly summary: Pick<ThreadSummary, "thread" | "status" | "pendingRequests" | "background">;
@@ -80,9 +104,6 @@ export const switchOffer = (input: {
 }): SwitchOffer => {
   const { summary, checks } = input;
   const { thread } = summary;
-  if (input.platform === "win32") return { offered: false };
-  // OpenCode's host has no workspace switch: offering one only leads to the server's refusal.
-  if (thread.model.agent === "opencode") return { offered: false };
   // An orchestrator's switch under way names where it is going, so its sheet shows how it stands.
   const to =
     thread.role === "orchestrator" && thread.sessionSwitch !== undefined
@@ -91,14 +112,23 @@ export const switchOffer = (input: {
   if (!installed(checks, to)) return { offered: false };
   const signedOut = (to === "codex" ? checks?.codexSignIn : checks?.claudeSignIn) === "notSignedIn";
   if (!input.listed && !signedOut) return { offered: false };
-  const refusal = refusalOf(summary, to, checks!);
-  return refusal === undefined ? { offered: true, to } : { offered: true, to, refusal };
+  const fresh =
+    thread.sessionSwitch === undefined ? noCarryOver(thread, to, input.platform) : undefined;
+  const refusal = refusalOf(summary, to, checks!, fresh !== undefined);
+  return {
+    offered: true,
+    to,
+    ...(refusal === undefined ? {} : { refusal }),
+    ...(fresh === undefined ? {} : { fresh }),
+  };
 };
 
 const refusalOf = (
   summary: Pick<ThreadSummary, "thread" | "status" | "pendingRequests" | "background">,
   to: AgentKind,
   checks: LaunchChecks,
+  /** A fresh session: what only a carry-over asks of the session doesn't apply. */
+  fresh: boolean,
 ): string | undefined => {
   const { thread } = summary;
   const from = AGENT_SHORT[thread.model.agent];
@@ -109,25 +139,50 @@ const refusalOf = (
     if (thread.sessionSwitch !== undefined) return undefined;
   } else {
     if (thread.sessionSwitch !== undefined || !RUNS_NOW.has(summary.status))
-      return "Wait for this turn to finish, or stop it, then switch.";
+      return fresh
+        ? "Wait for this turn to finish, or stop it, then start fresh."
+        : "Wait for this turn to finish, or stop it, then switch.";
     if (summary.pendingRequests.length > 0)
       return `Answer the open approval first. It can't move to ${name}.`;
     if ((summary.background?.length ?? 0) > 0) return `${from} still has background work running.`;
   }
-  if (thread.model.profileId !== undefined)
+  if (!fresh && thread.model.profileId !== undefined)
     return "Switching uses the CLI's own sign-in; it doesn't move gateway accounts.";
   const signIn = to === "codex" ? checks.codexSignIn : checks.claudeSignIn;
   if (signIn === "notSignedIn") return `Sign in to ${name} in Settings → Agents.`;
-  if (thread.parked) return "Unarchive this thread before switching it.";
-  if (!isLocalHost(effectiveCheckout(thread)))
+  if (thread.parked)
+    return fresh
+      ? "Unarchive this thread before starting it fresh."
+      : "Unarchive this thread before switching it.";
+  if (!fresh && !isLocalHost(effectiveCheckout(thread)))
     return `${name} can't run on this thread's machine yet.`;
   if (
     thread.forkedFrom !== undefined &&
-    (thread.agentSessionId === undefined || thread.agentSessionUnused === true)
+    (fresh || thread.agentSessionId === undefined || thread.agentSessionUnused === true)
   )
-    return "Send once in this fork first.";
+    return fresh
+      ? "A fork can't start fresh; start a new thread instead."
+      : "Send once in this fork first.";
   return undefined;
 };
+
+/** "Start fresh in Claude Code: new session with the recent turns", for the chip's group heading. */
+export const freshHint = (to: AgentKind): string =>
+  `Start fresh in ${AGENT_NAMES[to]}: new session with the recent turns`;
+
+/** The menu item's and the sheet's words for a fresh session on `to`. */
+export const freshLabel = (to: AgentKind): string => `Start fresh in ${AGENT_NAMES[to]}`;
+
+/** What a thread's fresh session gets, and what stays where it was. */
+export const FRESH_CARRIES_LINE =
+  "The recent turns, read from this thread's transcript. The branch, checkout and PR stay as they are.";
+
+/** Where the conversation goes, for a fresh session. */
+export const FRESH_STAYS_LINE = "This conversation stays in the thread, above a divider.";
+
+/** What an orchestrator's fresh session gets. */
+export const FRESH_ORCHESTRATOR_LINE =
+  "Memory, the charter and the ledger carry over. Workers keep running.";
 
 /**
  * Limit mode, as the server decides it (`noteModeOf`): the old agent can't take a note turn, being

@@ -352,7 +352,12 @@ export function NewTaskDraft({
     if (!valid || sending || selection.data === undefined) return;
     setSending(true);
     setError(undefined);
-    const { orchestratorNote: _note, orchestratorFrom: _from, ...shown } = selection.data;
+    const {
+      orchestratorNote: _note,
+      orchestratorFrom: _from,
+      orchestratorFresh: _fresh,
+      ...shown
+    } = selection.data;
     try {
       const thread = await api.startTask({
         target: { workspaceId: target.workspaceId },
@@ -630,7 +635,9 @@ export function NewTaskDraft({
               of its own says only a move. */}
           {orchestratorModel !== undefined && selection.data?.orchestratorFrom !== undefined && (
             <p data-testid="task-orchestrator-line" className="text-meta text-muted-foreground">
-              {`The orchestrator moves from ${agentLabel(selection.data.orchestratorFrom.agent)} · ${nameOf(selection.data.orchestratorFrom)} to ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)} as the task starts.`}
+              {selection.data.orchestratorFresh === true
+                ? `The orchestrator starts fresh on ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)} as this task starts. It saves to memory first; its conversation stays above a divider, and ${nameOf(selection.data.orchestratorFrom)}'s tool output and cache are left behind.`
+                : `The orchestrator moves from ${agentLabel(selection.data.orchestratorFrom.agent)} · ${nameOf(selection.data.orchestratorFrom)} to ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)} as the task starts.`}
             </p>
           )}
           {/* Its slot follows a tier nothing here fills: why, beside what stands in. */}

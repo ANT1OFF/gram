@@ -1,4 +1,10 @@
-import type { OrchestratorLedger, ThreadId, WorkspaceId, WorkspaceState } from "@gram/contracts";
+import type {
+  ModelRef,
+  OrchestratorLedger,
+  ThreadId,
+  WorkspaceId,
+  WorkspaceState,
+} from "@gram/contracts";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
@@ -184,8 +190,14 @@ export function useHandoff(state: WorkspaceState | undefined) {
   const running = handoffRunning(mark, summary?.thread, now);
   const starting = useRef(false);
 
-  /** `checkpoint: false` skips saving to memory first: a hard cut. */
-  const start = async (options?: { readonly checkpoint?: boolean }): Promise<boolean> => {
+  /**
+   * `checkpoint: false` skips saving to memory first: a hard cut. `model` opens the fresh session
+   * on it, for a model the running session can't carry over to.
+   */
+  const start = async (options?: {
+    readonly checkpoint?: boolean;
+    readonly model?: ModelRef;
+  }): Promise<boolean> => {
     if (workspaceId === undefined || starting.current) return false;
     starting.current = true;
     useHandoffStore.getState().mark(workspaceId, {
