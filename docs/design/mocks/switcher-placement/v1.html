@@ -150,10 +150,10 @@
   <body class="mock">
     <main class="mock-canvas">
       <p class="mock-note">
-        Where the embedding app's workspace switcher sits. Today it's under New at the sidebar's head.
-        A moves it to the sidebar's foot, beside the account and Settings. B takes it out of the
-        navigation into Settings, and leaves a small current-workspace label in the title bar. Each
-        is shown with the side, top-dock and auto-hide navigation, and on a phone. Pick A or B.
+        Where the embedding app's workspace switcher sits. Today it's under New at the sidebar's
+        head. A moves it to the sidebar's foot, beside the account and Settings. B takes it out of
+        the navigation into Settings, and leaves a small current-workspace label in the title bar.
+        Each is shown with the side, top-dock and auto-hide navigation, and on a phone. Pick A or B.
       </p>
 
       <section class="board" data-name="Today · side" data-size="960x560">
@@ -164,7 +164,9 @@
               <aside class="sidebar sp-side" aria-label="Overview">
                 <div class="head">
                   <i data-icon="panel"></i><span class="grow"></span>
-                  <button class="btn sm ghost" type="button"><i data-icon="plus"></i>New task</button>
+                  <button class="btn sm ghost" type="button">
+                    <i data-icon="plus"></i>New task
+                  </button>
                 </div>
                 <button class="sp-switch sp-ghost" type="button">
                   <span class="mark">A</span>Acme / Platform<i data-icon="down"></i>
@@ -175,10 +177,18 @@
                 <a class="nav-item" href="#" aria-current="page"><i data-icon="home"></i>Home</a>
                 <a class="nav-item" href="#"><i data-icon="layers"></i>Runs</a>
                 <div class="foot">
-                  <a class="nav-item" href="#"><i data-icon="clock"></i>History<i data-icon="settings" style="margin-left: auto"></i></a>
+                  <a class="nav-item" href="#"
+                    ><i data-icon="clock"></i>History<i
+                      data-icon="settings"
+                      style="margin-left: auto"
+                    ></i
+                  ></a>
                 </div>
               </aside>
-              <div class="sp-page"><h3>Welcome to Acme</h3><p class="muted">[The page]</p></div>
+              <div class="sp-page">
+                <h3>Welcome to Acme</h3>
+                <p class="muted">[The page]</p>
+              </div>
             </div>
           </div>
         </div>
@@ -192,7 +202,9 @@
               <aside class="sidebar sp-side" aria-label="Overview">
                 <div class="head">
                   <i data-icon="panel"></i><span class="grow"></span>
-                  <button class="btn sm ghost" type="button"><i data-icon="plus"></i>New task</button>
+                  <button class="btn sm ghost" type="button">
+                    <i data-icon="plus"></i>New task
+                  </button>
                 </div>
                 <a class="nav-item" href="#"><i data-icon="inbox"></i>3 need you</a>
                 <a class="nav-item" href="#"><i data-icon="search"></i>Search</a>
@@ -204,10 +216,18 @@
                     <span class="mark">A</span>Acme / Platform<i data-icon="up"></i>
                   </button>
                   <a class="nav-item" href="#"><i data-icon="user"></i>[Account]</a>
-                  <a class="nav-item" href="#"><i data-icon="clock"></i>History<i data-icon="settings" style="margin-left: auto"></i></a>
+                  <a class="nav-item" href="#"
+                    ><i data-icon="clock"></i>History<i
+                      data-icon="settings"
+                      style="margin-left: auto"
+                    ></i
+                  ></a>
                 </div>
               </aside>
-              <div class="sp-page"><h3>Welcome to Acme</h3><p class="muted">[The page]</p></div>
+              <div class="sp-page">
+                <h3>Welcome to Acme</h3>
+                <p class="muted">[The page]</p>
+              </div>
             </div>
           </div>
         </div>
@@ -232,18 +252,31 @@
               </nav>
             </div>
             <div class="titlebar"><span class="strong">Home</span></div>
-            <div class="sp-page"><h3>Welcome to Acme</h3><p class="muted">The switcher is the dock's last item, after Settings.</p></div>
+            <div class="sp-page">
+              <h3>Welcome to Acme</h3>
+              <p class="muted">The switcher is the dock's last item, after Settings.</p>
+            </div>
           </div>
         </div>
       </section>
 
-      <section class="board" data-name="A Foot · auto-hide" data-size="960x560" data-states="hidden,shown">
+      <section
+        class="board"
+        data-name="A Foot · auto-hide"
+        data-size="960x560"
+        data-states="hidden,shown"
+      >
         <div class="board-frame">
           <div class="app">
             <div class="titlebar"><span class="strong">Home</span></div>
             <div class="app-body">
               <div class="sp-edge" data-when="hidden" aria-hidden="true"></div>
-              <aside class="sidebar sp-side" aria-label="Overview" data-when="shown" style="box-shadow: var(--shadow-overlay)">
+              <aside
+                class="sidebar sp-side"
+                aria-label="Overview"
+                data-when="shown"
+                style="box-shadow: var(--shadow-overlay)"
+              >
                 <a class="nav-item" href="#"><i data-icon="inbox"></i>3 need you</a>
                 <a class="nav-item" href="#"><i data-icon="search"></i>Search</a>
                 <div class="section-label">Build</div>
@@ -253,13 +286,22 @@
                   <button class="sp-switch sp-ghost" type="button">
                     <span class="mark">A</span>Acme / Platform<i data-icon="up"></i>
                   </button>
-                  <a class="nav-item" href="#"><i data-icon="clock"></i>History<i data-icon="settings" style="margin-left: auto"></i></a>
+                  <a class="nav-item" href="#"
+                    ><i data-icon="clock"></i>History<i
+                      data-icon="settings"
+                      style="margin-left: auto"
+                    ></i
+                  ></a>
                 </div>
               </aside>
               <div class="sp-page">
                 <h3>Welcome to Acme</h3>
-                <p class="muted" data-when="hidden">Hidden: no switcher on screen until the sidebar slides in.</p>
-                <p class="muted" data-when="shown">Shown: the switcher is at the foot, as in the open sidebar.</p>
+                <p class="muted" data-when="hidden">
+                  Hidden: no switcher on screen until the sidebar slides in.
+                </p>
+                <p class="muted" data-when="shown">
+                  Shown: the switcher is at the foot, as in the open sidebar.
+                </p>
               </div>
             </div>
           </div>
@@ -290,14 +332,18 @@
         <div class="board-frame">
           <div class="app">
             <div class="titlebar">
-              <a class="sp-label sp-ghost" href="#" data-goto="B Settings · page">Acme / Platform</a>
+              <a class="sp-label sp-ghost" href="#" data-goto="B Settings · page"
+                >Acme / Platform</a
+              >
               <span class="subtle">/</span><span class="strong">Home</span>
             </div>
             <div class="app-body">
               <aside class="sidebar sp-side" aria-label="Overview">
                 <div class="head">
                   <i data-icon="panel"></i><span class="grow"></span>
-                  <button class="btn sm ghost" type="button"><i data-icon="plus"></i>New task</button>
+                  <button class="btn sm ghost" type="button">
+                    <i data-icon="plus"></i>New task
+                  </button>
                 </div>
                 <a class="nav-item" href="#"><i data-icon="inbox"></i>3 need you</a>
                 <a class="nav-item" href="#"><i data-icon="search"></i>Search</a>
@@ -305,10 +351,20 @@
                 <a class="nav-item" href="#" aria-current="page"><i data-icon="home"></i>Home</a>
                 <a class="nav-item" href="#"><i data-icon="layers"></i>Runs</a>
                 <div class="foot">
-                  <a class="nav-item" href="#"><i data-icon="clock"></i>History<i data-icon="settings" style="margin-left: auto"></i></a>
+                  <a class="nav-item" href="#"
+                    ><i data-icon="clock"></i>History<i
+                      data-icon="settings"
+                      style="margin-left: auto"
+                    ></i
+                  ></a>
                 </div>
               </aside>
-              <div class="sp-page"><h3>Welcome to Acme</h3><p class="muted">The title bar names the workspace; a click opens Settings → Workspace.</p></div>
+              <div class="sp-page">
+                <h3>Welcome to Acme</h3>
+                <p class="muted">
+                  The title bar names the workspace; a click opens Settings → Workspace.
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -329,10 +385,18 @@
               </nav>
             </div>
             <div class="titlebar">
-              <a class="sp-label sp-ghost" href="#" data-goto="B Settings · page">Acme / Platform</a>
+              <a class="sp-label sp-ghost" href="#" data-goto="B Settings · page"
+                >Acme / Platform</a
+              >
               <span class="subtle">/</span><span class="strong">Home</span>
             </div>
-            <div class="sp-page"><h3>Welcome to Acme</h3><p class="muted">[The page]. With auto-hide the label stays in the title bar while the navigation is away.</p></div>
+            <div class="sp-page">
+              <h3>Welcome to Acme</h3>
+              <p class="muted">
+                [The page]. With auto-hide the label stays in the title bar while the navigation is
+                away.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -343,7 +407,9 @@
             <div class="titlebar"><i data-icon="left"></i><span class="strong">Settings</span></div>
             <div class="app-body">
               <aside class="sidebar sp-side" aria-label="Settings">
-                <a class="nav-item" href="#" aria-current="page"><i data-icon="layers"></i>Workspace</a>
+                <a class="nav-item" href="#" aria-current="page"
+                  ><i data-icon="layers"></i>Workspace</a
+                >
                 <a class="nav-item" href="#"><i data-icon="sliders"></i>General</a>
                 <a class="nav-item" href="#"><i data-icon="sun"></i>Appearance</a>
                 <a class="nav-item" href="#"><i data-icon="bell"></i>Notifications</a>
@@ -378,7 +444,9 @@
               <a class="nav-item" href="#" aria-current="page"><i data-icon="home"></i>Home</a>
               <a class="nav-item" href="#"><i data-icon="layers"></i>Runs</a>
               <div class="foot">
-                <a class="nav-item" href="#"><i data-icon="user"></i>[Account] · Settings → Workspace</a>
+                <a class="nav-item" href="#"
+                  ><i data-icon="user"></i>[Account] · Settings → Workspace</a
+                >
               </div>
             </div>
           </div>
