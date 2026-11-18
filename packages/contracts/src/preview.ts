@@ -184,6 +184,33 @@ export interface PreviewState {
   readonly webView?: string | undefined;
 }
 
+/**
+ * An element the user picked on their page in Preview, for the next message (`DesktopPreview.pick`):
+ * what the agent needs to find it in the code. Page content, so the agent reads it as the page's,
+ * never as instructions.
+ */
+export interface PickedElement {
+  /** The page's address when it was picked. */
+  readonly url: string;
+  /** A CSS selector that finds it on that page (`form.checkout > button.pay`). */
+  readonly selector: string;
+  /** Its tag name, lower case. */
+  readonly tag: string;
+  /** Its visible text, one line, cut to 80 characters; empty when it has none. */
+  readonly text: string;
+  /** Its HTML, cut to 1,500 characters. */
+  readonly html: string;
+  /** Where it was in the page's viewport, in CSS pixels. */
+  readonly rect: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
+  /** A few computed styles that say how it is laid out and looks, by property. */
+  readonly styles: Readonly<Record<string, string>>;
+}
+
 /** Where the Preview tab's page shows, in the window page's CSS pixels. */
 export interface PreviewBounds {
   readonly x: number;
@@ -237,6 +264,13 @@ export interface DesktopPreview {
     target?: { ref?: string; region?: BrowserRegion },
   ): Promise<PaneResult>;
   viewport?(threadId: string, preset: BrowserViewportPreset): Promise<PaneResult>;
+  /**
+   * Lets the user pick an element on `threadId`'s page: the page outlines what the pointer is over
+   * until a click picks it, or Esc or `cancelPick` ends it with `null`. Only on loopback pages,
+   * never a web page opened with the user's sign-ins. Absent from shells older than picking.
+   */
+  pick?(threadId: string): Promise<PickedElement | null>;
+  cancelPick?(threadId: string): void;
   /** Subscribes to `threadId`'s page changing; returns the unsubscribe function. */
   onState(threadId: string, callback: (state: PreviewState) => void): () => void;
 }

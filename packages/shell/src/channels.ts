@@ -85,6 +85,8 @@ export const Channels = {
   previewStateGet: "gram:preview-state-get",
   previewInspect: "gram:preview-inspect",
   previewViewport: "gram:preview-viewport",
+  previewPick: "gram:preview-pick",
+  previewPickCancel: "gram:preview-pick-cancel",
   previewTakeOver: "gram:preview-take-over",
   previewHandBack: "gram:preview-hand-back",
   previewState: "gram:preview-state",

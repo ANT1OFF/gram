@@ -18,6 +18,7 @@ import {
   Pin,
   RotateCw,
   ScanSearch,
+  SquareMousePointer,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
@@ -27,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { spin } from "@/motion";
 import { useServerBrowser } from "@/settings/use-diagnostics";
 import { useLayoutStore } from "@/stores/layout";
+import { usePagePicksStore } from "@/stores/page-picks";
 import { useThreadsStore } from "@/stores/threads";
 
 import { errorMessage } from "@/api/errors";
@@ -222,6 +224,33 @@ function ShellPreview({
     }
   }, [threadId, pageId, file, current, driven, notePreviewPage]);
 
+  // Picking an element for the next message: the shell's own loopback pages only, never a web
+  // page opened with the user's sign-ins.
+  const picking = usePagePicksStore((s) => s.picking[threadId] === true);
+  const pickable =
+    bridge?.pick !== undefined &&
+    current !== null &&
+    current.webView === undefined &&
+    current.error === undefined &&
+    markdown === undefined;
+  const pick = async () => {
+    if (bridge?.pick === undefined) return;
+    if (picking) {
+      bridge.cancelPick?.(threadId);
+      return;
+    }
+    const store = usePagePicksStore.getState();
+    store.setPicking(threadId, true);
+    try {
+      const picked = await bridge.pick(threadId);
+      if (picked !== null) store.add(threadId, { ...picked, id: crypto.randomUUID() });
+    } finally {
+      usePagePicksStore.getState().setPicking(threadId, false);
+    }
+  };
+  // A pick ends with the tab: its page stays, but nothing would show it is picking.
+  useEffect(() => () => bridge?.cancelPick?.(threadId), [bridge, threadId]);
+
   const failed = current?.error !== undefined;
   const inspectionAvailable =
     current?.browserInspection !== undefined && bridge?.inspect !== undefined;
@@ -349,6 +378,23 @@ function ShellPreview({
             className="h-7 w-full rounded-md border border-input bg-transparent px-2 font-mono text-meta outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </form>
+        {bridge?.pick !== undefined && (
+          <ToolButton
+            label={
+              picking
+                ? "Stop picking (Esc)"
+                : pickable
+                  ? "Pick an element to add to your message"
+                  : "Picking works on your local pages only"
+            }
+            disabled={!picking && !pickable}
+            pressed={picking}
+            testId="preview-pick"
+            onClick={() => void pick()}
+          >
+            <SquareMousePointer />
+          </ToolButton>
+        )}
         <ToolButton
           label={
             inspecting
@@ -393,6 +439,15 @@ function ShellPreview({
         action={current?.action}
         recording={current?.recording === true}
       />
+      {picking && (
+        <p
+          role="status"
+          data-testid="preview-picking"
+          className="border-b border-border px-3 py-1.5 text-meta text-muted-foreground"
+        >
+          Click an element to add it to your message. Esc stops.
+        </p>
+      )}
       {refused && (
         <p role="alert" className="border-b border-border px-3 py-1.5 text-meta text-destructive">
           Only a web address opens here, such as localhost:3000 or example.com, or the full path of

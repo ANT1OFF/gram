@@ -66,6 +66,7 @@ import {
 import { parsePaneCommand } from "../../core/browse-rules.ts";
 import type { ShellIpc } from "../ipc.ts";
 import { focusedAppWindow } from "../../electron/decision-windows.ts";
+import { CANCEL_PICK_SCRIPT, PICK_SCRIPT, PICK_WORLD, parsePicked } from "./pick.ts";
 
 /**
  * No `persist:` prefix, so their cookies and storage live in memory and are gone at quit. The local
@@ -742,6 +743,36 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
         ...(command.region === undefined ? {} : { region: command.region }),
       }) ?? unavailable
     );
+  });
+  // Picking an element for the user's next message: on loopback pages only, never a web page with
+  // the user's sign-ins, whose content no agent reads.
+  ipc.handle(Channels.previewPick, async (input, event) => {
+    const preview = previewFor(input, event.sender);
+    if (preview === undefined || preview.kind !== "local") return null;
+    const contents = preview.view.webContents;
+    if (contents.isDestroyed()) return null;
+    const url = contents.getURL();
+    contents.focus();
+    try {
+      const picked: unknown = await contents.executeJavaScriptInIsolatedWorld(
+        PICK_WORLD,
+        [{ code: PICK_SCRIPT }],
+        true,
+      );
+      // A page that moved on while picking says nothing of the one the user saw.
+      if (contents.isDestroyed() || contents.getURL() !== url) return null;
+      return parsePicked(picked, url);
+    } catch {
+      return null;
+    }
+  });
+  ipc.on(Channels.previewPickCancel, (event, input) => {
+    const preview = previewFor(input, event.sender);
+    const contents = preview?.view.webContents;
+    if (contents === undefined || contents.isDestroyed()) return;
+    void contents
+      .executeJavaScriptInIsolatedWorld(PICK_WORLD, [{ code: CANCEL_PICK_SCRIPT }])
+      .catch(() => undefined);
   });
   ipc.handle(Channels.previewViewport, (input, event) => {
     const preview = previewFor(input, event.sender);

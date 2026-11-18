@@ -269,6 +269,51 @@ test("each thread keeps its own page, loaded while another thread shows", async 
   expect(opened).toEqual([`t-deps http://localhost:${port}/`, `t-flaky http://localhost:${port}/`]);
 });
 
+test("an element picked on the thread's page rides in the next message, as its page's content", async ({
+  page,
+}) => {
+  await openThread(page, "t-deps");
+  await page.evaluate((p) => window.gramMock!.simulatePorts("t-deps" as never, [p]), port);
+  await page.getByTestId("pane-header").getByTestId(`port-chip-${port}`).click();
+  await expect(view(page, "t-deps")).toBeVisible();
+
+  const pick = page.getByTestId("preview-pick");
+  await pick.click();
+  await expect(pick).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("preview-picking")).toBeVisible();
+  // Pressing it again stops picking, and nothing is added.
+  await pick.click();
+  await expect(pick).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByTestId("preview-picking")).toBeHidden();
+
+  await pick.click();
+  await page.evaluate(() =>
+    window.gramMock!.shell.preview.choose("t-deps", {
+      selector: "body > h1",
+      tag: "h1",
+      text: "Hello from the local app",
+      html: "<h1>Hello from the local app</h1>",
+      rect: { x: 8, y: 21, width: 640, height: 37 },
+      styles: { "font-size": "32px" },
+    }),
+  );
+  await expect(pick).toHaveAttribute("aria-pressed", "false");
+  const chip = page.getByTestId("page-pick-chip");
+  await expect(chip).toHaveCount(1);
+  await expect(chip).toContainText("Hello from the local app");
+
+  await page.getByRole("combobox", { name: "Message" }).fill("Make it smaller.");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(chip).toHaveCount(0);
+  const sent = page
+    .getByTestId("message-user")
+    .filter({ hasText: "An element I picked on the page in Preview" });
+  await expect(sent).toHaveCount(1);
+  await expect(sent).toContainText(`body > h1 on http://localhost:${port}/`);
+  await expect(sent).toContainText("font-size: 32px");
+  await expect(sent).toContainText("Make it smaller.");
+});
+
 test("a Markdown or HTML file the agent wrote gets a card that renders it in the Preview tab", async ({
   page,
 }) => {

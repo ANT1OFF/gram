@@ -73,6 +73,7 @@ import { PressScale, RingSpinner, RunningEdge, SharedSlab, Swap } from "@/motion
 import { useServerSettings } from "@/settings-sync/store";
 import { activityLine, backgroundWorking } from "@/sidebar/status";
 import { useDiffComments, useDiffCommentsStore, withDiffComments } from "@/stores/diff-comments";
+import { usePagePicks, usePagePicksStore, withPagePicks } from "@/stores/page-picks";
 import { useDraftStore } from "@/stores/drafts";
 import { useSuggestionsStore } from "@/stores/suggestions";
 import { useThreadsStore } from "@/stores/threads";
@@ -87,6 +88,7 @@ import { aboveComposer } from "./above-composer";
 import { onModelPickerAsked } from "./model-picker-request";
 import { PendingRestart } from "./pending-restart";
 import { DiffCommentChips } from "./diff-comment-chips";
+import { PagePickChips } from "./page-pick-chips";
 import { ghostOf, nextWord, stepped, typeIntoField, type Ghost } from "./ghost";
 import { usePromptHistory } from "./history";
 import { useAttachments } from "./use-attachments";
@@ -199,6 +201,7 @@ export function Composer({
   const setText = (value: string) => useDraftStore.getState().setText(threadId, value);
   const attachments = useAttachments({ threadId });
   const diffComments = useDiffComments(threadId);
+  const pagePicks = usePagePicks(threadId);
   const [hint, setHint] = useState<string | undefined>();
   const [slashIndex, setSlashIndex] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
@@ -282,7 +285,10 @@ export function Composer({
   const menuId = `slash-menu-${threadId}`;
   const canSend =
     !attachments.uploading &&
-    (text.trim() !== "" || attachments.ready.length > 0 || diffComments.length > 0);
+    (text.trim() !== "" ||
+      attachments.ready.length > 0 ||
+      diffComments.length > 0 ||
+      pagePicks.length > 0);
 
   const root = summary === undefined ? undefined : effectiveCheckout(summary.thread).path;
   const mentions = useMentions({
@@ -450,7 +456,8 @@ export function Composer({
       files.uploading ||
       (typed === "" &&
         files.ready.length === 0 &&
-        (useDiffCommentsStore.getState().byThread[threadId]?.length ?? 0) === 0)
+        (useDiffCommentsStore.getState().byThread[threadId]?.length ?? 0) === 0 &&
+        (usePagePicksStore.getState().byThread[threadId]?.length ?? 0) === 0)
     ) {
       files.release();
       return undefined;
@@ -465,8 +472,9 @@ export function Composer({
       accepted.current = undefined;
     }
     const reviewed = useDiffCommentsStore.getState().take(threadId);
+    const pickedOnPage = usePagePicksStore.getState().take(threadId);
     const input: UserInput = {
-      text: withDiffComments(reviewed, typed),
+      text: withPagePicks(pickedOnPage, withDiffComments(reviewed, typed)),
       ...(files.ready.length > 0 ? { attachments: files.ready } : {}),
     };
     history.push(typed);
@@ -483,6 +491,7 @@ export function Composer({
       const since = (useDraftStore.getState().text[threadId] ?? "").trim();
       setText([typed, since].filter(Boolean).join("\n\n"));
       useDiffCommentsStore.getState().restore(threadId, reviewed);
+      usePagePicksStore.getState().restore(threadId, pickedOnPage);
     };
     return {
       input,
@@ -1296,6 +1305,7 @@ export function Composer({
           />
         )}
         <DiffCommentChips threadId={threadId} className="px-3 pt-3" />
+        <PagePickChips threadId={threadId} className="px-3 pt-3" />
         <AttachmentChips
           items={attachments.items}
           onRemove={attachments.remove}
