@@ -4,6 +4,7 @@ import {
   sendKeyOf,
   type DraftId,
   type ModelRef,
+  type ProjectId,
   type StartTaskInput,
   type WorkspaceId,
 } from "@gram/contracts";
@@ -49,7 +50,6 @@ import { useServerSettings } from "@/settings-sync/store";
 import { cn } from "@/lib/utils";
 import { AuthorityExplainer } from "@/new-thread/authority-explainer";
 import { TaskAuthorityLine } from "@/new-thread/authority-line";
-import { AutonomyChoice } from "@/new-thread/autonomy-choice";
 import { ControlDetails } from "@/new-thread/control-details";
 import { useWorkspaceMergeApproval } from "@/new-thread/merge-approval";
 import { useNewForm, useThreadsWorkspaceNoun } from "@/embed/store";
@@ -129,7 +129,6 @@ export function NewTaskDraft({
     currentId === undefined ? undefined : s.byId[currentId]?.thread,
   );
   const last = useTaskDraftStore((s) => s.last);
-  const pickedAutonomy = useTaskDraftStore((s) => s.autonomy);
   const sendKey = useServerSettings((s) => (s.settings ? sendKeyOf(s.settings) : undefined));
 
   const newForm = useNewForm();
@@ -149,9 +148,23 @@ export function NewTaskDraft({
     projects,
     last,
   });
-  const target = settledTaskTarget(picked ?? named ?? starting?.target, workspaces);
+  const offered = settledTaskTarget(picked ?? named ?? starting?.target, workspaces);
+  // A task goes to a workspace that exists: a repository without one is set up in New workspace,
+  // which picking it under Where it runs opens. One asked for (handed over, or the thread's) is
+  // named beside the picker instead; a default that is one gives way to a workspace.
+  const askedRepo =
+    offered?.kind === "repo" && (picked !== undefined || starting?.from === "thread")
+      ? (projects.find((project) => project.id === offered.projectId) ?? null)
+      : undefined;
+  const target: Extract<TaskTarget, { kind: "workspace" }> | undefined =
+    offered?.kind === "workspace"
+      ? offered
+      : askedRepo !== undefined || workspaces[0] === undefined
+        ? undefined
+        : { kind: "workspace", workspaceId: workspaces[0].workspace.id };
   // Kept from the last task rather than read off where the draft was opened: said beside Start.
-  const remembered = picked === undefined && named === undefined && starting?.from === "last";
+  const remembered =
+    picked === undefined && named === undefined && starting?.from === "last" && target === offered;
   // The window is on the workspace the task goes to while it is drafted, so the title bar and the
   // overview name the one the form does.
   const showing = target?.kind === "workspace" ? target.workspaceId : undefined;
@@ -164,7 +177,6 @@ export function NewTaskDraft({
     target?.kind === "workspace"
       ? workspaces.find((state) => state.workspace.id === target.workspaceId)
       : undefined;
-  const makesOne = target?.kind === "repo";
   const kind = useThreadsWorkspaceNoun();
   const name = workspace?.workspace.name ?? repos[0]?.name ?? "";
   const { data: ledger } = useOrchestratorLedger(workspace?.workspace.id);
@@ -186,11 +198,7 @@ export function NewTaskDraft({
     target === undefined
       ? undefined
       : {
-          target:
-            target.kind === "workspace"
-              ? { workspaceId: target.workspaceId }
-              : { projectId: target.projectId },
-          ...(makesOne && pickedAutonomy !== undefined ? { autonomy: pickedAutonomy } : {}),
+          target: { workspaceId: target.workspaceId },
           ...(orchestratorPick === undefined ? {} : { orchestrator: orchestratorPick }),
         };
   const selection = useQuery({
@@ -347,17 +355,13 @@ export function NewTaskDraft({
     const { orchestratorNote: _note, orchestratorFrom: _from, ...shown } = selection.data;
     try {
       const thread = await api.startTask({
-        target:
-          target.kind === "workspace"
-            ? { workspaceId: target.workspaceId }
-            : { projectId: target.projectId },
+        target: { workspaceId: target.workspaceId },
         input: {
           text: prompt.trim(),
           ...(attachments.ready.length > 0 ? { attachments: attachments.ready } : {}),
         },
         selection: shown,
         ...(attachments.ready.length > 0 ? { draftId } : {}),
-        ...(makesOne && pickedAutonomy !== undefined ? { autonomy: pickedAutonomy } : {}),
         ...(orchestratorPick === undefined ? {} : { orchestrator: orchestratorPick }),
       });
       useTaskDraftStore.getState().remember(target);
@@ -378,10 +382,17 @@ export function NewTaskDraft({
     run: () => void send(),
   });
 
-  // New workspace is a page of its own; what was typed comes back to the draft Esc returns to.
-  const toNewWorkspace = () => {
-    carryDraft({ text: prompt, draftId, attachments: attachments.ready });
-    void navigate({ to: "/new-workspace" });
+  // Making a workspace is New workspace's: what was typed goes along as its first task, with the
+  // repository picked here, and comes back to the draft Esc returns to. The form has no place for
+  // files, so while any are attached the hand-off waits, saying why.
+  const handOffBlocked =
+    attachments.uploading || attachments.ready.length > 0
+      ? "New workspace can't take attachments: remove them to set one up from here"
+      : undefined;
+  const toNewWorkspace = (repo?: ProjectId) => {
+    if (handOffBlocked !== undefined) return;
+    carryDraft({ text: prompt, draftId, attachments: [] });
+    void navigate({ to: "/new-workspace", search: repo === undefined ? {} : { repo } });
   };
 
   const toOneOff = () => {
@@ -397,11 +408,7 @@ export function NewTaskDraft({
     if (who === "me") toOneOff();
   };
 
-  // The app's own word for a workspace ("Project" where it says so); Gram on its own says Workspace.
-  const noun = kind.toLowerCase();
-  const submitLabel = makesOne
-    ? `Start ${noun} and send`
-    : (newForm?.team?.start ?? "Send to team");
+  const submitLabel = newForm?.team?.start ?? "Send to team";
   // What Start waits on while a check runs, in its own words on the button: the task's selection,
   // then each agent's readiness, then the workspace's autonomy the summary beside it names.
   const checking: string | undefined =
@@ -415,17 +422,13 @@ export function NewTaskDraft({
             ? checkingAgent(orchestratorModel)
             : hasImages && imagePreflight.checking
               ? checkingAgent(inputModel)
-              : target.kind === "workspace" && workspace === undefined
+              : workspace === undefined
                 ? "Checking the workspace…"
                 : undefined;
   const budget = ledger?.budget;
-  // The level the line beside Start names: the new workspace's pick, else the workspace's own.
-  // Undefined while a named workspace hasn't loaded: the line waits rather than show the default.
-  const autonomy = makesOne
-    ? (pickedAutonomy ?? autonomyOf(DEFAULT_CHARTER))
-    : workspace === undefined
-      ? undefined
-      : autonomyOf(workspace.charter);
+  // The level the line beside Start names, the workspace's own. Undefined while the workspace
+  // hasn't loaded: the line waits rather than show the default.
+  const autonomy = workspace === undefined ? undefined : autonomyOf(workspace.charter);
   const mergeApproval = useWorkspaceMergeApproval(
     workspace,
     autonomy ?? autonomyOf(DEFAULT_CHARTER),
@@ -587,7 +590,7 @@ export function NewTaskDraft({
           folded={folded}
           where={
             <>
-              <WhereStop label={makesOne ? `New ${kind.toLowerCase()} for` : kind}>
+              <WhereStop label={kind}>
                 <TaskTargetPicker
                   value={target}
                   open={whereOpen}
@@ -595,8 +598,10 @@ export function NewTaskDraft({
                   disabled={attachments.uploading}
                   workspaces={workspaces}
                   projects={projects}
+                  handOffBlocked={handOffBlocked}
                   onPick={(next) => {
                     if (next.kind === "newWorkspace") return toNewWorkspace();
+                    if (next.kind === "repo") return toNewWorkspace(next.projectId);
                     setPicked(next);
                   }}
                 />
@@ -606,18 +611,12 @@ export function NewTaskDraft({
           }
           line={
             target === undefined && settled
-              ? "Gram doesn't know a repository to start a workspace in yet. Pick Chat to open one, or add one under Settings → Workspaces & merging."
+              ? askedRepo
+                ? `${askedRepo.name} has no ${kind.toLowerCase()} yet. Pick it under Where it runs to set one up.`
+                : `No ${kind.toLowerCase()} yet. Pick ${projects.length === 0 ? `New ${kind.toLowerCase()}` : "a repository"} under Where it runs to set one up.`
               : undefined
           }
         />
-
-        {makesOne && (
-          <AutonomyChoice
-            label={`Autonomy of the new ${noun}`}
-            value={pickedAutonomy ?? autonomyOf(DEFAULT_CHARTER)}
-            onChange={(next) => useTaskDraftStore.getState().rememberAutonomy(next)}
-          />
-        )}
 
         {error && (
           <p role="alert" className="text-reading text-destructive">
@@ -711,32 +710,20 @@ export function NewTaskDraft({
                 ) : (
                   <TaskAuthorityLine
                     workspace={name}
-                    makesOne={makesOne}
                     // While a pick saves, the line says the level it is saving.
-                    autonomy={makesOne ? autonomy : mergeApproval.autonomy}
+                    autonomy={mergeApproval.autonomy}
                     remembered={remembered}
-                    noun={noun}
-                    model={
-                      makesOne && orchestratorModel !== undefined
-                        ? nameOf(orchestratorModel)
-                        : undefined
-                    }
                     onChangeWhere={attachments.uploading ? undefined : changeWhere}
                     changeWhereHint={whereHint || undefined}
-                    // A new workspace's level is the Autonomy choice above; an existing one's
-                    // merge approval is picked here.
-                    approval={
-                      makesOne
-                        ? undefined
-                        : {
-                            label: mergeApproval.label,
-                            onPick: mergeApproval.pick,
-                            disabled: !mergeApproval.ready || mergeApproval.busy || sending,
-                          }
-                    }
+                    // The workspace's merge approval is picked here.
+                    approval={{
+                      label: mergeApproval.label,
+                      onPick: mergeApproval.pick,
+                      disabled: !mergeApproval.ready || mergeApproval.busy || sending,
+                    }}
                   />
                 )}
-                {!makesOne && mergeApproval.below !== undefined && (
+                {mergeApproval.below !== undefined && (
                   <span className="basis-full pl-5.5">{mergeApproval.below}</span>
                 )}
                 {budget !== undefined && (
@@ -751,7 +738,7 @@ export function NewTaskDraft({
             )}
           </div>
           <ControlDetails open={controlsOpen} onOpenChange={setControlsOpen}>
-            {target !== undefined && !makesOne && (
+            {target !== undefined && (
               <div className="flex flex-col gap-1">
                 <span className={labelCls}>Workspace autonomy</span>
                 <WorkspaceAutonomy

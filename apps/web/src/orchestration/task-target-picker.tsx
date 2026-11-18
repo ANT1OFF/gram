@@ -23,8 +23,8 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
  * The New form's "in" chip for the orchestrator or a worker, and its menu: every workspace, the
- * repos with none yet (one is made on send), and New workspace. Who does it is the form's own
- * control, so the chip names only the place.
+ * repos with none yet, each opening New workspace on it, and New workspace. Who does it is the
+ * form's own control, so the chip names only the place.
  */
 export function TaskTargetPicker({
   value,
@@ -34,8 +34,11 @@ export function TaskTargetPicker({
   onPick,
   open,
   onOpenChange,
+  handOffBlocked,
 }: {
   value: TaskTarget | undefined;
+  /** Why New workspace can't be opened from here now, which its items say while disabled. */
+  handOffBlocked?: string | undefined;
   /** While a file is still uploading, which the new-workspace sheet couldn't take with it. */
   disabled?: boolean;
   workspaces: readonly WorkspaceState[];
@@ -109,6 +112,8 @@ export function TaskTargetPicker({
                 <Menu.Item
                   key={project.id}
                   className={ITEM}
+                  disabled={handOffBlocked !== undefined}
+                  title={handOffBlocked}
                   onClick={() => onPick({ kind: "repo", projectId: project.id })}
                 >
                   <FolderGit2
@@ -117,7 +122,7 @@ export function TaskTargetPicker({
                   />
                   <span className="min-w-0 flex-1 truncate">{project.name}</span>
                   <span className="shrink-0 text-meta text-muted-foreground">
-                    makes one on send
+                    opens New {kind.toLowerCase()}
                   </span>
                   <Check
                     aria-hidden
@@ -132,6 +137,8 @@ export function TaskTargetPicker({
               <Menu.Item
                 data-testid="task-target-new-workspace"
                 className={cn(ITEM, "text-muted-foreground")}
+                disabled={handOffBlocked !== undefined}
+                title={handOffBlocked}
                 onClick={() => onPick({ kind: "newWorkspace" })}
               >
                 <Plus aria-hidden className="size-icon-row shrink-0" />

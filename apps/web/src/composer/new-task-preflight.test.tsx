@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
 import {
+  DEFAULT_CHARTER,
   DEFAULT_SETTINGS,
   type ProjectId,
+  type WorkspaceId,
+  type WorkspaceState,
   type SelectedHarnessSupport,
   type TaskModelSelection,
 } from "@gram/contracts";
@@ -22,15 +25,27 @@ vi.mock("@tanstack/react-router", () => ({
 afterEach(() => {
   cleanup();
   useServerSettings.setState({ settings: undefined });
-  useTaskDraftStore.setState({ last: undefined, autonomy: undefined, entry: undefined });
+  useTaskDraftStore.setState({ last: undefined, entry: undefined });
 });
 const projectId = "synthetic-project" as ProjectId;
+const workspaceId = "synthetic-workspace" as WorkspaceId;
+/** New task sends to a workspace that exists: one on the synthetic repository. */
+const workspace: WorkspaceState = {
+  workspace: {
+    id: workspaceId,
+    name: "Synthetic",
+    projectIds: [projectId],
+    homeProjectId: projectId,
+    createdAt: 1,
+  },
+  charter: DEFAULT_CHARTER,
+};
 const setup = (
   selection: () => Promise<TaskModelSelection>,
   observation: (agent: string) => Partial<SelectedHarnessSupport> = () => ({}),
 ) => {
   const api = createMockApi({ speed: 0, autoplay: false, persist: false });
-  vi.spyOn(api, "listWorkspaces").mockResolvedValue([]);
+  vi.spyOn(api, "listWorkspaces").mockResolvedValue([workspace]);
   vi.spyOn(api, "listProjects").mockResolvedValue([
     { id: projectId, name: "Synthetic", root: "/synthetic/repo", bookmarked: true },
   ]);
@@ -50,18 +65,14 @@ const setup = (
     ...observation(model.agent),
   }));
   useServerSettings.setState({ settings: DEFAULT_SETTINGS });
-  useTaskDraftStore.setState({ last: undefined, autonomy: undefined, entry: undefined });
+  useTaskDraftStore.setState({ last: undefined, entry: undefined });
   renderWithApi(<NewTaskDraft />, api);
   return { api, preview, start };
 };
 
-/** The model a new workspace's orchestrator starts on, as the line beside Start names it. */
+/** The model the orchestrator runs on, as the prompt box's Orchestrator fields name it. */
 const plannedOn = (model: string | RegExp) =>
-  waitFor(() =>
-    expect(screen.getByTestId("task-destination").textContent).toMatch(
-      typeof model === "string" ? `planned by its orchestrator on ${model}` : model,
-    ),
-  );
+  waitFor(() => expect(screen.getByTestId("task-orchestrator-fields").textContent).toMatch(model));
 
 describe("new-task authoritative preflight", () => {
   it("shows server-selected Codex for an unset default and pins exactly that selection on submit", async () => {
@@ -69,20 +80,19 @@ describe("new-task authoritative preflight", () => {
       orchestrator: { agent: "codex", model: "synthetic-model" },
     };
     const { start } = setup(async () => selection);
-    await plannedOn("synthetic-model");
+    await plannedOn(/Codex.*Synthetic/);
     fireEvent.change(screen.getByLabelText("What needs doing"), {
       target: { value: "Synthetic task" },
     });
     await waitFor(() =>
       expect(
-        (screen.getByRole("button", { name: /Start workspace and send/ }) as HTMLButtonElement)
-          .disabled,
+        (screen.getByRole("button", { name: /Send to team/ }) as HTMLButtonElement).disabled,
       ).toBe(false),
     );
     fireEvent.submit(screen.getByRole("form", { name: "New task" }));
     await screen.findByText("Synthetic start boundary");
     expect(start).toHaveBeenCalledWith(
-      expect.objectContaining({ selection, target: { projectId } }),
+      expect.objectContaining({ selection, target: { workspaceId } }),
     );
     // Always the orchestrator's: New starts no worker of its own.
     expect(start.mock.calls[0]?.[0]).not.toHaveProperty("direct");
@@ -119,13 +129,13 @@ describe("new-task authoritative preflight", () => {
         },
       ],
     });
-    await plannedOn(/planned by its orchestrator on /);
+    await plannedOn(/Claude.*Synthetic/);
     const fields = screen.getByTestId("task-orchestrator-fields");
     expect(fields.textContent).toContain("Orchestrator");
     const user = userEvent.setup();
     await user.click(await within(fields).findByLabelText("Agent"));
     await user.click(await screen.findByRole("option", { name: "Codex" }));
-    await plannedOn("Synthetic");
+    await plannedOn(/Codex.*Synthetic/);
     expect(preview).toHaveBeenLastCalledWith(
       expect.objectContaining({
         orchestrator: { agent: "codex", model: "synthetic-model", speed: "standard" },
@@ -136,8 +146,7 @@ describe("new-task authoritative preflight", () => {
     });
     await waitFor(() =>
       expect(
-        (screen.getByRole("button", { name: /Start workspace and send/ }) as HTMLButtonElement)
-          .disabled,
+        (screen.getByRole("button", { name: /Send to team/ }) as HTMLButtonElement).disabled,
       ).toBe(false),
     );
     fireEvent.submit(screen.getByRole("form", { name: "New task" }));
@@ -176,11 +185,10 @@ describe("new-task authoritative preflight", () => {
     expect(start).not.toHaveBeenCalled();
     refused = false;
     fireEvent.click(screen.getByRole("button", { name: "Retry task check" }));
-    await plannedOn("synthetic-model");
+    await plannedOn(/Synthetic/);
     await waitFor(() =>
       expect(
-        (screen.getByRole("button", { name: /Start workspace and send/ }) as HTMLButtonElement)
-          .disabled,
+        (screen.getByRole("button", { name: /Send to team/ }) as HTMLButtonElement).disabled,
       ).toBe(false),
     );
   });
@@ -201,8 +209,7 @@ describe("an orchestrator slot that can't run here", () => {
     });
     await waitFor(() =>
       expect(
-        (screen.getByRole("button", { name: /Start workspace and send/ }) as HTMLButtonElement)
-          .disabled,
+        (screen.getByRole("button", { name: /Send to team/ }) as HTMLButtonElement).disabled,
       ).toBe(false),
     );
     fireEvent.submit(screen.getByRole("form", { name: "New task" }));
@@ -224,7 +231,7 @@ describe("Start while the check runs", () => {
     expect(start).not.toHaveBeenCalled();
     // Start says what it waits on, on the button itself, keeping its action as its name.
     const button = screen.getByRole("button", {
-      name: "Start workspace and send, Checking agents…",
+      name: "Send to team, Checking agents…",
     }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(button.textContent).toBe("Checking agents…");
@@ -240,7 +247,7 @@ describe("Start while the check runs", () => {
       const button = screen.getByTestId("task-submit") as HTMLButtonElement;
       expect(button.disabled).toBe(false);
       expect(button.hasAttribute("data-checking")).toBe(false);
-      expect(button.textContent).toMatch(/^Start workspace and send/);
+      expect(button.textContent).toMatch(/^Send to team/);
     });
   });
 });

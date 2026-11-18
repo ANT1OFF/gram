@@ -1,5 +1,6 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { openMoreOptions } from "./new-thread-options";
+import { openOrchestrator } from "./thread-row";
 
 const PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -87,7 +88,26 @@ test("a screenshot pasted into /new moves into the thread and its first message 
 test("a file attached to a task stays through the switch to a one-off and back, then moves with the task", async ({
   page,
 }) => {
-  await page.goto("/new-task");
+  // A task goes to a workspace that exists: one on api, opened from its orchestrator.
+  await page.goto("/");
+  await page.getByTestId("overview-sidebar").waitFor();
+  const orchestrator = await page.evaluate(async () => {
+    const mock = window.gramMock!;
+    const api = mock.world.projects().find((project) => project.name === "api")!;
+    const state = await mock.saveWorkspace({
+      name: api.name,
+      projectIds: [api.id],
+      homeProjectId: api.id,
+    });
+    return (await mock.openOrchestrator({ workspaceId: state.workspace.id })).id;
+  });
+  await openOrchestrator(page, orchestrator);
+  await page
+    .getByTestId("overview-sidebar")
+    .getByRole("button", { name: "New task", exact: true })
+    .click();
+  await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Team/ }).click();
+  await expect(page).toHaveURL(/\/new-task$/);
   const task = page.getByLabel("What needs doing");
   await task.fill("what's in this screenshot?");
   await pasteImage(task, "Screenshot.png");
@@ -95,14 +115,26 @@ test("a file attached to a task stays through the switch to a one-off and back, 
   await expect(chip).toHaveAttribute("data-status", "ready");
   const staged = await chip.getAttribute("title");
 
-  await page.getByRole("radio", { name: "Chat", exact: true }).click();
+  const who = () => page.getByRole("radiogroup", { name: "Who does it" });
+  await who().getByRole("radio", { name: "Chat", exact: true }).click();
   await expect(page.getByLabel("First prompt")).toHaveValue("what's in this screenshot?");
   await expect(chip).toHaveAttribute("title", staged!);
 
-  await page.getByRole("radio", { name: "Team", exact: true }).click();
+  await who().getByRole("radio", { name: "Team", exact: true }).click();
   await expect(page.getByTestId("task-target")).toHaveText("api");
   await expect(chip).toHaveAttribute("title", staged!);
-  await page.getByRole("button", { name: /Start workspace and send/ }).click();
+  // New workspace has no place for a file, so while one is attached its ways in wait, saying why.
+  await page.getByTestId("task-target").click();
+  const menu = page.getByTestId("task-target-menu");
+  for (const item of [
+    menu.getByRole("menuitem", { name: /^web/ }),
+    menu.getByTestId("task-target-new-workspace"),
+  ]) {
+    await expect(item).toBeDisabled();
+    await expect(item).toHaveAttribute("title", /can't take attachments/);
+  }
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /Send to team/ }).click();
 
   await expect(page.getByTestId("pane-header").getByRole("heading")).toHaveAccessibleName(
     "Orchestrator: api",

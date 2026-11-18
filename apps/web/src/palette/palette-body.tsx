@@ -41,7 +41,7 @@ import { useOrchestratorLedgers, useWorkspaces } from "@/orchestration/use-orche
 import { agentLabel } from "@/agents/agent-display";
 import { openInNewWindow } from "@/desktop/open-in-new-window";
 import { focusOtherWindow } from "@/desktop/open-thread";
-import { prefillDraftProject, prefillTaskTarget } from "@/composer/draft-prefill";
+import { prefillDraftProject } from "@/composer/draft-prefill";
 import { useStashMenuStore } from "@/composer/stash-store";
 import { shortcutHint } from "@/keyboard/bindings";
 import { formatKeys, keyLabel } from "@/keyboard/registry";
@@ -715,15 +715,12 @@ export function PaletteBody({
     ...(currentProjectId !== undefined && !hasOwnWorkspace(currentProjectId)
       ? [
           {
-            // Opening one would make the project's workspace at the default autonomy unasked: the
-            // New task draft says what that lets it do, and lets the user pick another first.
+            // Making the project's workspace is New workspace's, which says how far it may go
+            // unasked before anything starts.
             id: "action:openOrchestrator",
             label: "Start project workspace…",
             keywords: "orchestrate orchestrator workers workspace dispatch autonomy",
-            run: () => {
-              prefillTaskTarget({ kind: "repo", projectId: currentProjectId });
-              void navigate({ to: "/new-task" });
-            },
+            run: () => void navigate({ to: "/new-workspace", search: { repo: currentProjectId } }),
           },
         ]
       : []),
