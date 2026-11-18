@@ -960,6 +960,14 @@ export const Thread = Schema.Struct({
    */
   awaitingMachine: Schema.optionalKey(AwaitingMachine),
   /**
+   * The one person who may see the thread, by the subject fronted sign-in names them with: set by
+   * an embedding host when it starts the thread from a profile (`ProfileStartRequest.readableBy`)
+   * and never changed or cleared after. Every thread it spawns has the same. Nobody else, and no
+   * caller without a signed-in person, sees anything of it: not in a list, a search, an event, a
+   * read or another thread's tools. Absent: the thread is everyone's to see, as ever.
+   */
+  readableBy: Schema.optionalKey(Schema.String),
+  /**
    * The workspace the thread belongs to: the one an orchestrator runs, or the one a worker was
    * spawned in or joined (`thread.joinWorkspace`, `adopt_thread`). A worker keeps it when its
    * orchestrator goes, so the next orchestrator there can see it; `thread.detach` clears it.

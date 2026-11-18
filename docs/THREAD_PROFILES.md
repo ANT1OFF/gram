@@ -136,6 +136,39 @@ Content-Type: application/json
 - **With the hosted features off** all three paths answer `404`, and `thread.createFromProfile`
   takes no `machine`: it places the thread now, as before.
 
+## Readable by one person
+
+A start may name the one person who may see the thread, by the subject the fronting proxy states
+for them, the same id as `startedBy`:
+
+```http
+POST /threads/from-profile
+Content-Type: application/json
+
+{ "profile": { "version": 1, ... }, "threadId": "<lowercase UUID>", "readableBy": "<person id>" }
+```
+
+- **What is kept.** The thread's `readableBy` (`Thread` in `@gram/contracts`), for good: no
+  write changes or clears it, and the answer repeats it (`ProfileStartResponse.readableBy`). Asked
+  again under the same id, a start must name the same reader, or none where the first named none;
+  otherwise it is `409`. A reader that isn't printable or is over 128 characters is `409` too.
+- **What inherits it.** Every thread it spawns (its workers), every fork of it, every thread its
+  agent makes in a tool call, and every thread made in a workspace whose orchestrator has it. A
+  thread joins or is adopted into a workspace only where the orchestrator has the same reader, so
+  a workspace is all one person's to see or everyone's.
+- **Who sees it.** Its reader alone, a member or a viewer. Anyone else, and any call with no
+  signed-in person (the launch token, phone access), gets nothing of it: it is left out of the
+  thread list and its snapshots, of every event a connection is sent, of search, of the closed
+  threads and their reopening, of wakes, usage, sessions, terminals and the other lists that name
+  threads, and a call naming it, or a workspace whose orchestrator it is, is refused as if there
+  were no such thread, whether it reads or writes. Another thread's agent sees it only if that
+  thread has the same reader: its tools leave it out of their lists and searches, and refuse any
+  input that names it. Messages, interrupts and answers from the platform's inbound routes and
+  `/asks/answer` reach it only for its reader.
+- **What still reaches it.** The platform's own service routes (the event sink, moves, the
+  export of a workspace), which are the embedder's, not a person's, and the server's own work.
+- **Without it** the thread is everyone's to see, as ever.
+
 ## Moving a thread to another machine
 
 A machine started for one thread may go away for good: one with no disk of its own is gone once

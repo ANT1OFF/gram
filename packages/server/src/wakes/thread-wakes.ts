@@ -42,6 +42,7 @@ import { Timers } from "../embedding/timers.ts";
 import { EventHub, isThreadRemoved } from "../events/event-hub.ts";
 import { isBadgeOf } from "../git/extra-prs.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
+import { readableOnly } from "../embedding/readable-by.ts";
 import { redactText } from "../logging/redact.ts";
 import {
   conditionWakeText,
@@ -502,7 +503,16 @@ export const ThreadWakesLive = Layer.effect(
 export const threadWakeHandlers = Effect.gen(function* () {
   const wakes = yield* ThreadWakes;
   return {
-    "threads.wakes": () => wakes.list,
+    // None of a thread the caller may not see (`embedding/readable-by.ts`).
+    "threads.wakes": () =>
+      wakes.list.pipe(
+        Effect.flatMap(({ wakes: all }) =>
+          Effect.map(
+            readableOnly(all, (wake) => wake.threadId),
+            (readable) => ({ wakes: readable }),
+          ),
+        ),
+      ),
     // A wake that fired or was cancelled while the user's click was in flight is simply gone.
     "thread.cancelWake": ({ threadId, id }) => wakes.cancel(threadId, id),
     "thread.snooze": ({ threadId, until }) => wakes.snooze(threadId, until ?? undefined),

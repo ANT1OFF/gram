@@ -1,6 +1,7 @@
 // Membership: threads joining a workspace (`join_workspace`),
 // the orchestrator adopting one (`adopt_thread`) with its pinned repos, detaching and removing a
 // worker, and reopening a stored thread, with the admission check its role must pass.
+import { READERS_DIFFER, sameReaders } from "../../embedding/readable-by.ts";
 import {
   effectiveCheckout,
   InvalidState,
@@ -332,6 +333,9 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
         )
       )
         return yield* Effect.fail(OWNERS_DIFFER);
+      // Nor does it span two readers: a workspace is all one person's to see, or everyone's
+      // (`embedding/readable-by.ts`).
+      if (!sameReaders(thread, holder)) return yield* Effect.fail(READERS_DIFFER);
       const refused = joinRefusal({
         thread: { ...thread, checkout },
         holder: holderId,
@@ -587,8 +591,11 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       const targets: Array<JoinTarget> = [];
       for (const state of yield* store.listWorkspaces) {
         const holder = state.workspace.orchestratorThreadId;
-        if (holder === undefined || (yield* findThread(holder)) === undefined) continue;
+        const holding = holder === undefined ? undefined : yield* findThread(holder);
+        if (holding === undefined) continue;
         if (thread.spawnedBy !== undefined && thread.workspaceId === state.workspace.id) continue;
+        // Only a workspace of the thread's own reader, which is all a join admits.
+        if (!sameReaders(thread, holding)) continue;
         targets.push({
           workspaceId: state.workspace.id,
           name: state.workspace.name,
@@ -819,6 +826,7 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
           // Linked again only on a machine of the reopened orchestrator's owner (`sameOwner`): an
           // orchestration never spans two people, however it comes back.
           if (!sameOwner(ownerOf, effectiveCheckout(worker), effectiveCheckout(made))) continue;
+          if (!sameReaders(worker, made)) continue;
           // A plain thread meanwhile, its model may have moved where no worker is admitted.
           const spawnedBy = { threadId: made.id, feature };
           if (!(yield* admits({ ...worker, spawnedBy }))) continue;
@@ -857,7 +865,11 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       }
       // Its orchestrator's again only on a machine of that owner's (`sameOwner`): asked of where
       // it was, which it comes back to, before anything is made.
-      if (!admitted || !sameOwner(ownerOf, effectiveCheckout(stored), effectiveCheckout(holder)))
+      if (
+        !admitted ||
+        !sameOwner(ownerOf, effectiveCheckout(stored), effectiveCheckout(holder)) ||
+        !sameReaders(stored, holder)
+      )
         return { thread: yield* create(inWorkspace), membership: "notAdmitted" };
       const made = yield* create({ ...inWorkspace, spawnedBy });
       // Its orchestrator closed while the row was being made, and the close cut links only from

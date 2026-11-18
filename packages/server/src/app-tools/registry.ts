@@ -32,6 +32,13 @@ import {
 import { inputLengthProblem } from "./input.ts";
 import { DecisionHook, REFUSAL_FOR_AGENT } from "../embedding/decision-hook.ts";
 import { RoutedFor, threadOwner } from "../host/ownership.ts";
+import {
+  anyPrivate,
+  mayReadThread,
+  ReadingAs,
+  readableByOf,
+  threadsMentioned,
+} from "../embedding/readable-by.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
 import { makeActionGuard, type ActionGuard } from "../embedding/guard.ts";
 import { dreamFileTools } from "./dream-tools.ts";
@@ -198,7 +205,12 @@ const asLineage = <A, E, R>(
   call: Effect.Effect<A, E, R>,
 ) =>
   Effect.flatMap(lineage === undefined ? Effect.succeed(undefined) : lineage(threadId), (person) =>
-    Effect.provideService(call, RoutedFor, { person }),
+    call.pipe(
+      Effect.provideService(RoutedFor, { person }),
+      // And it reads as its thread's reader: a thread readable by one person sees that person's
+      // threads and makes only theirs; any other sees none of them (`embedding/readable-by.ts`).
+      Effect.provideService(ReadingAs, { subject: readableByOf(threadId), fromThread: true }),
+    ),
   );
 
 /**
@@ -456,6 +468,15 @@ export const bindAppTools = (
                   }),
               ),
             );
+            // A thread named anywhere in the input that this thread's reader may not see is, to
+            // this agent, not there (`embedding/readable-by.ts`): never read, sent to or stopped.
+            if (anyPrivate())
+              for (const named of threadsMentioned(decoded))
+                if (!(yield* mayReadThread(named)))
+                  return yield* new AppToolError({
+                    tool: descriptor.name,
+                    message: `unknown thread ${named}`,
+                  });
             const target = yield* resolve(decoded);
             const decision =
               guard === undefined ? undefined : definition.decision?.(threadId, target);

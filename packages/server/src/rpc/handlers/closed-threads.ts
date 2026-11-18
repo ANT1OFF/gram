@@ -13,6 +13,7 @@ import { samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { resolveFolder } from "../../fs/folders.ts";
+import { mayRead, NOT_READABLE, readableOnly } from "../../embedding/readable-by.ts";
 import { mayReachThread, NOT_YOUR_MACHINE } from "../../host/ownership.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
 import { Orchestration, type ReopenFields } from "../../orchestration/service.ts";
@@ -141,6 +142,8 @@ export const makeClosedReopener = (
             ...(thread.agentNamed === undefined ? {} : { agentNamed: thread.agentNamed }),
             ...(thread.boundPr === undefined ? {} : { boundPr: thread.boundPr }),
             ...(thread.extraPrs === undefined ? {} : { extraPrs: thread.extraPrs }),
+            // Readable by the one person it was readable by before it closed.
+            ...(thread.readableBy === undefined ? {} : { readableBy: thread.readableBy }),
           },
           // A session that never received a message has no transcript to continue.
           ...(thread.agentSessionId === undefined || thread.agentSessionUnused === true
@@ -164,6 +167,8 @@ export const makeClosedReopener = (
       Effect.gen(function* () {
         // Its stored record is the target: the one rule decides, before anything is made, so a
         // refusal puts the entry back as it was (`host/ownership.ts`).
+        if (!(yield* mayRead(entry.thread.readableBy)))
+          return yield* new InvalidState({ message: NOT_READABLE });
         if (
           hosts !== undefined &&
           !(yield* mayReachThread(
@@ -203,7 +208,11 @@ export const makeClosedThreadHandlers = (
     const { store, withProblems, reopenTaken } = yield* makeClosedReopener(resolve);
 
     return {
-      "threads.closed.list": () => store.listClosed.pipe(Effect.flatMap(withProblems)),
+      "threads.closed.list": () =>
+        store.listClosed.pipe(
+          Effect.flatMap((closed) => readableOnly(closed, (entry) => entry.thread)),
+          Effect.flatMap(withProblems),
+        ),
       "threads.closed.reopen": () =>
         // Taken and guarded with nothing able to interrupt in between, so an entry off the list
         // either comes back as a thread or goes back on the list, a defect or an interruption too.

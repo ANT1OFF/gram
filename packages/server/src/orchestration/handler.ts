@@ -10,6 +10,7 @@ import * as Option from "effect/Option";
 import { attachmentsDir, withDraftAttachments } from "../attachments/attachments.ts";
 import { ServerConfig } from "../config.ts";
 import { logDefects, type Handlers } from "../rpc/handlers/common.ts";
+import { readableOnly } from "../embedding/readable-by.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { steerOrSend } from "../runtime/steer-or-send.ts";
@@ -47,7 +48,11 @@ export const orchestrationHandlers = Effect.gen(function* () {
         );
 
   return {
-    "workspace.list": () => orchestration.listWorkspaces,
+    // A workspace is its orchestrator's to see, whose workers have its reader (`readable-by.ts`).
+    "workspace.list": () =>
+      orchestration.listWorkspaces.pipe(
+        Effect.flatMap((all) => readableOnly(all, (state) => state.workspace.orchestratorThreadId)),
+      ),
     "workspace.save": (input) => orchestration.saveWorkspace(input),
     "workspace.remove": ({ workspaceId }) => orchestration.removeWorkspace(workspaceId),
     "workspace.taskPreflight": (input) => orchestration.taskPreflight(input),

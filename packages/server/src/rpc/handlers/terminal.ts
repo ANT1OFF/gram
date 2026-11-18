@@ -2,10 +2,18 @@ import {
   effectiveCheckout,
   InvalidState,
   NotFound,
+  type TerminalId,
   TerminalRpcs,
   type ThreadId,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
+import {
+  anyPrivate,
+  mayReadThread,
+  NOT_READABLE,
+  readableOnly,
+} from "../../embedding/readable-by.ts";
 import * as Option from "effect/Option";
 import { ServerConfig } from "../../config.ts";
 import { AppToolRegistry } from "../../app-tools/registry.ts";
@@ -31,6 +39,20 @@ const terminalHandlers = Effect.gen(function* () {
 
   // The agent tool that reads a terminal registers with the handlers, as it always has.
   yield* (yield* AppToolRegistry).register([readTerminalTool(terminals)]);
+
+  /**
+   * `effect` refused when the terminal is a thread's the caller may not see
+   * (`embedding/readable-by.ts`): its output and its keystrokes are that thread's.
+   */
+  const ofReadable = <A, E, R>(terminalId: TerminalId, effect: Effect.Effect<A, E, R>) =>
+    Effect.gen(function* () {
+      if (anyPrivate()) {
+        const info = (yield* terminals.list(undefined)).find((t) => t.terminalId === terminalId);
+        if (info?.threadId !== undefined && !(yield* mayReadThread(info.threadId)))
+          return yield* Effect.die(new Error(NOT_READABLE));
+      }
+      return yield* effect;
+    });
 
   /** A project script's command and folder, read from the project's own scripts file now. */
   const scriptRun = (threadId: ThreadId, name: string) =>
@@ -77,11 +99,15 @@ const terminalHandlers = Effect.gen(function* () {
                 script: run.name,
               });
             }),
-    "terminal.input": ({ terminalId, data }) => terminals.input(terminalId, data),
-    "terminal.resize": ({ terminalId, cols, rows }) => terminals.resize(terminalId, cols, rows),
-    "terminal.close": ({ terminalId }) => terminals.close(terminalId),
-    "terminal.list": ({ threadId }) => terminals.list(threadId),
-    "terminal.subscribe": ({ terminalId }) => terminals.subscribe(terminalId),
+    "terminal.input": ({ terminalId, data }) =>
+      ofReadable(terminalId, terminals.input(terminalId, data)),
+    "terminal.resize": ({ terminalId, cols, rows }) =>
+      ofReadable(terminalId, terminals.resize(terminalId, cols, rows)),
+    "terminal.close": ({ terminalId }) => ofReadable(terminalId, terminals.close(terminalId)),
+    "terminal.list": ({ threadId }) =>
+      terminals.list(threadId).pipe(Effect.flatMap((all) => readableOnly(all, (t) => t.threadId))),
+    "terminal.subscribe": ({ terminalId }) =>
+      Stream.unwrap(ofReadable(terminalId, Effect.succeed(terminals.subscribe(terminalId)))),
     "terminal.checkShell": ({ shell }) =>
       Effect.succeed(checkShell(shell, process.platform, process.env["PATH"] ?? "")),
   } satisfies Partial<Handlers>;

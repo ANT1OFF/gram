@@ -8,6 +8,15 @@ import {
 import { ANSWER_OVER_HTTP } from "../embedding/answer-proof.ts";
 import { ActingPerson } from "../embedding/person.ts";
 import {
+  anyPrivate,
+  NOT_READABLE,
+  type Reader,
+  ReadingAs,
+  readableByOf,
+  readerMay,
+  threadsMentioned,
+} from "../embedding/readable-by.ts";
+import {
   holderOf,
   mayReachThread,
   NOT_YOUR_MACHINE,
@@ -357,21 +366,51 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
             if (!(yield* mayReachThread(store.getThread, ownerOf, threadId))) return true;
           return false;
         }).pipe(Effect.provideService(RoutedFor, { person }));
+      /**
+       * Whether the call names a thread `reader` may not see (`embedding/readable-by.ts`): one it
+       * names anywhere in its payload, or a named workspace's orchestrator, whose workers have its
+       * reader. Asked of every call, a read or a change, before it runs.
+       */
+      const namesUnreadable = (reader: Reader, payload: unknown) =>
+        Effect.gen(function* () {
+          if (!anyPrivate()) return false;
+          for (const threadId of threadsMentioned(payload))
+            if (!readerMay(reader, readableByOf(threadId))) return true;
+          for (const workspaceId of workspacesNamed(payload)) {
+            const state = yield* store.getWorkspace(workspaceId).pipe(Effect.option);
+            const holder =
+              state._tag === "Some" ? state.value.workspace.orchestratorThreadId : undefined;
+            if (holder !== undefined && !readerMay(reader, readableByOf(holder))) return true;
+          }
+          return false;
+        });
       return ActorGuard.of((call, { rpc, payload, headers }) =>
         Effect.gen(function* () {
           // A machine started for one person is reached only for them, whatever the route
           // (`host/ownership.ts`): an RPC with no signed-in person is no one's.
           if (!(yield* fronted.active)) {
+            // Nor does it read a thread readable by one person: it has no subject to be them.
+            const nobody: Reader = { subject: undefined };
+            if (yield* namesUnreadable(nobody, payload))
+              return yield* Effect.die(new Error(NOT_READABLE));
             if (!VIEWER_RPCS.has(rpc._tag) && (yield* onAnothersMachine(undefined, payload)))
               return yield* Effect.die(new Error(NOT_YOUR_MACHINE));
-            return yield* Effect.provideService(call, RoutedFor, { person: undefined });
+            return yield* call.pipe(
+              Effect.provideService(RoutedFor, { person: undefined }),
+              Effect.provideService(ReadingAs, nobody),
+            );
           }
           const actor = actorOf(headers);
           if (actor === undefined) return yield* Effect.die(new Error(NO_ACTOR_REFUSAL));
+          // A thread readable by one person is theirs alone to read or change, member or viewer.
+          const reader: Reader = { subject: actor.id };
+          if (yield* namesUnreadable(reader, payload))
+            return yield* Effect.die(new Error(NOT_READABLE));
           // The call runs as this person, for what asks who acted (`embedding/person.ts`).
           const effect = call.pipe(
             Effect.provideService(ActingPerson, actor.id),
             Effect.provideService(RoutedFor, { person: actor.id }),
+            Effect.provideService(ReadingAs, reader),
           );
           const action = rpc._tag;
           if (VIEWER_RPCS.has(action) || setsOnlyOwnView(action, payload)) return yield* effect;
