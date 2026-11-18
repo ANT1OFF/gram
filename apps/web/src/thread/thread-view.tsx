@@ -76,7 +76,6 @@ import { forkedFromText } from "./fork-text";
 import { trackWrappedChips } from "./header-chips";
 import { LabelChip, useThreadLabel } from "./label-chip";
 import { AwaitingMachine, MachineStarting, useMachineWait } from "./awaiting-machine";
-import { SentNotice } from "./sent-notice";
 import { WAIT_WORDS } from "./awaiting-machine-model";
 import { MachineChip } from "./machine-chip";
 import { FolderMissingNotice } from "./folder-missing-notice";
@@ -116,6 +115,9 @@ import { BrowserChip } from "./browser-chip";
 import { HeaderWakeChip } from "./wake-chip";
 
 /** Only for a thread that moved away, so it loads only then. */
+const SentNotice = lazy(async () => ({
+  default: (await import("./sent-notice")).SentNotice,
+}));
 const MovedAwayNotice = lazy(async () => ({
   default: (await import("./moved-away-notice")).MovedAwayNotice,
 }));
@@ -830,7 +832,9 @@ export function ThreadView({
           {thread.role === "orchestrator" && <UndoLine />}
           {/* Sent to a server: it runs there, and its orchestrator messages it, so no composer. */}
           {thread.sentTo !== undefined ? (
-            <SentNotice threadId={threadId} />
+            <Suspense fallback={null}>
+              <SentNotice threadId={threadId} />
+            </Suspense>
           ) : (
             <TurnCompleteSheen key={threadId} status={status}>
               <ThreadComposer
