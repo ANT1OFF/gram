@@ -5,7 +5,7 @@
 // message.
 //
 //   { "person": { "id", "name"? }, "key", "repositories": ["owner/name" | git URL, ...],
-//     "text", "title"?, "branch"?, "model"?: { "agent", "model" } }
+//     "text", "title"?, "branch"?, "model"?: { "agent", "model" }, "mode"?: PermissionMode }
 //     → 200 { "threadId", "created", "branch" }   made now, or the thread this key made before
 //       409 { "error" } one that can't start now (no machine, a repository that refuses)
 //       400 a body that isn't one
@@ -24,6 +24,7 @@ import {
   type CheckoutRequest,
   ModelRef,
   parseRepoRemote,
+  type PermissionMode,
   type Project,
   type RepoRemote,
   ThreadId,
@@ -57,6 +58,18 @@ const PERSON = /^[A-Za-z0-9_.:@|-]{1,200}$/;
 const BRANCH = /^(?!-)(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._/-]{1,200}(?<![./])$/;
 
 const decodeModel = Schema.decodeUnknownOption(ModelRef);
+
+/**
+ * The permission modes a start may ask for: the ones New task offers. `dontAsk` is not one of them,
+ * since nothing can ask in it and an outward gate doesn't hold there.
+ */
+export const THREAD_START_MODES: ReadonlyArray<PermissionMode> = [
+  "default",
+  "acceptEdits",
+  "plan",
+  "auto",
+  "bypassPermissions",
+];
 
 /** The person a call names, or why the body doesn't name one. */
 const personOf = (value: unknown): Actor | string => {
@@ -136,6 +149,9 @@ export const ThreadStartsInboundLive = Layer.effectDiscard(
         const model = modelAsked === undefined ? undefined : decodeModel(modelAsked);
         if (model !== undefined && Option.isNone(model))
           return refusal(400, "`model` is `{ agent, model }`");
+        const mode = body?.["mode"];
+        if (mode !== undefined && !THREAD_START_MODES.includes(mode as PermissionMode))
+          return refusal(400, `\`mode\` is one of ${THREAD_START_MODES.join(", ")}`);
         const listed = body?.["repositories"];
         if (
           !Array.isArray(listed) ||
@@ -196,6 +212,7 @@ export const ThreadStartsInboundLive = Layer.effectDiscard(
                 ? {}
                 : { additionalDirectories: place.additionalDirectories }),
               ...(model === undefined ? {} : { model: model.value }),
+              ...(mode === undefined ? {} : { mode: mode as PermissionMode }),
               ...(typeof title === "string" ? { title: title.trim() } : {}),
               input: { text },
             })
