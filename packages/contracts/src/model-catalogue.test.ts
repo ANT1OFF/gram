@@ -169,13 +169,24 @@ describe("supersededModels", () => {
     expect([...supersededModels(rows)]).toEqual(["claude-opus-4-6"]);
   });
 
-  it("never supersedes the CLI's default, a model the user added, or one with no version", () => {
+  it("keeps the default alias and custom models, but moves an older named default to Legacy", () => {
     const rows = [
       plain("gpt-6.1-sol", "GPT-6.1-Sol"),
+      plain("default", "Default (recommended)", { resolvedId: "gpt-6-sol" }),
       plain("gpt-6-sol", "GPT-6-Sol", { isDefault: true }),
       plain("gpt-5-sol", "GPT-5-Sol", { description: "Added in Settings" }),
       plain("mystery", "Mystery"),
     ];
-    expect(supersededModels(rows).size).toBe(0);
+    expect([...supersededModels(rows)]).toEqual(["gpt-6-sol"]);
+  });
+
+  it("moves older Sol and Astra versions to Legacy when 6.2 is listed", () => {
+    const rows = [
+      plain("gpt-6.2-sol", "GPT-6.2-Sol"),
+      plain("gpt-6.2-astra", "GPT-6.2-Astra"),
+      plain("gpt-6.1-sol", "GPT-6.1-Sol", { isDefault: true }),
+      plain("gpt-6-astra", "GPT-6-Astra"),
+    ];
+    expect([...supersededModels(rows)]).toEqual(["gpt-6.1-sol", "gpt-6-astra"]);
   });
 });

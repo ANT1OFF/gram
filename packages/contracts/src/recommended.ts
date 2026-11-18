@@ -4,6 +4,7 @@ import { claudeLabel } from "./model-catalogue.ts";
 import type { AgentModel } from "./models.ts";
 import data from "./recommended/table.json" with { type: "json" };
 import v2026_11 from "./recommended/history/2026.11.json" with { type: "json" };
+import v2026_11_18 from "./recommended/history/2026.11.18.json" with { type: "json" };
 
 /** A kind of work, from cheapest to most capable. A following slot stores one of these. */
 export const Tier = Schema.Literals(["cheap", "scoped", "lead", "top"]);
@@ -117,8 +118,8 @@ export const RECOMMENDED: RecommendationTable = Schema.decodeUnknownSync(Recomme
  * the new table here as `recommended/history/<version>.json`, keeping the older ones; a test holds
  * the last entry equal to `table.json`.
  */
-export const RECOMMENDED_HISTORY: ReadonlyArray<RecommendationTable> = [v2026_11].map((table) =>
-  Schema.decodeUnknownSync(RecommendationTable)(table),
+export const RECOMMENDED_HISTORY: ReadonlyArray<RecommendationTable> = [v2026_11, v2026_11_18].map(
+  (table) => Schema.decodeUnknownSync(RecommendationTable)(table),
 );
 
 /**

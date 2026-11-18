@@ -218,8 +218,7 @@ const newer = (a: ReadonlyArray<number>, b: ReadonlyArray<number>): boolean => {
  * beside Opus 5.5, Fable 5.1 beside Fable 5.2, GPT-6-Sol beside GPT-6.1-Sol. A family is a name
  * with its version taken out ("Opus #", "GPT # Sol", "Opus # (1M context)"), so a variant only
  * gives way to a newer one of itself, and a version is the first number in the name, compared
- * part by part. Never superseded: the CLI's `default` row and its default model, which it chose
- * (the default still supersedes older ones); a model the user added; and a row whose name holds
+ * part by part. Never superseded: the CLI's `default` alias; a model the user added; and a row whose name holds
  * no version, which has nothing reliable to compare by.
  */
 export const supersededModels = (
@@ -231,14 +230,12 @@ export const supersededModels = (
   const ranked = models.flatMap((row) => {
     if (row.id === "default" || row.description === ADDED_IN_SETTINGS) return [];
     const found = rowFamily(row);
-    return found === undefined ? [] : [{ id: row.id, kept: row.isDefault === true, ...found }];
+    return found === undefined ? [] : [{ id: row.id, ...found }];
   });
   return new Set(
     ranked
-      .filter(
-        (row) =>
-          !row.kept &&
-          ranked.some((other) => other.family === row.family && newer(other.version, row.version)),
+      .filter((row) =>
+        ranked.some((other) => other.family === row.family && newer(other.version, row.version)),
       )
       .map((row) => row.id),
   );

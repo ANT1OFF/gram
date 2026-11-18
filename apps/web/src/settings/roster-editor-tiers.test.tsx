@@ -81,9 +81,11 @@ describe("RosterEditor with entries that follow a tier", () => {
     };
     const { rerender } = render(view(current));
     await waitFor(() =>
-      expect(screen.getAllByTestId("worker-model")[0]!.dataset["agent"]).toBe("codex"),
+      // Wait for this older account's catalogue, rather than the recommendation shown before discovery.
+      expect(screen.getAllByTestId("worker-model")[0]!.textContent).toContain("gpt-6.1-sol"),
     );
     const [scoped, lead] = screen.getAllByTestId("worker-model");
+    expect(scoped!.dataset["agent"]).toBe("codex");
     expect(scoped!.dataset["tier"]).toBe("scoped");
     expect(scoped!.textContent).toContain("gpt-6.1-sol");
     expect(lead!.textContent).toContain("opus");
