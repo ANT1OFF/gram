@@ -54,8 +54,9 @@ export const CODEX_AUTO_VERSION = "0.166.0";
 
 /**
  * Whether the switch is offered on this thread, and if so to which agent and, when it can't move
- * now, why: the server's words. Not offered at all on Windows, or while the other CLI isn't
- * installed, so Gram with one harness shows nothing new. The orchestrator's is offered the same way.
+ * now, why: the server's words. Not offered at all on Windows, from or to OpenCode (its host can't
+ * stop and reopen a session for a switch, so the server would refuse it), or while the other CLI
+ * isn't installed, so Gram with one harness shows nothing new. The orchestrator's is offered the same way.
  */
 export type SwitchOffer =
   | { readonly offered: false }
@@ -80,6 +81,8 @@ export const switchOffer = (input: {
   const { summary, checks } = input;
   const { thread } = summary;
   if (input.platform === "win32") return { offered: false };
+  // OpenCode's host has no workspace switch: offering one only leads to the server's refusal.
+  if (thread.model.agent === "opencode") return { offered: false };
   // An orchestrator's switch under way names where it is going, so its sheet shows how it stands.
   const to =
     thread.role === "orchestrator" && thread.sessionSwitch !== undefined

@@ -361,7 +361,10 @@ describe("switchAgent", () => {
       expect(yield* refused(CODEX)).toContain("Codex isn't signed in.");
       yield* fake.setModelDiscoveryFailure(undefined);
       yield* fake.setSwitchCapability(false);
-      expect(yield* refused(CODEX)).toContain("unavailable on this platform");
+      expect(yield* refused(CODEX)).toContain("unavailable on Windows");
+      // A harness with no switch at all is named, not blamed on the machine.
+      yield* fake.setSwitchCapability(undefined);
+      expect(yield* refused(CODEX)).not.toContain("Windows");
       yield* fake.setSwitchCapability(true);
 
       yield* unchanged(thread.id, thread);

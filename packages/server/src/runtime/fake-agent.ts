@@ -159,7 +159,8 @@ export interface FakeAgentControlShape {
   setSwitchStopFailure(message: string | undefined): Effect.Effect<void>;
   setSwitchStopDelay(delay: Duration.Input | undefined): Effect.Effect<void>;
   setModelDiscoveryFailure(message: string | undefined): Effect.Effect<void>;
-  setSwitchCapability(supported: boolean): Effect.Effect<void>;
+  /** `undefined`: a harness with no switch at all, as OpenCode's host. */
+  setSwitchCapability(supported: boolean | undefined): Effect.Effect<void>;
   setNativeGateReady(ready: boolean): Effect.Effect<void>;
   /** What every host answers `autoReviewReady` with; off until set. */
   setAutoReviewReady(ready: boolean): Effect.Effect<void>;
@@ -411,7 +412,7 @@ export const makeFakeAgentAdapter = (
         );
       let switchStopFailure: string | undefined;
       let switchStopDelay: Duration.Input | undefined;
-      let switchCapability = true;
+      let switchCapability: boolean | undefined = true;
       let nativeGateReady = false;
       let autoReviewReady = false;
       let modelDiscoveryFailure: string | undefined;
@@ -980,7 +981,7 @@ export const makeFakeAgentAdapter = (
         kind,
         nativeGateReady: Effect.sync(() => nativeGateReady),
         autoReviewReady: Effect.sync(() => autoReviewReady),
-        supportsWorkspaceSwitch: switchCapability,
+        ...(switchCapability === undefined ? {} : { supportsWorkspaceSwitch: switchCapability }),
         checkWorkspaceSwitch: Effect.suspend(() =>
           modelDiscoveryFailure === undefined
             ? Effect.void
