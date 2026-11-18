@@ -288,6 +288,9 @@ describe("checkHostedDiscovery", () => {
       // A thread is never sent anywhere but the server itself.
       { thread_import_endpoint: "https://elsewhere.example.net/threads" },
       { thread_import_endpoint: "http://gram.example.com/threads" },
+      // Nor asked for from, or settled, anywhere else.
+      { thread_export_endpoint: "https://elsewhere.example.net/threads/export" },
+      { thread_settle_endpoint: "https://elsewhere.example.net/threads/settle" },
       { version: 2 },
       { client_id: undefined },
     ])

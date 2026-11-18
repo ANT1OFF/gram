@@ -335,6 +335,8 @@ export interface HostedDeviceView {
     readonly problem?: string;
     /** It takes threads moved from this computer. Absent from shells older than it. */
     readonly takesThreads?: boolean;
+    /** It gives threads that moved there back to this computer. Absent from shells older than it. */
+    readonly givesThreads?: boolean;
     readonly workspaces: ReadonlyArray<{
       readonly id: string;
       readonly name: string;
@@ -434,6 +436,19 @@ export type HostedThreadMoved =
       /** No clear answer: the server may have it. Sending it again answers the thread it made. */
       readonly unknown?: true;
     };
+
+/** A thread asked for from a server, to bring back: its bundle, or why not, in the server's words. */
+export type HostedThreadFetched =
+  | { readonly ok: true; readonly bundle: unknown }
+  | { readonly ok: false; readonly why: string };
+
+/**
+ * How settling a thread's copy on a server ended. `unknown`: no clear answer, so the copy there
+ * may still take work; settling again is safe.
+ */
+export type HostedThreadSettled =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly why: string; readonly unknown?: true };
 
 export interface DesktopBridge extends DesktopWindows {
   readonly platform: "darwin" | "win32" | "linux" | (string & {});
@@ -551,6 +566,19 @@ export interface DesktopBridge extends DesktopWindows {
      * here (`POST /threads/settle`) once this answers. Absent from shells older than it.
      */
     moveThread?(origin: string, workspace: string, bundle: unknown): Promise<HostedThreadMoved>;
+    /**
+     * Asks a server signed in to for a thread of a workspace there, as a bundle to bring back.
+     * Nothing changes there but the ref its edits are kept on: the caller imports it here
+     * (`POST /threads/import`), then settles the copy there (`settleThread`).
+     */
+    fetchThread?(origin: string, workspace: string, threadId: string): Promise<HostedThreadFetched>;
+    /** The thread is here now: its copy on the server becomes read-only, saying it came here. */
+    settleThread?(
+      origin: string,
+      workspace: string,
+      threadId: string,
+      exportedAt: number,
+    ): Promise<HostedThreadSettled>;
     onChange(callback: () => void): () => void;
   };
   /**

@@ -61,6 +61,40 @@ export const settleThread = async (input: {
   readonly exportedAt: number;
   readonly to: string;
   readonly url?: string;
+  /** The server and workspace it went to: where it can be brought back from. */
+  readonly server?: { readonly origin: string; readonly workspaceId: string };
 }): Promise<void> => {
   await post("/threads/settle", input, "The copy here couldn't be made read-only.");
+};
+
+/** A thread brought back from a server, back here: what this server says of it. */
+export const importThread = async (input: {
+  readonly bundle: unknown;
+  readonly root: string;
+  readonly from: string;
+  /** Where it came back from: the thread says its copy there is open until `settledThere`. */
+  readonly server?: { readonly origin: string; readonly workspaceId: string };
+}): Promise<{ readonly notes: readonly string[]; readonly exportedAt: number }> => {
+  const answer = await post("/threads/import", input, "The thread couldn't be put back here.");
+  const notes = (
+    typeof answer === "object" && answer !== null && "notes" in answer ? answer.notes : undefined
+  ) as unknown;
+  const exportedAt = (
+    typeof input.bundle === "object" && input.bundle !== null && "exportedAt" in input.bundle
+      ? input.bundle.exportedAt
+      : undefined
+  ) as unknown;
+  if (typeof exportedAt !== "number")
+    throw new ThreadTransferError("The server's thread isn't one this Gram reads.");
+  return {
+    exportedAt,
+    notes: Array.isArray(notes)
+      ? notes.filter((note): note is string => typeof note === "string")
+      : [],
+  };
+};
+
+/** The copy on the server the thread came back from is read-only now. */
+export const settledThere = async (threadId: string): Promise<void> => {
+  await post("/threads/settled-there", { threadId }, "This Gram couldn't note it.");
 };

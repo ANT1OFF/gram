@@ -168,6 +168,7 @@ describe("this machine as a personal device", () => {
           signedIn: true,
           paused: false,
           takesThreads: true,
+          givesThreads: true,
           workspaces: [
             {
               id: "w1",

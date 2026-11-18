@@ -503,6 +503,53 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
       }).pipe(Effect.scoped),
   );
 
+  it.effect("gives a thread back only to a person who reaches it, and settles it for them", () =>
+    Effect.gen(function* () {
+      const at = yield* port;
+      const runtimes = yield* ThreadRuntimes;
+      const repo = makeRepo(join(tmp, "exports"));
+      const thread = yield* runtimes.create({
+        projectRoot: repo,
+        checkout: { kind: "main", path: repo },
+        readableBy: "user-7",
+      });
+      const ada = { id: "user-7", name: "Ada" };
+      const grace = { id: "user-8", name: "Grace" };
+      // Someone else's thread is as if there were none, to export and to settle alike.
+      for (const [path, body] of [
+        ["/embed/v1/thread-exports", { person: grace, threadId: thread.id }],
+        [
+          "/embed/v1/thread-settles",
+          { person: grace, threadId: thread.id, exportedAt: Date.now(), to: "Grace's laptop" },
+        ],
+      ] as const) {
+        expect((yield* call(at, path, { token: TOKEN, body })).status).toBe(404);
+        expect((yield* call(at, path, { body })).status).toBe(401);
+      }
+      expect(
+        (yield* call(at, "/embed/v1/thread-exports", {
+          token: TOKEN,
+          body: { person: ada, threadId: "" },
+        })).status,
+      ).toBe(400);
+      // A settle names an export this server made: never one from later than now.
+      expect(
+        (yield* call(at, "/embed/v1/thread-settles", {
+          token: TOKEN,
+          body: { person: ada, threadId: thread.id, exportedAt: Date.now() + 86_400_000, to: "X" },
+        })).status,
+      ).toBe(400);
+      // Its own person is answered by the move itself: here, a repository with no origin to
+      // carry its edits.
+      const refused = yield* call(at, "/embed/v1/thread-exports", {
+        token: TOKEN,
+        body: { person: ada, threadId: thread.id },
+      });
+      expect(refused.status).toBe(409);
+      expect(JSON.parse(refused.body).error).toContain("no origin");
+    }),
+  );
+
   it.effect(
     "starts a person's thread in repositories, a worktree in each on one branch, once per key",
     () =>

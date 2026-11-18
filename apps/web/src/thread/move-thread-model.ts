@@ -37,6 +37,80 @@ export const threadMoveRefusal = (
   return undefined;
 };
 
+/** Where a thread that moved to a server comes back from: that server and workspace, by name. */
+export interface BringBackSource {
+  readonly origin: string;
+  readonly workspace: string;
+  /** The workspace's name there, in the server's words; its id while the server hasn't listed it. */
+  readonly name: string;
+  readonly host: string;
+}
+
+/**
+ * Where the thread can be brought back from, or why not in the words the notice says it with.
+ * Nothing at all for a thread that didn't go to a server signed in to from here, or a shell that
+ * can't ask for one back.
+ */
+export const bringBackFrom = (
+  thread: Pick<Thread, "transferredTo">,
+  view: HostedDeviceView | null | undefined,
+): BringBackSource | { readonly why: string } | undefined => {
+  const at = thread.transferredTo?.server;
+  if (at === undefined || view === undefined || view === null) return undefined;
+  const server = view.servers.find((each) => each.origin === at.origin);
+  if (server === undefined || !server.signedIn)
+    return { why: `Sign in to ${hostOf(at.origin)} under Settings → Hosted to bring it back.` };
+  if (server.givesThreads !== true) return { why: "That server doesn't give threads back." };
+  if (server.paused)
+    return {
+      why: "You paused this computer for that server. Lift the pause under Settings → Hosted first.",
+    };
+  const workspace = server.workspaces.find((each) => each.id === at.workspaceId);
+  if (workspace === undefined) return { why: "Its workspace there isn't one of yours any more." };
+  return {
+    origin: at.origin,
+    workspace: at.workspaceId,
+    name: workspace.name,
+    host: hostOf(at.origin),
+  };
+};
+
+const hostOf = (origin: string): string => {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return origin;
+  }
+};
+
+/** What comes back with the thread, as the review lists it. */
+export const comesLines = (facts: { readonly branch?: string }): readonly string[] => [
+  "The conversation, with what it did there",
+  "Its edits, uncommitted ones too",
+  facts.branch === undefined ? "Its branch" : `Its branch, ${facts.branch}`,
+];
+
+/** What a bring-back does, step by step, as the dialog shows it under way. */
+export type BringStage = "fetch" | "import" | "settle";
+
+export const bringSteps = (
+  stage: BringStage,
+  from: BringBackSource,
+): ReadonlyArray<{ key: BringStage; words: string; state: "done" | "now" | "next" }> => {
+  const order: readonly BringStage[] = ["fetch", "import", "settle"];
+  const words: Record<BringStage, string> = {
+    fetch: `Asking ${from.name} for it`,
+    import: "Putting it back here, with its edits",
+    settle: `Making the copy on ${from.name} read-only`,
+  };
+  const at = order.indexOf(stage);
+  return order.map((key, index) => ({
+    key,
+    words: words[key],
+    state: index < at ? "done" : index === at ? "now" : "next",
+  }));
+};
+
 /** What goes with the thread, as the review lists it. */
 export const goesLines = (input: {
   readonly repository?: string;

@@ -324,6 +324,12 @@ const target = (arg: unknown) => ({
   workspace: field(arg, "workspace", 128),
 });
 
+/** A thread's id as a window names it: Gram's own ids, nothing a path could use. */
+const threadIdOf = (arg: unknown): string | undefined => {
+  const id = field(arg, "threadId", 128);
+  return id !== undefined && /^[A-Za-z0-9_-]{1,128}$/.test(id) ? id : undefined;
+};
+
 export interface HostedDeviceIpcOptions {
   readonly device: () => HostedDevice | undefined;
   /** The dialogs, attached to the window that asked. */
@@ -395,6 +401,42 @@ export const installHostedDeviceIpc = (ipc: ShellIpc, options: HostedDeviceIpcOp
                 ? { ...moved, notes: moved.notes.map((note) => serverWords(note).text) }
                 : { ...moved, why: serverWords(moved.why).text },
           );
+    }),
+  );
+  // The person pressed Bring back in the app's own window: the bundle goes to the local server,
+  // which reads and checks it, and the window settles the copy there once that took it.
+  serve(
+    Channels.hostedDeviceFetchThread,
+    withDevice((device, arg) => {
+      const { origin, workspace } = target(arg);
+      const threadId = threadIdOf(arg);
+      return origin === undefined || workspace === undefined || threadId === undefined
+        ? { ok: false, why: "Name the server, the workspace and the thread." }
+        : device
+            .fetchThread(origin, workspace, threadId)
+            .then((fetched) =>
+              fetched.ok ? fetched : { ...fetched, why: serverWords(fetched.why).text },
+            );
+    }),
+  );
+  serve(
+    Channels.hostedDeviceSettleThread,
+    withDevice((device, arg) => {
+      const { origin, workspace } = target(arg);
+      const threadId = threadIdOf(arg);
+      const exportedAt =
+        typeof arg === "object" && arg !== null && "exportedAt" in arg ? arg.exportedAt : undefined;
+      return origin === undefined ||
+        workspace === undefined ||
+        threadId === undefined ||
+        typeof exportedAt !== "number" ||
+        !Number.isFinite(exportedAt)
+        ? { ok: false, why: "Name the server, the workspace, the thread and its export." }
+        : device
+            .settleThread(origin, workspace, threadId, exportedAt)
+            .then((settled) =>
+              settled.ok ? settled : { ...settled, why: serverWords(settled.why).text },
+            );
     }),
   );
   serve(

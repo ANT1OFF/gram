@@ -821,6 +821,13 @@ export const AwaitingMachine = Schema.Struct({
 });
 export type AwaitingMachine = typeof AwaitingMachine.Type;
 
+/** A server signed in to that a thread moved to, and the workspace there it is in. */
+export const MovedToServer = Schema.Struct({
+  origin: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2_000)),
+  workspaceId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+});
+export type MovedToServer = typeof MovedToServer.Type;
+
 export const Thread = Schema.Struct({
   id: ThreadId,
   /**
@@ -906,6 +913,11 @@ export const Thread = Schema.Struct({
       /** The person the platform in front brought it in for, by the id it states for them. */
       by: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
       seeded: Schema.optionalKey(Schema.Boolean),
+      /**
+       * Brought back from this server and workspace, whose copy there is not yet read-only: until
+       * it is (`/threads/settled-there`), the thread is open in two places.
+       */
+      leftOpen: Schema.optionalKey(MovedToServer),
     }),
   ),
   /**
@@ -919,6 +931,16 @@ export const Thread = Schema.Struct({
       at: Schema.Number,
       /** Where to open it there, when the other Gram said. */
       url: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
+      /**
+       * The server signed in to that has it, and the workspace there, when it went to one: where
+       * bringing it back asks for it.
+       */
+      server: Schema.optionalKey(MovedToServer),
+      /**
+       * The person the platform in front took it away for, by the id it states for them: only
+       * they bring it back here.
+       */
+      by: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
     }),
   ),
   /** Raised by the user or the `set_unread` app tool; cleared when the thread is viewed. */

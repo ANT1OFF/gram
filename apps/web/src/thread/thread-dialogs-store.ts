@@ -29,6 +29,8 @@ export type ThreadDialog =
   | { kind: "moveWorkspace"; workspaceId: WorkspaceId }
   /** One thread's move to a server signed in to, where the desktop app can send one. */
   | { kind: "moveThread"; threadId: ThreadId }
+  /** A thread that moved to a server, back to this computer. */
+  | { kind: "bringThread"; threadId: ThreadId }
   /** The project's scripts to add and edit, opened from the thread it was asked from. */
   | { kind: "projectScripts"; projectId: ProjectId; threadId?: ThreadId };
 

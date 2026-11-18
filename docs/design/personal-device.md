@@ -187,7 +187,9 @@ more than the person did.
   "workspaces_endpoint": "https://gram.example.com/api/workspaces",
   "devices_endpoint": "https://gram.example.com/api/devices",
   "device_connect": "wss://gram.example.com/device/connect",
-  "thread_import_endpoint": "https://gram.example.com/api/threads/import"
+  "thread_import_endpoint": "https://gram.example.com/api/threads/import",
+  "thread_export_endpoint": "https://gram.example.com/api/threads/export",
+  "thread_settle_endpoint": "https://gram.example.com/api/threads/settle"
 }
 ```
 
@@ -212,6 +214,8 @@ address, in the browser. If the rule is ever relaxed, the issuer check of
 | `POST devices_endpoint/challenge` then `POST devices_endpoint`                                         | access token, scope `device:register`, signed challenge | `{ deviceId }`; the id is derived from the public key                  |
 | `DELETE devices_endpoint/<deviceId>`                                                                   | access token, scope `device:register`                   | forgets the device; the app does this on **Sign out**                  |
 | `POST thread_import_endpoint` `{ workspaceId, bundle, from }`                                          | access token, scope `workspaces:import`                 | `{ threadId, notes?, url? }`, or a refusal `{ error }` in its words    |
+| `POST thread_export_endpoint` `{ workspaceId, threadId }`                                              | access token, scope `workspaces:export`                 | `{ bundle }`, or a refusal `{ error }` in its words                    |
+| `POST thread_settle_endpoint` `{ workspaceId, threadId, exportedAt, to }`                              | access token, scope `workspaces:export`                 | `{ settled: true }`, or a refusal `{ error }` in its words             |
 
 Gram's token answer adds one field to OAuth's: `sub`, the person's subject id, which the dial
 signs and the gate checks each request's actor against. A renewal that names another person ends
@@ -234,7 +238,14 @@ this machine ([moving a thread](move-a-thread.md)). The bundle is the one `POST 
 wrote, `from` is this machine's name, and the call waits up to 100 seconds, since the server
 places the thread on a machine of its own before it answers. A `url` on another origin is never
 opened. A sign-in from before the server took threads lacks `workspaces:import`, and the app asks
-the person to sign in again.
+the person to sign in again. Each moving scope is asked for only of a server that names its calls.
+
+`thread_export_endpoint` and `thread_settle_endpoint` go together: a server that names both gives a
+thread that moved there back. The app asks for the bundle, gives it to this machine's own server
+(`POST /threads/import`), which puts the thread back onto its read-only copy here, and only then
+settles the copy there, naming the bundle's `exportedAt` and this machine's name. Whether work may
+leave is the server's to decide, and its refusal is shown in its words. Settling again is safe, so
+a settle with no clear answer is offered again.
 
 ### The dial
 

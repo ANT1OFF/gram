@@ -69,6 +69,7 @@ const stateWith = (
       name: "Example",
       signedIn: true,
       takesThreads: false,
+      givesThreads: false,
       paused,
       workspaces: [workspace(more)],
     },

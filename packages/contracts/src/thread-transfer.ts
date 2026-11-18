@@ -9,7 +9,7 @@
 // hooks and MCP servers, terminals and approvals in flight never go.
 
 import * as Schema from "effect/Schema";
-import { PlanItem, Thread } from "./domain.ts";
+import { MovedToServer, PlanItem, Thread } from "./domain.ts";
 import { ThreadId } from "./ids.ts";
 import { ThreadPlan } from "./thread-plan.ts";
 import { BUNDLE_MESSAGES_MAX, BundleMessage, BundleTurn } from "./workspace-transfer.ts";
@@ -76,6 +76,11 @@ export const ImportThreadInput = Schema.Struct({
   bundle: ThreadBundle,
   root: Schema.NonEmptyString,
   from: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+  /**
+   * The server signed in to that it came back from, and the workspace there, while its copy
+   * there is not yet read-only: kept on the thread as `transferredFrom.leftOpen`.
+   */
+  server: Schema.optionalKey(MovedToServer),
 });
 export type ImportThreadInput = typeof ImportThreadInput.Type;
 
@@ -108,5 +113,37 @@ export const SettleThreadInput = Schema.Struct({
   exportedAt: Schema.Number,
   to: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
   url: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
+  /** The server signed in to that took it, and the workspace there: where it comes back from. */
+  server: Schema.optionalKey(MovedToServer),
 });
 export type SettleThreadInput = typeof SettleThreadInput.Type;
+
+/**
+ * `POST /embed/v1/thread-exports`: the platform in front asks for a thread as a bundle for a
+ * person it signed in, to bring it back to a Gram of theirs. Changes nothing here but the ref
+ * its edits are kept on.
+ */
+export const ExportThreadForPersonInput = Schema.Struct({
+  threadId: ThreadId,
+  person: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+});
+export type ExportThreadForPersonInput = typeof ExportThreadForPersonInput.Type;
+
+/**
+ * `POST /embed/v1/thread-settles`: the Gram the person brought the thread back to has it, so the
+ * record here becomes the read-only copy, as `/threads/settle` makes it.
+ */
+export const SettleThreadForPersonInput = Schema.Struct({
+  threadId: ThreadId,
+  person: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+  exportedAt: Schema.Number,
+  to: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+});
+export type SettleThreadForPersonInput = typeof SettleThreadForPersonInput.Type;
+
+/**
+ * `POST /threads/settled-there`: the copy on the server a thread came back from is read-only now,
+ * so the thread here stops saying it is open there too.
+ */
+export const SettledThereInput = Schema.Struct({ threadId: ThreadId });
+export type SettledThereInput = typeof SettledThereInput.Type;

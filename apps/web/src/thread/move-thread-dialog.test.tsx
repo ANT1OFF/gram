@@ -168,6 +168,8 @@ describe("MoveThreadDialog", () => {
       exportedAt: BUNDLE.exportedAt,
       to: "Platform on gram.example.com",
       url: `${ORIGIN}/t`,
+      // Where it went, so it can be brought back.
+      server: { origin: ORIGIN, workspaceId: "w1" },
     });
     expect(after.textContent).toContain("This copy is read-only");
     expect(after.textContent).toContain("Its edits are back.");
