@@ -75,12 +75,31 @@ const workspaceReaders = new Map<string, string>();
  */
 const foldersOf = new Map<ThreadId, Set<string>>();
 
+/**
+ * The machines (`undefined` for this one) and the repositories (their top folders) a thread
+ * readable by one person has worked in, as noted: what a shell there, or another checkout of the
+ * same repository, could read of it beside the API (`sharesWithUnreadable`).
+ */
+const machinesOf = new Map<ThreadId, Set<string | undefined>>();
+const reposOf = new Map<ThreadId, Set<string>>();
+
+/** A checkout as the store keeps it. */
+interface CheckoutAt {
+  readonly path: string;
+  readonly hostId?: string | undefined;
+  readonly repoRoot?: string | undefined;
+}
+
 /** The folders of a thread as the store keeps it, any of which may be absent. */
 export interface ThreadFolders {
-  readonly checkout?: { readonly path: string } | undefined;
-  readonly currentCheckout?: { readonly path: string } | undefined;
-  readonly extraCheckouts?: ReadonlyArray<{ readonly path: string }> | undefined;
+  readonly checkout?: CheckoutAt | undefined;
+  readonly currentCheckout?: CheckoutAt | undefined;
+  readonly extraCheckouts?: ReadonlyArray<CheckoutAt> | undefined;
 }
+
+/** The machine a checkout is on as the privacy notes key it: `undefined` for this one. */
+const machineKey = (hostId: string | undefined): string | undefined =>
+  hostId === undefined || hostId === "local" ? undefined : hostId;
 
 /** Notes whose a thread is, as it is read or written, and where it works. A reader never changes. */
 export const notePrivacy = (
@@ -97,7 +116,65 @@ export const notePrivacy = (
     let folders = foldersOf.get(thread.id);
     if (folders === undefined) foldersOf.set(thread.id, (folders = new Set()));
     folders.add(resolve(each.path));
+    let machines = machinesOf.get(thread.id);
+    if (machines === undefined) machinesOf.set(thread.id, (machines = new Set()));
+    machines.add(machineKey(each.hostId));
+    if (typeof each.repoRoot === "string" && isAbsolute(each.repoRoot)) {
+      let repos = reposOf.get(thread.id);
+      if (repos === undefined) reposOf.set(thread.id, (repos = new Set()));
+      repos.add(resolve(each.repoRoot));
+    }
   }
+};
+
+/**
+ * Whether a thread `reader` may not see works on the machine `hostId` (`undefined`: this one):
+ * a shell there reaches its folder and this server's own files whatever the API refuses.
+ */
+export const machineHoldsUnreadable = (
+  reader: Reader | undefined,
+  hostId: string | undefined,
+): boolean => {
+  if (!anyPrivate()) return false;
+  const key = machineKey(hostId);
+  for (const [id, machines] of machinesOf)
+    if (!readerMay(reader, known.get(id)) && machines.has(key)) return true;
+  return false;
+};
+
+/**
+ * Whether any of `paths` (absolute) is in a repository a thread `reader` may not see has a
+ * checkout of: another checkout of it shares its `.git`, where that thread's commits are.
+ */
+export const sharesRepoWithUnreadable = (
+  reader: Reader | undefined,
+  paths: ReadonlyArray<string>,
+): boolean => {
+  if (paths.length === 0 || !anyPrivate()) return false;
+  const repos: Array<string> = [];
+  for (const [id, roots] of reposOf) if (!readerMay(reader, known.get(id))) repos.push(...roots);
+  if (repos.length === 0) return false;
+  return paths.some((path) => {
+    const written = resolve(path);
+    const real = realOf(written);
+    return repos.some((repo) => within(written, repo) || within(real, repo));
+  });
+};
+
+/**
+ * Lines of a log with nothing of a thread `reader` may not see: no line naming its id or one of
+ * its folders. Every line while no thread is readable by one person.
+ */
+export const logLinesFor = (
+  reader: Reader | undefined,
+  lines: ReadonlyArray<string>,
+): ReadonlyArray<string> => {
+  if (!anyPrivate()) return lines;
+  const hidden: Array<string> = [];
+  for (const [id, by] of known)
+    if (!readerMay(reader, by)) hidden.push(id, ...(foldersOf.get(id) ?? []));
+  if (hidden.length === 0) return lines;
+  return lines.filter((line) => !hidden.some((needle) => line.includes(needle)));
 };
 
 /** Whether any thread here is readable by one person: none, and nothing need be asked. */

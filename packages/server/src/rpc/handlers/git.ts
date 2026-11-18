@@ -34,7 +34,13 @@ import {
 } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { anyPrivate, currentReader, readableByOf, readerMay } from "../../embedding/readable-by.ts";
+import {
+  anyPrivate,
+  currentReader,
+  readableByOf,
+  readerMay,
+  touchesUnreadable,
+} from "../../embedding/readable-by.ts";
 import { GitRefresh } from "../../git/platform.ts";
 import { deleteMergedBranch } from "../../git/branch-cleanup.ts";
 import {
@@ -87,8 +93,8 @@ import { upstreamSyncHandlers } from "./upstream-sync.ts";
 /** `worktree.*`, `git.*` and `pr.*`. */
 
 /**
- * `listing` naming no thread the caller may not see (`embedding/readable-by.ts`): a worktree such
- * a thread holds stays listed as in use, so nothing offers to remove it, but not as whose.
+ * `listing` with nothing of a thread the caller may not see (`embedding/readable-by.ts`): no
+ * worktree such a thread holds or has held, by name, path or branch.
  */
 const unnamed = <L extends { readonly worktrees: ReadonlyArray<StorageWorktree> }>(listing: L) =>
   Effect.gen(function* () {
@@ -96,12 +102,13 @@ const unnamed = <L extends { readonly worktrees: ReadonlyArray<StorageWorktree> 
     const reader = yield* currentReader;
     return {
       ...listing,
-      worktrees: listing.worktrees.map((worktree) => {
-        if (worktree.threadId === undefined) return worktree;
-        if (readerMay(reader, readableByOf(worktree.threadId))) return worktree;
-        const { threadId: _, threadTitle: __, ...rest } = worktree;
-        return rest;
-      }),
+      // Nor its path or branch: the worktree is left out. A cleanup removes only paths it is
+      // given, which the guard checks against such a thread's folders.
+      worktrees: listing.worktrees.filter(
+        (worktree) =>
+          (worktree.threadId === undefined || readerMay(reader, readableByOf(worktree.threadId))) &&
+          !touchesUnreadable(reader, [worktree.path]),
+      ),
     };
   });
 

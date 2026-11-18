@@ -192,6 +192,10 @@ export const askedElsewhere = (tool: string, askedIn: ThreadId) => ({
   note: `The user is already being asked this same ${tool} call from this thread. That card is the one decision; this call did nothing, raised no card and needn't be repeated.`,
 });
 
+/** What a thread readable by one person is told that writes into a thread of another reader. */
+export const WRITES_STAY_PRIVATE =
+  "This thread is readable by one person, so it sends nothing into a thread readable by others.";
+
 /** Schemas belong to definitions and are reused across thread/session bindings. */
 const inputDocuments = new WeakMap<Schema.Top, ReturnType<typeof Schema.toJsonSchemaDocument>>();
 
@@ -489,6 +493,23 @@ export const bindAppTools = (
                     tool: descriptor.name,
                     message: `unknown thread ${named}`,
                   });
+              // A thread readable by one person writes into no thread or workspace of another
+              // reader, everyone's included: what it sends would be read where it isn't private.
+              const caller = yield* currentReader;
+              if (caller?.subject !== undefined && descriptor.class === "crossThread") {
+                const foreign =
+                  threadsMentioned(decoded).some(
+                    (named) => readableByOf(named) !== caller.subject,
+                  ) ||
+                  workspacesMentioned(decoded).some(
+                    (workspaceId) => readableByOfWorkspace(workspaceId) !== caller.subject,
+                  );
+                if (foreign)
+                  return yield* new AppToolError({
+                    tool: descriptor.name,
+                    message: WRITES_STAY_PRIVATE,
+                  });
+              }
               // Nor a workspace of such a thread's.
               for (const workspaceId of workspacesMentioned(decoded))
                 if (!readerMay(yield* currentReader, readableByOfWorkspace(workspaceId)))

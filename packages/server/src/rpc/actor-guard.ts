@@ -1,4 +1,5 @@
 import {
+  type DreamId,
   effectiveCheckout,
   isPersonalSetting,
   settingsPatchPaths,
@@ -17,6 +18,7 @@ import {
   pathsMentioned,
   readableByOfWorkspace,
   readerMay,
+  sharesRepoWithUnreadable,
   workspacesMentioned,
   threadsMentioned,
   touchesUnreadable,
@@ -396,9 +398,20 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           if (!anyPrivate()) return false;
           for (const threadId of threadsMentioned(payload))
             if (!readerMay(reader, readableByOf(threadId))) return true;
+          // A dream is its workspace's: its id names the workspace as much as the workspace's own.
+          const dreamWorkspaces: Array<string> = [];
+          const dreamId =
+            typeof payload === "object" && payload !== null
+              ? (payload as Record<string, unknown>)["dreamId"]
+              : undefined;
+          if (typeof dreamId === "string") {
+            const dream = yield* store.getDream(dreamId as DreamId).pipe(Effect.option);
+            if (dream._tag === "Some") dreamWorkspaces.push(dream.value.workspaceId);
+          }
           for (const workspaceId of new Set([
             ...workspacesNamed(payload),
             ...workspacesMentioned(payload),
+            ...dreamWorkspaces,
           ])) {
             const state = yield* store.getWorkspace(workspaceId as WorkspaceId).pipe(Effect.option);
             const holder =
@@ -412,7 +425,7 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
        * folder of a thread `reader` may not see (`touchesUnreadable`): by any spelling, a link
        * that leads there or `..` included, whatever the call does with it.
        */
-      const pathsUnreadable = (reader: Reader, payload: unknown) =>
+      const pathsUnreadable = (reader: Reader, payload: unknown, sharedToo = false) =>
         Effect.gen(function* () {
           if (!anyPrivate()) return false;
           const bases: Array<string> = [];
@@ -424,7 +437,13 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
                 ...(thread.value.extraCheckouts ?? []).map((extra) => extra.path),
               );
           }
-          return touchesUnreadable(reader, pathsMentioned(payload, bases));
+          const paths = pathsMentioned(payload, bases);
+          // Behind a proxy, nor a repository such a thread has a checkout of: another checkout
+          // of it, a branch list, a worktree list share that thread's `.git` and its commits.
+          return (
+            touchesUnreadable(reader, paths) ||
+            (sharedToo && sharesRepoWithUnreadable(reader, paths))
+          );
         });
       /** The folder a listing's relative entries are under: its own path, or its thread's. */
       const listedUnder = (payload: unknown) =>
@@ -491,7 +510,7 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           const reader: Reader = { subject: actor.id };
           if (
             (yield* namesUnreadable(reader, payload)) ||
-            (yield* pathsUnreadable(reader, payload))
+            (yield* pathsUnreadable(reader, payload, true))
           )
             return yield* Effect.die(new Error(NOT_READABLE));
           // The call runs as this person, for what asks who acted (`embedding/person.ts`).

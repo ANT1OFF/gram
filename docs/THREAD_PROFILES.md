@@ -165,7 +165,12 @@ Content-Type: application/json
   thread has the same reader: its tools leave it out of their lists and searches, and refuse any
   input that names it. Messages, interrupts and answers from the platform's inbound routes and
   `/asks/answer` reach it only for its reader.
-- **Its folder.** A call that names a path inside the thread's folder or worktrees (by any spelling: a link that leads there, `..`, or relative to another thread) is refused for anyone else in the same way. A listing of a folder above it leaves it out. This covers Gram's calls and Gram's own agent tools. An agent's own CLI tools on the same machine are not Gram's to stop, so a private thread belongs on a machine started for its reader.
+- **Its folder.** A call that names a path inside the thread's folder or worktrees is refused for anyone else in the same way, however the path is written: through a link that leads there, with `..`, or relative to another thread. A listing of a folder above it leaves it out. Behind a proxy, so is a call that names a path in a repository the thread has a checkout of, because another checkout shares its `.git`. This covers Gram's calls and Gram's own agent tools.
+- **Shells.** A terminal that belongs to no thread is its opener's alone: nobody else lists it, reads it, types into it or closes it. A terminal that runs in a private thread's folder is closed to anyone else, whoever opened it. Behind a proxy, nobody else may open a terminal on a machine that holds the thread.
+- **What `readableBy` does not cover.** It is a gate on Gram's API, not on the machine's disk or operating system. A shell on the same machine, or the Bash and file tools of any agent running there, can read the thread's folder and worktrees directly, and the server's own database, which holds every transcript. Gram's server does not mediate these. A thread in a repository also shares its `.git`, and so its commits and branches, with every other checkout of that repository.
+
+  So an embedding host must place a `readableBy` thread on a machine that only its subject reaches: one started on demand for that person, with clones of its own. A server that holds any `readableBy` thread should not offer server-local terminals, shared checkouts or shared machines to other subjects. Gram refuses what it can see: other people's terminals, shells on such a machine and calls into a shared repository, all behind a proxy. It cannot stop an agent's own tools on a shared machine.
+
 - **What still reaches it.** The platform's own service routes (the event sink, moves, the
   export of a workspace), which are the embedder's, not a person's, and the server's own work.
 - **Without it** the thread is everyone's to see, as ever.

@@ -8,7 +8,7 @@ import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { afterAll, describe, expect, layer } from "@effect/vitest";
+import { afterAll, describe, expect, layer, test } from "@effect/vitest";
 import {
   GramRpcs,
   PROFILE_START_PATH,
@@ -21,9 +21,10 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import { AppToolRegistry } from "../app-tools/registry.ts";
+import { AppToolRegistry, WRITES_STAY_PRIVATE } from "../app-tools/registry.ts";
+import { SHARED_MACHINE } from "../rpc/handlers/terminal.ts";
 import { ServerConfig } from "../config.ts";
-import { NOT_READABLE, ReadingAs } from "../embedding/readable-by.ts";
+import { logLinesFor, NOT_READABLE, ReadingAs } from "../embedding/readable-by.ts";
 import { gitPlatformTest } from "../git/platform.ts";
 import { removeDir } from "../git/test-repo.ts";
 import { waitReal } from "../orchestration/test-harness.ts";
@@ -241,6 +242,10 @@ const found = (who: Client, query: string) =>
   Effect.map(who["thread.search"]({ query }), (result) => [
     ...new Set(result.hits.map((hit) => hit.threadId)),
   ]);
+
+/** The terminals a connection is listed. */
+const terminalsOf = (who: Client) =>
+  Effect.map(who["terminal.list"]({}), (all) => all.map((t) => t.terminalId));
 
 describe("threads readable by one person", () => {
   afterAll(() => {
@@ -476,6 +481,87 @@ describe("threads readable by one person", () => {
       }),
     );
 
+    it.effect("keep their shells, dreams and messages to themselves", () =>
+      Effect.gen(function* () {
+        const { port } = yield* info;
+        const store = yield* ThreadStore;
+        const adaClient = yield* as(port, ada);
+        const moClient = yield* as(port, mo);
+
+        // A terminal that is no thread's, opened by Ada in her thread's folder: Mo neither lists
+        // it, reads it nor types into it. Nor does he open a shell on the machine that holds it.
+        const privateFolder = (yield* store.getThread(PRIVATE)).checkout.path;
+        const terminal = yield* adaClient["terminal.open"]({
+          cwd: privateFolder,
+          cols: 80,
+          rows: 24,
+        });
+        expect(yield* terminalsOf(adaClient)).toContain(terminal.terminalId);
+        expect(yield* terminalsOf(moClient)).not.toContain(terminal.terminalId);
+        expect(
+          yield* outcome(
+            moClient["terminal.subscribe"]({ terminalId: terminal.terminalId }).pipe(
+              Stream.take(1),
+              Stream.runCollect,
+            ),
+          ),
+        ).toContain(NOT_READABLE);
+        expect(
+          yield* outcome(
+            moClient["terminal.input"]({ terminalId: terminal.terminalId, data: "ls\n" }),
+          ),
+        ).toContain(NOT_READABLE);
+        expect(
+          yield* outcome(moClient["terminal.close"]({ terminalId: terminal.terminalId })),
+        ).toContain(NOT_READABLE);
+        expect(yield* outcome(moClient["terminal.open"]({ cols: 80, rows: 24 }))).toContain(
+          SHARED_MACHINE,
+        );
+        expect(
+          yield* outcome(
+            adaClient["terminal.input"]({ terminalId: terminal.terminalId, data: "\n" }),
+          ),
+        ).toBe("the call went through");
+        yield* adaClient["terminal.close"]({ terminalId: terminal.terminalId });
+
+        // A dream of a workspace that is Ada's, asked for by its id alone.
+        const runtimes = yield* ThreadRuntimes;
+        const workspaceId = "ws-ada-dreams";
+        const thread = yield* runtimes.create({
+          projectRoot: folder(),
+          checkout: { kind: "main", path: folder() },
+          deferOpen: true,
+          readableBy: "ada",
+          workspaceId: workspaceId as never,
+        });
+        const dreamId = "dream-of-ada-0001";
+        yield* store.putDream({
+          id: dreamId,
+          workspaceId,
+          kind: "dream",
+          mode: "review",
+          status: "completed",
+          inputs: { memoryVersion: "", threadIds: [], agentSessions: [] },
+          model: thread.model,
+          outputDir: folder(),
+          createdAt: 1,
+        } as never);
+        for (const call of [
+          moClient["dream.review"]({ dreamId } as never),
+          moClient["dream.discard"]({ dreamId } as never),
+        ])
+          expect(yield* outcome(call as Effect.Effect<unknown, unknown>)).toContain(NOT_READABLE);
+        expect(yield* outcome(adaClient["dream.review"]({ dreamId } as never))).not.toContain(
+          NOT_READABLE,
+        );
+
+        // Ada's thread's agent writes into no thread of another reader, everyone's included.
+        expect(
+          yield* outcome(tool(PRIVATE, "send_message", { threadId: OPEN, message: "the secret" })),
+        ).toContain(WRITES_STAY_PRIVATE);
+      }),
+    );
+
     it.effect("keep their reader for good, and give it to every thread they spawn", () =>
       Effect.gen(function* () {
         const { port } = yield* info;
@@ -614,4 +700,11 @@ describe("threads readable by one person", () => {
       );
     },
   );
+
+  test("leave a log's lines that name them out for anyone else", () => {
+    const lines = [`turn ended {"threadId":"${PRIVATE}"}`, `turn ended {"threadId":"${OPEN}"}`];
+    expect(logLinesFor({ subject: "mo" }, lines)).toEqual([lines[1]]);
+    expect(logLinesFor({ subject: undefined }, lines)).toEqual([lines[1]]);
+    expect(logLinesFor({ subject: "ada" }, lines)).toEqual(lines);
+  });
 });
