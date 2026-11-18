@@ -30,7 +30,7 @@ const ok = async () => ({ ok: true as const });
 const BUNDLE = { format: 1, exportedAt: 1_700_000_000_000, notes: ["Its terminal stays here."] };
 
 /** The desktop app signed in to one server that takes threads; its send answers as told. */
-const install = (sent: HostedThreadMoved) => {
+const install = (...answers: HostedThreadMoved[]) => {
   const calls: string[] = [];
   const bridge: Bridge = {
     state: async () => ({
@@ -68,7 +68,7 @@ const install = (sent: HostedThreadMoved) => {
     onChange: () => () => {},
     moveThread: async (origin, workspace, bundle) => {
       calls.push(`send ${origin} ${workspace} ${JSON.stringify(bundle)}`);
-      return sent;
+      return answers.length > 1 ? answers.shift()! : answers[0]!;
     },
   };
   useServerSettings.setState({
@@ -128,6 +128,26 @@ const moveIt = async () => {
 };
 
 describe("MoveThreadDialog", () => {
+  it("says a move with no clear answer may be there, and sends the same export again", async () => {
+    const calls = install(
+      { ok: false, why: "The server didn't answer.", unknown: true },
+      { ok: true, threadId, notes: [] },
+    );
+    await moveIt();
+    const unclear = await screen.findByTestId("move-thread-error");
+    expect(unclear.textContent).toContain("may be on Platform already");
+    expect(unclear.textContent).not.toContain("Nothing changed here");
+    fireEvent.click(screen.getByTestId("move-thread-start"));
+    await screen.findByTestId("move-thread-after");
+    expect(calls.map((call) => call.split(" ")[0])).toEqual([
+      "/threads/export",
+      "send",
+      "send",
+      "/threads/settle",
+    ]);
+    expect(calls[2]).toBe(calls[1]);
+  });
+
   it("exports, sends the bundle as it is, and only then leaves a read-only copy here", async () => {
     const calls = install({
       ok: true,

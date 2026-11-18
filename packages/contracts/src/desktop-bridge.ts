@@ -428,7 +428,12 @@ export type HostedThreadMoved =
       /** Where to open it there, when the server says. */
       readonly url?: string;
     }
-  | { readonly ok: false; readonly why: string };
+  | {
+      readonly ok: false;
+      readonly why: string;
+      /** No clear answer: the server may have it. Sending it again answers the thread it made. */
+      readonly unknown?: true;
+    };
 
 export interface DesktopBridge extends DesktopWindows {
   readonly platform: "darwin" | "win32" | "linux" | (string & {});

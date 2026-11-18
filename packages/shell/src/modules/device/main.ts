@@ -388,7 +388,13 @@ export const installHostedDeviceIpc = (ipc: ShellIpc, options: HostedDeviceIpcOp
         typeof arg === "object" && arg !== null && "bundle" in arg ? arg.bundle : undefined;
       return origin === undefined || workspace === undefined || bundle === undefined
         ? { ok: false, why: "Name the server, the workspace and the thread." }
-        : device.moveThread(origin, workspace, bundle);
+        : device.moveThread(origin, workspace, bundle).then(
+            // The server's words, as a dialog shows them: no hidden or reordering characters.
+            (moved) =>
+              moved.ok
+                ? { ...moved, notes: moved.notes.map((note) => serverWords(note).text) }
+                : { ...moved, why: serverWords(moved.why).text },
+          );
     }),
   );
   serve(

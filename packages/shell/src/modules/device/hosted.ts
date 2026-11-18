@@ -28,7 +28,10 @@ import { deviceIdOf, devicePublicKeyText } from "./keys.ts";
 
 /** How long one call to the server may take. */
 export const HOSTED_CALL_MS = 15_000;
-/** A thread brought in is cloned on the person's machine there before the server answers. */
+/**
+ * A thread brought in is cloned on the person's machine there before the server answers. A call
+ * the server asks to repeat for a nonce gets it again, so the whole may take twice as long.
+ */
 export const HOSTED_THREAD_IMPORT_MS = 100_000;
 /** How long the person has to finish signing in, in the browser. */
 export const HOSTED_SIGN_IN_MS = 5 * 60_000;
@@ -332,7 +335,10 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
       response_type: "code",
       client_id: discovery.client_id,
       redirect_uri: redirectUri,
-      scope: HOSTED_SCOPES.join(" "),
+      // Moving work is asked for only of a server that takes it: another may refuse the scope.
+      scope: HOSTED_SCOPES.filter(
+        (scope) => scope !== "workspaces:import" || discovery.thread_import_endpoint !== undefined,
+      ).join(" "),
       state,
       code_challenge: challenge,
       code_challenge_method: "S256",
@@ -645,21 +651,23 @@ const refusalOf = (answer: unknown): string | undefined => {
   return [...said.trim()].slice(0, 300).join("");
 };
 
-/**
- * Sends a thread this machine exported to a workspace there, with the person's sign-in, and
- * reads what the server made of it. The server decides whether it comes in; a refusal is its word.
- */
-export const importHostedThread = async (
-  calls: HostedCalls & HostedThreadImport,
-): Promise<
+/** How a thread's send ended. `unknown`: no clear answer, so the server may have taken it. */
+export type HostedThreadSent =
   | {
       readonly ok: true;
       readonly threadId: string;
       readonly notes: readonly string[];
       readonly url?: string;
     }
-  | Failed
-> => {
+  | { readonly ok: false; readonly why: string; readonly unknown?: true };
+
+/**
+ * Sends a thread this machine exported to a workspace there, with the person's sign-in, and
+ * reads what the server made of it. The server decides whether it comes in; a refusal is its word.
+ */
+export const importHostedThread = async (
+  calls: HostedCalls & HostedThreadImport,
+): Promise<HostedThreadSent> => {
   const endpoint = calls.discovery.thread_import_endpoint;
   if (endpoint === undefined) return failed("This server doesn't take threads.");
   const response = await authorizedCall(
@@ -672,15 +680,20 @@ export const importHostedThread = async (
     { workspaceId: calls.workspaceId, bundle: calls.bundle, from: calls.from },
     HOSTED_THREAD_IMPORT_MS,
   );
-  if ("why" in response) return response;
+  if ("why" in response) {
+    // No answer may be one that never came back: the server may have the thread.
+    return response.why === UNREACHABLE ? { ...response, unknown: true } : response;
+  }
   if (response.status === 413) {
     await response.body?.cancel().catch(() => undefined);
     return failed("The thread is larger than the server takes.");
   }
   const answer = await jsonOf(response);
+  // A server fault, or a yes it can't read, may still have made the thread there.
+  if (response.status >= 500) return { ...failed(refusalOf(answer) ?? UNREACHABLE), unknown: true };
   if (response.status !== 200) return failed(refusalOf(answer) ?? "The server refused the thread.");
   const decoded = Schema.decodeUnknownOption(HostedThreadImported)(answer);
-  if (decoded._tag === "None") return failed(UNREADABLE);
+  if (decoded._tag === "None") return { ...failed(UNREADABLE), unknown: true };
   const { threadId, notes = [], url } = decoded.value;
   // Opened only where the server is: never an address it sends elsewhere.
   const opens = url !== undefined && sameOrigin(url, calls.discovery.issuer) ? url : undefined;

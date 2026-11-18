@@ -147,7 +147,7 @@ export type ThreadMoved =
       readonly notes: readonly string[];
       readonly url?: string;
     }
-  | { readonly ok: false; readonly why: string };
+  | { readonly ok: false; readonly why: string; readonly unknown?: true };
 
 export interface LendChoice {
   readonly folders: ReadonlyArray<{
@@ -869,6 +869,11 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       const server = known(origin);
       if (server === undefined || server.keeper.signedOut())
         return { ok: false, why: "Sign in to the server first." };
+      if (server.limits.paused())
+        return {
+          ok: false,
+          why: "You paused this computer for that server. Lift the pause under Settings → Hosted first.",
+        };
       // Only a workspace the server listed for this person: the server checks again.
       if (!server.workspaces.some((each) => each.id === workspace))
         return { ok: false, why: "That workspace isn't one of yours there." };

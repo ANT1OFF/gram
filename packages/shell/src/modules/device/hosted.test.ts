@@ -281,6 +281,22 @@ describe("a hosted server", () => {
       threadId: "t-moved",
       notes: [],
     });
+    // No clear answer: it may be there, so it says so rather than "refused".
+    fake.state.importAnswer = { status: 502, body: {} };
+    expect(await importHostedThread({ ...calls, bundle })).toMatchObject({
+      ok: false,
+      unknown: true,
+    });
+    fake.state.importAnswer = { status: 200, body: { nothing: true } };
+    expect(await importHostedThread({ ...calls, bundle })).toMatchObject({
+      ok: false,
+      unknown: true,
+    });
+    fake.state.importAnswer = { status: 409, body: { error: "Here already." } };
+    expect(await importHostedThread({ ...calls, bundle })).toEqual({
+      ok: false,
+      why: "Here already.",
+    });
     // A server that takes no threads is never sent one.
     const before = fake.state.imported.length;
     const { thread_import_endpoint: _none, ...without } = discovery;
@@ -308,10 +324,12 @@ describe("a hosted server", () => {
     expect(fake.state.imported).toEqual([]);
   });
 
-  it("refuses a server that sends threads to another address", async () => {
+  it("asks for moving work only of a server that takes threads", async () => {
+    await signedIn();
+    expect(fake.state.askedScope.split(" ")).toContain("workspaces:import");
     fake.state.takesThreads = false;
-    const found = await discoverHosted(origin, fetch);
-    expect(found.ok && found.discovery.thread_import_endpoint).toBeUndefined();
+    await signedIn();
+    expect(fake.state.askedScope).toBe("workspaces device:register device:connect");
   });
 
   it("refuses a token copied without the device key", async () => {

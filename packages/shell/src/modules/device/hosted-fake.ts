@@ -69,6 +69,8 @@ export const fakeServer = () => {
     takesThreads: true,
     importScope: true,
     imported: [] as Array<unknown>,
+    /** The scope the last sign-in asked for. */
+    askedScope: "",
     /** How a thread import is answered, when not with the thread. */
     importAnswer: undefined as { status: number; body: unknown } | undefined,
   };
@@ -90,6 +92,7 @@ export const fakeServer = () => {
         ...(state.takesThreads ? { thread_import_endpoint: `${origin}/api/threads/import` } : {}),
       });
     if (url.pathname === "/oauth/authorize") {
+      state.askedScope = url.searchParams.get("scope") ?? "";
       const code = state.code || randomBytes(12).toString("hex");
       const redirect = url.searchParams.get("redirect_uri") ?? "";
       state.codes.set(code, { challenge: url.searchParams.get("code_challenge") ?? "", redirect });

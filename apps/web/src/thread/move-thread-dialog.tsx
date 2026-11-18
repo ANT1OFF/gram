@@ -14,7 +14,12 @@ import { useThreadsStore } from "@/stores/threads";
 import { Dialog, DialogShell } from "./dialog-shell";
 import { goesLines, type MoveStage, moveSteps, staysLines } from "./move-thread-model";
 import { stopTurn } from "./stop-store";
-import { exportThread, settleThread, ThreadTransferError } from "./thread-transfer-api";
+import {
+  type ExportedThread,
+  exportThread,
+  settleThread,
+  ThreadTransferError,
+} from "./thread-transfer-api";
 import { useThreadMove } from "./use-thread-move";
 
 const machine = () => (window.gram?.platform === "darwin" ? "this Mac" : "this computer");
@@ -58,9 +63,11 @@ export function MoveThreadDialog({
   const target = targets.find((each) => targetKey(each) === picked) ?? targets[0];
   const [phase, setPhase] = useState<"review" | "waiting" | "moving" | "moved">("review");
   const [stage, setStage] = useState<MoveStage>("export");
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<{ readonly why: string; readonly unknown: boolean }>();
   const [moved, setMoved] = useState<Moved>();
   const started = useRef(false);
+  // A send with no clear answer is sent again as it was: the same export answers the same thread.
+  const unanswered = useRef<ExportedThread>(undefined);
 
   const move = async () => {
     if (mover === undefined || target === undefined || started.current) return;
@@ -69,12 +76,18 @@ export function MoveThreadDialog({
     setPhase("moving");
     setStage("export");
     try {
-      const exported = await exportThread(threadId);
+      const exported = unanswered.current ?? (await exportThread(threadId));
+      unanswered.current = undefined;
       setStage("send");
       const sent = await mover(target.origin, target.workspace, exported.bundle).catch(
         (): HostedThreadMoved => ({ ok: false, why: "The move stopped unexpectedly." }),
       );
-      if (!sent.ok) throw new ThreadTransferError(sent.why);
+      if (!sent.ok) {
+        if (sent.unknown === true) unanswered.current = exported;
+        setError({ why: sent.why, unknown: sent.unknown === true });
+        setPhase("review");
+        return;
+      }
       setStage("settle");
       const to = `${target.name} on ${target.host}`;
       const unsettled = await settleThread({
@@ -93,7 +106,7 @@ export function MoveThreadDialog({
       });
       setPhase("moved");
     } catch (failed) {
-      setError(wordsOf(failed, "The move stopped unexpectedly."));
+      setError({ why: wordsOf(failed, "The move stopped unexpectedly."), unknown: false });
       setPhase("review");
     } finally {
       started.current = false;
@@ -139,8 +152,9 @@ export function MoveThreadDialog({
                 : `${moved.unsettled} Carry on in ${target.name}, not here.`}
             </span>
           </li>
-          {[...moved.notes, ...moved.left].map((note) => (
-            <li key={note} className="text-meta text-muted-foreground">
+          {[...moved.notes, ...moved.left].map((note, index) => (
+            // oxlint-disable-next-line react/no-array-index-key -- notes may repeat; they never move.
+            <li key={index} className="text-meta text-muted-foreground">
               {note}
             </li>
           ))}
@@ -266,9 +280,16 @@ export function MoveThreadDialog({
       </p>
       {error !== undefined && (
         <div role="alert" data-testid="move-thread-error" className="flex flex-col gap-0.5">
-          <p className="text-reading text-destructive">The move didn't finish. {error}</p>
+          <p className="text-reading text-destructive">
+            {error.unknown
+              ? "The server didn't say whether it took it."
+              : "The move didn't finish."}{" "}
+            {error.why}
+          </p>
           <p className="text-meta text-muted-foreground">
-            Nothing changed here: the thread is still on {machine()} and you can keep working in it.
+            {error.unknown
+              ? `It may be on ${target.name} already. Try again before you carry on here: if it got there, the server answers with that thread and this copy becomes read-only.`
+              : `Nothing changed here: the thread is still on ${machine()} and you can keep working in it.`}
           </p>
         </div>
       )}
