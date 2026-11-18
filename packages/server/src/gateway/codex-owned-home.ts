@@ -232,6 +232,11 @@ export const prepareOwnedCodexHome = (
       ]) {
         if (user[key] !== undefined) config[key] = user[key];
       }
+      // A machine's gateway may refuse hosted search (for example, when it cannot bound its
+      // server-side work). Keep its explicit opt-out when preparing the gated home.
+      if (provider !== undefined && user["web_search"] === "disabled") {
+        config["web_search"] = "disabled";
+      }
       const servers = user["mcp_servers"];
       if (typeof servers === "object" && servers !== null && !Array.isArray(servers)) {
         const { [APP_TOOLS_SERVER_NAME]: _ours, ...rest } = servers as Record<string, unknown>;

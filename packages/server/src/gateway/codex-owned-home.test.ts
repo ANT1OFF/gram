@@ -309,11 +309,26 @@ command = "docs"
       }).pipe(Effect.scoped),
   );
 
+  it.effect("keeps an own provider's hosted-search opt-out through repeated gated starts", () =>
+    Effect.gen(function* () {
+      const { root, user, data, env } = yield* fixture;
+      rmSync(join(user, "auth.json"));
+      for (const mode of ["disabled", "live", "disabled"]) {
+        writeFileSync(join(user, "config.toml"), `web_search = "${mode}"\n${embedderConfig}`);
+        const target = yield* prepareOwnedCodexHome(data, root, env);
+        const config = parse(readFileSync(join(target, "config.toml"), "utf8"));
+        expect(config["web_search"]).toBe(mode === "disabled" ? "disabled" : undefined);
+        expect(config["features"]).toMatchObject({ exec_policy: true, hooks: false });
+        expect(existsSync(join(target, "auth.json"))).toBe(false);
+      }
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("keeps a ChatGPT install exactly as before, whatever provider it configures", () =>
     Effect.gen(function* () {
       const { root, user, data, env } = yield* fixture;
       // The fixture's home has a login: its gated home is ChatGPT's, linked by path.
-      writeFileSync(join(user, "config.toml"), embedderConfig);
+      writeFileSync(join(user, "config.toml"), `web_search = "disabled"\n${embedderConfig}`);
       expect(yield* ownedCodexProvider(root, env)).toBeUndefined();
       const target = yield* prepareOwnedCodexHome(data, root, env);
       expect(readlinkSync(join(target, "auth.json"))).toBe(join(user, "auth.json"));
@@ -324,6 +339,7 @@ command = "docs"
         openai_base_url: "https://chatgpt.com/backend-api/codex",
       });
       expect(config["model_providers"]).toBeUndefined();
+      expect(config["web_search"]).toBeUndefined();
     }).pipe(Effect.scoped),
   );
 
