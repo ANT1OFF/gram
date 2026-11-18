@@ -34,7 +34,7 @@ describe("NewFormHeader", () => {
     expect(radios.map((radio) => radio.getAttribute("aria-label"))).toEqual(["Team", "Chat"]);
     // Each choice says what comes of it in one sentence, under its plain name.
     expect(radios.map((radio) => radio.textContent)).toEqual([
-      "TeamAn orchestrator plans it, runs workers as needed and sees their pull requests merged.",
+      "TeamAn orchestrator plans it and runs workers as needed.",
       "ChatYou and one agent in a folder. No workspace or orchestrator.",
     ]);
     expect(radios.map((radio) => radio.getAttribute("aria-checked"))).toEqual(["true", "false"]);

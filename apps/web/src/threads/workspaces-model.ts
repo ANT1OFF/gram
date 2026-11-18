@@ -141,6 +141,6 @@ export const emptyWords = (words: WorkspaceWords): { title: string; line: string
   const article = /^[aeiou]/i.test(noun) ? "An" : "A";
   return {
     title: `No ${noun} yet`,
-    line: `${article} ${noun} is an orchestrator and its workers on one or more repositories. Hand it a goal and it plans the work, runs workers and sees their pull requests merged.`,
+    line: `${article} ${noun} is an orchestrator and its workers on one or more repositories. Hand it a goal and it plans the work and runs workers.`,
   };
 };
