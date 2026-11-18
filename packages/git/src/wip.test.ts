@@ -132,6 +132,36 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
     }).pipe(provide),
   );
 
+  it.live("reads a thread's work from another host's ref of it, and no other thread's", () =>
+    Effect.gen(function* () {
+      const before = process.env[WIP_NAMESPACE_ENV];
+      process.env[WIP_NAMESPACE_ENV] = "personal-ab12";
+      const { repo, origin } = withOrigin();
+      try {
+        write(nodePath.join(repo, "tracked.txt"), "made on another machine\n");
+        yield* pushWip(repo, yield* snapshotWip(repo, "thread-1"), "origin", FILE);
+      } finally {
+        if (before === undefined) delete process.env[WIP_NAMESPACE_ENV];
+        else process.env[WIP_NAMESPACE_ENV] = before;
+      }
+      // This host has no name: its own ref of the thread is empty, the other host's is not.
+      const { clone } = cloneOf(origin);
+      const from = "refs/gram/wip/personal-ab12/thread-1";
+      expect(yield* fetchWip(clone, "thread-1", "origin", FILE)).toBeUndefined();
+      const kept = yield* fetchWip(clone, "thread-1", "origin", FILE, undefined, from);
+      expect(kept).toMatchObject({ ref: from, uncommitted: true });
+      yield* restoreWip(clone, kept!);
+      expect(fs.readFileSync(nodePath.join(clone, "tracked.txt"), "utf8")).toBe(
+        "made on another machine\n",
+      );
+      for (const other of ["refs/gram/wip/personal-ab12/thread-2", "refs/heads/main"])
+        expect(
+          (yield* Effect.flip(fetchWip(clone, "thread-1", "origin", FILE, undefined, other)))
+            .message,
+        ).toContain("invalid ref");
+    }).pipe(provide),
+  );
+
   it.live("pushes and reads back the work under the host's namespace", () =>
     Effect.gen(function* () {
       const before = process.env[WIP_NAMESPACE_ENV];

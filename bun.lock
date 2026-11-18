@@ -14,7 +14,7 @@
     },
     "apps/desktop": {
       "name": "@gram/desktop",
-      "version": "1.25.0",
+      "version": "1.30.0",
       "dependencies": {
         "node-pty": "catalog:",
         "sherpa-onnx-node": "catalog:",

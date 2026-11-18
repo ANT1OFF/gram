@@ -13,6 +13,10 @@
       "types": "./src/entries/core.ts",
       "default": "./src/entries/core.ts"
     },
+    "./thread-transfer": {
+      "types": "./src/thread-transfer.ts",
+      "default": "./src/thread-transfer.ts"
+    },
     "./agent-support": {
       "types": "./src/agent-support.ts",
       "default": "./src/agent-support.ts"

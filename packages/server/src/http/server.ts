@@ -169,6 +169,7 @@ import {
   ProfileStartRoutes,
 } from "../thread-profiles/routes.ts";
 import { ProfileStarters } from "../thread-profiles/service.ts";
+import { ThreadTransfer } from "../transfer/thread-transfer.ts";
 import { WorkspaceTransfer } from "../transfer/workspace-transfer.ts";
 import {
   claudeTokenCaptureFor,
@@ -1159,7 +1160,9 @@ export const ServerLayer: Layer.Layer<
         RpcRoutes,
         StaticRoutes,
         McpRoute,
-        WorkspaceTransferRoutes.pipe(Layer.provide(WorkspaceTransfer.layer)),
+        WorkspaceTransferRoutes.pipe(
+          Layer.provide(Layer.mergeAll(WorkspaceTransfer.layer, ThreadTransfer.layer)),
+        ),
         ProfileStartRoutes,
         AuthMiddleware,
       ).pipe(

@@ -614,11 +614,20 @@ export const makeMessageQueue = ({
 
   /**
    * A thread whose folder is gone has nowhere to run: refuses with the path a client can offer to
-   * restore, and stops a session still open there. Run under the lock, before any send or steer.
+   * restore, and stops a session still open there. A thread that moved to another Gram runs there
+   * and never here again. Run under the lock, before any send or steer.
    */
   const refuseMissingFolder = (rt: Runtime) =>
     Effect.gen(function* () {
-      const path = (yield* store.getThread(rt.threadId)).checkout.path;
+      const thread = yield* store.getThread(rt.threadId);
+      if (thread.transferredTo !== undefined) {
+        return yield* new InvalidState({
+          message: `This thread moved to ${thread.transferredTo.name}. Carry on there; this copy is read-only.`,
+          threadId: rt.threadId,
+          status: rt.status,
+        });
+      }
+      const path = thread.checkout.path;
       if (yield* checkouts.present(path)) return;
       yield* forkStopInMissing(rt);
       return yield* new InvalidState({
