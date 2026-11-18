@@ -10,6 +10,7 @@ import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 import { useUndoToasts } from "@/stores/undo-toasts";
 
+import { autonomyLevel } from "./workspace-settings-model";
 import { useWorkspaceSheet, WORKSPACE_SHEET_TEST_ID, WorkspaceSheet } from "./workspace-sheet";
 
 const settings: Settings = {
@@ -59,8 +60,8 @@ describe("workspace settings in a sheet", () => {
     // Autonomy is the segmented control with its one-line caption; a new workspace is at Full.
     const autonomy = await within(dialog).findByTestId("autonomy");
     expect(autonomy.getAttribute("data-value")).toBe("full");
-    expect(within(autonomy).getByTestId("autonomy-description").textContent).toContain(
-      "Asks about nothing.",
+    expect(within(autonomy).getByTestId("autonomy-description").textContent).toBe(
+      autonomyLevel("full").description,
     );
     // The Settings page's way back and its Open orchestrator have no place over the orchestrator.
     expect(within(dialog).queryByTestId("workspace-page-back")).toBeNull();
