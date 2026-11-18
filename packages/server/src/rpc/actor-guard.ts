@@ -181,6 +181,7 @@ export const UNRECORDED_RPCS: ReadonlySet<string> = new Set([
   "profiles.list",
   "profiles.vaultInfo",
   "projects.cloneSuggestions",
+  "projects.origins",
   "projects.repositories",
   "projects.scripts",
   "sessions.list",

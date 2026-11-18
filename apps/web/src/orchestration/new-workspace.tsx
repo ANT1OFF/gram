@@ -65,6 +65,7 @@ import {
   toggleRepo,
   type NewWorkspaceDraft,
 } from "./new-workspace-model";
+import { RepositoryAccess } from "./repository-access";
 import { RepositoryChecklist } from "./repository-checklist";
 import { sendDiscover } from "./use-board-actions";
 import { useWorkspacesQuery } from "./use-orchestration";
@@ -452,6 +453,7 @@ function SheetForm({
           }))
         }
       />
+      <RepositoryAccess projectIds={draft.projectIds} />
       <WorkspaceModels
         charter={charter}
         disabled={busy || waiting || created !== undefined}

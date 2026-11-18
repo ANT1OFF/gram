@@ -13,6 +13,7 @@ export const projectsRpc = ({ client }: RpcContext): ProjectsApi => ({
       ),
       options?.signal,
     ),
+  projectOrigins: (projectIds) => run(client["projects.origins"]({ projectIds })),
   cloneSuggestions: () => run(client["projects.cloneSuggestions"](undefined)),
   setProjectBookmarked: (projectId, bookmarked) =>
     run(client["projects.setBookmarked"]({ projectId, bookmarked })),
