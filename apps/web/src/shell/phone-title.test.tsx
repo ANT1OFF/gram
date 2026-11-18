@@ -143,6 +143,19 @@ describe("PhoneTitle", () => {
     expect(line().textContent).toBe("api");
   });
 
+  it("names the New form's pages as the title bar does, a workspace in the app's own noun", () => {
+    Object.assign(at, { pathname: "/new-task" });
+    render(<PhoneTitle />);
+    expect(title()).toBe("New task");
+    cleanup();
+    useEmbedShell.setState({
+      threadsPage: { workspaces: { noun: "Project", plural: "Projects" } },
+    });
+    Object.assign(at, { pathname: "/new-workspace" });
+    render(<PhoneTitle />);
+    expect(title()).toBe("New project");
+  });
+
   it("names a page an app in front of Gram added, over the group it is listed in", () => {
     useEmbedShell.setState({
       titles: { "/govern/limits": "Limits" },
