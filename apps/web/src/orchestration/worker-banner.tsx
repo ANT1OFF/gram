@@ -1,10 +1,8 @@
 import { USER_HOLD_IDLE_MS, type Thread, type ThreadId } from "@gram/contracts";
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Brain, Columns3, FolderGit2, HandGrab, Pause, Repeat, Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { useApi } from "@/api/context";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
@@ -29,7 +27,6 @@ import {
 
 import { workerRepoNames } from "./board-model";
 import { FreshSessionChip, HandingOff } from "./fresh-session";
-import { memoryIsEmpty } from "./memory-model";
 import { useOpenBoard } from "./open-board";
 import { midTurnWorkers } from "./tree-model";
 import { useHandoff, useResume } from "./use-board-actions";
@@ -321,54 +318,22 @@ export function OrchestratorChips({
 }
 
 /**
- * Under an orchestrator's header, only while it applies: the offer of an import into an empty
- * memory, which is never started unasked, and a paused workspace, in the attention colour, with the
- * way to resume it: the orchestrator's own thread is where a user looks when it stops answering.
- * The offer waits for what it is about to be known: the memory's files, and the chat itself
- * (`loaded`), so arriving in a workspace never shows the offer first and the chat after it.
+ * Under an orchestrator's header, only while it applies: a paused workspace, in the attention
+ * colour, with the way to resume it: the orchestrator's own thread is where a user looks when it
+ * stops answering. An empty memory's import is offered on the Memory view, not here.
  */
-export function OrchestratorBanner({
-  thread,
-  loaded = true,
-}: {
-  thread: Thread;
-  /** The chat's first page is in: until then the offer stays out of the way. */
-  loaded?: boolean;
-}) {
-  const api = useApi();
+export function OrchestratorBanner({ thread }: { thread: Thread }) {
   const { state, workspaceId } = useOrchestratorWorkspace(thread);
   const resume = useResume(workspaceId);
   const working = useThreadsStore((s) =>
     workspaceId === undefined ? 0 : midTurnWorkers(s.byId, workspaceId),
   );
-  const { data: files } = useQuery({
-    queryKey: ["memory", workspaceId, "files"],
-    queryFn: () => api.listMemory(workspaceId!),
-    enabled: workspaceId !== undefined,
-    retry: false,
-  });
   if (state === undefined || workspaceId === undefined) return null;
   // A parked orchestrator says so itself, and unparking resumes it.
   const paused = state.paused?.reason === "parked" ? undefined : state.paused;
 
   return (
     <>
-      {loaded && files !== undefined && memoryIsEmpty(files) && (
-        <p
-          data-testid="banner-import-offer"
-          className="border-b border-edge bg-card/40 px-3 py-1 text-meta text-muted-foreground"
-        >
-          Its memory is empty.{" "}
-          <Link
-            to="/w/$workspaceId/memory"
-            params={{ workspaceId }}
-            className="text-foreground/80 underline underline-offset-2 hover:no-underline"
-          >
-            Draft it from what your past sessions here worked out
-          </Link>
-          : you see what it would read first.
-        </p>
-      )}
       {paused !== undefined && (
         <div
           data-testid="orchestrator-banner-paused"
