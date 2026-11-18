@@ -19,16 +19,24 @@
  */
 import {
   BUNDLE_MESSAGES_MAX,
+  type Checkout,
+  type CheckoutRequest,
+  checkoutRequestHost,
+  cloneFolderOf,
   effectiveCheckout,
   embeddingOn,
+  hostServes,
   InvalidState,
+  isLocalHost,
   type NotFound,
+  type Project,
   type Thread,
   type ThreadNotFound,
   type ThreadStatus,
 } from "@gram/contracts";
 import {
   type ExportThreadInput,
+  type ImportThreadForPersonInput,
   type ImportThreadInput,
   type ImportThreadResult,
   type SettleThreadInput,
@@ -63,12 +71,17 @@ import { existsSync } from "node:fs";
 import * as nodePath from "node:path";
 import { ServerConfig } from "../config.ts";
 import { EventHub } from "../events/event-hub.ts";
+import { cloneRepo } from "../fs/clone.ts";
 import { registerRepo } from "../fs/folders.ts";
+import { ReadingAs, SERVER } from "../embedding/readable-by.ts";
+import { RemoteHosts } from "../host/remote-hosts.ts";
+import { cloneIdentityOf } from "../host/repos.ts";
 import { migrations } from "../persistence/migrations.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { makeClosedReopener } from "../rpc/handlers/closed-threads.ts";
-import type { CheckoutService } from "../runtime/hooks.ts";
+import { CheckoutService } from "../runtime/hooks.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { fileOrigin } from "../thread-profiles/repositories.ts";
 import { cut, portableThread, scrubbed, shareableRemote } from "./workspace-transfer.ts";
 
 /** Why nothing here runs while the hosted features setting is off. */
@@ -107,6 +120,15 @@ export const threadBundleProblem = (bundle: ThreadBundle): string | undefined =>
   return undefined;
 };
 
+/** What the import says to the person: the bundle's notes, then what happened here. */
+const notesOf = (bundle: ThreadBundle, more: ReadonlyArray<string>) => [
+  ...bundle.notes,
+  ...more,
+  ...(bundle.wip?.uncommitted === true
+    ? ["Its uncommitted edits are back as uncommitted files."]
+    : []),
+];
+
 export interface ThreadTransferShape {
   /**
    * The thread as a bundle, its edits kept on its hidden ref and pushed to its repository's
@@ -122,11 +144,35 @@ export interface ThreadTransferShape {
   importThread(
     input: ImportThreadInput,
   ): Effect.Effect<ImportThreadResult, NotFound | ThreadNotFound | InvalidState>;
+  /**
+   * Makes the bundle's thread here for a person the platform in front signed in, placed as a
+   * thread they started would be: on their own machine on a server that runs no work itself,
+   * in a clone of the repository here otherwise. Nothing is kept when any of that fails.
+   */
+  importThreadFor(
+    input: ImportThreadForPersonInput,
+  ): Effect.Effect<ImportThreadResult, NotFound | ThreadNotFound | InvalidState>;
   /** The thread here becomes a read-only, archived copy saying where it went. */
   settleThread(
     input: SettleThreadInput,
   ): Effect.Effect<Thread, NotFound | ThreadNotFound | InvalidState>;
 }
+
+/** Who alone may read a moved thread here, and who brought it in, when a person did. */
+interface Who {
+  readonly reader?: string;
+  readonly by?: string;
+}
+
+/**
+ * Whether the thread here is the one this person's move of `input` brought in: the same export,
+ * from the same Gram, brought in by them and still here. A later export of it is another move.
+ */
+const sameMove = (thread: Thread, input: ImportThreadForPersonInput): boolean =>
+  thread.transferredFrom?.name === input.from &&
+  thread.transferredFrom.exportedAt === input.bundle.exportedAt &&
+  thread.transferredFrom.by === input.person &&
+  thread.transferredTo === undefined;
 
 export interface ThreadTransferOptions {
   /** The git transports the ref may travel over. Tests allow `file`. */
@@ -140,6 +186,8 @@ const make = (options: ThreadTransferOptions) =>
     const hub = yield* EventHub;
     const config = yield* ServerConfig;
     const proc = Option.getOrUndefined(yield* Effect.serviceOption(Proc));
+    const checkouts = yield* CheckoutService;
+    const machines = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     const reopener = yield* makeClosedReopener();
     const protocols = options.protocols ?? WIP_PUSH_PROTOCOLS;
 
@@ -338,12 +386,9 @@ const make = (options: ThreadTransferOptions) =>
         }),
       );
 
-    // One at a time: two imports of one thread would each make a worktree before either was refused.
-    const importing = yield* Semaphore.make(1);
-    const importOne: ThreadTransferShape["importThread"] = (input) =>
+    /** Why the bundle can't come in here, read before anything is written; nothing when it can. */
+    const admit = (bundle: ThreadBundle) =>
       Effect.gen(function* () {
-        yield* requireOn;
-        const { bundle } = input;
         if (bundle.app.schema > SCHEMA) {
           return yield* refuse(
             `This thread was exported by a newer Gram (${cut(bundle.app.version, 40)}) than this server runs. Update this server, then move it again.`,
@@ -356,6 +401,88 @@ const make = (options: ThreadTransferOptions) =>
           bundle.turns.map((turn) => turn.id),
         );
         if (conflict !== undefined) return yield* refuse(conflict);
+        const branch = bundle.branch === undefined ? undefined : sanitizeBranch(bundle.branch);
+        if (bundle.branch !== undefined && branch !== bundle.branch) {
+          return yield* refuse("The bundle's branch isn't a branch name git takes.");
+        }
+      });
+
+    /**
+     * The thread recorded in the folder made for it and opened. Until the record is written, any
+     * failure runs `undo`, which takes that folder back; after it, the record keeps the folder,
+     * closed, when the thread can't be opened. `who` says who alone may read it here, and who
+     * brought it in, if anyone.
+     */
+    const stage = (
+      bundle: ThreadBundle,
+      from: string,
+      project: Project,
+      checkout: Checkout,
+      undo: Effect.Effect<void>,
+      who: Who,
+    ) =>
+      Effect.gen(function* () {
+        yield* record(bundle, from, project, checkout, who).pipe(Effect.onError(() => undo));
+        return yield* openMoved(bundle.thread.id);
+      });
+
+    const record = (
+      bundle: ThreadBundle,
+      from: string,
+      project: Project,
+      checkout: Checkout,
+      who: Who,
+    ) =>
+      Effect.gen(function* () {
+        const settings = yield* store.getSettings;
+        const now = yield* Clock.currentTimeMillis;
+        // Who may read it is this server's to say too: the bundle's reader is another Gram's
+        // subject, and reading as it would lend that identity to this thread's tools.
+        const {
+          role: _role,
+          workspaceId: _workspace,
+          readableBy: _reader,
+          ...thread
+        } = portableThread(bundle.thread);
+        // The bundle names its agent and model; how it runs here (a gateway profile, its
+        // effort, its speed) is this server's to say.
+        const model = { agent: thread.model.agent, model: thread.model.model };
+        const base =
+          bundle.base !== undefined && sanitizeBranch(bundle.base) === bundle.base
+            ? bundle.base
+            : undefined;
+        yield* store.stageMovedThread({
+          thread: {
+            ...thread,
+            model,
+            projectId: project.id,
+            // This server's rules from here on: never a mode the bundle names.
+            mode: settings.agents.defaultMode,
+            checkout: {
+              ...checkout,
+              ...(base === undefined ? {} : { base }),
+            },
+            transferredFrom: {
+              name: from,
+              at: now,
+              exportedAt: bundle.exportedAt,
+              ...(who.by === undefined ? {} : { by: who.by }),
+            },
+            ...(who.reader === undefined ? {} : { readableBy: who.reader }),
+          },
+          closedAt: now,
+          messages: bundle.messages,
+          turns: bundle.turns,
+          plan: bundle.plan,
+          turnPlan: bundle.turnPlan,
+        });
+      });
+
+    /** The thread in a new worktree of the repository at `root`, on this machine. */
+    const importHere = (input: ImportThreadInput, who: Who = {}) =>
+      Effect.gen(function* () {
+        const { bundle } = input;
+        yield* admit(bundle);
         // Before the folder becomes a project here: a wrong one leaves nothing behind.
         const here = yield* remoteOf(input.root);
         if (here === undefined || here !== bundle.repository.remote) {
@@ -367,66 +494,215 @@ const make = (options: ThreadTransferOptions) =>
         const top = project.root;
         const placed = yield* placeWork(top, bundle);
         const { dir } = placed;
-        const notes: Array<string> = [...bundle.notes];
+        const more: Array<string> = [];
         if (placed.detached && bundle.branch !== undefined) {
-          notes.push(
+          more.push(
             `${bundle.branch} is checked out in another folder here, so the thread's folder holds its work on a detached HEAD.`,
           );
         }
         if (placed.ahead && bundle.branch !== undefined) {
-          notes.push(
+          more.push(
             `${bundle.branch} here already had all of the thread's work, and is used as it is.`,
           );
         }
-        if (bundle.wip?.uncommitted === true) {
-          notes.push("Its uncommitted edits are back as uncommitted files.");
+        const thread = yield* stage(
+          bundle,
+          input.from,
+          project,
+          {
+            kind: "worktree",
+            path: dir,
+            repoRoot: top,
+            ...(bundle.branch === undefined || placed.detached ? {} : { branch: bundle.branch }),
+          },
+          withGit("", removeWorktreeDir(top, dir, true)).pipe(Effect.ignore),
+          who,
+        );
+        return {
+          thread,
+          notes: notesOf(bundle, more),
+        } satisfies ImportThreadResult;
+      });
+
+    /**
+     * The thread on the joined machine this server places a person's work on: the machine clones
+     * the repository, if it hasn't, and makes the thread's folder from the ref and commit the
+     * bundle names (`host.stop.restore` with `ref`), or from the branch at exactly its commit.
+     */
+    const importOnMachine = (input: ImportThreadForPersonInput, who: Who) =>
+      Effect.gen(function* () {
+        const { bundle } = input;
+        const url = bundle.repository.remote;
+        const filed = yield* withGit(
+          "The repository couldn't be filed here",
+          Effect.suspend(() => fileOrigin(proc!, config.dataDir, url)),
+        );
+        // Before anything is made on the machine: a failure here leaves nothing there.
+        const project = yield* store.ensureProject({ root: filed.path, name: filed.name });
+        const branch = bundle.branch;
+        const asked: CheckoutRequest = { kind: "newWorktree", branch: branch ?? "moved" };
+        const placed = checkouts.place === undefined ? asked : yield* checkouts.place(asked);
+        const hostId = checkoutRequestHost(placed);
+        if (hostId === undefined || isLocalHost({ hostId }) || machines === undefined) {
+          return yield* refuse(
+            "There is no machine of yours running here to take the thread. Start one, then move it again.",
+          );
         }
-        const settings = yield* store.getSettings;
-        const now = yield* Clock.currentTimeMillis;
-        const { role: _role, workspaceId: _workspace, ...thread } = portableThread(bundle.thread);
-        // The bundle names its agent and model; how it runs here (a gateway profile, its
-        // effort, its speed) is this server's to say.
-        const model = { agent: thread.model.agent, model: thread.model.model };
-        const base =
-          bundle.base !== undefined && sanitizeBranch(bundle.base) === bundle.base
-            ? bundle.base
-            : undefined;
-        yield* store
-          .stageMovedThread({
-            thread: {
-              ...thread,
-              model,
-              projectId: project.id,
-              // This server's rules from here on: never a mode the bundle names.
-              mode: settings.agents.defaultMode,
-              checkout: {
-                kind: "worktree",
-                path: dir,
-                repoRoot: top,
-                ...(bundle.branch === undefined || placed.detached
-                  ? {}
-                  : { branch: bundle.branch }),
-                ...(base === undefined ? {} : { base }),
-              },
-              transferredFrom: { name: input.from, at: now },
-            },
-            closedAt: now,
-            messages: bundle.messages,
-            turns: bundle.turns,
-            plan: bundle.plan,
-            turnPlan: bundle.turnPlan,
-          })
-          .pipe(
-            // Nothing of it kept: the folder made for it goes too.
-            Effect.onError(() =>
-              withGit("", removeWorktreeDir(top, dir, true)).pipe(Effect.ignore),
+        const connection = yield* machines
+          .connection(hostId)
+          .pipe(Effect.mapError((error) => refuse(error.message)));
+        const restore = connection.stop.restore;
+        if (restore === undefined || !hostServes(connection.hello, "wip-restore-ref")) {
+          return yield* refuse(
+            "Your machine here runs an older Gram that can't take a moved thread. Restart it, then move it again.",
+          );
+        }
+        const expected = bundle.wip?.commit ?? bundle.tip;
+        if (expected === undefined) {
+          return yield* refuse(
+            "The repository's remote doesn't hold the thread's edits. Move it again from the other server.",
+          );
+        }
+        // Bounded, as the restore is by the host protocol: the import holds this thread's lock
+        // and can't be interrupted, so no call of it may wait forever on a machine that stalls.
+        const { path: repoPath } = yield* connection.repos.ensure(url).pipe(
+          Effect.mapError((error) => refuse(cut(error.message, 400))),
+          Effect.timeoutOrElse({
+            duration: "10 minutes",
+            orElse: () =>
+              Effect.fail(refuse("Your machine took too long to clone the repository.")),
+          }),
+        );
+        // The machine's paths, which may not be this server's kind of path.
+        const join =
+          repoPath.includes("\\") && !repoPath.includes("/")
+            ? nodePath.win32.join
+            : nodePath.posix.join;
+        const restoreAt = (cwd: string) =>
+          restore({
+            threadId: bundle.thread.id,
+            cwd,
+            url,
+            ...(branch === undefined ? {} : { branch }),
+            commit: expected,
+            ...(bundle.wip === undefined ? { caughtUp: true } : { ref: bundle.wip.ref }),
+          }).pipe(
+            Effect.mapError((error) =>
+              refuse(
+                `The thread's edits couldn't be put back on your machine: ${cut(error.message, 400)}`,
+              ),
             ),
           );
-        const opened = yield* openMoved(bundle.thread.id);
-        return { thread: opened, notes } satisfies ImportThreadResult;
+        let cwd = join(repoPath, ".worktrees", folderName(branch ?? randomWorktreeName()));
+        let answer = yield* restoreAt(cwd);
+        // A folder of that name is there already, somebody's: one of a name of its own.
+        if (!answer.restored && answer.note === "Its folder is there already.") {
+          cwd = join(repoPath, ".worktrees", randomWorktreeName());
+          answer = yield* restoreAt(cwd);
+        }
+        if (!answer.restored) {
+          return yield* refuse(
+            `The thread's edits couldn't be put back on your machine${answer.note === undefined ? "." : `: ${cut(answer.note, 400)}`}`,
+          );
+        }
+        const undo = connection.worktrees
+          .remove({
+            repoPath,
+            worktreeDir: cwd,
+            force: true,
+            openCheckouts: [],
+          })
+          .pipe(Effect.timeout("2 minutes"), Effect.ignore);
+        // The branch at the remote may have moved since: only the commit the bundle names is taken.
+        if (answer.commit !== expected) {
+          yield* undo;
+          return yield* refuse(
+            "The thread's branch at the remote moved since it was exported. Move it again from the other server.",
+          );
+        }
+        const cloneIdentity = cloneIdentityOf(url);
+        const thread = yield* stage(
+          bundle,
+          input.from,
+          project,
+          {
+            kind: "worktree",
+            path: cwd,
+            hostId,
+            repoRoot: repoPath,
+            ...(branch === undefined ? {} : { branch }),
+            ...(cloneIdentity === undefined ? {} : { cloneIdentity }),
+          },
+          undo,
+          who,
+        );
+        return {
+          thread,
+          notes: notesOf(bundle, answer.note === undefined ? [] : [cut(answer.note, 400)]),
+        } satisfies ImportThreadResult;
+        // Once the machine has started on the folder, the import runs to its end or its undo: a
+        // caller that gives up mid-way leaves no folder nobody records.
+      }).pipe(Effect.uninterruptible);
+
+    /** For a person: on their machine where this server runs no work, else a clone of it here. */
+    const importFor = (input: ImportThreadForPersonInput) =>
+      Effect.gen(function* () {
+        // The same move asked again, as when the first answer never reached the platform: the
+        // thread it made, open here, is the answer, and nothing is made twice.
+        const here = yield* store.getThread(input.bundle.thread.id).pipe(Effect.option);
+        if (Option.isSome(here) && sameMove(here.value, input))
+          return { thread: here.value, notes: [] } satisfies ImportThreadResult;
+        yield* admit(input.bundle);
+        // A thread only one person could read stays only theirs: the person bringing it in.
+        const who: Who = {
+          by: input.person,
+          ...(input.bundle.thread.readableBy === undefined ? {} : { reader: input.person }),
+        };
+        if (config.headless === true) return yield* importOnMachine(input, who);
+        const project = yield* withGit(
+          "The repository couldn't be cloned here",
+          store.getSettings.pipe(
+            Effect.flatMap((settings) =>
+              cloneRepo(store, {
+                remote: input.bundle.repository.remote,
+                cloneFolder: cloneFolderOf(settings),
+              }),
+            ),
+          ),
+        );
+        return yield* importHere(
+          { bundle: input.bundle, root: project.root, from: input.from },
+          who,
+        );
       });
+
+    // One at a time for a thread: two imports of one thread would each make a worktree before
+    // either was refused. Other threads' imports, a clone on someone else's machine say, go on.
+    const locks = new Map<string, { readonly lock: Semaphore.Semaphore; users: number }>();
+    const oneAtATime = <A, E>(threadId: string, effect: Effect.Effect<A, E>) =>
+      Effect.acquireUseRelease(
+        // In one step, so two imports of a thread never make a lock each.
+        Effect.sync(() => {
+          const held = locks.get(threadId) ?? { lock: Semaphore.makeUnsafe(1), users: 0 };
+          held.users += 1;
+          locks.set(threadId, held);
+          return held;
+        }),
+        (held) => held.lock.withPermits(1)(effect),
+        (held) =>
+          Effect.sync(() => {
+            held.users -= 1;
+            if (held.users === 0) locks.delete(threadId);
+          }),
+      );
     const importThread: ThreadTransferShape["importThread"] = (input) =>
-      importing.withPermits(1)(importOne(input));
+      requireOn.pipe(Effect.andThen(oneAtATime(input.bundle.thread.id, importHere(input))));
+    const importThreadFor: ThreadTransferShape["importThreadFor"] = (input) =>
+      requireOn.pipe(
+        Effect.andThen(oneAtATime(input.bundle.thread.id, importFor(input))),
+        // The platform's work: the thread it makes is read back whoever alone may read it.
+        Effect.provideService(ReadingAs, SERVER),
+      );
 
     const settleThread: ThreadTransferShape["settleThread"] = (input) =>
       Effect.gen(function* () {
@@ -458,7 +734,7 @@ const make = (options: ThreadTransferOptions) =>
         return settled;
       });
 
-    return ThreadTransfer.of({ exportThread, importThread, settleThread });
+    return ThreadTransfer.of({ exportThread, importThread, importThreadFor, settleThread });
   });
 
 export class ThreadTransfer extends Context.Service<ThreadTransfer, ThreadTransferShape>()(

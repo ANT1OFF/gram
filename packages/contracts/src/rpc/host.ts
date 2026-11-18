@@ -160,6 +160,12 @@ export const HostFeature = Schema.Literals([
    */
   "wip-restore",
   /**
+   * Puts a thread's work back from another machine's ref of it (`host.stop.restore`'s `ref`), as
+   * when the thread moved here from another Gram: the ref must be one of that thread
+   * (`isWipRefOf`) and name exactly the commit asked for. A host without it is never asked to.
+   */
+  "wip-restore-ref",
+  /**
    * Keeps a thread's work in progress off the machine while it works (`host.stop.keep`): the same
    * hidden ref a stop writes, without readying the machine to stop. A control plane asks it after a
    * turn and during a long one, so a machine that is lost costs minutes of work, not the turn's.
@@ -1056,6 +1062,12 @@ export const HostRpcs = RpcGroup.make(
       remote: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
       commit: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
       caughtUp: Schema.optionalKey(Schema.Boolean),
+      /**
+       * Another machine's ref of the thread to read instead of this host's own, served by a host
+       * that names `wip-restore-ref`: it must be a ref of `threadId` and comes with `commit`.
+       * Nothing else is tried when it isn't there: no branch is fallen back on.
+       */
+      ref: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
     },
     success: HostStopRestored,
     error: HostFailed,

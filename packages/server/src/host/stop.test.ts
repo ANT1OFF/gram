@@ -787,6 +787,69 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
     }).pipe(Effect.scoped, live),
   );
 
+  it.live("puts back a thread that moved from another Gram, from that Gram's ref only", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+      const old = stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed(IDLE),
+        admission: makeAdmission(),
+        protocols: FILE,
+      });
+      const prepared = yield* old.prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
+      const commit = prepared.kept[0]!.commit!;
+      // The other Gram's machine wrote it under a namespace of its own; this host has none of it.
+      const theirs = `refs/gram/wip/personal-ab12/${THREAD}`;
+      run(origin, "update-ref", theirs, commit);
+      run(origin, "update-ref", "-d", wipRef(THREAD));
+      const { disk, stop } = yield* replaced(origin);
+      const at = (name: string) => join(disk, "worktrees", name);
+
+      // Only a ref of this thread, with the commit it must name.
+      const otherThread = yield* stop.restore!({
+        threadId: THREAD,
+        cwd: at("a"),
+        url: URL,
+        commit,
+        ref: "refs/gram/wip/personal-ab12/thread-2",
+      }).pipe(Effect.flip);
+      expect(otherThread.message).toContain("isn't a ref of this thread");
+      const noCommit = yield* stop.restore!({
+        threadId: THREAD,
+        cwd: at("a"),
+        url: URL,
+        ref: theirs,
+      }).pipe(Effect.flip);
+      expect(noCommit.message).toContain("isn't a ref of this thread");
+      // A ref the remote doesn't have is nothing put back, never the branch in its place.
+      expect(
+        yield* stop.restore!({
+          threadId: THREAD,
+          cwd: at("a"),
+          url: URL,
+          branch: "main",
+          commit,
+          ref: `refs/gram/wip/laptop-cd34/${THREAD}`,
+        }),
+      ).toEqual({ restored: false, note: "Nothing was kept of it at the remote." });
+      expect(existsSync(at("a"))).toBe(false);
+
+      const restored = yield* stop.restore!({
+        threadId: THREAD,
+        cwd: at("moved"),
+        url: URL,
+        branch: "moved",
+        commit,
+        ref: theirs,
+      });
+      expect(restored).toMatchObject({ restored: true, commit, uncommitted: true, source: "ref" });
+      expect(run(at("moved"), "symbolic-ref", "--short", "HEAD").trim()).toBe("moved");
+      expect(readFileSync(join(at("moved"), "tracked.txt"), "utf8")).toBe("work in progress\n");
+      expect(run(at("moved"), "status", "--porcelain")).toContain("?? new.txt");
+    }).pipe(Effect.scoped, live),
+  );
+
   it.live("leaves no folder behind where the machine's gate refuses the one it made", () =>
     Effect.gen(function* () {
       const { repo, origin } = yield* worktree;
