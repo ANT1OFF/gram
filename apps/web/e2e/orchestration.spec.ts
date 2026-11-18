@@ -284,7 +284,7 @@ test("a worker's menu goes to its orchestrator, removing makes it a plain thread
   await expect(detached).toHaveCount(0);
 });
 
-test("the palette starts a workspace through New task", async ({ page }) => {
+test("the palette starts a workspace through New workspace", async ({ page }) => {
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   const palette = page.getByTestId("command-palette");
@@ -294,14 +294,15 @@ test("the palette starts a workspace through New task", async ({ page }) => {
   await page.keyboard.press("ControlOrMeta+k");
   await palette.getByRole("combobox").fill(">workspace");
   await command.click();
-  // Making the workspace goes through New task, which says how far it will go unasked first.
-  const draft = page.getByRole("form", { name: "New task" });
-  const autonomy = draft.getByRole("radiogroup", { name: "Autonomy of the new workspace" });
+  // Making the workspace is New workspace's, on the thread's repo, which says how far it will go
+  // unasked first.
+  await expect(page).toHaveURL(/\/new-workspace\?repo=/);
+  const form = page.getByRole("form", { name: "New workspace" });
+  const autonomy = form.getByRole("radiogroup", { name: "Autonomy" });
   await expect(autonomy.getByRole("radio", { name: "Full" })).toBeChecked();
   await autonomy.getByRole("radio", { name: "Publish" }).click();
-  await expect(draft.getByTestId("task-autonomy")).toHaveAttribute("data-value", "publish");
-  await draft.getByLabel("What needs doing").fill("Look around the repo");
-  await draft.getByRole("button", { name: /Start workspace and send/ }).click();
+  await form.getByTestId("new-workspace-task").fill("Look around the repo");
+  await form.getByTestId("new-workspace-start").click();
   await expect(page.getByTestId("pane-role")).toHaveText("Orchestrator");
   await expect
     .poll(() =>
