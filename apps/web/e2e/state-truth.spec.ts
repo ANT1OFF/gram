@@ -63,8 +63,8 @@ test("the sidebar, the Workers panel, the Inbox and Quiet agree on what needs yo
   const solo = total - shares.reduce((sum, n) => sum + n, 0);
   expect(solo).toBe(1);
   const flaky = threadRow(page, "t-flaky");
-  await expect(flaky.getByTestId("overview-solo-status")).toContainText("#412 checks failing");
-  await expect(flaky.getByTestId("overview-solo-status")).not.toContainText("Stopped");
+  await expect(flaky.getByTestId("overview-solo-line")).toContainText("#412 checks failing");
+  await expect(flaky.getByTestId("overview-solo-line")).not.toContainText("Stopped");
 
   // The Workers panel names its workspace, counts that workspace's share, and says the rest.
   let panel = await workersPanel(page);

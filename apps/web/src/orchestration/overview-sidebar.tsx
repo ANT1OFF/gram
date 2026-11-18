@@ -1845,6 +1845,14 @@ export function SoloRow({
   const hostId = threadHost(thread);
   const machine = useMachineMark(hostId);
   const where = machine === undefined ? "" : `, ${machine.words}`;
+  // What needs you or failed takes a second line of its own, so the title stays whole and the
+  // words are never cut against it; the dot becomes a bar beside both lines, as a worker's does.
+  const twoLines = alarm;
+  const age = (
+    <span data-testid="overview-solo-age" className="shrink-0 tabular-nums">
+      {formatRelative(thread.lastActivityAt, now)}
+    </span>
+  );
   return (
     <RowMenu menu={<RowMenuItems threadId={thread.id} />}>
       <button
@@ -1861,48 +1869,47 @@ export function SoloRow({
         aria-keyshortcuts="Shift+F10"
         onClick={() => openThread(thread.id)}
         onKeyDown={rowMenuKeys}
-        className={cn(ROW, CURRENT_ROW, faded && SETTLED)}
+        className={cn(ROW, WORKER_ROW, twoLines && TWO_LINE_ROW, CURRENT_ROW, faded && SETTLED)}
       >
         <span
           aria-hidden
           data-working={display.working || undefined}
+          data-tall={twoLines || undefined}
           className={cn(
-            DOT,
-            "rounded-full bg-current",
+            twoLines ? TALL_DOT : DOT,
+            twoLines ? "bg-current" : "rounded-full bg-current",
             // A dot is a mark, not words: needs-you takes its clean ui-grade amber.
             display.tone === "text-status-needs" ? "text-status-needs-mark" : display.tone,
             display.working && "gram-working",
           )}
         />
-        {/* Like every row: one line, its title cut at its end with the whole on hover. At its
-            edge, what needs you or failed in words; else its dot says its state, and the edge its
-            last activity (none while it works). Its hover says its state. */}
+        {/* Its title on one line, cut at its end with the whole on hover. At its edge, the machine
+            it runs on and its last activity (none while it works). What needs you or failed is
+            said in words on a second line, in its colour, with its age. */}
         <span className={cn(ROW_TITLE, thread.unread && UNREAD_TITLE)}>{title}</span>
-        <span data-testid="overview-solo-status" className={ROW_TRAIL}>
+        <span data-testid="overview-solo-status" className={cn(ROW_TRAIL, WORKER_TRAIL)}>
           <MachineMarker
             hostId={hostId}
-            show={alarm ? "glyph" : "name"}
+            show={twoLines ? "glyph" : "name"}
             hover="none"
             testId="overview-solo-machine"
           />
-          {machine !== undefined && !alarm && !display.working && <span aria-hidden>·</span>}
-          {alarm ? (
+          {machine !== undefined && !twoLines && !display.working && <span aria-hidden>·</span>}
+          {!twoLines && !display.working && age}
+        </span>
+        {twoLines && (
+          <span data-testid="overview-solo-line" className={ROW_STATUS}>
             <span
               className={cn(
-                "truncate",
+                "min-w-0 flex-1 truncate",
                 display.tone === "text-status-needs" ? "text-status-needs" : "text-destructive",
               )}
             >
               {display.label}
             </span>
-          ) : (
-            !display.working && (
-              <span className="shrink-0 tabular-nums">
-                {formatRelative(thread.lastActivityAt, now)}
-              </span>
-            )
-          )}
-        </span>
+            <span className="ml-auto pl-1">{age}</span>
+          </span>
+        )}
       </button>
     </RowMenu>
   );

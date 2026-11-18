@@ -89,7 +89,7 @@ function measureShown(
   }
   const size = entry?.borderBoxSize[0]?.blockSize ?? element.getBoundingClientRect().height;
   // The virtualizer keeps a measure only when it differs from the size it assumed. A row as tall
-  // as the estimate would then follow the estimate when it changes (the drawn rows' average), so
+  // as the estimate would then follow the estimate when it changes (the drawn rows' median), so
   // it is kept here.
   if (!instance.itemSizeCache.has(key) && instance.measurementsCache[index]?.size === size) {
     instance.itemSizeCache.set(key, size);
@@ -97,14 +97,18 @@ function measureShown(
   return size;
 }
 
-/** The average height of the rows measured so far, or undefined before any is. */
+/**
+ * The median height of the rows measured so far, or undefined before any is: a few taller rows (a
+ * two-line row that needs you) don't make every row not drawn yet taller than the many one-line
+ * ones, which would put the list's end, and what follows it, past where a scroll to the end lands.
+ */
 function typicalSize(
   instance: Virtualizer<HTMLElement, HTMLElement> | undefined,
 ): number | undefined {
   if (instance === undefined || instance.itemSizeCache.size === 0) return undefined;
-  let sum = 0;
-  for (const size of instance.itemSizeCache.values()) sum += size;
-  return sum / instance.itemSizeCache.size;
+  const sizes = [...instance.itemSizeCache.values()].toSorted((a, b) => a - b);
+  const middle = sizes.length >> 1;
+  return sizes.length % 2 === 1 ? sizes[middle] : (sizes[middle - 1]! + sizes[middle]!) / 2;
 }
 
 export function VirtualRows<T>({
@@ -176,7 +180,7 @@ export function VirtualRows<T>({
       elementScroll(offset, options, instance);
       scrollWritten.current?.();
     },
-    // Rows not drawn yet are as tall as the drawn ones are on average: the given estimate is only a
+    // Rows not drawn yet are as tall as the drawn ones typically are (their median): the given estimate is only a
     // first guess, and each row off from it by half a pixel moves the rows under it.
     estimateSize: () => typical,
     getItemKey: (index) => (items[index] === undefined ? index : rowKey(items[index])),
