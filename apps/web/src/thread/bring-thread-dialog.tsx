@@ -86,6 +86,14 @@ export function BringThreadDialog({
     setPhase("bringing");
     try {
       let brought = unsettled.current;
+      // Already back, its answer lost on the way: only the copy there is left to settle.
+      const here = summary?.thread;
+      const backAt =
+        here?.transferredTo === undefined && here?.transferredFrom?.leftOpen?.origin === from.origin
+          ? here.transferredFrom.exportedAt
+          : undefined;
+      if (brought === undefined && backAt !== undefined)
+        brought = { notes: [], exportedAt: backAt };
       if (brought === undefined) {
         setStage("fetch");
         const fetched = await fetchThread(from.origin, from.workspace, threadId).catch(() => ({

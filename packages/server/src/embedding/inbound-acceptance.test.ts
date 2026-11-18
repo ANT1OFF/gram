@@ -532,6 +532,13 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
           body: { person: ada, threadId: "" },
         })).status,
       ).toBe(400);
+      // A settle names an export this server made: never one from later than now.
+      expect(
+        (yield* call(at, "/embed/v1/thread-settles", {
+          token: TOKEN,
+          body: { person: ada, threadId: thread.id, exportedAt: Date.now() + 86_400_000, to: "X" },
+        })).status,
+      ).toBe(400);
       // Its own person is answered by the move itself: here, a repository with no origin to
       // carry its edits.
       const refused = yield* call(at, "/embed/v1/thread-exports", {

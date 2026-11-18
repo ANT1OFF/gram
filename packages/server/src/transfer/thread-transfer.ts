@@ -685,8 +685,9 @@ const make = (options: ThreadTransferOptions) =>
               ),
             );
         }
+        // Only a copy that was open opens again: one the person had closed stays closed.
         return yield* placeReturned(input, project, was, inPlace, kept, left, who).pipe(
-          Effect.onError(() => reopenCopy(bundle.thread.id)),
+          Effect.onError(() => (copy.open ? reopenCopy(bundle.thread.id) : Effect.void)),
         );
       });
 
@@ -1007,7 +1008,9 @@ const make = (options: ThreadTransferOptions) =>
                   ),
                 );
             }
-            return yield* importOnMachine(input, who, true);
+            return yield* importOnMachine(input, who, true).pipe(
+              Effect.onError(() => (copy.open ? reopenCopy(input.bundle.thread.id) : Effect.void)),
+            );
           }
         } else {
           yield* admit(input.bundle);

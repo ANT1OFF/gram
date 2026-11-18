@@ -77,6 +77,9 @@ export const ThreadImportsInboundLive = Layer.effectDiscard(
         const thread = yield* store.getThread(threadId).pipe(Effect.option);
         if (Option.isNone(thread)) return false;
         if (!readerMay({ subject: person }, thread.value.readableBy)) return false;
+        // A thread brought here for one person goes back with them alone.
+        const by = thread.value.transferredFrom?.by;
+        if (by !== undefined && by !== person) return false;
         return yield* mayReachThread(store.getThread, ownerOf, threadId).pipe(
           Effect.provideService(RoutedFor, { person }),
         );
@@ -132,6 +135,9 @@ export const ThreadImportsInboundLive = Layer.effectDiscard(
           return refusal(400, "`threadId`, `exportedAt` and `to` say which export went where");
         const { threadId } = decoded.value;
         if (!(yield* reaches(person.id, threadId))) return refusal(404, "there is no such thread");
+        // An export not made yet settles nothing: only one this server gave can.
+        if (decoded.value.exportedAt > Date.now())
+          return refusal(400, "`exportedAt` is when the thread was exported, not later");
         return yield* asPerson(
           person,
           "thread.settle",
