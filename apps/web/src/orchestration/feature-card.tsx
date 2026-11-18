@@ -22,6 +22,8 @@ import { use, type MouseEvent, type ReactNode } from "react";
 import { useApi } from "@/api/context";
 import { openExternalUrl } from "@/api/open-external";
 import { prFactsOfCard } from "@/components/pr-facts";
+import { Button } from "@/components/ui/button";
+import { modelDisplayName } from "@/composer/models";
 import { PrMarkIcon } from "@/components/pr-marks";
 import { PR_STATE_DISPLAY, prMarksOf, prRefText, prTooltipOf } from "@/components/pr-marks-model";
 import { formatStamp } from "@/lib/time";
@@ -238,8 +240,21 @@ function StageLine({ card }: { card: FeatureCard }) {
   );
 }
 
+/** Whether the worker waits on the person: its question, or something only they can do. */
+const asksYou = (worker: Pick<FeatureCardWorker, "state">) =>
+  worker.state === "question" || worker.state === "needsUser";
+
+/** The model a worker runs, named as the picker names it ("Sonnet 5.5"); the card has its id only. */
+const workerModelName = (model: string): string =>
+  modelDisplayName(
+    undefined,
+    /^(claude-|opus|sonnet|haiku|fable)/i.test(model) ? "claude" : "codex",
+    model,
+  );
+
 function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
   const failed = worker.flag === "error";
+  const open = useOpenThread();
   // Its state's dot, the one its sidebar row, the Board and Workers draw: amber beside "asks
   // you", never the running blue of the station it stands at, which the stage line above says.
   const tone = useCardWorkerTone(worker);
@@ -255,6 +270,15 @@ function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
       <span className="flex w-36 min-w-0 shrink-0" title={worker.model}>
         <WorkerLink threadId={worker.threadId}>{worker.title}</WorkerLink>
       </span>
+      {/* Which model does the work, on the task itself rather than only in the worker's thread. */}
+      {worker.model !== undefined && (
+        <span
+          data-testid="feature-card-model"
+          className="max-w-28 shrink-0 truncate text-muted-foreground phone:hidden"
+        >
+          {workerModelName(worker.model)}
+        </span>
+      )}
       <Swap
         swapKey={worker.now}
         className={cn(
@@ -264,6 +288,18 @@ function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
       >
         <span data-testid="feature-card-now">{worker.now}</span>
       </Swap>
+      {/* What it needs from the person, where the task is followed: one click to answer it. */}
+      {asksYou(worker) && (
+        <Button
+          size="xs"
+          variant="outline"
+          data-testid="feature-card-answer"
+          className="shrink-0"
+          onClick={() => open(worker.threadId)}
+        >
+          Answer
+        </Button>
+      )}
       {/* The other machine it runs on, if any, before its pull requests. */}
       <ThreadMachineMarker threadId={worker.threadId} testId="feature-card-machine" />
       <span className="flex shrink-0 items-center gap-1">
@@ -436,6 +472,11 @@ function CalmFeatureLine({ card, worker }: { card: FeatureCard; worker: FeatureC
             {worker.title}
           </WorkerLink>
         </span>
+        {worker.model !== undefined && (
+          <span data-testid="feature-card-model" className="shrink-0 phone:hidden">
+            {workerModelName(worker.model)}
+          </span>
+        )}
         <Swap swapKey={worker.now} className="min-w-0 shrink-[2] truncate">
           <span data-testid="feature-card-now">{worker.now}</span>
         </Swap>
