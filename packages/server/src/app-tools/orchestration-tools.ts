@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import {
   aboveHigh,
   listedRow,
@@ -21,10 +22,12 @@ import { isBadgeOf } from "../git/extra-prs.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { restoreThreadWorktree } from "../git/restore-worktree.ts";
 import { isLiveWorker } from "../orchestration/ledger.ts";
+import { isEnded } from "../orchestration/sent-workers.ts";
 import { sendFingerprint } from "../orchestration/outbox.ts";
 import { featureSlug } from "../orchestration/rules.ts";
 import { userMidExchange } from "../orchestration/user-exchange.ts";
 import { Orchestration, type SentMessage } from "../orchestration/service.ts";
+import { SentWorkPort } from "../embedding/sent-work-port.ts";
 import {
   attachUserWords,
   USER_MESSAGES_MAX,
@@ -108,6 +111,8 @@ interface SendInput {
   readonly threadId: string;
   readonly text: string;
   readonly mode?: DeliveryMode;
+  /** The caller's retry id: a message that went to a server goes there once under it. */
+  readonly clientRequestId?: string;
 }
 
 /**
@@ -196,6 +201,8 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
     const releaseWatchers = publisher === undefined ? Effect.void : publisher.sync;
     // Absent in runtime-only layers, where nothing is ever delegated.
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
+    // Where a worker sent to a server is messaged and stopped: through the desktop app.
+    const sentWork = Option.getOrUndefined(yield* Effect.serviceOption(SentWorkPort));
     /** Epoch ms of each sender's recent sends, for the rate limit. */
     const sends = new Map<ThreadId, ReadonlyArray<number>>();
 
@@ -322,7 +329,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
      */
     const deliver = (
       caller: ThreadId,
-      { threadId, text, mode }: SendInput,
+      { threadId, text, mode, clientRequestId }: SendInput,
       ownWorkerOnly = false,
       uncarded = false,
       parentRoute?: ParentRoute,
@@ -352,6 +359,66 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         }
         if (ownWorkerOnly && !delegated) {
           return yield* new AppToolError({ tool, message: "It is no longer your worker." });
+        }
+        // A worker that runs on a server takes its orchestrator's messages there, and no other's.
+        const sent = target.thread.sentTo;
+        if (sent !== undefined) {
+          if (!delegated)
+            return yield* new AppToolError({
+              tool,
+              message: `${target.thread.title} runs on ${sent.server}; only the orchestrator that sent it messages it from here.`,
+            });
+          yield* orchestration.checkSend(caller, target.thread.id);
+          if (sentWork === undefined)
+            return yield* new AppToolError({
+              tool,
+              message: "There is no desktop app to send it through.",
+            });
+          const answer = yield* sentWork.message(sent.origin, sent.workspaceId, sent.threadId, {
+            text,
+            // A retry with the same id is the same message there, even after an unknown answer.
+            clientKey:
+              clientRequestId === undefined
+                ? randomUUID()
+                : createHash("sha256")
+                    .update(`${caller}\n${target.thread.id}\n${clientRequestId}\n${text}`)
+                    .digest("base64url")
+                    .slice(0, 64),
+            mode: mode === "queue" ? "queue" : mode === "interrupt" ? "interrupt" : "steer",
+          });
+          if (!answer.ok)
+            return yield* new AppToolError({
+              tool,
+              message: `${sent.server} didn't take the message: ${answer.why}${
+                answer.unknown === true
+                  ? " It may have arrived; check with get_thread before sending again."
+                  : ""
+              }`,
+            });
+          yield* orchestration.noteMessage(caller, target.thread.id);
+          // Asked again, it is at work again: followed again if it had ended, and an end heard
+          // from a wait that began before this isn't taken as its last.
+          const askedAt = yield* Clock.currentTimeMillis;
+          yield* store
+            .updateThread(target.thread.id, (current) =>
+              current.sentTo === undefined
+                ? current
+                : {
+                    ...current,
+                    sentTo: {
+                      ...current.sentTo,
+                      askedAt,
+                      ...(isEnded(current.sentTo.state) ? { state: "running" as const } : {}),
+                    },
+                  },
+            )
+            .pipe(Effect.ignore);
+          return {
+            threadId: target.thread.id,
+            title: target.thread.title,
+            delivered: answer.queued ? ("queued" as const) : ("sent" as const),
+            note: `It runs on ${sent.server}, in ${sent.workspace}: its reply comes as its report.`,
+          };
         }
         // The guard reads only each side's latest user message.
         const callerUser = yield* findUserMessages(store, caller, { from: "newest", count: 1 });
@@ -542,7 +609,12 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
       handle: (caller, { threadId, text, mode, clientRequestId }, { carded }) =>
         deliver(
           caller,
-          { threadId, text, ...(mode === undefined ? {} : { mode }) },
+          {
+            threadId,
+            text,
+            ...(mode === undefined ? {} : { mode }),
+            ...(clientRequestId === undefined ? {} : { clientRequestId }),
+          },
           false,
           carded === false,
         ).pipe(
@@ -682,6 +754,24 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
       handle: (caller, { threadId }) =>
         Effect.gen(function* () {
           const target = yield* otherThread("stop_thread", caller, threadId, "stop");
+          // A thread that runs on a server is stopped there.
+          const sent = target.thread.sentTo;
+          if (sent !== undefined) {
+            if (sentWork === undefined)
+              return yield* new AppToolError({
+                tool: "stop_thread",
+                message: "There is no desktop app to stop it through.",
+              });
+            const stopped = yield* sentWork.stop(sent.origin, sent.workspaceId, sent.threadId);
+            if (!stopped.ok)
+              return yield* new AppToolError({
+                tool: "stop_thread",
+                message: `${sent.server} didn't stop it: ${stopped.why}`,
+              });
+            if (orchestration !== undefined)
+              yield* orchestration.noteStop(caller, target.thread.id);
+            return { threadId: target.thread.id, stopped: true };
+          }
           // A thread waiting out a provider limit would start again on its own: Stop ends that too.
           const waiting =
             target.thread.limitWait !== undefined && target.thread.limitWait.cancelled !== true;

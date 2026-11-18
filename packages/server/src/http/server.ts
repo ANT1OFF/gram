@@ -26,6 +26,8 @@ import { McpRoute } from "../app-tools/http-mcp.ts";
 import { ClaudeAiSeenLive } from "../connectors/claude-ai-seen.ts";
 import { McpTokens } from "../app-tools/mcp-tokens.ts";
 import { OrchestrationAppToolsLive } from "../app-tools/orchestration-tools.ts";
+import { SentWorkPort } from "../embedding/sent-work-port.ts";
+import { SentWorkersLive } from "../orchestration/sent-workers.ts";
 import { SettingsAppToolsLive } from "../settings/chat-tools.ts";
 import { McpProposeAppToolsLive } from "../connectors/mcp-propose.ts";
 import { ConnectorConfigs } from "../rpc/handlers/connectors.ts";
@@ -922,8 +924,10 @@ export const ServerCore = Layer.unwrap(
         DocAppToolsLive,
         PageAppToolsLive,
         ReviewRequestAppToolsLive,
-        OrchestrationAppToolsLive,
+        // Messages and stops for a worker sent to a server go through the desktop app.
+        OrchestrationAppToolsLive.pipe(Layer.provide(SentWorkPort.layer)),
         OrchestratorAppToolsLive,
+        SentWorkersLive.pipe(Layer.provide(SentWorkPort.layer)),
         TranscriptSearchAppToolsLive,
         TranscriptReadAppToolsLive,
         RoutineAppToolsLive,

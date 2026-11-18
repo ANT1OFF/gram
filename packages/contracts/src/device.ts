@@ -721,3 +721,79 @@ export const HostedTokenAnswer = Schema.Struct({
   sub: Id,
 });
 export type HostedTokenAnswer = typeof HostedTokenAnswer.Type;
+
+// ---------------------------------------------------------------------------------------------
+// Work sent from this machine's server to a hosted server, through the desktop app, which holds
+// the sign-in. The server asks over its parent port; the app answers by id.
+
+/** A hosted workspace this machine may send work to: signed in, not paused, and its server runs it. */
+export interface SentWorkTarget {
+  readonly origin: string;
+  /** What the server calls itself, as the app shows it. */
+  readonly server: string;
+  readonly workspaceId: string;
+  readonly workspace: string;
+  readonly organisation: string;
+}
+
+/** The work an orchestrator sends, as the app passes it on. */
+export interface SentWorkBrief {
+  readonly repositories: readonly string[];
+  readonly text: string;
+  readonly title?: string;
+  readonly branch?: string;
+  readonly clientKey: string;
+}
+
+export type SentWorkOp =
+  | { readonly op: "targets" }
+  | {
+      readonly op: "send";
+      readonly origin: string;
+      readonly workspaceId: string;
+      readonly work: SentWorkBrief;
+    }
+  | {
+      readonly op: "wait";
+      readonly origin: string;
+      readonly workspaceId: string;
+      readonly threadId: string;
+      readonly after?: string;
+      readonly until?: "reply" | "idle" | "waiting" | "message";
+      readonly timeoutSeconds?: number;
+    }
+  | {
+      readonly op: "message";
+      readonly origin: string;
+      readonly workspaceId: string;
+      readonly threadId: string;
+      readonly text: string;
+      readonly clientKey: string;
+      readonly mode?: "queue" | "steer" | "interrupt";
+    }
+  | {
+      readonly op: "stop";
+      readonly origin: string;
+      readonly workspaceId: string;
+      readonly threadId: string;
+    };
+
+export type SentWorkRequestMessage = {
+  readonly type: "work.request";
+  readonly id: string;
+} & SentWorkOp;
+
+/** Each op's answer. `unknown`: no clear answer, so the call may be made again with its key. */
+export type SentWorkResult =
+  | { readonly ok: true; readonly targets: ReadonlyArray<SentWorkTarget> }
+  | { readonly ok: true; readonly threadId: string; readonly branch?: string }
+  | { readonly ok: true; readonly waited: HostedThreadWaited }
+  | { readonly ok: true; readonly queued: boolean; readonly after?: string }
+  | { readonly ok: true }
+  | { readonly ok: false; readonly why: string; readonly unknown?: true };
+
+export interface SentWorkResponseMessage {
+  readonly type: "work.response";
+  readonly id: string;
+  readonly result: SentWorkResult;
+}

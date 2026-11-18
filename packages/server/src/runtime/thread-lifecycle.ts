@@ -271,6 +271,7 @@ export const makeThreadLifecycle = ({
         ...(input.spawnedBy === undefined ? {} : { spawnedBy: input.spawnedBy }),
         ...(input.profile === undefined ? {} : { profile: input.profile }),
         ...(input.awaitingMachine === undefined ? {} : { awaitingMachine: input.awaitingMachine }),
+        ...(input.sentTo === undefined ? {} : { sentTo: input.sentTo }),
         ...(input.additionalDirectories === undefined || input.additionalDirectories.length === 0
           ? {}
           : { additionalDirectories: [...input.additionalDirectories] }),
@@ -323,8 +324,9 @@ export const makeThreadLifecycle = ({
       } else if (
         input.resumeSessionId === undefined &&
         input.deferOpen !== true &&
-        // Nothing opens for a thread whose machine isn't named yet.
-        input.awaitingMachine === undefined
+        // Nothing opens for a thread whose machine isn't named yet, or that runs on a server.
+        input.awaitingMachine === undefined &&
+        input.sentTo === undefined
       ) {
         const rt = yield* getRuntime(thread.id).pipe(Effect.orDie);
         yield* locked(rt, openSession(rt, stored));
