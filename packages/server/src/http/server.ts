@@ -144,6 +144,7 @@ import type { AgentHosts } from "../runtime/agent-hosts.ts";
 import type { TurnHooks } from "../runtime/hooks.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { HOST_STOP_PATHS, hostStopRoute } from "./host-stop-routes.ts";
+import { startWipKeeper } from "../host/wip-keeper.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { WorkspaceOutputs } from "../outputs/workspace-outputs.ts";
 import { SharedFolders } from "../shared/shared-folders.ts";
@@ -306,6 +307,8 @@ export const AuthMiddleware = HttpRouter.middleware(
             settings: store,
             ...(sharedFolders === undefined ? {} : { sharedFlush: sharedFolders.flush }),
           };
+    // A thread's work on a joined machine kept off it while it works: a lost machine costs minutes.
+    if (stopDeps !== undefined) yield* startWipKeeper(stopDeps);
     // Absent only in tests that serve the middleware alone, which take the launch token.
     const fronted = Option.getOrUndefined(yield* Effect.serviceOption(FrontedSignIn));
     const securityHeaders = {

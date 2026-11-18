@@ -159,6 +159,12 @@ export const HostFeature = Schema.Literals([
    */
   "wip-restore",
   /**
+   * Keeps a thread's work in progress off the machine while it works (`host.stop.keep`): the same
+   * hidden ref a stop writes, without readying the machine to stop. A control plane asks it after a
+   * turn and during a long one, so a machine that is lost costs minutes of work, not the turn's.
+   */
+  "wip-keep",
+  /**
    * Knows OpenCode as an agent kind (`opencode`): opens its sessions, or says it can't. A control
    * plane opens no OpenCode session on a host without it, reloads no OpenCode config there, and
    * leaves an OpenCode worker's agent out of what it sends that host.
@@ -992,6 +998,19 @@ export const HostRpcs = RpcGroup.make(
       remote: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
     },
     success: HostStopPrepared,
+    error: HostFailed,
+  }),
+  /**
+   * Keeps the listed folders' work in progress as `host.stop.prepare` does (the hidden ref
+   * `refs/gram/wip/<thread>`, pushed to `remote`), while the host goes on working: nothing is held
+   * and nothing waits for work to end. Served by a host that names `wip-keep`.
+   */
+  Rpc.make("host.stop.keep", {
+    payload: {
+      checkouts: Schema.Array(HostStopCheckout).check(Schema.isMaxLength(64)),
+      remote: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
+    },
+    success: Schema.Struct({ kept: Schema.Array(HostStopKept) }),
     error: HostFailed,
   }),
   /** Takes new work again after a `host.stop.prepare` that no stop followed. */

@@ -84,17 +84,15 @@ test("every row in the sidebar is one height for its lines; a worker's edge keep
         .filter((row) => row.checkVisibility())
         .map((row) => ({
           tone: row.querySelector("[data-tone]")?.getAttribute("data-tone"),
-          tall:
-            row.querySelector('[data-testid="overview-worker-dot"]')?.getAttribute("data-tall") ===
-            "true",
+          tall: row.querySelector('[data-tall="true"]') !== null,
           height: Math.round(row.getBoundingClientRect().height),
           words: row.querySelector(
             '[data-testid="overview-worker-now"], [data-testid="overview-worker-state"], [data-testid="overview-worker-waiting"]',
           )?.textContent,
         })),
     );
-  // A row with nothing more to say is one line of one height; a worker with PRs or words takes a
-  // second line, and every such row is the same taller height.
+  // A row with nothing more to say is one line of one height; a worker with PRs or words, or a
+  // solo thread that needs you, takes a second line, and every such row is the same taller height.
   expect(rows.length).toBeGreaterThan(4);
   expect(rows.filter((row) => !row.tall).every((row) => row.height === 36)).toBe(true);
   expect(rows.filter((row) => row.tall).every((row) => row.height === 48)).toBe(true);

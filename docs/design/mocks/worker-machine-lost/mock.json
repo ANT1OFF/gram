@@ -1,0 +1,41 @@
+{
+  "title": "A worker whose machine was lost",
+  "slug": "worker-machine-lost",
+  "status": "approved",
+  "template": "options",
+  "current": 1,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-18"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A In the conversation",
+      "board": "a-in-the-conversation",
+      "shots": {
+        "dark": "shots/a-dark.png",
+        "light": "shots/a-light.png"
+      }
+    },
+    {
+      "name": "B Composer and changes",
+      "board": "b-composer-and-changes",
+      "shots": {
+        "dark": "shots/b-dark.png",
+        "light": "shots/b-light.png"
+      }
+    },
+    {
+      "name": "C From the orchestrator",
+      "board": "c-from-the-orchestrator",
+      "shots": {
+        "dark": "shots/c-dark.png",
+        "light": "shots/c-light.png"
+      }
+    }
+  ]
+}

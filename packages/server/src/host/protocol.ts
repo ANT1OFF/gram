@@ -17,6 +17,7 @@ import {
   AnswerUndelivered,
   type HostAgentReload,
   type HostStatus,
+  type HostStopKept,
   type HostStopPrepared,
   type HostStopRestored,
   type HostUpdateCheck,
@@ -86,6 +87,7 @@ import { type Admission, UPDATING } from "./admission.ts";
 import {
   type DropRequest,
   type HostStop,
+  type KeepRequest,
   type RestoreRequest,
   type StopRequest,
   STOPPING,
@@ -204,6 +206,7 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "session-retarget",
   "file-parts",
   "wip-restore",
+  "wip-keep",
   "agent-opencode",
   "agent-codex",
   "agent-opencode-sessions",
@@ -403,6 +406,10 @@ const handlersFor = (host: HostService) => {
           ? Effect.fail(new HostFailed({ message: "This host can't be readied to stop." }))
           : host.stop.prepare(request),
       "host.stop.cancel": () => host.stop?.cancel ?? Effect.void,
+      "host.stop.keep": (request) =>
+        host.stop === undefined
+          ? Effect.fail(new HostFailed({ message: "This host keeps no work in progress." }))
+          : host.stop.keep(request).pipe(Effect.map((kept) => ({ kept }))),
       "host.stop.restore": (request) =>
         host.stop?.restore === undefined
           ? Effect.fail(new HostFailed({ message: "This host puts no kept work back." }))
@@ -837,6 +844,10 @@ export interface HostConnection {
     readonly restore?: (
       request: RestoreRequest,
     ) => Effect.Effect<HostStopRestored, HostFailed | HostUnavailable>;
+    /** Keeps folders' work in progress while the host works on; absent on a host before it. */
+    readonly keep?: (
+      request: KeepRequest,
+    ) => Effect.Effect<ReadonlyArray<HostStopKept>, HostFailed | HostUnavailable>;
     /** Deletes the kept work of a thread that is gone for good; absent as `restore` is. */
     readonly drop?: (
       request: DropRequest,
@@ -1683,6 +1694,22 @@ export const connectHost = (
             ),
           ),
         cancel: stopCall(client["host.stop.cancel"]()),
+        ...(hostServes(hello, "wip-keep")
+          ? {
+              keep: (request: KeepRequest) =>
+                stopCall(
+                  client["host.stop.keep"](
+                    defined({ checkouts: request.checkouts, remote: request.remote }),
+                  ).pipe(
+                    Effect.map((answer) => answer.kept),
+                    Effect.timeoutOrElse({
+                      duration: STOP_TIMEOUT,
+                      orElse: () => Effect.fail(unavailable(HOST_NOT_ANSWERING)),
+                    }),
+                  ),
+                ),
+            }
+          : {}),
         // Only on a host that says it does: an older one leaves a missing folder missing.
         ...(hostServes(hello, "wip-restore")
           ? {

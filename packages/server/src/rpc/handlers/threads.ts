@@ -45,6 +45,7 @@ import { restoreThreadWorktree } from "../../git/restore-worktree.ts";
 import { forkHostRefusal } from "../../runtime/history-plans.ts";
 import { Orchestration } from "../../orchestration/service.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
+import { MACHINE_LOST_KEY, machineLostText } from "../../runtime/machine-lost.ts";
 import { PlanKeeper } from "../../plans/keeper.ts";
 import { ThreadPlans } from "../../plans/service.ts";
 import { ThreadWaits } from "../../waits/service.ts";
@@ -367,6 +368,15 @@ export const threadHandlers = Effect.gen(function* () {
     "thread.interrupt": ({ threadId }) => runtimes.interrupt(threadId, { endLimitWait: true }),
     "thread.resumeLimitWait": ({ threadId }) => runtimes.resumeLimitWait(threadId),
     "thread.cancelLimitWait": ({ threadId }) => runtimes.cancelLimitWait(threadId),
+    "thread.resumeAfterMachineLost": ({ threadId }) =>
+      Effect.gen(function* () {
+        const lost = (yield* store.getThread(threadId)).lastError?.machineLost;
+        if (lost === undefined) return;
+        yield* runtimes.sendNotice(threadId, MACHINE_LOST_KEY, {
+          text: machineLostText(lost.machine, lost.during),
+          author: "server",
+        });
+      }),
     "thread.stopTask": ({ threadId, taskId }) => runtimes.stopTask(threadId, taskId),
     "thread.restartSession": ({ threadId, midTurn }) => runtimes.restartSession(threadId, midTurn),
     "thread.startSession": ({ threadId }) => runtimes.startSession(threadId),

@@ -218,6 +218,8 @@ export interface Runtime {
   endedReason: string | undefined;
   /** The joined machine the session's `ended` said restarted under it (`EndedEvent.restartedMachine`). */
   restartedMachine: string | undefined;
+  /** The joined machine the session's `ended` said was lost under it (`EndedEvent.lostMachine`). */
+  lostMachine: string | undefined;
   /**
    * The joined machine whose restart the next session to open resumes after, so it puts that in the
    * transcript; and whether a cut turn is continued or only the queue goes on.

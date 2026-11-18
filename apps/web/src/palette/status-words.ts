@@ -1,6 +1,7 @@
 import type { OrchestratorLedger, ThreadSummary, WorkspaceId } from "@gram/contracts";
 
-import { foldedSummaryText, stateWord } from "@/orchestration/overview-model";
+import type { NeedsYouItem } from "@/orchestration/needs-you-items";
+import { foldedSummaryText, soloDisplay, stateWord } from "@/orchestration/overview-model";
 import { glyphState, workerStatusWord, type DotState } from "@/orchestration/status-words";
 import { workingWorkerThreads } from "@/orchestration/tree-model";
 import { workersByTab, workerTones, type WorkerLiveFacts } from "@/orchestration/workers-model";
@@ -65,6 +66,27 @@ export const paletteStatusWords = (
 /** A thread's status in the palette: its workspace's words for it, else its own. */
 export const statusWord = (summary: ThreadSummary, words: ReadonlyMap<string, string>): string =>
   words.get(summary.thread.id) ?? threadStatusOf(summary).label;
+
+/**
+ * A solo thread's status and dot, as its sidebar row says them: its live detail, and what the
+ * Inbox lists it for ("Needs approval", "#412 checks failing"), never "Stopped" beside them.
+ */
+export const soloPaletteStatus = (
+  summary: ThreadSummary,
+  detail: Parameters<typeof threadStatusOf>[1],
+  need: Pick<NeedsYouItem, "kind" | "title"> | undefined,
+): { readonly word: string; readonly dot: DotState } => {
+  const display = soloDisplay(threadStatusOf(summary, detail), need);
+  const dot: DotState =
+    display.tone === "text-status-needs"
+      ? "needs"
+      : display.tone === "text-destructive"
+        ? "error"
+        : display.working
+          ? "working"
+          : paletteDot(display.label);
+  return { word: display.label, dot };
+};
 
 /**
  * The dot beside a palette row, read from the words it says (`statusWord`), so the two never

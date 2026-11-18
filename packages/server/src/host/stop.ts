@@ -73,6 +73,11 @@ export interface RestoreRequest {
   readonly caughtUp?: boolean | undefined;
 }
 
+export interface KeepRequest {
+  readonly checkouts: ReadonlyArray<HostStopCheckout>;
+  readonly remote?: string | undefined;
+}
+
 export interface DropRequest {
   readonly threadId: ThreadId;
   readonly cwd: string;
@@ -83,6 +88,8 @@ export interface DropRequest {
 export interface HostStop {
   readonly prepare: (request: StopRequest) => Effect.Effect<HostStopPrepared, HostFailed>;
   readonly cancel: Effect.Effect<void>;
+  /** Keeps the folders' work in progress now, while the host works on (`host.stop.keep`). */
+  readonly keep: (request: KeepRequest) => Effect.Effect<HostStopKept[], HostFailed>;
   /** Makes a thread's folder again from what a stop kept of it; absent where nothing clones. */
   readonly restore?: (request: RestoreRequest) => Effect.Effect<HostStopRestored, HostFailed>;
   /** Deletes the kept work of a thread gone for good, when the repository at its folder has any. */
@@ -493,8 +500,33 @@ export const stopOn = (deps: StopDeps): HostStop => {
       Effect.catchDefect(() => Effect.fail(refused("Its kept work couldn't be deleted."))),
     );
 
+  /**
+   * Keeps the folders' work in progress now, while the host goes on working: what a stop keeps,
+   * with no hold and no look at what runs. A host readied to stop keeps nothing more here: the
+   * stop has kept it, or is keeping it.
+   */
+  const keep = (request: KeepRequest): Effect.Effect<HostStopKept[], HostFailed> =>
+    Effect.gen(function* () {
+      const remote = request.remote ?? "origin";
+      if (!isPushRemote(remote)) return yield* refused("That isn't a remote to push to.");
+      if (stopping()) return [];
+      const byThread = new Map<string, Array<HostStopCheckout>>();
+      for (const checkout of request.checkouts) {
+        const list = byThread.get(checkout.threadId) ?? [];
+        if (!list.some((known) => known.cwd === checkout.cwd)) list.push(checkout);
+        byThread.set(checkout.threadId, list);
+      }
+      const lists = yield* Effect.forEach(
+        [...byThread.values()],
+        (list) => keepThread(list, remote),
+        { concurrency: KEEP_CONCURRENCY },
+      );
+      return lists.flat();
+    });
+
   const ensure = deps.ensure;
   return {
+    keep: (request) => lock.withPermits(1)(asWork(keep(request))),
     ...(ensure === undefined
       ? {}
       : {

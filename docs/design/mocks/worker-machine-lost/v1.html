@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>A worker whose machine was lost · directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <script type="application/json" id="mock-tweaks">
+      {
+        "density": {
+          "label": "Density",
+          "type": "enum",
+          "options": ["compact", "comfortable"],
+          "default": "compact"
+        },
+        "saved": {
+          "label": "Last save in the header",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    </script>
+    <style>
+      .wl-thread {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+      .wl-feed {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        width: 100%;
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 18px 20px 8px;
+        font-size: var(--text-sm);
+      }
+      .wl-reply {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-width: 92%;
+        color: var(--fg);
+      }
+      .wl-tool {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 10px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg, 8px);
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .wl-tool .mono {
+        color: var(--fg);
+      }
+      .wl-tool.cut {
+        border-style: dashed;
+      }
+      .wl-card {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl, 10px);
+        background: var(--surface-1);
+      }
+      .wl-card h4 {
+        margin: 0;
+        font-size: var(--text-sm);
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .wl-facts {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 4px 12px;
+        font-size: var(--text-xs);
+      }
+      .wl-facts dt {
+        color: var(--fg-muted);
+      }
+      .wl-facts dd {
+        margin: 0;
+        color: var(--fg);
+      }
+      .wl-files {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg, 8px);
+      }
+      .wl-file {
+        display: grid;
+        grid-template-columns: 16px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 10px;
+        font-size: var(--text-xs);
+        color: var(--fg);
+        background: none;
+        border: 0;
+        text-align: left;
+        font: inherit;
+        cursor: pointer;
+      }
+      .wl-file + .wl-file {
+        border-top: 1px solid var(--border-subtle);
+      }
+      .wl-file .num {
+        color: var(--fg-muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .wl-actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .wl-actions .note {
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .wl-steps {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: var(--text-xs);
+        color: var(--fg-muted);
+      }
+      .wl-steps .on {
+        color: var(--fg);
+      }
+      .wl-step {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .wl-gram {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 8px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg, 8px);
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .wl-gram strong {
+        color: var(--fg);
+        font-weight: 550;
+      }
+      .wl-compose {
+        width: 100%;
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 8px 20px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: var(--text-sm);
+      }
+      .wl-slab {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl, 10px);
+        background: var(--surface-3);
+      }
+      .wl-slab .draft {
+        flex: 1;
+        min-height: 36px;
+        color: var(--fg-muted);
+      }
+      .wl-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 9px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 999px;
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+        white-space: nowrap;
+      }
+      .wl-chip.bad {
+        color: var(--danger);
+      }
+      .wl-saved {
+        display: none;
+      }
+      html[data-tweak-saved="true"] .wl-saved {
+        display: inline-flex;
+      }
+      .wl-side {
+        flex: 0 0 300px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 14px;
+        border-left: 1px solid var(--border-subtle);
+        background: var(--surface-1);
+        font-size: var(--text-sm);
+        min-height: 0;
+        overflow: auto;
+      }
+      .wl-side h4 {
+        margin: 0;
+        font-size: var(--text-sm);
+        font-weight: 600;
+      }
+      .wl-bar {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl, 10px);
+        background: var(--surface-1);
+      }
+      .wl-bar .row {
+        gap: 8px;
+      }
+      .wl-workers {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 10px;
+        flex: 0 0 340px;
+        border-right: 1px solid var(--border-subtle);
+        font-size: var(--text-sm);
+      }
+      .wl-worker {
+        display: grid;
+        grid-template-columns: 16px minmax(0, 1fr) auto;
+        gap: 2px 8px;
+        align-items: center;
+        padding: 7px 10px;
+        border-radius: var(--radius-lg, 8px);
+        background: none;
+        border: 0;
+        text-align: left;
+        font: inherit;
+        color: var(--fg);
+        cursor: pointer;
+      }
+      .wl-worker[aria-selected="true"] {
+        background: var(--surface-3);
+      }
+      .wl-worker .sub {
+        grid-column: 2 / -1;
+        color: var(--fg-muted);
+        font-size: var(--text-xs);
+      }
+      .wl-worker .bad {
+        color: var(--danger);
+      }
+      .wl-sheet {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 18px;
+        min-width: 0;
+        overflow: auto;
+        font-size: var(--text-sm);
+      }
+      .wl-banner {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      @media (max-width: 720px) {
+        .wl-side,
+        .wl-workers {
+          flex-basis: auto;
+          border: 0;
+        }
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        A worker's machine was lost mid-turn while its checks ran. Each direction puts one recovery
+        in a different place: what happened, what of its edits was saved, and Resume worker, which
+        brings the same worker back on its folder as saved. Step through lost, resuming, resumed and
+        nothing saved. Pick one by name.
+      </p>
+
+      <!-- A: the recovery is a card in the conversation, where the turn was cut off. -->
+      <section
+        class="board"
+        data-name="A In the conversation"
+        data-size="1100x680"
+        data-states="lost,resuming,resumed,nothing-saved"
+      >
+        <div class="board-frame">
+          <div class="app">
+            <div class="app-body">
+              <div class="main">
+                <header class="topbar">
+                  <h2>Rename portal coding section</h2>
+                  <span class="wl-chip"><i data-icon="branch"></i>feat/portal-code-label</span>
+                  <span class="wl-chip bad" data-when="lost,nothing-saved"
+                    ><i data-icon="alert"></i>machine lost</span
+                  >
+                  <span class="wl-chip" data-when="resuming"
+                    ><span class="spinner" aria-hidden="true"></span>resuming</span
+                  >
+                  <span class="wl-chip" data-when="resumed"
+                    ><span class="dot working" aria-hidden="true"></span>working</span
+                  >
+                  <span class="wl-chip wl-saved"><i data-icon="check"></i>saved 08:12</span>
+                  <span class="grow"></span>
+                  <button class="btn sm" type="button" aria-label="More">
+                    <i data-icon="more"></i>
+                  </button>
+                </header>
+                <div class="wl-thread">
+                  <div class="wl-feed">
+                    <div class="wl-reply">
+                      The labels come from the portal's embedding options. I've renamed the
+                      navigation label, page title and both breadcrumbs to Code, and updated the
+                      selectors in the end-to-end tests. Running the checks now.
+                    </div>
+                    <div class="wl-tool cut">
+                      <i data-icon="terminal"></i><span class="mono">bun run check</span>
+                      <span class="grow"></span><span>cut off at 08:14</span>
+                    </div>
+
+                    <div class="wl-card" role="status" data-when="lost">
+                      <h4><i data-icon="alert"></i>This worker's machine was lost at 08:14</h4>
+                      <span class="muted small"
+                        >It went away while <span class="mono">bun run check</span> ran. It wasn't
+                        idle, and nothing stopped it on purpose.</span
+                      >
+                      <dl class="wl-facts">
+                        <dt>Saved</dt>
+                        <dd>08:12 · 6 files changed, not committed</dd>
+                        <dt>Lost</dt>
+                        <dd>Anything after 08:12, and the check run</dd>
+                        <dt>Branch</dt>
+                        <dd>feat/portal-code-label · no commits pushed yet</dd>
+                      </dl>
+                      <div class="wl-files">
+                        <button class="wl-file" type="button">
+                          <i data-icon="file"></i
+                          ><span class="truncate mono">apps/portal/src/embed/labels.ts</span
+                          ><span class="num">+4 −4</span>
+                        </button>
+                        <button class="wl-file" type="button">
+                          <i data-icon="file"></i
+                          ><span class="truncate mono">apps/portal/e2e/portal.spec.ts</span
+                          ><span class="num">+9 −7</span>
+                        </button>
+                        <button class="wl-file" type="button">
+                          <i data-icon="file"></i
+                          ><span class="truncate muted">and 4 more files</span
+                          ><span class="num">+12 −10</span>
+                        </button>
+                      </div>
+                      <div class="wl-actions">
+                        <button class="btn primary sm" type="button">
+                          <i data-icon="play"></i>Resume worker
+                        </button>
+                        <button class="btn sm" type="button">
+                          <i data-icon="diff"></i>View diff
+                        </button>
+                        <span class="note"
+                          >Starts its machine, puts the 6 files back, and tells the worker what was
+                          cut off.</span
+                        >
+                      </div>
+                    </div>
+
+                    <div class="wl-card" role="status" data-when="nothing-saved">
+                      <h4><i data-icon="alert"></i>This worker's machine was lost at 08:14</h4>
+                      <span class="muted small"
+                        >It went away while <span class="mono">bun run check</span> ran. It wasn't
+                        idle.</span
+                      >
+                      <dl class="wl-facts">
+                        <dt>Saved</dt>
+                        <dd>Nothing: the turn hadn't changed any files yet</dd>
+                        <dt>Branch</dt>
+                        <dd>feat/portal-code-label, as on origin/main</dd>
+                      </dl>
+                      <div class="wl-actions">
+                        <button class="btn primary sm" type="button">
+                          <i data-icon="play"></i>Resume worker
+                        </button>
+                        <span class="note"
+                          >Starts from the branch, with the conversation as it was.</span
+                        >
+                      </div>
+                    </div>
+
+                    <div class="wl-card" role="status" data-when="resuming">
+                      <h4><span class="spinner" aria-hidden="true"></span>Resuming this worker</h4>
+                      <div class="wl-steps">
+                        <span class="wl-step on"
+                          ><i data-icon="check"></i>Machine started · 08:52</span
+                        >
+                        <span class="wl-step on"
+                          ><span class="spinner" aria-hidden="true"></span>Putting back 6 files as
+                          saved at 08:12</span
+                        >
+                        <span class="wl-step"><i data-icon="dashed"></i>Telling the worker</span>
+                      </div>
+                    </div>
+
+                    <div class="wl-gram" data-when="resumed">
+                      <strong>Resumed at 08:53 on its folder as saved at 08:12</strong>
+                      <span
+                        >Your machine was lost at 08:14 while
+                        <span class="mono">bun run check</span> ran. 6 files were put back as saved
+                        at 08:12; anything after that is gone. Run the checks again and carry
+                        on.</span
+                      >
+                    </div>
+                    <div class="wl-reply" data-when="resumed">
+                      The folder is back with my six changes. Running the checks again.
+                    </div>
+                    <div class="wl-tool" data-when="resumed">
+                      <span class="spinner" aria-hidden="true"></span
+                      ><span class="mono">bun run check</span><span class="grow"></span
+                      ><span>running</span>
+                    </div>
+                  </div>
+                  <div class="wl-compose">
+                    <div class="wl-slab">
+                      <span class="draft">Message this worker</span>
+                      <button class="btn sm" type="button" aria-label="Send">
+                        <i data-icon="up"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- B: the composer becomes the recovery bar; the Changes panel shows what was saved. -->
+      <section
+        class="board"
+        data-name="B Composer and changes"
+        data-size="1100x680"
+        data-states="lost,resuming,resumed,nothing-saved"
+      >
+        <div class="board-frame">
+          <div class="app">
+            <div class="app-body">
+              <div class="main">
+                <header class="topbar">
+                  <h2>Rename portal coding section</h2>
+                  <span class="wl-chip bad" data-when="lost,nothing-saved"
+                    ><i data-icon="alert"></i>machine lost</span
+                  >
+                  <span class="wl-chip" data-when="resuming"
+                    ><span class="spinner" aria-hidden="true"></span>resuming</span
+                  >
+                  <span class="wl-chip" data-when="resumed"
+                    ><span class="dot working" aria-hidden="true"></span>working</span
+                  >
+                  <span class="wl-chip wl-saved"><i data-icon="check"></i>saved 08:12</span>
+                  <span class="grow"></span>
+                  <button class="btn sm" type="button"><i data-icon="diff"></i>Changes</button>
+                </header>
+                <div class="app-body" style="flex: 1; min-height: 0">
+                  <div class="wl-thread">
+                    <div class="wl-feed">
+                      <div class="wl-reply">
+                        I've renamed the navigation label, page title and both breadcrumbs to Code,
+                        and updated the selectors in the end-to-end tests. Running the checks now.
+                      </div>
+                      <div class="wl-tool cut">
+                        <i data-icon="terminal"></i><span class="mono">bun run check</span>
+                        <span class="grow"></span><span>cut off at 08:14</span>
+                      </div>
+                      <div class="wl-gram" data-when="resumed">
+                        <strong>Resumed at 08:53 on its folder as saved at 08:12</strong>
+                        <span>Machine lost at 08:14 during the checks; 6 files put back.</span>
+                      </div>
+                      <div class="wl-reply" data-when="resumed">
+                        The folder is back with my six changes. Running the checks again.
+                      </div>
+                    </div>
+                    <div class="wl-compose">
+                      <div class="wl-bar" role="status" data-when="lost,nothing-saved">
+                        <div class="row">
+                          <i data-icon="alert"></i>
+                          <strong>Machine lost at 08:14, during the checks</strong>
+                          <span class="grow"></span>
+                          <button class="btn primary sm" type="button">
+                            <i data-icon="play"></i>Resume worker
+                          </button>
+                        </div>
+                        <span class="muted small" data-when="lost"
+                          >Not idle. 6 files saved at 08:12 come back with it; later edits are
+                          lost.</span
+                        >
+                        <span class="muted small" data-when="nothing-saved"
+                          >Not idle. No files had changed, so it resumes from the branch.</span
+                        >
+                      </div>
+                      <div class="wl-bar" role="status" data-when="resuming">
+                        <div class="row">
+                          <span class="spinner" aria-hidden="true"></span>
+                          <strong>Putting back 6 files as saved at 08:12</strong>
+                          <span class="grow"></span><span class="muted small">2 of 3</span>
+                        </div>
+                      </div>
+                      <div class="wl-slab" data-when="resumed">
+                        <span class="draft">Message this worker</span>
+                        <button class="btn sm" type="button" aria-label="Send">
+                          <i data-icon="up"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <aside class="wl-side" aria-label="Changes">
+                    <h4>Changes</h4>
+                    <span class="muted small" data-when="lost,resuming,resumed"
+                      >Saved off the machine at 08:12 · not committed</span
+                    >
+                    <span class="muted small" data-when="nothing-saved"
+                      >No changes were saved: none had been made.</span
+                    >
+                    <div class="wl-files" data-when="lost,resuming,resumed">
+                      <button class="wl-file" type="button">
+                        <i data-icon="file"></i><span class="truncate mono">embed/labels.ts</span
+                        ><span class="num">+4 −4</span>
+                      </button>
+                      <button class="wl-file" type="button">
+                        <i data-icon="file"></i><span class="truncate mono">e2e/portal.spec.ts</span
+                        ><span class="num">+9 −7</span>
+                      </button>
+                      <button class="wl-file" type="button">
+                        <i data-icon="file"></i><span class="truncate mono">nav/sections.ts</span
+                        ><span class="num">+3 −3</span>
+                      </button>
+                      <button class="wl-file" type="button">
+                        <i data-icon="file"></i><span class="truncate mono">PORTAL_SHOTS.md</span
+                        ><span class="num">+1 −1</span>
+                      </button>
+                      <button class="wl-file" type="button">
+                        <i data-icon="file"></i><span class="truncate mono">durable-state.md</span
+                        ><span class="num">+1 −1</span>
+                      </button>
+                      <button class="wl-file" type="button">
+                        <i data-icon="file"></i><span class="truncate mono">GRAM_UI_SYNC.md</span
+                        ><span class="num">+7 −5</span>
+                      </button>
+                    </div>
+                    <span class="muted xsmall" data-when="lost"
+                      >Edits after 08:12 weren't saved before the machine went.</span
+                    >
+                  </aside>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- C: the recovery lives on the worker's row in the orchestrator; the thread links to it. -->
+      <section
+        class="board"
+        data-name="C From the orchestrator"
+        data-size="1100x680"
+        data-states="lost,resuming,resumed,nothing-saved"
+      >
+        <div class="board-frame">
+          <div class="app">
+            <div class="app-body">
+              <div class="main">
+                <header class="topbar">
+                  <h2>Orchestrator · web-app</h2>
+                  <span class="grow"></span>
+                  <span class="wl-chip">Workers 1 of 10</span>
+                </header>
+                <div class="app-body" style="flex: 1; min-height: 0">
+                  <div class="wl-workers" role="listbox" aria-label="Workers">
+                    <span class="section-label">Workers</span>
+                    <button class="wl-worker" type="button" role="option" aria-selected="true">
+                      <span
+                        class="dot needs"
+                        aria-hidden="true"
+                        data-when="lost,nothing-saved"
+                      ></span>
+                      <span class="spinner" aria-hidden="true" data-when="resuming"></span>
+                      <span class="dot working" aria-hidden="true" data-when="resumed"></span>
+                      <span class="truncate">Rename portal coding section</span>
+                      <span class="muted xsmall">gpt-6.2-sol</span>
+                      <span class="sub" data-when="lost"
+                        ><span class="bad">Machine lost 08:14</span> · 6 files saved</span
+                      >
+                      <span class="sub" data-when="nothing-saved"
+                        ><span class="bad">Machine lost 08:14</span> · nothing to save</span
+                      >
+                      <span class="sub" data-when="resuming">Resuming · putting files back</span>
+                      <span class="sub" data-when="resumed">Running checks · resumed 08:53</span>
+                    </button>
+                  </div>
+                  <div class="wl-sheet">
+                    <div class="wl-banner">
+                      <h3 style="margin: 0">Rename portal coding section</h3>
+                      <a href="#" class="small">Open thread</a>
+                    </div>
+                    <div class="callout danger" role="status" data-when="lost,nothing-saved">
+                      <i data-icon="alert"></i>
+                      <span
+                        >Its machine was lost at 08:14 while
+                        <span class="mono">bun run check</span> ran. It wasn't idle.</span
+                      >
+                    </div>
+                    <dl class="wl-facts" data-when="lost">
+                      <dt>Saved</dt>
+                      <dd>08:12 · 6 files changed, not committed</dd>
+                      <dt>Lost</dt>
+                      <dd>Anything after 08:12</dd>
+                      <dt>Branch</dt>
+                      <dd>feat/portal-code-label · nothing pushed</dd>
+                    </dl>
+                    <dl class="wl-facts" data-when="nothing-saved">
+                      <dt>Saved</dt>
+                      <dd>Nothing: no files had changed</dd>
+                    </dl>
+                    <div class="wl-actions" data-when="lost,nothing-saved">
+                      <button class="btn primary sm" type="button">
+                        <i data-icon="play"></i>Resume worker
+                      </button>
+                      <button class="btn sm" type="button" data-when="lost">
+                        <i data-icon="diff"></i>View 6 saved files
+                      </button>
+                      <button class="btn sm" type="button">Stop it for good</button>
+                    </div>
+                    <div class="wl-steps" data-when="resuming">
+                      <span class="wl-step on"
+                        ><i data-icon="check"></i>Machine started · 08:52</span
+                      >
+                      <span class="wl-step on"
+                        ><span class="spinner" aria-hidden="true"></span>Putting back 6 files</span
+                      >
+                      <span class="wl-step"><i data-icon="dashed"></i>Telling the worker</span>
+                    </div>
+                    <div class="callout" data-when="resumed">
+                      <i data-icon="okcircle"></i>
+                      <span
+                        >Resumed at 08:53 on its folder as saved at 08:12. It is running the checks
+                        again.</span
+                      >
+                    </div>
+                    <span class="muted xsmall"
+                      >The worker's own thread shows a one-line banner that links here.</span
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -953,6 +953,43 @@ describe("MessageBlock agent errors", () => {
     logged.mockClear();
   });
 
+  it("says a lost machine cut the turn off, and resumes the worker, not a resend", async () => {
+    const lost = {
+      kind: "unknown",
+      retryable: true,
+      text: "The turn failed: agent session ended: box stopped or restarted.",
+      turnId: "turn-1",
+      at: 7,
+      machineLost: { machine: "box", during: "bun run check" },
+    } as const;
+    const send = vi.fn(async () => ({ queued: false }));
+    const resumeAfterMachineLost = vi.fn(async () => {});
+    feed.set(E, [sent, { ...failed, parts: [{ ...failed.parts[0], data: lost } as never] }]);
+    useThreadsStore.setState({
+      byId: {
+        [E]: {
+          status: "error",
+          thread: { id: E, lastError: lost, checkout: { kind: "main", path: "/r" } },
+        },
+      },
+    } as never);
+    renderWithApi(
+      <MessageBlock
+        threadId={E}
+        message={{ ...failed, parts: [{ ...failed.parts[0], data: lost } as never] }}
+        streamingIds={new Set()}
+        subagents={new Map()}
+        subagentUsage={new Map()}
+      />,
+      { send, resumeAfterMachineLost } as never,
+    );
+    expect(screen.getByTestId("machine-lost").textContent).toContain("bun run check");
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Resume worker" }));
+    expect(resumeAfterMachineLost).toHaveBeenCalledWith(E);
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("says nothing was sent only for a refusal made before the message was taken", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const refused = Object.assign(new Error("The thread is closing"), { _tag: "InvalidState" });
