@@ -98,6 +98,24 @@ export function createProjectsMock(world: MockWorld) {
       clones.set(target, remoteKey(remote));
       return addProject(target);
     },
+    // A clone's origin is what it was cloned from; every other mock repository is EXAMPLE's.
+    projectOrigins: async (projectIds) => ({
+      origins: world.projects().flatMap((project) => {
+        if (!projectIds.includes(project.id)) return [];
+        const cloned = clones.get(project.root);
+        const github =
+          cloned === undefined
+            ? isMockRepo(project.root)
+              ? `EXAMPLE/${project.name}`
+              : undefined
+            : cloned.startsWith("github.com/")
+              ? cloned.slice("github.com/".length)
+              : undefined;
+        return [
+          github === undefined ? { projectId: project.id } : { projectId: project.id, github },
+        ];
+      }),
+    }),
     cloneSuggestions: async () => ({
       repos: [
         "EXAMPLE/example-device-apps",

@@ -207,6 +207,46 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     );
   });
 
+  it("asks the embedding app what agents can do in the picked GitHub repositories", async () => {
+    const access = vi.fn(async ({ repositories }: { repositories: readonly string[] }) => ({
+      repositories: repositories.map((fullName) => ({
+        fullName,
+        push: { allowed: false, text: "No: the app can only read", detail: "It reads only." },
+        pullRequest: { allowed: false, text: "—" },
+        merge: { allowed: false, text: "You, on GitHub" },
+        checks: ["build"],
+        fix: { label: `Give the app write on ${fullName}`, href: "https://example.invalid/i/1" },
+      })),
+      note: "Never main.",
+    }));
+    useEmbedShell.setState({
+      ...EMPTY_SHELL,
+      repositories: { list: async () => ({ repositories: [] }), access },
+    });
+    const { api, render } = await mount(settingsWith({ welcomeSeen: true }));
+    const origins = vi.spyOn(api, "projectOrigins");
+    render({ repo: API });
+    const rows = await screen.findAllByTestId("new-workspace-access-row");
+    expect(origins).toHaveBeenCalledWith([API]);
+    expect(access.mock.calls[0]?.[0].repositories).toEqual(["EXAMPLE/api"]);
+    expect(rows).toHaveLength(1);
+    // Unknown checks are never said as none; these were named.
+    expect(within(rows[0]!).getByTestId("new-workspace-access-checks").textContent).toContain(
+      "build",
+    );
+    const fix = screen.getByRole("link", { name: "Give the app write on EXAMPLE/api" });
+    expect(fix.getAttribute("target")).toBe("_blank");
+  });
+
+  it("says nothing of what agents can do where the app gives no source for it", async () => {
+    const { api, render } = await mount(settingsWith({ welcomeSeen: true }));
+    const origins = vi.spyOn(api, "projectOrigins");
+    render({ repo: API });
+    await screen.findByRole("form", { name: "New workspace" });
+    expect(screen.queryByTestId("new-workspace-access")).toBeNull();
+    expect(origins).not.toHaveBeenCalled();
+  });
+
   it("starts with autonomy picked on the sheet", async () => {
     const { api, render } = await mount(settingsWith({ welcomeSeen: true }));
     const save = vi.spyOn(api, "saveWorkspace");

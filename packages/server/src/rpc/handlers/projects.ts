@@ -1,5 +1,6 @@
 import {
   cloneFolderOf,
+  githubNameOf,
   InvalidState,
   NotFound,
   parseRepoRemote,
@@ -7,7 +8,7 @@ import {
   type ProjectId,
   type RepoRemote,
 } from "@gram/contracts";
-import { Proc } from "@gram/git";
+import { git, Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { ServerConfig } from "../../config.ts";
@@ -32,6 +33,20 @@ import { sessionHandlers } from "./sessions.ts";
  */
 const originUrl = (remote: RepoRemote): string =>
   remote.kind === "github" ? `https://github.com/${remote.owner}/${remote.repo}` : remote.url;
+
+/**
+ * The GitHub `owner/repo` a folder's `origin` names, as its config stores it (not as `insteadOf`
+ * rewrites it); undefined for none, another host, or a config that can't be read.
+ */
+const githubOriginOf = (root: string) =>
+  git(root, ["config", "--get", "remote.origin.url"], { timeoutMs: 2_000 }).pipe(
+    Effect.map((out) => {
+      const url = out.status === 0 ? out.stdout.trim() : "";
+      const remote = url === "" ? undefined : parseRepoRemote(url);
+      return remote === undefined || "error" in remote ? undefined : githubNameOf(remote);
+    }),
+    Effect.orElseSucceed(() => undefined),
+  );
 
 /**
  * `projects.list`, `projects.add`, `projects.repositories`, `projects.clone`,
@@ -63,11 +78,8 @@ const projectHandlers = Effect.gen(function* () {
       Effect.gen(function* () {
         const settings = yield* store.getSettings;
         // Where the user keeps repositories: the folder `/new` starts in, and where clones go.
-        const folders = [settings.agents.defaultFolder, cloneFolderOf(settings)].flatMap(
-          (folder) =>
-            folder === undefined || folder.trim() === ""
-              ? []
-              : [resolve(expandHome(folder.trim()))],
+        const folders = [settings.agents.defaultFolder, cloneFolderOf(settings)].flatMap((folder) =>
+          folder === undefined || folder.trim() === "" ? [] : [resolve(expandHome(folder.trim()))],
         );
         return yield* repositoryCandidates(yield* store.listProjects, folders);
       }),
@@ -84,6 +96,24 @@ const projectHandlers = Effect.gen(function* () {
         }
         const cloneFolder = cloneFolderOf(yield* store.getSettings);
         return yield* provide(cloneRepo(store, { remote, into, cloneFolder }));
+      }),
+    "projects.origins": ({ projectIds }) =>
+      Effect.gen(function* () {
+        const wanted = new Set<string>(projectIds);
+        const projects = (yield* store.listProjects).filter((project) => wanted.has(project.id));
+        const origins = yield* Effect.forEach(
+          projects,
+          (project) =>
+            provide(githubOriginOf(project.repoRoot ?? project.root)).pipe(
+              Effect.map((github) =>
+                github === undefined
+                  ? { projectId: project.id }
+                  : { projectId: project.id, github },
+              ),
+            ),
+          { concurrency: 8 },
+        );
+        return { origins };
       }),
     "projects.cloneSuggestions": () => provide(suggestions),
     "projects.setBookmarked": ({ projectId, bookmarked }) =>

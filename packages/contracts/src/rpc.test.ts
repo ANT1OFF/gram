@@ -24,6 +24,7 @@ import {
   CloneProjectPayload,
   CloneSuggestions,
   looksLikeFolderPath,
+  githubNameOf,
   parseRepoRemote,
   remoteKey,
 } from "./projects.ts";
@@ -515,6 +516,28 @@ describe("cloning", () => {
       .map((input) => parseRepoRemote(input))
       .map((remote) => ("error" in remote ? remote.error : remoteKey(remote)));
     expect(new Set(keys)).toEqual(new Set(["github.com/example/example-device-apps"]));
+  });
+
+  // An embedding app is asked what agents may do in a project's GitHub repository by this name:
+  // another host's repository must never be taken for a GitHub one.
+  it("names a GitHub origin owner/repo in every spelling, and no other host's", () => {
+    for (const input of [
+      "https://github.com/EXAMPLE/example-device-apps.git",
+      "git@github.com:EXAMPLE/example-device-apps.git",
+      "ssh://git@github.com/EXAMPLE/example-device-apps",
+    ]) {
+      const remote = parseRepoRemote(input);
+      expect("error" in remote ? remote.error : githubNameOf(remote), input).toBe(
+        "EXAMPLE/example-device-apps",
+      );
+    }
+    for (const input of [
+      "https://organization.example.invalid/EXAMPLE/example-device-apps.git",
+      "git@organization.example.invalid:EXAMPLE/example-device-apps.git",
+    ]) {
+      const remote = parseRepoRemote(input);
+      expect("error" in remote ? remote.error : githubNameOf(remote), input).toBeUndefined();
+    }
   });
 
   it("keeps other URLs for git, ssh ones for github.com included", () => {
