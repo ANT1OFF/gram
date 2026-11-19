@@ -360,6 +360,7 @@ export const MEMBER_RPCS: ReadonlySet<string> = new Set([
   "thread.respond",
   "thread.respondMany",
   "thread.restartSession",
+  "thread.restoreFromBranch",
   "thread.restoreWorktree",
   "thread.resumeAfterMachineLost",
   "thread.resumeLimitWait",
