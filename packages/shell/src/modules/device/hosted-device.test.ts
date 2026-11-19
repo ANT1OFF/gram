@@ -164,6 +164,7 @@ describe("this machine as a personal device", () => {
           { repository: "example/app", reach: "yes" },
           { repository: "other/x", reach: "no", reason: "The GitHub App doesn't reach it." },
         ],
+        model: { agent: "claude", model: "example-model" },
       },
     });
     expect(fake.state.started).toEqual([]);
