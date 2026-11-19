@@ -4,8 +4,10 @@ import { fixtureMessages as claudeFixture } from "@gram/agents/claude/testing";
 import { makeCodexMapper, type CodexMapper } from "@gram/agents/codex";
 import { codexFixture } from "@gram/agents/codex/testing";
 import {
+  HostId,
   MessageId,
   type AgentEvent,
+  type ThreadId,
   type ServerEvent,
   type ThreadStatus,
   type UserInput,
@@ -64,6 +66,8 @@ const replay = (
   steps: ReadonlyArray<Step>,
   input: UserInput = { text: "go" },
   root = "/work/repo",
+  /** Run once the session is open, before any step: to put the thread somewhere else, say. */
+  opened?: (threadId: ThreadId) => Effect.Effect<void, never, ThreadStore>,
 ) =>
   Effect.gen(function* () {
     const runtimes = yield* ThreadRuntimes;
@@ -92,6 +96,7 @@ const replay = (
       "the session",
       fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
     );
+    if (opened !== undefined) yield* opened(thread.id);
     let sends = 1;
     let firstSend = true;
     for (const step of steps) {
@@ -479,6 +484,7 @@ for (const scenario of [
   "other-agent",
   "other-tool",
   "ended-turn",
+  "other-machine",
 ]) {
   it.effect(`native image source admission rejects ${scenario} events without new files`, () => {
     const dataDir = mkdtempSync(join(tmpdir(), "gram-image-admission-"));
@@ -604,6 +610,20 @@ for (const scenario of [
         ],
         { text: "go" },
         root,
+        // A session on another machine names a path of that machine's: never read from this disk,
+        // though the file is here and the events are otherwise the admitted ones.
+        scenario === "other-machine"
+          ? (threadId) =>
+              Effect.gen(function* () {
+                const store = yield* ThreadStore;
+                yield* store
+                  .updateThread(threadId, (thread) => ({
+                    ...thread,
+                    checkout: { ...thread.checkout, hostId: HostId.make("elsewhere") },
+                  }))
+                  .pipe(Effect.orDie);
+              })
+          : undefined,
       );
       const messages = yield* (yield* ThreadStore).listMessages(id);
       const images = messages
