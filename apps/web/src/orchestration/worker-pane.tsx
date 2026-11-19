@@ -350,7 +350,11 @@ export function WorkerPane({
             <X aria-hidden className="size-icon-row" />
           </Hint>
         </div>
-        {record ? <RecordLine detail={detail} /> : <StateLine worker={worker} />}
+        {record ? (
+          <RecordLine detail={detail} />
+        ) : (
+          <StateLine worker={worker} row={order.find((each) => each.threadId === worker)} />
+        )}
         <ToolRow tools={tools} shown={shownTab} onPick={setTab} />
       </header>
       <ToolBody
@@ -395,10 +399,11 @@ function MainViewButton({ worker }: { worker: ThreadId }) {
 }
 
 /**
- * A live worker's state in one line: its status, its PR chips and its plan's steps, then its agent
- * and when it was last active, kept together so they wrap as one.
+ * A live worker's state in one line: its status in the list's own words and mark (its row's), its
+ * PR chips and its plan's steps, then its agent and when it was last active, kept together so they
+ * wrap as one. At work, what its thread runs.
  */
-function StateLine({ worker }: { worker: ThreadId }) {
+function StateLine({ worker, row }: { worker: ThreadId; row: PanelRow | undefined }) {
   const summary = useThreadsStore((s) => s.byId[worker]);
   const detail = useThreadsStore((s) => s.statusDetail[worker]);
   const chips = useWorkerPrChips(worker, NO_PRS);
@@ -414,14 +419,20 @@ function StateLine({ worker }: { worker: ThreadId }) {
       className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 pl-1 text-meta text-muted-foreground"
     >
       <span className="flex min-w-0 items-center gap-1.5">
-        <Swap swapKey={display.label}>
-          <display.icon
-            aria-hidden
-            data-working={display.working}
-            className={cn("size-icon-row shrink-0", display.tone)}
-          />
-        </Swap>
-        <span className="truncate">{display.label}</span>
+        {row === undefined || display.working ? (
+          <Swap swapKey={display.label}>
+            <display.icon
+              aria-hidden
+              data-working={display.working}
+              className={cn("size-icon-row shrink-0", display.tone)}
+            />
+          </Swap>
+        ) : (
+          <StatusDot state={row.dot} className="shrink-0" />
+        )}
+        <span className="truncate" title={row?.status ?? display.label}>
+          {row === undefined || display.working ? display.label : row.status}
+        </span>
       </span>
       <WorkerPrChips
         threadId={worker}

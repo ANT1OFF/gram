@@ -1441,7 +1441,11 @@ export function Composer({
           </div>
           <span
             aria-live="polite"
-            className="min-w-0 flex-1 truncate px-1 text-meta text-muted-foreground"
+            className={cn(
+              "min-w-0 flex-1 px-1 text-meta text-muted-foreground",
+              // The pane's standing takeover note wraps rather than cut its last words.
+              takeoverNoted ? "line-clamp-2" : "truncate",
+            )}
           >
             {hint ??
               (dictation.active

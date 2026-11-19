@@ -248,7 +248,9 @@ export function WorkerRow({
     ...(ageAt === undefined ? [] : [`last active ${agoText(ageAt, now)}`]),
     ...(startedAt === undefined ? [] : [`started ${formatStamp(startedAt)}`]),
   ];
-  const preview = usePickedPreview();
+  // In the pane the keys land on a row whenever the list opens (⌘J, Back): its card waits for
+  // the pointer there, rather than cover the chat beside it.
+  const preview = usePickedPreview(isWide);
   const onClick = (event: MouseEvent<HTMLElement>) => {
     preview.picked();
     if (event.altKey) {
@@ -559,7 +561,7 @@ function useAskQuestion(askKey: string | undefined): string | undefined {
  * after the pointer has left the row, or a fresh focus, after the focus has left it; a focus still
  * opens it from the keyboard.
  */
-function usePickedPreview() {
+function usePickedPreview(hoverOnly = false) {
   const [open, setOpen] = useState(false);
   const hoverQuiet = useRef(false);
   const focusQuiet = useRef(false);
@@ -572,7 +574,7 @@ function usePickedPreview() {
     },
     onOpenChange: (next: boolean, details: PreviewCard.Root.ChangeEventDetails) => {
       if (next && details.reason === "trigger-hover" && hoverQuiet.current) return;
-      if (next && details.reason === "trigger-focus" && focusQuiet.current) return;
+      if (next && details.reason === "trigger-focus" && (hoverOnly || focusQuiet.current)) return;
       setOpen(next);
     },
     onMouseLeave: () => {

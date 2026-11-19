@@ -7,7 +7,7 @@ import { focusWhenRendered } from "@/shell/focus-regions";
 import { fitShell, useLayoutStore, type RightPanelTab } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
-import { besideShown, useBesideStore } from "./beside-store";
+import { besideShown, narrowFromWorkers, useBesideStore, widenForWorkers } from "./beside-store";
 import { boardWorkspaceFor } from "./board-model";
 import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { tabCount, workersByTab } from "./workers-model";
@@ -45,6 +45,7 @@ export function showWorkersTab(): void {
   }
   beside.setShown(false);
   layout.revealPanel("workers");
+  widenForWorkers();
   void focusWorkers();
 }
 
@@ -79,8 +80,12 @@ export function toggleWorkersTab(): void {
   if (!onWorkers) return showWorkersTab();
   const back = beforeWorkers;
   beforeWorkers = undefined;
-  if (back === undefined || !back.open) return layout.togglePanel();
+  if (back === undefined || !back.open) {
+    narrowFromWorkers();
+    return layout.togglePanel();
+  }
   if (back.beside) return beside.setShown(true);
+  narrowFromWorkers();
   layout.setPanelTab(back.tab);
 }
 

@@ -172,6 +172,27 @@ function revealThreadTab() {
 }
 
 /**
+ * Gives the pane's Workers mode the room a worker's conversation needs, as opening one does: at
+ * least `BESIDE_WIDTH`, until the pane closes or goes back to how it stood.
+ */
+export function widenForWorkers(): void {
+  const layout = useLayoutStore.getState();
+  if (layout.panelWidth < BESIDE_WIDTH && useBesideStore.getState().widenedFrom === undefined) {
+    useBesideStore.setState({ widenedFrom: layout.panelWidth });
+    layout.setPanelWidth(BESIDE_WIDTH);
+  }
+}
+
+/** Puts back the width `widenForWorkers` or opening a worker took, unless dragged since. */
+export function narrowFromWorkers(): void {
+  const { widenedFrom } = useBesideStore.getState();
+  if (widenedFrom === undefined) return;
+  useBesideStore.setState({ widenedFrom: undefined });
+  const layout = useLayoutStore.getState();
+  if (layout.panelWidth === BESIDE_WIDTH) layout.setPanelWidth(widenedFrom);
+}
+
+/**
  * Keeps one restored from storage only while its worker still exists and still reports to an
  * orchestrator in view (in a pane, or the route's thread), and drops it otherwise. Call it once the
  * thread list has loaded; one opened in this session is left alone.
@@ -247,6 +268,7 @@ export function backToWorkers(): void {
 /** Closes the pane: the worker in it, if any, and the panel itself, however it was opened. */
 export function closePane(): void {
   closeBeside();
+  narrowFromWorkers();
   const layout = useLayoutStore.getState();
   if (fitShell(layout).panel !== "none") layout.togglePanel();
 }
