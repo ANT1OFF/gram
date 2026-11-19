@@ -149,6 +149,7 @@ export type SettingsPath =
   | "/settings/storage"
   | "/settings/machines"
   | "/settings/phones"
+  | "/settings/hosted-servers"
   | "/settings/about"
   | "/settings/diagnostics"
   | "/settings/help"
@@ -429,6 +430,27 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     ],
     search: null,
     summary: PhoneAccessSummary,
+  },
+  {
+    id: "hosted-servers",
+    label: "Hosted servers",
+    path: "/settings/hosted-servers",
+    group: "machines",
+    description:
+      "Sign in to a Gram server that runs work for your organisation, send it work, and lend it this computer.",
+    keywords: [
+      "hosted",
+      "server",
+      "sign in",
+      "sign-in",
+      "organisation",
+      "organization",
+      "send work",
+      "lend",
+      "workspace",
+      "cloud",
+    ],
+    search: null,
   },
   {
     id: "appearance",
