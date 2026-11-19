@@ -31,6 +31,8 @@ import { type MachineParts, placedHost } from "./placed.ts";
 import { machineHosts } from "./remote-worker-host.ts";
 import type { HostShared } from "../shared/host-shared.ts";
 import { ServerConfig } from "../config.ts";
+import { attachmentsDir } from "../attachments/attachments.ts";
+import { openerFenced } from "../platform/opener.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { TerminalGate } from "../terminal/gate.ts";
@@ -308,12 +310,18 @@ const joinedMachines = Effect.gen(function* () {
   const proc = Option.getOrUndefined(yield* Effect.serviceOption(Proc));
   if (remote === undefined || store === undefined || hub === undefined || proc === undefined)
     return undefined;
+  const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
   const get = yield* machineHosts(remote, {
     store,
     hub,
     proc,
     agents: yield* AgentHosts,
     gate: Option.getOrUndefined(yield* Effect.serviceOption(TerminalGate)),
+    // A server people sign in to, or one that runs no work, has no local user whose files a
+    // send may name: what it carries to a machine is only what was uploaded to it.
+    ...(config !== undefined && openerFenced(config)
+      ? { carriedFrom: attachmentsDir(config.dataDir) }
+      : {}),
   });
   // A thread placed on a machine since removed still routes there (and finds it unavailable).
   const placedBefore = (yield* store.listThreads.pipe(Effect.orElseSucceed(() => []))).some(
