@@ -1,7 +1,15 @@
 import { GramRpcs } from "@gram/contracts";
 import { describe, expect, test } from "vitest";
 import { threadsMentioned } from "../embedding/readable-by.ts";
-import { actorEventsOf, setsOnlyOwnView, UNRECORDED_RPCS, VIEWER_RPCS } from "./actor-guard.ts";
+import {
+  actorEventsOf,
+  DEPLOYMENT_RPCS,
+  MEMBER_RPCS,
+  memberMay,
+  setsOnlyOwnView,
+  UNRECORDED_RPCS,
+  VIEWER_RPCS,
+} from "./actor-guard.ts";
 
 const ada = { id: "user-ada", name: "Ada", role: "member" as const };
 
@@ -35,6 +43,47 @@ describe("what a viewer may call", () => {
       "pages.list",
     ])
       expect(VIEWER_RPCS.has(tag)).toBe(false);
+  });
+});
+
+/** How many of the three lists name `tag`. */
+const placed = (tag: string) =>
+  [VIEWER_RPCS, MEMBER_RPCS, DEPLOYMENT_RPCS].filter((set) => set.has(tag)).length;
+
+describe("what a member may call", () => {
+  test("every RPC is a viewer's, a member's or the deployment's, and only one", () => {
+    // A new RPC fails here until someone decides whose it is: until then members are refused it.
+    const known = [...GramRpcs.requests.keys()];
+    expect(known.filter((tag) => placed(tag) !== 1)).toEqual([]);
+    expect([...MEMBER_RPCS, ...DEPLOYMENT_RPCS].filter((tag) => !known.includes(tag))).toEqual([]);
+  });
+
+  test("leaves the server's own setup to its deployment", () => {
+    for (const tag of [
+      "agentRuntime.install",
+      "profiles.upsert",
+      "profiles.setKey",
+      "profiles.discoverModels",
+      "connectors.add",
+      "settings.set",
+      "palettes.upsert",
+      "sessions.preview",
+      "a.callAddedLater",
+    ])
+      for (const headless of [false, true]) expect(memberMay(tag, {}, headless)).toBe(false);
+    expect(memberMay("thread.send", { threadId: "t" }, true)).toBe(true);
+    // A server that runs work itself has its members' folders on its disk.
+    expect(memberMay("fs.browse", { path: "/" }, false)).toBe(true);
+    expect(memberMay("fs.list", { path: "/" }, false)).toBe(true);
+  });
+
+  test("keeps a headless server's own disk from its members", () => {
+    for (const tag of ["fs.browse", "fs.tree", "projects.add", "projects.clone"])
+      expect(memberMay(tag, { path: "/" }, true)).toBe(false);
+    // A listing lists a thread's folder, never the server's.
+    expect(memberMay("fs.list", { path: "/" }, true)).toBe(false);
+    expect(memberMay("fs.files", {}, true)).toBe(false);
+    expect(memberMay("fs.list", { threadId: "t", path: "src" }, true)).toBe(true);
   });
 });
 
