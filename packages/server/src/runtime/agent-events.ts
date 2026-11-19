@@ -152,6 +152,26 @@ export interface AgentEventsDeps {
  */
 export const UNASKED_MODES: ReadonlySet<PermissionMode> = new Set(["bypassPermissions"]);
 
+/** How much each mode lets run unasked, least first. */
+const LATITUDE: Record<PermissionMode, number> = {
+  plan: 0,
+  default: 1,
+  acceptEdits: 2,
+  auto: 3,
+  dontAsk: 4,
+  bypassPermissions: 5,
+};
+
+/**
+ * Whether a session on another machine may move its thread from `current` to `reported`. That
+ * machine's word never loosens the thread: every mode the server asks for it sets on the thread
+ * first (`setMode`, a session's open), so a looser report there is none of the server's. It may
+ * leave plan mode for the modes a plan's approval goes on in, and move to anything stricter.
+ */
+export const remoteMayReport = (current: PermissionMode, reported: PermissionMode): boolean =>
+  LATITUDE[reported] <= LATITUDE[current] ||
+  (current === "plan" && (reported === "default" || reported === "acceptEdits"));
+
 const startedDuringStop = (rt: Runtime, event: AgentEvent): string | undefined =>
   event.type === "request"
     ? event.request.kind === "question"
@@ -920,7 +940,10 @@ export const makeAgentEvents = ({
           // compromised agent's; leaving a mode, or moving between lesser ones, is taken as said.
           const current = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
           if (current.mode === event.mode) return;
-          if (UNASKED_MODES.has(event.mode)) {
+          if (
+            UNASKED_MODES.has(event.mode) ||
+            (sessionHostOf(current) !== LOCAL_HOST_ID && !remoteMayReport(current.mode, event.mode))
+          ) {
             yield* Effect.logWarning("a session reported a mode the user didn't pick").pipe(
               Effect.annotateLogs({ threadId: rt.threadId, mode: event.mode }),
             );
