@@ -58,6 +58,8 @@ import { affordsExtras, asBackground, GhBudget, GhPriority } from "../github/bud
 import { OpenPrs } from "../github/open-prs.ts";
 import { RateLimitMonitor } from "../github/rate-limit-monitor.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
+import { RemoteHosts } from "../host/remote-hosts.ts";
+import { folderOwedResume } from "../host/stop-marks.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { AppActivity, onScreen, type ActivityLevel } from "./activity.ts";
@@ -480,6 +482,7 @@ export const GitStatePublisherLive = Layer.effectContext(
     // Each checkout's git state, read on the machine it is on: by its machine, never by its path,
     // which another machine can hold too.
     const machines = yield* WorkerHosts;
+    const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     const gitOn = (spot: Spot) => machines.machine(spot.hostId).git;
     // Only this machine's checkouts are looked at for PRs elsewhere (`publishElsewhere`).
     const worktrees = machines.machine(LOCAL_HOST_ID).worktrees;
@@ -1196,7 +1199,13 @@ export const GitStatePublisherLive = Layer.effectContext(
         );
         if (thread.parked && !lingers(thread)) answered.set(thread.id, targetsKey(thread));
         // The folder just went: an agent still running there fails every tool it calls.
-        if (state.missing === true && last?.missing !== true)
+        // Not while its machine's resume is still to put it back: a session waiting for that resume
+        // would be stopped under it, and the thread fail with its folder about to return.
+        if (
+          state.missing === true &&
+          last?.missing !== true &&
+          !(remoteHosts !== undefined && folderOwedResume(remoteHosts.stops, thread))
+        )
           yield* runtimes.stopInMissingFolder(thread.id);
         // An archived thread's badge is kept true for the user; nobody is told what its CI or
         // review did, and its agent isn't woken over them.
