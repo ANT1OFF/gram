@@ -594,6 +594,10 @@ test("a new workspace is one sheet, and what it should work on is briefed into a
     .getByLabel("What should it work on?")
     .fill("Add mail triggers: an endpoint and a form");
   await sheet.getByTestId("autonomy").getByRole("radio", { name: "Publish" }).check();
+  // The survey is the person's own choice: a task alone leaves it off.
+  const survey = sheet.getByLabel(/Read the repositories first/);
+  await expect(survey).not.toBeChecked();
+  await survey.check();
   await page.keyboard.press("ControlOrMeta+Enter");
 
   // The orchestrator opens on that message, shown once: nothing under the stream repeats it.
