@@ -1056,6 +1056,75 @@ describe("ThreadRuntimes agent events", () => {
     }).pipe(Effect.provide(makeRuntimeTestLayer(TurnHooks.layerNoop, CheckoutsOnDisk))),
   );
 
+  it.effect(
+    "draws a message steered into a streaming reply above what the agent says after it",
+    () =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const store = yield* ThreadStore;
+        const { thread, session } = yield* createRunning;
+        const messageId = "m-steered-reply" as MessageId;
+        const chunk = (c: Record<string, unknown>) =>
+          session.emit({ type: "chunk", messageId, chunk: c as never });
+        yield* chunk({ type: "start", messageId, messageMetadata: { agentMessageIds: ["sdk-1"] } });
+        yield* chunk({ type: "start-step" });
+        yield* chunk({
+          type: "tool-input-available",
+          toolCallId: "t1",
+          toolName: "Bash",
+          input: {},
+        });
+        yield* waitFor(
+          "the tool call streaming",
+          runtimes
+            .liveMessages(thread.id)
+            .pipe(
+              Effect.map((all) => all.some((m) => m.parts.some((p) => p.type.startsWith("tool-")))),
+            ),
+        );
+        yield* runtimes.steer(thread.id, { text: "install btop" });
+        // The tool call under way finishes in the reply it started in.
+        yield* chunk({ type: "tool-output-available", toolCallId: "t1", output: "ok" });
+        yield* chunk({ type: "finish-step" });
+        yield* chunk({ type: "start-step" });
+        yield* chunk({ type: "text-start", id: "x" });
+        yield* chunk({ type: "text-delta", id: "x", delta: "Installed btop." });
+        yield* chunk({ type: "text-end", id: "x" });
+        yield* chunk({ type: "finish-step" });
+        yield* chunk({ type: "finish" });
+        yield* session.emit({ type: "turnEnd", reason: "completed" });
+        const messages = yield* waitFor(
+          "the answer stored",
+          store
+            .listMessages(thread.id)
+            .pipe(
+              Effect.map(
+                (all) =>
+                  all.some((m) =>
+                    m.parts.some((p) => p.type === "text" && p.text === "Installed btop."),
+                  ) && all,
+              ),
+            ),
+        );
+        const shape = messages.map((m) => [
+          m.role,
+          m.parts.flatMap((p) =>
+            p.type === "text" ? [p.text] : p.type.startsWith("tool-") ? ["tool"] : [],
+          ),
+        ]);
+        expect(shape).toEqual([
+          ["user", ["one"]],
+          ["assistant", ["tool"]],
+          ["user", ["install btop"]],
+          ["assistant", ["Installed btop."]],
+        ]);
+        const answer = messages.at(-1)!;
+        expect(answer.id).not.toBe(messageId);
+        expect(answer.metadata?.agentMessageIds).toEqual(["sdk-1"]);
+        expect(answer.metadata?.turnEnd?.reason).toBe("completed");
+      }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
   it.effect("refuses a steer into a turn whose folder was deleted, and stops it", () =>
     Effect.gen(function* () {
       const runtimes = yield* ThreadRuntimes;
