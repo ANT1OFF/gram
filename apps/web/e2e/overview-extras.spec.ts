@@ -289,14 +289,16 @@ test("⌘J opens the Workers tab whether the overview is open or hidden, and put
   await expect(overview(page).getByTestId("overview-worker").first()).toBeVisible();
 
   // The overview open: the tab, not a jump into the overview's rows. The workers are listed once:
-  // the current workspace folds its rows to its line, which says they are in Workers, and its
-  // chevron leads there.
+  // the current workspace hands its rows to the pane, folding them to its line, which says they
+  // are in Workers, and its chevron leads there. A worker that needs you stays in sight under it.
   await page.getByLabel("Message", { exact: true }).focus();
   await page.keyboard.press("ControlOrMeta+KeyJ");
   await expect(list).toBeVisible();
   const current = overview(page).locator('[data-testid="overview-workspace"][data-current]');
   await expect(current.getByTestId("overview-workspace-summary")).toHaveText(/^\d+ in Workers$/);
-  await expect(current.getByTestId("overview-worker").first()).toBeHidden();
+  await expect(
+    current.locator('[data-testid="overview-worker"]:not([data-asking]):not([data-tone="needs"])'),
+  ).toHaveCount(0);
   await expect(current.getByTestId("overview-workspace-fold")).toHaveAttribute(
     "data-in-tab",
     "true",

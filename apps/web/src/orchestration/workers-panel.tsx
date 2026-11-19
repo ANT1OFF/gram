@@ -56,6 +56,7 @@ import {
   type StatusGroupId,
 } from "./workers-panel-model";
 import { besideKey, WorkerRow } from "./worker-row";
+import { WIDE_ROW_PARTS } from "./worker-row-wide";
 
 // The right pane's Workers mode, as its list: one orchestrator's workers by where they stand, Needs
 // you first and Done folded, each group's count quiet beside its name. Its rows are the sidebar's
@@ -312,7 +313,7 @@ export function WorkersPanel({
                       row={card?.row ?? overviewRowOf(row, askKeys.get(row.threadId))}
                       feature={card?.feature ?? row.source.feature}
                       updatedAt={card?.at ?? row.atMs ?? 0}
-                      wide
+                      wide={WIDE_ROW_PARTS}
                       current={current === row.threadId}
                       onOpen={(event) => open(row, event)}
                       {...(done ? { at: row.atMs, mark: row.dot } : {})}

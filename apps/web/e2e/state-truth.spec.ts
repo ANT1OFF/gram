@@ -140,8 +140,8 @@ test("a worker spawned and not yet begun reads Starting everywhere, never Stoppe
   const listed = panel
     .getByTestId("workers-group-running")
     .locator(`[data-testid="workers-panel-row"][data-thread-id="${made.briefed}"]`);
-  await expect(listed).toHaveAttribute("data-dot", "working");
-  await expect(listed).toHaveAttribute("title", /\nStarting…$/);
+  await expect(listed).toHaveAttribute("data-tone", "working");
+  await expect(listed.getByTestId("overview-worker-starting")).toHaveText("Starting…");
   // Both workers waiting on one shared approval are under Needs you, as the sidebar says they ask.
   for (const id of made.waiting) {
     await expect(

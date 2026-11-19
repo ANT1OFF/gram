@@ -87,12 +87,16 @@ test("the orchestrator's home stays under 150 words", async ({ page }) => {
   const words = await visibleWords(page, "[data-pane-root]", '[data-testid="overview-sidebar"]');
   expect(words).toBeGreaterThan(40);
   expect(words).toBeLessThan(HOME_WORDS);
-  // The overview: at most four words of now line a worker.
+  // The overview: at most four words of now line a worker. An ask says its question after
+  // "Asks you", the same words as the pane's row, cut to the sidebar's one line.
   await expect(page.getByTestId("overview-sidebar")).toBeVisible();
   const nows = await page.getByTestId("overview-worker-now").allTextContents();
   expect(nows.length).toBeGreaterThan(0);
-  for (const now of nows) {
+  for (const now of nows.filter((each) => !each.startsWith("Asks you: "))) {
     expect(now.trim().split(/\s+/).length, now).toBeLessThanOrEqual(4);
+  }
+  for (const line of await page.getByTestId("overview-worker-line").all()) {
+    expect(await line.evaluate((each) => each.scrollHeight <= each.clientHeight + 1)).toBe(true);
   }
 });
 

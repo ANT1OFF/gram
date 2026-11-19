@@ -58,7 +58,7 @@ import { FinishedFiles, FinishedWorkerView } from "./finished-worker-view";
 import { useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
 import { StatusDot } from "./status-dot";
 import { STATUS_WORDS } from "./status-words";
-import { PlanSteps } from "./worker-row";
+import { PlanSteps } from "./worker-row-wide";
 import { finishedRow } from "./workers-model";
 import { neighbour, rowsInOrder, type PanelRow, type StatusGroup } from "./workers-panel-model";
 import { useOpenWorker, useWorkerGroups, useWorkersPanelStore } from "./workers-panel";

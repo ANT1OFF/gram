@@ -1195,8 +1195,8 @@ test("a worker still running after its feature is delivered shows with its step 
   const row = worker(page, made.doneToday);
   await expect(row).toBeVisible();
   await expect(row.getByTestId("overview-worker-dot")).toHaveAttribute("data-working", "true");
-  // One line: its pulsing dot says it works, with no words at its edge; what it does, its
-  // "working" and its age are in its name and hover card.
+  // Its pulsing dot says it works, and its line what it does, in plain words: never its card's now
+  // line or a wait. Its age is in its name and hover card.
   await expect(row.getByTestId("overview-worker-now")).toHaveCount(0);
   await expect(row.getByTestId("overview-worker-waiting")).toHaveCount(0);
   await expect(row.getByTestId("overview-ago")).toHaveCount(0);
@@ -1205,7 +1205,8 @@ test("a worker still running after its feature is delivered shows with its step 
   await expect(page.getByTestId("overview-worker-card-step")).toHaveText(
     "Step 2 of 2 · Running a command",
   );
-  await expect(row).toHaveAttribute("aria-label", /, working, .*last active \d{2}:\d{2}$/);
+  await expect(row.getByTestId("overview-worker-doing")).toHaveText("Running a command");
+  await expect(row).toHaveAttribute("aria-label", /, Running a command, .*last active /);
   // Its turn over, it leaves again.
   await page.evaluate((id) => window.gramMock!.simulateStatus(id as never, "idle"), made.doneToday);
   await expect(row).toHaveCount(0);

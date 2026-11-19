@@ -6,7 +6,6 @@ import {
   Bot,
   CircleArrowUp,
   Cpu,
-  FileText,
   Flag,
   Gauge,
   GitBranch,
@@ -21,11 +20,9 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react";
-import { useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useRef, useState, type ComponentType, type KeyboardEvent, type MouseEvent } from "react";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
-import { showDoc } from "@/docs/doc-pane-store";
-import { useDocs } from "@/docs/doc-queries";
 import { keyLabel } from "@/keyboard/registry";
 import { agoText, formatRelative, formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
@@ -37,7 +34,6 @@ import { activityLine, SETTLED_AFTER_MS, threadStatusOf } from "@/sidebar/status
 import { useThreadsStore } from "@/stores/threads";
 import { workerPauseHint } from "@/thread/orchestration-model";
 import { useThreadHeadline } from "@/thread/plan-ui";
-import { MockThumb } from "@/thread/mock-visuals";
 import { threadDragProps, WorkerRowMenuItems, rowMenuKeys } from "@/thread/row-menu";
 import { type MachineMark } from "@/thread/machine-mark";
 import {
@@ -158,7 +154,7 @@ export function WorkerRow({
   feature,
   updatedAt,
   card = true,
-  wide = false,
+  wide,
   current,
   onOpen,
   at,
@@ -168,7 +164,11 @@ export function WorkerRow({
   feature: string;
   updatedAt: number;
   card?: boolean;
-  wide?: boolean;
+  /**
+   * The right pane's wide row, with the parts only it draws (`worker-row-wide.tsx`): passed in, so
+   * the sidebar's row, on the first paint, doesn't load them.
+   */
+  wide?: WideParts | undefined;
   /** Whether it is drawn current; the thread open in the main view when left out. */
   current?: boolean;
   /** What a click (or ⌘⏎) does in place of opening it in the main view; ⌥-click still peeks. */
@@ -179,6 +179,8 @@ export function WorkerRow({
   mark?: DotState | undefined;
 }) {
   const openThread = useOpenThread();
+  const parts = wide;
+  const isWide = parts !== undefined;
   // Only this row's answer: a move to another thread re-renders the two rows it changes, not all.
   const viewed = useParams({
     strict: false,
@@ -233,7 +235,7 @@ export function WorkerRow({
   // of merged ones folded into "N merged"), then its words, then its age. With neither chips nor
   // words, the row stays one line and its dot says the rest. Wide, the chips lead its last line.
   const hasChips = prChips.length > 0 || runs.length > 0;
-  const twoLines = edgeSays || (!wide && prChips.length > 0);
+  const twoLines = edgeSays || (!isWide && prChips.length > 0);
   const said =
     question !== undefined ? asksYouLine(question) : (doing ?? waiting?.label ?? row.now);
   const facts = [
@@ -267,7 +269,7 @@ export function WorkerRow({
     type: "button" as const,
     [STOP]: "",
     // The pane's rows keep the Workers list's own name, which ⌘J and an embedder's tests find.
-    "data-testid": wide ? "workers-panel-row" : "overview-worker",
+    "data-testid": isWide ? "workers-panel-row" : "overview-worker",
     "data-thread-id": row.threadId,
     "data-tone": tone,
     "data-asking": asking || undefined,
@@ -288,7 +290,7 @@ export function WorkerRow({
       ROW,
       WORKER_ROW,
       twoLines && TWO_LINE_ROW,
-      wide && WIDE_ROW,
+      isWide && WIDE_ROW,
       CURRENT_ROW,
       settled && SETTLED,
     ),
@@ -305,13 +307,18 @@ export function WorkerRow({
   ) : doing !== undefined ? (
     <span
       data-testid="overview-worker-doing"
-      className={cn("min-w-0 text-meta text-muted-foreground", wide ? WRAPPED : "truncate")}
+      className={cn("min-w-0 text-meta text-muted-foreground", isWide ? WRAPPED : "truncate")}
     >
       {doing}
     </span>
   ) : waiting !== undefined ? (
     lineWait !== undefined && (
-      <WaitingLine waiting={lineWait} testId="overview-worker-waiting" prs={shownPrs} wrap={wide} />
+      <WaitingLine
+        waiting={lineWait}
+        testId="overview-worker-waiting"
+        prs={shownPrs}
+        wrap={isWide}
+      />
     )
   ) : (
     <WorkerNow
@@ -320,7 +327,7 @@ export function WorkerRow({
       question={question}
       tone={tone}
       prs={shownPrs}
-      wrap={wide}
+      wrap={isWide}
     />
   );
   const age = ageAt !== undefined && (
@@ -329,22 +336,25 @@ export function WorkerRow({
       title={`Last active ${formatStamp(ageAt)}`}
       className={cn(
         "shrink-0 text-muted-foreground tabular-nums",
-        wide ? "text-meta" : "ml-auto pl-1",
+        isWide ? "text-meta" : "ml-auto pl-1",
       )}
     >
       {formatRelative(ageAt, now)}
     </span>
   );
   // Wide, a third line under the words: its chips, its plan's steps and its docs.
-  const foot = wide ? <WideFoot threadId={row.threadId} done={tone === "merged"} ghost /> : null;
+  const foot =
+    parts === undefined ? null : (
+      <parts.Foot threadId={row.threadId} done={tone === "merged"} ghost />
+    );
   const body = (
     <>
       <StatusDot
         state={mark ?? tone}
         data-testid="overview-worker-dot"
         data-tone={tone}
-        data-tall={twoLines || wide || undefined}
-        className={wide ? WIDE_DOT : twoLines ? TALL_DOT : DOT}
+        data-tall={twoLines || isWide || undefined}
+        className={isWide ? WIDE_DOT : twoLines ? TALL_DOT : DOT}
       />
       {/* Its title, one line cut at its end; the hover card, or the flyout's tooltip, says the
           whole. */}
@@ -356,12 +366,12 @@ export function WorkerRow({
       </span>
       {/* At the title's edge: the machine it runs on, a pause, and its agent's mark; wide, its age
           after them. */}
-      <span className={cn(ROW_TRAIL, WORKER_TRAIL, wide && "max-w-none")}>
+      <span className={cn(ROW_TRAIL, WORKER_TRAIL, isWide && "max-w-none")}>
         {/* Its hover is the row's own: its card, or the flyout's title, says the machine whole. */}
         <MachineMarker
           hostId={hostId}
           sent={sent}
-          show={edgeSays && !wide ? "glyph" : "name"}
+          show={edgeSays && !isWide ? "glyph" : "name"}
           hover="none"
           testId="overview-worker-machine"
         />
@@ -371,9 +381,9 @@ export function WorkerRow({
             <AgentIcon agent={agent} className="size-icon-row" />
           </span>
         )}
-        {wide && age}
+        {isWide && age}
       </span>
-      {wide
+      {isWide
         ? edgeSays && (
             <span
               data-testid="overview-worker-line"
@@ -411,29 +421,31 @@ export function WorkerRow({
   );
   // The PR chips sit over their room, outside the row's button: each is a button of its own. Wide,
   // the whole last line does, its docs being buttons too.
-  const chips = wide ? (
-    <WideFoot
-      threadId={row.threadId}
-      done={tone === "merged"}
-      chips={{ cardPrs: row.prs, chips: prChips, runs, card }}
-    />
-  ) : (
-    twoLines &&
-    hasChips && (
-      <WorkerPrChips
+  const chips =
+    parts !== undefined ? (
+      <parts.Foot
         threadId={row.threadId}
-        cardPrs={row.prs}
-        chips={prChips}
-        runs={runs}
-        card={card}
-        dense
-        foldMerged
-        className={WORKER_CHIPS}
+        done={tone === "merged"}
+        chips={{ cardPrs: row.prs, chips: prChips, runs, card }}
       />
-    )
-  );
+    ) : (
+      twoLines &&
+      hasChips && (
+        <WorkerPrChips
+          threadId={row.threadId}
+          cardPrs={row.prs}
+          chips={prChips}
+          runs={runs}
+          card={card}
+          dense
+          foldMerged
+          className={WORKER_CHIPS}
+        />
+      )
+    );
   // An ask between pictures shows the first two under the row, each enlarged on a click.
-  const pictures = wide && row.askKey !== undefined ? <AskPictures askKey={row.askKey} /> : null;
+  const pictures =
+    parts !== undefined && row.askKey !== undefined ? <parts.Pictures askKey={row.askKey} /> : null;
   if (!card) {
     return (
       <RowMenu menu={<WorkerRowMenuItems threadId={row.threadId} />}>
@@ -456,7 +468,7 @@ export function WorkerRow({
         </PreviewCard.Trigger>
         <PreviewCard.Portal>
           <PreviewCard.Positioner
-            side={wide ? "left" : "right"}
+            side={isWide ? "left" : "right"}
             align="start"
             sideOffset={8}
             className="isolate z-50"
@@ -489,6 +501,27 @@ export function WorkerRow({
   );
 }
 
+/** What the wide row's last line takes: its chips as the row has them, or its own. */
+export interface WideFootProps {
+  readonly threadId: ThreadId;
+  /** Finished: its plan is over, and its steps say nothing. */
+  readonly done: boolean;
+  /** Drawn to hold its room inside the row's button, unseen. */
+  readonly ghost?: boolean;
+  readonly chips?: {
+    readonly cardPrs: OverviewWorkerRow["prs"];
+    readonly chips: ReturnType<typeof useWorkerPrChips>;
+    readonly runs: ReturnType<typeof watchedRuns>;
+    readonly card: boolean;
+  };
+}
+
+/** The parts only the pane's wide row draws: its last line, and an ask's pictures. */
+export interface WideParts {
+  readonly Foot: ComponentType<WideFootProps>;
+  readonly Pictures: ComponentType<{ readonly askKey: string }>;
+}
+
 /** "Asks you: put the sheet under Help or under Settings?" */
 export const asksYouLine = (question: string): string => `Asks you: ${question}`;
 
@@ -502,165 +535,22 @@ const WIDE_ROW = "py-1.5 text-body hover:bg-accent";
 const WIDE_DOT = "row-span-3 h-auto min-h-6 w-1 self-stretch justify-self-center rounded-full";
 
 /**
- * The question an ask in the stack puts, by its key: a worker's question, else what the stack
- * leads with. `undefined` without an ask.
+ * What an ask in the stack puts to you, by its key: a worker's question, else what the stack leads
+ * with and the exact command it is for ("Allow git push origin fix/retry"). `undefined` without an
+ * ask.
  */
 function useAskQuestion(askKey: string | undefined): string | undefined {
   const asks = useWorkspaceAsks();
   if (askKey === undefined) return undefined;
   for (const each of asks) {
     const ask = each.asks.find((a) => a.key === askKey);
-    if (ask !== undefined) return ask.worker?.question.question ?? ask.lead;
+    if (ask === undefined) continue;
+    return (
+      ask.worker?.question.question ??
+      [ask.lead, ask.command].filter((part) => part !== undefined && part !== "").join(" ")
+    );
   }
   return undefined;
-}
-
-/**
- * The wide row's last line: its PR chips first, as the sidebar's second line leads with them, then
- * its plan's steps while it has a plan, then the docs it wrote, each a titled chip that opens it.
- * Drawn twice: as `ghost`, inside the row's button, to hold its room; and over that room, outside
- * the button, where its chips and docs are buttons of their own.
- */
-function WideFoot({
-  threadId,
-  done,
-  ghost = false,
-  chips,
-}: {
-  threadId: ThreadId;
-  /** Finished: its plan is over, and its steps say nothing. */
-  done: boolean;
-  ghost?: boolean;
-  chips?: {
-    readonly cardPrs: OverviewWorkerRow["prs"];
-    readonly chips: ReturnType<typeof useWorkerPrChips>;
-    readonly runs: ReturnType<typeof watchedRuns>;
-    readonly card: boolean;
-  };
-}) {
-  const own = useWorkerPrChips(threadId, chips?.cardPrs ?? NO_CARD_PRS);
-  const prChips = chips?.chips ?? own;
-  const runs = chips?.runs ?? NO_RUNS;
-  const { headline } = useThreadHeadline(threadId);
-  const workspaceId = useThreadsStore((s) => s.byId[threadId]?.thread.workspaceId ?? undefined);
-  const docs = useDocs(workspaceId);
-  const written = (docs.data?.docs ?? []).filter((doc) => doc.authorThreadId === threadId);
-  const steps = !done && headline !== undefined && headline.total > 0 ? headline : undefined;
-  if (prChips.length === 0 && runs.length === 0 && steps === undefined && written.length === 0) {
-    return null;
-  }
-  return (
-    <span
-      aria-hidden={ghost || undefined}
-      data-testid={ghost ? undefined : "overview-worker-foot"}
-      className={
-        ghost
-          ? "invisible col-span-2 col-start-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-meta"
-          : "pointer-events-none absolute right-1.5 bottom-1.5 left-6 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-meta text-muted-foreground *:pointer-events-auto"
-      }
-    >
-      <WorkerPrChips
-        threadId={threadId}
-        cardPrs={chips?.cardPrs ?? NO_CARD_PRS}
-        chips={prChips}
-        runs={runs}
-        dense
-        ghost={ghost}
-        foldMerged
-        {...(chips === undefined ? {} : { card: chips.card })}
-        className="flex shrink-0 items-center"
-      />
-      {steps !== undefined && <PlanSteps done={steps.done} total={steps.total} />}
-      {written.slice(0, DOCS_SHOWN).map((doc) =>
-        ghost ? (
-          <span key={doc.id} className={DOC_CHIP}>
-            <FileText aria-hidden className="size-icon-chip shrink-0" />
-            <span className="truncate">{doc.title}</span>
-          </span>
-        ) : (
-          <button
-            key={doc.id}
-            type="button"
-            data-testid="overview-worker-doc"
-            data-doc-id={doc.id}
-            title={`Open ${doc.title}`}
-            onClick={() => {
-              if (workspaceId !== undefined) showDoc(workspaceId, doc.id);
-            }}
-            className={cn(
-              DOC_CHIP,
-              "text-foreground/80 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-            )}
-          >
-            <FileText aria-hidden className="size-icon-chip shrink-0" />
-            <span className="truncate">{doc.title}</span>
-          </button>
-        ),
-      )}
-    </span>
-  );
-}
-
-/** The docs a wide row names before the rest are left to the Docs tab. */
-const DOCS_SHOWN = 2;
-
-const DOC_CHIP =
-  "inline-flex h-5 max-w-56 min-w-0 items-center gap-1 rounded-full border border-edge px-1.5 text-meta";
-
-const NO_CARD_PRS: OverviewWorkerRow["prs"] = [];
-const NO_RUNS: ReturnType<typeof watchedRuns> = [];
-
-/** Its plan as a short bar of steps, the done ones filled, then "Step 2 of 4". */
-export function PlanSteps({ done, total }: { done: number; total: number }) {
-  const at = Math.min(done + 1, total);
-  return (
-    <span
-      data-testid="plan-steps"
-      role="img"
-      aria-label={`Step ${at} of ${total}`}
-      className="inline-flex shrink-0 items-center gap-1.5 text-meta text-muted-foreground"
-    >
-      <span aria-hidden className="flex items-center gap-0.5">
-        {Array.from({ length: Math.min(total, 8) }, (_, i) => (
-          <span
-            key={i}
-            className={cn(
-              "h-0.5 w-2.5 rounded-full",
-              i < done ? "bg-muted-foreground" : i === done ? "bg-primary" : "bg-border",
-            )}
-          />
-        ))}
-      </span>
-      <span aria-hidden className="tabular-nums">
-        Step {at} of {total}
-      </span>
-    </span>
-  );
-}
-
-/** How many of an ask's pictures a wide row shows. */
-const PICTURES_SHOWN = 2;
-
-/** The first pictures of an ask between options, 48 px tall, each with its option's name. */
-function AskPictures({ askKey }: { askKey: string }) {
-  const asks = useWorkspaceAsks();
-  const visuals = asks.flatMap((each) => each.asks).find((ask) => ask.key === askKey)?.visuals;
-  const shown = (visuals?.options ?? [])
-    .filter((option) => option.image !== undefined)
-    .slice(0, PICTURES_SHOWN);
-  if (visuals === undefined || shown.length === 0) return null;
-  return (
-    <div data-testid="overview-worker-pictures" className="flex gap-2 pt-1 pb-1.5 pl-6">
-      {shown.map((option) => (
-        <figure key={option.label} className="flex w-20 min-w-0 flex-col gap-0.5">
-          <MockThumb threadId={visuals.threadId} path={option.image!} label={option.label} />
-          <figcaption className="truncate text-caption text-muted-foreground" title={option.label}>
-            {option.label}
-          </figcaption>
-        </figure>
-      ))}
-    </div>
-  );
 }
 
 /**
