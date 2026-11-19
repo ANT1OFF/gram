@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { DISK_ID, hostDiskId, hostIdentity, VOLUME_ID_FOLDER } from "./host-config.ts";
+import { DISK_ID, hostDiskId, hostIdentity, renewDiskId, VOLUME_ID_FOLDER } from "./host-config.ts";
 
 describe("the id of the host's disk", () => {
   const homes: Array<string> = [];
@@ -51,6 +51,19 @@ describe("the id of the host's disk", () => {
     const repaired = hostDiskId(at);
     expect(hostDiskId(at)).toBe(repaired);
     expect(existsSync(join(at, `${DISK_ID}.lock`))).toBe(false);
+  });
+
+  it("takes a new id when told, so a disk Gram refuses as replaced comes back as another", () => {
+    const at = home();
+    const volume = home();
+    const before = hostIdentity(at, volume).diskId;
+    const old = hostDiskId(at);
+    expect(renewDiskId(at)).not.toBe(old);
+    expect(hostDiskId(at)).not.toBe(old);
+    if (process.platform !== "win32") expect(statSync(join(at, DISK_ID)).mode & 0o077).toBe(0);
+    // The id it says changes with its home's, a work volume of its own kept as it is.
+    expect(hostIdentity(at, volume).diskId).not.toBe(before);
+    expect(hostIdentity(at, volume).diskId.endsWith(before.slice(old.length))).toBe(true);
   });
 
   it("says the disk of a work volume of its own too, so swapping that volume is another disk", () => {

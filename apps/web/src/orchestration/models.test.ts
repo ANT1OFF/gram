@@ -2350,6 +2350,7 @@ describe("new workspace sheet", () => {
     ] as unknown as Project[];
     expect(createInput(emptyNewWorkspace, DEFAULT_CHARTER, projects, [])).toEqual({
       error: "Pick at least one repository.",
+      field: "repositories",
     });
     const ready = toggleRepo(toggleRepo(emptyNewWorkspace, api, true), web, true);
     expect(ready.homeProjectId).toBe(api);
@@ -2358,6 +2359,13 @@ describe("new workspace sheet", () => {
     });
     const taken = (name: string) => ({ ...source, workspace: { ...source.workspace, name } });
     expect(workspaceNameFor(ready, projects, [taken(" API "), taken("api 2")])).toBe("api 3");
+    // A typed name is kept as typed, and one already taken is refused before the save.
+    expect(
+      createInput({ ...ready, name: "  Payments " }, DEFAULT_CHARTER, projects, [taken("api")]),
+    ).toMatchObject({ input: { name: "Payments" } });
+    expect(
+      createInput({ ...ready, name: "payments" }, DEFAULT_CHARTER, projects, [taken("Payments")]),
+    ).toMatchObject({ field: "name" });
     // Removing the home repo hands the role on.
     expect(toggleRepo(ready, api, false)).toMatchObject({ projectIds: [web], homeProjectId: web });
   });

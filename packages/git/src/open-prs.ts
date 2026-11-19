@@ -39,6 +39,15 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
+ * Whether a PR's head lives in the repository it was asked of, as GitHub's `isCrossRepository`
+ * says. Branch names are anyone's: a fork can open a PR from a branch named like yours, at your
+ * commit. Every lookup of "the PR of this branch" keeps only these, and a PR that doesn't say is
+ * left out too.
+ */
+export const isSameRepoHead = (pr: unknown): boolean =>
+  isRecord(pr) && pr["isCrossRepository"] === false;
+
+/**
  * The open PRs in a response body. `undefined` when the body carries no PR list, so a refused or
  * errored document reads as "unknown" rather than as "no open PRs".
  */
@@ -49,7 +58,7 @@ export const parseOpenPrs = (body: unknown): ReadonlyArray<OpenPr> | undefined =
   const nodes = isRecord(pullRequests) ? pullRequests["nodes"] : undefined;
   if (!Array.isArray(nodes)) return undefined;
   return nodes.flatMap((node): ReadonlyArray<OpenPr> => {
-    if (!isRecord(node) || node["isCrossRepository"] === true) return [];
+    if (!isRecord(node) || !isSameRepoHead(node)) return [];
     const { number, title, url, headRefName } = node;
     if (typeof number !== "number" || typeof url !== "string" || typeof headRefName !== "string") {
       return [];

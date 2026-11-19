@@ -55,6 +55,13 @@ const run = (id: number, path: string, status = "completed", head = HEAD) => ({
   run_attempt: 1,
   status,
   conclusion: status === "completed" ? "success" : null,
+  head_repository: { full_name: "example/project" },
+  pull_requests: [
+    {
+      number: 5,
+      base: { ref: "main", repo: { url: "https://api.github.com/repos/example/project" } },
+    },
+  ],
 });
 const job = (name: string, run_id: number, more: Record<string, unknown> = {}) => ({
   name,

@@ -149,9 +149,15 @@ sent. The claims:
 
 - `iss` and `aud`, as configured.
 - `sub`, an id for the person that never changes, and optionally `name` to show.
-- `role`: `member`, who can do everything, or `viewer`, who can read threads, diffs, docs,
-  memory and settings, and change nothing but their own view (below). A viewer can read any file
-  in a thread's folders, including ones that hold secrets, such as `.env`.
+- `role`: `member`, who works in threads, workspaces, pull requests and pages, or `viewer`, who
+  can read threads, diffs, docs, memory and settings, and change nothing but their own view
+  (below). A viewer can read any file in a thread's folders, including ones that hold secrets,
+  such as `.env`. Neither changes the server's own setup: its settings beyond a person's own
+  view, gateway profiles and keys, connectors, agent CLI installs, keybindings and palettes. Nor
+  do they read the agent sessions in its own accounts, its diagnostics or its logs. The deployment
+  supplies those ([settings supplied from outside](EMBEDDING.md#settings-supplied-from-outside)).
+  On a headless server no member browses its disk, adds or clones a project onto it, or lists
+  it other than by a thread's folder.
 - `iat` and `exp`, at most five minutes apart. Make a new statement per request.
 
 Each person keeps their own view. The pane grid and which pane has the focus are saved under the

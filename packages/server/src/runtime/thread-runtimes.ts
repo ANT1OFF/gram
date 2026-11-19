@@ -538,6 +538,8 @@ const make = Effect.gen(function* () {
             lastTool: undefined,
             runningTools: new Set(),
             toolTimes: new Map(),
+            steerSplit: undefined,
+            replyAliases: new Map(),
             quiet: undefined,
             compaction: undefined,
             activityPublished: undefined,

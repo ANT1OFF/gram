@@ -13,7 +13,7 @@ name: Packages and images
 # Setting the repository variable GRAM_PUBLISH_PACKAGES to `false` stops both: nothing is uploaded
 # while it says so. No other branch or event ever uploads. A pull request that changes this workflow, the
 # packaging tools, the Dockerfile or a published package's manifest runs the same build as a dry
-# run, as do a manual run and a push to an integration branch.
+# run, as does a manual run. An integration branch is checked by its pull requests, not on push.
 #
 # `pack` and `image` run the repository's code and its dependencies' install scripts with a
 # read-only token. `publish` holds the token that writes packages and installs nothing: it runs
@@ -22,13 +22,11 @@ name: Packages and images
 
 on:
   push:
-    # An integration branch is built and checked like main, and never published from.
-    branches: [main, "integration/**"]
+    # Main publishes a canary. No other branch is built on push.
+    branches: [main]
   release:
     types: [published]
-  # Into an integration branch, the push run checks it once it lands (see check.yml).
   pull_request:
-    branches-ignore: ["integration/**"]
     paths:
       - .github/workflows/packages.yml
       - tools/packages/**

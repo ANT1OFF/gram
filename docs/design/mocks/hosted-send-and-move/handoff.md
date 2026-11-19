@@ -55,6 +55,19 @@ the hosted features on and a server signed in to, and only where the shell has t
 one (`hostedDevice.move` in `packages/contracts/src/desktop-bridge.ts`): `check`, `start`, `cancel`
 and `onProgress`. The sheet draws what those calls answer and decides nothing itself.
 
+Board 1, sending a task, is built in New task (`composer/new-task-draft.tsx`,
+`send-target-stop.tsx`, `send-target.ts`): a Machine stop lists the hosted workspaces of servers
+signed in to that run sent work, and picking one shows where it runs and the three checks. The
+local server answers them (`POST /threads/send-check`, `orchestration/sent-work-routes.ts`): the
+server says whether it reaches the repository (`thread_check_endpoint`; a server without it is
+"couldn't check", a warning), the remote's default branch is what the worker starts from (blocking
+when it is missing or has commits only here, a warning when another branch is checked out, since
+a server starts from the remote's default branch), and uncommitted files warn. `POST /threads/send`
+makes the task the workspace orchestrator's worker there, as `send_worker` would, without the
+charter's `sendWork`, which bounds the orchestrator and not the person. Deviations: "Ask for
+access" and "Push it" aren't drawn (no address for the first; pushing stays the person's), and
+attached files block a send, since only the brief goes.
+
 Still to come, each a change of its own:
 
 - The shell's side of `hostedDevice.move`, and the address on a hosted server that takes a bundle.

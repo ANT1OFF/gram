@@ -66,7 +66,14 @@ const prLayer = (proc: ProcShape) =>
  * PR chosen from them, and `e1` as that PR riding along once the branch is known.
  */
 const badgeDocument = (number: number) => {
-  const pullRequest = { number, state: "OPEN", url: "u", headRefOid: "tip", title: "t" };
+  const pullRequest = {
+    number,
+    state: "OPEN",
+    isCrossRepository: false,
+    url: "u",
+    headRefOid: "tip",
+    title: "t",
+  };
   return JSON.stringify({
     data: { e0: { pullRequests: { nodes: [pullRequest] }, pullRequest }, e1: { pullRequest } },
   });
@@ -245,6 +252,7 @@ describe("Pr.status caching", () => {
                 pullRequest: {
                   number: 11,
                   state: "OPEN",
+                  isCrossRepository: false,
                   url: "https://github.com/acme/web/pull/11",
                   headRefOid: "tip",
                   title: "t",
@@ -317,6 +325,7 @@ describe("Pr.status caching", () => {
             stdout: JSON.stringify({
               number: 11,
               state: "OPEN",
+              isCrossRepository: false,
               url: "https://github.com/acme/web/pull/11",
               title: "t",
               headRefOid: head,
@@ -412,7 +421,17 @@ describe("Pr.status caching", () => {
   it.effect("caches a bound PR badge per repo and number", () =>
     Effect.gen(function* () {
       const bound = {
-        data: { e0: { pullRequest: { number: 42, state: "OPEN", url: "u", title: "t" } } },
+        data: {
+          e0: {
+            pullRequest: {
+              number: 42,
+              state: "OPEN",
+              isCrossRepository: false,
+              url: "u",
+              title: "t",
+            },
+          },
+        },
       };
       const { proc, ghCalls } = repoProc({
         head: () => "aaa",
@@ -561,6 +580,7 @@ describe("Pr.status caching", () => {
               const pullRequest = {
                 number,
                 state: "OPEN",
+                isCrossRepository: false,
                 url: "u",
                 headRefOid: `tip/wt${number}`,
               };

@@ -181,7 +181,7 @@ function StartFreshOn({
   const [saveFirst, setSaveFirst] = useState(true);
   const model = modelDisplayName(models, onto.agent, onto.model);
   const action = `Start fresh on ${model}`;
-  if (handoff.running) return <HandingOff />;
+  if (handoff.running) return <HandingOff savingFirst={handoff.savingFirst} />;
   if (!open)
     return (
       <Button

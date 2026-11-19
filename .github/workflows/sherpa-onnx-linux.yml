@@ -24,18 +24,13 @@ on:
       - tools/sherpa-onnx/**
       - packages/shell/src/speech-process/**
       - apps/desktop/src/speech.live.test.ts
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/sherpa-onnx-linux.yml
-      - tools/sherpa-onnx/**
-      - packages/shell/src/speech-process/**
-      - apps/desktop/src/speech.live.test.ts
+  # Not on push to main: the pull request ran it before merging, and a release rebuilds it again
+  # (release-linux.yml).
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

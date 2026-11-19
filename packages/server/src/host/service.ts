@@ -196,6 +196,19 @@ export const installService = (platform: ServicePlatform, command: ServiceComman
   });
 
 /**
+ * Restarts the service as it is installed, its command and environment as written then: not
+ * rewritten from the shell that asks, whose `GRAM_HOST_REPOS` or `PATH` may differ.
+ */
+export const restartService = (platform: ServicePlatform) =>
+  platform === "darwin"
+    ? run("launchctl", ["kickstart", "-k", `gui/${uid()}/${LAUNCHD_LABEL}`]).pipe(
+        Effect.flatMap(must("launchctl kickstart")),
+      )
+    : run("systemctl", ["--user", "restart", SYSTEMD_UNIT]).pipe(
+        Effect.flatMap(must("systemctl --user restart")),
+      );
+
+/**
  * Whether the service is stopped now, by its manager's own answer: launchd has no such service
  * loaded, or systemd has the unit inactive or failed. Undefined when the manager couldn't say.
  */

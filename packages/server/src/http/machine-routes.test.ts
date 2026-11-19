@@ -4,7 +4,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   HOST_PROTOCOL_VERSION,
   type HostFolderChecked,
-  type HostId,
+  HostId,
   InvalidState,
   NotFound,
 } from "@gram/contracts";
@@ -19,6 +19,7 @@ import {
   MACHINES_FOLDERS_BROWSE_PATH,
   MACHINES_FOLDERS_CHECK_PATH,
   MACHINES_LIST_PATH,
+  MACHINES_READMIT_PATH,
   MACHINES_SSH_JOIN_PATH,
   MACHINES_UPDATE_PATH,
   machineManagement,
@@ -278,6 +279,32 @@ describe("Settings → Machines", () => {
       // Access over Tailscale off: no update.
       const off = yield* post(hosts, MACHINES_UPDATE_PATH, { id: box.id }, { remote: undefined });
       expect(off).toMatchObject({ status: 409, body: { reason: "tailscale-off" } });
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("lets a machine's refused disk back in as that machine, from this side", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const { id } = joined(hosts);
+      const machine = HostId.make(id);
+      hosts.stops.arrive(machine, { diskId: "disk-aaaaaaaa", bootId: "boot-a" });
+      hosts.stops.arrive(machine, { diskId: "disk-bbbbbbbb", bootId: "boot-b" });
+      // Nothing refused yet: nothing to let in.
+      expect((yield* post(hosts, MACHINES_READMIT_PATH, { id })).status).toBe(409);
+      expect((yield* post(hosts, MACHINES_READMIT_PATH, { id: "m-nope" })).status).toBe(404);
+      // The old disk's host dials in and is refused; a person lets it back without its shell.
+      expect(hosts.stops.arrive(machine, { diskId: "disk-aaaaaaaa", bootId: "boot-c" }).kind).toBe(
+        "fenced",
+      );
+      expect(yield* post(hosts, MACHINES_READMIT_PATH, { id })).toEqual({
+        status: 200,
+        body: { disk: "disk-aaaaaaaa" },
+      });
+      // Its next dial comes in as the same machine, owing a resume that checks its folders.
+      expect(hosts.stops.arrive(machine, { diskId: "disk-aaaaaaaa", bootId: "boot-c" }).kind).toBe(
+        "replaced",
+      );
+      expect(hosts.stops.onOtherDisk(machine)).toBe(true);
     }).pipe(Effect.scoped),
   );
 });

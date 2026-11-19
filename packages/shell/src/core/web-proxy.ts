@@ -46,6 +46,13 @@ export interface WebProxyOptions {
    * the shared session's proxy, which reaches no private network at all.
    */
   readonly privateDestination?: string | undefined;
+  /**
+   * Whether it may connect to `hostname` at all, asked before anything else: the local session's
+   * proxy reaches only the hosts its own request check let a page reach just now
+   * (`createHostDoors`), so a connection that check never saw (WebRTC, a worker's socket, a
+   * preconnect) reaches no other. Every host when absent, as the web sessions' proxies do.
+   */
+  readonly admits?: ((hostname: string) => boolean) | undefined;
   /** Told of what the server itself can't do, such as accept a connection. */
   readonly onError?: ((error: Error) => void) | undefined;
 }
@@ -181,6 +188,7 @@ export async function startWebProxy(options: WebProxyOptions = {}): Promise<WebP
   const targets = async (host: string, port: number) => {
     const hostname = hostnameOf(host);
     if (hostname === undefined) return undefined;
+    if (options.admits !== undefined && !options.admits(hostname)) return undefined;
     const allowPrivate =
       privateDestination !== undefined && destinationKey(hostname, port) === privateDestination;
     // A literal needs no lookup, nor a loopback or (here) unreachable private name; any other

@@ -157,4 +157,20 @@ describe("a shared tree's writes", () => {
     expect(await exists(host.root, ".gram-incoming")).toBe(true);
     expect((await run(host.list)).entries.map((e) => e.path)).toEqual(["big.bin"]);
   });
+  it("takes in nothing past the folder's room, so a machine can't fill this disk", async () => {
+    // A copy with 10 bytes of room: the machine's two 6-byte files can't both come in.
+    const small = sharedTree(join(dir, "small"), 10);
+    await run(small.open);
+    await put(host.root, "a.txt", "aaaaaa");
+    await put(host.root, "b.txt", "bbbbbb");
+    const done = await run(syncRound(side(small), side(host), {}));
+    expect(done).toMatchObject({ copied: 1, deferred: 1 });
+    expect((await run(small.list)).entries).toHaveLength(1);
+    // Replacing a file there counts the room it gives back.
+    const [kept] = (await run(small.list)).entries;
+    await put(host.root, kept!.path, "cccccccc", 4_000_000_000);
+    const again = await run(syncRound(side(small), side(host), done.base));
+    expect(again.copied).toBe(1);
+    expect(await text(small.root, kept!.path)).toBe("cccccccc");
+  });
 });

@@ -172,6 +172,8 @@ export const wakeWhenText = (
 export interface HandoffMark {
   readonly fromSession: string | undefined;
   readonly startedAt: number;
+  /** The orchestrator saves to memory first: the fresh session waits for that turn to end. */
+  readonly savingFirst?: boolean;
 }
 
 /** A handoff that hasn't shown its new session after this long is no longer claimed to be running. */

@@ -476,15 +476,29 @@ describe.skipIf(!hasGit)("routines and worker memory: fourth review", () => {
             for (const [path, content] of Object.entries(byHand)) {
               writeFileSync(nodePath.join(dir, path), content);
             }
-            const seen = listed(yield* worker.session.callTool("memory_list", {}));
+            const listing = yield* worker.session.callTool("memory_list", {});
+            const seen = listed(listing);
             expect(seen).toContain("conventions.md");
             for (const path of ["notes.md", ...Object.keys(byHand)]) {
               expect(seen, path).not.toContain(path);
               const refused = yield* worker.session
                 .callTool("memory_read", { path })
                 .pipe(Effect.flip);
-              expect(refused.message, path).toContain("No memory file");
+              // What its text holds back is named with the line and why, never the text; what is
+              // named for a credential or marked private still reads as missing.
+              if (path === "slack.md") {
+                expect(refused.message).toContain("line 1 has something shaped like a credential");
+                expect(refused.message).not.toContain(slackToken);
+              } else {
+                expect(refused.message, path).toContain("No memory file");
+              }
             }
+            expect(JSON.stringify(listing)).not.toContain(slackToken);
+            expect(
+              (
+                listing as { keptFromWorkers?: ReadonlyArray<{ path: string }> }
+              ).keptFromWorkers?.map((file) => file.path),
+            ).toEqual(["slack.md"]);
             const all = listed(yield* session.callTool("memory_list", {}));
             for (const path of ["notes.md", ...Object.keys(byHand)]) expect(all).toContain(path);
           }),

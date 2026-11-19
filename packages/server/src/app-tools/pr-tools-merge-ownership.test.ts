@@ -441,6 +441,8 @@ describe("merge_when_ready", () => {
                 path,
                 repoRoot: world.repo,
                 branch: "feat/evidence",
+                // As Gram records it when it registers a worktree for the worker.
+                cloneIdentity: cloneIdentityOf("https://github.com/acme/app.git")!,
               };
               yield* runtimes.updateThread(worker.thread.id, (t) => ({
                 ...t,

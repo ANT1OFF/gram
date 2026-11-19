@@ -349,6 +349,12 @@ export const Project = Schema.Struct({
   /** Read-only diagnostic; an invalid stored gate is unavailable, never OFF. */
   localCheckUnavailable: Schema.optionalKey(Schema.String),
   bookmarked: Schema.Boolean,
+  /**
+   * Whether the user trusts the folder's own agent settings and scripts (`.claude/`, `.mcp.json`,
+   * `.gram/scripts.json`). Asked once, when the folder is added; absent when it never was. An
+   * absent answer for a folder that brings any of them reads as `untrusted`.
+   */
+  folderTrust: Schema.optionalKey(Schema.Literals(["trusted", "untrusted"])),
   /** Epoch ms; absent if never opened (e.g. bookmarked only). Drives the recents list. */
   lastOpenedAt: Schema.optionalKey(Schema.Number),
 });
@@ -371,9 +377,11 @@ export const Checkout = Schema.Struct({
   /** The main checkout's repo root for a worktree; equal to `path` or omitted for main. */
   repoRoot: Schema.optionalKey(Schema.String),
   /**
-   * For a worktree Gram made on another machine, the identity of the `origin` it cloned there
-   * (transport, host, port, account, path), recorded here as it was made. Its host is asked only
-   * to confirm it; absent on a checkout made before it was recorded.
+   * The identity of the `origin` (transport, host, port, account, path) of the repository a
+   * worktree was made from, recorded here as Gram made it: on another machine, of the clone made
+   * there, which its host is asked only to confirm; on this one, of its repository's origin. A
+   * worker's ownership of a PR goes by it, never by the origin its git config names later.
+   * Absent on a checkout made before it was recorded.
    */
   cloneIdentity: Schema.optionalKey(Schema.String),
   /**
@@ -1297,6 +1305,11 @@ export const ApprovalRequest = Schema.Struct({
   toolName: Schema.String,
   /** The SDK has no `title`; the card is built from `displayName` + `input`. */
   displayName: Schema.String,
+  /**
+   * The card's question, for a Gram tool that words its own ("Send worker to Example?"); absent,
+   * the card asks "Allow <displayName>?".
+   */
+  title: Schema.optionalKey(Schema.String),
   input: Schema.Record(Schema.String, Schema.Unknown),
   /** The model's own description of the call. */
   description: Schema.optionalKey(Schema.String),

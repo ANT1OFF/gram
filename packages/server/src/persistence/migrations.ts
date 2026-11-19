@@ -585,6 +585,16 @@ const waitPerson = Effect.gen(function* () {
 });
 
 /**
+ * Whether the user trusts a project's own agent settings and scripts, asked once when a folder is
+ * added. Every project already known keeps what it had: its settings loaded, so it is trusted.
+ */
+const folderTrust = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE projects ADD COLUMN folder_trust TEXT`;
+  yield* sql`UPDATE projects SET folder_trust = 'trusted'`;
+});
+
+/**
  * The user-role rows of a thread in seq order, without the replies between them: what
  * `userMessagePage` and a role-filtered `messagesWith` walk. A worker's few prompts sit among
  * thousands of replies, and an orchestrator's newest prompt is found without reading its history.
@@ -617,6 +627,7 @@ export const migrations = {
   "0011_wait_person": waitPerson,
   "0012_user_messages": userMessages,
   "0013_actor_names": actorNames,
+  "0014_folder_trust": folderTrust,
 };
 
 /**

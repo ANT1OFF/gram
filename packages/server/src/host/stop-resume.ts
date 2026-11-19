@@ -24,9 +24,12 @@ import {
   type HostStopKept,
   HostUnavailable,
   hostServes,
+  InvalidState,
+  LOCAL_HOST_ID,
   type SavedDiff,
   type Thread,
   type ThreadId,
+  ThreadNotFound,
 } from "@gram/contracts";
 import { isWipRefOf } from "@gram/git";
 import * as Cause from "effect/Cause";
@@ -42,7 +45,7 @@ import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { cloneUrlOf } from "./repos.ts";
 import { HOST_RESTORE_MS, REOPEN_MS, SHARED_FLUSH_MS, STOP_CANCEL_MS } from "./budgets.ts";
 import type { JobReport } from "./machine-jobs.ts";
-import { FOLDER_THERE } from "./stop.ts";
+import { FOLDER_THERE, KEPT_WORK_GONE_REASON, keptWorkGone } from "./stop.ts";
 
 export interface StopResumeDeps {
   readonly hosts: Pick<RemoteHostsShape, "connection" | "machines" | "stops">;
@@ -458,18 +461,32 @@ const madeFrom = (thread: Thread, id: HostId, cwd: string) => {
   return undefined;
 };
 
+/** Why a named thread's folder isn't made from its branch: another thread in it wasn't named. */
+const SHARED_FROM_BRANCH =
+  "Its folder is shared with another thread that wasn't named in fromBranch, whose saved work taking the branch would drop too: name every thread in that folder, or none.";
+
+/** Why a folder a resume confirmed isn't back this time: Git on the machine couldn't read it. */
+const FOLDER_UNREAD =
+  "Git on the machine couldn't read its folder, so it wasn't checked; the next resume asks again.";
+
+/** A thread a person took the branch for, without the work its stop kept (`fromBranch`). */
+const namedIn = (fromBranch: ReadonlyArray<ThreadId> | undefined, threadId: ThreadId) =>
+  fromBranch?.includes(threadId) === true;
+
 /** What a resume made of one thread's folder. */
 type FolderOutcome =
   | { readonly kind: "there"; readonly unverified?: true }
   | ({ readonly kind: "restored" } & HostResumed["restored"][number])
-  | { readonly kind: "missing"; readonly note?: string }
-  | { readonly kind: "refused"; readonly note: string };
+  | { readonly kind: "missing"; readonly note?: string; readonly keptGone?: true }
+  | { readonly kind: "refused"; readonly note: string; readonly keptGone?: true };
 
 /** Why a thread's session doesn't open on the machine, for a folder of it that isn't back. */
 const blockReason = (outcome: FolderOutcome) =>
-  outcome.kind === "refused" || (outcome.kind === "missing" && outcome.note !== undefined)
-    ? `Its folder wasn't put back on the machine: ${outcome.note}`
-    : "Its folder isn't on the machine, and Gram can't put it back there.";
+  (outcome.kind === "missing" || outcome.kind === "refused") && outcome.keptGone === true
+    ? KEPT_WORK_GONE_REASON
+    : outcome.kind === "refused" || (outcome.kind === "missing" && outcome.note !== undefined)
+      ? `Its folder wasn't put back on the machine: ${outcome.note}`
+      : "Its folder isn't on the machine, and Gram can't put it back there.";
 
 /** Why, counted: no note is a folder Gram didn't make from a clone, or a host that can't. */
 const counted = (entries: ReadonlyArray<{ readonly note?: string | undefined }>) =>
@@ -478,6 +495,37 @@ const counted = (entries: ReadonlyArray<{ readonly note?: string | undefined }>)
       ([why, each]) => [why, each.length],
     ),
   );
+
+/**
+ * A person took the thread's branch without the work its last stop kept, which is gone from the
+ * remote: each joined machine whose resume holds the thread off for that (`KEPT_WORK_GONE_REASON`)
+ * is resumed with it in `fromBranch`. Fails with why when no machine holds it off so, a resume
+ * fails, or the thread is still held off after one.
+ */
+export const restoreFromBranch = (
+  deps: StopResumeDeps,
+  threadId: ThreadId,
+): Effect.Effect<void, InvalidState | ThreadNotFound> =>
+  Effect.gen(function* () {
+    const thread = (yield* deps.store.listThreads).find((each) => each.id === threadId);
+    if (thread === undefined) return yield* new ThreadNotFound({ threadId });
+    const stops = deps.hosts.stops;
+    const machines = [...new Set(checkoutsOf(thread).map(hostOf))].filter(
+      (id) => id !== LOCAL_HOST_ID && stops.blocked(id, threadId) === KEPT_WORK_GONE_REASON,
+    );
+    if (machines.length === 0)
+      return yield* new InvalidState({
+        threadId,
+        message: "This thread isn't held off its machine for saved work that is gone.",
+      });
+    for (const id of machines) {
+      yield* resumeHost(deps, id, { fromBranch: [threadId] }).pipe(
+        Effect.mapError((error) => new InvalidState({ threadId, message: error.message })),
+      );
+      const still = stops.blocked(id, threadId);
+      if (still !== undefined) return yield* new InvalidState({ threadId, message: still });
+    }
+  });
 
 /**
  * How many of a machine's folders a resume puts back at once: one, as the host restores one at a
@@ -513,6 +561,11 @@ export const resumeHost = (
     readonly kept?: ReadonlyArray<KeptBefore> | undefined;
     /** Told of each folder as it goes: a resume job's progress. */
     readonly follow?: JobReport | undefined;
+    /**
+     * Threads a person said to make from their branch when the work their stop kept is gone from
+     * the remote (`keptWorkGone`): without that work, rather than not at all.
+     */
+    readonly fromBranch?: ReadonlyArray<ThreadId> | undefined;
   } = {},
 ): Effect.Effect<HostResumed, HostUnavailable> =>
   Effect.suspend(() => {
@@ -560,7 +613,47 @@ export const resumeHost = (
       // was kept, never taken as back for being there: once, by the first resume of the
       // generation to confirm it. One a resume before confirmed may hold new work since.
       const otherDisk = stops.onOtherDisk(id);
-      const verifyThere = (cwd: string) => otherDisk && !stops.isFolderConfirmed(id, cwd);
+      // A confirmed folder the host could make is still a checkout Git reads, or it isn't the one
+      // confirmed: something replaced it since (an empty folder at its path, say), and it is
+      // checked again like any other. What is in a checkout is not looked at: it may hold new work.
+      const local = (
+        connection.git as {
+          local?: (cwd: string) => Effect.Effect<{ readonly repo?: boolean }, unknown>;
+        }
+      ).local;
+      // Asked a few times: Git that can't answer now says nothing of what is there, so such a folder
+      // is neither taken as back nor owed afresh, only left for the next resume (`unread`).
+      const probe = (read: NonNullable<typeof local>, cwd: string) =>
+        Effect.gen(function* () {
+          for (let tries = 0; tries < PRESENCE_TRIES; tries++) {
+            if (tries > 0) yield* Effect.sleep(PRESENCE_RETRY);
+            const said = yield* read(cwd).pipe(
+              Effect.map((state) => (state.repo === true ? "checkout" : "not")),
+              Effect.orElseSucceed(() => undefined),
+            );
+            if (said !== undefined) return said;
+          }
+          return "unknown" as const;
+        });
+      const rechecked = new Map(
+        local === undefined || !otherDisk
+          ? []
+          : yield* Effect.forEach(
+              [...Map.groupBy(folders, ({ cwd }) => cwd)]
+                .filter(
+                  ([cwd, sharing]) =>
+                    seen.get(cwd) === true &&
+                    stops.isFolderConfirmed(id, cwd) &&
+                    remakeable(sharing),
+                )
+                .map(([cwd]) => cwd),
+              (cwd) => Effect.map(probe(local, cwd), (said) => [cwd, said] as const),
+              { concurrency: LOOK_CONCURRENCY },
+            ),
+      );
+      const unread = (cwd: string) => rechecked.get(cwd) === "unknown";
+      const verifyThere = (cwd: string) =>
+        otherDisk && (!stops.isFolderConfirmed(id, cwd) || rechecked.get(cwd) === "not");
       // What a resume before this one set out to put back and didn't finish with.
       const owedBefore = new Set(
         [...new Set(folders.map(({ cwd }) => cwd))].filter((cwd) => stops.isFolderOwed(id, cwd)),
@@ -586,10 +679,15 @@ export const resumeHost = (
       /** A host that checks a folder a resume before didn't finish with before taking it as back. */
       const checksPending =
         connection.hello !== undefined && hostServes(connection.hello, "wip-restore-pending");
+      /** A host that holds a folder made from its branch to the commit its stop kept. */
+      const holdsKept =
+        connection.hello !== undefined && hostServes(connection.hello, "wip-restore-kept");
       const putBack = (
         { thread, cwd }: (typeof folders)[number],
         there: boolean | undefined,
         pending: boolean,
+        /** Every thread sharing the folder was named in `fromBranch`. */
+        fromBranch: boolean,
       ): Effect.Effect<FolderOutcome> =>
         Effect.gen(function* () {
           const made = madeFrom(thread, id, cwd);
@@ -663,6 +761,7 @@ export const resumeHost = (
             ...(commit === undefined ? {} : { commit }),
             ...(commit !== undefined && before?.caughtUp === true ? { caughtUp: true } : {}),
             ...(pending ? { pending: true } : {}),
+            ...(fromBranch ? { fromBranch: true } : {}),
           }).pipe(
             Effect.map((said) => ({ said, failed: undefined })),
             Effect.timeoutOrElse({
@@ -675,6 +774,18 @@ export const resumeHost = (
           if (answer.said === undefined) return { kind: "refused", note: answer.failed };
           const said = answer.said;
           const note = said.note === undefined ? {} : { note: said.note };
+          // A host before `wip-restore-kept` makes a folder from its branch whatever the branch
+          // holds, caught up or not: one at another commit than the stop kept is held to be without
+          // that work (the branch may have been pushed over), unless a person took the branch.
+          if (
+            said.restored &&
+            !holdsKept &&
+            !fromBranch &&
+            said.source === "branch" &&
+            commit !== undefined &&
+            said.commit !== commit
+          )
+            return { kind: "refused", note: keptWorkGone(thread.id, cwd), keptGone: true };
           if (said.restored)
             return {
               kind: "restored",
@@ -697,7 +808,11 @@ export const resumeHost = (
                   note: "A resume before set out to put this folder back, and this machine's host can't check it: update it, or remove the folder.",
                 }
               : { kind: "there" };
-          return { kind: "missing", ...note };
+          return {
+            kind: "missing",
+            ...note,
+            ...(said.keptGone === true ? { keptGone: true } : {}),
+          };
         });
       // Each thread's folders as they are done with, and the threads whose folders are all done.
       const toGo = new Map<ThreadId, number>();
@@ -761,18 +876,32 @@ export const resumeHost = (
               Number(madeFrom(a.thread, id, a.cwd) !== undefined),
           );
           const there = again && seen.get(cwd) === true ? undefined : seen.get(cwd);
+          // Taking the branch without the kept work is each thread's own choice: made so only when
+          // every thread in the folder was named, as it drops what any of them kept. A named thread
+          // sharing it with one that wasn't is refused that, and says why.
+          const takesBranch = sharing.every(({ thread }) => namedIn(options.fromBranch, thread.id));
           const outcomes: Array<FolderOutcome> = [];
           if (follow !== undefined)
             for (const folder of ordered) yield* follow.folder(folder.thread.id, cwd, "running");
           let back = false;
           for (const folder of ordered) {
+            // A confirmed folder Git couldn't read now: not checked, so not back, and asked again
+            // at the next resume, with nothing owed for it meanwhile.
+            if (unread(cwd)) {
+              outcomes.push({ kind: "refused", note: FOLDER_UNREAD });
+              continue;
+            }
             // There on the disk its folders were last seen on, and the host could make it: as it
             // was left. One the host can't make is held to being a readable repository below.
             if (back || (there === true && remakeable(sharing))) {
               outcomes.push({ kind: "there" });
               continue;
             }
-            const outcome = yield* putBack(folder, there, again);
+            if (!takesBranch && namedIn(options.fromBranch, folder.thread.id)) {
+              outcomes.push({ kind: "refused", note: SHARED_FROM_BRANCH });
+              continue;
+            }
+            const outcome = yield* putBack(folder, there, again, takesBranch);
             outcomes.push(outcome);
             back = outcome.kind === "there" || outcome.kind === "restored";
           }

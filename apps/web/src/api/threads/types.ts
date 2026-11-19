@@ -70,6 +70,11 @@ export interface ThreadsApi {
   resumeLimitWait(threadId: ThreadId): Promise<void>;
   /** Resumes a thread whose last turn a lost machine cut off, with Gram's note of what happened. */
   resumeAfterMachineLost(threadId: ThreadId): Promise<void>;
+  /**
+   * Makes the thread's folder on its machine from its branch without its saved work, which is gone
+   * from the remote (`ThreadError.code` `kept-work-gone`): the person's choice to drop it.
+   */
+  restoreFromBranch(threadId: ThreadId): Promise<void>;
   /** The diff behind `Thread.savedWork`, while this Gram still holds it; `saved` absent if not. */
   savedDiff(threadId: ThreadId): Promise<{ readonly saved?: SavedDiff }>;
   /** Stops a thread's limit wait; it stands failed until the user sends. */

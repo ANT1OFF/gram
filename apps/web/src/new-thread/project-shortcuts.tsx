@@ -4,6 +4,7 @@ import type { ComponentType, ReactNode } from "react";
 
 import { BookmarkToggle } from "./bookmark-toggle";
 import { ForgetProjectButton } from "./forget-project-button";
+import { TrustFolderButton } from "./trust-folder-button";
 import { GitBadge } from "./git-badge";
 import { baseName, folderLabel } from "./path";
 
@@ -155,6 +156,7 @@ function ProjectRow({
         </span>
         {project.repoRoot !== undefined && <GitBadge />}
       </button>
+      <TrustFolderButton project={project} />
       <BookmarkToggle project={project} />
       {forgettable && <ForgetProjectButton project={project} />}
     </li>

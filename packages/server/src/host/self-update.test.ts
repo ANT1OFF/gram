@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -56,7 +57,7 @@ import {
 } from "./self-update.ts";
 import { hostUpdaterOf } from "./self-update-host.ts";
 import { makeAdmission, UPDATING } from "./admission.ts";
-import { lockPort, takeUpdateLock, updateLockState } from "./update-lock.ts";
+import { legacyLockPort, takeUpdateLock, updateLockState } from "./update-lock.ts";
 import type { ServiceCommand } from "./service.ts";
 import { LINUX_HOST_SWITCHES } from "./launch-args.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
@@ -735,8 +736,9 @@ const supervisorProcess = (
     script,
     `import { superviseUpdate } from ${JSON.stringify(moduleUrl)};
 import { writeSync } from "node:fs";
-// As a real service move does (it runs launchctl or systemctl), this keeps the process alive.
-const alive = setInterval(() => {}, 1000);
+// As a real service move does (it runs launchctl or systemctl), this keeps the process alive,
+// collecting as it goes: a held lock must outlast a holder that nothing else references.
+const alive = setInterval(() => globalThis.gc?.(), 20);
 const outcome = await superviseUpdate({
   home: process.argv[2], apps: process.argv[3], now: () => 0, sleep: async () => {}, log: () => {},
   install: async () => { writeSync(1, "INSTALL\\n"); await new Promise(() => {}); },
@@ -766,7 +768,14 @@ syncBuiltinESMExports();
   );
   const child = spawn(
     process.execPath,
-    [...(pauseAtRename ? ["--import", preload] : []), script, fixture.home, fixture.apps, id],
+    [
+      "--expose-gc",
+      ...(pauseAtRename ? ["--import", preload] : []),
+      script,
+      fixture.home,
+      fixture.apps,
+      id,
+    ],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
   let out = "";
@@ -851,32 +860,61 @@ describe("re-review regressions", () => {
       // Once that one ends too, the next takes the lock and the move.
       await observer.kill();
       expect(await launch("next").waitFor("INSTALL", "DONE")).toBe("INSTALL");
-      // Nothing on disk was ever a lock.
-      expect(readdirSync(fixture.home).filter((name) => name.includes("lock"))).toEqual([]);
+      // Nothing on disk is a lock but the two files the kernel locks: none was ever taken over.
+      expect(
+        readdirSync(fixture.home)
+          .filter((name) => name.includes("lock"))
+          .toSorted(),
+      ).toEqual([".update-plan.lock", ".update-supervisor.lock"]);
     } finally {
       for (const each of started) await each.kill();
     }
   }, 60_000);
 
-  it("leaves the update alone when another program holds the lock's port", async () => {
+  it("moves the service when another program holds the old lock ports", async () => {
     const fixture = setup();
-    await steps(fixture.updater);
-    const id = fixture.handed[0]!.id;
-    const squatter = createServer((socket) => socket.end("not gram\n"));
-    await new Promise<void>((resolve) =>
-      squatter.listen({ host: "127.0.0.1", port: lockPort(fixture.home, "supervisor") }, () =>
-        resolve(),
-      ),
-    );
+    const closers = [
+      await squat(legacyLockPort(fixture.home, "supervisor")),
+      await squat(legacyLockPort(fixture.home, "plan")),
+    ];
     try {
-      expect(await supervisorRunning(fixture.home)).toBe(true);
-      const supervisor = supervising(fixture);
-      expect(await superviseUpdate(supervisor.deps, id)).toBeUndefined();
-      expect(supervisor.installed).toEqual([]);
+      await steps(fixture.updater);
+      const id = fixture.handed[0]!.id;
+      expect(await supervisorRunning(fixture.home)).toBe(false);
+      const gate = makeAdmission();
+      const newHost = makeSelfUpdate({ ...fixture.deps, release: NEW, admission: gate });
+      expect(gate.closed()).toBe(true);
+      const supervisor = supervising(fixture, {
+        confirmMs: 0,
+        install: async () => {
+          expect((await newHost.check()).last).toMatchObject({ outcome: "updated" });
+        },
+      });
+      expect(await superviseUpdate(supervisor.deps, id)).toMatchObject({ outcome: "updated" });
+      expect(gate.closed()).toBe(false);
     } finally {
-      await new Promise<void>((resolve) => squatter.close(() => resolve()));
+      for (const close of closers) await close();
     }
-  });
+  }, 30_000);
+
+  it("rolls back when another program holds the old lock ports and the new host never dials in", async () => {
+    const fixture = setup();
+    const closers = [
+      await squat(legacyLockPort(fixture.home, "supervisor")),
+      await squat(legacyLockPort(fixture.home, "plan")),
+    ];
+    try {
+      await steps(fixture.updater);
+      const plan = fixture.handed[0]!;
+      const supervisor = supervising(fixture, { confirmMs: 0 });
+      expect(await superviseUpdate(supervisor.deps, plan.id)).toMatchObject({
+        outcome: "rolledBack",
+      });
+      expect(supervisor.installed).toEqual([plan.next, plan.previous]);
+    } finally {
+      for (const close of closers) await close();
+    }
+  }, 30_000);
 
   it("keeps the new host from taking work until it is confirmed, and confirms nothing once it is given up", async () => {
     const fixture = setup();
@@ -954,11 +992,15 @@ describe("fourth review regressions", () => {
     mkdirSync(home, { recursive: true, mode: 0o700 });
     symlinkSync(real, join(root, "alias"));
     const alias = join(root, "alias", "host");
-    for (const spelling of [alias, `${home}/`, `${alias}/`, join(home, "..", "host")])
-      expect(lockPort(spelling, "supervisor")).toBe(lockPort(home, "supervisor"));
+    const held = await takeUpdateLock(home, "supervisor");
+    expect(held).toBeDefined();
+    const spellings = [alias, `${home}/`, `${alias}/`, join(home, "..", "host")];
     // On a folder that ignores case, as a Mac's usually does, another case is the same folder.
     const upper = home.replace(/host$/, "HOST");
-    if (existsSync(upper)) expect(lockPort(upper, "supervisor")).toBe(lockPort(home, "supervisor"));
+    if (existsSync(upper)) spellings.push(upper);
+    for (const spelling of spellings)
+      expect(await updateLockState(spelling, "supervisor")).toBe("held");
+    await held!.release();
 
     // Two supervisors, one through each spelling: only one enters the service move.
     const fixture = setup({ overrides: { home } });
@@ -997,59 +1039,39 @@ describe("fourth review regressions", () => {
     await first;
   });
 
-  it("gives a folder's two locks two ports side by side, never one", () => {
-    for (let i = 0; i < 40; i += 1) {
-      const home = temp();
-      expect(lockPort(home, "plan")).toBe(lockPort(home, "supervisor")! + 1);
-    }
-  });
-
   it("takes no lock for a folder it can't identify", async () => {
     const home = join(temp(), "gone");
-    expect(lockPort(home, "supervisor")).toBeUndefined();
     expect(await takeUpdateLock(home, "supervisor")).toBeUndefined();
     expect(await supervisorRunning(home)).toBe(true);
   });
 
-  it("refuses before downloading or writing anything when another program holds the plan's port", async () => {
-    const fixture = setup();
-    const port = lockPort(fixture.home, "plan");
-    const close = await squat(port);
-    try {
+  it.skipIf(process.platform === "win32")(
+    "takes no lock in a folder other users can open, and refuses the update before downloading",
+    async () => {
+      const fixture = setup();
+      chmodSync(fixture.home, 0o755);
+      expect(await takeUpdateLock(fixture.home, "plan")).toBeUndefined();
       const run = await steps(fixture.updater);
       expect(run.refused).toMatchObject({
         reason: "failed",
-        message: expect.stringContaining(`port ${port}`),
+        message: expect.stringContaining("mode 700"),
       });
       expect(fixture.release.asked).toEqual([]);
       expect(fixture.handed).toEqual([]);
-      expect(existsSync(join(fixture.home, UPDATE_FILE))).toBe(false);
-    } finally {
-      await close();
-    }
-  });
+    },
+  );
 
-  it("doesn't move the service when the plan's port is taken after the update started", async () => {
+  it("starts an update whoever holds the old ports, before or after it starts", async () => {
     const fixture = setup();
-    await steps(fixture.updater);
-    const plan = fixture.handed[0]!;
-    const close = await squat(lockPort(fixture.home, "plan"));
+    const before = await squat(legacyLockPort(fixture.home, "plan"));
     try {
-      const supervisor = supervising(fixture);
-      const outcome = await superviseUpdate(supervisor.deps, plan.id);
-      expect(outcome).toMatchObject({
-        outcome: "failed",
-        message: expect.stringContaining(`port ${lockPort(fixture.home, "plan")}`),
-      });
-      expect(supervisor.installed).toEqual([]);
-      expect(JSON.parse(readFileSync(join(fixture.home, UPDATE_FILE), "utf8"))).toMatchObject({
-        phase: "done",
-        outcome: { outcome: "failed" },
-      });
+      const run = await steps(fixture.updater);
+      expect(run.refused).toBeUndefined();
+      expect(fixture.handed).toHaveLength(1);
     } finally {
-      await close();
+      await before();
     }
-  });
+  }, 30_000);
 
   it("lets go of a lock while a client keeps its connection half open", async () => {
     const home = temp();
@@ -1057,7 +1079,7 @@ describe("fourth review regressions", () => {
     expect(lock).toBeDefined();
     const client = connect({
       host: "127.0.0.1",
-      port: lockPort(home, "plan")!,
+      port: legacyLockPort(home, "plan")!,
       allowHalfOpen: true,
     });
     await new Promise<void>((resolve, reject) => {

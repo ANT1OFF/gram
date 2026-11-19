@@ -40,6 +40,7 @@ const deviceOf = (servers: ReadonlyArray<HostedServerState>) => {
   const device = {
     state: () => ({ servers }),
     sendWork: record("sendWork"),
+    checkWork: record("checkWork"),
     waitWork: record("waitWork"),
     messageWork: record("messageWork"),
     stopWork: record("stopWork"),
@@ -90,10 +91,17 @@ describe("the app answering its server's sent work", () => {
       { ...send, op: "stop", threadId: "../other" },
       { ...send, op: "message", threadId: "t-1", text: "", clientKey: "k" },
       { ...send, op: "delete" },
+      { ...send, op: "check", repositories: ["-x\nrm"] },
+      { ...send, op: "check", repositories: [] },
     ]) {
       expect((await answerSentWork(bad, device))?.result.ok).toBe(false);
     }
     expect(calls).toHaveLength(1);
+    await answerSentWork({ ...send, op: "check", repositories: ["acme/shop"] }, device);
+    expect(calls.at(-1)).toEqual({
+      op: "checkWork",
+      args: ["https://a.example.com", "w1", ["acme/shop"]],
+    });
   });
 
   it("answers no other message, and answers when the call throws", async () => {

@@ -57,7 +57,10 @@ A job reads:
   refused), once the job has `failed`.
 - `budgetMs` is the longest the job goes without progress once it runs. Past that it fails by
   itself, as if cut off: a cut-off resume leaves the machine owed, and a cut-off prepare takes the
-  stop back. Progress is the job starting, and each folder it is done with.
+  stop back. Progress is the job starting, and each folder it starts or is done with. So a
+  resume's budget applies one folder at a time, however many folders it has: a resume of fifty
+  folders, each a large clone, never reads as stalled while one of them is under way. Each folder
+  says when it was started and done with (`startedAt`, `endedAt`).
 
 **No double run.** At most one job of a kind runs per machine. A start that names the `key` of a
 job still kept (running, or ended within the last 15 minutes) gets that job back, `joined: true`.
@@ -91,6 +94,7 @@ deadline is longer than the budget of the step it waits on.
 | Restore one folder on the host (`host.stop.restore`) | 20 min, counted from when Gram asks                                          | A resume, for that folder                        | The same 20 min. Gram asks one folder at a time, because the host restores one at a time                         |
 | Ready the host to stop (`host.stop.prepare`)         | 10 min, which includes waiting for the host's lock                           | A prepare job                                    | 10 min, plus 15 s for shared folders and 30 s to take the stop back: an 11-minute job                            |
 | Keep one thread's work (`host.stop.keep`)            | 10 min                                                                       | The work-in-progress keeper, inside Gram         | None beyond the call. It is not a job, because no one outside Gram waits on it                                   |
+| A step on the host, holding its lock                 | 1 min less than Gram's call: 9 min (keep, prepare), 19 (restore), 2 (drop)   | Gram's call for it                               | The call's deadline: the host answers, and lets go of its lock, a minute before it                               |
 | Resume job                                           | Progress at least every 21 min: a folder's 20, plus 1. A reopen takes 2 min. | An embedder, and sessions waiting on the machine | An embedder polls, and gives up after more than 21 min with no progress. Sessions give up after 25 min with none |
 | Prepare job                                          | 11 min in all                                                                | An embedder about to stop the machine            | More than 11 min, polled. The embedder's own stop step must allow for this                                       |
 | A session waiting for a machine                      | 5 min for the machine to be started and dial in                              | A person's message                               | Once the machine is back and its resume is making progress, the wait goes on for as long as the resume does      |
@@ -104,6 +108,15 @@ host went on with them where no one saw. Gram now sends them one at a time, so e
 budget is its own. A keep or a prepare can still queue behind one other step, and its 10 minutes
 cover that wait. Steps on the host take seconds; the budgets are ceilings.
 
+**A step's own budget on the host.** Every git command a host runs has its own time limit (a push
+2 minutes, for example). A step runs many of them, one folder after another, so a step as a whole
+could still hold the lock long after Gram had stopped waiting for it. Each step the host holds its
+lock for (keep, prepare, restore, drop) is therefore held to a budget of its own, one minute less
+than Gram's deadline for the call: 9 minutes for a keep or a prepare, 19 for a restore, 2 for a
+drop. Past it the host stops the step, its commands with it, answers that it was stopped, and the
+next step takes the lock. Gram then hears the answer before its own deadline, and a prepare it
+hears this of takes its stop back.
+
 ## What an embedder does
 
 - Start a job and keep its `id`. Its periodic pass never awaits a step. A later pass polls with
@@ -114,14 +127,13 @@ cover that wait. Steps on the host take seconds; the budgets are ceilings.
   on a prepare only after more than its `budgetMs`. Gram ends the job by itself at its budget,
   so an embedder that waits longer always sees the end.
 - On a `404` from a poll, Gram has restarted: start again, with the same key.
-- On a `404` from a start, the Gram is older than this, or its hosted features are off. Fall back
-  to the synchronous route, with its deadline longer than the step's budget.
+- On a `404` from a start, its hosted features are off. A Gram older than this answers a
+  service's call on the new paths `403` ("forbidden: not for a service"). On either, fall back to
+  the synchronous route, with its deadline longer than the step's budget.
 
 ## Left out
 
 - **Jobs that outlive a restart.** The resume's durable record already makes a second run safe.
 - **The keeper's keep as a job.** It runs inside Gram, which waits on it within its call.
-- **Host-side budgets.** The host has no time limit of its own on a git step, and Gram's call
-  deadline is the bound. A host whose push hangs holds its lock until its connection ends.
 - **Cancelling a job.** `POST /machines/stop/cancel` takes a stop back as before. A resume is
   cut off only by its budget, or by the machine leaving.

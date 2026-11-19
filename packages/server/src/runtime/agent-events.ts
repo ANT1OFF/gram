@@ -1,6 +1,7 @@
 // What a thread makes of its agent session's events: the transcript, status and activity they
 // change, the turns they open and end, and the limits, tasks and connectors they report.
 
+import { randomUUID } from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Clock from "effect/Clock";
 import * as FiberMap from "effect/FiberMap";
@@ -36,6 +37,9 @@ import {
   type MessageId,
   type ThreadId,
   type Thread,
+  type PermissionMode,
+  LOCAL_HOST_ID,
+  sessionHostOf,
 } from "@gram/contracts";
 import { BACKGROUND_SETTLE } from "./session-restarts.ts";
 import { touchesRemote } from "./remote-commands.ts";
@@ -142,6 +146,12 @@ export interface AgentEventsDeps {
  * target: a question or approval, a turn (one the agent opened itself), subagent or background
  * work. `undefined` while it stays at rest.
  */
+/**
+ * The mode in which Gram's own cards go unasked (`makeApprovalGate`): a thread enters it only at
+ * the user's pick, never on a session's report.
+ */
+export const UNASKED_MODES: ReadonlySet<PermissionMode> = new Set(["bypassPermissions"]);
+
 const startedDuringStop = (rt: Runtime, event: AgentEvent): string | undefined =>
   event.type === "request"
     ? event.request.kind === "question"
@@ -375,10 +385,63 @@ export const makeAgentEvents = ({
       );
     });
 
-  const handleEvent = (rt: Runtime, event: AgentEvent) =>
+  /**
+   * A message steered in while the reply streamed is stored after it, so the reply closes at its
+   * next new part (once no tool call, text or reasoning in it is still open) and the agent's later
+   * chunks stream into a new message below the steered one, so the transcript reads in the order
+   * it was sent. Returns the event as the runtime should take it, under the message it goes to now.
+   */
+  const splitAfterSteer = (rt: Runtime, sent: AgentEvent) =>
+    Effect.gen(function* () {
+      const original = "messageId" in sent ? (sent.messageId as MessageId) : undefined;
+      const aliased = original === undefined ? undefined : rt.replyAliases.get(original);
+      const event = (aliased === undefined ? sent : { ...sent, messageId: aliased }) as AgentEvent;
+      if (event.type !== "chunk" || original === undefined) return event;
+      const { chunk } = event;
+      if (aliased !== undefined && (chunk.type === "finish" || chunk.type === "abort")) {
+        rt.replyAliases.delete(original);
+      }
+      const split = rt.steerSplit;
+      if (split === undefined) return event;
+      const reply = rt.open.get(split.reply);
+      if (split.turnId !== rt.turn?.id || reply === undefined || reply.finished) {
+        rt.steerSplit = undefined;
+        return event;
+      }
+      if (event.messageId !== split.reply) return event;
+      const startsPart =
+        chunk.type === "start-step" ||
+        chunk.type === "text-start" ||
+        chunk.type === "reasoning-start" ||
+        ((chunk.type === "tool-input-start" || chunk.type === "tool-input-available") &&
+          reply.accumulator.toolPart(chunk.toolCallId) === undefined);
+      if (!startsPart || !reply.accumulator.settled()) return event;
+      rt.steerSplit = undefined;
+      const said = reply.accumulator.snapshot().metadata;
+      // A step under way closes with its message; one the agent just closed opens again below.
+      if (chunk.type !== "start-step")
+        yield* appendChunk(rt, reply.messageId, { type: "finish-step" });
+      yield* appendChunk(rt, reply.messageId, { type: "finish" });
+      rt.toolTimes.delete(reply.messageId);
+      const next = `reply-${randomUUID()}` as MessageId;
+      rt.replyAliases.set(original, next);
+      yield* appendChunk(rt, next, {
+        type: "start",
+        messageMetadata: {
+          ...(said?.agent === undefined ? {} : { agent: said.agent }),
+          ...(said?.agentSessionId === undefined ? {} : { agentSessionId: said.agentSessionId }),
+          ...(said?.agentMessageIds === undefined ? {} : { agentMessageIds: said.agentMessageIds }),
+        },
+      });
+      if (chunk.type !== "start-step") yield* appendChunk(rt, next, { type: "start-step" });
+      return { ...event, messageId: next };
+    });
+
+  const handleEvent = (rt: Runtime, sent: AgentEvent) =>
     locked(
       rt,
       Effect.gen(function* () {
+        const event = yield* splitAfterSteer(rt, sent);
         const lane = event.type === "chunk" ? rt.open.get(event.messageId) : undefined;
         // Whether the agent natively began a turn that carries a delivery, from either adapter.
         yield* noteDeliveryStart(
@@ -722,6 +785,9 @@ export const makeAgentEvents = ({
               const isCurrent = () =>
                 rt.turn === turn && rt.open.get(event.messageId) === lane && !lane.finished;
               const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
+              // The image is read from this disk: a session on another machine names a path of
+              // that machine's, and its word never opens a file here.
+              if (sessionHostOf(thread) !== LOCAL_HOST_ID) return;
               const messages = [
                 // Only `file` and stored tool-image parts name attachments.
                 ...(yield* store.messagesWithParts(rt.threadId, ["file", "data-tool-image"])),
@@ -848,6 +914,18 @@ export const makeAgentEvents = ({
           }
           return;
         case "mode": {
+          // A session reports the mode it runs in, but it never raises the thread into one that
+          // lets Gram's own cards go unasked (`makeApprovalGate`): only the user picks those
+          // (`setMode`). A session on another machine is that machine's word, and so is a
+          // compromised agent's; leaving a mode, or moving between lesser ones, is taken as said.
+          const current = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
+          if (current.mode === event.mode) return;
+          if (UNASKED_MODES.has(event.mode)) {
+            yield* Effect.logWarning("a session reported a mode the user didn't pick").pipe(
+              Effect.annotateLogs({ threadId: rt.threadId, mode: event.mode }),
+            );
+            return;
+          }
           const thread = yield* store
             .updateThread(rt.threadId, (t) => ({ ...t, mode: event.mode }))
             .pipe(Effect.orDie);

@@ -142,6 +142,20 @@ export const cloneUrlOf = (identity: string): string | undefined => {
   return url !== undefined && cloneIdentityOf(url) === identity ? url : undefined;
 };
 
+/**
+ * The identity (`cloneIdentityOf`'s) of the `origin` of the repository at `dir` on this machine,
+ * as stored, not as `insteadOf` rewrites it: what a checkout records as Gram makes it, so that a
+ * later check of the worker's ownership never goes by the origin the worker can rewrite since.
+ * `undefined` when it can't be read or isn't a remote the host clones.
+ */
+export const originIdentityAt = (dir: string) =>
+  git(dir, ["config", "--get", "remote.origin.url"], { timeoutMs: 2_000 }).pipe(
+    Effect.map((out) =>
+      out.status === 0 && out.stdout.trim() !== "" ? cloneIdentityOf(out.stdout.trim()) : undefined,
+    ),
+    Effect.orElseSucceed(() => undefined),
+  );
+
 /** `cloneIdentityOf`, of a URL that may not be there. */
 const identityOf = (url: string | undefined) =>
   url === undefined ? undefined : cloneIdentityOf(url);

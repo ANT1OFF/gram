@@ -79,17 +79,40 @@ afterEach(() => {
 });
 
 describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
-  it("is one sheet: repos, what to work on and autonomy, nothing else", async () => {
+  it("is one sheet: name, repos, what to work on and autonomy, nothing else", async () => {
     const { render } = await mount(settingsWith({ welcomeSeen: true }));
     render({ repo: API });
     await screen.findByRole("form", { name: "New workspace" });
     expect(chips()).toEqual(["api"]);
     expect(screen.getByLabelText("What should it work on?")).toBe(document.activeElement);
     expect(within(form()).getByTestId("autonomy")).toBeTruthy();
-    // No name, models or steps: they wait for the workspace's settings.
+    // The name is optional: blank, it shows the home repository's, which the workspace gets.
+    expect(screen.getByLabelText("Name")).toHaveProperty("placeholder", "api");
+    // No stages: they wait for the workspace's settings.
     expect(screen.queryByRole("navigation", { name: "Steps" })).toBeNull();
-    expect(screen.queryByLabelText("Name")).toBeNull();
     expect(screen.queryByTestId("workspace-guide")).toBeNull();
+  });
+
+  it("saves a typed name as typed, and refuses one another workspace has before saving", async () => {
+    const { api, render } = await mount(settingsWith({ welcomeSeen: true }));
+    const save = vi.spyOn(api, "saveWorkspace");
+    render({ repo: API });
+    await screen.findByRole("form", { name: "New workspace" });
+    const name = screen.getByLabelText("Name");
+    fireEvent.change(name, { target: { value: "  Payments " } });
+    startChord(form());
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect(save.mock.calls[0]![0]).toMatchObject({ name: "Payments", projectIds: [API] });
+
+    cleanup();
+    navigate.mockClear();
+    render({ repo: API });
+    await screen.findByRole("form", { name: "New workspace" });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "payments" } });
+    startChord(form());
+    expect(await screen.findByText("payments is taken. Pick another name.")).toBeTruthy();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it("is named by the embedding app's word for a workspace", async () => {

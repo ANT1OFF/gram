@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { describe, expect, it } from "vitest";
 import {
+  EXPECT_FOR_MS,
   KEPT_FOLDERS_MAX,
   MarksNotKept,
   RESUME_STALL_MS,
@@ -295,6 +296,62 @@ describe("stop marks", () => {
       marks.back(machine);
       marks.cancel(machine);
       expect(marks.resuming(machine)).toBe(true);
+    });
+
+    it("refuses a disk the machine was replaced from, or leaves, changing nothing", () => {
+      let at = 0;
+      const marks = makeStopMarks(() => at);
+      marks.arrive(machine, disk("aaaaaaaa"));
+      marks.arrive(machine, disk("bbbbbbbb"));
+      const generation = marks.resumeStarted(machine);
+      // The old host, cut off and dialling in again with the machine's key. Before, it was taken
+      // as the machine replaced afresh: its disk the machine's, the replacement's resume voided.
+      expect(marks.arrive(machine, disk("aaaaaaaa"))).toEqual({ kind: "fenced", why: "replaced" });
+      expect(marks.disk(machine)).toBe("disk-bbbbbbbb");
+      expect(marks.isCurrent(machine, generation)).toBe(true);
+      // Told the machine comes back on another disk: the host of the one it leaves isn't it,
+      // until the word runs out.
+      marks.expect(machine);
+      expect(marks.arrive(machine, disk("bbbbbbbb", "boot-cccccccc"))).toEqual({
+        kind: "fenced",
+        why: "expected",
+      });
+      at += EXPECT_FOR_MS;
+      expect(marks.arrive(machine, disk("bbbbbbbb", "boot-cccccccc")).kind).toBe("restarted");
+      // Removed and joined again: its disk history starts over.
+      marks.forget(machine);
+      expect(marks.arrive(machine, disk("aaaaaaaa"))).toEqual({ kind: "first" });
+    });
+
+    it("lets the disk it last refused back in once told to, as the machine replaced again", () => {
+      let at = 0;
+      const marks = makeStopMarks(() => at);
+      marks.arrive(machine, disk("aaaaaaaa"));
+      marks.arrive(machine, disk("bbbbbbbb"));
+      marks.resumed(machine, marks.resumeStarted(machine), true);
+      expect(marks.owes(machine)).toBe(false);
+      // Nothing refused yet: nothing to let in.
+      expect(marks.readmit(machine)).toBeUndefined();
+      expect(marks.arrive(machine, disk("aaaaaaaa")).kind).toBe("fenced");
+      // A host nobody can give a new disk id: let back from this side, keeping the machine.
+      expect(marks.readmit(machine)).toBe("disk-aaaaaaaa");
+      expect(marks.arrive(machine, disk("aaaaaaaa"))).toEqual({
+        kind: "replaced",
+        was: "disk-bbbbbbbb",
+      });
+      expect(marks.owes(machine)).toBe(true);
+      expect(marks.onOtherDisk(machine)).toBe(true);
+      // Once, and that disk alone: the one it took over from is fenced now.
+      expect(marks.arrive(machine, disk("bbbbbbbb")).kind).toBe("fenced");
+      // Told so and not taken up in time: fenced again.
+      expect(marks.readmit(machine)).toBe("disk-bbbbbbbb");
+      at += EXPECT_FOR_MS;
+      expect(marks.arrive(machine, disk("bbbbbbbb")).kind).toBe("fenced");
+      // The leaving disk under an `expect` is let back the same way, as it is.
+      marks.expect(machine);
+      expect(marks.arrive(machine, disk("aaaaaaaa", "boot-dddddddd")).kind).toBe("fenced");
+      expect(marks.readmit(machine)).toBe("disk-aaaaaaaa");
+      expect(marks.arrive(machine, disk("aaaaaaaa", "boot-dddddddd")).kind).toBe("restarted");
     });
 
     it("remembers the disks a machine was replaced from", () => {

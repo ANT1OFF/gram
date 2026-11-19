@@ -72,6 +72,8 @@ its id: `thread.createFromProfile({ profile, threadId })`, with a lowercase UUID
   makes nothing, whatever profile comes with it. Two asks at once make one thread.
 - The thread answered may be in error, when its agent couldn't open; it is still the thread.
 - An id another kind of thread has is refused, and so is the id of a thread since closed.
+- A person signed in through a fronting proxy names no id: theirs is refused. Otherwise an id
+  they made ahead of the service's own start would be answered to that start as its thread.
 - A start that failed left nothing, so asking again with the same id starts afresh.
 
 ## From a fronting platform's own service

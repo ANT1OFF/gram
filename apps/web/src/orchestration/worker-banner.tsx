@@ -244,7 +244,7 @@ export function OrchestratorChips({
   return (
     <>
       {handoff.running ? (
-        <HandingOff />
+        <HandingOff savingFirst={handoff.savingFirst} />
       ) : (
         state !== undefined && <FreshSessionChip state={state} inTitlebar={inTitlebar} />
       )}

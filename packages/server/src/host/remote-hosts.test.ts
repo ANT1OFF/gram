@@ -18,7 +18,7 @@ import { type DialOptions, dialOnce } from "./dial.ts";
 import { machineNews, publishMachineStates } from "./machine-events.ts";
 import { generateHostKey, hostIdOf, privateKeyFrom, signedConnectHeaders } from "./machine-keys.ts";
 import { memoryMachineStore, type PairedMachine } from "./paired-machines.ts";
-import { HOST_CAPABILITIES, type HostService, serveHost } from "./protocol.ts";
+import { HOST_CAPABILITIES, HOST_FENCED_CLOSE, type HostService, serveHost } from "./protocol.ts";
 import { type MarksStore, RemoteHosts } from "./remote-hosts.ts";
 import type { MachineMarksByHost } from "./stop-marks.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
@@ -925,6 +925,50 @@ describe("the disk a joined machine's host says it is on", () => {
       while (hosts.origin(hostId) !== undefined) yield* Effect.sleep("20 millis");
       yield* dialOnce(dial, service(hostId)).pipe(Effect.timeout("10 seconds"));
       expect(hosts.origin(hostId)).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("refuses the host of a disk its machine was replaced from, keeping the new one", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* servedWith(undefined, { marks: memoryMarks() });
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      yield* dialAndDrop(hosts, hostId, dial, diskA);
+      const replacement = yield* Effect.forkScoped(dialOnce(dial, service(hostId, diskB)));
+      expect((yield* online(hosts, hostId)).hello.diskId).toBe(diskB.diskId);
+      const generation = hosts.stops.resumeStarted(hostId);
+      // The old host, only cut off, dials in again with the machine's key. Before, it took the
+      // machine over as a fresh replacement, and the new disk's resume counted for nothing.
+      const why = yield* dialOnce(dial, service(hostId, diskA)).pipe(Effect.timeout("10 seconds"));
+      expect((yield* hosts.connection(hostId)).hello.diskId).toBe(diskB.diskId);
+      expect(hosts.stops.disk(hostId)).toBe(diskB.diskId);
+      expect(hosts.stops.isCurrent(hostId, generation)).toBe(true);
+      // Told why, and the way out, in the host's own log of the dial.
+      expect(why).toContain(String(HOST_FENCED_CLOSE));
+      expect(why).toContain("gram-host new-disk");
+      yield* Fiber.interrupt(replacement);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("takes the old disk back as the same machine once its host says a new disk", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* servedWith(undefined, { marks: memoryMarks() });
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      yield* dialAndDrop(hosts, hostId, dial, diskA);
+      // Replaced, its resume done, and then lost: the old disk holds the only folders left.
+      yield* dialAndDrop(hosts, hostId, dial, diskB);
+      hosts.stops.resumed(hostId, hosts.stops.resumeStarted(hostId), true);
+      yield* dialOnce(dial, service(hostId, diskA)).pipe(Effect.timeout("10 seconds"));
+      expect(hosts.origin(HostId.make(hostId))).toBeUndefined();
+      // `gram-host new-disk` there: the same key, so the same machine and its threads, on a disk
+      // Gram hasn't seen. It is let in, owing a resume that checks its folders before any opens.
+      const renewed = { diskId: "disk-cccccccc", bootId: "boot-cccccccc" };
+      const back = yield* Effect.forkScoped(dialOnce(dial, service(hostId, renewed)));
+      expect((yield* online(hosts, hostId)).hello.diskId).toBe(renewed.diskId);
+      expect(hosts.stops.resuming(hostId)).toBe(true);
+      expect(hosts.stops.onOtherDisk(hostId)).toBe(true);
+      // The disk it took over from is the one refused now.
+      expect(hosts.stops.arrive(hostId, diskB)).toEqual({ kind: "fenced", why: "replaced" });
+      yield* Fiber.interrupt(back);
     }).pipe(Effect.scoped),
   );
 
