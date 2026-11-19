@@ -179,6 +179,7 @@ const NO_MESSAGES: readonly GramUIMessage[] = [];
 export function Transcript({
   threadId,
   loading: loadingMessages,
+  slow = false,
   messages: loadedMessages,
   subagents,
   subagentUsage,
@@ -201,6 +202,8 @@ export function Transcript({
 }: {
   threadId: ThreadId;
   loading: boolean;
+  /** The server is slow to bring the conversation up and it is being asked again. */
+  slow?: boolean | undefined;
   messages: readonly GramUIMessage[];
   subagents: ReadonlyMap<string, readonly GramUIMessage[]>;
   /** The latest counts for each subagent run, keyed by its tool call id. */
@@ -1037,7 +1040,11 @@ export function Transcript({
         }}
       >
         {loading ? (
-          <p className="p-6 text-reading text-muted-foreground">Loading conversation…</p>
+          <p className="p-6 text-reading text-muted-foreground" data-testid="transcript-loading">
+            {slow && loadingMessages
+              ? "Loading conversation… The server is slow to answer; still trying."
+              : "Loading conversation…"}
+          </p>
         ) : messages.length === 0 ? (
           <EmptyThread threadId={threadId} />
         ) : (

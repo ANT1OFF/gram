@@ -25,6 +25,8 @@ export interface ThreadFeedState {
    * the server says the thread doesn't exist, until a new subscription starts.
    */
   phase: "loading" | "live" | "gone";
+  /** Still `loading` after the server took long to answer: the feed is asking again. */
+  slow: boolean;
   messages: readonly GramUIMessage[];
   /** Messages currently receiving chunks (a parent and its subagents can stream at once). */
   streamingMessageIds: readonly string[];
@@ -72,6 +74,8 @@ export interface ThreadFeed {
   resubscribing(): void;
   /** The server has no such thread: the feed ended for good, and the state says so. */
   gone(): void;
+  /** The server is taking long to bring the feed up, and it is being asked again. */
+  slow(): void;
   /** Resolves once every chunk applied so far has been folded into a message. */
   whenSettled(): Promise<void>;
   dispose(): void;
@@ -100,6 +104,7 @@ export function createThreadFeed(
   const scheduler = options.scheduler ?? rafScheduler;
   const store = createStore<ThreadFeedState>()(() => ({
     phase: "loading",
+    slow: false,
     messages: [],
     streamingMessageIds: [],
     earlier: false,
@@ -190,6 +195,7 @@ export function createThreadFeed(
         : [...active.keys()];
     store.setState({
       phase: "live",
+      slow: false,
       messages: working,
       streamingMessageIds: streaming,
       earlier,
@@ -373,6 +379,9 @@ export function createThreadFeed(
       caughtUp = false;
       stale = true;
     },
+    slow() {
+      if (!disposed && store.getState().phase === "loading") store.setState({ slow: true });
+    },
     gone() {
       if (disposed) return;
       endWaits(new Error("the thread is gone"));
@@ -381,7 +390,13 @@ export function createThreadFeed(
       earlier = false;
       replacements++;
       working = [];
-      store.setState({ phase: "gone", messages: working, streamingMessageIds: [], earlier });
+      store.setState({
+        phase: "gone",
+        slow: false,
+        messages: working,
+        streamingMessageIds: [],
+        earlier,
+      });
     },
     async whenSettled() {
       // Folding is synchronous; only a streaming tool call's input is parsed after the fact.

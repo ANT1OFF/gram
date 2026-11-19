@@ -178,6 +178,7 @@ export function ThreadView({
   const detail = useThreadsStore((s) => s.statusDetail[threadId]);
   const ready = useThreadsStore((s) => s.ready);
   const phase = useThreadFeed(threadId, (s) => s.phase);
+  const slow = useThreadFeed(threadId, (s) => s.slow);
   const messages = useThreadFeed(threadId, (s) => s.messages);
   const streamingIds = useThreadFeed(threadId, (s) => s.streamingMessageIds);
   const earlier = useThreadFeed(threadId, (s) => s.earlier);
@@ -769,6 +770,7 @@ export function ThreadView({
                 <Transcript
                   threadId={threadId}
                   loading={phase === "loading"}
+                  slow={slow}
                   messages={shown}
                   subagents={children}
                   subagentUsage={subagentUsage}
