@@ -128,9 +128,8 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     });
     expect(open).not.toHaveBeenCalled();
     const thread = await task.mock.results[0]!.value;
-    // Then Discover, queued behind the first message.
-    expect(send).toHaveBeenLastCalledWith(thread.id, { text: DISCOVER_MESSAGE });
-    expect(send.mock.calls.filter(([, input]) => input.text === DISCOVER_MESSAGE)).toHaveLength(1);
+    // A task alone never starts the survey: that is the person's choice, left unticked here.
+    expect(send.mock.calls.filter(([, input]) => input.text === DISCOVER_MESSAGE)).toHaveLength(0);
     expect(thread.workspaceId).toBe(made.workspace.id);
     expect(navigate).toHaveBeenCalledWith({
       to: "/t/$threadId",
