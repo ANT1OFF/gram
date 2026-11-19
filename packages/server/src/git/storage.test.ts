@@ -201,10 +201,25 @@ describe("parsing", () => {
   it("keeps the newest PR of a branch and drops what isn't one", () => {
     const prs = parseBranchPrs(
       JSON.stringify([
-        { number: 9, state: "MERGED", headRefName: "feat/x", headRefOid: "abc" },
-        { number: 3, state: "CLOSED", headRefName: "feat/x" },
-        { number: 4, state: "DRAFT", headRefName: "feat/y" },
-        { state: "OPEN", headRefName: "feat/z" },
+        // A fork's newer PR from a branch named like ours, at our commit, settles nothing.
+        {
+          number: 12,
+          state: "MERGED",
+          headRefName: "feat/x",
+          headRefOid: "abc",
+          isCrossRepository: true,
+        },
+        {
+          number: 9,
+          state: "MERGED",
+          headRefName: "feat/x",
+          headRefOid: "abc",
+          isCrossRepository: false,
+        },
+        { number: 3, state: "CLOSED", headRefName: "feat/x", isCrossRepository: false },
+        { number: 4, state: "DRAFT", headRefName: "feat/y", isCrossRepository: false },
+        { state: "OPEN", headRefName: "feat/z", isCrossRepository: false },
+        { number: 5, state: "MERGED", headRefName: "feat/w" },
       ]),
     );
     expect([...prs]).toEqual([["feat/x", { number: 9, state: "MERGED", headRefOid: "abc" }]]);
