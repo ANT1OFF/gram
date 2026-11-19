@@ -3,6 +3,7 @@ import { effectiveCheckout } from "@gram/contracts";
 import { Server, ServerOff } from "lucide-react";
 
 import { Hint } from "@/components/hint";
+import { useEmbedShell } from "@/embed/store";
 import { cn } from "@/lib/utils";
 import { tildify } from "@/new-thread/path";
 import { useHome } from "@/new-thread/use-folder";
@@ -22,9 +23,16 @@ import { MarkGlyph, useMachineMark } from "./machine-marker";
  */
 export function MachineChip({ thread, className }: { thread: Thread; className?: string }) {
   const hostId = threadHost(thread);
+  const unsaid = useEmbedShell(
+    (s) =>
+      s.threadsPage.places?.some(
+        (each) => each.machine === "hidden" && each.ids.includes(thread.id),
+      ) === true,
+  );
   // On no machine yet: its wait in the machine's place, kept however narrow the pane, since
   // nothing else in the header says why the thread hasn't answered.
   if (thread.awaitingMachine !== undefined) return <AwaitingMachineChip thread={thread} />;
+  if (unsaid) return null;
   if (thread.sentTo !== undefined) return <SentChip thread={thread} className={className} />;
   if (hostId === undefined) return null;
   return <PlacedChip hostId={hostId} path={effectiveCheckout(thread).path} className={className} />;

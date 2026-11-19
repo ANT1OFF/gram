@@ -424,6 +424,36 @@ test("the page of every thread and New take the embedding app's words", async ({
   expect(errors).toEqual([]);
 });
 
+test("a thread in a place of the app's own starts its path at that place, without its machine", async ({
+  page,
+}) => {
+  const errors = await mounted(page, "/t/t-flaky");
+  await page.evaluate(() => {
+    (window as unknown as Update).embed.update({
+      threadsPage: {
+        title: "Code",
+        bar: "path",
+        places: [
+          {
+            name: "Limits",
+            path: "/t/$threadId",
+            list: "/govern/limits",
+            machine: "hidden",
+            ids: ["t-flaky"],
+          },
+        ],
+      },
+    });
+  });
+  const path = page.getByTestId("titlebar-path");
+  await expect(path.getByRole("link", { name: "Limits" })).toBeVisible();
+  await expect(path.getByRole("link", { name: "Code" })).toHaveCount(0);
+  await expect(page.getByTestId("pane-machine")).toHaveCount(0);
+  await path.getByRole("link", { name: "Limits" }).click();
+  await expect(page).toHaveURL(/\/govern\/limits$/);
+  expect(errors).toEqual([]);
+});
+
 test("the page of every thread can open on the workspaces, in the app's word for one", async ({
   page,
 }) => {

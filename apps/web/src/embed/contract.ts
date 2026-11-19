@@ -319,6 +319,13 @@ export interface ShellThreadPlace {
   /** Where a thread opens in it, under the app, with `$threadId` for the thread's id. */
   readonly path: string;
   readonly ids: readonly string[];
+  /**
+   * The place's own page, under the app: a thread of it opened in Gram has the place as the start
+   * of the title bar's path, linking here, in place of the page of every thread.
+   */
+  readonly list?: string;
+  /** Its threads' header leaves out the machine and folder they run in: the app says where. */
+  readonly machine?: "shown" | "hidden";
 }
 
 export interface ShellThreadsPage {

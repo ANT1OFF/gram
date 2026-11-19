@@ -57,6 +57,11 @@ export function TitlebarPath({ solo, narrow }: { solo: boolean; narrow: boolean 
   const workspace = useViewWorkspace();
   const board = useViewStore((s) => s.view === "board");
   const route = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const place = useEmbedShell((s) =>
+    route === undefined
+      ? undefined
+      : s.threadsPage.places?.find((each) => each.list !== undefined && each.ids.includes(route)),
+  );
   const last =
     board ||
     onMemory(pathname) ||
@@ -68,11 +73,11 @@ export function TitlebarPath({ solo, narrow }: { solo: boolean; narrow: boolean 
       className={cn("flex min-w-0 shrink-0 items-center gap-1", NO_DRAG)}
     >
       <Link
-        to="/threads"
+        to={place?.list ?? "/threads"}
         data-testid="titlebar-path-root"
         className="shrink-0 rounded-(--radius-sm) px-2 text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
-        {title}
+        {place?.name ?? title}
       </Link>
       <Step />
       {fresh && (

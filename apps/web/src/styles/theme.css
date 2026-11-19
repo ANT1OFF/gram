@@ -16,7 +16,11 @@
    main pointer, or any window as narrow as a phone (under 480 px), which has no room for the
    desktop's columns. A narrower desktop window above that keeps the desktop layout. `usePhone()`
    uses the same query. */
-@custom-variant phone (@media (max-width: 1023px) and (pointer: coarse), (max-width: 479px));
+@custom-variant phone {
+  @media (max-width: 1023px) and (pointer: coarse), (max-width: 479px) {
+    @slot;
+  }
+}
 @custom-variant float-actions {
   @media (hover: hover) {
     @container message (min-width: 40rem) {
