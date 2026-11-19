@@ -791,6 +791,76 @@ describe.skipIf(!hasGit)("worktrees", () => {
       }).pipe(provide),
     );
 
+    // Someone else's head stays someone else's through every later worktree made from it.
+    it.live("marks a worktree made from someone else's branch or its commits untrusted", () =>
+      Effect.gen(function* () {
+        const repo = makeRepo(tmp());
+        write(nodePath.join(repo, ".gitignore"), ".env\n.worktrees/\n");
+        write(nodePath.join(repo, ".worktreeinclude"), ".env\n");
+        run(repo, "add", "-A");
+        run(repo, "commit", "-qm", "fixture");
+        write(nodePath.join(repo, ".env"), "TOKEN=secret");
+        run(repo, "checkout", "-qb", "pr-9-theirs");
+        write(nodePath.join(repo, "theirs.txt"), "their code");
+        run(repo, "add", "-A");
+        run(repo, "commit", "-qm", "theirs");
+        run(repo, "checkout", "-q", "-");
+
+        const first = yield* createWorktree({
+          repoPath: repo,
+          branch: "pr-9-theirs",
+          untrusted: true,
+          openCheckouts: [],
+        });
+        yield* removeWorktree({
+          repoPath: repo,
+          worktreeDir: first.checkout.path,
+          force: true,
+          openCheckouts: [],
+        });
+
+        // The same branch, with its first worktree gone.
+        const again = yield* createWorktree({
+          repoPath: repo,
+          branch: "pr-9-theirs",
+          openCheckouts: [],
+        });
+        expect(again.checkout.untrusted).toBe(true);
+        expect(fs.existsSync(nodePath.join(again.checkout.path, ".env"))).toBe(false);
+
+        // A new branch started from it, as move_to_worktree does with a base.
+        const built = yield* createWorktree({
+          repoPath: repo,
+          branch: "my-fix",
+          base: "pr-9-theirs",
+          openCheckouts: [again.checkout.path],
+        });
+        expect(built.checkout.untrusted).toBe(true);
+        expect(isUntrustedWorktree(built.checkout.path)).toBe(true);
+        expect(fs.existsSync(nodePath.join(built.checkout.path, ".env"))).toBe(false);
+
+        // A branch of the user's own, from a base that doesn't hold their commits, is the user's.
+        const mine = yield* createWorktree({
+          repoPath: repo,
+          branch: "mine",
+          openCheckouts: [again.checkout.path, built.checkout.path],
+        });
+        expect(mine.checkout.untrusted).toBeUndefined();
+        expect(fs.existsSync(nodePath.join(mine.checkout.path, ".env"))).toBe(true);
+
+        // And someone else's code is never handed the user's own checkout.
+        const refused = yield* Effect.flip(
+          createWorktree({
+            repoPath: repo,
+            branch: "mine",
+            untrusted: true,
+            openCheckouts: [],
+          }),
+        );
+        expect(refused.message).toMatch(/checkout of your own/);
+      }).pipe(provide),
+    );
+
     it.live("copies includes and seeds rules into the user's own new worktree", () =>
       Effect.gen(function* () {
         const repo = makeRepo(tmp());

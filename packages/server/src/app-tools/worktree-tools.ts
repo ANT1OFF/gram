@@ -41,9 +41,16 @@ export const moveToWorktreeTool = (
           (yield* store.listThreads).filter((t) => t.id !== threadId),
           LOCAL_HOST_ID,
         );
+        // Someone else's code stays someone else's: the new worktree is marked so too.
+        const untrusted = thread.checkout.untrusted === true;
         const checkout = yield* checkouts
           .prepare(
-            { kind: "newWorktree", branch, ...(base === undefined ? {} : { base }) },
+            {
+              kind: "newWorktree",
+              branch,
+              ...(base === undefined ? {} : { base }),
+              ...(untrusted ? { untrusted: true } : {}),
+            },
             others,
             thread.checkout.repoRoot ?? project.root,
           )
