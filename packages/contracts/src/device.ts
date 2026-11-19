@@ -457,6 +457,12 @@ export const HostedDiscovery = Schema.Struct({
    * repository and push its branch (`POST`, `HostedRepositoryReach`). Absent: it isn't asked.
    */
   thread_check_endpoint: Schema.optionalKey(Address),
+  /**
+   * Where model calls are sent on the person's behalf, by a CLI on this machine that this machine
+   * forwards with the sign-in: a provider's own path follows it (`/v1/messages`). Absent on a
+   * server that takes none.
+   */
+  models_endpoint: Schema.optionalKey(Address),
 });
 export type HostedDiscovery = typeof HostedDiscovery.Type;
 
@@ -533,6 +539,7 @@ export const checkHostedDiscovery = (origin: string, document: unknown): HostedD
       discovery.thread_message_endpoint,
       discovery.thread_stop_endpoint,
       discovery.thread_check_endpoint,
+      discovery.models_endpoint,
     ].filter((address) => address !== undefined),
   ];
   if (!calls.every((address) => on(address, secure ? "https:" : "http:")))
