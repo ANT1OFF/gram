@@ -65,6 +65,8 @@ export function useSendTargets(): readonly SendTarget[] {
 export interface SendCheck {
   readonly repository?: string;
   readonly orchestrator: boolean;
+  /** What a thread started there now opens on, when the server said. */
+  readonly model?: { readonly agent: string; readonly model: string };
   readonly local: {
     readonly current?: string;
     readonly base?: { readonly branch: string; readonly sha: string };
@@ -172,6 +174,12 @@ export const sendCheckRows = (
     });
   return rows;
 };
+
+const agents: Readonly<Record<string, string>> = { claude: "Claude", codex: "Codex" };
+
+/** "Claude · <model>", as the model a sent task runs on is named. */
+export const sentModelLabel = (model: { readonly agent: string; readonly model: string }) =>
+  `${agents[model.agent] ?? model.agent} · ${model.model}`;
 
 export class SendWorkError extends Error {}
 

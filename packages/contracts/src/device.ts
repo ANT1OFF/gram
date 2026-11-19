@@ -761,6 +761,16 @@ export const HostedRepositoryReach = Schema.Struct({
       reason: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(500))),
     }),
   ).check(Schema.isMaxLength(8)),
+  /**
+   * The model a thread started in that workspace now would open on, when the server could say:
+   * what a sent worker runs on. Absent from a server that doesn't, or while it can't tell.
+   */
+  model: Schema.optionalKey(
+    Schema.Struct({
+      agent: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(40)),
+      model: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+    }),
+  ),
 });
 export type HostedRepositoryReach = typeof HostedRepositoryReach.Type;
 

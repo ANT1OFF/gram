@@ -114,6 +114,7 @@ export const templateTitle = (ask: Ask): string => {
   const times = ask.count > 1 ? ` × ${ask.count}` : "";
   if (request !== undefined) {
     if (mergesPr(request)) return `Merge a pull request${times}?`;
+    if (request.title !== undefined) return times === "" ? request.title : `${request.title}${times}`;
     const verb =
       ask.command !== undefined && typeof request.input["command"] === "string"
         ? verbOf(ask.command)

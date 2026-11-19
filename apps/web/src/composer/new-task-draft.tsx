@@ -726,6 +726,7 @@ export function NewTaskDraft({
                     },
                   ]
             }
+            model={sendCheck.data?.model}
             error={sendCheck.isError ? errorMessage(sendCheck.error) : undefined}
             checking={sendCheck.isFetching}
             onRecheck={() => void sendCheck.refetch()}

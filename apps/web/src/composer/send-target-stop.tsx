@@ -11,7 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/motion";
 
-import { type SendCheckRow, type SendTarget, sendTargetKey } from "./send-target";
+import { type SendCheckRow, type SendTarget, sendTargetKey, sentModelLabel } from "./send-target";
 
 /** The picker's value for this computer. */
 const HERE = "__here__";
@@ -109,6 +109,7 @@ export function SendChecks({
   target,
   here,
   rows,
+  model,
   error,
   checking,
   onRecheck,
@@ -117,6 +118,8 @@ export function SendChecks({
   /** "this Mac" or "this computer". */
   here: string;
   rows: readonly SendCheckRow[] | undefined;
+  /** What a thread there opens on now, when the server said. */
+  model?: { readonly agent: string; readonly model: string } | undefined;
   error: string | undefined;
   checking: boolean;
   onRecheck: () => void;
@@ -128,6 +131,13 @@ export function SendChecks({
         <span className="text-foreground">{target.host}</span>, as a thread of that workspace. It
         keeps going when {here} sleeps, and reports to this workspace's orchestrator.{" "}
         {target.organisation}'s rules and approvals apply there, not this workspace's autonomy.
+        {model !== undefined && (
+          <>
+            {" "}
+            It runs on <span className="text-foreground">{sentModelLabel(model)}</span>, the model
+            that workspace starts threads on.
+          </>
+        )}
       </p>
       {rows === undefined ? (
         error === undefined ? (

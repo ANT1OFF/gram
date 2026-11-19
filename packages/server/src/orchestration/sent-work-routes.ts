@@ -211,6 +211,9 @@ export const SentWorkRoutes = Layer.unwrap(
           : reach.ok
             ? { reach: reach.reach.items[0] ?? { repository, reach: "unknown" } }
             : { reach: { repository, reach: "unknown", reason: reach.why } }),
+        ...(reach?.ok === true && reach.reach.model !== undefined
+          ? { model: reach.reach.model }
+          : {}),
       });
     });
 
