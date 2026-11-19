@@ -153,6 +153,7 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { HOST_STOP_PATHS, hostStopRoute } from "./host-stop-routes.ts";
 import { startWipKeeper } from "../host/wip-keeper.ts";
 import { readyOnGoing, resumeOwedMachines } from "../host/stop-resume.ts";
+import { makeMachineJobs } from "../host/machine-jobs.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { WorkspaceOutputs } from "../outputs/workspace-outputs.ts";
 import { SharedFolders } from "../shared/shared-folders.ts";
@@ -306,6 +307,8 @@ export const AuthMiddleware = HttpRouter.middleware(
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
     const sharedFolders = Option.getOrUndefined(yield* Effect.serviceOption(SharedFolders));
+    // Its long steps run as jobs in the server's scope, outliving the call that starts one.
+    const machineJobs = yield* makeMachineJobs();
     const stopDeps =
       remoteHosts === undefined || store === undefined || runtimes === undefined
         ? undefined
@@ -314,6 +317,7 @@ export const AuthMiddleware = HttpRouter.middleware(
             store,
             runtimes,
             settings: store,
+            jobs: machineJobs,
             ...(sharedFolders === undefined ? {} : { sharedFlush: sharedFolders.flush }),
           };
     // A thread's work on a joined machine kept off it while it works: a lost machine costs minutes.

@@ -93,6 +93,35 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
     }).pipe(provide),
   );
 
+  it.live("changes nothing in a sparse checkout that work can't come back into", () =>
+    Effect.gen(function* () {
+      const { repo } = withOrigin();
+      run(repo, "checkout", "-q", "-b", "feat");
+      write(nodePath.join(repo, "came-back.txt"), "from the other side\n");
+      run(repo, "add", "came-back.txt");
+      run(repo, "commit", "-q", "-m", "carried on there");
+      const back = run(repo, "rev-parse", "HEAD").trim();
+      run(repo, "checkout", "-q", "main");
+      const kept = { ref: "refs/gram/wip/t-1", commit: back, head: back, uncommitted: false };
+      // The thread's own folder, sparse, with a commit on `feat` the kept work doesn't hold.
+      const folder = nodePath.join(nodePath.dirname(repo), "folder");
+      run(repo, "worktree", "add", "-q", "-b", "mine", folder, "main");
+      write(nodePath.join(folder, "mine.txt"), "committed here\n");
+      run(folder, "add", "mine.txt");
+      run(folder, "commit", "-q", "-m", "my own");
+      run(folder, "branch", "-q", "-f", "feat", "HEAD");
+      run(folder, "checkout", "-q", "feat");
+      run(folder, "sparse-checkout", "set", "--no-cone", "/*", "!/sub/");
+      const tip = run(folder, "rev-parse", "HEAD").trim();
+      const refused = yield* setAsideFor(folder, kept, "feat", "aside/feat").pipe(Effect.flip);
+      // Before, HEAD was detached and `feat` moved before the restore refused the sparse folder.
+      expect(refused.message).toContain("sparse");
+      expect(run(folder, "symbolic-ref", "--short", "HEAD").trim()).toBe("feat");
+      expect(run(folder, "rev-parse", "feat").trim()).toBe(tip);
+      expect(run(repo, "branch", "--list", "aside/feat").trim()).toBe("");
+    }).pipe(provide),
+  );
+
   it.live("is committed on top of HEAD under a hidden ref, the branch and index untouched", () =>
     Effect.gen(function* () {
       const { repo, origin } = withOrigin();
@@ -229,6 +258,21 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
         // Read back on another machine of the same host.
         const { clone } = cloneOf(origin);
         expect((yield* fetchWip(clone, "thread-1", "origin", FILE))?.commit).toBe(kept.commit);
+        // A folder's own ref: one plain name under the namespace, as a remote that lets a host
+        // write only names under its own takes it, and read back only for that folder.
+        write(nodePath.join(repo, "tracked.txt"), "kept for one folder\n");
+        const folder = yield* snapshotWip(repo, "thread-1", "/work/widgets");
+        expect(folder.ref).toMatch(/^refs\/gram\/wip\/personal-ab12\/thread-1--[0-9a-f]{16}$/);
+        expect(folder.ref).toBe(wipRef("thread-1", "/work/widgets"));
+        expect(isWipRefOf(folder.ref, "thread-1")).toBe(true);
+        expect(isWipRefOf(folder.ref, "thread-2")).toBe(false);
+        yield* pushWip(repo, folder, "origin", FILE);
+        const back = (at: string) =>
+          fetchWip(clone, "thread-1", "origin", FILE, undefined, undefined, at);
+        expect((yield* back("/work/widgets"))?.commit).toBe(folder.commit);
+        expect(yield* back("/work/other")).toBeUndefined();
+        // The thread's one ref is still its own, and still as it was kept.
+        expect(run(origin, "rev-parse", kept.ref).trim()).toBe(kept.commit);
         // Deeper, or not a plain name: not a snapshot this module wrote.
         for (const ref of [
           "refs/gram/wip/a/b/thread-1",

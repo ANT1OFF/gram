@@ -53,6 +53,28 @@ describe("a session on a machine started again after a stop", () => {
     ),
   );
 
+  it.effect("waits past its own wait for a resume under way, for as long as that runs", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { stops, forSession, away, back } = setup();
+        stops.stopped(ID, []);
+        stops.away(ID);
+        away();
+        back();
+        stops.back(ID);
+        // Its resume is putting folders back: longer than the minute the session waits for a start.
+        const generation = stops.resumeStarted(ID);
+        const opening = yield* Effect.forkScoped(forSession(ID));
+        yield* TestClock.adjust("3 minutes");
+        expect(opening.pollUnsafe()).toBeUndefined();
+        stops.settle(ID, generation);
+        stops.resumed(ID, generation);
+        yield* TestClock.adjust("1 second");
+        expect(yield* Fiber.join(opening)).toBe(HOST);
+      }),
+    ),
+  );
+
   it.effect("waits too when this Gram never saw the stop but was told the disk is new", () =>
     Effect.scoped(
       Effect.gen(function* () {
