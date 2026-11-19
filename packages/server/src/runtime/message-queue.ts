@@ -46,6 +46,8 @@ import {
   userParts,
   authored,
   typedInput,
+  clientInput,
+  serverSetOf,
   withSender,
   conversationHeader,
 } from "./user-input.ts";
@@ -1291,11 +1293,10 @@ export const makeQueueMethods = ({
         Effect.map(({ index, actor }) => {
           // Whoever wrote the item is still shown as having written it (an edited notice never
           // becomes the user's words), but it goes as whoever edited it: the whole text is theirs.
-          const { author: _, ...edited } = input;
-          const author = rt.queue[index]!.input.author;
+          // What only the server sets is the stored item's, whatever the client sent back.
           rt.queue[index] = {
             id: itemId,
-            input: author === undefined ? edited : { ...edited, author },
+            input: { ...clientInput(input), ...serverSetOf(rt.queue[index]!.input) },
           };
           rt.actors.set(itemId, actor);
           rt.noticeKeys.delete(itemId);

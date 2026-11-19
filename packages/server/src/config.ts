@@ -54,6 +54,13 @@ export const endpointFrom = (
 export const ENDPOINT_UNUSABLE = "unusable";
 export type EndpointSetting = EndpointConfig | typeof ENDPOINT_UNUSABLE;
 
+/** The endpoint tokens taken out of the server's environment once read (`fromEnv`). */
+export const ENDPOINT_TOKEN_VARIABLES = [
+  "GRAM_DECISION_HOOK_TOKEN",
+  "GRAM_EVENT_SINK_TOKEN",
+  "GRAM_GITHUB_ROUTE_TOKEN",
+] as const;
+
 /** `endpointFrom`, telling a URL that was given and can't be used from one that wasn't given. */
 export const endpointSetting = (
   url: string | undefined,
@@ -233,8 +240,9 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
       env["GRAM_GITHUB_ROUTE_TOKEN"],
       env["GRAM_GITHUB_ROUTE_TOKEN_FILE"],
     );
-    // Read once, here: `gh` and everything else the server starts would inherit it.
-    if (env === process.env) delete env["GRAM_GITHUB_ROUTE_TOKEN"];
+    // Read once, here: `gh`, agents, terminals and everything else the server starts would
+    // inherit them, and an agent holding a hook's or a sink's token could answer or record as Gram.
+    if (env === process.env) for (const name of ENDPOINT_TOKEN_VARIABLES) delete env[name];
     return {
       dataDir: defaultDataDir(env),
       ...(env["GRAM_REMOTE_ORIGIN"] !== undefined
