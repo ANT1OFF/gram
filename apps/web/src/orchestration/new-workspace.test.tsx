@@ -128,9 +128,8 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     });
     expect(open).not.toHaveBeenCalled();
     const thread = await task.mock.results[0]!.value;
-    // Then Discover, queued behind the first message.
-    expect(send).toHaveBeenLastCalledWith(thread.id, { text: DISCOVER_MESSAGE });
-    expect(send.mock.calls.filter(([, input]) => input.text === DISCOVER_MESSAGE)).toHaveLength(1);
+    // A task alone never starts the survey: that is the person's choice, left unticked here.
+    expect(send.mock.calls.filter(([, input]) => input.text === DISCOVER_MESSAGE)).toHaveLength(0);
     expect(thread.workspaceId).toBe(made.workspace.id);
     expect(navigate).toHaveBeenCalledWith({
       to: "/t/$threadId",
@@ -251,6 +250,34 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     );
     const fix = screen.getByRole("link", { name: "Give the app write on EXAMPLE/api" });
     expect(fix.getAttribute("target")).toBe("_blank");
+  });
+
+  it("says why it can't read what agents can do, and reads it again on Retry", async () => {
+    const access = vi.fn(async ({ repositories }: { repositories: readonly string[] }) => ({
+      repositories: repositories.map((fullName) => ({
+        fullName,
+        push: { allowed: true, text: "Yes" },
+        pullRequest: { allowed: true, text: "Yes" },
+        merge: { allowed: false, text: "You, on GitHub" },
+      })),
+    }));
+    useEmbedShell.setState({
+      ...EMPTY_SHELL,
+      repositories: { list: async () => ({ repositories: [] }), access },
+    });
+    const { api, render } = await mount(settingsWith({ welcomeSeen: true }));
+    const read = api.projectOrigins.bind(api);
+    // The origins read fails once: the card must stop reading, not wait on an answer never asked.
+    vi.spyOn(api, "projectOrigins")
+      .mockRejectedValueOnce(new Error("The server couldn't read the repositories."))
+      .mockImplementation(read);
+    render({ repo: API });
+    const card = await screen.findByTestId("new-workspace-access");
+    await within(card).findByText("The server couldn't read the repositories.");
+    expect(within(card).queryByText(/Reading what the agents can do/)).toBeNull();
+    expect(access).not.toHaveBeenCalled();
+    fireEvent.click(within(card).getByRole("button", { name: "Retry" }));
+    expect(await screen.findAllByTestId("new-workspace-access-row")).toHaveLength(1);
   });
 
   it("says nothing of what agents can do where the app gives no source for it", async () => {

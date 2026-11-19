@@ -294,11 +294,10 @@ function SheetForm({
   const repositoryRef = useRef<AddRepositoryHandle>(null);
   // Discover goes once per workspace made here, however many times opening it is retried.
   const discovered = useRef(false);
-  // Whether Start has the orchestrator read the repositories first. Until the person says, it
-  // follows the task: with one it reads first, with none nothing runs until a task is sent. Opened
-  // from the first-run card, whose line promises the survey, it starts ticked.
-  const [survey, setSurvey] = useState<boolean | undefined>(read ? true : undefined);
-  const reads = survey ?? firstMessageOf(draft) !== undefined;
+  // Whether Start has the orchestrator read the repositories first: the person's choice, never
+  // implied by typing a task (a survey runs a worker and costs model use the task may not want).
+  // Opened from the first-run card, whose line promises the survey, it starts ticked.
+  const [reads, setSurvey] = useState(read);
   const taskId = useId();
   // With a repo picked, focus goes to the task: what is next.
   const focusTask = useCallback(
