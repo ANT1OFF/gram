@@ -16,7 +16,7 @@ import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 import { ServerConfig } from "../config.ts";
 import { privateJsonFile } from "../http/remote-sessions.ts";
-import type { Socket } from "../platform/unstable.ts";
+import { Socket } from "../platform/unstable.ts";
 import {
   createPairedMachines,
   dialNoncesLastSeen,
@@ -31,7 +31,14 @@ import {
   type PairedMachines,
   type PairedMachineStore,
 } from "./paired-machines.ts";
-import { connectHost, type HostConnection, helloMismatch, UNKNOWN_STATUS } from "./protocol.ts";
+import {
+  connectHost,
+  HOST_FENCED_CLOSE,
+  HOST_FENCED_REASON,
+  type HostConnection,
+  helloMismatch,
+  UNKNOWN_STATUS,
+} from "./protocol.ts";
 import { makeMachineUpdates, RETRY_MS, type UpdateRequest } from "./machine-updates.ts";
 import * as Schedule from "effect/Schedule";
 import * as FiberSet from "effect/FiberSet";
@@ -637,6 +644,27 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               return;
             }
             const disk = arrived.value;
+            // A disk the machine was replaced from, or the one it leaves while told it comes back
+            // on another: an old host, cut off, that dialled in again with the machine's key. It
+            // isn't the machine any more, so it is refused whatever is online, and the machine
+            // that replaced it stays. The old host's own grace ends what it kept for the machine,
+            // and the close says how a person makes that disk the machine again: its host says a
+            // disk this Gram hasn't seen (`gram-host new-disk`), which owes a resume like any.
+            if (disk.kind === "fenced") {
+              yield* Effect.logWarning(
+                "machines: refused a joined machine's host on a disk it was replaced from",
+              ).pipe(
+                Effect.annotateLogs({
+                  hostId: machine.id,
+                  why: disk.why,
+                  online: online.has(machine.id),
+                }),
+              );
+              yield* Effect.flatMap(socket.writer, (writer) =>
+                writer.write(new Socket.CloseEvent(HOST_FENCED_CLOSE, HOST_FENCED_REASON)),
+              ).pipe(Effect.ignore, Effect.scoped);
+              return;
+            }
             pending.get(machine.id)?.delete(endPending);
             close(machine.id);
             const live: Online = {

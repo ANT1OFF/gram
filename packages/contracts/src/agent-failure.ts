@@ -106,6 +106,13 @@ export const MACHINE_LOST_DURING_MAX = 200;
 export const THREAD_ERROR_TEXT_MAX = 300;
 
 /**
+ * `ThreadError.code` of a thread whose session didn't open because the work its machine's last stop
+ * kept is gone from the remote and its branch there doesn't hold it, so its folder wasn't put back
+ * (`thread.restoreFromBranch` makes it from the branch without that work, as a person decides).
+ */
+export const KEPT_WORK_GONE_CODE = "kept-work-gone";
+
+/**
  * The error a thread's last failed turn ended with, kept until a later turn completes. `text` is
  * Gram's own sentence for the failure, with at most a redacted, clipped excerpt of the
  * agent's message, fit to show anywhere the thread is.

@@ -35,6 +35,7 @@ import {
   type Server,
   type World,
 } from "./test-harness.ts";
+import { makeStopMarks } from "../host/stop-marks.ts";
 
 // Ownership is a machine's (`host/ownership.ts`), and an orchestration has one owner. Each test
 // here drives one family of entry points into the choke point it must pass:
@@ -95,6 +96,8 @@ const SHARED = {
 };
 const withShared = Layer.succeed(RemoteHosts, {
   machines: { list: () => [] },
+  // A send asks whether the machine's resume holds the thread off: nothing is owed here.
+  stops: makeStopMarks(),
   list: () => [SHARED],
 } as unknown as RemoteHostsShape);
 

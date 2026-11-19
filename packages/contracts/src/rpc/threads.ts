@@ -130,6 +130,16 @@ export const ThreadRpcs = RpcGroup.make(
     error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
   }),
   /**
+   * Makes the thread's folder on its machine from its branch without the work its last stop kept,
+   * which is gone from the remote (`ThreadError.code` `kept-work-gone`): what a person chooses when
+   * that work can't be got back. Resumes each joined machine the thread is held off for that reason;
+   * `InvalidState` when it isn't, or the machine couldn't do it.
+   */
+  Rpc.make("thread.restoreFromBranch", {
+    payload: threadRef,
+    error: errors(ThreadNotFound, InvalidState),
+  }),
+  /**
    * The diff behind `Thread.savedWork`, as the machine last sent it: readable while the machine is
    * away. `saved` is absent once Gram restarted since (the record outlives it, the diff doesn't),
    * or when nothing of the thread was saved.
