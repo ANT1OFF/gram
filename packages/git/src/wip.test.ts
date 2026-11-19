@@ -17,6 +17,7 @@ import {
   snapshotWip,
   wipCaughtUp,
   wipChanges,
+  WIP_LEASE_REFUSED,
   WIP_NAMESPACE_ENV,
   wipRef,
 } from "./wip.ts";
@@ -553,9 +554,14 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
       expect(yield* dropWip(repo, "thread-1", "origin", FILE, { by: clean.commit })).toBe("left");
       expect(run(origin, "rev-parse", wipRef("thread-1")).trim()).toBe(theirs.commit);
 
-      // Its own earlier snapshot, which its working tree moved on from, goes.
+      // Its own earlier snapshot, which its working tree moved on from, goes. It can't replace
+      // the other clone's work, only write the ref once that is gone.
       write(nodePath.join(repo, "tracked.txt"), "edited\n");
       const dirty = yield* snapshotWip(repo, "thread-1");
+      expect((yield* Effect.flip(pushWip(repo, dirty, "origin", FILE))).message).toBe(
+        WIP_LEASE_REFUSED,
+      );
+      run(origin, "update-ref", "-d", wipRef("thread-1"));
       yield* pushWip(repo, dirty, "origin", FILE);
       run(repo, "commit", "--quiet", "-am", "done");
       run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
@@ -573,6 +579,55 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
       // A ref at a commit the branch contains goes too.
       run(repo, "push", "--quiet", "origin", `HEAD~1:${wipRef("thread-1")}`);
       expect(yield* dropWip(repo, "thread-1", "origin", FILE, { by: done.commit })).toBe("dropped");
+    }).pipe(provide),
+  );
+
+  it.live("never replaces work at the remote that a folder didn't come from", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = withOrigin();
+      const ref = wipRef("thread-1");
+      // Clone A keeps its work.
+      write(nodePath.join(repo, "tracked.txt"), "A's work\n");
+      const a = yield* snapshotWip(repo, "thread-1");
+      yield* pushWip(repo, a, "origin", FILE);
+
+      // A fresh clone B, edited, keeps for the same thread: refused, at this keep and the next,
+      // and A's commit stays the remote's. B's snapshot stays here.
+      const b = cloneOf(origin).clone;
+      for (const edit of ["B's own\n", "B's own, more\n"]) {
+        write(nodePath.join(b, "tracked.txt"), edit);
+        const snapshot = yield* snapshotWip(b, "thread-1");
+        expect((yield* Effect.flip(pushWip(b, snapshot, "origin", FILE))).message).toBe(
+          WIP_LEASE_REFUSED,
+        );
+        expect(run(origin, "rev-parse", ref).trim()).toBe(a.commit);
+        expect(run(b, "rev-parse", ref).trim()).toBe(snapshot.commit);
+      }
+
+      // A folder written to before its work came back: fetched, not put back, refused too.
+      const c = cloneOf(origin).clone;
+      const kept = yield* fetchWip(c, "thread-1", "origin", FILE);
+      write(nodePath.join(c, "mine.txt"), "mine\n");
+      expect((yield* Effect.flip(restoreWip(c, kept!))).message).toContain("changes of its own");
+      expect(
+        (yield* Effect.flip(pushWip(c, yield* snapshotWip(c, "thread-1"), "origin", FILE))).message,
+      ).toBe(WIP_LEASE_REFUSED);
+      expect(run(origin, "rev-parse", ref).trim()).toBe(a.commit);
+
+      // Once A's work is back in it, it carries on from there; and A, behind it now, can't
+      // replace that.
+      fs.rmSync(nodePath.join(c, "mine.txt"));
+      yield* restoreWip(c, kept!);
+      write(nodePath.join(c, "tracked.txt"), "A's work, carried on\n");
+      const carried = yield* snapshotWip(c, "thread-1");
+      yield* pushWip(c, carried, "origin", FILE);
+      expect(run(origin, "rev-parse", ref).trim()).toBe(carried.commit);
+      write(nodePath.join(repo, "tracked.txt"), "A's work, later\n");
+      expect(
+        (yield* Effect.flip(pushWip(repo, yield* snapshotWip(repo, "thread-1"), "origin", FILE)))
+          .message,
+      ).toBe(WIP_LEASE_REFUSED);
+      expect(run(origin, "rev-parse", ref).trim()).toBe(carried.commit);
     }).pipe(provide),
   );
 

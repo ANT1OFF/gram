@@ -10,6 +10,11 @@
 // then only when deleting it loses nothing: the ref is one per thread at the remote, and another
 // folder of the thread, here or on another machine, may have written it since. A thread whose
 // branch held everything gets its folder back from that branch (`fetchBranchTip`).
+//
+// A push replaces the remote's ref only while it names what this repository last kept or put back
+// of the thread there (its lease, `refs/gram/wip-lease/…`, local and never pushed), or nothing
+// when it never had any: a fresh clone, a folder a resume skipped, or one written to before its
+// work came back can't replace the only copy of work it didn't come from.
 
 import * as fs from "node:fs";
 import * as Effect from "effect/Effect";
@@ -53,6 +58,18 @@ export const isWipRefOf = (ref: string, threadId: string): boolean => {
   return NAMESPACE.test(ref.slice(start.length, ref.length - end.length));
 };
 
+/**
+ * Where a repository notes the commit the remote held under `ref` when it last kept or put back
+ * the thread's work: what its next push is held to (`--force-with-lease`). Local, never pushed.
+ */
+const leaseRef = (ref: string) => `refs/gram/wip-lease/${ref.slice(WIP_REF_PREFIX.length + 1)}`;
+/** Notes a ref fetched here whose work wasn't put back yet: the folder didn't come from it. */
+const fetchedRef = (ref: string) => `refs/gram/wip-fetched/${ref.slice(WIP_REF_PREFIX.length + 1)}`;
+
+/** Why a push left the remote's ref as it was: it holds work this folder didn't come from. */
+export const WIP_LEASE_REFUSED =
+  "The thread's work saved at the remote didn't come from this folder, so it wasn't replaced: this folder's work is kept here only.";
+
 /** A push can carry many objects over a slow link. */
 const PUSH_TIMEOUT_MS = 120_000;
 
@@ -69,6 +86,11 @@ export interface WipSnapshot {
    * repository last kept or put back of the thread, which the working tree has moved on from.
    */
   readonly previous?: string;
+  /**
+   * The commit the remote's ref must name for the push to replace it: what this repository last
+   * kept or put back there. Absent: the remote must have no such ref.
+   */
+  readonly lease?: string;
 }
 
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -79,6 +101,19 @@ const isAncestor = (top: string, ancestor: string, commit: string) =>
     Effect.map((out) => out.status === 0),
     Effect.mapError((e) => new CheckpointError({ message: e.message })),
   );
+
+/**
+ * What this repository's next push of `ref` is held to: its lease; none while a ref fetched here
+ * waits to be put back. A repository from before leases has the ref it kept itself instead
+ * (`kept`, what `ref` named here before the snapshot).
+ */
+const leaseOf = (top: string, ref: string, kept: string | undefined) =>
+  Effect.gen(function* () {
+    const lease = yield* readRef(top, leaseRef(ref));
+    if (lease.kind === "commit") return lease.oid;
+    if ((yield* readRef(top, fetchedRef(ref))).kind === "commit") return undefined;
+    return kept;
+  });
 
 /**
  * Points `refs/gram/wip/<thread>` at the working tree as it is: HEAD when nothing is uncommitted,
@@ -126,6 +161,7 @@ export const snapshotWip = (repo: string, threadId: string) =>
               IDENTITY_ENV,
             )).stdout.trim();
     }
+    const lease = yield* leaseOf(top, ref, kept.kind === "commit" ? kept.oid : undefined);
     // `--no-deref`: should the name be a symbolic ref, replace it rather than move its target.
     yield* run(top, ["update-ref", "--no-deref", ref, commit]);
     return {
@@ -133,6 +169,7 @@ export const snapshotWip = (repo: string, threadId: string) =>
       commit,
       uncommitted,
       ...(kept.kind === "commit" && kept.oid !== commit ? { previous: kept.oid } : {}),
+      ...(lease === undefined ? {} : { lease }),
     } satisfies WipSnapshot;
   });
 
@@ -158,7 +195,10 @@ const threadOfWipRef = (ref: string): string | undefined => {
 
 /**
  * Pushes `commit` to `remote` as the thread's work-in-progress ref, replacing what the remote kept
- * under it: the ref is this thread's own and is rewritten at each snapshot. Only that ref is
+ * under it only while that is the snapshot's lease (`WipSnapshot.lease`), or nothing with none.
+ * A remote holding other work is left as it is, and the push fails with `WIP_LEASE_REFUSED`;
+ * unless the remote has no such ref any more, or one the commit holds, which is replaced, since
+ * that loses nothing. A push that took becomes the repository's lease. Only that ref is
  * written, whatever the user's config says of tags, submodules and signing; no pre-push hook runs,
  * since nothing a person reviews is published, and credentials are never prompted for. Only over
  * `protocols` (`GIT_ALLOW_PROTOCOL`), so a remote can't name a helper to run.
@@ -173,26 +213,37 @@ export const pushWip = (
     if (!isPushRemote(remote)) return yield* fail("invalid remote");
     if (threadOfWipRef(snapshot.ref) === undefined || !OID.test(snapshot.commit))
       return yield* fail("not a work-in-progress snapshot");
+    if (snapshot.lease !== undefined && !OID.test(snapshot.lease))
+      return yield* fail("not a work-in-progress snapshot");
     const top = yield* repoTopOrFail(repo);
-    const out = yield* git(
-      top,
-      [
-        "push",
-        "--force",
-        "--no-verify",
-        "--no-follow-tags",
-        "--no-signed",
-        "--recurse-submodules=no",
-        "--",
-        remote,
-        `${snapshot.commit}:${snapshot.ref}`,
-      ],
-      {
-        timeoutMs: PUSH_TIMEOUT_MS,
-        env: { GIT_TERMINAL_PROMPT: "0", GIT_ALLOW_PROTOCOL: protocols },
-      },
-    ).pipe(Effect.mapError((e) => new CheckpointError({ message: e.message })));
+    const push = (lease: string | undefined) =>
+      networkGit(
+        top,
+        [
+          "push",
+          "--no-verify",
+          "--no-follow-tags",
+          "--no-signed",
+          "--recurse-submodules=no",
+          // Never `--force`, which would override the lease.
+          `--force-with-lease=${snapshot.ref}:${lease ?? ""}`,
+          "--",
+          remote,
+          `${snapshot.commit}:${snapshot.ref}`,
+        ],
+        protocols,
+      );
+    let out = yield* push(snapshot.lease);
+    if (out.status !== 0 && /\(stale info\)/.test(`${out.stdout}\n${out.stderr}`)) {
+      // The remote's ref isn't what this repository last saw there.
+      const theirs = yield* remoteRef(top, remote, snapshot.ref, protocols);
+      if (theirs === undefined) out = yield* push(undefined);
+      else if (theirs !== snapshot.commit && !(yield* isAncestor(top, theirs, snapshot.commit)))
+        return yield* fail(WIP_LEASE_REFUSED);
+      else out = yield* push(theirs);
+    }
     if (out.status !== 0) return yield* fail(gitFailMsg(out, "git push failed"));
+    yield* run(top, ["update-ref", "--no-deref", leaseRef(snapshot.ref), snapshot.commit]);
   });
 
 /** What a remote kept of a thread's work, once fetched into a repository here. */
@@ -289,6 +340,9 @@ export const fetchWip = (
       yield* run(top, ["update-ref", "--no-deref", "-d", ref]);
       return yield* fail(unexpected);
     }
+    // Not this folder's lease until its work is put back (`restoreWip`).
+    if (ref === wipRef(threadId))
+      yield* run(top, ["update-ref", "--no-deref", fetchedRef(ref), kept.oid]);
     const [committer, parents, subject] = (yield* run(top, [
       "log",
       "-1",
@@ -455,6 +509,12 @@ export const restoreWip = (
       // The files as they were, then the index back at the branch: uncommitted, as they were.
       yield* run(top, [...QUIET, "read-tree", "--reset", "-u", kept.commit]);
       yield* run(top, [...QUIET, "reset", "--quiet", head, "--"]);
+    }
+    // The folder came from this host's own ref of the thread: the remote's ref is its lease now.
+    const thread = threadOfWipRef(kept.ref);
+    if (thread !== undefined && kept.ref === wipRef(thread)) {
+      yield* run(top, ["update-ref", "--no-deref", leaseRef(kept.ref), kept.commit]);
+      yield* run(top, ["update-ref", "--no-deref", "-d", fetchedRef(kept.ref)]);
     }
     return { ahead } satisfies WipRestored;
   });
@@ -678,6 +738,12 @@ export const dropWip = (
       } else dropped = "left";
     }
     yield* run(top, ["update-ref", "--no-deref", "-d", ref]);
+    // The remote has no such ref now: the next push is held to that. One left there stays the
+    // lease it was, which holds other work.
+    if (dropped !== "left") {
+      yield* run(top, ["update-ref", "--no-deref", "-d", leaseRef(ref)]);
+      yield* run(top, ["update-ref", "--no-deref", "-d", fetchedRef(ref)]);
+    }
     return dropped;
   });
 

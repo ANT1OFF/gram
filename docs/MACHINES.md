@@ -504,6 +504,14 @@ the local app, as the other `/machines/*` routes are.
 - The ref is one per thread at the remote. A thread with folders in two clones of one remote has
   one of them kept under it: the second is answered `pushed: false` and says why, rather than
   replace the first's work.
+- A push replaces the remote's ref only while it names what this repository last kept or put
+  back of the thread (`--force-with-lease`, held to a local `refs/gram/wip-lease/<thread>` that is
+  never pushed), or, for a repository that never had any, only while the remote has none. So a
+  fresh clone, a folder a resume skipped, or one written to before its work came back can't
+  replace the only saved copy of work it didn't come from: that keep is answered `pushed: false`
+  with "The thread's work saved at the remote didn't come from this folder", the snapshot stays
+  in the folder's own ref, and the thread's saved line says the last save failed. A remote that
+  has no such ref any more, or one the commit holds, is written as before.
 - A machine that is lost (its node gone, its process killed) gets no stop. So, with the hosted
   features on, Gram keeps a thread's work on a joined machine under the same hidden ref while it
   works: five seconds after each of its turns ends, and every five minutes while a turn runs.
