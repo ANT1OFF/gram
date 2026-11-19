@@ -1,5 +1,12 @@
 import { join } from "node:path";
-import type { Diagnostics, ServerEvent, ThreadStatus, ThreadSummary } from "@gram/contracts";
+import {
+  GramRpcs,
+  type Diagnostics,
+  type ServerEvent,
+  type ServerHandshake,
+  type ThreadStatus,
+  type ThreadSummary,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
@@ -140,7 +147,15 @@ export const appHandlers = Effect.gen(function* () {
     return events;
   });
 
+  // Every tag this build serves: `RpcHandlersLayer` has a handler for each.
+  const handshake: ServerHandshake = {
+    version: config.appVersion ?? DEV_VERSION,
+    ...(config.appBuild === undefined ? {} : { build: config.appBuild }),
+    rpcs: [...GramRpcs.requests.keys()],
+  };
+
   return {
+    "app.handshake": () => Effect.succeed(handshake),
     "app.diagnostics": () => makeDiagnostics({ runtimes, config, log, ports, serverBrowser }),
 
     // The native shell owns the link dialog when present.

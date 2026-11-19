@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
  * as a live quiet button.
  */
 const DISABLED_FILL =
-  "disabled:border-border disabled:bg-muted data-disabled:border-border data-disabled:bg-muted";
+  "disabled:border-border disabled:bg-muted data-disabled:border-border data-disabled:bg-muted data-disabled:hover:bg-muted";
 
 const buttonVariants = cva(
   "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-body font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:focus-ring motion-safe:active:not-aria-[haspopup]:scale-[0.97] disabled:pointer-events-none disabled:text-disabled disabled:shadow-none data-disabled:text-disabled aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-icon-row",
@@ -21,7 +21,7 @@ const buttonVariants = cva(
       variant: {
         default: `bg-primary text-primary-foreground hover:bg-primary/80 ${DISABLED_FILL}`,
         outline:
-          "border-border bg-background text-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-transparent dark:hover:bg-muted disabled:bg-transparent data-disabled:bg-transparent",
+          "border-border bg-background text-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-transparent dark:hover:bg-muted disabled:bg-transparent data-disabled:bg-transparent data-disabled:hover:bg-transparent",
         secondary: `bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--surface-fill),var(--fg)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground ${DISABLED_FILL}`,
         // The row hover's fill (surface-hover), so an icon button shows its 28 px target in dark too.
         ghost:

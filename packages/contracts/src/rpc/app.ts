@@ -36,6 +36,20 @@ export const KeptHostStatus = Schema.Struct({
 export type KeptHostStatus = typeof KeptHostStatus.Type;
 
 /**
+ * What a server says of itself to a client that may be built from another commit: an embedding
+ * app ships the web at one commit and its server at another. `rpcs` is every tag it serves; a
+ * client calls nothing outside it.
+ */
+export const ServerHandshake = Schema.Struct({
+  /** Gram's version, as `app.diagnostics` has it. */
+  version: Schema.String,
+  /** The commit it was built from, where it knows it. */
+  build: Schema.optionalKey(Schema.String),
+  rpcs: Schema.Array(Schema.String),
+});
+export type ServerHandshake = typeof ServerHandshake.Type;
+
+/**
  * The app itself: its event feed, windows, usage, diagnostics and launch checks, and filing issues.
  */
 export const AppRpcs = RpcGroup.make(
@@ -63,6 +77,11 @@ export const AppRpcs = RpcGroup.make(
     success: SelectedHarnessSupport,
     error: errors(),
   }),
+  /**
+   * The server's version and the RPCs it serves: a client's first call on a socket, so it never
+   * sends one the server lacks. A server older than this answers with a defect for the unknown tag.
+   */
+  Rpc.make("app.handshake", { success: ServerHandshake, error: errors() }),
   Rpc.make("app.diagnostics", { success: Diagnostics, error: errors() }),
   Rpc.make("app.diagnosticsReport", {
     /** Recent lines per log file; 200 when absent. */
