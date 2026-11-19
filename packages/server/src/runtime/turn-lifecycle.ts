@@ -555,6 +555,9 @@ export const makeTurnLifecycle = ({
         });
       }
       yield* closeOpenMessages(rt);
+      // A reply split after a steer closed with the rest; the agent's next turn opens its own.
+      rt.steerSplit = undefined;
+      rt.replyAliases.clear();
       const turn = rt.turn;
       if (turn === undefined) return;
       rt.turn = undefined;

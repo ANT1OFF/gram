@@ -408,13 +408,29 @@ export const makeMessageQueue = ({
       turn.lastInputAt = yield* Clock.currentTimeMillis;
       // The agent has it now, so a transcript that fails to record it mustn't make a caller
       // send it again.
-      yield* publishMessage(rt, message, turn.id).pipe(
+      // The reply under way already shows above the message: what it says from here on is drawn
+      // below it, in a message of its own (`agent-events.ts`, `splitAfterSteer`).
+      const open = turn.reply === undefined ? undefined : rt.open.get(turn.reply);
+      const reply =
+        open !== undefined &&
+        !open.finished &&
+        !open.nested &&
+        open.accumulator.snapshot().parts.some((part) => part.type !== "step-start")
+          ? open.messageId
+          : undefined;
+      yield* publishMessage(
+        rt,
+        message,
+        turn.id,
+        reply === undefined ? undefined : { after: reply },
+      ).pipe(
         Effect.catchDefect(() =>
           Effect.logWarning("couldn't record a steer the agent took").pipe(
             Effect.annotateLogs({ threadId: rt.threadId }),
           ),
         ),
       );
+      if (reply !== undefined) rt.steerSplit = { turnId: turn.id, reply };
       return true;
     });
 
