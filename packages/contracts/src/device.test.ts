@@ -296,6 +296,9 @@ describe("checkHostedDiscovery", () => {
       { thread_wait_endpoint: "https://elsewhere.example.net/threads/wait" },
       { thread_message_endpoint: "http://gram.example.com/threads/message" },
       { thread_stop_endpoint: "https://gram.example.com/threads/stop?as=other" },
+      // A model call, with the person's sign-in, goes to the server itself alone.
+      { models_endpoint: "https://models.example.net/models" },
+      { models_endpoint: "http://gram.example.com/models" },
       { version: 2 },
       { client_id: undefined },
     ])

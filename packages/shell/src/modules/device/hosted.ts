@@ -64,6 +64,7 @@ export const HOSTED_SCOPES = [
   "workspaces:import",
   "workspaces:export",
   "threads:start",
+  "models",
 ] as const;
 export type HostedScope = (typeof HOSTED_SCOPES)[number];
 
@@ -356,7 +357,8 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
         (scope) =>
           (scope !== "workspaces:import" || discovery.thread_import_endpoint !== undefined) &&
           (scope !== "workspaces:export" || givesThreads(discovery)) &&
-          (scope !== "threads:start" || runsSentWork(discovery)),
+          (scope !== "threads:start" || runsSentWork(discovery)) &&
+          (scope !== "models" || discovery.models_endpoint !== undefined),
       ).join(" "),
       state,
       code_challenge: challenge,

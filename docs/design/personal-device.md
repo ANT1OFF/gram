@@ -224,11 +224,12 @@ address, in the browser. If the rule is ever relaxed, the issuer check of
 | `POST thread_wait_endpoint` `{ workspaceId, threadId, after?, until?, timeoutSeconds }`                | access token, scope `threads:start`                     | `{ happened, latest?, reply?, thread: { title, state, working } }`     |
 | `POST thread_message_endpoint` `{ workspaceId, threadId, text, mode?, clientKey }`                     | access token, scope `threads:start`                     | `{ queued?, after? }`, or a refusal `{ error }` in its words           |
 | `POST thread_stop_endpoint` `{ workspaceId, threadId }`                                                | access token, scope `threads:start`                     | `200`, or a refusal `{ error }` in its words                           |
+| `GET`/`POST models_endpoint/<provider path>`, a CLI's model call as it made it                         | access token, scope `models`                            | the provider's answer, streamed, or OAuth's refusal                    |
 
 Gram's token answer adds one field to OAuth's: `sub`, the person's subject id, which the dial
 signs and the gate checks each request's actor against. A renewal that names another person ends
 the sign-in. The app signs in once for `workspaces device:register device:connect workspaces:import workspaces:export
-threads:start` (each moving or work scope only where the server names its calls) and narrows
+threads:start models` (each moving, work or model scope only where the server names its calls) and narrows
 each renewal to one scope; renewals go one at a time, since each rotates the refresh token, and
 the rotated token is in the keychain before it is used. A token is used for fifteen minutes at
 most, whatever the server says. The registration's signature covers, length-prefixed,
@@ -241,6 +242,14 @@ sender-constrained to the device key ([DPoP, RFC 9449](https://www.rfc-editor.or
 so a copied token is useless without the key. A server should ask for a fresh interactive sign-in
 before it accepts a registration. `devices` on a workspace is the organisation's policy as the
 server will enforce it. The app shows it; it never relies on it.
+
+`models_endpoint` is optional: a server that names it takes model calls on the person's behalf.
+Nothing uses it on its own. When something on this machine starts the local model route
+(`startHostedModelRoute`), it listens on loopback with a key it made at start, which a CLI is given
+as its API key and base address. Each call it takes goes on to `models_endpoint` plus the call's
+own path, with a `models` token and a fresh proof of the device key, and without the CLI's key; a
+call with an `Origin`, for another host name, or without that key goes nowhere. The answer streams
+back as the server gave it.
 
 `thread_import_endpoint` is optional: a server that names it takes a thread the person moves from
 this machine ([moving a thread](move-a-thread.md)). The bundle is the one `POST /threads/export`
