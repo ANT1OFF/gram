@@ -20,7 +20,7 @@ import {
   type ThreadProfileBinding,
 } from "./domain.ts";
 import { HostId, ProfileId, ThreadId } from "./ids.ts";
-import { connectorEntryProblem } from "./workspaces.ts";
+import { AutomaticDreamThreshold, connectorEntryProblem } from "./workspaces.ts";
 
 /** The most files a profile lays, its skills' own among them. */
 export const PROFILE_FILES_MAX = 200;
@@ -110,6 +110,12 @@ export const ProfileRole = Schema.Union([
     kind: Schema.Literal("orchestrator"),
     workspace: Schema.Struct({
       name: Schema.String.check(Schema.isMaxLength(PROFILE_WORKSPACE_NAME_MAX)),
+      /**
+       * Starts a memory update of the workspace each time this many of its workers have completed
+       * (`OrchestratorCharter.automaticDreamThreshold`), for a person to review. Absent: none
+       * starts by itself.
+       */
+      memoryUpdatesAfter: Schema.optionalKey(AutomaticDreamThreshold),
     }),
   }),
 ]);
