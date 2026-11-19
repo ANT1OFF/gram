@@ -77,8 +77,7 @@ import { createShellIpc } from "@gram/shell/modules/ipc";
 import {
   fileVaultStore,
   handleVaultRequest,
-  liveMacVaultReads,
-  makeMacVaultCrypto,
+  type VaultCrypto,
 } from "@gram/shell/modules/key-vault";
 import { createTrayMode, installTray } from "@gram/shell/modules/tray";
 import {
@@ -238,24 +237,20 @@ if (Object.keys(replacedEnv).length > 0) {
 
 // The server's gateway keys live in safeStorage, which only main can use.
 const vaultStore = fileVaultStore(join(app.getPath("userData"), "gateway-keys.json"));
-const vaultCrypto = makeMacVaultCrypto(
-  {
-    available: () => safeStorage.isEncryptionAvailable(),
-    // Electron 45 no longer falls back to `basic_text` without a keyring daemon: it still names the
-    // desktop's keyring and only reports encryption unavailable, which the vault and Settings read
-    // as `unavailable` rather than as a keyring.
-    backend: () =>
-      process.platform !== "linux"
-        ? undefined
-        : safeStorage.isEncryptionAvailable()
-          ? safeStorage.getSelectedStorageBackend()
-          : "unavailable",
-    encrypt: (plainText: string) => safeStorage.encryptString(plainText),
-    decrypt: (encrypted: Buffer) => safeStorage.decryptString(encrypted),
-  },
-  process.platform,
-  liveMacVaultReads(process.execPath),
-);
+const vaultCrypto: VaultCrypto = {
+  available: () => safeStorage.isEncryptionAvailable(),
+  // Electron 45 no longer falls back to `basic_text` without a keyring daemon: it still names the
+  // desktop's keyring and only reports encryption unavailable, which the vault and Settings read
+  // as `unavailable` rather than as a keyring.
+  backend: () =>
+    process.platform !== "linux"
+      ? undefined
+      : safeStorage.isEncryptionAvailable()
+        ? safeStorage.getSelectedStorageBackend()
+        : "unavailable",
+  encrypt: (plainText: string) => safeStorage.encryptString(plainText),
+  decrypt: (encrypted: Buffer) => safeStorage.decryptString(encrypted),
+};
 
 /**
  * This machine as a personal device of a hosted control plane, made only while the hosted

@@ -70,7 +70,7 @@ export interface VaultPort {
   on(event: "message", listener: (event: { readonly data: unknown }) => void): unknown;
 }
 
-// Main may wait up to 30 seconds for the one-time macOS keychain permission, after a PATH probe.
+// Main may wait on the person answering macOS's one-time keychain permission prompt.
 const BRIDGE_TIMEOUT_MS = 60_000;
 
 export const makeBridgeVault = (
