@@ -1088,6 +1088,16 @@ export const Thread = Schema.Struct({
    */
   readableBy: Schema.optionalKey(Schema.String),
   /**
+   * Who else may read a thread readable by one person (`readableBy`), by the subjects fronted
+   * sign-in names them with: they see it as its person does, in a list, a search, an event, a
+   * transcript, its outputs and files, but never act on it (no send, answer, stop, setting or
+   * terminal). Their agents read nothing of it either. Set by an embedding host
+   * (`ProfileStartRequest.readers`, `THREAD_READERS_PATH`), copied to every thread it spawns or
+   * forks, and changed only by that host. Absent or empty: its person alone. Ignored on a thread
+   * without `readableBy`, which is everyone's.
+   */
+  readers: Schema.optionalKey(Schema.Array(Schema.String)),
+  /**
    * The person the thread works for, by the subject fronted sign-in names them with: who started
    * it, or for a thread another thread spawned, its spawner's person (a worker its orchestrator's).
    * Set when the thread is made and never changed after. Absent without a signed-in person: a

@@ -90,6 +90,7 @@ export interface CreateThreadInput {
       | "boundPr"
       | "extraPrs"
       | "readableBy"
+      | "readers"
       | "startedBy"
       | "transferredFrom"
       | "transferredTo"
@@ -124,6 +125,8 @@ export interface CreateThreadInput {
    * has it, gets that one instead, whatever this says.
    */
   readonly readableBy?: string | undefined;
+  /** Who else may read it, with `readableBy` (`Thread.readers`); inherited as `readableBy` is. */
+  readonly readers?: ReadonlyArray<string> | undefined;
   /** Worktrees in other repos the thread holds beside `checkout` (`Thread.extraCheckouts`). */
   readonly extraCheckouts?: ReadonlyArray<Checkout>;
   /** Given the user's browser at spawn (`Thread.browser`); its session policy still decides. */
