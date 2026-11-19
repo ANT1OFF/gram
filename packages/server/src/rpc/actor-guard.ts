@@ -138,6 +138,303 @@ export const VIEWER_RPCS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * What only the deployment sets up on a server people sign in to: a member's call is refused, and
+ * the deployment supplies these from outside (`docs/EMBEDDING.md`, settings supplied from outside)
+ * instead. Each acts on the server itself rather than on a person's work: the agent CLIs it
+ * installs, its gateway keys and connectors, its own settings, keybindings and palettes, the agent
+ * sessions in its own accounts, its diagnostics and logs, and programs it would start for a local
+ * user. A headless server's disk holds nobody's work either ({@link memberMay}).
+ */
+export const DEPLOYMENT_RPCS: ReadonlySet<string> = new Set([
+  "agentRuntime.cancel",
+  "agentRuntime.cancelUpdate",
+  "agentRuntime.install",
+  "agentRuntime.rollback",
+  "agentRuntime.update",
+  "agentRuntime.useSource",
+  "app.diagnostics",
+  "app.diagnosticsReport",
+  "app.keptHostStop",
+  "app.openExternal",
+  "app.openLogsFolder",
+  "connectors.add",
+  "connectors.authenticate",
+  "connectors.reconnect",
+  "connectors.remove",
+  "connectors.setEnabled",
+  "connectors.signIn",
+  "editor.open",
+  "fs.reveal",
+  "issues.file",
+  "issues.preview",
+  "keybindings.set",
+  "palettes.remove",
+  "palettes.upsert",
+  "profiles.discoverModels",
+  "profiles.importKey",
+  "profiles.openRouterFinish",
+  "profiles.openRouterSignIn",
+  "profiles.remove",
+  "profiles.seed",
+  "profiles.setKey",
+  "profiles.upsert",
+  "profiles.vaultInfo",
+  "sessions.delete",
+  "sessions.list",
+  "sessions.preview",
+  // Its personal settings, a person's own view, are theirs to set (`setsOnlyOwnView`).
+  "settings.set",
+]);
+
+/**
+ * What a member may call beyond a viewer's reads: their work in threads, workspaces, pull requests
+ * and pages. Every RPC is in exactly one of {@link VIEWER_RPCS}, this and {@link DEPLOYMENT_RPCS}
+ * (`actor-guard.test.ts`), and a member's call outside the first two is refused, so an RPC added
+ * later is closed to members until it is named here.
+ */
+export const MEMBER_RPCS: ReadonlySet<string> = new Set([
+  "agentRuntime.installState",
+  "agentRuntime.list",
+  "agentRuntime.watchInstall",
+  "agentRuntime.watchUpdate",
+  "agents.support",
+  "app.handshake",
+  "app.keptHost",
+  "app.launchChecks",
+  "app.usageOverview",
+  "attachment.upload",
+  "browserView.control",
+  "browserView.input",
+  "browserView.subscribe",
+  "composer.drafts",
+  "connectors.catalogue",
+  "connectors.configured",
+  "connectors.list",
+  "docs.save",
+  "dream.adopt",
+  "dream.automaticStatus",
+  "dream.cancel",
+  "dream.discard",
+  "dream.merge",
+  "dream.preview",
+  "dream.review",
+  "dream.start",
+  "fs.browse",
+  "fs.files",
+  "fs.list",
+  "fs.preview",
+  "fs.resolve",
+  "fs.tree",
+  "fs.vocabulary",
+  "git.baseStatus",
+  "git.branches",
+  "git.fastForward",
+  "git.fetchBase",
+  "git.prApplySuggestion",
+  "git.prCheckDiagnostic",
+  "git.prChecks",
+  "git.prDetail",
+  "git.prReplyThread",
+  "git.prRequestRereview",
+  "git.prRerunChecks",
+  "git.prResolveThread",
+  "git.prReview",
+  "git.push",
+  "git.refresh",
+  "git.upstreamStatus",
+  "git.upstreamSync",
+  "helper.presence",
+  "helper.recordEvent",
+  "helper.status",
+  "labels.remove",
+  "labels.upsert",
+  "memory.delete",
+  "memory.restore",
+  "memory.write",
+  "models.list",
+  "models.suggestions",
+  "openPrs.list",
+  "orchestrator.archiveFeature",
+  "orchestrator.cancelSwitch",
+  "orchestrator.featureSummary",
+  "orchestrator.handoff",
+  "orchestrator.open",
+  "orchestrator.releaseHeldBrief",
+  "orchestrator.releaseWorker",
+  "orchestrator.renameFeature",
+  "orchestrator.retrySwitch",
+  "orchestrator.setCharter",
+  "orchestrator.setFeaturePaused",
+  "orchestrator.setGroup",
+  "orchestrator.setPaused",
+  "orchestrator.setStage",
+  "orchestrator.switch",
+  "orchestrator.takeOverWorker",
+  "pages.list",
+  "pages.open",
+  "pages.pin",
+  "pages.showOffer",
+  "pages.unpin",
+  "palette.filters",
+  "pr.bind",
+  "pr.bindExtra",
+  "pr.checkout",
+  "pr.close",
+  "pr.create",
+  "pr.draft",
+  "pr.hide",
+  "pr.labels.add",
+  "pr.labels.list",
+  "pr.labels.remove",
+  "pr.merge",
+  "pr.mergeOptions",
+  "pr.promote",
+  "pr.ready",
+  "pr.reopen",
+  "pr.requestReview",
+  "pr.reviewerSuggestions",
+  "pr.setExtraMonitor",
+  "pr.setMonitor",
+  "pr.showHidden",
+  "pr.status",
+  "pr.unbind",
+  "pr.unbindExtra",
+  "pr.updateBranch",
+  "profiles.list",
+  "projects.add",
+  "projects.clone",
+  "projects.cloneSuggestions",
+  "projects.forget",
+  "projects.origins",
+  "projects.repositories",
+  "projects.saveScripts",
+  "projects.scripts",
+  "projects.setBookmarked",
+  "question.answer",
+  "request.noticeTitle",
+  "request.replies",
+  "reviewRequests.list",
+  "reviewRequests.refresh",
+  "routine.run",
+  "task.accept",
+  "task.dismiss",
+  "terminal.checkShell",
+  "terminal.close",
+  "terminal.input",
+  "terminal.list",
+  "terminal.open",
+  "terminal.resize",
+  "terminal.subscribe",
+  "thread.addDirectory",
+  "thread.addWait",
+  "thread.browserStatus",
+  "thread.cancelLimitWait",
+  "thread.cancelWake",
+  "thread.catchUp",
+  "thread.close",
+  "thread.create",
+  "thread.createFromProfile",
+  "thread.detach",
+  "thread.fork",
+  "thread.interrupt",
+  "thread.joinTargets",
+  "thread.joinWorkspace",
+  "thread.keepWait",
+  "thread.label",
+  "thread.markCompleted",
+  "thread.markUnread",
+  "thread.park",
+  "thread.pin",
+  "thread.promptHistory",
+  "thread.queue.edit",
+  "thread.queue.remove",
+  "thread.queue.reorder",
+  "thread.queue.steer",
+  "thread.recap",
+  "thread.refreshPlan",
+  "thread.rename",
+  "thread.resolveWait",
+  "thread.respond",
+  "thread.respondMany",
+  "thread.restartSession",
+  "thread.restoreWorktree",
+  "thread.resumeAfterMachineLost",
+  "thread.resumeLimitWait",
+  "thread.rewind",
+  "thread.send",
+  "thread.setBabysit",
+  "thread.setBrowser",
+  "thread.setMode",
+  "thread.setModel",
+  "thread.setPlan",
+  "thread.setReviewMonitor",
+  "thread.snooze",
+  "thread.startFreshOn",
+  "thread.startSession",
+  "thread.stash.add",
+  "thread.stash.list",
+  "thread.stash.remove",
+  "thread.stash.take",
+  "thread.steer",
+  "thread.stopTask",
+  "thread.suggestions",
+  "thread.switchAgent",
+  "thread.undoTurn",
+  "thread.whyStuck",
+  "threads.closed.reopen",
+  "threads.reorder",
+  "threads.usingCheckout",
+  "ui.showPanel",
+  "windows.report",
+  "windows.watch",
+  "workerQuestion.answer",
+  "workerQuestion.dismiss",
+  "workspace.remove",
+  "workspace.save",
+  "workspace.startTask",
+  "workspace.taskPreflight",
+  "worktree.cleanUp",
+  "worktree.cleanupPlan",
+  "worktree.list",
+  "worktree.pendingPermissions",
+  "worktree.pendingPermissionsAt",
+  "worktree.remove",
+  "worktree.size",
+  "worktree.status",
+  "worktree.storage",
+]);
+
+/** What reaches this server's own disk rather than a thread's folder. */
+const SERVER_DISK: ReadonlySet<string> = new Set([
+  "fs.browse",
+  "fs.tree",
+  "projects.add",
+  "projects.clone",
+]);
+/** The listings that reach this server's own disk when they name no thread. */
+const SERVER_DISK_UNLESS_THREAD: ReadonlySet<string> = new Set(["fs.list", "fs.files"]);
+
+/**
+ * Whether a member may make this call on a server people sign in to: one of theirs or a viewer's.
+ * On a headless server, which runs no work itself, its disk is nobody's work: nothing browses it,
+ * adds or clones a project onto it, or lists it but by a thread's folder.
+ */
+export const memberMay = (action: string, payload: unknown, headless: boolean): boolean => {
+  if (!VIEWER_RPCS.has(action) && !MEMBER_RPCS.has(action)) return false;
+  if (!headless) return true;
+  if (SERVER_DISK.has(action)) return false;
+  if (!SERVER_DISK_UNLESS_THREAD.has(action)) return true;
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    typeof (payload as Record<string, unknown>)["threadId"] === "string"
+  );
+};
+
+export const DEPLOYMENT_REFUSAL =
+  "not yours to change: this server's own setup comes from its deployment, not from the people signed in to it";
+
+/**
  * A member's calls that go unrecorded: reads kept from viewers (see {@link VIEWER_RPCS}), what a
  * window reports of itself, what the composer keeps while someone types, and a terminal's
  * keystrokes, whose opening is recorded. Every other call outside {@link VIEWER_RPCS} is recorded,
@@ -367,6 +664,9 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
     Effect.gen(function* () {
       const fronted = yield* FrontedSignIn;
       const store = yield* ThreadStore;
+      // Absent in guard-only test layers, which run no headless server.
+      const headless =
+        Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig))?.headless === true;
       // Who each joined machine was started for, where one was. Absent in tests with no machines.
       const machines = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts))?.machines;
       const ownerOf = ownersOf(machines);
@@ -530,6 +830,9 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           const action = rpc._tag;
           if (VIEWER_RPCS.has(action) || setsOnlyOwnView(action, payload)) return yield* effect;
           if (actor.role !== "member") return yield* Effect.die(new Error(VIEWER_REFUSAL));
+          // A member works in threads and workspaces; the server's own setup is its deployment's.
+          if (!memberMay(action, payload, headless))
+            return yield* Effect.die(new Error(DEPLOYMENT_REFUSAL));
           // A socket can't carry what the proxy signs for one answer: those come over HTTP.
           if (action === "thread.respond" || action === "thread.respondMany")
             return yield* Effect.die(new Error(ANSWER_OVER_HTTP));
