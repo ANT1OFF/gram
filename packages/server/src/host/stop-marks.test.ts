@@ -3,11 +3,19 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { describe, expect, it } from "vitest";
-import { folderOwedResume, makeStopMarks } from "./stop-marks.ts";
+import {
+  KEPT_FOLDERS_MAX,
+  RESUME_STALL_MS,
+  folderOwedResume,
+  type MachineMarksByHost,
+  makeStopMarks,
+} from "./stop-marks.ts";
 
 const machine = HostId.make("m-one");
 const other = HostId.make("m-two");
 const thread = (id: string) => ThreadId.make(id);
+/** What a host says of its disk `id`, and of its start. */
+const disk = (id: string, boot = `boot-${id}`) => ({ diskId: `disk-${id}`, bootId: boot });
 
 describe("stop marks", () => {
   it("a machine is stopped from its stop until it is back", () => {
@@ -177,5 +185,183 @@ describe("stop marks", () => {
     expect(folderOwedResume(marks, on("b", machine))).toBe(true);
     marks.resumed(machine);
     expect(folderOwedResume(marks, on("b", machine))).toBe(false);
+  });
+
+  describe("the disk a machine's host says it is on", () => {
+    it("tells a redial, a restart and a replacement apart", () => {
+      const marks = makeStopMarks();
+      expect(marks.hello(machine, {})).toEqual({ kind: "unknown" });
+      expect(marks.disk(machine)).toBeUndefined();
+      expect(marks.hello(machine, disk("aaaaaaaa"))).toEqual({ kind: "first" });
+      expect(marks.hello(machine, disk("aaaaaaaa"))).toEqual({ kind: "redial" });
+      expect(marks.hello(machine, disk("aaaaaaaa", "boot-cccccccc"))).toEqual({
+        kind: "restarted",
+      });
+      expect(marks.resuming(machine)).toBe(false);
+      expect(marks.hello(machine, disk("bbbbbbbb"))).toEqual({
+        kind: "replaced",
+        was: "disk-aaaaaaaa",
+      });
+      expect(marks.disk(machine)).toBe("disk-bbbbbbbb");
+      // A host that says no disk changes nothing remembered.
+      expect(marks.hello(machine, {})).toEqual({ kind: "unknown" });
+      expect(marks.disk(machine)).toBe("disk-bbbbbbbb");
+      expect(marks.hello(other, disk("aaaaaaaa"))).toEqual({ kind: "first" });
+    });
+
+    it("owes a machine back on a new disk a resume, though no stop of it was seen", () => {
+      const marks = makeStopMarks();
+      marks.hello(machine, disk("aaaaaaaa"));
+      marks.back(machine);
+      expect(marks.resuming(machine)).toBe(false);
+      marks.hello(machine, disk("bbbbbbbb"));
+      marks.back(machine);
+      expect(marks.resuming(machine)).toBe(true);
+      expect(marks.owes(machine)).toBe(true);
+    });
+
+    it("drops what a resume of the disk before says, once the machine is on another", () => {
+      const marks = makeStopMarks();
+      marks.hello(machine, disk("aaaaaaaa"));
+      marks.expect(machine);
+      marks.back(machine);
+      const before = marks.resumeStarted(machine);
+      // Replaced while that resume ran: what it finds on the old disk isn't the new one's.
+      marks.hello(machine, disk("bbbbbbbb"));
+      marks.back(machine);
+      marks.threadBack(machine, thread("a"), before);
+      marks.block(machine, thread("b"), "Its folder is gone.", before);
+      marks.resumed(machine, before, true);
+      expect(marks.isThreadBack(machine, thread("a"))).toBe(false);
+      expect(marks.blocked(machine, thread("b"))).toBeUndefined();
+      expect(marks.resuming(machine)).toBe(true);
+      // The new disk's own resume settles it.
+      const now = marks.resumeStarted(machine);
+      expect(now).not.toBe(before);
+      marks.resumed(machine, now, true);
+      expect(marks.owes(machine)).toBe(false);
+    });
+
+    it("keeps a resume owed when one ends without completing", () => {
+      const marks = makeStopMarks();
+      marks.expect(machine);
+      marks.back(machine);
+      const generation = marks.resumeStarted(machine);
+      marks.resumed(machine, generation, false);
+      expect(marks.resuming(machine)).toBe(true);
+      expect(marks.resumeRunning(machine)).toBe(false);
+      // Two at once: one that completes settles it only once the other ends too.
+      const one = marks.resumeStarted(machine);
+      const two = marks.resumeStarted(machine);
+      marks.resumed(machine, one, true);
+      expect(marks.owes(machine)).toBe(true);
+      marks.resumed(machine, two, false);
+      expect(marks.owes(machine)).toBe(false);
+    });
+
+    it("a stall opens the gate to later sessions but leaves the resume owed", () => {
+      let at = 0;
+      const marks = makeStopMarks(() => at);
+      marks.expect(machine);
+      marks.back(machine);
+      at = RESUME_STALL_MS;
+      expect(marks.resuming(machine)).toBe(false);
+      expect(marks.stalled(machine)).toBe(RESUME_STALL_MS);
+      expect(marks.owes(machine)).toBe(true);
+      // A resume started after it closes the gate again, until it completes.
+      const generation = marks.resumeStarted(machine);
+      expect(marks.resuming(machine)).toBe(true);
+      marks.resumed(machine, generation, true);
+      expect(marks.owes(machine)).toBe(false);
+    });
+
+    it("keeps what a machine is owed across a restart of this Gram, but not the diff", () => {
+      let kept: MachineMarksByHost = {};
+      const persisted = () => ({
+        initial: kept,
+        save: (all: MachineMarksByHost) => {
+          kept = structuredClone(all);
+        },
+      });
+      let at = 0;
+      const before = makeStopMarks(() => at, undefined, undefined, undefined, persisted());
+      before.hello(machine, disk("aaaaaaaa"));
+      before.stopped(machine, [thread("a"), thread("b")]);
+      before.away(machine);
+      before.keep(machine, thread("a"), "/w/a", {
+        commit: "c1",
+        caughtUp: false,
+        saved: { files: [], uncommitted: false },
+      });
+      before.hello(machine, disk("bbbbbbbb"));
+      before.back(machine);
+      const generation = before.resumeStarted(machine);
+      before.threadBack(machine, thread("a"), generation);
+      before.block(machine, thread("b"), "Its folder is gone.", generation);
+      before.expect(other);
+      // An `expect` made before a short restart still holds after it.
+      const early = makeStopMarks(() => 1000, undefined, undefined, undefined, persisted());
+      early.back(other);
+      expect(early.resuming(other)).toBe(true);
+
+      // Down far longer than a stall: that isn't time the resume made no progress in.
+      at = 10 * RESUME_STALL_MS;
+      const after = makeStopMarks(() => at, undefined, undefined, undefined, persisted());
+      expect(after.resuming(machine)).toBe(true);
+      expect(after.resumeRunning(machine)).toBe(false);
+      expect(after.isThreadBack(machine, thread("a"))).toBe(true);
+      expect(after.blocked(machine, thread("b"))).toBe("Its folder is gone.");
+      expect(after.keptOf(machine, thread("a"), "/w/a")).toEqual({ commit: "c1", caughtUp: false });
+      expect(after.takeRested(machine)).toEqual([thread("a"), thread("b")]);
+      expect(after.disk(machine)).toBe("disk-bbbbbbbb");
+      // A late result of the resume from before the restart doesn't settle the one owed now.
+      after.resumed(machine, generation - 1, true);
+      expect(after.owes(machine)).toBe(true);
+      const now = after.resumeStarted(machine);
+      after.resumed(machine, now, true);
+      const again = makeStopMarks(() => at, undefined, undefined, undefined, persisted());
+      expect(again.resuming(machine)).toBe(false);
+      again.forget(machine);
+      again.forget(other);
+      expect(kept).toEqual({});
+    });
+
+    it("keeps the disk and what is owed in one write, and tries a failed one again", () => {
+      const writes: Array<MachineMarksByHost> = [];
+      let failing = false;
+      const marks = makeStopMarks(undefined, undefined, undefined, undefined, {
+        initial: {},
+        save: (all) => {
+          if (failing) throw new Error("disk full");
+          writes.push(structuredClone(all));
+        },
+      });
+      marks.hello(machine, disk("aaaaaaaa"));
+      writes.length = 0;
+      failing = true;
+      marks.hello(machine, disk("bbbbbbbb"));
+      marks.back(machine);
+      expect(writes).toEqual([]);
+      failing = false;
+      // The next change of any machine writes what failed too.
+      marks.expect(other);
+      expect(writes).toHaveLength(1);
+      expect(writes[0]?.[machine]).toMatchObject({
+        disk: { id: "disk-bbbbbbbb" },
+        owed: {},
+      });
+      // Once kept, the replacement was one write: no state with the disk and without the debt.
+      writes.length = 0;
+      marks.hello(machine, disk("cccccccc"));
+      expect(writes[0]?.[machine]).toMatchObject({ disk: { id: "disk-cccccccc" }, owed: {} });
+    });
+
+    it("keeps only the newest folders' records", () => {
+      const marks = makeStopMarks();
+      for (let at = 0; at <= KEPT_FOLDERS_MAX; at++)
+        marks.keep(machine, thread("a"), `/w/${at}`, { commit: "c", caughtUp: false });
+      expect(marks.keptOf(machine, thread("a"), "/w/0")).toBeUndefined();
+      expect(marks.keptOf(machine, thread("a"), `/w/${KEPT_FOLDERS_MAX}`)).toBeDefined();
+    });
   });
 });

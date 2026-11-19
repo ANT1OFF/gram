@@ -779,6 +779,13 @@ export interface HostSessionsConnection {
     agent: HostSessionOpen["agent"],
     reload: HostAgentReload,
   ) => Effect.Effect<void>;
+  /**
+   * Whether the host the session's events last came from runs on another disk than the one it
+   * was opened on (`HostHello.diskId`): its machine was replaced under it, so a session it no
+   * longer has was lost with the old disk, not ended by a restart. Absent on a connection to one
+   * host, and false when either host didn't say its disk.
+   */
+  readonly replaced?: (handle: string) => boolean;
 }
 
 /**

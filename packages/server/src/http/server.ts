@@ -152,7 +152,7 @@ import type { TurnHooks } from "../runtime/hooks.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { HOST_STOP_PATHS, hostStopRoute } from "./host-stop-routes.ts";
 import { startWipKeeper } from "../host/wip-keeper.ts";
-import { readyOnGoing } from "../host/stop-resume.ts";
+import { readyOnGoing, resumeOwedMachines } from "../host/stop-resume.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { WorkspaceOutputs } from "../outputs/workspace-outputs.ts";
 import { SharedFolders } from "../shared/shared-folders.ts";
@@ -323,6 +323,8 @@ export const AuthMiddleware = HttpRouter.middleware(
       const off = stopDeps.hosts.onGoing(readyOnGoing(stopDeps));
       yield* Effect.addFinalizer(() => Effect.sync(off));
     }
+    // A machine back on another disk owes a resume; with the hosted features off, this Gram runs it.
+    if (stopDeps !== undefined) yield* resumeOwedMachines(stopDeps);
     // Absent only in tests that serve the middleware alone, which take the launch token.
     const fronted = Option.getOrUndefined(yield* Effect.serviceOption(FrontedSignIn));
     const securityHeaders = {

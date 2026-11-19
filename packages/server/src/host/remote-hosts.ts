@@ -36,7 +36,13 @@ import { makeMachineUpdates, RETRY_MS, type UpdateRequest } from "./machine-upda
 import * as Schedule from "effect/Schedule";
 import * as FiberSet from "effect/FiberSet";
 import { watchedSocket } from "./socket-end.ts";
-import { makeStopMarks, type StopMarks } from "./stop-marks.ts";
+import * as Schema from "effect/Schema";
+import {
+  MachineMarks,
+  type MachineMarksByHost,
+  makeStopMarks,
+  type StopMarks,
+} from "./stop-marks.ts";
 
 /** The release a host said it runs, kept only when it reads as a release: it is shown as text. */
 const releaseOf = (hello: HostHello): string | undefined =>
@@ -134,6 +140,73 @@ export const fileAutomaticStore = (dataDir: string): AutomaticStore => {
       return value.automatic;
     },
     write: (on) => file().write({ version: 1, automatic: on }),
+  };
+};
+
+/** The machines' stop marks and disks (`stop-marks.ts`), as kept across a restart. */
+export interface MarksStore {
+  /**
+   * Every machine's marks, and how many machines' marks were left out for not reading as marks;
+   * throws when what is kept can't be read at all.
+   */
+  readonly read: () => { readonly machines: MachineMarksByHost; readonly dropped: number };
+  /** Throws when they couldn't be kept. */
+  readonly write: (all: MachineMarksByHost) => void;
+}
+
+/** The largest marks file read: a few machines' folders, never their diffs. */
+const MARKS_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * The marks in `remote-access/machine-marks.json`, owner-only beside the machines, each write a
+ * whole new file renamed over the old (`privateJsonFile`). A machine whose marks don't read as
+ * marks is left out, so one bad entry costs only its own; a file that isn't marks at all throws.
+ * A write that would come to more than is read back leaves out what stops kept of folders, which
+ * only holds a resume to a commit, before the disks and what is owed; past that it throws.
+ */
+export const fileMarksStore = (dataDir: string): MarksStore => {
+  const file = privateJsonFile(dataDir, "machine-marks.json", MARKS_MAX_BYTES);
+  const decode = Schema.decodeUnknownOption(MachineMarks);
+  const fits = (value: unknown) =>
+    Buffer.byteLength(JSON.stringify(value), "utf8") <= MARKS_MAX_BYTES;
+  return {
+    read: () => {
+      const value = file.read() as { version?: unknown; machines?: unknown } | undefined;
+      if (value === undefined) return { machines: {}, dropped: 0 };
+      if (
+        value === null ||
+        typeof value !== "object" ||
+        Array.isArray(value) ||
+        value.version !== 1 ||
+        typeof value.machines !== "object" ||
+        value.machines === null ||
+        Array.isArray(value.machines)
+      )
+        throw new Error("machine-marks.json isn't a machine marks file.");
+      const machines: Record<string, MachineMarks> = {};
+      let dropped = 0;
+      for (const [id, marks] of Object.entries(value.machines)) {
+        const decoded = decode(marks);
+        if (decoded._tag === "Some") machines[id] = decoded.value;
+        else dropped += 1;
+      }
+      return { machines, dropped };
+    },
+    write: (all) => {
+      const whole = { version: 1, machines: all };
+      if (fits(whole)) return file.write(whole);
+      const lean = {
+        version: 1,
+        machines: Object.fromEntries(
+          Object.entries(all).map(([id, marks]) => {
+            const { kept: _, ...rest } = marks;
+            return [id, rest];
+          }),
+        ),
+      };
+      if (!fits(lean)) throw new Error("The machines' marks don't fit in machine-marks.json.");
+      file.write(lean);
+    },
   };
 };
 
@@ -251,6 +324,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       readonly provisionedOrigin?: string | undefined;
       /** How often its connections ping their hosts; `HOST_PING_EVERY_MS` unless a test says. */
       readonly pingEveryMs?: number;
+      /** Where the stop marks and disks are kept across a restart; in memory when left out. */
+      readonly marks?: MarksStore;
     } = {},
   ) =>
     Effect.gen(function* () {
@@ -270,14 +345,55 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       const machines = createPairedMachines(store, now, nonces, changed);
       const online = new Map<HostId, Online>();
       let readAccess: (() => DialAccess) | undefined;
-      // A machine waited on or no longer is news to the threads that run on it (`starting`).
-      const stops = makeStopMarks(now, undefined, () => changed());
       const root = yield* Effect.scope;
       // The server's own logger and the rest, for a check started outside an effect.
       const context = yield* Effect.context<never>();
       const runPromise = Effect.runPromiseWith(context);
       /** Updates and their checks, which outlive the dial or request that started them. */
       const runFork = yield* FiberSet.makeRuntime<never>();
+      // What was kept of the machines' stops and disks. Marks that can't be read are started
+      // over, said in the log: a machine back then is taken as one this Gram never saw stop.
+      const marksStore = options.marks;
+      const keptMarks: MachineMarksByHost =
+        marksStore === undefined
+          ? {}
+          : yield* Effect.try(() => marksStore.read()).pipe(
+              Effect.tap(({ dropped }) =>
+                dropped === 0
+                  ? Effect.void
+                  : Effect.logWarning(
+                      "machines: some machines' kept stop marks were left out",
+                    ).pipe(Effect.annotateLogs({ dropped })),
+              ),
+              Effect.map((read) => read.machines),
+              Effect.catch((error) =>
+                Effect.logWarning("machines: the kept stop marks couldn't be read").pipe(
+                  Effect.annotateLogs({ reason: String(error.cause) }),
+                  Effect.as({}),
+                ),
+              ),
+            );
+      // A machine waited on or no longer is news to the threads that run on it (`starting`).
+      const stops = makeStopMarks(
+        now,
+        undefined,
+        () => changed(),
+        undefined,
+        marksStore === undefined
+          ? undefined
+          : {
+              initial: keptMarks,
+              save: (all) => marksStore.write(all),
+              // Kept in memory meanwhile, which holds this Gram's sessions to them; tried again at
+              // the next change. Only a restart before then would forget them.
+              failed: (error) =>
+                runFork(
+                  Effect.logError("machines: the stop marks couldn't be kept").pipe(
+                    Effect.annotateLogs({ reason: String(error) }),
+                  ),
+                ),
+            },
+      );
       let automaticMemory: boolean | undefined;
       const automaticStore: AutomaticStore = options.automatic ?? {
         read: () => automaticMemory,
@@ -449,6 +565,33 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             }
             // Removed, or its connections closed, while it said hello: it doesn't come online.
             if (!stillAdmitted(dial)) return;
+            // A host that says no disk never takes the machine from one that says its own, nor
+            // from a new disk whose folders are still owed: it can't say it isn't the old disk's.
+            // With neither, it comes online as hosts did before they said one.
+            const said = opened.value.hello;
+            const there = online.get(machine.id);
+            if (
+              said.diskId === undefined &&
+              stops.disk(machine.id) !== undefined &&
+              ((there !== undefined &&
+                !there.connection.gone() &&
+                there.connection.hello.diskId !== undefined) ||
+                stops.owes(machine.id))
+            ) {
+              yield* Effect.logWarning(
+                "machines: refused a joined machine's host that didn't say its disk",
+              ).pipe(
+                Effect.annotateLogs({
+                  hostId: machine.id,
+                  online: there !== undefined,
+                  owed: stops.owes(machine.id),
+                }),
+              );
+              return;
+            }
+            // The disk it says it is on: the same, or another, which owes a resume before any
+            // session opens there, kept as one change with the disk.
+            const disk = stops.hello(machine.id, said);
             pending.get(machine.id)?.delete(endPending);
             close(machine.id);
             const live: Online = {
@@ -463,7 +606,11 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             machines.note(machine.id, undefined);
             changed();
             yield* Effect.logInfo("machines: a joined machine is online").pipe(
-              Effect.annotateLogs({ hostId: machine.id, platform: opened.value.hello.platform }),
+              Effect.annotateLogs({
+                hostId: machine.id,
+                platform: opened.value.hello.platform,
+                disk: disk.kind,
+              }),
             );
             void checkSignIn(machine.id);
             // How its last update went, which also confirms one that brought it back, then
@@ -670,6 +817,10 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           release: releaseOfConfig(config),
           automatic: fileAutomaticStore(dataDir),
           provisionedOrigin: config.provisionedHosts?.origin,
+          marks: lazyFileStore(dataDir, "machine-marks.json", fileMarksStore, () => ({
+            machines: {},
+            dropped: 0,
+          })),
         },
       );
     }),

@@ -4,6 +4,7 @@ import {
   constants,
   fstatSync,
   fsyncSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -112,6 +113,32 @@ const writePrivate = (home: string, name: string, text: string) => {
   }
 };
 
+/**
+ * Writes `name` in `home` owner-only unless it is there already: made in full beside it, then linked
+ * into place, which fails rather than replace one that another writer made first.
+ */
+const createPrivate = (home: string, name: string, text: string) => {
+  ensureHostHome(home);
+  const path = join(home, name);
+  const temporary = `${path}.${randomBytes(8).toString("hex")}.tmp`;
+  let fd: number | undefined;
+  try {
+    fd = openSync(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+    writeFileSync(fd, text);
+    fsyncSync(fd);
+    closeSync(fd);
+    fd = undefined;
+    try {
+      linkSync(temporary, path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+    rmSync(temporary, { force: true });
+  }
+};
+
 /** Reads `name` in `home` without following a link, refused unless owner-only; undefined if none. */
 const readPrivate = (home: string, name: string): string | undefined => {
   let fd: number;
@@ -165,6 +192,36 @@ export const forgetJoined = (home: string) => {
   forgetClaudeToken(home);
   rmSync(join(home, CONFIG), { force: true });
   rmSync(join(home, KEY), { force: true });
+};
+
+/**
+ * The file in the host's folder that names the disk it runs on (`HostHello.diskId`). Made the first
+ * time the host starts there and never copied with its clones: a host brought back on a new disk
+ * with its key and join but not this file makes a new one, and so says it is on another disk.
+ */
+export const DISK_ID = "disk-id";
+const DISK_ID_SHAPE = /^[A-Za-z0-9_-]{8,64}$/;
+
+/**
+ * The id of the disk `home` is on, made and kept owner-only on first use. One that isn't an id
+ * (cut short, edited) is replaced: the host then says it is on another disk, which only makes
+ * Gram put its folders back first. Throws when the folder or the file isn't private to this user.
+ */
+export const hostDiskId = (home: string): string => {
+  const read = () => {
+    const kept = readPrivate(home, DISK_ID)?.trim();
+    return kept !== undefined && DISK_ID_SHAPE.test(kept) ? kept : undefined;
+  };
+  const kept = read();
+  if (kept !== undefined) return kept;
+  const made = `${randomBytes(16).toString("base64url")}\n`;
+  // Made only if none is there, so two hosts starting at once on one disk end up with one id:
+  // each reads back whichever was made first. One that isn't an id is replaced, and read back.
+  if (readPrivate(home, DISK_ID) === undefined) createPrivate(home, DISK_ID, made);
+  else writePrivate(home, DISK_ID, made);
+  const now = read();
+  if (now === undefined) throw new Error(`${join(home, DISK_ID)} couldn't be made.`);
+  return now;
 };
 
 /** The refusal for a token that isn't `CLAUDE_TOKEN_SHAPE`; it never quotes what it was given. */

@@ -7,6 +7,7 @@ import {
   HostFailed,
   type HostId,
   type HostStopRestored,
+  HostUnavailable,
   type SavedDiff,
   type Thread,
   type ThreadId,
@@ -22,6 +23,7 @@ import {
   keepThreadWork,
   prepareStop,
   resumeHost,
+  resumeOwedMachines,
   savedDiffOf,
   type StopResumeDeps,
 } from "./stop-resume.ts";
@@ -612,6 +614,66 @@ describe("resuming a machine on another disk", () => {
         expect((yield* gated(stops)(MACHINE, "t-one" as ThreadId)).id).toBe(MACHINE);
       }),
     ),
+  );
+
+  it.effect("leaves the resume owed when it can't reach the machine", () =>
+    Effect.gen(function* () {
+      const stops = makeStopMarks();
+      stops.expect(MACHINE);
+      stops.back(MACHINE);
+      const deps = {
+        hosts: {
+          connection: (hostId: HostId) =>
+            Effect.fail(new HostUnavailable({ hostId, message: "That machine is offline." })),
+          stops,
+        },
+        store: { listThreads: Effect.succeed(THREADS) },
+        runtimes: { startSession: () => Effect.void },
+      } as unknown as StopResumeDeps;
+      expect((yield* Effect.flip(resumeHost(deps, MACHINE)))._tag).toBe("HostUnavailable");
+      expect(stops.resuming(MACHINE)).toBe(true);
+      expect(stops.resumeRunning(MACHINE)).toBe(false);
+    }),
+  );
+
+  it.effect(
+    "is run by this Gram itself for a machine back on another disk, hosted features off",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { deps, asked } = machine([], true);
+          const stops = deps.hosts.stops;
+          stops.hello(MACHINE, { diskId: "disk-aaaaaaaa" });
+          stops.hello(MACHINE, { diskId: "disk-bbbbbbbb" });
+          stops.back(MACHINE);
+          const watchers: Array<() => void> = [];
+          const settings = { experimental: { embedding: false } };
+          yield* resumeOwedMachines({
+            ...deps,
+            hosts: {
+              ...deps.hosts,
+              machines: { list: () => [{ id: MACHINE, name: "box", confirmedAt: 1 }] } as never,
+              watch: (listener: () => void) => {
+                watchers.push(listener);
+                return () => {};
+              },
+            },
+            settings: { getSettings: Effect.sync(() => settings as never) },
+          });
+          yield* TestClock.adjust("1 second");
+          expect(asked.length).toBeGreaterThan(0);
+          expect(stops.owes(MACHINE)).toBe(false);
+          // With them on, it is left to whoever starts the machines.
+          settings.experimental.embedding = true;
+          stops.hello(MACHINE, { diskId: "disk-cccccccc" });
+          stops.back(MACHINE);
+          asked.length = 0;
+          for (const watcher of watchers) watcher();
+          yield* TestClock.adjust("2 minutes");
+          expect(asked).toEqual([]);
+          expect(stops.owes(MACHINE)).toBe(true);
+        }),
+      ),
   );
 
   it.effect("keeps a thread whose only folder is missing from opening, and says why", () =>

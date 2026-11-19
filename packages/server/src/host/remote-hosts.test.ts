@@ -19,7 +19,8 @@ import { machineNews, publishMachineStates } from "./machine-events.ts";
 import { generateHostKey, hostIdOf, privateKeyFrom, signedConnectHeaders } from "./machine-keys.ts";
 import { memoryMachineStore } from "./paired-machines.ts";
 import { HOST_CAPABILITIES, type HostService, serveHost } from "./protocol.ts";
-import { RemoteHosts } from "./remote-hosts.ts";
+import { type MarksStore, RemoteHosts } from "./remote-hosts.ts";
+import type { MachineMarksByHost } from "./stop-marks.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import { Proc, ProcLive } from "@gram/git";
@@ -69,7 +70,7 @@ const service = (
  */
 const servedWith = (
   duringUpgrade?: (hosts: RemoteHosts["Service"]) => void,
-  options: { readonly pingEveryMs?: number } = {},
+  options: { readonly pingEveryMs?: number; readonly marks?: MarksStore } = {},
 ) =>
   Effect.gen(function* () {
     const hosts = yield* RemoteHosts.make(memoryMachineStore(), undefined, undefined, options);
@@ -861,5 +862,107 @@ describe("a machine about to be taken away", () => {
       yield* Effect.sleep("100 millis");
       expect(yield* stop.goAway(300)).toBe("late");
     }).pipe(Effect.scoped, Effect.timeout("15 seconds")),
+  );
+});
+
+/** Stop marks kept in memory, as a restart of this Gram would find them. */
+const memoryMarks = () => {
+  let kept: MachineMarksByHost = {};
+  return {
+    read: () => ({ machines: kept, dropped: 0 }),
+    write: (all: MachineMarksByHost) => {
+      kept = structuredClone(all);
+    },
+  } satisfies MarksStore;
+};
+
+/** Dials until the host is online, then drops it and waits until it is offline again. */
+const dialAndDrop = (
+  hosts: RemoteHosts["Service"],
+  hostId: string,
+  dial: DialOptions,
+  said: Partial<HostService["hello"]>,
+) =>
+  Effect.gen(function* () {
+    const fiber = yield* Effect.forkScoped(dialOnce(dial, service(hostId, said)));
+    yield* online(hosts, hostId);
+    yield* Fiber.interrupt(fiber);
+    while (hosts.origin(HostId.make(hostId)) !== undefined) yield* Effect.sleep("20 millis");
+  });
+
+describe("the disk a joined machine's host says it is on", () => {
+  const diskA = { diskId: "disk-aaaaaaaa", bootId: "boot-aaaaaaaa" };
+  const diskB = { diskId: "disk-bbbbbbbb", bootId: "boot-bbbbbbbb" };
+
+  it.live("a host that says no disk never takes the machine from one that says its own", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* servedWith(undefined, { marks: memoryMarks() });
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      yield* dialAndDrop(hosts, hostId, dial, diskA);
+      // Back on another disk: owed a resume before any session opens there.
+      const replacement = yield* Effect.forkScoped(dialOnce(dial, service(hostId, diskB)));
+      expect((yield* online(hosts, hostId)).hello.diskId).toBe(diskB.diskId);
+      expect(hosts.stops.resuming(hostId)).toBe(true);
+      // An older host, or one that couldn't keep its id, dials in: it can't say it isn't the old
+      // disk's, so the replacement stays, and still owes its resume.
+      yield* dialOnce(dial, service(hostId)).pipe(Effect.timeout("10 seconds"));
+      expect((yield* hosts.connection(hostId)).hello.diskId).toBe(diskB.diskId);
+      expect(hosts.stops.resuming(hostId)).toBe(true);
+      // Nor does it take the machine while that resume is owed, with the replacement gone.
+      yield* Fiber.interrupt(replacement);
+      while (hosts.origin(hostId) !== undefined) yield* Effect.sleep("20 millis");
+      yield* dialOnce(dial, service(hostId)).pipe(Effect.timeout("10 seconds"));
+      expect(hosts.origin(hostId)).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("a machine whose hosts never said a disk comes online as before", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* servedWith(undefined, { marks: memoryMarks() });
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      yield* dialAndDrop(hosts, hostId, dial, {});
+      const fiber = yield* Effect.forkScoped(dialOnce(dial, service(hostId)));
+      yield* online(hosts, hostId);
+      expect(hosts.stops.resuming(hostId)).toBe(false);
+      yield* Fiber.interrupt(fiber);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("remembers across a restart which disk a machine is on, and what it owes", () =>
+    Effect.gen(function* () {
+      const marks = memoryMarks();
+      const before = yield* servedWith(undefined, { marks });
+      const { hostId, dial } = yield* joinedAndConfirmed(before.hosts, before.base);
+      const machine = before.hosts.machines.get(hostId)!;
+      yield* dialAndDrop(before.hosts, hostId, dial, diskA);
+      yield* dialAndDrop(before.hosts, hostId, dial, diskB);
+      // This Gram restarts: a new registry over what was kept.
+      const after = yield* RemoteHosts.make(memoryMachineStore([machine]), undefined, undefined, {
+        marks,
+      });
+      expect(after.stops.resuming(hostId)).toBe(true);
+      expect(after.stops.disk(hostId)).toBe(diskB.diskId);
+      expect(after.stops.hello(hostId, { ...diskB, bootId: "boot-cccccccc" })).toEqual({
+        kind: "restarted",
+      });
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("starts over, rather than not at all, when the kept marks can't be read", () =>
+    Effect.gen(function* () {
+      const written: Array<MachineMarksByHost> = [];
+      const hosts = yield* RemoteHosts.make(memoryMachineStore(), undefined, undefined, {
+        marks: {
+          read: () => {
+            throw new Error("machine-marks.json isn't a machine marks file.");
+          },
+          write: (all) => void written.push(all),
+        },
+      });
+      const id = HostId.make("m-one");
+      expect(hosts.stops.resuming(id)).toBe(false);
+      hosts.stops.expect(id);
+      expect(Object.keys(written.at(-1) ?? {})).toEqual(["m-one"]);
+    }),
   );
 });

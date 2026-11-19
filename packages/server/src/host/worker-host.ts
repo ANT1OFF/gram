@@ -193,7 +193,7 @@ const WAKE_LOOK = "500 millis";
  * no work until it is stopped and started, or its stop is taken back, and one back after a stop
  * until its threads are resumed (`StopMarks.resuming`), whose folders may not be there before.
  * With them off, and for a machine that isn't joined, an absent machine is unavailable at once,
- * as ever.
+ * as ever; one there that owes a resume (back on another disk) is waited for all the same.
  *
  * A thread whose folder its machine's resume couldn't put back (`StopMarks.blocked`) opens no
  * session there, and says why at once. Nor does one whose machine's resume made no progress for
@@ -226,7 +226,11 @@ export const awaitedMachines =
       if (first.host !== undefined && settled()) return first.host;
       const asIs = first.host === undefined ? Effect.fail(first.away) : Effect.succeed(first.host);
       if (remote.machines.get(id)?.confirmedAt === undefined) return yield* asIs;
-      if (!embeddingOn(yield* store.getSettings)) return yield* asIs;
+      // With the hosted features off, a machine that is away isn't waited for; one that is there
+      // but owes a resume (back on another disk) is, as this Gram resumes it itself
+      // (`resumeOwedMachines`): no session opens over folders not yet put back.
+      if (!embeddingOn(yield* store.getSettings) && (first.host === undefined || settled()))
+        return yield* asIs;
       yield* Effect.logInfo("a session waits for its machine to be started").pipe(
         Effect.annotateLogs({ hostId: id }),
       );

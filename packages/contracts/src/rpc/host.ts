@@ -213,6 +213,9 @@ export const HostFeature = Schema.Literals([
 ]);
 export type HostFeature = typeof HostFeature.Type;
 
+/** `HostHello.diskId` and `bootId`: a random id, as a host writes it. */
+export const HostDiskId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{8,64}$/));
+
 /** The host's answer to `host.hello`: who it is and what it can do. */
 export const HostHello = Schema.Struct({
   protocol: Schema.Int,
@@ -233,6 +236,21 @@ export const HostHello = Schema.Struct({
   features: Schema.optionalKey(
     Schema.Array(Schema.String.check(Schema.isMaxLength(64))).check(Schema.isMaxLength(256)),
   ),
+  /**
+   * The disk the host runs on: an id it made the first time it started there, kept in its own
+   * folder beside its key but never with its clones. Same disk, the machine's folders are still
+   * there; another, it is a new machine under the same key, whose folders a resume puts back
+   * before any session opens, and a host that says a disk it replaced is refused. Absent from a
+   * joined machine's host built before it (1.31.0 and earlier) or one that couldn't keep the id,
+   * and from this machine's own host. A control plane built before it ignores it.
+   */
+  diskId: Schema.optionalKey(HostDiskId),
+  /**
+   * This start of the host's process: a fresh id each time it starts, so a redial from the same
+   * process (its connection only dropped) is told apart from a restart on the same disk, which
+   * took its sessions with it. Sent with `diskId`.
+   */
+  bootId: Schema.optionalKey(HostDiskId),
 });
 export type HostHello = typeof HostHello.Type;
 

@@ -31,6 +31,10 @@ import { isWipRefOf } from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as FiberSet from "effect/FiberSet";
+import * as Schedule from "effect/Schedule";
+import type * as Scope from "effect/Scope";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
@@ -495,8 +499,10 @@ export const resumeHost = (
 ): Effect.Effect<HostResumed, HostUnavailable> =>
   Effect.suspend(() => {
     const stops = deps.hosts.stops;
-    // Counted before anything can fail, so the `resumed` that ends it is this resume's own.
-    stops.resumeStarted(id);
+    // Counted before anything can fail, so the `resumed` that ends it is this resume's own. Each
+    // result names the generation it runs for: once the machine is owed a resume afresh (back on
+    // another disk), what this one finds on the disk it reached counts for nothing.
+    const generation = stops.resumeStarted(id);
     return Effect.gen(function* () {
       const connection = yield* deps.hosts.connection(id);
       const placed = placedOn(yield* deps.store.listThreads, id);
@@ -602,12 +608,12 @@ export const resumeHost = (
             notBack.set(threadId, blockReason(outcome));
           const more = (toGo.get(threadId) ?? 1) - 1;
           toGo.set(threadId, more);
-          stops.progress(id);
+          stops.progress(id, generation);
           if (more > 0) return;
           // Only a thread whose every folder is back opens its session; the rest say why.
           const why = notBack.get(threadId);
-          if (why === undefined) stops.threadBack(id, threadId);
-          else stops.block(id, threadId, why);
+          if (why === undefined) stops.threadBack(id, threadId, generation);
+          else stops.block(id, threadId, why, generation);
         });
       // A few folders at once: each is a clone and a fetch on the host, and sessions wait for them
       // all. Threads sharing a folder take it in turn: once one has it back, it is back for all.
@@ -683,8 +689,12 @@ export const resumeHost = (
       );
       return { reopened, left, missing, refused, restored };
     }).pipe(
-      // Sessions held for it (`StopMarks.resuming`) open now, but those of threads not back.
-      Effect.ensuring(Effect.sync(() => stops.resumed(id))),
+      // Gone through every folder: sessions held for it (`StopMarks.resuming`) open now, but those
+      // of threads not back. One that couldn't reach the machine, failed or was cut off leaves the
+      // resume owed.
+      Effect.onExit((exit) =>
+        Effect.sync(() => stops.resumed(id, generation, Exit.isSuccess(exit))),
+      ),
     );
   });
 
@@ -697,8 +707,8 @@ export interface StopState {
   /** A thread waits for it to be started now. */
   readonly wanted: boolean;
   /**
-   * Dialled in after a stop and not yet resumed (`StopMarks.resuming`), however it was started:
-   * resume it (`POST /machines/stop/resume`), as its sessions wait for that.
+   * Dialled in after a stop, or on another disk, and not yet resumed (`StopMarks.owes`), however
+   * it was started: resume it (`POST /machines/stop/resume`), as its sessions wait for that.
    */
   readonly resuming?: boolean;
 }
@@ -723,7 +733,7 @@ export const stopStatus = (
           online,
           ...(stoppedAt === undefined ? {} : { stoppedAt }),
           wanted: deps.hosts.stops.wanted(id),
-          ...(online && deps.hosts.stops.resuming(id) ? { resuming: true } : {}),
+          ...(online && deps.hosts.stops.owes(id) ? { resuming: true } : {}),
         };
       }),
   );
@@ -745,3 +755,55 @@ export const savedDiffOf = (
       return saved === undefined ? [] : [saved];
     })[0];
 };
+
+/** How often machines owing a resume are looked at again, should no change say so. */
+const OWED_SWEEP = "1 minute";
+
+/**
+ * With the hosted features off, nothing outside this Gram starts or resumes its machines, so one
+ * that dials in owing a resume (back on another disk, `StopMarks.owes`) is resumed here as soon as
+ * it is online, one resume at a time: its sessions wait for that rather than open over folders
+ * that aren't there. A resume that doesn't complete leaves it owed, and it is tried again at the
+ * next change or sweep. With them on, whoever starts the machines asks (`POST /machines/stop/resume`).
+ */
+export const resumeOwedMachines = (
+  deps: StopResumeDeps & {
+    readonly hosts: Pick<RemoteHostsShape, "watch">;
+    readonly settings: Pick<ThreadStore["Service"], "getSettings">;
+  },
+): Effect.Effect<void, never, Scope.Scope> =>
+  Effect.gen(function* () {
+    const run = yield* FiberSet.makeRuntime<never>();
+    const going = new Set<HostId>();
+    const sweep = Effect.gen(function* () {
+      if (embeddingOn(yield* deps.settings.getSettings)) return;
+      for (const machine of deps.hosts.machines.list()) {
+        const id = machine.id as HostId;
+        if (machine.confirmedAt === undefined || going.has(id)) continue;
+        if (!deps.hosts.stops.owes(id) || deps.hosts.stops.resumeRunning(id)) continue;
+        const online = yield* deps.hosts.connection(id).pipe(
+          Effect.as(true),
+          Effect.orElseSucceed(() => false),
+        );
+        if (!online) continue;
+        going.add(id);
+        run(
+          Effect.logInfo("a machine back on another disk is resumed by this Gram").pipe(
+            Effect.annotateLogs({ hostId: id }),
+            Effect.andThen(resumeHost(deps, id)),
+            Effect.catchCause((cause) =>
+              Effect.logWarning("a machine's resume didn't complete; it is tried again").pipe(
+                Effect.annotateLogs({ hostId: id, reason: Cause.pretty(cause).slice(0, 300) }),
+              ),
+            ),
+            Effect.ensuring(Effect.sync(() => going.delete(id))),
+          ),
+        );
+      }
+    }).pipe(Effect.catchCause(() => Effect.void));
+    yield* Effect.acquireRelease(
+      Effect.sync(() => deps.hosts.watch(() => void run(sweep))),
+      (unwatch) => Effect.sync(unwatch),
+    );
+    yield* sweep.pipe(Effect.repeat(Schedule.spaced(OWED_SWEEP)), Effect.forkScoped);
+  });
