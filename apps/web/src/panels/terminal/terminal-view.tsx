@@ -378,7 +378,8 @@ export function TerminalView({
     const paths = droppedPaths(event);
     if (paths.length === 0) return;
     event.preventDefault();
-    handleRef.current?.paste(formatDroppedPaths(paths, shellKind(shell ?? "/bin/sh")));
+    const text = formatDroppedPaths(paths, shellKind(shell ?? "/bin/sh"));
+    if (text !== "") handleRef.current?.paste(text);
     handleRef.current?.focus();
   };
 

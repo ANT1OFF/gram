@@ -45,5 +45,15 @@ export function syncCustomPaletteStyle(doc: Document, palettes: readonly Palette
     style.id = CUSTOM_PALETTE_STYLE_ID;
     doc.head.append(style);
   }
-  style.textContent = palettes.map((palette) => paletteCss(palette)).join("\n");
+  // A palette that can't be written (an unsafe id, a colour it can't derive) is left out rather
+  // than breaking the page: custom palettes may come from another member of a shared server.
+  style.textContent = palettes
+    .flatMap((palette) => {
+      try {
+        return [paletteCss(palette)];
+      } catch {
+        return [];
+      }
+    })
+    .join("\n");
 }
