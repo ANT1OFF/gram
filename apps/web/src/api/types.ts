@@ -48,6 +48,7 @@ import type { BrowserViewApi } from "./browser-view/types";
 import type { ThreadsApi } from "./threads/types";
 import type { WaitsApi } from "./waits/types";
 import type { WorktreesApi } from "./worktrees/types";
+import type { ServedRpcs } from "./served";
 
 /** The merged PR a worktree's local branch is checked against before it's deleted. */
 export interface MergedPrRef {
@@ -271,4 +272,6 @@ export interface Api
     WorktreesApi {
   readonly kind: "mock" | "rpc";
   readonly connection: ConnectionMonitor;
+  /** Which RPCs the server serves, for controls a server older than this build lacks. */
+  readonly served: ServedRpcs;
 }

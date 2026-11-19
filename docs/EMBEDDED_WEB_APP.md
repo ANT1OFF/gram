@@ -772,6 +772,14 @@ When a change touches that surface:
   the before and after screenshots include the screen mounted in an embedding app's shell
   (`server: "mock"` with a `shell`), where the sidebar, the title bar and the words differ.
 
+The server an embedding app runs may be older than the web it mounts. The web's first call on
+its socket is `app.handshake`, which answers with the server's version and every RPC it serves.
+Calls wait for that answer, and one the server lacks fails at once with `NotImplemented` without
+being sent. A server older than the handshake refuses unknown RPCs at once (a defect for the
+tag), which the web turns into the same `NotImplemented` and remembers. A control backed by a
+missing RPC is hidden, or greyed with a hover text (`useServes`). A new RPC behind a control
+gets the same check.
+
 Embedding work lands on the `integration/embedding` branch, which takes `main` by merge. A UI
 change merged to `main` reaches embedders only after that merge, so merge `main` in soon after
 one lands, and carry its "Embedders" line into the merge's description.

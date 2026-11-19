@@ -4,6 +4,7 @@ import { Check, CircleAlert, User } from "lucide-react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
+import { useServes } from "@/api/use-serves";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import type {
@@ -26,7 +27,9 @@ import { abilityTone, checksLine, repositoryAccessRows } from "./repository-acce
  */
 export function RepositoryAccess({ projectIds }: { projectIds: readonly ProjectId[] }) {
   const access = useEmbedShell((s) => s.repositories?.access);
-  if (access === undefined || projectIds.length === 0) return null;
+  // A server older than `projects.origins` can't say which repositories these are.
+  const served = useServes("projects.origins");
+  if (access === undefined || projectIds.length === 0 || !served) return null;
   return <RepositoryAccessTable projectIds={projectIds} access={access} />;
 }
 

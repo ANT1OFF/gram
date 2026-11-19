@@ -83,6 +83,7 @@ import { createThreadFeed, syncScheduler } from "@/stores/thread-feed";
 
 import { createChannel, type Channel } from "./channel";
 import { createConnectionMonitor, resubscribing } from "./connection";
+import { servedAllBut } from "./served";
 import { isThreadNotFound } from "./errors";
 import { MOCK_DEPS_RECAP } from "./mock-assist";
 import { createMockBabysit } from "./mock-babysit";
@@ -230,6 +231,7 @@ import {
   mockStartsRealistic,
   mockStartsAtScale,
   mockServerBrowser,
+  mockServerLacks,
 } from "./mock-overrides";
 import { mockDiff, mockGitState, mockPrDetail } from "./mock-git";
 import { searchMessages } from "./mock-search";
@@ -333,8 +335,10 @@ const adoptDraft = (
 };
 
 /** The mock's own state and the threads slice; `createMockApi` adds every other domain's slice. */
-export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
+export class MockCore implements Pick<Api, "kind" | "connection" | "served">, ThreadsApi {
   readonly kind = "mock";
+  /** Everything, or all but what `MOCK_SERVER_LACKS_KEY` names, as a server older than this build. */
+  readonly served = servedAllBut(mockServerLacks());
   readonly #speed: number;
   readonly #threads = new Map<string, ThreadRuntime>();
   /** `simulateSavedWork`'s diffs, as `thread.savedDiff` reads them back. */

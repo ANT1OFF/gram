@@ -60,8 +60,15 @@ const checks = (overrides: Partial<LaunchChecks> = {}): LaunchChecks => ({
 const offer = (
   s: ReturnType<typeof summary>,
   c: LaunchChecks | undefined = checks(),
-  more: { platform?: string; listed?: boolean } = {},
-) => switchOffer({ summary: s, checks: c, listed: more.listed ?? true, platform: more.platform });
+  more: { platform?: string; listed?: boolean; servesFresh?: boolean } = {},
+) =>
+  switchOffer({
+    summary: s,
+    checks: c,
+    listed: more.listed ?? true,
+    platform: more.platform,
+    ...(more.servesFresh === undefined ? {} : { servesFresh: more.servesFresh }),
+  });
 
 /** An orchestrator's summary, as `summary` makes a plain thread's. */
 const orchestrator = (overrides: Parameters<typeof summary>[0] = {}, more: Partial<Thread> = {}) =>
@@ -151,6 +158,19 @@ describe("switchOffer", () => {
       fresh: expect.any(String),
       refusal: expect.stringMatching(/turn/),
     });
+  });
+
+  it("greys a fresh session on a server without `thread.startFreshOn`", () => {
+    const older = { platform: "win32", servesFresh: false };
+    const worker = offer(summary(), checks(), older);
+    expect(worker.offered && worker.refusal).toBeTruthy();
+    // A carry-over and an orchestrator's handoff need nothing it lacks.
+    expect(offer(summary(), checks(), { servesFresh: false })).toEqual({
+      offered: true,
+      to: "codex",
+    });
+    const lead = offer(orchestrator(), checks(), older);
+    expect(lead.offered && lead.refusal).toBeFalsy();
   });
 
   it("greys it with the server's words", () => {

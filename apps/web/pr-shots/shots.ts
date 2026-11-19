@@ -2911,6 +2911,62 @@ const openNewWorkspaceRefused = async (page: Page) => {
   await page.waitForTimeout(400);
 };
 
+/**
+ * A worker's lost machine on a server older than this build, which serves neither the resume nor
+ * the saved diff: both are greyed, the resume with its hover text (before: both live, and failing).
+ */
+const OLDER_SERVER_SHOTS: readonly Shot[] = [
+  {
+    name: "machine-lost-older-server",
+    title:
+      "A lost machine's card on a server without thread.resumeAfterMachineLost or thread.savedDiff, Resume hovered",
+    open: async (page) => {
+      await page.addInitScript(() =>
+        sessionStorage.setItem(
+          "gram.mock.serverLacks",
+          "thread.resumeAfterMachineLost,thread.savedDiff",
+        ),
+      );
+      await page.goto("/t/t-docs");
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await page.evaluate(() => window.gramMock!.turnEnded?.("t-docs" as never));
+      await page.evaluate(() => {
+        const mock = window.gramMock!;
+        mock.simulateSavedWork("t-docs" as never, {
+          base: "origin/main",
+          uncommitted: true,
+          files: [
+            {
+              path: "docs/guide.md",
+              status: "modified",
+              additions: 12,
+              deletions: 3,
+              patch: "@@ -1,3 +1,12 @@\n-old\n+new\n",
+              binary: false,
+              tooLarge: false,
+            },
+          ],
+        });
+        mock.simulateTurnError(
+          "t-docs" as never,
+          {
+            kind: "network",
+            retryable: false,
+            text: "The machine this worker ran on went away.",
+            machineLost: { machine: "build-box", during: "bun run test" },
+          },
+          "Tidy the guide",
+        );
+      });
+      const card = page.getByTestId("machine-lost");
+      await card.waitFor();
+      await card.scrollIntoViewIfNeeded();
+      await page.getByTestId("machine-lost-resume").hover();
+      await page.waitForTimeout(400);
+    },
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
   {
     name: "new-workspace-refused",
@@ -2922,6 +2978,7 @@ export const SHOTS: readonly Shot[] = [
   ...CONTINUE_IN_SHOTS,
   ...MACHINE_SHOTS,
   ...MACHINE_MARKER_SHOTS,
+  ...OLDER_SERVER_SHOTS,
   ...PHONE_ACCESS_SHOTS,
   ...EVENT_ROUTINE_SHOTS,
   ...ROUTINES_POLISH_SHOTS,
