@@ -1297,6 +1297,11 @@ export const ApprovalRequest = Schema.Struct({
   toolName: Schema.String,
   /** The SDK has no `title`; the card is built from `displayName` + `input`. */
   displayName: Schema.String,
+  /**
+   * The card's question, for a Gram tool that words its own ("Send worker to Example?"); absent,
+   * the card asks "Allow <displayName>?".
+   */
+  title: Schema.optionalKey(Schema.String),
   input: Schema.Record(Schema.String, Schema.Unknown),
   /** The model's own description of the call. */
   description: Schema.optionalKey(Schema.String),

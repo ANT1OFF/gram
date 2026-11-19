@@ -4,6 +4,7 @@ import {
   type DeviceCapability,
   type DeviceId,
   type HostedDiscovery,
+  type HostedRepositoryReach,
   type HostedThreadWaited,
   type HostedWorkspace,
   runsSentWork,
@@ -27,6 +28,7 @@ import {
   makeTokenKeeper,
   messageHostedThread,
   startHostedThread,
+  checkHostedRepositories,
   stopHostedThread,
   waitHostedThread,
   registerHostedDevice,
@@ -265,6 +267,15 @@ export interface HostedDevice {
    * with their sign-in. What runs there runs under that workspace's rules. Changes nothing here.
    */
   readonly sendWork: (origin: string, workspace: string, work: WorkToSend) => Promise<WorkSent>;
+  /** Whether a thread there could clone and push each repository. Changes nothing there. */
+  readonly checkWork: (
+    origin: string,
+    workspace: string,
+    repositories: readonly string[],
+  ) => Promise<
+    | { readonly ok: true; readonly reach: HostedRepositoryReach }
+    | { readonly ok: false; readonly why: string }
+  >;
   /** Waits on a thread sent from here: only those, as the server checks again. */
   readonly waitWork: (
     origin: string,
@@ -1069,6 +1080,13 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         ...(work.branch === undefined ? {} : { branch: work.branch }),
         clientKey: work.clientKey,
       });
+    },
+
+    checkWork: async (origin, workspace, repositories) => {
+      const server = known(origin);
+      const refused = refusedForThreads(server, workspace);
+      if (refused !== undefined || server === undefined) return refused ?? NOT_SIGNED_IN;
+      return checkHostedRepositories({ ...callsOf(server), workspaceId: workspace, repositories });
     },
 
     waitWork: async (origin, workspace, threadId, wait) => {

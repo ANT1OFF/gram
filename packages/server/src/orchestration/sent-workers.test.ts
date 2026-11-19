@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { HostedThreadWaited, SentWorkTarget, ThreadId, WorkspaceId } from "@gram/contracts";
+import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as TestClock from "effect/testing/TestClock";
@@ -9,7 +10,13 @@ import { run } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { pickTarget, reportOf } from "./sent-workers.ts";
+import {
+  pickTarget,
+  reportOf,
+  SENT_BRIEF_NOTE,
+  sendWorker,
+  sendWorkerTool,
+} from "./sent-workers.ts";
 import { Orchestration } from "./service.ts";
 import { makeWorld, openOrchestrator, settle, waitReal, withServer } from "./test-harness.ts";
 
@@ -29,6 +36,15 @@ const fakeApp = Effect.gen(function* () {
   const port: SentWorkPortShape = {
     available: true,
     targets: () => Effect.succeed({ ok: true, targets: [PLATFORM] }),
+    check: (_origin, _workspaceId, repositories) =>
+      Effect.succeed({
+        ok: true as const,
+        reach: {
+          connected: true,
+          items: repositories.map((repository) => ({ repository, reach: "yes" as const })),
+          model: { agent: "claude", model: "opus-there" },
+        },
+      }),
     send: (origin, workspaceId, work) =>
       Effect.sync(() => {
         asked.push({ op: "send", origin, workspaceId, ...work });
@@ -97,7 +113,7 @@ describe("a worker sent to a server", () => {
               origin: PLATFORM.origin,
               workspaceId: "w1",
               repositories: ["acme/shop"],
-              text: BRIEF.brief,
+              text: `${BRIEF.brief}\n\n${SENT_BRIEF_NOTE}`,
               title: BRIEF.title,
               clientKey: expect.any(String),
             });
@@ -225,6 +241,14 @@ describe("a worker sent to a server", () => {
                 .getThread(sent.threadId)
                 .pipe(Effect.map((each) => (each.sentTo?.state === "done" ? each : undefined))),
             );
+            // Its final reply reaches the orchestrator's chat by itself, as the digest it wakes to.
+            yield* settle;
+            yield* TestClock.adjust("1 minute");
+            const told = yield* waitReal(
+              "the orchestrator told of its end",
+              Effect.sync(() => session.sent.find((each) => each.text.includes("Done."))),
+            );
+            expect(told.text).toContain(BRIEF.title);
             yield* session.callTool("send_message", {
               threadId: sent.threadId,
               text: "Address the review comments.",
@@ -242,6 +266,51 @@ describe("a worker sent to a server", () => {
   );
 });
 
+describe("a task a person sends from New task", () => {
+  it.effect("goes where they picked, as the orchestrator's worker, whatever the charter says", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      run(world.repo, "remote", "add", "origin", "https://github.com/acme/shop.git");
+      const app = yield* fakeApp;
+      world.sentWork = app.port;
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const { thread: orchestrator } = yield* openOrchestrator(world);
+          const deps = {
+            orchestration: yield* Orchestration,
+            store: yield* ThreadStore,
+            runtimes: yield* ThreadRuntimes,
+            port: app.port,
+            proc: yield* Proc,
+          };
+          const task = { ...BRIEF, project: "shop", clientRequestId: "draft-1" };
+          // A workspace there that isn't listed now is refused, and nothing is sent.
+          const elsewhere = yield* sendWorker(
+            deps,
+            orchestrator.id,
+            { ...task, target: { origin: PLATFORM.origin, workspaceId: "w9" } },
+            "person",
+          ).pipe(Effect.flip);
+          expect(elsewhere.message).toContain("Settings → Machines");
+          expect(app.asked).toEqual([]);
+          // The charter's sendWork is off: that bounds the orchestrator, not the person.
+          const sent = yield* sendWorker(
+            deps,
+            orchestrator.id,
+            { ...task, target: { origin: PLATFORM.origin, workspaceId: "w1" } },
+            "person",
+          );
+          expect(sent.runsOn).toBe("Platform · gram.example.com");
+          const worker = yield* deps.store.getThread(sent.threadId);
+          expect(worker.spawnedBy?.threadId).toBe(orchestrator.id);
+          expect(worker.sentTo?.threadId).toBe("t-there-1");
+        }),
+      );
+    }),
+  );
+});
+
 describe("where a worker goes, and what it reports", () => {
   it("picks the one workspace there is, or the one named, and lists them otherwise", () => {
     expect(pickTarget([PLATFORM], undefined)).toBe(PLATFORM);
@@ -251,6 +320,39 @@ describe("where a worker goes, and what it reports", () => {
     expect(pickTarget([PLATFORM, research], undefined)).toContain('"Research · gram.example.com"');
     expect(pickTarget([], undefined)).toContain("Settings → Machines");
   });
+
+  it.effect("asks the user naming the server, the workspace there and the model it runs on", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      run(world.repo, "remote", "add", "origin", "https://github.com/acme/shop.git");
+      const app = yield* fakeApp;
+      world.sentWork = app.port;
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const { thread: orchestrator } = yield* openOrchestrator(world);
+          const tool = sendWorkerTool({
+            orchestration: yield* Orchestration,
+            store: yield* ThreadStore,
+            runtimes: yield* ThreadRuntimes,
+            port: app.port,
+            proc: yield* Proc,
+          });
+          const call = yield* tool.resolve!(orchestrator.id, BRIEF);
+          expect(yield* tool.title!(orchestrator.id, call)).toBe("Send worker to Example?");
+          expect(yield* tool.describe!(orchestrator.id, call)).toContain(
+            "Platform · gram.example.com",
+          );
+          expect(tool.cardDetails!(call)).toMatchObject({
+            workspace: "Platform · gram.example.com",
+            organisation: "Example Co",
+            model: "Claude · opus-there",
+            brief: BRIEF.brief,
+          });
+        }),
+      );
+    }),
+  );
 
   it("reports a question as a question and a failure as blocked", () => {
     expect(reportOf({ state: "waiting", server: "Example" }).state).toBe("question");

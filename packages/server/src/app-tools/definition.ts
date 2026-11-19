@@ -76,6 +76,11 @@ export interface AppToolDefinition<S extends Schema.Top = Schema.Top, T = S["Typ
   handle(threadId: ThreadId, input: T, call: AppToolCall): Effect.Effect<unknown, AppToolError>;
   /** The approval card's text for a call, e.g. naming the target thread; defaults to the description. */
   describe?(threadId: ThreadId, input: T): Effect.Effect<string>;
+  /**
+   * The approval card's question for a call, in place of "Allow <tool>?", for a tool whose name
+   * says less than what it does (e.g. "Send worker to Example?"). One short line ending in "?".
+   */
+  title?(threadId: ThreadId, input: T): Effect.Effect<string>;
   /** The threads the tool is bound for; absent means every thread. */
   readonly audience?: ReadonlyArray<ToolAudience>;
   /**
