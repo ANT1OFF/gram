@@ -4,7 +4,10 @@
 // conversation a note of what happened, which opens it again on the machine once it is back, on
 // its folder as kept.
 
-import { MACHINE_LOST_DURING_MAX } from "@gram/contracts";
+import { MACHINE_LOST_DURING_MAX, type ThreadId } from "@gram/contracts";
+import * as Effect from "effect/Effect";
+import type { ThreadStore } from "../persistence/thread-store.ts";
+import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 
 /** The `noticeKeys` key of the note a resume after a lost machine starts with. */
 export const MACHINE_LOST_KEY = "machine-lost";
@@ -36,3 +39,22 @@ export const commandDuring = (inputs: ReadonlyArray<unknown>): string | undefine
   }
   return undefined;
 };
+
+/**
+ * Resumes a thread whose last turn a lost machine cut off: the same conversation is sent the note
+ * above. False, and nothing sent, when its last turn ended otherwise.
+ */
+export const resumeAfterMachineLost = (
+  store: Pick<ThreadStore["Service"], "getThread">,
+  runtimes: Pick<ThreadRuntimesShape, "sendNotice">,
+  threadId: ThreadId,
+) =>
+  Effect.gen(function* () {
+    const lost = (yield* store.getThread(threadId)).lastError?.machineLost;
+    if (lost === undefined) return false;
+    yield* runtimes.sendNotice(threadId, MACHINE_LOST_KEY, {
+      text: machineLostText(lost.machine, lost.during),
+      author: "server",
+    });
+    return true;
+  });
