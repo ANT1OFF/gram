@@ -46,6 +46,7 @@ import { machineRestartText } from "../runtime/machine-restart.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { makeAdmission } from "./admission.ts";
+import { makeMachineJobs } from "./machine-jobs.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
@@ -236,6 +237,9 @@ const statusIs = (threadId: ThreadId, status: ThreadStatus) =>
     );
   });
 
+/** The server's jobs, for every call here. */
+const JOBS = Effect.runSync(Scope.provide(Scope.makeUnsafe())(makeMachineJobs()));
+
 /** One POST to a stop route from the local app, answered as the server answers it. */
 const post = (path: string, body: unknown) =>
   Effect.gen(function* () {
@@ -247,6 +251,7 @@ const post = (path: string, body: unknown) =>
         store,
         runtimes: yield* ThreadRuntimes,
         settings: store,
+        jobs: JOBS,
       },
       path,
     ).pipe(

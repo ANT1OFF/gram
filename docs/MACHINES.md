@@ -629,6 +629,17 @@ the local app, as the other `/machines/*` routes are.
   [what a resume is held to](#what-a-resume-is-held-to).
 - A message that waits in a thread's queue during the resume is sent once, when the thread's
   folders are back or the resume ends.
+- A resume and a prepare can each be started as a job, which a caller polls rather than holding
+  one call open for minutes: `POST /machines/stop/resume/start` and `/machines/stop/prepare/start`
+  take the same body plus a `key`, and answer `202 { job, joined }` at once.
+  `POST /machines/jobs/get` with `{ "job", "seen"?, "waitMs"? }` answers the job as it stands,
+  waiting up to `waitMs` (25 seconds at most) for a change past `seen`. A job says its `state`
+  (`queued`, `running`, `done`, `failed`), each folder's outcome, its `budgetMs` and, once ended,
+  the answer or error the synchronous route gives. A machine runs one job at a time, and a start
+  while one of its kind runs, or naming the key of one kept, joins it. So does the synchronous
+  route, which stays. After a restart of Gram a poll answers `404`: start again. See
+  [long steps as jobs](design/long-steps-as-jobs.md) for the contract and the budget each
+  caller's deadline must exceed.
 - `POST /machines/stop/expect` says a machine is being started on another disk: `{ "id" }`. Once
   it dials in, it waits for its resume as above, though this Gram saw no stop of it (the machine
   was stopped some other way, or its host doesn't say its disk). Call it before the host starts;

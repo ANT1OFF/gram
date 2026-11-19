@@ -11,7 +11,7 @@ import {
 } from "@gram/contracts";
 import { GitStateRuntime, Proc, Worktrees } from "@gram/git";
 import * as Context from "effect/Context";
-import * as Duration from "effect/Duration";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -42,6 +42,7 @@ import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { CheckoutService, type CheckoutServiceShape } from "../runtime/hooks.ts";
 import { HostTerminals } from "../terminal/host-terminals.ts";
 import type { Terminals } from "../terminal/terminals.ts";
+import { WAKE_WAIT_MS } from "./budgets.ts";
 
 export interface HostPorts {
   /** One sweep of the machine's listening ports and process tree. */
@@ -181,7 +182,7 @@ export interface WorkerHostsShape {
 }
 
 /** How long a session about to open waits for a stopped machine to be started. */
-export const WAKE_WAIT_MS = 5 * 60_000;
+export { WAKE_WAIT_MS };
 /** How often a machine being waited for is looked for. */
 const WAKE_LOOK = "500 millis";
 
@@ -254,13 +255,21 @@ export const awaitedMachines =
       return yield* remote.stops.wanting(
         id,
         Effect.gen(function* () {
+          const since = yield* Clock.currentTimeMillis;
           const host = yield* ready.pipe(
             Effect.retry({
-              schedule: Schedule.spaced(WAKE_LOOK).pipe(
-                Schedule.upTo({ duration: Duration.millis(waitMs) }),
-              ),
-              // A block or a stall is the answer: nothing to wait for.
-              while: () => notBack() === undefined && !stalledNow(),
+              schedule: Schedule.spaced(WAKE_LOOK),
+              // A block or a stall is the answer: nothing to wait for. `waitMs` is for the machine
+              // to be started; a resume under way is waited for as long as it makes progress, so
+              // the wait is never shorter than the step it waits on (`budgets.ts`).
+              while: () =>
+                Effect.map(
+                  Clock.currentTimeMillis,
+                  (at) =>
+                    notBack() === undefined &&
+                    !stalledNow() &&
+                    (at - since < waitMs || remote.stops.resumeRunning(id)),
+                ),
             }),
             Effect.catch((error) => Effect.succeed(error)),
           );

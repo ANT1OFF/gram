@@ -40,6 +40,8 @@ import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { cloneUrlOf } from "./repos.ts";
+import { HOST_RESTORE_MS, REOPEN_MS, SHARED_FLUSH_MS, STOP_CANCEL_MS } from "./budgets.ts";
+import type { JobReport } from "./machine-jobs.ts";
 import { FOLDER_THERE } from "./stop.ts";
 
 export interface StopResumeDeps {
@@ -91,9 +93,9 @@ const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 /** The most folders one stop is asked to keep (`host.stop.prepare`'s limit). */
 export const STOP_FOLDERS_MAX = 512;
 /** How long a stop waits for the machine's shared folders, inside the embedder's own deadline. */
-const SHARED_FLUSH_WITHIN = "15 seconds";
+const SHARED_FLUSH_WITHIN = SHARED_FLUSH_MS;
 /** How long a machine gets to say it takes work again. */
-const CANCEL_WITHIN = "30 seconds";
+const CANCEL_WITHIN = STOP_CANCEL_MS;
 
 /** Why a stop keeps nothing of a folder that a resume couldn't put back. */
 const NOT_BACK_KEPT =
@@ -436,7 +438,7 @@ export interface HostResumed {
 }
 
 /** How long a machine gets to clone a repository again and put one folder's work back. */
-const RESTORE_WITHIN = "20 minutes";
+const RESTORE_WITHIN = HOST_RESTORE_MS;
 /** How many times a resume asks whether a folder is there before it counts as unknown. */
 const PRESENCE_TRIES = 3;
 const PRESENCE_RETRY = "1 second";
@@ -477,8 +479,15 @@ const counted = (entries: ReadonlyArray<{ readonly note?: string | undefined }>)
     ),
   );
 
-/** How many of a machine's folders a resume puts back at once. */
-export const RESTORE_CONCURRENCY = 4;
+/**
+ * How many of a machine's folders a resume puts back at once: one, as the host restores one at a
+ * time (`stop.ts`'s lock). Asked more at once, a folder's `RESTORE_WITHIN` would run while it
+ * waits its turn there, and a slow folder ahead of it would make it read as not answering while
+ * the host went on with it.
+ */
+export const RESTORE_CONCURRENCY = 1;
+/** How many folders a resume asks after at once, before any is put back. */
+const LOOK_CONCURRENCY = 4;
 
 /**
  * Resumes the machine's threads on the host that dialled in as it: checks each thread's folders
@@ -502,6 +511,8 @@ export const resumeHost = (
   options: {
     readonly remote?: string | undefined;
     readonly kept?: ReadonlyArray<KeptBefore> | undefined;
+    /** Told of each folder as it goes: a resume job's progress. */
+    readonly follow?: JobReport | undefined;
   } = {},
 ): Effect.Effect<HostResumed, HostUnavailable> =>
   Effect.suspend(() => {
@@ -536,7 +547,7 @@ export const resumeHost = (
         yield* Effect.forEach(
           [...new Set(folders.map(({ cwd }) => cwd))],
           (cwd) => Effect.map(look(cwd), (there) => [cwd, there] as const),
-          { concurrency: RESTORE_CONCURRENCY },
+          { concurrency: LOOK_CONCURRENCY },
         ),
       );
       // A folder the host can make again: one Gram made from a clone for any thread that shares
@@ -569,6 +580,9 @@ export const resumeHost = (
           hostId: id,
           message: "The machine's record couldn't be kept, so nothing was put back.",
         });
+      const follow = options.follow;
+      if (follow !== undefined)
+        yield* follow.folders(folders.map(({ thread, cwd }) => ({ threadId: thread.id, cwd })));
       /** A host that checks a folder a resume before didn't finish with before taking it as back. */
       const checksPending =
         connection.hello !== undefined && hostServes(connection.hello, "wip-restore-pending");
@@ -748,6 +762,8 @@ export const resumeHost = (
           );
           const there = again && seen.get(cwd) === true ? undefined : seen.get(cwd);
           const outcomes: Array<FolderOutcome> = [];
+          if (follow !== undefined)
+            for (const folder of ordered) yield* follow.folder(folder.thread.id, cwd, "running");
           let back = false;
           for (const folder of ordered) {
             // There on the disk its folders were last seen on, and the host could make it: as it
@@ -768,6 +784,13 @@ export const resumeHost = (
                 ? ({ kind: "there" } as const)
                 : outcome;
             yield* done(folder.thread.id, cwd, settled);
+            if (follow !== undefined)
+              yield* follow.folder(
+                folder.thread.id,
+                cwd,
+                settled.kind,
+                "note" in settled ? settled.note : undefined,
+              );
           }
           // Done with once put back or there for all who share it, and confirmed so for the rest of
           // this resume's generation. One refused, or missing with nothing kept of it, stays owed
@@ -884,7 +907,7 @@ export const resumeHost = (
   });
 
 /** How long a reopened session at rest is waited for before it counts as not opened. */
-export const REOPEN_WITHIN = Duration.minutes(2);
+export const REOPEN_WITHIN = Duration.millis(REOPEN_MS);
 
 /** The statuses of a thread whose session is open. */
 const OPEN: ReadonlySet<string> = new Set(["idle", "running", "needsApproval", "needsInput"]);

@@ -27,6 +27,7 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { RESUME_STALL_MS } from "./budgets.ts";
 import { STOP_HOLD_MS } from "./stop.ts";
 
 /** How long after a readied machine's hold its sessions are still waited for as a stopped one's. */
@@ -37,7 +38,7 @@ export const STOPPED_RECENTLY_MS = 15 * 60_000;
  * progress sooner: each folder is done within `RESTORE_WITHIN` (20 minutes) of being started.
  * Only the end of its resume opens the machine to sessions; this never does.
  */
-export const RESUME_STALL_MS = 25 * 60_000;
+export { RESUME_STALL_MS };
 
 /** How long a machine told to come back on another disk (`expect`) is taken at its word. */
 export const EXPECT_FOR_MS = 15 * 60_000;
