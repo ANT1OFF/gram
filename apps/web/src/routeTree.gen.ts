@@ -28,6 +28,7 @@ import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagn
 import { Route as SettingsGatewaysRouteImport } from './routes/settings.gateways'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsHelpRouteImport } from './routes/settings.help'
+import { Route as SettingsHostedServersRouteImport } from './routes/settings.hosted-servers'
 import { Route as SettingsKeyboardRouteImport } from './routes/settings.keyboard'
 import { Route as SettingsMachinesRouteImport } from './routes/settings.machines'
 import { Route as SettingsNotificationsRouteImport } from './routes/settings.notifications'
@@ -141,6 +142,11 @@ const SettingsHelpRoute = SettingsHelpRouteImport.update({
   path: '/help',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsHostedServersRoute = SettingsHostedServersRouteImport.update({
+  id: '/hosted-servers',
+  path: '/hosted-servers',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsKeyboardRoute = SettingsKeyboardRouteImport.update({
   id: '/keyboard',
   path: '/keyboard',
@@ -247,6 +253,7 @@ export interface FileRoutesByFullPath {
   '/settings/gateways': typeof SettingsGatewaysRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/help': typeof SettingsHelpRoute
+  '/settings/hosted-servers': typeof SettingsHostedServersRoute
   '/settings/keyboard': typeof SettingsKeyboardRoute
   '/settings/machines': typeof SettingsMachinesRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
@@ -284,6 +291,7 @@ export interface FileRoutesByTo {
   '/settings/gateways': typeof SettingsGatewaysRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/help': typeof SettingsHelpRoute
+  '/settings/hosted-servers': typeof SettingsHostedServersRoute
   '/settings/keyboard': typeof SettingsKeyboardRoute
   '/settings/machines': typeof SettingsMachinesRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
@@ -323,6 +331,7 @@ export interface FileRoutesById {
   '/settings/gateways': typeof SettingsGatewaysRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/help': typeof SettingsHelpRoute
+  '/settings/hosted-servers': typeof SettingsHostedServersRoute
   '/settings/keyboard': typeof SettingsKeyboardRoute
   '/settings/machines': typeof SettingsMachinesRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
@@ -363,6 +372,7 @@ export interface FileRouteTypes {
     | '/settings/gateways'
     | '/settings/general'
     | '/settings/help'
+    | '/settings/hosted-servers'
     | '/settings/keyboard'
     | '/settings/machines'
     | '/settings/notifications'
@@ -400,6 +410,7 @@ export interface FileRouteTypes {
     | '/settings/gateways'
     | '/settings/general'
     | '/settings/help'
+    | '/settings/hosted-servers'
     | '/settings/keyboard'
     | '/settings/machines'
     | '/settings/notifications'
@@ -438,6 +449,7 @@ export interface FileRouteTypes {
     | '/settings/gateways'
     | '/settings/general'
     | '/settings/help'
+    | '/settings/hosted-servers'
     | '/settings/keyboard'
     | '/settings/machines'
     | '/settings/notifications'
@@ -606,6 +618,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsHelpRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/hosted-servers': {
+      id: '/settings/hosted-servers'
+      path: '/hosted-servers'
+      fullPath: '/settings/hosted-servers'
+      preLoaderRoute: typeof SettingsHostedServersRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/keyboard': {
       id: '/settings/keyboard'
       path: '/keyboard'
@@ -751,6 +770,7 @@ interface SettingsRouteChildren {
   SettingsGatewaysRoute: typeof SettingsGatewaysRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsHelpRoute: typeof SettingsHelpRoute
+  SettingsHostedServersRoute: typeof SettingsHostedServersRoute
   SettingsKeyboardRoute: typeof SettingsKeyboardRoute
   SettingsMachinesRoute: typeof SettingsMachinesRoute
   SettingsNotificationsRoute: typeof SettingsNotificationsRoute
@@ -779,6 +799,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsGatewaysRoute: SettingsGatewaysRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsHelpRoute: SettingsHelpRoute,
+  SettingsHostedServersRoute: SettingsHostedServersRoute,
   SettingsKeyboardRoute: SettingsKeyboardRoute,
   SettingsMachinesRoute: SettingsMachinesRoute,
   SettingsNotificationsRoute: SettingsNotificationsRoute,

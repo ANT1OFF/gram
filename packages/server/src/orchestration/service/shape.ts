@@ -664,6 +664,11 @@ export interface OrchestrationShape {
    * one it reports into while its orchestrator still holds the slot. `undefined` for anyone else.
    */
   memoryReaderOf(threadId: ThreadId): Effect.Effect<WorkspaceId | undefined>;
+  /**
+   * Why `memoryReaderOf` gives the thread no memory, in words it can act on: it is no worker, its
+   * workspace has no orchestrator open right now, or another thread holds the workspace.
+   */
+  memoryClosedReason(threadId: ThreadId): Effect.Effect<string>;
   /** The delegation rule for one call; reads only, since a gate may ask twice. */
   isDelegated(callerId: ThreadId, targetId: string): Effect.Effect<boolean>;
   /**

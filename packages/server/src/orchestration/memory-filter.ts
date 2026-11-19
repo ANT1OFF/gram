@@ -407,24 +407,107 @@ const withoutPaths = (text: string): string =>
     !tokenInName(path) && printableRun(base64Bytes(path.replace(/\./g, ""))) < 12 ? " " : path,
   );
 
-// Decisions -----------------------------------------------------------------------------------
+/**
+ * An id as prose cites it: a lowercase UUID after `thread`, `worker`, `workspace`, `feature`, `run`
+ * or `task`, the way memory names an entry's source (`from thread 6b4c4c3d-7cb9-…`).
+ */
+const CITED_ID =
+  /(?<=\b(?:threads?|workers?|workspaces?|features?|runs?|tasks?)[\s`'"(#:]{1,3})(?<![0-9A-Za-z_])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9A-Za-z_])/g;
 
 /**
- * Whether an entry is plainly safe prose a worker may read. Every character is plain (ASCII,
- * typographic punctuation, Latin-1 letters folded to ASCII); there is no escape or encoding syntax,
- * delimiter left open, URL userinfo or connection string; no strong credential word anywhere, nor a
- * weak one in a value's shape (camelCase and snake_case split first); no base64 or hex that decodes
- * to text, however it is split; and no token-like run once cited SHAs and plain paths are taken out.
+ * `text` with each cited id taken out, so an entry can name the thread it came from. Only when its
+ * clause has no credential word. Unlike a SHA's, its clause may hold a `:`, since an entry's source
+ * leads it (`- 2026-11-19 (thread 6b4c…): we squash-merge`): the label that has to come right
+ * before the id is what says it is no secret.
  */
-const plainProse = (text: string): boolean => {
-  if (openDelimiter(text) || !PLAIN_CHARS.test(text) || ENCODED.test(text)) return false;
+const withoutIds = (text: string): string =>
+  text.replace(CITED_ID, (id, offset: number) =>
+    credentialWord(clauseAround(text, offset, offset + id.length)) ? id : " ",
+  );
+
+/** A name made of words joined by `-` or `_`: a workspace, a branch, a label (`qa-2026-11-19-use-cases`). */
+const SLUG = /(?<![A-Za-z0-9+/=_-])[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)+(?![A-Za-z0-9+/=_-])/g;
+
+/**
+ * Whether one piece of a slug is a word or a number, not a fragment of a token: letters only, in
+ * one case or capitalised, that read as a word and are no token prefix; or four digits or fewer, or
+ * a date's.
+ */
+const slugPiece = (piece: string): boolean =>
+  /^\d+$/.test(piece)
+    ? piece.length <= 4 || DATE_DIGITS.test(piece)
+    : /^(?:[A-Za-z][a-z]*|[A-Z]+)$/.test(piece) &&
+      pronounceable(piece.toLowerCase()) &&
+      !TOKEN_PREFIX.test(piece.toLowerCase());
+
+/**
+ * `text` with each plain slug taken out, so a long hyphenated name isn't a token run. A slug is
+ * taken out only when every piece is a word or a short number, at least one is a word of two
+ * letters or more, its letters together read as words (`pronounceable`), and it doesn't decode as base64 to 12 or more printable characters. A value
+ * labelled as a credential is caught before this, by the words around it.
+ */
+const withoutSlugs = (text: string): string =>
+  text.replace(SLUG, (slug) => {
+    const pieces = slug.split(/[-_]/);
+    const letters = pieces.filter((piece) => /^[A-Za-z]+$/.test(piece)).join("");
+    const plain =
+      pieces.every(slugPiece) &&
+      pieces.some((piece) => /^[A-Za-z]{2,}$/.test(piece)) &&
+      pronounceable(letters.toLowerCase()) &&
+      printableRun(base64Bytes(slug.replace(/[-_]/g, ""))) < 12;
+    return plain ? " " : slug;
+  });
+
+// Decisions -----------------------------------------------------------------------------------
+
+/** Why a text isn't plain prose, in a few words that name no part of it. */
+type ProseProblem =
+  | "characters other than plain text"
+  | "escape or encoding syntax"
+  | "a code fence, quote or key block left open"
+  | "something shaped like a credential"
+  | "something shaped like a token or encoded value";
+
+/**
+ * Why an entry isn't plainly safe prose a worker may read, or `undefined` when it is. Every
+ * character is plain (ASCII, typographic punctuation, Latin-1 letters folded to ASCII); there is no
+ * escape or encoding syntax, delimiter left open, URL userinfo or connection string; no strong
+ * credential word anywhere, nor a weak one in a value's shape (camelCase and snake_case split
+ * first); no base64 or hex that decodes to text, however it is split; and no token-like run once
+ * cited SHAs and ids, plain paths and plain slugs are taken out.
+ */
+const proseProblem = (text: string): ProseProblem | undefined => {
+  if (!PLAIN_CHARS.test(text)) return "characters other than plain text";
+  if (ENCODED.test(text)) return "escape or encoding syntax";
+  if (openDelimiter(text)) return "a code fence, quote or key block left open";
   const ascii = folded(text);
-  if (USERINFO.test(ascii) || CONNECTION_STRING.test(ascii) || colonRecord(ascii)) return false;
-  if (COMMAND_CREDENTIAL.test(ascii) || OPTION_CREDENTIAL.test(ascii)) return false;
-  if (AUTH_COMMAND.test(ascii) || PAIR_LINE.test(ascii) || PAIR_VALUE.test(ascii)) return false;
-  if (credentialWords(ascii)) return false;
-  const runs = withoutPaths(withoutShas(ascii));
-  return !splitEncoding(runs) && !tokenRun(runs);
+  if (
+    USERINFO.test(ascii) ||
+    CONNECTION_STRING.test(ascii) ||
+    colonRecord(ascii) ||
+    COMMAND_CREDENTIAL.test(ascii) ||
+    OPTION_CREDENTIAL.test(ascii) ||
+    AUTH_COMMAND.test(ascii) ||
+    PAIR_LINE.test(ascii) ||
+    PAIR_VALUE.test(ascii) ||
+    credentialWords(ascii)
+  ) {
+    return "something shaped like a credential";
+  }
+  const runs = withoutSlugs(withoutPaths(withoutIds(withoutShas(ascii))));
+  return splitEncoding(runs) || tokenRun(runs)
+    ? "something shaped like a token or encoded value"
+    : undefined;
+};
+
+/**
+ * Where in `text` its problem is: the first line that has it on its own, counted from 1, or
+ * `undefined` when only the text as a whole has it (a token wrapped over lines, a fence left open).
+ */
+const lineOf = (text: string): number | undefined => {
+  const lines = text.split(/\r?\n/);
+  const at = lines.findIndex((line) => proseProblem(line) !== undefined);
+  return at === -1 ? undefined : at + 1;
 };
 
 /**
@@ -445,16 +528,52 @@ export const workerMayEnter = (path: string): boolean =>
   PLAIN_FOLDER.test(path) && !nameCarries(path);
 
 /**
- * Whether a worker may see the memory file at `path`, and, given its text, read it. Its name must be
- * plain (`PLAIN_NAME`) with no credential word or token shape in it; its text plain prose
- * (`plainProse`) under a plain header or none (`plainHeader`). A file it may not see is neither
- * listed nor read.
+ * Why a worker may not see or read a memory file. `name` and `header` are kept as they were chosen:
+ * a name that carries a credential, or front matter marking the file private. `text` is a line the
+ * prose checks hold back, which may be a false positive, so a worker is told of it.
  */
-export const workerMayRead = (path: string, text?: string): boolean => {
-  if (!PLAIN_NAME.test(path) || nameCarries(path)) return false;
-  if (text === undefined) return true;
-  return plainHeader(text) && plainProse(text);
+export interface WorkerReadProblem {
+  readonly kind: "name" | "header" | "text";
+  /** Names a line and a kind of problem, never the text, so it can be shown to anyone. */
+  readonly reason: string;
+}
+
+/**
+ * Why a worker may not see the memory file at `path`, or, given its text, read it; `undefined`
+ * when it may. Its name must be plain (`PLAIN_NAME`) with no credential word or token shape in it;
+ * its text plain prose (`proseProblem`) under a plain header or none (`plainHeader`).
+ */
+export const workerReadProblem = (path: string, text?: string): WorkerReadProblem | undefined => {
+  if (!PLAIN_NAME.test(path) || nameCarries(path)) {
+    return {
+      kind: "name",
+      reason:
+        "its name isn't plain: workers see lowercase words joined by `-`, ending `.md`, with no credential word or token shape",
+    };
+  }
+  if (text === undefined) return undefined;
+  if (!plainHeader(text)) {
+    return {
+      kind: "header",
+      reason:
+        "its front matter isn't plain: it is marked private, or holds more than flat `key: value` lines",
+    };
+  }
+  const problem = proseProblem(text);
+  if (problem === undefined) return undefined;
+  const line = lineOf(text);
+  return {
+    kind: "text",
+    reason: line === undefined ? `it has ${problem}` : `line ${line} has ${problem}`,
+  };
 };
+
+/**
+ * Whether a worker may see the memory file at `path`, and, given its text, read it: whether
+ * `workerReadProblem` finds nothing.
+ */
+export const workerMayRead = (path: string, text?: string): boolean =>
+  workerReadProblem(path, text) === undefined;
 
 // Headers -------------------------------------------------------------------------------------
 

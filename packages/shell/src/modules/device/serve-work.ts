@@ -6,7 +6,13 @@
 import type { SentWorkResult, SentWorkTarget } from "@gram/contracts";
 
 import type { HostedDevice } from "./hosted-device.ts";
-import { hostedThreadIdOf, workMessageOf, workToSendOf, workWaitOf } from "./work-input.ts";
+import {
+  hostedThreadIdOf,
+  repositoriesToCheckOf,
+  workMessageOf,
+  workToSendOf,
+  workWaitOf,
+} from "./work-input.ts";
 
 const NONE: SentWorkResult = { ok: false, why: "Hosted features are off in this app." };
 const MALFORMED: SentWorkResult = { ok: false, why: "The request isn't one the app sends." };
@@ -55,6 +61,11 @@ export const answerSentWork = async (
   const origin = textOf(message, "origin", 512);
   const workspace = textOf(message, "workspaceId", 128);
   if (origin === undefined || workspace === undefined) return respond(MALFORMED);
+  if (op === "check") {
+    const repositories = repositoriesToCheckOf(Reflect.get(message, "repositories"));
+    if (repositories === undefined) return respond(MALFORMED);
+    return respond(await device.checkWork(origin, workspace, repositories));
+  }
   if (op === "send") {
     const work = workToSendOf(message);
     if (work === undefined) return respond(MALFORMED);

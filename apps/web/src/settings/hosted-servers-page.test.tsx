@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import {
   applySettingsPatch,
+  embeddingOn,
   DEFAULT_SETTINGS,
   type DesktopBridge,
   type HostedDeviceActivity,
@@ -9,9 +10,11 @@ import {
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { Api } from "@/api/types";
+import { ApiProvider } from "@/api/context";
 import { useServerSettings } from "@/settings-sync/store";
 
-import { HostedDeviceSection } from "./hosted-device-section";
+import { HostedServersPage } from "./hosted-servers-page";
 
 const ORIGIN = "https://hosted.example";
 const view = (lending: "off" | "on" | "resume", paused = false): HostedDeviceView => ({
@@ -90,26 +93,51 @@ const withHosted = (on: boolean, bridge: Bridge | undefined) => {
   else target.gram = { platform: "darwin", hostedDevice: bridge };
 };
 
+const api = {
+  updateSettings: async (patch: Parameters<Api["updateSettings"]>[0]) =>
+    applySettingsPatch(useServerSettings.getState().settings!, patch),
+} as unknown as Api;
+
+const page = () => (
+  <ApiProvider api={api}>
+    <HostedServersPage />
+  </ApiProvider>
+);
+
 afterEach(() => {
   cleanup();
   delete (window as { gram?: unknown }).gram;
   vi.restoreAllMocks();
 });
 
-describe("Settings → Machines → lending this computer", () => {
-  it("shows nothing with hosted features off, or outside the desktop app", () => {
-    withHosted(false, bridgeWith(view("off")));
-    const { container, rerender } = render(<HostedDeviceSection />);
-    expect(container.innerHTML).toBe("");
+describe("Settings → Machines → Hosted servers", () => {
+  it("says signing in is the desktop app's, and turns hosted features on from here", async () => {
     withHosted(true, undefined);
-    rerender(<HostedDeviceSection />);
-    expect(container.innerHTML).toBe("");
+    const { rerender } = render(page());
+    expect(screen.getByTestId("hosted-servers-elsewhere")).toBeTruthy();
+    withHosted(false, bridgeWith(view("off")));
+    rerender(page());
+    expect(screen.queryByLabelText("Server address")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Turn on hosted features" }));
+    await waitFor(() => expect(embeddingOn(useServerSettings.getState().settings!)).toBe(true));
+  });
+
+  it("says what each sign-in allows", async () => {
+    const allowed = view("off");
+    withHosted(
+      true,
+      bridgeWith({ servers: [{ ...allowed.servers[0]!, runsWork: true, takesThreads: true }] }),
+    );
+    render(page());
+    expect((await screen.findByTestId("hosted-allows")).textContent).toBe(
+      "Runs work sent from here · takes threads moved there · may borrow this Mac",
+    );
   });
 
   it("opens the app's own decision to lend, and says why a sign-in failed", async () => {
     const bridge = bridgeWith(view("off"));
     withHosted(true, bridge);
-    render(<HostedDeviceSection />);
+    render(page());
     fireEvent.click(await screen.findByRole("button", { name: "Lend this Mac…" }));
     await waitFor(() => expect(bridge.calls).toEqual([`lend ${ORIGIN} w1`]));
     // A cancelled decision says nothing.
@@ -126,7 +154,7 @@ describe("Settings → Machines → lending this computer", () => {
   it("offers resume and stop for what was lent, and lifting a pause", async () => {
     const bridge = bridgeWith(view("resume", true));
     withHosted(true, bridge);
-    render(<HostedDeviceSection />);
+    render(page());
     expect(await screen.findByText("/work/app")).toBeTruthy();
     for (const [name, call] of [
       ["Resume lending…", `resume ${ORIGIN} w1`],
@@ -171,7 +199,7 @@ describe("Settings → Machines → lending this computer", () => {
       ],
     };
     withHosted(true, bridgeWith(view("on")));
-    render(<HostedDeviceSection />);
+    render(page());
     fireEvent.click(await screen.findByRole("button", { name: "Show" }));
     const rows = await screen.findAllByTestId("activity-row");
     expect(rows.map((row) => row.textContent)).toEqual([
@@ -194,14 +222,14 @@ describe("Settings → Machines → lending this computer", () => {
   it("says when nothing has been asked, or no record is kept", async () => {
     activity = { kept: true, intact: true, setAside: false, entries: [], more: false };
     withHosted(true, bridgeWith(view("on")));
-    const { unmount } = render(<HostedDeviceSection />);
+    const { unmount } = render(page());
     fireEvent.click(await screen.findByRole("button", { name: "Show" }));
     expect((await screen.findByTestId("hosted-activity")).textContent).toContain(
       "Nothing has been asked of this Mac",
     );
     unmount();
     activity = { kept: false, intact: true, setAside: false, entries: [], more: false };
-    render(<HostedDeviceSection />);
+    render(page());
     fireEvent.click(await screen.findByRole("button", { name: "Show" }));
     await waitFor(() =>
       expect(screen.getByTestId("hosted-activity").textContent).toContain("No record is kept"),
@@ -210,7 +238,7 @@ describe("Settings → Machines → lending this computer", () => {
 
   it("says why lending isn't available", async () => {
     withHosted(true, bridgeWith({ unavailable: "no-keyring", servers: [] }));
-    render(<HostedDeviceSection />);
+    render(page());
     expect((await screen.findByTestId("hosted-unavailable")).textContent).toContain(
       "no system keyring",
     );

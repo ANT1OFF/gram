@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   HOSTED_THREAD_STATES,
+  HostedRepositoryReach,
   type HostedThreadWaited,
   type SentWorkBrief,
   type SentWorkOp,
@@ -19,6 +20,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 
 type Refused = { readonly ok: false; readonly why: string; readonly unknown?: true };
 
@@ -28,6 +30,12 @@ export interface SentWorkPortShape {
   readonly targets: () => Effect.Effect<
     { readonly ok: true; readonly targets: ReadonlyArray<SentWorkTarget> } | Refused
   >;
+  /** Whether a thread there could clone and push each repository. Changes nothing there. */
+  readonly check: (
+    origin: string,
+    workspaceId: string,
+    repositories: ReadonlyArray<string>,
+  ) => Effect.Effect<{ readonly ok: true; readonly reach: HostedRepositoryReach } | Refused>;
   readonly send: (
     origin: string,
     workspaceId: string,
@@ -151,6 +159,16 @@ export const bridgeSentWork = (
             : refusedOf(result),
         ),
       ),
+    check: (origin, workspaceId, repositories) =>
+      ask({ op: "check", origin, workspaceId, repositories }).pipe(
+        Effect.map((result) => {
+          if (!result.ok || !("reach" in result)) return refusedOf(result);
+          const reach = Schema.decodeUnknownOption(HostedRepositoryReach)(result.reach);
+          return reach._tag === "Some"
+            ? { ok: true as const, reach: reach.value }
+            : refusedOf({ ok: true });
+        }),
+      ),
     send: (origin, workspaceId, work) =>
       ask({ op: "send", origin, workspaceId, work }).pipe(
         Effect.map((result) =>
@@ -200,6 +218,7 @@ const refusedHere = Effect.succeed({ ok: false as const, why: NO_APP });
 export const NO_SENT_WORK: SentWorkPortShape = {
   available: false,
   targets: () => refusedHere,
+  check: () => refusedHere,
   send: () => refusedHere,
   wait: () => refusedHere,
   message: () => refusedHere,

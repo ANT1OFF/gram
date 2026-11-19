@@ -20,7 +20,11 @@ export interface DreamsApi {
   automaticDreamStatus(workspaceId: WorkspaceId): Promise<AutomaticDreamStatus>;
   /** The files of the workspace's adopted memory version. */
   listMemory(workspaceId: WorkspaceId): Promise<readonly MemoryFileInfo[]>;
-  readMemory(workspaceId: WorkspaceId, path: string): Promise<{ path: string; content: string }>;
+  /** `keptFromWorkers`: why workers can't read the file, when they can't. */
+  readMemory(
+    workspaceId: WorkspaceId,
+    path: string,
+  ): Promise<{ path: string; content: string; keptFromWorkers?: string }>;
   /** Rejects with `InvalidState` naming the cap or the path rule a write breaks. */
   writeMemory(workspaceId: WorkspaceId, path: string, content: string): Promise<MemoryWrite>;
   deleteMemory(workspaceId: WorkspaceId, path: string): Promise<MemoryWrite>;

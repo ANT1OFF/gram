@@ -1372,7 +1372,7 @@ export function ApprovalCard({
                 : `Change workspace “${workspace.workspace.name}”?`
               : mcpServer !== undefined
                 ? `${mcpServer.action === "replace" ? "Replace" : "Add"} MCP server “${mcpServer.name}”?`
-                : (browser?.title ?? `Allow ${request.displayName}?`)
+                : (request.title ?? browser?.title ?? `Allow ${request.displayName}?`)
       }
       footer={
         pause !== undefined ? (
