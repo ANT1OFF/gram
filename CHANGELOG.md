@@ -1,5 +1,52 @@
 # Changelog
 
+## [1.31.0](https://github.com/ANT1OFF/gram/compare/v1.30.0...v1.31.0) (2026-11-19)
+
+
+### Features
+
+* compact idle threads before an embedding host stops the server; a fresh session carries its last exchanges ([#772](https://github.com/ANT1OFF/gram/issues/772)) ([7bb2740](https://github.com/ANT1OFF/gram/commit/7bb2740ac8185554dd4678375fc7658bf1069396))
+* **device:** send work to a hosted server, and follow, answer and stop it ([#780](https://github.com/ANT1OFF/gram/issues/780)) ([c0faae8](https://github.com/ANT1OFF/gram/commit/c0faae8c198c9784a391388cea8ff469f9c123c6))
+* **embedding:** a thread start can name its permission mode ([#775](https://github.com/ANT1OFF/gram/issues/775)) ([ae7b26a](https://github.com/ANT1OFF/gram/commit/ae7b26ac936e9413ab37385c81a486f26ebd1a16))
+* **embedding:** conversations a host's messages come from, a reply out through the event sink, and handing them to workers ([#778](https://github.com/ANT1OFF/gram/issues/778)) ([106bc2b](https://github.com/ANT1OFF/gram/commit/106bc2bf097fec1899af4567e61f7dff334e3a91))
+* **embedding:** navigation as a dock, and auto-hide, in MountOptions.defaults; a switcher kept to the title bar ([#719](https://github.com/ANT1OFF/gram/issues/719)) ([901ebe0](https://github.com/ANT1OFF/gram/commit/901ebe02ba2e1ae5fe83425cd6bf41046828369f))
+* **embed:** what a new workspace's agents can do in each GitHub repository ([#761](https://github.com/ANT1OFF/gram/issues/761)) ([28f59d0](https://github.com/ANT1OFF/gram/commit/28f59d09b74cd33be2e075c8c51c8c6944cbcba4))
+* **embed:** who pays for each model, and a task preview that promises only a move the orchestrator can make ([#756](https://github.com/ANT1OFF/gram/issues/756)) ([e36ed8a](https://github.com/ANT1OFF/gram/commit/e36ed8a31e7b44127b673e6308d885130c331788))
+* **first-run:** the form the first-run card opens reads the repositories first, as the card promises ([#764](https://github.com/ANT1OFF/gram/issues/764)) ([c65988a](https://github.com/ANT1OFF/gram/commit/c65988a7d39ab2e25bd12c1533655dc45fb6cc7d))
+* **hosted:** bring a thread that moved to a server back to this computer ([#779](https://github.com/ANT1OFF/gram/issues/779)) ([f56431e](https://github.com/ANT1OFF/gram/commit/f56431efb9619fe705f3991e9116725bd8c0b6b6))
+* **hosted:** move a thread to a server signed in to, from its menu ([#777](https://github.com/ANT1OFF/gram/issues/777)) ([3d869ec](https://github.com/ANT1OFF/gram/commit/3d869ec37d9d54af723b784c761f6a494e0bd2fa))
+* **machines:** keep a worker's work off a lost machine, and resume it from the conversation ([#754](https://github.com/ANT1OFF/gram/issues/754)) ([fbff3db](https://github.com/ANT1OFF/gram/commit/fbff3db3ec68d6cdb13f2ac56b5cdffd87f239b2))
+* **machines:** show what a worker's last save held, on its card, its task and its rows ([#759](https://github.com/ANT1OFF/gram/issues/759)) ([9715077](https://github.com/ANT1OFF/gram/commit/9715077b34eee033e9343815f877edd94e311799))
+* memory updates on a headless control plane ([#773](https://github.com/ANT1OFF/gram/issues/773)) ([0801b70](https://github.com/ANT1OFF/gram/commit/0801b70053146227d49c58559915bb49f356461b))
+* **new-task:** a repository with no workspace opens New workspace, with the task ([#771](https://github.com/ANT1OFF/gram/issues/771)) ([00d25cc](https://github.com/ANT1OFF/gram/commit/00d25cc1f2ab68e721d3baabbf0a14dd8237b5cc))
+* **new-task:** say each fact once, in the embedder's noun ([#763](https://github.com/ANT1OFF/gram/issues/763)) ([0ba9b74](https://github.com/ANT1OFF/gram/commit/0ba9b74cae177fa97ff7dc42824d65298dc1c60e))
+* **orchestration:** an orchestrator sends a worker to a hosted workspace and follows it ([#781](https://github.com/ANT1OFF/gram/issues/781)) ([0ded996](https://github.com/ANT1OFF/gram/commit/0ded996f2f4aace98c067eebc6712e31f0b12930))
+* **orchestration:** start a session fresh on a model it can't carry over to ([#760](https://github.com/ANT1OFF/gram/issues/760)) ([6860126](https://github.com/ANT1OFF/gram/commit/6860126c67b28ab9bb1b6df08bd0a288d8e7ea96))
+* **preview:** pick an element on the page to add to your next message ([#757](https://github.com/ANT1OFF/gram/issues/757)) ([5cff87c](https://github.com/ANT1OFF/gram/commit/5cff87c3b627c35e7ffd10fdde47eaf8af1a0770))
+* **profiles:** start a workspace's orchestrator from a thread profile, with its workers in folders of their own ([#776](https://github.com/ANT1OFF/gram/issues/776)) ([15c422f](https://github.com/ANT1OFF/gram/commit/15c422f3ac5b7355813fb195c741fa532f15efc6))
+* **server:** threads readable by one subject, for embedding hosts ([#748](https://github.com/ANT1OFF/gram/issues/748)) ([e62ee2e](https://github.com/ANT1OFF/gram/commit/e62ee2ef3e2b6912f6a461384707df99650ae0da))
+* **transfer:** bring a moved thread in for a person, on their own machine ([#774](https://github.com/ANT1OFF/gram/issues/774)) ([f38468d](https://github.com/ANT1OFF/gram/commit/f38468db642a6586b30e1d6204e208886fac5f72))
+* **transfer:** move one thread to another Gram with its edits ([#758](https://github.com/ANT1OFF/gram/issues/758)) ([0d81d1b](https://github.com/ANT1OFF/gram/commit/0d81d1b15018c5ba8dde3b5ae7fcd3337e833748))
+* **web:** a worker sent to a server is marked where it is listed, and says so in its view ([#782](https://github.com/ANT1OFF/gram/issues/782)) ([8f20b29](https://github.com/ANT1OFF/gram/commit/8f20b290a69911c5775ccb77013dbd77c2f0ea1a))
+* **workspaces:** choose models before starting a workspace ([#750](https://github.com/ANT1OFF/gram/issues/750)) ([270db0d](https://github.com/ANT1OFF/gram/commit/270db0d36f24b5d1bf7af00ab642a29e73088800))
+
+
+### Bug Fixes
+
+* **appearance:** every palette card renders the palette it shows ([5daa5b1](https://github.com/ANT1OFF/gram/commit/5daa5b116601ff5edd3a9b29eee55750d2652f50))
+* **appearance:** every palette card renders the palette it shows ([#751](https://github.com/ANT1OFF/gram/issues/751)) ([5daa5b1](https://github.com/ANT1OFF/gram/commit/5daa5b116601ff5edd3a9b29eee55750d2652f50))
+* **autonomy:** say only what each level does, not that branch protection is the only gate ([#768](https://github.com/ANT1OFF/gram/issues/768)) ([d75672c](https://github.com/ANT1OFF/gram/commit/d75672c4a5950bf3796cbc35791d6ae1bfeba5d5))
+* **embed:** no switch offer from OpenCode, and the New workspace form in the app's word ([#753](https://github.com/ANT1OFF/gram/issues/753)) ([c3b7c38](https://github.com/ANT1OFF/gram/commit/c3b7c38d05ba66b140daf3324f86f3cd6763525a))
+* **first-run:** promise neither a pull request nor a workspace that Set up doesn't make ([#769](https://github.com/ANT1OFF/gram/issues/769)) ([02604d6](https://github.com/ANT1OFF/gram/commit/02604d65d2051c4804ecc188881ad71e61743762))
+* **new-task:** say who merges only where it's true, and autonomy once ([#765](https://github.com/ANT1OFF/gram/issues/765)) ([54071cb](https://github.com/ANT1OFF/gram/commit/54071cb31622b1cdab0d81bb63918d1984a9ab9a))
+* **orchestrator:** the first minute after Start says nothing it can't know ([#770](https://github.com/ANT1OFF/gram/issues/770)) ([43cebd9](https://github.com/ANT1OFF/gram/commit/43cebd923dc61d054688c8d515b0e77dd7f01cff))
+* **palette, usage:** Ctrl+K says what the sidebar says; credits to two places ([#755](https://github.com/ANT1OFF/gram/issues/755)) ([82cf1c5](https://github.com/ANT1OFF/gram/commit/82cf1c5cb7ee57bf8682c1cfa5082b7d68f7c388))
+* **shell:** the phone header names New task and New workspace ([#762](https://github.com/ANT1OFF/gram/issues/762)) ([1dca0a9](https://github.com/ANT1OFF/gram/commit/1dca0a9da9a79799471620945f5b5349a5a19187))
+* **sidebar:** a solo thread that needs you keeps its whole title ([#752](https://github.com/ANT1OFF/gram/issues/752)) ([1bad3d6](https://github.com/ANT1OFF/gram/commit/1bad3d6835c15bdcf99237146799a48a3914cdc9))
+* **sidebar:** a worker's row names its pull request once ([#767](https://github.com/ANT1OFF/gram/issues/767)) ([606c057](https://github.com/ANT1OFF/gram/commit/606c057523ea89f1603aeddd43b66882b7981f53))
+* **threads:** an empty workspace list offers its two ways in once ([#766](https://github.com/ANT1OFF/gram/issues/766)) ([ec0f3d7](https://github.com/ANT1OFF/gram/commit/ec0f3d7597cbd6ff3b14ff42fef148c2007ff966))
+* **web:** New workspace's repository rights stop reading on a failure, with Retry; the survey is an explicit choice ([#783](https://github.com/ANT1OFF/gram/issues/783)) ([beb8e8a](https://github.com/ANT1OFF/gram/commit/beb8e8a1023c8c1ec52c9768438a547226387c5d))
+
 ## [1.30.0](https://github.com/ANT1OFF/gram/compare/v1.29.0...v1.30.0) (2026-11-18)
 
 
