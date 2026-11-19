@@ -27,6 +27,7 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { RESUME_STALL_MS } from "./budgets.ts";
 import { STOP_HOLD_MS } from "./stop.ts";
 
 /** How long after a readied machine's hold its sessions are still waited for as a stopped one's. */
@@ -37,7 +38,7 @@ export const STOPPED_RECENTLY_MS = 15 * 60_000;
  * progress sooner: each folder is done within `RESTORE_WITHIN` (20 minutes) of being started.
  * Only the end of its resume opens the machine to sessions; this never does.
  */
-export const RESUME_STALL_MS = 25 * 60_000;
+export { RESUME_STALL_MS };
 
 /** How long a machine told to come back on another disk (`expect`) is taken at its word. */
 export const EXPECT_FOR_MS = 15 * 60_000;
@@ -111,6 +112,11 @@ export const MachineMarks = Schema.Struct({
       unknown: Schema.optionalKey(Schema.Literal(true)),
       /** Owed for a disk other than the one its folders were last seen on: none is taken as is. */
       replaced: Schema.optionalKey(Schema.Literal(true)),
+      /**
+       * Folders a resume of this generation confirmed back (`folderDone`): checked once, never
+       * again until the machine is owed afresh, though a resume after them didn't complete.
+       */
+      confirmed: Schema.optionalKey(Schema.Array(Schema.String)),
     }),
   ),
   /**
@@ -283,10 +289,16 @@ export interface StopMarks {
    * thread's own work in it.
    */
   readonly folderOwed: (id: HostId, cwd: string, generation?: number) => void;
-  /** A resume is done with the folder: put back, there, or found missing on its own. */
+  /**
+   * A resume confirmed the folder back, put back or there: no longer owed, and, while the machine
+   * owes this generation, not checked again (`isFolderConfirmed`). Throws `MarksNotKept` when that
+   * can't be written: it stays owed, and is checked again.
+   */
   readonly folderDone: (id: HostId, cwd: string, generation?: number) => void;
   /** Whether a resume set out to put the folder back and didn't finish with it. */
   readonly isFolderOwed: (id: HostId, cwd: string) => boolean;
+  /** Whether a resume of the generation the machine owes now confirmed the folder back. */
+  readonly isFolderConfirmed: (id: HostId, cwd: string) => boolean;
   /** A session of this thread waits for the machine's resume: its folders go first. */
   readonly awaiting: (id: HostId, threadId: ThreadId) => void;
   /** The threads a session waits on the machine's resume for, as `awaiting` said. */
@@ -627,10 +639,27 @@ export const makeStopMarks = (
     folderDone: (id, cwd, generation) => {
       if (!current(id, generation)) return;
       const record = get(id);
-      if (record.owedFolders?.includes(cwd) !== true) return;
-      commit(id, { ...record, owedFolders: record.owedFolders.filter((each) => each !== cwd) });
+      const owedThere = record.owedFolders?.includes(cwd) === true;
+      // Only where a folder there is checked (`onOtherDisk`): elsewhere being there is enough.
+      const owed = record.owed;
+      const confirm =
+        owed !== undefined &&
+        (owed.replaced === true || owed.unknown === true) &&
+        owed.confirmed?.includes(cwd) !== true;
+      if (!owedThere && !confirm) return;
+      // Lifts a debt: written first, the folder and its confirmation together.
+      commit(id, {
+        ...record,
+        ...(owedThere
+          ? { owedFolders: (record.owedFolders ?? []).filter((each) => each !== cwd) }
+          : {}),
+        ...(confirm && record.owed !== undefined
+          ? { owed: { ...record.owed, confirmed: [...(record.owed.confirmed ?? []), cwd] } }
+          : {}),
+      });
     },
     isFolderOwed: (id, cwd) => get(id).owedFolders?.includes(cwd) === true,
+    isFolderConfirmed: (id, cwd) => get(id).owed?.confirmed?.includes(cwd) === true,
     awaiting: (id, threadId) => {
       const set = threadsAwaiting.get(id) ?? new Set<ThreadId>();
       set.add(threadId);

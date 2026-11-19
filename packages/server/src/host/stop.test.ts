@@ -12,7 +12,7 @@ import { join } from "node:path";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { describe, expect, it } from "@effect/vitest";
 import { type HostBusy, HOST_PROTOCOL_VERSION, LOCAL_HOST_ID, ThreadId } from "@gram/contracts";
-import { Proc, ProcLive, wipRef, Worktrees, WorktreesLive } from "@gram/git";
+import { Proc, ProcLive, pushWip, snapshotWip, wipRef, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -53,12 +53,15 @@ const worktree = Effect.gen(function* () {
   return { repo, origin };
 });
 
-/** A stop on another disk, whose clones of the tests' remote are made under `disk`. */
-const replaced = (origin: string) =>
+/**
+ * A stop on another disk, whose clones of the tests' remote are made under `disk`, or at `at`: the
+ * path the machine's clone had on the disk that was lost.
+ */
+const replaced = (origin: string, at?: string) =>
   Effect.gen(function* () {
     const disk = tempDir();
     yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(disk)));
-    const clone = join(disk, "clones", "widgets");
+    const clone = at ?? join(disk, "clones", "widgets");
     const asked: Array<string> = [];
     const stop = stopOn({
       proc: yield* Proc,
@@ -69,7 +72,7 @@ const replaced = (origin: string) =>
         Effect.sync(() => {
           asked.push(url);
           if (!existsSync(clone)) {
-            mkdirSync(join(disk, "clones"), { recursive: true });
+            mkdirSync(join(clone, ".."), { recursive: true });
             run(disk, "clone", "--quiet", "--branch", "main", origin, clone);
           }
           return { path: realpathSync(clone) };
@@ -77,6 +80,21 @@ const replaced = (origin: string) =>
     });
     return { disk, clone, asked, stop };
   });
+/**
+ * Keeps `repo`'s work as the thread's folder Gram names `as`, as a machine whose gate finds that
+ * folder at `repo` does: each folder's work is kept under its own ref, and put back at `as`.
+ */
+const keepAs = (repo: string, as: string) =>
+  Effect.gen(function* () {
+    return yield* stopOn({
+      proc: yield* Proc,
+      busy: Effect.succeed(IDLE),
+      admission: makeAdmission(),
+      protocols: FILE,
+      admit: (cwd) => Effect.succeed({ path: cwd === as ? repo : cwd }),
+    }).prepare({ checkouts: [{ threadId: THREAD, cwd: as }] });
+  });
+
 describe.skipIf(!hasGit)("a host readied to stop", () => {
   it.live("keeps each folder's work in progress on the remote and says it is idle", () =>
     Effect.gen(function* () {
@@ -100,15 +118,15 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
         {
           threadId: THREAD,
           cwd: repo,
-          ref: wipRef(THREAD),
+          ref: wipRef(THREAD, repo),
           commit: expect.stringMatching(/^[0-9a-f]{40}$/),
           branch: "main",
           pushed: true,
           saved: expect.objectContaining({ uncommitted: true }),
         },
       ]);
-      expect(run(origin, "show", `${wipRef(THREAD)}:tracked.txt`)).toBe("work in progress\n");
-      expect(run(origin, "show", `${wipRef(THREAD)}:new.txt`)).toBe("untracked\n");
+      expect(run(origin, "show", `${wipRef(THREAD, repo)}:tracked.txt`)).toBe("work in progress\n");
+      expect(run(origin, "show", `${wipRef(THREAD, repo)}:new.txt`)).toBe("untracked\n");
       // The branch and the files are as they were.
       expect(run(repo, "rev-parse", "HEAD").trim()).toBe(head);
       expect(run(repo, "status", "--porcelain")).toContain("tracked.txt");
@@ -141,9 +159,10 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       ]);
       // Nothing held: the machine takes work as before.
       expect(stop.stopping()).toBe(false);
-      // The machine is lost; one on another disk gets the folder back as kept.
-      const { disk, stop: next } = yield* replaced(origin);
-      const cwd = join(disk, "worktrees", "worker");
+      // The machine is lost; one on another disk gets the folder back as kept, where it was.
+      removeDir(repo);
+      const { stop: next } = yield* replaced(origin);
+      const cwd = repo;
       expect(
         yield* next.restore!({ threadId: THREAD, cwd, url: origin, branch: "gram/worker" }),
       ).toMatchObject({ restored: true, uncommitted: true, source: "ref" });
@@ -180,7 +199,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       // A machine about to be taken away: kept anyway, and still not idle.
       const forced = yield* stop.prepare({ checkouts, force: true });
       expect(forced).toMatchObject({ idle: false, kept: [{ pushed: true }] });
-      expect(run(origin, "show", `${wipRef(THREAD)}:new.txt`)).toBe("untracked\n");
+      expect(run(origin, "show", `${wipRef(THREAD, repo)}:new.txt`)).toBe("untracked\n");
       expect(stop.stopping()).toBe(true);
     }).pipe(Effect.scoped, live),
   );
@@ -244,7 +263,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       expect(prepared.kept[1]).toMatchObject({ pushed: false });
       expect(prepared.kept[1]?.note).toContain("not a git repository");
       // Committed here though the remote couldn't be reached.
-      expect(prepared.kept[2]).toMatchObject({ ref: wipRef("thread-3"), pushed: false });
+      expect(prepared.kept[2]).toMatchObject({ ref: wipRef("thread-3", repo), pushed: false });
       expect(prepared.kept[2]?.note).toBeTruthy();
       expect(
         (yield* Effect.flip(stop.prepare({ checkouts: [], remote: "--upload-pack=x" }))).message,
@@ -284,11 +303,9 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       }).pipe(Effect.scoped, live),
   );
 
-  it.live("runs git where the gate says the folder is, and keeps one folder per repository", () =>
+  it.live("runs git where the gate says the folder is", () =>
     Effect.gen(function* () {
       const { repo, origin } = yield* worktree;
-      const second = join(repo, "..", "second");
-      run(repo, "worktree", "add", "--quiet", "-b", "second", second);
       const stop = stopOn({
         proc: yield* Proc,
         busy: Effect.succeed(IDLE),
@@ -296,16 +313,76 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
         protocols: FILE,
         admit: (cwd) => Effect.succeed({ path: cwd === "~/work" ? repo : cwd }),
       });
-      const prepared = yield* stop.prepare({
-        checkouts: [
-          { threadId: THREAD, cwd: "~/work" },
-          { threadId: THREAD, cwd: realpathSync(second) },
-        ],
-      });
+      const prepared = yield* stop.prepare({ checkouts: [{ threadId: THREAD, cwd: "~/work" }] });
       expect(prepared.kept[0]).toMatchObject({ cwd: "~/work", pushed: true });
-      expect(run(origin, "show", `${wipRef(THREAD)}:new.txt`)).toBe("untracked\n");
-      expect(prepared.kept[1]).toMatchObject({ pushed: false });
-      expect(prepared.kept[1]?.note).toContain("one is kept per repository");
+      expect(run(origin, "show", `${wipRef(THREAD, "~/work")}:new.txt`)).toBe("untracked\n");
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("keeps and puts back every checkout of one repository, each from its own ref", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+      // The machine's clone and a linked worktree of it, both folders of one thread, each with
+      // uncommitted work of its own.
+      const second = join(repo, "..", "second");
+      run(repo, "worktree", "add", "--quiet", "-b", "gram/second", second);
+      write(join(second, "tracked.txt"), "the second folder's work\n");
+      write(join(second, "only-second.txt"), "untracked here\n");
+      const stop = stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed({ ...IDLE, turns: 1 }),
+        admission: makeAdmission(),
+        protocols: FILE,
+      });
+      const checkouts = [
+        { threadId: THREAD, cwd: repo },
+        { threadId: THREAD, cwd: second },
+      ];
+      const kept = yield* stop.keep({ checkouts });
+      // Before, the second was "one is kept per repository", and its work was on this disk only.
+      expect(kept).toMatchObject([
+        { cwd: repo, ref: wipRef(THREAD, repo), pushed: true, branch: "main" },
+        { cwd: second, ref: wipRef(THREAD, second), pushed: true, branch: "gram/second" },
+      ]);
+      expect(wipRef(THREAD, repo)).not.toBe(wipRef(THREAD, second));
+      expect(run(origin, "show", `${wipRef(THREAD, repo)}:tracked.txt`)).toBe("work in progress\n");
+      expect(run(origin, "show", `${wipRef(THREAD, second)}:tracked.txt`)).toBe(
+        "the second folder's work\n",
+      );
+      // Each folder's next keep is held to its own lease: neither replaces the other's.
+      write(join(repo, "later.txt"), "more\n");
+      write(join(second, "later.txt"), "more here\n");
+      const again = yield* stop.keep({ checkouts });
+      expect(again).toMatchObject([{ pushed: true }, { pushed: true }]);
+      expect(run(origin, "show", `${wipRef(THREAD, repo)}:later.txt`)).toBe("more\n");
+      expect(run(origin, "show", `${wipRef(THREAD, second)}:later.txt`)).toBe("more here\n");
+
+      // The machine is lost with its disk. One on another disk puts each folder back where it
+      // was, the worktree first, from its own ref and held to its own commit.
+      removeDir(second);
+      removeDir(repo);
+      const { stop: next } = yield* replaced(origin, repo);
+      const back = (cwd: string, branch: string) =>
+        next.restore!({
+          threadId: THREAD,
+          cwd,
+          url: URL,
+          branch,
+          commit: again.find((each) => each.cwd === cwd)?.commit,
+        });
+      expect(yield* back(second, "gram/second")).toMatchObject({ restored: true, source: "ref" });
+      expect(yield* back(repo, "main")).toMatchObject({ restored: true, source: "ref" });
+      expect(readFileSync(join(second, "tracked.txt"), "utf8")).toBe("the second folder's work\n");
+      expect(readFileSync(join(second, "only-second.txt"), "utf8")).toBe("untracked here\n");
+      expect(readFileSync(join(second, "later.txt"), "utf8")).toBe("more here\n");
+      expect(readFileSync(join(repo, "tracked.txt"), "utf8")).toBe("work in progress\n");
+      expect(readFileSync(join(repo, "later.txt"), "utf8")).toBe("more\n");
+      expect(existsSync(join(repo, "only-second.txt"))).toBe(false);
+      // And each folder's next keep is pushed, held to what it was put back from.
+      write(join(second, "after.txt"), "after\n");
+      expect(yield* next.keep({ checkouts })).toMatchObject([{ pushed: true }, { pushed: true }]);
+      expect(run(origin, "show", `${wipRef(THREAD, second)}:after.txt`)).toBe("after\n");
     }).pipe(Effect.scoped, live),
   );
 
@@ -412,7 +489,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
         protocols: FILE,
       });
       const first = yield* stop.prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
-      expect(first.kept[0]).toMatchObject({ ref: wipRef(THREAD), pushed: true });
+      expect(first.kept[0]).toMatchObject({ ref: wipRef(THREAD, repo), pushed: true });
       expect(first.kept[0]).not.toHaveProperty("caughtUp");
       yield* stop.cancel;
       // Committed, and the remote's branch still behind: the ref carries the commit.
@@ -420,8 +497,12 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       run(repo, "commit", "--quiet", "-m", "done");
       const head = run(repo, "rev-parse", "HEAD").trim();
       const ahead = yield* stop.prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
-      expect(ahead.kept[0]).toMatchObject({ ref: wipRef(THREAD), commit: head, pushed: true });
-      expect(run(origin, "rev-parse", wipRef(THREAD)).trim()).toBe(head);
+      expect(ahead.kept[0]).toMatchObject({
+        ref: wipRef(THREAD, repo),
+        commit: head,
+        pushed: true,
+      });
+      expect(run(origin, "rev-parse", wipRef(THREAD, repo)).trim()).toBe(head);
       yield* stop.cancel;
       // Pushed: nothing more to keep, and what was kept before is out of date.
       run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
@@ -441,7 +522,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
     }).pipe(Effect.scoped, live),
   );
 
-  it.live("leaves a ref another folder of the thread wrote, whichever is asked first", () =>
+  it.live("keeps each clone of a thread under its own ref, and leaves one written elsewhere", () =>
     Effect.gen(function* () {
       const { repo, origin } = yield* worktree;
       run(repo, "add", "-A");
@@ -467,15 +548,17 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
         yield* stop.cancel;
         const dirty = prepared.kept.find((kept) => kept.cwd === repo);
         const clean = prepared.kept.find((kept) => kept.cwd === other);
-        expect(dirty).toMatchObject({ ref: wipRef(THREAD), pushed: true });
+        expect(dirty).toMatchObject({ ref: wipRef(THREAD, repo), pushed: true });
         expect(clean).toMatchObject({ pushed: true, caughtUp: true });
         expect(clean).not.toHaveProperty("ref");
-        // The uncommitted work the first folder pushed is still what the remote keeps.
-        expect(run(origin, "rev-parse", wipRef(THREAD)).trim()).toBe(dirty?.commit);
-        expect(run(origin, "show", `${wipRef(THREAD)}:tracked.txt`)).toBe("uncommitted work\n");
+        expect(run(origin, "rev-parse", wipRef(THREAD, repo)).trim()).toBe(dirty?.commit);
+        expect(run(origin, "show", `${wipRef(THREAD, repo)}:tracked.txt`)).toBe(
+          "uncommitted work\n",
+        );
       }
 
-      // Both with work of their own: the ref holds one folder's, and the other is said not kept.
+      // Both with work of their own: each is kept, neither in place of the other. Before, the
+      // second was "one is kept per thread", and its work was on this disk only.
       write(join(other, "tracked.txt"), "other work\n");
       const both = yield* stop.prepare({
         checkouts: [
@@ -483,10 +566,20 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
           { threadId: THREAD, cwd: other },
         ],
       });
-      expect(both.kept[0]).toMatchObject({ pushed: true });
-      expect(both.kept[1]).toMatchObject({ pushed: false });
-      expect(both.kept[1]?.note).toContain("one is kept per thread");
-      expect(run(origin, "show", `${wipRef(THREAD)}:tracked.txt`)).toBe("uncommitted work\n");
+      yield* stop.cancel;
+      expect(both.kept).toMatchObject([{ pushed: true }, { pushed: true }]);
+      expect(run(origin, "show", `${wipRef(THREAD, repo)}:tracked.txt`)).toBe("uncommitted work\n");
+      expect(run(origin, "show", `${wipRef(THREAD, other)}:tracked.txt`)).toBe("other work\n");
+
+      // The folder's ref at the remote rewritten elsewhere since: a caught-up folder leaves it.
+      run(other, "checkout", "--quiet", "--", "tracked.txt");
+      run(repo, "commit", "--quiet", "--allow-empty", "-m", "elsewhere");
+      const elsewhere = run(repo, "rev-parse", "HEAD").trim();
+      run(repo, "push", "--quiet", "--force", "origin", `HEAD:${wipRef(THREAD, other)}`);
+      const caught = yield* stop.prepare({ checkouts: [{ threadId: THREAD, cwd: other }] });
+      expect(caught.kept[0]).toMatchObject({ pushed: true, caughtUp: true });
+      expect(caught.kept[0]?.note).toContain("holds other work of the thread");
+      expect(run(origin, "rev-parse", wipRef(THREAD, other)).trim()).toBe(elsewhere);
     }).pipe(Effect.scoped, live),
   );
 
@@ -652,19 +745,14 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       const { repo, origin } = yield* worktree;
       run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
       const proc = yield* Proc;
-      yield* stopOn({
-        proc,
-        busy: Effect.succeed(IDLE),
-        admission: makeAdmission(),
-        protocols: FILE,
-      }).prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
       const { disk, clone, stop: plain } = yield* replaced(origin);
+      const cwd = join(disk, "worktrees", "deep", "worker");
+      yield* keepAs(repo, cwd);
       yield* plain.restore!({
         threadId: ThreadId.make("thread-none"),
         cwd: join(disk, "none"),
         url: URL,
       });
-      const cwd = join(disk, "worktrees", "deep", "worker");
       /** What was in the folder each time the gate was asked about it. */
       const seen: Array<ReadonlyArray<string>> = [];
       const gated = stopOn({
@@ -709,8 +797,10 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       const prepared = yield* old.prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
       expect(prepared.kept[0]).toMatchObject({ pushed: true });
 
+      // The disk is lost with the folder: it is put back where it was, from its own ref.
+      removeDir(repo);
       const { disk, clone, asked, stop } = yield* replaced(origin);
-      const cwd = join(disk, "worktrees", "worker");
+      const cwd = repo;
       const restored = yield* stop.restore!({
         threadId: THREAD,
         cwd,
@@ -761,6 +851,41 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
     }).pipe(Effect.scoped, live),
   );
 
+  it.live("puts a folder back from the thread's one ref a host kept before each had its own", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+      run(repo, "checkout", "--quiet", "-b", "gram/worker");
+      // As a host built before folders had refs of their own kept it: the thread's one ref.
+      const snapshot = yield* snapshotWip(repo, THREAD);
+      expect(snapshot.ref).toBe(wipRef(THREAD));
+      yield* pushWip(repo, snapshot, "origin", FILE);
+      removeDir(repo);
+      const { stop } = yield* replaced(origin);
+      const asked = { threadId: THREAD, cwd: repo, url: URL, branch: "gram/worker" };
+      // Not read with nothing to hold it to: it may be another folder's work of the thread.
+      expect(yield* stop.restore!(asked)).toEqual({
+        restored: false,
+        note: "Nothing was kept of it at the remote.",
+      });
+      // Held to the commit the stop said it kept of this folder: put back.
+      expect(yield* stop.restore!({ ...asked, commit: snapshot.commit })).toMatchObject({
+        restored: true,
+        commit: snapshot.commit,
+        uncommitted: true,
+        source: "ref",
+      });
+      expect(readFileSync(join(repo, "tracked.txt"), "utf8")).toBe("work in progress\n");
+      expect(readFileSync(join(repo, "new.txt"), "utf8")).toBe("untracked\n");
+      // Its next keep goes under the folder's own ref, and the old one goes with the thread.
+      write(join(repo, "later.txt"), "more\n");
+      const kept = yield* stop.keep({ checkouts: [{ threadId: THREAD, cwd: repo }] });
+      expect(kept).toMatchObject([{ ref: wipRef(THREAD, repo), pushed: true }]);
+      expect(yield* stop.drop({ threadId: THREAD, cwd: repo })).toEqual({ dropped: true });
+      expect(run(origin, "for-each-ref", "--format=%(refname)", "refs/gram").trim()).toBe("");
+    }).pipe(Effect.scoped, live),
+  );
+
   it.live(
     "checks a folder a resume before didn't finish putting back, never taking it as back",
     () =>
@@ -772,16 +897,13 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
         run(repo, "add", "committed.txt");
         run(repo, "commit", "--quiet", "-m", "local only");
         const head = run(repo, "rev-parse", "HEAD").trim();
-        const prepared = yield* stopOn({
-          proc: yield* Proc,
-          busy: Effect.succeed(IDLE),
-          admission: makeAdmission(),
-          protocols: FILE,
-        }).prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
         const { disk, clone, stop } = yield* replaced(origin);
+        const cwd = join(disk, "worktrees", "worker");
+        const empty = join(disk, "worktrees", "empty");
+        const prepared = yield* keepAs(repo, cwd);
+        const emptyKept = yield* keepAs(repo, empty);
         yield* stop.restore!({ threadId: ThreadId.make("thread-none"), cwd: clone, url: URL });
         // The host stopped part way: the worktree made at the branch's base, its work never in it.
-        const cwd = join(disk, "worktrees", "worker");
         mkdirSync(join(disk, "worktrees"), { recursive: true });
         run(clone, "worktree", "add", "--quiet", "-b", "gram/worker", cwd, "origin/main");
         const asked = {
@@ -798,10 +920,15 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
         expect(run(cwd, "rev-parse", "HEAD").trim()).toBe(head);
         expect(readFileSync(join(cwd, "tracked.txt"), "utf8")).toBe("work in progress\n");
         // An empty folder it left is made again; one that is somebody else's is refused.
-        const empty = join(disk, "worktrees", "empty");
         mkdirSync(empty);
         expect(
-          yield* stop.restore!({ ...asked, cwd: empty, branch: "gram/empty", pending: true }),
+          yield* stop.restore!({
+            ...asked,
+            cwd: empty,
+            branch: "gram/empty",
+            commit: emptyKept.kept[0]?.commit,
+            pending: true,
+          }),
         ).toMatchObject({ restored: true });
         const other = join(disk, "worktrees", "other");
         mkdirSync(other);
@@ -828,7 +955,9 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
         protocols: FILE,
       });
       yield* old.prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
-      const { clone, stop } = yield* replaced(origin);
+      // The machine's clone was the thread's folder, and its disk is lost.
+      removeDir(repo);
+      const { clone, stop } = yield* replaced(origin, repo);
       // Its folder is the clone, which isn't there until the host clones again.
       const restored = yield* stop.restore!({
         threadId: THREAD,
@@ -852,6 +981,119 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
     }).pipe(Effect.scoped, live),
   );
 
+  it.live("finishes a worktree a host died making, on the branch its clone is on", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+      const base = run(repo, "rev-parse", "HEAD").trim();
+      const { disk, clone, stop } = yield* replaced(origin);
+      const cwd = join(disk, "worktrees", "worker");
+      const prepared = yield* keepAs(repo, cwd);
+      yield* stop.restore!({ threadId: ThreadId.make("thread-none"), cwd: clone, url: URL });
+      // The host died after adding the detached worktree, before its branch was set: the clone
+      // is still on `main`, the branch the thread's work goes back on.
+      mkdirSync(join(disk, "worktrees"), { recursive: true });
+      run(clone, "worktree", "add", "--quiet", "--detach", cwd, base);
+      const checked = yield* stop.restore!({
+        threadId: THREAD,
+        cwd,
+        url: URL,
+        branch: "main",
+        commit: prepared.kept[0]?.commit,
+        pending: true,
+      });
+      // Before, refused for good: "main is checked out in" the clone, at every retry.
+      expect(checked).toMatchObject({ restored: true, source: "ref" });
+      expect(run(cwd, "symbolic-ref", "--short", "HEAD").trim()).toBe("main");
+      expect(readFileSync(join(cwd, "tracked.txt"), "utf8")).toBe("work in progress\n");
+      expect(run(clone, "status", "--porcelain")).toBe("");
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("finishes a restore a host died writing, so the folder's next keep is pushed", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+      run(repo, "checkout", "--quiet", "-b", "gram/worker");
+      const { disk, stop } = yield* replaced(origin);
+      const cwd = join(disk, "worktrees", "worker");
+      const prepared = yield* keepAs(repo, cwd);
+      const commit = prepared.kept[0]!.commit!;
+      const asked = { threadId: THREAD, cwd, url: URL, branch: "gram/worker", commit };
+      expect(yield* stop.restore!(asked)).toMatchObject({ restored: true });
+      // As a host that died after writing the kept files, before the index went back to HEAD and
+      // the remote's ref became the folder's lease.
+      const tail = wipRef(THREAD, cwd).slice("refs/gram/wip/".length);
+      run(cwd, "update-ref", "-d", `refs/gram/wip-lease/${tail}`);
+      run(cwd, "update-ref", `refs/gram/wip-fetched/${tail}`, commit);
+      run(cwd, "read-tree", commit);
+      expect(yield* stop.restore!({ ...asked, pending: true })).toMatchObject({ restored: true });
+      // What was staged comes back unstaged, as from a restore that finished.
+      expect(run(cwd, "status", "--porcelain")).toContain(" M tracked.txt");
+      // Before, the retry said restored and the next keep was refused at the remote.
+      write(join(cwd, "later.txt"), "more work\n");
+      expect(yield* stop.keep({ checkouts: [{ threadId: THREAD, cwd }] })).toMatchObject([
+        { threadId: THREAD, cwd, pushed: true },
+      ]);
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("keeps what was staged since, asked again after a restore that finished", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+      run(repo, "checkout", "--quiet", "-b", "gram/worker");
+      const { disk, stop } = yield* replaced(origin);
+      const cwd = join(disk, "worktrees", "worker");
+      const prepared = yield* keepAs(repo, cwd);
+      const asked = {
+        threadId: THREAD,
+        cwd,
+        url: URL,
+        branch: "gram/worker",
+        commit: prepared.kept[0]!.commit!,
+      };
+      expect(yield* stop.restore!(asked)).toMatchObject({ restored: true });
+      // Its answer lost; meanwhile a hunk is staged that the files no longer show.
+      write(join(cwd, "tracked.txt"), "staged only\n");
+      run(cwd, "add", "tracked.txt");
+      write(join(cwd, "tracked.txt"), "work in progress\n");
+      expect(run(cwd, "status", "--porcelain")).toContain("MM tracked.txt");
+      expect(yield* stop.restore!({ ...asked, pending: true })).toMatchObject({ restored: true });
+      // Before, the index went back to HEAD and the staged hunk was gone.
+      expect(run(cwd, "status", "--porcelain")).toContain("MM tracked.txt");
+      expect(run(cwd, "show", ":tracked.txt")).toBe("staged only\n");
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("puts nothing back into a sparse checkout, which would leave kept files out", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+      write(join(repo, "sub", "edit.txt"), "kept in sub\n");
+      const prepared = yield* stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed(IDLE),
+        admission: makeAdmission(),
+        protocols: FILE,
+      }).prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
+      removeDir(repo);
+      const { clone, stop } = yield* replaced(origin, repo);
+      yield* stop.restore!({ threadId: ThreadId.make("thread-none"), cwd: clone, url: URL });
+      run(clone, "sparse-checkout", "set", "--no-cone", "/*", "!/sub/");
+      const refused = yield* stop.restore!({
+        threadId: THREAD,
+        cwd: clone,
+        url: URL,
+        branch: "main",
+        commit: prepared.kept[0]?.commit,
+      }).pipe(Effect.flip);
+      // Before, restored, with `sub/edit.txt` never written.
+      expect(refused.message).toContain("sparse");
+      expect(run(clone, "status", "--porcelain")).toBe("");
+    }).pipe(Effect.scoped, live),
+  );
+
   it.live("puts back a thread that moved from another Gram, from that Gram's ref only", () =>
     Effect.gen(function* () {
       const { repo, origin } = yield* worktree;
@@ -867,7 +1109,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       // The other Gram's machine wrote it under a namespace of its own; this host has none of it.
       const theirs = `refs/gram/wip/personal-ab12/${THREAD}`;
       run(origin, "update-ref", theirs, commit);
-      run(origin, "update-ref", "-d", wipRef(THREAD));
+      run(origin, "update-ref", "-d", wipRef(THREAD, repo));
       const { disk, stop } = yield* replaced(origin);
       const at = (name: string) => join(disk, "worktrees", name);
 
@@ -920,14 +1162,9 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       const { repo, origin } = yield* worktree;
       run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
       const proc = yield* Proc;
-      yield* stopOn({
-        proc,
-        busy: Effect.succeed(IDLE),
-        admission: makeAdmission(),
-        protocols: FILE,
-      }).prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
       const { disk, clone, stop: plain } = yield* replaced(origin);
       const cwd = join(disk, "worktrees", "worker");
+      yield* keepAs(repo, cwd);
       const gated = stopOn({
         proc,
         busy: Effect.succeed(IDLE),
@@ -989,7 +1226,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
         checkouts: [{ threadId: THREAD, cwd: repo }],
       });
       expect(prepared).toMatchObject({ idle: true, kept: [{ pushed: true }] });
-      expect(run(origin, "rev-parse", wipRef(THREAD)).trim()).toBe(prepared.kept[0]?.commit);
+      expect(run(origin, "rev-parse", wipRef(THREAD, repo)).trim()).toBe(prepared.kept[0]?.commit);
       expect((yield* open).message).toBe(STOPPING);
 
       yield* connection.stop.cancel;

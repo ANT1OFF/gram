@@ -1,0 +1,15 @@
+{
+  "title": "Whose work each Board row is",
+  "slug": "board-owners",
+  "status": "draft",
+  "template": "app-screen",
+  "current": 1,
+  "approved": null,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-19"
+    }
+  ]
+}

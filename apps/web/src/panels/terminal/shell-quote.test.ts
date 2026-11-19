@@ -58,3 +58,15 @@ describe("formatDroppedPaths", () => {
     expect(formatDroppedPaths([], "posix")).toBe("");
   });
 });
+
+describe("formatDroppedPaths with hostile names", () => {
+  // A file name is its author's: these would submit, cancel or end a bracketed paste when typed.
+  it("never types a path holding a control character", () => {
+    for (const char of ["\r", "\n", "\u0003", "\u0004", "\u001b", "\u007f", "\u009b"]) {
+      const hostile = `/tmp/a${char}touch pwned${char}.txt`;
+      expect(formatDroppedPaths([hostile], "posix")).toBe("");
+      expect(formatDroppedPaths(["/tmp/ok.txt", hostile], "posix")).toBe("/tmp/ok.txt ");
+    }
+    expect(formatDroppedPaths(["/tmp/a\u001b[201~; rm -rf ~"], "powershell")).toBe("");
+  });
+});

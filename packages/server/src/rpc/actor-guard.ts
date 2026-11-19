@@ -109,6 +109,7 @@ export const VIEWER_RPCS: ReadonlySet<string> = new Set([
   "settings.get",
   "keybindings.get",
   "labels.list",
+  "people.names",
   "palettes.list",
   "projects.list",
   "workspace.list",

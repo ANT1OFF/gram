@@ -234,6 +234,29 @@ describe("this machine as a personal device", () => {
     expect(await device.signIn(origin)).toMatchObject({ ok: false });
   });
 
+  it("keeps a sign-in that allows sending work without lending this machine", async () => {
+    fake.state.lendsDevices = false;
+    const first = await setUp();
+    expect(await first.device.signIn(origin)).toEqual({ ok: true });
+    expect(fake.state.registeredKey).toBeUndefined();
+    await first.device.close();
+
+    const second = await setUp({}, first.store);
+    await second.waitFor(() => (second.device.state().servers[0]?.workspaces.length ?? 0) > 0);
+    expect(second.device.state().servers[0]).toMatchObject({
+      signedIn: true,
+      workspaces: [{ id: "w1", policy: "off" }],
+    });
+    expect(
+      await second.device.sendWork(origin, "w1", {
+        repositories: ["example/app"],
+        text: "Read the README",
+        clientKey: "verify-scoped-sign-in",
+      }),
+    ).toMatchObject({ ok: true, threadId: "t-sent-1" });
+    expect(dials).toEqual([]);
+  });
+
   it("signs in to nothing the person didn't accept", async () => {
     const { device, store } = await setUp({ confirmServer: async () => false });
     expect(await device.signIn(origin)).toEqual({ ok: false, why: "Not signed in." });

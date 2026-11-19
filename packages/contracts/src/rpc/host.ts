@@ -387,7 +387,10 @@ export type HostStopCheckout = typeof HostStopCheckout.Type;
 export const HostStopKept = Schema.Struct({
   threadId: ThreadId,
   cwd: Schema.String,
-  /** `refs/gram/wip/<thread>`, once the working tree was committed under it. */
+  /**
+   * The folder's own ref, `refs/gram/wip/<thread>--<folder>`, once the working tree was committed
+   * under it; `refs/gram/wip/<thread>` from a host built before each folder had its own.
+   */
   ref: Schema.optionalKey(Schema.String),
   commit: Schema.optionalKey(Schema.String),
   /** Whether the remote now has that commit under the ref. */
@@ -433,7 +436,7 @@ export type HostStopPrepared = typeof HostStopPrepared.Type;
  */
 export const HostStopRestored = Schema.Struct({
   restored: Schema.Boolean,
-  /** The commit put back: the one the remote kept under the thread's ref, or its branch's tip. */
+  /** The commit put back: the one the remote kept under the folder's ref, or its branch's tip. */
   commit: Schema.optionalKey(Schema.String),
   /** Whether files that weren't committed were put back with the branch. */
   uncommitted: Schema.optionalKey(Schema.Boolean),
@@ -1055,9 +1058,10 @@ export const HostRpcs = RpcGroup.make(
    * Readies the host to be stopped with its disk kept. It stops taking new work, and when nothing
    * runs on it (the test an update waits on: no turn, busy terminal, clone or check), or `force`
    * says to go on regardless (a machine about to be taken away), it commits each listed folder's
-   * working tree on top of its HEAD under `refs/gram/wip/<thread>` and pushes that ref to `remote`
-   * (`origin` when left out). The branch, the index and the files stay as they are. A host built
-   * before this answers with an unknown-request defect.
+   * working tree on top of its HEAD under the folder's own ref (`refs/gram/wip/<thread>--<folder>`,
+   * `<folder>` a hash of `cwd`) and pushes that ref to `remote` (`origin` when left out). The
+   * branch, the index and the files stay as they are. A host built before this answers with an
+   * unknown-request defect.
    */
   Rpc.make("host.stop.prepare", {
     payload: {
@@ -1069,8 +1073,8 @@ export const HostRpcs = RpcGroup.make(
     error: HostFailed,
   }),
   /**
-   * Keeps the listed folders' work in progress as `host.stop.prepare` does (the hidden ref
-   * `refs/gram/wip/<thread>`, pushed to `remote`), while the host goes on working: nothing is held
+   * Keeps the listed folders' work in progress as `host.stop.prepare` does (each folder's hidden
+   * ref, pushed to `remote`), while the host goes on working: nothing is held
    * and nothing waits for work to end. Served by a host that names `wip-keep`.
    */
   Rpc.make("host.stop.keep", {
@@ -1095,16 +1099,18 @@ export const HostRpcs = RpcGroup.make(
   }),
   /**
    * Puts back what a stop kept of a thread whose folder `cwd` is not on this disk: the host's
-   * clone of the repository at `url` is made or fetched, `refs/gram/wip/<thread>` is fetched from
-   * `remote` (`origin` when absent), and `cwd` is made again as it was, a worktree of that clone
+   * clone of the repository at `url` is made or fetched, the ref a stop kept of `cwd` is fetched
+   * from `remote` (`origin` when absent), and `cwd` is made again as it was, a worktree of that clone
    * or the clone itself, on `branch` at the tip the work was on, with the uncommitted files
    * uncommitted. A folder that is there with work of its own is never written over, and a branch
    * that is there with commits the kept work doesn't hold is never moved. Served by a host that
    * names `wip-restore`.
    *
    * `commit` is the commit the stop said it kept: the ref must name exactly it, or nothing is put
-   * back. `caughtUp` says the stop kept no ref because the branch at the remote held everything:
-   * the folder is made from `branch` there. So is one whose ref the remote doesn't have.
+   * back. A folder with no ref of its own at the remote is read from the thread's one ref an older
+   * host kept, `refs/gram/wip/<thread>`, only given `commit`. `caughtUp` says the stop kept no ref
+   * because the branch at the remote held everything: the folder is made from `branch` there. So
+   * is one whose ref the remote doesn't have.
    */
   Rpc.make("host.stop.restore", {
     payload: {
@@ -1131,8 +1137,8 @@ export const HostRpcs = RpcGroup.make(
     error: HostFailed,
   }),
   /**
-   * Deletes `refs/gram/wip/<thread>` at `remote` and in the repository at `cwd`, whatever it
-   * names, when that repository has the ref; otherwise nothing is asked of any remote. For a
+   * Deletes the thread's ref of `cwd`, and its one ref an older host kept, at `remote` and in the
+   * repository at `cwd`, whatever they name, when that repository has them; otherwise nothing is asked of any remote. For a
    * thread that is gone for good: closing one doesn't ask it, since a closed thread can be
    * reopened. Served by a host that names `wip-restore`.
    */

@@ -18,6 +18,7 @@ import { ThreadArchive } from "./archive.ts";
 import { makeFinishedWorkers } from "./finished-workers.ts";
 import { routineHandlers } from "../routines/routines.ts";
 import { Orchestration } from "./service.ts";
+import { clientInput } from "../runtime/user-input.ts";
 
 /** `workspace.*`, `orchestrator.*`, `thread.detach` and `thread.joinWorkspace`. */
 export const orchestrationHandlers = Effect.gen(function* () {
@@ -67,13 +68,14 @@ export const orchestrationHandlers = Effect.gen(function* () {
     "workspace.taskPreflight": (input) => orchestration.taskPreflight(input),
     "workspace.startTask": ({
       target,
-      input,
+      input: sent,
       draftId,
       autonomy,
       orchestrator: picked,
       selection,
     }) =>
       Effect.gen(function* () {
+        const input = clientInput(sent);
         // The orchestrator the user picked: a running one starts moving to it, under the locks a
         // switch and a charter change take, before the task's own startup takes them.
         const move = yield* orchestration.prepareTaskOrchestrator({

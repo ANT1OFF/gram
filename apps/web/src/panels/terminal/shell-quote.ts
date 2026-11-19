@@ -54,6 +54,22 @@ export function quoteShellPath(path: string, kind: ShellKind): string {
   }
 }
 
-/** Dropped paths as the text to type: each quoted for the shell, space-separated, with a trailing space. */
-export const formatDroppedPaths = (paths: readonly string[], kind: ShellKind): string =>
-  paths.length === 0 ? "" : `${paths.map((path) => quoteShellPath(path, kind)).join(" ")} `;
+/**
+ * A C0 or C1 control character, or DEL. The terminal and the shell's line editor act on these
+ * before any quoting does (Enter, Ctrl-C, Escape, the end of a bracketed paste), so a file name
+ * holding one could run a command of its author's choosing.
+ */
+// oxlint-disable-next-line no-control-regex -- matching control characters is the point.
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+
+/** Whether a dropped path can be typed into a terminal at all (`formatDroppedPaths`). */
+export const typablePath = (path: string): boolean => !CONTROL.test(path);
+
+/**
+ * Dropped paths as the text to type: each quoted for the shell, space-separated, with a trailing
+ * space. A path holding a control character is left out (`typablePath`).
+ */
+export const formatDroppedPaths = (paths: readonly string[], kind: ShellKind): string => {
+  const typed = paths.filter(typablePath);
+  return typed.length === 0 ? "" : `${typed.map((path) => quoteShellPath(path, kind)).join(" ")} `;
+};

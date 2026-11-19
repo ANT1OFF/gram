@@ -40,6 +40,8 @@ import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { cloneUrlOf } from "./repos.ts";
+import { HOST_RESTORE_MS, REOPEN_MS, SHARED_FLUSH_MS, STOP_CANCEL_MS } from "./budgets.ts";
+import type { JobReport } from "./machine-jobs.ts";
 import { FOLDER_THERE } from "./stop.ts";
 
 export interface StopResumeDeps {
@@ -91,9 +93,9 @@ const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 /** The most folders one stop is asked to keep (`host.stop.prepare`'s limit). */
 export const STOP_FOLDERS_MAX = 512;
 /** How long a stop waits for the machine's shared folders, inside the embedder's own deadline. */
-const SHARED_FLUSH_WITHIN = "15 seconds";
+const SHARED_FLUSH_WITHIN = SHARED_FLUSH_MS;
 /** How long a machine gets to say it takes work again. */
-const CANCEL_WITHIN = "30 seconds";
+const CANCEL_WITHIN = STOP_CANCEL_MS;
 
 /** Why a stop keeps nothing of a folder that a resume couldn't put back. */
 const NOT_BACK_KEPT =
@@ -340,7 +342,7 @@ export const readyOnGoing =
 
 /**
  * Keeps one thread's work in progress on the machine off it now, while it works on
- * (`host.stop.keep`): the thread's folders there that Gram made from a clone, under the thread's
+ * (`host.stop.keep`): the thread's folders there that Gram made from a clone, each under its own
  * hidden ref at the remote. Remembered as a stop's is, so a resume on another disk is held to it;
  * after a restart the remote's ref is taken as it is. A host built before it keeps nothing.
  */
@@ -436,7 +438,7 @@ export interface HostResumed {
 }
 
 /** How long a machine gets to clone a repository again and put one folder's work back. */
-const RESTORE_WITHIN = "20 minutes";
+const RESTORE_WITHIN = HOST_RESTORE_MS;
 /** How many times a resume asks whether a folder is there before it counts as unknown. */
 const PRESENCE_TRIES = 3;
 const PRESENCE_RETRY = "1 second";
@@ -477,8 +479,15 @@ const counted = (entries: ReadonlyArray<{ readonly note?: string | undefined }>)
     ),
   );
 
-/** How many of a machine's folders a resume puts back at once. */
-export const RESTORE_CONCURRENCY = 4;
+/**
+ * How many of a machine's folders a resume puts back at once: one, as the host restores one at a
+ * time (`stop.ts`'s lock). Asked more at once, a folder's `RESTORE_WITHIN` would run while it
+ * waits its turn there, and a slow folder ahead of it would make it read as not answering while
+ * the host went on with it.
+ */
+export const RESTORE_CONCURRENCY = 1;
+/** How many folders a resume asks after at once, before any is put back. */
+const LOOK_CONCURRENCY = 4;
 
 /**
  * Resumes the machine's threads on the host that dialled in as it: checks each thread's folders
@@ -502,6 +511,8 @@ export const resumeHost = (
   options: {
     readonly remote?: string | undefined;
     readonly kept?: ReadonlyArray<KeptBefore> | undefined;
+    /** Told of each folder as it goes: a resume job's progress. */
+    readonly follow?: JobReport | undefined;
   } = {},
 ): Effect.Effect<HostResumed, HostUnavailable> =>
   Effect.suspend(() => {
@@ -536,7 +547,7 @@ export const resumeHost = (
         yield* Effect.forEach(
           [...new Set(folders.map(({ cwd }) => cwd))],
           (cwd) => Effect.map(look(cwd), (there) => [cwd, there] as const),
-          { concurrency: RESTORE_CONCURRENCY },
+          { concurrency: LOOK_CONCURRENCY },
         ),
       );
       // A folder the host can make again: one Gram made from a clone for any thread that shares
@@ -546,8 +557,10 @@ export const resumeHost = (
         restore !== undefined &&
         sharing.some(({ thread, cwd }) => madeFrom(thread, id, cwd) !== undefined);
       // On a disk the folders weren't last seen on, one that is there is checked against what
-      // was kept, never taken as back for being there.
-      const verifyThere = stops.onOtherDisk(id);
+      // was kept, never taken as back for being there: once, by the first resume of the
+      // generation to confirm it. One a resume before confirmed may hold new work since.
+      const otherDisk = stops.onOtherDisk(id);
+      const verifyThere = (cwd: string) => otherDisk && !stops.isFolderConfirmed(id, cwd);
       // What a resume before this one set out to put back and didn't finish with.
       const owedBefore = new Set(
         [...new Set(folders.map(({ cwd }) => cwd))].filter((cwd) => stops.isFolderOwed(id, cwd)),
@@ -555,7 +568,9 @@ export const resumeHost = (
       // Missing now, or not known, and the host can make it: owed until a resume is done with it,
       // written before anything is put back there. Not written, nothing is put back: still owed.
       const owing = [...Map.groupBy(folders, ({ cwd }) => cwd)]
-        .filter(([cwd, sharing]) => remakeable(sharing) && (seen.get(cwd) !== true || verifyThere))
+        .filter(
+          ([cwd, sharing]) => remakeable(sharing) && (seen.get(cwd) !== true || verifyThere(cwd)),
+        )
         .map(([cwd]) => cwd);
       const written = yield* Effect.try(() => {
         for (const cwd of owing) stops.folderOwed(id, cwd, generation);
@@ -565,6 +580,9 @@ export const resumeHost = (
           hostId: id,
           message: "The machine's record couldn't be kept, so nothing was put back.",
         });
+      const follow = options.follow;
+      if (follow !== undefined)
+        yield* follow.folders(folders.map(({ thread, cwd }) => ({ threadId: thread.id, cwd })));
       /** A host that checks a folder a resume before didn't finish with before taking it as back. */
       const checksPending =
         connection.hello !== undefined && hostServes(connection.hello, "wip-restore-pending");
@@ -576,23 +594,49 @@ export const resumeHost = (
         Effect.gen(function* () {
           const made = madeFrom(thread, id, cwd);
           if (restore === undefined || made === undefined) {
-            // Nothing to hold it to: back only as a repository its git can read, and said to be
-            // unchecked. An empty or unreadable folder is no folder of the thread's.
+            // Nothing to hold it to: back as a folder its git can read, and said to be unchecked.
+            // A plain folder is a chat's as much as a repository is (git reads it, `repo: false`):
+            // one with anything in it is back. An empty one is as it was left on the disk its
+            // folders were last seen on, and no folder of the thread's on another. One git can't
+            // read is no folder of the thread's either.
             if (there === true) {
-              const local = (
-                connection.git as { local?: (cwd: string) => Effect.Effect<unknown, unknown> }
-              ).local;
-              const readable =
-                local === undefined ||
-                (yield* local(cwd).pipe(
-                  Effect.as(true),
+              const git = connection.git as {
+                local?: (cwd: string) => Effect.Effect<{ readonly repo?: boolean }, unknown>;
+              };
+              const repo =
+                git.local === undefined
+                  ? true
+                  : yield* git.local(cwd).pipe(
+                      Effect.map((state) => state.repo === true),
+                      Effect.orElseSucceed(() => undefined),
+                    );
+              if (repo === undefined)
+                return {
+                  kind: "refused",
+                  note: "Its folder is there, but Git can't read it.",
+                };
+              if (repo || !verifyThere(cwd)) return { kind: "there", unverified: true };
+              const files = (
+                connection as {
+                  files?: {
+                    list: (
+                      path: string,
+                      options: { readonly showHidden: boolean; readonly limit: number },
+                    ) => Effect.Effect<{ readonly entries: ReadonlyArray<unknown> }, unknown>;
+                  };
+                }
+              ).files;
+              const held =
+                files !== undefined &&
+                (yield* files.list(cwd, { showHidden: true, limit: 1 }).pipe(
+                  Effect.map((listing) => listing.entries.length > 0),
                   Effect.orElseSucceed(() => false),
                 ));
-              return readable
+              return held
                 ? { kind: "there", unverified: true }
                 : {
                     kind: "refused",
-                    note: "Its folder is there, but isn't a repository Git can read.",
+                    note: "Its folder is there on a new disk, but empty: put its files back there.",
                   };
             }
             if (there === false) return { kind: "missing" };
@@ -708,7 +752,8 @@ export const resumeHost = (
           // is taken as it is: there, and readable, is back, as when the user put it back.
           // By folder: a sibling folder that couldn't be put back puts this one through nothing.
           const again =
-            remakeable(sharing) && (owedBefore.has(cwd) || (verifyThere && seen.get(cwd) === true));
+            remakeable(sharing) &&
+            (owedBefore.has(cwd) || (verifyThere(cwd) && seen.get(cwd) === true));
           // The thread made from the clone asks first: its restore is the one that checks.
           const ordered = [...sharing].toSorted(
             (a, b) =>
@@ -717,6 +762,8 @@ export const resumeHost = (
           );
           const there = again && seen.get(cwd) === true ? undefined : seen.get(cwd);
           const outcomes: Array<FolderOutcome> = [];
+          if (follow !== undefined)
+            for (const folder of ordered) yield* follow.folder(folder.thread.id, cwd, "running");
           let back = false;
           for (const folder of ordered) {
             // There on the disk its folders were last seen on, and the host could make it: as it
@@ -737,11 +784,20 @@ export const resumeHost = (
                 ? ({ kind: "there" } as const)
                 : outcome;
             yield* done(folder.thread.id, cwd, settled);
+            if (follow !== undefined)
+              yield* follow.folder(
+                folder.thread.id,
+                cwd,
+                settled.kind,
+                "note" in settled ? settled.note : undefined,
+              );
           }
-          // Done with: put back or there for all who share it, or missing with nothing kept of it.
-          // One refused stays owed, and blocked, for the next resume.
-          // Nothing a connection that went said counts.
-          if (!lost() && (back || outcomes.every((outcome) => outcome.kind === "missing")))
+          // Done with once put back or there for all who share it, and confirmed so for the rest of
+          // this resume's generation. One refused, or missing with nothing kept of it, stays owed
+          // and blocked: the host may have made a plain clone at its path before finding nothing
+          // to put in it, which a later resume must not take as back for being there. Nothing a
+          // connection that went said counts.
+          if (!lost() && back)
             // Not written: still owed, and the next resume asks again.
             yield* Effect.try(() => stops.folderDone(id, cwd, generation)).pipe(Effect.ignore);
         });
@@ -851,7 +907,7 @@ export const resumeHost = (
   });
 
 /** How long a reopened session at rest is waited for before it counts as not opened. */
-export const REOPEN_WITHIN = Duration.minutes(2);
+export const REOPEN_WITHIN = Duration.millis(REOPEN_MS);
 
 /** The statuses of a thread whose session is open. */
 const OPEN: ReadonlySet<string> = new Set(["idle", "running", "needsApproval", "needsInput"]);

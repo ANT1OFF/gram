@@ -101,6 +101,15 @@ export const settingsHandlers = Effect.gen(function* () {
         yield* store.removePalette(paletteId);
       }),
 
+    "people.names": ({ ids }) =>
+      Effect.gen(function* () {
+        const you = yield* ActingPerson;
+        const names = yield* store.personNames(ids);
+        return {
+          ...(you === undefined ? {} : { you }),
+          people: [...names].map(([id, name]) => ({ id, name })),
+        };
+      }),
     "labels.list": () => store.listLabels,
     "labels.upsert": ({ label }) => store.upsertLabel(label).pipe(Effect.as(label)),
     "labels.remove": ({ labelId }) => store.removeLabel(labelId),

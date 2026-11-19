@@ -92,6 +92,7 @@ import {
   type StopRequest,
   STOPPING,
 } from "./stop.ts";
+import { HOST_DROP_MS, HOST_RESTORE_MS, HOST_STOP_MS } from "./budgets.ts";
 import type { HostSessionsService } from "./sessions.ts";
 import type { HostTerminalsService, TerminalRoot } from "./terminals.ts";
 import type {
@@ -1008,11 +1009,11 @@ export const HOST_STOP_UNANSWERED =
   "This machine's gram-host can't be readied to stop. It may be older than this Gram.";
 
 /** How long a host gets to commit and push its threads' work in progress before a stop. */
-const STOP_TIMEOUT = "10 minutes";
+const STOP_TIMEOUT = HOST_STOP_MS;
 /** How long a host gets to clone a repository again and put one thread's work back. */
-const RESTORE_TIMEOUT = "20 minutes";
+const RESTORE_TIMEOUT = HOST_RESTORE_MS;
 /** How long a host gets to delete one thread's kept work at its remote. */
-const DROP_TIMEOUT = "3 minutes";
+const DROP_TIMEOUT = HOST_DROP_MS;
 
 /** How long a host gets to say hello before it counts as not answering. */
 const HELLO_TIMEOUT = "5 seconds";

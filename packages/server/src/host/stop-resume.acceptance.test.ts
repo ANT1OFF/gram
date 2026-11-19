@@ -46,6 +46,7 @@ import { machineRestartText } from "../runtime/machine-restart.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { makeAdmission } from "./admission.ts";
+import { makeMachineJobs } from "./machine-jobs.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
@@ -236,6 +237,9 @@ const statusIs = (threadId: ThreadId, status: ThreadStatus) =>
     );
   });
 
+/** The server's jobs, for every call here. */
+const JOBS = Effect.runSync(Scope.provide(Scope.makeUnsafe())(makeMachineJobs()));
+
 /** One POST to a stop route from the local app, answered as the server answers it. */
 const post = (path: string, body: unknown) =>
   Effect.gen(function* () {
@@ -247,6 +251,7 @@ const post = (path: string, body: unknown) =>
         store,
         runtimes: yield* ThreadRuntimes,
         settings: store,
+        jobs: JOBS,
       },
       path,
     ).pipe(
@@ -376,14 +381,23 @@ describe.skipIf(!hasGit)("stopping a machine and resuming on a new host", () => 
         expect(prepared.body).toMatchObject({
           idle: true,
           working: [],
-          kept: [{ threadId: thread.id, cwd: volume.repo, ref: wipRef(thread.id), pushed: true }],
+          kept: [
+            {
+              threadId: thread.id,
+              cwd: volume.repo,
+              ref: wipRef(thread.id, volume.repo),
+              pushed: true,
+            },
+          ],
         });
         const keptThen = (prepared.body as { kept: ReadonlyArray<Record<string, unknown>> }).kept;
         expect(keptThen[0]).toMatchObject({ commit: expect.stringMatching(/^[0-9a-f]{40}$/) });
-        expect(run(volume.origin, "show", `${wipRef(thread.id)}:feature.ts`)).toBe(
+        expect(run(volume.origin, "show", `${wipRef(thread.id, volume.repo)}:feature.ts`)).toBe(
           "export const feature = 1;\n",
         );
-        expect(run(volume.origin, "show", `${wipRef(thread.id)}:tracked.txt`)).toBe("half done\n");
+        expect(run(volume.origin, "show", `${wipRef(thread.id, volume.repo)}:tracked.txt`)).toBe(
+          "half done\n",
+        );
         expect(run(volume.repo, "rev-parse", "HEAD").trim()).toBe(head);
         yield* statusIs(thread.id, "cold");
         yield* eventually(
@@ -603,7 +617,7 @@ describe.skipIf(!hasGit)("stopping a machine and resuming on a new host", () => 
           working: [thread.id],
           kept: [{ pushed: true }],
         });
-        expect(run(volume.origin, "show", `${wipRef(thread.id)}:feature.ts`)).toBe(
+        expect(run(volume.origin, "show", `${wipRef(thread.id, volume.repo)}:feature.ts`)).toBe(
           "export const feature = 1;\n",
         );
         yield* hostA.end;

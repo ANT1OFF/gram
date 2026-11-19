@@ -18,6 +18,34 @@ export const typedInput = (input: UserInput): UserInput => {
   return waitNote === undefined ? input : typed;
 };
 
+/**
+ * A client's input with none of what only the server sets: who wrote it (`author`), the thread
+ * that sent it (`origin`), a notice card (`notice`), the note on Waiting on you (`waitNote`) and
+ * the embedding host's conversation (`conversation`). Every RPC that takes a `UserInput` from a
+ * client passes it through here first, so a person can't pass their words off as Gram's, another
+ * thread's or an outside conversation's.
+ */
+export const clientInput = (input: UserInput): UserInput => {
+  const {
+    author: _author,
+    origin: _origin,
+    notice: _notice,
+    waitNote: _waitNote,
+    conversation: _conversation,
+    ...typed
+  } = input;
+  return typed;
+};
+
+/** What of `stored` only the server sets, kept on an edit of it whatever the client sent. */
+export const serverSetOf = (stored: UserInput): Partial<UserInput> => ({
+  ...(stored.author === undefined ? {} : { author: stored.author }),
+  ...(stored.origin === undefined ? {} : { origin: stored.origin }),
+  ...(stored.notice === undefined ? {} : { notice: stored.notice }),
+  ...(stored.waitNote === undefined ? {} : { waitNote: stored.waitNote }),
+  ...(stored.conversation === undefined ? {} : { conversation: stored.conversation }),
+});
+
 /** A queued item put back after a send that didn't go: its turn was closed, and isn't reused. */
 export const notInFlight = (item: QueuedInput): QueuedInput => {
   const { turnId: _, ...queued } = item;

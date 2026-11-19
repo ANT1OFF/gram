@@ -631,6 +631,12 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
           return at === undefined ? [] : [[worker.threadId, at] as const];
         }),
       ),
+      startedBy: new Map(
+        workers.flatMap((worker) => {
+          const person = threads.get(worker.threadId)?.startedBy;
+          return person === undefined ? [] : [[worker.threadId, person] as const];
+        }),
+      ),
       held: ledger.held,
       now: Date.now(),
     });

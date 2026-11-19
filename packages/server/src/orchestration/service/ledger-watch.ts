@@ -330,6 +330,11 @@ export const makeLedgerWatch = (
         models: new Map(found.workers.map((thread) => [thread.id, thread.model.model])),
         activity,
         spawnedAt: new Map(found.workers.map((thread) => [thread.id, thread.createdAt])),
+        startedBy: new Map(
+          found.workers.flatMap((thread) =>
+            thread.startedBy === undefined ? [] : [[thread.id, thread.startedBy] as const],
+          ),
+        ),
         held: heldOf(found.outbox),
         now: found.now,
       });

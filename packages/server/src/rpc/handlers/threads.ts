@@ -68,6 +68,7 @@ export const MACHINE_FOLDER_LOCAL_ONLY =
   "A chat in a folder on another machine starts only from the Gram app on this computer.";
 import { ThreadRuntimes, type ForkPlan } from "../../runtime/thread-runtimes.ts";
 import type { Handlers } from "./common.ts";
+import { clientInput } from "../../runtime/user-input.ts";
 import { taskCheckoutRequest } from "./task-checkout.ts";
 
 // Narrow the union before handing codecs to the receipt store, so each handler keeps its
@@ -267,7 +268,7 @@ export const threadHandlers = Effect.gen(function* () {
         model,
         mode,
         title,
-        input,
+        input: sentInput,
         resumeSessionId,
         codexHome,
         draftId,
@@ -277,6 +278,7 @@ export const threadHandlers = Effect.gen(function* () {
       call?: { readonly headers?: Readonly<Record<string, string | undefined>> },
     ) =>
       Effect.gen(function* () {
+        const input = sentInput === undefined ? undefined : clientInput(sentInput);
         // A folder on another machine is the local app's to pick, never a paired phone's: the
         // transport says which connection this is (`isLocalApp`), not anything the caller sent.
         if (checkout.kind === "machineFolder" && !isLocalApp(call?.headers)) {
@@ -345,17 +347,20 @@ export const threadHandlers = Effect.gen(function* () {
           : withDraftAttachments(attachmentsDir(config.dataDir), draftId, id, input, create);
       }),
     "thread.createFromProfile": ({ profile, threadId }) => profiles.start(profile, { threadId }),
-    "thread.send": ({ threadId, input, clientMessageId }) =>
-      store.messageReceipt(
+    "thread.send": ({ threadId, input: sent, clientMessageId }) => {
+      const input = clientInput(sent);
+      return store.messageReceipt(
         threadId,
         clientMessageId,
         ["send", input],
         sendRpc.successSchema,
         sendRpc.errorSchema,
         runtimes.send(threadId, input),
-      ),
-    "thread.steer": ({ threadId, input, clientMessageId, interrupt }) =>
-      store.messageReceipt(
+      );
+    },
+    "thread.steer": ({ threadId, input: sent, clientMessageId, interrupt }) => {
+      const input = clientInput(sent);
+      return store.messageReceipt(
         threadId,
         clientMessageId,
         interrupt === true ? ["interrupt", input] : ["steer", input],
@@ -367,7 +372,8 @@ export const threadHandlers = Effect.gen(function* () {
           input,
           interrupt === true ? { interrupt, pastCard: true } : { pastCard: true },
         ),
-      ),
+      );
+    },
     "thread.interrupt": ({ threadId }) => runtimes.interrupt(threadId, { endLimitWait: true }),
     "thread.resumeLimitWait": ({ threadId }) => runtimes.resumeLimitWait(threadId),
     "thread.cancelLimitWait": ({ threadId }) => runtimes.cancelLimitWait(threadId),
@@ -530,7 +536,7 @@ export const threadHandlers = Effect.gen(function* () {
     "thread.markUnread": ({ threadId, unread }) =>
       runtimes.updateThread(threadId, (t) => ({ ...t, unread })).pipe(Effect.asVoid),
     "thread.queue.edit": ({ threadId, itemId, input }) =>
-      runtimes.editQueued(threadId, itemId, input),
+      runtimes.editQueued(threadId, itemId, clientInput(input)),
     "thread.queue.reorder": ({ threadId, itemIds }) => runtimes.reorderQueue(threadId, itemIds),
     "thread.queue.remove": ({ threadId, itemId }) => runtimes.removeQueued(threadId, itemId),
     "thread.queue.steer": ({ threadId, itemId, clientMessageId }) =>

@@ -1,14 +1,16 @@
 // A thread's work in progress, kept off the machine it was made on: the working tree (tracked and
-// untracked, gitignore honoured) committed on top of HEAD into the hidden ref
-// `refs/gram/wip/<thread>` and pushed there to a remote. The branch, the user's index and the files
+// untracked, gitignore honoured) committed on top of HEAD into a hidden ref and pushed there to a
+// remote. Each folder of a thread has its own ref, `refs/gram/wip/<thread>--<folder>`
+// (`wipRef`), so two checkouts of one repository (its clone and a linked worktree, say) are each
+// kept, and each put back from its own; `refs/gram/wip/<thread>` is the thread's one ref from
+// before, still read back, and still what a thread moved to another server is bundled under. The branch, the user's index and the files
 // are never touched, as with a turn's checkpoints. A machine that stops, or is lost, then costs
 // caches, never work: the ref carries the branch's unpushed commits and what wasn't committed.
 //
 // On a machine that replaces it the ref is read back (`fetchWip`) and the work put where it was
 // (`restoreWip`, `restoreWipWorktree`): the branch at its tip, the uncommitted files as files. The
 // ref is deleted (`dropWip`) once the branch at the remote holds everything (`wipCaughtUp`), and
-// then only when deleting it loses nothing: the ref is one per thread at the remote, and another
-// folder of the thread, here or on another machine, may have written it since. A thread whose
+// then only when deleting it loses nothing: another machine may have written it since. A thread whose
 // branch held everything gets its folder back from that branch (`fetchBranchTip`).
 //
 // A push replaces the remote's ref only while it names what this repository last kept or put back
@@ -16,6 +18,7 @@
 // when it never had any: a fresh clone, a folder a resume skipped, or one written to before its
 // work came back can't replace the only copy of work it didn't come from.
 
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as Effect from "effect/Effect";
 import { headOid, readRef, repoTopOrFail, run } from "./checkpoint-git.ts";
@@ -42,21 +45,43 @@ const hostNamespace = (): string | undefined => {
   return value !== undefined && NAMESPACE.test(value) ? value : undefined;
 };
 
-export const wipRef = (threadId: string): string => {
+/** How a folder's ref names it: a hash of its path as Gram names the folder, never the path. */
+const FOLDER_KEY = /--[0-9a-f]{16}$/;
+const folderKey = (folder: string) =>
+  createHash("sha256").update(folder).digest("hex").slice(0, 16);
+
+/**
+ * Where this host keeps the thread's work of `folder`, its path as Gram names it:
+ * `refs/gram/wip/<thread>--<folder>`, under the host's namespace when it has one. Without
+ * `folder`, the thread's one ref from before each folder had its own: `refs/gram/wip/<thread>`.
+ */
+export const wipRef = (threadId: string, folder?: string): string => {
   const namespace = hostNamespace();
+  const name = folder === undefined ? threadId : `${threadId}--${folderKey(folder)}`;
   return namespace === undefined
-    ? `${WIP_REF_PREFIX}/${threadId}`
-    : `${WIP_REF_PREFIX}/${namespace}/${threadId}`;
+    ? `${WIP_REF_PREFIX}/${name}`
+    : `${WIP_REF_PREFIX}/${namespace}/${name}`;
 };
 
-/** Whether `ref` is where a host keeps `threadId`'s work: with no namespace, or under one. */
+/** `ref`'s last part without a folder's key: what names the thread. */
+const withoutFolder = (ref: string) => ref.replace(FOLDER_KEY, "");
+
+/**
+ * Whether `ref` is where a host keeps `threadId`'s work, of one folder or the thread's one ref from
+ * before: with no namespace, or under one.
+ */
 export const isWipRefOf = (ref: string, threadId: string): boolean => {
-  if (ref === `${WIP_REF_PREFIX}/${threadId}`) return true;
+  const bare = withoutFolder(ref);
+  if (bare === `${WIP_REF_PREFIX}/${threadId}`) return true;
   const start = `${WIP_REF_PREFIX}/`;
   const end = `/${threadId}`;
-  if (!ref.startsWith(start) || !ref.endsWith(end)) return false;
-  return NAMESPACE.test(ref.slice(start.length, ref.length - end.length));
+  if (!bare.startsWith(start) || !bare.endsWith(end)) return false;
+  return NAMESPACE.test(bare.slice(start.length, bare.length - end.length));
 };
+
+/** Whether `ref` is this host's own ref of the thread, a folder's or the thread's from before. */
+const isOwnWipRef = (ref: string, threadId: string) =>
+  ref === wipRef(threadId) || (FOLDER_KEY.test(ref) && withoutFolder(ref) === wipRef(threadId));
 
 /**
  * Where a repository notes the commit the remote held under `ref` when it last kept or put back
@@ -116,15 +141,16 @@ const leaseOf = (top: string, ref: string, kept: string | undefined) =>
   });
 
 /**
- * Points `refs/gram/wip/<thread>` at the working tree as it is: HEAD when nothing is uncommitted,
- * otherwise a commit of the tree on top of HEAD. A tree already kept under the ref on the same
- * HEAD keeps its commit, so a repeat pushes nothing new.
+ * Points the thread's ref of `folder` (`wipRef`) at the working tree as it is: HEAD when nothing is
+ * uncommitted, otherwise a commit of the tree on top of HEAD. A tree already kept under the ref on
+ * the same HEAD keeps its commit, so a repeat pushes nothing new. Without `folder`, the thread's
+ * one ref (`refs/gram/wip/<thread>`), as a thread moved to another server is bundled under.
  */
-export const snapshotWip = (repo: string, threadId: string) =>
+export const snapshotWip = (repo: string, threadId: string, folder?: string) =>
   Effect.gen(function* () {
     if (!isValidCheckpointId(threadId)) return yield* fail("invalid thread id");
     const top = yield* repoTopOrFail(repo);
-    const ref = wipRef(threadId);
+    const ref = wipRef(threadId, folder);
     const tree = yield* writeWorktreeTree(top);
     const head = yield* headOid(top);
     const treeOf = (commit: string) =>
@@ -182,12 +208,13 @@ export const WIP_PUSH_PROTOCOLS = "https:ssh";
 
 /**
  * The thread a work-in-progress ref is for, when `ref` is one this module wrote:
- * `refs/gram/wip/<thread>`, or `refs/gram/wip/<namespace>/<thread>` under a host's namespace.
+ * `refs/gram/wip/<thread>`, or `refs/gram/wip/<namespace>/<thread>` under a host's namespace, each
+ * maybe with a folder's key (`--<folder>`).
  */
 const threadOfWipRef = (ref: string): string | undefined => {
   const prefix = `${WIP_REF_PREFIX}/`;
   if (ref.slice(0, prefix.length) !== prefix) return undefined;
-  const rest = ref.slice(prefix.length).split("/");
+  const rest = withoutFolder(ref).slice(prefix.length).split("/");
   const id = rest.at(-1) ?? "";
   if (rest.length > 2 || !isValidCheckpointId(id)) return undefined;
   return rest.length === 1 || isWipRefOf(ref, id) ? id : undefined;
@@ -294,8 +321,9 @@ const remoteRef = (top: string, remote: string, ref: string, protocols: string) 
  * it is fetched.
  *
  * `from` reads the thread's work from another host's ref of it (`refs/gram/wip/<name>/<thread>`),
- * as one written on another Gram's machine is when the thread moved here; it must be a ref of that
- * thread (`isWipRefOf`). Unset, the ref is this host's own.
+ * as one written on another Gram's machine is when the thread moved here, or from this host's ref
+ * of it from before each folder had its own; it must be a ref of that thread (`isWipRefOf`).
+ * Unset, the ref is this host's own of `folder` (`wipRef`).
  */
 export const fetchWip = (
   repo: string,
@@ -304,6 +332,7 @@ export const fetchWip = (
   protocols: string = WIP_PUSH_PROTOCOLS,
   expected?: string,
   from?: string,
+  folder?: string,
 ) =>
   Effect.gen(function* () {
     if (!isValidCheckpointId(threadId)) return yield* fail("invalid thread id");
@@ -311,7 +340,7 @@ export const fetchWip = (
     if (expected !== undefined && !OID.test(expected)) return yield* fail("invalid commit");
     if (from !== undefined && !isWipRefOf(from, threadId)) return yield* fail("invalid ref");
     const top = yield* repoTopOrFail(repo);
-    const ref = from ?? wipRef(threadId);
+    const ref = from ?? wipRef(threadId, folder);
     const theirs = yield* remoteRef(top, remote, ref, protocols);
     if (theirs === undefined) return undefined;
     const unexpected = `${ref} at the remote isn't the commit the stop kept, so nothing of it was put back`;
@@ -341,7 +370,7 @@ export const fetchWip = (
       return yield* fail(unexpected);
     }
     // Not this folder's lease until its work is put back (`restoreWip`).
-    if (ref === wipRef(threadId))
+    if (isOwnWipRef(ref, threadId))
       yield* run(top, ["update-ref", "--no-deref", fetchedRef(ref), kept.oid]);
     const [committer, parents, subject] = (yield* run(top, [
       "log",
@@ -434,6 +463,23 @@ export interface RestoreOptions {
 }
 
 /**
+ * Fails over a sparse checkout, which writes only the paths its patterns take in: kept files
+ * outside them would be left out, and the folder taken as back without them. Asked before anything
+ * is changed, by every step of putting work back.
+ */
+const refuseSparse = (top: string) =>
+  Effect.gen(function* () {
+    const sparse = yield* git(top, ["config", "--type=bool", "--get", "core.sparseCheckout"]).pipe(
+      Effect.map((out) => out.status === 0 && out.stdout.trim() === "true"),
+      Effect.mapError((e) => new CheckpointError({ message: e.message })),
+    );
+    if (sparse)
+      return yield* fail(
+        `${top} is a sparse checkout, so not every kept file would be written: nothing was put back`,
+      );
+  });
+
+/**
  * Puts kept work back in the working tree at `repo`, which must hold nothing of its own (a fresh
  * clone, a worktree just added): `branch` is set to the tip the work was on and checked out (a
  * detached HEAD there without one), and the files that weren't committed are written as files,
@@ -458,6 +504,38 @@ export const restoreWip = (
       return yield* fail("the work was kept before the repository had a commit");
     if (branch !== undefined && !(yield* isBranchName(top, branch)))
       return yield* fail("invalid branch");
+    yield* refuseSparse(top);
+    // The end of every restore: the index back at HEAD, the kept files staying as files, and the
+    // remote's ref, when it came from this host's own ref of the thread, the folder's lease. Over
+    // a folder that already holds the work (`again`), only what a restore cut off left undone:
+    // the index only while it is exactly the kept files a restore wrote there, never what was
+    // staged since, and a lease only where the folder has none, never one it moved on to.
+    const finish = (at: string, again: boolean) =>
+      Effect.gen(function* () {
+        const index = again
+          ? yield* git(top, ["write-tree"]).pipe(
+              Effect.map((out) => (out.status === 0 ? out.stdout.trim() : undefined)),
+              Effect.mapError((e) => new CheckpointError({ message: e.message })),
+            )
+          : undefined;
+        const left =
+          !again ||
+          (index !== undefined &&
+            index ===
+              (yield* run(top, [
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                `${kept.commit}^{tree}`,
+              ])).stdout.trim());
+        if (kept.uncommitted && left) yield* run(top, [...QUIET, "reset", "--quiet", at, "--"]);
+        const thread = threadOfWipRef(kept.ref);
+        if (thread !== undefined && isOwnWipRef(kept.ref, thread)) {
+          if (!again || (yield* readRef(top, leaseRef(kept.ref))).kind !== "commit")
+            yield* run(top, ["update-ref", "--no-deref", leaseRef(kept.ref), kept.commit]);
+          yield* run(top, ["update-ref", "--no-deref", "-d", fetchedRef(kept.ref)]);
+        }
+      });
     let release: string | undefined;
     if (branch !== undefined) {
       // Never a branch another worktree is on: moving it would change that worktree under it.
@@ -478,8 +556,9 @@ export const restoreWip = (
       }
     }
     // Already holding the kept uncommitted work, as a restore before this one left it, its answer
-    // lost: done, rather than refused below for changes that are the work itself. HEAD at the
-    // branch's tip as kept, or past it, on that branch, and the files exactly as the work was
+    // lost or its host gone part way: done, rather than refused below for changes that are the
+    // work itself, once what such a restore may not have reached is done too (`finish`). HEAD at
+    // the branch's tip as kept, or past it, on that branch, and the files exactly as the work was
     // kept. A clean tree goes the usual way, which puts the same back.
     const current = kept.uncommitted ? yield* headOid(top) : undefined;
     const on =
@@ -501,8 +580,10 @@ export const restoreWip = (
           "--quiet",
           `${kept.commit}^{tree}`,
         ])).stdout.trim()
-    )
+    ) {
+      yield* finish(current, true);
       return { ahead: current !== head } satisfies WipRestored;
+    }
     const status = yield* run(top, [...STRICT_STATUS_ARGS]);
     if (status.stdout.trim() !== "")
       return yield* fail(`${top} has changes of its own, so nothing was put back over them`);
@@ -531,17 +612,9 @@ export const restoreWip = (
       ...(branch === undefined ? ["--detach", head] : ahead ? [branch] : ["-B", branch, head]),
       "--",
     ]);
-    if (kept.uncommitted) {
-      // The files as they were, then the index back at the branch: uncommitted, as they were.
-      yield* run(top, [...QUIET, "read-tree", "--reset", "-u", kept.commit]);
-      yield* run(top, [...QUIET, "reset", "--quiet", head, "--"]);
-    }
-    // The folder came from this host's own ref of the thread: the remote's ref is its lease now.
-    const thread = threadOfWipRef(kept.ref);
-    if (thread !== undefined && kept.ref === wipRef(thread)) {
-      yield* run(top, ["update-ref", "--no-deref", leaseRef(kept.ref), kept.commit]);
-      yield* run(top, ["update-ref", "--no-deref", "-d", fetchedRef(kept.ref)]);
-    }
+    // The files as they were, then the index back at the branch: uncommitted, as they were.
+    if (kept.uncommitted) yield* run(top, [...QUIET, "read-tree", "--reset", "-u", kept.commit]);
+    yield* finish(head, false);
     return { ahead } satisfies WipRestored;
   });
 
@@ -568,6 +641,8 @@ export const setAsideFor = (
     if (branch !== undefined && !(yield* isBranchName(top, branch)))
       return yield* fail("invalid branch");
     if (left !== undefined && !OID.test(left)) return yield* fail("invalid commit");
+    // Refused here, where `restoreWip` would refuse it after this had moved HEAD and the branch.
+    yield* refuseSparse(top);
     const head = yield* headOid(top);
     const tree = yield* writeWorktreeTree(top);
     const treeOf = (commit: string) =>
@@ -713,14 +788,15 @@ export interface WipHeld {
 }
 
 /**
- * Deletes the thread's work-in-progress ref at `remote` and here. A remote that has no such ref is
- * as wanted. Only that ref is deleted, and only while it still names the commit it was seen at.
+ * Deletes the thread's work-in-progress ref of `folder` (`wipRef`) at `remote` and here. A remote
+ * that has no such ref is as wanted. Only that ref is deleted, and only while it still names the
+ * commit it was seen at.
  *
- * The ref is one per thread at the remote, so another folder of the thread (another clone here,
- * another machine) may have written it. Given `held`, the remote's ref goes only when deleting it
- * loses nothing: it names `held.by`, one of `held.also`, or a commit here that `held.by` contains.
- * Anything else is `left`: it may be work only that ref holds. Without `held` it is deleted
- * whatever it names: for a thread that is gone for good.
+ * Another machine (or, for the thread's one ref from before, another folder of the thread) may
+ * have written it. Given `held`, the remote's ref goes only when deleting it loses nothing: it
+ * names `held.by`, one of `held.also`, or a commit here that `held.by` contains. Anything else is
+ * `left`: it may be work only that ref holds. Without `held` it is deleted whatever it names: for
+ * a thread that is gone for good.
  */
 export const dropWip = (
   repo: string,
@@ -728,12 +804,13 @@ export const dropWip = (
   remote = "origin",
   protocols: string = WIP_PUSH_PROTOCOLS,
   held?: WipHeld,
+  folder?: string,
 ) =>
   Effect.gen(function* () {
     if (!isValidCheckpointId(threadId)) return yield* fail("invalid thread id");
     if (!isPushRemote(remote)) return yield* fail("invalid remote");
     const top = yield* repoTopOrFail(repo);
-    const ref = wipRef(threadId);
+    const ref = wipRef(threadId, folder);
     const theirs = yield* remoteRef(top, remote, ref, protocols);
     let dropped: WipDropped = "absent";
     if (theirs !== undefined) {
@@ -773,12 +850,15 @@ export const dropWip = (
     return dropped;
   });
 
-/** Whether the repository at `repo` holds the thread's work-in-progress ref: read here, no remote asked. */
-export const hasWip = (repo: string, threadId: string) =>
+/**
+ * Whether the repository at `repo` holds the thread's work-in-progress ref of `folder`, or its one
+ * ref from before without: read here, no remote asked.
+ */
+export const hasWip = (repo: string, threadId: string, folder?: string) =>
   Effect.gen(function* () {
     if (!isValidCheckpointId(threadId)) return false;
     const top = yield* repoTopOrFail(repo);
-    return (yield* readRef(top, wipRef(threadId))).kind === "commit";
+    return (yield* readRef(top, wipRef(threadId, folder))).kind === "commit";
   });
 
 /** What a kept commit holds against the branch's base (`wipChanges`). */

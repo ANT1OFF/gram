@@ -25,6 +25,7 @@ import {
   type RailWorker,
 } from "@/orchestration/rail-model";
 import { StageChip } from "@/orchestration/stage-stepper";
+import { OwnerMark } from "./board-people";
 import { StatusDot } from "@/orchestration/status-dot";
 import { useOrchestratorLedger } from "@/orchestration/use-orchestration";
 import { useFeatureSummary } from "@/orchestration/use-feature-cards";
@@ -396,6 +397,8 @@ function SubTask({
  */
 export function GridLine({
   row,
+  owners,
+  ownerOf,
   stage,
   needsMark,
   repos,
@@ -404,6 +407,10 @@ export function GridLine({
   place,
 }: {
   row: RailRow;
+  /** Whose work the line is, in words, on a Board more than one person's work is on. */
+  owners?: string | undefined;
+  /** Each worker's person's name, where the line's workers work for different people. */
+  ownerOf?: ((threadId: ThreadId) => string | undefined) | undefined;
   stage: FeatureStage | undefined;
   needsMark: boolean;
   repos: boolean;
@@ -476,6 +483,7 @@ export function GridLine({
             />
           </span>
           {(stage !== undefined ||
+            owners !== undefined ||
             summary !== undefined ||
             repos ||
             onlyHost !== undefined ||
@@ -487,6 +495,7 @@ export function GridLine({
                 delay={HINT_MS}
                 testId="rail-machine"
               />
+              {owners !== undefined && <OwnerMark text={owners} testId="rail-owners" />}
               {stage !== undefined && <StageChip stage={stage} testId="rail-stage-chip" />}
               {repos && (
                 <span data-testid="rail-repos" className="truncate text-muted-foreground">
@@ -540,7 +549,12 @@ export function GridLine({
           {workers.map(({ worker, station }) => (
             <li key={worker.threadId}>
               <GridRow sub>
-                <SubTask threadId={worker.threadId}>{worker.title}</SubTask>
+                <SubTask threadId={worker.threadId}>
+                  {worker.title}
+                  {ownerOf?.(worker.threadId) !== undefined && (
+                    <span className="text-muted-foreground">{` · ${ownerOf(worker.threadId)}`}</span>
+                  )}
+                </SubTask>
                 <WorkerCells
                   workspaceId={row.card.workspaceId}
                   worker={worker}
