@@ -1,6 +1,9 @@
 name: Cancel closed pull request runs
 
-# A merged or closed pull request's remaining checks are dead work.
+# A merged or closed pull request's remaining checks are dead work: cancel those of its head
+# commit. Only that commit's: a branch name is reused once a pull request merges, and a new pull
+# request on the same branch has runs of its own that must go on. Its older commits need nothing
+# here, since each workflow's concurrency already cancelled their runs.
 on:
   pull_request:
     types: [closed]
@@ -20,12 +23,15 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       BRANCH: ${{ github.event.pull_request.head.ref }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       SELF: ${{ github.run_id }}
     steps:
       - run: |
+          # A full commit hash, so it is safe inside the jq filter below.
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "not a commit: $HEAD_SHA"; exit 1; }
           for status in queued in_progress waiting pending requested; do
             gh api -X GET "repos/$GH_REPO/actions/runs" -f branch="$BRANCH" -f event=pull_request \
-              -f status="$status" --paginate --jq '.workflow_runs[].id'
+              -f status="$status" --paginate --jq ".workflow_runs[] | select(.head_sha == \"$HEAD_SHA\") | .id"
           done | sort -u | while read -r id; do
             [ "$id" = "$SELF" ] && continue
             echo "Cancelling run $id"
