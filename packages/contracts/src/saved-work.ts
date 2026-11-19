@@ -54,6 +54,13 @@ export const SavedWork = Schema.Struct({
   /** The save held edits that weren't committed. */
   uncommitted: Schema.Boolean,
   base: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+  /**
+   * Epoch ms of the last try to save, when that try failed: the work since `at` isn't saved. Absent
+   * once a save reaches the remote again.
+   */
+  lastAttemptAt: Schema.optionalKey(Schema.Number),
+  /** Why that try failed, in the machine's words or this Gram's. */
+  lastFailure: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
 });
 export type SavedWork = typeof SavedWork.Type;
 

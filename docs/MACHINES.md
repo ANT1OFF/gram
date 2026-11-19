@@ -506,8 +506,12 @@ the local app, as the other `/machines/*` routes are.
   replace the first's work.
 - A machine that is lost (its node gone, its process killed) gets no stop. So, with the hosted
   features on, Gram keeps a thread's work on a joined machine under the same hidden ref while it
-  works: five seconds after each of its turns ends, and every five minutes while a turn runs.
-  Nothing is held and nothing waits for the turn. A host started on another disk then gets the
+  works: five seconds after each of its turns ends, and while a turn runs whenever the last keep
+  is five minutes old. A keep asked for at a turn's end still happens when the next turn starts
+  first, a keep under way is never cut off, and at most four threads push at once. Nothing is
+  held and nothing waits for the turn. Each keep logs one line naming the thread: pushed, caught
+  up, skipped and why (hosted features off, parked, readied to stop, a host that can't keep, no
+  folder made from a clone), or not kept and why. A host started on another disk then gets the
   folder back from that ref when it is resumed, as after a stop, and loses at most the last few
   minutes. Only folders Gram made from a clone are kept, since only those can be made again. A
   host older than this keeps nothing until it is readied to stop.
@@ -523,7 +527,10 @@ the local app, as the other `/machines/*` routes are.
   the task's card and the worker's rows say "machine lost 08:14 · 6 files saved". View diff reads
   the diff back (`thread.savedDiff`) while the machine is away. The record outlives a restart of
   Gram; the diff doesn't, and the card then lists the files alone. A host older than this sends
-  no `saved`, and the card says the folder comes back as last saved, as before.
+  no `saved`, and the card says the folder comes back as last saved, as before. A keep that
+  fails after a save marks the record (`lastAttemptAt`, `lastFailure`), and the task's card says
+  "Last save 08:20 failed: …" until a keep reaches the remote again, so an old save never reads
+  as current.
 - `POST /machines/stop/cancel` takes a stop back: the host takes new work again.
 - `POST /machines/stop/status` lists each joined machine: `online`, `stoppedAt` when it was
   readied and hasn't dialled in since, `wanted` when a thread waits on it now, and `resuming`
