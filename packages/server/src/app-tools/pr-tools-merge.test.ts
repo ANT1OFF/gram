@@ -22,6 +22,7 @@ import {
   waitReal,
   withServer,
 } from "../orchestration/test-harness.ts";
+import { cloneIdentityOf } from "../host/repos.ts";
 import { AppToolRegistry } from "./registry.ts";
 import { ready, armedWorkerBadge, approvedRecovery, otherRecoveryRoot } from "./pr-tools-kit.ts";
 
@@ -472,7 +473,14 @@ describe("merge_when_ready", () => {
                 yield* runtimes.updateThread(worker.thread.id, (t) => ({
                   ...t,
                   extraCheckouts: [
-                    { kind: "worktree", path, repoRoot: world.repo, branch: "feat/extra-start" },
+                    {
+                      kind: "worktree",
+                      path,
+                      repoRoot: world.repo,
+                      branch: "feat/extra-start",
+                      // As Gram records it when it registers a worktree for the worker.
+                      cloneIdentity: cloneIdentityOf("https://github.com/acme/app.git")!,
+                    },
                   ],
                 }));
               }

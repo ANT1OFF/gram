@@ -145,3 +145,107 @@ describe.skipIf(!hasGit)("other threads' repository claims", () => {
     );
   }
 });
+
+/** Real git, and `gh pr view` answering `pr` with `branch` as its head, from the repo itself. */
+const ghAnswering = (pr: { readonly repo: string; readonly number: number }, branch: string) =>
+  ({
+    run: (bin, args, options) =>
+      bin === "gh"
+        ? Effect.succeed({
+            status: 0,
+            stderr: "",
+            truncated: false,
+            stdout: JSON.stringify({
+              number: pr.number,
+              url: `https://github.com/${pr.repo}/pull/${pr.number}`,
+              headRefName: branch,
+              headRefOid: "h1",
+              state: "OPEN",
+              isCrossRepository: false,
+            }),
+          })
+        : Effect.sync(() => {
+            const out = spawnSync(bin, args, {
+              cwd: options.cwd,
+              encoding: "utf8",
+              timeout: 2_000,
+              env: { ...process.env, ...options.env },
+            });
+            return {
+              status: out.status ?? -1,
+              stdout: out.stdout ?? "",
+              stderr: out.stderr ?? "",
+              truncated: false,
+            };
+          }),
+  }) satisfies Proc["Service"];
+
+describe.skipIf(!hasGit)("the origin a worker's ownership goes by", () => {
+  it.effect("is the one Gram recorded, never the one the worker rewrites its config to", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const { session } = yield* openOrchestrator(world);
+          const worker = yield* spawn(session, { feature: "forged" });
+          yield* completeTurn(worker.session);
+          const thread = yield* store.getThread(worker.thread.id);
+          const branch = thread.checkout.branch!;
+          // What a worker can do from its own worktree: point the repository's origin (one
+          // config, shared with the main checkout) at another repository, and check out a branch
+          // named as that repository's PR head.
+          run(
+            thread.checkout.path,
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/elsewhere/other.git",
+          );
+          const outside = { repo: "elsewhere/other", number: 7 };
+          expect(
+            yield* workerPrOwnership(thread, outside.repo, outside.number).pipe(
+              Effect.provideService(Proc, ghAnswering(outside, branch)),
+            ),
+          ).toBe(OWNERSHIP_BLOCKERS.repoNotInWorkspace);
+          // Its own PR stays its own: the recorded origin still names it.
+          const own = { repo: "acme/app", number: 12 };
+          expect(
+            yield* workerPrOwnership(thread, own.repo, own.number).pipe(
+              Effect.provideService(Proc, ghAnswering(own, branch)),
+            ),
+          ).toEqual({ path: thread.checkout.path, branch });
+        }),
+      );
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("owns nothing in a worktree made before it was recorded", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          const { session } = yield* openOrchestrator(world);
+          const worker = yield* spawn(session, { feature: "legacy" });
+          yield* completeTurn(worker.session);
+          run(world.repo, "remote", "add", "origin", "https://github.com/acme/app.git");
+          yield* runtimes.updateThread(worker.thread.id, (t) => {
+            const { cloneIdentity: _recorded, ...checkout } = t.checkout;
+            return { ...t, checkout };
+          });
+          const thread = yield* store.getThread(worker.thread.id);
+          const own = { repo: "acme/app", number: 12 };
+          expect(
+            yield* workerPrOwnership(thread, own.repo, own.number).pipe(
+              Effect.provideService(Proc, ghAnswering(own, thread.checkout.branch!)),
+            ),
+          ).toBe(OWNERSHIP_BLOCKERS.originUnrecorded);
+        }),
+      );
+    }).pipe(Effect.scoped),
+  );
+});
