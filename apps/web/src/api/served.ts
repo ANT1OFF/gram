@@ -72,9 +72,6 @@ export function servedAllBut(lacking: readonly string[] = []): ServedRpcs {
   return served;
 }
 
-/** The hover text of a control greyed because the server lacks its RPC. */
-export const OLDER_SERVER = "The server runs an older Gram, which can't do this yet.";
-
 export const HANDSHAKE_TAG = "app.handshake" satisfies GramRpcTag;
 
 /** What Effect RPC's server answers a request whose tag it has no RPC for: a defect, at once. */

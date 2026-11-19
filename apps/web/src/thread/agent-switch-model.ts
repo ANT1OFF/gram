@@ -23,7 +23,7 @@ import {
 } from "@gram/contracts";
 
 import { AGENT_LABEL } from "@/agents/agent-label";
-import { OLDER_SERVER } from "@/api/served";
+import { OLDER_SERVER } from "@/api/use-serves";
 import { isOlderVersion } from "@/launch-checks/issues";
 import { formatClockTime } from "@/lib/time";
 

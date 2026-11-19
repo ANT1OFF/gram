@@ -3,7 +3,11 @@ import { useSyncExternalStore } from "react";
 import { useApi } from "./context";
 import type { GramRpcTag } from "./served";
 
-export { OLDER_SERVER } from "./served";
+/**
+ * The hover text of a control greyed because the server lacks its RPC. Here, not in `served.ts`,
+ * which the first paint must not load.
+ */
+export const OLDER_SERVER = "The server runs an older Gram, which can't do this yet.";
 
 /**
  * Whether the server serves `tag`: false for one a server older than this build lacks, so the
