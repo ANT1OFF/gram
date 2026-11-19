@@ -158,6 +158,7 @@ export interface HostedToken {
 
 export interface HostedTokens extends HostedToken {
   readonly refreshToken?: string;
+  readonly grantedScopes?: readonly string[];
 }
 
 interface TokenCallOptions {
@@ -233,6 +234,7 @@ const tokenCall = async (
         expiresAt: options.now() + lasts,
         subject: token.sub,
         ...(token.refresh_token === undefined ? {} : { refreshToken: token.refresh_token }),
+        ...(token.scope === undefined ? {} : { grantedScopes: token.scope.trim().split(/ +/) }),
       },
     };
   }
@@ -312,7 +314,7 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
       finish(failed("The sign-in didn't finish."));
       return;
     }
-    page(response, 200, "Signed in. You can close this window and go back to Gram.");
+    page(response, 200, "The browser step finished. Return to Gram to check the connection.");
     finish({ code });
   };
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
