@@ -31,8 +31,8 @@ and switcher. The other directions (A, B, C) are not built.
 | `title=` hints                  | `components/hint.tsx`                                                |
 | steer composer and its note     | `ThreadView` `beside` with `takeoverNoted`                           |
 | hand-over                       | `overview-sidebar.tsx` (`WorkspaceRow`, `handedOverItems`)           |
-| plan steps (new)                | `PlanSteps` in `worker-row.tsx`                                      |
-| doc chips (new)                 | `WideFoot` in `worker-row.tsx`                                       |
+| plan steps (new)                | `PlanSteps` in `worker-row-wide.tsx`                                 |
+| doc chips (new)                 | `WideFoot` in `worker-row-wide.tsx`                                  |
 
 ## Deviations allowed
 
