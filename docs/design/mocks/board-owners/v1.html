@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Whose work each Board row is · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <script type="application/json" id="mock-tweaks">
+      {
+        "you": {
+          "label": "Your own rows say",
+          "type": "enum",
+          "options": ["you", "name"],
+          "default": "you"
+        }
+      }
+    </script>
+    <style>
+      .bd {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        flex: 1;
+        background: var(--surface-2);
+      }
+      .bd-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .bd-head h2 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .cols {
+        display: grid;
+        grid-template-columns: minmax(10rem, 2fr) 8rem minmax(12rem, 3fr) minmax(7rem, 1fr);
+        column-gap: 24px;
+      }
+      .heads {
+        padding: 6px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .rows {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .rows > li {
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .task {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+      .task .name {
+        font-weight: 500;
+      }
+      .l2 {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 2px 8px;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .owner {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .owner .icon {
+        width: 12px;
+        height: 12px;
+      }
+      .stage {
+        display: flex;
+        gap: 2px;
+        align-items: center;
+        height: 20px;
+      }
+      .stage i {
+        flex: 1;
+        height: 6px;
+        background: var(--border-strong);
+      }
+      .stage i.done {
+        background: var(--fg-muted);
+      }
+      .stage i.cur {
+        height: 10px;
+        border-radius: 999px;
+        background: var(--accent);
+      }
+      .stage i:first-child {
+        border-radius: 999px 0 0 999px;
+      }
+      .stage i:last-child {
+        border-radius: 0 999px 999px 0;
+      }
+      .station {
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .now {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        font-size: 13px;
+      }
+      .ring {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: none;
+        box-shadow: inset 0 0 0 1.5px var(--status-working);
+      }
+      .dot.run {
+        background: var(--status-working);
+      }
+      .pr {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--fg-muted);
+        font-size: 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        padding: 0 6px;
+        width: fit-content;
+        height: fit-content;
+        align-self: start;
+      }
+      .pr .icon {
+        color: var(--success-text);
+        width: 12px;
+        height: 12px;
+      }
+      .sub {
+        margin-top: 6px;
+        padding-left: 12px;
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .sub .cols {
+        padding: 2px 0;
+      }
+      html[data-tweak-you="name"] .me-you,
+      html[data-tweak-you="you"] .me-name {
+        display: none;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        The Board of a workspace two people work in. Look at the second line under each task: it
+        names whose the work is, and nothing else on the row changes. "One person" is today's Board,
+        unchanged, because a Board that is all one person's work says nothing about it.
+      </p>
+
+      <section class="board" data-name="Board" data-size="1280x720" data-states="two,one">
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>gram · Board</span>
+            </div>
+            <div class="app-body">
+              <nav class="sidebar" aria-label="Primary">
+                <div class="section-label">Workspaces</div>
+                <a class="nav-item" href="#" aria-current="page"
+                  ><i data-icon="orch"></i>gram<span class="count">4</span></a
+                >
+                <a class="nav-item" href="#"><i data-icon="orch"></i>web</a>
+              </nav>
+              <div class="bd">
+                <header class="bd-head">
+                  <i data-icon="cols"></i>
+                  <h2>Board</h2>
+                  <span class="grow"></span>
+                  <button class="btn sm" type="button">Show finished (2)</button>
+                </header>
+                <div class="heads cols" aria-hidden="true">
+                  <span>Task</span><span>Stage</span><span>Now</span><span>Pull request</span>
+                </div>
+
+                <ul class="rows" data-when="two">
+                  <li>
+                    <div class="cols">
+                      <div class="task">
+                        <span class="name">Resume a worker a lost machine cut off</span>
+                        <span class="l2">
+                          <span class="owner"
+                            ><i data-icon="user"></i><span class="me-you">You</span
+                            ><span class="me-name">Magnus</span></span
+                          >
+                          <span>gram · runner</span>
+                        </span>
+                      </div>
+                      <div>
+                        <div class="stage" aria-label="Checks, step 3 of 5">
+                          <i class="done"></i><i class="done"></i><i class="cur"></i><i></i><i></i>
+                        </div>
+                        <span class="station">Checks</span>
+                      </div>
+                      <div class="now"><span class="ring"></span>Waiting · checks</div>
+                      <span class="pr"><i data-icon="pr"></i>#795</span>
+                    </div>
+                  </li>
+                  <li>
+                    <div class="cols">
+                      <div class="task">
+                        <span class="name">Owners on features and stages</span>
+                        <span class="l2">
+                          <span class="owner"><i data-icon="user"></i>Grace</span>
+                          <span>gram</span>
+                        </span>
+                      </div>
+                      <div>
+                        <div class="stage" aria-label="Working, step 2 of 5">
+                          <i class="done"></i><i class="cur"></i><i></i><i></i><i></i>
+                        </div>
+                        <span class="station">Working</span>
+                      </div>
+                      <div class="now"><span class="dot run"></span>Running · tests</div>
+                      <span></span>
+                    </div>
+                  </li>
+                  <li>
+                    <div class="cols">
+                      <div class="task">
+                        <span class="name">Phone layout for the Inbox</span>
+                        <span class="l2">
+                          <span class="owner"
+                            ><i data-icon="user"></i>Grace,
+                            <span class="me-you">you</span><span class="me-name">Magnus</span></span
+                          >
+                        </span>
+                      </div>
+                      <div>
+                        <div class="stage" aria-label="Working, step 2 of 5">
+                          <i class="done"></i><i class="cur"></i><i></i><i></i><i></i>
+                        </div>
+                        <span class="station">Working</span>
+                      </div>
+                      <div class="now muted">2 workers</div>
+                      <span></span>
+                    </div>
+                    <div class="sub">
+                      <div class="cols">
+                        <span>Inbox list at 390 px</span>
+                        <span></span>
+                        <div class="now"><span class="dot run"></span>Running · editing</div>
+                        <span></span>
+                      </div>
+                      <div class="cols">
+                        <span
+                          >Ask sheet on a phone ·
+                          <span class="owner"
+                            ><i data-icon="user"></i><span class="me-you">You</span
+                            ><span class="me-name">Magnus</span></span
+                          ></span
+                        >
+                        <span></span>
+                        <div class="now"><span class="ring"></span>Waiting · review</div>
+                        <span class="pr"><i data-icon="pr"></i>#797</span>
+                      </div>
+                    </div>
+                  </li>
+                  <li>
+                    <div class="cols">
+                      <div class="task">
+                        <span class="name">Release notes for 0.41</span>
+                        <span class="l2">
+                          <span class="owner"><i data-icon="user"></i>Someone else</span>
+                        </span>
+                      </div>
+                      <div>
+                        <div class="stage" aria-label="Review, step 4 of 5">
+                          <i class="done"></i><i class="done"></i><i class="done"></i
+                          ><i class="cur"></i><i></i>
+                        </div>
+                        <span class="station">Review</span>
+                      </div>
+                      <div class="now"><span class="ring"></span>Waiting · review</div>
+                      <span class="pr"><i data-icon="pr"></i>#796</span>
+                    </div>
+                  </li>
+                </ul>
+
+                <ul class="rows" data-when="one">
+                  <li>
+                    <div class="cols">
+                      <div class="task">
+                        <span class="name">Resume a worker a lost machine cut off</span>
+                        <span class="l2"><span>gram · runner</span></span>
+                      </div>
+                      <div>
+                        <div class="stage" aria-label="Checks, step 3 of 5">
+                          <i class="done"></i><i class="done"></i><i class="cur"></i><i></i><i></i>
+                        </div>
+                        <span class="station">Checks</span>
+                      </div>
+                      <div class="now"><span class="ring"></span>Waiting · checks</div>
+                      <span class="pr"><i data-icon="pr"></i>#795</span>
+                    </div>
+                  </li>
+                  <li>
+                    <div class="cols">
+                      <div class="task">
+                        <span class="name">Owners on features and stages</span>
+                        <span class="l2"><span>gram</span></span>
+                      </div>
+                      <div>
+                        <div class="stage" aria-label="Working, step 2 of 5">
+                          <i class="done"></i><i class="cur"></i><i></i><i></i><i></i>
+                        </div>
+                        <span class="station">Working</span>
+                      </div>
+                      <div class="now"><span class="dot run"></span>Running · tests</div>
+                      <span></span>
+                    </div>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
