@@ -347,10 +347,10 @@ the open PRs into its branch that a Gram thread binds (the allowed ones aside; a
 follows is someone else's and left alone), keeps them on the freeze with the head commit each
 stood on (each one before GitHub is asked, so a quit partway loses none), and arms them again with
 the same method when it ends, pinned to that head with `--match-head-commit`. If another freeze
-stands on the branch by then, they are handed to it instead. GitHub turns an auto-merge off when
-someone pushes to the PR, but a push during the freeze finds nothing armed, so a PR whose head
-moved meanwhile (or one kept without a head, from before freezes recorded it) is not armed again,
-and its thread is told why. A PR whose auto-merge someone turns off, whose merge is held, that is
+stands on the branch by then, they are handed to it instead, and one set while they are being
+armed again waits for that, then takes them down in turn. The pin holds when Gram arms it: a PR
+whose head moved during the freeze (or one kept without a head, from before freezes recorded it)
+is not armed again, and its thread is told why. A PR whose auto-merge someone turns off, whose merge is held, that is
 unbound, or that closes or merges during the freeze is let go of at once and never armed again;
 nor is one whose thread is archived, babysat or in a paused workspace when the freeze ends. It can't stop a person merging, auto-merge on a
 PR no Gram thread binds, or an entry already in a merge queue.

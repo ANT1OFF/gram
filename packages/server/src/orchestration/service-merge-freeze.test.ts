@@ -10,6 +10,7 @@ import { AppToolRegistry } from "../app-tools/registry.ts";
 import { hasGit } from "../git/test-repo.ts";
 import { MergeFreezes } from "../git/merge-freezes.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { SqlClient } from "../platform/unstable.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { WakeConditions } from "../wakes/conditions.ts";
@@ -542,6 +543,65 @@ describe.skipIf(!hasGit)("merge freezes", () => {
             );
             expect(told.text).toContain(autoMergeHead(12).slice(0, 7));
             expect(told.text).toContain(pushed.slice(0, 7));
+          }),
+        );
+      }),
+  );
+
+  it.effect(
+    "a freeze kept from before it recorded heads arms none of its auto-merges again, and tells their threads",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const first = yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            const { release } = yield* armedWorkspace(world);
+            yield* release.session.callTool("merge_freeze", { repo: "acme/app", reason: "cut" });
+            expect(world.autoMergeCalls).toEqual(["disable acme/app#13"]);
+            // As an older Gram stored it: the PR and its method, no head.
+            const rows = yield* sql<{
+              key: string;
+              data: string;
+            }>`SELECT key, data FROM merge_freezes`;
+            for (const row of rows) {
+              const data = JSON.parse(row.data) as {
+                disarmed?: Array<{ number: number; method: string; head?: string }>;
+              };
+              data.disarmed = (data.disarmed ?? []).map(({ number, method }) => ({
+                number,
+                method,
+              }));
+              const legacy = JSON.stringify(data);
+              yield* sql`UPDATE merge_freezes SET data = ${legacy} WHERE key = ${row.key}`;
+            }
+            return { release: release.thread.id };
+          }),
+        );
+
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const freezes = yield* MergeFreezes;
+            const store = yield* ThreadStore;
+            const fake = yield* FakeAgentControl;
+            yield* settle;
+            expect((yield* freezes.active("acme/app", "main"))?.disarmed).toEqual([
+              { number: 13, method: "rebase" },
+            ]);
+            yield* freezes.lift(yield* store.getThread(first.release), { repo: "acme/app" });
+            expect(world.autoMergeCalls).toEqual(["disable acme/app#13"]);
+            expect(world.autoMerges.has("acme/app#13")).toBe(false);
+            yield* waitReal(
+              "the notice to #13's thread",
+              Effect.sync(() =>
+                fake.sessions
+                  .filter((session) => session.options.threadId === first.release)
+                  .flatMap((session) => [...session.sent, ...session.steered])
+                  .some((input) => input.text.includes("didn't record which head")),
+              ),
+            );
           }),
         );
       }),
