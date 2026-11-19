@@ -36,15 +36,20 @@ export const modelOf = (profile: ThreadProfile): ModelRef => ({
 
 /**
  * The charter of the workspace `profile`'s orchestrator is started for: the profile's level, and
- * its model for the orchestrator and as the one model its workers run on. The rest is a new
- * workspace's.
+ * its model for the orchestrator and as the one model its workers run on, and the memory updates
+ * it asks for. The rest is a new workspace's.
  */
-export const homeCharter = (profile: ThreadProfile): OrchestratorCharter => ({
-  ...DEFAULT_CHARTER,
-  autonomy: profile.autonomy ?? "publish",
-  orchestratorModel: modelOf(profile),
-  workerModels: [modelOf(profile)],
-});
+export const homeCharter = (profile: ThreadProfile): OrchestratorCharter => {
+  const after =
+    profile.role?.kind === "orchestrator" ? profile.role.workspace.memoryUpdatesAfter : undefined;
+  return {
+    ...DEFAULT_CHARTER,
+    autonomy: profile.autonomy ?? "publish",
+    orchestratorModel: modelOf(profile),
+    workerModels: [modelOf(profile)],
+    ...(after === undefined ? {} : { automaticDreamThreshold: after }),
+  };
+};
 
 /**
  * Keeps `profile` in `home`, the folder its workspace is filed under, without its first message,

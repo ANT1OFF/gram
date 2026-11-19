@@ -55,7 +55,9 @@ a message, and it answers small things itself and hands real work to workers.
   worker spawned in a repository works in a worktree, as in any workspace, once the repository is
   in the workspace.
 - **Memory** is the workspace's, as any orchestrator's, and so are memory updates: each workspace
-  a profile made reads only its own threads.
+  a profile made reads only its own threads. `workspace.memoryUpdatesAfter` (1 to 1000) starts one
+  by itself each time that many of its workers have completed, for a person to review; absent,
+  none starts by itself.
 - **Asked again** under the same id, the start answers the orchestrator as it is, and makes
   nothing. A start that fails takes back the workspace, its folder and the thread.
 - **What is refused.** A workplace of repositories (`profileProblems` says so), and a start with

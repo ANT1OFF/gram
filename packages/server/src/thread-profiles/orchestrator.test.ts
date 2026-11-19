@@ -83,6 +83,7 @@ describe.skipIf(!hasGit)("an orchestrator started from a profile", () => {
           orchestratorModel: { agent: "claude", model: "opus" },
           workerModels: [{ agent: "claude", model: "opus" }],
         });
+        expect(state.charter.automaticDreamThreshold).toBeUndefined();
         const home = join(world.dir, PROFILE_HOMES_DIR, ID);
         const [project] = (yield* store.listProjects).filter((p) => p.root === home);
         expect(state.workspace.projectIds).toEqual([project!.id]);
@@ -112,6 +113,28 @@ describe.skipIf(!hasGit)("an orchestrator started from a profile", () => {
           (yield* store.listWorkspaces).filter((each) => each.workspace.fromProfile === true),
         ).toHaveLength(1);
         expect(yield* sessionsOf(ID)).toHaveLength(1);
+      }),
+    ),
+  );
+
+  it.effect("starts its memory updates by themselves only when the profile asks", () =>
+    inServer(() =>
+      Effect.gen(function* () {
+        yield* turnOn;
+        const store = yield* ThreadStore;
+        const starter = yield* profileStarterHere;
+        yield* starter.startOne(
+          profile({
+            role: { kind: "orchestrator", workspace: { name: "Runbooks", memoryUpdatesAfter: 10 } },
+          }),
+          { threadId: ID },
+        );
+        const workspaceId = ID as string as WorkspaceId;
+        expect((yield* store.getWorkspace(workspaceId)).charter.automaticDreamThreshold).toBe(10);
+        expect(yield* store.getAutomaticDreamState(workspaceId)).toMatchObject({
+          threshold: 10,
+          completed: 0,
+        });
       }),
     ),
   );
