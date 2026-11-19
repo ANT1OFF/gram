@@ -65,6 +65,7 @@ describe("migration ordering gate", () => {
         [10, "person_settings"],
         [11, "wait_person"],
         [12, "user_messages"],
+        [13, "actor_names"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -139,6 +140,7 @@ describe("the baseline", () => {
   it.effect("creates the 1.0 schema whole and records itself as migration 1", () =>
     Effect.gen(function* () {
       expect(yield* objects).toEqual([
+        "index actor_events_actor",
         "index actor_events_thread",
         "index closed_messages_turn",
         "index closed_turns_started",

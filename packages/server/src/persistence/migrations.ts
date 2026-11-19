@@ -594,6 +594,15 @@ const userMessages = Effect.gen(function* () {
   yield* sql`CREATE INDEX IF NOT EXISTS messages_thread_user ON messages(thread_id, seq) WHERE role = 'user'`;
 });
 
+/**
+ * Each signed-in person's newest entry: the name they last signed in under, which the Board puts
+ * beside the work a thread does for them (`ThreadStore.personNames`).
+ */
+const actorNames = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE INDEX IF NOT EXISTS actor_events_actor ON actor_events(actor_id, seq)`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
@@ -607,6 +616,7 @@ export const migrations = {
   "0010_person_settings": personSettings,
   "0011_wait_person": waitPerson,
   "0012_user_messages": userMessages,
+  "0013_actor_names": actorNames,
 };
 
 /**

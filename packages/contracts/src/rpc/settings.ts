@@ -17,6 +17,14 @@ import { Palette, Settings, SettingsPatch } from "../settings.ts";
 import { errors } from "./shared.ts";
 
 /** Settings and the user's own entities: palettes, labels, keybindings, gateway profiles and their models, and the helper. */
+/** `people.names`'s answer. */
+export const PeopleNames = Schema.Struct({
+  /** The caller, by the subject fronted sign-in names them with; absent without one. */
+  you: Schema.optionalKey(Schema.String),
+  people: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String })),
+});
+export type PeopleNames = typeof PeopleNames.Type;
+
 export const SettingsRpcs = RpcGroup.make(
   Rpc.make("models.list", {
     payload: { agent: AgentKind, profileId: Schema.optionalKey(ProfileId) },
@@ -111,6 +119,19 @@ export const SettingsRpcs = RpcGroup.make(
   Rpc.make("palettes.remove", {
     payload: { paletteId: PaletteId },
     error: errors(NotFound, InvalidState),
+  }),
+  /**
+   * Who the people a server's threads work for are (`Thread.startedBy`): the name each last signed
+   * in under, for those who ever have, and `you`, the caller's own id where they signed in.
+   */
+  Rpc.make("people.names", {
+    payload: {
+      ids: Schema.Array(Schema.String.check(Schema.isMaxLength(128))).check(
+        Schema.isMaxLength(200),
+      ),
+    },
+    success: PeopleNames,
+    error: errors(),
   }),
   Rpc.make("labels.list", { success: Schema.Array(Label), error: errors() }),
   Rpc.make("labels.upsert", { payload: { label: Label }, success: Label, error: errors() }),

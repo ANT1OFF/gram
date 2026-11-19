@@ -1056,6 +1056,11 @@ export interface ThreadStoreShape {
     readonly afterSeq?: number;
     readonly limit?: number;
   }): Effect.Effect<ReadonlyArray<ActorEventRecord>>;
+  /**
+   * The name each of `ids` last signed in under (`actor_events`), for those who ever have. A
+   * person known only by an embedder's start has no name here.
+   */
+  personNames(ids: ReadonlyArray<string>): Effect.Effect<ReadonlyMap<string, string>>;
   /** Appends to the workspace's audit and returns the entry's sequence number. */
   appendOrchestrationEvent(
     workspaceId: WorkspaceId,
@@ -1262,10 +1267,13 @@ const configurePageCache = (sql: SqlClient.SqlClient) =>
 const WORKSPACE_MOVED = { _tag: "WorkspaceMoved" } as const;
 
 /**
- * `next` with the reader `before` had (`Thread.readableBy`): once set it never changes or clears,
- * whatever a write says.
+ * `next` with the reader `before` had (`Thread.readableBy`) and the person it worked for
+ * (`Thread.startedBy`): once set neither changes or clears, whatever a write says.
  */
-const keepReader = (before: Thread, next: Thread): Thread => {
+const keepReader = (before: Thread, next: Thread): Thread =>
+  keepPerson(before, keepReaderOnly(before, next));
+
+const keepReaderOnly = (before: Thread, next: Thread): Thread => {
   if (next.readableBy === before.readableBy) return next;
   if (before.readableBy === undefined) {
     const { readableBy: _, ...rest } = next;
@@ -1273,6 +1281,19 @@ const keepReader = (before: Thread, next: Thread): Thread => {
   }
   return { ...next, readableBy: before.readableBy };
 };
+
+/** `next` with the person `before` worked for (`Thread.startedBy`), which no write changes. */
+const keepPerson = (before: Thread, next: Thread): Thread => {
+  if (next.startedBy === before.startedBy) return next;
+  if (before.startedBy === undefined) {
+    const { startedBy: _, ...rest } = next;
+    return rest;
+  }
+  return { ...next, startedBy: before.startedBy };
+};
+
+/** The most people one `personNames` call looks up. */
+export const PERSON_NAMES_MAX = 200;
 
 /** A broken database is a defect, not something callers can handle. */
 const run = <A, E, R>(
@@ -4125,6 +4146,18 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 }),
               ),
             ),
+          ),
+
+        personNames: (ids) =>
+          run(
+            Effect.forEach([...new Set(ids)].slice(0, PERSON_NAMES_MAX), (id) =>
+              sql<{ actor_name: string }>`SELECT actor_name FROM actor_events
+                  WHERE actor_id = ${id} ORDER BY seq DESC LIMIT 1`.pipe(
+                Effect.map((rows) =>
+                  rows[0] === undefined ? [] : [[id, rows[0].actor_name] as const],
+                ),
+              ),
+            ).pipe(Effect.map((found) => new Map(found.flat()))),
           ),
 
         appendOrchestrationEvent: (workspaceId, entry) =>

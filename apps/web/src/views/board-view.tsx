@@ -22,6 +22,17 @@ import {
   type RailEntry,
   type RailRow,
 } from "@/orchestration/rail-model";
+import {
+  boardClashes,
+  boardPeople,
+  ownersOf,
+  ownersText,
+  personByWorker,
+  personName,
+  rowsFor,
+  sharedBoard,
+  type PersonKey,
+} from "@/orchestration/board-people";
 import { useMessageOrchestrator } from "@/orchestration/message-orchestrator";
 import { useSetStage } from "@/orchestration/use-board-actions";
 import { useFeatureCards } from "@/orchestration/use-feature-cards";
@@ -34,6 +45,7 @@ import { DoneBand, doneRows } from "./board-done";
 import { PhoneBoard } from "./board-phone";
 import { GridHeads, GridLine } from "./board-grid";
 import { BoardHeader } from "./board-header";
+import { ClashLine, PeopleStrip, usePeopleNames } from "./board-people";
 import { useViewStore } from "./view-store";
 
 // The Board view: the workspace as feature lines, and the ask stack docked below: a compact grid,
@@ -121,10 +133,19 @@ function RailBoard({ state }: { state: WorkspaceState }) {
     openWorker(threadId, event);
   };
   const setStage = useSetStage(workspaceId);
-  const rows = useMemo(
+  const allRows = useMemo(
     () => boardRows(railRows(cards, facts, finishedShown ? "all" : "shown"), finishedShown),
     [cards, facts, finishedShown],
   );
+  // More than one person's work: whose each line is, who is on what, and where they clash.
+  const shared = useMemo(() => sharedBoard(allRows), [allRows]);
+  const people = usePeopleNames(
+    useMemo(() => (shared ? [...new Set(allRows.flatMap(ownersOf))] : []), [allRows, shared]),
+  );
+  const [picked, setPicked] = useState<PersonKey | undefined>(undefined);
+  const pick = shared ? picked : undefined;
+  const rows = useMemo(() => rowsFor(allRows, pick), [allRows, pick]);
+  const persons = useMemo(() => (shared ? personByWorker(allRows) : undefined), [allRows, shared]);
   // Under the lines, what has left them for Done, while finished work is hidden.
   const done = useMemo(
     () => (finishedShown ? [] : doneRows(railRows(cards, facts, "all"))),
@@ -143,10 +164,16 @@ function RailBoard({ state }: { state: WorkspaceState }) {
   // Rows name their repos only when they differ: a workspace whose work is all in one repo (or
   // that has one) says nothing a row would repeat on every line.
   const repos = useMemo(() => new Set(rows.flatMap((row) => row.projects)).size > 1, [rows]);
+  const ownerOf = (threadId: ThreadId) => {
+    const key = persons?.get(threadId);
+    return key === undefined ? undefined : personName(key, people);
+  };
   const line = (row: RailRow, place?: RowPlace) => (
     <GridLine
       key={row.feature}
       row={row}
+      owners={shared ? ownersText(ownersOf(row), people) : undefined}
+      ownerOf={shared && ownersOf(row).length > 1 ? ownerOf : undefined}
       stage={state.stages?.[row.feature]}
       needsMark={row.group === undefined}
       repos={repos}
@@ -176,6 +203,23 @@ function RailBoard({ state }: { state: WorkspaceState }) {
       <BoardHeader state={state} hidden={hidden} />
       {/* Failures first: above the lines and what waits on you, and never scrolled away. */}
       <FailuresCard workspaceId={workspaceId} className="shrink-0 px-4 pt-2 pb-1" />
+      {shared && !phone && (
+        <>
+          <ClashLine
+            clashes={boardClashes(allRows, people?.you)}
+            names={people}
+            workspaceId={workspaceId}
+            onOpen={onOpen}
+            onMessage={messageOrchestrator}
+          />
+          <PeopleStrip
+            people={boardPeople(allRows, people?.you)}
+            names={people}
+            picked={pick}
+            onPick={setPicked}
+          />
+        </>
+      )}
       {/* Why a repo's PRs show no checks, once for the workspace: a fact, not a failure. */}
       <NoCiNote workspaceId={workspaceId} className="shrink-0 px-4 pt-1.5 pb-1" />
       <div

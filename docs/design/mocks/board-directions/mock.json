@@ -1,10 +1,10 @@
 {
   "title": "The Board for more than one person",
   "slug": "board-directions",
-  "status": "draft",
+  "status": "approved",
   "template": "options",
   "current": 2,
-  "approved": null,
+  "approved": 2,
   "versions": [
     {
       "n": 1,
