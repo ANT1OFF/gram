@@ -423,21 +423,42 @@ const fakeGh = (world: World) => {
  */
 const gitActivity = { running: 0, started: 0 };
 
+/** Whether `args` read a repository's stored `origin` URL. */
+const readsOrigin = (args: ReadonlyArray<string>) =>
+  args.length === 3 &&
+  args[0] === "config" &&
+  args[1] === "--get" &&
+  args[2] === "remote.origin.url";
+
 // Every git process of the server, the service's and the worktrees' alike, counted while it runs.
-const countedProc = Layer.effect(
-  Proc,
-  Effect.gen(function* () {
-    const proc = yield* Proc;
-    return {
-      run: (bin, args, options) =>
-        Effect.suspend(() => {
-          gitActivity.running++;
-          gitActivity.started++;
-          return proc.run(bin, args, options);
-        }).pipe(Effect.ensuring(Effect.sync(() => void gitActivity.running--))),
-    };
-  }),
-).pipe(Layer.provide(ProcLive));
+// A repository with no `origin` of its own (`world.repo`) has the one the PR tools see
+// (`fakeGh`), so the origin Gram records as it makes a worktree is the world's.
+const countedProc = (world: World) =>
+  Layer.effect(
+    Proc,
+    Effect.gen(function* () {
+      const proc = yield* Proc;
+      return {
+        run: (bin, args, options) =>
+          Effect.suspend(() => {
+            gitActivity.running++;
+            gitActivity.started++;
+            return proc.run(bin, args, options);
+          }).pipe(
+            Effect.map((out) =>
+              bin === "git" && readsOrigin(args) && out.status !== 0
+                ? {
+                    ...out,
+                    status: 0,
+                    stdout: `${world.origin ?? "https://github.com/acme/app.git"}\n`,
+                  }
+                : out,
+            ),
+            Effect.ensuring(Effect.sync(() => void gitActivity.running--)),
+          ),
+      };
+    }),
+  ).pipe(Layer.provide(ProcLive));
 
 /** Gram's own local checks, when the world asks for them, over the real git of its repos. */
 const localChecksOf = (world: World) =>
@@ -674,7 +695,7 @@ export const serverLayer = (
       ),
       Layer.provideMerge(
         gitPlatformTest({
-          proc: countedProc,
+          proc: countedProc(world),
           pr: Layer.succeed(Pr, {
             status: (cwd, bound, _checkout, options) =>
               Effect.sync(() => {
