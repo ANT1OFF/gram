@@ -22,17 +22,17 @@ and switcher. The other directions (A, B, C) are not built.
 
 ## Parts
 
-| Mock | Code |
-|---|---|
-| worker row, both widths | `apps/web/src/orchestration/worker-row.tsx` (`WorkerRow`, `wide`) |
-| list head, groups | `workers-panel.tsx` (`WorkersPanel`), `workers-group.tsx` |
-| `.menu` Orchestrator ▾, filter | `@base-ui/react/menu` as `workers-panel.tsx` uses it |
+| Mock                            | Code                                                                 |
+| ------------------------------- | -------------------------------------------------------------------- |
+| worker row, both widths         | `apps/web/src/orchestration/worker-row.tsx` (`WorkerRow`, `wide`)    |
+| list head, groups               | `workers-panel.tsx` (`WorkersPanel`), `workers-group.tsx`            |
+| `.menu` Orchestrator ▾, filter  | `@base-ui/react/menu` as `workers-panel.tsx` uses it                 |
 | worker head, tool row, switcher | `worker-pane.tsx` (`WorkerPane`, `ToolRow`, `Switcher`, a `Popover`) |
-| `title=` hints | `components/hint.tsx` |
-| steer composer and its note | `ThreadView` `beside` with `takeoverNoted` |
-| hand-over | `overview-sidebar.tsx` (`WorkspaceRow`, `handedOverItems`) |
-| plan steps (new) | `PlanSteps` in `worker-row.tsx` |
-| doc chips (new) | `WideFoot` in `worker-row.tsx` |
+| `title=` hints                  | `components/hint.tsx`                                                |
+| steer composer and its note     | `ThreadView` `beside` with `takeoverNoted`                           |
+| hand-over                       | `overview-sidebar.tsx` (`WorkspaceRow`, `handedOverItems`)           |
+| plan steps (new)                | `PlanSteps` in `worker-row.tsx`                                      |
+| doc chips (new)                 | `WideFoot` in `worker-row.tsx`                                       |
 
 ## Deviations allowed
 

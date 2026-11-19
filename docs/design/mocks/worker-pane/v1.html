@@ -1080,26 +1080,56 @@
       </section>
 
       <!-- A -->
-      <section class="board" data-name="A Navigator" data-size="1440x900" data-states="list,worker,changes">
+      <section
+        class="board"
+        data-name="A Navigator"
+        data-size="1440x900"
+        data-states="list,worker,changes"
+      >
         <div class="board-frame"><div data-render="A" data-size="desktop"></div></div>
       </section>
-      <section class="board" data-name="A Navigator narrow" data-size="1024x768" data-states="list,worker">
+      <section
+        class="board"
+        data-name="A Navigator narrow"
+        data-size="1024x768"
+        data-states="list,worker"
+      >
         <div class="board-frame"><div data-render="A" data-size="narrow"></div></div>
       </section>
 
       <!-- B -->
-      <section class="board" data-name="B Tabs" data-size="1440x900" data-states="list,worker,changes">
+      <section
+        class="board"
+        data-name="B Tabs"
+        data-size="1440x900"
+        data-states="list,worker,changes"
+      >
         <div class="board-frame"><div data-render="B" data-size="desktop"></div></div>
       </section>
-      <section class="board" data-name="B Tabs narrow" data-size="1024x768" data-states="list,worker">
+      <section
+        class="board"
+        data-name="B Tabs narrow"
+        data-size="1024x768"
+        data-states="list,worker"
+      >
         <div class="board-frame"><div data-render="B" data-size="narrow"></div></div>
       </section>
 
       <!-- C -->
-      <section class="board" data-name="C Split" data-size="1440x900" data-states="split,switcher,pane-closed">
+      <section
+        class="board"
+        data-name="C Split"
+        data-size="1440x900"
+        data-states="split,switcher,pane-closed"
+      >
         <div class="board-frame"><div data-render="C" data-size="desktop"></div></div>
       </section>
-      <section class="board" data-name="C Split narrow" data-size="1024x768" data-states="list,worker">
+      <section
+        class="board"
+        data-name="C Split narrow"
+        data-size="1024x768"
+        data-states="list,worker"
+      >
         <div class="board-frame"><div data-render="C" data-size="narrow"></div></div>
       </section>
     </main>
@@ -1195,15 +1225,13 @@
       };
       // The pane's row today: dot, title, age; a status line with its PR chip at the end.
       const paneRowToday = (w) =>
-        `<div class="old-r"><span class="mk"><span class="d ${w.dot}"></span></span><span class="t">${w.title}</span><span class="a">${w.age === "4m" ? "now" : w.age}</span><span class="s"><span class="wd" ${w.dot === "needs" ? 'style="color:var(--status-needs)"' : ""}>${w.dot === "needs" ? "Asks you" : (w.short === "checks" ? "Checks on #142" : w.short)}</span>${(w.prs ?? []).map(pr).join("")}</span></div>`;
+        `<div class="old-r"><span class="mk"><span class="d ${w.dot}"></span></span><span class="t">${w.title}</span><span class="a">${w.age === "4m" ? "now" : w.age}</span><span class="s"><span class="wd" ${w.dot === "needs" ? 'style="color:var(--status-needs)"' : ""}>${w.dot === "needs" ? "Asks you" : w.short === "checks" ? "Checks on #142" : w.short}</span>${(w.prs ?? []).map(pr).join("")}</span></div>`;
 
       // The proposed row: the sidebar's, wide. `compact` for C's list column.
       const row = (w, { cur = false, compact = false } = {}) => {
-        const carry = [
-          ...(w.prs ?? []).map(pr),
-          ...(w.plan ? [plan(w.plan)] : []),
-        ].join("");
-        const thumbs = !compact && w.thumbs ? `<span class="thumbs">${w.thumbs.map(thumb).join("")}</span>` : "";
+        const carry = [...(w.prs ?? []).map(pr), ...(w.plan ? [plan(w.plan)] : [])].join("");
+        const thumbs =
+          !compact && w.thumbs ? `<span class="thumbs">${w.thumbs.map(thumb).join("")}</span>` : "";
         return `<button type="button" class="r ${cur ? "cur" : ""}" data-goto-worker="${w.id}">
           <span class="mk"><span class="d ${w.dot} bar"></span></span>
           <span class="bd">
@@ -1254,7 +1282,8 @@
             <div class="sb-solo"><span class="d idle"></span><span class="t">Plan the auth refactor</span><span class="a">20m</span></div>
           </div>
         </aside>`;
-      const rail = () => `<aside class="rail">${i("panel")}${i("inbox")}${i("search")}<span class="mono on">G</span><span class="mono">B</span><span class="mono">W</span><span class="mono">I</span>${i("msg")}</aside>`;
+      const rail = () =>
+        `<aside class="rail">${i("panel")}${i("inbox")}${i("search")}<span class="mono on">G</span><span class="mono">B</span><span class="mono">W</span><span class="mono">I</span>${i("msg")}</aside>`;
       const chat = () => `<section class="chat">
           <div class="cbar"><strong>Gram</strong>${i("down")}<span class="seg"><span class="on">Chat</span><span>Board</span></span><span class="push">${i("panel")}</span></div>
           <div class="tx">
@@ -1303,18 +1332,24 @@
         </div>`;
       const W = WORKERS.find((w) => w.id === "search");
       // Where it stands, under its name: dot and words, its PR, its plan, its agent.
-      const status = () => `<div class="ws"><span class="d wait"></span><span>Waiting on checks</span>${pr(W.prs[0])}${plan(W.plan)}<span class="agent">${i("sparkle")}</span>Claude · 14m</div>`;
+      const status = () =>
+        `<div class="ws"><span class="d wait"></span><span>Waiting on checks</span>${pr(W.prs[0])}${plan(W.plan)}<span class="agent">${i("sparkle")}</span>Claude · 14m</div>`;
       // The worker's tools: its own, every one, in one row.
-      const tools = (on) => `<div class="wt" role="tablist">${[
-        ["msg", "Conversation"],
-        ["diff", "Changes <span class='n'>3</span>"],
-        ["pr", "PR <span class='n'>#142</span>"],
-        ["terminal", "Terminal"],
-        ["folder", "Files"],
-      ]
-        .map(([icon, label], k) => `<button type="button" class="tb" role="tab" aria-selected="${k === on}">${i(icon)}${label}</button>`)
-        .join("")}</div>`;
-      const prBar = () => `<div class="prbar"><span class="ring" style="width:10px;height:10px;border-radius:50%;border:1.5px solid var(--status-working)"></span>Waiting on checks <span class="mono">#142</span> gram <span class="mono">feat/settings-search</span><span style="margin-left:auto">CI</span></div>`;
+      const tools = (on) =>
+        `<div class="wt" role="tablist">${[
+          ["msg", "Conversation"],
+          ["diff", "Changes <span class='n'>3</span>"],
+          ["pr", "PR <span class='n'>#142</span>"],
+          ["terminal", "Terminal"],
+          ["folder", "Files"],
+        ]
+          .map(
+            ([icon, label], k) =>
+              `<button type="button" class="tb" role="tab" aria-selected="${k === on}">${i(icon)}${label}</button>`,
+          )
+          .join("")}</div>`;
+      const prBar = () =>
+        `<div class="prbar"><span class="ring" style="width:10px;height:10px;border-radius:50%;border:1.5px solid var(--status-working)"></span>Waiting on checks <span class="mono">#142</span> gram <span class="mono">feat/settings-search</span><span style="margin-left:auto">CI</span></div>`;
 
       // ---------- A Navigator: one pane, list ⇄ worker, a crumb and back ----------
       const paneHeadTools = (worker) =>

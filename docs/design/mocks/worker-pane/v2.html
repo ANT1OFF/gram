@@ -1433,40 +1433,80 @@
         v2, after round 1's ratings. The orchestrator stays in the main pane and its workers live in
         the right pane. Every direction draws both lists with one worker row at two widths, keeps
         main's "4 in Workers" fold, reaches a worker's tools by one row, and moves between workers
-        with ↑ ↓. A is the minimal change, A+ adds the grouped switcher and keeps needs-you rows
-        in the sidebar, B keeps one worker tab, and C is A+ widened. Each board has states: click
-        them in its strip. Synthetic workers.
+        with ↑ ↓. A is the minimal change, A+ adds the grouped switcher and keeps needs-you rows in
+        the sidebar, B keeps one worker tab, and C is A+ widened. Each board has states: click them
+        in its strip. Synthetic workers.
       </p>
 
       <section class="board" data-name="Rows" data-size="1180x760">
         <div class="board-frame"><div data-render="parity"></div></div>
       </section>
 
-      <section class="board" data-name="A Navigator" data-size="1440x900" data-states="list,worker,changes,back">
+      <section
+        class="board"
+        data-name="A Navigator"
+        data-size="1440x900"
+        data-states="list,worker,changes,back"
+      >
         <div class="board-frame"><div data-render="A" data-size="desktop"></div></div>
       </section>
-      <section class="board" data-name="A Navigator narrow" data-size="1024x768" data-states="list,worker">
+      <section
+        class="board"
+        data-name="A Navigator narrow"
+        data-size="1024x768"
+        data-states="list,worker"
+      >
         <div class="board-frame"><div data-render="A" data-size="narrow"></div></div>
       </section>
 
-      <section class="board" data-name="A+ Switcher and hand-over" data-size="1440x900" data-states="list,worker,switcher,changes,no-pr,done,back,pane-closed">
+      <section
+        class="board"
+        data-name="A+ Switcher and hand-over"
+        data-size="1440x900"
+        data-states="list,worker,switcher,changes,no-pr,done,back,pane-closed"
+      >
         <div class="board-frame"><div data-render="AP" data-size="desktop"></div></div>
       </section>
-      <section class="board" data-name="A+ Switcher and hand-over narrow" data-size="1024x768" data-states="list,worker,switcher">
+      <section
+        class="board"
+        data-name="A+ Switcher and hand-over narrow"
+        data-size="1024x768"
+        data-states="list,worker,switcher"
+      >
         <div class="board-frame"><div data-render="AP" data-size="narrow"></div></div>
       </section>
 
-      <section class="board" data-name="B One worker tab" data-size="1440x900" data-states="list,worker,switcher,changes">
+      <section
+        class="board"
+        data-name="B One worker tab"
+        data-size="1440x900"
+        data-states="list,worker,switcher,changes"
+      >
         <div class="board-frame"><div data-render="B" data-size="desktop"></div></div>
       </section>
-      <section class="board" data-name="B One worker tab narrow" data-size="1024x768" data-states="list,worker">
+      <section
+        class="board"
+        data-name="B One worker tab narrow"
+        data-size="1024x768"
+        data-states="list,worker"
+      >
         <div class="board-frame"><div data-render="B" data-size="narrow"></div></div>
       </section>
 
-      <section class="board" data-name="C Split" data-size="1440x900" data-states="wide,wide-changes,default">
+      <section
+        class="board"
+        data-name="C Split"
+        data-size="1440x900"
+        data-states="wide,wide-changes,default"
+      >
         <div class="board-frame"><div data-render="C" data-size="desktop"></div></div>
       </section>
-      <section class="board" data-name="C Split narrow" data-size="1024x768" data-states="list,worker">
+      <section
+        class="board"
+        data-name="C Split narrow"
+        data-size="1024x768"
+        data-states="list,worker"
+      >
         <div class="board-frame"><div data-render="C" data-size="narrow"></div></div>
       </section>
     </main>
@@ -1567,7 +1607,10 @@
           ...(w.plan ? [plan(w.plan)] : []),
           ...(width === "pane" ? (w.docs ?? []).map(art) : []),
         ].join("");
-        const pick = width === "pane" && w.pick ? `<span class="thumbs">${w.pick.map(thumb).join("")}</span>` : "";
+        const pick =
+          width === "pane" && w.pick
+            ? `<span class="thumbs">${w.pick.map(thumb).join("")}</span>`
+            : "";
         return `<button type="button" class="${cls}" ${cur ? 'aria-current="true"' : ""}>
           <span class="mk"><span class="d ${w.dot} bar"></span></span>
           <span class="bd">
@@ -1585,12 +1628,19 @@
         GROUPS.map(([id, label]) => {
           const rows = WORKERS.filter((w) => w.group === id);
           return `<section class="grp" aria-label="${label}"><div class="grp-h">${i("down")}<span><b>${label}</b>${rows.length}</span></div>${rows
-            .map((w) => row(w, { width, cur: w.id === cur, focus: w.id === focus, hover: w.id === hover }))
+            .map((w) =>
+              row(w, { width, cur: w.id === cur, focus: w.id === focus, hover: w.id === hover }),
+            )
             .join("")}</section>`;
         }).join("") +
-        `<section class="grp" aria-label="Done"><div class="grp-h">${i("down")}<span><b>Done</b>6</span></div>${(doneOpen ? DONE : DONE.slice(0, 3))
+        `<section class="grp" aria-label="Done"><div class="grp-h">${i("down")}<span><b>Done</b>6</span></div>${(doneOpen
+          ? DONE
+          : DONE.slice(0, 3)
+        )
           .map(doneRow)
-          .join("")}${doneOpen ? "" : `<button type="button" class="more-row">3 more</button>`}</section>`;
+          .join(
+            "",
+          )}${doneOpen ? "" : `<button type="button" class="more-row">3 more</button>`}</section>`;
 
       // ---------- The window ----------
       // The sidebar keeps main's fold: while the pane shows this orchestrator's workers (the list or
@@ -1606,13 +1656,17 @@
           <div class="sb-h">${i("down")}<span>Orchestrators</span><span>4</span></div>
           <div class="sb-list">
             <div class="sb-ws on ${folded ? "target" : ""}" ${folded ? 'title="Show 4 workers, 1 needs you (⌘J)"' : ""}><span class="d run"></span><span class="t">Gram</span><span class="e">${
-              folded ? `<span class="in">4 in Workers</span> <span class="n">1</span>${i("right")}` : `3 working · <span class="n">1</span>${i("down")}`
+              folded
+                ? `<span class="in">4 in Workers</span> <span class="n">1</span>${i("right")}`
+                : `3 working · <span class="n">1</span>${i("down")}`
             }</span></div>
             ${
               !folded
                 ? `<div class="sb-kids">${WORKERS.map((w) => row(w, { width: "side" })).join("")}</div>`
                 : kept
-                  ? `<div class="sb-kids kept">${WORKERS.filter((w) => w.dot === "needs").map((w) => row(w, { width: "side" })).join("")}</div>`
+                  ? `<div class="sb-kids kept">${WORKERS.filter((w) => w.dot === "needs")
+                      .map((w) => row(w, { width: "side" }))
+                      .join("")}</div>`
                   : ""
             }
             <div class="sb-ws"><span class="d needs"></span><span class="t">billing-api</span><span class="e">1 worker · <span class="n">1</span>${i("down")}</span></div>
@@ -1651,7 +1705,9 @@
       // The list's head: its count, search, filter, and the orchestrator's own views, named as its.
       const listHead = ({ orch = true, widen = false } = {}) =>
         `<div class="ph"><span class="crumb"><span class="here">Workers</span><span class="n">4 · 6 done</span></span><button class="tool" type="button" title="Search workers">${i("search")}</button><button class="tool" type="button" title="Filter">${i("filter")}</button>${
-          widen ? `<button class="tool" type="button" title="Widen: the list beside the worker">${i("cols")}</button>` : ""
+          widen
+            ? `<button class="tool" type="button" title="Widen: the list beside the worker">${i("cols")}</button>`
+            : ""
         }${orch ? `<span class="vr"></span><button class="tool orch" type="button" title="The orchestrator's own views">Orchestrator ${i("down")}</button>` : ""}<button class="tool" type="button" title="Close the pane">${i("x")}</button></div>`;
       // The open worker's head: back, the crumb, its title (a menu of every worker where `menu`),
       // the previous and next worker, open in the main view, close.
@@ -1665,17 +1721,30 @@
             ? `<button type="button" class="here menu ${open ? "open" : ""}" title="Go to another worker"><span>${w.title}</span>${i("down")}</button>`
             : `<span class="here">${w.title}</span>`
         }</span><button class="tool" type="button" title="Previous worker (↑)">${i("up")}</button><button class="tool" type="button" title="Next worker (↓)" style="transform:rotate(180deg)">${i("up")}</button>${
-          widen ? `<button class="tool" type="button" title="Widen: the list beside the worker">${i("cols")}</button>` : ""
+          widen
+            ? `<button class="tool" type="button" title="Widen: the list beside the worker">${i("cols")}</button>`
+            : ""
         }<button class="tool" type="button" title="Open in the main view">${i("external")}</button><button class="tool" type="button" title="Close the pane">${i("x")}</button></div>`;
       // Where it stands, under its name.
       const status = (w) =>
         `<div class="ws"><span class="d ${w.dot}"></span><span>${
-          w.dot === "wait" ? "Waiting on checks" : w.dot === "run" ? "Running tests" : w.dot === "done" ? "Merged 10:32" : "Asks you"
+          w.dot === "wait"
+            ? "Waiting on checks"
+            : w.dot === "run"
+              ? "Running tests"
+              : w.dot === "done"
+                ? "Merged 10:32"
+                : "Asks you"
         }</span>${(w.prs ?? []).map(pr).join("")}${w.plan ? plan(w.plan) : ""}${agent(w)}<span>${w.agent} · active ${w.ago}</span></div>`;
       // The worker's tools: its own, every one, in one row. A tool it doesn't have yet says so.
       const tools = (on, w) => {
         const hasPr = (w.prs ?? []).length > 0;
-        const prLabel = w.dot === "done" ? "PR <span class='n'>#141</span>" : hasPr ? `PR <span class='n'>#${w.prs[0].n}</span>` : "PR";
+        const prLabel =
+          w.dot === "done"
+            ? "PR <span class='n'>#141</span>"
+            : hasPr
+              ? `PR <span class='n'>#${w.prs[0].n}</span>`
+              : "PR";
         const prOff = !hasPr && w.dot !== "done";
         return `<div class="wt" role="tablist">${[
           ["msg", "Conversation", false],
@@ -1733,14 +1802,27 @@
       // The grouped switcher: every worker of this orchestrator by group, typed to narrow.
       const switcher = () => `<div class="menu-pop" role="menu">
           <div class="find">${i("search")}Go to a worker…</div>
-          ${GROUPS.map(([id, label]) => `<div class="lbl">${label}</div>${WORKERS.filter((w) => w.group === id)
-            .map((w) => `<div class="mi ${w.id === OPEN ? "on" : ""}"><span class="d ${w.dot}"></span><span class="t">${w.title}</span><span class="x">${w.ago}</span></div>`)
-            .join("")}`).join("")}
+          ${GROUPS.map(
+            ([id, label]) =>
+              `<div class="lbl">${label}</div>${WORKERS.filter((w) => w.group === id)
+                .map(
+                  (w) =>
+                    `<div class="mi ${w.id === OPEN ? "on" : ""}"><span class="d ${w.dot}"></span><span class="t">${w.title}</span><span class="x">${w.ago}</span></div>`,
+                )
+                .join("")}`,
+          ).join("")}
           <div class="lbl">Done</div><div class="mi"><span class="d done"></span><span class="t">Stable sort in History</span><span class="x">10:32</span></div>
           <div class="foot"><span>↑ ↓ move</span><span>⏎ open</span><span>Esc close</span></div>
         </div>`;
       const W = (id) => WORKERS.find((w) => w.id === id);
-      const DONE_W = { id: "done", title: "Stable sort in History", dot: "done", agent: "Claude", ago: "10:32", prs: [{ n: 141, state: "merged" }] };
+      const DONE_W = {
+        id: "done",
+        title: "Stable sort in History",
+        dot: "done",
+        agent: "Claude",
+        ago: "10:32",
+        prs: [{ n: 141, state: "merged" }],
+      };
 
       // The list, scrolled where you left it: Done opened, Waiting in view.
       const listBody = (opts = {}) =>
@@ -1756,8 +1838,12 @@
           `<aside class="pane">${workerHead(W(OPEN))}${status(W(OPEN))}${tools(tool, W(OPEN))}${tool === 0 ? conversation(W(OPEN)) : changes()}</aside>`;
         return `<div data-when="list">${win(cls, side, list({ doneOpen: true, scroll: narrow ? 260 : 200, hover: OPEN }))}</div>
           <div data-when="worker">${win(cls, side, worker(0))}</div>
-          ${narrow ? "" : `<div data-when="changes">${win(cls, side, worker(1))}</div>
-          <div data-when="back">${win(cls, side, list({ doneOpen: true, scroll: 200, cur: OPEN, focus: OPEN }))}</div>`}`;
+          ${
+            narrow
+              ? ""
+              : `<div data-when="changes">${win(cls, side, worker(1))}</div>
+          <div data-when="back">${win(cls, side, list({ doneOpen: true, scroll: 200, cur: OPEN, focus: OPEN }))}</div>`
+          }`;
       };
 
       // ---------- A+ Navigator with switcher: A, the grouped switcher, needs-you rows kept ----------
@@ -1770,7 +1856,10 @@
           `<aside class="pane pane-wrap">${workerHead(w, { menu: true, open: menu })}${status(w)}${tools(tool, w)}${body}${menu ? switcher() : ""}</aside>`;
         const s = W(OPEN);
         const states = [
-          ["list", win(cls, side, list({ doneOpen: true, scroll: narrow ? 260 : 200, hover: OPEN }))],
+          [
+            "list",
+            win(cls, side, list({ doneOpen: true, scroll: narrow ? 260 : 200, hover: OPEN })),
+          ],
           ["worker", win(cls, side, worker(s, 0, conversation(s)))],
           ["switcher", win(cls, side, worker(s, 0, conversation(s), { menu: true }))],
         ];
@@ -1815,7 +1904,9 @@
           return `<div data-when="list">${win("narrow", rail(), `<aside class="pane">${listHead({ widen: false })}${listBody({ doneOpen: true, scroll: 260, hover: OPEN })}</aside>`)}</div>
             <div data-when="worker">${win("narrow", rail(), `<aside class="pane">${workerHead(s, { menu: true })}${status(s)}${tools(0, s)}${conversation(s)}</aside>`)}</div>`;
         }
-        const split = (tool) => `<div class="w wide">${rail()}${chat()}<aside class="pane"><div class="split-body">
+        const split = (
+          tool,
+        ) => `<div class="w wide">${rail()}${chat()}<aside class="pane"><div class="split-body">
             <div class="col"><div class="ph"><span class="crumb"><span class="here">Workers</span><span class="n">4 · 6 done</span></span><button class="tool" type="button" title="Search workers">${i("search")}</button><button class="tool" type="button" title="Back to one column: the worker alone, the sidebar back">${i("cols")}</button></div>${`<div class="list-body">${groups({ width: "col", cur: OPEN })}</div>`}</div>
             <div class="col">${workerHead(s, { back: false, menu: true })}${status(s)}${tools(tool, s)}${tool === 0 ? conversation(s) : changes()}</div>
           </div></aside></div>`;
