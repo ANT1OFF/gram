@@ -472,7 +472,9 @@ signing/pin assertions meaningful. Never remove an assertion simply to obtain a 
 
 [check.yml](../.github/workflows/check.yml) classifies each pull request by its diff against the
 actual base ([ci-policy.ts](../packages/git/src/ci-policy.ts)) and runs only the lanes it can
-affect; main pushes and manual runs run every lane. Classification runs from the event's merge
+affect, into `main` or an integration branch. A merge is not checked again on `main`. Only two kinds of run happen
+there, each with every lane: a release commit's (`chore(main): release …`), which a release takes
+as its evidence, and a manual run. The macOS jobs start once `check static` has passed. Classification runs from the event's merge
 commit, the source the jobs' conditions come from, and falls back to every lane on any other
 checkout, so a branch's own copy of the classifier never picks its lanes. Prose (Markdown outside `apps/`, `packages/`
 and `tools/`, and everything under `docs/`, but the mock files and the mock-build skill that tests read) gets a docs job: frozen
