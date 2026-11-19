@@ -423,7 +423,15 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
           );
         for (const file of submodules.flatMap(submoduleConfigFiles)) {
           if (!fs.existsSync(file)) continue;
-          const own = yield* read(["config", "--file", file, "--list", "--show-scope", "-z"]);
+          const own = yield* read([
+            "config",
+            "--includes",
+            "--file",
+            file,
+            "--list",
+            "--show-scope",
+            "-z",
+          ]);
           if (own.status !== 0 || own.truncated)
             return yield* Effect.fail(
               new ProcSpawnError({ bin: "git", message: "couldn't read a submodule's git config" }),

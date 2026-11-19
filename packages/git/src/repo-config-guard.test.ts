@@ -139,13 +139,29 @@ describe.skipIf(!hasGit)("Gram's own git and a submodule's config", () => {
       const { repo, ran, modules, plantIn } = withSubmodules();
       plantIn(modules, "core.fsmonitor", "fsmonitor");
       plantIn(modules, "filter.planted.clean", "clean");
-      fs.writeFileSync(nodePath.join(repo, "sub", "l.txt"), "changed\n");
+      fs.writeFileSync(nodePath.join(repo, "sub", "l.txt"), "lix\n");
 
       expect((yield* git(repo, ["status", "--porcelain"])).status).toBe(0);
       yield* git(repo, ["diff", "--quiet", "HEAD"]);
       // The check before a checkout is removed still sees the submodule's uncommitted change.
       expect((yield* git(repo, STRICT_STATUS_ARGS)).stdout).toContain("sub");
 
+      expect(ran()).toEqual([]);
+    }).pipe(provide),
+  );
+
+  it.live("follows a submodule config's includes", () =>
+    Effect.gen(function* () {
+      const { repo, ran, modules, plantIn } = withSubmodules();
+      // The planted key sits in a file the submodule's config only includes.
+      const elsewhere = nodePath.join(modules, "elsewhere");
+      fs.mkdirSync(elsewhere);
+      plantIn(elsewhere, "filter.planted.clean", "clean");
+      const config = nodePath.join(modules, "config");
+      run(repo, "config", "--file", config, "include.path", nodePath.join(elsewhere, "config"));
+      // Same size, so git has to read the file, through its clean filter, to see the change.
+      fs.writeFileSync(nodePath.join(repo, "sub", "l.txt"), "lix\n");
+      expect((yield* git(repo, STRICT_STATUS_ARGS)).stdout).toContain("sub");
       expect(ran()).toEqual([]);
     }).pipe(provide),
   );
