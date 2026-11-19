@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { openSsl3 } from "./openssl-testing.ts";
 import {
   GRAM_RELEASE_PUBLIC_KEY,
   releaseKeyPem,
@@ -14,10 +15,14 @@ import {
 /** A throwaway publisher key, made for the test, and its signature of `text`. */
 const publisher = () => {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-  const raw = publicKey.export({ format: "der", type: "spki" }).subarray(12).toString("base64");
+  const raw = publicKey
+    .export({ format: "der", type: "spki" })
+    .subarray(12)
+    .toString("base64");
   return {
     key: raw,
-    sign: (text: string) => sign(null, Buffer.from(text), privateKey).toString("base64"),
+    sign: (text: string) =>
+      sign(null, Buffer.from(text), privateKey).toString("base64"),
   };
 };
 const SUMS = `${"a".repeat(64)}  gram_1.17.0_x86_64.AppImage\n`;
@@ -26,24 +31,28 @@ describe("the release's checksum signature", () => {
   it("takes the pinned publisher's signature of the exact list", () => {
     const { key, sign: signed } = publisher();
     expect(validReleaseKey(key)).toBe(true);
-    expect(() => requireChecksumsSignature(SUMS, `${signed(SUMS)}\n`, key)).not.toThrow();
+    expect(() =>
+      requireChecksumsSignature(SUMS, `${signed(SUMS)}\n`, key),
+    ).not.toThrow();
   });
 
   it("refuses another key's signature, a changed list and a malformed signature", () => {
     const { key, sign: signed } = publisher();
     const other = publisher();
-    expect(() => requireChecksumsSignature(SUMS, other.sign(SUMS), key)).toThrow(
-      "aren't signed by Gram's publisher",
-    );
-    expect(() => requireChecksumsSignature(`${SUMS}x`, signed(SUMS), key)).toThrow(
-      "aren't signed by Gram's publisher",
-    );
+    expect(() =>
+      requireChecksumsSignature(SUMS, other.sign(SUMS), key),
+    ).toThrow("aren't signed by Gram's publisher");
+    expect(() =>
+      requireChecksumsSignature(`${SUMS}x`, signed(SUMS), key),
+    ).toThrow("aren't signed by Gram's publisher");
     // A trailing newline is part of what was signed.
-    expect(() => requireChecksumsSignature(SUMS.trimEnd(), signed(SUMS), key)).toThrow(
-      "aren't signed by Gram's publisher",
-    );
+    expect(() =>
+      requireChecksumsSignature(SUMS.trimEnd(), signed(SUMS), key),
+    ).toThrow("aren't signed by Gram's publisher");
     expect(() => requireChecksumsSignature(SUMS, "", key)).toThrow("malformed");
-    expect(() => requireChecksumsSignature(SUMS, "not base64!", key)).toThrow("malformed");
+    expect(() => requireChecksumsSignature(SUMS, "not base64!", key)).toThrow(
+      "malformed",
+    );
   });
 
   it("fails closed with no pinned key, which the placeholder is", () => {
@@ -52,7 +61,9 @@ describe("the release's checksum signature", () => {
       "pins no release signing key",
     );
     if (GRAM_RELEASE_PUBLIC_KEY === null)
-      expect(() => requireChecksumsSignature(SUMS, signed(SUMS))).toThrow("pins no release");
+      expect(() => requireChecksumsSignature(SUMS, signed(SUMS))).toThrow(
+        "pins no release",
+      );
     else expect(validReleaseKey(GRAM_RELEASE_PUBLIC_KEY)).toBe(true);
   });
 
@@ -64,7 +75,7 @@ describe("the release's checksum signature", () => {
       writeFileSync(join(dir, "sums"), SUMS);
       writeFileSync(join(dir, "sig"), Buffer.from(signed(SUMS), "base64"));
       const verified = spawnSync(
-        "openssl",
+        openSsl3(),
         [
           "pkeyutl",
           "-verify",

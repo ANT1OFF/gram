@@ -12,6 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { openSsl3 } from "@gram/git/openssl-testing";
 import { afterAll, describe, expect, it } from "vitest";
 import { removeDir, tempDir } from "../git/test-repo.ts";
 import {
@@ -68,27 +69,7 @@ const script = (
   trust: Partial<InstallTrust> = {},
 ) => installScript(ORIGIN, version, run, { ...TRUST, ...trust });
 
-/**
- * A real OpenSSL 3 to check the checksum signature with, as a Linux machine has. macOS's own
- * `openssl` is LibreSSL, which can't, so on a Mac runner it is Homebrew's.
- */
-const OPENSSL = [
-  spawnSync("sh", ["-c", "command -v openssl"], {
-    encoding: "utf8",
-  }).stdout.trim(),
-  "/opt/homebrew/opt/openssl@3/bin/openssl",
-  "/usr/local/opt/openssl@3/bin/openssl",
-].find(
-  (candidate) =>
-    candidate !== "" &&
-    /^OpenSSL [3-9]/.test(
-      spawnSync(candidate, ["version"], { encoding: "utf8" }).stdout ?? "",
-    ),
-);
-if (OPENSSL === undefined)
-  throw new Error(
-    "These tests need OpenSSL 3 (on macOS: brew install openssl@3).",
-  );
+const OPENSSL = openSsl3();
 
 /**
  * A synthetic machine with no Gram on it: `curl` serves the release from a folder, and the release's
