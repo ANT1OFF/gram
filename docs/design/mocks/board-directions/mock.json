@@ -3,12 +3,17 @@
   "slug": "board-directions",
   "status": "draft",
   "template": "options",
-  "current": 1,
+  "current": 2,
   "approved": null,
   "versions": [
     {
       "n": 1,
       "file": "v1.html",
+      "created": "2026-11-19"
+    },
+    {
+      "n": 2,
+      "file": "v2.html",
       "created": "2026-11-19"
     }
   ]

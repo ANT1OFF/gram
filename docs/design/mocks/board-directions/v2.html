@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Board for more than one person · v2</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .bd {
+        display: flex;
+        flex-direction: column;
+        min-height: 620px;
+        background: var(--surface-2);
+        font-size: 13px;
+      }
+      .bd-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .bd-head h2 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .cols {
+        display: grid;
+        grid-template-columns: minmax(12rem, 2fr) 7rem minmax(10rem, 2fr) 5rem;
+        column-gap: 20px;
+        align-items: start;
+      }
+      .heads {
+        padding: 6px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .rows {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .rows > li {
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .name {
+        font-weight: 500;
+        font-size: 14px;
+      }
+      .l2 {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 2px 8px;
+        color: var(--fg-muted);
+        font-size: 12px;
+        margin-top: 2px;
+      }
+      .who {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .who .icon {
+        width: 12px;
+        height: 12px;
+      }
+      .ini {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        display: inline-grid;
+        place-items: center;
+        font-size: 10px;
+        font-weight: 600;
+        background: var(--surface-hover);
+        color: var(--fg);
+        box-shadow: inset 0 0 0 1px var(--border-strong);
+        flex: none;
+      }
+      .ini.agent {
+        border-radius: 5px;
+        color: var(--orchestrator, var(--fg));
+      }
+      .stage {
+        display: flex;
+        gap: 2px;
+        align-items: center;
+        height: 18px;
+        max-width: 96px;
+      }
+      .stage i {
+        flex: 1;
+        height: 5px;
+        background: var(--border-strong);
+      }
+      .stage i.d {
+        background: var(--fg-muted);
+      }
+      .stage i.c {
+        height: 9px;
+        border-radius: 999px;
+        background: var(--accent);
+      }
+      .station {
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .now {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+      .ring,
+      .dt {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: none;
+      }
+      .ring {
+        box-shadow: inset 0 0 0 1.5px var(--status-working);
+      }
+      .dt.run {
+        background: var(--status-working);
+      }
+      .dt.needs {
+        background: var(--status-needs-mark);
+      }
+      .dt.idle {
+        background: var(--fg-subtle);
+      }
+      .asks {
+        color: var(--status-needs);
+      }
+      .pr {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--fg-muted);
+        font-size: 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        padding: 0 6px;
+        width: fit-content;
+      }
+      .pr .icon {
+        color: var(--success-text);
+        width: 12px;
+        height: 12px;
+      }
+      .overlap {
+        display: block;
+        color: var(--fg-muted);
+        font-size: 12px;
+        margin-top: 4px;
+      }
+      .overlap .icon {
+        width: 12px;
+        height: 12px;
+        vertical-align: -2px;
+        margin-right: 4px;
+      }
+      .mono {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+      }
+      .sub {
+        margin-top: 6px;
+        padding-left: 12px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .sub .cols {
+        padding: 2px 0;
+      }
+      .lane {
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .lane-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: var(--surface-1);
+        font-weight: 600;
+      }
+      .lane-head .meta {
+        font-weight: 400;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .lane-head .icon {
+        width: 14px;
+        height: 14px;
+        color: var(--fg-muted);
+      }
+      .kb {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        padding: 12px 16px;
+        flex: 1;
+      }
+      .kcol {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 0;
+      }
+      .kcol > h4 {
+        margin: 0 0 2px;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--fg-muted);
+        display: flex;
+        gap: 6px;
+      }
+      .kcard {
+        background: var(--surface-3);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .kcard .name {
+        font-size: 13px;
+      }
+      .kfoot {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        justify-content: space-between;
+      }
+      .people {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .person {
+        background: var(--surface-3);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        text-align: left;
+        font: inherit;
+        color: inherit;
+      }
+      .person[aria-pressed="true"] {
+        box-shadow: inset 0 0 0 1px var(--accent);
+      }
+      .person .top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+      }
+      .person .top .meta {
+        margin-left: auto;
+        font-weight: 400;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .person .line {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--fg-muted);
+        min-width: 0;
+      }
+      .person .line span:last-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .clash {
+        margin: 10px 16px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        color: var(--fg);
+      }
+      .clash .icon {
+        width: 14px;
+        height: 14px;
+        color: var(--fg-muted);
+      }
+      .clash .grow {
+        flex: 1;
+      }
+      .hand {
+        color: var(--status-needs-mark);
+        width: 13px;
+        height: 13px;
+      }
+    </style>
+    <style>
+      .people { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: stretch; }
+      .person { cursor: pointer; }
+      .person:hover { background: var(--surface-hover); }
+      .everyone { align-self: center; }
+      .clash .btn { flex: none; }
+      .filter-note { padding: 6px 16px; color: var(--fg-muted); font-size: 12px; border-bottom: 1px solid var(--border-subtle); display:flex; gap:8px; align-items:center; }
+      .menu-pop { position: absolute; right: 16px; top: 44px; z-index: 3; min-width: 220px; }
+      .bd { position: relative; flex: 1 1 0; min-width: 0; }
+      .app-body { flex-wrap: nowrap; }
+    </style>
+  </head>
+  <body class="mock"><main class="mock-canvas">
+<p class="mock-note">v2, the picked combination: what clashes first, then who is on what (a card per person, which also filters the rows), then today's rows with whose each is. Grouping by person is in the Board's menu. "One person" is today's Board, unchanged. Use the states under the board.</p>
+<section class="board" data-name="Board" data-size="1180x720" data-states="everyone,picked,grouped,menu,one">
+<div class="board-frame"><div class="app"><div class="titlebar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>gram · Board</span></div>
+<div class="app-body"><nav class="sidebar" aria-label="Primary"><div class="section-label">Workspaces</div><a class="nav-item" href="#" aria-current="page"><i data-icon="orch"></i>gram<span class="count">5</span></a><a class="nav-item" href="#"><i data-icon="orch"></i>web</a></nav>
+<div class="bd">
+<div data-when="everyone"><header class="bd-head"><i data-icon="cols"></i><h2>Board</h2><span class="grow"></span>
+<button class="btn sm ghost" type="button"><i data-icon="archive"></i>Show finished (2)</button>
+<button class="btn sm ghost" type="button" aria-label="Board menu" ><i data-icon="more"></i></button></header><div class="clash"><i data-icon="alert"></i><span class="grow">Your <strong>Resume a worker a lost machine cut off</strong> and Grace's <strong>Owners on features and stages</strong> both change <span class="mono">host/ownership.ts</span></span>
+<button class="btn sm" type="button">Tell Grace's orchestrator</button><button class="btn sm" type="button">Open both</button><button class="btn sm ghost" type="button" aria-label="Dismiss"><i data-icon="x"></i></button></div><div class="people"><button class="person" type="button" aria-pressed="false"><span class="top"><span class="ini">Y</span>You<span class="meta">3 features</span></span><span class="line"><span class="dt needs"></span><span><span class="asks">Ask sheet on a phone asks you</span></span></span><span class="line"><span class="ring"></span><span>Resume a worker… waiting on checks</span></span></button><button class="person" type="button" aria-pressed="false"><span class="top"><span class="ini">G</span>Grace<span class="meta">2 features</span></span><span class="line"><span class="dt run"></span><span>Owners on features… running tests</span></span><span class="line"><span class="dt run"></span><span>Inbox list at 390 px editing</span></span></button><button class="person" type="button" aria-pressed="false"><span class="top"><span class="ini agent">R</span>Release agent<span class="meta">1 feature</span></span><span class="line"><span class="ring"></span><span>Release notes for 0.41 waiting on review</span></span><span class="line"><span></span><span><span class="muted">Directed by Grace and you</span></span></span></button><button class="btn sm everyone" type="button" disabled>Everyone</button></div><div class="heads cols" aria-hidden="true"><span>Task</span><span>Stage</span><span>Now</span><span>Pull request</span></div><ul class="rows"><li><div class="cols"><div><div class="name">Resume a worker a lost machine cut off</div><div class="l2"><span class="who"><i data-icon="user"></i>You</span><span>gram · runner</span></div><div class="overlap"><i data-icon="alert"></i>Overlaps Grace's <u>Owners on features and stages</u> · <span class="mono">host/ownership.ts</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i></div><span class="station">Checks</span></div>
+<div class="now"><span class="ring"></span>Waiting · checks</div><span class="pr"><i data-icon="pr"></i>#795</span></div></li><li><div class="cols"><div><div class="name">Owners on features and stages</div><div class="l2"><span class="who"><i data-icon="user"></i>Grace</span><span>gram</span></div><div class="overlap"><i data-icon="alert"></i>Overlaps your <u>Resume a worker…</u> · <span class="mono">host/ownership.ts</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i><i class=""></i></div><span class="station">Working</span></div>
+<div class="now"><span class="dt run"></span>Running · tests</div><span></span></div></li><li><div class="cols"><div><div class="name">Phone layout for the Inbox</div><div class="l2"><span class="who"><i data-icon="user"></i>Grace, you</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i><i class=""></i></div><span class="station">Working</span></div>
+<div class="now"><span class="muted">2 workers ·</span> <span class="asks">1 needs you</span></div><span></span></div><div class="sub"><div class="cols"><span>Inbox list at 390 px · Grace</span><span></span><div class="now"><span class="dt run"></span>Running · editing</div><span></span></div>
+<div class="cols"><span>Ask sheet on a phone · You</span><span></span><div class="now"><span class="dt needs"></span><span class="asks">Asks you</span></div><span></span></div></div></li><li><div class="cols"><div><div class="name">Release notes for 0.41</div><div class="l2"><span class="who"><i data-icon="orch"></i>Release agent</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i><i class=""></i></div><span class="station">Review</span></div>
+<div class="now"><span class="ring"></span>Waiting · review</div><span class="pr"><i data-icon="pr"></i>#796</span></div></li><li><div class="cols"><div><div class="name">Move to Codex 0.171</div><div class="l2"><span class="who"><i data-icon="user"></i>You</span></div></div>
+<div><div class="stage"><i class="c"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><span class="station">Briefed</span></div>
+<div class="now"><span class="dt idle"></span>Held · usage limit, 17:10</div><span></span></div></li></ul></div>
+<div data-when="picked"><header class="bd-head"><i data-icon="cols"></i><h2>Board</h2><span class="grow"></span>
+<button class="btn sm ghost" type="button"><i data-icon="archive"></i>Show finished (2)</button>
+<button class="btn sm ghost" type="button" aria-label="Board menu" ><i data-icon="more"></i></button></header><div class="clash"><i data-icon="alert"></i><span class="grow">Your <strong>Resume a worker a lost machine cut off</strong> and Grace's <strong>Owners on features and stages</strong> both change <span class="mono">host/ownership.ts</span></span>
+<button class="btn sm" type="button">Tell Grace's orchestrator</button><button class="btn sm" type="button">Open both</button><button class="btn sm ghost" type="button" aria-label="Dismiss"><i data-icon="x"></i></button></div><div class="people"><button class="person" type="button" aria-pressed="false"><span class="top"><span class="ini">Y</span>You<span class="meta">3 features</span></span><span class="line"><span class="dt needs"></span><span><span class="asks">Ask sheet on a phone asks you</span></span></span><span class="line"><span class="ring"></span><span>Resume a worker… waiting on checks</span></span></button><button class="person" type="button" aria-pressed="true"><span class="top"><span class="ini">G</span>Grace<span class="meta">2 features</span></span><span class="line"><span class="dt run"></span><span>Owners on features… running tests</span></span><span class="line"><span class="dt run"></span><span>Inbox list at 390 px editing</span></span></button><button class="person" type="button" aria-pressed="false"><span class="top"><span class="ini agent">R</span>Release agent<span class="meta">1 feature</span></span><span class="line"><span class="ring"></span><span>Release notes for 0.41 waiting on review</span></span><span class="line"><span></span><span><span class="muted">Directed by Grace and you</span></span></span></button><button class="btn sm everyone" type="button" >Everyone</button></div><div class="filter-note">Grace's work: 2 of 5 features</div><div class="heads cols" aria-hidden="true"><span>Task</span><span>Stage</span><span>Now</span><span>Pull request</span></div><ul class="rows"><li><div class="cols"><div><div class="name">Owners on features and stages</div><div class="l2"><span class="who"><i data-icon="user"></i>Grace</span><span>gram</span></div><div class="overlap"><i data-icon="alert"></i>Overlaps your <u>Resume a worker…</u> · <span class="mono">host/ownership.ts</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i><i class=""></i></div><span class="station">Working</span></div>
+<div class="now"><span class="dt run"></span>Running · tests</div><span></span></div></li><li><div class="cols"><div><div class="name">Phone layout for the Inbox</div><div class="l2"><span class="who"><i data-icon="user"></i>Grace, you</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i><i class=""></i></div><span class="station">Working</span></div>
+<div class="now"><span class="muted">2 workers ·</span> <span class="asks">1 needs you</span></div><span></span></div><div class="sub"><div class="cols"><span>Inbox list at 390 px · Grace</span><span></span><div class="now"><span class="dt run"></span>Running · editing</div><span></span></div>
+<div class="cols"><span>Ask sheet on a phone · You</span><span></span><div class="now"><span class="dt needs"></span><span class="asks">Asks you</span></div><span></span></div></div></li></ul></div>
+<div data-when="grouped"><header class="bd-head"><i data-icon="cols"></i><h2>Board</h2><span class="grow"></span>
+<button class="btn sm ghost" type="button"><i data-icon="archive"></i>Show finished (2)</button>
+<button class="btn sm ghost" type="button" aria-label="Board menu" ><i data-icon="more"></i></button></header><div class="clash"><i data-icon="alert"></i><span class="grow">Your <strong>Resume a worker a lost machine cut off</strong> and Grace's <strong>Owners on features and stages</strong> both change <span class="mono">host/ownership.ts</span></span>
+<button class="btn sm" type="button">Tell Grace's orchestrator</button><button class="btn sm" type="button">Open both</button><button class="btn sm ghost" type="button" aria-label="Dismiss"><i data-icon="x"></i></button></div><div class="people"><button class="person" type="button" aria-pressed="false"><span class="top"><span class="ini">Y</span>You<span class="meta">3 features</span></span><span class="line"><span class="dt needs"></span><span><span class="asks">Ask sheet on a phone asks you</span></span></span><span class="line"><span class="ring"></span><span>Resume a worker… waiting on checks</span></span></button><button class="person" type="button" aria-pressed="false"><span class="top"><span class="ini">G</span>Grace<span class="meta">2 features</span></span><span class="line"><span class="dt run"></span><span>Owners on features… running tests</span></span><span class="line"><span class="dt run"></span><span>Inbox list at 390 px editing</span></span></button><button class="person" type="button" aria-pressed="false"><span class="top"><span class="ini agent">R</span>Release agent<span class="meta">1 feature</span></span><span class="line"><span class="ring"></span><span>Release notes for 0.41 waiting on review</span></span><span class="line"><span></span><span><span class="muted">Directed by Grace and you</span></span></span></button><button class="btn sm everyone" type="button" disabled>Everyone</button></div><div class="heads cols" aria-hidden="true"><span>Task</span><span>Stage</span><span>Now</span><span>Pull request</span></div><div class="lane"><div class="lane-head"><i data-icon="down"></i><span class="ini">Y</span>You<span class="meta">3 features · <span class="asks">1 needs you</span></span></div><ul class=rows><li><div class="cols"><div><div class="name">Resume a worker a lost machine cut off</div><div class="l2"><span class="who"><i data-icon="user"></i>You</span><span>gram · runner</span></div><div class="overlap"><i data-icon="alert"></i>Overlaps Grace's <u>Owners on features and stages</u> · <span class="mono">host/ownership.ts</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i></div><span class="station">Checks</span></div>
+<div class="now"><span class="ring"></span>Waiting · checks</div><span class="pr"><i data-icon="pr"></i>#795</span></div></li><li><div class="cols"><div><div class="name">Move to Codex 0.171</div><div class="l2"><span class="who"><i data-icon="user"></i>You</span></div></div>
+<div><div class="stage"><i class="c"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><span class="station">Briefed</span></div>
+<div class="now"><span class="dt idle"></span>Held · usage limit, 17:10</div><span></span></div></li><li><div class="cols"><div><div class="name">Phone layout for the Inbox</div><div class="l2"><span class="who"><i data-icon="user"></i>Grace, you</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i><i class=""></i></div><span class="station">Working</span></div>
+<div class="now"><span class="muted">2 workers ·</span> <span class="asks">1 needs you</span></div><span></span></div><div class="sub"><div class="cols"><span>Inbox list at 390 px · Grace</span><span></span><div class="now"><span class="dt run"></span>Running · editing</div><span></span></div>
+<div class="cols"><span>Ask sheet on a phone · You</span><span></span><div class="now"><span class="dt needs"></span><span class="asks">Asks you</span></div><span></span></div></div></li></ul></div><div class="lane"><div class="lane-head"><i data-icon="down"></i><span class="ini">G</span>Grace<span class="meta">2 features</span></div><ul class=rows><li><div class="cols"><div><div class="name">Owners on features and stages</div><div class="l2"><span class="who"><i data-icon="user"></i>Grace</span><span>gram</span></div><div class="overlap"><i data-icon="alert"></i>Overlaps your <u>Resume a worker…</u> · <span class="mono">host/ownership.ts</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i><i class=""></i></div><span class="station">Working</span></div>
+<div class="now"><span class="dt run"></span>Running · tests</div><span></span></div></li></ul></div><div class="lane"><div class="lane-head"><i data-icon="right"></i><span class="ini agent">R</span>Release agent<span class="meta">1 feature · waiting on review</span></div></div></div>
+<div data-when="menu"><header class="bd-head"><i data-icon="cols"></i><h2>Board</h2><span class="grow"></span>
+<button class="btn sm ghost" type="button"><i data-icon="archive"></i>Show finished (2)</button>
+<button class="btn sm ghost" type="button" aria-label="Board menu" aria-expanded="true"><i data-icon="more"></i></button></header><div class="menu menu-pop" role="menu"><button class="menu-item" role="menuitemcheckbox" aria-checked="false" type="button"><i data-icon="layers"></i>Group by person</button><button class="menu-item" type="button"><i data-icon="archive"></i>Tidy up</button></div><div class="clash"><i data-icon="alert"></i><span class="grow">Your <strong>Resume a worker a lost machine cut off</strong> and Grace's <strong>Owners on features and stages</strong> both change <span class="mono">host/ownership.ts</span></span>
+<button class="btn sm" type="button">Tell Grace's orchestrator</button><button class="btn sm" type="button">Open both</button><button class="btn sm ghost" type="button" aria-label="Dismiss"><i data-icon="x"></i></button></div><div class="people"><button class="person" type="button" aria-pressed="false"><span class="top"><span class="ini">Y</span>You<span class="meta">3 features</span></span><span class="line"><span class="dt needs"></span><span><span class="asks">Ask sheet on a phone asks you</span></span></span><span class="line"><span class="ring"></span><span>Resume a worker… waiting on checks</span></span></button><button class="person" type="button" aria-pressed="false"><span class="top"><span class="ini">G</span>Grace<span class="meta">2 features</span></span><span class="line"><span class="dt run"></span><span>Owners on features… running tests</span></span><span class="line"><span class="dt run"></span><span>Inbox list at 390 px editing</span></span></button><button class="person" type="button" aria-pressed="false"><span class="top"><span class="ini agent">R</span>Release agent<span class="meta">1 feature</span></span><span class="line"><span class="ring"></span><span>Release notes for 0.41 waiting on review</span></span><span class="line"><span></span><span><span class="muted">Directed by Grace and you</span></span></span></button><button class="btn sm everyone" type="button" disabled>Everyone</button></div><div class="heads cols" aria-hidden="true"><span>Task</span><span>Stage</span><span>Now</span><span>Pull request</span></div><ul class="rows"><li><div class="cols"><div><div class="name">Resume a worker a lost machine cut off</div><div class="l2"><span class="who"><i data-icon="user"></i>You</span><span>gram · runner</span></div><div class="overlap"><i data-icon="alert"></i>Overlaps Grace's <u>Owners on features and stages</u> · <span class="mono">host/ownership.ts</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i></div><span class="station">Checks</span></div>
+<div class="now"><span class="ring"></span>Waiting · checks</div><span class="pr"><i data-icon="pr"></i>#795</span></div></li><li><div class="cols"><div><div class="name">Owners on features and stages</div><div class="l2"><span class="who"><i data-icon="user"></i>Grace</span><span>gram</span></div><div class="overlap"><i data-icon="alert"></i>Overlaps your <u>Resume a worker…</u> · <span class="mono">host/ownership.ts</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i><i class=""></i></div><span class="station">Working</span></div>
+<div class="now"><span class="dt run"></span>Running · tests</div><span></span></div></li><li><div class="cols"><div><div class="name">Phone layout for the Inbox</div><div class="l2"><span class="who"><i data-icon="user"></i>Grace, you</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i><i class=""></i></div><span class="station">Working</span></div>
+<div class="now"><span class="muted">2 workers ·</span> <span class="asks">1 needs you</span></div><span></span></div><div class="sub"><div class="cols"><span>Inbox list at 390 px · Grace</span><span></span><div class="now"><span class="dt run"></span>Running · editing</div><span></span></div>
+<div class="cols"><span>Ask sheet on a phone · You</span><span></span><div class="now"><span class="dt needs"></span><span class="asks">Asks you</span></div><span></span></div></div></li><li><div class="cols"><div><div class="name">Release notes for 0.41</div><div class="l2"><span class="who"><i data-icon="orch"></i>Release agent</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i><i class=""></i></div><span class="station">Review</span></div>
+<div class="now"><span class="ring"></span>Waiting · review</div><span class="pr"><i data-icon="pr"></i>#796</span></div></li><li><div class="cols"><div><div class="name">Move to Codex 0.171</div><div class="l2"><span class="who"><i data-icon="user"></i>You</span></div></div>
+<div><div class="stage"><i class="c"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><span class="station">Briefed</span></div>
+<div class="now"><span class="dt idle"></span>Held · usage limit, 17:10</div><span></span></div></li></ul></div>
+<div data-when="one"><header class="bd-head"><i data-icon="cols"></i><h2>Board</h2><span class="grow"></span>
+<button class="btn sm ghost" type="button"><i data-icon="archive"></i>Show finished (2)</button>
+<button class="btn sm ghost" type="button" aria-label="Board menu" ><i data-icon="more"></i></button></header><div class="heads cols" aria-hidden="true"><span>Task</span><span>Stage</span><span>Now</span><span>Pull request</span></div><ul class="rows"><li><div class="cols"><div><div class="name">Resume a worker a lost machine cut off</div><div class="l2"><span>gram · runner</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i></div><span class="station">Checks</span></div>
+<div class="now"><span class="ring"></span>Waiting · checks</div><span class="pr"><i data-icon="pr"></i>#795</span></div></li><li><div class="cols"><div><div class="name">Owners on features and stages</div><div class="l2"><span>gram</span></div></div>
+<div><div class="stage"><i class="d"></i><i class="c"></i><i class=""></i><i class=""></i><i class=""></i></div><span class="station">Working</span></div>
+<div class="now"><span class="dt run"></span>Running · tests</div><span></span></div></li><li><div class="cols"><div><div class="name">Move to Codex 0.171</div></div>
+<div><div class="stage"><i class="c"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><span class="station">Briefed</span></div>
+<div class="now"><span class="dt idle"></span>Held · usage limit, 17:10</div><span></span></div></li></ul></div>
+</div></div></div></div></section></main></body></html>
