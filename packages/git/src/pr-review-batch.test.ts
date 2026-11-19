@@ -39,7 +39,9 @@ describe("batched PR lookups carry review-bot state", () => {
                     // The candidates' block and the chosen PR's both read alias `e0`.
                     data: {
                       e0: {
-                        pullRequests: { nodes: [{ ...node, state: "OPEN" }] },
+                        pullRequests: {
+                          nodes: [{ ...node, state: "OPEN", isCrossRepository: false }],
+                        },
                         pullRequest: { ...node, state: "OPEN" },
                       },
                     },

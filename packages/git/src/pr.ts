@@ -42,6 +42,7 @@ import {
 } from "./review.ts";
 import { ReviewBots } from "./review-bots.ts";
 import { mergeCiForLaunch } from "./merge-ci.ts";
+import { isSameRepoHead } from "./open-prs.ts";
 import { Tools } from "./tools.ts";
 
 type Json = Record<string, unknown>;
@@ -381,9 +382,11 @@ export const choosePr = <R>(
   isAncestor: (oid: string) => Effect.Effect<boolean, never, R>,
 ): Effect.Effect<ChosenPr | undefined, never, R> =>
   Effect.gen(function* () {
-    const anchored = prs.find((p) => isTip(str(p, "headRefOid"), localTip, remoteTip));
+    // A branch name is anyone's: only a PR whose head is in the repo asked can be this branch's.
+    const own = prs.filter(isSameRepoHead);
+    const anchored = own.find((p) => isTip(str(p, "headRefOid"), localTip, remoteTip));
     if (anchored) return { pr: anchored, headMatches: true, aheadOfPr: false };
-    const open = prs.filter((p) => str(p, "state") === "OPEN");
+    const open = own.filter((p) => str(p, "state") === "OPEN");
     for (const p of open) {
       if (
         localTip !== "" &&
@@ -561,7 +564,7 @@ const REVIEW_REQUESTS_GQL_FIELD =
  * these unless a review monitor is on it.
  */
 const badgeGqlFields = (number: string) =>
-  "number state url isDraft headRefOid baseRefOid baseRef{target{oid}} title baseRefName headRefName author{login} additions " +
+  "number state url isDraft headRefOid baseRefOid baseRef{target{oid}} title baseRefName headRefName isCrossRepository author{login} additions " +
   "deletions changedFiles updatedAt mergeStateStatus reviewDecision " +
   REVIEW_REQUESTS_GQL_FIELD +
   rollupGqlField(number);
@@ -572,7 +575,7 @@ const badgeGqlFields = (number: string) =>
  * what it costs under the one PR chosen from them. Asking for review threads here was five of the
  * six points a branch lookup cost, measured, and the sweep spent the hour's 5,000 in twenty minutes.
  */
-const DISCOVERY_GQL_FIELDS = "number state headRefOid";
+const DISCOVERY_GQL_FIELDS = "number state headRefOid isCrossRepository";
 
 // Review-bot state: summary reviews and progress comments, and bot-started threads.
 // The reviews and comments are everyone's, so people's verdicts and the ids of their comments come
@@ -649,6 +652,7 @@ const reshapeBadgeNode = (node: Json): Json => ({
   title: node["title"],
   baseRefName: node["baseRefName"],
   headRefName: node["headRefName"],
+  isCrossRepository: node["isCrossRepository"],
   author: node["author"],
   additions: node["additions"],
   deletions: node["deletions"],
@@ -767,7 +771,7 @@ const runBlocks = (
   });
 
 const REST_PR_FIELDS =
-  "number,state,url,isDraft,headRefOid,baseRefOid,title,statusCheckRollup,baseRefName,headRefName,author,additions,deletions,changedFiles,updatedAt,reviewDecision,reviewRequests";
+  "number,state,url,isDraft,headRefOid,baseRefOid,title,statusCheckRollup,baseRefName,headRefName,author,additions,deletions,changedFiles,updatedAt,reviewDecision,reviewRequests,isCrossRepository";
 
 const restPrList = (inputs: PrInputs): Effect.Effect<ReadonlyArray<Json>, PrLookupError, Proc> =>
   gh(inputs.workTree, [
