@@ -477,6 +477,32 @@ export const restoreWip = (
         release = at;
       }
     }
+    // Already holding the kept uncommitted work, as a restore before this one left it, its answer
+    // lost: done, rather than refused below for changes that are the work itself. HEAD at the
+    // branch's tip as kept, or past it, on that branch, and the files exactly as the work was
+    // kept. A clean tree goes the usual way, which puts the same back.
+    const current = kept.uncommitted ? yield* headOid(top) : undefined;
+    const on =
+      current === undefined
+        ? false
+        : branch === undefined ||
+          (yield* git(top, ["symbolic-ref", "--quiet", "HEAD"]).pipe(
+            Effect.map((out) => out.status === 0 && out.stdout.trim() === `refs/heads/${branch}`),
+            Effect.orElseSucceed(() => false),
+          ));
+    if (
+      on &&
+      current !== undefined &&
+      (current === head || (yield* isAncestor(top, head, current))) &&
+      (yield* writeWorktreeTree(top)) ===
+        (yield* run(top, [
+          "rev-parse",
+          "--verify",
+          "--quiet",
+          `${kept.commit}^{tree}`,
+        ])).stdout.trim()
+    )
+      return { ahead: current !== head } satisfies WipRestored;
     const status = yield* run(top, [...STRICT_STATUS_ARGS]);
     if (status.stdout.trim() !== "")
       return yield* fail(`${top} has changes of its own, so nothing was put back over them`);

@@ -11,6 +11,7 @@ import {
   NotFound,
   type TerminalId,
   type Thread,
+  type HostSessionOpen,
   type ThreadId,
   ThreadNotFound,
   WorktreeDirty,
@@ -59,6 +60,8 @@ export interface Machine {
   readonly connection?: Effect.Effect<HostConnection, HostUnavailable>;
   /** How long its sessions wait for it to dial in again, read at each wait. */
   readonly reattachMs?: () => number;
+  /** Why a thread's session mustn't open there now, asked as it goes (`followingSessions`). */
+  readonly admit?: (threadId: ThreadId) => string | undefined;
 }
 
 const offline = (machine: Machine) => `${machine.name} is offline.`;
@@ -467,10 +470,12 @@ export const machineWorkerHost = (
     const sessions =
       machine.connection === undefined
         ? connection.sessions
-        : followingSessions(
-            machine.connection,
-            machine.reattachMs === undefined ? {} : { reattachMs: machine.reattachMs },
-          );
+        : followingSessions(machine.connection, {
+            ...(machine.reattachMs === undefined ? {} : { reattachMs: machine.reattachMs }),
+            ...(machine.admit === undefined
+              ? {}
+              : { admit: (request: HostSessionOpen) => machine.admit?.(request.threadId) }),
+          });
     return {
       id: machine.id,
       sessions: AgentHosts.of({
@@ -568,6 +573,13 @@ export const machineHosts = (
             // A machine readied to stop is waited for longer: it comes back as a new host.
             reattachMs: () =>
               remote.stops.recently(id) ? STOPPED_REATTACH_MS : REATTACH_WITHIN_MS,
+            // Asked again as the open goes out: the machine may have come back on another disk
+            // since its session was let through, and owe a resume first.
+            admit: (threadId: ThreadId) =>
+              remote.stops.blocked(id, threadId) ??
+              (remote.stops.resuming(id) && !remote.stops.isThreadBack(id, threadId)
+                ? "That machine's threads are being put back."
+                : undefined),
           };
           const host = yield* machineWorkerHost(machine, connection, deps).pipe(
             Scope.provide(scope),

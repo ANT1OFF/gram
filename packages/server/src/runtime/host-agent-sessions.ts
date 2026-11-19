@@ -62,6 +62,17 @@ export const machineRestartedEnded = (machine: string): AgentEvent => ({
   restartedMachine: machine,
 });
 
+/**
+ * The event a joined machine's session ends with when the machine came back without it on another
+ * disk (`HostSessionsConnection.replaced`): a new machine under the same key, its folders not there
+ * until a resume puts them back. Lost, not restarted: the conversation isn't carried on there.
+ */
+export const machineReplacedEnded = (machine: string): AgentEvent => ({
+  type: "ended",
+  reason: `${machine} came back on a new disk, without the session, so the agent stopped with it.`,
+  lostMachine: machine,
+});
+
 /** The event a joined machine's session ends with when the machine didn't come back in time. */
 export const machineAwayEnded = (machine: string): AgentEvent => ({
   type: "ended",
@@ -350,9 +361,12 @@ const openOnHost = (
               ? error._tag === "NotFound"
                 ? HOST_SESSION_GONE_ENDED
                 : HOST_STOPPED_ENDED
-              : // A machine that came back without the session restarted under it.
+              : // A machine that came back without the session restarted under it, on the same
+                // disk; one that came back on another was replaced, and the session lost with it.
                 error._tag === "NotFound"
-                ? machineRestartedEnded(machine)
+                ? host.replaced?.(handle) === true
+                  ? machineReplacedEnded(machine)
+                  : machineRestartedEnded(machine)
                 : machineAwayEnded(machine),
           ),
         ),

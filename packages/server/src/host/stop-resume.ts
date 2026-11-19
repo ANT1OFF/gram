@@ -22,7 +22,8 @@ import {
   type HostId,
   hostOf,
   type HostStopKept,
-  type HostUnavailable,
+  HostUnavailable,
+  hostServes,
   type SavedDiff,
   type Thread,
   type ThreadId,
@@ -31,6 +32,10 @@ import { isWipRefOf } from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as Duration from "effect/Duration";
+import * as FiberSet from "effect/FiberSet";
+import * as Schedule from "effect/Schedule";
+import type * as Scope from "effect/Scope";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
@@ -40,7 +45,8 @@ import { FOLDER_THERE } from "./stop.ts";
 export interface StopResumeDeps {
   readonly hosts: Pick<RemoteHostsShape, "connection" | "machines" | "stops">;
   readonly store: Pick<ThreadStore["Service"], "listThreads">;
-  readonly runtimes: Pick<ThreadRuntimesShape, "restSession" | "startSession">;
+  readonly runtimes: Pick<ThreadRuntimesShape, "restSession" | "startSession"> &
+    Partial<Pick<ThreadRuntimesShape, "snapshot">>;
   /** Brings the machine's shared-folder mirrors in step one last time, where there are any. */
   readonly sharedFlush?: (id: HostId) => Effect.Effect<void>;
 }
@@ -422,6 +428,11 @@ export interface HostResumed {
     readonly source?: "ref" | "branch";
     readonly note?: string;
   }>;
+  /**
+   * Folders taken as back for being there, a readable repository, with nothing kept to hold them
+   * to: one the user picked, and maybe put back by hand. Not checked against any work.
+   */
+  readonly unverified?: ReadonlyArray<{ readonly threadId: ThreadId; readonly cwd: string }>;
 }
 
 /** How long a machine gets to clone a repository again and put one folder's work back. */
@@ -447,7 +458,7 @@ const madeFrom = (thread: Thread, id: HostId, cwd: string) => {
 
 /** What a resume made of one thread's folder. */
 type FolderOutcome =
-  | { readonly kind: "there" }
+  | { readonly kind: "there"; readonly unverified?: true }
   | ({ readonly kind: "restored" } & HostResumed["restored"][number])
   | { readonly kind: "missing"; readonly note?: string }
   | { readonly kind: "refused"; readonly note: string };
@@ -495,14 +506,19 @@ export const resumeHost = (
 ): Effect.Effect<HostResumed, HostUnavailable> =>
   Effect.suspend(() => {
     const stops = deps.hosts.stops;
-    // Counted before anything can fail, so the `resumed` that ends it is this resume's own.
-    stops.resumeStarted(id);
+    // Counted before anything can fail, so the `resumed` that ends it is this resume's own. Each
+    // result names the generation it runs for: once the machine is owed a resume afresh (back on
+    // another disk), what this one finds on the disk it reached counts for nothing.
+    const generation = stops.resumeStarted(id);
     return Effect.gen(function* () {
       const connection = yield* deps.hosts.connection(id);
+      /** The connection the resume runs on went: what it says of folders isn't known any more. */
+      const lost = (): boolean => (connection.gone as (() => boolean) | undefined)?.() === true;
       const placed = placedOn(yield* deps.store.listThreads, id);
       const missing: Array<HostResumed["missing"][number]> = [];
       const refused: Array<HostResumed["refused"][number]> = [];
       const restored: Array<HostResumed["restored"][number]> = [];
+      const unverified: Array<NonNullable<HostResumed["unverified"]>[number]> = [];
       const restore = connection.stop.restore;
       const folders = placed.flatMap(({ thread, cwds }) => cwds.map((cwd) => ({ thread, cwd })));
       const presence = connection.git.presence ?? ((cwd: string) => connection.git.present(cwd));
@@ -523,16 +539,62 @@ export const resumeHost = (
           { concurrency: RESTORE_CONCURRENCY },
         ),
       );
-      // Missing now: owed until this resume, or a later one, is done with it.
-      for (const [cwd, there] of seen) if (there === false) stops.folderOwed(id, cwd);
+      // A folder the host can make again: one Gram made from a clone for any thread that shares
+      // it, on a host that restores. Another thread taking the same path as its own doesn't stop
+      // it being checked.
+      const remakeable = (sharing: ReadonlyArray<(typeof folders)[number]>) =>
+        restore !== undefined &&
+        sharing.some(({ thread, cwd }) => madeFrom(thread, id, cwd) !== undefined);
+      // On a disk the folders weren't last seen on, one that is there is checked against what
+      // was kept, never taken as back for being there.
+      const verifyThere = stops.onOtherDisk(id);
+      // What a resume before this one set out to put back and didn't finish with.
+      const owedBefore = new Set(
+        [...new Set(folders.map(({ cwd }) => cwd))].filter((cwd) => stops.isFolderOwed(id, cwd)),
+      );
+      // Missing now, or not known, and the host can make it: owed until a resume is done with it,
+      // written before anything is put back there. Not written, nothing is put back: still owed.
+      const owing = [...Map.groupBy(folders, ({ cwd }) => cwd)]
+        .filter(([cwd, sharing]) => remakeable(sharing) && (seen.get(cwd) !== true || verifyThere))
+        .map(([cwd]) => cwd);
+      const written = yield* Effect.try(() => {
+        for (const cwd of owing) stops.folderOwed(id, cwd, generation);
+      }).pipe(Effect.option);
+      if (written._tag === "None")
+        return yield* new HostUnavailable({
+          hostId: id,
+          message: "The machine's record couldn't be kept, so nothing was put back.",
+        });
+      /** A host that checks a folder a resume before didn't finish with before taking it as back. */
+      const checksPending =
+        connection.hello !== undefined && hostServes(connection.hello, "wip-restore-pending");
       const putBack = (
         { thread, cwd }: (typeof folders)[number],
         there: boolean | undefined,
+        pending: boolean,
       ): Effect.Effect<FolderOutcome> =>
         Effect.gen(function* () {
           const made = madeFrom(thread, id, cwd);
           if (restore === undefined || made === undefined) {
-            if (there === true) return { kind: "there" };
+            // Nothing to hold it to: back only as a repository its git can read, and said to be
+            // unchecked. An empty or unreadable folder is no folder of the thread's.
+            if (there === true) {
+              const local = (
+                connection.git as { local?: (cwd: string) => Effect.Effect<unknown, unknown> }
+              ).local;
+              const readable =
+                local === undefined ||
+                (yield* local(cwd).pipe(
+                  Effect.as(true),
+                  Effect.orElseSucceed(() => false),
+                ));
+              return readable
+                ? { kind: "there", unverified: true }
+                : {
+                    kind: "refused",
+                    note: "Its folder is there, but isn't a repository Git can read.",
+                  };
+            }
             if (there === false) return { kind: "missing" };
             return {
               kind: "refused",
@@ -556,6 +618,7 @@ export const resumeHost = (
             ...(remote === undefined ? {} : { remote }),
             ...(commit === undefined ? {} : { commit }),
             ...(commit !== undefined && before?.caughtUp === true ? { caughtUp: true } : {}),
+            ...(pending ? { pending: true } : {}),
           }).pipe(
             Effect.map((said) => ({ said, failed: undefined })),
             Effect.timeoutOrElse({
@@ -580,8 +643,16 @@ export const resumeHost = (
               ...(said.source === undefined ? {} : { source: said.source }),
               ...note,
             };
-          // Made meanwhile, by a resume beside this one, or there all along: left as it is.
-          if (said.there === true || said.note === FOLDER_THERE) return { kind: "there" };
+          // Made meanwhile, by a resume beside this one, or there all along: left as it is. Not a
+          // folder a resume before set out to put back, though, unless the host checked it: what
+          // is there may be part of it, a clone without its work.
+          if (said.there === true || said.note === FOLDER_THERE)
+            return pending && !checksPending
+              ? {
+                  kind: "refused",
+                  note: "A resume before set out to put this folder back, and this machine's host can't check it: update it, or remove the folder.",
+                }
+              : { kind: "there" };
           return { kind: "missing", ...note };
         });
       // Each thread's folders as they are done with, and the threads whose folders are all done.
@@ -590,6 +661,8 @@ export const resumeHost = (
       const notBack = new Map<ThreadId, string>();
       const done = (threadId: ThreadId, cwd: string, outcome: FolderOutcome) =>
         Effect.sync(() => {
+          if (outcome.kind === "there" && outcome.unverified === true)
+            unverified.push({ threadId, cwd });
           if (outcome.kind === "restored") {
             const { kind: _, ...entry } = outcome;
             restored.push(entry);
@@ -600,16 +673,22 @@ export const resumeHost = (
               ...(outcome.note === undefined ? {} : { note: outcome.note }),
             });
           else if (outcome.kind === "refused") refused.push({ threadId, cwd, note: outcome.note });
-          if ((outcome.kind === "missing" || outcome.kind === "refused") && !notBack.has(threadId))
+          // What a machine whose connection went said, or didn't, of a folder is unknown, not
+          // missing: nothing is blocked on it, and the resume fails below and stays owed.
+          if (
+            (outcome.kind === "missing" || outcome.kind === "refused") &&
+            !notBack.has(threadId) &&
+            !lost()
+          )
             notBack.set(threadId, blockReason(outcome));
           const more = (toGo.get(threadId) ?? 1) - 1;
           toGo.set(threadId, more);
-          stops.progress(id);
-          if (more > 0) return;
+          stops.progress(id, generation);
+          if (more > 0 || lost()) return;
           // Only a thread whose every folder is back opens its session; the rest say why.
           const why = notBack.get(threadId);
-          if (why === undefined) stops.threadBack(id, threadId);
-          else stops.block(id, threadId, why);
+          if (why === undefined) stops.threadBack(id, threadId, generation);
+          else stops.block(id, threadId, why, generation);
         });
       // A few folders at once: each is a clone and a fetch on the host, and sessions wait for them
       // all. Threads sharing a folder take it in turn: once one has it back, it is back for all.
@@ -624,24 +703,33 @@ export const resumeHost = (
         Effect.gen(function* () {
           const cwd = sharing[0]!.cwd;
           // A folder a resume before couldn't put back, or set out to and didn't finish with, is
-          // asked of the host again, there or not: what is at its path may be only what another
-          // folder's restore made of it.
+          // asked of the host again, there or not, and checked by it (`pending`): what is at its
+          // path may be only part of it. One the host can't make again (a folder the user picked)
+          // is taken as it is: there, and readable, is back, as when the user put it back.
+          // By folder: a sibling folder that couldn't be put back puts this one through nothing.
           const again =
-            stops.isFolderOwed(id, cwd) ||
-            sharing.some(({ thread }) => stops.blocked(id, thread.id) !== undefined);
+            remakeable(sharing) && (owedBefore.has(cwd) || (verifyThere && seen.get(cwd) === true));
+          // The thread made from the clone asks first: its restore is the one that checks.
+          const ordered = [...sharing].toSorted(
+            (a, b) =>
+              Number(madeFrom(b.thread, id, b.cwd) !== undefined) -
+              Number(madeFrom(a.thread, id, a.cwd) !== undefined),
+          );
           const there = again && seen.get(cwd) === true ? undefined : seen.get(cwd);
           const outcomes: Array<FolderOutcome> = [];
           let back = false;
-          for (const folder of sharing) {
-            if (back || there === true) {
+          for (const folder of ordered) {
+            // There on the disk its folders were last seen on, and the host could make it: as it
+            // was left. One the host can't make is held to being a readable repository below.
+            if (back || (there === true && remakeable(sharing))) {
               outcomes.push({ kind: "there" });
               continue;
             }
-            const outcome = yield* putBack(folder, there);
+            const outcome = yield* putBack(folder, there, again);
             outcomes.push(outcome);
             back = outcome.kind === "there" || outcome.kind === "restored";
           }
-          for (const [at, folder] of sharing.entries()) {
+          for (const [at, folder] of ordered.entries()) {
             const outcome = outcomes[at]!;
             // Back for one of them is back for all who share it.
             const settled =
@@ -652,22 +740,50 @@ export const resumeHost = (
           }
           // Done with: put back or there for all who share it, or missing with nothing kept of it.
           // One refused stays owed, and blocked, for the next resume.
-          if (back || outcomes.every((outcome) => outcome.kind === "missing"))
-            stops.folderDone(id, cwd);
+          // Nothing a connection that went said counts.
+          if (!lost() && (back || outcomes.every((outcome) => outcome.kind === "missing")))
+            // Not written: still owed, and the next resume asks again.
+            yield* Effect.try(() => stops.folderDone(id, cwd, generation)).pipe(Effect.ignore);
         });
       yield* Effect.forEach(groups, putBackShared, {
         concurrency: RESTORE_CONCURRENCY,
         discard: true,
       });
+      // Every folder done with, but on a connection that went, or a disk the machine has left since:
+      // not a resume of the machine as it is now. It is owed still, and the threads at rest wait
+      // for the one that is.
+      if (lost() || !stops.isCurrent(id, generation))
+        return yield* new HostUnavailable({
+          hostId: id,
+          message: lost()
+            ? "The machine's connection went while its threads were put back."
+            : "The machine came back on another disk while its threads were put back.",
+        });
       const live = new Set(placed.filter(({ session }) => session).map(({ thread }) => thread.id));
       const reopened: Array<ThreadId> = [];
       const left: Array<{ readonly threadId: ThreadId; readonly reason: string }> = [];
-      for (const threadId of stops.takeRested(id)) {
-        // Archived, closed or moved since the stop.
-        if (!live.has(threadId)) continue;
+      /** The resume, from here on, isn't of the machine as it is now: it stops, still owed. */
+      const superseded = () =>
+        lost() || !stops.isCurrent(id, generation)
+          ? new HostUnavailable({
+              hostId: id,
+              message:
+                "The machine went, or came back on another disk, while its threads reopened.",
+            })
+          : undefined;
+      // Each thread at rest leaves the list once its session is seen open, or the thread is gone:
+      // one whose folder isn't back, whose start was refused or that doesn't open in time stays
+      // on it for the next resume.
+      const opening: Array<ThreadId> = [];
+      for (const threadId of stops.restedOf(id)) {
         const why = notBack.get(threadId);
         if (why !== undefined) {
           left.push({ threadId, reason: why });
+          continue;
+        }
+        // Archived, closed or moved since the stop: nothing to reopen.
+        if (!live.has(threadId)) {
+          yield* Effect.try(() => stops.restedDone(id, threadId, generation)).pipe(Effect.ignore);
           continue;
         }
         const started = yield* deps.runtimes.startSession(threadId).pipe(
@@ -676,9 +792,37 @@ export const resumeHost = (
             Effect.succeed(error._tag === "InvalidState" ? error.message : "The thread is gone."),
           ),
         );
-        if (started === undefined) reopened.push(threadId);
+        const stop = superseded();
+        if (stop !== undefined) return yield* stop;
+        if (started === undefined) opening.push(threadId);
         else left.push({ threadId, reason: started });
       }
+      const opened = yield* Effect.forEach(
+        opening,
+        (threadId) =>
+          Effect.map(sessionOpened(deps.runtimes, threadId), (ok) => [threadId, ok] as const),
+        { concurrency: "unbounded" },
+      );
+      const stop = superseded();
+      if (stop !== undefined) return yield* stop;
+      for (const [threadId, ok] of opened) {
+        if (!ok) {
+          left.push({ threadId, reason: "Its session didn't open." });
+          continue;
+        }
+        reopened.push(threadId);
+        // Not written: still on the list, and the next resume finds it open already.
+        yield* Effect.try(() => stops.restedDone(id, threadId, generation)).pipe(Effect.ignore);
+      }
+      // Gone through every folder on the machine as it is now: it owes nothing, once that is
+      // written. Not written, it is still owed, and this resume says it failed.
+      const settled = yield* Effect.try(() => stops.settle(id, generation)).pipe(Effect.option);
+      if (settled._tag === "None")
+        return yield* new HostUnavailable({
+          hostId: id,
+          message:
+            "The machine's threads are back, but its record couldn't be kept: resume it again.",
+        });
       yield* Effect.logInfo("a machine's threads were resumed").pipe(
         Effect.annotateLogs({
           hostId: id,
@@ -691,12 +835,51 @@ export const resumeHost = (
           ...(refused.length === 0 ? {} : { refusedWhy: counted(refused) }),
         }),
       );
-      return { reopened, left, missing, refused, restored };
+      return {
+        reopened,
+        left,
+        missing,
+        refused,
+        restored,
+        ...(unverified.length === 0 ? {} : { unverified }),
+      };
     }).pipe(
-      // Sessions held for it (`StopMarks.resuming`) open now, but those of threads not back.
-      Effect.ensuring(Effect.sync(() => stops.resumed(id))),
+      // Counted off however it ended. Only `settle` above lifts what the machine owes: one that
+      // couldn't reach the machine, failed or was cut off leaves the resume owed.
+      Effect.onExit(() => Effect.sync(() => stops.resumed(id, generation, false))),
     );
   });
+
+/** How long a reopened session at rest is waited for before it counts as not opened. */
+export const REOPEN_WITHIN = Duration.minutes(2);
+
+/** The statuses of a thread whose session is open. */
+const OPEN: ReadonlySet<string> = new Set(["idle", "running", "needsApproval", "needsInput"]);
+
+/**
+ * Whether the thread's session is seen open, its start having been asked: true once its status is
+ * one of an open session's, false once it ends up in another or `REOPEN_WITHIN` passes. A runtime
+ * that can't say (only in tests) is taken at its start's word.
+ */
+const sessionOpened = (
+  runtimes: Partial<Pick<ThreadRuntimesShape, "snapshot">>,
+  threadId: ThreadId,
+): Effect.Effect<boolean> => {
+  const snapshot = runtimes.snapshot;
+  if (snapshot === undefined) return Effect.succeed(true);
+  const look = snapshot.pipe(
+    Effect.map((all) => all.find((summary) => summary.thread.id === threadId)?.status),
+    Effect.flatMap((status) =>
+      status === "starting" ? Effect.fail("starting" as const) : Effect.succeed(status),
+    ),
+  );
+  return look.pipe(
+    Effect.retry(Schedule.spaced("250 millis")),
+    Effect.timeoutOrElse({ duration: REOPEN_WITHIN, orElse: () => Effect.succeed(undefined) }),
+    Effect.map((status) => status !== undefined && OPEN.has(status)),
+    Effect.orElseSucceed(() => false),
+  );
+};
 
 export interface StopState {
   readonly id: HostId;
@@ -707,8 +890,8 @@ export interface StopState {
   /** A thread waits for it to be started now. */
   readonly wanted: boolean;
   /**
-   * Dialled in after a stop and not yet resumed (`StopMarks.resuming`), however it was started:
-   * resume it (`POST /machines/stop/resume`), as its sessions wait for that.
+   * Dialled in after a stop, or on another disk, and not yet resumed (`StopMarks.owes`), however
+   * it was started: resume it (`POST /machines/stop/resume`), as its sessions wait for that.
    */
   readonly resuming?: boolean;
 }
@@ -733,7 +916,7 @@ export const stopStatus = (
           online,
           ...(stoppedAt === undefined ? {} : { stoppedAt }),
           wanted: deps.hosts.stops.wanted(id),
-          ...(online && deps.hosts.stops.resuming(id) ? { resuming: true } : {}),
+          ...(online && deps.hosts.stops.owes(id) ? { resuming: true } : {}),
         };
       }),
   );
@@ -755,3 +938,95 @@ export const savedDiffOf = (
       return saved === undefined ? [] : [saved];
     })[0];
 };
+
+/** How often machines owing a resume are looked at again, should no change say so. */
+const OWED_SWEEP = "1 minute";
+/**
+ * How often a machine that owes nothing but has threads whose folders couldn't be put back is
+ * resumed again: one put back by hand, or a fetch that failed for a while, is found then.
+ */
+export const BLOCKED_RETRY_MS = 10 * 60_000;
+/** The first wait before threads at rest whose sessions didn't open are tried again, doubled up to the most. */
+export const RESTED_RETRY_FIRST_MS = 60_000;
+export const RESTED_RETRY_MOST_MS = 30 * 60_000;
+
+/**
+ * With the hosted features off, nothing outside this Gram starts or resumes its machines, so one
+ * that dials in owing a resume (back on another disk, `StopMarks.owes`) is resumed here as soon as
+ * it is online, one resume at a time: its sessions wait for that rather than open over folders
+ * that aren't there. A resume that doesn't complete leaves it owed, and it is tried again at the
+ * next change or sweep. With them on, whoever starts the machines asks (`POST /machines/stop/resume`).
+ */
+export const resumeOwedMachines = (
+  deps: StopResumeDeps & {
+    readonly hosts: Pick<RemoteHostsShape, "watch">;
+    readonly settings: Pick<ThreadStore["Service"], "getSettings">;
+  },
+): Effect.Effect<void, never, Scope.Scope> =>
+  Effect.gen(function* () {
+    const run = yield* FiberSet.makeRuntime<never>();
+    const going = new Set<HostId>();
+    /** When each machine owing nothing but blocked folders was last resumed for them. */
+    const triedBlocked = new Map<HostId, number>();
+    /** When each machine with threads at rest not yet reopened is tried next, and how long after. */
+    const restedBackoff = new Map<HostId, { wait: number; next: number }>();
+    const sweep = Effect.gen(function* () {
+      const hosted = embeddingOn(yield* deps.settings.getSettings);
+      for (const machine of deps.hosts.machines.list()) {
+        const id = machine.id as HostId;
+        if (machine.confirmedAt === undefined || going.has(id)) continue;
+        if (deps.hosts.stops.resumeRunning(id)) continue;
+        const at = yield* Clock.currentTimeMillis;
+        // Left at rest after a resume: one that owes nothing more and isn't readied to stop again.
+        const resting =
+          deps.hosts.stops.restedOf(id).length > 0 &&
+          !deps.hosts.stops.owes(id) &&
+          deps.hosts.stops.stoppedAt(id) === undefined;
+        if (hosted || !deps.hosts.stops.owes(id)) {
+          // Threads at rest whose sessions didn't open: tried again, less often each time, with
+          // the hosted features on or off. Owing nothing, but with folders that couldn't be put
+          // back: asked again now and then, with them off; with them on, whoever starts machines
+          // resumes them.
+          const backoff = restedBackoff.get(id);
+          const restedDue = resting && (backoff === undefined || at >= backoff.next);
+          const blockedDue =
+            !hosted &&
+            deps.hosts.stops.anyBlocked(id) &&
+            at - (triedBlocked.get(id) ?? 0) >= BLOCKED_RETRY_MS;
+          if (!restedDue && !blockedDue) continue;
+          if (blockedDue) triedBlocked.set(id, at);
+          if (restedDue) {
+            const wait = Math.min(
+              (backoff?.wait ?? RESTED_RETRY_FIRST_MS / 2) * 2,
+              RESTED_RETRY_MOST_MS,
+            );
+            restedBackoff.set(id, { wait, next: at + wait });
+          }
+        }
+        if (!resting) restedBackoff.delete(id);
+        const online = yield* deps.hosts.connection(id).pipe(
+          Effect.as(true),
+          Effect.orElseSucceed(() => false),
+        );
+        if (!online) continue;
+        going.add(id);
+        run(
+          Effect.logInfo("a machine back on another disk is resumed by this Gram").pipe(
+            Effect.annotateLogs({ hostId: id }),
+            Effect.andThen(resumeHost(deps, id)),
+            Effect.catchCause((cause) =>
+              Effect.logWarning("a machine's resume didn't complete; it is tried again").pipe(
+                Effect.annotateLogs({ hostId: id, reason: Cause.pretty(cause).slice(0, 300) }),
+              ),
+            ),
+            Effect.ensuring(Effect.sync(() => going.delete(id))),
+          ),
+        );
+      }
+    }).pipe(Effect.catchCause(() => Effect.void));
+    yield* Effect.acquireRelease(
+      Effect.sync(() => deps.hosts.watch(() => void run(sweep))),
+      (unwatch) => Effect.sync(unwatch),
+    );
+    yield* sweep.pipe(Effect.repeat(Schedule.spaced(OWED_SWEEP)), Effect.forkScoped);
+  });
