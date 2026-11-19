@@ -106,6 +106,29 @@ installed in a temporary directory with `npm ci --ignore-scripts --omit=dev`.
   is Developer ID signed, notarized and stapled; there is no unsigned stable path.
 - **Source:** the release PR is merged, all three version fields read the version, the exact
   merged source has passed its checks, and nobody else is cutting this version.
+- **Release key:** once `GRAM_RELEASE_PUBLIC_KEY` is pinned, the release key in your login
+  keychain (see [Release signing key](#release-signing-key)).
+
+### Release signing key
+
+Joined machines (`gram-host` updating itself, and the join installer) take a Linux release only
+when its `SHA256SUMS.txt` carries the publisher's Ed25519 signature, `SHA256SUMS.txt.sig`; on
+macOS they check the app's Developer ID team instead, and the signature too once a key is pinned.
+The private half lives only in the publisher's login keychain, so GitHub alone can't change what
+installs. Make it once, on the Mac that publishes:
+
+    bun run release:key keygen
+
+It keeps the private half in the keychain as "Gram release signing", never replaces one that is
+there, and prints the public half. Back the private half up offline, then pin the public half as
+`GRAM_RELEASE_PUBLIC_KEY` in [release-signature.ts](../packages/git/src/release-signature.ts) in a
+pull request. From then on `release:rc` and `release:stable linux` sign each `SHA256SUMS.txt` they
+write, and `release:stable validate` verifies the signature it downloads. `bun run release:key
+show` prints the public half of the key in the keychain.
+
+Until it is pinned the source holds a placeholder (`null`): releases carry no signature, and every
+Linux joined-machine update and Linux install from a release refuses with "Signed release
+refused". Dev builds and Gram run from source are unaffected.
 
 ### Holding main during the cut
 

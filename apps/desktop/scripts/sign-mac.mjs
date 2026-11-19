@@ -31,7 +31,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENTITLEMENTS = join(HERE, "../build/entitlements.mac.plist");
 const signature = await import(
-  pathToFileURL(join(HERE, "../../../packages/shell/src/modules/update/mac-signature.ts")).href
+  pathToFileURL(join(HERE, "../../../packages/git/src/mac-signature.ts")).href
 );
 const {
   GRAM_MAC_TEAM_ID,
@@ -103,7 +103,7 @@ if (!options.adhoc) {
   if (teamId !== GRAM_MAC_TEAM_ID)
     fail(
       `the identity's team ${teamId} is not GRAM_MAC_TEAM_ID (${GRAM_MAC_TEAM_ID ?? "unset"}) in ` +
-        "packages/shell/src/modules/update/mac-signature.ts; the updater would refuse this build.",
+        "packages/git/src/mac-signature.ts; the updater would refuse this build.",
     );
   // Lists names and hashes only, never key material.
   const identities = tool("/usr/bin/security", [

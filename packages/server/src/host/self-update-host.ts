@@ -4,6 +4,8 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { type HostBusy, type HostUpdateProgress, HostUpdateRefused } from "@gram/contracts";
+import { GRAM_MAC_TEAM_ID, verifyMacCodeSignature } from "@gram/git/mac-signature";
+import { GRAM_RELEASE_PUBLIC_KEY } from "@gram/git/release-signature";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Schedule from "effect/Schedule";
@@ -58,12 +60,28 @@ export const selfUpdater = (
     unpack: async (archive, into) => {
       await unpackRelease(platform)(archive, into);
     },
+    releaseKey: GRAM_RELEASE_PUBLIC_KEY,
+    verifyApp: verifyPublisherApp(platform),
     probe: probeHost,
     handOver: handOverToSupervisor(platform),
     now: Date.now,
   });
   return hostUpdaterOf(updater, () => mkdirSync(apps, { recursive: true, mode: 0o700 }));
 };
+
+/**
+ * Rejects an unpacked app that isn't the publisher's: on macOS, unless `Gram.app` is Gram signed by
+ * the pinned Developer ID team, sealed, hardened, notarized and stapled. Linux apps carry no code
+ * signature; their release's signed checksums stand for them.
+ */
+export const verifyPublisherApp =
+  (platform: NodeJS.Platform, verify: typeof verifyMacCodeSignature = verifyMacCodeSignature) =>
+  async (dir: string): Promise<void> => {
+    if (platform !== "darwin") return;
+    if (GRAM_MAC_TEAM_ID === null)
+      throw new Error("Signed update refused: this build pins no publisher Team ID.");
+    await verify(join(dir, "Gram.app"), GRAM_MAC_TEAM_ID, { notarization: true });
+  };
 
 /** The updater as the protocol serves it: its steps as a stream, its refusal as the stream's error. */
 export const hostUpdaterOf = (

@@ -7,13 +7,37 @@
  * in host mode, `launch.ts`), so the machine needs no Node, checkout or package of its own. The script uses a Gram
  * app installed there when it is this Gram's version (or, for a Gram run from source, any that has
  * `gram-host.js`); otherwise it downloads this Gram's release from GitHub, checks it against the
- * release's `SHA256SUMS.txt`, and keeps it beside the host's folder. It then writes a `gram-host`
+ * release's `SHA256SUMS.txt`, and keeps it beside the host's folder. On Linux that list must carry
+ * the publisher's Ed25519 signature under the key pinned in `@gram/git/release-signature`, checked
+ * with OpenSSL 3; on macOS the unpacked app must be Gram signed by the publisher's Developer ID
+ * team and accepted by Gatekeeper, before anything in it runs. It then writes a `gram-host`
  * command to `~/.local/bin` and joins with the link on stdin; run again on a joined machine, it
  * moves the service to the new app instead. The script holds no secret: the link is the user's to
  * pass, and it sits in that shell's history and `sh`'s arguments until the script ends.
  */
 
+import { GRAM_MAC_TEAM_ID, macDesignatedRequirement, validTeamId } from "@gram/git/mac-signature";
+import { GRAM_RELEASE_PUBLIC_KEY, releaseKeyPem } from "@gram/git/release-signature";
 import { LINUX_HOST_SWITCHES } from "./launch.ts";
+
+/** Whom the installer trusts a downloaded app from, and the Apple tools it asks; seams for tests. */
+export interface InstallTrust {
+  /** The publisher's release signing key (base64 Ed25519); null, the placeholder, refuses on Linux. */
+  readonly releaseKey: string | null;
+  /** The publisher's Developer ID Team ID; null refuses a download on macOS. */
+  readonly macTeam: string | null;
+  readonly codesign: string;
+  readonly spctl: string;
+}
+
+export const PUBLISHER: InstallTrust = {
+  releaseKey: GRAM_RELEASE_PUBLIC_KEY,
+  macTeam: GRAM_MAC_TEAM_ID,
+  codesign: "/usr/bin/codesign",
+  spctl: "/usr/sbin/spctl",
+};
+
+const TOOL = /^\/[0-9A-Za-z/._-]+$/;
 
 /** The public repository whose releases the app is downloaded from. */
 export const RELEASES = "https://github.com/ANT1OFF/gram/releases/download";
@@ -47,8 +71,12 @@ export const installScript = (
     /** Only moves a joined machine's service, run over SSH to update it: it never joins. */
     readonly update?: boolean;
   } = {},
+  trust: InstallTrust = PUBLISHER,
 ): string => {
   const { link } = run;
+  const team = trust.macTeam !== null && validTeamId(trust.macTeam) ? trust.macTeam : undefined;
+  const key = trust.releaseKey === null ? "" : releaseKeyPem(trust.releaseKey);
+  if (!TOOL.test(trust.codesign) || !TOOL.test(trust.spctl)) throw new Error("Not a tool path.");
   if (!ORIGIN.test(origin)) throw new Error("Not an https origin.");
   if (version !== undefined && !VERSION.test(version)) throw new Error("Not a version.");
   if (link !== undefined && !link.startsWith(`${origin}/host/join#code=`))
@@ -64,19 +92,47 @@ VERSION='${version ?? ""}'
 RELEASE="${RELEASES}/v$VERSION"
 LINK='${link ?? ""}'
 UPDATE='${run.update === true ? "1" : ""}'
+RELEASE_KEY='${key}'
+MAC_REQUIREMENT='${team === undefined ? "" : macDesignatedRequirement(team)}'
+CODESIGN='${trust.codesign}'
+SPCTL='${trust.spctl}'
 
 say() { printf 'gram-host: %s\\n' "$*" >&2; }
 die() { say "$*"; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$2"; }
 
-# The release file's checksum, from the release's own list.
+# The release's checksum list, as a file: on Linux only once the publisher's signature of its exact
+# bytes verifies (macOS checks the app's own Developer ID signature instead, \`mac_signed\`).
+sums() {
+  curl -fsSL -o "$APPS/.sums" "$RELEASE/SHA256SUMS.txt" || die "Couldn't read the release's checksums."
+  [ "$(uname -s)" = Linux ] || return 0
+  [ -n "$RELEASE_KEY" ] || die "Signed release refused: this Gram pins no release signing key, so it can't verify the release."
+  need openssl "OpenSSL 3 is needed to check the release's signature."
+  case "$(openssl version 2>/dev/null)" in "OpenSSL "[3-9]*) ;; *) die "OpenSSL 3 is needed to check the release's signature." ;; esac
+  curl -fsSL -o "$APPS/.sums.sig" "$RELEASE/SHA256SUMS.txt.sig" || die "Signed release refused: the release has no checksum signature."
+  printf '%s\n' "$RELEASE_KEY" >"$APPS/.release-key.pem"
+  openssl base64 -d -A -in "$APPS/.sums.sig" -out "$APPS/.sums.bin" 2>/dev/null || die "Signed release refused: the release's checksum signature is malformed."
+  openssl pkeyutl -verify -pubin -inkey "$APPS/.release-key.pem" -rawin -in "$APPS/.sums" -sigfile "$APPS/.sums.bin" >/dev/null 2>&1 ||
+    die "Signed release refused: the release's checksums aren't signed by Gram's publisher."
+}
+
+# The release file's checksum, from the release's own (verified) list.
 verify() {
-  sums=$(curl -fsSL "$RELEASE/SHA256SUMS.txt") || die "Couldn't read the release's checksums."
-  want=$(printf '%s\\n' "$sums" | awk -v f="$2" '$2 == f || $2 == "*" f { print $1 }')
+  sums
+  want=$(awk -v f="$2" '$2 == f || $2 == "*" f { print $1 }' "$APPS/.sums")
+  rm -f "$APPS/.sums" "$APPS/.sums.sig" "$APPS/.sums.bin" "$APPS/.release-key.pem"
   [ -n "$want" ] || die "The release lists no checksum for $2."
   if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum "$1" | cut -d' ' -f1)
   else got=$(shasum -a 256 "$1" | cut -d' ' -f1); fi
   [ "$got" = "$want" ] || die "$2 doesn't match its checksum; nothing was installed."
+}
+
+# Whether the app bundle is Gram, sealed and signed by the publisher's Developer ID team, and
+# notarized as Gatekeeper sees it: before anything in a downloaded or cached app runs.
+mac_signed() {
+  [ -n "$MAC_REQUIREMENT" ] || return 1
+  "$CODESIGN" --verify --deep --strict -R "=$MAC_REQUIREMENT" "$1" >/dev/null 2>&1 || return 1
+  "$SPCTL" --assess --type execute "$1" >/dev/null 2>&1
 }
 
 download() {
@@ -143,13 +199,14 @@ main() {
       done
       if [ -z "$BIN" ]; then
         own="$APPS/$VERSION/Gram.app"
-        if [ -z "$VERSION" ] || [ ! -f "$APPS/$VERSION/.complete" ] || ! host_app "$own/Contents/MacOS/Gram" "$own/Contents/Resources"; then
+        if [ -z "$VERSION" ] || [ ! -f "$APPS/$VERSION/.complete" ] || ! mac_signed "$own" || ! host_app "$own/Contents/MacOS/Gram" "$own/Contents/Resources"; then
           zip="gram_\${VERSION}_darwin-arm64_signed.zip"
           download "$zip"
           stage=$(mktemp -d "$APPS/.extract-XXXXXX")
           trap 'rm -rf "$stage"' EXIT
           trap 'exit 1' HUP INT TERM
           ditto -x -k "$APPS/$zip" "$stage" || die "Couldn't unpack $zip."
+          mac_signed "$stage/Gram.app" || die "Signed update refused: the app isn't Gram signed by its publisher's Developer ID team and notarized; nothing was installed."
           host_app "$stage/Gram.app/Contents/MacOS/Gram" "$stage/Gram.app/Contents/Resources" || die "The extracted app is incomplete. Run the installer again."
           touch "$stage/.complete"
           rm -rf "$APPS/$VERSION"
