@@ -83,7 +83,17 @@ const takeFileLock = (path: string, waitMs: number): Database | undefined => {
   let db: Database | undefined;
   try {
     db = new (databaseSync())(path, { timeout: waitMs });
-    db.exec("PRAGMA journal_mode = OFF; PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE;");
+    // SQLite answers the mode it is left in, and leaves the old one when it can't change it now
+    // (macOS does so while another connection holds the file). Begun in that mode, the lock would
+    // write a rollback journal beside its file: take it only with journaling off.
+    const mode = db.prepare("PRAGMA journal_mode = OFF").get() as
+      | { journal_mode?: string }
+      | undefined;
+    if (mode?.journal_mode?.toLowerCase() !== "off") {
+      db.close();
+      return undefined;
+    }
+    db.exec("PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE;");
     return db;
   } catch (error) {
     try {
