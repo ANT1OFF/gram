@@ -3,12 +3,17 @@
   "slug": "worker-pane",
   "status": "draft",
   "template": "options",
-  "current": 1,
+  "current": 2,
   "approved": null,
   "versions": [
     {
       "n": 1,
       "file": "v1.html",
+      "created": "2026-11-19"
+    },
+    {
+      "n": 2,
+      "file": "v2.html",
       "created": "2026-11-19"
     }
   ],
@@ -17,24 +22,32 @@
       "name": "A Navigator",
       "board": "a-navigator",
       "shots": {
-        "dark": "shots/a-navigator-worker-dark.png",
-        "light": "shots/a-navigator-worker-light.png"
+        "dark": "shots/v2-a-navigator-worker-dark.png",
+        "light": "shots/v2-a-navigator-worker-light.png"
       }
     },
     {
-      "name": "B Tabs",
-      "board": "b-tabs",
+      "name": "A+ Switcher and hand-over",
+      "board": "a-switcher-and-hand-over",
       "shots": {
-        "dark": "shots/b-tabs-worker-dark.png",
-        "light": "shots/b-tabs-worker-light.png"
+        "dark": "shots/v2-a-switcher-and-hand-over-switcher-dark.png",
+        "light": "shots/v2-a-switcher-and-hand-over-switcher-light.png"
+      }
+    },
+    {
+      "name": "B One worker tab",
+      "board": "b-one-worker-tab",
+      "shots": {
+        "dark": "shots/v2-b-one-worker-tab-worker-dark.png",
+        "light": "shots/v2-b-one-worker-tab-worker-light.png"
       }
     },
     {
       "name": "C Split",
       "board": "c-split",
       "shots": {
-        "dark": "shots/c-split-split-dark.png",
-        "light": "shots/c-split-split-light.png"
+        "dark": "shots/v2-c-split-wide-dark.png",
+        "light": "shots/v2-c-split-wide-light.png"
       }
     }
   ]

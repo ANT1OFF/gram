@@ -1,0 +1,1855 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Worker pane directions · v2</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      /* ---------- The window: sidebar (or rail), the orchestrator's chat, the right pane ---------- */
+      .w {
+        display: grid;
+        grid-template-columns: 248px minmax(0, 1fr) var(--pane, 500px);
+        height: 100%;
+        min-height: inherit;
+        background: var(--surface-2);
+        color: var(--fg);
+        font-family: var(--font-ui);
+        font-size: 14px;
+        line-height: 20px;
+      }
+      .w.narrow {
+        grid-template-columns: 52px minmax(0, 1fr) var(--pane, 420px);
+      }
+      .w.closed {
+        grid-template-columns: 248px minmax(0, 1fr);
+      }
+      .w.split {
+        --pane: 780px;
+      }
+      .icon {
+        width: 16px;
+        height: 16px;
+      }
+
+      /* Sidebar */
+      .sb {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 8px;
+        background: var(--surface-1);
+        border-right: 1px solid var(--border-subtle);
+        min-width: 0;
+        overflow: hidden;
+      }
+      .sb-top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 28px;
+        color: var(--fg-muted);
+        font-size: 13px;
+        padding: 0 4px;
+      }
+      .sb-top .push {
+        margin-left: auto;
+        color: var(--fg);
+      }
+      .pill {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 30px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border-strong);
+        font-size: 13px;
+      }
+      .pill b {
+        font-weight: 400;
+        color: var(--status-needs);
+      }
+      .sb-search {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 6px;
+        height: 28px;
+        color: var(--fg-muted);
+      }
+      .sb-h {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        height: 26px;
+        padding: 0 6px;
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .sb-h .icon {
+        width: 12px;
+        height: 12px;
+      }
+      .sb-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+      .sb-ws {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        min-height: 32px;
+        padding: 0 6px;
+        border-radius: var(--radius-sm);
+      }
+      .sb-ws.on {
+        background: var(--surface-hover);
+      }
+      .sb-ws .t {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .sb-ws .e {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--fg-muted);
+        white-space: nowrap;
+      }
+      .sb-ws .e .icon {
+        width: 12px;
+        height: 12px;
+      }
+      .sb-ws .e .n {
+        min-width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        border: 1px solid var(--border-strong);
+        color: var(--status-needs);
+        font-size: 11px;
+        line-height: 16px;
+        text-align: center;
+      }
+      .sb-kids {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        margin: 0 0 4px 12px;
+        padding-left: 6px;
+        border-left: 1px solid var(--border-subtle);
+      }
+      .sb-solo {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        min-height: 30px;
+        padding: 0 6px;
+        font-size: 14px;
+      }
+      .sb-solo .t {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .sb-solo .a {
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .sb-hand {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0 0 4px 30px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .sb-hand .icon {
+        width: 12px;
+        height: 12px;
+      }
+
+      /* The rail, narrow */
+      .rail {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 0;
+        background: var(--surface-1);
+        border-right: 1px solid var(--border-subtle);
+        color: var(--fg-muted);
+      }
+      .rail .mono {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: var(--radius-sm);
+        font-size: 13px;
+        font-family: var(--font-ui);
+        color: var(--fg);
+      }
+      .rail .mono.on {
+        background: var(--surface-hover);
+      }
+
+      /* The orchestrator's chat */
+      .chat {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        background: var(--surface-2);
+      }
+      .cbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 40px;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--border-subtle);
+        font-size: 13px;
+        color: var(--fg-muted);
+        flex-shrink: 0;
+      }
+      .cbar strong {
+        color: var(--fg);
+        font-weight: 500;
+      }
+      .cbar .seg {
+        display: inline-flex;
+        gap: 2px;
+      }
+      .cbar .seg span {
+        padding: 2px 8px;
+        border-radius: var(--radius-sm);
+      }
+      .cbar .seg span.on {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .cbar .push {
+        margin-left: auto;
+      }
+      .tx {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 20px 28px;
+        overflow: hidden;
+        max-width: 760px;
+        margin: 0 auto;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .tx p {
+        margin: 0;
+      }
+      .tx .fold {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .tx .fold .icon {
+        width: 12px;
+        height: 12px;
+      }
+      .tx .me {
+        align-self: flex-end;
+        background: var(--surface-3);
+        padding: 8px 14px;
+        border-radius: var(--radius-lg);
+      }
+      .tx .new {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--accent-text);
+        font-size: 13px;
+      }
+      .tx .new::after {
+        content: "";
+        flex: 1;
+        border-top: 1px solid var(--accent);
+      }
+      .lnk {
+        color: var(--accent-text);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .lnk .icon {
+        width: 13px;
+        height: 13px;
+        vertical-align: -2px;
+        margin-right: 2px;
+      }
+      .lnk.merged .icon {
+        color: var(--merged);
+      }
+      .comp {
+        margin: 0 20px 14px;
+        min-height: 88px;
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-3);
+        color: var(--fg-subtle);
+        padding: 12px 16px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        flex-shrink: 0;
+      }
+      .comp .m {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+
+      /* ---------- The right pane ---------- */
+      .pane {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+        background: var(--surface-1);
+        border-left: 1px solid var(--border-subtle);
+        overflow: hidden;
+      }
+      .ph {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 44px;
+        padding: 0 8px 0 12px;
+        border-bottom: 1px solid var(--border-subtle);
+        flex-shrink: 0;
+        min-width: 0;
+      }
+      .ph .crumb {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        flex: 1;
+        font-size: 14px;
+      }
+      .ph .crumb a,
+      .ph .crumb button.root {
+        color: var(--fg-muted);
+        text-decoration: none;
+        background: none;
+        border: 0;
+        padding: 2px 4px;
+        border-radius: var(--radius-sm);
+        font: inherit;
+        white-space: nowrap;
+      }
+      .ph .crumb a:hover {
+        color: var(--fg);
+        background: var(--surface-hover);
+      }
+      .ph .crumb .sep {
+        color: var(--fg-subtle);
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+      }
+      .ph .crumb .here {
+        font-weight: 500;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      .ph .crumb .n {
+        color: var(--fg-muted);
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+      }
+      .ph .crumb .menu-caret {
+        width: 12px;
+        height: 12px;
+        color: var(--fg-muted);
+        flex-shrink: 0;
+      }
+      .tool {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        min-width: 28px;
+        height: 28px;
+        padding: 0 4px;
+        border-radius: var(--radius-sm);
+        color: var(--fg-muted);
+        background: none;
+        border: 0;
+        font: inherit;
+        font-size: 13px;
+        flex-shrink: 0;
+      }
+      .tool:hover {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .tool.back {
+        color: var(--fg);
+      }
+      .vr {
+        width: 1px;
+        height: 16px;
+        background: var(--border-subtle);
+        margin: 0 4px;
+        flex-shrink: 0;
+      }
+      kbd.k {
+        font-family: var(--font-ui);
+        font-size: 11px;
+        color: var(--fg-subtle);
+        border: 1px solid var(--border-subtle);
+        border-radius: 4px;
+        padding: 0 4px;
+        line-height: 16px;
+      }
+
+      /* The panel's tab strip (B, and today's look) */
+      .tabs2 {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        height: 44px;
+        padding: 0 8px;
+        border-bottom: 1px solid var(--border-subtle);
+        flex-shrink: 0;
+        min-width: 0;
+        overflow: hidden;
+      }
+      .tb {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 8px;
+        border-radius: var(--radius-sm);
+        color: var(--fg-muted);
+        font-size: 13px;
+        white-space: nowrap;
+        min-width: 0;
+        border: 0;
+        background: none;
+        font-family: inherit;
+      }
+      .tb .t {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 150px;
+      }
+      .tb[aria-selected="true"] {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .tb .x {
+        width: 12px;
+        height: 12px;
+        color: var(--fg-subtle);
+      }
+      .tb .n {
+        font-variant-numeric: tabular-nums;
+        color: var(--fg-muted);
+      }
+      .tabs2 .push {
+        margin-left: auto;
+      }
+
+      /* The open worker: status line, its tools, its content */
+      .ws {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 32px;
+        padding: 4px 16px;
+        font-size: 13px;
+        color: var(--fg-muted);
+        flex-shrink: 0;
+        flex-wrap: wrap;
+      }
+      .ws .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .wt {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 0 12px 8px;
+        border-bottom: 1px solid var(--border-subtle);
+        flex-shrink: 0;
+        overflow: hidden;
+      }
+      .wt .tb {
+        height: 26px;
+      }
+      .narrow .wt .tb .icon {
+        display: none;
+      }
+      .wt .tb .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .wbody {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px;
+        background: var(--surface-2);
+      }
+      .wbody p {
+        margin: 0;
+      }
+      .wbody ul {
+        margin: 0;
+        padding-left: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .code {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        background: var(--surface-3);
+        border-radius: 4px;
+        padding: 0 4px;
+      }
+      .files {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 8px 12px;
+        font-size: 13px;
+      }
+      .files .push {
+        margin-left: auto;
+      }
+      .plus {
+        color: var(--success-text);
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+      .minus {
+        color: var(--danger-text);
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+      .wbody .me {
+        align-self: flex-end;
+        background: var(--surface-3);
+        padding: 8px 14px;
+        border-radius: var(--radius-lg);
+      }
+      .prbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 6px 10px;
+        font-size: 13px;
+        color: var(--fg-muted);
+        background: var(--surface-1);
+        margin: 0 12px;
+        flex-shrink: 0;
+      }
+      .prbar .mono {
+        color: var(--fg);
+      }
+      .wcomp {
+        margin: 8px 12px 12px;
+        min-height: 72px;
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-3);
+        color: var(--fg-subtle);
+        padding: 10px 14px;
+        flex-shrink: 0;
+      }
+      .difflist {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        background: var(--surface-1);
+      }
+      .difflist .f {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        border-top: 1px solid var(--border-subtle);
+      }
+      .difflist .f:first-child {
+        border-top: 0;
+      }
+      .difflist .f .p {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .hunk {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 18px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        background: var(--surface-1);
+        padding: 6px 0;
+        overflow: hidden;
+      }
+      .hunk div {
+        padding: 0 12px;
+        white-space: pre;
+      }
+      .hunk .a {
+        background: color-mix(in oklab, var(--success) 14%, transparent);
+      }
+      .hunk .h {
+        color: var(--fg-muted);
+      }
+
+      /* ---------- The worker list: groups and the sidebar's row, wide ---------- */
+      .list-body {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 10px 10px 16px;
+      }
+      .grp {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .grp-h {
+        display: grid;
+        grid-template-columns: 12px minmax(0, 1fr);
+        gap: 8px;
+        align-items: center;
+        height: 28px;
+        padding: 0 6px;
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .grp-h .icon {
+        width: 12px;
+        height: 12px;
+      }
+      .grp-h b {
+        font-weight: 500;
+        color: var(--fg);
+        margin-right: 6px;
+      }
+      .grp-h.folded .icon {
+        transform: rotate(-90deg);
+      }
+
+      /* A row: the sidebar's WorkerRow. Its mark (a dot, a bar once it has a second line), its title,
+         its agent's mark and its age; then its status line; then what it carries: chips, plan, thumbs. */
+      .r {
+        display: flex;
+        gap: 8px;
+        padding: 7px 8px;
+        border-radius: var(--radius-sm);
+        text-align: left;
+        background: none;
+        border: 0;
+        font: inherit;
+        color: inherit;
+        width: 100%;
+      }
+      .r:hover {
+        background: var(--surface-hover);
+      }
+      .r.cur {
+        background: color-mix(in oklab, var(--accent) 12%, var(--surface-1));
+        box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 40%, transparent);
+      }
+      .r .mk {
+        width: 12px;
+        flex-shrink: 0;
+        display: flex;
+        justify-content: center;
+        padding: 3px 0;
+      }
+      .r .bd {
+        flex: 1;
+        min-width: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 8px;
+        row-gap: 3px;
+      }
+      .r .t {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      .r .edge {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--fg-muted);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .r .edge .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .r .line {
+        grid-column: 1 / 3;
+        font-size: 13px;
+        color: var(--fg-muted);
+        min-width: 0;
+      }
+      .r .line.needs {
+        color: var(--status-needs);
+      }
+      .r .line.one {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .r .carry {
+        grid-column: 1 / 3;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px 10px;
+        font-size: 12px;
+        color: var(--fg-muted);
+        min-width: 0;
+      }
+      .r .thumbs {
+        grid-column: 1 / 3;
+        display: flex;
+        gap: 8px;
+        padding-top: 4px;
+      }
+      .thumb {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        width: 132px;
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .thumb .pic {
+        height: 72px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-3);
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        box-sizing: border-box;
+      }
+      .thumb .pic i {
+        display: block;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border-strong);
+      }
+      .thumb .pic i.s {
+        width: 55%;
+      }
+      .thumb .pic i.m {
+        width: 80%;
+      }
+      .thumb .pic i.b {
+        height: 18px;
+        width: 100%;
+        background: var(--surface-hover);
+      }
+      .thumb span {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
+      /* The dots: StatusDot's states. A row with more than its title takes a bar. */
+      .d {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        box-sizing: border-box;
+      }
+      .d.needs {
+        background: var(--status-needs-mark);
+      }
+      .d.run {
+        background: var(--status-working);
+      }
+      .d.wait {
+        border: 1.5px solid var(--status-working);
+      }
+      .d.idle {
+        background: var(--status-idle);
+      }
+      .d.done {
+        background: var(--merged);
+      }
+      .d.bar {
+        width: 3px;
+        height: auto;
+        min-height: 14px;
+        align-self: stretch;
+        border-radius: 2px;
+      }
+      .d.bar.wait {
+        width: 4px;
+        border-width: 1.5px;
+      }
+      .r .mk .d:not(.bar) {
+        margin-top: 0;
+      }
+
+      /* Chips: a PR (muted, colour on its glyph), the plan's progress (grey, the step in the accent). */
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 999px;
+        border: 1px solid var(--border-subtle);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--fg-muted);
+        white-space: nowrap;
+      }
+      .chip .icon {
+        width: 12px;
+        height: 12px;
+      }
+      .chip .ring {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        border: 1.5px solid var(--status-working);
+        box-sizing: border-box;
+      }
+      .chip.merged .icon {
+        color: var(--merged);
+      }
+      .chip.open .icon {
+        color: var(--success);
+      }
+      .plan {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+      }
+      .plan .steps {
+        display: inline-flex;
+        gap: 2px;
+      }
+      .plan .steps i {
+        width: 10px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border-strong);
+      }
+      .plan .steps i.at {
+        background: var(--accent);
+      }
+      .agent {
+        display: inline-flex;
+        color: var(--fg-muted);
+      }
+      .agent .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .more-row {
+        padding: 4px 8px 4px 28px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .done-r {
+        display: grid;
+        grid-template-columns: 12px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        padding: 5px 8px;
+        font-size: 14px;
+      }
+      .done-r .t {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        color: var(--fg-muted);
+      }
+
+      /* C: list and worker side by side in a wide pane */
+      .split-body {
+        flex: 1;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 300px minmax(0, 1fr);
+      }
+      .split-body > .col {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        min-width: 0;
+      }
+      .split-body > .col + .col {
+        border-left: 1px solid var(--border-subtle);
+      }
+      .menu-pop {
+        position: absolute;
+        top: 40px;
+        left: 40px;
+        width: 340px;
+        z-index: 3;
+        background: var(--surface-3);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        box-shadow: 0 12px 32px color-mix(in oklab, black 25%, transparent);
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-size: 13px;
+      }
+      .menu-pop .mi {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 8px;
+        border-radius: var(--radius-sm);
+        color: var(--fg);
+      }
+      .menu-pop .mi.on {
+        background: var(--surface-hover);
+      }
+      .menu-pop .mi .x {
+        margin-left: auto;
+        color: var(--fg-muted);
+      }
+      .menu-pop .lbl {
+        padding: 6px 8px 2px;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .pane-wrap {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        min-width: 0;
+      }
+
+      /* Rows parity board */
+      .par {
+        display: grid;
+        grid-template-columns: 260px 400px 520px;
+        gap: 24px;
+        padding: 24px;
+        background: var(--surface-2);
+        color: var(--fg);
+        font-family: var(--font-ui);
+        font-size: 14px;
+        line-height: 20px;
+        height: 100%;
+        box-sizing: border-box;
+        align-items: start;
+      }
+      .par h3 {
+        margin: 0 0 4px;
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .par .cap {
+        font-size: 12px;
+        color: var(--fg-muted);
+        margin: 0 0 10px;
+      }
+      .par .box {
+        background: var(--surface-1);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 8px;
+      }
+      .old-r {
+        display: grid;
+        grid-template-columns: 12px minmax(0, 1fr) auto;
+        column-gap: 8px;
+        padding: 6px;
+      }
+      .old-r .t {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .old-r .s {
+        grid-column: 2 / 4;
+        display: flex;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--fg-muted);
+        align-items: center;
+      }
+      .old-r .s .wd {
+        flex: 1;
+      }
+      .old-r .a {
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .old-r .mk {
+        display: flex;
+        justify-content: center;
+        padding: 3px 0;
+        grid-row: 1 / 3;
+      }
+      .old-r .mk:has(.d:not(.bar)) {
+        grid-row: 1;
+        padding-top: 6px;
+      }
+      .callouts {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .callouts ul {
+        margin: 0;
+        padding-left: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      /* ---------- v2 ---------- */
+      .board-frame > div[data-when] {
+        height: 100%;
+        min-height: inherit;
+      }
+      .board-frame > div[data-when] > .w {
+        height: 100%;
+      }
+      .list-body {
+        overflow-y: auto;
+        scrollbar-width: thin;
+      }
+      .r.focus {
+        outline: 2px solid var(--focus-ring);
+        outline-offset: -2px;
+      }
+      .r.hover {
+        background: var(--surface-hover);
+      }
+      /* The status line wraps to two lines in the pane, and is cut to one in the sidebar. */
+      .r .line {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .r.side {
+        padding: 4px 6px;
+        gap: 8px;
+      }
+      .r.side .bd {
+        row-gap: 1px;
+      }
+      .r.side .line {
+        -webkit-line-clamp: 1;
+        font-size: 13px;
+      }
+      .r.side .t {
+        font-size: 14px;
+      }
+      .r.side .carry {
+        flex-wrap: nowrap;
+        overflow: hidden;
+      }
+      .r.side .edge .age {
+        display: none;
+      }
+      .r.side .sline {
+        grid-column: 1 / 3;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .r.side .sline .wd {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .r.side .sline .wd.needs {
+        color: var(--status-needs);
+      }
+      .r.side .sline .age {
+        font-variant-numeric: tabular-nums;
+      }
+      .art {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 999px;
+        border: 1px solid var(--border-subtle);
+        font-size: 12px;
+        color: var(--fg-muted);
+        white-space: nowrap;
+        max-width: 220px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .art .icon {
+        width: 12px;
+        height: 12px;
+        flex-shrink: 0;
+      }
+      .thumb.sm {
+        width: 96px;
+      }
+      .thumb.sm .pic {
+        height: 48px;
+        padding: 6px;
+        gap: 4px;
+      }
+      .thumb.sm .pic i.b {
+        height: 10px;
+      }
+      .ph .crumb .here.menu {
+        display: inline-flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        height: 28px;
+        line-height: 20px;
+        white-space: nowrap;
+        align-items: center;
+        gap: 4px;
+        background: none;
+        border: 0;
+        font: inherit;
+        font-weight: 500;
+        color: var(--fg);
+        padding: 2px 4px;
+        border-radius: var(--radius-sm);
+        min-width: 0;
+      }
+      .ph .crumb .here.menu:hover,
+      .ph .crumb .here.menu.open {
+        background: var(--surface-hover);
+      }
+      .ph .crumb .here.menu span {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .ph .crumb .here.menu .icon {
+        width: 12px;
+        height: 12px;
+        color: var(--fg-muted);
+        flex-shrink: 0;
+      }
+      .tool.orch {
+        gap: 4px;
+        padding: 0 6px;
+      }
+      .tool.orch .icon {
+        color: var(--fg-muted);
+      }
+      .tb[aria-disabled="true"] {
+        color: var(--fg-subtle);
+      }
+      .wcomp {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+      .wcomp .hint {
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .readonly {
+        margin: 8px 12px 12px;
+        padding: 10px 14px;
+        border-radius: var(--radius-md);
+        border: 1px dashed var(--border-subtle);
+        font-size: 13px;
+        color: var(--fg-muted);
+        flex-shrink: 0;
+      }
+      .menu-pop {
+        left: 44px;
+        width: 360px;
+      }
+      .menu-pop .find {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 8px;
+        border-radius: var(--radius-sm);
+        background: var(--surface-2);
+        color: var(--fg-subtle);
+        margin-bottom: 4px;
+      }
+      .menu-pop .foot {
+        display: flex;
+        gap: 10px;
+        padding: 6px 8px 2px;
+        border-top: 1px solid var(--border-subtle);
+        margin-top: 4px;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .menu-pop .mi .t {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .orch-pop {
+        position: absolute;
+        top: 40px;
+        right: 40px;
+        width: 260px;
+        z-index: 3;
+        background: var(--surface-3);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        box-shadow: 0 12px 32px color-mix(in oklab, black 25%, transparent);
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-size: 13px;
+      }
+      .orch-pop .lbl {
+        padding: 4px 8px;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .orch-pop .mi {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 8px;
+        border-radius: var(--radius-sm);
+      }
+      .orch-pop .mi .icon {
+        width: 14px;
+        height: 14px;
+        color: var(--fg-muted);
+      }
+      .rail .mono {
+        position: relative;
+      }
+      .rail .mono .nb {
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--status-needs-mark);
+      }
+      .sb-ws.target {
+        cursor: pointer;
+      }
+      .sb-ws .e .in {
+        color: var(--fg-muted);
+      }
+      .sb-kids.kept {
+        margin-top: -2px;
+      }
+      .w.wide {
+        grid-template-columns: 52px minmax(560px, 1fr) var(--pane, 820px);
+      }
+      .w.wide .split-body {
+        grid-template-columns: 310px minmax(0, 1fr);
+      }
+      .done-r {
+        border: 0;
+        background: none;
+        font: inherit;
+        color: inherit;
+        width: 100%;
+        text-align: left;
+        border-radius: var(--radius-sm);
+      }
+      .done-r:hover {
+        background: var(--surface-hover);
+      }
+      .done-r .edge {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .done-r .edge .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .more-row {
+        background: none;
+        border: 0;
+        font: inherit;
+        font-size: 13px;
+        text-align: left;
+      }
+      /* Rows board v2 */
+      .par2 {
+        display: grid;
+        grid-template-columns: 236px 480px 300px;
+        gap: 28px;
+        padding: 24px;
+        background: var(--surface-2);
+        color: var(--fg);
+        font-family: var(--font-ui);
+        font-size: 14px;
+        line-height: 20px;
+        height: 100%;
+        box-sizing: border-box;
+        align-items: start;
+      }
+      .par2 h3 {
+        margin: 0 0 4px;
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .par2 .cap {
+        font-size: 12px;
+        color: var(--fg-muted);
+        margin: 0 0 10px;
+      }
+      .par2 .box {
+        background: var(--surface-1);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 6px;
+      }
+      .card-pop {
+        background: var(--surface-3);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 13px;
+        box-shadow: 0 12px 32px color-mix(in oklab, black 20%, transparent);
+      }
+      .card-pop .m {
+        color: var(--fg-muted);
+      }
+      .ctx {
+        margin-top: 16px;
+        background: var(--surface-3);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        font-size: 13px;
+      }
+      .ctx span {
+        padding: 5px 8px;
+        border-radius: var(--radius-sm);
+      }
+      .ctx hr {
+        border: 0;
+        border-top: 1px solid var(--border-subtle);
+        margin: 4px 0;
+      }
+      .ctx .danger {
+        color: var(--danger-text);
+      }
+      .par2 .notes {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .par2 .notes ul {
+        margin: 0;
+        padding-left: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        v2, after round 1's ratings. The orchestrator stays in the main pane and its workers live in
+        the right pane. Every direction draws both lists with one worker row at two widths, keeps
+        main's "4 in Workers" fold, reaches a worker's tools by one row, and moves between workers
+        with ↑ ↓. A is the minimal change, A+ adds the grouped switcher and keeps needs-you rows
+        in the sidebar, B keeps one worker tab, and C is A+ widened. Each board has states: click
+        them in its strip. Synthetic workers.
+      </p>
+
+      <section class="board" data-name="Rows" data-size="1180x760">
+        <div class="board-frame"><div data-render="parity"></div></div>
+      </section>
+
+      <section class="board" data-name="A Navigator" data-size="1440x900" data-states="list,worker,changes,back">
+        <div class="board-frame"><div data-render="A" data-size="desktop"></div></div>
+      </section>
+      <section class="board" data-name="A Navigator narrow" data-size="1024x768" data-states="list,worker">
+        <div class="board-frame"><div data-render="A" data-size="narrow"></div></div>
+      </section>
+
+      <section class="board" data-name="A+ Switcher and hand-over" data-size="1440x900" data-states="list,worker,switcher,changes,no-pr,done,back,pane-closed">
+        <div class="board-frame"><div data-render="AP" data-size="desktop"></div></div>
+      </section>
+      <section class="board" data-name="A+ Switcher and hand-over narrow" data-size="1024x768" data-states="list,worker,switcher">
+        <div class="board-frame"><div data-render="AP" data-size="narrow"></div></div>
+      </section>
+
+      <section class="board" data-name="B One worker tab" data-size="1440x900" data-states="list,worker,switcher,changes">
+        <div class="board-frame"><div data-render="B" data-size="desktop"></div></div>
+      </section>
+      <section class="board" data-name="B One worker tab narrow" data-size="1024x768" data-states="list,worker">
+        <div class="board-frame"><div data-render="B" data-size="narrow"></div></div>
+      </section>
+
+      <section class="board" data-name="C Split" data-size="1440x900" data-states="wide,wide-changes,default">
+        <div class="board-frame"><div data-render="C" data-size="desktop"></div></div>
+      </section>
+      <section class="board" data-name="C Split narrow" data-size="1024x768" data-states="list,worker">
+        <div class="board-frame"><div data-render="C" data-size="narrow"></div></div>
+      </section>
+    </main>
+
+    <script>
+      // The realistic scenario's Gram workspace, with one ask so Needs you shows (the before frames
+      // have theirs in billing-api). Every name is invented. `ago` is last activity, in both lists.
+      const WORKERS = [
+        {
+          id: "sheet",
+          title: "Keyboard shortcut sheet",
+          group: "needs",
+          dot: "needs",
+          line: "Asks you: put the sheet under Help or under Settings?",
+          agent: "Claude",
+          ago: "4m",
+          plan: [2, 4],
+          pick: ["Sheet A · by area", "Sheet B · one list"],
+        },
+        {
+          id: "inline",
+          title: "Inline comments in the diff",
+          group: "run",
+          dot: "run",
+          line: "Running tests: bun run test apps/web/src/review",
+          agent: "Claude",
+          ago: "now",
+          plan: [3, 5],
+        },
+        {
+          id: "cold",
+          title: "Faster cold start",
+          group: "run",
+          dot: "run",
+          line: "Editing apps/web/src/boot.ts: settings read moved off first paint",
+          agent: "Codex",
+          ago: "2m",
+          plan: [2, 4],
+        },
+        {
+          id: "search",
+          title: "Search in Settings",
+          group: "wait",
+          dot: "wait",
+          line: "Waiting on checks for #142; the review bot's two nits are fixed and pushed",
+          agent: "Claude",
+          ago: "14m",
+          plan: [4, 4],
+          prs: [{ n: 142, state: "checks" }],
+          docs: ["Settings search: how it matches"],
+        },
+      ];
+      const DONE = [
+        ["Stable sort in History", "141", "10:32"],
+        ["Retry failed uploads", "140", "10:31"],
+        ["Release notes for 0.9", "61", "10:00"],
+        ["Bigger sidebar hit areas", "138", "09:59"],
+        ["Clearer empty states", "137", "08:41"],
+        ["Undo a turn's edits", "136", "08:12"],
+      ];
+      const GROUPS = [
+        ["needs", "Needs you"],
+        ["run", "Running"],
+        ["wait", "Waiting"],
+      ];
+      const OPEN = "search"; // the worker open in the pane
+
+      const i = (name, cls) => `<i data-icon="${name}"${cls ? ` class="${cls}"` : ""}></i>`;
+      const agent = (w) =>
+        `<span class="agent" title="${w.agent}">${i(w.agent === "Codex" ? "layers" : "sparkle")}</span>`;
+      const pr = (p) =>
+        p.state === "merged"
+          ? `<span class="chip merged">${i("merge")}${p.n}</span>`
+          : `<span class="chip open" title="#${p.n}: checks running">${i("pr")}#${p.n}<span class="ring"></span></span>`;
+      const plan = ([at, of]) =>
+        `<span class="plan" title="Plan: step ${at} of ${of}"><span class="steps">${Array.from({ length: of }, (_, k) => `<i class="${k + 1 === at ? "at" : ""}"></i>`).join("")}</span>Step ${at} of ${of}</span>`;
+      const art = (t) => `<span class="art" title="${t}">${i("file")}${t}</span>`;
+      const thumb = (t) =>
+        `<span class="thumb sm"><span class="pic"><i class="m"></i><i class="s"></i><i class="b"></i></span><span>${t}</span></span>`;
+
+      // ---------- The one worker row, at three widths ----------
+      // side: the sidebar's (title and agent; then chips, the status words cut to one line, the age)
+      // pane: the right pane's (title, agent, age; the status words on up to two lines; chips, plan,
+      //       documents; two small previews only when the worker asks you to pick between them)
+      // col:  C's list column (as pane, without documents or previews)
+      const row = (w, { width = "pane", cur = false, focus = false, hover = false } = {}) => {
+        const cls = `r ${width === "side" ? "side" : ""} ${cur ? "cur" : ""} ${focus ? "focus" : ""} ${hover ? "hover" : ""}`;
+        const needs = w.dot === "needs" ? "needs" : "";
+        if (width === "side") {
+          return `<button type="button" class="${cls}" ${cur ? 'aria-current="true"' : ""}>
+            <span class="mk"><span class="d ${w.dot} bar"></span></span>
+            <span class="bd"><span class="t">${w.title}</span><span class="edge">${agent(w)}</span>
+            <span class="sline">${(w.prs ?? []).map(pr).join("")}<span class="wd ${needs}">${w.line}</span><span class="age">${w.ago}</span></span></span>
+          </button>`;
+        }
+        const carry = [
+          ...(w.prs ?? []).map(pr),
+          ...(w.plan ? [plan(w.plan)] : []),
+          ...(width === "pane" ? (w.docs ?? []).map(art) : []),
+        ].join("");
+        const pick = width === "pane" && w.pick ? `<span class="thumbs">${w.pick.map(thumb).join("")}</span>` : "";
+        return `<button type="button" class="${cls}" ${cur ? 'aria-current="true"' : ""}>
+          <span class="mk"><span class="d ${w.dot} bar"></span></span>
+          <span class="bd">
+            <span class="t">${w.title}</span>
+            <span class="edge">${agent(w)}<span class="age">${w.ago}</span></span>
+            <span class="line ${needs}">${w.line}</span>
+            ${carry ? `<span class="carry">${carry}</span>` : ""}
+            ${pick}
+          </span>
+        </button>`;
+      };
+      const doneRow = ([t, n, at]) =>
+        `<button type="button" class="done-r"><span class="d done" style="justify-self:center"></span><span class="t">${t}</span><span class="edge"><span class="chip merged">${i("merge")}${n}</span>${at}</span></button>`;
+      const groups = ({ width = "pane", cur, focus, hover, doneOpen = false } = {}) =>
+        GROUPS.map(([id, label]) => {
+          const rows = WORKERS.filter((w) => w.group === id);
+          return `<section class="grp" aria-label="${label}"><div class="grp-h">${i("down")}<span><b>${label}</b>${rows.length}</span></div>${rows
+            .map((w) => row(w, { width, cur: w.id === cur, focus: w.id === focus, hover: w.id === hover }))
+            .join("")}</section>`;
+        }).join("") +
+        `<section class="grp" aria-label="Done"><div class="grp-h">${i("down")}<span><b>Done</b>6</span></div>${(doneOpen ? DONE : DONE.slice(0, 3))
+          .map(doneRow)
+          .join("")}${doneOpen ? "" : `<button type="button" class="more-row">3 more</button>`}</section>`;
+
+      // ---------- The window ----------
+      // The sidebar keeps main's fold: while the pane shows this orchestrator's workers (the list or
+      // one of them), its row says "4 in Workers" and a click opens the pane's list. `kept` keeps the
+      // workers that need you as rows under it (A+, C). With the pane closed, every row is back.
+      const sidebar = ({ fold = "main" } = {}) => {
+        const folded = fold !== "none";
+        const kept = fold === "kept";
+        return `<aside class="sb">
+          <div class="sb-top">${i("panel")}${i("sparkle")}<span class="push">${i("plus")} New task</span></div>
+          <div class="pill"><span class="d needs"></span><span>1 error · <b>2 questions</b></span></div>
+          <div class="sb-search">${i("search")}Search<span style="margin-left:auto;font-size:12px">⌘K</span></div>
+          <div class="sb-h">${i("down")}<span>Orchestrators</span><span>4</span></div>
+          <div class="sb-list">
+            <div class="sb-ws on ${folded ? "target" : ""}" ${folded ? 'title="Show 4 workers, 1 needs you (⌘J)"' : ""}><span class="d run"></span><span class="t">Gram</span><span class="e">${
+              folded ? `<span class="in">4 in Workers</span> <span class="n">1</span>${i("right")}` : `3 working · <span class="n">1</span>${i("down")}`
+            }</span></div>
+            ${
+              !folded
+                ? `<div class="sb-kids">${WORKERS.map((w) => row(w, { width: "side" })).join("")}</div>`
+                : kept
+                  ? `<div class="sb-kids kept">${WORKERS.filter((w) => w.dot === "needs").map((w) => row(w, { width: "side" })).join("")}</div>`
+                  : ""
+            }
+            <div class="sb-ws"><span class="d needs"></span><span class="t">billing-api</span><span class="e">1 worker · <span class="n">1</span>${i("down")}</span></div>
+            <div class="sb-ws"><span class="d idle"></span><span class="t">web</span><span class="e">Stopped ${i("down")}</span></div>
+            <div class="sb-ws"><span class="d idle"></span><span class="t">infra</span><span class="e">Stopped ${i("down")}</span></div>
+          </div>
+          <div class="sb-h">${i("down")}<span>Solo threads</span><span>9</span></div>
+          <div class="sb-list">
+            <div class="sb-solo"><span class="d run"></span><span class="t">Rewrite the README</span><span class="a"></span></div>
+            <div class="sb-solo"><span class="d" style="background:var(--danger)"></span><span class="t">Fix flaky retry test</span><span class="a">2m</span></div>
+            <div class="sb-solo"><span class="d idle"></span><span class="t">Pick a date library</span><span class="a">12m</span></div>
+            <div class="sb-solo"><span class="d idle"></span><span class="t">Plan the auth refactor</span><span class="a">20m</span></div>
+          </div>
+        </aside>`;
+      };
+      const rail = () =>
+        `<aside class="rail">${i("panel")}${i("inbox")}${i("search")}<span class="mono on" title="Gram: 4 in Workers, 1 needs you">G<span class="nb"></span></span><span class="mono">B</span><span class="mono">W</span><span class="mono">I</span>${i("msg")}</aside>`;
+      const chat = () => `<section class="chat">
+          <div class="cbar"><strong>Gram</strong>${i("down")}<span class="seg"><span class="on">Chat</span><span>Board</span></span><span class="push">${i("panel")}</span></div>
+          <div class="tx">
+            <div class="fold">${i("right")}09:59 Update · 2 merged · 1 report</div>
+            <p>All green on <span class="lnk merged">${i("merge")}#138</span>. Release the hold.</p>
+            <div class="fold">${i("right")}Queued to merge when ready</div>
+            <p class="me">Add the shortcut sheet too. Same rules.</p>
+            <p>Started <b>shortcut-sheet</b> in <span class="code">gram</span>. It reads the shortcuts from the keymap, so the sheet can't drift from what the keys do.</p>
+            <div class="fold">${i("right")}10:32 Update · 2 merged · 1 report</div>
+            <div class="new">New</div>
+            <p><span class="lnk merged">${i("merge")}#140</span> and <span class="lnk merged">${i("merge")}#141</span> <b>merged.</b> Failed uploads retry on their own now, and History stops reordering rows that finish together.</p>
+            <p>Three workers are still going: diff comments is running its tests, cold start is measuring again, and the shortcut sheet asks you where it goes. <span class="lnk">${i("pr")}#142</span> waits on checks; I'll merge it when they pass.</p>
+          </div>
+          <div class="comp"><span>Message… (/ for commands, @ for files)</span><span class="m">${i("sparkle")}Opus</span></div>
+        </section>`;
+      const win = (cls, side, pane) => `<div class="w ${cls}">${side}${chat()}${pane}</div>`;
+
+      // ---------- The pane's pieces, the same in every direction ----------
+      // The list's head: its count, search, filter, and the orchestrator's own views, named as its.
+      const listHead = ({ orch = true, widen = false } = {}) =>
+        `<div class="ph"><span class="crumb"><span class="here">Workers</span><span class="n">4 · 6 done</span></span><button class="tool" type="button" title="Search workers">${i("search")}</button><button class="tool" type="button" title="Filter">${i("filter")}</button>${
+          widen ? `<button class="tool" type="button" title="Widen: the list beside the worker">${i("cols")}</button>` : ""
+        }${orch ? `<span class="vr"></span><button class="tool orch" type="button" title="The orchestrator's own views">Orchestrator ${i("down")}</button>` : ""}<button class="tool" type="button" title="Close the pane">${i("x")}</button></div>`;
+      // The open worker's head: back, the crumb, its title (a menu of every worker where `menu`),
+      // the previous and next worker, open in the main view, close.
+      const workerHead = (w, { menu = false, open = false, back = true, widen = false } = {}) =>
+        `<div class="ph"><span class="crumb">${
+          back
+            ? `<button class="tool back" type="button" title="Back to Workers (Esc)">${i("left")}</button><a href="#" title="Back to Workers (Esc)">Workers</a>${i("right", "sep")}`
+            : ""
+        }${
+          menu
+            ? `<button type="button" class="here menu ${open ? "open" : ""}" title="Go to another worker"><span>${w.title}</span>${i("down")}</button>`
+            : `<span class="here">${w.title}</span>`
+        }</span><button class="tool" type="button" title="Previous worker (↑)">${i("up")}</button><button class="tool" type="button" title="Next worker (↓)" style="transform:rotate(180deg)">${i("up")}</button>${
+          widen ? `<button class="tool" type="button" title="Widen: the list beside the worker">${i("cols")}</button>` : ""
+        }<button class="tool" type="button" title="Open in the main view">${i("external")}</button><button class="tool" type="button" title="Close the pane">${i("x")}</button></div>`;
+      // Where it stands, under its name.
+      const status = (w) =>
+        `<div class="ws"><span class="d ${w.dot}"></span><span>${
+          w.dot === "wait" ? "Waiting on checks" : w.dot === "run" ? "Running tests" : w.dot === "done" ? "Merged 10:32" : "Asks you"
+        }</span>${(w.prs ?? []).map(pr).join("")}${w.plan ? plan(w.plan) : ""}${agent(w)}<span>${w.agent} · active ${w.ago}</span></div>`;
+      // The worker's tools: its own, every one, in one row. A tool it doesn't have yet says so.
+      const tools = (on, w) => {
+        const hasPr = (w.prs ?? []).length > 0;
+        const prLabel = w.dot === "done" ? "PR <span class='n'>#141</span>" : hasPr ? `PR <span class='n'>#${w.prs[0].n}</span>` : "PR";
+        const prOff = !hasPr && w.dot !== "done";
+        return `<div class="wt" role="tablist">${[
+          ["msg", "Conversation", false],
+          ["diff", `Changes <span class='n'>${w.dot === "run" ? 5 : 3}</span>`, false],
+          ["pr", prLabel, prOff],
+          ["terminal", "Terminal", false],
+          ["folder", "Files", false],
+        ]
+          .map(
+            ([icon, label, off], k) =>
+              `<button type="button" class="tb" role="tab" aria-selected="${k === on}" ${off ? 'aria-disabled="true" title="No pull request yet"' : ""}>${i(icon)}${label}</button>`,
+          )
+          .join("")}</div>`;
+      };
+      const conversation = (w) => `<div class="wbody">
+          <p><b>Done.</b> Settings has a search box at the top that filters pages and rows as you type.</p>
+          <ul>
+            <li><span class="code">settings-search.ts</span>: <span class="code">filterPages</span> matches every word against a row's label and description.</li>
+            <li><span class="code">settings-nav.tsx</span>: the box keeps focus while the list narrows, and says so when nothing matches.</li>
+            <li><span class="code">settings-search.test.ts</span>: seven cases.</li>
+          </ul>
+          <div class="files">${i("file")}3 files changed <span class="plus">+71</span><span class="minus">−1</span><span class="push">Undo</span><span class="btn sm">View changes</span></div>
+          <p class="me">Looks right. Open the PR.</p>
+          <p>Opened <span class="lnk">${i("pr")}#142</span>. The review bot left two nits, an unused import and a missing empty state; both are fixed and pushed. Waiting on checks now.</p>
+        </div>
+        <div class="wcomp"><span>Steer ${w.title}…</span><span class="hint">Sending takes over from the orchestrator; its messages wait behind yours.</span></div>`;
+      const runningConversation = (w) => `<div class="wbody">
+          <p>Comments now anchor to diff lines and keep their place when the file changes under them.</p>
+          <div class="files">${i("file")}5 files changed <span class="plus">+188</span><span class="minus">−22</span><span class="push">Undo</span><span class="btn sm">View changes</span></div>
+          <div class="fold" style="display:flex;gap:6px;color:var(--fg-muted);font-size:13px">${i("terminal")}Running <span class="code">bun run test apps/web/src/review</span></div>
+          <p style="color:var(--fg-muted)">No pull request yet: it opens one when the tests pass.</p>
+        </div>
+        <div class="wcomp"><span>Steer ${w.title}…</span><span class="hint">Sending takes over from the orchestrator; its messages wait behind yours.</span></div>`;
+      const doneConversation = () => `<div class="wbody">
+          <p><b>Merged</b> <span class="lnk merged">${i("merge")}#141</span> at 10:32. History sorts by finish time, ties by title, so rows stop jumping.</p>
+          <div class="files">${i("file")}2 files changed <span class="plus">+34</span><span class="minus">−9</span><span class="push"></span><span class="btn sm">View changes</span></div>
+        </div>
+        <div class="readonly">Finished. Its worktree is cleaned up, so this is its record: read only.</div>`;
+      const changes = () => `<div class="wbody">
+          <div class="difflist">
+            <div class="f">${i("file")}<span class="p">apps/web/src/settings/settings-search.ts</span><span class="plus">+52</span></div>
+            <div class="f">${i("file")}<span class="p">apps/web/src/settings/settings-nav.tsx</span><span class="plus">+9</span><span class="minus">−1</span></div>
+            <div class="f">${i("file")}<span class="p">apps/web/src/settings/settings-search.test.ts</span><span class="plus">+10</span></div>
+          </div>
+          <div class="hunk">
+            <div class="h">@@ -0,0 +1,12 @@ settings-search.ts</div>
+            <div class="a">+export function filterPages(pages: readonly Page[], query: string) {</div>
+            <div class="a">+  const words = query.toLowerCase().split(/\\s+/).filter(Boolean);</div>
+            <div class="a">+  return pages.filter((page) =></div>
+            <div class="a">+    words.every((word) => matches(page, word)),</div>
+            <div class="a">+  );</div>
+            <div class="a">+}</div>
+          </div>
+        </div>`;
+      // The grouped switcher: every worker of this orchestrator by group, typed to narrow.
+      const switcher = () => `<div class="menu-pop" role="menu">
+          <div class="find">${i("search")}Go to a worker…</div>
+          ${GROUPS.map(([id, label]) => `<div class="lbl">${label}</div>${WORKERS.filter((w) => w.group === id)
+            .map((w) => `<div class="mi ${w.id === OPEN ? "on" : ""}"><span class="d ${w.dot}"></span><span class="t">${w.title}</span><span class="x">${w.ago}</span></div>`)
+            .join("")}`).join("")}
+          <div class="lbl">Done</div><div class="mi"><span class="d done"></span><span class="t">Stable sort in History</span><span class="x">10:32</span></div>
+          <div class="foot"><span>↑ ↓ move</span><span>⏎ open</span><span>Esc close</span></div>
+        </div>`;
+      const W = (id) => WORKERS.find((w) => w.id === id);
+      const DONE_W = { id: "done", title: "Stable sort in History", dot: "done", agent: "Claude", ago: "10:32", prs: [{ n: 141, state: "merged" }] };
+
+      // The list, scrolled where you left it: Done opened, Waiting in view.
+      const listBody = (opts = {}) =>
+        `<div class="list-body" ${opts.scroll ? `data-scroll="${opts.scroll}"` : ""}>${groups(opts)}</div>`;
+
+      // ---------- A Navigator: main's fold, ↑ ↓ between workers ----------
+      const A = (size) => {
+        const narrow = size === "narrow";
+        const side = narrow ? rail() : sidebar({ fold: "main" });
+        const cls = narrow ? "narrow" : "";
+        const list = (o) => `<aside class="pane">${listHead()}${listBody(o)}</aside>`;
+        const worker = (tool) =>
+          `<aside class="pane">${workerHead(W(OPEN))}${status(W(OPEN))}${tools(tool, W(OPEN))}${tool === 0 ? conversation(W(OPEN)) : changes()}</aside>`;
+        return `<div data-when="list">${win(cls, side, list({ doneOpen: true, scroll: narrow ? 260 : 200, hover: OPEN }))}</div>
+          <div data-when="worker">${win(cls, side, worker(0))}</div>
+          ${narrow ? "" : `<div data-when="changes">${win(cls, side, worker(1))}</div>
+          <div data-when="back">${win(cls, side, list({ doneOpen: true, scroll: 200, cur: OPEN, focus: OPEN }))}</div>`}`;
+      };
+
+      // ---------- A+ Navigator with switcher: A, the grouped switcher, needs-you rows kept ----------
+      const AP = (size) => {
+        const narrow = size === "narrow";
+        const side = narrow ? rail() : sidebar({ fold: "kept" });
+        const cls = narrow ? "narrow" : "";
+        const list = (o) => `<aside class="pane">${listHead()}${listBody(o)}</aside>`;
+        const worker = (w, tool, body, { menu = false } = {}) =>
+          `<aside class="pane pane-wrap">${workerHead(w, { menu: true, open: menu })}${status(w)}${tools(tool, w)}${body}${menu ? switcher() : ""}</aside>`;
+        const s = W(OPEN);
+        const states = [
+          ["list", win(cls, side, list({ doneOpen: true, scroll: narrow ? 260 : 200, hover: OPEN }))],
+          ["worker", win(cls, side, worker(s, 0, conversation(s)))],
+          ["switcher", win(cls, side, worker(s, 0, conversation(s), { menu: true }))],
+        ];
+        if (!narrow) {
+          states.push(
+            ["changes", win(cls, side, worker(s, 1, changes()))],
+            ["no-pr", win(cls, side, worker(W("inline"), 0, runningConversation(W("inline"))))],
+            ["done", win(cls, side, worker(DONE_W, 0, doneConversation()))],
+            ["back", win(cls, side, list({ doneOpen: true, scroll: 200, cur: OPEN, focus: OPEN }))],
+            ["pane-closed", `<div class="w closed">${sidebar({ fold: "none" })}${chat()}</div>`],
+          );
+        }
+        return states.map(([k, html]) => `<div data-when="${k}">${html}</div>`).join("");
+      };
+
+      // ---------- B One worker tab: Workers first, one tab for the open worker, its title a switcher ----------
+      const B = (size) => {
+        const narrow = size === "narrow";
+        const side = narrow ? rail() : sidebar({ fold: "main" });
+        const cls = narrow ? "narrow" : "";
+        const strip = (on, menu = false) => `<div class="tabs2" role="tablist">
+            <button class="tb" role="tab" type="button" aria-selected="${on === "list"}">${i("orch")}Workers <span class="n">4</span></button>
+            <button class="tb" role="tab" type="button" aria-selected="${on === "worker"}" title="Go to another worker" style="max-width:${narrow ? 200 : 260}px"><span class="d wait"></span><span class="t" style="max-width:none">${W(OPEN).title}</span>${i("down", "x")}</button>
+            <span class="push"></span>
+            ${on === "list" ? `<button class="tool orch" type="button" title="The orchestrator's own views">Orchestrator ${i("down")}</button>` : `<button class="tool" type="button" title="Previous worker (↑)">${i("up")}</button><button class="tool" type="button" title="Next worker (↓)" style="transform:rotate(180deg)">${i("up")}</button><button class="tool" type="button" title="Open in the main view">${i("external")}</button>`}
+            <button class="tool" type="button" title="Close the pane">${i("x")}</button>
+          </div>`;
+        const list = (o) =>
+          `<aside class="pane">${strip("list")}<div class="ph" style="height:34px;border:0"><span class="crumb"><span class="n">4 at work · 6 done</span></span><button class="tool" type="button">${i("search")}</button><button class="tool" type="button">${i("filter")}</button></div>${listBody(o)}</aside>`;
+        const worker = (tool, menu = false) =>
+          `<aside class="pane pane-wrap">${strip("worker", menu)}${status(W(OPEN))}${tools(tool, W(OPEN))}${tool === 0 ? conversation(W(OPEN)) : changes()}${menu ? switcher().replace('class="menu-pop"', 'class="menu-pop" style="left:90px"') : ""}</aside>`;
+        return `<div data-when="list">${win(cls, side, list({ doneOpen: true, scroll: narrow ? 260 : 200, cur: OPEN }))}</div>
+          <div data-when="worker">${win(cls, side, worker(0))}</div>
+          ${narrow ? "" : `<div data-when="switcher">${win(cls, side, worker(0, true))}</div><div data-when="changes">${win(cls, side, worker(1))}</div>`}`;
+      };
+
+      // ---------- C Split: A+ widened. The sidebar steps down to its rail so the chat keeps 560 px ----------
+      const C = (size) => {
+        const narrow = size === "narrow";
+        const s = W(OPEN);
+        if (narrow) {
+          return `<div data-when="list">${win("narrow", rail(), `<aside class="pane">${listHead({ widen: false })}${listBody({ doneOpen: true, scroll: 260, hover: OPEN })}</aside>`)}</div>
+            <div data-when="worker">${win("narrow", rail(), `<aside class="pane">${workerHead(s, { menu: true })}${status(s)}${tools(0, s)}${conversation(s)}</aside>`)}</div>`;
+        }
+        const split = (tool) => `<div class="w wide">${rail()}${chat()}<aside class="pane"><div class="split-body">
+            <div class="col"><div class="ph"><span class="crumb"><span class="here">Workers</span><span class="n">4 · 6 done</span></span><button class="tool" type="button" title="Search workers">${i("search")}</button><button class="tool" type="button" title="Back to one column: the worker alone, the sidebar back">${i("cols")}</button></div>${`<div class="list-body">${groups({ width: "col", cur: OPEN })}</div>`}</div>
+            <div class="col">${workerHead(s, { back: false, menu: true })}${status(s)}${tools(tool, s)}${tool === 0 ? conversation(s) : changes()}</div>
+          </div></aside></div>`;
+        return `<div data-when="wide">${split(0)}</div>
+          <div data-when="wide-changes">${split(1)}</div>
+          <div data-when="default">${win("", sidebar({ fold: "kept" }), `<aside class="pane">${workerHead(s, { menu: true, widen: true })}${status(s)}${tools(0, s)}${conversation(s)}</aside>`)}</div>`;
+      };
+
+      // ---------- Rows: one component, two widths, its card and its menu ----------
+      const parity = () => `<div class="par2">
+        <div><h3>Sidebar width (the pane closed)</h3><p class="cap">The same row: mark, title, agent; then chips, the same status words cut to one line, and last activity.</p><div class="box">${WORKERS.map((w) => row(w, { width: "side" })).join("")}</div></div>
+        <div><h3>Pane width</h3><p class="cap">Title, agent and last activity; the status words on up to two lines; chips, plan and documents; small previews only when it asks you to pick between them.</p><div class="box">${WORKERS.map((w) => row(w)).join("")}</div></div>
+        <div><h3>Both widths: hover card and menu</h3><p class="cap">The sidebar row's own, now on the pane's row too, with ⌥-click to peek and drag.</p>
+          <div class="card-pop"><span class="m">Claude · Settings search</span><b>Search in Settings</b><span>Waiting on checks for #142; the review bot's two nits are fixed and pushed.</span><span class="m">Step 4 of 4 · started 08:51 · active 10:26</span><span>${pr({ n: 142 })} ${art("Settings search: how it matches")}</span></div>
+          <div class="ctx"><span>Open beside</span><span>Open in the main view</span><span>More…</span><hr><span>Rename…</span><span>Pin</span><span>Mark unread</span><span>Archive</span><hr><span class="danger">Close thread…</span></div>
+        </div>
+        <div class="notes">
+          <ul><li>One component with a width: the status string is the same; CSS cuts it to fit.</li><li>Age is last activity in both; "started" moves to the card.</li></ul>
+          <ul><li>Running rows say what they're doing in both lists.</li><li>The open worker is current in both lists, from the pane's state, not the route.</li></ul>
+          <ul><li>Documents are titled chips; two 48 px previews only for a pick between two mocks.</li><li>Done rows open a read-only record in the pane.</li></ul>
+        </div></div>`;
+
+      const R = { A, AP, B, C, parity };
+      for (const el of document.querySelectorAll("[data-render]")) {
+        el.outerHTML = R[el.dataset.render](el.dataset.size);
+      }
+      // A list shows where you left it: its saved scroll, applied whenever its state is shown.
+      const applyScroll = () => {
+        for (const el of document.querySelectorAll("[data-scroll]")) {
+          if (el.offsetParent !== null) el.scrollTop = Number(el.dataset.scroll);
+        }
+      };
+      document.addEventListener("click", () => setTimeout(applyScroll, 30));
+      window.addEventListener("load", () => setTimeout(applyScroll, 60));
+    </script>
+  </body>
+</html>
