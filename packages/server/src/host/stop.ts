@@ -10,6 +10,11 @@
 // ref, when what the ref names is this folder's own or is in that branch: the ref is one per
 // thread at the remote, and another folder of the thread may have written it. `host.stop.drop`
 // deletes it whatever it names, for a thread that is gone for good.
+//
+// A host about to be taken away (a provisioned host sent SIGTERM, as a node drain or a reclaimed
+// spot node sends it) says so to whoever listens (`host.stop.going`, `goAway`) and holds its exit
+// while one does, so the control plane readies it to stop as above and its threads' work is kept,
+// remembered there as any stop's is, before the process ends.
 
 import {
   type HostBusy,
@@ -45,8 +50,11 @@ import {
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute } from "node:path";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
 import type { Admission } from "./admission.ts";
 import { redactUrlCredentials } from "./remote-url.ts";
 import { toDiffFile } from "../git/mapping.ts";
@@ -128,7 +136,29 @@ export interface HostStop {
   readonly drop: (request: DropRequest) => Effect.Effect<{ readonly dropped: boolean }, HostFailed>;
   /** Whether new work is refused now because the host was readied to stop. */
   readonly stopping: () => boolean;
+  /**
+   * Says once, when `goAway` is called, that the host is about to be taken away
+   * (`host.stop.going`). Each listener counts while it listens: `goAway` waits for them.
+   */
+  readonly going: Stream.Stream<HostGoing>;
+  /**
+   * The host is about to be taken away: says so to every listener of `going`, and waits until none
+   * listens any more (each readied it to stop and let go, or its connection closed) or `withinMs`
+   * pass. Answers at once when none listens.
+   */
+  readonly goAway: (withinMs: number) => Effect.Effect<GoneAway>;
 }
+
+/** What `host.stop.going` says: how long the host waits for its listeners. */
+export interface HostGoing {
+  readonly withinMs: number;
+}
+
+/**
+ * How a `goAway` ended: `stopped` when its listeners let go after a stop was readied, `unheard`
+ * when none listened or they let go with no stop, `late` when `withinMs` ran out first.
+ */
+export type GoneAway = "stopped" | "unheard" | "late";
 
 export interface StopDeps {
   readonly proc: ProcShape;
@@ -184,6 +214,15 @@ export const stopOn = (deps: StopDeps): HostStop => {
   let cancels = 0;
   /** One prepare at a time: a second one waits for the first one's pushes. */
   const lock = Semaphore.makeUnsafe(1);
+  /** Said once by `goAway`: the host is about to be taken away. */
+  const announced = Deferred.makeUnsafe<HostGoing>();
+  let goingSaid = false;
+  /** Listeners of `going` now. */
+  let listeners = 0;
+  /** Done once, after `goAway`, when no listener is left. */
+  const unheard = Deferred.makeUnsafe<void>();
+  /** A prepare ended after `goAway`: the stop was readied as it went. */
+  let readiedAfterGoing = false;
 
   const stopping = () => {
     if (heldUntil !== undefined && now() >= heldUntil) heldUntil = undefined;
@@ -577,8 +616,36 @@ export const stopOn = (deps: StopDeps): HostStop => {
       return lists.flat();
     });
 
+  const going: Stream.Stream<HostGoing> = Stream.suspend(() => {
+    listeners += 1;
+    return Stream.concat(Stream.fromEffect(Deferred.await(announced)), Stream.never).pipe(
+      Stream.ensuring(
+        Effect.sync(() => {
+          listeners -= 1;
+          if (goingSaid && listeners === 0) Deferred.doneUnsafe(unheard, Exit.void);
+        }),
+      ),
+    );
+  });
+
+  const goAway = (withinMs: number): Effect.Effect<GoneAway> =>
+    Effect.suspend(() => {
+      goingSaid = true;
+      Deferred.doneUnsafe(announced, Exit.succeed({ withinMs }));
+      if (listeners === 0) Deferred.doneUnsafe(unheard, Exit.void);
+      return Deferred.await(unheard).pipe(
+        Effect.map((): GoneAway => (readiedAfterGoing ? "stopped" : "unheard")),
+        Effect.timeoutOrElse({
+          duration: withinMs,
+          orElse: () => Effect.succeed<GoneAway>("late"),
+        }),
+      );
+    });
+
   const ensure = deps.ensure;
   return {
+    going,
+    goAway,
     keep: (request) => lock.withPermits(1)(asWork(keep(request))),
     ...(ensure === undefined
       ? {}
@@ -587,7 +654,16 @@ export const stopOn = (deps: StopDeps): HostStop => {
             lock.withPermits(1)(asWork(restore(ensure, request))),
         }),
     drop: (request) => lock.withPermits(1)(asWork(drop(request))),
-    prepare: (request) => lock.withPermits(1)(prepare(request)),
+    prepare: (request) =>
+      lock
+        .withPermits(1)(prepare(request))
+        .pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (goingSaid) readiedAfterGoing = true;
+            }),
+          ),
+        ),
     cancel: Effect.sync(() => {
       cancels += 1;
       heldUntil = undefined;

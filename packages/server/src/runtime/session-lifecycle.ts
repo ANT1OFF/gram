@@ -487,19 +487,21 @@ export const makeSessionLifecycle = ({
           : Option.none();
         // An interrupt is the server shutting down under the session, which says nothing of the turn.
         const interrupted = Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause);
+        // A machine that took the session with it is the thread's incident whether a turn was
+        // open or not: an idle thread on a lost machine says so too, over any error it had.
         const exitError =
           stopping === undefined &&
           !carriesOn &&
           !interrupted &&
           !isShuttingDown() &&
           Option.isNone(unavailable) &&
-          (endedMidTurn || Option.isNone(kept))
+          (endedMidTurn || Option.isNone(kept) || lostMachine !== undefined)
             ? yield* recordFailure(
                 rt,
                 UNKNOWN_FAILURE,
                 exitDetail,
                 turnId,
-                lostMachine === undefined || !endedMidTurn
+                lostMachine === undefined
                   ? undefined
                   : {
                       machine: lostMachine,

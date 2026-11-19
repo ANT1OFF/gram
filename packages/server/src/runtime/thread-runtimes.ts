@@ -15,6 +15,7 @@ import {
   type GitError,
   type QueuedInput,
   type Thread,
+  LOCAL_HOST_ID,
   type ThreadNotFound,
   type ThreadSummary,
   type ThreadStatus,
@@ -609,6 +610,18 @@ const make = Effect.gen(function* () {
     stampTurnEnd,
     setRetrying: (rt, retrying, detail) => setRetrying(rt, retrying, detail),
     clearPendingRequests: (rt, reason) => clearPendingRequests(rt, reason),
+    ...(remoteHosts === undefined
+      ? {}
+      : {
+          awayMachine: (thread: Thread) => {
+            const id = sessionHostOf(thread);
+            if (id === LOCAL_HOST_ID) return undefined;
+            const machine = remoteHosts.machines.get(id);
+            return machine === undefined || remoteHosts.origin(id) !== undefined
+              ? undefined
+              : machine.name;
+          },
+        }),
   });
   /**
    * `detail` is the adapter's retry line, of which only `retryFacts` reaches the log. A retry that

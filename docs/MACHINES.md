@@ -528,6 +528,13 @@ the local app, as the other `/machines/*` routes are.
   not as a plain session end. The conversation shows that turn's card with Resume worker
   (`thread.resumeAfterMachineLost`): the same conversation gets Gram's note of what was cut off,
   which brings the machine back and its folder as last kept.
+- The loss is kept on the thread apart from its last error (`Thread.machineIncident`: when, which
+  machine, `away` or `lost`, and the time of the last save before it), so a later failure doesn't
+  hide it: a message that waits on the machine and then fails as "offline" keeps the card, and
+  every error written while it lasts carries it as `machineLost`, dated from the loss. A thread
+  that was idle when its machine took its session gets it too, and so does any failure of a
+  thread whose machine is offline then. Only a turn that completes, or Resume worker, clears it.
+  A failure logs `machineLost: true` on its "turn failed" line.
 - Each keep says what the save holds (`HostStopKept.saved`): the diff of the kept commit against
   where its branch left its base, bodies cut to 512 KB with the largest files listed without
   theirs. Gram records the time and the files on the thread (`Thread.savedWork`), so the
@@ -540,6 +547,16 @@ the local app, as the other `/machines/*` routes are.
   "Last save 08:20 failed: …" until a keep reaches the remote again, so an old save never reads
   as current.
 - `POST /machines/stop/cancel` takes a stop back: the host takes new work again.
+- **A provisioned host sent SIGTERM** (its node drained, or a reclaimed spot node, before the
+  grace period ends) readies itself to stop before it goes. It says so to this Gram
+  (`host.stop.going`, from a host that names the `stop-going` feature), which readies it as
+  `POST /machines/stop/prepare` with `force` does: each thread's work is kept at the remote and
+  remembered here, and the machine is owed a resume when a host dials in as it again. The host
+  holds its exit while this Gram does so, for up to 35 seconds, and goes at once when no Gram
+  listens. The log says `a machine about to go was readied to stop`, with how many folders were
+  kept and missed. Give the host a grace period longer than that (60 seconds leaves room for
+  what runs after it). A machine a person joined keeps its disk, and an update's restart is a
+  SIGTERM too, so it doesn't do this.
 - `POST /machines/stop/status` lists each joined machine: `online`, `stoppedAt` when it was
   readied and hasn't dialled in since, `wanted` when a thread waits on it now, and `resuming`
   when it dialled in after a stop and hasn't been resumed: resume it, however it was started. A message sent
@@ -637,6 +654,7 @@ to what the stop said it kept: the ref must name exactly the stop's `commit` for
 nothing is put back and the folder is reported missing with why. A folder the stop answered
 `caughtUp` for is made from its branch, whatever the ref names.
 
+A stop on SIGTERM is remembered as any stop is, so a resume after it is held to what it kept.
 Gram remembers each stop's answer while it runs. After Gram itself restarted it remembers none,
 so give the stop's `kept` array back in the resume call (`"kept": [...]`, entries as they were
 answered; up to 512). With neither, the ref is taken as the remote has it, and a thread with no

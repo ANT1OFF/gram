@@ -11,6 +11,7 @@ import {
   type Thread,
   type ThreadId,
 } from "@gram/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
@@ -645,6 +646,72 @@ describe("resuming a machine on another disk", () => {
       // Another thread on the machine opens as on any machine.
       expect(restoreGateOf(stops, MACHINE, "t-other" as ThreadId)).toBeUndefined();
     }),
+  );
+
+  it.effect(
+    "asks again of a clone an interrupted resume made but didn't put its thread's work in",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          // A worker's worktree of the clone, and the orchestrator's own folder, the clone itself.
+          const clone = "/clones/widgets";
+          const worktree = thread("t-worker", {
+            path: "/clones/widgets-trees/worker",
+            branch: "gram/worker",
+            repoRoot: clone,
+            cloneIdentity: cloneIdentityOf(URL)!,
+          });
+          const own = thread("t-orch", {
+            kind: "current",
+            path: clone,
+            branch: "main",
+            cloneIdentity: cloneIdentityOf(URL)!,
+          } as never);
+          const disk = new Set<string>();
+          const asked: Array<string> = [];
+          const hang = yield* Deferred.make<void>();
+          let first = true;
+          const restore = (request: RestoreRequest) =>
+            Effect.gen(function* () {
+              asked.push(request.cwd);
+              // Putting the worktree back makes the plain clone behind it first.
+              disk.add(clone);
+              if (request.cwd === clone && first) yield* Deferred.await(hang);
+              disk.add(request.cwd);
+              return { restored: true, commit: COMMIT } satisfies HostStopRestored;
+            });
+          const stops = makeStopMarks();
+          stops.expect(MACHINE);
+          stops.back(MACHINE);
+          const deps = {
+            hosts: {
+              connection: () =>
+                Effect.succeed({
+                  git: { present: (at: string) => Effect.sync(() => disk.has(at)) },
+                  stop: { restore },
+                }),
+              stops,
+            },
+            store: { listThreads: Effect.succeed([worktree, own]) },
+            runtimes: { startSession: () => Effect.void },
+          } as unknown as StopResumeDeps;
+          // The first resume is cut off with the worktree back and the clone's own work not.
+          const cut = yield* Effect.forkScoped(resumeHost(deps, MACHINE));
+          yield* Effect.gen(function* () {
+            while (!asked.includes(clone) || !disk.has("/clones/widgets-trees/worker"))
+              yield* Effect.yieldNow;
+          });
+          yield* Fiber.interrupt(cut);
+          first = false;
+          asked.length = 0;
+          // The clone is on the disk now, but only as the worktree's restore left it: the next
+          // resume asks for the thread's work in it rather than take it for put back.
+          stops.expect(MACHINE);
+          stops.back(MACHINE);
+          yield* resumeHost(deps, MACHINE);
+          expect(asked).toContain(clone);
+        }),
+      ),
   );
 
   it.effect(

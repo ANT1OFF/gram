@@ -16,6 +16,7 @@
 import {
   type Checkout,
   effectiveCheckout,
+  embeddingOn,
   HostFailed,
   type HostBusy,
   type HostId,
@@ -27,6 +28,7 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import { isWipRefOf } from "@gram/git";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import type { ThreadStore } from "../persistence/thread-store.ts";
@@ -289,6 +291,48 @@ export const prepareStop = (
   });
 
 /**
+ * What runs when a machine's host says it is about to be taken away (`host.stop.going`, a
+ * provisioned host sent SIGTERM): the machine is readied to stop as whoever runs it would ask,
+ * forced, so each thread's work is kept and remembered before the host's process ends, and the
+ * machine is owed a resume when a host dials in as it again. Within `withinMs`, past which the
+ * host goes regardless. Nothing while the hosted features are off.
+ */
+export const readyOnGoing =
+  (deps: StopResumeDeps & { readonly settings: Pick<ThreadStore["Service"], "getSettings"> }) =>
+  (id: HostId, withinMs: number): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      if (!embeddingOn(yield* deps.settings.getSettings))
+        return yield* Effect.logInfo("a machine about to go wasn't readied to stop").pipe(
+          Effect.annotateLogs({ hostId: id, reason: "the hosted features are off" }),
+        );
+      const prepared = yield* prepareStop(deps, id, { force: true }).pipe(
+        Effect.timeoutOrElse({
+          duration: withinMs,
+          orElse: () =>
+            Effect.fail(new HostFailed({ message: "The machine went before its stop was ready." })),
+        }),
+      );
+      const missed = prepared.kept.filter((work) => !work.pushed);
+      yield* (missed.length > 0 ? Effect.logWarning : Effect.logInfo)(
+        "a machine about to go was readied to stop",
+      ).pipe(
+        Effect.annotateLogs({
+          hostId: id,
+          kept: prepared.kept.length - missed.length,
+          missed: missed.length,
+          ...(missed.length > 0 ? { notes: missed.map((work) => work.note) } : {}),
+          ...(prepared.note === undefined ? {} : { note: prepared.note }),
+        }),
+      );
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("a machine about to go wasn't readied to stop").pipe(
+          Effect.annotateLogs({ hostId: id, reason: Cause.pretty(cause).slice(0, 1024) }),
+        ),
+      ),
+    );
+
+/**
  * Keeps one thread's work in progress on the machine off it now, while it works on
  * (`host.stop.keep`): the thread's folders there that Gram made from a clone, under the thread's
  * hidden ref at the remote. Remembered as a stop's is, so a resume on another disk is held to it;
@@ -479,6 +523,8 @@ export const resumeHost = (
           { concurrency: RESTORE_CONCURRENCY },
         ),
       );
+      // Missing now: owed until this resume, or a later one, is done with it.
+      for (const [cwd, there] of seen) if (there === false) stops.folderOwed(id, cwd);
       const putBack = (
         { thread, cwd }: (typeof folders)[number],
         there: boolean | undefined,
@@ -577,8 +623,12 @@ export const resumeHost = (
       const putBackShared = (sharing: ReadonlyArray<(typeof folders)[number]>) =>
         Effect.gen(function* () {
           const cwd = sharing[0]!.cwd;
-          // A folder a resume before couldn't put back is asked of the host again, there or not.
-          const again = sharing.some(({ thread }) => stops.blocked(id, thread.id) !== undefined);
+          // A folder a resume before couldn't put back, or set out to and didn't finish with, is
+          // asked of the host again, there or not: what is at its path may be only what another
+          // folder's restore made of it.
+          const again =
+            stops.isFolderOwed(id, cwd) ||
+            sharing.some(({ thread }) => stops.blocked(id, thread.id) !== undefined);
           const there = again && seen.get(cwd) === true ? undefined : seen.get(cwd);
           const outcomes: Array<FolderOutcome> = [];
           let back = false;
@@ -600,6 +650,10 @@ export const resumeHost = (
                 : outcome;
             yield* done(folder.thread.id, cwd, settled);
           }
+          // Done with: put back or there for all who share it, or missing with nothing kept of it.
+          // One refused stays owed, and blocked, for the next resume.
+          if (back || outcomes.every((outcome) => outcome.kind === "missing"))
+            stops.folderDone(id, cwd);
         });
       yield* Effect.forEach(groups, putBackShared, {
         concurrency: RESTORE_CONCURRENCY,

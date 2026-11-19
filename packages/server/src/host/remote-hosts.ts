@@ -11,6 +11,7 @@ import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Stream from "effect/Stream";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 import { ServerConfig } from "../config.ts";
@@ -169,6 +170,12 @@ export interface RemoteHostsShape {
    */
   readonly watch: (listener: () => void) => () => void;
   /**
+   * Runs `ready` when a machine's host says it is about to be taken away (`host.stop.going`), with
+   * how long it waits: the host holds its exit until every `ready` has ended, or that time has
+   * passed. Returns the unregister.
+   */
+  readonly onGoing: (ready: (id: HostId, withinMs: number) => Effect.Effect<void>) => () => void;
+  /**
    * Where `states` reads whether access over Tailscale is switched off, so an offline machine says
    * that rather than that it never dialled; until it is given, access counts as on unless it was
    * last kept off. Only the switch is read: why Tailscale is down here changes with no word to
@@ -249,6 +256,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
     Effect.gen(function* () {
       /** Told when `states` may have changed; one that throws doesn't stop the others. */
       const watchers = new Set<() => void>();
+      /** What runs when a machine says it is about to be taken away (`onGoing`). */
+      const goingReady = new Set<(id: HostId, withinMs: number) => Effect.Effect<void>>();
       const changed = () => {
         for (const watcher of watchers) {
           try {
@@ -460,6 +469,24 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             // How its last update went, which also confirms one that brought it back, then
             // whether it updates now.
             runFork(updates.connected(machine.id, opened.value));
+            // Listened to while it is online, and let go of once it was readied to stop as it said
+            // it goes: the host holds its exit until then.
+            const going = opened.value.stop.going;
+            if (going !== undefined)
+              runFork(
+                Stream.runForEachWhile(going, ({ withinMs }) =>
+                  Effect.logInfo("machines: a machine says it is about to be taken away").pipe(
+                    Effect.annotateLogs({ hostId: machine.id, withinMs }),
+                    Effect.andThen(
+                      Effect.forEach([...goingReady], (ready) => ready(machine.id, withinMs), {
+                        concurrency: "unbounded",
+                        discard: true,
+                      }),
+                    ),
+                    Effect.as(false),
+                  ),
+                ).pipe(Effect.ignore),
+              );
             yield* Deferred.await(ended).pipe(Effect.ignore);
             if (online.get(machine.id) === live) stops.away(machine.id);
             yield* Effect.logInfo("machines: a joined machine went offline").pipe(
@@ -563,6 +590,12 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           watchers.add(listener);
           return () => {
             watchers.delete(listener);
+          };
+        },
+        onGoing: (ready) => {
+          goingReady.add(ready);
+          return () => {
+            goingReady.delete(ready);
           };
         },
         accessFrom: (read) => {
