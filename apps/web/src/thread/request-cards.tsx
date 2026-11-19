@@ -12,6 +12,7 @@ import type {
   ThreadId,
   WorkspaceProposalCard,
 } from "@gram/contracts";
+import { approvalHidesText, HIDDEN_TEXT_WARNING, revealHidden } from "@gram/contracts";
 import {
   Check,
   ChevronLeft,
@@ -1175,19 +1176,43 @@ export function ApprovalInput({ request }: { request: ApprovalRequest }) {
   // More to the input than the line it leads with, if only a description: Details has all of it.
   const more =
     Object.keys(request.input).length > 1 &&
-    approvalSubject(request) !== JSON.stringify(request.input);
+    approvalSubject(request) !== revealHidden(JSON.stringify(request.input));
+  // Characters that hide or reorder text show as markers, and the card says so before the input.
+  const hides = approvalHidesText(request);
   return (
     <>
+      {request.allowWithheld !== undefined && (
+        <p
+          data-testid="approval-withheld"
+          role="alert"
+          className="mb-2 text-meta text-status-needs-mark"
+        >
+          {request.allowWithheld}
+        </p>
+      )}
+      {hides && (
+        <p
+          data-testid="approval-hidden-warning"
+          role="alert"
+          className="mb-2 text-meta text-status-needs-mark"
+        >
+          {HIDDEN_TEXT_WARNING}
+        </p>
+      )}
       {/* What it is for, in the agent's words, before the input: the input stays in the open under
           it, since the words are the agent's and the input is what an Allow covers. */}
       {request.description && (
         <p data-testid="approval-description" className="mb-2">
-          {request.description}
+          {revealHidden(request.description)}
         </p>
       )}
-      <pre className="overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-meta whitespace-pre-wrap">
-        {/* A shell command in colour, its embedded scripts in theirs; the text is exactly the input. */}
-        {typeof request.input["command"] === "string" ? (
+      <pre
+        data-testid="approval-subject"
+        className="overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-meta whitespace-pre-wrap"
+      >
+        {/* A shell command in colour, its embedded scripts in theirs; the text is exactly the input.
+            One that hides text reads as plain text with its markers, never highlighted over them. */}
+        {typeof request.input["command"] === "string" && !hides ? (
           <HighlightedCommand code={request.input["command"]} />
         ) : (
           approvalSubject(request)
@@ -1315,6 +1340,11 @@ export function ApprovalCard({
     return view !== null && plainKeysReach(focus, view);
   };
   const mayAnswer = () => keysReach() && (canAnswer?.() ?? true);
+  // Text that hides or reorders characters is read, not answered by a key: 1 and 2 stay off and
+  // the buttons are pressed by hand. 3 still denies.
+  const hides = approvalHidesText(request);
+  // What would run isn't known exactly: the card offers Deny alone.
+  const withheld = request.allowWithheld !== undefined;
 
   useShortcut(
     {
@@ -1326,7 +1356,7 @@ export function ApprovalCard({
       when: mayAnswer,
       run: () => allow("once"),
     },
-    active && pause === undefined,
+    active && pause === undefined && !hides && !withheld,
   );
   useShortcut(
     {
@@ -1340,7 +1370,7 @@ export function ApprovalCard({
       once: true,
       run: always,
     },
-    active && pause === undefined,
+    active && pause === undefined && !hides,
   );
   useShortcut(
     {
@@ -1372,7 +1402,7 @@ export function ApprovalCard({
                 : `Change workspace “${workspace.workspace.name}”?`
               : mcpServer !== undefined
                 ? `${mcpServer.action === "replace" ? "Replace" : "Add"} MCP server “${mcpServer.name}”?`
-                : (request.title ?? browser?.title ?? `Allow ${request.displayName}?`)
+                : revealHidden(request.title ?? browser?.title ?? `Allow ${request.displayName}?`)
       }
       footer={
         pause !== undefined ? (
@@ -1394,25 +1424,27 @@ export function ApprovalCard({
           </>
         ) : (
           <>
-            <PressScale>
-              <Button
-                size="sm"
-                data-testid="approval-allow"
-                disabled={pending}
-                onClick={() => allow("once")}
-              >
-                {workspace?.action === "create"
-                  ? "Create workspace"
-                  : settings !== undefined || workspace !== undefined
-                    ? "Apply changes"
-                    : mcpServer !== undefined
-                      ? mcpServer.action === "replace"
-                        ? "Replace server"
-                        : "Add server"
-                      : ALLOW_ONCE}{" "}
-                <CardKbd id="approval.allow" />
-              </Button>
-            </PressScale>
+            {!withheld && (
+              <PressScale>
+                <Button
+                  size="sm"
+                  data-testid="approval-allow"
+                  disabled={pending}
+                  onClick={() => allow("once")}
+                >
+                  {workspace?.action === "create"
+                    ? "Create workspace"
+                    : settings !== undefined || workspace !== undefined
+                      ? "Apply changes"
+                      : mcpServer !== undefined
+                        ? mcpServer.action === "replace"
+                          ? "Replace server"
+                          : "Add server"
+                        : ALLOW_ONCE}{" "}
+                  {!hides && <CardKbd id="approval.allow" />}
+                </Button>
+              </PressScale>
+            )}
             {canAlways && (
               <Button
                 size="sm"
@@ -1423,7 +1455,7 @@ export function ApprovalCard({
                 onClick={always}
               >
                 {confirming ? alwaysAllowLabel(rules.length) : alwaysAllowOpenLabel(rules.length)}{" "}
-                <CardKbd id="approval.always" />
+                {!hides && <CardKbd id="approval.always" />}
               </Button>
             )}
             {confirming && (

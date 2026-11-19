@@ -3,6 +3,7 @@ import {
   NOTICE_ROW_CHARS,
   noticeBodyFits,
   noticePlain,
+  revealHidden,
   type ApprovalRequest,
   type WorkspaceId,
 } from "@gram/contracts";
@@ -93,9 +94,12 @@ const approvalOf = (ask: Ask): ApprovalRequest | undefined => {
   return ask.icon === "approval" && request?.kind === "approval" ? request : undefined;
 };
 
-/** A line that can't be shown whole: a plain start, marked as cut. */
+/**
+ * A line that can't be shown whole: a plain start, marked as cut. A character that hides or
+ * reorders text shows as its marker (`revealHidden`), a line break or tab as a replacement mark.
+ */
 const cutLine = (line: string): string => {
-  const plain = [...line].map((char) => (noticePlain(char) ? char : "�"));
+  const plain = [...revealHidden(line)].map((char) => (noticePlain(char) ? char : "�"));
   return `${plain.slice(0, NOTICE_ROW_CHARS - 1).join("")}…`;
 };
 

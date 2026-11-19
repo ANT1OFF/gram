@@ -57,6 +57,17 @@ const kindOf = (p: CommandApproval): OutwardKind | undefined => {
   return kinds.includes("irreversible") ? "irreversible" : kinds.find((kind) => kind !== undefined);
 };
 
+/** The exact command a command approval runs, or "" when Codex didn't send one. */
+const exactCommand = (p: CommandApproval): string =>
+  typeof p.command === "string" && p.command.trim() !== "" ? p.command : "";
+
+/**
+ * Whether a command approval can't be allowed from what its card shows: it names no exact command
+ * and isn't a network ask, which says its host instead.
+ */
+const withholdsAllow = (p: CommandApproval): boolean =>
+  exactCommand(p) === "" && (p.networkApprovalContext ?? null) === null;
+
 /**
  * What a session under the outward gate does with a server request before anyone sees it:
  * - `askOnce`: a command the gate's level asks about. Always a card, and only ever for this one run.
@@ -129,6 +140,13 @@ export const toPendingRequest = (
     case "item/commandExecution/requestApproval": {
       const p = request.params;
       const kind = kindOf(p);
+      // The card shows the exact command that runs. Codex's parsed actions are a best-effort
+      // reading for display, so they come second, and only when they read differently. A request
+      // without the command can't be allowed from what it shows: it offers Deny alone.
+      const command = exactCommand(p);
+      const parsed = (p.commandActions ?? []).map((action) => action.command).join("; ");
+      const network = p.networkApprovalContext ?? null;
+      const unknown = withholdsAllow(p);
       return {
         kind: "approval",
         id,
@@ -136,9 +154,17 @@ export const toPendingRequest = (
         toolName: "Bash",
         displayName: "Bash",
         input: {
-          command: p.commandActions?.map((action) => action.command).join("; ") || p.command || "",
+          ...(command === "" ? {} : { command }),
+          ...(parsed === "" || parsed === command ? {} : { parsed }),
+          ...(network === null ? {} : { network: `${network.protocol}://${network.host}` }),
           ...(p.cwd ? { cwd: p.cwd } : {}),
         },
+        ...(unknown
+          ? {
+              allowWithheld:
+                "Codex didn't send the exact command it would run, so this can't be allowed from here.",
+            }
+          : {}),
         ...(p.reason ? { description: p.reason } : {}),
         suggestions: [],
         scopes: gateAsks(level, kind)
@@ -244,7 +270,8 @@ export const responseFor = (
       const offers = (decision: string) =>
         available === null || available === undefined || available.includes(decision);
       let decision: CommandExecutionApprovalDecision;
-      if (!allow) decision = gated || offers("decline") ? "decline" : "cancel";
+      // A card that showed no exact command offered no Allow, and none is sent for it.
+      if (!allow || withholdsAllow(p)) decision = gated || offers("decline") ? "decline" : "cancel";
       else if (gateAsks(level, kind)) decision = "accept";
       else if (
         scope === "always" &&

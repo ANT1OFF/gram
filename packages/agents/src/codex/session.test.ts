@@ -1268,7 +1268,11 @@ describe("CodexSession under the outward gate", () => {
               kind: "approval",
               id: "codex-2",
               toolName: "Bash",
-              input: { command: "git push origin HEAD:main", cwd: "/repo" },
+              input: {
+                command: "/bin/zsh -lc 'git push origin HEAD:main'",
+                parsed: "git push origin HEAD:main",
+                cwd: "/repo",
+              },
               suggestions: [],
               scopes: ["once"],
             }),
