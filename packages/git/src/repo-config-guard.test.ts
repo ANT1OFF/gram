@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import { git } from "./exec.ts";
+import { git, STRICT_STATUS_ARGS } from "./exec.ts";
 import { ProcLive } from "./proc.ts";
 import { guardFor, parseConfigList, withGuardArgs } from "./repo-config-guard.ts";
 import { hasGit, removeDir, run, tempDir } from "./test-utils.ts";
@@ -33,6 +33,31 @@ const setup = () => {
 };
 
 const provide = Effect.provide(ProcLive);
+
+/** A repository with one submodule, as `git submodule add` lays it out. */
+const withSubmodules = () => {
+  const { repo, root, ran, marker } = setup();
+  const lib = nodePath.join(root, "lib");
+  fs.mkdirSync(lib);
+  run(lib, "init", "-q", "-b", "main");
+  fs.writeFileSync(nodePath.join(lib, ".gitattributes"), "*.txt filter=planted\n");
+  fs.writeFileSync(nodePath.join(lib, "l.txt"), "lib\n");
+  run(lib, "add", "-A");
+  run(lib, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-qm", "lib");
+  run(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", lib, "sub");
+  run(repo, "commit", "-qm", "sub");
+  const modules = nodePath.join(repo, ".git", "modules", "sub");
+  const plantIn = (gitDir: string, key: string, name: string) =>
+    run(
+      repo,
+      "config",
+      "--file",
+      nodePath.join(gitDir, "config"),
+      key,
+      `touch '${marker(name)}'; cat`,
+    );
+  return { repo, ran, modules, plantIn };
+};
 
 describe.skipIf(!hasGit)("Gram's own git and the repository's config", () => {
   it.live("runs nothing the repository's config names, on status, add, diff and log", () =>
@@ -108,12 +133,44 @@ describe.skipIf(!hasGit)("Gram's own git and the repository's config", () => {
   );
 });
 
+describe.skipIf(!hasGit)("Gram's own git and a submodule's config", () => {
+  it.live("runs nothing a submodule's own config names, on status and diff", () =>
+    Effect.gen(function* () {
+      const { repo, ran, modules, plantIn } = withSubmodules();
+      plantIn(modules, "core.fsmonitor", "fsmonitor");
+      plantIn(modules, "filter.planted.clean", "clean");
+      fs.writeFileSync(nodePath.join(repo, "sub", "l.txt"), "changed\n");
+
+      expect((yield* git(repo, ["status", "--porcelain"])).status).toBe(0);
+      yield* git(repo, ["diff", "--quiet", "HEAD"]);
+      // The check before a checkout is removed still sees the submodule's uncommitted change.
+      expect((yield* git(repo, STRICT_STATUS_ARGS)).stdout).toContain("sub");
+
+      expect(ran()).toEqual([]);
+    }).pipe(provide),
+  );
+
+  it.live("sees a submodule config an agent writes after Gram's last call", () =>
+    Effect.gen(function* () {
+      const { repo, ran, modules, plantIn } = withSubmodules();
+      expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+      plantIn(modules, "core.fsmonitor", "fsmonitor");
+      fs.writeFileSync(nodePath.join(repo, "sub", "l.txt"), "changed\n");
+      expect((yield* git(repo, STRICT_STATUS_ARGS)).status).toBe(0);
+      expect(ran()).toEqual([]);
+    }).pipe(provide),
+  );
+});
+
 describe("guardFor", () => {
   it.skipIf(!hasGit)("keeps git's built-in file monitor the repository turned on", () => {
     const { repo } = setup();
     run(repo, "config", "core.fsmonitor", "true");
     const guard = guardFor(parseConfigList(run(repo, "config", "--list", "--show-scope", "-z")));
-    expect(guard.pairs.some(([key]) => key === "core.fsmonitor")).toBe(false);
+    expect(guard.pairs.filter(([key]) => key === "core.fsmonitor").at(-1)).toEqual([
+      "core.fsmonitor",
+      "true",
+    ]);
   });
 
   it("rebuilds a credential helper list from the user's helpers alone", () => {

@@ -24,7 +24,10 @@ import {
   discoverySignature,
   gitEnvKey,
   type Guard,
+  type ConfigEntry,
   guardFor,
+  submoduleConfigFiles,
+  submoduleGitDirs,
   leadingOptions,
   parseConfigList,
   withGuardArgs,
@@ -409,8 +412,27 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
         return yield* Effect.fail(
           new ProcSpawnError({ bin: "git", message: "couldn't read the repository's git config" }),
         );
-      const guard = guardFor(parseConfigList(listing.stdout));
       const [gitDir, commonDir] = dirs.stdout.trim().split("\n");
+      // A git started inside a submodule reads that one's own config, so it is read here too.
+      const nested: Array<ConfigEntry> = [];
+      if (dirs.status === 0 && commonDir) {
+        const submodules = submoduleGitDirs(commonDir);
+        if (submodules === undefined)
+          return yield* Effect.fail(
+            new ProcSpawnError({ bin: "git", message: "the repository has too many submodules" }),
+          );
+        for (const file of submodules.flatMap(submoduleConfigFiles)) {
+          if (!fs.existsSync(file)) continue;
+          const own = yield* read(["config", "--file", file, "--list", "--show-scope", "-z"]);
+          if (own.status !== 0 || own.truncated)
+            return yield* Effect.fail(
+              new ProcSpawnError({ bin: "git", message: "couldn't read a submodule's git config" }),
+            );
+          for (const entry of parseConfigList(own.stdout))
+            nested.push({ ...entry, scope: "local" });
+        }
+      }
+      const guard = guardFor(parseConfigList(listing.stdout), nested);
       // Not a repository (yet), or one with includes: read again next time.
       if (dirs.status === 0 && gitDir && commonDir && !guard.includes && globals.length === 0) {
         if (cache.size >= GUARD_CACHE_LIMIT) cache.delete(cache.keys().next().value!);

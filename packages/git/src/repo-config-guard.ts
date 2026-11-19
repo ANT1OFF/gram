@@ -73,6 +73,9 @@ export const neutralValue = (key: string, value: string | undefined): string | u
   if (/^merge\..+\.driver$/.test(k)) return "false";
   if (/^remote\..+\.uploadpack$/.test(k)) return "git-upload-pack";
   if (/^remote\..+\.receivepack$/.test(k)) return "git-receive-pack";
+  // `commit --trailer` and `interpret-trailers` run a trailer's command; `true` adds nothing.
+  if (/^trailer\..+\.(?:cmd|command)$/.test(k)) return "true";
+  if (/^(?:difftool|mergetool)\..+\.cmd$/.test(k)) return "false";
   if (/^submodule\..+\.update$/.test(k))
     return value !== undefined && value.startsWith("!") ? "checkout" : undefined;
   return undefined;
@@ -89,8 +92,20 @@ const isInclude = (key: string): boolean => {
   return k === "include.path" || /^includeif\..+\.path$/.test(k);
 };
 
-/** Always set: a remote URL never runs a command through `ext::`, whatever the repository allows. */
-const ALWAYS: ReadonlyArray<readonly [string, string]> = [["protocol.ext.allow", "never"]];
+/**
+ * Always set. A remote URL never runs a command through `ext::`, whatever the repository allows.
+ * And git never starts a git of its own inside a submodule: that one would read the submodule's
+ * config (`.git/modules/<name>/config`), which this guard doesn't see. Status and diff still show
+ * a submodule's moved commit (`dirty` reads its HEAD in place), not its uncommitted changes.
+ */
+const ALWAYS: ReadonlyArray<readonly [string, string]> = [
+  ["protocol.ext.allow", "never"],
+  ["diff.ignoreSubmodules", "dirty"],
+  ["status.submoduleSummary", "false"],
+  ["submodule.recurse", "false"],
+  ["fetch.recurseSubmodules", "false"],
+  ["push.recurseSubmodules", "no"],
+];
 
 export interface Guard {
   /** `GIT_CONFIG_*` pairs to add, in order: a later pair for the same key wins. */
@@ -101,13 +116,35 @@ export interface Guard {
   readonly includes: boolean;
 }
 
-/** The guard for one listing: the repository's program keys, put back to the user's values or off. */
-export const guardFor = (entries: ReadonlyArray<ConfigEntry>): Guard => {
+/**
+ * The guard for one listing: the repository's program keys, put back to the user's values or off.
+ * `nested` is what its submodules' own config files hold, as local entries: a git that does start
+ * inside one inherits these pairs, which win over that config too.
+ */
+export const guardFor = (
+  entries: ReadonlyArray<ConfigEntry>,
+  nested: ReadonlyArray<ConfigEntry> = [],
+): Guard => {
   const pairs: Array<readonly [string, string]> = [...ALWAYS];
   let noExtDiff = false;
   let includes = false;
   const handled = new Set<string>();
-  for (const entry of entries) {
+  // `core.fsmonitor` always, so a nested repository this listing can't see (a submodule's own
+  // `.git` folder) runs no monitor of its own either: off, then the user's values, then the
+  // repository's own built-in choice (a plain boolean, which runs nothing of its own).
+  handled.add("core.fsmonitor");
+  pairs.push(["core.fsmonitor", "false"]);
+  for (const entry of entries)
+    if (entry.key === "core.fsmonitor" && !REPO_SCOPES.has(entry.scope))
+      pairs.push([entry.key, entry.value ?? "true"]);
+  for (const entry of entries)
+    if (
+      entry.key === "core.fsmonitor" &&
+      REPO_SCOPES.has(entry.scope) &&
+      neutralValue(entry.key, entry.value) === undefined
+    )
+      pairs.push([entry.key, entry.value ?? "true"]);
+  for (const entry of [...entries, ...nested]) {
     if (!REPO_SCOPES.has(entry.scope)) continue;
     if (isInclude(entry.key)) includes = true;
     if (isExternalDiff(entry.key)) noExtDiff = true;
@@ -169,6 +206,45 @@ export const withGuardArgs = (args: ReadonlyArray<string>, guard: Guard): Readon
 };
 
 // ---------------------------------------------------------------------------------------------
+// Submodules
+
+const SUBMODULE_LIMIT = 64;
+
+/**
+ * The git folders of the repository's submodules, nested ones too: `<common dir>/modules/<name>`,
+ * where `git submodule` keeps them. A name may hold slashes, so a folder without a `HEAD` is walked
+ * into. `undefined` past `SUBMODULE_LIMIT`, which the caller treats as unreadable.
+ */
+export const submoduleGitDirs = (commonDir: string): ReadonlyArray<string> | undefined => {
+  const found: Array<string> = [];
+  const walk = (folder: string, depth: number): boolean => {
+    let names: Array<fs.Dirent>;
+    try {
+      names = fs.readdirSync(folder, { withFileTypes: true });
+    } catch {
+      return true;
+    }
+    for (const entry of names) {
+      if (!entry.isDirectory()) continue;
+      const path = nodePath.join(folder, entry.name);
+      if (fs.existsSync(nodePath.join(path, "HEAD"))) {
+        found.push(path);
+        if (found.length > SUBMODULE_LIMIT) return false;
+        if (!walk(nodePath.join(path, "modules"), 0)) return false;
+      } else if (depth < 8 && !walk(path, depth + 1)) return false;
+    }
+    return true;
+  };
+  return walk(nodePath.join(commonDir, "modules"), 0) ? found : undefined;
+};
+
+/** A submodule git folder's config files, in the order git reads them. */
+export const submoduleConfigFiles = (gitDir: string): ReadonlyArray<string> => [
+  nodePath.join(gitDir, "config"),
+  nodePath.join(gitDir, "config.worktree"),
+];
+
+// ---------------------------------------------------------------------------------------------
 // What a cached guard depends on
 
 /**
@@ -205,6 +281,9 @@ export const discoverySignature = (
     nodePath.join(commonDir, "config.worktree"),
   ])
     mark(path);
+  const submodules = submoduleGitDirs(commonDir);
+  if (submodules === undefined) parts.push("submodules:too-many");
+  else for (const sub of submodules) for (const path of submoduleConfigFiles(sub)) mark(path);
   return parts.join("\n");
 };
 
