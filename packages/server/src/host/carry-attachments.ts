@@ -6,7 +6,8 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
-import { basename } from "node:path";
+import { isInside, tryRealPath } from "@gram/git";
+import { basename, join, resolve } from "node:path";
 import { openOutside, readUpTo } from "../fs/files.ts";
 import type { HostAttachments } from "./file-reads.ts";
 
@@ -21,10 +22,23 @@ const failure = (error: unknown) =>
     ? String((error as { message: unknown }).message)
     : String(error);
 
-/** An attachment's bytes on this machine, as base64: a regular file, never a credential file. */
-const readHere = (path: string, maxBytes: number): Effect.Effect<string, string> =>
+/**
+ * An attachment's bytes on this machine, as base64: a regular file, never a credential file, and
+ * only inside `within` when it is given, by its real path.
+ */
+const readHere = (
+  path: string,
+  maxBytes: number,
+  within: string | undefined,
+): Effect.Effect<string, string> =>
   Effect.gen(function* () {
-    const handle = yield* openOutside(path, {}, () => true, { regularFile: true });
+    // The folder by its real path, as the file's is compared; one that doesn't resolve holds nothing.
+    const root =
+      within === undefined
+        ? undefined
+        : ((yield* Effect.promise(() => tryRealPath(resolve(within)))) ?? false);
+    const inside = (real: string) => root === undefined || (root !== false && isInside(root, real));
+    const handle = yield* openOutside(path, {}, inside, { regularFile: true });
     const bytes = yield* Effect.tryPromise({
       try: () => readUpTo(handle, maxBytes + 1),
       catch: () => "it couldn't be read here",
@@ -45,7 +59,9 @@ const readHere = (path: string, maxBytes: number): Effect.Effect<string, string>
           ? "it is no longer where it was attached from"
           : /credentials/.test(error.message)
             ? "it may hold credentials, so it isn't sent"
-            : "it couldn't be read here",
+            : /isn't where it may be read from/.test(error.message)
+              ? "it isn't one of the files attached here"
+              : "it couldn't be read here",
     ),
   );
 
@@ -63,6 +79,12 @@ export const carryAttachments = (
   machineName: string,
   store: AttachmentsOnMachine,
   maxBytes: number = MAX_ATTACHMENT_BYTES,
+  /**
+   * Gram's attachments folder, on a server with no local user: attachments are read only from
+   * this thread's own folder in it. Any other path a person names is one of the server's own
+   * files, or another thread's attachment.
+   */
+  within?: string,
 ): Effect.Effect<UserInput> =>
   Effect.gen(function* () {
     const attached = input.attachments ?? [];
@@ -75,7 +97,11 @@ export const carryAttachments = (
       const copied =
         target._tag === "Failure"
           ? Result.fail(target.failure)
-          : yield* readHere(attachment.path, maxBytes).pipe(
+          : yield* readHere(
+              attachment.path,
+              maxBytes,
+              within === undefined ? undefined : join(within, threadId),
+            ).pipe(
               Effect.flatMap((data) =>
                 target.success.put(threadId, name, data).pipe(Effect.mapError(failure)),
               ),

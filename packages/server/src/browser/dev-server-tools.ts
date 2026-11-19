@@ -9,7 +9,9 @@ import { randomUUID } from "node:crypto";
 import {
   AppToolError,
   effectiveCheckout,
+  LOCAL_HOST_ID,
   pageContent,
+  sessionHostOf,
   visibleText,
   type ThreadId,
 } from "@gram/contracts";
@@ -96,6 +98,13 @@ export const devServerTools = (deps: DevServerDeps): ReadonlyArray<AppToolDefini
         .getThread(threadId)
         .pipe(Effect.mapError(() => fail(tool, `unknown thread ${threadId}`)));
       if (thread.role === "dream") return yield* fail(tool, "Dream runs cannot run dev servers.");
+      // A dev server runs here, from this disk: a thread whose session runs on another machine
+      // has its folder there, and the same path here is this machine's own.
+      if (sessionHostOf(thread) !== LOCAL_HOST_ID)
+        return yield* fail(
+          tool,
+          "This thread runs on another machine, and dev servers start only on the machine Gram itself runs on. Start it there from a terminal instead.",
+        );
       return effectiveCheckout(thread).path;
     });
   const named = (tool: string, threadId: ThreadId, name: string) =>

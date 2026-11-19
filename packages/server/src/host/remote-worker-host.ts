@@ -413,12 +413,17 @@ export interface MachineDeps {
   readonly agents: AgentHosts["Service"];
   readonly proc: ProcShape;
   readonly gate?: TerminalGate["Service"] | undefined;
+  /**
+   * The one folder a send's attachments are carried to the machine from (`carryAttachments`):
+   * set on a server with no local user, where any other path is the server's own file.
+   */
+  readonly carriedFrom?: string | undefined;
 }
 
 export const machineWorkerHost = (
   machine: Machine,
   connection: HostConnection,
-  { store, hub, agents, proc, gate }: MachineDeps,
+  { store, hub, agents, proc, gate, carriedFrom }: MachineDeps,
 ): Effect.Effect<WorkerHost, never, Scope.Scope> =>
   Effect.gen(function* () {
     const threads = store.listThreads.pipe(Effect.orElseSucceed((): ReadonlyArray<Thread> => []));
@@ -491,6 +496,7 @@ export const machineWorkerHost = (
               machine.origin ?? (() => undefined),
               machine.recheckSignIn,
               currentAttachments(machine, connection),
+              carriedFrom,
             );
             wrapped.set(agent, through);
             return through;
