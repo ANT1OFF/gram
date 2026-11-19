@@ -16,7 +16,7 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 
-import { seedMergedPr } from "./mock-git";
+import { seedMergedPr, seedMockBranch, seedMockPr } from "./mock-git";
 import type { MockScenes } from "./mock-orchestration";
 
 // The realistic scenario: Gram on an ordinary working morning, modelled on a real window rather
@@ -83,6 +83,49 @@ const RELEASE_NOTES_FILES: readonly DiffFile[] = [
     tooLarge: false,
   },
 ];
+
+/** A file a merged PR changed, by its counts; its patch says no more than that. */
+const touched = (path: string, additions: number, deletions: number): DiffFile => ({
+  path,
+  status: deletions === 0 ? "added" : "modified",
+  additions,
+  deletions,
+  patch: `@@ -1,${deletions} +1,${additions} @@`,
+  binary: false,
+  tooLarge: false,
+});
+
+/** What each merged worker's PR changed, by its feature, for its Changes in the pane. */
+const MERGED_FILES: Readonly<Record<string, readonly DiffFile[]>> = {
+  "undo-turn": [
+    touched("apps/web/src/thread/turn-files-chip.tsx", 48, 6),
+    touched("packages/server/src/turns/undo.ts", 96, 0),
+    touched("packages/server/src/turns/undo.test.ts", 71, 0),
+  ],
+  "empty-states": [
+    touched("apps/web/src/board/board-empty.tsx", 22, 3),
+    touched("apps/web/src/history/history-empty.tsx", 18, 2),
+  ],
+  "hit-areas": [
+    touched("apps/web/src/sidebar/sidebar-row.tsx", 9, 5),
+    touched("apps/web/src/styles/rows.css", 6, 2),
+  ],
+  "upload-retry": [
+    touched("apps/web/src/composer/upload-queue.ts", 41, 7),
+    touched("apps/web/src/composer/upload-queue.test.ts", 38, 0),
+  ],
+  "history-sort": [
+    touched("apps/web/src/history/history-model.ts", 30, 8),
+    touched("apps/web/src/history/history-model.test.ts", 4, 1),
+  ],
+  "invoice-footer": [touched("src/invoices/pdf-footer.ts", 19, 2)],
+  "report-rounding": [
+    touched("src/reports/totals.ts", 12, 9),
+    touched("src/reports/totals.test.ts", 27, 0),
+  ],
+  "checkout-states": [touched("src/checkout/checkout-button.tsx", 25, 11)],
+  "staging-certs": [touched("terraform/staging/certs.tf", 14, 6)],
+};
 
 export interface MockRealisticSimulation {
   /** The "Gram" workspace, whose orchestrator has the long transcript. */
@@ -201,6 +244,8 @@ export async function simulateRealistic(
       lastActivityAt: at(Math.max(createdMinutesAgo - 20, 1)),
     };
     host.replace(worker);
+    // Its Diff names its own branch, as its worktree's does.
+    seedMockBranch(worker.id, `feat/${feature}`);
     return worker;
   };
 
@@ -248,6 +293,14 @@ export async function simulateRealistic(
 
   const merged = (worker: Thread, repo: string, number: number, minutesAgo: number) => {
     host.setGit(worker.id, gitOf(worker, repo, { number, state: "MERGED", checks: "passing" }));
+    // Its PR, with what it changed: what its Changes shows once it is done.
+    seedMergedPr(worker.id, {
+      number,
+      repo,
+      title: worker.title,
+      branch: worker.checkout.branch!,
+      files: MERGED_FILES[worker.spawnedBy?.feature ?? ""] ?? [],
+    });
     host.replace({
       ...worker,
       completedAt: at(minutesAgo),
@@ -354,6 +407,16 @@ export async function simulateRealistic(
     lastActivityAt: at(14),
     boundPr: { repo: gramRepo, number: 142, monitor: true },
   });
+  // Its PR is the one its tool names, and its branch holds the same three files.
+  seedMockPr(search.id, {
+    number: 142,
+    repo: gramRepo,
+    title: "feat: search in Settings",
+    branch: search.checkout.branch!,
+    files: SEARCH_FILES,
+    state: "OPEN",
+  });
+  seedMockBranch(search.id, search.checkout.branch!, SEARCH_FILES);
   report(search, "progress", "Opened #142; waiting on checks.", 14, prUrl(gramRepo, 142));
   seedSearchTranscript(host, search.id, at, deps);
 

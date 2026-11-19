@@ -3,9 +3,10 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { currentWindow } from "@/desktop/window-identity";
+import { panelOffered, useEmbedShell } from "@/embed/store";
 import { isTouch } from "@/lib/use-phone";
 import { focusPaneComposer } from "@/shell/pane-focus";
-import { fitShell, useLayoutStore } from "@/stores/layout";
+import { fitShell, routePanelRequests, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
 // "Open beside" (⌘\, ⌘-click a worker, a plain click on a worker's link in its orchestrator's chat):
@@ -56,7 +57,22 @@ interface BesideState {
   readonly widenedFrom: number | undefined;
   /** `worker` came back from storage: it isn't shown until `checkRestored` keeps or drops it. */
   readonly restored: boolean;
-  dock: (worker: ThreadId, options?: { readonly record?: boolean }) => void;
+  /**
+   * The pane takes the keys once its worker is drawn (on its title), as when it opened from the
+   * pane's own list, its switcher or ↑ ↓: Esc and ↑ ↓ work at once.
+   */
+  readonly takeKeys: boolean;
+  /** Back asked the list for its place: its scroll, and the keys on the current worker's row. */
+  readonly returned: boolean;
+  dock: (
+    worker: ThreadId,
+    options?: {
+      readonly record?: boolean;
+      /** Keep the tool it shows (↑ ↓ and the switcher), where the worker has it. */
+      readonly keepTool?: boolean;
+      readonly takeKeys?: boolean;
+    },
+  ) => void;
   close: () => void;
   /** Back to the Workers list: the worker leaves the pane, which stays as it stands. */
   back: () => void;
@@ -108,6 +124,8 @@ export const useBesideStore = create<BesideState>()(
       before: undefined,
       widenedFrom: undefined,
       restored: false,
+      takeKeys: false,
+      returned: false,
       dock: (worker, options) =>
         set((s) => ({
           worker,
@@ -116,8 +134,14 @@ export const useBesideStore = create<BesideState>()(
           record: options?.record === true,
           shown: true,
           restored: false,
-          // Another worker opens on its conversation.
-          ...(s.worker === worker ? {} : { tab: "thread" as const, focused: false }),
+          takeKeys: options?.takeKeys === true,
+          returned: false,
+          // Another worker opens on its conversation, unless stepped to with the same tool.
+          ...(s.worker === worker
+            ? {}
+            : options?.keepTool === true
+              ? {}
+              : { tab: "thread" as const, focused: false }),
         })),
       close: () =>
         set({
@@ -129,8 +153,18 @@ export const useBesideStore = create<BesideState>()(
           before: undefined,
           widenedFrom: undefined,
           restored: false,
+          takeKeys: false,
+          returned: false,
         }),
-      back: () => set({ worker: undefined, record: false, shown: false, focused: false }),
+      back: () =>
+        set({
+          worker: undefined,
+          record: false,
+          shown: false,
+          focused: false,
+          takeKeys: false,
+          returned: true,
+        }),
       setTab: (tab) => set({ tab }),
       setShown: (shown) => set((s) => (s.shown === shown ? s : { shown, focused: false })),
       setFocused: (focused) => set((s) => (s.focused === focused ? s : { focused })),
@@ -150,6 +184,24 @@ export const useBesideStore = create<BesideState>()(
 /** The worker the right panel's Thread tab shows now, if it does. */
 export const besideShown = (s: Pick<BesideState, "worker" | "shown" | "restored">) =>
   s.worker !== undefined && s.shown && !s.restored ? s.worker : undefined;
+
+/** Which of a worker's tools shows what a panel request for it asks. */
+const TOOL_FOR: Partial<Record<string, BesideTab>> = {
+  diff: "changes",
+  pr: "pr",
+  files: "files",
+  terminal: "terminal",
+};
+
+// A link in the worker's own transcript ("View changes", a file, its PR) opens that worker's tool
+// in the pane, where it is, rather than the orchestrator's tab behind it.
+routePanelRequests((threadId, panel) => {
+  const state = useBesideStore.getState();
+  const tool = TOOL_FOR[panel];
+  if (tool === undefined || besideShown(state) !== threadId) return false;
+  state.setTab(tool);
+  return true;
+});
 
 /** Shows the right panel on the Thread tab however it fits, noting how it stood if it was hidden. */
 function revealThreadTab() {
@@ -204,12 +256,32 @@ export function checkRestored(route: ThreadId | undefined) {
   const inView =
     orchestrator !== undefined &&
     (orchestrator === route || useLayoutStore.getState().grid.panes.includes(orchestrator));
-  if (!inView) {
+  if (!inView || !besideOffered(orchestrator)) {
     closeBeside();
     return;
   }
   useBesideStore.setState({ restored: false });
   if (shown) revealThreadTab();
+}
+
+/**
+ * Whether a worker can open in the pane beside `orchestrator`: the one check every way in goes
+ * through (a row of the list, ⌘\, a chat link, the switcher, ↑ ↓, a record, a restore). Not on a
+ * touch screen, which shows one thing at a time, and only where the pane is offered on the
+ * orchestrator (an app in front of Gram may offer it on a coding thread alone).
+ */
+export function besideOffered(orchestrator: ThreadId | undefined): boolean {
+  if (isTouch()) return false;
+  const { panel } = useEmbedShell.getState();
+  // Gram's own offers it everywhere.
+  if (panel === "shown" || orchestrator === undefined) return true;
+  const summary = useThreadsStore.getState().byId[orchestrator];
+  if (summary === undefined) return true;
+  return panelOffered(panel, {
+    threadInView: true,
+    threadInRepo: summary.git?.repo ?? summary.thread.checkout.kind === "worktree",
+    orchestrator: summary.thread.role === "orchestrator",
+  });
 }
 
 /** The orchestrator `worker` reports to, while it is a worker. */
@@ -225,20 +297,22 @@ export const orchestratorOf = (worker: ThreadId): ThreadId | undefined =>
 export function keepBeside(
   worker: ThreadId,
   open: (threadId: ThreadId) => void,
-  options: { readonly keepFocus?: boolean } = {},
+  options: { readonly keepFocus?: boolean; readonly keepTool?: boolean } = {},
 ): boolean {
-  // A touch screen shows one thing at a time: the worker opens on its own, as any thread does.
-  if (isTouch()) return false;
   const orchestrator = orchestratorOf(worker);
-  if (orchestrator === undefined) return false;
+  // A touch screen shows one thing at a time: the worker opens on its own, as any thread does.
+  if (orchestrator === undefined || !besideOffered(orchestrator)) return false;
   const { grid, openInPane } = useLayoutStore.getState();
   if (grid.panes[grid.focused] === worker && !grid.panes.includes(orchestrator)) {
     openInPane(orchestrator, grid.focused);
   }
   open(orchestrator);
-  useBesideStore.getState().dock(worker);
+  // From the pane's own list the keys go into the pane, for ↑ ↓ and Esc.
+  useBesideStore.getState().dock(worker, {
+    takeKeys: options.keepFocus === true,
+    keepTool: options.keepTool === true,
+  });
   revealThreadTab();
-  // From the pane's own list the keys stay in the pane, for ↑ ↓ and Esc.
   if (options.keepFocus !== true) {
     focusPaneComposer(useLayoutStore.getState().grid.focused, { always: true });
   }
@@ -250,15 +324,21 @@ export function keepBeside(
  * beside the orchestrator already in view. The server has no thread for it, so it is not checked
  * against one.
  */
-export function openRecordBeside(worker: ThreadId): void {
-  if (isTouch()) return;
-  useBesideStore.getState().dock(worker, { record: true });
+export function openRecordBeside(
+  worker: ThreadId,
+  options: { readonly keepTool?: boolean } = {},
+): boolean {
+  if (!besideOffered(undefined)) return false;
+  useBesideStore
+    .getState()
+    .dock(worker, { record: true, takeKeys: true, keepTool: options.keepTool === true });
   revealThreadTab();
+  return true;
 }
 
 /**
  * Back from a worker to the pane's Workers list, the pane left as it stands: the worker stays
- * current on the list, which keeps its place.
+ * current on the list, which puts back its place and the keys on that worker's row.
  */
 export function backToWorkers(): void {
   useBesideStore.getState().back();
@@ -279,7 +359,7 @@ export function closePane(): void {
  * which the link then opens as it always has.
  */
 export function openBesideFrom(orchestrator: ThreadId, worker: ThreadId): boolean {
-  if (isTouch() || orchestratorOf(worker) !== orchestrator) return false;
+  if (orchestratorOf(worker) !== orchestrator || !besideOffered(orchestrator)) return false;
   useBesideStore.getState().dock(worker);
   revealThreadTab();
   return true;
@@ -317,7 +397,8 @@ export function besideToggle(focused: ThreadId | undefined): "close" | ThreadId 
   if (isTouch()) return worker !== undefined && shown ? "close" : undefined;
   if (worker !== undefined) return shown ? "close" : worker;
   if (focused === undefined) return undefined;
-  if (orchestratorOf(focused) !== undefined) return focused;
+  const orchestrator = orchestratorOf(focused);
+  if (orchestrator !== undefined) return besideOffered(orchestrator) ? focused : undefined;
   if (last !== undefined && orchestratorOf(last) === focused) return last;
   return undefined;
 }

@@ -21,7 +21,14 @@ import { useThreadsStore } from "@/stores/threads";
 
 import type { Ask } from "./ask-model";
 import { besideShown, closeBeside, openRecordBeside, useBesideStore } from "./beside-store";
-import { WorkerPane } from "./worker-pane";
+import {
+  FINISHED,
+  FOLDER_MISSING,
+  liveTools,
+  NO_PR_YET,
+  NO_REPOSITORY,
+  WorkerPane,
+} from "./worker-pane";
 import { useWorkersPanelStore, WorkersPanel } from "./workers-panel";
 
 const WORKSPACE = "ws-1" as WorkspaceId;
@@ -31,9 +38,12 @@ const opened = vi.fn<(threadId: ThreadId) => void>();
 /** The workspace's docs, which the list's Docs slot lists under the groups. */
 let docs: DocMeta[] = [];
 let finished: FinishedWorkerDetail | undefined;
+/** The files the PR of a finished worker in the list changed. */
+let prFiles: { path: string; additions: number; deletions: number }[] = [];
 const api: Partial<Api> = {
   listDocs: vi.fn(async () => ({ docs })),
   finishedWorker: vi.fn(async () => finished!),
+  prDetail: vi.fn(async () => ({ available: true, detail: { files: prFiles } }) as never),
 };
 let ledger: Pick<OrchestratorLedger, "features"> | undefined;
 let asks: { workspaceId: WorkspaceId; asks: Ask[] }[] = [];
@@ -53,9 +63,9 @@ vi.mock("./ask-stack", () => ({ useWorkspaceAsks: () => asks }));
 vi.mock("./overview-sidebar", () => ({ useOverviewFeatures: () => [] }));
 // The worker's own views are tested where they live; here only which one shows.
 vi.mock("@/thread/thread-view", () => ({
-  ThreadView: () => (
-    <div data-testid="thread-view">
-      <textarea aria-label="Steer" defaultValue="" />
+  ThreadView: ({ beside }: { beside?: { readOnly?: boolean } }) => (
+    <div data-testid="thread-view" data-read-only={beside?.readOnly === true || undefined}>
+      {beside?.readOnly !== true && <textarea aria-label="Steer" defaultValue="" />}
     </div>
   ),
 }));
@@ -88,7 +98,12 @@ const worker = (
 const summary = (
   id: string,
   status: ThreadStatus,
-  extra: { completedAt?: number; orchestrator?: string; git?: object } = {},
+  extra: {
+    completedAt?: number;
+    orchestrator?: string;
+    git?: object;
+    boundPr?: { repo: string; number: number };
+  } = {},
 ): ThreadSummary =>
   ({
     thread: {
@@ -98,6 +113,7 @@ const summary = (
       workspaceId: WORKSPACE,
       checkout: { kind: "worktree", path: `/work/${id}` },
       ...(extra.completedAt === undefined ? {} : { completedAt: extra.completedAt }),
+      ...(extra.boundPr === undefined ? {} : { boundPr: { ...extra.boundPr, monitor: false } }),
       ...(extra.orchestrator === undefined
         ? {}
         : { spawnedBy: { threadId: extra.orchestrator, feature: "refunds" } }),
@@ -153,6 +169,7 @@ beforeEach(() => {
   docs = [];
   asks = [];
   finished = undefined;
+  prFiles = [];
   opened.mockClear();
   useWorkersPanelStore.setState({
     toggled: new Set(),
@@ -162,7 +179,6 @@ beforeEach(() => {
     query: undefined,
     queryFor: undefined,
     place: undefined,
-    restore: false,
     focus: false,
   });
   // Focus moves on the next frame once a row is drawn.
@@ -371,6 +387,35 @@ describe("a worker open in the pane", () => {
     expect(screen.getByTestId("beside-title").textContent).toBe("Title of a");
   });
 
+  it("takes the keys when it opens from the list, on its title, so Esc goes back at once", async () => {
+    seedTeam(team);
+    renderWithApi(<Pane />, api);
+    fireEvent.click(rowOf("b"));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("beside-title")));
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(rowOf("b")));
+  });
+
+  it("steps keeping the tool shown, and Back puts the keys on the worker stepped to", async () => {
+    seed(
+      team.map(({ id, state, status }) => worker(id, state, { status })),
+      [
+        ...team.map(({ id }) =>
+          summary(id, "running", { orchestrator: "orch", git: { repo: true, changedFiles: 2 } }),
+        ),
+        summary("orch", "idle"),
+      ],
+    );
+    renderWithApi(<Pane />, api);
+    fireEvent.click(rowOf("a"));
+    fireEvent.click(screen.getByTestId("beside-tab-changes"));
+    fireEvent.keyDown(screen.getByTestId("beside-title"), { key: "ArrowDown" });
+    expect(title()).toBe("Title of b");
+    expect(screen.getByTestId("beside-tab-changes").getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByTestId("beside-back"));
+    await waitFor(() => expect(document.activeElement).toBe(rowOf("b")));
+  });
+
   it("steps to the worker before or after with ↑ ↓ on its head, never from the composer or outside the pane", () => {
     seedTeam(team);
     renderWithApi(<Pane />, api);
@@ -431,6 +476,44 @@ describe("a worker open in the pane", () => {
     expect(screen.getByTestId("beside-tab-thread").getAttribute("aria-selected")).toBe("true");
   });
 
+  it("keeps a finished worker read only though its worktree is still there: no composer, no Terminal or Files, Changes from its PR", async () => {
+    prFiles = [
+      { path: "src/history.ts", additions: 30, deletions: 8 },
+      { path: "src/history.test.ts", additions: 4, deletions: 1 },
+    ];
+    seed(
+      [worker("shipped", "merged")],
+      [
+        summary("shipped", "idle", {
+          orchestrator: "orch",
+          completedAt: NOW - 10 * 60_000,
+          git: { repo: true, changedFiles: 0 },
+          boundPr: { repo: "acme/app", number: 141 },
+        }),
+        summary("orch", "idle"),
+      ],
+    );
+    renderWithApi(<Pane />, api);
+    fireEvent.click(heading("done"));
+    fireEvent.click(rowOf("shipped"));
+    expect(screen.getByTestId("thread-view").dataset.readOnly).toBe("true");
+    expect(within(screen.getByTestId("thread-view")).queryByRole("textbox")).toBeNull();
+    for (const id of ["terminal", "files"]) {
+      const tool = screen.getByTestId(`beside-tab-${id}`);
+      expect(tool.getAttribute("aria-disabled")).toBe("true");
+      expect(document.getElementById(tool.getAttribute("aria-describedby")!)?.textContent).toBe(
+        "Finished: read only",
+      );
+    }
+    expect(screen.getByTestId("beside-tab-pr").getAttribute("aria-disabled")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByTestId("beside-tab-changes").textContent).toBe("Changes2"),
+    );
+    fireEvent.click(screen.getByTestId("beside-tab-changes"));
+    expect(screen.getByTestId("finished-files-all").querySelectorAll("li")).toHaveLength(2);
+    expect(screen.queryByTestId("diff-panel")).toBeNull();
+  });
+
   it("opens a finished worker whose worktree is gone as its record: Terminal and Files off and why, Changes counted from the record", async () => {
     finished = {
       worker: {
@@ -473,5 +556,38 @@ describe("a worker open in the pane", () => {
     expect(screen.getByTestId("beside-record-note").textContent).toContain("read only");
     // Read only: no composer.
     expect(screen.queryByTestId("thread-view")).toBeNull();
+  });
+});
+
+/** Each tool's reason it is off, else its count, else "on". */
+const off = (facts: Parameters<typeof liveTools>[0]) =>
+  Object.fromEntries(liveTools(facts).map((tool) => [tool.id, tool.off ?? tool.count ?? "on"]));
+
+describe("a worker's tools", () => {
+  it("offers PR only with a PR to open, and Terminal and Files only with a checkout to read, each off saying why", () => {
+    // A PR it is bound to opens before its badge has loaded.
+    expect(off({ git: { repo: true, changedFiles: 0 }, boundPr: 142 }).pr).toBe("#142");
+    expect(off({ git: { repo: true, changedFiles: 3 } })).toMatchObject({
+      pr: NO_PR_YET,
+      changes: "3",
+      terminal: "on",
+      files: "on",
+    });
+    // Its folder deleted outside Gram: nothing to read from it.
+    expect(off({ git: { repo: true, changedFiles: 0, missing: true }, boundPr: 7 })).toMatchObject({
+      pr: "#7",
+      changes: FOLDER_MISSING,
+      terminal: FOLDER_MISSING,
+      files: FOLDER_MISSING,
+    });
+    expect(off({ git: { repo: false, changedFiles: 0 } })).toMatchObject({
+      changes: NO_REPOSITORY,
+      pr: NO_REPOSITORY,
+      files: "on",
+    });
+    // Finished: read only, its Changes its PR's, counted from them.
+    expect(off({ git: { repo: true, changedFiles: 0 }, finished: true, prFiles: 4 })).toMatchObject(
+      { changes: "4", terminal: FINISHED, files: FINISHED },
+    );
   });
 });

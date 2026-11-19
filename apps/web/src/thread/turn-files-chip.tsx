@@ -11,6 +11,8 @@ import { formatStamp } from "@/lib/time";
 import { turnTarget } from "@/panels/turn-diff";
 import { useLayoutStore } from "@/stores/layout";
 
+import { useReadOnlyTranscript } from "./read-only-transcript";
+
 const files = (n: number) => `${n} ${n === 1 ? "file" : "files"}`;
 
 /**
@@ -38,6 +40,8 @@ export function TurnFilesChip({
     retry: false,
   });
   const [confirming, setConfirming] = useState(false);
+  // Read only (a finished worker beside the chat): its changes to look at, nothing to undo.
+  const readOnly = useReadOnlyTranscript();
   const undoing = useMutation({
     mutationFn: () => api.undoTurn(threadId, turnId),
     onSettled: () => setConfirming(false),
@@ -117,7 +121,7 @@ export function TurnFilesChip({
                 Cancel
               </Button>
             </>
-          ) : (
+          ) : readOnly ? null : (
             <Button
               size="sm"
               variant="ghost"

@@ -4,7 +4,7 @@ import { TabsContent } from "@/components/ui/tabs";
 import { DocsPanel } from "@/docs/docs-panel";
 import { PagesPanel } from "@/pages/pages-panel";
 import { WorkerPane } from "@/orchestration/worker-pane";
-import { WorkersPanel, type OrchestratorView } from "@/orchestration/workers-panel";
+import { WorkersPanel, type OrchestratorViews } from "@/orchestration/workers-panel";
 import { ConnectorsPanel } from "@/panels/connectors-panel";
 import { DiffPanel } from "@/panels/diff-panel";
 import { FilesPanel } from "@/panels/files/files-panel";
@@ -32,9 +32,7 @@ export function WorkersMode({
   workspaceId: WorkspaceId;
   worker: ThreadId | undefined;
   record: boolean;
-  orchestrator:
-    | { readonly views: readonly OrchestratorView[]; readonly onPick: (value: string) => void }
-    | undefined;
+  orchestrator: OrchestratorViews | undefined;
 }) {
   if (worker !== undefined) {
     return <WorkerPane workspaceId={workspaceId} worker={worker} record={record} />;

@@ -396,8 +396,9 @@ export function WorkerRow({
           )
         : twoLines && (
             <span data-testid="overview-worker-line" className={ROW_STATUS}>
-              {/* Its chips, then its words while at least a few of them fit beside the chips: short
-                  of that they wrap out of sight to the hover card, rather than show a cut stub. */}
+              {/* Its chips, then its words, cut at their end, while a word or two fits beside the
+                  chips (they start at that width, not their whole): short of that they wrap out of
+                  sight to the hover card, rather than show a stub. */}
               <span className="flex h-lh min-w-0 flex-1 flex-wrap content-start items-center gap-x-1.5 overflow-hidden">
                 {/* The chips' room; the real ones, each a button, sit over it outside the row's
                     own. */}
@@ -412,7 +413,7 @@ export function WorkerRow({
                   className="h-lh shrink-0 items-center"
                 />
                 {edgeSays && (
-                  <span className="flex h-lh min-w-16 flex-1 items-center">{words}</span>
+                  <span className="flex h-lh min-w-0 flex-1 basis-14 items-center">{words}</span>
                 )}
               </span>
               {age}
