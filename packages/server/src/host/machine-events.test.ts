@@ -44,4 +44,27 @@ describe("sendQueuedOnJoin", () => {
         expect(sent).toEqual(["b", "a"]);
       }).pipe(Effect.scoped),
   );
+
+  it.effect("sends a machine's queues when its resume says threads may open", () =>
+    Effect.gen(function* () {
+      const ready = new Set<(id: HostId) => void>();
+      const sent: Array<string> = [];
+      yield* sendQueuedOnJoin(
+        { sendQueuedOn: (id) => Effect.sync(() => void sent.push(id)) },
+        {
+          states: () => [machine("a", true)],
+          watch: () => () => {},
+          stops: {
+            onReady: (listener) => {
+              ready.add(listener);
+              return () => ready.delete(listener);
+            },
+          },
+        },
+      );
+      for (const listener of ready) listener("a" as HostId);
+      yield* Effect.yieldNow;
+      expect(sent).toEqual(["a"]);
+    }).pipe(Effect.scoped),
+  );
 });

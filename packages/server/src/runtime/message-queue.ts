@@ -98,6 +98,13 @@ export interface MessageQueueDeps {
   ) => Effect.Effect<void, AgentUnavailable>;
   readonly forkStopInMissing: (rt: Runtime) => Effect.Effect<void>;
   readonly becomeIdle: (rt: Runtime) => Effect.Effect<void>;
+  /**
+   * Whether the thread's session can open on its machine as far as the machine's resume goes:
+   * `wait` while its folders are being put back (the resume's end, or the thread's folders coming
+   * back, sends what waits: `sendQueuedOn`), `blocked` when they couldn't be. Absent where no
+   * machine can join.
+   */
+  readonly restoreGate?: ((thread: Thread) => "wait" | "blocked" | undefined) | undefined;
 }
 
 /** A thread's queued input and system deliveries, and `send`, which every input goes through. */
@@ -129,6 +136,7 @@ export const makeMessageQueue = ({
   openSession,
   forkStopInMissing,
   becomeIdle,
+  restoreGate,
 }: MessageQueueDeps) => {
   /** Whether the thread waits for a machine to be named for it (`Thread.awaitingMachine`). */
   const awaitsMachine = (rt: Runtime) =>
@@ -954,8 +962,13 @@ export const makeMessageQueue = ({
           return;
       }
       const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
+      // Its folders are being put back: their coming back sends this, so nothing waits here, and
+      // a folder not there yet isn't taken for one that is gone.
+      const gate = restoreGate?.(thread);
+      if (gate === "wait") return;
       // Nowhere to run, as a send there is refused: the queue waits for the folder to come back.
-      if (!(yield* checkouts.present(thread.checkout.path))) return;
+      // One its machine couldn't put back opens, so the thread says why (`awaitedMachines`).
+      if (gate !== "blocked" && !(yield* checkouts.present(thread.checkout.path))) return;
       yield* openSession(rt, thread).pipe(
         Effect.catchTag("AgentUnavailable", (e) => failUnavailable(rt, e)),
       );

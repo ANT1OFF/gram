@@ -89,6 +89,8 @@ const CODEX_KINDS: Record<string, readonly [AgentFailureKind, boolean]> = {
   policyCapacityUnavailable: ["rateLimit", true],
   // Terminal since 0.165.0: Codex no longer retries a provider's `model_not_found`.
   modelNotFound: ["modelUnavailable", false],
+  // 0.170.0: a configured inference hook refused the request; Codex treats it as terminal.
+  inferenceHookDenied: ["unknown", false],
   cyberPolicy: ["unknown", false],
   misalignmentPolicyViolation: ["unknown", false],
   internalServerError: ["unknown", true],

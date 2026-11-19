@@ -51,7 +51,8 @@ import { ThreadWaits } from "../waits/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ActivityTracker } from "./activity.ts";
 import type { AgentHosts } from "./agent-hosts.ts";
-import { WorkerHosts } from "../host/worker-host.ts";
+import { restoreGateOf, WorkerHosts } from "../host/worker-host.ts";
+import { RemoteHosts } from "../host/remote-hosts.ts";
 import { makeAccountScopes } from "./account-scopes.ts";
 import { ephemeralAccountScope } from "../usage/account-scope.ts";
 import { ownedRuntimes } from "./owned-runtimes.ts";
@@ -253,6 +254,8 @@ const make = Effect.gen(function* () {
   const turnActivity = yield* TurnActivity;
   // Each thread's machine: its session and its checkout go to the machine it is placed on.
   const workerHosts = yield* WorkerHosts;
+  // Absent where no machine can join.
+  const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
   const { sessions: hosts, checkouts, git } = workerHosts.placed;
   /** Subscription readings keep the install's privacy key and each machine/login's limits. */
   const limitReadings = yield* Effect.serviceOption(UsageLimitReadings);
@@ -822,6 +825,10 @@ const make = Effect.gen(function* () {
       openSession(rt, thread, resumeAt, switchAttempt),
     forkStopInMissing: (rt) => forkStopInMissing(rt),
     becomeIdle: (rt) => becomeIdle(rt),
+    restoreGate:
+      remoteHosts === undefined
+        ? undefined
+        : (thread) => restoreGateOf(remoteHosts.stops, sessionHostOf(thread), thread.id),
   });
   /**
    * The turn an in-flight input goes in: the one it was given before, unless a turn with that id

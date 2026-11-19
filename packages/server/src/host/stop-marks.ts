@@ -19,11 +19,12 @@ import { STOP_HOLD_MS } from "./stop.ts";
 /** How long after a readied machine's hold its sessions are still waited for as a stopped one's. */
 export const STOPPED_RECENTLY_MS = 15 * 60_000;
 /**
- * How long a machine that dialled in after a stop is waited on to have its threads resumed
- * (`resumeHost`) before sessions open on it anyway: a host on another disk gets its folders back
- * there, and a session opened before then finds its folder missing.
+ * How long a machine owed a resume may go with no restore progress (no resume started, no folder
+ * done) before the sessions waiting on it give up, and say so. A resume under way always makes
+ * progress sooner: each folder is done within `RESTORE_WITHIN` (20 minutes) of being started.
+ * Only the end of its resume opens the machine to sessions; this never does.
  */
-export const RESUME_WAIT_MS = 3 * 60_000;
+export const RESUME_STALL_MS = 25 * 60_000;
 
 /** How long a machine told to come back on another disk (`expect`) is taken at its word. */
 export const EXPECT_FOR_MS = 15 * 60_000;
@@ -85,15 +86,39 @@ export interface StopMarks {
    * a restart): once it is back, it is owed a resume as one that left after a stop is.
    */
   readonly expect: (id: HostId) => void;
-  /** Dialled in after a stop, its threads not yet resumed, within `RESUME_WAIT_MS`. */
+  /**
+   * Dialled in after a stop and its threads not yet resumed: until its resume ends, or it goes
+   * `RESUME_STALL_MS` with no restore progress (`stalled` then says since when).
+   */
   readonly resuming: (id: HostId) => boolean;
-  /** Its threads were resumed, or the resume gave up: sessions open on it as on any machine. */
+  /**
+   * When the machine's owed resume was given up on for making no progress, while nothing newer
+   * is owed: the sessions that waited for it are told so, rather than opened.
+   */
+  readonly stalled: (id: HostId) => number | undefined;
+  /** A resume of the machine starts: its folders are being put back. */
+  readonly resumeStarted: (id: HostId) => void;
+  /** One of the machine's folders is done with by its resume, put back or not. */
+  readonly progress: (id: HostId) => void;
+  /**
+   * A resume of the machine ended. Once none is running, sessions open on it as on any machine,
+   * but those of `blocked` threads.
+   */
   readonly resumed: (id: HostId) => void;
   /**
-   * While the machine is `resuming`: this thread's folders are back (or the resume is done with
-   * them), so its session may open before the others' are.
+   * While the machine is `resuming`: this thread's folders are back, so its session may open
+   * before the others' are. Lifts a block a resume before put on it.
    */
   readonly threadBack: (id: HostId, threadId: ThreadId) => void;
+  /**
+   * A resume couldn't put this thread's folder back (missing, or refused): its session doesn't open
+   * on the machine, now or once the resume ends, until a later resume puts it back.
+   */
+  readonly block: (id: HostId, threadId: ThreadId, reason: string) => void;
+  /** Why the thread's session doesn't open on the machine (`block`), if it doesn't. */
+  readonly blocked: (id: HostId, threadId: ThreadId) => string | undefined;
+  /** Told when threads' sessions may open on a machine now: a thread back, or its resume ended. */
+  readonly onReady: (listener: (id: HostId) => void) => () => void;
   /** Whether `threadBack` said so of this thread since the machine was last owed a resume. */
   readonly isThreadBack: (id: HostId, threadId: ThreadId) => boolean;
   /** A session of this thread waits for the machine's resume: its folders go first. */
@@ -131,7 +156,7 @@ export const makeStopMarks = (
   holdMs: number = STOP_HOLD_MS,
   /** Told when a machine starts or stops being waited on (`wantedSince`). */
   onWanted: (id: HostId) => void = () => {},
-  resumeWaitMs: number = RESUME_WAIT_MS,
+  stallMs: number = RESUME_STALL_MS,
 ): StopMarks => {
   const marks = new Map<HostId, { readonly at: number; left: boolean }>();
   const last = new Map<HostId, number>();
@@ -140,7 +165,20 @@ export const makeStopMarks = (
   const waitingSince = new Map<HostId, number>();
   const cancels = new Map<HostId, number>();
   const kept = new Map<HostId, Map<string, KeptRecord>>();
-  const owed = new Map<HostId, number>();
+  /** Owed a resume: since when the last progress was made, and how many resumes run now. */
+  const owed = new Map<HostId, { progress: number; running: number }>();
+  const stalls = new Map<HostId, number>();
+  const blocks = new Map<HostId, Map<ThreadId, string>>();
+  const readyListeners = new Set<(id: HostId) => void>();
+  const ready = (id: HostId) => {
+    for (const listener of readyListeners) {
+      try {
+        listener(id);
+      } catch {
+        // A listener's failure is its own.
+      }
+    }
+  };
   /** Told to come back on another disk (`expect`), since when. */
   const expected = new Map<HostId, number>();
   const threadsBack = new Map<HostId, Set<ThreadId>>();
@@ -186,7 +224,9 @@ export const makeStopMarks = (
       const told = expected.get(id);
       expected.delete(id);
       if (markOf(id)?.left === true || (told !== undefined && now() - told < EXPECT_FOR_MS)) {
-        owed.set(id, now());
+        // A resume already running for it goes on counting.
+        owed.set(id, { progress: now(), running: owed.get(id)?.running ?? 0 });
+        stalls.delete(id);
         threadsBack.delete(id);
       }
       marks.delete(id);
@@ -195,20 +235,61 @@ export const makeStopMarks = (
       expected.set(id, now());
     },
     resuming: (id) => {
-      const at = owed.get(id);
-      if (at === undefined) return false;
-      if (now() - at < resumeWaitMs) return true;
+      const state = owed.get(id);
+      if (state === undefined) return false;
+      if (now() - state.progress < stallMs) return true;
+      // No progress for too long: given up on, and said so (`stalled`), never opened silently.
       settle(id);
+      stalls.set(id, now());
       return false;
     },
-    resumed: settle,
-    threadBack: (id, threadId) => add(threadsBack, id, threadId),
+    stalled: (id) => stalls.get(id),
+    resumeStarted: (id) => {
+      const state = owed.get(id);
+      if (state === undefined) return;
+      state.running++;
+      state.progress = now();
+    },
+    progress: (id) => {
+      const state = owed.get(id);
+      if (state !== undefined) state.progress = now();
+    },
+    resumed: (id) => {
+      const state = owed.get(id);
+      if (state !== undefined && state.running > 1) {
+        state.running--;
+        state.progress = now();
+        return;
+      }
+      const was = state !== undefined;
+      settle(id);
+      stalls.delete(id);
+      if (was) ready(id);
+    },
+    threadBack: (id, threadId) => {
+      blocks.get(id)?.delete(threadId);
+      const before = threadsBack.get(id)?.has(threadId) === true;
+      add(threadsBack, id, threadId);
+      if (!before) ready(id);
+    },
+    block: (id, threadId, reason) => {
+      threadsBack.get(id)?.delete(threadId);
+      const reasons = blocks.get(id) ?? new Map<ThreadId, string>();
+      reasons.set(threadId, reason);
+      blocks.set(id, reasons);
+    },
+    blocked: (id, threadId) => blocks.get(id)?.get(threadId),
+    onReady: (listener) => {
+      readyListeners.add(listener);
+      return () => void readyListeners.delete(listener);
+    },
     isThreadBack: (id, threadId) => threadsBack.get(id)?.has(threadId) === true,
     awaiting: (id, threadId) => add(threadsAwaiting, id, threadId),
     awaited: (id) => threadsAwaiting.get(id) ?? new Set(),
     cancel: (id) => {
       marks.delete(id);
       settle(id);
+      stalls.delete(id);
       expected.delete(id);
       rested.delete(id);
       last.delete(id);
@@ -245,6 +326,8 @@ export const makeStopMarks = (
     forget: (id) => {
       marks.delete(id);
       settle(id);
+      stalls.delete(id);
+      blocks.delete(id);
       expected.delete(id);
       last.delete(id);
       rested.delete(id);

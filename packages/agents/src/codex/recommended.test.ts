@@ -30,11 +30,7 @@ describe("the recommended Codex models", () => {
       });
       for (const slug of pick.models) {
         const entry = bundled.models.find((candidate) => candidate.slug === slug);
-        if (entry === undefined) {
-          // Released after 0.166.0's bundle; an account's live catalogue supplies these.
-          expect(["gpt-6.2-sol", "gpt-6.2-astra"], `${tier}: ${slug}`).toContain(slug);
-          continue;
-        }
+        expect(entry, `${tier}: ${slug}`).toBeDefined();
         const levels = (
           entry!["supported_reasoning_levels"] as ReadonlyArray<{ effort: string }>
         ).map((level) => level.effort);

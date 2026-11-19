@@ -649,6 +649,11 @@ export const serveHost = (
 export interface HostGitConnection {
   readonly local: HostGit["local"];
   readonly present: HostGit["present"];
+  /**
+   * Whether the folder is there, as `present`, but `undefined` when the host couldn't say: for a
+   * caller that mustn't take "unknown" for "there", as a resume deciding what to put back.
+   */
+  readonly presence?: (cwd: string) => Effect.Effect<boolean | undefined>;
   readonly watch: (
     ...args: Parameters<HostGit["watch"]>
   ) => Stream.Stream<Stream.Success<ReturnType<HostGit["watch"]>>, HostUnavailable>;
@@ -1310,6 +1315,11 @@ export const connectHost = (
       // then says why.
       present: (cwd) =>
         guarded(client["host.git.present"]({ cwd })).pipe(Effect.orElseSucceed(() => true)),
+      presence: (cwd) =>
+        guarded(client["host.git.present"]({ cwd })).pipe(
+          Effect.map((there): boolean | undefined => there),
+          Effect.orElseSucceed(() => undefined),
+        ),
       watch: (paths, watchOptions = {}) =>
         Stream.suspend(() =>
           ended

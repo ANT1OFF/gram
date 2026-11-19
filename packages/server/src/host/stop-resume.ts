@@ -33,6 +33,7 @@ import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { cloneUrlOf } from "./repos.ts";
+import { FOLDER_THERE } from "./stop.ts";
 
 export interface StopResumeDeps {
   readonly hosts: Pick<RemoteHostsShape, "connection" | "machines" | "stops">;
@@ -85,6 +86,10 @@ export const STOP_FOLDERS_MAX = 512;
 const SHARED_FLUSH_WITHIN = "15 seconds";
 /** How long a machine gets to say it takes work again. */
 const CANCEL_WITHIN = "30 seconds";
+
+/** Why a stop keeps nothing of a folder that a resume couldn't put back. */
+const NOT_BACK_KEPT =
+  "Its folder wasn't put back at the machine's last resume, so nothing of it was kept over what the remote has.";
 
 /** What a stop kept of one folder, as this Gram vouches for it. */
 export interface KeptWork {
@@ -202,9 +207,17 @@ export const prepareStop = (
     // than one stop keeps.
     const rank = (entry: (typeof placed)[number]) =>
       entry.session ? 0 : entry.thread.parked ? 2 : 1;
-    const folders = placed
+    const all = placed
       .toSorted((a, b) => rank(a) - rank(b))
       .flatMap(({ thread, cwds }) => cwds.map((cwd) => ({ threadId: thread.id, cwd })));
+    // A thread whose folder a resume couldn't put back has no work there to keep: what is there
+    // (a plain clone, say) would only take the place of what the remote still has of it.
+    const notBack = all.filter(
+      ({ threadId }) => deps.hosts.stops.blocked(id, threadId) !== undefined,
+    );
+    const folders = all.filter(
+      ({ threadId }) => deps.hosts.stops.blocked(id, threadId) === undefined,
+    );
     const asked = folders.slice(0, STOP_FOLDERS_MAX);
     const cancels = deps.hosts.stops.cancels(id);
     // The machine takes work again, and no longer counts as readied here either.
@@ -224,7 +237,10 @@ export const prepareStop = (
         Effect.tapError((error) => (error._tag === "HostFailed" ? takeBack : Effect.void)),
         Effect.onInterrupt(() => takeBack),
       );
-    const kept = keptOf(asked, prepared.kept, options.remote);
+    const kept = [
+      ...keptOf(asked, prepared.kept, options.remote),
+      ...notBack.map((folder) => ({ ...folder, pushed: false, note: NOT_BACK_KEPT })),
+    ];
     // Remembered whether or not the stop holds: the remote has it now, and a resume is held to it.
     remember(deps, id, kept, prepared.kept, yield* Clock.currentTimeMillis);
     const left = folders.length - asked.length;
@@ -288,6 +304,8 @@ export const keepThreadWork = (
     const connection = yield* deps.hosts.connection(id);
     const keep = connection.stop.keep;
     if (keep === undefined) return [];
+    // Its folder wasn't put back: nothing there is its work, and the remote's copy stays.
+    if (deps.hosts.stops.blocked(id, thread.id) !== undefined) return [];
     // Only folders made from a clone: a resume can put back only those.
     const asked = [
       ...new Set(
@@ -339,6 +357,16 @@ export interface HostResumed {
     readonly cwd: string;
     readonly note?: string;
   }>;
+  /**
+   * Folders the machine was asked to put back and didn't: it refused, failed or didn't answer, or
+   * couldn't say whether the folder is there. Such a folder may be there without the thread's work
+   * (a plain clone), so it isn't taken for back.
+   */
+  readonly refused: ReadonlyArray<{
+    readonly threadId: ThreadId;
+    readonly cwd: string;
+    readonly note: string;
+  }>;
   /** Folders that weren't on its disk and were made again from what a stop kept of them. */
   readonly restored: ReadonlyArray<{
     readonly threadId: ThreadId;
@@ -354,6 +382,9 @@ export interface HostResumed {
 
 /** How long a machine gets to clone a repository again and put one folder's work back. */
 const RESTORE_WITHIN = "20 minutes";
+/** How many times a resume asks whether a folder is there before it counts as unknown. */
+const PRESENCE_TRIES = 3;
+const PRESENCE_RETRY = "1 second";
 
 /**
  * How the thread's folder `cwd` on the machine was made, when Gram made it from the machine's
@@ -370,19 +401,46 @@ const madeFrom = (thread: Thread, id: HostId, cwd: string) => {
   return undefined;
 };
 
+/** What a resume made of one thread's folder. */
+type FolderOutcome =
+  | { readonly kind: "there" }
+  | ({ readonly kind: "restored" } & HostResumed["restored"][number])
+  | { readonly kind: "missing"; readonly note?: string }
+  | { readonly kind: "refused"; readonly note: string };
+
+/** Why a thread's session doesn't open on the machine, for a folder of it that isn't back. */
+const blockReason = (outcome: FolderOutcome) =>
+  outcome.kind === "refused" || (outcome.kind === "missing" && outcome.note !== undefined)
+    ? `Its folder wasn't put back on the machine: ${outcome.note}`
+    : "Its folder isn't on the machine, and Gram can't put it back there.";
+
+/** Why, counted: no note is a folder Gram didn't make from a clone, or a host that can't. */
+const counted = (entries: ReadonlyArray<{ readonly note?: string | undefined }>) =>
+  Object.fromEntries(
+    [...Map.groupBy(entries, (entry) => entry.note ?? "not made from a clone here")].map(
+      ([why, each]) => [why, each.length],
+    ),
+  );
+
+/** How many of a machine's folders a resume puts back at once. */
+export const RESTORE_CONCURRENCY = 4;
+
 /**
  * Resumes the machine's threads on the host that dialled in as it: checks each thread's folders
  * are on its disk, and opens again the sessions the stop put to rest, each on its own
  * conversation. A turn a forced stop cut off needs nothing from here: it goes on by itself once
  * the host is back (`machine-restart.ts`). Fails while the machine is away.
  *
+ * Whether each folder is there is asked once, before anything is put back: a folder another
+ * folder's restore makes meanwhile (the machine's clone, for a worktree of it) is still put back
+ * from what was kept of it. A folder the machine can't say of, or one a resume before couldn't put
+ * back, is the host's to decide (`host.stop.restore`). A thread whose folder is missing or refused
+ * isn't back: its session doesn't open on the machine (`StopMarks.block`), and says why.
+ *
  * A folder made again is held to what the stop said it kept of it: `options.kept` (a stop's
  * answer, given back by whoever asks) before what this Gram remembers of its own stops. With
  * neither, as after this Gram restarted, the remote's ref is taken as it is.
  */
-/** How many of a machine's folders a resume puts back at once. */
-export const RESTORE_CONCURRENCY = 4;
-
 export const resumeHost = (
   deps: StopResumeDeps,
   id: HostId,
@@ -391,138 +449,200 @@ export const resumeHost = (
     readonly kept?: ReadonlyArray<KeptBefore> | undefined;
   } = {},
 ): Effect.Effect<HostResumed, HostUnavailable> =>
-  Effect.gen(function* () {
-    const connection = yield* deps.hosts.connection(id);
-    const placed = placedOn(yield* deps.store.listThreads, id);
-    const missing: Array<HostResumed["missing"][number]> = [];
-    const restored: Array<HostResumed["restored"][number]> = [];
-    const restore = connection.stop.restore;
-    const folders = placed.flatMap(({ thread, cwds }) => cwds.map((cwd) => ({ thread, cwd })));
-    const putBack = ({ thread, cwd }: (typeof folders)[number]) =>
-      Effect.gen(function* () {
-        if (yield* connection.git.present(cwd)) return;
-        const entry = { threadId: thread.id, cwd };
-        const made = madeFrom(thread, id, cwd);
-        if (restore === undefined || made === undefined) {
-          missing.push(entry);
-          return;
-        }
-        const before =
-          options.kept?.find((kept) => kept.threadId === thread.id && kept.cwd === cwd) ??
-          deps.hosts.stops.keptOf(id, thread.id, cwd);
-        const commit =
-          before?.commit !== undefined && OID.test(before.commit) ? before.commit : undefined;
-        // The branch the machine said the folder was on at the stop, before the one recorded here.
-        const branch = (commit === undefined ? undefined : before?.branch) ?? made.branch;
-        // Where the stop pushed, unless this resume names somewhere else.
-        const remote = options.remote ?? (commit === undefined ? undefined : before?.remote);
-        const answer = yield* restore({
-          threadId: thread.id,
-          cwd,
-          url: made.url,
-          ...(branch === undefined ? {} : { branch }),
-          ...(remote === undefined ? {} : { remote }),
-          ...(commit === undefined ? {} : { commit }),
-          ...(commit !== undefined && before?.caughtUp === true ? { caughtUp: true } : {}),
-        }).pipe(
-          Effect.timeoutOrElse({
-            duration: RESTORE_WITHIN,
-            orElse: () => Effect.succeed({ restored: false, note: "The machine didn't answer." }),
-          }),
-          Effect.catch((error) => Effect.succeed({ restored: false, note: error.message })),
-        );
-        const note = answer.note === undefined ? {} : { note: answer.note };
-        if (!answer.restored) {
-          // Made meanwhile, by a resume beside this one: there, so not missing.
-          if (yield* connection.git.present(cwd)) return;
-          missing.push({ ...entry, ...note });
-          return;
-        }
-        const put =
-          "commit" in answer && answer.commit !== undefined && OID.test(answer.commit)
-            ? { commit: answer.commit }
-            : {};
-        restored.push({
-          ...entry,
-          ...put,
-          ...("uncommitted" in answer && answer.uncommitted !== undefined
-            ? { uncommitted: answer.uncommitted }
-            : {}),
-          ...("source" in answer && answer.source !== undefined ? { source: answer.source } : {}),
-          ...note,
+  Effect.suspend(() => {
+    const stops = deps.hosts.stops;
+    // Counted before anything can fail, so the `resumed` that ends it is this resume's own.
+    stops.resumeStarted(id);
+    return Effect.gen(function* () {
+      const connection = yield* deps.hosts.connection(id);
+      const placed = placedOn(yield* deps.store.listThreads, id);
+      const missing: Array<HostResumed["missing"][number]> = [];
+      const refused: Array<HostResumed["refused"][number]> = [];
+      const restored: Array<HostResumed["restored"][number]> = [];
+      const restore = connection.stop.restore;
+      const folders = placed.flatMap(({ thread, cwds }) => cwds.map((cwd) => ({ thread, cwd })));
+      const presence = connection.git.presence ?? ((cwd: string) => connection.git.present(cwd));
+      const look = (cwd: string) =>
+        Effect.gen(function* () {
+          for (let tries = 0; tries < PRESENCE_TRIES; tries++) {
+            if (tries > 0) yield* Effect.sleep(PRESENCE_RETRY);
+            const there = yield* presence(cwd);
+            if (there !== undefined) return there;
+          }
+          return undefined;
         });
-      });
-    // A few folders at once: each is a clone and a fetch on the host, and sessions wait for them
-    // all. Threads sharing a folder take it in turn, so the first makes it and the rest find it.
-    // A thread whose folders are all done opens its session then, before the rest are.
-    const toGo = new Map<ThreadId, number>();
-    for (const { thread } of folders) toGo.set(thread.id, (toGo.get(thread.id) ?? 0) + 1);
-    const done = (threadId: ThreadId) =>
-      Effect.sync(() => {
-        const more = (toGo.get(threadId) ?? 1) - 1;
-        toGo.set(threadId, more);
-        if (more === 0) deps.hosts.stops.threadBack(id, threadId);
-      });
-    // The folders of threads a session waits for first.
-    const awaited = deps.hosts.stops.awaited(id);
-    const groups = [...Map.groupBy(folders, ({ cwd }) => cwd).values()].toSorted(
-      (a, b) =>
-        Number(b.some(({ thread }) => awaited.has(thread.id))) -
-        Number(a.some(({ thread }) => awaited.has(thread.id))),
-    );
-    yield* Effect.forEach(
-      groups,
-      (sharing) =>
-        Effect.forEach(
-          sharing,
-          (folder) => putBack(folder).pipe(Effect.ensuring(done(folder.thread.id))),
-          { discard: true },
-        ),
-      { concurrency: RESTORE_CONCURRENCY, discard: true },
-    );
-    const gone = new Set(missing.map((entry) => entry.threadId));
-    const live = new Set(placed.filter(({ session }) => session).map(({ thread }) => thread.id));
-    const reopened: Array<ThreadId> = [];
-    const left: Array<{ readonly threadId: ThreadId; readonly reason: string }> = [];
-    for (const threadId of deps.hosts.stops.takeRested(id)) {
-      // Archived, closed or moved since the stop.
-      if (!live.has(threadId)) continue;
-      if (gone.has(threadId)) {
-        left.push({ threadId, reason: "Its folder isn't on the machine." });
-        continue;
-      }
-      const started = yield* deps.runtimes.startSession(threadId).pipe(
-        Effect.as(undefined),
-        Effect.catch((error) =>
-          Effect.succeed(error._tag === "InvalidState" ? error.message : "The thread is gone."),
+      // Asked of every folder before any is put back: what a restore makes meanwhile isn't there.
+      const seen = new Map(
+        yield* Effect.forEach(
+          [...new Set(folders.map(({ cwd }) => cwd))],
+          (cwd) => Effect.map(look(cwd), (there) => [cwd, there] as const),
+          { concurrency: RESTORE_CONCURRENCY },
         ),
       );
-      if (started === undefined) reopened.push(threadId);
-      else left.push({ threadId, reason: started });
-    }
-    yield* Effect.logInfo("a machine's threads were resumed").pipe(
-      Effect.annotateLogs({
-        hostId: id,
-        reopened: reopened.length,
-        missing: missing.length,
-        restored: restored.length,
-        // Why, counted: no note is a folder Gram didn't make from a clone, or a host that can't.
-        ...(missing.length === 0
-          ? {}
-          : {
-              missingWhy: Object.fromEntries(
-                [
-                  ...Map.groupBy(missing, (entry) => entry.note ?? "not made from a clone here"),
-                ].map(([why, entries]) => [why, entries.length]),
-              ),
+      const putBack = (
+        { thread, cwd }: (typeof folders)[number],
+        there: boolean | undefined,
+      ): Effect.Effect<FolderOutcome> =>
+        Effect.gen(function* () {
+          const made = madeFrom(thread, id, cwd);
+          if (restore === undefined || made === undefined) {
+            if (there === true) return { kind: "there" };
+            if (there === false) return { kind: "missing" };
+            return {
+              kind: "refused",
+              note: "The machine couldn't say whether its folder is there.",
+            };
+          }
+          const before =
+            options.kept?.find((kept) => kept.threadId === thread.id && kept.cwd === cwd) ??
+            stops.keptOf(id, thread.id, cwd);
+          const commit =
+            before?.commit !== undefined && OID.test(before.commit) ? before.commit : undefined;
+          // The branch the machine said the folder was on at the stop, before the one recorded here.
+          const branch = (commit === undefined ? undefined : before?.branch) ?? made.branch;
+          // Where the stop pushed, unless this resume names somewhere else.
+          const remote = options.remote ?? (commit === undefined ? undefined : before?.remote);
+          const answer = yield* restore({
+            threadId: thread.id,
+            cwd,
+            url: made.url,
+            ...(branch === undefined ? {} : { branch }),
+            ...(remote === undefined ? {} : { remote }),
+            ...(commit === undefined ? {} : { commit }),
+            ...(commit !== undefined && before?.caughtUp === true ? { caughtUp: true } : {}),
+          }).pipe(
+            Effect.map((said) => ({ said, failed: undefined })),
+            Effect.timeoutOrElse({
+              duration: RESTORE_WITHIN,
+              orElse: () =>
+                Effect.succeed({ said: undefined, failed: "The machine didn't answer." }),
             }),
-      }),
+            Effect.catch((error) => Effect.succeed({ said: undefined, failed: error.message })),
+          );
+          if (answer.said === undefined) return { kind: "refused", note: answer.failed };
+          const said = answer.said;
+          const note = said.note === undefined ? {} : { note: said.note };
+          if (said.restored)
+            return {
+              kind: "restored",
+              threadId: thread.id,
+              cwd,
+              ...(said.commit !== undefined && OID.test(said.commit)
+                ? { commit: said.commit }
+                : {}),
+              ...(said.uncommitted === undefined ? {} : { uncommitted: said.uncommitted }),
+              ...(said.source === undefined ? {} : { source: said.source }),
+              ...note,
+            };
+          // Made meanwhile, by a resume beside this one, or there all along: left as it is.
+          if (said.there === true || said.note === FOLDER_THERE) return { kind: "there" };
+          return { kind: "missing", ...note };
+        });
+      // Each thread's folders as they are done with, and the threads whose folders are all done.
+      const toGo = new Map<ThreadId, number>();
+      for (const { thread } of folders) toGo.set(thread.id, (toGo.get(thread.id) ?? 0) + 1);
+      const notBack = new Map<ThreadId, string>();
+      const done = (threadId: ThreadId, cwd: string, outcome: FolderOutcome) =>
+        Effect.sync(() => {
+          if (outcome.kind === "restored") {
+            const { kind: _, ...entry } = outcome;
+            restored.push(entry);
+          } else if (outcome.kind === "missing")
+            missing.push({
+              threadId,
+              cwd,
+              ...(outcome.note === undefined ? {} : { note: outcome.note }),
+            });
+          else if (outcome.kind === "refused") refused.push({ threadId, cwd, note: outcome.note });
+          if ((outcome.kind === "missing" || outcome.kind === "refused") && !notBack.has(threadId))
+            notBack.set(threadId, blockReason(outcome));
+          const more = (toGo.get(threadId) ?? 1) - 1;
+          toGo.set(threadId, more);
+          stops.progress(id);
+          if (more > 0) return;
+          // Only a thread whose every folder is back opens its session; the rest say why.
+          const why = notBack.get(threadId);
+          if (why === undefined) stops.threadBack(id, threadId);
+          else stops.block(id, threadId, why);
+        });
+      // A few folders at once: each is a clone and a fetch on the host, and sessions wait for them
+      // all. Threads sharing a folder take it in turn: once one has it back, it is back for all.
+      // A thread whose folders are all done opens its session then, before the rest are.
+      const awaited = stops.awaited(id);
+      const groups = [...Map.groupBy(folders, ({ cwd }) => cwd).values()].toSorted(
+        (a, b) =>
+          Number(b.some(({ thread }) => awaited.has(thread.id))) -
+          Number(a.some(({ thread }) => awaited.has(thread.id))),
+      );
+      const putBackShared = (sharing: ReadonlyArray<(typeof folders)[number]>) =>
+        Effect.gen(function* () {
+          const cwd = sharing[0]!.cwd;
+          // A folder a resume before couldn't put back is asked of the host again, there or not.
+          const again = sharing.some(({ thread }) => stops.blocked(id, thread.id) !== undefined);
+          const there = again && seen.get(cwd) === true ? undefined : seen.get(cwd);
+          const outcomes: Array<FolderOutcome> = [];
+          let back = false;
+          for (const folder of sharing) {
+            if (back || there === true) {
+              outcomes.push({ kind: "there" });
+              continue;
+            }
+            const outcome = yield* putBack(folder, there);
+            outcomes.push(outcome);
+            back = outcome.kind === "there" || outcome.kind === "restored";
+          }
+          for (const [at, folder] of sharing.entries()) {
+            const outcome = outcomes[at]!;
+            // Back for one of them is back for all who share it.
+            const settled =
+              back && (outcome.kind === "missing" || outcome.kind === "refused")
+                ? ({ kind: "there" } as const)
+                : outcome;
+            yield* done(folder.thread.id, cwd, settled);
+          }
+        });
+      yield* Effect.forEach(groups, putBackShared, {
+        concurrency: RESTORE_CONCURRENCY,
+        discard: true,
+      });
+      const live = new Set(placed.filter(({ session }) => session).map(({ thread }) => thread.id));
+      const reopened: Array<ThreadId> = [];
+      const left: Array<{ readonly threadId: ThreadId; readonly reason: string }> = [];
+      for (const threadId of stops.takeRested(id)) {
+        // Archived, closed or moved since the stop.
+        if (!live.has(threadId)) continue;
+        const why = notBack.get(threadId);
+        if (why !== undefined) {
+          left.push({ threadId, reason: why });
+          continue;
+        }
+        const started = yield* deps.runtimes.startSession(threadId).pipe(
+          Effect.as(undefined),
+          Effect.catch((error) =>
+            Effect.succeed(error._tag === "InvalidState" ? error.message : "The thread is gone."),
+          ),
+        );
+        if (started === undefined) reopened.push(threadId);
+        else left.push({ threadId, reason: started });
+      }
+      yield* Effect.logInfo("a machine's threads were resumed").pipe(
+        Effect.annotateLogs({
+          hostId: id,
+          reopened: reopened.length,
+          missing: missing.length,
+          refused: refused.length,
+          restored: restored.length,
+          blocked: notBack.size,
+          ...(missing.length === 0 ? {} : { missingWhy: counted(missing) }),
+          ...(refused.length === 0 ? {} : { refusedWhy: counted(refused) }),
+        }),
+      );
+      return { reopened, left, missing, refused, restored };
+    }).pipe(
+      // Sessions held for it (`StopMarks.resuming`) open now, but those of threads not back.
+      Effect.ensuring(Effect.sync(() => stops.resumed(id))),
     );
-    return { reopened, left, missing, restored };
-  }).pipe(
-    // Sessions held for it (`StopMarks.resuming`) open now, their folders back or not.
-    Effect.ensuring(Effect.sync(() => deps.hosts.stops.resumed(id))),
-  );
+  });
 
 export interface StopState {
   readonly id: HostId;

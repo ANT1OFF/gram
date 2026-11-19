@@ -909,6 +909,16 @@ describe("makeCodexMapper failures", () => {
         false,
       ),
     ).toEqual({ kind: "rateLimit", code: "policyCapacityUnavailable", retryable: true });
+    expect(
+      codexFailure(
+        {
+          message: "Denied by hook",
+          codexErrorInfo: "inferenceHookDenied",
+          additionalDetails: null,
+        },
+        false,
+      ),
+    ).toEqual({ kind: "unknown", code: "inferenceHookDenied", retryable: false });
   });
 
   it("reads a 401 as auth and a 404 as a model the gateway doesn't have", () => {

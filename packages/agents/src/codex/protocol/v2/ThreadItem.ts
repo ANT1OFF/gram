@@ -10,6 +10,7 @@ import type { SleepItem } from "../SleepItem.ts";
 import type { WebSearchItem } from "../WebSearchItem.ts";
 import type { JsonValue } from "../serde_json/JsonValue.ts";
 import type { AgentMessageDelivery } from "./AgentMessageDelivery.ts";
+import type { AgentMessageModeration } from "./AgentMessageModeration.ts";
 import type { AsyncUserInputQuestion } from "./AsyncUserInputQuestion.ts";
 import type { CollabAgentState } from "./CollabAgentState.ts";
 import type { CollabAgentTool } from "./CollabAgentTool.ts";
@@ -42,7 +43,7 @@ startedAtMs?: number | null,
 /**
  * Unix timestamp in milliseconds when the item completed, if recorded.
  */
-completedAtMs?: number | null, } & ({ "type": "userMessage", id: string, clientId: string | null, content: Array<UserInput>, } | { "type": "hookPrompt", id: string, fragments: Array<HookPromptFragment>, } | { "type": "agentMessage", id: string, text: string, phase: MessagePhase | null, memoryCitation: MemoryCitation | null, delivery: AgentMessageDelivery | null, questions: Array<AsyncUserInputQuestion> | null, } | { "type": "functionCallOutput", id: string, name: string, namespace: string | null, output: FunctionCallOutputBody, } | { "type": "plan", id: string, text: string, } | { "type": "reasoning", id: string, summary: Array<string>, content: Array<string>, } | { "type": "commandExecution", id: string,
+completedAtMs?: number | null, } & ({ "type": "userMessage", id: string, clientId: string | null, content: Array<UserInput>, } | { "type": "hookPrompt", id: string, fragments: Array<HookPromptFragment>, } | { "type": "agentMessage", moderation: AgentMessageModeration | null, id: string, text: string, phase: MessagePhase | null, memoryCitation: MemoryCitation | null, delivery: AgentMessageDelivery | null, questions: Array<AsyncUserInputQuestion> | null, } | { "type": "functionCallOutput", id: string, name: string, namespace: string | null, output: FunctionCallOutputBody, } | { "type": "plan", id: string, text: string, } | { "type": "reasoning", id: string, summary: Array<string>, content: Array<string>, } | { "type": "commandExecution", id: string,
 /**
  * Trusted first-party plugin id when this command resolves to one plugin script.
  */

@@ -73,10 +73,15 @@ const onlineIn = (hosts: Pick<RemoteHostsShape, "states">): ReadonlySet<HostId> 
  * sent while the machine was offline stays queued (the send there failed), and the queue waits for
  * the folder to come back, which only the machine's joining tells. A machine that was already
  * online when this starts is the boot's (`sendQueuedAtBoot`).
+ *
+ * So does a machine back after a stop as its resume puts threads' folders back (`StopMarks.onReady`):
+ * the queue doesn't open a session while they are being put back, and their coming back sends it.
  */
 export const sendQueuedOnJoin = (
   runtimes: { readonly sendQueuedOn: (hostId: HostId) => Effect.Effect<void> },
-  hosts: Pick<RemoteHostsShape, "states" | "watch">,
+  hosts: Pick<RemoteHostsShape, "states" | "watch"> & {
+    readonly stops?: Pick<RemoteHostsShape["stops"], "onReady">;
+  },
 ) =>
   Effect.gen(function* () {
     const run = yield* FiberSet.makeRuntime<never>();
@@ -91,5 +96,11 @@ export const sendQueuedOnJoin = (
         }),
       ),
       (unwatch) => Effect.sync(unwatch),
+    );
+    const stops = hosts.stops;
+    if (stops === undefined) return;
+    yield* Effect.acquireRelease(
+      Effect.sync(() => stops.onReady((id) => void run(runtimes.sendQueuedOn(id)))),
+      (unlisten) => Effect.sync(unlisten),
     );
   });

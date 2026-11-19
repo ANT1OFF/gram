@@ -73,6 +73,12 @@ const savedOf = (
 /** Why new work is refused while the host is readied to stop. */
 export const STOPPING = "This machine is about to stop. Try again once it is back.";
 
+/**
+ * A restore's note for a folder that is there already and is left as it is. A resume reads it from a
+ * host built before `HostStopRestored.there`.
+ */
+export const FOLDER_THERE = "Its folder is there already.";
+
 /** How long a host readied to stop refuses new work when no stop and no cancel follows. */
 export const STOP_HOLD_MS = 10 * 60_000;
 
@@ -418,7 +424,7 @@ export const stopOn = (deps: StopDeps): HostStop => {
       // there is somebody's, and is left alone.
       const inClone = existsSync(cwd);
       if (inClone && !samePath(clone, cwd))
-        return { restored: false, note: "Its folder is there already." };
+        return { restored: false, there: true, note: FOLDER_THERE };
       // The ref, held to the commit the stop said it kept; no ref was kept of a thread whose
       // branch at the remote held everything, which gets its folder from that branch.
       const ref =
