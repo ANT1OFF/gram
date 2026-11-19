@@ -733,7 +733,7 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       // A folder that is there is never written over, and a thread nothing was kept of is said.
       expect(
         yield* stop.restore!({ threadId: THREAD, cwd, url: URL, branch: "gram/worker" }),
-      ).toEqual({ restored: false, note: "Its folder is there already." });
+      ).toEqual({ restored: false, there: true, note: "Its folder is there already." });
       expect(
         yield* stop.restore!({
           threadId: ThreadId.make("thread-none"),

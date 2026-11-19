@@ -543,16 +543,36 @@ the local app, as the other `/machines/*` routes are.
   in no machine's `wanted`: its message waits in its queue, with no time limit, until a machine
   is named for it.
 - `POST /machines/stop/resume` opens again the sessions the stop put to rest, once a host has
-  dialled in, and answers which it reopened, which folders it made again (`restored`) and which
-  are still missing from the disk (`missing`, with why when the machine was asked). Threads that
-  had no session open at the stop open with their next message, as ever. A machine that dialled
-  in after a stop takes no new session until it is resumed, or for at most three minutes: a host
-  on another disk has its folders only once the resume has made them again. `"remote"` names where
-  the hidden refs are fetched from; left out, it is where the stop pushed them. `"kept"` gives
-  the stop's `kept` back, as it was answered: see [what a resume is held to](#what-a-resume-is-held-to).
-  A thread's session opens as soon as its own folders are done, and the folders of threads a
-  session waits for go first. Folders are made again a few at a time, threads sharing one in turn; one found there by then
-  (made by a resume beside it) counts as there, not missing.
+  dialled in. It answers four lists:
+  - `reopened`: the sessions it opened again.
+  - `restored`: the folders it made again.
+  - `missing`: the folders still not on the disk, with why when the machine was asked.
+  - `refused`: the folders the machine was asked to put back and didn't. It refused or failed,
+    didn't answer, or couldn't say whether the folder is there.
+
+  Threads that had no session open at the stop open with their next message, as ever.
+
+- A machine that dialled in after a stop takes no new session until its resume ends: a host on
+  another disk has its folders only once the resume has made them again. No timer opens it. When
+  25 minutes pass with no resume started and no folder done, the sessions waiting on it fail with
+  that reason and the log says so. A message sent after that opens on the folders as they are.
+- A thread's session opens as soon as its own folders are back. The folders of threads a session
+  waits for go first.
+- A thread with a folder that is missing or refused doesn't open on the machine, during the resume
+  or after it. Its session fails at once with the reason, and the thread shows it. A stop and the
+  periodic keep leave that folder alone, so whatever is at its path never replaces the kept work
+  at the remote. The next resume asks the host about it again, even if the path is there now.
+- Resume asks the machine whether each folder is there once, before any is put back. A folder made
+  from a clone is always the host's to decide: it puts it back or says it is there already. So a
+  clone that another folder's restore made first doesn't count as restored, and a folder the machine
+  can't read doesn't count as there.
+- Folders are made again a few at a time, and threads that share a folder take it in turn. Once one
+  of them has it back, it is back for all of them.
+- `"remote"` names where the hidden refs are fetched from; left out, it is where the stop pushed
+  them. `"kept"` gives the stop's `kept` back, as it was answered: see
+  [what a resume is held to](#what-a-resume-is-held-to).
+- A message that waits in a thread's queue during the resume is sent once, when the thread's
+  folders are back or the resume ends.
 - `POST /machines/stop/expect` says a machine is being started on another disk: `{ "id" }`. Once
   it dials in, it waits for its resume as above, though this Gram saw no stop of it (it was
   restarted since, or the machine was stopped some other way). Call it before the host starts; it

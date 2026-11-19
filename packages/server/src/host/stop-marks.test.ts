@@ -22,6 +22,29 @@ describe("stop marks", () => {
     expect(marks.stoppedAt(machine)).toBeUndefined();
   });
 
+  it("owes a resume until the last one running ends, and tells when threads may open", () => {
+    let at = 0;
+    const marks = makeStopMarks(() => at);
+    const ready: Array<string> = [];
+    marks.onReady((id) => ready.push(id));
+    marks.expect(machine);
+    marks.back(machine);
+    marks.resumeStarted(machine);
+    marks.resumeStarted(machine);
+    marks.threadBack(machine, thread("a"));
+    marks.threadBack(machine, thread("a"));
+    expect(ready).toEqual(["m-one"]);
+    // One of two ends: the other still puts folders back.
+    marks.resumed(machine);
+    at = 60 * 60_000;
+    marks.progress(machine);
+    expect(marks.resuming(machine)).toBe(true);
+    marks.resumed(machine);
+    expect(marks.resuming(machine)).toBe(false);
+    expect(marks.stalled(machine)).toBeUndefined();
+    expect(ready).toEqual(["m-one", "m-one"]);
+  });
+
   it("hands the rested threads out once, across stops, and keeps them when the machine is back", () => {
     const marks = makeStopMarks();
     marks.stopped(machine, [thread("a"), thread("b")]);

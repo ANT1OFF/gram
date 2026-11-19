@@ -26,6 +26,7 @@ import { LocalHostProcess } from "./local-process.ts";
 import { type OwnerOf, ownedMachines, ownersOf } from "./ownership.ts";
 import { Embedding } from "../embedding/embedding.ts";
 import { RemoteHosts, type RemoteHostsShape } from "./remote-hosts.ts";
+import { RESUME_STALL_MS, type StopMarks } from "./stop-marks.ts";
 import { type MachineParts, placedHost } from "./placed.ts";
 import { machineHosts } from "./remote-worker-host.ts";
 import type { HostShared } from "../shared/host-shared.ts";
@@ -190,8 +191,13 @@ const WAKE_LOOK = "500 millis";
  * with their disks kept (`stop-resume.ts`) and starts one again when it is wanted, which the wait
  * says it is (`RemoteHosts.stops.wanted`). So is one readied to stop and still there, which takes
  * no work until it is stopped and started, or its stop is taken back, and one back after a stop
- * until its threads are resumed (`StopMarks.resuming`), whose folders may not be there before. With them off, and for a
- * machine that isn't joined, an absent machine is unavailable at once, as ever.
+ * until its threads are resumed (`StopMarks.resuming`), whose folders may not be there before.
+ * With them off, and for a machine that isn't joined, an absent machine is unavailable at once,
+ * as ever.
+ *
+ * A thread whose folder its machine's resume couldn't put back (`StopMarks.blocked`) opens no
+ * session there, and says why at once. Nor does one whose machine's resume made no progress for
+ * too long while it waited: no timer opens a session over folders that may still be coming.
  */
 export const awaitedMachines =
   (
@@ -202,6 +208,11 @@ export const awaitedMachines =
   ) =>
   (id: HostId, threadId?: ThreadId): Effect.Effect<WorkerHost, HostUnavailable> =>
     Effect.gen(function* () {
+      const notBack = () =>
+        threadId === undefined ? undefined : remote.stops.blocked(id, threadId);
+      const blockedNow = notBack();
+      if (blockedNow !== undefined)
+        return yield* new HostUnavailable({ hostId: id, message: blockedNow });
       const first = yield* get(id).pipe(
         Effect.map((host) => ({ host, away: undefined })),
         Effect.catch((away) => Effect.succeed({ host: undefined, away })),
@@ -220,6 +231,12 @@ export const awaitedMachines =
         Effect.annotateLogs({ hostId: id }),
       );
       if (threadId !== undefined) remote.stops.awaiting(id, threadId);
+      // Given up on while this waited: said, not opened.
+      const stalledBefore = remote.stops.stalled(id);
+      const stalledNow = () => {
+        const at = remote.stops.stalled(id);
+        return at !== undefined && at !== stalledBefore;
+      };
       const ready = get(id).pipe(
         Effect.filterOrFail(
           settled,
@@ -232,15 +249,52 @@ export const awaitedMachines =
             }),
         ),
       );
+      const stop = (message: string) => new HostUnavailable({ hostId: id, message });
       return yield* remote.stops.wanting(
         id,
-        ready.pipe(
-          Effect.retry(
-            Schedule.spaced(WAKE_LOOK).pipe(Schedule.upTo({ duration: Duration.millis(waitMs) })),
-          ),
-        ),
+        Effect.gen(function* () {
+          const host = yield* ready.pipe(
+            Effect.retry({
+              schedule: Schedule.spaced(WAKE_LOOK).pipe(
+                Schedule.upTo({ duration: Duration.millis(waitMs) }),
+              ),
+              // A block or a stall is the answer: nothing to wait for.
+              while: () => notBack() === undefined && !stalledNow(),
+            }),
+            Effect.catch((error) => Effect.succeed(error)),
+          );
+          const why = notBack();
+          if (why !== undefined) return yield* stop(why);
+          if (stalledNow()) {
+            yield* Effect.logWarning(
+              "a machine's resume made no progress; a session waiting on it wasn't opened",
+            ).pipe(
+              Effect.annotateLogs({ hostId: id, ...(threadId === undefined ? {} : { threadId }) }),
+            );
+            return yield* stop(RESUME_STALLED);
+          }
+          if (host instanceof HostUnavailable) return yield* host;
+          return host;
+        }),
       );
     });
+
+/**
+ * Where a thread stands with its machine's resume, for what would open its session: `wait` while
+ * the machine owes one and the thread's folders aren't back, `blocked` when a resume couldn't put
+ * them back (`StopMarks.block`), otherwise nothing.
+ */
+export const restoreGateOf = (
+  stops: Pick<StopMarks, "blocked" | "resuming" | "isThreadBack">,
+  id: HostId,
+  threadId: ThreadId,
+): "wait" | "blocked" | undefined => {
+  if (stops.blocked(id, threadId) !== undefined) return "blocked";
+  return stops.resuming(id) && !stops.isThreadBack(id, threadId) ? "wait" : undefined;
+};
+
+/** What a session waiting on a resume that made no progress is told. */
+export const RESUME_STALLED = `That machine's threads were being put back, and nothing came back for ${RESUME_STALL_MS / 60_000} minutes, so this session wasn't opened over folders that may not be there. Send again to open it as the folders are now.`;
 
 /**
  * The joined machines' worker hosts, when this server has joined machines (`RemoteHosts`) and the

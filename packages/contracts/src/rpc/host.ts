@@ -404,6 +404,11 @@ export const HostStopRestored = Schema.Struct({
    * no ref was kept of. Absent from a host that restores only from the ref.
    */
   source: Schema.optionalKey(Schema.Literals(["ref", "branch"])),
+  /**
+   * Nothing was put back because the folder is there already, made by something else: it is left
+   * as it is. Absent from a host built before it, which says so only in `note`.
+   */
+  there: Schema.optionalKey(Schema.Boolean),
   /** Why nothing was put back, or what to know of what was, in the host's words. */
   note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
 });
