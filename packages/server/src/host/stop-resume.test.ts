@@ -18,12 +18,18 @@ import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
 import { type MachineMarksByHost, makeStopMarks, type StopMarks } from "./stop-marks.ts";
 import { awaitedMachines, RESUME_STALLED, restoreGateOf, type WorkerHost } from "./worker-host.ts";
-import { FOLDER_THERE, type KeepRequest, type RestoreRequest } from "./stop.ts";
+import {
+  FOLDER_THERE,
+  KEPT_WORK_GONE_REASON,
+  type KeepRequest,
+  type RestoreRequest,
+} from "./stop.ts";
 import { cloneIdentityOf, cloneUrlOf } from "./repos.ts";
 import {
   keepThreadWork,
   prepareStop,
   resumeHost,
+  restoreFromBranch,
   BLOCKED_RETRY_MS,
   resumeOwedMachines,
   savedDiffOf,
@@ -1274,6 +1280,58 @@ describe("resuming a machine on another disk", () => {
       expect(taken.restored.map((entry) => entry.cwd)).toEqual([cwd]);
       expect(stops.blocked(MACHINE, worker.id)).toBeUndefined();
       expect(stops.blocked(MACHINE, caught.id)).toBeDefined();
+    }),
+  );
+
+  it.effect("makes a thread's folder from its branch when a person takes it without its work", () =>
+    Effect.gen(function* () {
+      const cwd = "/clones/widgets-trees/worker";
+      const worker = thread("t-worker", {
+        path: cwd,
+        branch: "gram/worker",
+        cloneIdentity: cloneIdentityOf(URL)!,
+      });
+      const stops = makeStopMarks();
+      stops.arrive(MACHINE, { diskId: "disk-aaaaaaaa" });
+      stops.keep(MACHINE, worker.id, cwd, {
+        commit: COMMIT,
+        caughtUp: false,
+        branch: "gram/worker",
+      });
+      stops.arrive(MACHINE, { diskId: "disk-bbbbbbbb" });
+      const asked: Array<RestoreRequest> = [];
+      const deps = {
+        hosts: {
+          connection: () =>
+            Effect.succeed({
+              hello: { capabilities: [], features: ["wip-restore-pending", "wip-restore-kept"] },
+              git: { present: () => Effect.succeed(false) },
+              stop: {
+                restore: (request: RestoreRequest) =>
+                  Effect.sync((): HostStopRestored => {
+                    asked.push(request);
+                    return request.fromBranch === true
+                      ? { restored: true, commit: "b".repeat(40), source: "branch" }
+                      : { restored: false, keptGone: true, note: "Its kept work is gone." };
+                  }),
+              },
+            }),
+          stops,
+        },
+        store: { listThreads: Effect.succeed([worker]) },
+        runtimes: { startSession: () => Effect.void },
+      } as unknown as StopResumeDeps;
+      // Nothing held off yet: nothing to take.
+      expect((yield* Effect.flip(restoreFromBranch(deps, worker.id)))._tag).toBe("InvalidState");
+      yield* resumeHost(deps, MACHINE);
+      // Gram's own words, whatever the host's: what the thread's card offers the way out for.
+      expect(stops.blocked(MACHINE, worker.id)).toBe(KEPT_WORK_GONE_REASON);
+      yield* restoreFromBranch(deps, worker.id);
+      expect(asked.at(-1)).toMatchObject({ cwd, fromBranch: true });
+      expect(stops.blocked(MACHINE, worker.id)).toBeUndefined();
+      expect((yield* Effect.flip(restoreFromBranch(deps, "t-gone" as ThreadId)))._tag).toBe(
+        "ThreadNotFound",
+      );
     }),
   );
 

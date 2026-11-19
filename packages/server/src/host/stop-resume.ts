@@ -24,9 +24,12 @@ import {
   type HostStopKept,
   HostUnavailable,
   hostServes,
+  InvalidState,
+  LOCAL_HOST_ID,
   type SavedDiff,
   type Thread,
   type ThreadId,
+  ThreadNotFound,
 } from "@gram/contracts";
 import { isWipRefOf } from "@gram/git";
 import * as Cause from "effect/Cause";
@@ -42,7 +45,7 @@ import type { RemoteHostsShape } from "./remote-hosts.ts";
 import { cloneUrlOf } from "./repos.ts";
 import { HOST_RESTORE_MS, REOPEN_MS, SHARED_FLUSH_MS, STOP_CANCEL_MS } from "./budgets.ts";
 import type { JobReport } from "./machine-jobs.ts";
-import { FOLDER_THERE, keptWorkGone } from "./stop.ts";
+import { FOLDER_THERE, KEPT_WORK_GONE_REASON, keptWorkGone } from "./stop.ts";
 
 export interface StopResumeDeps {
   readonly hosts: Pick<RemoteHostsShape, "connection" | "machines" | "stops">;
@@ -474,14 +477,16 @@ const namedIn = (fromBranch: ReadonlyArray<ThreadId> | undefined, threadId: Thre
 type FolderOutcome =
   | { readonly kind: "there"; readonly unverified?: true }
   | ({ readonly kind: "restored" } & HostResumed["restored"][number])
-  | { readonly kind: "missing"; readonly note?: string }
-  | { readonly kind: "refused"; readonly note: string };
+  | { readonly kind: "missing"; readonly note?: string; readonly keptGone?: true }
+  | { readonly kind: "refused"; readonly note: string; readonly keptGone?: true };
 
 /** Why a thread's session doesn't open on the machine, for a folder of it that isn't back. */
 const blockReason = (outcome: FolderOutcome) =>
-  outcome.kind === "refused" || (outcome.kind === "missing" && outcome.note !== undefined)
-    ? `Its folder wasn't put back on the machine: ${outcome.note}`
-    : "Its folder isn't on the machine, and Gram can't put it back there.";
+  (outcome.kind === "missing" || outcome.kind === "refused") && outcome.keptGone === true
+    ? KEPT_WORK_GONE_REASON
+    : outcome.kind === "refused" || (outcome.kind === "missing" && outcome.note !== undefined)
+      ? `Its folder wasn't put back on the machine: ${outcome.note}`
+      : "Its folder isn't on the machine, and Gram can't put it back there.";
 
 /** Why, counted: no note is a folder Gram didn't make from a clone, or a host that can't. */
 const counted = (entries: ReadonlyArray<{ readonly note?: string | undefined }>) =>
@@ -490,6 +495,37 @@ const counted = (entries: ReadonlyArray<{ readonly note?: string | undefined }>)
       ([why, each]) => [why, each.length],
     ),
   );
+
+/**
+ * A person took the thread's branch without the work its last stop kept, which is gone from the
+ * remote: each joined machine whose resume holds the thread off for that (`KEPT_WORK_GONE_REASON`)
+ * is resumed with it in `fromBranch`. Fails with why when no machine holds it off so, a resume
+ * fails, or the thread is still held off after one.
+ */
+export const restoreFromBranch = (
+  deps: StopResumeDeps,
+  threadId: ThreadId,
+): Effect.Effect<void, InvalidState | ThreadNotFound> =>
+  Effect.gen(function* () {
+    const thread = (yield* deps.store.listThreads).find((each) => each.id === threadId);
+    if (thread === undefined) return yield* new ThreadNotFound({ threadId });
+    const stops = deps.hosts.stops;
+    const machines = [...new Set(checkoutsOf(thread).map(hostOf))].filter(
+      (id) => id !== LOCAL_HOST_ID && stops.blocked(id, threadId) === KEPT_WORK_GONE_REASON,
+    );
+    if (machines.length === 0)
+      return yield* new InvalidState({
+        threadId,
+        message: "This thread isn't held off its machine for saved work that is gone.",
+      });
+    for (const id of machines) {
+      yield* resumeHost(deps, id, { fromBranch: [threadId] }).pipe(
+        Effect.mapError((error) => new InvalidState({ threadId, message: error.message })),
+      );
+      const still = stops.blocked(id, threadId);
+      if (still !== undefined) return yield* new InvalidState({ threadId, message: still });
+    }
+  });
 
 /**
  * How many of a machine's folders a resume puts back at once: one, as the host restores one at a
@@ -749,7 +785,7 @@ export const resumeHost = (
             commit !== undefined &&
             said.commit !== commit
           )
-            return { kind: "refused", note: keptWorkGone(thread.id, cwd) };
+            return { kind: "refused", note: keptWorkGone(thread.id, cwd), keptGone: true };
           if (said.restored)
             return {
               kind: "restored",
@@ -772,7 +808,11 @@ export const resumeHost = (
                   note: "A resume before set out to put this folder back, and this machine's host can't check it: update it, or remove the folder.",
                 }
               : { kind: "there" };
-          return { kind: "missing", ...note };
+          return {
+            kind: "missing",
+            ...note,
+            ...(said.keptGone === true ? { keptGone: true } : {}),
+          };
         });
       // Each thread's folders as they are done with, and the threads whose folders are all done.
       const toGo = new Map<ThreadId, number>();

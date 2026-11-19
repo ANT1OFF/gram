@@ -459,6 +459,12 @@ export const HostStopRestored = Schema.Struct({
   there: Schema.optionalKey(Schema.Boolean),
   /** Why nothing was put back, or what to know of what was, in the host's words. */
   note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+  /**
+   * Nothing was put back because the work the stop kept (`commit`) is gone from the remote and the
+   * branch there doesn't hold it: a person may take the branch without it (`fromBranch`). Absent
+   * from a host before `wip-restore-kept`.
+   */
+  keptGone: Schema.optionalKey(Schema.Literal(true)),
 });
 export type HostStopRestored = typeof HostStopRestored.Type;
 

@@ -3,6 +3,7 @@ import {
   effectiveCheckout,
   GitError,
   InvalidState,
+  KEPT_WORK_GONE_CODE,
   isLocalHost,
   checkoutRequestHost,
   type HostId,
@@ -59,7 +60,7 @@ import { makeThreadCreator, prepareWithOthers } from "../../runtime/create-in-ch
 import { CheckoutService } from "../../runtime/hooks.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
 import { RemoteHosts } from "../../host/remote-hosts.ts";
-import { savedDiffOf } from "../../host/stop-resume.ts";
+import { restoreFromBranch, savedDiffOf } from "../../host/stop-resume.ts";
 import { isLocalApp } from "../../http/local-app.ts";
 import { profileStarter } from "../../thread-profiles/service.ts";
 
@@ -379,6 +380,20 @@ export const threadHandlers = Effect.gen(function* () {
     "thread.cancelLimitWait": ({ threadId }) => runtimes.cancelLimitWait(threadId),
     "thread.resumeAfterMachineLost": ({ threadId }) =>
       Effect.asVoid(resumeAfterMachineLost(store, runtimes, threadId)),
+    "thread.restoreFromBranch": ({ threadId }) =>
+      remoteHosts === undefined
+        ? Effect.fail(new InvalidState({ threadId, message: "This Gram has no joined machines." }))
+        : restoreFromBranch({ hosts: remoteHosts, store, runtimes }, threadId).pipe(
+            // Its saved work is dropped: the error that said it was gone has nothing left to offer.
+            Effect.andThen(
+              runtimes.updateThread(threadId, (t) => {
+                if (t.lastError?.code !== KEPT_WORK_GONE_CODE) return t;
+                const { lastError: _, ...rest } = t;
+                return rest;
+              }),
+            ),
+            Effect.asVoid,
+          ),
     "thread.savedDiff": ({ threadId }) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId);

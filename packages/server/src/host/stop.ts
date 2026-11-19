@@ -98,6 +98,14 @@ export const FOLDER_THERE = "Its folder is there already.";
 export const keptWorkGone = (threadId: string, cwd?: string): string =>
   `The work its last stop kept is gone from the remote, and its branch there doesn't hold it. Push ${wipRef(threadId, cwd)} back to the remote and Gram puts it back at the next resume, or resume the machine with this thread in fromBranch to make the folder from its branch without that work.`;
 
+/**
+ * Why a thread whose kept work is gone (`keptWorkGone`) doesn't open on its machine, in this Gram's
+ * words whatever the host's: what its error says (`ThreadError.code` `kept-work-gone`), with the two
+ * ways out a person has. Within `THREAD_ERROR_TEXT_MAX`.
+ */
+export const KEPT_WORK_GONE_REASON =
+  "Its saved work is gone from the remote and its branch doesn't hold it, so its folder wasn't put back. Push its saved ref back and the next resume brings it, or open it from the branch without that work.";
+
 /** How long a host readied to stop refuses new work when no stop and no cancel follows. */
 export const STOP_HOLD_MS = 10 * 60_000;
 
@@ -564,7 +572,11 @@ export const stopOn = (deps: StopDeps): HostStop => {
         }
       }
       if (without && request.fromBranch !== true)
-        return { restored: false, note: keptWorkGone(request.threadId, cwd) };
+        return {
+          restored: false,
+          keptGone: true as const,
+          note: keptWorkGone(request.threadId, cwd),
+        };
       // A ref fetched and then not put back isn't this repository's own work: forgotten here, so
       // a later stop doesn't take it for a snapshot of its own (the remote's stays).
       const forget =

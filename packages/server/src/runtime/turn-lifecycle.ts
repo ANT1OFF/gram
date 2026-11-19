@@ -42,11 +42,13 @@ import {
 import {
   unavailableMessage,
   unavailableError,
+  keptWorkGoneError,
   missingFolderError,
   threadError,
   loggableCode,
 } from "./thread-error.ts";
 import { missingThreadFolder } from "../fs/folders.ts";
+import { KEPT_WORK_GONE_REASON } from "../host/stop.ts";
 import { settleEstimate } from "./cost-ledger.ts";
 import type {
   ObservedTurnEnd,
@@ -314,11 +316,14 @@ export const makeTurnLifecycle = ({
       const at = yield* Clock.currentTimeMillis;
       // An agent can't start in a folder that is gone, and its spawn error would read as a broken
       // install: the thread says what happened instead.
-      const gone = rt.cwd !== undefined && !(yield* checkouts.present(rt.cwd));
+      const keptGone = keptWorkGoneError(error, KEPT_WORK_GONE_REASON, at);
+      const gone =
+        keptGone === undefined && rt.cwd !== undefined && !(yield* checkouts.present(rt.cwd));
       const text = gone ? missingThreadFolder(rt.cwd!) : undefined;
       const kept = yield* keepError(
         rt,
-        text === undefined ? unavailableError(error, at) : missingFolderError(text, at),
+        keptGone ??
+          (text === undefined ? unavailableError(error, at) : missingFolderError(text, at)),
       );
       if (kept?.machineLost !== undefined)
         yield* Effect.logInfo("agent unavailable on a lost machine").pipe(

@@ -658,6 +658,10 @@ export const makeMessageQueue = ({
         });
       }
       const path = thread.checkout.path;
+      // A folder its machine's resume is putting back, or couldn't, isn't one that is gone: the
+      // send goes on to open a session, which waits for it or fails saying why (`awaitedMachines`),
+      // and the thread shows that, with its way out (saved work gone: `thread.restoreFromBranch`).
+      if (restoreGate?.(thread) !== undefined) return;
       if (yield* checkouts.present(path)) return;
       yield* forkStopInMissing(rt);
       return yield* new InvalidState({

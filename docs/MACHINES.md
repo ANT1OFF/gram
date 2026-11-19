@@ -819,7 +819,10 @@ the machine, and its reason says so and names the two ways out.
 - **Put the work back at the remote**: push `refs/gram/wip/<thread>` at the kept commit from
   wherever it still is (another clone, or the old disk). The next resume puts it back as usual;
   with the hosted features off this Gram resumes such a machine every ten minutes by itself.
-- **Take the branch without it**: resume the machine with the thread in `"fromBranch"`
+- **Take the branch without it**: in the thread, whose card says "Saved work is gone" once a
+  message to it is held off for this, **Open from the branch…** asks first, saying the saved work
+  isn't put back later, and then resumes its machine for that thread alone
+  (`thread.restoreFromBranch`). Or resume the machine with the thread in `"fromBranch"`
   (`POST /machines/stop/resume`, `{ "id", "fromBranch": ["<thread>"] }`). The folder is made from
   the branch as it is at the remote, `restored` lists it with `source: "branch"`, and its `note`
   says it is without the work its stop kept. Only the threads named take it: a folder that threads
