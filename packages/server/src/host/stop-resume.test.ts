@@ -1011,7 +1011,9 @@ describe("resuming a machine on another disk", () => {
               git: {
                 present: () => Effect.succeed(true),
                 local: () =>
-                  readable ? Effect.succeed({}) : Effect.fail(new Error("not a git repository")),
+                  readable
+                    ? Effect.succeed({ repo: true })
+                    : Effect.fail(new Error("not a git repository")),
               },
               stop: {},
             }),
@@ -1029,6 +1031,148 @@ describe("resuming a machine on another disk", () => {
       const second = yield* resumeHost(deps, MACHINE);
       expect(second.unverified).toEqual([{ threadId: "t-lost", cwd: "/home/dev/lost" }]);
       expect(stops.blocked(MACHINE, "t-lost" as ThreadId)).toBeUndefined();
+    }),
+  );
+
+  it.effect("doesn't take an empty folder of the user's own as back, though git reads it", () =>
+    Effect.gen(function* () {
+      const only = thread("t-empty", { kind: "main", path: "/home/dev/empty" });
+      const stops = makeStopMarks();
+      stops.expect(MACHINE);
+      stops.back(MACHINE);
+      const deps = {
+        hosts: {
+          connection: () =>
+            Effect.succeed({
+              git: {
+                present: () => Effect.succeed(true),
+                // As the host's own read answers in a folder that isn't a repository.
+                local: () => Effect.succeed({ repo: false }),
+              },
+              stop: {},
+            }),
+          stops,
+        },
+        store: { listThreads: Effect.succeed([only]) },
+        runtimes: { startSession: () => Effect.void },
+      } as unknown as StopResumeDeps;
+      const resumed = yield* resumeHost(deps, MACHINE);
+      // Before, taken as back, unchecked, and its session let open.
+      expect(resumed.unverified ?? []).toEqual([]);
+      expect(resumed.refused).toHaveLength(1);
+      expect(stops.blocked(MACHINE, "t-empty" as ThreadId)).toBeDefined();
+    }),
+  );
+
+  it.effect("keeps a clone made without the thread's work shut at every later resume", () =>
+    Effect.gen(function* () {
+      const clone = "/clones/widgets";
+      const orchestrator = thread("t-orch", {
+        kind: "current",
+        path: clone,
+        branch: "main",
+        cloneIdentity: cloneIdentityOf(URL)!,
+      } as never);
+      const stops = makeStopMarks();
+      stops.arrive(MACHINE, { diskId: "disk-aaaaaaaa" });
+      stops.arrive(MACHINE, { diskId: "disk-bbbbbbbb" });
+      const disk = new Set<string>();
+      const asked: Array<RestoreRequest> = [];
+      let kept = false;
+      const deps = {
+        hosts: {
+          connection: () =>
+            Effect.succeed({
+              hello: { capabilities: [], features: ["wip-restore-pending"] },
+              git: { present: (cwd: string) => Effect.sync(() => disk.has(cwd)) },
+              stop: {
+                // The host clones first, then finds neither the thread's ref nor its branch.
+                restore: (request: RestoreRequest) =>
+                  Effect.sync((): HostStopRestored => {
+                    asked.push(request);
+                    disk.add(clone);
+                    return kept
+                      ? { restored: true, commit: COMMIT, uncommitted: true }
+                      : { restored: false, note: "Nothing was kept of it at the remote." };
+                  }),
+              },
+            }),
+          stops,
+        },
+        store: { listThreads: Effect.succeed([orchestrator]) },
+        runtimes: { startSession: () => Effect.void },
+      } as unknown as StopResumeDeps;
+      yield* resumeHost(deps, MACHINE);
+      expect(stops.blocked(MACHINE, "t-orch" as ThreadId)).toBeDefined();
+      // The plain clone is there now. Before, the next resume took it as back and opened it.
+      yield* resumeHost(deps, MACHINE);
+      expect(asked.map((request) => [request.cwd, request.pending])).toEqual([
+        [clone, undefined],
+        [clone, true],
+      ]);
+      expect(stops.blocked(MACHINE, "t-orch" as ThreadId)).toBeDefined();
+      // Its way out: the work at the remote again, and the next resume puts it back.
+      kept = true;
+      yield* resumeHost(deps, MACHINE);
+      expect(stops.blocked(MACHINE, "t-orch" as ThreadId)).toBeUndefined();
+    }),
+  );
+
+  it.effect("checks no folder again that an interrupted resume of a new disk put back", () =>
+    Effect.gen(function* () {
+      const first = "/clones/widgets-trees/first";
+      const second = "/clones/widgets-trees/second";
+      const threads = [
+        thread("t-first", { path: first, cloneIdentity: cloneIdentityOf(URL)! }),
+        thread("t-second", { path: second, cloneIdentity: cloneIdentityOf(URL)! }),
+      ];
+      const stops = makeStopMarks();
+      stops.arrive(MACHINE, { diskId: "disk-aaaaaaaa" });
+      stops.arrive(MACHINE, { diskId: "disk-bbbbbbbb" });
+      const disk = new Set<string>();
+      const asked: Array<string> = [];
+      let gone = false;
+      let drops = true;
+      const deps = {
+        hosts: {
+          connection: () =>
+            Effect.succeed({
+              gone: () => gone,
+              hello: { capabilities: [], features: ["wip-restore-pending"] },
+              git: { present: (cwd: string) => Effect.sync(() => disk.has(cwd)) },
+              stop: {
+                restore: (request: RestoreRequest) =>
+                  Effect.gen(function* () {
+                    asked.push(request.cwd);
+                    // The second folder's link drops once the first is put back and done with.
+                    if (request.cwd === second && drops) {
+                      while (stops.isFolderOwed(MACHINE, first)) yield* Effect.yieldNow;
+                      gone = true;
+                      return yield* new HostFailed({ message: "The machine's connection closed." });
+                    }
+                    // Put back, and used once its thread is back: no longer as it was restored.
+                    disk.add(request.cwd);
+                    return { restored: true, commit: COMMIT } satisfies HostStopRestored;
+                  }),
+              },
+            }),
+          stops,
+        },
+        store: { listThreads: Effect.succeed(threads) },
+        runtimes: { startSession: () => Effect.void },
+      } as unknown as StopResumeDeps;
+      expect((yield* Effect.flip(resumeHost(deps, MACHINE)))._tag).toBe("HostUnavailable");
+      expect(stops.isThreadBack(MACHINE, "t-first" as ThreadId)).toBe(true);
+      // The machine dials in again, on the same disk.
+      gone = false;
+      drops = false;
+      asked.length = 0;
+      yield* resumeHost(deps, MACHINE);
+      // Before, the first folder was asked of the host again, and refused for its new work.
+      expect(asked).toEqual([second]);
+      expect(stops.blocked(MACHINE, "t-first" as ThreadId)).toBeUndefined();
+      expect(stops.blocked(MACHINE, "t-second" as ThreadId)).toBeUndefined();
+      expect(stops.owes(MACHINE)).toBe(false);
     }),
   );
 

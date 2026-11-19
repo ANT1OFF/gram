@@ -458,6 +458,27 @@ export const restoreWip = (
       return yield* fail("the work was kept before the repository had a commit");
     if (branch !== undefined && !(yield* isBranchName(top, branch)))
       return yield* fail("invalid branch");
+    // A sparse checkout writes only the paths its patterns take in: kept files outside them would
+    // be left out, and the folder taken as back without them.
+    const sparse = yield* git(top, ["config", "--type=bool", "--get", "core.sparseCheckout"]).pipe(
+      Effect.map((out) => out.status === 0 && out.stdout.trim() === "true"),
+      Effect.mapError((e) => new CheckpointError({ message: e.message })),
+    );
+    if (sparse)
+      return yield* fail(
+        `${top} is a sparse checkout, so not every kept file would be written: nothing was put back`,
+      );
+    // The index back at HEAD, the kept files staying as files, and the remote's ref, when it came
+    // from this host's own ref of the thread, the folder's lease: the end of every restore.
+    const finish = (at: string) =>
+      Effect.gen(function* () {
+        if (kept.uncommitted) yield* run(top, [...QUIET, "reset", "--quiet", at, "--"]);
+        const thread = threadOfWipRef(kept.ref);
+        if (thread !== undefined && kept.ref === wipRef(thread)) {
+          yield* run(top, ["update-ref", "--no-deref", leaseRef(kept.ref), kept.commit]);
+          yield* run(top, ["update-ref", "--no-deref", "-d", fetchedRef(kept.ref)]);
+        }
+      });
     let release: string | undefined;
     if (branch !== undefined) {
       // Never a branch another worktree is on: moving it would change that worktree under it.
@@ -478,8 +499,9 @@ export const restoreWip = (
       }
     }
     // Already holding the kept uncommitted work, as a restore before this one left it, its answer
-    // lost: done, rather than refused below for changes that are the work itself. HEAD at the
-    // branch's tip as kept, or past it, on that branch, and the files exactly as the work was
+    // lost or its host gone part way: done, rather than refused below for changes that are the
+    // work itself, once what such a restore may not have reached is done too (`finish`). HEAD at
+    // the branch's tip as kept, or past it, on that branch, and the files exactly as the work was
     // kept. A clean tree goes the usual way, which puts the same back.
     const current = kept.uncommitted ? yield* headOid(top) : undefined;
     const on =
@@ -501,8 +523,10 @@ export const restoreWip = (
           "--quiet",
           `${kept.commit}^{tree}`,
         ])).stdout.trim()
-    )
+    ) {
+      yield* finish(current);
       return { ahead: current !== head } satisfies WipRestored;
+    }
     const status = yield* run(top, [...STRICT_STATUS_ARGS]);
     if (status.stdout.trim() !== "")
       return yield* fail(`${top} has changes of its own, so nothing was put back over them`);
@@ -531,17 +555,9 @@ export const restoreWip = (
       ...(branch === undefined ? ["--detach", head] : ahead ? [branch] : ["-B", branch, head]),
       "--",
     ]);
-    if (kept.uncommitted) {
-      // The files as they were, then the index back at the branch: uncommitted, as they were.
-      yield* run(top, [...QUIET, "read-tree", "--reset", "-u", kept.commit]);
-      yield* run(top, [...QUIET, "reset", "--quiet", head, "--"]);
-    }
-    // The folder came from this host's own ref of the thread: the remote's ref is its lease now.
-    const thread = threadOfWipRef(kept.ref);
-    if (thread !== undefined && kept.ref === wipRef(thread)) {
-      yield* run(top, ["update-ref", "--no-deref", leaseRef(kept.ref), kept.commit]);
-      yield* run(top, ["update-ref", "--no-deref", "-d", fetchedRef(kept.ref)]);
-    }
+    // The files as they were, then the index back at the branch: uncommitted, as they were.
+    if (kept.uncommitted) yield* run(top, [...QUIET, "read-tree", "--reset", "-u", kept.commit]);
+    yield* finish(head);
     return { ahead } satisfies WipRestored;
   });
 

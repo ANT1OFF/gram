@@ -546,8 +546,10 @@ export const resumeHost = (
         restore !== undefined &&
         sharing.some(({ thread, cwd }) => madeFrom(thread, id, cwd) !== undefined);
       // On a disk the folders weren't last seen on, one that is there is checked against what
-      // was kept, never taken as back for being there.
-      const verifyThere = stops.onOtherDisk(id);
+      // was kept, never taken as back for being there: once, by the first resume of the
+      // generation to confirm it. One a resume before confirmed may hold new work since.
+      const otherDisk = stops.onOtherDisk(id);
+      const verifyThere = (cwd: string) => otherDisk && !stops.isFolderConfirmed(id, cwd);
       // What a resume before this one set out to put back and didn't finish with.
       const owedBefore = new Set(
         [...new Set(folders.map(({ cwd }) => cwd))].filter((cwd) => stops.isFolderOwed(id, cwd)),
@@ -555,7 +557,9 @@ export const resumeHost = (
       // Missing now, or not known, and the host can make it: owed until a resume is done with it,
       // written before anything is put back there. Not written, nothing is put back: still owed.
       const owing = [...Map.groupBy(folders, ({ cwd }) => cwd)]
-        .filter(([cwd, sharing]) => remakeable(sharing) && (seen.get(cwd) !== true || verifyThere))
+        .filter(
+          ([cwd, sharing]) => remakeable(sharing) && (seen.get(cwd) !== true || verifyThere(cwd)),
+        )
         .map(([cwd]) => cwd);
       const written = yield* Effect.try(() => {
         for (const cwd of owing) stops.folderOwed(id, cwd, generation);
@@ -577,15 +581,18 @@ export const resumeHost = (
           const made = madeFrom(thread, id, cwd);
           if (restore === undefined || made === undefined) {
             // Nothing to hold it to: back only as a repository its git can read, and said to be
-            // unchecked. An empty or unreadable folder is no folder of the thread's.
+            // unchecked. An empty or unreadable folder is no folder of the thread's: git's read of
+            // a folder that isn't a repository succeeds, saying so (`repo: false`).
             if (there === true) {
               const local = (
-                connection.git as { local?: (cwd: string) => Effect.Effect<unknown, unknown> }
+                connection.git as {
+                  local?: (cwd: string) => Effect.Effect<{ readonly repo?: boolean }, unknown>;
+                }
               ).local;
               const readable =
                 local === undefined ||
                 (yield* local(cwd).pipe(
-                  Effect.as(true),
+                  Effect.map((state) => state.repo === true),
                   Effect.orElseSucceed(() => false),
                 ));
               return readable
@@ -708,7 +715,8 @@ export const resumeHost = (
           // is taken as it is: there, and readable, is back, as when the user put it back.
           // By folder: a sibling folder that couldn't be put back puts this one through nothing.
           const again =
-            remakeable(sharing) && (owedBefore.has(cwd) || (verifyThere && seen.get(cwd) === true));
+            remakeable(sharing) &&
+            (owedBefore.has(cwd) || (verifyThere(cwd) && seen.get(cwd) === true));
           // The thread made from the clone asks first: its restore is the one that checks.
           const ordered = [...sharing].toSorted(
             (a, b) =>
@@ -738,10 +746,12 @@ export const resumeHost = (
                 : outcome;
             yield* done(folder.thread.id, cwd, settled);
           }
-          // Done with: put back or there for all who share it, or missing with nothing kept of it.
-          // One refused stays owed, and blocked, for the next resume.
-          // Nothing a connection that went said counts.
-          if (!lost() && (back || outcomes.every((outcome) => outcome.kind === "missing")))
+          // Done with once put back or there for all who share it, and confirmed so for the rest of
+          // this resume's generation. One refused, or missing with nothing kept of it, stays owed
+          // and blocked: the host may have made a plain clone at its path before finding nothing
+          // to put in it, which a later resume must not take as back for being there. Nothing a
+          // connection that went said counts.
+          if (!lost() && back)
             // Not written: still owed, and the next resume asks again.
             yield* Effect.try(() => stops.folderDone(id, cwd, generation)).pipe(Effect.ignore);
         });

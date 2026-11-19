@@ -521,7 +521,9 @@ export const stopOn = (deps: StopDeps): HostStop => {
       const put = Effect.gen(function* () {
         if (inClone) {
           yield* placeOf(cwd).pipe(Effect.mapError((error) => refused(error.why)));
-          return yield* restoreWip(into ?? clone, kept, request.branch).pipe(
+          // A worktree a restore before made and didn't finish: the clone gives up the branch
+          // when it is on it with nothing of its own, as for a worktree made now.
+          return yield* restoreWip(into ?? clone, kept, request.branch, { release: clone }).pipe(
             Effect.mapError((error) => refused(error.message)),
           );
         }
