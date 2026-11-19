@@ -126,7 +126,37 @@ export const ThreadError = Schema.Struct({
     Schema.Struct({
       machine: Schema.String,
       during: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MACHINE_LOST_DURING_MAX))),
+      /**
+       * Epoch ms the thread's machine incident began (`Thread.machineIncident.at`), which a later
+       * failure while it lasts keeps: the error's own `at` is that failure's. Absent from errors
+       * written before it, whose `at` is the loss's.
+       */
+      at: Schema.optionalKey(Schema.Number),
     }),
   ),
 });
 export type ThreadError = typeof ThreadError.Type;
+
+/**
+ * `Thread.machineIncident`: the joined machine the thread runs on went away under it, kept apart
+ * from `lastError` so the next failure doesn't hide it. Set by a session the machine took with it,
+ * and by any failure while the machine is away; cleared only by a turn that completes, or by a
+ * resume after it (`thread.resumeAfterMachineLost`). While it is set, every `lastError` written
+ * carries it as `machineLost`.
+ */
+export const MachineIncident = Schema.Struct({
+  /** Epoch ms the thread first met it. */
+  at: Schema.Number,
+  /** The machine's name. */
+  machine: Schema.String,
+  /**
+   * `away`: the machine was offline when the thread needed it, and nothing has given it up yet.
+   * `lost`: it didn't come back in time, or came back on a new disk, and the session went with it.
+   */
+  state: Schema.Literals(["away", "lost"]),
+  /** Epoch ms of the last save of the thread's work before it (`savedWork.at`), when there was one. */
+  saved: Schema.optionalKey(Schema.Number),
+  /** The command that was running when it went, if one was. */
+  during: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MACHINE_LOST_DURING_MAX))),
+});
+export type MachineIncident = typeof MachineIncident.Type;

@@ -528,6 +528,13 @@ the local app, as the other `/machines/*` routes are.
   not as a plain session end. The conversation shows that turn's card with Resume worker
   (`thread.resumeAfterMachineLost`): the same conversation gets Gram's note of what was cut off,
   which brings the machine back and its folder as last kept.
+- The loss is kept on the thread apart from its last error (`Thread.machineIncident`: when, which
+  machine, `away` or `lost`, and the time of the last save before it), so a later failure doesn't
+  hide it: a message that waits on the machine and then fails as "offline" keeps the card, and
+  every error written while it lasts carries it as `machineLost`, dated from the loss. A thread
+  that was idle when its machine took its session gets it too, and so does any failure of a
+  thread whose machine is offline then. Only a turn that completes, or Resume worker, clears it.
+  A failure logs `machineLost: true` on its "turn failed" line.
 - Each keep says what the save holds (`HostStopKept.saved`): the diff of the kept commit against
   where its branch left its base, bodies cut to 512 KB with the largest files listed without
   theirs. Gram records the time and the files on the thread (`Thread.savedWork`), so the

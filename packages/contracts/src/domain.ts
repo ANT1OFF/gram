@@ -1,5 +1,11 @@
 import * as Schema from "effect/Schema";
-import { LimitCleared, LimitWait, THREAD_ERROR_TEXT_MAX, ThreadError } from "./agent-failure.ts";
+import {
+  LimitCleared,
+  LimitWait,
+  MachineIncident,
+  THREAD_ERROR_TEXT_MAX,
+  ThreadError,
+} from "./agent-failure.ts";
 import { BabysitState, HumanReviewNotice, ReviewNotice } from "./babysit.ts";
 import { CodexHome } from "./codex-home.ts";
 import { ConversationRef } from "./conversations.ts";
@@ -900,6 +906,11 @@ export const Thread = Schema.Struct({
   codexHome: Schema.optionalKey(CodexHome),
   /** How the last failed turn failed; cleared when a later turn completes. */
   lastError: Schema.optionalKey(ThreadError),
+  /**
+   * The joined machine it runs on went away under it (`MachineIncident`): apart from `lastError`,
+   * which a later failure replaces; cleared by a turn that completes, or a resume after it.
+   */
+  machineIncident: Schema.optionalKey(MachineIncident),
   /**
    * The last save of its work on a joined machine that reached the remote (`wip-keeper.ts`): when,
    * and the files it held. What a lost machine gives back.
