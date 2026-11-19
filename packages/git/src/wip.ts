@@ -434,6 +434,23 @@ export interface RestoreOptions {
 }
 
 /**
+ * Fails over a sparse checkout, which writes only the paths its patterns take in: kept files
+ * outside them would be left out, and the folder taken as back without them. Asked before anything
+ * is changed, by every step of putting work back.
+ */
+const refuseSparse = (top: string) =>
+  Effect.gen(function* () {
+    const sparse = yield* git(top, ["config", "--type=bool", "--get", "core.sparseCheckout"]).pipe(
+      Effect.map((out) => out.status === 0 && out.stdout.trim() === "true"),
+      Effect.mapError((e) => new CheckpointError({ message: e.message })),
+    );
+    if (sparse)
+      return yield* fail(
+        `${top} is a sparse checkout, so not every kept file would be written: nothing was put back`,
+      );
+  });
+
+/**
  * Puts kept work back in the working tree at `repo`, which must hold nothing of its own (a fresh
  * clone, a worktree just added): `branch` is set to the tip the work was on and checked out (a
  * detached HEAD there without one), and the files that weren't committed are written as files,
@@ -458,24 +475,35 @@ export const restoreWip = (
       return yield* fail("the work was kept before the repository had a commit");
     if (branch !== undefined && !(yield* isBranchName(top, branch)))
       return yield* fail("invalid branch");
-    // A sparse checkout writes only the paths its patterns take in: kept files outside them would
-    // be left out, and the folder taken as back without them.
-    const sparse = yield* git(top, ["config", "--type=bool", "--get", "core.sparseCheckout"]).pipe(
-      Effect.map((out) => out.status === 0 && out.stdout.trim() === "true"),
-      Effect.mapError((e) => new CheckpointError({ message: e.message })),
-    );
-    if (sparse)
-      return yield* fail(
-        `${top} is a sparse checkout, so not every kept file would be written: nothing was put back`,
-      );
-    // The index back at HEAD, the kept files staying as files, and the remote's ref, when it came
-    // from this host's own ref of the thread, the folder's lease: the end of every restore.
-    const finish = (at: string) =>
+    yield* refuseSparse(top);
+    // The end of every restore: the index back at HEAD, the kept files staying as files, and the
+    // remote's ref, when it came from this host's own ref of the thread, the folder's lease. Over
+    // a folder that already holds the work (`again`), only what a restore cut off left undone:
+    // the index only while it is exactly the kept files a restore wrote there, never what was
+    // staged since, and a lease only where the folder has none, never one it moved on to.
+    const finish = (at: string, again: boolean) =>
       Effect.gen(function* () {
-        if (kept.uncommitted) yield* run(top, [...QUIET, "reset", "--quiet", at, "--"]);
+        const index = again
+          ? yield* git(top, ["write-tree"]).pipe(
+              Effect.map((out) => (out.status === 0 ? out.stdout.trim() : undefined)),
+              Effect.mapError((e) => new CheckpointError({ message: e.message })),
+            )
+          : undefined;
+        const left =
+          !again ||
+          (index !== undefined &&
+            index ===
+              (yield* run(top, [
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                `${kept.commit}^{tree}`,
+              ])).stdout.trim());
+        if (kept.uncommitted && left) yield* run(top, [...QUIET, "reset", "--quiet", at, "--"]);
         const thread = threadOfWipRef(kept.ref);
         if (thread !== undefined && kept.ref === wipRef(thread)) {
-          yield* run(top, ["update-ref", "--no-deref", leaseRef(kept.ref), kept.commit]);
+          if (!again || (yield* readRef(top, leaseRef(kept.ref))).kind !== "commit")
+            yield* run(top, ["update-ref", "--no-deref", leaseRef(kept.ref), kept.commit]);
           yield* run(top, ["update-ref", "--no-deref", "-d", fetchedRef(kept.ref)]);
         }
       });
@@ -524,7 +552,7 @@ export const restoreWip = (
           `${kept.commit}^{tree}`,
         ])).stdout.trim()
     ) {
-      yield* finish(current);
+      yield* finish(current, true);
       return { ahead: current !== head } satisfies WipRestored;
     }
     const status = yield* run(top, [...STRICT_STATUS_ARGS]);
@@ -557,7 +585,7 @@ export const restoreWip = (
     ]);
     // The files as they were, then the index back at the branch: uncommitted, as they were.
     if (kept.uncommitted) yield* run(top, [...QUIET, "read-tree", "--reset", "-u", kept.commit]);
-    yield* finish(head);
+    yield* finish(head, false);
     return { ahead } satisfies WipRestored;
   });
 
@@ -584,6 +612,8 @@ export const setAsideFor = (
     if (branch !== undefined && !(yield* isBranchName(top, branch)))
       return yield* fail("invalid branch");
     if (left !== undefined && !OID.test(left)) return yield* fail("invalid commit");
+    // Refused here, where `restoreWip` would refuse it after this had moved HEAD and the branch.
+    yield* refuseSparse(top);
     const head = yield* headOid(top);
     const tree = yield* writeWorktreeTree(top);
     const treeOf = (commit: string) =>

@@ -603,9 +603,11 @@ the local app, as the other `/machines/*` routes are.
   being there isn't being back. A resume asks again only the folders still owed, never a thread's
   intact folder for a sibling that couldn't come back. A folder already holding exactly the kept
   work (a restore whose answer was lost) counts as put back.
-- A folder the host can't make again (one the user picked) is back when it is there and a
-  repository Git can read, and the resume's answer lists it in `unverified`: nothing was kept to
-  check it by. One put back by hand opens its thread at the next resume.
+- A folder the host can't make again (one the user picked) is back when it is there and Git can
+  read it, a repository or a plain folder, and the resume's answer lists it in `unverified`:
+  nothing was kept to check it by. On a disk its folders weren't last seen on, an empty plain
+  folder isn't back: put its files back there. One put back by hand opens its thread at the next
+  resume.
 - A thread at rest whose session didn't open stays on the list and is tried again, after a
   minute, then twice as long each time up to half an hour. With the hosted features off,
   this Gram resumes a machine with folders that couldn't be put back every ten minutes, so one put

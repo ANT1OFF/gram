@@ -93,6 +93,35 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
     }).pipe(provide),
   );
 
+  it.live("changes nothing in a sparse checkout that work can't come back into", () =>
+    Effect.gen(function* () {
+      const { repo } = withOrigin();
+      run(repo, "checkout", "-q", "-b", "feat");
+      write(nodePath.join(repo, "came-back.txt"), "from the other side\n");
+      run(repo, "add", "came-back.txt");
+      run(repo, "commit", "-q", "-m", "carried on there");
+      const back = run(repo, "rev-parse", "HEAD").trim();
+      run(repo, "checkout", "-q", "main");
+      const kept = { ref: "refs/gram/wip/t-1", commit: back, head: back, uncommitted: false };
+      // The thread's own folder, sparse, with a commit on `feat` the kept work doesn't hold.
+      const folder = nodePath.join(nodePath.dirname(repo), "folder");
+      run(repo, "worktree", "add", "-q", "-b", "mine", folder, "main");
+      write(nodePath.join(folder, "mine.txt"), "committed here\n");
+      run(folder, "add", "mine.txt");
+      run(folder, "commit", "-q", "-m", "my own");
+      run(folder, "branch", "-q", "-f", "feat", "HEAD");
+      run(folder, "checkout", "-q", "feat");
+      run(folder, "sparse-checkout", "set", "--no-cone", "/*", "!/sub/");
+      const tip = run(folder, "rev-parse", "HEAD").trim();
+      const refused = yield* setAsideFor(folder, kept, "feat", "aside/feat").pipe(Effect.flip);
+      // Before, HEAD was detached and `feat` moved before the restore refused the sparse folder.
+      expect(refused.message).toContain("sparse");
+      expect(run(folder, "symbolic-ref", "--short", "HEAD").trim()).toBe("feat");
+      expect(run(folder, "rev-parse", "feat").trim()).toBe(tip);
+      expect(run(repo, "branch", "--list", "aside/feat").trim()).toBe("");
+    }).pipe(provide),
+  );
+
   it.live("is committed on top of HEAD under a hidden ref, the branch and index untouched", () =>
     Effect.gen(function* () {
       const { repo, origin } = withOrigin();

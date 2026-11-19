@@ -919,6 +919,39 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
     }).pipe(Effect.scoped, live),
   );
 
+  it.live("keeps what was staged since, asked again after a restore that finished", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+      run(repo, "checkout", "--quiet", "-b", "gram/worker");
+      const prepared = yield* stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed(IDLE),
+        admission: makeAdmission(),
+        protocols: FILE,
+      }).prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
+      const { disk, stop } = yield* replaced(origin);
+      const cwd = join(disk, "worktrees", "worker");
+      const asked = {
+        threadId: THREAD,
+        cwd,
+        url: URL,
+        branch: "gram/worker",
+        commit: prepared.kept[0]!.commit!,
+      };
+      expect(yield* stop.restore!(asked)).toMatchObject({ restored: true });
+      // Its answer lost; meanwhile a hunk is staged that the files no longer show.
+      write(join(cwd, "tracked.txt"), "staged only\n");
+      run(cwd, "add", "tracked.txt");
+      write(join(cwd, "tracked.txt"), "work in progress\n");
+      expect(run(cwd, "status", "--porcelain")).toContain("MM tracked.txt");
+      expect(yield* stop.restore!({ ...asked, pending: true })).toMatchObject({ restored: true });
+      // Before, the index went back to HEAD and the staged hunk was gone.
+      expect(run(cwd, "status", "--porcelain")).toContain("MM tracked.txt");
+      expect(run(cwd, "show", ":tracked.txt")).toBe("staged only\n");
+    }).pipe(Effect.scoped, live),
+  );
+
   it.live("puts nothing back into a sparse checkout, which would leave kept files out", () =>
     Effect.gen(function* () {
       const { repo, origin } = yield* worktree;

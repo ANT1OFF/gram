@@ -580,26 +580,49 @@ export const resumeHost = (
         Effect.gen(function* () {
           const made = madeFrom(thread, id, cwd);
           if (restore === undefined || made === undefined) {
-            // Nothing to hold it to: back only as a repository its git can read, and said to be
-            // unchecked. An empty or unreadable folder is no folder of the thread's: git's read of
-            // a folder that isn't a repository succeeds, saying so (`repo: false`).
+            // Nothing to hold it to: back as a folder its git can read, and said to be unchecked.
+            // A plain folder is a chat's as much as a repository is (git reads it, `repo: false`):
+            // one with anything in it is back. An empty one is as it was left on the disk its
+            // folders were last seen on, and no folder of the thread's on another. One git can't
+            // read is no folder of the thread's either.
             if (there === true) {
-              const local = (
-                connection.git as {
-                  local?: (cwd: string) => Effect.Effect<{ readonly repo?: boolean }, unknown>;
+              const git = connection.git as {
+                local?: (cwd: string) => Effect.Effect<{ readonly repo?: boolean }, unknown>;
+              };
+              const repo =
+                git.local === undefined
+                  ? true
+                  : yield* git.local(cwd).pipe(
+                      Effect.map((state) => state.repo === true),
+                      Effect.orElseSucceed(() => undefined),
+                    );
+              if (repo === undefined)
+                return {
+                  kind: "refused",
+                  note: "Its folder is there, but Git can't read it.",
+                };
+              if (repo || !verifyThere(cwd)) return { kind: "there", unverified: true };
+              const files = (
+                connection as {
+                  files?: {
+                    list: (
+                      path: string,
+                      options: { readonly showHidden: boolean; readonly limit: number },
+                    ) => Effect.Effect<{ readonly entries: ReadonlyArray<unknown> }, unknown>;
+                  };
                 }
-              ).local;
-              const readable =
-                local === undefined ||
-                (yield* local(cwd).pipe(
-                  Effect.map((state) => state.repo === true),
+              ).files;
+              const held =
+                files !== undefined &&
+                (yield* files.list(cwd, { showHidden: true, limit: 1 }).pipe(
+                  Effect.map((listing) => listing.entries.length > 0),
                   Effect.orElseSucceed(() => false),
                 ));
-              return readable
+              return held
                 ? { kind: "there", unverified: true }
                 : {
                     kind: "refused",
-                    note: "Its folder is there, but isn't a repository Git can read.",
+                    note: "Its folder is there on a new disk, but empty: put its files back there.",
                   };
             }
             if (there === false) return { kind: "missing" };

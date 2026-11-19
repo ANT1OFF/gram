@@ -125,6 +125,37 @@ const flaky = (failing: (all: MachineMarksByHost) => boolean) =>
     },
   });
 
+/** A machine whose only threads are in plain folders, `full` holding files, the rest empty. */
+const plainFolders = (stops: StopMarks, full: ReadonlyArray<string>) => {
+  const home = thread("t-home", { kind: "main", path: "/home/dev" });
+  const scratch = thread("t-scratch", { kind: "main", path: "/home/dev/scratch" });
+  return {
+    hosts: {
+      connection: () =>
+        Effect.succeed({
+          git: {
+            present: () => Effect.succeed(true),
+            // As the host's own read answers in a folder that isn't a repository.
+            local: () => Effect.succeed({ repo: false }),
+          },
+          files: {
+            list: (path: string) =>
+              Effect.succeed({
+                path,
+                entries: full.includes(path)
+                  ? [{ name: "notes.txt", path: `${path}/notes.txt`, kind: "file" }]
+                  : [],
+              }),
+          },
+          stop: {},
+        }),
+      stops,
+    },
+    store: { listThreads: Effect.succeed([home, scratch]) },
+    runtimes: { startSession: () => Effect.void },
+  } as unknown as StopResumeDeps;
+};
+
 describe("resuming a machine on another disk", () => {
   it.effect("has each missing folder Gram made from a clone put back, and opens its session", () =>
     Effect.gen(function* () {
@@ -1034,33 +1065,36 @@ describe("resuming a machine on another disk", () => {
     }),
   );
 
-  it.effect("doesn't take an empty folder of the user's own as back, though git reads it", () =>
+  it.effect("opens plain-folder chats again after a stop and restart on the same disk", () =>
     Effect.gen(function* () {
-      const only = thread("t-empty", { kind: "main", path: "/home/dev/empty" });
       const stops = makeStopMarks();
-      stops.expect(MACHINE);
-      stops.back(MACHINE);
-      const deps = {
-        hosts: {
-          connection: () =>
-            Effect.succeed({
-              git: {
-                present: () => Effect.succeed(true),
-                // As the host's own read answers in a folder that isn't a repository.
-                local: () => Effect.succeed({ repo: false }),
-              },
-              stop: {},
-            }),
-          stops,
-        },
-        store: { listThreads: Effect.succeed([only]) },
-        runtimes: { startSession: () => Effect.void },
-      } as unknown as StopResumeDeps;
-      const resumed = yield* resumeHost(deps, MACHINE);
+      stops.arrive(MACHINE, { diskId: "disk-aaaaaaaa", bootId: "boot-aaaaaaaa" });
+      stops.stopped(MACHINE, []);
+      stops.away(MACHINE);
+      expect(stops.arrive(MACHINE, { diskId: "disk-aaaaaaaa", bootId: "boot-bbbbbbbb" }).kind).toBe(
+        "restarted",
+      );
+      expect(stops.owes(MACHINE)).toBe(true);
+      const resumed = yield* resumeHost(plainFolders(stops, ["/home/dev"]), MACHINE);
+      // Before, each was refused as no repository, at this resume and every one after it.
+      expect(resumed.refused).toEqual([]);
+      expect(stops.blocked(MACHINE, "t-home" as ThreadId)).toBeUndefined();
+      // On the disk its folders were last seen on, an empty one is as it was left.
+      expect(stops.blocked(MACHINE, "t-scratch" as ThreadId)).toBeUndefined();
+    }),
+  );
+
+  it.effect("doesn't take an empty folder of the user's own as back on another disk", () =>
+    Effect.gen(function* () {
+      const stops = makeStopMarks();
+      stops.arrive(MACHINE, { diskId: "disk-aaaaaaaa" });
+      stops.arrive(MACHINE, { diskId: "disk-bbbbbbbb" });
+      const resumed = yield* resumeHost(plainFolders(stops, ["/home/dev"]), MACHINE);
       // Before, taken as back, unchecked, and its session let open.
-      expect(resumed.unverified ?? []).toEqual([]);
-      expect(resumed.refused).toHaveLength(1);
-      expect(stops.blocked(MACHINE, "t-empty" as ThreadId)).toBeDefined();
+      expect(resumed.unverified).toEqual([{ threadId: "t-home", cwd: "/home/dev" }]);
+      expect(resumed.refused.map((entry) => entry.threadId)).toEqual(["t-scratch"]);
+      expect(stops.blocked(MACHINE, "t-scratch" as ThreadId)).toBeDefined();
+      expect(stops.blocked(MACHINE, "t-home" as ThreadId)).toBeUndefined();
     }),
   );
 
