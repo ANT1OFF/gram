@@ -8,7 +8,7 @@ import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { localHelperTransport } from "./local.ts";
 
 describe("local Codex helper version status", () => {
-  for (const version of ["0.166.0", "0.166.1", "0.167.0", "0.165.0", "unknown"])
+  for (const version of ["0.170.0", "0.166.0", "0.170.1", "0.171.0", "0.165.0", "unknown"])
     it.effect(`reports discovery and warning for ${version}`, () => {
       const fixture = codexHelperFixture({ GRAM_HELPER_VERSION: version });
       const helper = makeCodexHelper(fixture.config, {
@@ -31,7 +31,7 @@ describe("local Codex helper version status", () => {
           expect(status.models[0]?.id).toBe("gpt-6-luna");
           expect(status.detail).toContain("Context permission applies to this provider");
           expect(status.detail?.includes("some features may misbehave")).toBe(
-            version !== "0.166.0",
+            version !== "0.170.0",
           );
         }
       }).pipe(

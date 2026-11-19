@@ -2,7 +2,7 @@
  * The Codex CLI version `protocol/` was generated from (`scripts/codex-protocol.mjs`). A different
  * installed CLI gets a skew warning.
  */
-export const CODEX_CLI_VERSION = "0.166.0";
+export const CODEX_CLI_VERSION = "0.170.0";
 
 // Semver identifiers reject leading zeroes on numeric components, including prereleases.
 const numeric = "(?:0|[1-9][0-9]*)";

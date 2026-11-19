@@ -43,6 +43,7 @@ export type { GetConversationSummaryResponse } from "./GetConversationSummaryRes
 export type { GitDiffToRemoteParams } from "./GitDiffToRemoteParams.ts";
 export type { GitDiffToRemoteResponse } from "./GitDiffToRemoteResponse.ts";
 export type { GitSha } from "./GitSha.ts";
+export type { GuardianAssessmentOutcome } from "./GuardianAssessmentOutcome.ts";
 export type { ImageDetail } from "./ImageDetail.ts";
 export type { ImageGenerationFailure } from "./ImageGenerationFailure.ts";
 export type { ImageGenerationInputImage } from "./ImageGenerationInputImage.ts";
@@ -99,5 +100,6 @@ export type { WebSearchContextSize } from "./WebSearchContextSize.ts";
 export type { WebSearchItem } from "./WebSearchItem.ts";
 export type { WebSearchLocation } from "./WebSearchLocation.ts";
 export type { WebSearchMode } from "./WebSearchMode.ts";
+export type { WebSearchProvider } from "./WebSearchProvider.ts";
 export type { WebSearchToolConfig } from "./WebSearchToolConfig.ts";
 export * as v2 from "./v2/index.ts";
