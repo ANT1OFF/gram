@@ -397,8 +397,13 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
         discoverySignature(options.cwd, hit.gitDir, hit.commonDir) === hit.signature
       )
         return hit.guard;
+      // `git config` reads `GIT_CONFIG` as its `--file`, which the call itself ignores: listed
+      // with it, the repository's own keys wouldn't show.
+      const listEnv = Object.fromEntries(
+        Object.entries(env).filter(([name]) => name.toUpperCase() !== "GIT_CONFIG"),
+      );
       const read = (more: ReadonlyArray<string>) =>
-        runner.run(exe, "git", [...globals, ...more], { cwd: options.cwd, tier: "local" }, env);
+        runner.run(exe, "git", [...globals, ...more], { cwd: options.cwd, tier: "local" }, listEnv);
       const dirs = yield* read([
         "rev-parse",
         "--path-format=absolute",
@@ -428,7 +433,7 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
             "git",
             ["--git-dir", sub, "config", "--list", "--show-scope", "-z"],
             { cwd: options.cwd, tier: "local" },
-            env,
+            listEnv,
           );
           if (own.status !== 0 || own.truncated)
             return yield* Effect.fail(

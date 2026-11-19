@@ -119,6 +119,19 @@ describe.skipIf(!hasGit)("Gram's own git and the repository's config", () => {
     }).pipe(provide),
   );
 
+  it.live("sees the repository's config whatever GIT_CONFIG says", () =>
+    Effect.gen(function* () {
+      const { repo, plant, ran } = setup();
+      plant("core.fsmonitor", "fsmonitor");
+      fs.writeFileSync(nodePath.join(repo, "a.txt"), "two\n");
+      const out = yield* git(repo, ["status", "--porcelain"], {
+        env: { GIT_CONFIG: "/dev/null" },
+      });
+      expect(out.status).toBe(0);
+      expect(ran()).toEqual([]);
+    }).pipe(provide),
+  );
+
   it.live("keeps the user's own value for a key the repository also sets", () =>
     Effect.gen(function* () {
       const { repo, root, plant, ran } = setup();
