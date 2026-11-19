@@ -189,8 +189,15 @@ export function generateThemeCss(
   return cssBlock([":root"], themeVariables(selection, palettes)) + hiDpiBlock(look, [":root"]);
 }
 
+/** What a palette id may be made of to stand in a `[data-palette="…"]` selector. */
+export const SAFE_PALETTE_ID = /^[A-Za-z0-9_.:~-]{1,200}$/;
+
 /** The `[data-palette]` blocks for a palette at standard and more contrast. */
 export function paletteCss(palette: Palette, { isDefault = false } = {}): string {
+  // The id goes into the stylesheet as selector text, and a palette can come from another person
+  // on a shared server: only an id that can't close the selector is written.
+  if (!SAFE_PALETTE_ID.test(palette.id))
+    throw new Error(`Not a palette id: ${JSON.stringify(palette.id)}`);
   const selector = `[data-palette="${palette.id}"]`;
   return (
     cssBlock(

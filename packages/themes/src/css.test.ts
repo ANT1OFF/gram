@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { generateStylesheet, springToCss, themeVariables } from "./css.ts";
+import { generateStylesheet, paletteCss, springToCss, themeVariables } from "./css.ts";
 import { LOOK_IDS, LOOKS } from "./looks.ts";
 import { PRESET_PALETTES } from "./presets.ts";
 
@@ -58,5 +58,17 @@ describe("springToCss", () => {
     expect(easing).toMatch(/^linear\(0, .*, 1\)$/);
     expect(duration).toBeGreaterThan(100);
     expect(duration).toBeLessThan(1000);
+  });
+});
+
+describe("paletteCss", () => {
+  // A custom palette can come from another member of a shared server.
+  it("writes no palette whose id could change the stylesheet", () => {
+    const base = PRESET_PALETTES[0]!;
+    expect(paletteCss({ ...base, id: "custom:ocean-2" })).toContain(
+      '[data-palette="custom:ocean-2"]',
+    );
+    for (const id of ['x"] body{display:none} [x="', "a\nb", "a\\b", "a{b", ""])
+      expect(() => paletteCss({ ...base, id })).toThrow();
   });
 });
