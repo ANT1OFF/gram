@@ -11,6 +11,8 @@
 //     → 200 { "interrupted": true }
 //   thread-fresh-session { "threadId", "person": { "id", "name"? }, "checkpoint"?, "model"? }
 //     → 200 { "started": true }                 an orchestrator's fresh session is under way
+//   thread-resume-machine-lost { "threadId", "person": { "id", "name"? } }
+//     → 200 { "resumed": true }                 the conversation a lost machine cut off goes on
 //   each → 404 no such thread, 409 { "error" } one that can't take it now, 400 a body that isn't one
 //
 // A fresh session is for a workspace's orchestrator only (`orchestrator.handoff`, the web app's
@@ -18,6 +20,10 @@
 // `checkpoint` (default true) has the orchestrator save to memory first; false is a hard cut.
 // `model` (a `ModelRef`) opens the fresh session on it, and it becomes the workspace's orchestrator
 // model: the way onto a model the running session can't carry over to.
+//
+// A resume after a lost machine is the web app's Resume worker (`thread.resumeAfterMachineLost`):
+// the same conversation is told what was cut off, and opens again once the machine is back. It is
+// refused (409) for a thread whose last turn a lost machine didn't end.
 //
 // The message is the person's, exactly as one they typed in the web app: the same receipt, so a
 // `key` sent again is one message (`thread.send`'s `clientMessageId`), the same record of who
@@ -53,6 +59,7 @@ import { RemoteHosts } from "../host/remote-hosts.ts";
 import type { Actor } from "../http/fronted-identity.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { actorEventsOf } from "../rpc/actor-guard.ts";
+import { resumeAfterMachineLost } from "../runtime/machine-lost.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { answer, EmbedInbound, refusal, type EmbedAnswer } from "./inbound.ts";
 import { ActingPerson } from "./person.ts";
@@ -272,6 +279,35 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
         ).pipe(
           Effect.map((result) =>
             result === "not-yours" ? refusal(409, NOT_YOUR_MACHINE) : answer({ started: true }),
+          ),
+          Effect.catch((error) => Effect.succeed(failed(error))),
+        );
+      }),
+    );
+
+    yield* inbound.route("POST", "thread-resume-machine-lost", (body) =>
+      Effect.gen(function* () {
+        const threadId = body?.["threadId"];
+        if (typeof threadId !== "string" || !THREAD.test(threadId))
+          return refusal(400, "`threadId` is a thread's id");
+        const person = personOf(body?.["person"]);
+        if (typeof person === "string") return refusal(400, person);
+        const id = threadId as ThreadId;
+        if (Option.isNone(yield* store.getThread(id).pipe(Effect.option)))
+          return refusal(404, "there is no such thread");
+        return yield* asPerson(
+          person,
+          id,
+          "thread.resumeAfterMachineLost",
+          { threadId: id },
+          resumeAfterMachineLost(store, runtimes, id),
+        ).pipe(
+          Effect.map((result) =>
+            result === "not-yours"
+              ? refusal(409, NOT_YOUR_MACHINE)
+              : result
+                ? answer({ resumed: true })
+                : refusal(409, "this thread's last turn wasn't cut off by a lost machine"),
           ),
           Effect.catch((error) => Effect.succeed(failed(error))),
         );

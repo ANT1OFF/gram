@@ -511,6 +511,15 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
         const plain = yield* fresh({ threadId: thread.id, person, checkpoint: false });
         expect(plain.status).toBe(409);
         expect(JSON.parse(plain.body).error).toContain("orchestrator");
+
+        // A resume after a lost machine is refused for a thread no lost machine cut off.
+        const resume = (body: Record<string, unknown>) =>
+          call(at, "/embed/v1/thread-resume-machine-lost", { token: TOKEN, body });
+        expect((yield* resume({ threadId: thread.id })).status).toBe(400);
+        expect((yield* resume({ threadId: "no-such-thread", person })).status).toBe(404);
+        const notLost = yield* resume({ threadId: thread.id, person });
+        expect(notLost.status).toBe(409);
+        expect(JSON.parse(notLost.body).error).toContain("lost machine");
       }).pipe(Effect.scoped),
   );
 

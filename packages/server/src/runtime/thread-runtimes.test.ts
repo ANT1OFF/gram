@@ -32,7 +32,7 @@ import { RuntimeTestLayer, waitFor } from "./test-harness.ts";
 import { failureText, requestHost, unavailableError } from "./thread-error.ts";
 import { RETRY_DEADLINE, retryFacts, ThreadRuntimes } from "./thread-runtimes.ts";
 import { machineAwayEnded } from "./host-agent-sessions.ts";
-import { MACHINE_LOST_KEY, machineLostText } from "./machine-lost.ts";
+import { resumeAfterMachineLost } from "./machine-lost.ts";
 
 const createRunning = (text = "one") =>
   Effect.gen(function* () {
@@ -1811,10 +1811,7 @@ describe("ThreadRuntimes", () => {
       );
 
       // The resume is the same conversation told what happened, as Gram's word, not the user's.
-      yield* runtimes.sendNotice(thread.id, MACHINE_LOST_KEY, {
-        text: machineLostText("box", failed?.machineLost?.during),
-        author: "server",
-      });
+      expect(yield* resumeAfterMachineLost(store, runtimes, thread.id)).toBe(true);
       const next = yield* waitFor(
         "the resumed session",
         fake.latest(thread.id).pipe(Effect.map((s) => s !== session && s.sent.length === 1 && s)),

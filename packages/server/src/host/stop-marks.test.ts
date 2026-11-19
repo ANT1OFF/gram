@@ -1,9 +1,9 @@
-import { HostId, ThreadId } from "@gram/contracts";
+import { HostId, LOCAL_HOST_ID, type Thread, ThreadId } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { describe, expect, it } from "vitest";
-import { makeStopMarks } from "./stop-marks.ts";
+import { folderOwedResume, makeStopMarks } from "./stop-marks.ts";
 
 const machine = HostId.make("m-one");
 const other = HostId.make("m-two");
@@ -129,5 +129,30 @@ describe("stop marks", () => {
         expect(told).toEqual(["m-one", "m-one"]);
       }).pipe(Effect.scoped),
     );
+  });
+
+  it("a thread's missing folder is owed by its machine's resume until its folders are back", () => {
+    const on = (id: string, hostId: HostId) =>
+      ({
+        id: thread(id),
+        checkout: { kind: "worktree", path: `/w/${id}`, branch: id, hostId },
+      }) as unknown as Thread;
+    const marks = makeStopMarks();
+    // Lost and back with no stop and no word of a new disk: a missing folder is just missing.
+    marks.away(machine);
+    marks.back(machine);
+    expect(folderOwedResume(marks, on("a", machine))).toBe(false);
+    // Told it comes back on a new disk: until the resume, its threads' folders are on their way.
+    marks.expect(machine);
+    marks.back(machine);
+    expect(folderOwedResume(marks, on("a", machine))).toBe(true);
+    expect(folderOwedResume(marks, on("b", machine))).toBe(true);
+    expect(folderOwedResume(marks, on("a", other))).toBe(false);
+    expect(folderOwedResume(marks, on("a", HostId.make(LOCAL_HOST_ID)))).toBe(false);
+    marks.threadBack(machine, thread("a"));
+    expect(folderOwedResume(marks, on("a", machine))).toBe(false);
+    expect(folderOwedResume(marks, on("b", machine))).toBe(true);
+    marks.resumed(machine);
+    expect(folderOwedResume(marks, on("b", machine))).toBe(false);
   });
 });

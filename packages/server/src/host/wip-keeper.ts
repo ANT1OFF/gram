@@ -58,6 +58,25 @@ export const startWipKeeper = (deps: WipKeeperDeps): Effect.Effect<void, never, 
         const id = machineOf(thread);
         if (id === undefined || thread.parked) return;
         const kept = yield* keepThreadWork(deps, id, thread);
+        // Nothing asked of the machine (it keeps nothing, or no folder was made from a clone): said,
+        // since a lost machine then costs the whole turn.
+        if (kept.length === 0) {
+          const serves = (yield* deps.hosts.connection(id)).stop.keep !== undefined;
+          yield* Effect.logInfo("a thread's work in progress has nothing to keep it").pipe(
+            Effect.annotateLogs({
+              threadId,
+              hostId: id,
+              reason: serves ? "no folder made from a clone" : "its host keeps nothing",
+            }),
+          );
+        } else
+          yield* Effect.logDebug("a thread's work in progress kept").pipe(
+            Effect.annotateLogs({
+              threadId,
+              hostId: id,
+              pushed: kept.filter((w) => w.pushed).length,
+            }),
+          );
         yield* noteSaved(thread, id, kept);
         const missed = kept.filter((work) => !work.pushed);
         if (missed.length > 0)

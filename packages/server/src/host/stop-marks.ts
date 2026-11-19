@@ -4,7 +4,15 @@
 // across a restart: a thread asking for a machine that is away says so again, and whoever asks
 // for a resume names what the stop kept (its answer) when it is to be held to that.
 
-import type { HostId, SavedDiff, ThreadId } from "@gram/contracts";
+import {
+  effectiveCheckout,
+  hostOf,
+  LOCAL_HOST_ID,
+  type HostId,
+  type SavedDiff,
+  type Thread,
+  type ThreadId,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { STOP_HOLD_MS } from "./stop.ts";
 
@@ -19,6 +27,19 @@ export const RESUME_WAIT_MS = 3 * 60_000;
 
 /** How long a machine told to come back on another disk (`expect`) is taken at its word. */
 export const EXPECT_FOR_MS = 15 * 60_000;
+
+/**
+ * Whether the thread's folder is missing only because its machine, back on a new disk, hasn't had
+ * it put back yet: the machine is owed a resume (`resuming`) and the thread's folders aren't back.
+ * A session waiting for that resume isn't stopped for a deleted folder meanwhile.
+ */
+export const folderOwedResume = (
+  stops: Pick<StopMarks, "resuming" | "isThreadBack">,
+  thread: Thread,
+): boolean => {
+  const id = hostOf(effectiveCheckout(thread));
+  return id !== LOCAL_HOST_ID && stops.resuming(id) && !stops.isThreadBack(id, thread.id);
+};
 
 /** What a stop said it kept of one folder at a remote, for a resume to hold the remote to. */
 export interface KeptRecord {
