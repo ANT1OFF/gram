@@ -93,6 +93,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentHosts } from "./agent-hosts.ts";
 import type { ClaudeAiSeenShape } from "../connectors/claude-ai-seen.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
+import { folderBringsNothing, projectFolderTrusted } from "../settings/folder-trust.ts";
 import type { EventHubShape } from "../events/event-hub.ts";
 import type { CheckoutServiceShape } from "./hooks.ts";
 import type { McpConnection } from "../app-tools/mcp-tokens.ts";
@@ -605,6 +606,18 @@ export const makeSessionLifecycle = ({
             "An orchestrator switch is holding this session. Review its status before starting another session.",
         });
       const host = yield* hosts.get(thread.model.agent);
+      // The folder's own agent settings load only once the user trusts the folder, asked when it
+      // was added. A folder never asked about counts as trusted only while it brings nothing,
+      // which is read here only on this machine. A thread outside any project keeps the settings.
+      const project = (yield* store.listProjects).find((p) => p.id === thread.projectId);
+      const folderTrusted =
+        project === undefined ||
+        projectFolderTrusted(
+          project,
+          sessionHostOf(thread) === LOCAL_HOST_ID
+            ? folderBringsNothing(thread.checkout.path)
+            : () => false,
+        );
       const resume = yield* resumeOptions(thread, resumeAt);
       const policy = yield* policyFor(thread);
       yield* opening(thread);
@@ -701,8 +714,11 @@ export const makeSessionLifecycle = ({
               : { outwardGate: policy.outwardGate }),
             ...(hooked ? hookedSessionOptions : {}),
             ...(policy.confineWrites === true ? { confineWrites: true } : {}),
-            // Someone else's code (a fork's PR head): the folder's own agent settings don't load.
-            ...(thread.checkout.untrusted === true ? { untrustedTree: true } : {}),
+            // Someone else's code (a fork's PR head), or a folder the user hasn't trusted: the
+            // folder's own agent settings don't load.
+            ...(thread.checkout.untrusted === true || !folderTrusted
+              ? { untrustedTree: true }
+              : {}),
             ...(policy.pinCwd === true ? { pinCwd: true } : {}),
             ...(policy.mcpAllowlist === undefined ? {} : { mcpAllowlist: policy.mcpAllowlist }),
             ...(policy.mcpDenylist === undefined ? {} : { mcpDenylist: policy.mcpDenylist }),

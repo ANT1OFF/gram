@@ -25,6 +25,7 @@ import { TurnHooks } from "../../runtime/hooks.ts";
 import { TEST_CONFIG } from "../../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
+import { UNTRUSTED_SCRIPTS } from "./terminal.ts";
 
 const localSettingsPath = (root: string) => nodePath.join(root, ".claude", "settings.local.json");
 
@@ -308,6 +309,71 @@ describe.skipIf(!hasGit)("git RPCs", () => {
         };
         expect(merged.permissions.allow).toEqual(
           expect.arrayContaining(["Bash(ls:*)", "Bash(pnpm test:*)"]),
+        );
+      }),
+    );
+
+    it.effect("run a folder's scripts only once the user trusts the folder", () =>
+      Effect.gen(function* () {
+        const dir = tempDir();
+        dirs.push(dir);
+        const repo = makeRepo(dir);
+        write(
+          nodePath.join(repo, ".gram", "scripts.json"),
+          JSON.stringify({ scripts: [{ name: "hello", command: "echo hi", shortcut: "mod+j" }] }),
+        );
+        const client = yield* makeClient;
+        // Never asked, and the folder brings a script: not trusted.
+        const project = yield* client["projects.add"]({ root: repo });
+        expect(project.folderTrust).toBe("untrusted");
+        expect((yield* client["projects.folderSettings"]({ root: repo })).scripts).toEqual([
+          { name: "hello", shortcut: "mod+j" },
+        ]);
+        expect((yield* client["projects.scripts"]({ projectId: project.id })).untrusted).toBe(true);
+        const thread = yield* client["thread.create"]({
+          projectRoot: repo,
+          checkout: { kind: "current" },
+        });
+        yield* Effect.addFinalizer(() =>
+          client["thread.close"]({ threadId: thread.id }).pipe(Effect.ignore),
+        );
+        const refused = yield* client["terminal.open"]({
+          threadId: thread.id,
+          script: "hello",
+          cols: 80,
+          rows: 24,
+        }).pipe(Effect.flip);
+        expect(refused).toMatchObject({ _tag: "InvalidState", message: UNTRUSTED_SCRIPTS });
+
+        const trusted = yield* client["projects.setFolderTrust"]({
+          projectId: project.id,
+          trusted: true,
+        });
+        expect(trusted.folderTrust).toBe("trusted");
+        expect((yield* client["projects.scripts"]({ projectId: project.id })).untrusted).toBe(
+          undefined,
+        );
+        const opened = yield* client["terminal.open"]({
+          threadId: thread.id,
+          script: "hello",
+          cols: 80,
+          rows: 24,
+        });
+        yield* client["terminal.close"]({ terminalId: opened.terminalId });
+      }),
+    );
+
+    it.effect("record a plain folder as trusted, and the user's answer when added", () =>
+      Effect.gen(function* () {
+        const dir = tempDir();
+        dirs.push(dir);
+        const plain = makeRepo(nodePath.join(dir, "plain"));
+        const asked = makeRepo(nodePath.join(dir, "asked"));
+        write(nodePath.join(asked, ".mcp.json"), JSON.stringify({ mcpServers: { x: {} } }));
+        const client = yield* makeClient;
+        expect((yield* client["projects.add"]({ root: plain })).folderTrust).toBe("trusted");
+        expect((yield* client["projects.add"]({ root: asked, trust: true })).folderTrust).toBe(
+          "trusted",
         );
       }),
     );

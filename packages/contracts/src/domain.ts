@@ -349,6 +349,12 @@ export const Project = Schema.Struct({
   /** Read-only diagnostic; an invalid stored gate is unavailable, never OFF. */
   localCheckUnavailable: Schema.optionalKey(Schema.String),
   bookmarked: Schema.Boolean,
+  /**
+   * Whether the user trusts the folder's own agent settings and scripts (`.claude/`, `.mcp.json`,
+   * `.gram/scripts.json`). Asked once, when the folder is added; absent when it never was. An
+   * absent answer for a folder that brings any of them reads as `untrusted`.
+   */
+  folderTrust: Schema.optionalKey(Schema.Literals(["trusted", "untrusted"])),
   /** Epoch ms; absent if never opened (e.g. bookmarked only). Drives the recents list. */
   lastOpenedAt: Schema.optionalKey(Schema.Number),
 });

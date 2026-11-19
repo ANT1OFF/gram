@@ -363,3 +363,40 @@ describe("dispatchShortcut", () => {
     expect(send).toHaveBeenCalledOnce();
   });
 });
+
+describe("a yielding shortcut", () => {
+  it("never takes a key another shortcut holds, however late it registers", () => {
+    const builtIn = vi.fn();
+    const script = vi.fn();
+    cleanups.push(
+      registerShortcut({ id: "app.palette", keys: "mod+k", label: "", group: "App", run: builtIn }),
+      registerShortcut({
+        id: "script.planted",
+        keys: "mod+k",
+        label: "",
+        group: "Thread",
+        yields: true,
+        run: script,
+      }),
+    );
+    expect(dispatchShortcut(cmd("k", document.body), true)).toBe(true);
+    expect(builtIn).toHaveBeenCalledOnce();
+    expect(script).not.toHaveBeenCalled();
+  });
+
+  it("still runs on a key nothing else holds", () => {
+    const script = vi.fn();
+    cleanups.push(
+      registerShortcut({
+        id: "script.free",
+        keys: "mod+j",
+        label: "",
+        group: "Thread",
+        yields: true,
+        run: script,
+      }),
+    );
+    expect(dispatchShortcut(cmd("j", document.body), true)).toBe(true);
+    expect(script).toHaveBeenCalledOnce();
+  });
+});

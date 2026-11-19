@@ -65,6 +65,7 @@ describe("migration ordering gate", () => {
         [10, "person_settings"],
         [11, "wait_person"],
         [12, "user_messages"],
+        [13, "folder_trust"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),

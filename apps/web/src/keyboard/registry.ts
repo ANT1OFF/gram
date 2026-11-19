@@ -23,6 +23,11 @@ export interface Shortcut {
   skipWhileTyping?: boolean;
   /** Also fire while focus is inside a dialog; the rest wait until it closes, so nothing acts behind it. */
   allowInDialogs?: boolean;
+  /**
+   * Never takes a key from another shortcut: it runs only when no other one would. For keys that
+   * come from a repository's own files, so they can't stand in for one of Gram's.
+   */
+  yields?: boolean;
   /** Hide from the shortcut overlay (e.g. duplicates of a documented binding). */
   hidden?: boolean;
   /**
@@ -314,10 +319,16 @@ export function dispatchShortcut(event: KeyboardEvent, mac = isMac()): boolean {
     dialog !== null &&
     !dialog.hasAttribute("data-closed") &&
     !dialog.hasAttribute("data-ending-style");
-  for (const scoped of [true, false]) {
+  for (const pass of ["scoped", "unscoped", "yielding"] as const) {
     for (let i = registry.length - 1; i >= 0; i--) {
       const shortcut = registry[i]!;
-      if ((shortcut.focusScope !== undefined) !== scoped) continue;
+      const ofPass =
+        shortcut.yields === true
+          ? "yielding"
+          : shortcut.focusScope !== undefined
+            ? "scoped"
+            : "unscoped";
+      if (ofPass !== pass) continue;
       const keys = effectiveKeys(shortcut.id, shortcut.keys);
       if (keys === undefined || !matches(keys, event, mac)) continue;
       if (inDialog && !shortcut.allowInDialogs) continue;

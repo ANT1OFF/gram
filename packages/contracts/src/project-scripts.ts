@@ -48,6 +48,8 @@ export const ProjectScripts = Schema.Struct({
   suggestions: Schema.Array(ScriptSuggestion),
   /** Why the file can't be read as scripts; `scripts` is empty then, and saving replaces it. */
   problem: Schema.optionalKey(Schema.String),
+  /** Present when the user hasn't trusted the folder: its scripts are listed but don't run. */
+  untrusted: Schema.optionalKey(Schema.Literal(true)),
 });
 export type ProjectScripts = typeof ProjectScripts.Type;
 
