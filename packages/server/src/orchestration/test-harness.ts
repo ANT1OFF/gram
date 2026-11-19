@@ -164,11 +164,20 @@ export interface World {
   readonly diskSpace: Map<string, DiskSpace>;
   /** Each checkout's origin as `owner/repo`, by folder; a folder without one has none. */
   readonly originRepos: Map<string, string>;
-  /** GitHub auto-merges armed, by `owner/repo#N` lower-cased in the repo. */
+  /** GitHub auto-merges armed, by `owner/repo#N` lower-cased in the repo, and the head pinned. */
   readonly autoMerges: Map<
     string,
-    { readonly base: string; readonly method: "squash" | "merge" | "rebase" }
+    {
+      readonly base: string;
+      readonly method: "squash" | "merge" | "rebase";
+      readonly head?: string;
+    }
   >;
+  /**
+   * Those PRs' heads on GitHub, by the same key; absent: `autoMergeHead(N)`. A push during a
+   * freeze sets one, and `enable` refuses an auto-merge pinned to another head, as GitHub does.
+   */
+  readonly autoMergePrHeads: Map<string, string>;
   /** What a freeze did to them, in order: `disable acme/app#7`, `enable acme/app#7 squash`. */
   readonly autoMergeCalls: Array<string>;
   /** Runs before a PR's auto-merge is turned off, for a test to hold the freeze there. */
@@ -257,6 +266,7 @@ export const makeWorld = Effect.gen(function* () {
     diskSpace: new Map(),
     originRepos: new Map(),
     autoMerges: new Map(),
+    autoMergePrHeads: new Map(),
     autoMergeCalls: [],
     releases: new Map(),
     releaseReads: [],
@@ -463,19 +473,26 @@ const fakeMachine = (world: World) =>
     disk: (path) => Effect.sync(() => world.diskSpace.get(path) ?? world.diskSpace.get("*")),
   });
 
+/** The head of PR `number` in the fake GitHub's auto-merges, unless `autoMergePrHeads` moved it. */
+export const autoMergeHead = (number: number) => String(number).padStart(40, "0");
+
 /** GitHub's auto-merges and the checkouts' origins as `world` has them; each change is recorded. */
-const fakeAutoMerges = (world: World) =>
-  Layer.succeed(AutoMerges, {
+const fakeAutoMerges = (world: World) => {
+  const headNow = (repo: string, number: number) =>
+    world.autoMergePrHeads.get(`${repo.toLowerCase()}#${number}`) ?? autoMergeHead(number);
+  return Layer.succeed(AutoMerges, {
     repoOf: (cwd) => Effect.sync(() => world.originRepos.get(cwd)),
     armed: (_cwd, repo, base) =>
       Effect.sync(() =>
         [...world.autoMerges].flatMap(([key, armed]) => {
           const [r, n] = key.split("#");
           return r === repo.toLowerCase() && armed.base === base
-            ? [{ number: Number(n), method: armed.method }]
+            ? [{ number: Number(n), method: armed.method, head: headNow(repo, Number(n)) }]
             : [];
         }),
       ),
+    headOf: (_cwd, repo, number) =>
+      Effect.sync(() => ({ open: true as const, head: headNow(repo, number) })),
     disable: (_cwd, repo, number) =>
       (world.autoMergeDisableGate?.(number) ?? Effect.void).pipe(
         Effect.andThen(
@@ -486,13 +503,16 @@ const fakeAutoMerges = (world: World) =>
           }),
         ),
       ),
-    enable: (_cwd, repo, number, method) =>
+    enable: (_cwd, repo, number, method, head) =>
       Effect.sync(() => {
+        if (head !== headNow(repo, number))
+          return "Head branch was modified. Review and try again.";
         world.autoMergeCalls.push(`enable ${repo}#${number} ${method}`);
-        world.autoMerges.set(`${repo.toLowerCase()}#${number}`, { base: "main", method });
+        world.autoMerges.set(`${repo.toLowerCase()}#${number}`, { base: "main", method, head });
         return undefined;
       }),
   });
+};
 
 /** npm's and GitHub's releases as `world` has them. */
 const fakeReleases = (world: World) =>
