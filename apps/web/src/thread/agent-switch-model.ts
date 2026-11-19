@@ -23,6 +23,7 @@ import {
 } from "@gram/contracts";
 
 import { AGENT_LABEL } from "@/agents/agent-label";
+import { OLDER_SERVER } from "@/api/use-serves";
 import { isOlderVersion } from "@/launch-checks/issues";
 import { formatClockTime } from "@/lib/time";
 
@@ -101,6 +102,8 @@ export const switchOffer = (input: {
    * signed out, it has nothing to offer.
    */
   readonly listed: boolean;
+  /** Whether the server serves `thread.startFreshOn`, which a worker's fresh session needs. */
+  readonly servesFresh?: boolean;
 }): SwitchOffer => {
   const { summary, checks } = input;
   const { thread } = summary;
@@ -114,7 +117,10 @@ export const switchOffer = (input: {
   if (!input.listed && !signedOut) return { offered: false };
   const fresh =
     thread.sessionSwitch === undefined ? noCarryOver(thread, to, input.platform) : undefined;
-  const refusal = refusalOf(summary, to, checks!, fresh !== undefined);
+  const refusal =
+    fresh !== undefined && thread.role !== "orchestrator" && input.servesFresh === false
+      ? OLDER_SERVER
+      : refusalOf(summary, to, checks!, fresh !== undefined);
   return {
     offered: true,
     to,

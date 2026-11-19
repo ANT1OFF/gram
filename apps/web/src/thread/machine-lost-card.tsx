@@ -4,6 +4,8 @@ import { Suspense, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
+import { OLDER_SERVER, useServes } from "@/api/use-serves";
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { formatStamp } from "@/lib/time";
 import { useThreadsStore } from "@/stores/threads";
@@ -39,6 +41,8 @@ export function MachineLostCard({
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState<string | undefined>();
   const [viewing, setViewing] = useState(false);
+  const canResume = useServes("thread.resumeAfterMachineLost");
+  const canDiff = useServes("thread.savedDiff");
   // The last save before the loss: its time and its files, as the machine said them.
   const saved = useThreadsStore((s) => savedBefore(s.byId[threadId]?.thread.savedWork, error));
   const count = saved === undefined ? 0 : saved.files.length + saved.more;
@@ -137,25 +141,40 @@ export function MachineLostCard({
           </>
         )}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            data-testid="machine-lost-resume"
-            disabled={shown === "resuming"}
-            onClick={() => void resume()}
+          <Hint
+            label={OLDER_SERVER}
+            disabled={canResume}
+            render={
+              <Button
+                size="sm"
+                data-testid="machine-lost-resume"
+                disabled={shown === "resuming" || !canResume}
+                focusableWhenDisabled
+                onClick={() => void resume()}
+              />
+            }
           >
             {shown !== "resuming" && <Play aria-hidden data-icon="inline-start" />}
             {shown === "resuming" ? "Resuming…" : "Resume worker"}
-          </Button>
+          </Hint>
           {saved !== undefined && count > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              data-testid="machine-lost-diff"
-              onClick={() => setViewing(true)}
+            <Hint
+              label={OLDER_SERVER}
+              disabled={canDiff}
+              render={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="machine-lost-diff"
+                  disabled={!canDiff}
+                  focusableWhenDisabled
+                  onClick={() => setViewing(true)}
+                />
+              }
             >
               <FileDiff aria-hidden data-icon="inline-start" />
               View diff
-            </Button>
+            </Hint>
           )}
           <span className="text-meta text-muted-foreground">
             {shown === "resuming"

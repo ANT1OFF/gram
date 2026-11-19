@@ -3,6 +3,7 @@ import { FileText } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 
 import { useApi } from "@/api/context";
+import { OLDER_SERVER, useServes } from "@/api/use-serves";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/api/errors";
 import { formatStamp } from "@/lib/time";
@@ -79,6 +80,8 @@ export function SavedWorkLine({ threadId }: { threadId: ThreadId }) {
   const [viewing, setViewing] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [failed, setFailed] = useState<string | undefined>();
+  const canResume = useServes("thread.resumeAfterMachineLost");
+  const canDiff = useServes("thread.savedDiff");
   if (saved === undefined && lost === undefined) return null;
   const count = saved === undefined ? 0 : savedFileCount(saved);
   const resume = async () => {
@@ -109,14 +112,16 @@ export function SavedWorkLine({ threadId }: { threadId: ThreadId }) {
               {formatStamp(saved.at)}
             </span>
           </span>
-          <button
-            type="button"
-            data-testid="feature-card-diff"
-            onClick={() => setViewing(true)}
-            className="shrink-0 rounded-sm text-foreground underline underline-offset-4 outline-none hover:text-primary focus-visible:focus-ring"
-          >
-            Diff
-          </button>
+          {canDiff && (
+            <button
+              type="button"
+              data-testid="feature-card-diff"
+              onClick={() => setViewing(true)}
+              className="shrink-0 rounded-sm text-foreground underline underline-offset-4 outline-none hover:text-primary focus-visible:focus-ring"
+            >
+              Diff
+            </button>
+          )}
         </span>
       ) : saved !== undefined ? (
         <span>
@@ -139,13 +144,16 @@ export function SavedWorkLine({ threadId }: { threadId: ThreadId }) {
           size="xs"
           variant="outline"
           data-testid="feature-card-resume"
-          disabled={resuming}
+          disabled={resuming || !canResume}
+          focusableWhenDisabled
           title={
-            saved === undefined || saved.at > lost.at
-              ? "Starts its machine, puts its folder back as last saved, and tells the worker what was cut off."
-              : count === 0
-                ? "Starts from the branch, with the conversation as it was."
-                : `Starts its machine, puts the ${filesWord(count)} back as saved at ${formatStamp(saved.at)}, and tells the worker what was cut off.`
+            !canResume
+              ? OLDER_SERVER
+              : saved === undefined || saved.at > lost.at
+                ? "Starts its machine, puts its folder back as last saved, and tells the worker what was cut off."
+                : count === 0
+                  ? "Starts from the branch, with the conversation as it was."
+                  : `Starts its machine, puts the ${filesWord(count)} back as saved at ${formatStamp(saved.at)}, and tells the worker what was cut off.`
           }
           onClick={() => void resume()}
         >

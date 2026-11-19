@@ -55,3 +55,12 @@ export const mockAgents = (): readonly AgentKind[] | undefined => {
 export const MOCK_SERVER_BROWSER_KEY = "gram.mock.serverBrowser";
 
 export const mockServerBrowser = (): boolean => flag(MOCK_SERVER_BROWSER_KEY) === "1";
+
+/**
+ * Comma-separated RPC tags the mock serves as a server older than this build would not: controls
+ * backed by them are hidden or greyed, as against such a server.
+ */
+export const MOCK_SERVER_LACKS_KEY = "gram.mock.serverLacks";
+
+export const mockServerLacks = (): readonly string[] =>
+  (flag(MOCK_SERVER_LACKS_KEY) ?? "").split(",").filter((tag) => tag !== "");

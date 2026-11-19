@@ -36,7 +36,8 @@ import { docsRpc } from "./docs/rpc";
 import { pagesRpc } from "./pages/rpc";
 import { worktreesRpc } from "./worktrees/rpc";
 import { createConnectionMonitor, withSessionProbe } from "./connection";
-import { type RpcContext } from "./rpc-client";
+import { run, type RpcContext } from "./rpc-client";
+import { createServed, gateClient, HANDSHAKE_TAG, startHandshake } from "./served";
 import { rpcProtocolLayer } from "./rpc-protocol";
 import type { Api } from "./types";
 
@@ -59,7 +60,7 @@ export async function createRpcApi(url: string, session?: GramServer["session"])
       scope,
     ),
   );
-  const client = await Effect.runPromise(
+  const raw = await Effect.runPromise(
     RpcClient.make(GramRpcs, { disableTracing: true }).pipe(
       Effect.provideContext(context),
       Effect.provideService(Scope.Scope, scope),
@@ -74,11 +75,29 @@ export async function createRpcApi(url: string, session?: GramServer["session"])
     });
   }
 
+  // The server may be older than this build (an embedding app ships the two apart): its handshake
+  // says what it serves, first on the socket, and nothing else goes out before it answers.
+  const served = createServed();
+  const ready = startHandshake(
+    () => run(raw[HANDSHAKE_TAG](undefined)),
+    served,
+    (again) => {
+      let status = connection.get().status;
+      connection.subscribe(() => {
+        const next = connection.get().status;
+        if (status === "reconnecting" && next === "open") again();
+        status = next;
+      });
+    },
+  );
+  const client = gateClient(raw, served, ready);
+
   const domain: RpcContext = { client, connection };
 
   return {
     kind: "rpc",
     connection,
+    served,
     // After the members above, so TypeScript reports one a domain also defines.
     ...agentRuntimeRpc(domain),
     ...agentSupportRpc(domain),

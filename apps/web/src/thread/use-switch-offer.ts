@@ -1,5 +1,6 @@
 import type { ThreadId } from "@gram/contracts";
 
+import { useServes } from "@/api/use-serves";
 import { useModelsSettled } from "@/composer/models";
 import { useLaunchChecks } from "@/launch-checks/use-launch-checks";
 import { useThreadsStore } from "@/stores/threads";
@@ -19,11 +20,13 @@ export function useSwitchOffer(threadId: ThreadId): SwitchOffer {
   const to = summary?.thread.sessionSwitch?.target.agent ?? otherAgent(agent ?? "claude");
   const wanted = agent !== undefined;
   const { models } = useModelsSettled(to, wanted && installed(checks, to));
+  const servesFresh = useServes("thread.startFreshOn");
   if (summary === undefined || agent === undefined) return { offered: false };
   return switchOffer({
     summary,
     checks,
     platform: typeof window === "undefined" ? undefined : window.gram?.platform,
     listed: (models?.length ?? 0) > 0,
+    servesFresh,
   });
 }
