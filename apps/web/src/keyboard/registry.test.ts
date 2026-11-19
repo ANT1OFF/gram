@@ -417,6 +417,23 @@ describe("a yielding shortcut", () => {
     expect(script).not.toHaveBeenCalled();
   });
 
+  it("knows ctrl is the same key as mod off macOS", () => {
+    const script = vi.fn();
+    cleanups.push(
+      registerShortcut({
+        id: "s.cv",
+        keys: "ctrl+v",
+        label: "",
+        group: "Thread",
+        yields: true,
+        run: script,
+      }),
+    );
+    const ctrlV = key({ key: "v", code: "KeyV", ctrlKey: true }, document.body);
+    expect(dispatchShortcut(ctrlV, false)).toBe(false);
+    expect(script).not.toHaveBeenCalled();
+  });
+
   it("still runs on a key nothing else holds", () => {
     const script = vi.fn();
     cleanups.push(

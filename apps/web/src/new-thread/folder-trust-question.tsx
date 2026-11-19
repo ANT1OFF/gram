@@ -92,7 +92,8 @@ export function FolderTrustQuestion({
     >
       <p className="flex items-start gap-1.5 text-meta">
         <ShieldAlert aria-hidden className="mt-px size-icon-row shrink-0 text-warning-text" />
-        This folder has its own agent settings. They run as you in every thread here.
+        This folder has its own agent settings. They run as you in every thread here. Without them,
+        its CLAUDE.md doesn't load either.
       </p>
       <FolderSettingsList settings={settings} />
       <div className="flex flex-wrap justify-end gap-1">{actions}</div>

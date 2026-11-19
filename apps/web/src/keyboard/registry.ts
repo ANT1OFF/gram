@@ -71,10 +71,17 @@ export function parseKeys(keys: string): Chord {
   };
 }
 
-/** Whether two key strings name the same chord, however they are spelled. */
-export function sameKeys(a: string, b: string): boolean {
-  const x = parseKeys(a);
-  const y = parseKeys(b);
+/**
+ * Whether two key strings name the same chord, however they are spelled: off macOS `mod` and
+ * `ctrl` are the same Control key, as `matches` reads them.
+ */
+export function sameKeys(a: string, b: string, mac = isMac()): boolean {
+  const chord = (keys: string) => {
+    const parsed = parseKeys(keys);
+    return mac ? parsed : { ...parsed, mod: false, ctrl: parsed.ctrl || parsed.mod };
+  };
+  const x = chord(a);
+  const y = chord(b);
   return (
     x.mod === y.mod &&
     x.ctrl === y.ctrl &&
@@ -97,12 +104,12 @@ export const EDIT_CHORDS: readonly string[] = [
 ];
 
 /** Whether a yielding shortcut's keys are held by any other shortcut, active now or not. */
-const heldByOther = (keys: string): boolean =>
-  EDIT_CHORDS.some((chord) => sameKeys(chord, keys)) ||
+const heldByOther = (keys: string, mac: boolean): boolean =>
+  EDIT_CHORDS.some((chord) => sameKeys(chord, keys, mac)) ||
   registry.some((other) => {
     if (other.yields === true) return false;
     const theirs = effectiveKeys(other.id, other.keys);
-    return theirs !== undefined && sameKeys(theirs, keys);
+    return theirs !== undefined && sameKeys(theirs, keys, mac);
   });
 
 /**
@@ -367,7 +374,7 @@ export function dispatchShortcut(event: KeyboardEvent, mac = isMac()): boolean {
       const keys = effectiveKeys(shortcut.id, shortcut.keys);
       if (keys === undefined || !matches(keys, event, mac)) continue;
       // Gram's own keys stay Gram's even where that shortcut doesn't apply right now.
-      if (pass === "yielding" && heldByOther(keys)) continue;
+      if (pass === "yielding" && heldByOther(keys, mac)) continue;
       if (inDialog && !shortcut.allowInDialogs) continue;
       if (typing && !shortcut.allowInInputs && !parseKeys(keys).mod) continue;
       if (typing && shortcut.skipWhileTyping) continue;
