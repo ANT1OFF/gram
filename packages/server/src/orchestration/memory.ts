@@ -50,9 +50,9 @@ import { anchoredTree } from "./anchored-tree.ts";
 import type { AnchoredOptions } from "./anchored-files.ts";
 import { isInside, realPath } from "@gram/git";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
-import { workerMayEnter, workerMayRead } from "./memory-filter.ts";
+import { workerMayEnter, workerMayRead, workerReadProblem } from "./memory-filter.ts";
 
-export { workerMayEnter, workerMayRead } from "./memory-filter.ts";
+export { workerMayEnter, workerMayRead, workerReadProblem } from "./memory-filter.ts";
 
 /** The index every orchestrator session starts from. */
 export const MEMORY_INDEX = "MEMORY.md";
@@ -122,6 +122,15 @@ then add it here; a missing suggested note has no recorded content yet.
 `;
 
 /** One memory file, as `list` reports it. */
+const byPath = (a: { readonly path: string }, b: { readonly path: string }) =>
+  a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+
+/** What a worker's `memory_list` gives: the files it can read, and those kept from it, with why. */
+export interface WorkerMemoryListing {
+  readonly files: ReadonlyArray<MemoryFile>;
+  readonly withheld: ReadonlyArray<{ readonly path: string; readonly reason: string }>;
+}
+
 export interface MemoryFile {
   /** POSIX path relative to the current version. */
   readonly path: string;
@@ -187,14 +196,22 @@ export interface OrchestrationMemoryShape {
   /**
    * `list` as a worker sees it: through the anchored tree (every folder below the data root opened
    * without following a link, so no symlink in any ancestor can lead out of this workspace), and
-   * without the files `workerMayRead` keeps from workers.
+   * without the files `workerMayRead` keeps from workers. A file the prose checks hold back (not one
+   * named for a credential or marked private) is named under `withheld` with the reason, so a worker knows it is there and why it
+   * can't read it, rather than taking memory to be empty.
    */
-  listForWorker(workspaceId: string): Effect.Effect<ReadonlyArray<MemoryFile>, MemoryError>;
+  listForWorker(workspaceId: string): Effect.Effect<WorkerMemoryListing, MemoryError>;
   /**
    * `read` as a worker sees it: through the anchored tree, and `NotFound` for a file
-   * `workerMayRead` keeps from workers, by its name or by a `private: true` line in its front matter.
+   * `workerMayRead` keeps from workers by its name or by its front matter (`private: true`). A file
+   * the prose checks hold back is refused with the line and kind of problem (`workerReadProblem`).
    */
   readForWorker(workspaceId: string, path: string): Effect.Effect<string, MemoryError>;
+  /**
+   * Why a worker can't read the file at `path` (`workerReadProblem` of its text), or `undefined`
+   * when it can: what the memory editor shows beside a file workers don't see.
+   */
+  workerProblem(workspaceId: string, path: string): Effect.Effect<string | undefined, MemoryError>;
   /** `MEMORY.md`, or `""` when there is none yet. */
   index(workspaceId: string): Effect.Effect<string, MemoryError>;
   /**
@@ -283,6 +300,13 @@ const refuse = (message: string) => new InvalidState({ message });
 /** Why a worker can't change a file: it is one the worker can't see. */
 const keptFromWorkers = (path: string) =>
   `kept_from_workers: ${path} is kept from workers, by its name or its text, so only the orchestrator can change it.`;
+
+/**
+ * Why a worker can't read a file, named so it can pass it on: the reason names a line and a kind of
+ * problem, never the text.
+ */
+const keptFromWorkerReads = (path: string, reason: string) =>
+  `kept_from_workers: Workers can't read ${path}: ${reason}. The orchestrator reads it in full, so ask it for what you need; the user can reword that line in the memory editor.`;
 
 const WORKER_WRITE_UNPLAIN =
   "kept_from_workers: Every worker reads what a worker writes, so it has to be plain prose under plain front matter: no credential, token, encoded blob or `private` marker. Leave that out, or ask your orchestrator.";
@@ -933,6 +957,7 @@ const make = (root: string): OrchestrationMemoryShape => {
     Effect.gen(function* () {
       const within = versionRel(version);
       const files: Array<MemoryFile> = [];
+      const withheld: Array<{ readonly path: string; readonly reason: string }> = [];
       const walk = (relDir: string, depth: number): Effect.Effect<void, MemoryError> =>
         Effect.gen(function* () {
           const treeRel = relDir === "" ? within : `${within}/${relDir}`;
@@ -960,7 +985,13 @@ const make = (root: string): OrchestrationMemoryShape => {
               const text = yield* adoptionTree
                 .readText(workspaceId, `${within}/${path}`, within, path, MEMORY_READ_MAX_BYTES)
                 .pipe(Effect.orElseSucceed(() => undefined));
-              if (text === undefined || !workerMayRead(path, text)) continue;
+              if (text === undefined) continue;
+              const problem = workerReadProblem(path, text);
+              if (problem !== undefined) {
+                // A file kept by the prose checks is named, with why; one marked private is not.
+                if (problem.kind === "text") withheld.push({ path, reason: problem.reason });
+                continue;
+              }
               if (file.kind === "file" && file.stats !== undefined) {
                 files.push({
                   path,
@@ -972,7 +1003,7 @@ const make = (root: string): OrchestrationMemoryShape => {
           }
         });
       yield* walk("", 1);
-      return files.toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+      return { files: files.toSorted(byPath), withheld: withheld.toSorted(byPath) };
     });
 
   /** Copies `text` into the file's history and drops what is older than the newest twenty. */
@@ -1188,7 +1219,9 @@ const make = (root: string): OrchestrationMemoryShape => {
     listForWorker: (workspaceId) =>
       guarded(workspaceId, undefined, () =>
         Effect.flatMap(adopted(workspaceId, adoptionTree), (version) =>
-          version === undefined ? Effect.succeed([]) : listVersionForWorker(workspaceId, version),
+          version === undefined
+            ? Effect.succeed({ files: [], withheld: [] })
+            : listVersionForWorker(workspaceId, version),
         ),
       ),
 
@@ -1213,8 +1246,28 @@ const make = (root: string): OrchestrationMemoryShape => {
             path,
             MEMORY_READ_MAX_BYTES,
           );
-          if (!workerMayRead(path, text)) return yield* missing;
+          const problem = workerReadProblem(path, text);
+          // A private file reads as missing, as it always has; one the prose checks hold back says
+          // which line and why, so a worker can pass that on rather than take memory to be empty.
+          if (problem?.kind === "text") {
+            return yield* refuse(keptFromWorkerReads(path, problem.reason));
+          }
+          if (problem !== undefined) return yield* missing;
           return redactText(text);
+        }),
+      ),
+
+    workerProblem: (workspaceId, path) =>
+      guarded(workspaceId, path, () =>
+        Effect.gen(function* () {
+          const named = workerReadProblem(path);
+          if (named !== undefined) return named.reason;
+          const version = yield* adopted(workspaceId);
+          if (version === undefined) return undefined;
+          const within = versionRel(version);
+          const rel = `${within}/${path}`;
+          if ((yield* resolveInTree(workspaceId, rel, within)).kind !== "file") return undefined;
+          return workerReadProblem(path, yield* readText(workspaceId, rel, within, path))?.reason;
         }),
       ),
 
