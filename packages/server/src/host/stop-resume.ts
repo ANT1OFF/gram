@@ -523,6 +523,8 @@ export const resumeHost = (
           { concurrency: RESTORE_CONCURRENCY },
         ),
       );
+      // Missing now: owed until this resume, or a later one, is done with it.
+      for (const [cwd, there] of seen) if (there === false) stops.folderOwed(id, cwd);
       const putBack = (
         { thread, cwd }: (typeof folders)[number],
         there: boolean | undefined,
@@ -621,8 +623,12 @@ export const resumeHost = (
       const putBackShared = (sharing: ReadonlyArray<(typeof folders)[number]>) =>
         Effect.gen(function* () {
           const cwd = sharing[0]!.cwd;
-          // A folder a resume before couldn't put back is asked of the host again, there or not.
-          const again = sharing.some(({ thread }) => stops.blocked(id, thread.id) !== undefined);
+          // A folder a resume before couldn't put back, or set out to and didn't finish with, is
+          // asked of the host again, there or not: what is at its path may be only what another
+          // folder's restore made of it.
+          const again =
+            stops.isFolderOwed(id, cwd) ||
+            sharing.some(({ thread }) => stops.blocked(id, thread.id) !== undefined);
           const there = again && seen.get(cwd) === true ? undefined : seen.get(cwd);
           const outcomes: Array<FolderOutcome> = [];
           let back = false;
@@ -644,6 +650,10 @@ export const resumeHost = (
                 : outcome;
             yield* done(folder.thread.id, cwd, settled);
           }
+          // Done with: put back or there for all who share it, or missing with nothing kept of it.
+          // One refused stays owed, and blocked, for the next resume.
+          if (back || outcomes.every((outcome) => outcome.kind === "missing"))
+            stops.folderDone(id, cwd);
         });
       yield* Effect.forEach(groups, putBackShared, {
         concurrency: RESTORE_CONCURRENCY,

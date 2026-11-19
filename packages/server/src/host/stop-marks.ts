@@ -121,6 +121,17 @@ export interface StopMarks {
   readonly onReady: (listener: (id: HostId) => void) => () => void;
   /** Whether `threadBack` said so of this thread since the machine was last owed a resume. */
   readonly isThreadBack: (id: HostId, threadId: ThreadId) => boolean;
+  /**
+   * A resume found the folder `cwd` missing and set out to put it back: until a resume is done
+   * with it (`folderDone`), a later one asks the host for it again, though the path is there by
+   * then. Another folder's restore may have made it (a worktree makes its clone) without the
+   * thread's own work in it.
+   */
+  readonly folderOwed: (id: HostId, cwd: string) => void;
+  /** A resume is done with the folder: put back, there, or found missing on its own. */
+  readonly folderDone: (id: HostId, cwd: string) => void;
+  /** Whether a resume set out to put the folder back and didn't finish with it. */
+  readonly isFolderOwed: (id: HostId, cwd: string) => boolean;
   /** A session of this thread waits for the machine's resume: its folders go first. */
   readonly awaiting: (id: HostId, threadId: ThreadId) => void;
   /** The threads a session waits on the machine's resume for, as `awaiting` said. */
@@ -169,6 +180,7 @@ export const makeStopMarks = (
   const owed = new Map<HostId, { progress: number; running: number }>();
   const stalls = new Map<HostId, number>();
   const blocks = new Map<HostId, Map<ThreadId, string>>();
+  const foldersOwed = new Map<HostId, Set<string>>();
   const readyListeners = new Set<(id: HostId) => void>();
   const ready = (id: HostId) => {
     for (const listener of readyListeners) {
@@ -284,6 +296,15 @@ export const makeStopMarks = (
       return () => void readyListeners.delete(listener);
     },
     isThreadBack: (id, threadId) => threadsBack.get(id)?.has(threadId) === true,
+    folderOwed: (id, cwd) => {
+      const owedHere = foldersOwed.get(id) ?? new Set<string>();
+      owedHere.add(cwd);
+      foldersOwed.set(id, owedHere);
+    },
+    folderDone: (id, cwd) => {
+      foldersOwed.get(id)?.delete(cwd);
+    },
+    isFolderOwed: (id, cwd) => foldersOwed.get(id)?.has(cwd) === true,
     awaiting: (id, threadId) => add(threadsAwaiting, id, threadId),
     awaited: (id) => threadsAwaiting.get(id) ?? new Set(),
     cancel: (id) => {
@@ -333,6 +354,7 @@ export const makeStopMarks = (
       rested.delete(id);
       cancels.delete(id);
       kept.delete(id);
+      foldersOwed.delete(id);
     },
   };
 };
