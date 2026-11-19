@@ -118,7 +118,11 @@ changes into events that wake the thread that cares:
 - **Monitors.** `pr_monitor` watches a pull request's checks, `pr_review_monitor` its review bot
   and reviewers, and `run_monitor` a GitHub Actions run such as a release build. Each sends one
   message when the checks settle, the bot posts a round or a verdict, a person approves or
-  requests changes, the merge state changes, or the run completes.
+  requests changes, the merge state changes, or the run completes. The review bot is an app
+  account GitHub reports as one, whose login matches the bot's pattern; a person with a matching
+  login is a person. A person's review reaches the agent only when they can push to the
+  repository, and an outsider's change request doesn't hold `merge_when_ready`. Names, titles and
+  review text from GitHub reach the agent fenced as untrusted content.
 - **Wakes.** `schedule_wake` wakes a thread at a time, on the first of a set of pull request
   events (checks settling, a review bot's verdict on its head, a new push, a merge or a close), or
   on a [condition](#condition-wakes) such as a branch getting a new head or another thread

@@ -22,6 +22,7 @@ import {
   type ReviewRound,
   type Thread,
   type ThreadId,
+  fenceNames,
 } from "@gram/contracts";
 import {
   invalidatePrBadges,
@@ -267,7 +268,7 @@ export const ciMessage = (
   if (next === "passing") return `CI passed on #${number}`;
   if (next !== "failing") return undefined;
   return failing.length > 0
-    ? `CI failed on #${number}: ${failing.join(", ")}`
+    ? `CI failed on #${number}. The failing checks:\n${fenceNames("the failing checks' names", failing)}`
     : `CI failed on #${number}`;
 };
 

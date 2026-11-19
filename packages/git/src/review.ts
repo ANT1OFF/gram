@@ -4,8 +4,8 @@
 
 import {
   HUMAN_REVIEW_BODY_CHARS,
-  isBotLogin,
-  matchesBotLogin,
+  isAppAuthor,
+  isReviewBotAuthor,
   MAX_PERSON_COMMENTS,
 } from "@gram/contracts";
 import type {
@@ -36,6 +36,11 @@ const at = (value: unknown, path: ReadonlyArray<string | number>): unknown => {
   return current;
 };
 const login = (node: Json): string => str(at(node, ["author", "login"]));
+/** Whether a configured review bot wrote `node`: an app account by GitHub's word, login matching. */
+const writtenByBot = (node: Json, bots: ReadonlyArray<ReviewBot>): boolean =>
+  isReviewBotAuthor(bots, login(node), at(node, ["author", "__typename"]));
+/** Whether an app account wrote `node`, a configured bot or not. */
+const byApp = (node: Json): boolean => isAppAuthor(login(node), at(node, ["author", "__typename"]));
 
 const normaliseLogin = (value: string) =>
   value
@@ -44,7 +49,7 @@ const normaliseLogin = (value: string) =>
     .replace(/\[bot\]$/, "");
 
 // The matching moved to contracts, where the web app and the helper's PR context read it too.
-export { isBotLogin, matchesBotLogin } from "@gram/contracts";
+export { isBotLogin, isReviewBotAuthor, matchesBotLogin } from "@gram/contracts";
 
 const TAG = /^\s*(?:\*\*|`)?\[(blocker|suggestion|still outstanding)\](?:\*\*|`)?/i;
 
@@ -139,7 +144,7 @@ export const isRoundInFlight = (
 ): boolean => {
   for (let i = comments.length - 1; i >= 0; i--) {
     const comment = comments[i]!;
-    if (!isBotLogin(bots, login(comment))) continue;
+    if (!writtenByBot(comment, bots)) continue;
     const body = str(comment["body"]);
     const progress = /###\s*Code review/i.test(body) || /Responding to comment/i.test(body);
     if (!progress) continue;
@@ -164,26 +169,23 @@ export const verdictOf = (state: string): ReviewVerdict | undefined => {
 /** Bot reviews with a summary body; empty-body reviews are GitHub's wrappers around thread replies. */
 const summaryReviews = (node: Json, bots: ReadonlyArray<ReviewBot>) =>
   arr(at(node, ["reviews", "nodes"])).filter(
-    (r) => isBotLogin(bots, login(r)) && str(r["body"]).trim() !== "" && r["state"] !== "PENDING",
+    (r) => writtenByBot(r, bots) && str(r["body"]).trim() !== "" && r["state"] !== "PENDING",
   );
 
 const threadComments = (thread: Json) => arr(at(thread, ["comments", "nodes"]));
 
 const startedByBot = (thread: Json, bots: ReadonlyArray<ReviewBot>) => {
   const first = threadComments(thread)[0];
-  return first !== undefined && isBotLogin(bots, login(first));
+  return first !== undefined && writtenByBot(first, bots);
 };
 
 /**
  * Each person's standing verdict, oldest first: their latest review that approved, requested changes
  * or was dismissed, kept unless dismissed. A comment-only review leaves the verdict before it standing,
- * as GitHub does. Configured bots, GitHub App accounts and `author` are not people here.
+ * as GitHub does. App accounts, the configured bots among them, and `author` are not people here;
+ * a person whose login a bot pattern matches is.
  */
-export const humanReviewsOf = (
-  node: Json,
-  bots: ReadonlyArray<ReviewBot>,
-  author: string,
-): Array<HumanReview> => {
+export const humanReviewsOf = (node: Json, author: string): Array<HumanReview> => {
   const latest = new Map<string, Json>();
   for (const review of arr(at(node, ["reviews", "nodes"]))) {
     const who = login(review);
@@ -191,8 +193,7 @@ export const humanReviewsOf = (
     if (
       who === "" ||
       normaliseLogin(who) === normaliseLogin(author) ||
-      at(review, ["author", "__typename"]) === "Bot" ||
-      isBotLogin(bots, who) ||
+      byApp(review) ||
       (state !== "APPROVED" && state !== "CHANGES_REQUESTED" && state !== "DISMISSED")
     )
       continue;
@@ -214,6 +215,9 @@ export const humanReviewsOf = (
           body.length > HUMAN_REVIEW_BODY_CHARS
             ? `${body.slice(0, HUMAN_REVIEW_BODY_CHARS)}…`
             : body,
+        ...(typeof review["authorAssociation"] === "string"
+          ? { authorAssociation: review["authorAssociation"] }
+          : {}),
       },
     ];
   });
@@ -222,12 +226,7 @@ export const humanReviewsOf = (
 /** Whether `node`'s author is a person: not a configured bot, not a GitHub App, not deleted. */
 const byPerson = (node: Json, bots: ReadonlyArray<ReviewBot>): boolean => {
   const who = login(node);
-  return (
-    who !== "" &&
-    at(node, ["author", "__typename"]) !== "Bot" &&
-    !/\[bot\]$/i.test(who) &&
-    !isBotLogin(bots, who)
-  );
+  return who !== "" && !byApp(node) && !/\[bot\]$/i.test(who) && !writtenByBot(node, bots);
 };
 
 /**
@@ -292,7 +291,7 @@ export const buildReviewState = (
   author = "",
 ): PrReviewState | undefined => {
   const head = str(node["headRefOid"]);
-  const allReviews = arr(at(node, ["reviews", "nodes"])).filter((r) => isBotLogin(bots, login(r)));
+  const allReviews = arr(at(node, ["reviews", "nodes"])).filter((r) => writtenByBot(r, bots));
   const summaries = summaryReviews(node, bots);
   const threads = arr(at(node, ["reviewThreads", "nodes"]));
   const botThreads = threads.filter((t) => startedByBot(t, bots));
@@ -307,8 +306,8 @@ export const buildReviewState = (
     );
   }).length;
   const comments = arr(at(node, ["comments", "nodes"]));
-  const botComments = comments.filter((c) => isBotLogin(bots, login(c)));
-  const humanReviews = humanReviewsOf(node, bots, author);
+  const botComments = comments.filter((c) => writtenByBot(c, bots));
+  const humanReviews = humanReviewsOf(node, author);
   if (
     allReviews.length === 0 &&
     botThreads.length === 0 &&
@@ -321,7 +320,11 @@ export const buildReviewState = (
 
   const onHead = summaries.filter((r) => str(at(r, ["commit", "oid"])) === head);
   const approvingOnHead = onHead.filter((review) =>
-    bots.some((bot) => bot.canApprove && matchesBotLogin(bot.loginPattern, login(review))),
+    isReviewBotAuthor(
+      bots.filter((bot) => bot.canApprove),
+      login(review),
+      at(review, ["author", "__typename"]),
+    ),
   );
   const decisiveOnHead = approvingOnHead.toReversed().find((review) => {
     const verdict = verdictOf(str(review["state"]));
@@ -341,7 +344,7 @@ export const buildReviewState = (
   const severities = unresolved.map((t) =>
     threadSeverity(
       threadComments(t)
-        .filter((c) => isBotLogin(bots, login(c)))
+        .filter((c) => writtenByBot(c, bots))
         .map((c) => str(c["body"])),
     ),
   );
@@ -427,7 +430,11 @@ export const buildReviewThreads = (
       isResolved: thread["isResolved"] === true,
       isOutdated: thread["isOutdated"] === true,
       severity: byBot
-        ? threadSeverity(comments.filter((c) => isBotLogin(bots, c.author)).map((c) => c.body))
+        ? threadSeverity(
+            threadComments(thread)
+              .filter((c) => writtenByBot(c, bots))
+              .map((c) => str(c["body"])),
+          )
         : "finding",
       byBot,
       comments,

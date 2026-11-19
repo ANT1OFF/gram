@@ -278,8 +278,8 @@ const humansOf = (input: PrContextInput): PrContext["humans"] => {
   const { badge, bots } = input;
   const latest = new Map<string, HumanReviewContext>();
   for (const review of badge.review?.humanReviews ?? []) {
-    // The bots were matched when the badge was read; the setting may have changed since.
-    if (isBotLogin(bots, review.author)) continue;
+    // People's verdicts only: an app account never lands here, and a person whose login a bot
+    // pattern matches is still a person.
     latest.delete(review.author);
     latest.set(review.author, {
       who: clean(review.author),

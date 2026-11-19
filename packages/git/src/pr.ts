@@ -578,7 +578,7 @@ const DISCOVERY_GQL_FIELDS = "number state headRefOid";
 // The reviews and comments are everyone's, so people's verdicts and the ids of their comments come
 // from the same connections at no extra cost: scalar fields add nothing to a document's price.
 const REVIEW_GQL_FIELDS =
-  `reviews(last:${BADGE_REVIEWS_READ}){nodes{id author{login __typename} state submittedAt commit{oid} body}} ` +
+  `reviews(last:${BADGE_REVIEWS_READ}){nodes{id author{login __typename} authorAssociation state submittedAt commit{oid} body}} ` +
   `comments(last:${BADGE_COMMENTS_READ}){nodes{id author{login __typename} createdAt body}}`;
 const THREADS_GQL_FIELD =
   "reviewThreads(first:50){nodes{isResolved isOutdated comments(first:3){nodes{author{login __typename} body}}}}";
