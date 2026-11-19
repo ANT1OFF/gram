@@ -725,8 +725,9 @@ const supervisorProcess = (
     script,
     `import { superviseUpdate } from ${JSON.stringify(moduleUrl)};
 import { writeSync } from "node:fs";
-// As a real service move does (it runs launchctl or systemctl), this keeps the process alive.
-const alive = setInterval(() => {}, 1000);
+// As a real service move does (it runs launchctl or systemctl), this keeps the process alive,
+// collecting as it goes: a held lock must outlast a holder that nothing else references.
+const alive = setInterval(() => globalThis.gc?.(), 20);
 const outcome = await superviseUpdate({
   home: process.argv[2], apps: process.argv[3], now: () => 0, sleep: async () => {}, log: () => {},
   install: async () => { writeSync(1, "INSTALL\\n"); await new Promise(() => {}); },
@@ -756,7 +757,14 @@ syncBuiltinESMExports();
   );
   const child = spawn(
     process.execPath,
-    [...(pauseAtRename ? ["--import", preload] : []), script, fixture.home, fixture.apps, id],
+    [
+      "--expose-gc",
+      ...(pauseAtRename ? ["--import", preload] : []),
+      script,
+      fixture.home,
+      fixture.apps,
+      id,
+    ],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
   let out = "";

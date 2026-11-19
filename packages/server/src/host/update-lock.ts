@@ -184,6 +184,13 @@ const takeLegacy = async (identity: string, purpose: LockPurpose) => {
 
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Every lock this process holds, until it is released. A holder waiting on something nothing else
+ * references (a promise that never settles, as a service move's can be) would otherwise leave its
+ * connection unreachable, and the collector's close would let the lock go while it still acts.
+ */
+const held = new Set<Database>();
+
 /** A lock this process holds, until it releases it or ends. */
 export interface HeldLock {
   readonly release: () => Promise<void>;
@@ -201,11 +208,13 @@ export const takeUpdateLock = async (
   if (folder === undefined) return undefined;
   const db = takeFileLock(join(folder.path, FILES[purpose]), TAKE_WAIT_MS);
   if (db === undefined) return undefined;
+  held.add(db);
   const legacy = await takeLegacy(folder.identity, purpose);
   let released: Promise<void> | undefined;
   return {
     release: () =>
       (released ??= (async () => {
+        held.delete(db);
         try {
           db.close();
         } finally {
