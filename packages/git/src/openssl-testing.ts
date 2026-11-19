@@ -14,13 +14,9 @@ export const openSsl3 = (): string => {
   ].find(
     (candidate) =>
       candidate !== "" &&
-      /^OpenSSL [3-9]/.test(
-        spawnSync(candidate, ["version"], { encoding: "utf8" }).stdout ?? "",
-      ),
+      /^OpenSSL [3-9]/.test(spawnSync(candidate, ["version"], { encoding: "utf8" }).stdout ?? ""),
   );
   if (found === undefined)
-    throw new Error(
-      "These tests need OpenSSL 3 (on macOS: brew install openssl@3).",
-    );
+    throw new Error("These tests need OpenSSL 3 (on macOS: brew install openssl@3).");
   return found;
 };
