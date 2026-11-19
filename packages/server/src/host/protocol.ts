@@ -185,6 +185,15 @@ const NO_TOKEN_STORE = "This machine's host doesn't keep a Claude token.";
 export const HOST_CAPABILITIES = HOST_REQUIRED_CAPABILITIES;
 
 /**
+ * The WebSocket close a control plane ends a dial with when the host says a disk its machine was
+ * replaced from (`HostHello.diskId`): that host is no longer the machine, so it ends the sessions
+ * and terminals it kept for the machine rather than keep them going (`dialForever`). A host
+ * before it reads it as any other close.
+ */
+export const HOST_FENCED_CLOSE = 4409;
+export const HOST_FENCED_REASON = "This disk was replaced; the machine runs elsewhere now.";
+
+/**
  * The capabilities this build's host serves: the ones required, and those a control plane uses only
  * where a host advertises them, so a host on an older release still connects.
  */

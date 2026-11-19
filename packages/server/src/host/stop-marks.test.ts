@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { describe, expect, it } from "vitest";
 import {
+  EXPECT_FOR_MS,
   KEPT_FOLDERS_MAX,
   RESUME_STALL_MS,
   folderOwedResume,
@@ -209,6 +210,34 @@ describe("stop marks", () => {
       expect(marks.hello(other, disk("aaaaaaaa"))).toEqual({ kind: "first" });
     });
 
+    it("fences the disk a machine was replaced from, and the one it was told it leaves", () => {
+      let at = 0;
+      const marks = makeStopMarks(() => at);
+      marks.hello(machine, disk("aaaaaaaa"));
+      marks.hello(machine, disk("bbbbbbbb"));
+      expect(marks.hello(machine, disk("aaaaaaaa"))).toEqual({ kind: "fenced", why: "replaced" });
+      // Refused, it changes nothing: the new disk is still the machine's.
+      expect(marks.disk(machine)).toBe("disk-bbbbbbbb");
+      expect(marks.hello(machine, disk("bbbbbbbb"))).toEqual({ kind: "redial" });
+      marks.expect(machine);
+      expect(marks.hello(machine, disk("bbbbbbbb", "boot-dddddddd"))).toEqual({
+        kind: "fenced",
+        why: "expected",
+      });
+      expect(marks.hello(machine, disk("cccccccc"))).toMatchObject({ kind: "replaced" });
+      // Once the word has run out, the disk is its own again.
+      const later = makeStopMarks(() => at);
+      later.hello(machine, disk("aaaaaaaa"));
+      later.expect(machine);
+      at = EXPECT_FOR_MS;
+      expect(later.hello(machine, disk("aaaaaaaa", "boot-dddddddd"))).toEqual({
+        kind: "restarted",
+      });
+      // A machine removed and joined again starts over.
+      marks.forget(machine);
+      expect(marks.hello(machine, disk("aaaaaaaa"))).toEqual({ kind: "first" });
+    });
+
     it("owes a machine back on a new disk a resume, though no stop of it was seen", () => {
       const marks = makeStopMarks();
       marks.hello(machine, disk("aaaaaaaa"));
@@ -314,6 +343,7 @@ describe("stop marks", () => {
       expect(after.keptOf(machine, thread("a"), "/w/a")).toEqual({ commit: "c1", caughtUp: false });
       expect(after.takeRested(machine)).toEqual([thread("a"), thread("b")]);
       expect(after.disk(machine)).toBe("disk-bbbbbbbb");
+      expect(after.hello(machine, disk("aaaaaaaa"))).toEqual({ kind: "fenced", why: "replaced" });
       // A late result of the resume from before the restart doesn't settle the one owed now.
       after.resumed(machine, generation - 1, true);
       expect(after.owes(machine)).toBe(true);

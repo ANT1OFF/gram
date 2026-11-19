@@ -14,7 +14,7 @@ import type { RemoteAccess } from "../http/remote-access.ts";
 import { serverPort } from "../http/server.ts";
 import { HttpRouter, HttpServer, HttpServerRequest, Socket } from "../platform/unstable.ts";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
-import { type DialOptions, dialOnce } from "./dial.ts";
+import { type DialOptions, dialForever, dialOnce } from "./dial.ts";
 import { machineNews, publishMachineStates } from "./machine-events.ts";
 import { generateHostKey, hostIdOf, privateKeyFrom, signedConnectHeaders } from "./machine-keys.ts";
 import { memoryMachineStore } from "./paired-machines.ts";
@@ -890,6 +890,21 @@ const dialAndDrop = (
     while (hosts.origin(HostId.make(hostId)) !== undefined) yield* Effect.sleep("20 millis");
   });
 
+/** `service`, counting how often what it serves ended. */
+const countedService = (hostId: string, said: Partial<HostService["hello"]>) => {
+  const counts = { ended: 0 };
+  const built = service(hostId, said).pipe(
+    Effect.tap(() =>
+      Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          counts.ended += 1;
+        }),
+      ),
+    ),
+  );
+  return { counts, served: built };
+};
+
 describe("the disk a joined machine's host says it is on", () => {
   const diskA = { diskId: "disk-aaaaaaaa", bootId: "boot-aaaaaaaa" };
   const diskB = { diskId: "disk-bbbbbbbb", bootId: "boot-bbbbbbbb" };
@@ -913,6 +928,53 @@ describe("the disk a joined machine's host says it is on", () => {
       while (hosts.origin(hostId) !== undefined) yield* Effect.sleep("20 millis");
       yield* dialOnce(dial, service(hostId)).pipe(Effect.timeout("10 seconds"));
       expect(hosts.origin(hostId)).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+
+  it.live(
+    "refuses the host of a disk its machine was replaced from, and keeps the new one online",
+    () =>
+      Effect.gen(function* () {
+        const { hosts, base } = yield* servedWith(undefined, { marks: memoryMarks() });
+        const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+        yield* dialAndDrop(hosts, hostId, dial, diskA);
+        const replacement = yield* Effect.forkScoped(dialOnce(dial, service(hostId, diskB)));
+        expect((yield* online(hosts, hostId)).hello.diskId).toBe(diskB.diskId);
+        // The old disk's host, only cut off, dials in again: refused, and told why.
+        let fenced = false;
+        yield* dialOnce(
+          dial,
+          service(hostId, diskA),
+          Effect.void,
+          undefined,
+          Effect.sync(() => {
+            fenced = true;
+          }),
+        ).pipe(Effect.timeout("10 seconds"));
+        expect(fenced).toBe(true);
+        expect((yield* hosts.connection(HostId.make(hostId))).hello.diskId).toBe(diskB.diskId);
+        // And once the new one is gone too: still not the machine.
+        yield* Fiber.interrupt(replacement);
+        while (hosts.origin(HostId.make(hostId)) !== undefined) yield* Effect.sleep("20 millis");
+        yield* dialOnce(dial, service(hostId, diskA)).pipe(Effect.timeout("10 seconds"));
+        expect(hosts.origin(HostId.make(hostId))).toBeUndefined();
+      }).pipe(Effect.scoped),
+  );
+
+  it.live("a host refused for its disk ends what it kept at once, whatever its grace", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* servedWith(undefined, { marks: memoryMarks() });
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      yield* dialAndDrop(hosts, hostId, dial, diskA);
+      yield* Effect.forkScoped(dialOnce(dial, service(hostId, diskB)));
+      yield* online(hosts, hostId);
+      const old = countedService(hostId, diskA);
+      const dialling = yield* Effect.forkScoped(
+        dialForever(dial, old.served, { retryFirstMs: 50, detachedMs: 10 * 60_000 }),
+      );
+      yield* waitUntil("the old host's sessions end", () => old.counts.ended > 0);
+      expect((yield* hosts.connection(HostId.make(hostId))).hello.diskId).toBe(diskB.diskId);
+      yield* Fiber.interrupt(dialling);
     }).pipe(Effect.scoped),
   );
 

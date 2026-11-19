@@ -14,7 +14,7 @@ import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
 import { generateHostKey, hostIdOf, privateKeyFrom } from "./machine-keys.ts";
-import { HOST_FEATURES, HOST_SERVES, type HostService } from "./protocol.ts";
+import { HOST_FEATURES, HOST_FENCED_CLOSE, HOST_SERVES, type HostService } from "./protocol.ts";
 import { reposOn } from "./repos.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
@@ -84,7 +84,14 @@ describe("dialForever", () => {
  * thing: to the host, a link that broke without a word. One that pings sends what the main Gram's
  * RPC client does every interval, as an unmasked text frame.
  */
-const mainGram = (pings: number | undefined) =>
+const mainGram = (
+  pings: number | undefined,
+  /**
+   * Instead: say one thing and close, as a main Gram that asks a host's hello and then refuses it
+   * does, with this close code.
+   */
+  refuseWith?: number,
+) =>
   Effect.acquireRelease(
     Effect.promise(
       () =>
@@ -103,8 +110,14 @@ const mainGram = (pings: number | undefined) =>
                 "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
                   `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
               );
-              if (pings === undefined) return;
               const ping = Buffer.from('{"_tag":"Ping"}\n');
+              if (refuseWith !== undefined) {
+                const code = Buffer.from([refuseWith >> 8, refuseWith & 0xff]);
+                socket.write(Buffer.concat([Buffer.from([0x81, ping.length]), ping]));
+                socket.write(Buffer.concat([Buffer.from([0x88, code.length]), code]));
+                return;
+              }
+              if (pings === undefined) return;
               timers.push(
                 setInterval(() => {
                   if (!socket.destroyed)
@@ -197,6 +210,68 @@ describe("dialForever over a link that went quiet", () => {
       const fiber = yield* Effect.forkScoped(dialling(main));
       yield* Effect.sleep("1500 millis");
       expect(main.dials()).toBe(1);
+      yield* Fiber.interrupt(fiber);
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+});
+
+describe("a dial the main Gram refuses after the host's hello", () => {
+  const keyed = (main: { port: number }) => {
+    const key = generateHostKey();
+    const hostId = hostIdOf(key.publicKey);
+    return {
+      hostId,
+      options: {
+        origin: `http://127.0.0.1:${main.port}`,
+        hostId,
+        key: privateKeyFrom(key.privateKeyPem),
+        url: `ws://127.0.0.1:${main.port}/host/connect`,
+      },
+    };
+  };
+
+  it.live("isn't a dial that got through: what the host kept doesn't count it as served", () =>
+    Effect.gen(function* () {
+      const main = yield* mainGram(undefined, 1000);
+      const { hostId, options } = keyed(main);
+      let served = 0;
+      yield* dialOnce(
+        options,
+        servedHost(hostId),
+        Effect.sync(() => void (served += 1)),
+      ).pipe(Effect.timeout("10 seconds"));
+      expect(served).toBe(0);
+      // One that keeps talking is.
+      const talking = yield* mainGram(50);
+      const other = keyed(talking);
+      yield* dialOnce(
+        other.options,
+        servedHost(other.hostId),
+        Effect.sync(() => void (served += 1)),
+        300,
+      ).pipe(Effect.timeout("2 seconds"), Effect.ignore);
+      expect(served).toBeGreaterThan(0);
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+
+  it.live("ends what the host kept at once when its disk was replaced", () =>
+    Effect.gen(function* () {
+      const main = yield* mainGram(undefined, HOST_FENCED_CLOSE);
+      const { hostId, options } = keyed(main);
+      const counts = { ended: 0 };
+      const fiber = yield* Effect.forkScoped(
+        dialForever(
+          options,
+          servedHost(hostId).pipe(
+            Effect.tap(() => Effect.addFinalizer(() => Effect.sync(() => void (counts.ended += 1)))),
+          ),
+          { retryFirstMs: 50, detachedMs: 10 * 60_000 },
+        ),
+      );
+      yield* Effect.gen(function* () {
+        while (counts.ended === 0) yield* Effect.sleep("20 millis");
+      }).pipe(Effect.timeout("5 seconds"));
+      expect(counts.ended).toBe(1);
       yield* Fiber.interrupt(fiber);
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );

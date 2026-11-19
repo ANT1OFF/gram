@@ -68,6 +68,13 @@ export interface KeptRecord {
  */
 export const KEPT_FOLDERS_MAX = 256;
 
+/**
+ * How many disks a machine is remembered to have been replaced from, newest kept: a host that says
+ * one of them is refused. Far more than a machine is ever replaced in its life; removing the
+ * machine and joining it again starts it over.
+ */
+export const RETIRED_DISKS_KEPT = 4096;
+
 /** What a stop said it kept of a folder, as kept across a restart: without the diff behind it. */
 const KeptRecordStored = Schema.Struct({
   commit: Schema.String,
@@ -102,6 +109,8 @@ export const MachineMarks = Schema.Struct({
   disk: Schema.optionalKey(
     Schema.Struct({ id: HostDiskId, boot: Schema.optionalKey(HostDiskId), at: Schema.Number }),
   ),
+  /** Disks it was replaced from, oldest first: a host that says one of them is refused. */
+  retired: Schema.optionalKey(Schema.Array(HostDiskId)),
 });
 export type MachineMarks = typeof MachineMarks.Type;
 
@@ -117,16 +126,21 @@ export type MachineMarksByHost = Readonly<Record<string, MachineMarks>>;
  * - `restarted`: the same disk, another start: its sessions went with the old one, its folders
  *   are there;
  * - `replaced`: another disk, a new machine under the same key, whose folders aren't there until
- *   a resume puts them back. It is owed one from then, in the same change that remembers the disk.
+ *   a resume puts them back. It is owed one from then, in the same change that remembers the disk,
+ *   and the disk before is retired;
+ * - `fenced`: a disk it was replaced from, or the disk it was told it comes back without
+ *   (`expect`): an old host that dialled in again with the machine's key, which is refused.
  */
 export type DiskVerdict =
   | { readonly kind: "unknown" | "first" | "redial" | "restarted" }
-  | { readonly kind: "replaced"; readonly was: string };
+  | { readonly kind: "replaced"; readonly was: string }
+  | { readonly kind: "fenced"; readonly why: "replaced" | "expected" };
 
 export interface StopMarks {
   /**
    * A host of the machine dialled in, saying this of its disk: what that makes it. Remembers the
-   * disk it said, and on another disk owes the machine a resume, kept as one change.
+   * disk it said unless it is `fenced`, and on another disk retires the one before and owes the
+   * machine a resume, kept as one change.
    */
   readonly hello: (
     id: HostId,
@@ -310,6 +324,7 @@ export const makeStopMarks = (
   const threadsBack = new Map<HostId, Set<ThreadId>>();
   const threadsAwaiting = new Map<HostId, Set<ThreadId>>();
   const disks = new Map<HostId, { id: string; boot?: string; at: number }>();
+  const retired = new Map<HostId, ReadonlyArray<string>>();
 
   /** What is kept of each machine, as last saved. */
   const stored = new Map<HostId, MachineMarks>();
@@ -323,6 +338,7 @@ export const makeStopMarks = (
     const records = kept.get(id);
     const disk = disks.get(id);
     const generation = generations.get(id);
+    const was = retired.get(id);
     const value: MachineMarks = {
       ...(mark === undefined ? {} : { stop: { at: mark.at, left: mark.left } }),
       ...(last.has(id) ? { last: last.get(id)! } : {}),
@@ -346,6 +362,7 @@ export const makeStopMarks = (
             ),
           }),
       ...(disk === undefined ? {} : { disk }),
+      ...(was === undefined || was.length === 0 ? {} : { retired: was }),
     };
     return Object.keys(value).length === 0 ? undefined : value;
   };
@@ -397,6 +414,7 @@ export const makeStopMarks = (
       blocks.set(id, new Map(Object.entries(value.blocks) as Array<[ThreadId, string]>));
     if (value.kept !== undefined) kept.set(id, new Map(Object.entries(value.kept)));
     if (value.disk !== undefined) disks.set(id, { ...value.disk });
+    if (value.retired !== undefined) retired.set(id, value.retired);
   }
 
   const settle = (id: HostId) => {
@@ -428,7 +446,13 @@ export const makeStopMarks = (
         said: { readonly diskId?: string | undefined; readonly bootId?: string | undefined },
       ): DiskVerdict => {
         if (said.diskId === undefined) return { kind: "unknown" };
+        const was = retired.get(id) ?? [];
+        if (was.includes(said.diskId)) return { kind: "fenced", why: "replaced" };
         const known = disks.get(id);
+        const told = expected.get(id);
+        // Told it comes back on another disk: the host of the one it leaves isn't it.
+        if (known?.id === said.diskId && told !== undefined && now() - told < EXPECT_FOR_MS)
+          return { kind: "fenced", why: "expected" };
         disks.set(id, {
           id: said.diskId,
           ...(said.bootId === undefined ? {} : { boot: said.bootId }),
@@ -438,6 +462,10 @@ export const makeStopMarks = (
         if (known.id !== said.diskId) {
           // Its folders aren't on this disk: owed a resume before any session opens, kept in the
           // same write as the disk, so a restart never finds the one without the other.
+          retired.set(
+            id,
+            [...was.filter((disk) => disk !== known.id), known.id].slice(-RETIRED_DISKS_KEPT),
+          );
           owe(id);
           helloOwed.add(id);
           expected.delete(id);
@@ -606,6 +634,7 @@ export const makeStopMarks = (
       cancels.delete(id);
       kept.delete(id);
       disks.delete(id);
+      retired.delete(id);
       generations.delete(id);
     }),
   };

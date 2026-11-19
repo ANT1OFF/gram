@@ -16,7 +16,7 @@ import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 import { ServerConfig } from "../config.ts";
 import { privateJsonFile } from "../http/remote-sessions.ts";
-import type { Socket } from "../platform/unstable.ts";
+import { Socket } from "../platform/unstable.ts";
 import {
   createPairedMachines,
   dialNoncesLastSeen,
@@ -31,7 +31,14 @@ import {
   type PairedMachines,
   type PairedMachineStore,
 } from "./paired-machines.ts";
-import { connectHost, type HostConnection, helloMismatch, UNKNOWN_STATUS } from "./protocol.ts";
+import {
+  connectHost,
+  HOST_FENCED_CLOSE,
+  HOST_FENCED_REASON,
+  type HostConnection,
+  helloMismatch,
+  UNKNOWN_STATUS,
+} from "./protocol.ts";
 import { makeMachineUpdates, RETRY_MS, type UpdateRequest } from "./machine-updates.ts";
 import * as Schedule from "effect/Schedule";
 import * as FiberSet from "effect/FiberSet";
@@ -589,9 +596,28 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               );
               return;
             }
-            // The disk it says it is on: the same, or another, which owes a resume before any
-            // session opens there, kept as one change with the disk.
+            // The disk it says it is on: the same, another (which owes a resume before any session
+            // opens there, kept as one change with the disk), or one the machine was replaced
+            // from: a host cut off that dialled in again, holding the machine's key but no longer
+            // the machine. It is refused, whatever is online, and told so (`HOST_FENCED_CLOSE`):
+            // it ends the sessions it kept, rather than keep them going on a disk that isn't the
+            // machine's any more.
             const disk = stops.hello(machine.id, said);
+            if (disk.kind === "fenced") {
+              yield* Effect.logWarning(
+                "machines: refused a joined machine's host on a disk it was replaced from",
+              ).pipe(
+                Effect.annotateLogs({
+                  hostId: machine.id,
+                  why: disk.why,
+                  online: there !== undefined,
+                }),
+              );
+              yield* Effect.flatMap(socket.writer, (writer) =>
+                writer.write(new Socket.CloseEvent(HOST_FENCED_CLOSE, HOST_FENCED_REASON)),
+              ).pipe(Effect.ignore, Effect.scoped);
+              return;
+            }
             pending.get(machine.id)?.delete(endPending);
             close(machine.id);
             const live: Online = {

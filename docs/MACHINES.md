@@ -604,7 +604,8 @@ the local app, as the other `/machines/*` routes are.
 - `POST /machines/stop/expect` says a machine is being started on another disk: `{ "id" }`. Once
   it dials in, it waits for its resume as above, though this Gram saw no stop of it (the machine
   was stopped some other way, or its host doesn't say its disk). Call it before the host starts;
-  it holds for fifteen minutes.
+  it holds for fifteen minutes. Meanwhile a host that says the disk the machine is leaving is
+  refused: it is the old one dialling in again.
 - What this Gram knows of each machine's stops is kept across its own restart, in
   `remote-access/machine-marks.json` in its data folder, owner-only and replaced whole on each
   change: whether it was readied and left, whether it is owed a resume and how far that got, the
@@ -647,6 +648,16 @@ disk of each machine and reads a dial against it:
   what a resume begun on the old disk finds counts for nothing on the new one. With the hosted
   features off, nobody else resumes the machine, so this Gram does as soon as it is online, and
   sessions wait for it.
+- **A disk it was replaced from**: an old host that was only cut off and dialled in again. It
+  holds the machine's key but isn't the machine any more, so it is refused before it comes
+  online, and the log says so ("refused a joined machine's host on a disk it was replaced
+  from"); the machine that replaced it stays online. So is a host that says the disk the machine
+  is leaving while an `expect` holds. Gram closes the refused dial with code 4409, on which the
+  old host ends the sessions and terminals it kept for the machine at once, and goes on dialling
+  at its slowest. A host counts a dial as got through, for its three-minute grace, only once
+  Gram has said more than the hello it asks of every dial, so refusals never keep its sessions
+  going. Gram remembers up to 4096 replaced disks a machine; removing the machine and joining it
+  again starts it over, which is also how a disk replaced on purpose comes back.
 - **No disk said** (a host of 1.31.0 or earlier, or one that couldn't keep the file): as before
   hosts said one, for a machine none of whose hosts ever said one. For a machine whose hosts did,
   it is refused while a host that says its disk is online, or while the machine owes a resume:
