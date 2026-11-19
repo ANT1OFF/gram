@@ -9,9 +9,10 @@
  * turns off the auto-merge that its repo's PRs onto the branch had armed, where a Gram thread binds
  * the PR (following it is not owning it), keeps them on the freeze with the head each stood on, and
  * arms them again with the same method once it ends, pinned to that head (handing them to a freeze
- * that stands on the branch by then instead). GitHub turns an auto-merge off when someone pushes to
- * the PR, but a push during the freeze finds nothing armed: so a PR whose head moved meanwhile is
- * not armed again, and its thread is told, since what was approved was the head that stood. A PR
+ * that stands on the branch by then instead). What was approved was the head that stood, and GitHub
+ * would turn the auto-merge off on a push by someone without write access; a push during the
+ * freeze finds nothing armed. So a PR whose head moved meanwhile is not armed again, and its
+ * thread is told. A PR
  * someone turns off, holds, unbinds or closes meanwhile is let go of (`forget`), never armed again.
  * A person's merge, an auto-merge on a PR no Gram thread binds, or an entry already in a merge
  * queue, it can't stop.
@@ -260,6 +261,23 @@ export const MergeFreezesLive = Layer.effect(
           ),
         );
 
+    /** Hands `entries` to the freeze standing on the branch now, if one does. */
+    const handOff = (key: string, entries: NonNullable<StoredFreeze["disarmed"]>) =>
+      locks.withLock(
+        key,
+        Effect.gen(function* () {
+          const now = yield* Clock.currentTimeMillis;
+          const next = standing(freezes.get(key), now);
+          if (next === undefined) return false;
+          const kept = next.disarmed ?? [];
+          yield* write(key, {
+            ...next,
+            disarmed: [...kept, ...entries.filter((d) => !kept.some((k) => k.number === d.number))],
+          });
+          return true;
+        }),
+      );
+
     /**
      * Arms again the GitHub auto-merges an ended freeze turned off, or hands them to the freeze that
      * stands on the branch by then, which arms them when it ends.
@@ -268,65 +286,58 @@ export const MergeFreezesLive = Layer.effect(
       Effect.gen(function* () {
         const disarmed = ended.disarmed ?? [];
         if (disarmed.length === 0) return;
-        const handed = yield* locks.withLock(
-          key,
-          Effect.gen(function* () {
-            const now = yield* Clock.currentTimeMillis;
-            const next = standing(freezes.get(key), now);
-            if (next === undefined) return false;
-            const kept = next.disarmed ?? [];
-            yield* write(key, {
-              ...next,
-              disarmed: [
-                ...kept,
-                ...disarmed.filter((d) => !kept.some((k) => k.number === d.number)),
-              ],
-            });
-            return true;
-          }),
-        );
-        if (handed) return;
+        if (yield* handOff(key, disarmed)) return;
         const cwd = yield* ghFolder(ended);
-        for (const { number, method, head } of disarmed) {
-          // Asked again now: what became of the PR meanwhile decides, not what it was.
-          const owner = yield* rearmOwner(ended.repo, number);
-          if (owner === undefined) continue;
-          // Recorded before freezes kept the head: nothing says what the auto-merge stood on.
-          if (head === undefined) {
-            yield* tellNotRearmed(
-              owner,
-              ended,
-              number,
-              "the freeze didn't record which head it was armed on",
-            );
-            continue;
-          }
-          const now = yield* autoMerges.headOf(cwd, ended.repo, number);
-          // A PR merged or closed meanwhile has nothing to arm.
-          if (now?.open === false) continue;
-          // Someone pushed while nothing was armed for GitHub to turn off: not what was approved.
-          if (now !== undefined && now.head !== head) {
-            yield* tellNotRearmed(
-              owner,
-              ended,
-              number,
-              `its head moved from ${shortHead(head)}, the head it was armed on, to ${shortHead(now.head)} while the freeze stood`,
-            );
-            continue;
-          }
-          // Pinned: a push since the read above is refused by GitHub, not merged.
-          const failed = yield* autoMerges.enable(cwd, ended.repo, number, method, head);
-          if (failed !== undefined) {
+        /** Arms one auto-merge again, pinned to the head it stood on, or tells its thread why not. */
+        const rearmOne = (entry: NonNullable<StoredFreeze["disarmed"]>[number]) =>
+          Effect.gen(function* () {
+            const { number, method, head } = entry;
+            // A freeze set on the branch since the handoff above takes it instead.
+            if (yield* handOff(key, [entry])) return;
+            // Asked again now: what became of the PR meanwhile decides, not what it was.
+            const owner = yield* rearmOwner(ended.repo, number);
+            if (owner === undefined) return;
+            // Recorded before freezes kept the head: nothing says what the auto-merge stood on.
+            if (head === undefined) {
+              return yield* tellNotRearmed(
+                owner,
+                ended,
+                number,
+                "the freeze didn't record which head it was armed on",
+              );
+            }
+            const now = yield* autoMerges.headOf(cwd, ended.repo, number);
+            // A PR merged or closed meanwhile has nothing to arm.
+            if (now?.open === false) return;
+            // Pushed to while nothing was armed: not the head that stood when it was taken down.
+            if (now !== undefined && now.head !== head) {
+              return yield* tellNotRearmed(
+                owner,
+                ended,
+                number,
+                `its head moved from ${shortHead(head)}, the head it was armed on, to ${shortHead(now.head)} while the freeze stood`,
+              );
+            }
+            // Pinned: GitHub refuses to arm it if the head moved since the read above.
+            const failed = yield* autoMerges.enable(cwd, ended.repo, number, method, head);
+            if (failed === undefined) return;
             yield* Effect.logWarning("merge freeze couldn't re-arm an auto-merge").pipe(
               Effect.annotateLogs({ repo: ended.repo, number, error: failed }),
             );
+            // A reply lost after GitHub armed it: read again before saying it isn't.
+            const armedNow = yield* autoMerges.armed(cwd, ended.repo, ended.branch);
+            if (armedNow?.some((pr) => pr.number === number && pr.head === head) === true) return;
             yield* tellNotRearmed(
               owner,
               ended,
               number,
               `GitHub refused to arm it on ${shortHead(head)}: ${failed.split("\n")[0]!.slice(0, 200)}`,
             );
-          }
+          });
+        for (const entry of disarmed) {
+          // Under the repo's fence, which a new freeze takes to stand: one set meanwhile waits,
+          // then finds this PR armed and takes it down in turn.
+          yield* fences.withLock(ended.repo.toLowerCase(), rearmOne(entry));
         }
       });
 

@@ -45,7 +45,8 @@ export interface AutoMergesShape {
   ) => Effect.Effect<PrHeadNow | undefined>;
   /**
    * Arms a PR's auto-merge again with `method`, pinned to `head` (`--match-head-commit`), so
-   * GitHub refuses it once the head has moved; why it couldn't, or `undefined` when it did.
+   * GitHub refuses to arm it if the head is another by then; why it couldn't, or `undefined` when
+   * it did. The pin holds at this call only: a later push is GitHub's own auto-merge rules.
    */
   readonly enable: (
     cwd: string,
