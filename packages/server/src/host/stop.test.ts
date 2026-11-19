@@ -700,6 +700,88 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
     }).pipe(Effect.scoped, live),
   );
 
+  it.live("puts nothing back from a branch without the kept work, unless a person says to", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+      const base = run(repo, "rev-parse", "HEAD").trim();
+      const old = stopOn({
+        proc: yield* Proc,
+        busy: Effect.succeed(IDLE),
+        admission: makeAdmission(),
+        protocols: FILE,
+      });
+      const prepared = yield* old.prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
+      const commit = prepared.kept[0]?.commit;
+      expect(commit).toMatch(/^[0-9a-f]{40}$/);
+      // The ref the stop wrote is deleted from the remote; the branch is still at the base.
+      run(origin, "update-ref", "-d", wipRef(THREAD));
+
+      const { disk, stop } = yield* replaced(origin);
+      const cwd = join(disk, "worktrees", "worker");
+      const asked = { threadId: THREAD, cwd, url: URL, branch: "main", commit };
+      // Before, the branch was put back in its place and said restored: the work gone unseen.
+      const refused = yield* stop.restore!(asked);
+      expect(refused.restored).toBe(false);
+      expect(refused.note).toContain(wipRef(THREAD));
+      expect(refused.note).toContain("fromBranch");
+      expect(existsSync(cwd)).toBe(false);
+      // A person takes the branch without it.
+      const taken = yield* stop.restore!({ ...asked, fromBranch: true });
+      expect(taken).toMatchObject({ restored: true, commit: base, source: "branch" });
+      expect(taken.note).toContain("without the work");
+      expect(run(cwd, "rev-parse", "HEAD").trim()).toBe(base);
+
+      // A caught-up folder whose branch was pushed over since: the kept tip isn't in it either.
+      const other = ThreadId.make("thread-2");
+      const overCwd = join(disk, "worktrees", "over");
+      const over = yield* stop.restore!({
+        threadId: other,
+        cwd: overCwd,
+        url: URL,
+        branch: "main",
+        commit: "0".repeat(40),
+        caughtUp: true,
+      });
+      expect(over.restored).toBe(false);
+      expect(existsSync(overCwd)).toBe(false);
+    }).pipe(Effect.scoped, live),
+  );
+
+  it.live("takes a caught-up folder's exact ref once its branch was pushed over", () =>
+    Effect.gen(function* () {
+      const { repo, origin } = yield* worktree;
+      run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+      run(repo, "checkout", "--quiet", "-b", "gram/worker");
+      run(repo, "add", "-A");
+      run(repo, "commit", "--quiet", "-m", "all of it");
+      run(repo, "push", "--quiet", "origin", "gram/worker");
+      const kept = run(repo, "rev-parse", "HEAD").trim();
+      // The branch is pushed over with another history; the kept commit is pushed back as the
+      // thread's ref, exactly as the stop found it.
+      run(repo, "checkout", "--quiet", "--orphan", "other");
+      write(join(repo, "other.txt"), "other\n");
+      run(repo, "add", "-A");
+      run(repo, "commit", "--quiet", "-m", "pushed over");
+      run(repo, "push", "--quiet", "--force", "origin", "HEAD:refs/heads/gram/worker");
+      run(repo, "push", "--quiet", "origin", `${kept}:${wipRef(THREAD)}`);
+
+      const { disk, stop } = yield* replaced(origin);
+      const cwd = join(disk, "worktrees", "worker");
+      // Before, refused as gone though the ref the refusal asks for was there.
+      const restored = yield* stop.restore!({
+        threadId: THREAD,
+        cwd,
+        url: URL,
+        branch: "gram/worker",
+        commit: kept,
+        caughtUp: true,
+      });
+      expect(restored).toMatchObject({ restored: true, commit: kept, source: "ref" });
+      expect(readFileSync(join(cwd, "new.txt"), "utf8")).toBe("untracked\n");
+    }).pipe(Effect.scoped, live),
+  );
+
   it.live("keeps a branch that is on the disk ahead of what was kept, and says so", () =>
     Effect.gen(function* () {
       const { repo } = yield* worktree;

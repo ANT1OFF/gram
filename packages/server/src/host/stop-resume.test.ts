@@ -1210,6 +1210,282 @@ describe("resuming a machine on another disk", () => {
     }),
   );
 
+  it.effect("holds an older host's folder from a branch to the work its stop kept", () =>
+    Effect.gen(function* () {
+      const cwd = "/clones/widgets-trees/worker";
+      const caughtCwd = "/clones/widgets-trees/caught";
+      const worker = thread("t-worker", {
+        path: cwd,
+        branch: "gram/worker",
+        cloneIdentity: cloneIdentityOf(URL)!,
+      });
+      const caught = thread("t-caught", {
+        path: caughtCwd,
+        branch: "gram/caught",
+        cloneIdentity: cloneIdentityOf(URL)!,
+      });
+      const stops = makeStopMarks();
+      stops.arrive(MACHINE, { diskId: "disk-aaaaaaaa" });
+      stops.keep(MACHINE, worker.id, cwd, {
+        commit: COMMIT,
+        caughtUp: false,
+        branch: "gram/worker",
+      });
+      // Caught up at the stop: the branch at the remote held it all then.
+      stops.keep(MACHINE, caught.id, caughtCwd, {
+        commit: COMMIT,
+        caughtUp: true,
+        branch: "gram/caught",
+      });
+      stops.arrive(MACHINE, { diskId: "disk-bbbbbbbb" });
+      const asked: Array<RestoreRequest> = [];
+      const tip = "b".repeat(40);
+      const deps = {
+        hosts: {
+          connection: () =>
+            Effect.succeed({
+              // Built before `wip-restore-kept`: it makes the branch as it is now, unasked.
+              hello: { capabilities: [], features: ["wip-restore-pending"] },
+              git: { present: () => Effect.succeed(false) },
+              stop: {
+                restore: (request: RestoreRequest) =>
+                  Effect.sync((): HostStopRestored => {
+                    asked.push(request);
+                    return { restored: true, commit: tip, uncommitted: false, source: "branch" };
+                  }),
+              },
+            }),
+          stops,
+        },
+        store: { listThreads: Effect.succeed([worker, caught]) },
+        runtimes: { startSession: () => Effect.void },
+      } as unknown as StopResumeDeps;
+      const first = yield* resumeHost(deps, MACHINE);
+      // Before, taken as restored, and the threads opened without their kept work: the caught-up
+      // one on a branch pushed over since.
+      expect(first.restored).toEqual([]);
+      expect(stops.blocked(MACHINE, worker.id)).toBeDefined();
+      expect(stops.blocked(MACHINE, caught.id)).toBeDefined();
+      // A person takes the branch without it, for the one thread they named.
+      const taken = yield* resumeHost(deps, MACHINE, { fromBranch: [worker.id] });
+      expect(asked.filter((request) => request.fromBranch === true).map((r) => r.cwd)).toEqual([
+        cwd,
+      ]);
+      expect(taken.restored.map((entry) => entry.cwd)).toEqual([cwd]);
+      expect(stops.blocked(MACHINE, worker.id)).toBeUndefined();
+      expect(stops.blocked(MACHINE, caught.id)).toBeDefined();
+    }),
+  );
+
+  it.effect("takes the branch for a shared folder only when every thread in it was named", () =>
+    Effect.gen(function* () {
+      const cwd = "/clones/widgets-trees/shared";
+      const a = thread("t-a", {
+        path: cwd,
+        branch: "gram/a",
+        cloneIdentity: cloneIdentityOf(URL)!,
+      });
+      const b = thread("t-b", {
+        path: cwd,
+        branch: "gram/a",
+        cloneIdentity: cloneIdentityOf(URL)!,
+      });
+      const stops = makeStopMarks();
+      stops.arrive(MACHINE, { diskId: "disk-aaaaaaaa" });
+      for (const each of [a, b])
+        stops.keep(MACHINE, each.id, cwd, { commit: COMMIT, caughtUp: false, branch: "gram/a" });
+      stops.arrive(MACHINE, { diskId: "disk-bbbbbbbb" });
+      const asked: Array<RestoreRequest> = [];
+      const deps = {
+        hosts: {
+          connection: () =>
+            Effect.succeed({
+              hello: { capabilities: [], features: ["wip-restore-pending", "wip-restore-kept"] },
+              git: { present: () => Effect.succeed(false) },
+              stop: {
+                // Each thread's kept work is gone: the branch only when told to take it.
+                restore: (request: RestoreRequest) =>
+                  Effect.sync((): HostStopRestored => {
+                    asked.push(request);
+                    return request.fromBranch === true
+                      ? { restored: true, commit: "b".repeat(40), source: "branch" }
+                      : { restored: false, note: "Its kept work is gone." };
+                  }),
+              },
+            }),
+          stops,
+        },
+        store: { listThreads: Effect.succeed([a, b]) },
+        runtimes: { startSession: () => Effect.void },
+      } as unknown as StopResumeDeps;
+      yield* resumeHost(deps, MACHINE);
+      // A alone named: before, its branch was taken for B too, which nobody named.
+      asked.length = 0;
+      yield* resumeHost(deps, MACHINE, { fromBranch: [a.id] });
+      expect(asked.some((request) => request.fromBranch === true)).toBe(false);
+      expect(stops.blocked(MACHINE, a.id)).toContain("name every thread in that folder");
+      expect(stops.blocked(MACHINE, b.id)).toBeDefined();
+      // Both named: made from the branch for both.
+      yield* resumeHost(deps, MACHINE, { fromBranch: [a.id, b.id] });
+      expect(stops.blocked(MACHINE, a.id)).toBeUndefined();
+      expect(stops.blocked(MACHINE, b.id)).toBeUndefined();
+    }),
+  );
+
+  it.effect("leaves a confirmed folder Git can't read now for the next resume, owing nothing", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const first = "/clones/widgets-trees/first";
+        const second = "/clones/widgets-trees/second";
+        const both = {
+          ...thread("t-both", { path: first, cloneIdentity: cloneIdentityOf(URL)! }),
+          extraCheckouts: [
+            {
+              kind: "worktree",
+              hostId: MACHINE,
+              path: second,
+              cloneIdentity: cloneIdentityOf(URL)!,
+            },
+          ],
+        } as unknown as Thread;
+        const stops = makeStopMarks();
+        stops.arrive(MACHINE, { diskId: "disk-aaaaaaaa" });
+        stops.arrive(MACHINE, { diskId: "disk-bbbbbbbb" });
+        const disk = new Set<string>();
+        const asked: Array<string> = [];
+        let gone = false;
+        let drops = true;
+        // How many of the next reads of the first folder fail, as an RPC that times out does.
+        let failing = 0;
+        const deps = {
+          hosts: {
+            connection: () =>
+              Effect.succeed({
+                gone: () => gone,
+                hello: { capabilities: [], features: ["wip-restore-pending"] },
+                git: {
+                  present: (cwd: string) => Effect.sync(() => disk.has(cwd)),
+                  local: (cwd: string) =>
+                    cwd === first && failing > 0
+                      ? Effect.suspend(() => {
+                          failing -= 1;
+                          return Effect.fail(new Error("timed out"));
+                        })
+                      : Effect.succeed({ repo: disk.has(cwd) }),
+                },
+                stop: {
+                  restore: (request: RestoreRequest) =>
+                    Effect.gen(function* () {
+                      asked.push(request.cwd);
+                      if (request.cwd === second && drops) {
+                        while (stops.isFolderOwed(MACHINE, first)) yield* Effect.yieldNow;
+                        gone = true;
+                        return yield* new HostFailed({ message: "The connection closed." });
+                      }
+                      // A confirmed checkout with new work since: asked again, it is refused.
+                      if (request.cwd === first && request.pending === true)
+                        return yield* new HostFailed({ message: "It has work of its own." });
+                      disk.add(request.cwd);
+                      return { restored: true, commit: COMMIT } satisfies HostStopRestored;
+                    }),
+                },
+              }),
+            stops,
+          },
+          store: { listThreads: Effect.succeed([both]) },
+          runtimes: { startSession: () => Effect.void },
+        } as unknown as StopResumeDeps;
+        expect((yield* Effect.flip(resumeHost(deps, MACHINE)))._tag).toBe("HostUnavailable");
+        expect(stops.isFolderConfirmed(MACHINE, first)).toBe(true);
+        gone = false;
+        drops = false;
+        // One read fails: asked again, and it answers. Before, the folder was owed afresh, asked of
+        // the host, and refused for its new work.
+        failing = 1;
+        asked.length = 0;
+        const once = yield* Effect.forkScoped(resumeHost(deps, MACHINE));
+        yield* TestClock.adjust("10 seconds");
+        yield* Fiber.join(once);
+        expect(asked).toEqual([second]);
+        expect(stops.isFolderOwed(MACHINE, first)).toBe(false);
+        expect(stops.blocked(MACHINE, "t-both" as ThreadId)).toBeUndefined();
+      }),
+    ),
+  );
+
+  it.effect("asks again for a confirmed folder that is no checkout any more at the retry", () =>
+    Effect.gen(function* () {
+      const first = "/clones/widgets-trees/first";
+      const second = "/clones/widgets-trees/second";
+      // One thread with two folders: it opens only once both are back.
+      const both = {
+        ...thread("t-both", { path: first, cloneIdentity: cloneIdentityOf(URL)! }),
+        extraCheckouts: [
+          { kind: "worktree", hostId: MACHINE, path: second, cloneIdentity: cloneIdentityOf(URL)! },
+        ],
+      } as unknown as Thread;
+      const stops = makeStopMarks();
+      stops.arrive(MACHINE, { diskId: "disk-aaaaaaaa" });
+      stops.arrive(MACHINE, { diskId: "disk-bbbbbbbb" });
+      // What is at each path: a checkout Git reads, or a plain folder.
+      const disk = new Map<string, "checkout" | "empty">();
+      const asked: Array<RestoreRequest> = [];
+      let gone = false;
+      let drops = true;
+      const deps = {
+        hosts: {
+          connection: () =>
+            Effect.succeed({
+              gone: () => gone,
+              hello: { capabilities: [], features: ["wip-restore-pending"] },
+              git: {
+                present: (cwd: string) => Effect.sync(() => disk.has(cwd)),
+                local: (cwd: string) => Effect.sync(() => ({ repo: disk.get(cwd) === "checkout" })),
+              },
+              stop: {
+                restore: (request: RestoreRequest) =>
+                  Effect.gen(function* () {
+                    asked.push(request);
+                    if (request.cwd === second && drops) {
+                      while (stops.isFolderOwed(MACHINE, first)) yield* Effect.yieldNow;
+                      gone = true;
+                      return yield* new HostFailed({ message: "The machine's connection closed." });
+                    }
+                    disk.set(request.cwd, "checkout");
+                    return { restored: true, commit: COMMIT } satisfies HostStopRestored;
+                  }),
+              },
+            }),
+          stops,
+        },
+        store: { listThreads: Effect.succeed([both]) },
+        runtimes: { startSession: () => Effect.void },
+      } as unknown as StopResumeDeps;
+      expect((yield* Effect.flip(resumeHost(deps, MACHINE)))._tag).toBe("HostUnavailable");
+      expect(stops.isFolderConfirmed(MACHINE, first)).toBe(true);
+      expect(stops.isThreadBack(MACHINE, "t-both" as ThreadId)).toBe(false);
+      // Between the two, the confirmed folder is replaced by an empty one at the same path.
+      disk.set(first, "empty");
+      gone = false;
+      drops = false;
+      asked.length = 0;
+      const again = yield* resumeHost(deps, MACHINE);
+      // Before, the empty folder was taken as back unasked, and the thread opened on it.
+      expect(
+        asked
+          .map((request) => [request.cwd, request.pending])
+          .toSorted(([a], [b]) => String(a).localeCompare(String(b))),
+      ).toEqual([
+        [first, true],
+        [second, true],
+      ]);
+      expect(disk.get(first)).toBe("checkout");
+      expect(again.restored.map((entry) => entry.cwd).toSorted()).toEqual([first, second]);
+      expect(stops.blocked(MACHINE, "t-both" as ThreadId)).toBeUndefined();
+      expect(stops.owes(MACHINE)).toBe(false);
+    }),
+  );
+
   it.effect("checks a folder that is there on a new disk, and one a user's thread shares", () =>
     Effect.gen(function* () {
       const cwd = "/clones/widgets";

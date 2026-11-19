@@ -174,6 +174,13 @@ export const HostFeature = Schema.Literals([
    */
   "wip-restore-pending",
   /**
+   * Holds a folder made from its branch to the commit its stop kept (`host.stop.restore`'s
+   * `commit`): when the ref is gone from the remote and the branch doesn't hold that commit,
+   * nothing is put back unless `fromBranch` says to. A control plane holds a host without it to
+   * that itself, refusing a folder such a host made from the branch.
+   */
+  "wip-restore-kept",
+  /**
    * Keeps a thread's work in progress off the machine while it works (`host.stop.keep`): the same
    * hidden ref a stop writes, without readying the machine to stop. A control plane asks it after a
    * turn and during a long one, so a machine that is lost costs minutes of work, not the turn's.
@@ -1110,7 +1117,9 @@ export const HostRpcs = RpcGroup.make(
    * back. A folder with no ref of its own at the remote is read from the thread's one ref an older
    * host kept, `refs/gram/wip/<thread>`, only given `commit`. `caughtUp` says the stop kept no ref
    * because the branch at the remote held everything: the folder is made from `branch` there. So
-   * is one whose ref the remote doesn't have.
+   * is one whose ref the remote doesn't have, but only when that branch holds `commit`: otherwise
+   * the work the stop kept is gone from the remote, and nothing is put back unless `fromBranch`
+   * says to make it without that work.
    */
   Rpc.make("host.stop.restore", {
     payload: {
@@ -1132,6 +1141,12 @@ export const HostRpcs = RpcGroup.make(
        * host that names `wip-restore-pending`: one that is there is checked, not taken as is.
        */
       pending: Schema.optionalKey(Schema.Literal(true)),
+      /**
+       * A person took the branch without the work the stop kept (`commit`), which is gone from
+       * the remote: the folder is made from `branch` all the same. A host before it does so
+       * unasked, which the caller holds it to.
+       */
+      fromBranch: Schema.optionalKey(Schema.Literal(true)),
     },
     success: HostStopRestored,
     error: HostFailed,

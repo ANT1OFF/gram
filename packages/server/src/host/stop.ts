@@ -91,6 +91,13 @@ export const STOPPING = "This machine is about to stop. Try again once it is bac
  */
 export const FOLDER_THERE = "Its folder is there already.";
 
+/**
+ * A restore's note for a folder whose kept work is gone from the remote, its branch there without
+ * it: nothing is put back, and the note names the two ways out a person has.
+ */
+export const keptWorkGone = (threadId: string, cwd?: string): string =>
+  `The work its last stop kept is gone from the remote, and its branch there doesn't hold it. Push ${wipRef(threadId, cwd)} back to the remote and Gram puts it back at the next resume, or resume the machine with this thread in fromBranch to make the folder from its branch without that work.`;
+
 /** How long a host readied to stop refuses new work when no stop and no cancel follows. */
 export const STOP_HOLD_MS = 10 * 60_000;
 
@@ -117,6 +124,8 @@ export interface RestoreRequest {
   readonly ref?: string | undefined;
   /** A resume before set out to put it back and didn't finish: one there is checked first. */
   readonly pending?: boolean | undefined;
+  /** A person took the branch without the kept `commit`, gone from the remote (`keptWorkGone`). */
+  readonly fromBranch?: boolean | undefined;
 }
 
 export interface KeepRequest {
@@ -515,14 +524,14 @@ export const stopOn = (deps: StopDeps): HostStop => {
           ref,
           ref === undefined ? cwd : undefined,
         ).pipe(Effect.mapError((error) => refused(error.message)));
-      const ref =
+      let ref =
         request.caughtUp === true
           ? undefined
           : ((yield* fetch(from)) ??
             (from === undefined && expected !== undefined
               ? yield* fetch(wipRef(request.threadId))
               : undefined));
-      const kept =
+      let kept =
         ref ??
         (request.branch === undefined || from !== undefined
           ? undefined
@@ -531,6 +540,31 @@ export const stopOn = (deps: StopDeps): HostStop => {
             ));
       if (kept === undefined)
         return { restored: false, note: "Nothing was kept of it at the remote." };
+      // From the branch, though the stop said it kept a commit (its ref is gone from the remote, or
+      // the branch was pushed over since): only a branch that holds that commit holds its work.
+      // One that doesn't is made into the folder only when a person said to (`fromBranch`).
+      let without =
+        ref === undefined &&
+        expected !== undefined &&
+        !(yield* git(clone, ["merge-base", "--is-ancestor", expected, kept.commit]).pipe(
+          Effect.map((out) => out.status === 0),
+          Effect.orElseSucceed(() => false),
+        ));
+      // Caught up at the stop, so no ref was asked for, and the branch has gone another way since:
+      // the thread's ref at exactly that commit (pushed back, say) still holds it, and is taken.
+      // One that names anything else is another folder's, and left alone.
+      if (without && request.caughtUp === true && from === undefined) {
+        const exact =
+          (yield* fetch().pipe(Effect.orElseSucceed(() => undefined))) ??
+          (yield* fetch(wipRef(request.threadId)).pipe(Effect.orElseSucceed(() => undefined)));
+        if (exact !== undefined) {
+          ref = exact;
+          kept = exact;
+          without = false;
+        }
+      }
+      if (without && request.fromBranch !== true)
+        return { restored: false, note: keptWorkGone(request.threadId, cwd) };
       // A ref fetched and then not put back isn't this repository's own work: forgotten here, so
       // a later stop doesn't take it for a snapshot of its own (the remote's stays).
       const forget =
@@ -589,6 +623,9 @@ export const stopOn = (deps: StopDeps): HostStop => {
       if (ahead)
         said =
           "The branch was on this disk with commits made after this work was kept, and is as it was.";
+      else if (without)
+        said =
+          "Made from its branch without the work its last stop kept, which is gone from the remote, as asked.";
       else if (ref === undefined) {
         // From the branch: said when it isn't what the stop found there.
         if (expected !== undefined && kept.commit !== expected)
