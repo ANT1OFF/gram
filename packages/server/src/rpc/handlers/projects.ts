@@ -17,6 +17,11 @@ import { resolve } from "node:path";
 import { cloneRepo, makeCloneSuggestions } from "../../fs/clone.ts";
 import { expandHome, registerRepo, repositoryCandidates } from "../../fs/folders.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
+import {
+  folderBringsNothing,
+  folderSettings,
+  projectFolderTrusted,
+} from "../../settings/folder-trust.ts";
 import { fileOrigin } from "../../thread-profiles/repositories.ts";
 import {
   projectScriptsDir,
@@ -60,20 +65,36 @@ const projectHandlers = Effect.gen(function* () {
   // Absent in test layers without a data folder: a broken scripts file then just has none.
   const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
   const lastGoodDir = config === undefined ? undefined : projectScriptsDir(config.dataDir);
-  const projectRoot = (projectId: ProjectId) =>
+  const projectOf = (projectId: ProjectId) =>
     store.listProjects.pipe(
       Effect.flatMap((projects) => {
         const project = projects.find((each) => each.id === projectId);
         return project === undefined
           ? Effect.fail(new NotFound({ entity: "project", id: projectId }))
-          : Effect.succeed(project.root);
+          : Effect.succeed(project);
       }),
     );
+  const projectRoot = (projectId: ProjectId) =>
+    Effect.map(projectOf(projectId), (project) => project.root);
 
   return {
     "projects.list": () => store.listProjects,
-    "projects.add": ({ root }) =>
-      registerRepo(store, root).pipe(Effect.map(({ project }) => project)),
+    "projects.add": ({ root, trust }) =>
+      Effect.gen(function* () {
+        const { project, created } = yield* registerRepo(store, root);
+        // Only a folder this call adds takes the answer: an existing project keeps its own, which
+        // changes only through `projects.setFolderTrust`. Without one nothing is kept, so settings
+        // the folder gains later are asked about rather than trusted for having been absent.
+        if (!created || trust === undefined) return project;
+        return yield* store.setProjectFolderTrust(project.id, trust);
+      }),
+    "projects.folderSettings": ({ root }) =>
+      Effect.try({
+        try: () => folderSettings(resolve(expandHome(root))),
+        catch: () => new NotFound({ entity: "file", id: root }),
+      }),
+    "projects.setFolderTrust": ({ projectId, trusted }) =>
+      store.setProjectFolderTrust(projectId, trusted),
     "projects.repositories": () =>
       Effect.gen(function* () {
         const settings = yield* store.getSettings;
@@ -123,9 +144,14 @@ const projectHandlers = Effect.gen(function* () {
       store.setProjectBookmarked(projectId, bookmarked),
     "projects.forget": ({ projectId }) => store.forgetProject(projectId),
     "projects.scripts": ({ projectId }) =>
-      projectRoot(projectId).pipe(
-        Effect.flatMap((root) =>
-          Effect.promise(() => readProjectScripts(root, projectId, lastGoodDir)),
+      projectOf(projectId).pipe(
+        Effect.flatMap((project) =>
+          Effect.promise(async () => {
+            const scripts = await readProjectScripts(project.root, projectId, lastGoodDir);
+            return projectFolderTrusted(project, folderBringsNothing(project.root))
+              ? scripts
+              : { ...scripts, untrusted: true as const };
+          }),
         ),
       ),
     "projects.saveScripts": ({ projectId, scripts }) =>

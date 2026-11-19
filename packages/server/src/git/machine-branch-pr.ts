@@ -3,7 +3,7 @@
 // so a branch's PR there was found only once bound; a PR just opened from that worktree read as
 // none, and the PR tools refused it.
 import { effectiveCheckout, isLocalHost, type PrStatus, type Thread } from "@gram/contracts";
-import { gh, git, originOwnerRepo, Proc, repoFromPrUrl } from "@gram/git";
+import { gh, git, isSameRepoHead, originOwnerRepo, Proc, repoFromPrUrl } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { cloneIdentityOf } from "../host/repos.ts";
@@ -88,10 +88,7 @@ const openPrNumber = (root: string, repo: string, branch: string) =>
         // A fork's PR from a branch of the same name isn't this worktree's.
         const own = listed.find(
           (entry: unknown): entry is { readonly number: number } =>
-            typeof entry === "object" &&
-            entry !== null &&
-            (entry as { isCrossRepository?: unknown }).isCrossRepository !== true &&
-            typeof (entry as { number?: unknown }).number === "number",
+            isSameRepoHead(entry) && typeof (entry as { number?: unknown }).number === "number",
         );
         return own?.number;
       } catch {

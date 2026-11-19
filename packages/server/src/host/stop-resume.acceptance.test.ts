@@ -427,6 +427,10 @@ describe.skipIf(!hasGit)("stopping a machine and resuming on a new host", () => 
         // anything that isn't one is refused before the machine is asked.
         for (const kept of ["all", [{ threadId: thread.id }], [{ ...keptThen[0], commit: "HEAD" }]])
           expect((yield* post(MACHINES_STOP_RESUME_PATH, { id: hostId, kept })).status).toBe(400);
+        for (const fromBranch of [thread.id, [1], [""]])
+          expect((yield* post(MACHINES_STOP_RESUME_PATH, { id: hostId, fromBranch })).status).toBe(
+            400,
+          );
         const resumed = yield* post(MACHINES_STOP_RESUME_PATH, { id: hostId, kept: keptThen });
         expect(resumed).toEqual({
           status: 200,

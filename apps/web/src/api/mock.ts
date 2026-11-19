@@ -77,6 +77,7 @@ import {
   withoutCompletion,
   firstChoiceOf,
   savedWorkOf,
+  KEPT_WORK_GONE_CODE,
 } from "@gram/contracts";
 
 import { createThreadFeed, syncScheduler } from "@/stores/thread-feed";
@@ -1814,6 +1815,16 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     await this.send(threadId, {
       text: `Note: ${lost.machine}, the machine this session runs on, was lost. Continue where you left off.`,
     });
+  }
+
+  async restoreFromBranch(threadId: ThreadId) {
+    const runtime = this.#runtime(threadId);
+    const { lastError, ...thread } = runtime.summary.thread;
+    if (lastError?.code !== KEPT_WORK_GONE_CODE)
+      throw refuse("This thread isn't held off its machine for saved work that is gone.");
+    await this.#delay(400);
+    this.#replaceThread(thread);
+    this.#setStatus(runtime, "idle");
   }
 
   async cancelLimitWait(threadId: ThreadId) {

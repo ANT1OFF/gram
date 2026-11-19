@@ -78,10 +78,13 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * The orchestrator's raised on 2026-11-18, on purpose, for `spawn_worker`'s `conversations` (handing
  * a host's conversation to a worker): the parameter and one short sentence, with how `reply` works
  * left to its own description; measured then at 65,523.
+ * The orchestrator's raised on 2026-11-19, on purpose, for `freeze_merges` restoring auto-merge
+ * only on the head it disarmed (the November security batch): its clause was cut first; measured
+ * then at 65,603. The worker's raised with it, for the same tool; measured then at 41,948.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 65_550,
-  worker: 41_900,
+  orchestrator: 65_650,
+  worker: 41_990,
   plain: 23_650,
 };
 

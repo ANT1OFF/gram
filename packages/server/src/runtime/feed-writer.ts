@@ -98,10 +98,26 @@ export const makeFeedWriter = ({
     hub.publishOwn({ type: "message.settled", threadId: rt.threadId, messageId });
 
   /** Stores a whole message and pushes it to live subscribers. */
-  const publishMessage = (rt: Runtime, message: GramUIMessage, turnId?: TurnId) =>
+  /**
+   * `after`, an open message the feed already shows above this one, is stored first if it wasn't
+   * yet, so the stored transcript keeps the order the live one shows.
+   */
+  const publishMessage = (
+    rt: Runtime,
+    message: GramUIMessage,
+    turnId?: TurnId,
+    options?: { readonly after?: MessageId },
+  ) =>
     feedLocked(
       rt,
-      store.upsertMessage(rt.threadId, message, turnId).pipe(
+      Effect.gen(function* () {
+        const before = options?.after === undefined ? undefined : rt.open.get(options.after);
+        if (before !== undefined && !before.finished) {
+          yield* persist(rt, before);
+          before.unsaved = false;
+        }
+      }).pipe(
+        Effect.andThen(store.upsertMessage(rt.threadId, message, turnId)),
         Effect.flatMap((rev) => publishFeed(rt, { type: "message", message, rev })),
         Effect.tap(() => settled(rt, message.id)),
       ),

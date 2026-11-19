@@ -9,11 +9,14 @@ import {
   AddProjectPayload,
   CloneProjectPayload,
   CloneSuggestions,
+  FolderSettings,
+  FolderSettingsPayload,
   ForgetProjectPayload,
   ProjectOrigins,
   ProjectOriginsPayload,
   RepositoryCandidates,
   SetProjectBookmarkedPayload,
+  SetProjectFolderTrustPayload,
 } from "../projects.ts";
 import { ProjectScripts, SaveProjectScriptsPayload } from "../project-scripts.ts";
 import { DeleteSessionPayload } from "../resume.ts";
@@ -75,6 +78,21 @@ export const ProjectRpcs = RpcGroup.make(
   Rpc.make("projects.cloneSuggestions", { success: CloneSuggestions, error: errors() }),
   Rpc.make("projects.setBookmarked", {
     payload: SetProjectBookmarkedPayload,
+    success: Project,
+    error: errors(NotFound),
+  }),
+  /**
+   * What a folder brings that would load as the user's once trusted (`FolderSettings`), for the
+   * question Gram asks when it is added. Reads files only; `NotFound` for a missing folder.
+   */
+  Rpc.make("projects.folderSettings", {
+    payload: FolderSettingsPayload,
+    success: FolderSettings,
+    error: errors(NotFound),
+  }),
+  /** Records whether the user trusts the project's own agent settings and scripts. */
+  Rpc.make("projects.setFolderTrust", {
+    payload: SetProjectFolderTrustPayload,
     success: Project,
     error: errors(NotFound),
   }),

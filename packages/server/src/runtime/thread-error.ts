@@ -1,4 +1,5 @@
 import {
+  KEPT_WORK_GONE_CODE,
   THREAD_ERROR_TEXT_MAX,
   type AgentFailure,
   type AgentKind,
@@ -172,6 +173,27 @@ export const unavailableError = (error: AgentUnavailable, at: number): ThreadErr
     at,
   };
 };
+
+/**
+ * The error a thread leaves whose session its machine's resume holds off because its saved work is
+ * gone (`KEPT_WORK_GONE_REASON`, the message it fails with): that, with its code, so the thread
+ * offers to make the folder from the branch without it. Undefined for any other failure. Read
+ * before the folder is looked for: the folder isn't there, and that isn't the reason.
+ */
+export const keptWorkGoneError = (
+  error: AgentUnavailable,
+  reason: string,
+  at: number,
+): ThreadError | undefined =>
+  error.message.includes(reason)
+    ? {
+        kind: "unknown",
+        retryable: false,
+        code: KEPT_WORK_GONE_CODE,
+        text: excerpt(reason, THREAD_ERROR_TEXT_MAX),
+        at,
+      }
+    : undefined;
 
 /** The error a thread whose folder is gone leaves when its agent can't start there. */
 export const missingFolderError = (text: string, at: number): ThreadError => ({

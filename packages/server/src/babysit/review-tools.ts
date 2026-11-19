@@ -62,10 +62,14 @@ const threadView = (thread: ReviewThread) => ({
   })),
 });
 
-/** Whether a configured review bot wrote the thread's first comment, as `ReviewThread.byBot` reads it. */
+/**
+ * Whether a configured review bot started the thread: `ReviewThread.byBot`, which only an app
+ * account GitHub reports as one can earn, and whose login the bots configured now still match. A
+ * person whose login matches a pattern starts a person's thread, which the user is asked about.
+ */
 const startedByReviewBot = (bots: ReadonlyArray<ReviewBot>, target: ReviewThread) => {
   const first = target.comments[0];
-  return first !== undefined && isBotLogin(bots, first.author);
+  return target.byBot && first !== undefined && isBotLogin(bots, first.author);
 };
 
 const sameRepo = (a: string | undefined, b: string) => a?.toLowerCase() === b.toLowerCase();

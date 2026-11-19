@@ -21,6 +21,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { folderExists, resolveFolder } from "../fs/folders.ts";
+import { originIdentityAt } from "../host/repos.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { heldCheckoutPaths, usedCheckoutPaths } from "../runtime/create-in-checkout.ts";
 import { CheckoutService, THIS_MACHINE_FOLDER } from "../runtime/hooks.ts";
@@ -82,6 +83,23 @@ export const GitCheckoutLive = Layer.effect(
         return yield* new CheckoutInUse({ path: entry?.path ?? root, message });
       });
 
+    /**
+     * `checkout` with the identity of its repository's origin recorded as Gram makes it, before the
+     * thread's agent runs there: what the worker's ownership of a PR is later checked against,
+     * never the origin the agent can rewrite since. Only a worktree on this machine; another
+     * machine's records its own as it is made there.
+     */
+    const withOrigin = (checkout: Checkout, repoRoot: string) =>
+      checkout.kind !== "worktree" ||
+      (checkout.hostId !== undefined && checkout.hostId !== LOCAL_HOST_ID) ||
+      checkout.cloneIdentity !== undefined
+        ? Effect.succeed(checkout)
+        : provide(originIdentityAt(repoRoot)).pipe(
+            Effect.map((cloneIdentity): Checkout =>
+              cloneIdentity === undefined ? checkout : { ...checkout, cloneIdentity },
+            ),
+          );
+
     const prepare: CheckoutService["Service"]["prepare"] = (request, openCheckouts, projectRoot) =>
       Effect.gen(function* () {
         // Every kind checks its folder before git runs there, so a typo never persists a thread.
@@ -117,7 +135,7 @@ export const GitCheckoutLive = Layer.effect(
                       : provide(removalError(error, root)),
                 ),
               );
-            return created.checkout;
+            return yield* withOrigin(created.checkout, created.checkout.repoRoot ?? root);
           }
           case "machineFolder":
             return yield* new InvalidState({ message: THIS_MACHINE_FOLDER });
@@ -142,11 +160,12 @@ export const GitCheckoutLive = Layer.effect(
             const branch = entry.branch === undefined ? {} : { branch: entry.branch };
             // A PR head from another repository stays someone else's code in every thread opened on it.
             const trust = isUntrustedWorktree(entry.path) ? { untrusted: true } : {};
-            return (
-              entry.isMain
-                ? { kind: "main", path: entry.path, ...branch }
-                : { kind: "worktree", path: entry.path, ...branch, repoRoot: main.path, ...trust }
-            ) satisfies Checkout;
+            if (entry.isMain)
+              return { kind: "main", path: entry.path, ...branch } satisfies Checkout;
+            return yield* withOrigin(
+              { kind: "worktree", path: entry.path, ...branch, repoRoot: main.path, ...trust },
+              main.path,
+            );
           }
         }
       });

@@ -1,10 +1,19 @@
-import type { GramUIMessage, ThreadError, ThreadId, ThreadStatus, TurnId } from "@gram/contracts";
+import {
+  type GramUIMessage,
+  KEPT_WORK_GONE_CODE,
+  type ThreadError,
+  type ThreadId,
+  type ThreadStatus,
+  type TurnId,
+} from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, CircleX, Clock, RotateCw } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
+import { OLDER_SERVER, useServes } from "@/api/use-serves";
+import { Hint } from "@/components/hint";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { askModelPicker } from "@/composer/model-picker-request";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -135,8 +144,9 @@ function EarlierAttempts({ earlier }: { earlier: readonly EarlierAttempt[] }) {
 export function AgentErrorCard({ threadId, error }: { threadId: ThreadId; error: ThreadError }) {
   // A thread the server no longer has, a finished worker's, has no feed to read attempts from.
   const live = useThreadsStore((s) => s.byId[threadId] !== undefined);
-  // A lost machine has a card of its own, with its own resume.
-  if (error.machineLost !== undefined)
+  // A lost machine has a card of its own, with its own resume; not once its saved work is gone,
+  // which a resume can't bring back: that card says so, with its own way out.
+  if (error.machineLost !== undefined && error.code !== KEPT_WORK_GONE_CODE)
     return <MachineLostCard threadId={threadId} error={error} lost={error.machineLost} />;
   return live ? (
     <LiveErrorCard threadId={threadId} error={error} />
@@ -254,11 +264,14 @@ function ErrorCard({
   // A spent usage limit says so, and when it resets once that is known: "Usage limit · resets
   // 11:15". The provider throttling requests stays "Rate limited".
   const spent = limited && (!error.retryable || retryAt !== undefined);
-  const title = spent
-    ? early
-      ? `${USAGE_LIMIT_SHORT} · resets ${resetText(retryAt, now)}`
-      : USAGE_LIMIT
-    : failureLabel(error.kind, error.retryable);
+  const keptGone = error.code === KEPT_WORK_GONE_CODE;
+  const title = keptGone
+    ? KEPT_WORK_GONE_TITLE
+    : spent
+      ? early
+        ? `${USAGE_LIMIT_SHORT} · resets ${resetText(retryAt, now)}`
+        : USAGE_LIMIT
+      : failureLabel(error.kind, error.retryable);
   const canRetryNow = text !== undefined && (error.retryable || !early);
   // Repeated throttling, with no reset to wait for: the card can try again on its own in a moment,
   // or the user can move the thread to another model. Never while the server waits the limit out.
@@ -310,6 +323,7 @@ function ErrorCard({
         </p>
         <p className="break-words">{errorSentence(error.kind, error.text, early)}</p>
         {repeat && <EarlierAttempts earlier={attempt.earlier} />}
+        {keptGone && <FromBranch threadId={threadId} current={current} />}
         {limited && current && retried === undefined && !early && (
           <p
             data-testid="agent-error-retry-time"
@@ -428,6 +442,111 @@ function ErrorCard({
         )}
       </div>
     </div>
+  );
+}
+
+/** The title of a thread whose saved work is gone from the remote (`kept-work-gone`). */
+export const KEPT_WORK_GONE_TITLE = "Saved work is gone";
+
+/**
+ * The way out of a thread whose saved work is gone and whose branch doesn't hold it: open it from
+ * the branch without that work (`thread.restoreFromBranch`). It drops the work, so it asks first,
+ * in so many words; the other way out (push the saved ref back) is the card's sentence.
+ */
+function FromBranch({ threadId, current }: { threadId: ThreadId; current: boolean }) {
+  const api = useApi();
+  const served = useServes("thread.restoreFromBranch");
+  const [step, setStep] = useState<"offer" | "confirm" | "opening" | "opened">("offer");
+  const [failed, setFailed] = useState<string | undefined>();
+  const open = async () => {
+    setStep("opening");
+    setFailed(undefined);
+    try {
+      await api.restoreFromBranch(threadId);
+      setStep("opened");
+    } catch (e) {
+      console.error("restore from branch", e);
+      setFailed(`Couldn't open it from the branch: ${errorMessage(e)}`);
+      setStep("confirm");
+    }
+  };
+  if (step === "opened")
+    return (
+      <p
+        role="status"
+        data-testid="agent-error-from-branch-done"
+        className="mt-1 text-meta text-muted-foreground"
+      >
+        Its folder is back from the branch, without the saved work. Send a message to carry on.
+      </p>
+    );
+  if (!current) return null;
+  return (
+    <>
+      {step === "offer" ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Hint
+            label={OLDER_SERVER}
+            disabled={served}
+            render={
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="agent-error-from-branch"
+                disabled={!served}
+                focusableWhenDisabled
+                onClick={() => setStep("confirm")}
+              />
+            }
+          >
+            Open from the branch…
+          </Hint>
+          <span className="text-meta text-muted-foreground">Without its saved work.</span>
+        </div>
+      ) : (
+        <div
+          role="group"
+          aria-label="Open from the branch without its saved work"
+          data-testid="agent-error-from-branch-confirming"
+          className="mt-2 flex flex-col gap-2 rounded-(--radius-sm) border border-destructive/40 p-2"
+        >
+          <p className="text-meta break-words">
+            Its folder is made from the branch as it is at the remote. The saved work isn&apos;t in
+            it, and Gram won&apos;t put it back later.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="destructive"
+              data-testid="agent-error-from-branch-confirm"
+              disabled={step === "opening"}
+              onClick={() => void open()}
+            >
+              {step === "opening" ? "Opening…" : "Drop saved work and open"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={step === "opening"}
+              onClick={() => {
+                setFailed(undefined);
+                setStep("offer");
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+      {failed !== undefined && (
+        <p
+          data-testid="agent-error-from-branch-failed"
+          className="mt-1 text-meta break-words text-foreground"
+        >
+          {failed}
+        </p>
+      )}
+    </>
   );
 }
 

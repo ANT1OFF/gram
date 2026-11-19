@@ -1,15 +1,15 @@
 {
-  "firstPaintKb": 2239,
+  "firstPaintKb": 2241,
   "lazyChunkKb": 1000,
   "kitLiteKb": 215,
   "routeKb": {
     "default": 140,
     "t/$threadId": 920,
     "settings.agents": 260,
-    "new": 385,
+    "new": 390,
     "w/$workspaceId.memory": 320,
-    "settings.workspaces_.$workspaceId": 313,
-    "index": 220,
+    "settings.workspaces_.$workspaceId": 318,
+    "index": 221,
     "new-task": 200
   }
 }

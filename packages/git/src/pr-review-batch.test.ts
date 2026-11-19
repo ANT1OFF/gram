@@ -39,7 +39,9 @@ describe("batched PR lookups carry review-bot state", () => {
                     // The candidates' block and the chosen PR's both read alias `e0`.
                     data: {
                       e0: {
-                        pullRequests: { nodes: [{ ...node, state: "OPEN" }] },
+                        pullRequests: {
+                          nodes: [{ ...node, state: "OPEN", isCrossRepository: false }],
+                        },
                         pullRequest: { ...node, state: "OPEN" },
                       },
                     },
@@ -80,10 +82,8 @@ describe("batched PR lookups carry review-bot state", () => {
         noBots,
       );
       expect(plain?.number).toBe(node.number);
-      // The unconfigured bot's threads carry no `__typename` in this fixture, so they count as people's.
-      expect(plain?.review).toMatchObject({ bots: [], reviewedHead: false });
-      expect(plain?.review?.verdictOnHead).toBeUndefined();
-      expect(plain?.review?.threads).toMatchObject({ unresolved: 0, blockers: 0, suggestions: 0 });
+      // An app account no bot setting names is neither the review bot nor a person.
+      expect(plain?.review).toBeUndefined();
     }),
   );
 });

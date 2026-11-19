@@ -27,7 +27,7 @@ import { FOLD, FoldSummary } from "@/components/fold-summary";
 import { FormError } from "@/components/form-error";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
 import { carriedDraft } from "@/composer/draft-prefill";
 import { useModelNames, useModelsSettled } from "@/composer/models";
 import {
@@ -64,6 +64,7 @@ import {
   startFrom,
   subscriptionWorkspaceCharter,
   toggleRepo,
+  workspaceNameFor,
   type NewWorkspaceDraft,
 } from "./new-workspace-model";
 import { RepositoryAccess } from "./repository-access";
@@ -85,10 +86,11 @@ const inPopup = (target: EventTarget) =>
   target.closest('[role="menu"], [role="listbox"], [role="dialog"], [role="alertdialog"]') !== null;
 
 /**
- * New workspace, on one sheet: its repositories, what it should work on, and how far it goes
- * alone. Start makes the workspace and opens its orchestrator, with "What should it work on?" as
- * its first message when filled in. The name comes from the home repository. The model defaults
- * come from settings or `from`'s charter, and can be changed before the first turn.
+ * New workspace, on one sheet: its name, repositories and what it should work on beside how far it
+ * goes alone and on which models. Start makes the workspace and opens its orchestrator, with "What
+ * should it work on?" as its first message when filled in. Left blank, the name is the home
+ * repository's, shown in the field until one is typed. The model defaults come from settings or
+ * `from`'s charter, and can be changed before the first turn.
  * ⌘Enter starts, Esc leaves.
  */
 export function NewWorkspaceSheet({
@@ -144,7 +146,7 @@ export function NewWorkspaceSheet({
       <div className="flex min-h-full items-center-safe justify-center p-6">
         <div
           data-testid="new-workspace"
-          className="flex w-full max-w-lg flex-col gap-5 rounded-lg border border-edge bg-card p-5 text-reading text-card-foreground"
+          className="flex w-full max-w-4xl flex-col gap-5 rounded-lg border border-edge bg-card p-5 text-reading text-card-foreground"
         >
           <h1 className="font-heading text-title">New {kind.toLowerCase()}</h1>
           {loadError && !shown ? (
@@ -241,6 +243,8 @@ function SheetForm({
     [projects, added],
   );
   const [issue, setIssue] = useState<string>();
+  // A typed name that is taken: said under the field, not with the sheet's other errors.
+  const [nameIssue, setNameIssue] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<{ state: WorkspaceState; text: string | undefined }>();
   const [pending, setPending] = useState(false);
@@ -299,6 +303,8 @@ function SheetForm({
   // Opened from the first-run card, whose line promises the survey, it starts ticked.
   const [reads, setSurvey] = useState(read);
   const taskId = useId();
+  const nameId = useId();
+  const nameRef = useRef<HTMLInputElement>(null);
   // With a repo picked, focus goes to the task: what is next.
   const focusTask = useCallback(
     (element: HTMLTextAreaElement | null) => {
@@ -353,6 +359,11 @@ function SheetForm({
     const current = draftRef.current;
     const result = createInput(current, starting, [...projects, ...addedRef.current], workspaces);
     if ("error" in result) {
+      if (result.field === "name") {
+        setNameIssue(result.error);
+        focusIfConnected(nameRef.current);
+        return undefined;
+      }
       setAdding(true);
       setIssue(result.error);
       return undefined;
@@ -440,71 +451,113 @@ function SheetForm({
         void start();
       }}
     >
-      <ReposField
-        draft={draft}
-        projects={known}
-        onAdded={(project) => {
-          addedRef.current = [...addedRef.current, project];
-          setAdded(addedRef.current);
-        }}
-        adding={adding}
-        onAdding={setAdding}
-        onChange={(update) => {
-          setIssue(undefined);
-          setDraft(update);
-        }}
-        repositoryRef={repositoryRef}
-        onPendingChange={setPending}
-      />
-      <AutonomyChoice
-        testId="autonomy"
-        value={autonomyOf(charter)}
-        onChange={(autonomy) =>
-          setDraft((current) => ({
-            ...current,
-            charter: withAutonomy(charterOf(current, starting), autonomy),
-          }))
-        }
-      />
-      <RepositoryAccess projectIds={draft.projectIds} />
-      <WorkspaceModels
-        charter={charter}
-        disabled={busy || waiting || created !== undefined}
-        onChange={(next) => setDraft((current) => ({ ...current, charter: next }))}
-      />
-      <Field label="What should it work on?" htmlFor={taskId}>
-        <Textarea
-          ref={focusTask}
-          id={taskId}
-          data-testid="new-workspace-task"
-          rows={3}
-          // As wide as the rows above it: a settings field's own width stopped it short of them.
-          className="min-h-18"
-          value={draft.task}
-          placeholder="Optional"
-          onChange={(event) => {
-            const task = event.target.value;
-            setDraft((current) => ({ ...current, task }));
-          }}
-        />
-      </Field>
-      <Checkbox
-        data-testid="new-workspace-discover"
-        label="Read the repositories first"
-        description="The orchestrator surveys them before the first task. A few minutes of model use."
-        checked={reads}
-        disabled={created !== undefined}
-        onCheckedChange={setSurvey}
-      />
-      <StartSteps
-        machine={machineWanted ? noun : undefined}
-        reads={reads}
-        task={firstMessageOf(draft) !== undefined}
-      />
+      {/* What it is on the left, how it runs on the right; one column where they don't fit. */}
+      <div className="flex flex-wrap gap-x-7 gap-y-5">
+        <div className="flex min-w-0 flex-[1_1_20rem] flex-col gap-5">
+          <Field
+            label="Name"
+            htmlFor={nameId}
+            hint={
+              nameIssue !== undefined ? (
+                <span role="alert" className="text-destructive">
+                  {nameIssue}
+                </span>
+              ) : draft.name.trim() === "" ? (
+                <span className="text-meta text-muted-foreground">
+                  Optional. Left empty, it is named after the first repository.
+                </span>
+              ) : undefined
+            }
+          >
+            <Input
+              ref={nameRef}
+              id={nameId}
+              data-testid="new-workspace-name"
+              className="max-w-none"
+              autoComplete="off"
+              value={draft.name}
+              invalid={nameIssue !== undefined}
+              placeholder={
+                draft.homeProjectId === undefined
+                  ? "The first repository's name"
+                  : workspaceNameFor(draft, known, workspaces)
+              }
+              onChange={(event) => {
+                const name = event.target.value;
+                setNameIssue(undefined);
+                setDraft((current) => ({ ...current, name }));
+              }}
+            />
+          </Field>
+          <ReposField
+            draft={draft}
+            projects={known}
+            onAdded={(project) => {
+              addedRef.current = [...addedRef.current, project];
+              setAdded(addedRef.current);
+            }}
+            adding={adding}
+            onAdding={setAdding}
+            onChange={(update) => {
+              setIssue(undefined);
+              setDraft(update);
+            }}
+            repositoryRef={repositoryRef}
+            onPendingChange={setPending}
+          />
+          <Field label="What should it work on?" htmlFor={taskId}>
+            <Textarea
+              ref={focusTask}
+              id={taskId}
+              data-testid="new-workspace-task"
+              rows={5}
+              // As wide as the rows above it: a settings field's own width stopped it short of them.
+              className="min-h-28"
+              value={draft.task}
+              placeholder="Optional"
+              onChange={(event) => {
+                const task = event.target.value;
+                setDraft((current) => ({ ...current, task }));
+              }}
+            />
+          </Field>
+        </div>
+        <div className="flex min-w-0 flex-[1_1_20rem] flex-col gap-5">
+          <AutonomyChoice
+            testId="autonomy"
+            value={autonomyOf(charter)}
+            onChange={(autonomy) =>
+              setDraft((current) => ({
+                ...current,
+                charter: withAutonomy(charterOf(current, starting), autonomy),
+              }))
+            }
+          />
+          <RepositoryAccess projectIds={draft.projectIds} />
+          <WorkspaceModels
+            charter={charter}
+            disabled={busy || waiting || created !== undefined}
+            onChange={(next) => setDraft((current) => ({ ...current, charter: next }))}
+          />
+          <Checkbox
+            data-testid="new-workspace-discover"
+            label="Read the repositories first"
+            description="The orchestrator surveys them before the first task. A few minutes of model use."
+            checked={reads}
+            disabled={created !== undefined}
+            onCheckedChange={setSurvey}
+          />
+          <StartSteps
+            machine={machineWanted ? noun : undefined}
+            reads={reads}
+            task={firstMessageOf(draft) !== undefined}
+          />
+        </div>
+      </div>
       {issue !== undefined && <FormError message={issue} />}
       {/* Where the machine reaches every repository, Start starts it: no second start. */}
       {machineWanted && !reachesTheirs && <StartMachineCard />}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 border-t border-edge pt-4">
         <PressScale>
           <Button
             type="submit"

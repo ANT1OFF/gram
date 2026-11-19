@@ -33,6 +33,7 @@ import {
   spawn,
   waitSent,
 } from "./test-harness.ts";
+import { makeStopMarks } from "../host/stop-marks.ts";
 
 const efforts = ["low", "medium", "high", "xhigh", "max"] as const;
 const row = (id: string, resolvedId?: string): AgentModel => ({
@@ -430,6 +431,8 @@ const box = (models?: ReadonlyArray<AgentModel>) =>
   Layer.succeed(RemoteHosts, {
     // No machine's link is registered, so a call for this machine's own paths looks nothing up.
     machines: { list: () => [] },
+    // A send asks whether the machine's resume holds the thread off: nothing is owed here.
+    stops: makeStopMarks(),
     list: () => [
       {
         id: HostId.make("m-0123456789abcdef01234567"),

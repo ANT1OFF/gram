@@ -101,9 +101,44 @@ const readPolicy = (cwd: string, repo: string, baseRefOid: string) =>
       : Schema.decodeUnknownSync(Policy)(JSON.parse(String(record(object)["text"])));
   });
 
-/** The latest run of each workflow and event on exactly `head` of `branch`. */
-const latestRuns = (cwd: string, repo: string, head: string, branch: string) =>
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const sameRepo = (value: unknown, repo: string) =>
+  typeof value === "string" && value.toLowerCase() === repo.toLowerCase();
+
+/**
+ * Whether `run` is provably `badge`'s own: run from a head in `repo` itself, and for a
+ * `pull_request` run, triggered for this PR and no other. A fork's PR, or a second PR from the same
+ * branch, can reuse the commit and branch name; a run either of them could own is nobody's evidence.
+ */
+export const runIsPrs = (run: Record<string, unknown>, repo: string, badge: PrStatus): boolean => {
+  const headRepo = run["head_repository"];
+  if (!isRecord(headRepo) || !sameRepo(headRepo["full_name"], repo)) return false;
+  if (run["event"] === "push") return true;
+  const prs = run["pull_requests"];
+  if (!Array.isArray(prs) || prs.length !== 1) return false;
+  const pr: unknown = prs[0];
+  if (!isRecord(pr) || pr["number"] !== badge.number) return false;
+  const prBase = pr["base"];
+  if (!isRecord(prBase)) return false;
+  const baseRepo = prBase["repo"];
+  if (!isRecord(baseRepo) || !sameRepo(repoOf(baseRepo), repo)) return false;
+  return badge.baseRef === undefined || prBase["ref"] === badge.baseRef;
+};
+
+/** `owner/name` of a minimal repository object as a run's `pull_requests` carries it. */
+const repoOf = (repository: Record<string, unknown>): string | undefined => {
+  const url = repository["url"];
+  if (typeof url !== "string") return undefined;
+  const match = /\/repos\/([^/]+\/[^/]+)$/.exec(url);
+  return match?.[1];
+};
+
+/** The latest run of each workflow and event on exactly `badge`'s head, among the PR's own runs. */
+const latestRuns = (cwd: string, repo: string, badge: ExactBadge) =>
   Effect.gen(function* () {
+    const head = badge.headRefOid;
     const runsOut = yield* ghApi(cwd, [
       `repos/${repo}/actions/runs?head_sha=${encodeURIComponent(head)}&per_page=100`,
     ]);
@@ -112,8 +147,9 @@ const latestRuns = (cwd: string, repo: string, head: string, branch: string) =>
     const runs = list(json(runsOut.stdout), "workflow_runs").filter(
       (run) =>
         run["head_sha"] === head &&
-        run["head_branch"] === branch &&
-        (run["event"] === "push" || run["event"] === "pull_request"),
+        run["head_branch"] === badge.headRef &&
+        (run["event"] === "push" || run["event"] === "pull_request") &&
+        runIsPrs(run, repo, badge),
     );
     // Keep the latest execution of each workflow/event. A rerun updates this same run's attempt;
     // an old green run cannot hide a newer queued/red execution on the identical commit.
@@ -160,7 +196,7 @@ export const verifyMergeCi = (cwd: string, repo: string, badge: PrStatus) =>
           )
         : new Set(CI_LANES);
     const docs = lanes === "docs";
-    const latest = yield* latestRuns(cwd, repo, badge.headRefOid, badge.headRef);
+    const latest = yield* latestRuns(cwd, repo, badge);
     const required =
       policy?.workflows ??
       [...latest.values()].map((run) => ({
@@ -308,7 +344,7 @@ const verifyAlwaysJobs = (cwd: string, repo: string, badge: PrStatus) =>
       (workflow) => (workflow.alwaysJobs?.length ?? 0) > 0,
     );
     if (declared.length === 0) return undefined;
-    const latest = yield* latestRuns(cwd, repo, badge.headRefOid, badge.headRef);
+    const latest = yield* latestRuns(cwd, repo, badge);
     let result: ChecksRollup = "passing";
     for (const workflow of declared) {
       const run = latest.get(`${workflow.path}|${workflow.event}`);

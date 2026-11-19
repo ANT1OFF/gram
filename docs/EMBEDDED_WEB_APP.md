@@ -73,6 +73,13 @@ page's origin, behind whatever puts the signed-in person's identity on each requ
 ([sign-in through a proxy](DOCKER.md#sign-in-through-a-proxy)). Calls carry the origin's cookies and no
 others.
 
+Serve the page with a Content-Security-Policy at least as strict as the one Gram's own server
+sends (`contentSecurityPolicy()` in `packages/server/src/http/auth.ts`) for scripts, images,
+frames and connections, widened only for what your page itself needs, such as its identity
+provider. Gram renders text it doesn't trust (agents' messages, GitHub comments, files), and its
+markdown never loads another origin itself; the policy is the second layer, and the only one for
+anything your own pages render.
+
 `server: "mock"` mounts the app against the in-memory server Gram's own development uses, with the
 hosted features on and sample threads in it. It needs no server at all, which makes it the way to
 build and test the pages around Gram.

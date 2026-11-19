@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   addressZone,
+  createHostDoors,
+  DOOR_MS,
   hostZone,
   loopbackPortOf,
   parsePreviewBounds,
@@ -10,6 +12,7 @@ import {
   previewsToClose,
   previewThreadOf,
   proxyTargets,
+  unattributedRequest,
   resolvedWithin,
   webNavigation,
   webNetworkOf,
@@ -84,6 +87,65 @@ describe("the preview's requests", () => {
     expect(loopbackPortOf("ws://[::1]:9229/")).toBe(9229);
     expect(loopbackPortOf("http://user@localhost:3000/")).toBeUndefined();
     expect(loopbackPortOf("http://organization.example.invalid:3000/")).toBeUndefined();
+  });
+});
+
+describe("the preview's requests no page is named for", () => {
+  it("keeps a public page's workers off loopback", () => {
+    for (const url of ["http://127.0.0.1:5173/api", "ws://localhost:9229/", "http://[::1]:8080/"])
+      expect(unattributedRequest(url, "https://approved.example")).toBe("block");
+  });
+
+  it("keeps an opaque initiator off loopback, as a data: worker's is", () => {
+    expect(unattributedRequest("http://127.0.0.1:5173/api", "null")).toBe("block");
+  });
+
+  it("lets a loopback page's workers and the app's own loads reach loopback", () => {
+    expect(unattributedRequest("http://127.0.0.1:5173/api", "http://localhost:5173")).toBe("allow");
+    expect(unattributedRequest("ws://localhost:5173/hmr", "http://127.0.0.1:5173")).toBe("allow");
+    expect(unattributedRequest("http://127.0.0.1:5173/", undefined)).toBe("allow");
+  });
+
+  it("still blocks what the local session never loads, and lets a page's own data through", () => {
+    expect(unattributedRequest("https://exfil.example/", "http://localhost:5173")).toBe("block");
+    expect(unattributedRequest("blob:https://approved.example/1", "https://approved.example")).toBe(
+      "allow",
+    );
+  });
+});
+
+describe("the local session's proxy doors", () => {
+  it("admits a public host only once a request to it was let through, for a while", () => {
+    let now = 1_000;
+    const doors = createHostDoors(() => now);
+    expect(doors.admits("cdn.example")).toBe(false);
+    doors.open("https://cdn.example/app.js");
+    expect(doors.admits("cdn.example")).toBe(true);
+    expect(doors.admits("other.example")).toBe(false);
+    now += DOOR_MS + 1;
+    expect(doors.admits("cdn.example")).toBe(false);
+  });
+
+  it("opens no door for loopback, a page's own data or another scheme", () => {
+    const doors = createHostDoors();
+    for (const url of [
+      "http://127.0.0.1:5173/",
+      "ws://localhost:5173/",
+      "data:text/plain,x",
+      "blob:https://a.example/1",
+      "ftp://files.example/",
+    ])
+      doors.open(url);
+    for (const host of ["127.0.0.1", "localhost", "a.example", "files.example"])
+      expect(doors.admits(host)).toBe(false);
+  });
+
+  it("spells a host as the proxy reads it from a CONNECT", () => {
+    const doors = createHostDoors();
+    doors.open("wss://Socket.Example:8443/live");
+    doors.open("https://[2606:4700::1111]/");
+    expect(doors.admits("socket.example")).toBe(true);
+    expect(doors.admits("[2606:4700::1111]")).toBe(true);
   });
 });
 

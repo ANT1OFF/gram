@@ -2,6 +2,7 @@
 // with a synthetic proxy's key. Forged and missing identities are refused, two people's actions
 // are told apart in the record, a viewer changes nothing, and with the hosted features setting off
 // the same server takes the launch token as it always has.
+import { PERSON_NAMES_NO_ID } from "../rpc/handlers/threads.ts";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { createServer, request as httpRequest } from "node:http";
@@ -15,6 +16,7 @@ import {
   PROFILE_MOVE_PATH,
   PROFILE_START_PATH,
   PROFILE_WAIT_PATH,
+  ProfileId,
   RequestId,
   ThreadId,
   WorkspaceId,
@@ -31,7 +33,7 @@ import { gitPlatformTest } from "../git/platform.ts";
 import { makeRepo, removeDir } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { HttpServer, RpcClient, RpcSerialization, Socket } from "../platform/unstable.ts";
-import { NO_ACTOR_REFUSAL, VIEWER_REFUSAL } from "../rpc/actor-guard.ts";
+import { DEPLOYMENT_REFUSAL, NO_ACTOR_REFUSAL, VIEWER_REFUSAL } from "../rpc/actor-guard.ts";
 import {
   mayReach,
   NOT_YOUR_MACHINE,
@@ -476,6 +478,19 @@ describe("sign-in through a fronting proxy", () => {
           { status: 200, threadId: PROFILE_THREAD, created: true },
           { status: 200, threadId: PROFILE_THREAD, created: false },
         ]);
+        // A signed-in person names no id, so none they pick ahead can pass for the service's start.
+        const ahead = yield* refusal(
+          (yield* as(port, ada))["thread.createFromProfile"]({
+            profile: JSON.parse(startBody()).profile,
+            threadId: OTHER_PROFILE_THREAD as ThreadId,
+          }),
+        );
+        expect(ahead).toContain(PERSON_NAMES_NO_ID);
+        expect(
+          (yield* (yield* ThreadStore)
+            .getThread(OTHER_PROFILE_THREAD as ThreadId)
+            .pipe(Effect.option))._tag,
+        ).toBe("None");
         // Asked again for a machine it isn't on, it says so rather than answer as if it were.
         const moved = yield* post(
           port,
@@ -740,8 +755,25 @@ describe("sign-in through a fronting proxy", () => {
             body: answerBody,
           },
         });
-        // And Grace changes a setting.
-        yield* graceClient["settings.set"]({ patch: { logLevel: "debug" } });
+        // Grace renames the thread; the server's own settings are its deployment's, not hers.
+        yield* graceClient["thread.rename"]({ threadId, title: "Grace's name for it" });
+        const level = (yield* store.getSettings).logLevel;
+        expect(
+          yield* refusal(graceClient["settings.set"]({ patch: { logLevel: "debug" } })),
+        ).toContain(DEPLOYMENT_REFUSAL);
+        expect(
+          yield* refusal(
+            graceClient["profiles.upsert"]({
+              profile: {
+                id: ProfileId.make("grace-gateway"),
+                name: "Grace's gateway",
+                baseURL: "http://169.254.169.254/latest",
+                keyRef: "grace-gateway",
+                models: [],
+              },
+            }),
+          ),
+        ).toContain(DEPLOYMENT_REFUSAL);
         // A change that fails on the way is on record as hers too.
         const missing = yield* post(
           port,
@@ -756,7 +788,7 @@ describe("sign-in through a fronting proxy", () => {
         expect(missing.status).toBe(404);
 
         // Vera reads what the others see, and changes nothing.
-        expect((yield* veraClient["settings.get"]()).logLevel).toBe("debug");
+        expect((yield* veraClient["settings.get"]()).logLevel).toBe(level);
         expect((yield* veraClient["workspace.list"]()).length).toBeGreaterThanOrEqual(0);
         const send = {
           threadId,
@@ -811,7 +843,7 @@ describe("sign-in through a fronting proxy", () => {
             }),
           ),
         ).toContain(NO_ACTOR_REFUSAL);
-        expect((yield* store.getSettings).logLevel).toBe("debug");
+        expect((yield* store.getSettings).logLevel).toBe(level);
 
         const events = (yield* store.listActorEvents({ afterSeq: before })).map((event) => ({
           who: event.actor.id,
@@ -846,13 +878,7 @@ describe("sign-in through a fronting proxy", () => {
               answer: { kind: "approval", decision: "allow", scope: "once" },
             },
           },
-          {
-            who: "user-grace",
-            name: "Grace",
-            action: "settings.set",
-            threadId: undefined,
-            data: { settings: ["logLevel"] },
-          },
+          { who: "user-grace", name: "Grace", action: "thread.rename", threadId, data: {} },
           {
             who: "user-grace",
             name: "Grace",
@@ -960,47 +986,30 @@ describe("sign-in through a fronting proxy", () => {
           expect(veras.logLevel).toBe(level);
           expect(veras.layout).toEqual({ grid: grid("vera-left", "vera-right") });
 
-          // A member's change to both is written to each place: the shared part for everyone.
-          yield* graceClient["settings.set"]({
-            patch: { layout: { grid: grid("grace-a", "grace-b"), focusMode: true } },
+          // A shared setting is the deployment's, a member's as much as a viewer's: alone or beside
+          // their own view, nothing of it is written.
+          expect(
+            yield* refusal(
+              graceClient["settings.set"]({
+                patch: { layout: { grid: grid("grace-a", "grace-b"), focusMode: true } },
+              }),
+            ),
+          ).toContain(DEPLOYMENT_REFUSAL);
+          expect((yield* graceClient["settings.get"]()).layout).toEqual({
+            grid: grid("grace-left", "grace-right"),
           });
-          expect((yield* adaClient["settings.get"]()).layout).toEqual({
-            grid: grid("ada-left", "ada-right"),
-            focusMode: true,
-          });
-          yield* graceClient["settings.set"]({ patch: { layout: { focusMode: null } } });
 
           // Clearing is a person's own as well.
           yield* adaClient["settings.set"]({ patch: { layout: { grid: null } } });
           expect((yield* adaClient["settings.get"]()).layout?.grid).toBeUndefined();
           expect((yield* graceClient["settings.get"]()).layout?.grid).toEqual(
-            grid("grace-a", "grace-b"),
+            grid("grace-left", "grace-right"),
           );
 
           // The shared row holds none of it, and a person's own view is not on the record of
-          // changes: only the two that changed a shared setting are.
+          // changes, nor is a refused one.
           expect((yield* store.getSettings).layout?.grid).toBeUndefined();
-          expect(
-            (yield* store.listActorEvents({ afterSeq: before })).map((event) => [
-              event.actor.id,
-              event.action,
-              event.data,
-            ]),
-          ).toEqual([
-            [
-              "user-grace",
-              "settings.set",
-              {
-                settings: [
-                  "layout.grid.preset",
-                  "layout.grid.panes",
-                  "layout.grid.focused",
-                  "layout.focusMode",
-                ],
-              },
-            ],
-            ["user-grace", "settings.set", { settings: ["layout.focusMode"] }],
-          ]);
+          expect(yield* store.listActorEvents({ afterSeq: before })).toEqual([]);
         }),
     );
 
