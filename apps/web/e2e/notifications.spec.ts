@@ -111,12 +111,12 @@ test("startup repeats quietly retain history, survive reload, and remain usable 
   await expect(page.getByTestId("toast")).toHaveCount(0);
   await expect(center.getByTestId("notification-entry")).toHaveCount(4);
   await shot(page, { path: testInfo.outputPath("notifications-wide.png") });
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 500, height: 844 });
   // Reopen over the content when a side panel no longer fits.
   await openHistory(page);
   const bounds = await center.boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
-  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(391);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(501);
   expect(await center.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   await shot(page, { path: testInfo.outputPath("notifications-narrow.png") });
   await center.getByRole("button", { name: "Mark all read" }).focus();

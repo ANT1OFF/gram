@@ -56,3 +56,16 @@ test.describe("a thread's panels on a phone", () => {
     await expect(page.getByTestId("phone-panel-row")).toHaveCount(0);
   });
 });
+
+test.describe("a phone-narrow window with a mouse", () => {
+  test.use({ hasTouch: false, viewport: { width: 390, height: 844 } });
+
+  test("has the phone's menu, not a sidebar squeezed beside the chat", async ({ page }) => {
+    await page.goto("/t/t-deps");
+    await expect(page.getByTestId("transcript")).toBeVisible();
+    await expect(page.getByTestId("overview-sidebar")).toHaveCount(0);
+    await expect(page.getByTestId("overview-rail")).toHaveCount(0);
+    await page.getByTestId("phone-menu").click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+  });
+});

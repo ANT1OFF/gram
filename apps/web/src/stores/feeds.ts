@@ -35,6 +35,14 @@ interface Entry extends Kept {
   unwatch: (() => void) | undefined;
 }
 
+/**
+ * How long a subscription may go without a word from the server before it is made again, doubling
+ * each time up to the cap. A feed that hears nothing back, or whose stream ends in an error other
+ * than the thread being gone, never stays on its loading line for good.
+ */
+const FEED_QUIET_MS = 12_000;
+const FEED_QUIET_MAX_MS = 60_000;
+
 /** Feeds stay subscribed briefly after the last viewer leaves, so switching back is instant. */
 const KEEP_WARM_MS = 30_000;
 /**
@@ -85,22 +93,39 @@ function entryFor(api: Api, threadId: ThreadId): Entry {
   return entry;
 }
 
-function listen(api: Api, threadId: ThreadId, entry: Entry) {
+function listen(api: Api, threadId: ThreadId, entry: Entry, quiet = FEED_QUIET_MS) {
   const { feed, abort } = entry;
   // Taken before subscribing: the events feed runs apart from this one, so a reopened thread's
   // summary can land before the refusal of the subscription made while it was closed.
   const before = useThreadsStore.getState().byId[threadId];
+  let heard = false;
+  const again = () => {
+    if (entry.abort !== abort || abort.signal.aborted) return;
+    clearTimeout(watch);
+    abort.abort();
+    entry.abort = new AbortController();
+    feed.slow();
+    feed.resubscribing();
+    listen(api, threadId, entry, Math.min(quiet * 2, FEED_QUIET_MAX_MS));
+  };
+  const watch = setTimeout(() => {
+    if (!heard && feed.store.getState().phase === "loading") again();
+  }, quiet);
   void (async () => {
     try {
       for await (const event of api.threadFeed(threadId, abort.signal, feed.resume)) {
         // A cold feed lives on under a new subscription; this one's stragglers mustn't reach it.
         if (abort.signal.aborted) return;
+        heard = true;
+        clearTimeout(watch);
         feed.apply(event);
       }
     } catch (error) {
+      clearTimeout(watch);
       if (abort.signal.aborted) return;
       if (!isThreadNotFound(error)) {
         console.error("thread feed ended", threadId, error);
+        if (feed.store.getState().phase === "loading") setTimeout(again, Math.min(quiet, 5_000));
         return;
       }
       feed.gone();

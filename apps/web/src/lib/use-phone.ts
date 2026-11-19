@@ -3,12 +3,16 @@ import { useSyncExternalStore } from "react";
 /**
  * The widest window laid out for a phone or a tablet held upright (phone access): a drawer for the
  * threads, full-screen sheets for dialogs, bottom sheets for popovers and cards for tables. Only
- * with a touch screen as the main pointer: a desktop window this narrow keeps the desktop layout.
- * The `phone:` Tailwind variant (globals.css) is the same query, so classes and `usePhone()` agree.
+ * with a touch screen as the main pointer: a desktop window this narrow keeps the desktop layout,
+ * unless it is as narrow as a phone (`NARROW_MAX_WIDTH`), where the desktop's columns do not fit.
+ * The `phone:` Tailwind variant (theme.css) is the same query, so classes and `usePhone()` agree.
  */
 export const PHONE_MAX_WIDTH = 1023;
 
-export const PHONE_QUERY = `(max-width: ${PHONE_MAX_WIDTH}px) and (pointer: coarse)`;
+/** The widest window laid out for a phone whatever its pointer. */
+export const NARROW_MAX_WIDTH = 479;
+
+export const PHONE_QUERY = `(max-width: ${PHONE_MAX_WIDTH}px) and (pointer: coarse), (max-width: ${NARROW_MAX_WIDTH}px)`;
 
 /** A touch screen as the main pointer, at any width: one pane at a time, nothing side by side. */
 export const TOUCH_QUERY = "(pointer: coarse)";
