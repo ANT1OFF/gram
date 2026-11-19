@@ -35,7 +35,10 @@ const executable = (path: string, text: string) => {
 const keyPair = () => {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   return {
-    key: publicKey.export({ format: "der", type: "spki" }).subarray(12).toString("base64"),
+    key: publicKey
+      .export({ format: "der", type: "spki" })
+      .subarray(12)
+      .toString("base64"),
     sign: (bytes: Buffer) => sign(null, bytes, privateKey).toString("base64"),
   };
 };
@@ -64,6 +67,28 @@ const script = (
   run: Parameters<typeof installScript>[2] = {},
   trust: Partial<InstallTrust> = {},
 ) => installScript(ORIGIN, version, run, { ...TRUST, ...trust });
+
+/**
+ * A real OpenSSL 3 to check the checksum signature with, as a Linux machine has. macOS's own
+ * `openssl` is LibreSSL, which can't, so on a Mac runner it is Homebrew's.
+ */
+const OPENSSL = [
+  spawnSync("sh", ["-c", "command -v openssl"], {
+    encoding: "utf8",
+  }).stdout.trim(),
+  "/opt/homebrew/opt/openssl@3/bin/openssl",
+  "/usr/local/opt/openssl@3/bin/openssl",
+].find(
+  (candidate) =>
+    candidate !== "" &&
+    /^OpenSSL [3-9]/.test(
+      spawnSync(candidate, ["version"], { encoding: "utf8" }).stdout ?? "",
+    ),
+);
+if (OPENSSL === undefined)
+  throw new Error(
+    "These tests need OpenSSL 3 (on macOS: brew install openssl@3).",
+  );
 
 /**
  * A synthetic machine with no Gram on it: `curl` serves the release from a folder, and the release's
@@ -114,7 +139,10 @@ HOST
   const digest = createHash("sha256")
     .update(readFileSync(join(release, image)))
     .digest("hex");
-  writeFileSync(join(release, "SHA256SUMS.txt"), `${tamper ? "0".repeat(64) : digest}  ${image}\n`);
+  writeFileSync(
+    join(release, "SHA256SUMS.txt"),
+    `${tamper ? "0".repeat(64) : digest}  ${image}\n`,
+  );
   if (signature !== "none")
     writeFileSync(
       join(release, "SHA256SUMS.txt.sig"),
@@ -152,8 +180,14 @@ case "$url" in "${RELEASES}/v${version}/"*) ;; *) exit 22 ;; esac
 if [ -n "$out" ]; then cp "$file" "$out"; else cat "$file"; fi
 `,
   );
-  for (const tool of ["git", "tailscale", "claude"]) executable(join(bin, tool), "#!/bin/sh\n");
-  const run = (text: string, extra: Record<string, string> = {}, shell = "sh") =>
+  for (const tool of ["git", "tailscale", "claude"])
+    executable(join(bin, tool), "#!/bin/sh\n");
+  symlinkSync(OPENSSL, join(bin, "openssl"));
+  const run = (
+    text: string,
+    extra: Record<string, string> = {},
+    shell = "sh",
+  ) =>
     spawnSync(shell, ["-s", "--", LINK], {
       input: text,
       encoding: "utf8",
@@ -180,26 +214,38 @@ describe("the join installer", () => {
       `curl -fsSL '${ORIGIN}/host/install' | sh -s -- '${ORIGIN}/host/join#code=abcd'`,
     );
     // Run again on a joined machine it needs no link: the join stands.
-    expect(updateCommand(ORIGIN)).toBe(`curl -fsSL '${ORIGIN}/host/install' | sh`);
+    expect(updateCommand(ORIGIN)).toBe(
+      `curl -fsSL '${ORIGIN}/host/install' | sh`,
+    );
   });
 
   it("quotes the installer's URL, so shell characters in the origin are not run", () => {
     const origin = "https://a;id;$(x)'b.ts.net";
-    expect(updateCommand(origin)).toBe("curl -fsSL 'https://a;id;$(x)b.ts.net/host/install' | sh");
+    expect(updateCommand(origin)).toBe(
+      "curl -fsSL 'https://a;id;$(x)b.ts.net/host/install' | sh",
+    );
     expect(installCommand(origin, "l")).toBe(
       "curl -fsSL 'https://a;id;$(x)b.ts.net/host/install' | sh -s -- 'l'",
     );
   });
 
-  for (const shell of ["sh", "dash"].filter((name) => spawnSync(name, ["-c", ":"]).status === 0)) {
+  for (const shell of ["sh", "dash"].filter(
+    (name) => spawnSync(name, ["-c", ":"]).status === 0,
+  )) {
     for (const signal of ["HUP", "TERM"]) {
       it(`cleans the temporary extraction after ${signal} under ${shell}`, () => {
         const m = machine("99.14.0");
         try {
-          const result = m.run(script("99.14.0"), { SYNTHETIC_UNPACK_SIGNAL: signal }, shell);
+          const result = m.run(
+            script("99.14.0"),
+            { SYNTHETIC_UNPACK_SIGNAL: signal },
+            shell,
+          );
           expect(result.status === 0).toBe(false);
           const apps = join(m.home, ".local", "share", "gram-host", "apps");
-          expect(readdirSync(apps).filter((name) => name.startsWith(".extract-"))).toEqual([]);
+          expect(
+            readdirSync(apps).filter((name) => name.startsWith(".extract-")),
+          ).toEqual([]);
           expect(existsSync(join(apps, "99.14.0"))).toBe(false);
         } finally {
           removeDir(m.dir);
@@ -209,7 +255,9 @@ describe("the join installer", () => {
   }
 
   it("embeds only an https origin and a version", () => {
-    expect(() => installScript("https://x.ts.net'; rm -rf ~; '", "1.0.0")).toThrow();
+    expect(() =>
+      installScript("https://x.ts.net'; rm -rf ~; '", "1.0.0"),
+    ).toThrow();
     expect(() => installScript("http://x.ts.net", "1.0.0")).toThrow();
     expect(() => script("1.0.0'; true; '")).toThrow();
     for (const version of ["1.14.0", undefined]) {
@@ -270,7 +318,13 @@ describe("the join installer", () => {
       try {
         const apps =
           platform === "Darwin"
-            ? join(m.home, "Library", "Application Support", "Gram Host", "apps")
+            ? join(
+                m.home,
+                "Library",
+                "Application Support",
+                "Gram Host",
+                "apps",
+              )
             : join(m.home, ".local", "share", "gram-host", "apps");
         const version = join(apps, "99.14.0");
         const binary =
@@ -279,10 +333,14 @@ describe("the join installer", () => {
             : join(version, "gram");
         mkdirSync(join(binary, ".."), { recursive: true });
         executable(binary, "#!/bin/sh\nexit 19\n");
-        const interrupted = m.run(script("99.14.0"), { SYNTHETIC_UNPACK_FAIL: "1" });
+        const interrupted = m.run(script("99.14.0"), {
+          SYNTHETIC_UNPACK_FAIL: "1",
+        });
         expect(interrupted.status).not.toBe(0);
         expect(existsSync(join(version, ".complete"))).toBe(false);
-        expect(readdirSync(apps).some((name) => name.startsWith(".extract-"))).toBe(false);
+        expect(
+          readdirSync(apps).some((name) => name.startsWith(".extract-")),
+        ).toBe(false);
         const result = m.run(script("99.14.0"));
         expect(result.status, result.stderr).toBe(0);
         // On Linux the app runs with Chromium's switches for a machine with no display.
@@ -293,7 +351,9 @@ describe("the join installer", () => {
         });
         expect(existsSync(join(version, ".complete"))).toBe(true);
         // Reuse the completed cache without extracting again.
-        expect(m.run(script("99.14.0"), { SYNTHETIC_UNPACK_FAIL: "1" }).status).toBe(0);
+        expect(
+          m.run(script("99.14.0"), { SYNTHETIC_UNPACK_FAIL: "1" }).status,
+        ).toBe(0);
         // A completion marker alone never authorizes an app whose entry/resources are broken.
         executable(binary, "#!/bin/sh\nexit 19\n");
         expect(m.run(script("99.14.0")).status).toBe(0);
@@ -310,8 +370,14 @@ describe("the join installer", () => {
       expect(result.stderr).toContain("Installed");
       expect(result.status).toBe(0);
       const app = join(home, ".local", "share", "gram-host", "apps", "1.14.0");
-      expect(ran()).toEqual({ args: ["join"], stdin: `${LINK}\n`, switches: LINUX_HOST_SWITCHES });
-      expect(readFileSync(join(home, ".local", "bin", "gram-host"), "utf8")).toContain(
+      expect(ran()).toEqual({
+        args: ["join"],
+        stdin: `${LINK}\n`,
+        switches: LINUX_HOST_SWITCHES,
+      });
+      expect(
+        readFileSync(join(home, ".local", "bin", "gram-host"), "utf8"),
+      ).toContain(
         `ELECTRON_RUN_AS_NODE=1 exec '${app}/gram' '${app}/resources/app.asar/out/server/gram-host.js' "$@" ${LINUX_HOST_SWITCHES.join(" ")}`,
       );
     } finally {
@@ -324,7 +390,10 @@ describe("the join installer", () => {
     try {
       mkdirSync(join(home, ".config", "gram-host"), { recursive: true });
       const config = join(home, ".config", "gram-host", "host.json");
-      writeFileSync(config, JSON.stringify({ origin: "https://other.example-tailnet.ts.net" }));
+      writeFileSync(
+        config,
+        JSON.stringify({ origin: "https://other.example-tailnet.ts.net" }),
+      );
       const elsewhere = run(script("1.14.0"));
       expect(elsewhere.status).not.toBe(0);
       expect(elsewhere.stderr).toContain("already joined another Gram");
@@ -335,7 +404,11 @@ describe("the join installer", () => {
       expect(result.status).toBe(0);
       // It moves the service, then says which machine it is, for an install over SSH to check.
       expect(calls()).toEqual([
-        { args: ["service", "install"], stdin: "", switches: LINUX_HOST_SWITCHES },
+        {
+          args: ["service", "install"],
+          stdin: "",
+          switches: LINUX_HOST_SWITCHES,
+        },
         { args: ["status"], stdin: "", switches: LINUX_HOST_SWITCHES },
       ]);
       expect(existsSync(old)).toBe(false);
@@ -375,8 +448,10 @@ describe("the join installer", () => {
   });
 });
 
-const linuxApps = (home: string) => join(home, ".local", "share", "gram-host", "apps");
-const macApps = (home: string) => join(home, "Library", "Application Support", "Gram Host", "apps");
+const linuxApps = (home: string) =>
+  join(home, ".local", "share", "gram-host", "apps");
+const macApps = (home: string) =>
+  join(home, "Library", "Application Support", "Gram Host", "apps");
 
 describe("the installer's publisher checks", () => {
   for (const [signature, message] of [
@@ -435,9 +510,18 @@ describe("the installer's publisher checks", () => {
         'certificate leaf[subject.OU] = "FAKETEAM01"',
       );
       // A cached app that no longer passes is never run, and nor is a download that fails too.
-      const binary = join(macApps(m.home), "1.14.0", "Gram.app", "Contents", "MacOS", "Gram");
+      const binary = join(
+        macApps(m.home),
+        "1.14.0",
+        "Gram.app",
+        "Contents",
+        "MacOS",
+        "Gram",
+      );
       executable(binary, "#!/bin/sh\nexit 19\n");
-      expect(m.run(script("1.14.0"), { SYNTHETIC_CODESIGN: "3" }).status).not.toBe(0);
+      expect(
+        m.run(script("1.14.0"), { SYNTHETIC_CODESIGN: "3" }).status,
+      ).not.toBe(0);
       expect(existsSync(binary)).toBe(true);
       expect(m.calls()).toHaveLength(1);
     } finally {
@@ -459,8 +543,12 @@ describe("the installer's publisher checks", () => {
 
 describe("the installer run over SSH", () => {
   it("carries only this Gram's own join link", () => {
-    expect(() => script("1.14.0", { link: "https://evil.example/host/join#code=x" })).toThrow();
-    expect(() => script("1.14.0", { link: `${ORIGIN}/host/join#code=a'b` })).toThrow();
+    expect(() =>
+      script("1.14.0", { link: "https://evil.example/host/join#code=x" }),
+    ).toThrow();
+    expect(() =>
+      script("1.14.0", { link: `${ORIGIN}/host/join#code=a'b` }),
+    ).toThrow();
     const text = script("1.14.0", { link: LINK });
     expect(text).toContain(`LINK='${LINK}'`);
     execFileSync("sh", ["-n"], { input: text });
