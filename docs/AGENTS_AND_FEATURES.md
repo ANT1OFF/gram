@@ -1120,7 +1120,9 @@ threads, which have no workspace, and memory updates get no shared folder.
   again since it was listed waits for the next round instead of being overwritten. What the two
   sides last agreed on is kept in `<data>/shared-sync/`, so deletes still carry after a restart.
 - **What it carries.** Plain files of up to 64 MB, and up to 5,000 files in a workspace. A larger
-  file stays on the machine where it was written, and Gram never deletes it on either side. Links,
+  file stays on the machine where it was written, and Gram never deletes it on either side. Each
+  machine's copy takes in up to 2 GB from the sync; a file that would take it past that waits
+  there until a delete makes room, so one machine can't fill another's disk. Links,
   and names Gram keeps for itself (`.gram-*`), are never carried or followed. Writes arrive under
   `.gram-incoming` and are moved into place whole, so an agent never reads half a file.
 - **Limits.** A host older than this release (one that doesn't name `shared-folders`) runs its

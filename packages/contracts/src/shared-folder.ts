@@ -10,6 +10,11 @@ import * as Schema from "effect/Schema";
 export const SHARED_FILE_MAX_BYTES = 64 * 2 ** 20;
 /** The most files one workspace's shared folder carries between machines. */
 export const SHARED_FILES_MAX = 5_000;
+/**
+ * The most bytes a machine's copy of one workspace's shared folder takes in from a sync, files on
+ * their way in included: a mirror that is over it is sent nothing more until it has room.
+ */
+export const SHARED_FOLDER_MAX_BYTES = 2 * 2 ** 30;
 /** The most bytes one `host.shared.read` or `host.shared.write` carries. */
 export const SHARED_PART_BYTES = 4 * 2 ** 20;
 /** What names Gram's own files in a shared folder: never listed, carried or shown. */
