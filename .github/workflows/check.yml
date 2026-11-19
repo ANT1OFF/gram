@@ -1,21 +1,27 @@
 name: Application checks
 
 on:
-  # A pull request into an integration branch is checked once it lands there, by the push run:
-  # checking each one as well left the runners too few for the branch's own runs.
+  # Checks run on the pull request, before it merges, into main or an integration branch.
   pull_request:
-    branches-ignore: ["integration/**"]
     # Ready for review too: a draft release metadata PR runs a short set of lanes (classify).
     types: [opened, synchronize, reopened, ready_for_review]
+  # Main is not checked again after each merge: its pull request already was. The one exception is
+  # a release commit (release-please's `chore(main): release …`), whose push run is the evidence a
+  # release takes in place of a local Vitest run (tools/release-rc/ci-check.mjs). Any other push
+  # run skips every job.
   push:
-    # An integration branch collects pull requests before main, so it is checked as main is.
-    branches: [main, "integration/**"]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  # Superseded PR runs cancel. A run on main or an integration branch that starts finishes, and
-  # only the newest push waits behind it, so a burst of merges still ends in a finished run.
+  # A push to main that isn't a release commit gets a group of its own, so its empty run never
+  # replaces a release commit's run waiting in the group.
+  group: >-
+    ${{ github.workflow }}-${{ github.ref }}${{ github.event_name == 'push'
+    && !startsWith(github.event.head_commit.message, 'chore(main): release')
+    && format('-{0}', github.sha) || '' }}
+  # Superseded PR runs cancel. A run on main that starts finishes, and only the newest release
+  # commit waits behind it.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -27,13 +33,18 @@ permissions:
 #
 # On a pull request, `classify` picks the lanes its diff can affect (packages/git/src/ci-policy.ts):
 # prose alone runs only `docs`; other changes run `check static` and whichever of the Vitest, macOS
-# package and e2e jobs they can reach. Main pushes and manual runs run every lane. `qualification`
+# package and e2e jobs they can reach. A release commit's push run and manual runs run every lane.
+# The macOS jobs start once `check static` has passed: macOS runners are the scarcest, and a run
+# that fails its static stages or is superseded in its first minutes never takes one. `qualification`
 # is the one stable result: a skipped job passes only when classification didn't select its lane.
 jobs:
   classify:
     timeout-minutes: 5
-    # Only same-repository PRs run CI.
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    # Only same-repository PRs run CI, and on main only a release commit (see `on`).
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'chore(main): release'))
     runs-on: ubuntu-24.04-arm
     outputs:
       kind: ${{ steps.classify.outputs.kind }}
@@ -349,7 +360,7 @@ jobs:
   # On a pull request the suite runs here only when the diff reaches code whose behaviour can differ
   # on macOS (the `macos` lane: the desktop app, server, agents, git and shell); `main` always does.
   macos-tests:
-    needs: classify
+    needs: [classify, check-static]
     name: macos tests ${{ matrix.shard }}/3
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && contains(fromJSON(needs.classify.outputs.lanes), 'macos')
     runs-on: macos-15
@@ -380,7 +391,7 @@ jobs:
       - run: node tools/check/run.mjs --only tests --shard "${{ matrix.shard }}/3"
 
   macos-package:
-    needs: classify
+    needs: [classify, check-static]
     name: macos package
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && contains(fromJSON(needs.classify.outputs.lanes), 'package')
     runs-on: macos-15
@@ -550,11 +561,12 @@ jobs:
       ]
     # On a pull request it always reports, so a cancelled run never reads as a skipped, passing
     # required check. On a push it skips a cancelled run: `always()` queued it even then, and the
-    # run held its concurrency slot until a runner came free, so the next push's run waited.
+    # run held its concurrency slot until a runner came free, so the next push's run waited. A
+    # push that isn't a release commit skipped `classify`, and this skips with it.
     if: >-
       (github.event_name == 'pull_request' && always()
       && github.event.pull_request.head.repo.full_name == github.repository)
-      || (github.event_name != 'pull_request' && !cancelled())
+      || (github.event_name != 'pull_request' && !cancelled() && needs.classify.result != 'skipped')
     timeout-minutes: 5
     runs-on: ubuntu-24.04-arm
     defaults:
