@@ -83,6 +83,26 @@ describe("threadPrEntries", () => {
     expect(entry!.notes).toContain("Uncommitted work on “feat/other” in another worktree");
   });
 
+  it("names the PR the thread is bound to, never a badge that still names another", () => {
+    const bound = { repo: "example/web", number: 142, monitor: false };
+    const [own, ...rest] = threadPrEntries({ ...thread, boundPr: bound }, git());
+    expect(rest).toEqual([]);
+    expect(own).toMatchObject({
+      key: "example/web#142",
+      number: 142,
+      own: true,
+      url: "https://github.com/example/web/pull/142",
+    });
+    expect(own!.glyph.kind).toBe("unknown");
+    // Once the badge is the bound PR's, its state is the badge's.
+    const [caught] = threadPrEntries(
+      { ...thread, boundPr: bound },
+      git({ pr: pr({ number: 142, url: "https://github.com/example/web/pull/142" }) }),
+    );
+    expect(caught).toMatchObject({ key: "example/web#142", number: 142 });
+    expect(caught!.glyph.kind).toBe("ready");
+  });
+
   it("has nothing to show without a PR", () => {
     const { pr: _pr, ...bare } = git();
     expect(threadPrEntries(thread, bare)).toEqual([]);

@@ -22,6 +22,9 @@ import { useThreadsStore } from "@/stores/threads";
  * The worker's own tools, in the pane's one row under its title: its conversation, its changes, its
  * pull request, its terminal (read only) and its files.
  */
+/** The worker pane's own element, which a panel request checks the keys against. */
+export const WORKER_PANE_TEST_ID = "beside-dock";
+
 export type BesideTab = "thread" | "changes" | "pr" | "terminal" | "files";
 
 /** How the right panel stood before the Thread tab opened it, which Close puts back. */
@@ -62,6 +65,12 @@ interface BesideState {
    * pane's own list, its switcher or ↑ ↓: Esc and ↑ ↓ work at once.
    */
   readonly takeKeys: boolean;
+  /**
+   * A link in the pane (its transcript's "View changes", a file, its PR) opened one of the worker's
+   * tools while the keys were on it: once drawn, the keys go to that tool's tab if the link went
+   * with the view it was in, so Esc and ↑ ↓ still work. Keys outside the pane are left alone.
+   */
+  readonly toolKeys: boolean;
   /** Back asked the list for its place: its scroll, and the keys on the current worker's row. */
   readonly returned: boolean;
   dock: (
@@ -125,6 +134,7 @@ export const useBesideStore = create<BesideState>()(
       widenedFrom: undefined,
       restored: false,
       takeKeys: false,
+      toolKeys: false,
       returned: false,
       dock: (worker, options) =>
         set((s) => ({
@@ -135,6 +145,7 @@ export const useBesideStore = create<BesideState>()(
           shown: true,
           restored: false,
           takeKeys: options?.takeKeys === true,
+          toolKeys: false,
           returned: false,
           // Another worker opens on its conversation, unless stepped to with the same tool.
           ...(s.worker === worker
@@ -154,6 +165,7 @@ export const useBesideStore = create<BesideState>()(
           widenedFrom: undefined,
           restored: false,
           takeKeys: false,
+          toolKeys: false,
           returned: false,
         }),
       back: () =>
@@ -163,6 +175,7 @@ export const useBesideStore = create<BesideState>()(
           shown: false,
           focused: false,
           takeKeys: false,
+          toolKeys: false,
           returned: true,
         }),
       setTab: (tab) => set({ tab }),
@@ -199,7 +212,11 @@ routePanelRequests((threadId, panel) => {
   const state = useBesideStore.getState();
   const tool = TOOL_FOR[panel];
   if (tool === undefined || besideShown(state) !== threadId) return false;
-  state.setTab(tool);
+  // Read before the tool replaces the view the link was in, which takes the keys with it.
+  const held = document.activeElement;
+  const inPane =
+    held instanceof Element && held.closest(`[data-testid="${WORKER_PANE_TEST_ID}"]`) !== null;
+  useBesideStore.setState({ tab: tool, toolKeys: inPane });
   return true;
 });
 

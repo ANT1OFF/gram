@@ -3,6 +3,7 @@ import type {
   DocId,
   DocMeta,
   FinishedWorkerDetail,
+  GitState,
   OrchestratorLedger,
   ProjectId,
   ThreadId,
@@ -559,6 +560,8 @@ describe("a worker open in the pane", () => {
   });
 });
 
+const BOUND_142 = { repo: "example/gram", number: 142 };
+
 /** Each tool's reason it is off, else its count, else "on". */
 const off = (facts: Parameters<typeof liveTools>[0]) =>
   Object.fromEntries(liveTools(facts).map((tool) => [tool.id, tool.off ?? tool.count ?? "on"]));
@@ -566,7 +569,7 @@ const off = (facts: Parameters<typeof liveTools>[0]) =>
 describe("a worker's tools", () => {
   it("offers PR only with a PR to open, and Terminal and Files only with a checkout to read, each off saying why", () => {
     // A PR it is bound to opens before its badge has loaded.
-    expect(off({ git: { repo: true, changedFiles: 0 }, boundPr: 142 }).pr).toBe("#142");
+    expect(off({ git: { repo: true, changedFiles: 0 }, boundPr: BOUND_142 }).pr).toBe("#142");
     expect(off({ git: { repo: true, changedFiles: 3 } })).toMatchObject({
       pr: NO_PR_YET,
       changes: "3",
@@ -574,7 +577,10 @@ describe("a worker's tools", () => {
       files: "on",
     });
     // Its folder deleted outside Gram: nothing to read from it.
-    expect(off({ git: { repo: true, changedFiles: 0, missing: true }, boundPr: 7 })).toMatchObject({
+    const bound7 = { repo: "example/gram", number: 7 };
+    expect(
+      off({ git: { repo: true, changedFiles: 0, missing: true }, boundPr: bound7 }),
+    ).toMatchObject({
       pr: "#7",
       changes: FOLDER_MISSING,
       terminal: FOLDER_MISSING,
@@ -589,5 +595,16 @@ describe("a worker's tools", () => {
     expect(off({ git: { repo: true, changedFiles: 0 }, finished: true, prFiles: 4 })).toMatchObject(
       { changes: "4", terminal: FINISHED, files: FINISHED },
     );
+  });
+
+  it("names the PR its panel opens: the bound one, over a badge that still names another", () => {
+    const stale = {
+      number: 913,
+      url: "https://github.com/example/gram/pull/913",
+    } as NonNullable<GitState["pr"]>;
+    const git = { repo: true, changedFiles: 0, origin: "example/gram", pr: stale };
+    expect(off({ git, boundPr: BOUND_142 }).pr).toBe("#142");
+    // Unbound, the branch's PR is the one it opens.
+    expect(off({ git }).pr).toBe("#913");
   });
 });
