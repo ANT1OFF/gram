@@ -1,10 +1,10 @@
 {
   "title": "Trust a folder once",
   "slug": "folder-trust",
-  "status": "in-review",
+  "status": "approved",
   "template": "options",
   "current": 1,
-  "approved": null,
+  "approved": 1,
   "versions": [
     {
       "n": 1,
