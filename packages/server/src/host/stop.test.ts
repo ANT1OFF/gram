@@ -16,8 +16,10 @@ import { Proc, ProcLive, pushWip, snapshotWip, wipRef, Worktrees, WorktreesLive 
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as TestClock from "effect/testing/TestClock";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "../git/test-repo.ts";
 import { makeAdmission } from "./admission.ts";
+import { HOST_RESTORE_MS, HOST_STEP_MARGIN_MS } from "./budgets.ts";
 import { attachmentsOnHost, fileReadsOn } from "./file-reads.ts";
 import { filesOn } from "./files.ts";
 import { gitOn } from "./git.ts";
@@ -1282,5 +1284,38 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       expect(connection.gone()).toBe(false);
       yield* connection.stop.cancel;
     }).pipe(Effect.scoped, live),
+  );
+});
+
+describe("a host's step held to its budget", () => {
+  it.effect("is stopped past it, and the lock goes to the step waiting behind it", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const stop = stopOn({
+          proc: {} as never,
+          busy: Effect.succeed(IDLE),
+          admission: makeAdmission(),
+          // A clone that never ends, as one whose remote stopped answering mid-transfer.
+          ensure: () => Effect.never,
+        });
+        const restoring = yield* Effect.forkScoped(
+          stop.restore!({
+            threadId: THREAD,
+            cwd: join(tmpdir(), "gram-budget-test", "widgets"),
+            url: "https://git.example.test/acme/widgets.git",
+          }),
+        );
+        // Waits for the lock behind it, as the machine's next keep would.
+        const keeping = yield* Effect.forkScoped(stop.keep({ checkouts: [] }));
+        yield* TestClock.adjust(HOST_RESTORE_MS - HOST_STEP_MARGIN_MS - 1_000);
+        expect(keeping.pollUnsafe()).toBeUndefined();
+        yield* TestClock.adjust(2_000);
+        const failed = yield* Fiber.join(restoring).pipe(Effect.flip);
+        expect(failed.message).toBe(
+          "Putting the folder back took longer than 19 minutes on this machine, so it was stopped.",
+        );
+        expect(yield* Fiber.join(keeping)).toEqual([]);
+      }),
+    ),
   );
 });

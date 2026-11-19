@@ -59,6 +59,7 @@ import * as Exit from "effect/Exit";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import type { Admission } from "./admission.ts";
+import { HOST_DROP_MS, HOST_RESTORE_MS, HOST_STEP_MARGIN_MS, HOST_STOP_MS } from "./budgets.ts";
 import { redactUrlCredentials } from "./remote-url.ts";
 import { toDiffFile } from "../git/mapping.ts";
 
@@ -201,6 +202,27 @@ const isBusy = (busy: HostBusy) => busy.turns + busy.terminals + busy.clones + b
 const note = (message: string) => redactUrlCredentials(message).slice(0, 1024);
 
 const refused = (message: string) => new HostFailed({ message: note(message) });
+
+/**
+ * A step held to its own budget on the host, inside the lock: a minute less than Gram's deadline
+ * for the call (`budgets.ts`). Each git command has its own time limit, but a step runs many,
+ * one folder after another; past its budget it is stopped (its commands with it) and the lock
+ * goes to the next, so one slow step never holds the machine's others behind it unseen.
+ */
+const within =
+  (callMs: number, what: string) =>
+  <A>(effect: Effect.Effect<A, HostFailed>): Effect.Effect<A, HostFailed> =>
+    effect.pipe(
+      Effect.timeoutOrElse({
+        duration: callMs - HOST_STEP_MARGIN_MS,
+        orElse: () =>
+          Effect.fail(
+            refused(
+              `${what} took longer than ${Math.round((callMs - HOST_STEP_MARGIN_MS) / 60_000)} minutes on this machine, so it was stopped.`,
+            ),
+          ),
+      }),
+    );
 
 /** A folder that isn't kept, and why. */
 class NotKept {
@@ -681,17 +703,21 @@ export const stopOn = (deps: StopDeps): HostStop => {
   return {
     going,
     goAway,
-    keep: (request) => lock.withPermits(1)(asWork(keep(request))),
+    keep: (request) =>
+      lock.withPermits(1)(within(HOST_STOP_MS, "Keeping the work")(asWork(keep(request)))),
     ...(ensure === undefined
       ? {}
       : {
           restore: (request: RestoreRequest) =>
-            lock.withPermits(1)(asWork(restore(ensure, request))),
+            lock.withPermits(1)(
+              within(HOST_RESTORE_MS, "Putting the folder back")(asWork(restore(ensure, request))),
+            ),
         }),
-    drop: (request) => lock.withPermits(1)(asWork(drop(request))),
+    drop: (request) =>
+      lock.withPermits(1)(within(HOST_DROP_MS, "Deleting the kept work")(asWork(drop(request)))),
     prepare: (request) =>
       lock
-        .withPermits(1)(prepare(request))
+        .withPermits(1)(within(HOST_STOP_MS, "Readying the machine to stop")(prepare(request)))
         .pipe(
           Effect.ensuring(
             Effect.sync(() => {
