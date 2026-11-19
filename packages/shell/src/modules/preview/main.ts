@@ -45,6 +45,7 @@ import {
   parsePreviewBounds,
   previewNavigation,
   previewRequest,
+  unattributedRequest,
   previewsToClose,
   previewThreadOf,
   resolvedWithin,
@@ -264,7 +265,11 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
         );
         return;
       }
-      callback(previewRequest(details.url) === "allow" ? {} : { cancel: true });
+      const verdict =
+        details.webContents === undefined
+          ? unattributedRequest(details.url, details.initiatorOrigin)
+          : previewRequest(details.url);
+      callback(verdict === "allow" ? {} : { cancel: true });
     });
   };
 
@@ -462,8 +467,10 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     view.setVisible(false);
     // WebRTC's sockets don't pass the session's request check: no UDP at all, and TCP only through
     // the proxy, which reaches a private network only for a private page's own session, and
-    // loopback never. Set on the page itself, so every frame in it holds to it.
-    if (kind === "web") view.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
+    // loopback never. Set on the page itself, so every frame in it holds to it. A local page gets
+    // it too: its session has no proxy yet, so this takes UDP (STUN, ICE checks, most data
+    // channels) away from it, and TCP TURN is left until that session's connections are pinned.
+    view.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
     const preview: Preview = {
       threadId,
       kind,

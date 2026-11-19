@@ -10,6 +10,7 @@ import {
   previewsToClose,
   previewThreadOf,
   proxyTargets,
+  unattributedRequest,
   resolvedWithin,
   webNavigation,
   webNetworkOf,
@@ -84,6 +85,30 @@ describe("the preview's requests", () => {
     expect(loopbackPortOf("ws://[::1]:9229/")).toBe(9229);
     expect(loopbackPortOf("http://user@localhost:3000/")).toBeUndefined();
     expect(loopbackPortOf("http://organization.example.invalid:3000/")).toBeUndefined();
+  });
+});
+
+describe("the preview's requests no page is named for", () => {
+  it("keeps a public page's workers off loopback", () => {
+    for (const url of ["http://127.0.0.1:5173/api", "ws://localhost:9229/", "http://[::1]:8080/"])
+      expect(unattributedRequest(url, "https://approved.example")).toBe("block");
+  });
+
+  it("keeps an opaque initiator off loopback, as a data: worker's is", () => {
+    expect(unattributedRequest("http://127.0.0.1:5173/api", "null")).toBe("block");
+  });
+
+  it("lets a loopback page's workers and the app's own loads reach loopback", () => {
+    expect(unattributedRequest("http://127.0.0.1:5173/api", "http://localhost:5173")).toBe("allow");
+    expect(unattributedRequest("ws://localhost:5173/hmr", "http://127.0.0.1:5173")).toBe("allow");
+    expect(unattributedRequest("http://127.0.0.1:5173/", undefined)).toBe("allow");
+  });
+
+  it("still blocks what the local session never loads, and lets a page's own data through", () => {
+    expect(unattributedRequest("https://exfil.example/", "http://localhost:5173")).toBe("block");
+    expect(unattributedRequest("blob:https://approved.example/1", "https://approved.example")).toBe(
+      "allow",
+    );
   });
 });
 

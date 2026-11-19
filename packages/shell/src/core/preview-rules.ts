@@ -83,6 +83,21 @@ export function previewRequest(url: string): PreviewRequest {
   return loopbackPortOf(url) === undefined ? "block" : "allow";
 }
 
+/**
+ * Whether the local session lets through a request no page can be named for, such as a worker's:
+ * Chromium gives those no `WebContents`, so the agent browser's rules can't be asked. The same
+ * session holds agents' pages on public hosts, whose workers make exactly such requests, so one
+ * reaches loopback only when it started on loopback, or started nowhere (the app's own load). An
+ * opaque initiator (`null`, a `data:` worker's) could be anyone's, and doesn't.
+ */
+export function unattributedRequest(url: string, initiator: string | undefined): PreviewRequest {
+  if (previewRequest(url) === "block") return "block";
+  const parsed = parse(url);
+  if (parsed !== undefined && LOCAL.has(parsed.protocol)) return "allow";
+  if (initiator === undefined) return "allow";
+  return loopbackPortOf(initiator) === undefined ? "block" : "allow";
+}
+
 // ---------------------------------------------------------------------------------------------
 // The web session
 
