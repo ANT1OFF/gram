@@ -861,6 +861,40 @@ describe.skipIf(!hasGit)("worktrees", () => {
       }).pipe(provide),
     );
 
+    it.live("still knows someone else's branch after it moves to commits of its own", () =>
+      Effect.gen(function* () {
+        const repo = makeRepo(tmp());
+        write(nodePath.join(repo, ".gitignore"), ".env\n.worktrees/\n");
+        write(nodePath.join(repo, ".worktreeinclude"), ".env\n");
+        run(repo, "add", "-A");
+        run(repo, "commit", "-qm", "fixture");
+        write(nodePath.join(repo, ".env"), "TOKEN=secret");
+        run(repo, "branch", "pr-9-theirs");
+        const theirs = yield* createWorktree({
+          repoPath: repo,
+          branch: "pr-9-theirs",
+          untrusted: true,
+          openCheckouts: [],
+        });
+        // Inside their checkout, the branch is pointed at a commit unrelated to the first head.
+        const at = theirs.checkout.path;
+        run(at, "checkout", "-q", "--orphan", "elsewhere");
+        write(nodePath.join(at, "planted.txt"), "theirs");
+        run(at, "add", "planted.txt");
+        run(at, "commit", "-qm", "orphan");
+        run(at, "branch", "-f", "pr-9-theirs", "HEAD");
+
+        const built = yield* createWorktree({
+          repoPath: repo,
+          branch: "my-fix",
+          base: "pr-9-theirs",
+          openCheckouts: [at],
+        });
+        expect(built.checkout.untrusted).toBe(true);
+        expect(fs.existsSync(nodePath.join(built.checkout.path, ".env"))).toBe(false);
+      }).pipe(provide),
+    );
+
     it.live("copies includes and seeds rules into the user's own new worktree", () =>
       Effect.gen(function* () {
         const repo = makeRepo(tmp());

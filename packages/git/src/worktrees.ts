@@ -333,15 +333,22 @@ export const fromUntrustedHead = (repoTop: string, branch: string, commit: strin
     if (heads.length === 0) return false;
     if (heads.some((head) => head.branch === branch)) return true;
     if (commit === undefined) return true;
-    const base = yield* originBaseRef(repoTop);
+    // Each recorded head, and where its branch points now: a fork that force-pushed, or an agent in
+    // that checkout that moved the branch, leaves a tip the first head isn't in.
+    const oids = new Set(heads.map((head) => head.oid));
     for (const head of heads) {
-      const contains = yield* git(repoTop, ["merge-base", "--is-ancestor", head.oid, commit]).pipe(
+      const tip = yield* commitOf(repoTop, `refs/heads/${head.branch}`);
+      if (tip !== undefined) oids.add(tip);
+    }
+    const base = yield* originBaseRef(repoTop);
+    for (const oid of oids) {
+      const contains = yield* git(repoTop, ["merge-base", "--is-ancestor", oid, commit]).pipe(
         Effect.mapError(toFailed),
       );
       if (contains.status === 1) continue;
       if (contains.status !== 0) return true;
       if (base === undefined) return true;
-      const merged = yield* git(repoTop, ["merge-base", "--is-ancestor", head.oid, base]).pipe(
+      const merged = yield* git(repoTop, ["merge-base", "--is-ancestor", oid, base]).pipe(
         Effect.mapError(toFailed),
       );
       if (merged.status !== 0) return true;
@@ -395,11 +402,19 @@ export const addWorktree = (
     if (out.status !== 0) {
       return yield* Effect.fail(invalid(`git worktree failed: ${gitFailMsg(out, "")}`));
     }
-    const theirs =
-      untrusted ||
-      (yield* fromUntrustedHead(repoTop, safeBranch, yield* commitOf(worktreeDir, "HEAD")));
+    // A worktree whose trust couldn't be settled doesn't stay: unmarked, it would read as the
+    // user's own when next opened.
+    const theirs = yield* (
+      untrusted
+        ? Effect.succeed(true)
+        : Effect.flatMap(commitOf(worktreeDir, "HEAD"), (commit) =>
+            fromUntrustedHead(repoTop, safeBranch, commit),
+          )
+    ).pipe(Effect.tapError(() => Effect.ignore(removeWorktreeDir(repoTop, worktreeDir, true))));
     if (theirs) {
-      yield* markUntrustedHead(repoTop, worktreeDir, safeBranch);
+      yield* markUntrustedHead(repoTop, worktreeDir, safeBranch).pipe(
+        Effect.tapError(() => Effect.ignore(removeWorktreeDir(repoTop, worktreeDir, true))),
+      );
       return { copiedIncludes: 0, startPoint, untrusted: true };
     }
     const copiedIncludes = yield* copyWorktreeIncludes(repoTop, worktreeDir);
@@ -498,6 +513,9 @@ export const createWorktree = (request: CreateWorktreeRequest) =>
     const untrusted =
       !plan.isMainCheckout &&
       (request.untrusted === true || added.untrusted || isUntrustedWorktree(plan.worktreeDir));
+    // A reused checkout of someone else's may have moved on: what it holds now is recorded too.
+    if (plan.reuse && untrusted && rawBranch !== "")
+      yield* markUntrustedHead(repoTop, plan.worktreeDir, rawBranch);
     // Reused checkouts too, so repos whose worktrees predate this get the line on their next open.
     // A git dir that can't be written doesn't block the checkout.
     if (!plan.isMainCheckout) {
