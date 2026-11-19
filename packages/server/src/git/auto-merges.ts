@@ -11,11 +11,16 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-/** A PR with GitHub's auto-merge armed, and the method it merges with. */
+/** A PR with GitHub's auto-merge armed, the method it merges with, and its head when read. */
 export interface ArmedAutoMerge {
   readonly number: number;
   readonly method: "squash" | "merge" | "rebase";
+  /** The head commit the auto-merge stood on; `undefined` when GitHub didn't say. */
+  readonly head: string | undefined;
 }
+
+/** An open PR's head commit, or that it is no longer open. */
+export type PrHeadNow = { readonly open: true; readonly head: string } | { readonly open: false };
 
 export interface AutoMergesShape {
   /** The `owner/repo` of a checkout's origin, as `--repo` names it; `undefined` without one. */
@@ -32,12 +37,22 @@ export interface AutoMergesShape {
     repo: string,
     number: number,
   ) => Effect.Effect<string | undefined>;
-  /** Arms a PR's auto-merge again with `method`; why it couldn't, or `undefined` when it did. */
+  /** A PR's head now; `undefined` when gh couldn't say. */
+  readonly headOf: (
+    cwd: string,
+    repo: string,
+    number: number,
+  ) => Effect.Effect<PrHeadNow | undefined>;
+  /**
+   * Arms a PR's auto-merge again with `method`, pinned to `head` (`--match-head-commit`), so
+   * GitHub refuses it once the head has moved; why it couldn't, or `undefined` when it did.
+   */
   readonly enable: (
     cwd: string,
     repo: string,
     number: number,
     method: ArmedAutoMerge["method"],
+    head: string,
   ) => Effect.Effect<string | undefined>;
 }
 
@@ -50,6 +65,7 @@ const decodeList = Schema.decodeUnknownOption(
     Schema.Array(
       Schema.Struct({
         number: Schema.Int,
+        headRefOid: Schema.optionalKey(Schema.NullOr(Schema.String)),
         autoMergeRequest: Schema.NullOr(
           Schema.Struct({ mergeMethod: Schema.optionalKey(Schema.NullOr(Schema.String)) }),
         ),
@@ -57,6 +73,19 @@ const decodeList = Schema.decodeUnknownOption(
     ),
   ),
 );
+
+const decodeView = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Struct({
+      state: Schema.String,
+      headRefOid: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    }),
+  ),
+);
+
+/** A full commit id (SHA-1 or SHA-256), as `--match-head-commit` takes it. */
+const isOid = (text: string | null | undefined): text is string =>
+  text != null && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i.test(text);
 
 const methodOf = (raw: string | null | undefined): ArmedAutoMerge["method"] => {
   switch (raw?.toUpperCase()) {
@@ -95,7 +124,7 @@ export const AutoMergesLive = Layer.effect(
           "--limit",
           "100",
           "--json",
-          "number,autoMergeRequest",
+          "number,headRefOid,autoMergeRequest",
         ]).pipe(
           Effect.map((out) => {
             if (out.status !== 0) return undefined;
@@ -105,14 +134,38 @@ export const AutoMergesLive = Layer.effect(
               .map((pr) => ({
                 number: pr.number,
                 method: methodOf(pr.autoMergeRequest?.mergeMethod),
+                head: isOid(pr.headRefOid) ? pr.headRefOid : undefined,
               }));
           }),
           Effect.orElseSucceed(() => undefined),
         ),
       disable: (cwd, repo, number) =>
         act(cwd, ["pr", "merge", String(number), "--disable-auto", "--repo", repo]),
-      enable: (cwd, repo, number, method) =>
-        act(cwd, ["pr", "merge", String(number), "--auto", `--${method}`, "--repo", repo]),
+      headOf: (cwd, repo, number) =>
+        run(cwd, ["pr", "view", String(number), "--repo", repo, "--json", "state,headRefOid"]).pipe(
+          Effect.map((out): PrHeadNow | undefined => {
+            if (out.status !== 0) return undefined;
+            const view = Option.getOrUndefined(decodeView(out.stdout));
+            if (view === undefined) return undefined;
+            if (view.state !== "OPEN") return { open: false };
+            return isOid(view.headRefOid) ? { open: true, head: view.headRefOid } : undefined;
+          }),
+          Effect.orElseSucceed(() => undefined),
+        ),
+      enable: (cwd, repo, number, method, head) =>
+        isOid(head)
+          ? act(cwd, [
+              "pr",
+              "merge",
+              String(number),
+              "--auto",
+              `--${method}`,
+              "--match-head-commit",
+              head,
+              "--repo",
+              repo,
+            ])
+          : Effect.succeed("no head commit to pin the auto-merge to"),
     });
   }),
 );

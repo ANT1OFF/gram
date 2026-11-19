@@ -344,12 +344,17 @@ export const MergeFreeze = Schema.Struct({
   allow: Schema.optionalKey(
     Schema.Array(Schema.Int).check(Schema.isMaxLength(MERGE_FREEZE_ALLOW_MAX)),
   ),
-  /** PRs whose GitHub auto-merge the freeze turned off, to arm again with its method once it ends. */
+  /**
+   * PRs whose GitHub auto-merge the freeze turned off, to arm again with its method once it ends,
+   * pinned to `head`, the commit it stood on: a PR whose head moved meanwhile, or one recorded
+   * without a head, isn't armed again, and its thread is told.
+   */
   disarmed: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
         number: Schema.Int,
         method: Schema.Literals(["squash", "merge", "rebase"]),
+        head: Schema.optionalKey(Schema.String),
       }),
     ),
   ),

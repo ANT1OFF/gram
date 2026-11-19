@@ -10,11 +10,13 @@ import { AppToolRegistry } from "../app-tools/registry.ts";
 import { hasGit } from "../git/test-repo.ts";
 import { MergeFreezes } from "../git/merge-freezes.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { WakeConditions } from "../wakes/conditions.ts";
 import { Orchestration } from "./service.ts";
 import {
   atAutonomy,
+  autoMergeHead,
   completeTurn,
   makeWorld,
   openOrchestrator,
@@ -491,6 +493,58 @@ describe.skipIf(!hasGit)("merge freezes", () => {
         }),
       );
     }),
+  );
+
+  it.effect(
+    "a freeze arms an auto-merge again only on the head it stood on, telling the thread of a PR pushed to meanwhile, and leaves a PR a thread only follows alone",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const runtimes = yield* ThreadRuntimes;
+            const fake = yield* FakeAgentControl;
+            const { impl, release } = yield* armedWorkspace(world);
+            world.autoMerges.set("acme/app#12", { base: "main", method: "squash" });
+            // Someone else's PR the release thread only follows, with an auto-merge they armed.
+            yield* runtimes.updateThread(release.thread.id, (t) => ({
+              ...t,
+              extraPrs: [{ repo: "acme/app", number: 41, monitor: false }],
+            }));
+            world.autoMerges.set("acme/app#41", { base: "main", method: "merge" });
+            yield* release.session.callTool("merge_freeze", { repo: "acme/app", reason: "cut" });
+            expect(world.autoMergeCalls).toEqual(["disable acme/app#13", "disable acme/app#12"]);
+            expect(world.autoMerges.has("acme/app#41")).toBe(true);
+
+            // A push to #12 while the freeze stands: GitHub finds nothing armed to turn off.
+            const pushed = "e".repeat(40);
+            world.autoMergePrHeads.set("acme/app#12", pushed);
+            yield* release.session.callTool("merge_freeze", { repo: "acme/app", lift: true });
+            // #13 comes back pinned to the head it stood on; #12 stays off.
+            expect(world.autoMergeCalls).toEqual([
+              "disable acme/app#13",
+              "disable acme/app#12",
+              "enable acme/app#13 rebase",
+            ]);
+            expect(world.autoMerges.get("acme/app#13")?.head).toBe(autoMergeHead(13));
+            expect(world.autoMerges.has("acme/app#12")).toBe(false);
+            // #12's thread is told why, naming both heads.
+            // Sent to it, or steered into the turn it is in.
+            const told = yield* waitReal(
+              "the notice to #12's thread",
+              Effect.sync(() =>
+                fake.sessions
+                  .filter((session) => session.options.threadId === impl.thread.id)
+                  .flatMap((session) => [...session.sent, ...session.steered])
+                  .find((input) => input.text.includes("acme/app#12")),
+              ),
+            );
+            expect(told.text).toContain(autoMergeHead(12).slice(0, 7));
+            expect(told.text).toContain(pushed.slice(0, 7));
+          }),
+        );
+      }),
   );
 
   it.effect(
