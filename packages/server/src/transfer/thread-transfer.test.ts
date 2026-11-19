@@ -96,7 +96,7 @@ const onMachineServer = <A, E>(
           return {
             connection: (id: HostId) =>
               id === MACHINE ? Effect.succeed(connection) : Effect.die(new Error(`no ${id}`)),
-            stops: { keep: () => undefined },
+            stops: { keep: () => undefined, blocked: () => undefined },
           } as never;
         }),
       );
