@@ -11,6 +11,7 @@ import {
   type ThreadId,
   type WorkspaceState,
   type WorkspaceId,
+  inlineText,
 } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -430,7 +431,9 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
         );
       }
       const when = (list: ReadonlyArray<Thread>) =>
-        list.map((worker) => `${worker.title} at ${clockText(plan.get(worker.id)!)}`).join(", ");
+        list
+          .map((worker) => `${inlineText(worker.title)} at ${clockText(plan.get(worker.id)!)}`)
+          .join(", ");
       if (stopped.length > 0) {
         parts.push(
           `The pause stopped ${stopped.length === 1 ? "1 worker" : `${stopped.length} workers`} mid-turn. They resume on their own in batches, each told to continue where it left off: ${when(stopped)}.`,
