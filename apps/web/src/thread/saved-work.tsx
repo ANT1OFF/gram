@@ -123,6 +123,17 @@ export function SavedWorkLine({ threadId }: { threadId: ThreadId }) {
           Nothing changed yet · saved <span className="tabular-nums">{formatStamp(saved.at)}</span>
         </span>
       ) : null}
+      {saved?.lastFailure !== undefined && (
+        <span
+          data-testid="feature-card-save-failed"
+          className="basis-full truncate text-warning-text"
+          title={saved.lastFailure}
+        >
+          Last save{" "}
+          <span className="tabular-nums">{formatStamp(saved.lastAttemptAt ?? saved.at)}</span>{" "}
+          failed: {saved.lastFailure}
+        </span>
+      )}
       {lost !== undefined && (
         <Button
           size="xs"

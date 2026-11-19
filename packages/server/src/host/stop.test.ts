@@ -151,7 +151,14 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       expect(readFileSync(join(cwd, "new.txt"), "utf8")).toBe("untracked\n");
       // Readied to stop, a keep leaves it to the stop.
       yield* stop.prepare({ checkouts: [], force: true });
-      expect(yield* stop.keep({ checkouts: [{ threadId: THREAD, cwd: repo }] })).toEqual([]);
+      expect(yield* stop.keep({ checkouts: [{ threadId: THREAD, cwd: repo }] })).toEqual([
+        {
+          threadId: THREAD,
+          cwd: repo,
+          pushed: false,
+          note: "The machine is readied to stop, and the stop keeps its work.",
+        },
+      ]);
     }).pipe(Effect.scoped, live),
   );
 
