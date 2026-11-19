@@ -5,7 +5,7 @@ import {
   type BoundPr,
   type CheckoutRequest,
 } from "@gram/contracts";
-import { fetchPrHead, prHead, Proc, tryRepoTop, type PrHead } from "@gram/git";
+import { fetchPrHead, originOwnerRepo, prHead, Proc, tryRepoTop, type PrHead } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { resolveFolder } from "../../fs/folders.ts";
 import { toGitError } from "../../git/mapping.ts";
@@ -17,15 +17,32 @@ import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
 import type { Handlers } from "./common.ts";
 
 /**
- * The worktree a PR is checked out in. A fork's head is its author's code: the worktree gets
+ * Whether a PR's head is the project's own code: its head is a branch of the repository the project
+ * tracks as `origin`. A fork's head, and any PR of another repository (whose head GitHub compares
+ * with that repository, not with this project), is someone else's.
+ */
+export const prHeadIsProjects = (
+  head: Pick<PrHead, "fork" | "repo" | "headRepo">,
+  origin: string | undefined,
+): boolean =>
+  !head.fork &&
+  origin !== undefined &&
+  head.repo.toLowerCase() === origin.toLowerCase() &&
+  (head.headRepo === undefined || head.headRepo.toLowerCase() === origin.toLowerCase());
+
+/**
+ * The worktree a PR is checked out in. Someone else's head is its author's code: the worktree gets
  * nothing of the main checkout's, and the thread's agent loads none of the settings the PR carries
  * (`Checkout.untrusted`).
  */
 export const prCheckoutRequest = (
-  head: Pick<PrHead, "fork">,
+  head: Pick<PrHead, "fork" | "repo" | "headRepo">,
   branch: string,
+  origin: string | undefined,
 ): CheckoutRequest & { readonly kind: "newWorktree" } =>
-  head.fork ? { kind: "newWorktree", branch, untrusted: true } : { kind: "newWorktree", branch };
+  prHeadIsProjects(head, origin)
+    ? { kind: "newWorktree", branch }
+    : { kind: "newWorktree", branch, untrusted: true };
 
 /** `pr.checkout`. */
 export const prCheckoutHandlers = Effect.gen(function* () {
@@ -45,10 +62,11 @@ export const prCheckoutHandlers = Effect.gen(function* () {
           return yield* new GitError({ message: `${root} is not a git repository` });
         }
         const head = yield* provide(prHead(top, number, repo)).pipe(Effect.mapError(toGitError));
+        const origin = yield* provide(originOwnerRepo(top));
         const branch = yield* provide(fetchPrHead(top, head)).pipe(Effect.mapError(toGitError));
         const open = heldCheckoutPaths(yield* store.listThreads, LOCAL_HOST_ID);
         const checkout = yield* checkouts
-          .prepare(prCheckoutRequest(head, branch), open, root)
+          .prepare(prCheckoutRequest(head, branch, origin), open, root)
           .pipe(
             Effect.catchTag("WorktreeDirty", (e) =>
               Effect.fail(new InvalidState({ message: `${e.path} has uncommitted changes` })),

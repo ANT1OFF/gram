@@ -1,6 +1,7 @@
 // A thread's agent session: opening it, what its end means for the thread, the watchdog's
 // recovery of a stuck turn, and stopping a session whose folder is gone.
 
+import { isUntrustedWorktree } from "@gram/git";
 import type { DecisionHookShape } from "../embedding/decision-hook.ts";
 import { hookedSessionOptions } from "../embedding/hooked-requests.ts";
 import * as Effect from "effect/Effect";
@@ -701,8 +702,12 @@ export const makeSessionLifecycle = ({
               : { outwardGate: policy.outwardGate }),
             ...(hooked ? hookedSessionOptions : {}),
             ...(policy.confineWrites === true ? { confineWrites: true } : {}),
-            // Someone else's code (a fork's PR head): the folder's own agent settings don't load.
-            ...(thread.checkout.untrusted === true ? { untrustedTree: true } : {}),
+            // Someone else's code (a PR head from another repository): the folder's own agent
+            // settings don't load. The worktree's own mark counts too, so a checkout made or
+            // restored from such a branch never loads them, whatever the thread recorded.
+            ...(thread.checkout.untrusted === true || isUntrustedWorktree(thread.checkout.path)
+              ? { untrustedTree: true }
+              : {}),
             ...(policy.pinCwd === true ? { pinCwd: true } : {}),
             ...(policy.mcpAllowlist === undefined ? {} : { mcpAllowlist: policy.mcpAllowlist }),
             ...(policy.mcpDenylist === undefined ? {} : { mcpDenylist: policy.mcpDenylist }),
