@@ -1,10 +1,11 @@
 {
   "title": "Worker pane: list and worker on the right",
   "slug": "worker-pane",
-  "status": "draft",
+  "status": "approved",
   "template": "options",
   "current": 2,
-  "approved": null,
+  "approved": 2,
+  "approvedDirection": "A+ Switcher and hand-over",
   "versions": [
     {
       "n": 1,

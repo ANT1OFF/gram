@@ -52,7 +52,8 @@ test("⌘J shows the Workers tab with the keys on its rows, opens a worker, and 
 
   await page.keyboard.press("ControlOrMeta+KeyJ");
   await expect(tab(page)).toBeVisible();
-  await expect(page.getByTestId("workers-panel-title")).toHaveText("Workers in agent-platform");
+  // Its whole height for the workers: named, counted, and no workspace said again.
+  await expect(page.getByTestId("workers-panel-title")).toHaveText(/^Workers\d/);
   // The keys are on its rows: ↑↓ move between them.
   const focused = () =>
     page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? "");
@@ -67,8 +68,8 @@ test("⌘J shows the Workers tab with the keys on its rows, opens a worker, and 
     .poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-thread-id")))
     .toBe(first);
 
-  // Each row says its state under its title, and the finished ones are under Done.
-  await expect(row(page, made.live).getByTestId("workers-panel-status")).not.toBeEmpty();
+  // Each row is the sidebar's own, wide, and the finished ones are under Done.
+  await expect(row(page, made.live).getByTestId("overview-worker-title")).not.toBeEmpty();
   await expect(tab(page).getByTestId("workers-group-done")).toHaveAttribute("data-count", /^[1-9]/);
 
   // ⌘J again puts the panel back as it was: hidden here.

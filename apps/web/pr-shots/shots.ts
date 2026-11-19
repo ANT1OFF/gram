@@ -2465,7 +2465,7 @@ const MACHINE_MARKER_SHOTS: readonly Shot[] = [
     open: async (page) => {
       await openMachineMarkers(page);
       await openPanelTab(page.getByTestId("right-panel"), "Workers");
-      await page.getByTestId("workers-panel-machine").first().waitFor();
+      await page.getByTestId("overview-worker-machine").first().waitFor();
       await openBoardView(page);
       await page.getByTestId("rail-machine").first().waitFor();
       await page.mouse.move(700, 980);

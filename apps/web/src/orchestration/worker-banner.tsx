@@ -101,10 +101,13 @@ function TakeOverLine() {
 export function WorkerBanner({
   thread,
   inTitlebar = false,
+  takeover = true,
 }: {
   thread: Thread;
   /** The header is in the title bar, which may fold its hold chip down to a glyph. */
   inTitlebar?: boolean;
+  /** Its takeover line; the pane's composer says it in its own place instead. */
+  takeover?: boolean;
 }) {
   const workspace = useWorkspaces().find((state) => state.workspace.id === thread.workspaceId);
   const { data: ledger } = useOrchestratorLedger(workspace?.workspace.id);
@@ -160,7 +163,8 @@ export function WorkerBanner({
           </span>
         </div>
       )}
-      {!held &&
+      {takeover &&
+        !held &&
         thread.sentTo === undefined &&
         entry !== undefined &&
         !FINISHED_WORKER.has(entry.state) && <TakeOverLine />}

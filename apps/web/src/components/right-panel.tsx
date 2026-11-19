@@ -34,7 +34,7 @@ import { useNotificationHistory, unreadNotifications } from "@/stores/notificati
 import { PreviewSuggestionNotice } from "@/panels/preview-suggestion";
 import { useReviewRequests } from "@/reviews/review-requests";
 import { useFeature, useServerBrowser } from "@/settings/use-diagnostics";
-import { useRoomySidebar } from "@/embed/store";
+import { panelWorkersOnly, useEmbedShell, useRoomySidebar, useWorkersWord } from "@/embed/store";
 import { usePhone } from "@/lib/use-phone";
 import { PHONE_SEGMENT, PhonePanelHeader } from "@/shell/phone-panels";
 import { useToastDock } from "@/shell/toast-dock";
@@ -124,6 +124,16 @@ const RightPanelTabs = lazy(() =>
   preloadRightPanel().then((tabs) => ({ default: tabs.RightPanelTabs })),
 );
 
+const WorkersMode = lazy(() => preloadRightPanel().then((tabs) => ({ default: tabs.WorkersMode })));
+
+/** The tabs that are the orchestrator's own views, which its menu in the Workers list opens. */
+const NOT_ORCHESTRATOR_VIEWS: ReadonlySet<ShownTab> = new Set([
+  "workers",
+  "thread",
+  "command",
+  "pr",
+]);
+
 /**
  * Applies an agent's `ui.showPanel` for the viewed thread. Called from the shell rather than the
  * panel, which isn't mounted while hidden.
@@ -166,20 +176,35 @@ export function RightPanel() {
   // The tab is synced between machines and the list's placement is not, so the stored tab can name
   // a Reviews tab this window doesn't have, or a Preview tab where the shell has no preview. Needs
   // you was a tab before the Inbox took its place.
-  const panelTab =
-    (storedTab === "reviews" && !reviewsHere) ||
-    (storedTab === "preview" && !previewHere) ||
-    (storedTab === "workers" && !workersHere) ||
-    (storedTab === "pages" && !pagesHere) ||
-    storedTab === "needsYou"
-      ? "diff"
-      : storedTab;
-  // A worker open beside the chat has the Thread tab, picked over the stored one while it shows.
-  const besideWorker = useBesideStore((s) => (s.restored ? undefined : s.worker));
-  const besideOn = useBesideStore((s) => besideShown(s) !== undefined);
-  const setBesideShown = useBesideStore((s) => s.setShown);
   const params = useParams({ strict: false });
   const routeThreadId = params.threadId as ThreadId | undefined;
+  // An app in front of Gram may offer the pane on an orchestrator outside a repository for its
+  // workers alone: none of its own views.
+  const workersOnly = useThreadsStore((s) => {
+    const summary = routeThreadId === undefined ? undefined : s.byId[routeThreadId];
+    return (
+      summary !== undefined &&
+      panelWorkersOnly(useEmbedShell.getState().panel, {
+        orchestrator: summary.thread.role === "orchestrator",
+        threadInRepo: summary.git?.repo ?? summary.thread.checkout.kind === "worktree",
+      })
+    );
+  });
+  const panelTab =
+    workersOnly && workersHere
+      ? "workers"
+      : (storedTab === "reviews" && !reviewsHere) ||
+          (storedTab === "preview" && !previewHere) ||
+          (storedTab === "workers" && !workersHere) ||
+          (storedTab === "pages" && !pagesHere) ||
+          storedTab === "needsYou"
+        ? "diff"
+        : storedTab;
+  // A worker open beside the chat has the Thread tab, picked over the stored one while it shows.
+  const besideWorker = useBesideStore((s) => (s.restored ? undefined : s.worker));
+  const besideRecord = useBesideStore((s) => s.record);
+  const besideOn = useBesideStore((s) => besideShown(s) !== undefined);
+  const setBesideShown = useBesideStore((s) => s.setShown);
   // A command opened from a thread's strip is in reach while that thread is in view.
   const openCommand = useCommandViewStore((s) => s.open);
   const commandHere = useLayoutStore(
@@ -190,25 +215,36 @@ export function RightPanel() {
   const command = commandHere ? openCommand : undefined;
   const commandOn = useCommandViewStore((s) => s.shown) && command !== undefined;
   const setCommandShown = useCommandViewStore((s) => s.setShown);
+  // Over the chat on a phone, the panel has a header of its own: its name, its thread, and Back.
+  const phone = usePhone();
+  const over = useLayoutStore((s) => fitShell(s).panel === "over");
+  const roomy = useRoomySidebar();
+  const phoneHeader = phone && over && routeThreadId !== undefined;
   const tab: ShownTab = commandOn ? "command" : besideOn ? "thread" : panelTab;
   const setPanelTab = useLayoutStore((s) => s.setPanelTab);
   const setTab = (value: ShownTab) => {
     setCommandShown(value === "command");
-    setBesideShown(value === "thread");
+    // Workers comes back to the worker it showed, if one is still open there.
+    setBesideShown(value === "thread" || (value === "workers" && besideWorker !== undefined));
     if (value !== "thread" && value !== "command") setPanelTab(value);
   };
   const tabList = useRef<HTMLDivElement>(null);
+  const word = useWorkersWord();
   const shownTabs = [
-    ...(besideWorker === undefined ? [] : [THREAD_TAB]),
+    // Off a phone the worker is in the Workers mode, not a tab of its own.
+    ...(besideWorker === undefined || !phoneHeader ? [] : [THREAD_TAB]),
     ...(command === undefined ? [] : [COMMAND_TAB]),
     ...TABS,
-  ].filter(
-    (t) =>
-      (t.value !== "reviews" || reviewsHere) &&
-      (t.value !== "preview" || previewHere) &&
-      (t.value !== "workers" || workersHere) &&
-      (t.value !== "pages" || pagesHere),
-  );
+  ]
+    .filter(
+      (t) =>
+        (t.value !== "reviews" || reviewsHere) &&
+        (t.value !== "preview" || previewHere) &&
+        (t.value !== "workers" || workersHere) &&
+        (t.value !== "pages" || pagesHere) &&
+        (!workersOnly || t.value === "workers" || t.value === "thread"),
+    )
+    .map((t) => (t.value === "workers" ? { ...t, label: word } : t));
   const expanded = useLayoutStore((s) => s.panelExpanded);
   const focused = useLayoutStore((s) => s.reviewFocus);
   // On a review the action beside the tabs is Focus review, in words; elsewhere an icon at the end.
@@ -216,11 +252,6 @@ export function RightPanel() {
   const labelFit = useTabLabelFit(tabList, tab);
   const aside = useRef<HTMLElement>(null);
   useKeepReadingPlace(aside);
-  // Over the chat on a phone, the panel has a header of its own: its name, its thread, and Back.
-  const phone = usePhone();
-  const over = useLayoutStore((s) => fitShell(s).panel === "over");
-  const roomy = useRoomySidebar();
-  const phoneHeader = phone && over && routeThreadId !== undefined;
   useEffect(() => {
     // The bell may select a tab beyond the narrow strip's edge without focusing that tab.
     tabList.current
@@ -270,6 +301,39 @@ export function RightPanel() {
   const setExpanded = useLayoutStore((s) => s.setPanelExpanded);
   const folded = faces.filter((_, i) => foldFlags[i]);
   const inStrip = faces.filter((_, i) => !foldFlags[i]);
+
+  // On a workspace's thread, Workers is a mode of the pane rather than a tab: the list, or one
+  // worker under "‹ Workers › its title", with the pane's whole height and no tab strip above it.
+  // The orchestrator's own views are in the list's "Orchestrator" menu. A phone keeps its strip.
+  if (!phoneHeader && workspaceId !== undefined && (tab === "workers" || tab === "thread")) {
+    const views = faces
+      .filter((face) => !NOT_ORCHESTRATOR_VIEWS.has(face.tab.value))
+      .map((face) => ({ value: face.tab.value, label: face.tab.label, icon: face.tab.icon }));
+    return (
+      <aside
+        ref={aside}
+        data-testid="right-panel"
+        data-mode="workers"
+        data-surface="chrome"
+        className="flex min-h-0 flex-1 flex-col border-l border-border bg-panel"
+      >
+        <div className="h-(--titlebar-height) shrink-0 [-webkit-app-region:drag]" />
+        <Suspense fallback={null}>
+          <WorkersMode
+            workspaceId={workspaceId}
+            worker={besideOn ? besideWorker : undefined}
+            record={besideRecord}
+            orchestrator={
+              workersOnly || views.length === 0
+                ? undefined
+                : { views, onPick: (value) => setTab(value as ShownTab) }
+            }
+          />
+        </Suspense>
+        <div ref={setToastDock} data-testid="toast-dock" className="shrink-0" />
+      </aside>
+    );
+  }
 
   return (
     <aside
@@ -400,6 +464,7 @@ export function RightPanel() {
             threadId={threadId}
             workspaceId={workspaceId}
             besideWorker={besideWorker}
+            besideRecord={besideRecord}
             command={command}
             previewHere={previewHere}
             reviewsHere={reviewsHere}

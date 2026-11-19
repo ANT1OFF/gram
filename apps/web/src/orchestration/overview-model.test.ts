@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { ANSWERED } from "./rail-model";
 import {
+  handedOverItems,
   answeredCards,
   ASKS_YOU,
   foldByKey,
@@ -553,6 +554,45 @@ describe("overviewItems", () => {
     expect(
       overviewItems(features).map((item) => (item.kind === "worker" ? item.row.threadId : "")),
     ).toEqual(["one", "two", "three"]);
+  });
+});
+
+describe("the hand-over to the right pane", () => {
+  it("keeps only the workers that need you under the orchestrator's line, and says where the rest are", () => {
+    const held = {
+      id: "held-1",
+      title: "Refresh docs",
+      project: "docs",
+      agent: "codex",
+      window: "fiveHour" as const,
+      usedPct: 85,
+      until: 5_000,
+    };
+    const features = overviewFeatures(
+      [
+        card("docs", [worker("asker"), worker("busy"), worker("failing")]),
+        card("release", [worker("ci", { state: "inReview", station: "review" })]),
+        { ...card("later", []), held: [held] },
+      ],
+      new Map([["asker" as ThreadId, "ask-1"]]),
+      undefined,
+      [],
+      new Set(),
+      {},
+      new Map(),
+      { busy: "working", ci: "waiting", failing: "needs" },
+    );
+    const kept = handedOverItems(overviewItems(features));
+    // An ask waiting in the stack, or a tone that says it needs you: nothing else, no held brief.
+    expect(kept.map((item) => (item.kind === "worker" ? item.row.threadId : "held"))).toEqual([
+      "asker",
+      "failing",
+    ]);
+    expect(workspaceWorkersText({ live: 4, working: 1, inTab: true })).toBe("4 in Workers");
+    // An embedding app's word for them.
+    expect(workspaceWorkersText({ live: 4, working: 1, inTab: true, word: "Team" })).toBe(
+      "4 in Team",
+    );
   });
 });
 

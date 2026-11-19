@@ -75,16 +75,15 @@ test("⌘\\ opens a worker beside the chat without holding it or taking typing",
   await expect(composer).toBeFocused();
   await page.keyboard.type("Tell me when it's green");
   await expect(composer).toHaveValue("Tell me when it's green");
-  // It sits in the right panel's Thread tab, on the worker's conversation, with the worker's own
-  // composer; its last command and its changes are a view away. None of it takes the typing.
-  await expect(
-    page.getByTestId("right-panel").getByRole("tab", { name: "Thread", exact: true }),
-  ).toHaveAttribute("aria-selected", "true");
+  // It sits in the right pane's Workers mode, on the worker's conversation, with the worker's own
+  // composer named for it; its last command and its changes are a tool away. None of it takes the
+  // typing.
+  await expect(page.getByTestId("right-panel")).toHaveAttribute("data-mode", "workers");
   await expect(dock.getByTestId("beside-tab-thread")).toHaveAttribute("aria-selected", "true");
   await expect(dock.getByTestId("transcript")).toBeVisible();
   await expect(dock.getByLabel("Message", { exact: true })).toHaveAttribute(
     "placeholder",
-    "Steer this thread…",
+    /^Steer .+…$/,
   );
   await dock.getByTestId("beside-tab-terminal").click();
   await expect(composer).toHaveValue("Tell me when it's green");
@@ -186,7 +185,7 @@ test("what you send beside the chat is you typing into the worker", async ({ pag
       .filter({ hasText: "retry helper" }),
   ).toHaveCount(0);
 
-  // Open full view swaps the chat for the worker, and the panel's Thread tab goes.
+  // Open in the main view swaps the chat for the worker, and the pane lets it go.
   await dock.getByTestId("beside-open").click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.live}$`));
   await expect(dock).toHaveCount(0);

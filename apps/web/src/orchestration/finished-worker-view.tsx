@@ -40,7 +40,14 @@ function useAskTarget(detail: FinishedWorkerDetail): ThreadId | undefined {
  * transcript alone once only the archive has it. "Ask about it" starts a message to the
  * orchestrator with the worker's context and leaves it in the composer.
  */
-export function FinishedWorkerView({ detail }: { detail: FinishedWorkerDetail }) {
+export function FinishedWorkerView({
+  detail,
+  bare = false,
+}: {
+  detail: FinishedWorkerDetail;
+  /** In the pane, whose head already names it and says it is a record: its facts and transcript. */
+  bare?: boolean;
+}) {
   const { worker } = detail;
   const now = useNow(true, undefined, 60_000);
   const row = finishedRow(worker, now);
@@ -63,52 +70,56 @@ export function FinishedWorkerView({ detail }: { detail: FinishedWorkerDetail })
       data-kept={worker.kept}
       className="flex min-h-0 flex-1 flex-col"
     >
-      <header
-        data-testid="pane-header"
-        className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 text-reading"
-      >
-        <h1
-          aria-label={`Worker: ${worker.title}`}
-          className="flex min-w-0 items-center gap-1 font-heading font-medium"
+      {!bare && (
+        <header
+          data-testid="pane-header"
+          className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 text-reading"
         >
-          <span className="max-w-40 min-w-0 shrink-[6] truncate font-normal text-muted-foreground">
-            {workspaceName}
+          <h1
+            aria-label={`Worker: ${worker.title}`}
+            className="flex min-w-0 items-center gap-1 font-heading font-medium"
+          >
+            <span className="max-w-40 min-w-0 shrink-[6] truncate font-normal text-muted-foreground">
+              {workspaceName}
+            </span>
+            {separator}
+            <span className="max-w-40 min-w-0 shrink-[6] truncate font-normal text-muted-foreground">
+              {worker.feature}
+            </span>
+            {separator}
+            <span className="min-w-0 truncate">{worker.title}</span>
+          </h1>
+          {row.glyph === "merged" ? (
+            <GitMerge aria-hidden className="size-icon-row shrink-0 text-merged" />
+          ) : (
+            <Archive aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
+          )}
+          <span data-testid="finished-when" className="shrink-0 text-meta text-muted-foreground">
+            {row.now}
           </span>
-          {separator}
-          <span className="max-w-40 min-w-0 shrink-[6] truncate font-normal text-muted-foreground">
-            {worker.feature}
-          </span>
-          {separator}
-          <span className="min-w-0 truncate">{worker.title}</span>
-        </h1>
-        {row.glyph === "merged" ? (
-          <GitMerge aria-hidden className="size-icon-row shrink-0 text-merged" />
-        ) : (
-          <Archive aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
-        )}
-        <span data-testid="finished-when" className="shrink-0 text-meta text-muted-foreground">
-          {row.now}
-        </span>
-      </header>
-      <div
-        data-testid="finished-note"
-        className="flex shrink-0 items-center gap-2 border-b border-edge bg-card/40 px-4 py-1.5 text-meta text-muted-foreground"
-      >
-        <Archive aria-hidden className="size-icon-row shrink-0" />
-        <span className="min-w-0 flex-1 truncate">Worktree cleaned up · read-only</span>
-        <Button
-          size="xs"
-          variant="outline"
-          data-testid="finished-ask"
-          disabled={target === undefined}
-          onClick={() => {
-            if (target !== undefined)
-              startOrchestratorMessage(target, aboutFinishedWorker(worker), open);
-          }}
+        </header>
+      )}
+      {!bare && (
+        <div
+          data-testid="finished-note"
+          className="flex shrink-0 items-center gap-2 border-b border-edge bg-card/40 px-4 py-1.5 text-meta text-muted-foreground"
         >
-          Ask about it
-        </Button>
-      </div>
+          <Archive aria-hidden className="size-icon-row shrink-0" />
+          <span className="min-w-0 flex-1 truncate">Worktree cleaned up · read-only</span>
+          <Button
+            size="xs"
+            variant="outline"
+            data-testid="finished-ask"
+            disabled={target === undefined}
+            onClick={() => {
+              if (target !== undefined)
+                startOrchestratorMessage(target, aboutFinishedWorker(worker), open);
+            }}
+          >
+            Ask about it
+          </Button>
+        </div>
+      )}
       <FinishedFacts detail={detail} />
       <ReadOnlyTranscript.Provider value>
         {detail.messages.length > 0 ? (
@@ -137,6 +148,31 @@ export function FinishedWorkerView({ detail }: { detail: FinishedWorkerDetail })
         )}
       </ReadOnlyTranscript.Provider>
     </div>
+  );
+}
+
+/** A finished worker's changed files, as its record keeps them: the pane's Changes for it. */
+export function FinishedFiles({ detail }: { detail: FinishedWorkerDetail }) {
+  if (detail.files.length === 0) {
+    return (
+      <p className="px-4 py-6 text-center text-reading text-muted-foreground">No changes kept</p>
+    );
+  }
+  return (
+    <ul
+      data-testid="finished-files-all"
+      className="flex flex-col gap-0.5 px-4 py-3 font-mono text-meta"
+    >
+      {detail.files.map((file) => (
+        <li key={file.path} className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 flex-1 truncate" title={file.path}>
+            {file.path}
+          </span>
+          <span className="shrink-0 text-success">+{file.additions}</span>
+          <span className="shrink-0 text-destructive">−{file.deletions}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
