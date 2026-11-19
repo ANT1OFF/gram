@@ -1,15 +1,16 @@
 // A host readied to be stopped with its disk kept (`host.stop.prepare`): it stops taking new work,
 // says whether anything still runs on it, and keeps each thread's work in progress off the machine
-// under a hidden ref (`@gram/git`'s `wip.ts`). Whoever runs the machine then stops it; a host
+// under a hidden ref per folder (`@gram/git`'s `wip.ts`), so every checkout of a thread is kept,
+// two of one repository included. Whoever runs the machine then stops it; a host
 // started later on the same disk finds the folders, branches and agent transcripts as they were.
 //
 // A host started on another disk has none of that. Asked to (`host.stop.restore`), it clones the
 // repository again, fetches the thread's hidden ref and makes the thread's folder as it was; a
 // thread no ref was kept of, because its branch at the remote held everything, gets its folder
-// from that branch. A later stop that finds the branch at the remote holds everything deletes the
-// ref, when what the ref names is this folder's own or is in that branch: the ref is one per
-// thread at the remote, and another folder of the thread may have written it. `host.stop.drop`
-// deletes it whatever it names, for a thread that is gone for good.
+// from that branch. A folder kept before each had its own ref comes back from the thread's one ref
+// then, held to the commit the stop said it kept. A later stop that finds the branch at the remote
+// holds everything deletes the folder's ref, when what the ref names is this folder's own or is in
+// that branch. `host.stop.drop` deletes it whatever it names, for a thread that is gone for good.
 //
 // A host about to be taken away (a provisioned host sent SIGTERM, as a node drain or a reclaimed
 // spot node sends it) says so to whoever listens (`host.stop.going`, `goAway`) and holds its exit
@@ -47,6 +48,7 @@ import {
   tryRepoRoots,
   wipCaughtUp,
   wipChanges,
+  wipRef,
 } from "@gram/git";
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
@@ -279,31 +281,23 @@ export const stopOn = (deps: StopDeps): HostStop => {
       return roots;
     });
 
-  /** One thread's folders, one after another: its ref in a repository is written once. */
+  /**
+   * One thread's folders, one after another, each under its own ref (`wipRef` of the folder as
+   * Gram names it): two worktrees of one repository share its refs, and each writes only its own.
+   */
   const keepThread = (
     checkouts: ReadonlyArray<HostStopCheckout>,
     remote: string,
   ): Effect.Effect<ReadonlyArray<HostStopKept>> =>
     Effect.gen(function* () {
       const kept: Array<HostStopKept> = [];
-      /** The repositories this thread's ref was written in, by their shared git folder. */
-      const written = new Set<string>();
-      /** What this stop pushed under the thread's ref at the remote, from an earlier folder. */
-      let pushed: string | undefined;
       for (const checkout of checkouts) {
         const base = { threadId: checkout.threadId, cwd: checkout.cwd };
         const one: HostStopKept = yield* Effect.gen(function* () {
           const roots = yield* placeOf(checkout.cwd);
-          if (written.has(roots.common))
-            return yield* Effect.fail(
-              new NotKept(
-                "Another folder of this thread is a worktree of the same repository, and one is kept per repository.",
-              ),
-            );
-          const snapshot = yield* snapshotWip(roots.top, checkout.threadId).pipe(
+          const snapshot = yield* snapshotWip(roots.top, checkout.threadId, checkout.cwd).pipe(
             Effect.mapError((error) => new NotKept(error.message)),
           );
-          written.add(roots.common);
           const on = yield* git(roots.top, ["symbolic-ref", "--quiet", "--short", "HEAD"]).pipe(
             Effect.map((out) => (out.status === 0 ? out.stdout.trim() : "")),
             Effect.orElseSucceed(() => ""),
@@ -319,16 +313,23 @@ export const stopOn = (deps: StopDeps): HostStop => {
             ...(saved === undefined ? {} : { saved }),
           };
           // The branch at the remote holds all of it: nothing more to keep. A ref this folder
-          // left at an earlier stop is out of date, so it goes; one that names anything else is
-          // another folder's work of the thread, and stays. Unsure: pushed as ever.
+          // left at an earlier stop is out of date, so it goes; one that names anything else was
+          // written since by another machine, and stays. Unsure: pushed as ever.
           const caughtUp = yield* wipCaughtUp(roots.top, snapshot, remote, deps.protocols).pipe(
             Effect.orElseSucceed(() => false),
           );
           if (caughtUp) {
-            const dropped = yield* dropWip(roots.top, checkout.threadId, remote, deps.protocols, {
-              by: snapshot.commit,
-              also: snapshot.previous === undefined ? [] : [snapshot.previous],
-            }).pipe(Effect.orElseSucceed(() => "failed" as const));
+            const dropped = yield* dropWip(
+              roots.top,
+              checkout.threadId,
+              remote,
+              deps.protocols,
+              {
+                by: snapshot.commit,
+                also: snapshot.previous === undefined ? [] : [snapshot.previous],
+              },
+              checkout.cwd,
+            ).pipe(Effect.orElseSucceed(() => "failed" as const));
             return {
               ...base,
               commit: snapshot.commit,
@@ -338,20 +339,13 @@ export const stopOn = (deps: StopDeps): HostStop => {
               caughtUp: true,
               ...(dropped === "left"
                 ? {
-                    note: "The thread's ref at the remote holds other work of the thread and was left there.",
+                    note: "The folder's ref at the remote holds other work of the thread and was left there.",
                   }
                 : dropped === "failed"
                   ? { note: "A ref kept at an earlier stop couldn't be deleted at the remote." }
                   : {}),
             };
           }
-          // One ref per thread at the remote: a second folder's push would replace the first's.
-          if (pushed !== undefined && pushed !== snapshot.commit)
-            return {
-              ...local,
-              pushed: false,
-              note: "Another folder of this thread is kept under the thread's ref at the remote, and one is kept per thread.",
-            };
           return yield* pushWip(roots.top, snapshot, remote, deps.protocols).pipe(
             Effect.match({
               onFailure: (error): HostStopKept => ({
@@ -359,10 +353,7 @@ export const stopOn = (deps: StopDeps): HostStop => {
                 pushed: false,
                 note: note(error.message),
               }),
-              onSuccess: (): HostStopKept => {
-                pushed = snapshot.commit;
-                return { ...local, pushed: true };
-              },
+              onSuccess: (): HostStopKept => ({ ...local, pushed: true }),
             }),
           );
         }).pipe(
@@ -488,14 +479,27 @@ export const stopOn = (deps: StopDeps): HostStop => {
           );
       }
       const inClone = into !== undefined && existsSync(into);
-      // The ref, held to the commit the stop said it kept; no ref was kept of a thread whose
-      // branch at the remote held everything, which gets its folder from that branch.
+      // The folder's own ref, held to the commit the stop said it kept; no ref was kept of a
+      // thread whose branch at the remote held everything, which gets its folder from that branch.
+      // A folder kept before each had its own ref is under the thread's one ref then, read only
+      // held to the commit kept of this folder: unheld, it may be another folder's work.
+      const fetch = (ref?: string) =>
+        fetchWip(
+          clone,
+          request.threadId,
+          remote,
+          deps.protocols,
+          expected,
+          ref,
+          ref === undefined ? cwd : undefined,
+        ).pipe(Effect.mapError((error) => refused(error.message)));
       const ref =
         request.caughtUp === true
           ? undefined
-          : yield* fetchWip(clone, request.threadId, remote, deps.protocols, expected, from).pipe(
-              Effect.mapError((error) => refused(error.message)),
-            );
+          : ((yield* fetch(from)) ??
+            (from === undefined && expected !== undefined
+              ? yield* fetch(wipRef(request.threadId))
+              : undefined));
       const kept =
         ref ??
         (request.branch === undefined || from !== undefined
@@ -597,15 +601,20 @@ export const stopOn = (deps: StopDeps): HostStop => {
       const roots = yield* placeOf(request.cwd).pipe(
         Effect.mapError((error) => refused(error.why)),
       );
-      // Read here first: a repository that never kept anything asks nothing of a remote.
-      const has = yield* hasWip(roots.top, request.threadId).pipe(
-        Effect.orElseSucceed(() => false),
-      );
-      if (!has) return { dropped: false };
-      yield* dropWip(roots.top, request.threadId, remote, deps.protocols).pipe(
-        Effect.mapError((error) => refused(error.message)),
-      );
-      return { dropped: true };
+      // Read here first: a repository that never kept anything asks nothing of a remote. The
+      // folder's own ref, and the thread's one ref from before each folder had its own.
+      let dropped = false;
+      for (const folder of [request.cwd, undefined]) {
+        const has = yield* hasWip(roots.top, request.threadId, folder).pipe(
+          Effect.orElseSucceed(() => false),
+        );
+        if (!has) continue;
+        yield* dropWip(roots.top, request.threadId, remote, deps.protocols, undefined, folder).pipe(
+          Effect.mapError((error) => refused(error.message)),
+        );
+        dropped = true;
+      }
+      return { dropped };
     }).pipe(
       Effect.provideService(Proc, deps.proc),
       Effect.catchDefect(() => Effect.fail(refused("Its kept work couldn't be deleted."))),

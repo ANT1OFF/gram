@@ -376,14 +376,23 @@ describe.skipIf(!hasGit)("stopping a machine and resuming on a new host", () => 
         expect(prepared.body).toMatchObject({
           idle: true,
           working: [],
-          kept: [{ threadId: thread.id, cwd: volume.repo, ref: wipRef(thread.id), pushed: true }],
+          kept: [
+            {
+              threadId: thread.id,
+              cwd: volume.repo,
+              ref: wipRef(thread.id, volume.repo),
+              pushed: true,
+            },
+          ],
         });
         const keptThen = (prepared.body as { kept: ReadonlyArray<Record<string, unknown>> }).kept;
         expect(keptThen[0]).toMatchObject({ commit: expect.stringMatching(/^[0-9a-f]{40}$/) });
-        expect(run(volume.origin, "show", `${wipRef(thread.id)}:feature.ts`)).toBe(
+        expect(run(volume.origin, "show", `${wipRef(thread.id, volume.repo)}:feature.ts`)).toBe(
           "export const feature = 1;\n",
         );
-        expect(run(volume.origin, "show", `${wipRef(thread.id)}:tracked.txt`)).toBe("half done\n");
+        expect(run(volume.origin, "show", `${wipRef(thread.id, volume.repo)}:tracked.txt`)).toBe(
+          "half done\n",
+        );
         expect(run(volume.repo, "rev-parse", "HEAD").trim()).toBe(head);
         yield* statusIs(thread.id, "cold");
         yield* eventually(
@@ -603,7 +612,7 @@ describe.skipIf(!hasGit)("stopping a machine and resuming on a new host", () => 
           working: [thread.id],
           kept: [{ pushed: true }],
         });
-        expect(run(volume.origin, "show", `${wipRef(thread.id)}:feature.ts`)).toBe(
+        expect(run(volume.origin, "show", `${wipRef(thread.id, volume.repo)}:feature.ts`)).toBe(
           "export const feature = 1;\n",
         );
         yield* hostA.end;

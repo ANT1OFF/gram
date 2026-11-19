@@ -340,7 +340,7 @@ export const readyOnGoing =
 
 /**
  * Keeps one thread's work in progress on the machine off it now, while it works on
- * (`host.stop.keep`): the thread's folders there that Gram made from a clone, under the thread's
+ * (`host.stop.keep`): the thread's folders there that Gram made from a clone, each under its own
  * hidden ref at the remote. Remembered as a stop's is, so a resume on another disk is held to it;
  * after a restart the remote's ref is taken as it is. A host built before it keeps nothing.
  */

@@ -258,6 +258,21 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
         // Read back on another machine of the same host.
         const { clone } = cloneOf(origin);
         expect((yield* fetchWip(clone, "thread-1", "origin", FILE))?.commit).toBe(kept.commit);
+        // A folder's own ref: one plain name under the namespace, as a remote that lets a host
+        // write only names under its own takes it, and read back only for that folder.
+        write(nodePath.join(repo, "tracked.txt"), "kept for one folder\n");
+        const folder = yield* snapshotWip(repo, "thread-1", "/work/widgets");
+        expect(folder.ref).toMatch(/^refs\/gram\/wip\/personal-ab12\/thread-1--[0-9a-f]{16}$/);
+        expect(folder.ref).toBe(wipRef("thread-1", "/work/widgets"));
+        expect(isWipRefOf(folder.ref, "thread-1")).toBe(true);
+        expect(isWipRefOf(folder.ref, "thread-2")).toBe(false);
+        yield* pushWip(repo, folder, "origin", FILE);
+        const back = (at: string) =>
+          fetchWip(clone, "thread-1", "origin", FILE, undefined, undefined, at);
+        expect((yield* back("/work/widgets"))?.commit).toBe(folder.commit);
+        expect(yield* back("/work/other")).toBeUndefined();
+        // The thread's one ref is still its own, and still as it was kept.
+        expect(run(origin, "rev-parse", kept.ref).trim()).toBe(kept.commit);
         // Deeper, or not a plain name: not a snapshot this module wrote.
         for (const ref of [
           "refs/gram/wip/a/b/thread-1",
