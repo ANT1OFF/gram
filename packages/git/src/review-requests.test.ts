@@ -215,7 +215,7 @@ describe("updatedSinceDate", () => {
 
 const botReview = (state: string, oid: string, login = "example-code-review") => ({
   id: `r-${oid}-${state}`,
-  author: { login },
+  author: { login, __typename: "Bot" },
   state,
   submittedAt: "2026-09-17T08:00:00Z",
   commit: { oid },

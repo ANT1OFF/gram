@@ -18,7 +18,8 @@
             {
               "id": "REVIEW_1943_0",
               "author": {
-                "login": "example-code-review"
+                "login": "example-code-review",
+                "__typename": "Bot"
               },
               "state": "CHANGES_REQUESTED",
               "submittedAt": "2026-01-02T10:00:00Z",
@@ -30,7 +31,8 @@
             {
               "id": "REVIEW_1943_1",
               "author": {
-                "login": "example-code-review"
+                "login": "example-code-review",
+                "__typename": "Bot"
               },
               "state": "DISMISSED",
               "submittedAt": "2026-01-02T10:01:00Z",
@@ -42,7 +44,8 @@
             {
               "id": "REVIEW_1943_2",
               "author": {
-                "login": "example-code-review"
+                "login": "example-code-review",
+                "__typename": "Bot"
               },
               "state": "DISMISSED",
               "submittedAt": "2026-01-02T10:02:00Z",
@@ -54,7 +57,8 @@
             {
               "id": "REVIEW_1943_3",
               "author": {
-                "login": "example-code-review"
+                "login": "example-code-review",
+                "__typename": "Bot"
               },
               "state": "COMMENTED",
               "submittedAt": "2026-01-02T10:03:00Z",
@@ -66,7 +70,8 @@
             {
               "id": "REVIEW_1943_4",
               "author": {
-                "login": "example-code-review"
+                "login": "example-code-review",
+                "__typename": "Bot"
               },
               "state": "DISMISSED",
               "submittedAt": "2026-01-02T10:04:00Z",
@@ -78,7 +83,8 @@
             {
               "id": "REVIEW_1943_5",
               "author": {
-                "login": "example-code-review"
+                "login": "example-code-review",
+                "__typename": "Bot"
               },
               "state": "CHANGES_REQUESTED",
               "submittedAt": "2026-01-02T10:05:00Z",
@@ -90,7 +96,8 @@
             {
               "id": "REVIEW_1943_6",
               "author": {
-                "login": "example-code-review"
+                "login": "example-code-review",
+                "__typename": "Bot"
               },
               "state": "COMMENTED",
               "submittedAt": "2026-01-02T10:06:00Z",
@@ -102,7 +109,8 @@
             {
               "id": "REVIEW_1943_7",
               "author": {
-                "login": "example-code-review"
+                "login": "example-code-review",
+                "__typename": "Bot"
               },
               "state": "CHANGES_REQUESTED",
               "submittedAt": "2026-01-02T10:07:00Z",
@@ -130,7 +138,8 @@
                     "id": "COMMENT_1943_0_0",
                     "databaseId": 4024247869,
                     "author": {
-                      "login": "example-code-review"
+                      "login": "example-code-review",
+                      "__typename": "Bot"
                     },
                     "body": "[suggestion] Synthetic finding 0: handle the widget input.\n```suggestion\nexport const widget = \"ready\";\n```",
                     "createdAt": "2026-01-02T11:00:00Z",
@@ -162,7 +171,8 @@
                     "id": "COMMENT_1943_1_0",
                     "databaseId": 4025554440,
                     "author": {
-                      "login": "example-code-review"
+                      "login": "example-code-review",
+                      "__typename": "Bot"
                     },
                     "body": "[blocker] Synthetic finding 1: handle the widget input.",
                     "createdAt": "2026-01-02T11:01:00Z",
@@ -194,7 +204,8 @@
                     "id": "COMMENT_1943_2_0",
                     "databaseId": 4025554452,
                     "author": {
-                      "login": "example-code-review"
+                      "login": "example-code-review",
+                      "__typename": "Bot"
                     },
                     "body": "[blocker] Synthetic finding 2: handle the widget input.",
                     "createdAt": "2026-01-02T11:02:00Z",
@@ -226,7 +237,8 @@
                     "id": "COMMENT_1943_3_0",
                     "databaseId": 4026253961,
                     "author": {
-                      "login": "example-code-review"
+                      "login": "example-code-review",
+                      "__typename": "Bot"
                     },
                     "body": "[suggestion] Synthetic finding 3: handle the widget input.\n```suggestion\nexport const widget = \"ready\";\n```",
                     "createdAt": "2026-01-02T11:03:00Z",
@@ -258,7 +270,8 @@
                     "id": "COMMENT_1943_4_0",
                     "databaseId": 4026253967,
                     "author": {
-                      "login": "example-code-review"
+                      "login": "example-code-review",
+                      "__typename": "Bot"
                     },
                     "body": "[suggestion] Synthetic finding 4: handle the widget input.\n```suggestion\nexport const widget = \"ready\";\n```",
                     "createdAt": "2026-01-02T11:04:00Z",
@@ -290,7 +303,8 @@
                     "id": "COMMENT_1943_5_0",
                     "databaseId": 4026253981,
                     "author": {
-                      "login": "example-code-review"
+                      "login": "example-code-review",
+                      "__typename": "Bot"
                     },
                     "body": "[suggestion] Synthetic finding 5: handle the widget input.\n```suggestion\nexport const widget = \"ready\";\n```",
                     "createdAt": "2026-01-02T11:05:00Z",
@@ -322,7 +336,8 @@
                     "id": "COMMENT_1943_6_0",
                     "databaseId": 4026253992,
                     "author": {
-                      "login": "example-code-review"
+                      "login": "example-code-review",
+                      "__typename": "Bot"
                     },
                     "body": "[suggestion] Synthetic finding 6: handle the widget input.\n```suggestion\nexport const widget = \"ready\";\n```",
                     "createdAt": "2026-01-02T11:06:00Z",
@@ -340,7 +355,8 @@
                     "id": "COMMENT_1943_6_1",
                     "databaseId": 4026927211,
                     "author": {
-                      "login": "example-code-review"
+                      "login": "example-code-review",
+                      "__typename": "Bot"
                     },
                     "body": "[suggestion] Synthetic finding 6: handle the widget input.\n```suggestion\nexport const widget = \"ready\";\n```",
                     "createdAt": "2026-01-02T11:06:01Z",
@@ -372,7 +388,8 @@
                     "id": "COMMENT_1943_7_0",
                     "databaseId": 4026930835,
                     "author": {
-                      "login": "example-code-review"
+                      "login": "example-code-review",
+                      "__typename": "Bot"
                     },
                     "body": "Synthetic finding 7: handle the widget input.",
                     "createdAt": "2026-01-02T11:07:00Z",
@@ -396,7 +413,8 @@
             {
               "id": "ISSUE_COMMENT_1943_0",
               "author": {
-                "login": "synthetic-user"
+                "login": "synthetic-user",
+                "__typename": "User"
               },
               "body": "Synthetic discussion: test the widget.",
               "createdAt": "2026-09-16T08:57:20Z",
@@ -405,7 +423,8 @@
             {
               "id": "ISSUE_COMMENT_1943_1",
               "author": {
-                "login": "synthetic-user"
+                "login": "synthetic-user",
+                "__typename": "User"
               },
               "body": "Synthetic discussion: test the widget.",
               "createdAt": "2026-09-16T09:23:34Z",
@@ -414,7 +433,8 @@
             {
               "id": "ISSUE_COMMENT_1943_2",
               "author": {
-                "login": "synthetic-user"
+                "login": "synthetic-user",
+                "__typename": "User"
               },
               "body": "Synthetic discussion: test the widget.",
               "createdAt": "2026-09-16T09:24:44Z",
@@ -423,7 +443,8 @@
             {
               "id": "ISSUE_COMMENT_1943_3",
               "author": {
-                "login": "synthetic-user"
+                "login": "synthetic-user",
+                "__typename": "User"
               },
               "body": "Synthetic discussion: test the widget.",
               "createdAt": "2026-09-16T09:45:26Z",
@@ -432,7 +453,8 @@
             {
               "id": "ISSUE_COMMENT_1943_4",
               "author": {
-                "login": "synthetic-user"
+                "login": "synthetic-user",
+                "__typename": "User"
               },
               "body": "Synthetic discussion: test the widget.",
               "createdAt": "2026-09-16T11:37:20Z",
@@ -441,7 +463,8 @@
             {
               "id": "ISSUE_COMMENT_1943_5",
               "author": {
-                "login": "synthetic-user"
+                "login": "synthetic-user",
+                "__typename": "User"
               },
               "body": "Synthetic discussion: test the widget.",
               "createdAt": "2026-09-16T12:14:40Z",
@@ -450,7 +473,8 @@
             {
               "id": "ISSUE_COMMENT_1943_6",
               "author": {
-                "login": "synthetic-user"
+                "login": "synthetic-user",
+                "__typename": "User"
               },
               "body": "Synthetic discussion: test the widget.",
               "createdAt": "2026-09-16T12:53:36Z",
@@ -459,7 +483,8 @@
             {
               "id": "ISSUE_COMMENT_1943_7",
               "author": {
-                "login": "synthetic-user"
+                "login": "synthetic-user",
+                "__typename": "User"
               },
               "body": "Synthetic discussion: test the widget.",
               "createdAt": "2026-09-16T14:03:35Z",

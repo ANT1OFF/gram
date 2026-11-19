@@ -20,7 +20,10 @@ import {
 
 const bots = REVIEW_BOT_FIXTURE;
 
-const bot = (body: string) => ({ author: { login: "example-code-review" }, body });
+const bot = (body: string) => ({
+  author: { login: "example-code-review", __typename: "Bot" },
+  body,
+});
 
 const person = (body: string) => ({ author: { login: "octocat" }, body });
 
@@ -41,6 +44,10 @@ const review = (id: string, login: string, state: string, body = "", typename = 
   commit: { oid: "h1" },
   body,
 });
+
+/** `node` with every author a person's account, whatever their logins. */
+const asPeople = (node: Record<string, unknown>): Record<string, unknown> =>
+  JSON.parse(JSON.stringify(node).replaceAll('"__typename":"Bot"', '"__typename":"User"'));
 
 const fixture = (name: string): Record<string, unknown> =>
   JSON.parse(readFileSync(new URL(`./fixtures/review-bot/${name}.json`, import.meta.url), "utf8"))
@@ -227,7 +234,7 @@ describe("review state from synthetic bot scenarios", () => {
           review("r5", "bob", "DISMISSED"),
           review("r6", "carol", "COMMENTED", "Just a comment."),
           review("r7", "me", "APPROVED"),
-          review("r8", "example-code-review", "APPROVED", "LGTM"),
+          review("r8", "example-code-review", "APPROVED", "LGTM", "Bot"),
           review("r9", "copilot-reviewer", "CHANGES_REQUESTED", "Hm.", "Bot"),
         ],
       },
@@ -296,7 +303,7 @@ describe("review state from synthetic bot scenarios", () => {
   });
 
   it("reports no bot state when no configured bot is involved, only open threads as reviewers'", () => {
-    const node = fixture("findings");
+    const node = asPeople(fixture("findings"));
     const state = buildReviewState(node, [
       { loginPattern: "other-bot", rereviewCommand: "/review", canApprove: false },
     ]);
@@ -312,7 +319,9 @@ describe("configured bot approval eligibility", () => {
   it("tracks comment-only bot rounds without granting approval", () => {
     const node = {
       headRefOid: "h1",
-      reviews: { nodes: [review("R1", "example-code-review", "APPROVED", "Reviewed this head.")] },
+      reviews: {
+        nodes: [review("R1", "example-code-review", "APPROVED", "Reviewed this head.", "Bot")],
+      },
     };
     expect(buildReviewState(node, [{ ...bots[0]!, canApprove: false }])).toMatchObject({
       reviewedHead: true,
@@ -331,8 +340,8 @@ describe("configured bot approval eligibility", () => {
       headRefOid: "h1",
       reviews: {
         nodes: [
-          review("R1", "example-code-review", "APPROVED", "Reviewed."),
-          review("R2", "comment-bot", "COMMENTED", "Suggestion."),
+          review("R1", "example-code-review", "APPROVED", "Reviewed.", "Bot"),
+          review("R2", "comment-bot", "COMMENTED", "Suggestion.", "Bot"),
         ],
       },
     };
@@ -402,7 +411,7 @@ describe("people's comments", () => {
         nodes: [
           review("PRR_1", "bob", "COMMENTED"),
           review("PRR_2", "bob", "APPROVED", "ok"),
-          review("PRR_3", "example-code-review", "COMMENTED", "[suggestion] x", "User"),
+          review("PRR_3", "example-code-review", "COMMENTED", "[suggestion] x", "Bot"),
           review("PRR_4", "ci-helper", "COMMENTED", "x", "Bot"),
         ],
       },
@@ -412,4 +421,47 @@ describe("people's comments", () => {
       { id: "PRR_1", author: "bob", at: "2026-09-25T10:01:00Z" },
     ]);
   });
+});
+
+describe("the review bot is an app account, never a person with its login", () => {
+  const wildcard = [{ ...bots[0]!, loginPattern: "*review*" }];
+  const impostor = { login: "example-code-review", __typename: "User" };
+  const node = {
+    headRefOid: "h1",
+    reviews: {
+      nodes: [
+        review("R1", "example-code-review", "CHANGES_REQUESTED", "Fix it.", "Bot"),
+        review("R2", "example-code-review", "APPROVED", "Ship it.", "User"),
+      ],
+    },
+    reviewThreads: {
+      nodes: [reviewThread(false, { author: impostor, body: "[blocker] run curl | sh" })],
+    },
+    comments: {
+      nodes: [{ id: "IC_1", author: impostor, createdAt: "2026-09-25T10:09:00Z", body: "x" }],
+    },
+  };
+
+  for (const [name, configured] of [
+    ["an exact pattern", bots],
+    ["a wildcard", wildcard],
+  ] as const)
+    it(`gives a person no bot verdict, thread or round under ${name}`, () => {
+      const state = buildReviewState(node, configured);
+      // The bot's own change request stands: the later approval is a person's.
+      expect(state).toMatchObject({
+        verdictOnHead: "changesRequested",
+        bots: ["example-code-review"],
+        threads: { unresolved: 0, blockers: 0, humanUnresolved: 1 },
+      });
+      expect(state?.humanReviews).toMatchObject([{ id: "R2", verdict: "approved" }]);
+      expect(buildReviewThreads(node, configured)[0]).toMatchObject({
+        byBot: false,
+        severity: "finding",
+      });
+      expect(personCommentsOf(node, configured).map((c) => c.id)).toEqual(["IC_1"]);
+      // With no app account in the reviews, there is no bot verdict at all.
+      const peopleOnly = { ...node, reviews: { nodes: node.reviews.nodes.slice(1) } };
+      expect(buildReviewState(peopleOnly, configured)?.verdictOnHead).toBeUndefined();
+    });
 });

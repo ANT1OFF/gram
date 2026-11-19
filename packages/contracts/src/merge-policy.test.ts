@@ -106,4 +106,44 @@ describe("workspace merge review policy", () => {
       false,
     );
   });
+  it("is held by a change request from anyone who may push, never by an outsider's", () => {
+    const badge: PrStatus = {
+      number: 1,
+      url: "https://github.com/a/b/pull/1",
+      title: "t",
+      state: "OPEN",
+      isDraft: false,
+      checks: "passing",
+      headRefOid: "h1",
+      headMatches: true,
+      aheadOfPr: false,
+      mergeState: "CLEAN",
+    };
+    const requested = (authorAssociation?: string): PrStatus => ({
+      ...badge,
+      review: {
+        bots: [],
+        reviewedHead: false,
+        roundInFlight: false,
+        threads: { unresolved: 0, blockers: 0, suggestions: 0, outdatedUnresolved: 0 },
+        humanReviews: [
+          {
+            id: "r1",
+            author: "someone",
+            verdict: "changesRequested",
+            commitOid: "h1",
+            submittedAt: "2026-11-19T10:00:00Z",
+            body: "",
+            ...(authorAssociation === undefined ? {} : { authorAssociation }),
+          },
+        ],
+      },
+    });
+    expect(mergePolicyReady(badge, "solo")).toBe(true);
+    for (const outsider of ["NONE", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR"])
+      expect(mergePolicyReady(requested(outsider), "solo")).toBe(true);
+    // One who may push, or a review that doesn't say, still holds it.
+    for (const writer of ["OWNER", "MEMBER", "COLLABORATOR", undefined])
+      expect(mergePolicyReady(requested(writer), "solo")).toBe(false);
+  });
 });

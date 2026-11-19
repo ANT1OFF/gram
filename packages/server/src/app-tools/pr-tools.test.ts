@@ -377,6 +377,19 @@ describe.skipIf(!hasGit)("PR app tools", () => {
   );
 });
 
+/** `lines` inside a fence, as a pattern. */
+const fenced = (lines: string) =>
+  `\\[BEGIN UNTRUSTED EXTERNAL CONTENT [0-9a-f]{12}[^\\n]*\\]\\n${lines}\\n\\[END UNTRUSTED EXTERNAL CONTENT [0-9a-f]{12}\\]`;
+/** What a thread is told when acme/web's run `id` ends: its names and failed jobs fenced. */
+const runDone = (id: number, conclusion: string, failed: ReadonlyArray<string>) => {
+  return new RegExp(
+    `^Workflow run acme/web #${id} completed: ${conclusion}\\. https://github\\.com/acme/web/actions/runs/${id}\\n` +
+      `Its workflow and title:\\n${fenced("release\\nv0\\.8\\.0-rc\\.1")}` +
+      (failed.length === 0 ? "" : `\\nFailed jobs:\\n${fenced(failed.join("\\n"))}`) +
+      "$",
+  );
+};
+
 describe.skipIf(!hasGit)("run_monitor", () => {
   it.live(
     "watches a run, and sends one message when it completes, even one it only finds done",
@@ -429,18 +442,12 @@ describe.skipIf(!hasGit)("run_monitor", () => {
               .find((text) => text.includes("#99")),
           ),
         );
-        expect(told).toBe(
-          'Workflow run "release: v0.8.0-rc.1" (acme/web #99) completed: failure. Failed: sign. https://github.com/acme/web/actions/runs/99',
-        );
+        expect(told).toMatch(runDone(99, "failure", ["sign"]));
         expect((yield* store.getThread(thread.id)).runWatches).toBeUndefined();
 
         // The latest run of a workflow that is already done is answered at once, with no watch.
         expect(yield* hosted("run_monitor").run({ workflow: "Release", repo: "acme/web" })).toEqual(
-          {
-            watching: false,
-            completed:
-              'Workflow run "release: v0.8.0-rc.1" (acme/web #100) completed: success. https://github.com/acme/web/actions/runs/100',
-          },
+          { watching: false, completed: expect.stringMatching(runDone(100, "success", [])) },
         );
         const bad = yield* hosted("run_monitor").run({ run: "soon" }).pipe(Effect.flip);
         expect(bad.message).toContain("neither a run id nor a run's URL");
@@ -552,7 +559,9 @@ describe.skipIf(!hasGit)("run_monitor", () => {
         "the first held completion",
         fake
           .latest(thread.id)
-          .pipe(Effect.map((s) => s.sent.find((input) => input.text.includes("(acme/web #1)")))),
+          .pipe(
+            Effect.map((s) => s.sent.find((input) => input.text.includes("acme/web #1 completed"))),
+          ),
       );
       expect(told.text).toContain("completed: success");
       gh.answer = () => ok;
@@ -595,7 +604,7 @@ describe.skipIf(!hasGit)("run_monitor", () => {
             "the run's message",
             Effect.sync(() => sentTo(fake, thread.id).find((text) => text.includes("#99"))),
           );
-          expect(told).toContain("completed: failure. Failed: sign.");
+          expect(told).toMatch(runDone(99, "failure", ["sign"]));
           expect((yield* store.getThread(thread.id)).runWatches).toBeUndefined();
         }
         gh.answer = () => ok;
