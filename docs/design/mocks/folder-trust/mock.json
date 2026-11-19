@@ -1,0 +1,41 @@
+{
+  "title": "Trust a folder once",
+  "slug": "folder-trust",
+  "status": "in-review",
+  "template": "options",
+  "current": 1,
+  "approved": null,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-19"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A When adding",
+      "board": "a-when-adding",
+      "shots": {
+        "dark": "shots/a-when-adding-dark.png",
+        "light": "shots/a-when-adding-light.png"
+      }
+    },
+    {
+      "name": "B First thread",
+      "board": "b-first-thread",
+      "shots": {
+        "dark": "shots/b-first-thread-dark.png",
+        "light": "shots/b-first-thread-light.png"
+      }
+    },
+    {
+      "name": "C Project mark",
+      "board": "c-project-mark",
+      "shots": {
+        "dark": "shots/c-project-mark-dark.png",
+        "light": "shots/c-project-mark-light.png"
+      }
+    }
+  ]
+}

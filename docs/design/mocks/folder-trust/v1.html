@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trust a folder once directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .brings {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 10px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        background: var(--surface-1);
+      }
+      .brings .row {
+        gap: 8px;
+      }
+      .brings code,
+      .mono {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+      }
+      .composer {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--surface-1);
+      }
+      .composer .input-line {
+        color: var(--fg-subtle);
+        min-height: 40px;
+      }
+      .side-project {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 8px;
+        border-radius: var(--radius-md);
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        Where Gram asks, once per folder, whether to trust a folder's own agent settings and
+        scripts. A folder that brings none is never asked about. Pick one by name.
+      </p>
+
+      <!-- A: asked while adding the folder -->
+      <section
+        class="board"
+        data-name="A When adding"
+        data-size="560x460"
+        data-states="asks,nothing"
+      >
+        <div class="board-frame">
+          <div class="content stack">
+            <h3>Add repository</h3>
+            <label class="field">
+              <span class="small muted">Folder or repository</span>
+              <span class="input mono">~/code/acme-app</span>
+            </label>
+            <div class="stack" data-when="asks">
+              <p class="small">
+                <strong>This folder has its own agent settings.</strong>
+                <span class="muted">They run as you in every thread here.</span>
+              </p>
+              <div class="brings small">
+                <div class="row">
+                  <i data-icon="terminal"></i>1 hook <code>SessionStart: ./scripts/setup.sh</code>
+                </div>
+                <div class="row">
+                  <i data-icon="link"></i>2 MCP servers <code>postgres</code>,
+                  <code>acme-docs</code>
+                </div>
+                <div class="row"><i data-icon="check"></i>14 allow rules</div>
+                <div class="row">
+                  <i data-icon="play"></i>3 scripts, 1 with a shortcut <code>⌥⌘T test</code>
+                </div>
+              </div>
+              <div class="row between wrap">
+                <button class="btn" type="button">Add without them</button>
+                <button class="btn primary" type="button">Trust and add</button>
+              </div>
+              <p class="xsmall muted">
+                You can change this later in the project's menu. Gram won't ask again for this
+                folder.
+              </p>
+            </div>
+            <div class="stack" data-when="nothing">
+              <p class="small muted">No agent settings or scripts in this folder.</p>
+              <div class="row"><button class="btn primary" type="button">Add</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- B: asked on the first thread in the folder -->
+      <section
+        class="board"
+        data-name="B First thread"
+        data-size="560x460"
+        data-states="asks,untrusted"
+      >
+        <div class="board-frame">
+          <div class="content stack" style="justify-content: flex-end; min-height: 460px">
+            <div class="callout" data-when="asks">
+              <i data-icon="lock"></i>
+              <div class="stack">
+                <p class="small">
+                  <strong>acme-app has its own agent settings.</strong>
+                  <span class="muted"
+                    >1 hook, 2 MCP servers, 14 allow rules and 3 scripts. Trust them before this
+                    thread starts?</span
+                  >
+                </p>
+                <div class="row wrap">
+                  <button class="btn sm primary" type="button">Trust acme-app</button>
+                  <button class="btn sm" type="button">Start without them</button>
+                  <a href="#" class="small">See what they are</a>
+                </div>
+              </div>
+            </div>
+            <div class="row" data-when="untrusted">
+              <span class="badge warning"><i data-icon="lock"></i>Folder settings off</span>
+              <a href="#" class="small">Trust acme-app</a>
+            </div>
+            <div class="composer">
+              <span class="input-line small">Ask Claude to…</span>
+              <div class="row between">
+                <span class="small muted">acme-app · main</span>
+                <button class="btn sm primary" type="button">Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- C: never blocks; a mark on the project, trust from its menu -->
+      <section
+        class="board"
+        data-name="C Project mark"
+        data-size="560x460"
+        data-states="untrusted,menu"
+      >
+        <div class="board-frame">
+          <div class="app-body" style="min-height: 460px">
+            <aside class="content" style="flex: 0 0 220px; background: var(--surface-1)">
+              <span class="section-label">Projects</span>
+              <div class="side-project small">
+                <i data-icon="file"></i>acme-app
+                <span class="badge warning" title="Its own settings and scripts are off"
+                  >Not trusted</span
+                >
+              </div>
+              <div class="side-project small"><i data-icon="file"></i>gram</div>
+              <div class="menu" data-when="menu">
+                <button class="menu-item" type="button">Trust this folder…</button>
+                <button class="menu-item" type="button">Project settings</button>
+              </div>
+            </aside>
+            <div class="content stack" style="flex: 1">
+              <h3>acme-app</h3>
+              <p class="small muted" data-when="untrusted">
+                Threads here run with your own settings only. The folder's hook, MCP servers, rules
+                and scripts are off until you trust it.
+              </p>
+              <div class="stack" data-when="menu">
+                <p class="small"><strong>Trust acme-app?</strong></p>
+                <div class="brings small">
+                  <div class="row">
+                    <i data-icon="terminal"></i>1 hook <code>SessionStart: ./scripts/setup.sh</code>
+                  </div>
+                  <div class="row">
+                    <i data-icon="link"></i>2 MCP servers <code>postgres</code>,
+                    <code>acme-docs</code>
+                  </div>
+                  <div class="row"><i data-icon="check"></i>14 allow rules</div>
+                  <div class="row"><i data-icon="play"></i>3 scripts <code>⌥⌘T test</code></div>
+                </div>
+                <div class="row">
+                  <button class="btn primary" type="button">Trust</button
+                  ><button class="btn" type="button">Not now</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
