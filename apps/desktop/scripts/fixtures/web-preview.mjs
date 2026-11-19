@@ -288,7 +288,7 @@ fetch("http://${LAN2}:${unusedPort}/opaque-fetch", { mode: "no-cors" }).then(
       const { hostname } = new URL(details.url);
       const page = contents.getURL();
       // A public page loads from public hosts and nothing on loopback, as publicPageRequest says.
-      if (page.startsWith("http://site.example"))
+      if (URL.parse(page)?.hostname === "site.example")
         return Promise.resolve(
           ["127.0.0.1", "localhost", "[::1]"].includes(hostname) ? "block" : "allow",
         );
