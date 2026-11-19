@@ -6,7 +6,6 @@
       "entry": [
         "tools/qualify-ci.mjs",
         "tools/test-release-please.mjs",
-        "tools/release-rc/native-probe.cjs",
         "tools/release-stable/update-check.mjs",
         "tools/release-stable/testing/fake-gh.mjs"
       ]
@@ -15,6 +14,7 @@
       "entry": [
         "electron.vite*.config.ts!",
         "build/afterPack.cjs!",
+        "src/main/native-probe.cjs!",
         "scripts/sign-mac.mjs!",
         "scripts/verify-browser-toolkit.mjs",
         "scripts/verify-local-browser.mjs",

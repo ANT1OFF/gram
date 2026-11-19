@@ -1,5 +1,5 @@
 // Shipped in the app as app.asar/out/server/native-probe.js, and run by the packaged Gram with that
-// path as its first argument (src/main/entry.ts: its RunAsNode fuse is off, so it runs no script
+// path as its first argument (entry.ts: its RunAsNode fuse is off, so it runs no script
 // from outside) from tools/release-rc/rc.mjs, and on Linux from verify-package.mjs and CI: loads
 // the speech and PTY natives through the production app.asar and has the PTY run a shell that
 // prints a marker. Arguments: <app.asar> <scratch dir> <marker> [watch], then on Linux Chromium's

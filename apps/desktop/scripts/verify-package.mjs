@@ -6,7 +6,7 @@
 //
 // On Linux it also checks that the compiled addons (node-pty, @parcel/watcher, sherpa-onnx and its
 // ONNX Runtime) stay within Debian 12's glibc, and, on a Linux host of the package's arch, loads
-// them through the packaged app (tools/release-rc/native-probe.cjs). It then checks the AppImage
+// them through the packaged app (src/main/native-probe.cjs). It then checks the AppImage
 // and .deb electron-builder made beside the unpacked app: their metadata, desktop entry, icons,
 // and that each carries the same app.asar, pty.node and sherpa-onnx files.
 //

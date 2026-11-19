@@ -70,7 +70,7 @@ export const hostProcessPlugin = (): Plugin =>
  * app.asar it is pointed at, so nothing of theirs is bundled.
  */
 export const nativeProbePlugin = (): Plugin =>
-  besideServer("native-probe", new URL("../../tools/release-rc/native-probe.cjs", import.meta.url));
+  besideServer("native-probe", new URL("./src/main/native-probe.cjs", import.meta.url));
 
 /** The app's release, as its package says. */
 export const appRelease = (): string => {
