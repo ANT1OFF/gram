@@ -42,14 +42,15 @@ import {
   restoreWip,
   restoreWipWorktree,
   samePath,
+  tryRealPathSync,
   snapshotWip,
   tryRepoRoots,
   wipCaughtUp,
   wipChanges,
 } from "@gram/git";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute } from "node:path";
+import { isAbsolute, join } from "node:path";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -111,6 +112,8 @@ export interface RestoreRequest {
   readonly caughtUp?: boolean | undefined;
   /** Another machine's ref of the thread, read in place of this host's own (`isWipRefOf`). */
   readonly ref?: string | undefined;
+  /** A resume before set out to put it back and didn't finish: one there is checked first. */
+  readonly pending?: boolean | undefined;
 }
 
 export interface KeepRequest {
@@ -204,6 +207,17 @@ class NotKept {
     this.why = why;
   }
 }
+
+/** Whether the repository at `cwd` is a worktree of `clone`: their common git folder is one. */
+const worktreeOf = (clone: string, cwd: string) =>
+  git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).pipe(
+    Effect.map((out) => {
+      if (out.status !== 0) return false;
+      const common = tryRealPathSync(out.stdout.trim());
+      return common !== undefined && common === tryRealPathSync(join(clone, ".git"));
+    }),
+    Effect.orElseSucceed(() => false),
+  );
 
 export const stopOn = (deps: StopDeps): HostStop => {
   const now = deps.now ?? Date.now;
@@ -460,10 +474,20 @@ export const stopOn = (deps: StopDeps): HostStop => {
         Effect.mapError((error) => refused(error.message)),
       );
       // The clone itself was the thread's folder, and is there again; any other folder that is
-      // there is somebody's, and is left alone.
-      const inClone = existsSync(cwd);
-      if (inClone && !samePath(clone, cwd))
-        return { restored: false, there: true, note: FOLDER_THERE };
+      // there is somebody's, and is left alone. Unless a resume before set out to put it back
+      // (`pending`) and may have stopped part way: an empty one is made again, a worktree of the
+      // clone gets the kept work put into it, and anything else is refused, never taken as back.
+      let into = samePath(clone, cwd) ? cwd : undefined;
+      if (existsSync(cwd) && into === undefined) {
+        if (request.pending !== true) return { restored: false, there: true, note: FOLDER_THERE };
+        if (readdirSync(cwd).length === 0) rmSync(cwd, { recursive: true, force: true });
+        else if (yield* worktreeOf(clone, cwd)) into = cwd;
+        else
+          return yield* refused(
+            "A resume before set out to put this folder back, and what is there now isn't a worktree of its repository.",
+          );
+      }
+      const inClone = into !== undefined && existsSync(into);
       // The ref, held to the commit the stop said it kept; no ref was kept of a thread whose
       // branch at the remote held everything, which gets its folder from that branch.
       const ref =
@@ -497,7 +521,7 @@ export const stopOn = (deps: StopDeps): HostStop => {
       const put = Effect.gen(function* () {
         if (inClone) {
           yield* placeOf(cwd).pipe(Effect.mapError((error) => refused(error.why)));
-          return yield* restoreWip(clone, kept, request.branch).pipe(
+          return yield* restoreWip(into ?? clone, kept, request.branch).pipe(
             Effect.mapError((error) => refused(error.message)),
           );
         }

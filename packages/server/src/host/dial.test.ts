@@ -84,7 +84,14 @@ describe("dialForever", () => {
  * thing: to the host, a link that broke without a word. One that pings sends what the main Gram's
  * RPC client does every interval, as an unmasked text frame.
  */
-const mainGram = (pings: number | undefined) =>
+const mainGram = (
+  pings: number | undefined,
+  /**
+   * Instead: say one thing and close, as a main Gram that asks a host's hello and then refuses it
+   * does, with this close code.
+   */
+  refuseWith?: number,
+) =>
   Effect.acquireRelease(
     Effect.promise(
       () =>
@@ -103,8 +110,14 @@ const mainGram = (pings: number | undefined) =>
                 "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
                   `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
               );
-              if (pings === undefined) return;
               const ping = Buffer.from('{"_tag":"Ping"}\n');
+              if (refuseWith !== undefined) {
+                const code = Buffer.from([refuseWith >> 8, refuseWith & 0xff]);
+                socket.write(Buffer.concat([Buffer.from([0x81, ping.length]), ping]));
+                socket.write(Buffer.concat([Buffer.from([0x88, code.length]), code]));
+                return;
+              }
+              if (pings === undefined) return;
               timers.push(
                 setInterval(() => {
                   if (!socket.destroyed)
@@ -198,6 +211,47 @@ describe("dialForever over a link that went quiet", () => {
       yield* Effect.sleep("1500 millis");
       expect(main.dials()).toBe(1);
       yield* Fiber.interrupt(fiber);
+    }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
+  );
+});
+
+/** A host key and the dial options for `main`. */
+const keyed = (main: { port: number }) => {
+  const key = generateHostKey();
+  const hostId = hostIdOf(key.publicKey);
+  return {
+    hostId,
+    options: {
+      origin: `http://127.0.0.1:${main.port}`,
+      hostId,
+      key: privateKeyFrom(key.privateKeyPem),
+      url: `ws://127.0.0.1:${main.port}/host/connect`,
+    },
+  };
+};
+
+describe("a dial the main Gram refuses after the host's hello", () => {
+  it.live("isn't a dial that got through: what the host kept doesn't count it as served", () =>
+    Effect.gen(function* () {
+      const main = yield* mainGram(undefined, 1000);
+      const { hostId, options } = keyed(main);
+      let served = 0;
+      yield* dialOnce(
+        options,
+        servedHost(hostId),
+        Effect.sync(() => void (served += 1)),
+      ).pipe(Effect.timeout("10 seconds"));
+      expect(served).toBe(0);
+      // One that keeps talking is.
+      const talking = yield* mainGram(50);
+      const other = keyed(talking);
+      yield* dialOnce(
+        other.options,
+        servedHost(other.hostId),
+        Effect.sync(() => void (served += 1)),
+        300,
+      ).pipe(Effect.timeout("2 seconds"), Effect.ignore);
+      expect(served).toBeGreaterThan(0);
     }).pipe(Effect.scoped, Effect.provide(WorktreesLive.pipe(Layer.provideMerge(ProcLive)))),
   );
 });

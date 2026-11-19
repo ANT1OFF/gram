@@ -416,7 +416,15 @@ describe.skipIf(!hasGit)("stopping a machine and resuming on a new host", () => 
         const resumed = yield* post(MACHINES_STOP_RESUME_PATH, { id: hostId, kept: keptThen });
         expect(resumed).toEqual({
           status: 200,
-          body: { reopened: [thread.id], left: [], missing: [], refused: [], restored: [] },
+          body: {
+            reopened: [thread.id],
+            left: [],
+            missing: [],
+            refused: [],
+            restored: [],
+            // The user's own folder, there and readable: back, with nothing kept to check it by.
+            unverified: [{ threadId: thread.id, cwd: expect.any(String) }],
+          },
         });
         expect((yield* post(MACHINES_STOP_STATUS_PATH, {})).body).toEqual({
           machines: [{ id: hostId, name: NAME, online: true, wanted: false }],
@@ -541,7 +549,7 @@ describe.skipIf(!hasGit)("stopping a machine and resuming on a new host", () => 
         yield* second.completeTurn("done");
         yield* statusIs(thread.id, "idle");
         // Taken back, nothing is left to resume: the thread at rest before the stop stays so.
-        expect((yield* post(MACHINES_STOP_RESUME_PATH, { id: hostId })).body).toEqual({
+        expect((yield* post(MACHINES_STOP_RESUME_PATH, { id: hostId })).body).toMatchObject({
           reopened: [],
           left: [],
           missing: [],

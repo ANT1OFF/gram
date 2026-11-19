@@ -761,6 +761,62 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
     }).pipe(Effect.scoped, live),
   );
 
+  it.live(
+    "checks a folder a resume before didn't finish putting back, never taking it as back",
+    () =>
+      Effect.gen(function* () {
+        const { repo, origin } = yield* worktree;
+        run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
+        run(repo, "checkout", "--quiet", "-b", "gram/worker");
+        write(join(repo, "committed.txt"), "never pushed\n");
+        run(repo, "add", "committed.txt");
+        run(repo, "commit", "--quiet", "-m", "local only");
+        const head = run(repo, "rev-parse", "HEAD").trim();
+        const prepared = yield* stopOn({
+          proc: yield* Proc,
+          busy: Effect.succeed(IDLE),
+          admission: makeAdmission(),
+          protocols: FILE,
+        }).prepare({ checkouts: [{ threadId: THREAD, cwd: repo }] });
+        const { disk, clone, stop } = yield* replaced(origin);
+        yield* stop.restore!({ threadId: ThreadId.make("thread-none"), cwd: clone, url: URL });
+        // The host stopped part way: the worktree made at the branch's base, its work never in it.
+        const cwd = join(disk, "worktrees", "worker");
+        mkdirSync(join(disk, "worktrees"), { recursive: true });
+        run(clone, "worktree", "add", "--quiet", "-b", "gram/worker", cwd, "origin/main");
+        const asked = {
+          threadId: THREAD,
+          cwd,
+          url: URL,
+          branch: "gram/worker",
+          commit: prepared.kept[0]?.commit,
+        };
+        // Before: there, and taken as back without its work.
+        expect(yield* stop.restore!(asked)).toMatchObject({ restored: false, there: true });
+        const checked = yield* stop.restore!({ ...asked, pending: true });
+        expect(checked).toMatchObject({ restored: true, source: "ref" });
+        expect(run(cwd, "rev-parse", "HEAD").trim()).toBe(head);
+        expect(readFileSync(join(cwd, "tracked.txt"), "utf8")).toBe("work in progress\n");
+        // An empty folder it left is made again; one that is somebody else's is refused.
+        const empty = join(disk, "worktrees", "empty");
+        mkdirSync(empty);
+        expect(
+          yield* stop.restore!({ ...asked, cwd: empty, branch: "gram/empty", pending: true }),
+        ).toMatchObject({ restored: true });
+        const other = join(disk, "worktrees", "other");
+        mkdirSync(other);
+        write(join(other, "notes.txt"), "mine\n");
+        const refused = yield* stop.restore!({
+          ...asked,
+          cwd: other,
+          branch: "gram/other",
+          pending: true,
+        }).pipe(Effect.flip);
+        expect(refused.message).toContain("isn't a worktree of its repository");
+        expect(readFileSync(join(other, "notes.txt"), "utf8")).toBe("mine\n");
+      }).pipe(Effect.scoped, live),
+  );
+
   it.live("puts work back in the machine's clone itself, for a thread that worked there", () =>
     Effect.gen(function* () {
       const { repo, origin } = yield* worktree;
@@ -783,14 +839,16 @@ describe.skipIf(!hasGit)("a host readied to stop", () => {
       expect(restored).toMatchObject({ restored: true, uncommitted: true });
       expect(readFileSync(join(clone, "new.txt"), "utf8")).toBe("untracked\n");
       expect(run(clone, "status", "--porcelain")).toContain(" M tracked.txt");
-      // Asked again over the work now there: nothing is put back over it.
-      const again = yield* stop.restore!({
-        threadId: THREAD,
-        cwd: clone,
-        url: URL,
-        branch: "main",
-      }).pipe(Effect.flip);
+      // Asked again over exactly the work now there, as after an answer that was lost: done, not
+      // refused. Before, the work it had just put back was taken for changes of its own.
+      const asked = { threadId: THREAD, cwd: clone, url: URL, branch: "main" };
+      expect(yield* stop.restore!(asked)).toMatchObject({ restored: true });
+      expect(readFileSync(join(clone, "new.txt"), "utf8")).toBe("untracked\n");
+      // Over changes that aren't the kept work: nothing is put back over them.
+      write(join(clone, "mine.txt"), "mine\n");
+      const again = yield* stop.restore!(asked).pipe(Effect.flip);
       expect(again.message).toContain("changes of its own");
+      expect(readFileSync(join(clone, "mine.txt"), "utf8")).toBe("mine\n");
     }).pipe(Effect.scoped, live),
   );
 

@@ -207,6 +207,7 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "file-parts",
   "wip-restore",
   "wip-restore-ref",
+  "wip-restore-pending",
   "wip-keep",
   "agent-opencode",
   "agent-codex",
@@ -779,6 +780,13 @@ export interface HostSessionsConnection {
     agent: HostSessionOpen["agent"],
     reload: HostAgentReload,
   ) => Effect.Effect<void>;
+  /**
+   * Whether the host the session's events last came from runs on another disk than the one it
+   * was opened on (`HostHello.diskId`): its machine was replaced under it, so a session it no
+   * longer has was lost with the old disk, not ended by a restart. Absent on a connection to one
+   * host, and false when either host didn't say its disk.
+   */
+  readonly replaced?: (handle: string) => boolean;
 }
 
 /**
@@ -1766,6 +1774,10 @@ export const connectHost = (
                       // Only to a host that reads another machine's ref: an older one would
                       // put back its own ref of the thread, or none.
                       ref: hostServes(hello, "wip-restore-ref") ? request.ref : undefined,
+                      pending:
+                        request.pending === true && hostServes(hello, "wip-restore-pending")
+                          ? (true as const)
+                          : undefined,
                     }),
                   ).pipe(
                     Effect.timeoutOrElse({

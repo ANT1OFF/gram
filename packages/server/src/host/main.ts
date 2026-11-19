@@ -4,6 +4,7 @@
 // `leave`) it is another machine's host, which dials the main Gram over the tailnet. Nothing here
 // listens on a network either way.
 
+import { randomBytes } from "node:crypto";
 import { Socket as NetSocket } from "node:net";
 import { join } from "node:path";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -26,6 +27,7 @@ import { threadPlacesOnHost } from "./thread-places.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
 import {
   hostAttachments,
+  hostIdentity,
   hostShared,
   hostHome,
   hostRepos,
@@ -146,6 +148,8 @@ const hostService = (
     readonly graceFrom: () => number | undefined;
     readonly busy: (busy: BusyOf) => void;
   },
+  /** A joined machine's host: the folder whose disk it names in its hello (`HostHello.diskId`). */
+  diskOf?: string,
 ): Effect.Effect<HostService, never, Scope.Scope | Proc | Worktrees | AgentHosts> =>
   Effect.gen(function* () {
     const proc = yield* Proc;
@@ -218,6 +222,24 @@ const hostService = (
           () => Effect.sync(() => (clones -= 1)),
         ),
     });
+    // Its disk, and this start of it. One it can't keep says neither, and is taken as hosts were
+    // before they said: a redial that has lost its sessions restarted on the same disk.
+    const disk =
+      diskOf === undefined
+        ? undefined
+        : yield* Effect.try(() => hostIdentity(diskOf, hostRepos())).pipe(
+            Effect.map(({ diskId, unknown }) => ({
+              diskId,
+              bootId: randomBytes(16).toString("base64url"),
+              ...(unknown === undefined ? {} : { diskUnknown: unknown }),
+            })),
+            Effect.tapError((error) =>
+              Effect.logWarning("gram-host: couldn't keep the id of its disk").pipe(
+                Effect.annotateLogs({ reason: String(error.cause) }),
+              ),
+            ),
+            Effect.orElseSucceed(() => undefined),
+          );
     return {
       hello: {
         protocol: HOST_PROTOCOL_VERSION,
@@ -231,6 +253,7 @@ const hostService = (
             (feature !== "agent-codex" || runsCodex) &&
             (feature !== "agent-opencode-sessions" || runsOpenCode),
         ),
+        ...disk,
       },
       files: filesOn(proc),
       folders,
@@ -385,6 +408,8 @@ NodeRuntime.runMain(
                   ? undefined
                   : (busy, admission) => selfUpdater(RELEASE, home, busy, admission),
                 join(home, "kept-terminals", hostId),
+                undefined,
+                home,
               ).pipe(
                 // Its compute goes with it, so its work is kept on SIGTERM. A machine a person
                 // joined keeps its disk, and an update's restart is a SIGTERM too.

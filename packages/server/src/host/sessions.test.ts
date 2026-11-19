@@ -32,6 +32,7 @@ import {
   agentHostThroughHost,
   HOST_STOPPED_ENDED,
   machineAwayEnded,
+  machineReplacedEnded,
   machineRestartedEnded,
   onMachineUnavailable,
   opensOnHost,
@@ -849,6 +850,8 @@ const redialling = Effect.gen(function* () {
       features: HOST_FEATURES,
       platform: process.platform,
       pid: 7,
+      diskId: "disk-aaaaaaaa",
+      bootId: "boot-aaaaaaaa",
     },
     files: filesOn(yield* Proc),
     reads: fileReadsOn(yield* Proc),
@@ -901,18 +904,31 @@ const redialling = Effect.gen(function* () {
       ? Effect.fail(new HostUnavailable({ hostId: MACHINE, message: "That machine is offline." }))
       : Effect.succeed(live.connection),
   );
-  /** The host process starts afresh, with none of the old one's sessions. */
-  const restarted = Effect.gen(function* () {
-    service = {
-      ...service,
-      hello: { ...service.hello, pid: service.hello.pid + 1 },
-      sessions: yield* sessionsOnHost(() => Effect.succeed(onHost.host)),
-    };
-  });
+  /**
+   * The host process starts afresh, with none of the old one's sessions: on the same disk, or on
+   * another (`diskId`), as a machine replaced under its key is.
+   */
+  const startAfresh = (diskId: string) =>
+    Effect.gen(function* () {
+      service = {
+        ...service,
+        hello: {
+          ...service.hello,
+          pid: service.hello.pid + 1,
+          diskId,
+          bootId: `boot-${service.hello.pid + 1}-aaaaaaaa`,
+        },
+        sessions: yield* sessionsOnHost(() => Effect.succeed(onHost.host)),
+      };
+    });
+  const restarted = startAfresh("disk-aaaaaaaa");
+  const replaced = startAfresh("disk-bbbbbbbb");
   const first = yield* dial;
+  /** Why an open mustn't go out now, as the machine's restore gate would say. */
+  let refusing: string | undefined;
   const agent = (reattachMs: number, callMs = 2_000) =>
     agentHostOnMachine(
-      followingSessions(current, { reattachMs, callMs }),
+      followingSessions(current, { reattachMs, callMs, admit: () => refusing }),
       () => false,
       inServer.host,
       "box",
@@ -929,9 +945,13 @@ const redialling = Effect.gen(function* () {
         ),
     );
   return {
+    refuse: (why: string | undefined) => {
+      refusing = why;
+    },
     onHost,
     dial,
     restarted,
+    replaced,
     shutDown,
     first,
     agent,
@@ -999,6 +1019,37 @@ describe("a joined machine's sessions across a dropped connection", () => {
       expect(said(events)).toEqual(["before", "ended"]);
       expect(events.at(-1)).toEqual(machineRestartedEnded("box"));
       expect(events.at(-1)).toMatchObject({ restartedMachine: "box" });
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("don't open on a machine whose gate closed after the session was let through", () =>
+    Effect.gen(function* () {
+      const { refuse, agent } = yield* redialling;
+      // Back on another disk between the gate and the open: its folders aren't there yet.
+      refuse("That machine's threads are being put back.");
+      const refused = yield* Effect.flip(agent(10_000).open({ threadId: THREAD, cwd: "/work" }));
+      expect(refused.message).toContain("being put back");
+      refuse(undefined);
+      yield* agent(10_000).open({ threadId: THREAD, cwd: "/work" });
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("end as lost with the machine when it comes back without them on another disk", () =>
+    Effect.gen(function* () {
+      const { onHost, dial, replaced, first, agent } = yield* redialling;
+      const session = yield* agent(10_000).open({ threadId: THREAD, cwd: "/work" });
+      const collected = yield* Effect.forkScoped(Stream.runCollect(session.events));
+      yield* Queue.offer(onHost.events, notice("before"));
+      yield* Effect.sleep("200 millis");
+      first.hostEnd.destroy();
+      yield* eventually(() => (first.connection.gone() ? true : undefined), "the drop");
+      yield* replaced;
+      yield* dial;
+      const events = yield* Fiber.join(collected);
+      expect(said(events)).toEqual(["before", "ended"]);
+      // Not carried on there: its folder isn't on the new disk until a resume puts it back.
+      expect(events.at(-1)).toEqual(machineReplacedEnded("box"));
+      expect(events.at(-1)).not.toHaveProperty("restartedMachine");
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 
