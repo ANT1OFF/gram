@@ -1012,6 +1012,60 @@ describe("MessageBlock agent errors", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("offers a thread whose saved work is gone its branch, only once asked to drop the work", async () => {
+    const gone = {
+      kind: "unknown",
+      retryable: false,
+      code: "kept-work-gone",
+      text: "Its saved work is gone from the remote and its branch doesn't hold it.",
+      turnId: "turn-1",
+      at: 7,
+      // Its machine was lost too: the resume can't bring this back, so its card isn't offered.
+      machineLost: { machine: "box" },
+    } as const;
+    const restoreFromBranch = vi.fn(async () => {});
+    const resumeAfterMachineLost = vi.fn(async () => {});
+    const message = { ...failed, parts: [{ ...failed.parts[0], data: gone } as never] };
+    feed.set(E, [sent, message]);
+    useThreadsStore.setState({
+      byId: {
+        [E]: {
+          status: "error",
+          thread: { id: E, lastError: gone, checkout: { kind: "main", path: "/r" } },
+        },
+      },
+    } as never);
+    renderWithApi(
+      <MessageBlock
+        threadId={E}
+        message={message}
+        streamingIds={new Set()}
+        subagents={new Map()}
+        subagentUsage={new Map()}
+      />,
+      { restoreFromBranch, resumeAfterMachineLost } as never,
+    );
+    expect(screen.queryByTestId("machine-lost")).toBeNull();
+    expect(screen.getByTestId("agent-error").textContent).toContain(gone.text);
+    await userEvent.click(screen.getByTestId("agent-error-from-branch"));
+    // Asked first, in so many words; Cancel takes nothing.
+    expect(screen.getByTestId("agent-error-from-branch-confirming").textContent).toContain(
+      "The saved work isn't in it",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(restoreFromBranch).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByTestId("agent-error-from-branch"));
+    await userEvent.click(screen.getByTestId("agent-error-from-branch-confirm"));
+    expect(restoreFromBranch).toHaveBeenCalledExactlyOnceWith(E);
+    expect(await screen.findByTestId("agent-error-from-branch-done")).toBeTruthy();
+    expect(resumeAfterMachineLost).not.toHaveBeenCalled();
+  });
+
+  it("offers no branch for any other failure", () => {
+    show(vi.fn(), error);
+    expect(screen.queryByTestId("agent-error-from-branch")).toBeNull();
+  });
+
   it("shows what the last save held, and its diff even once Gram no longer has it", async () => {
     const lost = {
       kind: "unknown",

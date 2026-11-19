@@ -3,7 +3,9 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  HOST_DROP_MS,
   HOST_RESTORE_MS,
+  HOST_STEP_MARGIN_MS,
   HOST_STOP_MS,
   JOB_KEPT_MS,
   JOB_WAIT_MAX_MS,
@@ -17,6 +19,10 @@ import {
 
 describe("the budgets of a machine's long steps", () => {
   it("nest: whoever waits on a step waits longer than it may take", () => {
+    // A host ends a step it holds its lock for, and answers, before Gram's call gives up on it.
+    for (const call of [HOST_RESTORE_MS, HOST_STOP_MS, HOST_DROP_MS])
+      expect(call - HOST_STEP_MARGIN_MS).toBeGreaterThan(HOST_STEP_MARGIN_MS);
+    expect(HOST_STEP_MARGIN_MS).toBeGreaterThan(0);
     // A resume job goes without progress for no longer than one folder's restore or its reopen.
     expect(RESUME_JOB_MS).toBeGreaterThan(HOST_RESTORE_MS);
     expect(RESUME_JOB_MS).toBeGreaterThan(REOPEN_MS);

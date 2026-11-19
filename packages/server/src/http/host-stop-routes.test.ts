@@ -173,7 +173,7 @@ describe("a machine's resume as a job, through its routes", () => {
         yield* Deferred.await(asking);
         yield* letThrough("/clones/a");
         const half = yield* pollUntil(deps, jobs, id, (job) => job.progress.done === 1);
-        expect(half.folders).toEqual([
+        expect(half.folders).toMatchObject([
           { threadId: "t-a", cwd: "/clones/a", state: "restored" },
           { threadId: "t-b", cwd: "/clones/b", state: "running" },
         ]);

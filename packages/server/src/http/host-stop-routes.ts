@@ -33,8 +33,9 @@ export const MACHINES_STOP_PREPARE_PATH = "/machines/stop/prepare";
 /** Takes a stop back: `{ id }`. */
 export const MACHINES_STOP_CANCEL_PATH = "/machines/stop/cancel";
 /**
- * Resumes a machine's threads on the host that dialled in as it: `{ id, remote?, kept? }`, where
- * `kept` is the `kept` of the stop's answer, given back.
+ * Resumes a machine's threads on the host that dialled in as it: `{ id, remote?, kept?,
+ * fromBranch? }`, where `kept` is the `kept` of the stop's answer, given back, and `fromBranch` the
+ * threads to make from their branch when the work their stop kept is gone from the remote.
  */
 export const MACHINES_STOP_RESUME_PATH = "/machines/stop/resume";
 /**
@@ -108,6 +109,14 @@ const keptBefore = (value: unknown): ReadonlyArray<KeptBefore> | undefined => {
   }
   return kept;
 };
+
+/** The threads a resume may make from their branch without their kept work, or undefined. */
+const threadIds = (value: unknown): ReadonlyArray<ThreadId> | undefined =>
+  Array.isArray(value) &&
+  value.length <= STOP_FOLDERS_MAX &&
+  value.every((each) => typeof each === "string" && each.length > 0 && each.length <= 256)
+    ? (value as ReadonlyArray<string>).map((each) => ThreadId.make(each))
+    : undefined;
 
 const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 const refuse = (message: string, status: number) => json({ message }, status);
@@ -208,17 +217,23 @@ export const hostStopRoute = (
         budgetMs: PREPARE_JOB_MS,
         run: () => prepareStop(deps, hostId, { force, remote }),
       });
-    const resumeJob = (kept: ReadonlyArray<KeptBefore> | undefined) =>
+    const resumeJob = (
+      kept: ReadonlyArray<KeptBefore> | undefined,
+      fromBranch: ReadonlyArray<ThreadId> | undefined,
+    ) =>
       deps.jobs.start({
         kind: "resume",
         machine: hostId,
         key,
         budgetMs: RESUME_JOB_MS,
-        run: (follow) => resumeHost(deps, hostId, { remote, kept, follow }),
+        run: (follow) => resumeHost(deps, hostId, { remote, kept, follow, fromBranch }),
       });
     /** The resume's `kept`, or `null` for one that isn't a stop's answer. */
     const keptOfBody = () =>
       body["kept"] === undefined ? undefined : (keptBefore(body["kept"]) ?? null);
+    /** The resume's `fromBranch`, or `null` for one that isn't a list of threads. */
+    const fromBranchOfBody = () =>
+      body["fromBranch"] === undefined ? undefined : (threadIds(body["fromBranch"]) ?? null);
     switch (path) {
       case MACHINES_STOP_PREPARE_PATH: {
         // A job all the same, so a retry joins it. One this call started is cut off with it, so
@@ -247,15 +262,17 @@ export const hostStopRoute = (
         return json({ ok: true });
       case MACHINES_STOP_RESUME_PATH: {
         const kept = keptOfBody();
-        if (kept === null) return refuse("bad request", 400);
+        const fromBranch = fromBranchOfBody();
+        if (kept === null || fromBranch === null) return refuse("bad request", 400);
         // A job, which goes on should this call go away: a retry joins it.
-        const { job } = yield* resumeJob(kept);
+        const { job } = yield* resumeJob(kept, fromBranch);
         return answerOf(yield* deps.jobs.ended(job.id));
       }
       case MACHINES_STOP_RESUME_START_PATH: {
         const kept = keptOfBody();
-        if (kept === null) return refuse("bad request", 400);
-        return json(yield* resumeJob(kept), 202);
+        const fromBranch = fromBranchOfBody();
+        if (kept === null || fromBranch === null) return refuse("bad request", 400);
+        return json(yield* resumeJob(kept, fromBranch), 202);
       }
       default:
         return refuse("not found", 404);

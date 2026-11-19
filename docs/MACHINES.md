@@ -219,6 +219,7 @@ its sessions end with it.
 | `gram-host service install \| uninstall \| status` | Manage the service                                |
 | `gram-host status`                                 | The main Gram it joined, its fingerprint, service |
 | `gram-host leave [--no-service]`                   | Stop the service and forget the join and its key  |
+| `gram-host new-disk`                               | Take a disk Gram refuses back as the machine      |
 
 This machine's own host can run the same way, kept running after Gram quits, when you turn that
 on: see [agents after Gram quits](AGENTS_AND_FEATURES.md#agents-after-gram-quits).
@@ -604,7 +605,12 @@ the local app, as the other `/machines/*` routes are.
   clone that is there is checked by the host against what was kept, like one a resume left owed:
   being there isn't being back. A resume asks again only the folders still owed, never a thread's
   intact folder for a sibling that couldn't come back. A folder already holding exactly the kept
-  work (a restore whose answer was lost) counts as put back.
+  work (a restore whose answer was lost) counts as put back. One a resume before confirmed is
+  not checked against what was kept again (it may hold new work by then), but it must still be a
+  checkout Git reads: one that isn't any more (an empty folder left at its path, say) is asked of
+  the host again, as an owed one is. Git is asked a few times; one that can't answer leaves the
+  folder's threads out for this resume, saying so, with nothing owed for it, and the next resume
+  asks again.
 - A folder the host can't make again (one the user picked) is back when it is there and Git can
   read it, a repository or a plain folder, and the resume's answer lists it in `unverified`:
   nothing was kept to check it by. On a disk its folders weren't last seen on, an empty plain
@@ -626,7 +632,9 @@ the local app, as the other `/machines/*` routes are.
   of them has it back, it is back for all of them.
 - `"remote"` names where the hidden refs are fetched from; left out, it is where the stop pushed
   them. `"kept"` gives the stop's `kept` back, as it was answered: see
-  [what a resume is held to](#what-a-resume-is-held-to).
+  [what a resume is held to](#what-a-resume-is-held-to). `"fromBranch"` lists threads to make from
+  their branch when the work their stop kept is gone from the remote: see
+  [when the kept work is gone](#when-the-kept-work-is-gone).
 - A message that waits in a thread's queue during the resume is sent once, when the thread's
   folders are back or the resume ends.
 - A resume and a prepare can each be started as a job, which a caller polls rather than holding
@@ -643,7 +651,12 @@ the local app, as the other `/machines/*` routes are.
 - `POST /machines/stop/expect` says a machine is being started on another disk: `{ "id" }`. Once
   it dials in, it waits for its resume as above, though this Gram saw no stop of it (the machine
   was stopped some other way, or its host doesn't say its disk). Call it before the host starts;
-  it holds for fifteen minutes.
+  it holds for fifteen minutes. Meanwhile a host that says the disk the machine is leaving is
+  refused: it is the old one dialling in again. It gets in once the fifteen minutes are up, when it
+  is let back in (`POST /machines/readmit`, below), or when it says a new disk
+  (`gram-host new-disk`).
+  An `expect` said again after the new disk dialled in is about that disk: call it once, before
+  the host starts.
 - What this Gram knows of each machine's stops and restores is one record per machine, kept
   across its own restart in `remote-access/machine-marks.json` in its data folder, owner-only and
   replaced whole on each change: the disk and start its host last said, the disks it was
@@ -705,6 +718,30 @@ disk of each machine and reads a dial against it:
   its id is part of the disk's, kept in the volume (`.gram-volume`), so a volume swapped or wiped
   under a home that stayed is another disk, owing a resume. One whose id can't be kept is said to
   be unknown (`HostHello.diskUnknown`), and owes a resume at each start, the first one too.
+- **A disk it was replaced from**: an old host that was only cut off and dialled in again. It
+  holds the machine's key but isn't the machine any more, so it is refused before it comes
+  online, whatever is online, and the log says so ("refused a joined machine's host on a disk it
+  was replaced from"); the machine that replaced it stays, and its resume goes on. Gram closes the
+  dial with code 4409, whose reason is in the host's own log of it ("not connected; dialling
+  again"). Gram remembers the last 64 disks a machine was replaced from.
+- **Taking an old disk back**, as when the disk that replaced it is lost and the old one holds the
+  only folders left: run `gram-host new-disk` on it. Its host makes a new disk id and restarts
+  its service (restart a `gram-host run` yourself), and dials in on a disk Gram hasn't seen. It
+  keeps its key, so it is the same machine with the same threads: it is owed a resume, which checks
+  its folders against what was kept before any session opens, and the disk it took over from is
+  the one refused from then on, with the same way back. The service is restarted as it was
+  installed, so its folders and settings stay as they were.
+- **Letting it back in from this side**, for a host nobody can run a command on (one an embedding
+  app started, say): `POST /machines/readmit` with `{ "id" }`, from the local app as the other
+  `/machines/*` routes are, or from an embedding app for a machine it provisioned. It lets the disk
+  this Gram last refused a host of the machine on back in, at that host's next dial within fifteen
+  minutes, once, and answers that disk; 409 when no host of it was refused since Gram started (it
+  dials again within half a minute). A disk the machine was replaced from comes in as the machine
+  replaced again, with the same id and threads, owing a resume that checks its folders before any
+  session opens; the disk it is leaving under an `expect` comes in as it is, and the `expect` is
+  taken back.
+- Removing the machine and joining it again also lets the disk in, but as a new machine: the
+  threads placed on the old one stay on it.
 - **No disk said** (a host of 1.31.0 or earlier, or one that couldn't keep the file): as before,
   for a machine none of whose hosts ever said one. Once one has, a host that says none is refused
   ("refused a joined machine's host that didn't say its disk"): it can't say it isn't an old
@@ -712,8 +749,7 @@ disk of each machine and reads a dial against it:
 
 A host counts a dial as got through, for its three-minute grace, only once Gram has said more
 than the hello it asks of every dial, so a host Gram keeps refusing ends its sessions when the
-grace runs out. The disks a machine was replaced from are remembered but nothing refuses a host
-that says one of them yet.
+grace runs out: an old disk's host among them.
 
 So whatever brings a machine back on another disk must not copy `disk-id` with the rest of the
 home folder: the key and `host.json` are what make it the same machine, and the id is what makes
@@ -728,11 +764,13 @@ fetch that folder's own ref, and make the folder again at the same path: the bra
 it was on, unpushed commits included, and the files that weren't committed written back as
 uncommitted files (what was staged comes back unstaged; ignored files were never kept). A thread
 no ref was kept of, because its branch at the remote held everything (`caughtUp`), gets its
-folder from that branch at the remote. The answer's `restored` says which with `source`: `ref` or
-`branch`. Each folder is put back from its own ref and held to its own record, and the thread's
-session opens as after any resume once every one of its folders is back. A folder kept by an older host,
-under the thread's one ref, is put back from that ref only when the stop's
-`commit` for this folder is known and the ref names it: unheld, it may be another folder's work.
+folder from that branch at the remote, as long as that branch still holds what the stop found
+there ([when the kept work is gone](#when-the-kept-work-is-gone)). The answer's `restored` says
+which with `source`: `ref` or `branch`. Each folder is put back from its own ref and held to its
+own record, and the thread's session opens as after any resume once every one of its folders is
+back. A folder kept by an older host, under the thread's one ref, is put back from that ref only
+when the stop's `commit` for this folder is known and the ref names it: unheld, it may be another
+folder's work.
 
 - It needs a host that names the `wip-restore` feature, and the host's own git credentials for
   the clone and the fetch. With an older host the folder is reported missing, as before.
@@ -767,6 +805,34 @@ Gram remembers each stop's answer while it runs. After Gram itself restarted it 
 so give the stop's `kept` array back in the resume call (`"kept": [...]`, entries as they were
 answered; up to 512). With neither, the ref is taken as the remote has it, and a thread with no
 ref gets its branch.
+
+### When the kept work is gone
+
+A folder whose stop kept a commit, when the remote no longer has its ref (deleted by whoever runs
+the remote, say), is made from its branch only if that branch holds the commit: work committed and
+pushed since is all there. So is a caught-up folder whose branch moved on; one whose branch was
+pushed over is made from the thread's ref when that names exactly the commit the stop found. A
+branch that doesn't hold it (the ref gone and the work uncommitted, or the branch pushed over
+since) would be the folder without that work, so nothing is put back: the thread doesn't open on
+the machine, and its reason says so and names the two ways out.
+
+- **Put the work back at the remote**: push `refs/gram/wip/<thread>` at the kept commit from
+  wherever it still is (another clone, or the old disk). The next resume puts it back as usual;
+  with the hosted features off this Gram resumes such a machine every ten minutes by itself.
+- **Take the branch without it**: in the thread, whose card says "Saved work is gone" once a
+  message to it is held off for this, **Open from the branch…** asks first, saying the saved work
+  isn't put back later, and then resumes its machine for that thread alone
+  (`thread.restoreFromBranch`). Or resume the machine with the thread in `"fromBranch"`
+  (`POST /machines/stop/resume`, `{ "id", "fromBranch": ["<thread>"] }`). The folder is made from
+  the branch as it is at the remote, `restored` lists it with `source: "branch"`, and its `note`
+  says it is without the work its stop kept. Only the threads named take it: a folder that threads
+  share is made so only when every one of them is named, as it drops what any of them kept, and a
+  named thread that shares its folder with one that isn't says so and stays out.
+
+A host that names `wip-restore-kept` checks this itself before it makes anything. One built
+before it makes the folder from the branch whatever it holds; Gram then takes a folder it made
+at any other commit than the stop kept, caught up or not, as not put back unless the thread is in
+`"fromBranch"`, and the next resume asks again.
 
 ### What the remote must allow
 

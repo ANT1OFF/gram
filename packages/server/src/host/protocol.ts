@@ -199,6 +199,16 @@ export const HOST_SERVES: ReadonlyArray<HostCapability> = [
   "folders",
 ];
 
+/**
+ * The WebSocket close a control plane ends a dial with when the host says a disk its machine was
+ * replaced from (`HostHello.diskId`), or the one it leaves while told it comes back on another:
+ * that host isn't the machine any more. The reason, in the host's log of the dial, names the way
+ * out. A host reads it as any other close.
+ */
+export const HOST_FENCED_CLOSE = 4409;
+export const HOST_FENCED_REASON =
+  "Gram runs this machine on another disk now. To make this disk the machine: gram-host new-disk";
+
 /** The features this build's host names in its hello, beside its capabilities. */
 export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "account-scope",
@@ -209,6 +219,7 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "wip-restore",
   "wip-restore-ref",
   "wip-restore-pending",
+  "wip-restore-kept",
   "wip-keep",
   "agent-opencode",
   "agent-codex",
@@ -1779,6 +1790,7 @@ export const connectHost = (
                         request.pending === true && hostServes(hello, "wip-restore-pending")
                           ? (true as const)
                           : undefined,
+                      fromBranch: request.fromBranch === true ? (true as const) : undefined,
                     }),
                   ).pipe(
                     Effect.timeoutOrElse({

@@ -11,6 +11,11 @@ export const HOST_RESTORE_MS = 20 * MINUTE;
 export const HOST_STOP_MS = 10 * MINUTE;
 /** A host deleting one thread's kept work at its remote (`host.stop.drop`). */
 export const HOST_DROP_MS = 3 * MINUTE;
+/**
+ * How much sooner than Gram's deadline for its call a host ends a step it holds its lock for
+ * (`stop.ts`): the host lets go of the lock, and says so, before Gram stops waiting for it.
+ */
+export const HOST_STEP_MARGIN_MS = MINUTE;
 /** A stop's last flush of the machine's shared folders. */
 export const SHARED_FLUSH_MS = 15 * SECOND;
 /** A machine saying it takes work again. */
