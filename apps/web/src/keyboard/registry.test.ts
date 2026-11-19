@@ -363,3 +363,90 @@ describe("dispatchShortcut", () => {
     expect(send).toHaveBeenCalledOnce();
   });
 });
+
+describe("a yielding shortcut", () => {
+  it("never takes a key another shortcut holds, however late it registers", () => {
+    const builtIn = vi.fn();
+    const script = vi.fn();
+    cleanups.push(
+      registerShortcut({ id: "app.palette", keys: "mod+k", label: "", group: "App", run: builtIn }),
+      registerShortcut({
+        id: "script.planted",
+        keys: "mod+k",
+        label: "",
+        group: "Thread",
+        yields: true,
+        run: script,
+      }),
+    );
+    expect(dispatchShortcut(cmd("k", document.body), true)).toBe(true);
+    expect(builtIn).toHaveBeenCalledOnce();
+    expect(script).not.toHaveBeenCalled();
+  });
+
+  it("leaves a Gram key alone even where that shortcut doesn't apply, and never takes a paste", () => {
+    const script = vi.fn();
+    cleanups.push(
+      registerShortcut({
+        id: "terminal.clear",
+        keys: "mod+k",
+        label: "",
+        group: "Terminal",
+        focusScope: () => false,
+        run: vi.fn(),
+      }),
+      registerShortcut({
+        id: "s.k",
+        keys: "mod+k",
+        label: "",
+        group: "Thread",
+        yields: true,
+        run: script,
+      }),
+      registerShortcut({
+        id: "s.v",
+        keys: "mod+v",
+        label: "",
+        group: "Thread",
+        yields: true,
+        run: script,
+      }),
+    );
+    expect(dispatchShortcut(cmd("k", document.body), true)).toBe(false);
+    expect(dispatchShortcut(cmd("v", document.body), true)).toBe(false);
+    expect(script).not.toHaveBeenCalled();
+  });
+
+  it("knows ctrl is the same key as mod off macOS", () => {
+    const script = vi.fn();
+    cleanups.push(
+      registerShortcut({
+        id: "s.cv",
+        keys: "ctrl+v",
+        label: "",
+        group: "Thread",
+        yields: true,
+        run: script,
+      }),
+    );
+    const ctrlV = key({ key: "v", code: "KeyV", ctrlKey: true }, document.body);
+    expect(dispatchShortcut(ctrlV, false)).toBe(false);
+    expect(script).not.toHaveBeenCalled();
+  });
+
+  it("still runs on a key nothing else holds", () => {
+    const script = vi.fn();
+    cleanups.push(
+      registerShortcut({
+        id: "script.free",
+        keys: "mod+j",
+        label: "",
+        group: "Thread",
+        yields: true,
+        run: script,
+      }),
+    );
+    expect(dispatchShortcut(cmd("j", document.body), true)).toBe(true);
+    expect(script).toHaveBeenCalledOnce();
+  });
+});

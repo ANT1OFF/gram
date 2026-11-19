@@ -1,5 +1,6 @@
 import type {
   CloneSuggestions,
+  FolderSettings,
   Project,
   ProjectId,
   ProjectOrigins,
@@ -20,7 +21,14 @@ export interface ProjectsApi {
    * The project whose root is the repository at `root`, registered if it is new. Rejects with
    * `NotFound` for a missing folder, `InvalidState` for one that isn't a repository's top folder.
    */
-  addProject(root: string): Promise<Project>;
+  addProject(root: string, options?: { trust?: boolean | undefined }): Promise<Project>;
+  /**
+   * What the folder brings that would load as the user once trusted: Claude settings, MCP servers,
+   * scripts. Rejects with `NotFound` for a folder that can't be read.
+   */
+  folderSettings(root: string): Promise<FolderSettings>;
+  /** Trusts the project's folder, or stops trusting it; asked once, when it was added. */
+  setFolderTrust(projectId: ProjectId, trusted: boolean): Promise<Project>;
   /**
    * Clones a GitHub `owner/repo` or a git URL into `<into or the clone folder>/<repo>` and
    * registers it, or registers the clone already there. Rejects with `InvalidState` for a remote it
