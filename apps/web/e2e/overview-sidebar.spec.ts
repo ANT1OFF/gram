@@ -187,10 +187,13 @@ test("lists the workspaces in the switcher's order, the current one opened into 
     // Its title is the wait's label, then its whole words on the next line.
     const waiting =
       (await waits.count()) === 0 ? undefined : (await waits.getAttribute("title"))?.split("\n")[0];
-    const now = asking ? "asks you" : (waiting ?? each.now);
-    expect(await row.getAttribute("aria-label")).toContain(`, ${now}`);
+    const now = asking ? "Asks you" : (waiting ?? each.now);
+    // At work, it says what it is doing in place of its card's now line, in both lists.
+    const doing = await row.getByTestId("overview-worker-doing").count();
+    if (doing === 0) expect(await row.getAttribute("aria-label")).toContain(`, ${now}`);
     const line = row.getByTestId("overview-worker-now");
-    if (asking) await expect(line).toHaveText("asks you");
+    // An ask says its question, after "Asks you".
+    if (asking) await expect(line).toHaveText(/^Asks you/);
     else if (["working", "briefed", "in review", "idle"].includes(now)) {
       await expect(line).toHaveCount(0);
     }
@@ -386,7 +389,8 @@ test("a worker that asks opens on its ask, and arrows walk the overview", async 
   for (const threadId of [made.asks.choosing, made.asks.pushers[0]]) {
     const target = worker(page, threadId);
     await expect(target).toHaveAttribute("data-asking", "true");
-    await expect(target.getByTestId("overview-worker-now")).toHaveText("asks you");
+    // Its question, cut to the row, after "Asks you".
+    await expect(target.getByTestId("overview-worker-now")).toHaveText(/^Asks you/);
     const before = await workerFacts(page, made, threadId);
     await target.click();
     // Its thread, with what it asks on show there to answer.
@@ -1191,8 +1195,8 @@ test("a worker still running after its feature is delivered shows with its step 
   const row = worker(page, made.doneToday);
   await expect(row).toBeVisible();
   await expect(row.getByTestId("overview-worker-dot")).toHaveAttribute("data-working", "true");
-  // One line: its pulsing dot says it works, with no words at its edge; what it does, its
-  // "working" and its age are in its name and hover card.
+  // Its pulsing dot says it works, and its line what it does, in plain words: never its card's now
+  // line or a wait. Its age is in its name and hover card.
   await expect(row.getByTestId("overview-worker-now")).toHaveCount(0);
   await expect(row.getByTestId("overview-worker-waiting")).toHaveCount(0);
   await expect(row.getByTestId("overview-ago")).toHaveCount(0);
@@ -1201,7 +1205,8 @@ test("a worker still running after its feature is delivered shows with its step 
   await expect(page.getByTestId("overview-worker-card-step")).toHaveText(
     "Step 2 of 2 · Running a command",
   );
-  await expect(row).toHaveAttribute("aria-label", /, working, .*last active \d{2}:\d{2}$/);
+  await expect(row.getByTestId("overview-worker-doing")).toHaveText("Running a command");
+  await expect(row).toHaveAttribute("aria-label", /, Running a command, .*last active /);
   // Its turn over, it leaves again.
   await page.evaluate((id) => window.gramMock!.simulateStatus(id as never, "idle"), made.doneToday);
   await expect(row).toHaveCount(0);
@@ -1308,8 +1313,8 @@ test("a worker's PRs show as chips under its row, with checks and the review bot
   const chips = overview(page).locator(
     `[data-testid="overview-pr-chips"][data-thread-id="${made.live}"] [data-testid="overview-pr-chip"]`,
   );
-  // At work its dot says it works, so the row has no words, its step on the hover card; its chips
-  // take a second line under its title, beside how long ago it started.
+  // At work it says what it is doing, never its card's now line; its chips take a second line
+  // under its title, beside how long ago it was last active.
   await expect(worker(page, made.live).getByTestId("overview-worker-now")).toHaveCount(0);
   await expect(worker(page, made.live)).toHaveJSProperty("offsetHeight", 48);
   await expect(worker(page, made.live).getByTestId("overview-worker-dot")).toHaveAttribute(

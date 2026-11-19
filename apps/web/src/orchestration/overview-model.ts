@@ -328,6 +328,20 @@ export const rowWaiting = (
 ): WaitingOn | undefined =>
   row.askKey === undefined && !row.failed && calmTone(tone) ? row.waiting : undefined;
 
+/**
+ * Whether a worker row needs you: an ask of its waits in the stack, or its tone says so. The rows
+ * the sidebar keeps under its orchestrator's line while the right pane has the rest.
+ */
+export const needsYouRow = (row: Pick<OverviewWorkerRow, "askKey" | "tone">): boolean =>
+  row.askKey !== undefined || row.tone === "needs";
+
+/**
+ * What stays under an orchestrator's line while the right pane shows its workers: the workers that
+ * need you, in the overview's order; no held brief, no worker at work or at rest.
+ */
+export const handedOverItems = (items: readonly OverviewItem[]): readonly OverviewItem[] =>
+  items.filter((item) => item.kind === "worker" && needsYouRow(item.row));
+
 /** Now lines that only say what a row's dot says. */
 const DOT_WORDS: ReadonlySet<string> = new Set(["working", "briefed", "in review", "idle"]);
 
@@ -463,13 +477,16 @@ export const workspaceWorkersText = ({
   live,
   working,
   inTab,
+  word = "Workers",
 }: {
   readonly live: number;
   readonly working: number;
   readonly inTab: boolean;
+  /** What the pane's list is called: "Workers", or an embedding app's word. */
+  readonly word?: string;
 }): string =>
   inTab
-    ? `${live} in Workers`
+    ? `${live} in ${word}`
     : working > 0
       ? `${working} working`
       : `${live} ${live === 1 ? "worker" : "workers"}`;

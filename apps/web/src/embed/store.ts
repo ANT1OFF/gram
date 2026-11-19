@@ -133,12 +133,27 @@ export const useHostHome = () => useEmbedShell((s) => s.home !== undefined);
 
 /**
  * Whether the right panel is offered on a page: everywhere on Gram's own; under `panel: "code"`,
- * only on a thread in view that works in a git repository.
+ * only on a thread in view that works in a git repository, or on an orchestrator, whose pane lists
+ * its workers (and only them, unless it works in a repository itself: `panelWorkersOnly`).
  */
 export const panelOffered = (
   panel: ShellPanel,
-  page: { readonly threadInView: boolean; readonly threadInRepo: boolean },
-): boolean => panel === "shown" || (page.threadInView && page.threadInRepo);
+  page: {
+    readonly threadInView: boolean;
+    readonly threadInRepo: boolean;
+    readonly orchestrator?: boolean;
+  },
+): boolean =>
+  panel === "shown" || (page.threadInView && (page.threadInRepo || page.orchestrator === true));
+
+/**
+ * Whether the pane offers an orchestrator's workers and nothing of its own: under `panel: "code"`,
+ * on an orchestrator outside a repository, its Diff, Files and Terminal stay out.
+ */
+export const panelWorkersOnly = (
+  panel: ShellPanel,
+  page: { readonly threadInRepo: boolean; readonly orchestrator: boolean },
+): boolean => panel === "code" && page.orchestrator && !page.threadInRepo;
 
 /** Whether `name` is one of the tools `pattern` is for: `*` stands for any run of characters. */
 export const toolMatches = (pattern: string, name: string): boolean => {
@@ -169,6 +184,9 @@ export const toolCardFor = (
 
 export const useHostToolCard = (name: string) =>
   useEmbedShell((s) => toolCardFor(s.toolCards, name));
+
+/** The embedding app's word for an orchestrator's workers together: "Workers" on Gram's own. */
+export const useWorkersWord = () => useEmbedShell((s) => s.threadsPage.kinds?.workers ?? "Workers");
 
 /** The name of the page of every thread: "Threads", unless the embedding app gave another. */
 export const useThreadsTitle = () => useEmbedShell((s) => s.threadsPage.title ?? "Threads");

@@ -188,9 +188,12 @@ export interface ShellSidebar {
  * offered.
  *
  * - `shown`: on every page, as Gram on its own.
- * - `code`: only on a thread that works in a git repository, a worktree or a checkout. On any
- *   other page (a thread with no repository, `/threads`, the home page, the embedding app's own
- *   pages) neither the panel nor its toggle shows, and its key and palette commands are left out.
+ * - `code`: only on a thread that works in a git repository, a worktree or a checkout, and on an
+ *   orchestrator, where the pane lists its workers and opens each with its own Changes, PR,
+ *   Terminal and Files. An orchestrator outside a repository gets its workers alone: none of its
+ *   own Diff, Files or Terminal. On any other page (another thread with no repository, `/threads`,
+ *   the home page, the embedding app's own pages) neither the panel nor its toggle shows, and its
+ *   key and palette commands are left out.
  */
 export type ShellPanel = "shown" | "code";
 
@@ -409,6 +412,12 @@ export interface ShellThreadKinds {
   readonly orchestrator?: string;
   /** A thread an orchestrator started, alone or before "of <its orchestrator>": "Worker". */
   readonly worker?: string;
+  /**
+   * Those threads together, "Workers" when left out: the right pane's list of an orchestrator's
+   * workers, the way back to it from one of them, its switcher and empty state, and the sidebar's
+   * "4 in Workers".
+   */
+  readonly workers?: string;
 }
 
 /**

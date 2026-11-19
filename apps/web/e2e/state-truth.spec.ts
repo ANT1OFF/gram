@@ -66,31 +66,23 @@ test("the sidebar, the Workers panel, the Inbox and Quiet agree on what needs yo
   await expect(flaky.getByTestId("overview-solo-line")).toContainText("#412 checks failing");
   await expect(flaky.getByTestId("overview-solo-line")).not.toContainText("Stopped");
 
-  // The Workers panel names its workspace, counts that workspace's share, and says the rest.
+  // The Workers pane counts this workspace's share and nothing from other workspaces.
   let panel = await workersPanel(page);
-  await expect(panel.getByTestId("workers-panel-title")).toHaveText("Workers in Gram");
-  // Nothing in Gram asks, so there is no "Needs you 0" group: only what asks elsewhere, in a line.
+  // Nothing in Gram asks, so there is no "Needs you 0" group.
   await expect(panel.getByTestId("workers-group-needs")).toHaveCount(0);
-  await expect(panel.getByTestId("workers-needs-elsewhere")).toHaveText(
-    `${total - gramShare} need you elsewhere · Open Inbox`,
-  );
 
   // In billing-api, its asking worker is its Needs you, the same 1 as its line's badge.
   await openOrchestrator(page, made.billingOrchestrator);
   panel = await workersPanel(page);
-  await expect(panel.getByTestId("workers-panel-title")).toHaveText("Workers in billing-api");
   const needs = panel.getByTestId("workers-group-needs");
   await expect(needs).toHaveAttribute("data-count", String(billingShare));
   await expect(needs.getByTestId("workers-panel-row")).toHaveAttribute(
     "data-thread-id",
     made.asking,
   );
-  await expect(panel.getByTestId("workers-needs-elsewhere")).toHaveText(
-    `${total - billingShare} more needs you elsewhere · Open Inbox`,
-  );
 
-  // The Inbox lists the whole count; its link from the panel opens it.
-  await panel.getByTestId("workers-needs-elsewhere").click();
+  // The Inbox lists the whole count; the needs-you pill opens it.
+  await page.getByTestId("overview-needs-you").click();
   const inbox = page.getByTestId("inbox");
   await expect(inbox).toBeVisible();
   await expect(inbox.getByTestId("inbox-count")).toHaveText(`${total} need you`);
@@ -148,8 +140,8 @@ test("a worker spawned and not yet begun reads Starting everywhere, never Stoppe
   const listed = panel
     .getByTestId("workers-group-running")
     .locator(`[data-testid="workers-panel-row"][data-thread-id="${made.briefed}"]`);
-  await expect(listed).toHaveAttribute("data-dot", "working");
-  await expect(listed).toHaveAttribute("title", /\nStarting…$/);
+  await expect(listed).toHaveAttribute("data-tone", "working");
+  await expect(listed.getByTestId("overview-worker-starting")).toHaveText("Starting…");
   // Both workers waiting on one shared approval are under Needs you, as the sidebar says they ask.
   for (const id of made.waiting) {
     await expect(

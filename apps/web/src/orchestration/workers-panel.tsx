@@ -1,56 +1,71 @@
 import { Menu } from "@base-ui/react/menu";
-import type { FeatureCardPr, ThreadId, WorkspaceId } from "@gram/contracts";
-import { CheckIcon, ListFilter, Search, Workflow, X } from "lucide-react";
-import { useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import type { ThreadId, WorkspaceId } from "@gram/contracts";
+import {
+  CheckIcon,
+  ChevronDown,
+  ListFilter,
+  Search,
+  Workflow,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import { create } from "zustand";
-import { useParams } from "@tanstack/react-router";
 
 import { EmptyState } from "@/components/empty-state";
-import { showInbox } from "@/inbox/inbox-store";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
+import { useWorkersWord } from "@/embed/store";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
-import { useOnDemandMachine } from "@/composer/start-machine-card";
-import { MachineMarker } from "@/thread/machine-marker";
+import { focusWhenRendered } from "@/shell/focus-regions";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { useThreadsStore } from "@/stores/threads";
 
 import { askKeysByThread } from "./ask-model";
-import { keepBeside } from "./beside-store";
+import { closePane, keepBeside, openRecordBeside, useBesideStore } from "./beside-store";
 import { useWorkspaceAsks } from "./ask-stack";
 import { useAnsweredWorkers } from "./needs-you-store";
-import { useChipsFit, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
-import { ROW_MARK, ROW_STATUS } from "./overview-section";
-import { StatusDot } from "./status-dot";
+import { useOverviewFeatures } from "./overview-sidebar";
 import { useMessageOrchestrator } from "./message-orchestrator";
 import { useFinishedWorkerPages } from "./use-finished-workers";
 import { needsYouThreads } from "./needs-you-items";
 import { useNeedsYouIn } from "./use-needs-you";
-import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
+import { useOrchestratorLedgers } from "./use-orchestration";
 import { WorkersDocs } from "./workers-docs";
-import { GroupHeading, ROW_GRID, ROW_NOTE } from "./workers-group";
+import { GroupHeading, ROW_NOTE } from "./workers-group";
 import { workersByTab } from "./workers-model";
 import {
   DONE_SHOWN,
   filteredGroups,
   filterLabel,
   FOLDED_BY_DEFAULT,
+  overviewRowOf,
+  rowsInOrder,
   STATUS_GROUPS,
   statusGroups,
   type PanelRow,
-  placementWords,
   type StatusGroup,
-  elsewhereLine,
   type StatusGroupId,
 } from "./workers-panel-model";
+import { besideKey, WorkerRow } from "./worker-row";
+import { WIDE_ROW_PARTS } from "./worker-row-wide";
 
-// The panel's Workers tab: one workspace's workers by where they stand, named in its heading,
-// Needs you first and Done folded, each group's count quiet beside its name. Calm by space, not
-// lines: no card edges, no rules, a dot, a title and an age per row. Its rows are ⌘J's, and its
-// Needs you is the needs-you selector's in this workspace (`needsYouIn`), so every count agrees
-// with the sidebar, the Board and the Inbox; what needs you elsewhere is said apart, never folded
-// into this workspace's count.
+// The right pane's Workers mode, as its list: one orchestrator's workers by where they stand, Needs
+// you first and Done folded, each group's count quiet beside its name. Its rows are the sidebar's
+// own worker row, wide (`worker-row.tsx`), so a worker reads alike in both lists. The pane's height
+// is for the workers: no workspace named, nothing from other workspaces. Its rows are ⌘J's, and
+// its Needs you is the needs-you selector's in this workspace (`needsYouIn`), so every count agrees
+// with the sidebar, the Board and the Inbox. A row opens its worker in the pane
+// (`worker-pane.tsx`); Back comes here to the same place: the groups open as they were, the scroll
+// where it was, and the keys on the worker's row.
 
 export const WORKERS_PANEL_TEST_ID = "workers-panel";
 
@@ -63,19 +78,35 @@ interface WorkersPanelState {
   readonly doneAll: boolean;
   /** The Docs section under the groups is folded. */
   readonly docsFolded: boolean;
+  /** The search, kept while a worker is open; `undefined` with the search closed. */
+  readonly query: string | undefined;
+  /** The workspace the search is in: another one's list starts without it. */
+  readonly queryFor: WorkspaceId | undefined;
+  /** Where the list was scrolled to, and the row's place in it, when a worker opened from it. */
+  readonly place: { readonly scroll: number; readonly index: number } | undefined;
+  /** Back asked for the list's place: its scroll, and the keys on the worker's row. */
+  readonly restore: boolean;
+  /** Something asked for the keys in the list (the sidebar's "N in Workers"). */
+  readonly focus: boolean;
   toggleDocs: () => void;
   toggle: (id: StatusGroupId) => void;
   setShown: (id: StatusGroupId, on: boolean) => void;
   showAll: () => void;
   setDoneAll: (all: boolean) => void;
+  setQuery: (workspaceId: WorkspaceId, query: string | undefined) => void;
 }
 
-/** The tab's folds and filter, kept while the panel switches tabs or threads. */
+/** The list's folds, filter, search and place, kept while the pane shows a worker or a tab. */
 export const useWorkersPanelStore = create<WorkersPanelState>()((set) => ({
   toggled: new Set(),
   shown: new Set(),
   doneAll: false,
   docsFolded: false,
+  query: undefined,
+  queryFor: undefined,
+  place: undefined,
+  restore: false,
+  focus: false,
   toggleDocs: () => set((s) => ({ docsFolded: !s.docsFolded })),
   toggle: (id) =>
     set((s) => {
@@ -93,27 +124,20 @@ export const useWorkersPanelStore = create<WorkersPanelState>()((set) => ({
     }),
   showAll: () => set({ shown: new Set() }),
   setDoneAll: (doneAll) => set({ doneAll }),
+  setQuery: (workspaceId, query) => set({ query, queryFor: workspaceId }),
 }));
+
+/** Asks the list for the keys: on the current row, else the first; it takes them once drawn. */
+export const focusWorkersList = () => useWorkersPanelStore.setState({ focus: true });
 
 const folded = (toggled: ReadonlySet<StatusGroupId>, id: StatusGroupId): boolean =>
   FOLDED_BY_DEFAULT.includes(id) !== toggled.has(id);
 
 /**
- * Opens a worker from the panel: a live one in the Thread tab, beside its orchestrator's chat, and
- * one that opens in the main view only (`mainOnly`), or any with ⌘/Ctrl, in the main view. The one
- * place that choice is made.
+ * A workspace's workers by group, the ⌘J rows' facts, and which ask each waits on: what the list,
+ * the switcher and ↑ ↓ all read, so they agree on what each worker is and where it stands.
  */
-function useOpenWorker(): (row: PanelRow, event: Pick<MouseEvent, "metaKey" | "ctrlKey">) => void {
-  const openThread = useOpenThread();
-  return (row, event) => {
-    const full = row.mainOnly || event.metaKey || event.ctrlKey;
-    if (!full && keepBeside(row.threadId, openThread)) return;
-    openThread(row.threadId);
-  };
-}
-
-/** The Workers tab for the workspace the open thread is in. */
-export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
+export function useWorkerGroups(workspaceId: WorkspaceId, query = "") {
   const byId = useThreadsStore((s) => s.byId);
   const statusDetail = useThreadsStore((s) => s.statusDetail);
   const ids = useMemo(() => [workspaceId], [workspaceId]);
@@ -123,45 +147,137 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
   const now = useNow(true, undefined, 60_000);
   // Who an ask in the stack is from, so a row's dot takes the tone every other view gives it.
   const asks = useWorkspaceAsks();
-  const asking = useMemo(
-    () =>
-      new Set(askKeysByThread(asks.find((w) => w.workspaceId === workspaceId)?.asks ?? []).keys()),
+  const askKeys = useMemo(
+    () => askKeysByThread(asks.find((w) => w.workspaceId === workspaceId)?.asks ?? []),
     [asks, workspaceId],
   );
+  const asking = useMemo(() => new Set(askKeys.keys()), [askKeys]);
   const answered = useAnsweredWorkers();
-  const name = useWorkspaces().find((state) => state.workspace.id === workspaceId)?.workspace.name;
-  // What needs you here, by the one selector the workspace's badge counts by, and elsewhere.
+  // What needs you here, by the one selector the workspace's badge counts by.
   const needs = useNeedsYouIn({ workspaceId });
   const needing = useMemo(() => needsYouThreads(needs.here), [needs.here]);
   const tabs = useMemo(
     () => workersByTab(ledger, { byId, statusDetail, now, asking, answered }, finished),
     [ledger, byId, statusDetail, now, asking, answered, finished],
   );
-  const [query, setQuery] = useState<string | undefined>(undefined);
+  const groups = useMemo(
+    () => statusGroups(tabs, byId, now, needing, query),
+    [tabs, byId, now, needing, query],
+  );
+  return { groups, askKeys };
+}
+
+/** The sidebar's facts of each worker it lists, by thread, which the pane's rows draw from. */
+function useCardRows(workspaceId: WorkspaceId) {
+  const features = useOverviewFeatures(workspaceId);
+  return useMemo(
+    () =>
+      new Map(
+        features.flatMap((feature) =>
+          feature.rows.map(
+            (row) =>
+              [row.threadId, { row, feature: feature.feature, at: feature.updatedAt }] as const,
+          ),
+        ),
+      ),
+    [features],
+  );
+}
+
+/**
+ * Opens a worker from the list in the pane, beside its orchestrator's chat, the keys staying in
+ * the pane; a finished one whose worktree was cleaned up as its record. A solo thread, or any with
+ * ⌘/Ctrl, opens in the main view. The one place that choice is made.
+ */
+export function useOpenWorker(): (
+  row: PanelRow,
+  event: Pick<MouseEvent, "metaKey" | "ctrlKey">,
+) => void {
+  const openThread = useOpenThread();
+  return (row, event) => {
+    const full = besideKey(event) || row.source.solo === true;
+    if (full) return openThread(row.threadId);
+    if (row.source.cleanedUp === true) return openRecordBeside(row.threadId);
+    if (!keepBeside(row.threadId, openThread, { keepFocus: true })) openThread(row.threadId);
+  };
+}
+
+/** One of the orchestrator's own views, which its menu in the list's head opens in the pane. */
+export interface OrchestratorView {
+  readonly value: string;
+  readonly label: string;
+  readonly icon: LucideIcon;
+}
+
+/**
+ * The Workers list for the workspace the open thread is in. `orchestrator` is the orchestrator's
+ * own views, for the menu in its head; left out (a phone's strip, or an app that offers the pane
+ * for workers alone) there is none. `closable` puts ✕ in its head, the pane's own close.
+ */
+export function WorkersPanel({
+  workspaceId,
+  orchestrator,
+  closable = false,
+}: {
+  workspaceId: WorkspaceId;
+  orchestrator?:
+    | { readonly views: readonly OrchestratorView[]; readonly onPick: (value: string) => void }
+    | undefined;
+  closable?: boolean;
+}) {
+  const storedQuery = useWorkersPanelStore((s) => s.query);
+  const queryFor = useWorkersPanelStore((s) => s.queryFor);
+  const setQuery = useWorkersPanelStore((s) => s.setQuery);
+  const query = queryFor === workspaceId ? storedQuery : undefined;
+  const { groups: all, askKeys } = useWorkerGroups(workspaceId, query ?? "");
   const shown = useWorkersPanelStore((s) => s.shown);
-  const all = statusGroups(tabs, byId, now, needing, query ?? "");
   const groups = filteredGroups(all, shown);
+  const cards = useCardRows(workspaceId);
   const searching = query !== undefined && query.trim() !== "";
   const matches = groups.some((group) => group.rows.length > 0);
   // No worker at all, in any group: one empty state, not five groups that each say so.
   const none = !searching && all.every((group) => group.rows.length === 0);
   const messageOrchestrator = useMessageOrchestrator();
   const listed = groups.filter((group) => group.rows.length > 0);
-  // What needs you outside this workspace, said while Needs you is among the groups shown.
-  const elsewhere =
-    !searching && groups.some((group) => group.id === "needs") ? needs.elsewhere.length : 0;
   const docsFolded = useWorkersPanelStore((s) => s.docsFolded);
   const toggleDocs = useWorkersPanelStore((s) => s.toggleDocs);
+  const word = useWorkersWord();
+  const current = useBesideStore((s) => s.current);
+  const scroller = useRef<HTMLDivElement>(null);
+  const openWorker = useOpenWorker();
+  // How many are on now, and how many are done, beside the list's name.
+  const doneCount = all.find((group) => group.id === "done")?.rows.length ?? 0;
+  const liveCount = all.reduce((sum, group) => sum + group.rows.length, 0) - doneCount;
+  usePlaceKept(scroller, all, current);
+
+  const open = (row: PanelRow, event: Pick<MouseEvent, "metaKey" | "ctrlKey">) => {
+    // Its place, which Back puts back.
+    const rows = [...(scroller.current?.querySelectorAll<HTMLElement>(LIST_ROWS) ?? [])];
+    const index = rows.findIndex((each) => each.dataset.threadId === row.threadId);
+    useWorkersPanelStore.setState({
+      place: { scroll: scroller.current?.scrollTop ?? 0, index: Math.max(index, 0) },
+    });
+    openWorker(row, event);
+  };
 
   return (
     <div
       data-testid={WORKERS_PANEL_TEST_ID}
       className="flex min-h-0 flex-1 flex-col"
-      aria-label={name === undefined ? "Workers" : `Workers in ${name}`}
+      aria-label={word}
       role="region"
     >
-      <Header query={query} onQuery={setQuery} workspace={name} />
+      <Header
+        word={word}
+        counts={none ? undefined : { live: liveCount, done: doneCount }}
+        query={query}
+        onQuery={(next) => setQuery(workspaceId, next)}
+        orchestrator={orchestrator}
+        closable={closable}
+      />
       <div
+        ref={scroller}
+        data-testid="workers-panel-list"
         onKeyDown={rowKeys}
         className="flex min-h-0 flex-1 flex-col gap-section overflow-y-auto px-section pt-inset pb-section"
       >
@@ -169,7 +285,7 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
           <EmptyState
             testId="workers-empty"
             icon={Workflow}
-            title="No workers yet"
+            title={`No ${word.toLowerCase()} yet`}
             line="The orchestrator briefs a worker for each piece of a task; each shows here by where it stands."
             action={{
               label: "Message the orchestrator",
@@ -182,21 +298,32 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
           </p>
         ) : (
           <>
-            {/* With nothing asking here, what asks elsewhere is one line, under no empty group. */}
-            {elsewhere > 0 && !listed.some((group) => group.id === "needs") && (
-              <ElsewhereLine elsewhere={elsewhere} here={0} />
-            )}
             {/* Only the groups that hold something: "Stopped 0" said nothing. */}
             {listed.map((group) => (
               <Group
                 key={group.id}
                 group={group}
                 open={searching}
-                elsewhere={group.id === "needs" ? elsewhere : 0}
+                render={(row) => {
+                  const card = cards.get(row.threadId);
+                  const done = row.source.tab === "done";
+                  return (
+                    <WorkerRow
+                      key={row.threadId}
+                      row={card?.row ?? overviewRowOf(row, askKeys.get(row.threadId))}
+                      feature={card?.feature ?? row.source.feature}
+                      updatedAt={card?.at ?? row.atMs ?? 0}
+                      wide={WIDE_ROW_PARTS}
+                      current={current === row.threadId}
+                      onOpen={(event) => open(row, event)}
+                      {...(done ? { at: row.atMs, mark: row.dot } : {})}
+                    />
+                  );
+                }}
               />
             ))}
-            {/* A filter that picks only empty groups still says why the tab is bare. */}
-            {listed.length === 0 && elsewhere === 0 && (
+            {/* A filter that picks only empty groups still says why the list is bare. */}
+            {listed.length === 0 && (
               <p
                 role="status"
                 data-testid="workers-filter-empty"
@@ -216,18 +343,78 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
   );
 }
 
+/** The list's worker rows, in the order drawn. */
+const LIST_ROWS = '[data-testid="workers-panel-row"]';
+
 /**
- * "Workers in <workspace>", then search and the filter: two glyphs, each named on hover. The
- * workspace is named so every count under it reads as this workspace's, not the window's.
+ * Puts the list back where it was when a worker opened from it, once Back asks (`restore`): the
+ * worker's group unfolded (and Done's rest shown) if it moved out of sight, the scroll where it
+ * was, and the keys on its row, else the row nearest its place, else the list's first control.
+ * Takes the keys too when asked (`focus`), on the current row or the first.
+ */
+function usePlaceKept(
+  scroller: React.RefObject<HTMLDivElement | null>,
+  groups: readonly StatusGroup[],
+  current: ThreadId | undefined,
+) {
+  const restore = useWorkersPanelStore((s) => s.restore);
+  const focus = useWorkersPanelStore((s) => s.focus);
+  // Reveal first: the row has to be drawn before it can take the keys.
+  useLayoutEffect(() => {
+    if (!restore || current === undefined) return;
+    const group = groups.find((each) => each.rows.some((row) => row.threadId === current));
+    if (group === undefined) return;
+    const store = useWorkersPanelStore.getState();
+    if (folded(store.toggled, group.id)) store.toggle(group.id);
+    if (group.id === "done" && !store.doneAll) {
+      const at = group.rows.findIndex((row) => row.threadId === current);
+      if (at >= DONE_SHOWN) store.setDoneAll(true);
+    }
+  }, [restore, current, groups]);
+  useEffect(() => {
+    if (!restore && !focus) return;
+    const { place } = useWorkersPanelStore.getState();
+    useWorkersPanelStore.setState({ restore: false, focus: false });
+    const box = scroller.current;
+    if (box === null) return;
+    if (restore && place !== undefined) box.scrollTo({ top: place.scroll });
+    const rows = () =>
+      [...box.querySelectorAll<HTMLElement>(LIST_ROWS)].filter(
+        (row) => row.closest("[hidden]") === null,
+      );
+    void focusWhenRendered(() => {
+      const all = rows();
+      const own = all.find((row) => row.dataset.threadId === current);
+      if (own !== undefined) return own;
+      if (all.length > 0) return all[Math.min(restore ? (place?.index ?? 0) : 0, all.length - 1)]!;
+      return box.querySelector<HTMLElement>("button");
+    }, 30).then(() => {
+      // In view, without moving a list already showing it.
+      (document.activeElement as HTMLElement | null)?.scrollIntoView?.({ block: "nearest" });
+    });
+  }, [restore, focus, scroller, current]);
+}
+
+/**
+ * The list's head: its name and counts ("Workers 4 · 6 done"), then search, the filter, the
+ * orchestrator's own views and ✕. Nothing about the workspace: the chat beside it says that.
  */
 function Header({
+  word,
+  counts,
   query,
   onQuery,
-  workspace,
+  orchestrator,
+  closable,
 }: {
+  word: string;
+  counts: { readonly live: number; readonly done: number } | undefined;
   query: string | undefined;
   onQuery: (query: string | undefined) => void;
-  workspace: string | undefined;
+  orchestrator:
+    | { readonly views: readonly OrchestratorView[]; readonly onPick: (value: string) => void }
+    | undefined;
+  closable: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const close = () => onQuery(undefined);
@@ -242,23 +429,28 @@ function Header({
       <div className="flex items-center gap-tight">
         <h2
           data-testid="workers-panel-title"
-          title={workspace === undefined ? undefined : `Workers in ${workspace}`}
-          className="min-w-0 flex-1 truncate text-body-strong text-foreground"
+          className="flex min-w-0 flex-1 items-baseline gap-inset truncate text-body-strong text-foreground"
         >
-          Workers
-          {workspace !== undefined && (
-            <span className="font-normal text-muted-foreground"> in {workspace}</span>
+          {word}
+          {counts !== undefined && (
+            <span
+              data-testid="workers-panel-counts"
+              className="truncate font-normal text-muted-foreground tabular-nums"
+            >
+              {counts.live}
+              {counts.done > 0 && ` · ${counts.done} done`}
+            </span>
           )}
         </h2>
         <Hint
-          label={query === undefined ? "Search workers" : "Close search"}
+          label={query === undefined ? `Search ${word.toLowerCase()}` : "Close search"}
           side="bottom"
           render={
             <Button
               variant="ghost"
               size="icon-xs"
               data-testid="workers-panel-search-toggle"
-              aria-label={query === undefined ? "Search workers" : "Close search"}
+              aria-label={query === undefined ? `Search ${word.toLowerCase()}` : "Close search"}
               aria-pressed={query !== undefined}
               className="text-muted-foreground aria-pressed:bg-accent aria-pressed:text-foreground"
               onClick={() => (query === undefined ? onQuery("") : close())}
@@ -268,6 +460,27 @@ function Header({
           <Search />
         </Hint>
         <FilterMenu />
+        {orchestrator !== undefined && orchestrator.views.length > 0 && (
+          <OrchestratorMenu views={orchestrator.views} onPick={orchestrator.onPick} />
+        )}
+        {closable && (
+          <Hint
+            label="Close"
+            side="bottom"
+            render={
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                data-testid="workers-panel-close"
+                aria-label="Close"
+                className="text-muted-foreground"
+                onClick={closePane}
+              />
+            }
+          >
+            <X />
+          </Hint>
+        )}
       </div>
       {query !== undefined && (
         <div className="flex h-8 items-center gap-inset rounded-xs bg-muted px-inset">
@@ -276,8 +489,8 @@ function Header({
             ref={input}
             autoFocus
             data-testid="workers-panel-search"
-            aria-label="Search workers"
-            placeholder="Search workers…"
+            aria-label={`Search ${word.toLowerCase()}`}
+            placeholder={`Search ${word.toLowerCase()}…`}
             value={query}
             onChange={(event) => onQuery(event.target.value)}
             onKeyDown={onKeyDown}
@@ -306,6 +519,52 @@ const POPUP =
   "z-50 min-w-48 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const ITEM =
   "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[highlighted]:row-cursor";
+
+/**
+ * The orchestrator's own views (its Diff, Files, Terminal and the rest), named as its, and only in
+ * the list's head: never in a worker's, whose tools are its own.
+ */
+function OrchestratorMenu({
+  views,
+  onPick,
+}: {
+  views: readonly OrchestratorView[];
+  onPick: (value: string) => void;
+}) {
+  return (
+    <Menu.Root>
+      <Menu.Trigger
+        data-testid="workers-panel-orchestrator"
+        aria-label="The orchestrator's own views"
+        className="ml-tight flex h-7 shrink-0 items-center gap-1 rounded-xs px-1.5 text-meta text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:focus-ring data-popup-open:bg-accent data-popup-open:text-foreground"
+      >
+        Orchestrator
+        <ChevronDown aria-hidden className="size-icon-chip" />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
+          <Menu.Popup
+            data-surface="overlay"
+            data-testid="workers-panel-orchestrator-menu"
+            className={POPUP}
+          >
+            {views.map((view) => (
+              <Menu.Item
+                key={view.value}
+                data-view={view.value}
+                className={ITEM}
+                onClick={() => onPick(view.value)}
+              >
+                <view.icon aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
+                {view.label}
+              </Menu.Item>
+            ))}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+}
 
 /** Which groups show: each one checked, or every one. The glyph is on while a filter holds. */
 function FilterMenu() {
@@ -379,36 +638,17 @@ function Check() {
 }
 
 /**
- * What needs you outside this workspace (`elsewhereLine`), with the way to the Inbox that lists it
- * all: under Needs you's rows, so its count reads as this workspace's share, or alone at the top
- * when nothing here asks.
- */
-function ElsewhereLine({ elsewhere, here }: { elsewhere: number; here: number }) {
-  return (
-    <button
-      type="button"
-      data-testid="workers-needs-elsewhere"
-      onClick={() => showInbox({ ask: true })}
-      className={ROW_NOTE}
-    >
-      <span className="col-start-2">{elsewhereLine(elsewhere, here)} · Open Inbox</span>
-    </button>
-  );
-}
-
-/**
  * One group: its name and quiet count, a chevron that folds it, and its rows. A group with nothing
- * in it isn't drawn at all. `open` unfolds it whatever its fold, as a search does. `elsewhere` is
- * how much needs you outside this workspace, said under Needs you.
+ * in it isn't drawn at all. `open` unfolds it whatever its fold, as a search does.
  */
 function Group({
   group,
   open,
-  elsewhere = 0,
+  render,
 }: {
   group: StatusGroup;
   open: boolean;
-  elsewhere?: number;
+  render: (row: PanelRow) => React.ReactNode;
 }) {
   const isFolded = useWorkersPanelStore((s) => !open && folded(s.toggled, group.id));
   const toggle = useWorkersPanelStore((s) => s.toggle);
@@ -433,10 +673,8 @@ function Group({
         controls={body}
         onToggle={() => toggle(group.id)}
       />
-      <div id={body} hidden={isFolded} className="flex flex-col">
-        {rows.map((row) => (
-          <Row key={row.threadId} row={row} />
-        ))}
+      <div id={body} hidden={isFolded} className="flex flex-col gap-px">
+        {rows.map(render)}
         {capped && (
           <button
             type="button"
@@ -447,118 +685,10 @@ function Group({
             <span className="col-start-2">{count - DONE_SHOWN} more</span>
           </button>
         )}
-        {elsewhere > 0 && <ElsewhereLine elsewhere={elsewhere} here={count} />}
       </div>
     </section>
   );
 }
-
-/**
- * A worker, in the sidebar's row shape: its dot, its title on one line (cut at its end, whole on
- * hover) and its age, then one muted status line (amber while it needs you) with its PR chips at
- * the line's end while they fit beside the words. Opens it.
- */
-function Row({ row }: { row: PanelRow }) {
-  const openWorker = useOpenWorker();
-  const current = useIsCurrentThread(row.threadId);
-  const chips = useWorkerPrChips(row.threadId, NO_CARD_PRS);
-  const { line, words, ghost, fits } = useChipsFit(chips.length);
-  // The provider's choices name the options a placement's picks are by (VM, x86, L).
-  const choices = useOnDemandMachine().status?.choices?.choices;
-  const why =
-    row.placement?.why === undefined ? "" : `\nWhy ${row.placement.machine}: ${row.placement.why}`;
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        data-testid="workers-panel-row"
-        data-thread-id={row.threadId}
-        data-dot={row.dot}
-        aria-current={current ? "page" : undefined}
-        title={`${row.title}\n${row.status}${why}`}
-        onClick={(event) => openWorker(row, event)}
-        onKeyDown={(event) => {
-          // ⌘⏎ opens it in the main view, as ⌘-click does; ⏎ alone is the row's click.
-          if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
-          event.preventDefault();
-          openWorker(row, event);
-        }}
-        className={cn(
-          ROW_GRID,
-          "items-start rounded-xs py-1.5 text-left text-body outline-none hover:bg-accent focus-visible:focus-ring aria-current:choice-selected",
-        )}
-      >
-        <span className={ROW_MARK}>
-          <StatusDot state={row.dot} />
-        </span>
-        <span className="min-w-0 truncate text-foreground">{row.title}</span>
-        <span
-          data-testid="workers-panel-age"
-          title={row.at}
-          className="flex h-lh items-center text-meta text-muted-foreground tabular-nums"
-        >
-          {row.age}
-        </span>
-        <span ref={line} className={cn(ROW_STATUS, "flex-wrap content-start overflow-hidden")}>
-          <span
-            ref={words}
-            data-testid="workers-panel-status"
-            className={cn(
-              "min-w-0 flex-[0_1_auto] truncate",
-              row.dot === "needs" && "text-status-needs",
-            )}
-          >
-            {row.line}
-          </span>
-          {/* The other machine it runs on, named after its status; its hover says its state. */}
-          {(row.hostId !== undefined || row.sent !== undefined) && (
-            <>
-              <span aria-hidden className="shrink-0">
-                ·
-              </span>
-              <MachineMarker
-                hostId={row.hostId}
-                sent={row.sent}
-                hover="title"
-                testId="workers-panel-machine"
-              />
-            </>
-          )}
-          {row.placement !== undefined && (
-            <span
-              data-testid="workers-panel-placement"
-              className="shrink-0 text-meta text-muted-foreground"
-            >
-              {placementWords(row.placement, choices)}
-            </span>
-          )}
-          <WorkerPrChips
-            threadId={row.threadId}
-            cardPrs={NO_CARD_PRS}
-            chips={chips}
-            dense
-            ghost
-            ghostRef={ghost}
-            className="ml-auto"
-          />
-        </span>
-      </button>
-      {/* The chips sit over the status line, outside the row's button: each is a button of its own. */}
-      {fits && (
-        <WorkerPrChips
-          threadId={row.threadId}
-          cardPrs={NO_CARD_PRS}
-          chips={chips}
-          dense
-          className="absolute right-1.5 bottom-1.5"
-        />
-      )}
-    </div>
-  );
-}
-
-/** The panel's rows have no feature card: their chips come from the thread and the ledger. */
-const NO_CARD_PRS: readonly FeatureCardPr[] = [];
 
 /** The rows the arrow keys move through: the workers, then the docs under them. */
 const KEYED_ROWS = '[data-testid="workers-panel-row"], [data-testid="doc-row"]';
@@ -589,10 +719,8 @@ function rowKeys(event: KeyboardEvent<HTMLElement>) {
   rows[next]?.focus();
 }
 
-/**
- * Whether `threadId` is open in the main view, which its row marks as the current place. Only this
- * row's answer: a move to another thread re-renders the two rows it changes, not all.
- */
-function useIsCurrentThread(threadId: ThreadId): boolean {
-  return useParams({ strict: false, select: (params) => params.threadId === threadId });
+/** Every worker in the list's order, for ↑ ↓ and the switcher: the groups' rows, all of Done. */
+export function useWorkerOrder(workspaceId: WorkspaceId) {
+  const { groups, askKeys } = useWorkerGroups(workspaceId);
+  return { groups, order: rowsInOrder(groups), askKeys };
 }

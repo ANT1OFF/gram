@@ -1,0 +1,1445 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Worker pane directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      /* ---------- The window: sidebar (or rail), the orchestrator's chat, the right pane ---------- */
+      .w {
+        display: grid;
+        grid-template-columns: 248px minmax(0, 1fr) var(--pane, 500px);
+        height: 100%;
+        min-height: inherit;
+        background: var(--surface-2);
+        color: var(--fg);
+        font-family: var(--font-ui);
+        font-size: 14px;
+        line-height: 20px;
+      }
+      .w.narrow {
+        grid-template-columns: 52px minmax(0, 1fr) var(--pane, 420px);
+      }
+      .w.closed {
+        grid-template-columns: 248px minmax(0, 1fr);
+      }
+      .w.split {
+        --pane: 780px;
+      }
+      .icon {
+        width: 16px;
+        height: 16px;
+      }
+
+      /* Sidebar */
+      .sb {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 8px;
+        background: var(--surface-1);
+        border-right: 1px solid var(--border-subtle);
+        min-width: 0;
+        overflow: hidden;
+      }
+      .sb-top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 28px;
+        color: var(--fg-muted);
+        font-size: 13px;
+        padding: 0 4px;
+      }
+      .sb-top .push {
+        margin-left: auto;
+        color: var(--fg);
+      }
+      .pill {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 30px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border-strong);
+        font-size: 13px;
+      }
+      .pill b {
+        font-weight: 400;
+        color: var(--status-needs);
+      }
+      .sb-search {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 6px;
+        height: 28px;
+        color: var(--fg-muted);
+      }
+      .sb-h {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        height: 26px;
+        padding: 0 6px;
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .sb-h .icon {
+        width: 12px;
+        height: 12px;
+      }
+      .sb-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+      .sb-ws {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        min-height: 32px;
+        padding: 0 6px;
+        border-radius: var(--radius-sm);
+      }
+      .sb-ws.on {
+        background: var(--surface-hover);
+      }
+      .sb-ws .t {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .sb-ws .e {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--fg-muted);
+        white-space: nowrap;
+      }
+      .sb-ws .e .icon {
+        width: 12px;
+        height: 12px;
+      }
+      .sb-ws .e .n {
+        min-width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        border: 1px solid var(--border-strong);
+        color: var(--status-needs);
+        font-size: 11px;
+        line-height: 16px;
+        text-align: center;
+      }
+      .sb-kids {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        margin: 0 0 4px 12px;
+        padding-left: 6px;
+        border-left: 1px solid var(--border-subtle);
+      }
+      .sb-solo {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        min-height: 30px;
+        padding: 0 6px;
+        font-size: 14px;
+      }
+      .sb-solo .t {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .sb-solo .a {
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .sb-hand {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0 0 4px 30px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .sb-hand .icon {
+        width: 12px;
+        height: 12px;
+      }
+
+      /* The rail, narrow */
+      .rail {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 0;
+        background: var(--surface-1);
+        border-right: 1px solid var(--border-subtle);
+        color: var(--fg-muted);
+      }
+      .rail .mono {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: var(--radius-sm);
+        font-size: 13px;
+        font-family: var(--font-ui);
+        color: var(--fg);
+      }
+      .rail .mono.on {
+        background: var(--surface-hover);
+      }
+
+      /* The orchestrator's chat */
+      .chat {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        background: var(--surface-2);
+      }
+      .cbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 40px;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--border-subtle);
+        font-size: 13px;
+        color: var(--fg-muted);
+        flex-shrink: 0;
+      }
+      .cbar strong {
+        color: var(--fg);
+        font-weight: 500;
+      }
+      .cbar .seg {
+        display: inline-flex;
+        gap: 2px;
+      }
+      .cbar .seg span {
+        padding: 2px 8px;
+        border-radius: var(--radius-sm);
+      }
+      .cbar .seg span.on {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .cbar .push {
+        margin-left: auto;
+      }
+      .tx {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 20px 28px;
+        overflow: hidden;
+        max-width: 760px;
+        margin: 0 auto;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .tx p {
+        margin: 0;
+      }
+      .tx .fold {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .tx .fold .icon {
+        width: 12px;
+        height: 12px;
+      }
+      .tx .me {
+        align-self: flex-end;
+        background: var(--surface-3);
+        padding: 8px 14px;
+        border-radius: var(--radius-lg);
+      }
+      .tx .new {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--accent-text);
+        font-size: 13px;
+      }
+      .tx .new::after {
+        content: "";
+        flex: 1;
+        border-top: 1px solid var(--accent);
+      }
+      .lnk {
+        color: var(--accent-text);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .lnk .icon {
+        width: 13px;
+        height: 13px;
+        vertical-align: -2px;
+        margin-right: 2px;
+      }
+      .lnk.merged .icon {
+        color: var(--merged);
+      }
+      .comp {
+        margin: 0 20px 14px;
+        min-height: 88px;
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-3);
+        color: var(--fg-subtle);
+        padding: 12px 16px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        flex-shrink: 0;
+      }
+      .comp .m {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+
+      /* ---------- The right pane ---------- */
+      .pane {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+        background: var(--surface-1);
+        border-left: 1px solid var(--border-subtle);
+        overflow: hidden;
+      }
+      .ph {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 44px;
+        padding: 0 8px 0 12px;
+        border-bottom: 1px solid var(--border-subtle);
+        flex-shrink: 0;
+        min-width: 0;
+      }
+      .ph .crumb {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        flex: 1;
+        font-size: 14px;
+      }
+      .ph .crumb a,
+      .ph .crumb button.root {
+        color: var(--fg-muted);
+        text-decoration: none;
+        background: none;
+        border: 0;
+        padding: 2px 4px;
+        border-radius: var(--radius-sm);
+        font: inherit;
+        white-space: nowrap;
+      }
+      .ph .crumb a:hover {
+        color: var(--fg);
+        background: var(--surface-hover);
+      }
+      .ph .crumb .sep {
+        color: var(--fg-subtle);
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+      }
+      .ph .crumb .here {
+        font-weight: 500;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      .ph .crumb .n {
+        color: var(--fg-muted);
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+      }
+      .ph .crumb .menu-caret {
+        width: 12px;
+        height: 12px;
+        color: var(--fg-muted);
+        flex-shrink: 0;
+      }
+      .tool {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        min-width: 28px;
+        height: 28px;
+        padding: 0 4px;
+        border-radius: var(--radius-sm);
+        color: var(--fg-muted);
+        background: none;
+        border: 0;
+        font: inherit;
+        font-size: 13px;
+        flex-shrink: 0;
+      }
+      .tool:hover {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .tool.back {
+        color: var(--fg);
+      }
+      .vr {
+        width: 1px;
+        height: 16px;
+        background: var(--border-subtle);
+        margin: 0 4px;
+        flex-shrink: 0;
+      }
+      kbd.k {
+        font-family: var(--font-ui);
+        font-size: 11px;
+        color: var(--fg-subtle);
+        border: 1px solid var(--border-subtle);
+        border-radius: 4px;
+        padding: 0 4px;
+        line-height: 16px;
+      }
+
+      /* The panel's tab strip (B, and today's look) */
+      .tabs2 {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        height: 44px;
+        padding: 0 8px;
+        border-bottom: 1px solid var(--border-subtle);
+        flex-shrink: 0;
+        min-width: 0;
+        overflow: hidden;
+      }
+      .tb {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 8px;
+        border-radius: var(--radius-sm);
+        color: var(--fg-muted);
+        font-size: 13px;
+        white-space: nowrap;
+        min-width: 0;
+        border: 0;
+        background: none;
+        font-family: inherit;
+      }
+      .tb .t {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 150px;
+      }
+      .tb[aria-selected="true"] {
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .tb .x {
+        width: 12px;
+        height: 12px;
+        color: var(--fg-subtle);
+      }
+      .tb .n {
+        font-variant-numeric: tabular-nums;
+        color: var(--fg-muted);
+      }
+      .tabs2 .push {
+        margin-left: auto;
+      }
+
+      /* The open worker: status line, its tools, its content */
+      .ws {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 32px;
+        padding: 4px 16px;
+        font-size: 13px;
+        color: var(--fg-muted);
+        flex-shrink: 0;
+        flex-wrap: wrap;
+      }
+      .ws .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .wt {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 0 12px 8px;
+        border-bottom: 1px solid var(--border-subtle);
+        flex-shrink: 0;
+        overflow: hidden;
+      }
+      .wt .tb {
+        height: 26px;
+      }
+      .narrow .wt .tb .icon {
+        display: none;
+      }
+      .wt .tb .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .wbody {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px;
+        background: var(--surface-2);
+      }
+      .wbody p {
+        margin: 0;
+      }
+      .wbody ul {
+        margin: 0;
+        padding-left: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .code {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        background: var(--surface-3);
+        border-radius: 4px;
+        padding: 0 4px;
+      }
+      .files {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 8px 12px;
+        font-size: 13px;
+      }
+      .files .push {
+        margin-left: auto;
+      }
+      .plus {
+        color: var(--success-text);
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+      .minus {
+        color: var(--danger-text);
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+      .wbody .me {
+        align-self: flex-end;
+        background: var(--surface-3);
+        padding: 8px 14px;
+        border-radius: var(--radius-lg);
+      }
+      .prbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 6px 10px;
+        font-size: 13px;
+        color: var(--fg-muted);
+        background: var(--surface-1);
+        margin: 0 12px;
+        flex-shrink: 0;
+      }
+      .prbar .mono {
+        color: var(--fg);
+      }
+      .wcomp {
+        margin: 8px 12px 12px;
+        min-height: 72px;
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-3);
+        color: var(--fg-subtle);
+        padding: 10px 14px;
+        flex-shrink: 0;
+      }
+      .difflist {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        background: var(--surface-1);
+      }
+      .difflist .f {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        border-top: 1px solid var(--border-subtle);
+      }
+      .difflist .f:first-child {
+        border-top: 0;
+      }
+      .difflist .f .p {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .hunk {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 18px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        background: var(--surface-1);
+        padding: 6px 0;
+        overflow: hidden;
+      }
+      .hunk div {
+        padding: 0 12px;
+        white-space: pre;
+      }
+      .hunk .a {
+        background: color-mix(in oklab, var(--success) 14%, transparent);
+      }
+      .hunk .h {
+        color: var(--fg-muted);
+      }
+
+      /* ---------- The worker list: groups and the sidebar's row, wide ---------- */
+      .list-body {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 10px 10px 16px;
+      }
+      .grp {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .grp-h {
+        display: grid;
+        grid-template-columns: 12px minmax(0, 1fr);
+        gap: 8px;
+        align-items: center;
+        height: 28px;
+        padding: 0 6px;
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .grp-h .icon {
+        width: 12px;
+        height: 12px;
+      }
+      .grp-h b {
+        font-weight: 500;
+        color: var(--fg);
+        margin-right: 6px;
+      }
+      .grp-h.folded .icon {
+        transform: rotate(-90deg);
+      }
+
+      /* A row: the sidebar's WorkerRow. Its mark (a dot, a bar once it has a second line), its title,
+         its agent's mark and its age; then its status line; then what it carries: chips, plan, thumbs. */
+      .r {
+        display: flex;
+        gap: 8px;
+        padding: 7px 8px;
+        border-radius: var(--radius-sm);
+        text-align: left;
+        background: none;
+        border: 0;
+        font: inherit;
+        color: inherit;
+        width: 100%;
+      }
+      .r:hover {
+        background: var(--surface-hover);
+      }
+      .r.cur {
+        background: color-mix(in oklab, var(--accent) 12%, var(--surface-1));
+        box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 40%, transparent);
+      }
+      .r .mk {
+        width: 12px;
+        flex-shrink: 0;
+        display: flex;
+        justify-content: center;
+        padding: 3px 0;
+      }
+      .r .bd {
+        flex: 1;
+        min-width: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 8px;
+        row-gap: 3px;
+      }
+      .r .t {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      .r .edge {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--fg-muted);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .r .edge .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .r .line {
+        grid-column: 1 / 3;
+        font-size: 13px;
+        color: var(--fg-muted);
+        min-width: 0;
+      }
+      .r .line.needs {
+        color: var(--status-needs);
+      }
+      .r .line.one {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .r .carry {
+        grid-column: 1 / 3;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px 10px;
+        font-size: 12px;
+        color: var(--fg-muted);
+        min-width: 0;
+      }
+      .r .thumbs {
+        grid-column: 1 / 3;
+        display: flex;
+        gap: 8px;
+        padding-top: 4px;
+      }
+      .thumb {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        width: 132px;
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .thumb .pic {
+        height: 72px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-subtle);
+        background: var(--surface-3);
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        box-sizing: border-box;
+      }
+      .thumb .pic i {
+        display: block;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border-strong);
+      }
+      .thumb .pic i.s {
+        width: 55%;
+      }
+      .thumb .pic i.m {
+        width: 80%;
+      }
+      .thumb .pic i.b {
+        height: 18px;
+        width: 100%;
+        background: var(--surface-hover);
+      }
+      .thumb span {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
+      /* The dots: StatusDot's states. A row with more than its title takes a bar. */
+      .d {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        box-sizing: border-box;
+      }
+      .d.needs {
+        background: var(--status-needs-mark);
+      }
+      .d.run {
+        background: var(--status-working);
+      }
+      .d.wait {
+        border: 1.5px solid var(--status-working);
+      }
+      .d.idle {
+        background: var(--status-idle);
+      }
+      .d.done {
+        background: var(--merged);
+      }
+      .d.bar {
+        width: 3px;
+        height: auto;
+        min-height: 14px;
+        align-self: stretch;
+        border-radius: 2px;
+      }
+      .d.bar.wait {
+        width: 4px;
+        border-width: 1.5px;
+      }
+      .r .mk .d:not(.bar) {
+        margin-top: 0;
+      }
+
+      /* Chips: a PR (muted, colour on its glyph), the plan's progress (grey, the step in the accent). */
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 999px;
+        border: 1px solid var(--border-subtle);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--fg-muted);
+        white-space: nowrap;
+      }
+      .chip .icon {
+        width: 12px;
+        height: 12px;
+      }
+      .chip .ring {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        border: 1.5px solid var(--status-working);
+        box-sizing: border-box;
+      }
+      .chip.merged .icon {
+        color: var(--merged);
+      }
+      .chip.open .icon {
+        color: var(--success);
+      }
+      .plan {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+      }
+      .plan .steps {
+        display: inline-flex;
+        gap: 2px;
+      }
+      .plan .steps i {
+        width: 10px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border-strong);
+      }
+      .plan .steps i.at {
+        background: var(--accent);
+      }
+      .agent {
+        display: inline-flex;
+        color: var(--fg-muted);
+      }
+      .agent .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .more-row {
+        padding: 4px 8px 4px 28px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .done-r {
+        display: grid;
+        grid-template-columns: 12px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        padding: 5px 8px;
+        font-size: 14px;
+      }
+      .done-r .t {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        color: var(--fg-muted);
+      }
+
+      /* C: list and worker side by side in a wide pane */
+      .split-body {
+        flex: 1;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 300px minmax(0, 1fr);
+      }
+      .split-body > .col {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        min-width: 0;
+      }
+      .split-body > .col + .col {
+        border-left: 1px solid var(--border-subtle);
+      }
+      .menu-pop {
+        position: absolute;
+        top: 40px;
+        left: 40px;
+        width: 340px;
+        z-index: 3;
+        background: var(--surface-3);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        box-shadow: 0 12px 32px color-mix(in oklab, black 25%, transparent);
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-size: 13px;
+      }
+      .menu-pop .mi {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 8px;
+        border-radius: var(--radius-sm);
+        color: var(--fg);
+      }
+      .menu-pop .mi.on {
+        background: var(--surface-hover);
+      }
+      .menu-pop .mi .x {
+        margin-left: auto;
+        color: var(--fg-muted);
+      }
+      .menu-pop .lbl {
+        padding: 6px 8px 2px;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .pane-wrap {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        min-width: 0;
+      }
+
+      /* Rows parity board */
+      .par {
+        display: grid;
+        grid-template-columns: 260px 400px 520px;
+        gap: 24px;
+        padding: 24px;
+        background: var(--surface-2);
+        color: var(--fg);
+        font-family: var(--font-ui);
+        font-size: 14px;
+        line-height: 20px;
+        height: 100%;
+        box-sizing: border-box;
+        align-items: start;
+      }
+      .par h3 {
+        margin: 0 0 4px;
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .par .cap {
+        font-size: 12px;
+        color: var(--fg-muted);
+        margin: 0 0 10px;
+      }
+      .par .box {
+        background: var(--surface-1);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 8px;
+      }
+      .old-r {
+        display: grid;
+        grid-template-columns: 12px minmax(0, 1fr) auto;
+        column-gap: 8px;
+        padding: 6px;
+      }
+      .old-r .t {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .old-r .s {
+        grid-column: 2 / 4;
+        display: flex;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--fg-muted);
+        align-items: center;
+      }
+      .old-r .s .wd {
+        flex: 1;
+      }
+      .old-r .a {
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .old-r .mk {
+        display: flex;
+        justify-content: center;
+        padding: 3px 0;
+        grid-row: 1 / 3;
+      }
+      .old-r .mk:has(.d:not(.bar)) {
+        grid-row: 1;
+        padding-top: 6px;
+      }
+      .callouts {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .callouts ul {
+        margin: 0;
+        padding-left: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        The orchestrator stays in the main pane; its workers live in the right pane. Three ways to
+        hold the list, the open worker and its tools there. Every direction uses the sidebar's
+        worker row, widened, and gives the pane's height to the workers only. Synthetic workers from
+        the realistic mock scenario. Each board has states: click them in its strip. Pick one by
+        name.
+      </p>
+
+      <!-- Rows -->
+      <section class="board" data-name="Rows" data-size="1280x760">
+        <div class="board-frame"><div data-render="parity"></div></div>
+      </section>
+
+      <!-- A -->
+      <section
+        class="board"
+        data-name="A Navigator"
+        data-size="1440x900"
+        data-states="list,worker,changes"
+      >
+        <div class="board-frame"><div data-render="A" data-size="desktop"></div></div>
+      </section>
+      <section
+        class="board"
+        data-name="A Navigator narrow"
+        data-size="1024x768"
+        data-states="list,worker"
+      >
+        <div class="board-frame"><div data-render="A" data-size="narrow"></div></div>
+      </section>
+
+      <!-- B -->
+      <section
+        class="board"
+        data-name="B Tabs"
+        data-size="1440x900"
+        data-states="list,worker,changes"
+      >
+        <div class="board-frame"><div data-render="B" data-size="desktop"></div></div>
+      </section>
+      <section
+        class="board"
+        data-name="B Tabs narrow"
+        data-size="1024x768"
+        data-states="list,worker"
+      >
+        <div class="board-frame"><div data-render="B" data-size="narrow"></div></div>
+      </section>
+
+      <!-- C -->
+      <section
+        class="board"
+        data-name="C Split"
+        data-size="1440x900"
+        data-states="split,switcher,pane-closed"
+      >
+        <div class="board-frame"><div data-render="C" data-size="desktop"></div></div>
+      </section>
+      <section
+        class="board"
+        data-name="C Split narrow"
+        data-size="1024x768"
+        data-states="list,worker"
+      >
+        <div class="board-frame"><div data-render="C" data-size="narrow"></div></div>
+      </section>
+    </main>
+
+    <script>
+      // The mock's one set of workers: the realistic scenario's Gram workspace, with one ask added so
+      // Needs you shows. Every name is invented.
+      const WORKERS = [
+        {
+          id: "sheet",
+          title: "Keyboard shortcut sheet",
+          group: "needs",
+          dot: "needs",
+          line: "Asks you: put the sheet under Help or under Settings?",
+          agent: "Claude",
+          age: "4m",
+          plan: [2, 4],
+          thumbs: ["Shortcut sheet · A by area", "Shortcut sheet · B one list"],
+        },
+        {
+          id: "inline",
+          title: "Inline comments in the diff",
+          group: "run",
+          dot: "run",
+          line: "Running tests: bun run test apps/web/src/review",
+          short: "Running tests",
+          agent: "Claude",
+          age: "1h",
+          plan: [3, 5],
+        },
+        {
+          id: "cold",
+          title: "Faster cold start",
+          group: "run",
+          dot: "run",
+          line: "Editing apps/web/src/boot.ts: settings read moved off first paint",
+          short: "Editing code",
+          agent: "Codex",
+          age: "1h",
+          plan: [2, 4],
+        },
+        {
+          id: "search",
+          title: "Search in Settings",
+          group: "wait",
+          dot: "wait",
+          line: "Waiting on checks for #142; the review bot's two nits are fixed and pushed",
+          short: "checks",
+          agent: "Claude",
+          age: "14m",
+          plan: [4, 4],
+          prs: [{ n: 142, state: "checks" }],
+          thumbs: ["Settings search: how it matches"],
+        },
+      ];
+      const DONE = [
+        ["Stable sort in History", "#141", "10:32"],
+        ["Retry failed uploads", "#140", "10:31"],
+        ["Release notes for 0.9", "#61", "10:00"],
+      ];
+      const GROUPS = [
+        ["needs", "Needs you"],
+        ["run", "Running"],
+        ["wait", "Waiting"],
+      ];
+
+      const i = (name) => `<i data-icon="${name}"></i>`;
+      const agent = (w) =>
+        `<span class="agent" title="${w.agent}">${i(w.agent === "Codex" ? "layers" : "sparkle")}</span>`;
+      const pr = (p) =>
+        p.state === "merged"
+          ? `<span class="chip merged">${i("merge")}${p.n}</span>`
+          : `<span class="chip open">${i("pr")}#${p.n}<span class="ring" title="Checks running"></span></span>`;
+      const plan = ([at, of]) =>
+        `<span class="plan"><span class="steps">${Array.from({ length: of }, (_, k) => `<i class="${k + 1 === at ? "at" : ""}"></i>`).join("")}</span>Step ${at} of ${of}</span>`;
+      const thumb = (t) =>
+        `<span class="thumb"><span class="pic"><i class="m"></i><i class="s"></i><i class="b"></i><i class="m"></i></span><span>${t}</span></span>`;
+
+      // The sidebar's row today: one line while the dot says it all, a second for chips and words.
+      const sidebarRow = (w) => {
+        const two = w.dot !== "run";
+        const words =
+          w.dot === "needs"
+            ? `<span style="color:var(--status-needs)">asks you</span>`
+            : w.dot === "wait"
+              ? "checks"
+              : "";
+        return `<div class="old-r"><span class="mk"><span class="d ${w.dot} ${two ? "bar" : ""}"></span></span><span class="t">${w.title}</span><span class="a">${agent(w)}</span>${
+          two
+            ? `<span class="s">${(w.prs ?? []).map(pr).join("")}<span class="wd">${words}</span><span>${w.dot === "wait" ? "2h" : "1h"}</span></span>`
+            : ""
+        }</div>`;
+      };
+      // The pane's row today: dot, title, age; a status line with its PR chip at the end.
+      const paneRowToday = (w) =>
+        `<div class="old-r"><span class="mk"><span class="d ${w.dot}"></span></span><span class="t">${w.title}</span><span class="a">${w.age === "4m" ? "now" : w.age}</span><span class="s"><span class="wd" ${w.dot === "needs" ? 'style="color:var(--status-needs)"' : ""}>${w.dot === "needs" ? "Asks you" : w.short === "checks" ? "Checks on #142" : w.short}</span>${(w.prs ?? []).map(pr).join("")}</span></div>`;
+
+      // The proposed row: the sidebar's, wide. `compact` for C's list column.
+      const row = (w, { cur = false, compact = false } = {}) => {
+        const carry = [...(w.prs ?? []).map(pr), ...(w.plan ? [plan(w.plan)] : [])].join("");
+        const thumbs =
+          !compact && w.thumbs ? `<span class="thumbs">${w.thumbs.map(thumb).join("")}</span>` : "";
+        return `<button type="button" class="r ${cur ? "cur" : ""}" data-goto-worker="${w.id}">
+          <span class="mk"><span class="d ${w.dot} bar"></span></span>
+          <span class="bd">
+          <span class="t">${w.title}</span>
+          <span class="edge">${agent(w)}<span>${w.age}</span></span>
+          <span class="line ${w.dot === "needs" ? "needs" : ""} ${compact ? "one" : ""}">${w.line}</span>
+          ${carry ? `<span class="carry">${carry}</span>` : ""}
+          ${thumbs}
+          </span>
+        </button>`;
+      };
+      const groups = ({ cur, compact = false } = {}) =>
+        GROUPS.map(([id, label]) => {
+          const rows = WORKERS.filter((w) => w.group === id);
+          return `<section class="grp" aria-label="${label}"><div class="grp-h">${i("down")}<span><b>${label}</b>${rows.length}</span></div>${rows.map((w) => row(w, { cur: w.id === cur, compact })).join("")}</section>`;
+        }).join("") +
+        `<section class="grp" aria-label="Done"><div class="grp-h">${i("down")}<span><b>Done</b>6</span></div>${DONE.map(
+          ([t, n, at]) =>
+            `<div class="done-r"><span class="d done" style="justify-self:center"></span><span class="t">${t}</span><span class="chip merged">${i("merge")}${n.slice(1)} · ${at}</span></div>`,
+        ).join("")}<div class="more-row">3 more</div></section>`;
+
+      // ---------- Shared pieces of the window ----------
+      const sidebar = ({ handover = false, paneOpen = true } = {}) => `<aside class="sb">
+          <div class="sb-top">${i("panel")}${i("sparkle")}<span class="push">${i("plus")} New task</span></div>
+          <div class="pill"><span class="d needs"></span><span>1 error · <b>2 questions</b></span></div>
+          <div class="sb-search">${i("search")}Search<span style="margin-left:auto;font-size:12px">⌘K</span></div>
+          <div class="sb-h">${i("down")}<span>Orchestrators</span><span>4</span></div>
+          <div class="sb-list">
+            <div class="sb-ws on"><span class="d run"></span><span class="t">Gram</span><span class="e">${
+              handover && paneOpen
+                ? `4 workers · <span class="n">1</span>${i("right")}`
+                : `3 working · <span class="n">1</span>${i("down")}`
+            }</span></div>
+            ${
+              handover && paneOpen
+                ? ""
+                : `<div class="sb-kids">${WORKERS.map((w) => sidebarRow(w)).join("")}</div>`
+            }
+            <div class="sb-ws"><span class="d needs"></span><span class="t">billing-api</span><span class="e">1 worker · <span class="n">1</span>${i("down")}</span></div>
+            <div class="sb-ws"><span class="d idle"></span><span class="t">web</span><span class="e">Stopped ${i("down")}</span></div>
+            <div class="sb-ws"><span class="d idle"></span><span class="t">infra</span><span class="e">Stopped ${i("down")}</span></div>
+          </div>
+          <div class="sb-h">${i("down")}<span>Solo threads</span><span>9</span></div>
+          <div class="sb-list">
+            <div class="sb-solo"><span class="d run"></span><span class="t">Rewrite the README</span><span class="a"></span></div>
+            <div class="sb-solo"><span class="d" style="background:var(--danger)"></span><span class="t">Fix flaky retry test</span><span class="a">2m</span></div>
+            <div class="sb-solo"><span class="d idle"></span><span class="t">Pick a date library</span><span class="a">12m</span></div>
+            <div class="sb-solo"><span class="d idle"></span><span class="t">Plan the auth refactor</span><span class="a">20m</span></div>
+          </div>
+        </aside>`;
+      const rail = () =>
+        `<aside class="rail">${i("panel")}${i("inbox")}${i("search")}<span class="mono on">G</span><span class="mono">B</span><span class="mono">W</span><span class="mono">I</span>${i("msg")}</aside>`;
+      const chat = () => `<section class="chat">
+          <div class="cbar"><strong>Gram</strong>${i("down")}<span class="seg"><span class="on">Chat</span><span>Board</span></span><span class="push">${i("panel")}</span></div>
+          <div class="tx">
+            <div class="fold">${i("right")}09:59 Update · 2 merged · 1 report</div>
+            <p>All green on <span class="lnk merged">${i("merge")}#138</span>. Release the hold.</p>
+            <div class="fold">${i("right")}Queued to merge when ready</div>
+            <p class="me">Add the shortcut sheet too. Same rules.</p>
+            <p>Started <b>shortcut-sheet</b> in <span class="code">gram</span>. It reads the shortcuts from the keymap, so the sheet can't drift from what the keys do.</p>
+            <div class="fold">${i("right")}10:32 Update · 2 merged · 1 report</div>
+            <div class="new">New</div>
+            <p><span class="lnk merged">${i("merge")}#140</span> and <span class="lnk merged">${i("merge")}#141</span> <b>merged.</b> Failed uploads retry on their own now, and History stops reordering rows that finish together.</p>
+            <p>Three workers are still going: diff comments is running its tests, cold start is measuring again, and the shortcut sheet asks you where it goes. <span class="lnk">${i("pr")}#142</span> waits on checks; I'll merge it when they pass.</p>
+          </div>
+          <div class="comp"><span>Message… (/ for commands, @ for files)</span><span class="m">${i("sparkle")}Opus</span></div>
+        </section>`;
+
+      // The open worker's body, by tool.
+      const conversation = () => `<div class="wbody">
+          <p><b>Done.</b> Settings has a search box at the top that filters pages and rows as you type.</p>
+          <ul>
+            <li><span class="code">settings-search.ts</span>: <span class="code">filterPages</span> matches every word against a row's label and description.</li>
+            <li><span class="code">settings-nav.tsx</span>: the box keeps focus while the list narrows, and says so when nothing matches.</li>
+            <li><span class="code">settings-search.test.ts</span>: seven cases.</li>
+          </ul>
+          <div class="files">${i("file")}3 files changed <span class="plus">+71</span><span class="minus">−1</span><span class="push">Undo</span><span class="btn sm">View changes</span></div>
+          <p class="me">Looks right. Open the PR.</p>
+          <div class="fold" style="display:flex;gap:6px;color:var(--fg-muted);font-size:13px">Ran 2 commands ${i("right")}</div>
+          <p>Opened <span class="lnk">${i("pr")}#142</span>. The review bot left two nits, an unused import and a missing empty state; both are fixed and pushed. Waiting on checks now.</p>
+        </div>
+        <div class="wcomp">Steer this worker…</div>`;
+      const changes = () => `<div class="wbody">
+          <div class="difflist">
+            <div class="f">${i("file")}<span class="p">apps/web/src/settings/settings-search.ts</span><span class="plus">+52</span></div>
+            <div class="f">${i("file")}<span class="p">apps/web/src/settings/settings-nav.tsx</span><span class="plus">+9</span><span class="minus">−1</span></div>
+            <div class="f">${i("file")}<span class="p">apps/web/src/settings/settings-search.test.ts</span><span class="plus">+10</span></div>
+          </div>
+          <div class="hunk">
+            <div class="h">@@ -0,0 +1,12 @@ settings-search.ts</div>
+            <div class="a">+export function filterPages(pages: readonly Page[], query: string) {</div>
+            <div class="a">+  const words = query.toLowerCase().split(/\\s+/).filter(Boolean);</div>
+            <div class="a">+  return pages.filter((page) =></div>
+            <div class="a">+    words.every((word) => matches(page, word)),</div>
+            <div class="a">+  );</div>
+            <div class="a">+}</div>
+          </div>
+        </div>`;
+      const W = WORKERS.find((w) => w.id === "search");
+      // Where it stands, under its name: dot and words, its PR, its plan, its agent.
+      const status = () =>
+        `<div class="ws"><span class="d wait"></span><span>Waiting on checks</span>${pr(W.prs[0])}${plan(W.plan)}<span class="agent">${i("sparkle")}</span>Claude · 14m</div>`;
+      // The worker's tools: its own, every one, in one row.
+      const tools = (on) =>
+        `<div class="wt" role="tablist">${[
+          ["msg", "Conversation"],
+          ["diff", "Changes <span class='n'>3</span>"],
+          ["pr", "PR <span class='n'>#142</span>"],
+          ["terminal", "Terminal"],
+          ["folder", "Files"],
+        ]
+          .map(
+            ([icon, label], k) =>
+              `<button type="button" class="tb" role="tab" aria-selected="${k === on}">${i(icon)}${label}</button>`,
+          )
+          .join("")}</div>`;
+      const prBar = () =>
+        `<div class="prbar"><span class="ring" style="width:10px;height:10px;border-radius:50%;border:1.5px solid var(--status-working)"></span>Waiting on checks <span class="mono">#142</span> gram <span class="mono">feat/settings-search</span><span style="margin-left:auto">CI</span></div>`;
+
+      // ---------- A Navigator: one pane, list ⇄ worker, a crumb and back ----------
+      const paneHeadTools = (worker) =>
+        worker
+          ? `<button class="tool" type="button" title="Open in the main view">${i("external")}</button><button class="tool" type="button" title="Close the pane">${i("x")}</button>`
+          : `<button class="tool" type="button" title="Search workers">${i("search")}</button><button class="tool" type="button" title="Filter">${i("filter")}</button><span class="vr"></span><button class="tool" type="button" title="The orchestrator's own views: Diff of main, Files, Terminal, Docs, Pages, Notifications">More ${i("down")}</button><button class="tool" type="button" title="Close the pane">${i("x")}</button>`;
+      const A = (size) => {
+        const narrow = size === "narrow";
+        const listPane = `<aside class="pane">
+            <div class="ph"><span class="crumb"><span class="here">Workers</span><span class="n">4 · 6 done</span></span>${paneHeadTools(false)}</div>
+            <div class="list-body">${groups({})}</div>
+          </aside>`;
+        const workerPane = (tool) => `<aside class="pane">
+            <div class="ph"><span class="crumb"><button class="tool back" type="button" title="Back to Workers (Esc)">${i("left")}</button><a href="#">Workers</a>${i("right").replace('data-icon="right"', 'data-icon="right" class="sep"')}<span class="here">Search in Settings</span></span><kbd class="k">Esc</kbd>${paneHeadTools(true)}</div>
+            ${status()}
+            ${tools(tool)}
+            ${tool === 0 ? conversation() + "" : changes()}
+            ${tool === 0 ? "" : ""}
+          </aside>`;
+        return `
+          <div data-when="list" class="w ${narrow ? "narrow" : ""}">${narrow ? rail() : sidebar()}${chat()}${listPane}</div>
+          <div data-when="worker" class="w ${narrow ? "narrow" : ""}">${narrow ? rail() : sidebar()}${chat()}${workerPane(0)}</div>
+          ${narrow ? "" : `<div data-when="changes" class="w">${sidebar()}${chat()}${workerPane(1)}</div>`}`;
+      };
+
+      // ---------- B Tabs: Workers first, each open worker a tab of its own ----------
+      const B = (size) => {
+        const narrow = size === "narrow";
+        const strip = (on) => `<div class="tabs2" role="tablist">
+            <button class="tb" role="tab" type="button" aria-selected="${on === "list"}">${i("orch")}Workers <span class="n">4</span></button>
+            <button class="tb" role="tab" type="button" aria-selected="${on === "search"}"><span class="d wait"></span><span class="t">Search in Settings</span>${i("x").replace('data-icon="x"', 'data-icon="x" class="x"')}</button>
+            ${narrow ? "" : `<button class="tb" role="tab" type="button" aria-selected="false"><span class="d needs"></span><span class="t">Keyboard shortcut sheet</span>${i("x").replace('data-icon="x"', 'data-icon="x" class="x"')}</button>`}
+            <span class="push"></span>
+            <button class="tb" type="button" title="Diff of main, Files, Terminal, Docs, Pages, Notifications">More ${i("down")}</button>
+            <button class="tool" type="button" title="Close the pane">${i("x")}</button>
+          </div>`;
+        const listPane = `<aside class="pane">${strip("list")}
+            <div class="ph" style="border:0;height:36px"><span class="crumb"><span class="n">4 at work · 6 done</span></span><button class="tool" type="button">${i("search")}</button><button class="tool" type="button">${i("filter")}</button></div>
+            <div class="list-body" style="padding-top:0">${groups({ cur: "search" })}</div></aside>`;
+        const workerPane = (tool) => `<aside class="pane">${strip("search")}
+            <div class="ph" style="height:40px;border:0"><span class="crumb"><span class="here">Search in Settings</span></span><button class="tool" type="button" title="Open in the main view">${i("external")}</button></div>
+            ${status()}${tools(tool)}${tool === 0 ? conversation() : changes()}</aside>`;
+        return `
+          <div data-when="list" class="w ${narrow ? "narrow" : ""}">${narrow ? rail() : sidebar()}${chat()}${listPane}</div>
+          <div data-when="worker" class="w ${narrow ? "narrow" : ""}">${narrow ? rail() : sidebar()}${chat()}${workerPane(0)}</div>
+          ${narrow ? "" : `<div data-when="changes" class="w">${sidebar()}${chat()}${workerPane(1)}</div>`}`;
+      };
+
+      // ---------- C Split: list beside the worker when the pane is wide; the sidebar hands over ----------
+      const C = (size) => {
+        const narrow = size === "narrow";
+        const listCol = `<div class="col">
+            <div class="ph"><span class="crumb"><span class="here">Workers</span><span class="n">4 · 6 done</span></span><button class="tool" type="button">${i("search")}</button><button class="tool" type="button">${i("filter")}</button></div>
+            <div class="list-body">${groups({ cur: "search", compact: true })}</div></div>`;
+        const workerCol = (menu) => `<div class="col pane-wrap">
+            <div class="ph"><span class="crumb">${menu ? `<button class="tool back" type="button" title="Back to Workers (Esc)">${i("left")}</button>` : ""}<button class="root" type="button" title="Switch worker (⌘J)"><span class="here" style="color:var(--fg)">Search in Settings</span></button>${i("down").replace('data-icon="down"', 'data-icon="down" class="menu-caret"')}</span><button class="tool" type="button" title="Previous worker">${i("up")}</button><button class="tool" type="button" title="Next worker" style="transform:rotate(180deg)">${i("up")}</button><span class="vr"></span><button class="tool" type="button" title="More: Diff of main, Files, Terminal, Docs, Pages">More ${i("down")}</button><button class="tool" type="button">${i("x")}</button></div>
+            ${status()}${tools(0)}${conversation()}
+            ${
+              menu
+                ? `<div class="menu-pop" role="menu"><div class="lbl">Needs you</div><div class="mi"><span class="d needs"></span>Keyboard shortcut sheet<span class="x">4m</span></div><div class="lbl">Running</div><div class="mi"><span class="d run"></span>Inline comments in the diff<span class="x">1h</span></div><div class="mi"><span class="d run"></span>Faster cold start<span class="x">1h</span></div><div class="lbl">Waiting</div><div class="mi on"><span class="d wait"></span>Search in Settings<span class="x">14m</span></div></div>`
+                : ""
+            }</div>`;
+        if (narrow) {
+          const listPane = `<aside class="pane"><div class="ph"><span class="crumb"><span class="here">Workers</span><span class="n">4 · 6 done</span></span>${paneHeadTools(false)}</div><div class="list-body">${groups({})}</div></aside>`;
+          const workerPane = `<aside class="pane pane-wrap"><div class="ph"><span class="crumb"><button class="tool back" type="button" title="Back to Workers (Esc)">${i("left")}</button><button class="root" type="button"><span class="here" style="color:var(--fg)">Search in Settings</span></button>${i("down").replace('data-icon="down"', 'data-icon="down" class="menu-caret"')}</span><button class="tool" type="button">${i("up")}</button><button class="tool" type="button" style="transform:rotate(180deg)">${i("up")}</button><button class="tool" type="button">${i("x")}</button></div>${status()}${tools(0)}${conversation()}</aside>`;
+          return `<div data-when="list" class="w narrow">${rail()}${chat()}${listPane}</div>
+            <div data-when="worker" class="w narrow">${rail()}${chat()}${workerPane}</div>`;
+        }
+        return `
+          <div data-when="split" class="w split">${sidebar({ handover: true })}${chat()}<aside class="pane"><div class="split-body">${listCol}${workerCol(false)}</div></aside></div>
+          <div data-when="switcher" class="w">${sidebar({ handover: true })}${chat()}<aside class="pane pane-wrap">${workerCol(true).replace('class="col pane-wrap"', 'class="pane-wrap" style="flex:1"')}</aside></div>
+          <div data-when="pane-closed" class="w closed">${sidebar({ handover: true, paneOpen: false })}${chat()}</div>`;
+      };
+
+      // ---------- Rows: the same four workers in the sidebar, the pane today, and the proposed row ----------
+      const parity = () => `<div class="par">
+        <div><h3>Sidebar today (the source)</h3><p class="cap">Agent mark, bar for two lines, chips first, started-at age; running rows one line.</p><div class="box">${WORKERS.map(sidebarRow).join("")}</div></div>
+        <div><h3>Right pane today</h3><p class="cap">No agent mark, a round dot, a different age (14m vs 2h), its own words, chips last.</p><div class="box">${WORKERS.map(paneRowToday).join("")}</div></div>
+        <div><h3>Proposed, every direction: the sidebar's row, wide</h3><p class="cap">Same mark, title, agent and age as the sidebar; then the whole status line, chips and plan, and what the worker made.</p><div class="box">${WORKERS.map((w) => row(w)).join("")}</div></div>
+        <div class="callouts">
+          <ul><li>One row component, two widths: the sidebar keeps its one-or-two lines.</li><li>The pane may wrap the status line to two lines; the sidebar cuts it.</li></ul>
+          <ul><li>Age means last activity in both (open question; today they disagree).</li><li>Plan progress: grey steps, the current one in the accent.</li></ul>
+          <ul><li>Thumbnails only for what a worker published (docs, mocks); none for code.</li><li>Done stays one line each, folded to its latest three.</li></ul>
+        </div></div>`;
+
+      const R = { A, B, C, parity };
+      for (const el of document.querySelectorAll("[data-render]")) {
+        const fn = R[el.dataset.render];
+        el.outerHTML = fn(el.dataset.size);
+      }
+    </script>
+  </body>
+</html>

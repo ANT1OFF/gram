@@ -2,6 +2,7 @@
 import type {
   DocId,
   DocMeta,
+  FinishedWorkerDetail,
   OrchestratorLedger,
   ProjectId,
   ThreadId,
@@ -18,17 +19,24 @@ import type { Api } from "@/api/types";
 import { renderWithApi } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 
-import { closeBeside, useBesideStore } from "./beside-store";
+import type { Ask } from "./ask-model";
+import { besideShown, closeBeside, openRecordBeside, useBesideStore } from "./beside-store";
+import { WorkerPane } from "./worker-pane";
 import { useWorkersPanelStore, WorkersPanel } from "./workers-panel";
 
 const WORKSPACE = "ws-1" as WorkspaceId;
 const NOW = Date.now();
 
 const opened = vi.fn<(threadId: ThreadId) => void>();
-/** The workspace's docs, which the tab's Docs slot lists above the groups. */
+/** The workspace's docs, which the list's Docs slot lists under the groups. */
 let docs: DocMeta[] = [];
-const api: Partial<Api> = { listDocs: vi.fn(async () => ({ docs })) };
+let finished: FinishedWorkerDetail | undefined;
+const api: Partial<Api> = {
+  listDocs: vi.fn(async () => ({ docs })),
+  finishedWorker: vi.fn(async () => finished!),
+};
 let ledger: Pick<OrchestratorLedger, "features"> | undefined;
+let asks: { workspaceId: WorkspaceId; asks: Ask[] }[] = [];
 
 vi.mock("@tanstack/react-router", () => ({ useParams: () => ({}) }));
 vi.mock("@/shell/thread-switcher", () => ({ useOpenThread: () => opened }));
@@ -40,7 +48,22 @@ vi.mock("./use-orchestration", () => ({
 vi.mock("./use-finished-workers", () => ({
   useFinishedWorkerPages: () => ({ finished: new Map(), horizons: new Map(), busy: false }),
 }));
-vi.mock("./ask-stack", () => ({ useWorkspaceAsks: () => [] }));
+vi.mock("./ask-stack", () => ({ useWorkspaceAsks: () => asks }));
+// The sidebar's cards: none here, so every row is drawn from the ledger's facts.
+vi.mock("./overview-sidebar", () => ({ useOverviewFeatures: () => [] }));
+// The worker's own views are tested where they live; here only which one shows.
+vi.mock("@/thread/thread-view", () => ({
+  ThreadView: () => (
+    <div data-testid="thread-view">
+      <textarea aria-label="Steer" defaultValue="" />
+    </div>
+  ),
+}));
+vi.mock("@/panels/diff-panel", () => ({ DiffPanel: () => <div data-testid="diff-panel" /> }));
+vi.mock("@/panels/pr-panel", () => ({ PrPanel: () => <div data-testid="pr-panel" /> }));
+vi.mock("@/panels/files/files-panel", () => ({
+  FilesPanel: () => <div data-testid="files-panel" />,
+}));
 
 const worker = (
   id: string,
@@ -62,17 +85,26 @@ const worker = (
   ...extra,
 });
 
-const summary = (id: string, status: ThreadStatus, completedAt?: number): ThreadSummary =>
+const summary = (
+  id: string,
+  status: ThreadStatus,
+  extra: { completedAt?: number; orchestrator?: string; git?: object } = {},
+): ThreadSummary =>
   ({
     thread: {
       id: id as ThreadId,
       title: `Title of ${id}`,
       lastActivityAt: NOW - 2 * 60_000,
       workspaceId: WORKSPACE,
-      ...(completedAt === undefined ? {} : { completedAt }),
+      checkout: { kind: "worktree", path: `/work/${id}` },
+      ...(extra.completedAt === undefined ? {} : { completedAt: extra.completedAt }),
+      ...(extra.orchestrator === undefined
+        ? {}
+        : { spawnedBy: { threadId: extra.orchestrator, feature: "refunds" } }),
     },
     status,
     pendingRequests: [],
+    ...(extra.git === undefined ? {} : { git: extra.git }),
   }) as unknown as ThreadSummary;
 
 const seed = (workers: WorkerLedgerEntry[], summaries: ThreadSummary[]) => {
@@ -86,36 +118,76 @@ const seed = (workers: WorkerLedgerEntry[], summaries: ThreadSummary[]) => {
   });
 };
 
+/** Workers of the orchestrator "orch", in the pane beside its chat. */
+const seedTeam = (ids: { id: string; state: WorkerState; status?: ThreadStatus }[]) =>
+  seed(
+    ids.map(({ id, state, status }) => worker(id, state, status === undefined ? {} : { status })),
+    [
+      ...ids.map(({ id, status }) => summary(id, status ?? "idle", { orchestrator: "orch" })),
+      summary("orch", "idle"),
+    ],
+  );
+
 const group = (id: string) => screen.getByTestId(`workers-group-${id}`);
 const heading = (id: string) => within(group(id)).getAllByRole("button")[0]!;
+const rowOf = (id: string) =>
+  screen
+    .getAllByTestId("workers-panel-row")
+    .find((row) => row.dataset.threadId === id) as HTMLElement;
+
+const list = () => screen.getByTestId("workers-panel-list");
+const title = () => screen.getByTestId("beside-title").textContent;
+
+/** The pane as the right panel draws it in Workers mode: the list, or the worker open in it. */
+function Pane() {
+  const shown = useBesideStore((s) => besideShown(s));
+  const record = useBesideStore((s) => s.record);
+  return shown === undefined ? (
+    <WorkersPanel workspaceId={WORKSPACE} closable />
+  ) : (
+    <WorkerPane workspaceId={WORKSPACE} worker={shown} record={record} />
+  );
+}
 
 beforeEach(() => {
   docs = [];
+  asks = [];
+  finished = undefined;
   opened.mockClear();
   useWorkersPanelStore.setState({
     toggled: new Set(),
     shown: new Set(),
     doneAll: false,
     docsFolded: false,
+    query: undefined,
+    queryFor: undefined,
+    place: undefined,
+    restore: false,
+    focus: false,
   });
+  // Focus moves on the next frame once a row is drawn.
+  vi.stubGlobal("requestAnimationFrame", (run: () => void) => setTimeout(run, 0));
 });
 
 afterEach(() => {
   cleanup();
+  closeBeside();
+  vi.unstubAllGlobals();
   useThreadsStore.setState({ byId: {}, statusDetail: {} });
 });
 
-describe("the Workers tab", () => {
+describe("the Workers list", () => {
   it("groups workers by status with quiet counts, Done folded, and draws no group that holds nothing", () => {
     seed(
       [worker("run", "working", { status: "running" }), worker("shipped", "merged")],
-      [summary("run", "running"), summary("shipped", "idle", NOW - 60 * 60_000)],
+      [summary("run", "running"), summary("shipped", "idle", { completedAt: NOW - 60 * 60_000 })],
     );
     renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
 
     expect(within(group("running")).getByTestId("workers-group-count").textContent).toBe("1");
     expect(within(group("running")).getByText("Title of run")).toBeTruthy();
-    expect(within(group("running")).getByTestId("workers-panel-age").textContent).toBe("2m");
+    // How many are on, and how many are done, beside its name; no workspace named.
+    expect(screen.getByTestId("workers-panel-counts").textContent).toBe("1 · 1 done");
 
     // Done starts folded, its count still said.
     expect(heading("done").getAttribute("aria-expanded")).toBe("false");
@@ -128,14 +200,34 @@ describe("the Workers tab", () => {
     for (const id of ["needs", "waiting", "stopped"]) {
       expect(screen.queryByTestId(`workers-group-${id}`)).toBeNull();
     }
-    expect(screen.queryByTestId("workers-needs-elsewhere")).toBeNull();
   });
 
-  it("says each worker's state under its title, as the sidebar's row does", () => {
-    seed([worker("run", "working", { status: "running" })], [summary("run", "running")]);
+  it("draws each worker with the sidebar's own row, wide: its question whole, in the needs-you tone", () => {
+    seed([worker("asker", "working")], [summary("asker", "idle")]);
+    asks = [
+      {
+        workspaceId: WORKSPACE,
+        asks: [
+          {
+            key: "ask-1",
+            lead: "Where does the sheet go?",
+            worker: {
+              workspaceId: WORKSPACE,
+              question: {
+                threadId: "asker",
+                question: "Put the sheet under Help or under Settings?",
+              },
+            },
+          } as unknown as Ask,
+        ],
+      },
+    ];
     renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
-    const row = within(group("running")).getByTestId("workers-panel-row");
-    expect(within(row).getByTestId("workers-panel-status").textContent).toBe("Working");
+    const row = rowOf("asker");
+    expect(within(row).getByTestId("overview-worker-title").textContent).toBe("Title of asker");
+    const words = within(row).getByTestId("overview-worker-now");
+    expect(words.textContent).toBe("Asks you: Put the sheet under Help or under Settings?");
+    expect(words.closest(".text-status-needs")).toBeTruthy();
   });
 
   it("says once that there are no workers yet, with the orchestrator a click away, instead of five empty groups", () => {
@@ -167,15 +259,14 @@ describe("the Workers tab", () => {
     const { unmount } = renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
     const strip = await screen.findByTestId("docs-strip");
     const doc = within(strip).getByTestId("doc-row");
-    // Its title and its age, as a worker's row says its own; who wrote it is on its hover.
     expect(doc.textContent).toBe("Gap analysis5m");
-    expect(doc.getAttribute("title")).toContain("Title of run");
-    // A section like the groups: a heading that folds, with its count.
-    expect(within(strip).getByTestId("workers-group-count").textContent).toBe("1");
+    // The worker that wrote it names it on its own row too, a chip that opens it.
+    expect(within(rowOf("run").parentElement!).getByTestId("overview-worker-doc").textContent).toBe(
+      "Gap analysis",
+    );
     fireEvent.click(within(strip).getByRole("button", { name: "Docs, 1" }));
     expect(doc.closest("[hidden]")).toBeTruthy();
-    expect(useWorkersPanelStore.getState().docsFolded).toBe(true);
-    // Under the status groups, in the tab's one scroll column: the workers come first.
+    // Under the status groups: the workers come first.
     expect(
       strip.compareDocumentPosition(group("running")) & Node.DOCUMENT_POSITION_PRECEDING,
     ).toBeTruthy();
@@ -185,44 +276,22 @@ describe("the Workers tab", () => {
     renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
     await waitFor(() => expect(api.listDocs).toHaveBeenCalledTimes(2));
     expect(screen.queryByTestId("docs-strip")).toBeNull();
-    expect(group("running")).toBeTruthy();
   });
 
-  it("collapses a group from its heading", () => {
-    seed([worker("run", "working", { status: "running" })], [summary("run", "running")]);
-    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
-    fireEvent.click(heading("running"));
-    expect(heading("running").getAttribute("aria-expanded")).toBe("false");
-    expect(within(group("running")).queryByText("Title of run")?.closest("[hidden]")).toBeTruthy();
-  });
-
-  it("opens a worker from its row: in its own view while it is no orchestrator's", () => {
-    seed([worker("run", "working", { status: "running" })], [summary("run", "running")]);
-    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
-    fireEvent.click(screen.getByTestId("workers-panel-row"));
-    expect(opened).toHaveBeenCalledWith("run");
-    expect(useBesideStore.getState().worker).toBeUndefined();
-  });
-
-  it("opens an orchestrator's live worker beside its chat, and with ⌘ in its own view", () => {
-    // Focus moves on the next frame, which a node test doesn't have.
-    vi.stubGlobal("requestAnimationFrame", () => 0);
-    const run = summary("run", "running");
-    seed([worker("run", "working", { status: "running" })], [
-      { ...run, thread: { ...run.thread, spawnedBy: { threadId: "orch", feature: "refunds" } } },
-      summary("orch", "idle"),
-    ] as ThreadSummary[]);
-    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, {});
-    fireEvent.click(screen.getByTestId("workers-panel-row"));
-    // The orchestrator stays the chat; the worker is in the Thread tab beside it.
+  it("opens an orchestrator's worker in the pane, keeping the chat, and with ⌘ in the main view", () => {
+    seedTeam([{ id: "run", state: "working", status: "running" }]);
+    renderWithApi(<Pane />, api);
+    fireEvent.click(rowOf("run"));
+    // The orchestrator stays the chat; the worker is in the pane, under its crumb.
     expect(opened).toHaveBeenCalledWith("orch");
     expect(useBesideStore.getState()).toMatchObject({ worker: "run", shown: true });
-    closeBeside();
+    expect(screen.getByTestId("beside-title").textContent).toBe("Title of run");
+    expect(screen.getByTestId("beside-crumb").textContent).toBe("Workers");
+    act(() => closeBeside());
     opened.mockClear();
-    fireEvent.click(screen.getByTestId("workers-panel-row"), { metaKey: true });
+    fireEvent.click(rowOf("run"), { metaKey: true });
     expect(opened).toHaveBeenCalledWith("run");
     expect(useBesideStore.getState().worker).toBeUndefined();
-    vi.unstubAllGlobals();
   });
 
   it("searches from the header, listing only groups with a match", () => {
@@ -254,9 +323,155 @@ describe("the Workers tab", () => {
     expect(screen.getByTestId("workers-panel-filter").getAttribute("aria-label")).toBe(
       "Filter: Running",
     );
-    // A filter that picks only groups with nothing in them says so, rather than a bare tab.
     act(() => useWorkersPanelStore.setState({ shown: new Set(["stopped"]) }));
     expect(screen.queryByTestId("workers-group-running")).toBeNull();
     expect(screen.getByTestId("workers-filter-empty").textContent).toBe("No workers in Stopped");
+  });
+});
+
+describe("a worker open in the pane", () => {
+  const team = [
+    { id: "a", state: "working" as const, status: "running" as const },
+    { id: "b", state: "working" as const, status: "running" as const },
+    { id: "c", state: "working" as const, status: "running" as const },
+  ];
+
+  it("goes back by ‹, the crumb or Esc to the list as it was: its groups, its scroll, the worker current and holding the keys", async () => {
+    seedTeam([...team, { id: "shipped", state: "merged" }]);
+    renderWithApi(<Pane />, api);
+    fireEvent.click(heading("done"));
+    list().scrollTop = 120;
+    fireEvent.click(rowOf("b"));
+    expect(screen.queryByTestId("workers-panel")).toBeNull();
+
+    // ‹ goes back.
+    fireEvent.click(screen.getByTestId("beside-back"));
+    await waitFor(() => expect(document.activeElement).toBe(rowOf("b")));
+    expect(heading("done").getAttribute("aria-expanded")).toBe("true");
+    expect(list().scrollTop).toBe(120);
+    // The worker last open is current, drawn apart from the keys' focus.
+    expect(rowOf("b").getAttribute("aria-current")).toBe("true");
+    expect(rowOf("a").getAttribute("aria-current")).toBeNull();
+
+    // Esc goes back too, with the keys in the pane and nothing typed; it is marked as handled for
+    // an app around Gram, never stopped.
+    fireEvent.click(rowOf("c"));
+    const outside = vi.fn((event: KeyboardEvent) => event.defaultPrevented);
+    document.addEventListener("keydown", outside);
+    fireEvent.keyDown(screen.getByTestId("beside-title"), { key: "Escape" });
+    document.removeEventListener("keydown", outside);
+    expect(outside).toHaveReturnedWith(true);
+    await waitFor(() => expect(document.activeElement).toBe(rowOf("c")));
+
+    // A draft keeps its Esc: the pane stays on the worker.
+    fireEvent.click(rowOf("a"));
+    const draft = within(screen.getByTestId("thread-view")).getByRole("textbox");
+    fireEvent.change(draft, { target: { value: "half a thought" } });
+    fireEvent.keyDown(draft, { key: "Escape" });
+    expect(screen.getByTestId("beside-title").textContent).toBe("Title of a");
+  });
+
+  it("steps to the worker before or after with ↑ ↓ on its head, never from the composer or outside the pane", () => {
+    seedTeam(team);
+    renderWithApi(<Pane />, api);
+    fireEvent.click(rowOf("b"));
+
+    fireEvent.keyDown(screen.getByTestId("beside-title"), { key: "ArrowDown" });
+    expect(title()).toBe("Title of c");
+    // On the tools too, where ← → move between them.
+    fireEvent.keyDown(screen.getByTestId("beside-tab-thread"), { key: "ArrowUp" });
+    expect(title()).toBe("Title of b");
+    // The neighbours are named on the buttons that do the same.
+    expect(screen.getByTestId("beside-prev").getAttribute("aria-label")).toBe(
+      "Previous: Title of a",
+    );
+
+    // In the composer the arrows are the caret's; outside the pane they are someone else's.
+    const draft = within(screen.getByTestId("thread-view")).getByRole("textbox");
+    fireEvent.keyDown(draft, { key: "ArrowDown" });
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(title()).toBe("Title of b");
+  });
+
+  it("opens any worker from its title's switcher: by group, narrowed by typing, ↓ and ⏎", async () => {
+    seedTeam(team);
+    renderWithApi(<Pane />, api);
+    fireEvent.click(rowOf("a"));
+    fireEvent.click(screen.getByTestId("beside-title"));
+    const switcher = await screen.findByTestId("beside-switcher");
+    expect(within(switcher).getByRole("group", { name: "Running" })).toBeTruthy();
+    const filter = within(switcher).getByTestId("beside-switcher-filter");
+    fireEvent.change(filter, { target: { value: "of c" } });
+    expect(within(switcher).getAllByTestId("beside-switcher-row")).toHaveLength(1);
+    fireEvent.keyDown(filter, { key: "ArrowDown" });
+    fireEvent.keyDown(filter, { key: "Enter" });
+    await waitFor(() => expect(screen.getByTestId("beside-title").textContent).toBe("Title of c"));
+  });
+
+  it("says why a tool it doesn't have is off: no PR yet", () => {
+    seed(
+      [worker("run", "working", { status: "running" })],
+      [
+        summary("run", "running", {
+          orchestrator: "orch",
+          git: { repo: true, changedFiles: 3, aheadBase: 1 },
+        }),
+        summary("orch", "idle"),
+      ],
+    );
+    renderWithApi(<Pane />, api);
+    fireEvent.click(rowOf("run"));
+    expect(screen.getByTestId("beside-tab-changes").textContent).toContain("3");
+    const pr = screen.getByTestId("beside-tab-pr");
+    expect(pr.getAttribute("aria-disabled")).toBe("true");
+    expect(document.getElementById(pr.getAttribute("aria-describedby")!)?.textContent).toBe(
+      "No pull request yet",
+    );
+    fireEvent.click(pr);
+    expect(screen.getByTestId("beside-tab-thread").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("opens a finished worker whose worktree is gone as its record: Terminal and Files off and why, Changes counted from the record", async () => {
+    finished = {
+      worker: {
+        threadId: "gone" as ThreadId,
+        workspaceId: WORKSPACE,
+        title: "Stable sort in History",
+        feature: "history",
+        closedAt: NOW - 30 * 60_000,
+        completedReason: "prMerged",
+        prs: [{ repo: "acme/app", number: 141, url: "https://example.test/141", merged: true }],
+        kept: "closed",
+      },
+      reports: [],
+      files: [
+        { path: "src/history.ts", additions: 30, deletions: 8 },
+        { path: "src/history.test.ts", additions: 4, deletions: 1 },
+      ],
+      messages: [],
+      earlierOmitted: 0,
+    };
+    seed([], []);
+    act(() => openRecordBeside("gone" as ThreadId));
+    renderWithApi(<Pane />, api);
+    await waitFor(() =>
+      expect(screen.getByTestId("beside-tab-changes").textContent).toBe("Changes2"),
+    );
+    for (const id of ["terminal", "files"]) {
+      const tool = screen.getByTestId(`beside-tab-${id}`);
+      expect(tool.getAttribute("aria-disabled")).toBe("true");
+      expect(document.getElementById(tool.getAttribute("aria-describedby")!)?.textContent).toBe(
+        "Worktree cleaned up",
+      );
+      fireEvent.click(tool);
+      expect(screen.getByTestId("beside-tab-thread").getAttribute("aria-selected")).toBe("true");
+    }
+    // Its record's files are what Changes shows: the count and the list agree.
+    fireEvent.click(screen.getByTestId("beside-tab-changes"));
+    expect(screen.getByTestId("finished-files-all").querySelectorAll("li")).toHaveLength(2);
+    expect(screen.getByTestId("beside-tab-pr").textContent).toContain("#141");
+    expect(screen.getByTestId("beside-record-note").textContent).toContain("read only");
+    // Read only: no composer.
+    expect(screen.queryByTestId("thread-view")).toBeNull();
   });
 });

@@ -43,9 +43,9 @@ test("the sidebar names the machine a thread runs on, and nothing for one on thi
 }) => {
   const made = await start(page);
 
-  // At work, its edge is otherwise empty: the machine's name stands there.
+  // At work, its edge says what it is doing, so the machine is its glyph there and its name in the
+  // row's name and card.
   const working = threadRow(page, made.working).getByTestId("overview-worker-machine");
-  await expect(working).toHaveText("atlas");
   await expect(working).toHaveAttribute("data-machine-state", "online");
   await expect(threadRow(page, made.working)).toHaveAccessibleName(/on atlas/);
 
@@ -78,11 +78,10 @@ test("the sidebar names the machine a thread runs on, and nothing for one on thi
 test("a machine that drops shows offline at once, with no reload", async ({ page }) => {
   const made = await start(page);
   const marker = threadRow(page, made.working).getByTestId("overview-worker-machine");
-  await expect(marker).toHaveText("atlas");
+  await expect(marker).toHaveAttribute("data-machine-state", "online");
 
   await page.evaluate((list) => window.gramMock!.setMachines(list as never), machines(false));
   await expect(marker).toHaveAttribute("data-machine-state", "offline");
-  await expect(marker).toHaveText("atlasoffline");
   await expect(threadRow(page, "t-flaky").getByTestId("overview-solo-machine")).toHaveText(
     "atlasoffline",
   );
@@ -93,15 +92,12 @@ test("the Board and the Workers tab name the machine too", async ({ page }) => {
 
   await openPanelTab(page.getByTestId("right-panel"), "Workers");
   const row = page.locator(`[data-testid="workers-panel-row"][data-thread-id="${made.working}"]`);
-  await expect(row.getByTestId("workers-panel-machine")).toHaveText("atlas");
-  await expect(row.getByTestId("workers-panel-machine")).toHaveAttribute(
-    "title",
-    /^Runs on atlas\nJoined machine · online/,
-  );
+  // The sidebar's own row, wide: the same marker, its whole state on the row's card.
+  await expect(row.getByTestId("overview-worker-machine")).toHaveText("atlas");
   const offline = page.locator(
     `[data-testid="workers-panel-row"][data-thread-id="${made.inReview}"]`,
   );
-  await expect(offline.getByTestId("workers-panel-machine")).toHaveText("studiooffline");
+  await expect(offline.getByTestId("overview-worker-machine")).toHaveText("studiooffline");
 
   await page
     .getByRole("radiogroup", { name: "View" })

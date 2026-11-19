@@ -158,7 +158,7 @@ export function ThreadView({
    * and a composer that says it steers the thread (or `placeholder`, the words of an app that shows
    * it). What it sends is the same as typing in the view.
    */
-  beside?: { header: ReactNode; placeholder?: string } | undefined;
+  beside?: { header: ReactNode; placeholder?: string; takeoverNoted?: boolean } | undefined;
   /** Pane controls at the end of the header. */
   actions?: ReactNode;
   /** Runs on a double-click on the header outside its controls; the grid maximizes or restores. */
@@ -722,7 +722,11 @@ export function ThreadView({
           <StatusHeader thread={thread} digests={stream?.plan.digests} />
           <WaitingTray threadId={threadId} />
           <PlanStrip threadId={threadId} />
-          <WorkerBanner thread={thread} inTitlebar={inTitlebar} />
+          <WorkerBanner
+            thread={thread}
+            inTitlebar={inTitlebar}
+            takeover={beside?.takeoverNoted !== true}
+          />
           {/* A helper's summary isn't the conversation, which is all "Conversation only" shows. */}
           {!conversationOnly && <CatchUpCard thread={thread} />}
           <StuckCard thread={thread} />
@@ -842,7 +846,10 @@ export function ThreadView({
                 focused={focused}
                 {...(beside === undefined
                   ? {}
-                  : { placeholder: beside.placeholder ?? "Steer this thread…" })}
+                  : {
+                      placeholder: beside.placeholder ?? "Steer this thread…",
+                      takeoverNoted: beside.takeoverNoted === true,
+                    })}
               />
             </TurnCompleteSheen>
           )}
@@ -861,10 +868,12 @@ function ThreadComposer({
   thread,
   focused,
   placeholder,
+  takeoverNoted = false,
 }: {
   thread: Thread;
   focused: boolean;
   placeholder?: string;
+  takeoverNoted?: boolean;
 }) {
   const takesControl = useSendTakesControl(thread);
   // Started before its machine: the box says where a message goes now, which is into the wait.
@@ -883,6 +892,7 @@ function ThreadComposer({
       threadId={thread.id}
       focused={focused}
       takesControl={takesControl}
+      takeoverNoted={takeoverNoted}
       {...(words === undefined ? {} : { placeholder: words })}
     />
   );

@@ -167,6 +167,8 @@ const waitingThreads = new Set<string>();
  * so the field never reads as a warning.
  */
 const TAKES_OVER_LINE = "Sending takes over from the orchestrator";
+/** The same, said before anything is typed, where the composer is the worker's beside its chat. */
+const TAKES_OVER_NOTE = `${TAKES_OVER_LINE}; its messages wait behind yours.`;
 /** Shown while a send waits for the connection to come back. */
 const RECONNECT_HINT = "Waiting for the connection — sends once it's back";
 
@@ -175,6 +177,7 @@ export function Composer({
   focused,
   placeholder,
   takesControl = false,
+  takeoverNoted = false,
 }: {
   threadId: ThreadId;
   focused: boolean;
@@ -185,6 +188,11 @@ export function Composer({
    * the placeholder, Send's name and the line beside it say so before the message goes.
    */
   takesControl?: boolean;
+  /**
+   * The line beside Send says the takeover from the start, not only once a draft waits: the pane
+   * beside the orchestrator's chat, where two composers are in view.
+   */
+  takeoverNoted?: boolean;
 }) {
   const api = useApi();
   const typing = useTypingPresence();
@@ -1433,14 +1441,20 @@ export function Composer({
           </div>
           <span
             aria-live="polite"
-            className="min-w-0 flex-1 truncate px-1 text-meta text-muted-foreground"
+            className={cn(
+              "min-w-0 flex-1 px-1 text-meta text-muted-foreground",
+              // The pane's standing takeover note wraps rather than cut its last words.
+              takeoverNoted ? "line-clamp-2" : "truncate",
+            )}
           >
             {hint ??
               (dictation.active
                 ? dictationStatus(dictation.state)
-                : takesControl && hasDraft
-                  ? TAKES_OVER_LINE
-                  : undefined)}
+                : takesControl && takeoverNoted
+                  ? TAKES_OVER_NOTE
+                  : takesControl && hasDraft
+                    ? TAKES_OVER_LINE
+                    : undefined)}
           </span>
           <div className="flex shrink-0 items-center gap-1.5">
             {dictation.available && (

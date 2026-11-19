@@ -11,6 +11,31 @@ export async function openPanelTab(panel: Locator, name: string | RegExp): Promi
   const tab = panel.getByRole("tab", { name, exact });
   const more = panel.getByTestId("panel-more");
   const menu = panel.page().getByTestId("panel-more-menu");
+  // On a workspace's thread Workers is the pane's mode, with no strip: the list, or a worker open
+  // in it, whose Back is the way to the list. The orchestrator's own views are in its menu.
+  const workers = panel.getByTestId("workers-panel");
+  const worker = panel.getByTestId("beside-dock");
+  const orchestrator = panel.getByTestId("workers-panel-orchestrator");
+  const orchestratorMenu = panel.page().getByTestId("workers-panel-orchestrator-menu");
+  const isWorkers = typeof name === "string" ? name === "Workers" : name.test("Workers");
+  await expect(tab.or(more).or(workers).or(worker).first()).toBeVisible();
+  if (isWorkers) {
+    await expect(async () => {
+      if (await worker.isVisible())
+        await worker.getByTestId("beside-back").click({ timeout: 2_000 });
+      if (await workers.isVisible()) return;
+      await tab.click({ timeout: 2_000 });
+      await expect(workers).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
+    return;
+  }
+  await expect(async () => {
+    if (await worker.isVisible()) await worker.getByTestId("beside-back").click({ timeout: 2_000 });
+    if (await orchestrator.isVisible()) {
+      await orchestrator.click({ timeout: 2_000 });
+      await orchestratorMenu.getByRole("menuitem", { name, exact }).click({ timeout: 2_000 });
+    }
+  }).toPass({ timeout: 15_000 });
   await expect(tab.or(more).first()).toBeVisible();
   await expect(async () => {
     if ((await tab.count()) > 0) {

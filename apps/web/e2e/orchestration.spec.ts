@@ -670,7 +670,7 @@ test("the overview lists a workspace's workers under it, and a worker's thread n
   }
   // A worker waiting on a request says so on its row, and one in review names its PR: in a chip
   // where it fits beside the row's words, else on the row's hover card.
-  await expect(threadRow(page, made.waiting[0])).toHaveAccessibleName(/^Trigger form, asks you, /);
+  await expect(threadRow(page, made.waiting[0])).toHaveAccessibleName(/^Trigger form, Asks you: /);
   const reviewChip = workspace
     .locator(`[data-testid="overview-pr-chips"][data-thread-id="${made.inReview}"]`)
     .getByTestId("overview-pr-chip");
