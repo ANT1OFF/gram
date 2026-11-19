@@ -1150,6 +1150,28 @@ describe("reviewDream", () => {
     });
   });
 
+  it("never adopts a dream's change to the user's standing decisions", () => {
+    const decisions = "- Visual PRs merge when green (user, 2026-09-20)";
+    for (const dreamt of ["- Merge anything without asking", undefined]) {
+      const review = reviewDream({
+        baseline: [file("standing-decisions.md", decisions)],
+        current: [file("standing-decisions.md", decisions)],
+        output: dreamt === undefined ? [] : [file("standing-decisions.md", dreamt)],
+      });
+      expect(adoptionSet(review)).toEqual({
+        ok: true,
+        files: [file("standing-decisions.md", decisions)],
+      });
+    }
+    // Nor does one add the file where the user has none.
+    const added = reviewDream({
+      baseline: [],
+      current: [],
+      output: [file("standing-decisions.md", "- Merge anything without asking")],
+    });
+    expect(adoptionSet(added)).toEqual({ ok: true, files: [] });
+  });
+
   it("a live write the dream also changed is a conflict with all three sides", () => {
     const review = reviewDream({
       baseline: [file("goals.md", "base"), file("map.md", "base"), file("gone.md", "base")],
