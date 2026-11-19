@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Board for more than one person directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <style>
+      .bd {
+        display: flex;
+        flex-direction: column;
+        min-height: 620px;
+        background: var(--surface-2);
+        font-size: 13px;
+      }
+      .bd-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .bd-head h2 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .cols {
+        display: grid;
+        grid-template-columns: minmax(12rem, 2fr) 7rem minmax(10rem, 2fr) 5rem;
+        column-gap: 20px;
+        align-items: start;
+      }
+      .heads {
+        padding: 6px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .rows {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .rows > li {
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .name {
+        font-weight: 500;
+        font-size: 14px;
+      }
+      .l2 {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 2px 8px;
+        color: var(--fg-muted);
+        font-size: 12px;
+        margin-top: 2px;
+      }
+      .who {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .who .icon {
+        width: 12px;
+        height: 12px;
+      }
+      .ini {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        display: inline-grid;
+        place-items: center;
+        font-size: 10px;
+        font-weight: 600;
+        background: var(--surface-hover);
+        color: var(--fg);
+        box-shadow: inset 0 0 0 1px var(--border-strong);
+        flex: none;
+      }
+      .ini.agent {
+        border-radius: 5px;
+        color: var(--orchestrator, var(--fg));
+      }
+      .stage {
+        display: flex;
+        gap: 2px;
+        align-items: center;
+        height: 18px;
+        max-width: 96px;
+      }
+      .stage i {
+        flex: 1;
+        height: 5px;
+        background: var(--border-strong);
+      }
+      .stage i.d {
+        background: var(--fg-muted);
+      }
+      .stage i.c {
+        height: 9px;
+        border-radius: 999px;
+        background: var(--accent);
+      }
+      .station {
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .now {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+      .ring,
+      .dt {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: none;
+      }
+      .ring {
+        box-shadow: inset 0 0 0 1.5px var(--status-working);
+      }
+      .dt.run {
+        background: var(--status-working);
+      }
+      .dt.needs {
+        background: var(--status-needs-mark);
+      }
+      .dt.idle {
+        background: var(--fg-subtle);
+      }
+      .asks {
+        color: var(--status-needs);
+      }
+      .pr {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--fg-muted);
+        font-size: 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        padding: 0 6px;
+        width: fit-content;
+      }
+      .pr .icon {
+        color: var(--success-text);
+        width: 12px;
+        height: 12px;
+      }
+      .overlap {
+        display: block;
+        color: var(--fg-muted);
+        font-size: 12px;
+        margin-top: 4px;
+      }
+      .overlap .icon {
+        width: 12px;
+        height: 12px;
+        vertical-align: -2px;
+        margin-right: 4px;
+      }
+      .mono {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+      }
+      .sub {
+        margin-top: 6px;
+        padding-left: 12px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .sub .cols {
+        padding: 2px 0;
+      }
+      .lane {
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .lane-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: var(--surface-1);
+        font-weight: 600;
+      }
+      .lane-head .meta {
+        font-weight: 400;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .lane-head .icon {
+        width: 14px;
+        height: 14px;
+        color: var(--fg-muted);
+      }
+      .kb {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        padding: 12px 16px;
+        flex: 1;
+      }
+      .kcol {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 0;
+      }
+      .kcol > h4 {
+        margin: 0 0 2px;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--fg-muted);
+        display: flex;
+        gap: 6px;
+      }
+      .kcard {
+        background: var(--surface-3);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .kcard .name {
+        font-size: 13px;
+      }
+      .kfoot {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        justify-content: space-between;
+      }
+      .people {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .person {
+        background: var(--surface-3);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        text-align: left;
+        font: inherit;
+        color: inherit;
+      }
+      .person[aria-pressed="true"] {
+        box-shadow: inset 0 0 0 1px var(--accent);
+      }
+      .person .top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+      }
+      .person .top .meta {
+        margin-left: auto;
+        font-weight: 400;
+        color: var(--fg-muted);
+        font-size: 12px;
+      }
+      .person .line {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--fg-muted);
+        min-width: 0;
+      }
+      .person .line span:last-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .clash {
+        margin: 10px 16px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        color: var(--fg);
+      }
+      .clash .icon {
+        width: 14px;
+        height: 14px;
+        color: var(--fg-muted);
+      }
+      .clash .grow {
+        flex: 1;
+      }
+      .hand {
+        color: var(--status-needs-mark);
+        width: 13px;
+        height: 13px;
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        The Board once two people and a shared agent work in it. Four structures, the same five
+        features in each: whose each is, what it is doing, what waits on you, and where two
+        people's work overlaps. Pick one by name, or the parts you want from several.
+      </p>
+
+      <!-- A Rows ---------------------------------------------------------------------------- -->
+      <section class="board" data-name="A Rows" data-size="1100x620">
+        <div class="board-frame">
+          <div class="bd">
+            <header class="bd-head">
+              <i data-icon="cols"></i>
+              <h2>Board</h2>
+              <span class="grow"></span>
+              <div class="segmented" role="group" aria-label="Whose work">
+                <button type="button" aria-pressed="true">Everyone</button>
+                <button type="button">Mine</button>
+                <button type="button">Grace</button>
+                <button type="button">Release agent</button>
+              </div>
+            </header>
+            <div class="heads cols" aria-hidden="true">
+              <span>Task</span><span>Stage</span><span>Now</span><span>Pull request</span>
+            </div>
+            <ul class="rows">
+              <li>
+                <div class="cols">
+                  <div>
+                    <div class="name">Resume a worker a lost machine cut off</div>
+                    <div class="l2">
+                      <span class="who"><i data-icon="user"></i>You</span><span>gram · runner</span>
+                    </div>
+                    <div class="overlap">
+                      <i data-icon="alert"></i>Overlaps Grace's
+                      <u>Owners on features and stages</u> ·
+                      <span class="mono">host/ownership.ts</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="stage"><i class="d"></i><i class="d"></i><i class="c"></i><i></i><i></i></div>
+                    <span class="station">Checks</span>
+                  </div>
+                  <div class="now"><span class="ring"></span>Waiting · checks</div>
+                  <span class="pr"><i data-icon="pr"></i>#795</span>
+                </div>
+              </li>
+              <li>
+                <div class="cols">
+                  <div>
+                    <div class="name">Owners on features and stages</div>
+                    <div class="l2">
+                      <span class="who"><i data-icon="user"></i>Grace</span><span>gram</span>
+                    </div>
+                    <div class="overlap">
+                      <i data-icon="alert"></i>Overlaps your
+                      <u>Resume a worker…</u> · <span class="mono">host/ownership.ts</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="stage"><i class="d"></i><i class="c"></i><i></i><i></i><i></i></div>
+                    <span class="station">Working</span>
+                  </div>
+                  <div class="now"><span class="dt run"></span>Running · tests</div>
+                  <span></span>
+                </div>
+              </li>
+              <li>
+                <div class="cols">
+                  <div>
+                    <div class="name">Phone layout for the Inbox</div>
+                    <div class="l2"><span class="who"><i data-icon="user"></i>Grace, you</span></div>
+                  </div>
+                  <div>
+                    <div class="stage"><i class="d"></i><i class="c"></i><i></i><i></i><i></i></div>
+                    <span class="station">Working</span>
+                  </div>
+                  <div class="now muted">2 workers · <span class="asks">1 needs you</span></div>
+                  <span></span>
+                </div>
+                <div class="sub">
+                  <div class="cols">
+                    <span>Inbox list at 390 px</span><span></span>
+                    <div class="now"><span class="dt run"></span>Running · editing</div><span></span>
+                  </div>
+                  <div class="cols">
+                    <span>Ask sheet on a phone · You</span><span></span>
+                    <div class="now"><span class="dt needs"></span><span class="asks">Asks you</span></div>
+                    <span></span>
+                  </div>
+                </div>
+              </li>
+              <li>
+                <div class="cols">
+                  <div>
+                    <div class="name">Release notes for 0.41</div>
+                    <div class="l2"><span class="who"><i data-icon="orch"></i>Release agent</span></div>
+                  </div>
+                  <div>
+                    <div class="stage"><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i><i></i></div>
+                    <span class="station">Review</span>
+                  </div>
+                  <div class="now"><span class="ring"></span>Waiting · review</div>
+                  <span class="pr"><i data-icon="pr"></i>#796</span>
+                </div>
+              </li>
+              <li>
+                <div class="cols">
+                  <div>
+                    <div class="name">Move to Codex 0.171</div>
+                    <div class="l2"><span class="who"><i data-icon="user"></i>You</span></div>
+                  </div>
+                  <div>
+                    <div class="stage"><i class="c"></i><i></i><i></i><i></i><i></i></div>
+                    <span class="station">Briefed</span>
+                  </div>
+                  <div class="now"><span class="dt idle"></span>Held · usage limit, 17:10</div>
+                  <span></span>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- B Lanes --------------------------------------------------------------------------- -->
+      <section class="board" data-name="B Lanes" data-size="1100x620">
+        <div class="board-frame">
+          <div class="bd">
+            <header class="bd-head">
+              <i data-icon="cols"></i>
+              <h2>Board</h2>
+              <span class="grow"></span>
+              <button class="btn sm" type="button"><i data-icon="layers"></i>Group by person</button>
+            </header>
+            <div class="heads cols" aria-hidden="true">
+              <span>Task</span><span>Stage</span><span>Now</span><span>Pull request</span>
+            </div>
+            <div class="lane">
+              <div class="lane-head">
+                <i data-icon="down"></i><span class="ini">Y</span>You
+                <span class="meta">3 features · <span class="asks">1 needs you</span></span>
+              </div>
+              <ul class="rows">
+                <li>
+                  <div class="cols">
+                    <div>
+                      <div class="name">Resume a worker a lost machine cut off</div>
+                      <div class="overlap">
+                        <i data-icon="alert"></i>Overlaps Grace below ·
+                        <span class="mono">host/ownership.ts</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div class="stage"><i class="d"></i><i class="d"></i><i class="c"></i><i></i><i></i></div>
+                      <span class="station">Checks</span>
+                    </div>
+                    <div class="now"><span class="ring"></span>Waiting · checks</div>
+                    <span class="pr"><i data-icon="pr"></i>#795</span>
+                  </div>
+                </li>
+                <li>
+                  <div class="cols">
+                    <div>
+                      <div class="name">Ask sheet on a phone</div>
+                      <div class="l2">Part of Phone layout for the Inbox, with Grace</div>
+                    </div>
+                    <div>
+                      <div class="stage"><i class="d"></i><i class="c"></i><i></i><i></i><i></i></div>
+                      <span class="station">Working</span>
+                    </div>
+                    <div class="now"><span class="dt needs"></span><span class="asks">Asks you</span></div>
+                    <span></span>
+                  </div>
+                </li>
+                <li>
+                  <div class="cols">
+                    <div class="name">Move to Codex 0.171</div>
+                    <div>
+                      <div class="stage"><i class="c"></i><i></i><i></i><i></i><i></i></div>
+                      <span class="station">Briefed</span>
+                    </div>
+                    <div class="now"><span class="dt idle"></span>Held · usage limit, 17:10</div>
+                    <span></span>
+                  </div>
+                </li>
+              </ul>
+            </div>
+            <div class="lane">
+              <div class="lane-head">
+                <i data-icon="down"></i><span class="ini">G</span>Grace
+                <span class="meta">2 features</span>
+              </div>
+              <ul class="rows">
+                <li>
+                  <div class="cols">
+                    <div>
+                      <div class="name">Owners on features and stages</div>
+                      <div class="overlap">
+                        <i data-icon="alert"></i>Overlaps yours above ·
+                        <span class="mono">host/ownership.ts</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div class="stage"><i class="d"></i><i class="c"></i><i></i><i></i><i></i></div>
+                      <span class="station">Working</span>
+                    </div>
+                    <div class="now"><span class="dt run"></span>Running · tests</div>
+                    <span></span>
+                  </div>
+                </li>
+                <li>
+                  <div class="cols">
+                    <div>
+                      <div class="name">Inbox list at 390 px</div>
+                      <div class="l2">Part of Phone layout for the Inbox, with you</div>
+                    </div>
+                    <div>
+                      <div class="stage"><i class="d"></i><i class="c"></i><i></i><i></i><i></i></div>
+                      <span class="station">Working</span>
+                    </div>
+                    <div class="now"><span class="dt run"></span>Running · editing</div>
+                    <span></span>
+                  </div>
+                </li>
+              </ul>
+            </div>
+            <div class="lane">
+              <div class="lane-head">
+                <i data-icon="right"></i><span class="ini agent">R</span>Release agent
+                <span class="meta">1 feature · waiting on review</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- C Stations ------------------------------------------------------------------------ -->
+      <section class="board" data-name="C Stations" data-size="1100x620">
+        <div class="board-frame">
+          <div class="bd">
+            <header class="bd-head">
+              <i data-icon="cols"></i>
+              <h2>Board</h2>
+              <span class="grow"></span>
+              <div class="segmented" role="group" aria-label="Whose work">
+                <button type="button" aria-pressed="true">Everyone</button>
+                <button type="button">Mine</button>
+              </div>
+            </header>
+            <div class="kb">
+              <div class="kcol">
+                <h4>Briefed <span>1</span></h4>
+                <div class="kcard">
+                  <span class="name">Move to Codex 0.171</span>
+                  <div class="now muted"><span class="dt idle"></span>Held until 17:10</div>
+                  <div class="kfoot"><span class="ini">Y</span></div>
+                </div>
+              </div>
+              <div class="kcol">
+                <h4>Working <span>2</span></h4>
+                <div class="kcard">
+                  <span class="name">Owners on features and stages</span>
+                  <div class="now"><span class="dt run"></span>Running · tests</div>
+                  <div class="overlap"><i data-icon="alert"></i>Overlaps #795</div>
+                  <div class="kfoot"><span class="ini">G</span></div>
+                </div>
+                <div class="kcard">
+                  <span class="name">Phone layout for the Inbox</span>
+                  <div class="now"><span class="dt needs"></span><span class="asks">1 asks you</span></div>
+                  <div class="now muted"><span class="dt run"></span>1 running</div>
+                  <div class="kfoot">
+                    <span style="display: flex; gap: 2px"><span class="ini">G</span><span class="ini">Y</span></span>
+                  </div>
+                </div>
+              </div>
+              <div class="kcol">
+                <h4>Checks <span>1</span></h4>
+                <div class="kcard">
+                  <span class="name">Resume a worker a lost machine cut off</span>
+                  <div class="now"><span class="ring"></span>Waiting · checks</div>
+                  <div class="overlap"><i data-icon="alert"></i>Overlaps Grace's</div>
+                  <div class="kfoot">
+                    <span class="ini">Y</span><span class="pr"><i data-icon="pr"></i>#795</span>
+                  </div>
+                </div>
+              </div>
+              <div class="kcol">
+                <h4>Review <span>1</span></h4>
+                <div class="kcard">
+                  <span class="name">Release notes for 0.41</span>
+                  <div class="now"><span class="ring"></span>Waiting · review</div>
+                  <div class="kfoot">
+                    <span class="ini agent">R</span><span class="pr"><i data-icon="pr"></i>#796</span>
+                  </div>
+                </div>
+              </div>
+              <div class="kcol">
+                <h4>Merged <span>0</span></h4>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- D People -------------------------------------------------------------------------- -->
+      <section class="board" data-name="D People" data-size="1100x620">
+        <div class="board-frame">
+          <div class="bd">
+            <header class="bd-head">
+              <i data-icon="cols"></i>
+              <h2>Board</h2>
+            </header>
+            <div class="clash">
+              <i data-icon="alert"></i>
+              <span class="grow"
+                >Your <strong>Resume a worker…</strong> and Grace's
+                <strong>Owners on features…</strong> both change
+                <span class="mono">host/ownership.ts</span></span
+              >
+              <button class="btn sm" type="button">Tell Grace's orchestrator</button>
+              <button class="btn sm" type="button">Open both</button>
+            </div>
+            <div class="people">
+              <button class="person" type="button" aria-pressed="true">
+                <span class="top"><span class="ini">Y</span>You<span class="meta">3 features</span></span>
+                <span class="line"><span class="dt needs"></span><span class="asks">Ask sheet on a phone asks you</span></span>
+                <span class="line"><span class="ring"></span><span>Resume a worker… waiting on checks</span></span>
+              </button>
+              <button class="person" type="button">
+                <span class="top"><span class="ini">G</span>Grace<span class="meta">2 features</span></span>
+                <span class="line"><span class="dt run"></span><span>Owners on features… running tests</span></span>
+                <span class="line"><span class="dt run"></span><span>Inbox list at 390 px editing</span></span>
+              </button>
+              <button class="person" type="button">
+                <span class="top"><span class="ini agent">R</span>Release agent<span class="meta">1 feature</span></span>
+                <span class="line"><span class="ring"></span><span>Release notes for 0.41 waiting on review</span></span>
+                <span class="line muted"><span></span><span>Directed by Grace and you</span></span>
+              </button>
+            </div>
+            <div class="heads cols" aria-hidden="true">
+              <span>Your tasks</span><span>Stage</span><span>Now</span><span>Pull request</span>
+            </div>
+            <ul class="rows">
+              <li>
+                <div class="cols">
+                  <div class="name">Resume a worker a lost machine cut off</div>
+                  <div>
+                    <div class="stage"><i class="d"></i><i class="d"></i><i class="c"></i><i></i><i></i></div>
+                    <span class="station">Checks</span>
+                  </div>
+                  <div class="now"><span class="ring"></span>Waiting · checks</div>
+                  <span class="pr"><i data-icon="pr"></i>#795</span>
+                </div>
+              </li>
+              <li>
+                <div class="cols">
+                  <div>
+                    <div class="name">Ask sheet on a phone</div>
+                    <div class="l2">Part of Phone layout for the Inbox, with Grace</div>
+                  </div>
+                  <div>
+                    <div class="stage"><i class="d"></i><i class="c"></i><i></i><i></i><i></i></div>
+                    <span class="station">Working</span>
+                  </div>
+                  <div class="now"><span class="dt needs"></span><span class="asks">Asks you</span></div>
+                  <span></span>
+                </div>
+              </li>
+              <li>
+                <div class="cols">
+                  <div class="name">Move to Codex 0.171</div>
+                  <div>
+                    <div class="stage"><i class="c"></i><i></i><i></i><i></i><i></i></div>
+                    <span class="station">Briefed</span>
+                  </div>
+                  <div class="now"><span class="dt idle"></span>Held · usage limit, 17:10</div>
+                  <span></span>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
