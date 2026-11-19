@@ -287,6 +287,7 @@ export const fakeServer = () => {
             ? { repository, reach: "yes" }
             : { repository, reach: "no", reason: "The GitHub App doesn't reach it." },
         ),
+        model: { agent: "claude", model: "example-model" },
       });
     }
     if (url.pathname === "/api/threads/wait" && held.scope === "threads:start") {

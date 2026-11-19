@@ -519,6 +519,13 @@ jobs:
             echo "::endgroup::"
             grep -q "SMOKE OK" "$work/smoke.log" || { echo "$app: no SMOKE OK"; exit 1; }
           done
+      # The hosted journey on the installed app: sign in to the test server with a grant that lends
+      # no device, approve one worker an orchestrator sends there, and see its final reply reach
+      # the orchestrator's chat. xdotool answers the sign-in dialog main draws.
+      - name: Drive the installed app through the hosted journey under Xvfb
+        run: |
+          sudo apt-get install -y -qq --no-install-recommends xdotool
+          timeout 300 xvfb-run -a bun apps/desktop/scripts/verify-hosted-journey.ts /opt/Gram/gram
       - name: Upload the AppImage and .deb
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
