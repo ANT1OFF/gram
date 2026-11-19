@@ -325,7 +325,7 @@ describe.skipIf(!hasGit)("git RPCs", () => {
         const client = yield* makeClient;
         // Never asked, and the folder brings a script: not trusted.
         const project = yield* client["projects.add"]({ root: repo });
-        expect(project.folderTrust).toBe("untrusted");
+        expect(project.folderTrust).toBeUndefined();
         expect((yield* client["projects.folderSettings"]({ root: repo })).scripts).toEqual([
           { name: "hello", shortcut: "mod+j" },
         ]);
@@ -363,7 +363,7 @@ describe.skipIf(!hasGit)("git RPCs", () => {
       }),
     );
 
-    it.effect("record a plain folder as trusted, and the user's answer when added", () =>
+    it.effect("keep the user's answer when added, and none when not asked", () =>
       Effect.gen(function* () {
         const dir = tempDir();
         dirs.push(dir);
@@ -371,7 +371,7 @@ describe.skipIf(!hasGit)("git RPCs", () => {
         const asked = makeRepo(nodePath.join(dir, "asked"));
         write(nodePath.join(asked, ".mcp.json"), JSON.stringify({ mcpServers: { x: {} } }));
         const client = yield* makeClient;
-        expect((yield* client["projects.add"]({ root: plain })).folderTrust).toBe("trusted");
+        expect((yield* client["projects.add"]({ root: plain })).folderTrust).toBeUndefined();
         expect((yield* client["projects.add"]({ root: asked, trust: true })).folderTrust).toBe(
           "trusted",
         );

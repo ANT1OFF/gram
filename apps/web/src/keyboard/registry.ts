@@ -24,8 +24,9 @@ export interface Shortcut {
   /** Also fire while focus is inside a dialog; the rest wait until it closes, so nothing acts behind it. */
   allowInDialogs?: boolean;
   /**
-   * Never takes a key from another shortcut: it runs only when no other one would. For keys that
-   * come from a repository's own files, so they can't stand in for one of Gram's.
+   * Never takes a key another shortcut holds, whether or not that one applies right now, nor an
+   * editing chord (`EDIT_CHORDS`). For keys from a repository's own files, so they can't stand in
+   * for one of Gram's or a paste.
    */
   yields?: boolean;
   /** Hide from the shortcut overlay (e.g. duplicates of a documented binding). */
@@ -69,6 +70,40 @@ export function parseKeys(keys: string): Chord {
     key: KEY_ALIASES[key] ?? key,
   };
 }
+
+/** Whether two key strings name the same chord, however they are spelled. */
+export function sameKeys(a: string, b: string): boolean {
+  const x = parseKeys(a);
+  const y = parseKeys(b);
+  return (
+    x.mod === y.mod &&
+    x.ctrl === y.ctrl &&
+    x.shift === y.shift &&
+    x.alt === y.alt &&
+    x.key === y.key
+  );
+}
+
+/** Editing chords every text field answers, which no shortcut from a repository's files may take. */
+export const EDIT_CHORDS: readonly string[] = [
+  "mod+a",
+  "mod+c",
+  "mod+v",
+  "mod+x",
+  "mod+z",
+  "mod+y",
+  "mod+shift+z",
+  "mod+shift+v",
+];
+
+/** Whether a yielding shortcut's keys are held by any other shortcut, active now or not. */
+const heldByOther = (keys: string): boolean =>
+  EDIT_CHORDS.some((chord) => sameKeys(chord, keys)) ||
+  registry.some((other) => {
+    if (other.yields === true) return false;
+    const theirs = effectiveKeys(other.id, other.keys);
+    return theirs !== undefined && sameKeys(theirs, keys);
+  });
 
 /**
  * The zoom characters, which mean zoom wherever a layout puts them. They go by what was typed, ahead
@@ -331,6 +366,8 @@ export function dispatchShortcut(event: KeyboardEvent, mac = isMac()): boolean {
       if (ofPass !== pass) continue;
       const keys = effectiveKeys(shortcut.id, shortcut.keys);
       if (keys === undefined || !matches(keys, event, mac)) continue;
+      // Gram's own keys stay Gram's even where that shortcut doesn't apply right now.
+      if (pass === "yielding" && heldByOther(keys)) continue;
       if (inDialog && !shortcut.allowInDialogs) continue;
       if (typing && !shortcut.allowInInputs && !parseKeys(keys).mod) continue;
       if (typing && shortcut.skipWhileTyping) continue;

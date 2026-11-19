@@ -384,6 +384,39 @@ describe("a yielding shortcut", () => {
     expect(script).not.toHaveBeenCalled();
   });
 
+  it("leaves a Gram key alone even where that shortcut doesn't apply, and never takes a paste", () => {
+    const script = vi.fn();
+    cleanups.push(
+      registerShortcut({
+        id: "terminal.clear",
+        keys: "mod+k",
+        label: "",
+        group: "Terminal",
+        focusScope: () => false,
+        run: vi.fn(),
+      }),
+      registerShortcut({
+        id: "s.k",
+        keys: "mod+k",
+        label: "",
+        group: "Thread",
+        yields: true,
+        run: script,
+      }),
+      registerShortcut({
+        id: "s.v",
+        keys: "mod+v",
+        label: "",
+        group: "Thread",
+        yields: true,
+        run: script,
+      }),
+    );
+    expect(dispatchShortcut(cmd("k", document.body), true)).toBe(false);
+    expect(dispatchShortcut(cmd("v", document.body), true)).toBe(false);
+    expect(script).not.toHaveBeenCalled();
+  });
+
   it("still runs on a key nothing else holds", () => {
     const script = vi.fn();
     cleanups.push(

@@ -83,10 +83,10 @@ const projectHandlers = Effect.gen(function* () {
       Effect.gen(function* () {
         const { project, created } = yield* registerRepo(store, root);
         // Only a folder this call adds takes the answer: an existing project keeps its own, which
-        // changes only through `projects.setFolderTrust`.
-        if (!created) return project;
-        const trusted = trust ?? folderBringsNothing(project.root)();
-        return yield* store.setProjectFolderTrust(project.id, trusted);
+        // changes only through `projects.setFolderTrust`. Without one nothing is kept, so settings
+        // the folder gains later are asked about rather than trusted for having been absent.
+        if (!created || trust === undefined) return project;
+        return yield* store.setProjectFolderTrust(project.id, trust);
       }),
     "projects.folderSettings": ({ root }) =>
       Effect.try({

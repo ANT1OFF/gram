@@ -17,6 +17,7 @@ import {
   resolveMockPath,
 } from "../mock-fs";
 import type { MockWorld } from "../mock-world";
+import { mockFolderSettings } from "./mock-folder-settings";
 import { mockProjectScripts, saveMockProjectScripts } from "./mock-scripts";
 import type { ProjectsApi } from "./types";
 
@@ -31,7 +32,7 @@ export function createProjectsMock(world: MockWorld) {
   const find = (match: (project: ReturnType<MockWorld["projects"]>[number]) => boolean) =>
     world.projects().find(match);
 
-  const addProject: ProjectsApi["addProject"] = async (root) => {
+  const addProject: ProjectsApi["addProject"] = async (root, options) => {
     const path = resolveMockFolder(root);
     if (!isMockRepo(path)) {
       throw new MockInvalidState(notARepositoryMessage(path));
@@ -39,7 +40,12 @@ export function createProjectsMock(world: MockWorld) {
     const existing = find((p) => p.root === path);
     if (existing) return existing;
     // Registered, not opened: the server leaves it out of the recents too.
-    const { lastOpenedAt: _unopened, ...added } = mockProject(path, `p-${world.ids()}`);
+    const { lastOpenedAt: _unopened, ...made } = mockProject(path, `p-${world.ids()}`);
+    const trust = options?.trust;
+    const added =
+      trust === undefined
+        ? made
+        : { ...made, folderTrust: trust ? ("trusted" as const) : ("untrusted" as const) };
     world.updateProjects((projects) => [...projects, added]);
     return added;
   };
@@ -124,6 +130,20 @@ export function createProjectsMock(world: MockWorld) {
         "EXAMPLE/example-infra",
       ],
     }),
+    folderSettings: async (root) => {
+      await world.delay(40);
+      return mockFolderSettings(resolveMockFolder(root));
+    },
+    setFolderTrust: async (projectId, trusted) => {
+      const project = find((p) => p.id === projectId);
+      if (!project) throw new Error("That project no longer exists.");
+      const next = {
+        ...project,
+        folderTrust: trusted ? ("trusted" as const) : ("untrusted" as const),
+      };
+      world.updateProjects((projects) => projects.map((p) => (p.id === projectId ? next : p)));
+      return next;
+    },
     setProjectBookmarked: async (projectId, bookmarked) => {
       const project = find((p) => p.id === projectId);
       if (!project) throw new Error("That project no longer exists.");
