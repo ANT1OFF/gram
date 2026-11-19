@@ -1,0 +1,33 @@
+{
+  "title": "New workspace: a name, and a wider sheet",
+  "slug": "new-workspace-name",
+  "status": "approved",
+  "template": "app-screen",
+  "current": 1,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-19"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A Two columns",
+      "board": "a-two-columns",
+      "shots": {
+        "dark": "shots/a-two-columns-picked-dark.png",
+        "light": "shots/a-two-columns-picked-light.png"
+      }
+    },
+    {
+      "name": "B Wide rows",
+      "board": "b-wide-rows",
+      "shots": {
+        "dark": "shots/b-wide-rows-picked-dark.png",
+        "light": "shots/b-wide-rows-picked-light.png"
+      }
+    }
+  ]
+}
