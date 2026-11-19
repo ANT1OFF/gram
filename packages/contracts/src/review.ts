@@ -37,9 +37,30 @@ export const matchesBotLogin = (pattern: string, candidate: string): boolean => 
   return new RegExp(`^${source}$`).test(l);
 };
 
-/** Whether `candidate` is one of the configured review bots: the AI reviewer, not a person. */
+/**
+ * Whether `candidate` matches a configured review bot's pattern. A login is only text: anyone can
+ * register one a pattern matches, so this never says on its own that an author is the bot.
+ * `isReviewBotAuthor` does, and is what decides who the bot is.
+ */
 export const isBotLogin = (bots: ReadonlyArray<ReviewBot>, candidate: string): boolean =>
   bots.some((bot) => matchesBotLogin(bot.loginPattern, candidate));
+
+/**
+ * Whether GitHub reports the author as an app account: `__typename` `Bot` in GraphQL. Where the
+ * type wasn't asked, REST's `[bot]` login suffix, which a person's login can't carry.
+ */
+export const isAppAuthor = (login: string, typename: unknown): boolean =>
+  typename === undefined ? /\[bot\]$/i.test(login.trim()) : typename === "Bot";
+
+/**
+ * Whether an author is a configured review bot: an app account GitHub reports as one, whose login
+ * matches. A person whose login matches a pattern is a person, with a person's review and comments.
+ */
+export const isReviewBotAuthor = (
+  bots: ReadonlyArray<ReviewBot>,
+  login: string,
+  typename: unknown,
+): boolean => isAppAuthor(login, typename) && isBotLogin(bots, login);
 
 /**
  * A finding's tag. `outstanding` is the bot's `[Still outstanding]`; `finding` is an untagged comment,
@@ -79,8 +100,24 @@ export const HumanReview = Schema.Struct({
   submittedAt: Schema.String,
   /** Written by the reviewer on GitHub, cut to `HUMAN_REVIEW_BODY_CHARS`. */
   body: Schema.String,
+  /**
+   * The reviewer's tie to the repository as GitHub states it on the review (`OWNER`, `MEMBER`,
+   * `COLLABORATOR`, `CONTRIBUTOR`, `NONE`, …); absent where it wasn't read.
+   */
+  authorAssociation: Schema.optionalKey(Schema.String),
 });
 export type HumanReview = typeof HumanReview.Type;
+
+/** The ties to a repository that may hold write access to it: anyone else certainly holds none. */
+const MAY_WRITE = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+
+/**
+ * Whether `review`'s author may be able to push to the repository, by GitHub's word on the review.
+ * A review that doesn't say is taken as theirs. An outsider (`CONTRIBUTOR`, `NONE`, a first-timer)
+ * can't: a change request of theirs is their view, which GitHub doesn't count either.
+ */
+export const reviewerMayWrite = (review: HumanReview): boolean =>
+  review.authorAssociation === undefined || MAY_WRITE.has(review.authorAssociation);
 
 /**
  * The review state carried on `PrStatus.review`; absent when no configured bot touched the PR and no

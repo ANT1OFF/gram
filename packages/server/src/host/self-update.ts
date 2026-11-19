@@ -42,7 +42,7 @@ import type {
 } from "@gram/contracts";
 import { relativeInside } from "@gram/git";
 import type { Admission } from "./admission.ts";
-import { lockConflict, lockPort, takeUpdateLock, updateLockState } from "./update-lock.ts";
+import { lockConflict, takeUpdateLock, updateLockState } from "./update-lock.ts";
 import { RELEASES } from "./install-script.ts";
 import { LAUNCHD_LABEL, type ServiceCommand } from "./service.ts";
 
@@ -221,7 +221,7 @@ const writePlan = (home: string, plan: UpdatePlan) => {
 };
 
 /**
- * Whether a supervisor holds the update's lock now. A port another program holds counts as held
+ * Whether a supervisor holds the update's lock now. A folder no lock can be taken in counts as held
  * too: no supervisor could take it, so no update should start.
  */
 export const supervisorRunning = async (home: string): Promise<boolean> =>
@@ -240,7 +240,7 @@ const planLockUsable = async (home: string): Promise<boolean> => {
       await lock.release();
       return true;
     }
-    if ((await updateLockState(home, "plan")) === "foreign") return false;
+    if ((await updateLockState(home, "plan")) === "unusable") return false;
     await wait(20);
   }
   return false;
@@ -730,7 +730,7 @@ export const superviseUpdate = async (
       const outcome: HostUpdateOutcome = {
         release: plan.release,
         outcome: "failed",
-        message: `gram-host couldn't take its update's plan lock (port ${lockPort(deps.home, "plan") ?? "unknown"}), so the service didn't move.`,
+        message: "gram-host couldn't take its update's plan lock, so the service didn't move.",
         at: deps.now(),
       };
       const now = readPlan(deps.home);

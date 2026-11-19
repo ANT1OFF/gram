@@ -164,11 +164,20 @@ export interface World {
   readonly diskSpace: Map<string, DiskSpace>;
   /** Each checkout's origin as `owner/repo`, by folder; a folder without one has none. */
   readonly originRepos: Map<string, string>;
-  /** GitHub auto-merges armed, by `owner/repo#N` lower-cased in the repo. */
+  /** GitHub auto-merges armed, by `owner/repo#N` lower-cased in the repo, and the head pinned. */
   readonly autoMerges: Map<
     string,
-    { readonly base: string; readonly method: "squash" | "merge" | "rebase" }
+    {
+      readonly base: string;
+      readonly method: "squash" | "merge" | "rebase";
+      readonly head?: string;
+    }
   >;
+  /**
+   * Those PRs' heads on GitHub, by the same key; absent: `autoMergeHead(N)`. A push during a
+   * freeze sets one, and `enable` refuses an auto-merge pinned to another head, as GitHub does.
+   */
+  readonly autoMergePrHeads: Map<string, string>;
   /** What a freeze did to them, in order: `disable acme/app#7`, `enable acme/app#7 squash`. */
   readonly autoMergeCalls: Array<string>;
   /** Runs before a PR's auto-merge is turned off, for a test to hold the freeze there. */
@@ -257,6 +266,7 @@ export const makeWorld = Effect.gen(function* () {
     diskSpace: new Map(),
     originRepos: new Map(),
     autoMerges: new Map(),
+    autoMergePrHeads: new Map(),
     autoMergeCalls: [],
     releases: new Map(),
     releaseReads: [],
@@ -413,21 +423,42 @@ const fakeGh = (world: World) => {
  */
 const gitActivity = { running: 0, started: 0 };
 
+/** Whether `args` read a repository's stored `origin` URL. */
+const readsOrigin = (args: ReadonlyArray<string>) =>
+  args.length === 3 &&
+  args[0] === "config" &&
+  args[1] === "--get" &&
+  args[2] === "remote.origin.url";
+
 // Every git process of the server, the service's and the worktrees' alike, counted while it runs.
-const countedProc = Layer.effect(
-  Proc,
-  Effect.gen(function* () {
-    const proc = yield* Proc;
-    return {
-      run: (bin, args, options) =>
-        Effect.suspend(() => {
-          gitActivity.running++;
-          gitActivity.started++;
-          return proc.run(bin, args, options);
-        }).pipe(Effect.ensuring(Effect.sync(() => void gitActivity.running--))),
-    };
-  }),
-).pipe(Layer.provide(ProcLive));
+// A repository with no `origin` of its own (`world.repo`) has the one the PR tools see
+// (`fakeGh`), so the origin Gram records as it makes a worktree is the world's.
+const countedProc = (world: World) =>
+  Layer.effect(
+    Proc,
+    Effect.gen(function* () {
+      const proc = yield* Proc;
+      return {
+        run: (bin, args, options) =>
+          Effect.suspend(() => {
+            gitActivity.running++;
+            gitActivity.started++;
+            return proc.run(bin, args, options);
+          }).pipe(
+            Effect.map((out) =>
+              bin === "git" && readsOrigin(args) && out.status !== 0
+                ? {
+                    ...out,
+                    status: 0,
+                    stdout: `${world.origin ?? "https://github.com/acme/app.git"}\n`,
+                  }
+                : out,
+            ),
+            Effect.ensuring(Effect.sync(() => void gitActivity.running--)),
+          ),
+      };
+    }),
+  ).pipe(Layer.provide(ProcLive));
 
 /** Gram's own local checks, when the world asks for them, over the real git of its repos. */
 const localChecksOf = (world: World) =>
@@ -463,19 +494,26 @@ const fakeMachine = (world: World) =>
     disk: (path) => Effect.sync(() => world.diskSpace.get(path) ?? world.diskSpace.get("*")),
   });
 
+/** The head of PR `number` in the fake GitHub's auto-merges, unless `autoMergePrHeads` moved it. */
+export const autoMergeHead = (number: number) => String(number).padStart(40, "0");
+
 /** GitHub's auto-merges and the checkouts' origins as `world` has them; each change is recorded. */
-const fakeAutoMerges = (world: World) =>
-  Layer.succeed(AutoMerges, {
+const fakeAutoMerges = (world: World) => {
+  const headNow = (repo: string, number: number) =>
+    world.autoMergePrHeads.get(`${repo.toLowerCase()}#${number}`) ?? autoMergeHead(number);
+  return Layer.succeed(AutoMerges, {
     repoOf: (cwd) => Effect.sync(() => world.originRepos.get(cwd)),
     armed: (_cwd, repo, base) =>
       Effect.sync(() =>
         [...world.autoMerges].flatMap(([key, armed]) => {
           const [r, n] = key.split("#");
           return r === repo.toLowerCase() && armed.base === base
-            ? [{ number: Number(n), method: armed.method }]
+            ? [{ number: Number(n), method: armed.method, head: headNow(repo, Number(n)) }]
             : [];
         }),
       ),
+    headOf: (_cwd, repo, number) =>
+      Effect.sync(() => ({ open: true as const, head: headNow(repo, number) })),
     disable: (_cwd, repo, number) =>
       (world.autoMergeDisableGate?.(number) ?? Effect.void).pipe(
         Effect.andThen(
@@ -486,13 +524,16 @@ const fakeAutoMerges = (world: World) =>
           }),
         ),
       ),
-    enable: (_cwd, repo, number, method) =>
+    enable: (_cwd, repo, number, method, head) =>
       Effect.sync(() => {
+        if (head !== headNow(repo, number))
+          return "Head branch was modified. Review and try again.";
         world.autoMergeCalls.push(`enable ${repo}#${number} ${method}`);
-        world.autoMerges.set(`${repo.toLowerCase()}#${number}`, { base: "main", method });
+        world.autoMerges.set(`${repo.toLowerCase()}#${number}`, { base: "main", method, head });
         return undefined;
       }),
   });
+};
 
 /** npm's and GitHub's releases as `world` has them. */
 const fakeReleases = (world: World) =>
@@ -654,7 +695,7 @@ export const serverLayer = (
       ),
       Layer.provideMerge(
         gitPlatformTest({
-          proc: countedProc,
+          proc: countedProc(world),
           pr: Layer.succeed(Pr, {
             status: (cwd, bound, _checkout, options) =>
               Effect.sync(() => {

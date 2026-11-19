@@ -604,6 +604,35 @@ describe("adding a repository", () => {
     );
   });
 
+  it("asks before trusting a folder that brings agent settings, and adds it as answered", async () => {
+    const { input, onAdded } = renderAdd();
+    type(input, "~/Documents/code/client-app");
+    const add = screen.getByRole("button", { name: "Add" });
+    await waitFor(() => expect(add.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(add);
+    const question = await screen.findByRole("group", { name: "Trust this folder?" });
+    expect(onAdded).not.toHaveBeenCalled();
+    fireEvent.click(within(question).getByRole("button", { name: "Add without them" }));
+    await waitFor(() =>
+      expect(onAdded).toHaveBeenCalledWith(
+        expect.objectContaining({
+          root: "/Users/dev/Documents/code/client-app",
+          folderTrust: "untrusted",
+        }),
+      ),
+    );
+  });
+
+  it("adds a folder that brings nothing without asking", async () => {
+    const { input, onAdded } = renderAdd();
+    type(input, "~/Documents/code/infra");
+    const add = screen.getByRole("button", { name: "Add" });
+    await waitFor(() => expect(add.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(add);
+    await waitFor(() => expect(onAdded).toHaveBeenCalled());
+    expect(screen.queryByRole("group", { name: "Trust this folder?" })).toBeNull();
+  });
+
   it("offers to clone a GitHub name typed into the project picker, then picks the clone", async () => {
     useServerSettings.setState({ settings: DEFAULT_SETTINGS });
     const input = renderPicker();

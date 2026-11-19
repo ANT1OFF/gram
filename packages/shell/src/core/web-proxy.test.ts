@@ -95,6 +95,33 @@ describe("the web session's proxy", () => {
     expect(site.reached).toHaveLength(1);
   });
 
+  it("connects only to a host it admits, before looking anything up", async () => {
+    const site = await target();
+    owned.push(site);
+    const looked: string[] = [];
+    const proxy = await startWebProxy({
+      lookup: async (name) => {
+        looked.push(name);
+        return ["93.184.216.34"];
+      },
+      admits: (hostname) => hostname === "approved.example",
+      dial: (_address, port) => connect({ host: "127.0.0.1", port }),
+    });
+    owned.push(proxy);
+    expect(await tunnel(proxy, "exfil.example", site.port, credential(proxy))).toMatchObject({
+      status: 403,
+    });
+    expect(await tunnel(proxy, "93.184.216.34", site.port, credential(proxy))).toMatchObject({
+      status: 403,
+    });
+    expect(site.reached).toHaveLength(0);
+    expect(looked).toEqual([]);
+    expect(await tunnel(proxy, "approved.example", site.port, credential(proxy))).toMatchObject({
+      status: 200,
+      body: "hello",
+    });
+  });
+
   it("is no relay for anyone without its credential", async () => {
     const site = await target();
     owned.push(site);

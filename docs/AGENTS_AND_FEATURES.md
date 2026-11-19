@@ -123,7 +123,11 @@ changes into events that wake the thread that cares:
 - **Monitors.** `pr_monitor` watches a pull request's checks, `pr_review_monitor` its review bot
   and reviewers, and `run_monitor` a GitHub Actions run such as a release build. Each sends one
   message when the checks settle, the bot posts a round or a verdict, a person approves or
-  requests changes, the merge state changes, or the run completes.
+  requests changes, the merge state changes, or the run completes. The review bot is an app
+  account GitHub reports as one, whose login matches the bot's pattern; a person with a matching
+  login is a person. A person's review reaches the agent only when they can push to the
+  repository, and an outsider's change request doesn't hold `merge_when_ready`. Names, titles and
+  review text from GitHub reach the agent fenced as untrusted content.
 - **Wakes.** `schedule_wake` wakes a thread at a time, on the first of a set of pull request
   events (checks settling, a review bot's verdict on its head, a new push, a merge or a close), or
   on a [condition](#condition-wakes) such as a branch getting a new head or another thread
@@ -343,13 +347,17 @@ in flight. `set_auto_merge` reads the PR's base afresh when a freeze stands on i
 retargeted onto the frozen branch is held too.
 
 GitHub merges a PR whose auto-merge is armed by itself. So a freeze turns off GitHub auto-merge on
-the open PRs into its branch that belong to Gram's threads (the allowed ones aside), keeps them on
-the freeze (each one before GitHub is asked, so a quit partway loses none), and arms them again
-with the same method when it ends. If another freeze stands on the branch by then, they are
-handed to it instead. A PR whose auto-merge someone turns off, whose merge is held, that is
+the open PRs into its branch that a Gram thread binds (the allowed ones aside; a PR a thread only
+follows is someone else's and left alone), keeps them on the freeze with the head commit each
+stood on (each one before GitHub is asked, so a quit partway loses none), and arms them again with
+the same method when it ends, pinned to that head with `--match-head-commit`. If another freeze
+stands on the branch by then, they are handed to it instead, and one set while they are being
+armed again waits for that, then takes them down in turn. The pin holds when Gram arms it: a PR
+whose head moved during the freeze (or one kept without a head, from before freezes recorded it)
+is not armed again, and its thread is told why. A PR whose auto-merge someone turns off, whose merge is held, that is
 unbound, or that closes or merges during the freeze is let go of at once and never armed again;
 nor is one whose thread is archived, babysat or in a paused workspace when the freeze ends. It can't stop a person merging, auto-merge on a
-PR no Gram thread has, or an entry already in a merge queue.
+PR no Gram thread binds, or an entry already in a merge queue.
 
 Only the thread that froze it, or its workspace's orchestrator, can lift it. It always ends at its
 expiry: every read checks the time, whatever the timers did, so a thread that stopped, or a
@@ -1129,7 +1137,9 @@ threads, which have no workspace, and memory updates get no shared folder.
   again since it was listed waits for the next round instead of being overwritten. What the two
   sides last agreed on is kept in `<data>/shared-sync/`, so deletes still carry after a restart.
 - **What it carries.** Plain files of up to 64 MB, and up to 5,000 files in a workspace. A larger
-  file stays on the machine where it was written, and Gram never deletes it on either side. Links,
+  file stays on the machine where it was written, and Gram never deletes it on either side. Each
+  machine's copy takes in up to 2 GB from the sync; a file that would take it past that waits
+  there until a delete makes room, so one machine can't fill another's disk. Links,
   and names Gram keeps for itself (`.gram-*`), are never carried or followed. Writes arrive under
   `.gram-incoming` and are moved into place whole, so an agent never reads half a file.
 - **Limits.** A host older than this release (one that doesn't name `shared-folders`) runs its

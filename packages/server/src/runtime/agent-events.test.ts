@@ -539,6 +539,37 @@ describe("ThreadRuntimes agent events", () => {
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
+  it.effect("never takes a session's word for a mode that asks less, only the user's pick", () =>
+    Effect.gen(function* () {
+      const store = yield* ThreadStore;
+      const runtimes = yield* ThreadRuntimes;
+      const { thread, session } = yield* createRunning;
+      yield* runtimes.setMode(thread.id, "default");
+      const events = yield* serverEvents;
+      // A session that says it now runs unasked, as a compromised agent or another machine might:
+      // Gram's own cards would go unasked for it.
+      yield* session.emit(
+        { type: "mode", mode: "bypassPermissions" },
+        { type: "notice", level: "warning", message: "after the mode" },
+      );
+      yield* waitFor(
+        "the notice after it",
+        Effect.sync(() => events.some((e) => e.type === "notify" && e.title === "after the mode")),
+      );
+      expect((yield* store.getThread(thread.id)).mode).toBe("default");
+      // A lesser mode is still taken as said.
+      yield* session.emit({ type: "mode", mode: "plan" });
+      yield* waitFor(
+        "the plan mode",
+        store.getThread(thread.id).pipe(Effect.map((t) => t.mode === "plan")),
+      );
+      // The user's pick is the way in, and the session's report of it then changes nothing.
+      yield* runtimes.setMode(thread.id, "bypassPermissions");
+      yield* session.emit({ type: "mode", mode: "bypassPermissions" });
+      expect((yield* store.getThread(thread.id)).mode).toBe("bypassPermissions");
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
   it.effect("applies mode changes, publishes notices, and records plans as a data part", () =>
     Effect.gen(function* () {
       const store = yield* ThreadStore;

@@ -16,7 +16,14 @@ export type ForgetProjectPayload = typeof ForgetProjectPayload.Type;
  * `projects.add`: the project whose root is this folder, registered if Gram doesn't know it
  * yet. Only the top folder of a git repository's main checkout qualifies.
  */
-export const AddProjectPayload = Schema.Struct({ root: Schema.NonEmptyString });
+export const AddProjectPayload = Schema.Struct({
+  root: Schema.NonEmptyString,
+  /**
+   * The user's answer to whether the folder's own agent settings and scripts may load; only
+   * recorded for a project this call adds. Left out, a folder that brings none is trusted.
+   */
+  trust: Schema.optionalKey(Schema.Boolean),
+});
 export type AddProjectPayload = typeof AddProjectPayload.Type;
 
 /** A repository a new workspace can work in: a known project, or one found and not added yet. */
@@ -200,3 +207,35 @@ export const remoteLabel = (remote: RepoRemote): string =>
 /** Whether typed text is a folder's path rather than a repository to clone. */
 export const looksLikeFolderPath = (input: string): boolean =>
   /^(?:[~/\\.]|[A-Za-z]:[\\/])/.test(input.trim());
+
+/** `projects.setFolderTrust`: the user's later answer about a folder's own agent settings. */
+export const SetProjectFolderTrustPayload = Schema.Struct({
+  projectId: ProjectId,
+  trusted: Schema.Boolean,
+});
+export type SetProjectFolderTrustPayload = typeof SetProjectFolderTrustPayload.Type;
+
+/** `projects.folderSettings`: a folder Gram may be about to add. */
+export const FolderSettingsPayload = Schema.Struct({ root: Schema.NonEmptyString });
+export type FolderSettingsPayload = typeof FolderSettingsPayload.Type;
+
+/**
+ * What a folder brings that would run or apply as the user once trusted, as its files say:
+ * Claude hooks by event, MCP servers by name, allow rules and env, and scripts with their keys.
+ * Reading it runs nothing. `none` when the folder brings nothing to ask about.
+ */
+export const FolderSettings = Schema.Struct({
+  hooks: Schema.Array(Schema.Struct({ event: Schema.String, command: Schema.String })),
+  mcpServers: Schema.Array(Schema.String),
+  allowRules: Schema.Int,
+  env: Schema.Array(Schema.String),
+  /** `apiKeyHelper`, `statusLine` and other settings that name a command. */
+  commands: Schema.Array(Schema.String),
+  scripts: Schema.Array(
+    Schema.Struct({ name: Schema.String, shortcut: Schema.optionalKey(Schema.String) }),
+  ),
+  /** Files that exist but couldn't be read; they'd load once trusted, so they count. */
+  unreadable: Schema.Array(Schema.String),
+  none: Schema.Boolean,
+});
+export type FolderSettings = typeof FolderSettings.Type;

@@ -33,7 +33,11 @@ describe("passOver", () => {
 
   it("passes over bots, verdicts, empty comments and Gram's own re-review command", () => {
     expect(passOver(comment("x", { authorIsBot: true }), bots)).toBe("bot");
-    expect(passOver(comment("x", { author: "example-code-review" }), bots)).toBe("bot");
+    expect(passOver(comment("x", { author: "example-code-review", authorIsBot: true }), bots)).toBe(
+      "bot",
+    );
+    // A person whose login the bot pattern matches is a person, asked about as one.
+    expect(passOver(comment("x", { author: "example-code-review" }), bots)).toBeUndefined();
     expect(passOver(comment("x", { author: "renovate[bot]" }), bots)).toBe("bot");
     expect(passOver(comment("x", { author: "" }), bots)).toBe("bot");
     expect(passOver(comment("ok", { kind: "review", state: "APPROVED" }), bots)).toBe("verdict");

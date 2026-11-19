@@ -54,7 +54,14 @@ const actionRun = (headSha = head) => ({
   status: "completed",
   conclusion: "success",
   // This association is mutable and deliberately disagrees with the immutable source in tests.
-  pull_requests: [{ number: 1, base: { sha: base }, head: { sha: headSha } }],
+  head_repository: { full_name: "example/project" },
+  pull_requests: [
+    {
+      number: 1,
+      base: { sha: base, repo: { url: "https://api.github.com/repos/example/project" } },
+      head: { sha: headSha },
+    },
+  ],
 });
 const jobs = (headSha = head, step = sourceStep()) =>
   ["classify", "qualification", "docs", "check", "subscription-smoke"].map((name, index) => ({

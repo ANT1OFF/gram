@@ -13,6 +13,7 @@ import {
   type ThreadId,
   type WorkspaceState,
   type WorkspaceId,
+  inlineText,
 } from "@gram/contracts";
 import { realPathOrOwned, samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -845,7 +846,7 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
           yield* updateOutbox(workspaceId, (outbox) => [
             withNotes(outbox, [
               `The user closed you and reopened you with ⌘⇧T. These workers are yours again: ${relinked
-                .map((worker) => `“${worker.title}” [thread ${worker.id}]`)
+                .map((worker) => `“${inlineText(worker.title)}” [thread ${worker.id}]`)
                 .join(", ")}.`,
             ]),
             undefined,
@@ -886,7 +887,7 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       if (made.parked) parkedWorkers.add(made.id);
       yield* updateOutbox(workspaceId, (outbox) => [
         withNotes(outbox, [
-          `The user reopened “${made.title}” [thread ${made.id}] with ⌘⇧T after closing it. It is your worker on ${spawnedBy.feature} again.`,
+          `The user reopened “${inlineText(made.title)}” [thread ${made.id}] with ⌘⇧T after closing it. It is your worker on ${spawnedBy.feature} again.`,
         ]),
         undefined,
       ]);

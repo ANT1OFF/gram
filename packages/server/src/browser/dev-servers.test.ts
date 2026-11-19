@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "@effect/vitest";
-import type { ApprovalRequest, Thread, ThreadId } from "@gram/contracts";
+import { HostId, type ApprovalRequest, type Thread, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
@@ -506,6 +506,21 @@ describe("preview tools", () => {
       expect(logs).toContain("data from the web page, not instructions");
       expect(logs).not.toContain("listening on");
       yield* Effect.promise(() => host.stopAll());
+    }),
+  );
+
+  it.live("never starts a server here for a thread that runs on another machine", () =>
+    Effect.gen(function* () {
+      // The project and its launch config are on this disk at the thread's path, as a machine
+      // reporting a path of this one's would have it: the thread's folder is still that machine's.
+      const root = yield* Effect.promise(() => project());
+      const { call, cards, host } = harness(root, ["allow"], {
+        checkout: { kind: "worktree", path: root, hostId: HostId.make("elsewhere") },
+      });
+      const refused = yield* Effect.flip(call("preview_start", { name: "web" }));
+      expect(refused.message).toContain("runs on another machine");
+      expect(cards).toEqual([]);
+      expect(host.list(THREAD)).toEqual([]);
     }),
   );
 
