@@ -17,7 +17,6 @@ import * as Fiber from "effect/Fiber";
 import { afterEach } from "vitest";
 import { KEPT_TERMINALS_ENV } from "../terminal/kept.ts";
 import {
-  LAUNCHER,
   localLaunchdPlist,
   localServiceEnv,
   localServicePaths,
@@ -33,6 +32,7 @@ import {
   lifecycle,
 } from "./local-service-unit.ts";
 import type { Run } from "./service.ts";
+import { HOST_MODE_FLAG, LINUX_HOST_SWITCHES } from "./launch-args.ts";
 import { RUN_TOKEN_ENV } from "./run-sweep.ts";
 
 const HOME = "/home/someone";
@@ -102,17 +102,20 @@ describe("the kept-running host's service", () => {
         { APPIMAGE: "/apps/Gram.AppImage", APPDIR: "/tmp/.mount_gramX" },
         "/tmp/.mount_gramX/gram",
         "/tmp/.mount_gramX/resources/app.asar/out/server/gram-host.js",
+        LINUX_HOST_SWITCHES,
       ),
-    ).toEqual(["/apps/Gram.AppImage", paths.launcher, "local", "--socket", paths.socket]);
-    expect(LAUNCHER).toContain("process.env.APPDIR");
-    // Installed anywhere else, its own program and entry, which stay where they are.
-    expect(localServiceProgram(paths, {}, "/opt/Gram/gram", "/opt/Gram/resources/x.js")).toEqual([
-      "/opt/Gram/gram",
-      "/opt/Gram/resources/x.js",
+    ).toEqual([
+      "/apps/Gram.AppImage",
+      HOST_MODE_FLAG,
       "local",
       "--socket",
       paths.socket,
+      ...LINUX_HOST_SWITCHES,
     ]);
+    // Installed anywhere else, its own program and entry, which stay where they are.
+    expect(
+      localServiceProgram(paths, {}, "/opt/Gram/gram", "/opt/Gram/resources/x.js", []),
+    ).toEqual(["/opt/Gram/gram", "/opt/Gram/resources/x.js", "local", "--socket", paths.socket]);
   });
 
   it("carries over only names it lists: no token, key or proxy is written to disk", () => {

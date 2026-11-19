@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { removeDir, tempDir } from "../git/test-repo.ts";
 import { installCommand, installScript, RELEASES, updateCommand } from "./install-script.ts";
+import { LINUX_HOST_SWITCHES } from "./launch-args.ts";
 
 const ORIGIN = "https://studio.example-tailnet.ts.net";
 const LINK = `${ORIGIN}/host/join#code=${"a".repeat(64)}`;
@@ -57,7 +58,10 @@ if [ -n "\${SYNTHETIC_UNPACK_SIGNAL:-}" ]; then kill -s "$SYNTHETIC_UNPACK_SIGNA
 cat >squashfs-root/resources/app.asar/out/server/gram-host.js <<'HOST'
 const { appendFileSync, readFileSync } = require("node:fs");
 if (process.argv[2] === "--help") process.exit(0);
-appendFileSync(${JSON.stringify(record)}, JSON.stringify({ args: process.argv.slice(2), stdin: readFileSync(0, "utf8") }) + "\\n");
+// As the real one does, Chromium's switches aren't its arguments; the switches it was given are kept.
+const switches = process.argv.slice(2).filter((arg) => ${JSON.stringify(LINUX_HOST_SWITCHES)}.includes(arg));
+const args = process.argv.slice(2).filter((arg) => !switches.includes(arg));
+appendFileSync(${JSON.stringify(record)}, JSON.stringify({ args, stdin: readFileSync(0, "utf8"), switches }) + "\\n");
 HOST
 `,
   );
@@ -234,7 +238,12 @@ describe("the join installer", () => {
         expect(readdirSync(apps).some((name) => name.startsWith(".extract-"))).toBe(false);
         const result = m.run(installScript(ORIGIN, "99.14.0"));
         expect(result.status, result.stderr).toBe(0);
-        expect(m.ran()).toEqual({ args: ["join"], stdin: `${LINK}\n` });
+        // On Linux the app runs with Chromium's switches for a machine with no display.
+        expect(m.ran()).toEqual({
+          args: ["join"],
+          stdin: `${LINK}\n`,
+          switches: platform === "Darwin" ? [] : LINUX_HOST_SWITCHES,
+        });
         expect(existsSync(join(version, ".complete"))).toBe(true);
         // Reuse the completed cache without extracting again.
         expect(m.run(installScript(ORIGIN, "99.14.0"), { SYNTHETIC_UNPACK_FAIL: "1" }).status).toBe(
@@ -256,9 +265,9 @@ describe("the join installer", () => {
       expect(result.stderr).toContain("Installed");
       expect(result.status).toBe(0);
       const app = join(home, ".local", "share", "gram-host", "apps", "1.14.0");
-      expect(ran()).toEqual({ args: ["join"], stdin: `${LINK}\n` });
+      expect(ran()).toEqual({ args: ["join"], stdin: `${LINK}\n`, switches: LINUX_HOST_SWITCHES });
       expect(readFileSync(join(home, ".local", "bin", "gram-host"), "utf8")).toContain(
-        `ELECTRON_RUN_AS_NODE=1 exec '${app}/gram' '${app}/resources/app.asar/out/server/gram-host.js' "$@"`,
+        `ELECTRON_RUN_AS_NODE=1 exec '${app}/gram' '${app}/resources/app.asar/out/server/gram-host.js' "$@" ${LINUX_HOST_SWITCHES.join(" ")}`,
       );
     } finally {
       removeDir(dir);
@@ -281,8 +290,8 @@ describe("the join installer", () => {
       expect(result.status).toBe(0);
       // It moves the service, then says which machine it is, for an install over SSH to check.
       expect(calls()).toEqual([
-        { args: ["service", "install"], stdin: "" },
-        { args: ["status"], stdin: "" },
+        { args: ["service", "install"], stdin: "", switches: LINUX_HOST_SWITCHES },
+        { args: ["status"], stdin: "", switches: LINUX_HOST_SWITCHES },
       ]);
       expect(existsSync(old)).toBe(false);
     } finally {

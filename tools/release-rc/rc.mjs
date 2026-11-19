@@ -83,7 +83,6 @@ import {
   startLinuxBuild,
 } from "../release-linux/linux-release.mjs";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const started = Date.now();
 const steps = [];
 const say = (line) => process.stdout.write(`${line}\n`);
@@ -701,13 +700,15 @@ const marker = `GRAM_RC_NATIVE_${randomBytes(4).toString("hex")}`;
 const probe = step(
   "native-probe",
   join(app, "Contents/MacOS/Gram"),
+  // The probe the app ships (out/server/native-probe.js): its RunAsNode fuse is off, so it runs
+  // no script from outside.
   [
-    join(HERE, "native-probe.cjs"),
+    join(app, "Contents/Resources/app.asar/out/server/native-probe.js"),
     join(app, "Contents/Resources/app.asar"),
     join(work, "probes"),
     marker,
   ],
-  { env: { ...isolated, ELECTRON_RUN_AS_NODE: "1" }, timeoutMs: 60_000 },
+  { env: isolated, timeoutMs: 60_000 },
 );
 const runtime = JSON.parse(probe.output.split("\n").find((line) => line.startsWith("{")) ?? "{}");
 if (

@@ -18,10 +18,9 @@ afterPack: ./build/afterPack.cjs
 # verify-package.mjs asserts each one. ASAR integrity checks app.asar against the hash
 # electron-builder writes in Info.plist (macOS) or the exe's resources (Windows).
 electronFuses:
-  # The release tool's native probe (tools/release-rc/native-probe.cjs) runs the packaged app as
-  # Node through ELECTRON_RUN_AS_NODE; nothing in the app does any more. Turning it off needs the
-  # probe moved first.
-  runAsNode: true
+  # Off: the packaged binary never runs a script it is handed. It runs only what its app.asar
+  # ships: gram-host in host mode and the release checks' native probe (src/main/entry.ts).
+  runAsNode: false
   enableNodeOptionsEnvironmentVariable: false
   enableNodeCliInspectArguments: false
   enableEmbeddedAsarIntegrityValidation: true

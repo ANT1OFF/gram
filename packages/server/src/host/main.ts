@@ -61,12 +61,14 @@ import { foregroundOf } from "../ports/pure.ts";
 import { runCli } from "./cli.ts";
 import type { HostBusy, HostId } from "@gram/contracts";
 import { selfUpdater } from "./self-update-host.ts";
+import { hostTeardown, prepareHostProcess } from "./launch.ts";
 import { type Admission, makeAdmission } from "./admission.ts";
 import type * as Scope from "effect/Scope";
 
-// The server starts the host as plain Node under Electron; what the host runs (git, ps, an editor
-// git opens) must not inherit that.
+// The host runs as Node, or in host mode in the app's own Electron (`launch.ts`); what it runs
+// (git, ps, an editor git opens) must not inherit either.
 delete process.env["ELECTRON_RUN_AS_NODE"];
+prepareHostProcess();
 
 /**
  * The Gram release this host was built from, which its hello carries so the main Gram can say a
@@ -433,4 +435,5 @@ NodeRuntime.runMain(
               Effect.asVoid,
             ),
         ),
+  { teardown: hostTeardown },
 );

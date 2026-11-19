@@ -6,7 +6,7 @@
   "homepage": "https://github.com/ANT1OFF/gram",
   "license": "MIT",
   "author": "Gram contributors",
-  "main": "out/main/index.js",
+  "main": "out/main/entry.js",
   "scripts": {
     "dev": "install-electron && GRAM_READABLE_BUNDLES=1 electron-vite build -c electron.vite.server.config.ts && GRAM_READABLE_BUNDLES=1 electron-vite build -c electron.vite.speech.config.ts && GRAM_READABLE_BUNDLES=1 electron-vite build -c electron.vite.page-guard.config.ts && node scripts/dev.mjs",
     "build": "electron-vite build && electron-vite build -c electron.vite.server.config.ts && electron-vite build -c electron.vite.speech.config.ts && electron-vite build -c electron.vite.page-guard.config.ts && node ../../tools/notices/generate.mjs",

@@ -3,8 +3,8 @@
  *
  *   curl -fsSL 'https://<device>.<tailnet>.ts.net/host/install' | sh -s -- '<join link>'
  *
- * Gram's own app carries `gram-host` (`gram-host.js` beside the server, run by the app's binary as
- * plain Node), so the machine needs no Node, checkout or package of its own. The script uses a Gram
+ * Gram's own app carries `gram-host` (`gram-host.js` beside the server, which the app's binary runs
+ * in host mode, `launch.ts`), so the machine needs no Node, checkout or package of its own. The script uses a Gram
  * app installed there when it is this Gram's version (or, for a Gram run from source, any that has
  * `gram-host.js`); otherwise it downloads this Gram's release from GitHub, checks it against the
  * release's `SHA256SUMS.txt`, and keeps it beside the host's folder. It then writes a `gram-host`
@@ -12,6 +12,8 @@
  * moves the service to the new app instead. The script holds no secret: the link is the user's to
  * pass, and it sits in that shell's history and `sh`'s arguments until the script ends.
  */
+
+import { LINUX_HOST_SWITCHES } from "./launch.ts";
 
 /** The public repository whose releases the app is downloaded from. */
 export const RELEASES = "https://github.com/ANT1OFF/gram/releases/download";
@@ -95,9 +97,11 @@ usable() {
 
 # Check the actual entry and its imported resources before publishing or reusing a cache.
 # --help loads the host without joining, starting a service or reading a saved join.
+# The app runs the gram-host bundled in its own asar when that is its first argument (host mode),
+# on Linux with Chromium's switches for a machine with no display ($SWITCHES, split on purpose).
 host_app() {
   [ -x "$1" ] && [ -e "$2/app.asar" ] || return 1
-  ELECTRON_RUN_AS_NODE=1 "$1" "$2/app.asar/out/server/gram-host.js" --help </dev/null >/dev/null 2>&1
+  ELECTRON_RUN_AS_NODE=1 "$1" "$2/app.asar/out/server/gram-host.js" --help $SWITCHES </dev/null >/dev/null 2>&1
 }
 
 # Repair an owner-created directory from an older installer, but never follow a link or take
@@ -123,6 +127,7 @@ main() {
 
   BIN=""
   RESOURCES=""
+  SWITCHES=""
   case "$(uname -s)" in
     Darwin)
       [ "$(uname -m)" = arm64 ] || die "Gram for macOS runs on Apple silicon only."
@@ -157,6 +162,7 @@ main() {
       ;;
     Linux)
       [ "$(uname -m)" = x86_64 ] || die "Gram for Linux runs on x64 only."
+      SWITCHES="${LINUX_HOST_SWITCHES.join(" ")}"
       case "\${XDG_CONFIG_HOME:-}" in /*) HOST_HOME="$XDG_CONFIG_HOME/gram-host" ;; *) HOST_HOME="$HOME/.config/gram-host" ;; esac
       case "\${GRAM_HOST_HOME:-}" in /*) HOST_HOME="$GRAM_HOST_HOME" ;; esac
       private_home
@@ -172,7 +178,7 @@ main() {
           image="gram_\${VERSION}_x86_64.AppImage"
           download "$image"
           chmod +x "$APPS/$image"
-          # Unpacked, so it needs no FUSE and starts no desktop: the host is the app's binary as Node.
+          # Unpacked, so it needs no FUSE and starts no desktop: the host is the app's own, in host mode.
           stage=$(mktemp -d "$APPS/.extract-XXXXXX")
           trap 'rm -rf "$stage"' EXIT
           trap 'exit 1' HUP INT TERM
@@ -206,8 +212,8 @@ main() {
   SHIM="$HOME/.local/bin/gram-host"
   {
     printf '#!/bin/sh\\n'
-    printf '# Gram'"'"'s own app, run as Node: its gram-host.\\n'
-    printf 'ELECTRON_RUN_AS_NODE=1 exec %s %s "$@"\\n' "'$BIN'" "'$ENTRY'"
+    printf '# Gram'"'"'s own app, running its own gram-host.\\n'
+    printf 'ELECTRON_RUN_AS_NODE=1 exec %s %s "$@"%s\\n' "'$BIN'" "'$ENTRY'" "\${SWITCHES:+ $SWITCHES}"
   } >"$SHIM.part"
   chmod +x "$SHIM.part"
   mv "$SHIM.part" "$SHIM"

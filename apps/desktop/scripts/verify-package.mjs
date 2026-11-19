@@ -6,7 +6,7 @@
 //
 // On Linux it also checks that the compiled addons (node-pty, @parcel/watcher, sherpa-onnx and its
 // ONNX Runtime) stay within Debian 12's glibc, and, on a Linux host of the package's arch, loads
-// them through the packaged app (tools/release-rc/native-probe.cjs). It then checks the AppImage
+// them through the packaged app (src/main/native-probe.cjs). It then checks the AppImage
 // and .deb electron-builder made beside the unpacked app: their metadata, desktop entry, icons,
 // and that each carries the same app.asar, pty.node and sherpa-onnx files.
 //
@@ -19,7 +19,7 @@
 //
 // `--dir-only` skips the Linux AppImage and .deb, for a `--dir` package.
 import { createHash, randomBytes } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -36,15 +36,15 @@ const packageName = (dir) => {
 };
 
 /**
- * Electron's fuses as each one must be in a package. `runAsNode` stays on for the release tool's
- * native probe; see electron-builder.yml.
+ * Electron's fuses as each one must be in a package. `runAsNode` is off: the binary runs only what
+ * its app.asar ships (src/main/entry.ts); see electron-builder.yml.
  */
 /** A fuse's byte in the wire: ASCII "1" or "0". */
 const FUSE_ON = 0x31;
 const FUSE_OFF = 0x30;
 
 const FUSES = {
-  RunAsNode: true,
+  RunAsNode: false,
   EnableCookieEncryption: false,
   EnableNodeOptionsEnvironmentVariable: false,
   EnableNodeCliInspectArguments: false,
@@ -60,6 +60,7 @@ const NODE_BUNDLES = [
   "server",
   "proc-worker",
   "gram-host",
+  "native-probe",
   "speech",
 ];
 
@@ -81,11 +82,15 @@ const PRODUCT = "Gram";
 const WATCHER_LINUX = "@parcel/watcher-linux-x64-glibc";
 const ASAR_ENTRIES = [
   "package.json",
+  // The package's main: the app, or a file the app ships (gram-host, the native probe).
+  "out/main/entry.js",
   "out/main/index.js",
   "out/server/server.js",
   "out/server/proc-worker.js",
   // This machine's worker host, when it runs as its own process.
   "out/server/gram-host.js",
+  // The release checks' native probe, the one script besides gram-host the binary runs.
+  "out/server/native-probe.js",
   // The terminal emulator the server replays scrollback through; read from beside the bundle.
   "out/server/ghostty-vt.wasm",
   "out/preload/index.js",
@@ -589,22 +594,31 @@ if (platform === "linux") {
     }
   }
 
-  // node-pty, @parcel/watcher and sherpa-onnx loading in the packaged Electron, as Node, resolved as
-  // the server and speech process resolve them from inside the asar: a shell through a pty and a
-  // file change through a watch. Only a host that can run the package can do this.
+  // node-pty, @parcel/watcher and sherpa-onnx loading in the packaged Electron, in the probe the
+  // package ships, resolved as the server and speech process resolve them from inside the asar: a
+  // shell through a pty and a file change through a watch. Only a host that can run the package
+  // can do this, and it has no display: the probe runs as gram-host does, headless.
   if (process.platform === "linux" && process.arch === arch) {
     const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "gram-native-probe-"));
     try {
       const marker = `GRAM_NATIVE_${randomBytes(4).toString("hex")}`;
-      const probe = path.resolve(import.meta.dirname, "../../../tools/release-rc/native-probe.cjs");
+      const packedAsar = path.join(resources, "app.asar");
       let output = "";
       try {
         output = execFileSync(
           path.join(appDir, "gram"),
-          [probe, path.join(resources, "app.asar"), scratch, marker, "watch"],
+          [
+            path.join(packedAsar, "out/server/native-probe.js"),
+            packedAsar,
+            scratch,
+            marker,
+            "watch",
+            "--ozone-platform=headless",
+            "--no-sandbox",
+          ],
           {
             encoding: "utf8",
-            env: { PATH: "/usr/bin:/bin", HOME: scratch, ELECTRON_RUN_AS_NODE: "1" },
+            env: { PATH: "/usr/bin:/bin", HOME: scratch },
             timeout: 60_000,
           },
         );
@@ -621,6 +635,28 @@ if (platform === "linux") {
         output.includes("NATIVE OK")
           ? `Electron ${runtime.electron} ${runtime.arch}`
           : output.trim(),
+      );
+      // The fuse's point: handed a script of someone else's, as Node or in place of its own
+      // gram-host, the binary runs none of it. Without a display the app it starts instead ends.
+      const foreignScript = path.join(scratch, "foreign.cjs");
+      const ran = path.join(scratch, "foreign-ran");
+      fs.writeFileSync(
+        foreignScript,
+        `require("node:fs").writeFileSync(${JSON.stringify(ran)}, "");\n`,
+      );
+      for (const args of [
+        [foreignScript],
+        [foreignScript, "--ozone-platform=headless", "--no-sandbox"],
+      ])
+        spawnSync(path.join(appDir, "gram"), args, {
+          env: { PATH: "/usr/bin:/bin", HOME: scratch, ELECTRON_RUN_AS_NODE: "1" },
+          stdio: "ignore",
+          timeout: 20_000,
+        });
+      check(
+        "packaged app runs no script it is handed, ELECTRON_RUN_AS_NODE or not",
+        !fs.existsSync(ran),
+        fs.existsSync(ran) ? "a foreign script ran" : "refused",
       );
     } finally {
       fs.rmSync(scratch, { recursive: true, force: true });

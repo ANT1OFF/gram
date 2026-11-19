@@ -129,7 +129,10 @@ command-worker and speech bundles are minified with only license comments kept
 (`apps/desktop/shipped-code.ts`); the dev loop builds them readable with
 `GRAM_READABLE_BUNDLES=1`, which `verify:package` rejects. Packaging flips Electron's
 fuses (`electronFuses` in `electron-builder.yml`): NODE_OPTIONS and inspect flags off,
-ASAR integrity and only-ASAR on, `RunAsNode` on for the release tool's native probe.
+ASAR integrity and only-ASAR on, and `RunAsNode` off, so the binary never runs a script it is
+handed. Besides the app it runs only what its asar ships, chosen by its first argument
+(`apps/desktop/src/main/entry.ts`): `gram-host` in host mode, and the release checks' native
+probe (`out/server/native-probe.js`).
 
 Local `dist:dir` packaging is unsigned; signing is part of [releasing](RELEASING.md).
 Native loading is separate from real accounts, microphone capture and recognition

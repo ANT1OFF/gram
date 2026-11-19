@@ -153,7 +153,7 @@ joined first of those online.
    main Gram's version; otherwise it downloads that release from GitHub, checks it against the
    release's `SHA256SUMS.txt`, and keeps it in `apps` in the host's folder on a Mac, or in
    `~/.local/share/gram-host/apps` on Linux. It writes a `gram-host` command to `~/.local/bin` (the
-   app's own binary, run as Node), hands the link to `gram-host join` on stdin, and installs the
+   app's own binary, in host mode), hands the link to `gram-host join` on stdin, and installs the
    background service. Run it again after the main Gram updates and it moves the service to the new
    release; the join stands. Settings → Machines offers this as **Update** (see
    [Updating a machine](#updating-a-machine)).

@@ -21,7 +21,11 @@ export default defineConfig(() => ({
       ...shippedBuild,
       rolldownOptions: {
         // The server is built separately (electron.vite.server.config.ts) into out/server.
-        input: { index: fileURLToPath(new URL("./src/main/index.ts", import.meta.url)) },
+        // `entry` is the package's main: it runs the app (`index`) or a file the app ships.
+        input: {
+          entry: fileURLToPath(new URL("./src/main/entry.ts", import.meta.url)),
+          index: fileURLToPath(new URL("./src/main/index.ts", import.meta.url)),
+        },
         output: shippedOutput,
       },
     },

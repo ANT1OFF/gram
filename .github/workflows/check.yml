@@ -505,8 +505,10 @@ jobs:
                 | grep "not found" || true)
               if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
               scratch=$(mktemp -d)
-              ELECTRON_RUN_AS_NODE=1 /opt/Gram/gram tools/release-rc/native-probe.cjs \
-                /opt/Gram/resources/app.asar "$scratch" GRAM_DEBIAN_12 watch'
+              # The probe the package ships: with its RunAsNode fuse off, it runs no other.
+              /opt/Gram/gram /opt/Gram/resources/app.asar/out/server/native-probe.js \
+                /opt/Gram/resources/app.asar "$scratch" GRAM_DEBIAN_12 watch \
+                --ozone-platform=headless --no-sandbox'
       - name: Smoke the installed app and the AppImage under Xvfb
         run: |
           for app in /opt/Gram/gram "$PWD/apps/desktop/release/gram_"*"_x86_64.AppImage"; do
