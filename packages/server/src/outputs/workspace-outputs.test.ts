@@ -535,6 +535,27 @@ describe("WorkspaceOutputs", () => {
       );
     });
 
+    it.effect("records nothing of this server's disk on that machine's word", () => {
+      const tree = tempTree();
+      const there = machine(tree.root, false);
+      const store = kept(true);
+      return Effect.gen(function* () {
+        const outputs = yield* WorkspaceOutputs;
+        const thread = yield* elsewhere;
+        // A file of this server's own, which the other machine's session says it sent or wrote.
+        const own = join(tree.dataDir, "server-report.pdf");
+        write(own, "the server's own");
+        for (const source of ["sent", "written", "evidence"] as const)
+          yield* outputs.record(thread.id, { path: own, source });
+        expect((yield* listed()).outputs).toEqual([]);
+        expect(store.objects.size).toBe(0);
+      }).pipe(
+        Effect.provide(layers(tree.dataDir, there.layer, store.layer)),
+        Effect.scoped,
+        Effect.ensuring(Effect.sync(tree.done)),
+      );
+    });
+
     for (const [name, parts, on] of [
       ["a host that reads no file in parts", false, true],
       ["no object store", true, false],
