@@ -203,6 +203,13 @@ export const HostFeature = Schema.Literals([
    * update to a host without it, which would drop the field and open an ordinary session.
    */
   "dream-sessions",
+  /**
+   * Says when it is about to be taken away (`host.stop.going`): a provisioned host sent SIGTERM,
+   * as a node drain or a reclaimed spot node sends it, holds its exit while a control plane that
+   * listens readies it to stop, keeping its threads' work as a stop does. A control plane doesn't
+   * ask a host without it.
+   */
+  "stop-going",
 ]);
 export type HostFeature = typeof HostFeature.Type;
 
@@ -1045,6 +1052,16 @@ export const HostRpcs = RpcGroup.make(
   }),
   /** Takes new work again after a `host.stop.prepare` that no stop followed. */
   Rpc.make("host.stop.cancel", {}),
+  /**
+   * Says once, when the host is about to be taken away, how long it waits (`withinMs`), and nothing
+   * before. The host holds its exit while any caller still listens, up to then: a caller listens
+   * on until it has readied the host to stop (`host.stop.prepare`, forced), so its work is kept
+   * first. A caller that isn't going to stops listening. Served by a host that names `stop-going`.
+   */
+  Rpc.make("host.stop.going", {
+    success: Schema.Struct({ withinMs: Schema.Int }),
+    stream: true,
+  }),
   /**
    * Puts back what a stop kept of a thread whose folder `cwd` is not on this disk: the host's
    * clone of the repository at `url` is made or fetched, `refs/gram/wip/<thread>` is fetched from

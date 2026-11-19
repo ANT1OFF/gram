@@ -45,7 +45,8 @@ import { terminalsOnHostKeeping } from "./terminals.ts";
 import { KEPT_TERMINALS_ENV, keptTerminalsIn } from "../terminal/kept.ts";
 import { serveLocal } from "./local-service.ts";
 import { LOCAL_SECRET_ENV } from "./local-service-unit.ts";
-import { stopOn } from "./stop.ts";
+import { type HostStop, stopOn } from "./stop.ts";
+import { GOING_WITHIN_MS, holdingTerm } from "./term-hold.ts";
 import {
   HOST_FEATURES,
   HOST_SERVES,
@@ -359,6 +360,8 @@ const keyAuth =
       return false;
     }
   })();
+/** The provisioned host's stop, which says it is going on SIGTERM (`holdingTerm`). */
+let goingStop: HostStop | undefined;
 const socketArg = args[0] === "local" && args[1] === "--socket" ? args[2] : undefined;
 NodeRuntime.runMain(
   args.length === 0
@@ -371,19 +374,38 @@ NodeRuntime.runMain(
             ),
           ),
         )
-      : runCli(args, {
-          service: (hostId, home, provisioned) =>
-            hostService(
-              hostId,
-              claudeTokenIn(joinedHome),
-              // A provisioned host is replaced by whatever started it, never updated in place.
-              provisioned
-                ? undefined
-                : (busy, admission) => selfUpdater(RELEASE, home, busy, admission),
-              join(home, "kept-terminals", hostId),
+      : holdingTerm(
+          runCli(args, {
+            service: (hostId, home, provisioned) =>
+              hostService(
+                hostId,
+                claudeTokenIn(joinedHome),
+                // A provisioned host is replaced by whatever started it, never updated in place.
+                provisioned
+                  ? undefined
+                  : (busy, admission) => selfUpdater(RELEASE, home, busy, admission),
+                join(home, "kept-terminals", hostId),
+              ).pipe(
+                // Its compute goes with it, so its work is kept on SIGTERM. A machine a person
+                // joined keeps its disk, and an update's restart is a SIGTERM too.
+                Effect.tap((service) =>
+                  Effect.sync(() => {
+                    if (provisioned) goingStop = service.stop;
+                  }),
+                ),
+              ),
+            // Its Codex homes go in its own folder, beside its token.
+            layer: hostLayer(() => readClaudeToken(joinedHome), keyAuth, joinedHome),
+            release: RELEASE,
+          }),
+          () =>
+            goingStop?.goAway(GOING_WITHIN_MS).pipe(
+              Effect.tap((gone) =>
+                Effect.logInfo("gram-host: going on SIGTERM").pipe(
+                  Effect.annotateLogs({ outcome: gone }),
+                ),
+              ),
+              Effect.asVoid,
             ),
-          // Its Codex homes go in its own folder, beside its token.
-          layer: hostLayer(() => readClaudeToken(joinedHome), keyAuth, joinedHome),
-          release: RELEASE,
-        }),
+        ),
 );

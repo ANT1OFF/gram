@@ -213,6 +213,7 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "agent-opencode-sessions",
   "shared-folders",
   "dream-sessions",
+  "stop-going",
 ];
 
 /** Why a memory update isn't opened on a host that doesn't name `dream-sessions`. */
@@ -412,6 +413,8 @@ const handlersFor = (host: HostService) => {
           ? Effect.fail(new HostFailed({ message: "This host can't be readied to stop." }))
           : host.stop.prepare(request),
       "host.stop.cancel": () => host.stop?.cancel ?? Effect.void,
+      // Says nothing until the host is about to go: a host that can't be readied never says.
+      "host.stop.going": () => host.stop?.going ?? Stream.never,
       "host.stop.keep": (request) =>
         host.stop === undefined
           ? Effect.fail(new HostFailed({ message: "This host keeps no work in progress." }))
@@ -863,6 +866,12 @@ export interface HostConnection {
     readonly drop?: (
       request: DropRequest,
     ) => Effect.Effect<{ readonly dropped: boolean }, HostFailed | HostUnavailable>;
+    /**
+     * Says once that the host is about to be taken away, and how long it waits for this listener
+     * to let go (`host.stop.going`); absent on a host before it. It holds its exit while this
+     * stream is listened to: let go once the stop is readied.
+     */
+    readonly going?: Stream.Stream<{ readonly withinMs: number }, HostUnavailable>;
   };
   /** Whether the host has gone: its process ended or its stream closed. Calls fail at once then. */
   readonly gone: () => boolean;
@@ -1721,6 +1730,9 @@ export const connectHost = (
             ),
           ),
         cancel: stopCall(client["host.stop.cancel"]()),
+        ...(hostServes(hello, "stop-going")
+          ? { going: hostStream(client["host.stop.going"]()) }
+          : {}),
         ...(hostServes(hello, "wip-keep")
           ? {
               keep: (request: KeepRequest) =>

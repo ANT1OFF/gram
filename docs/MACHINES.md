@@ -540,6 +540,16 @@ the local app, as the other `/machines/*` routes are.
   "Last save 08:20 failed: …" until a keep reaches the remote again, so an old save never reads
   as current.
 - `POST /machines/stop/cancel` takes a stop back: the host takes new work again.
+- **A provisioned host sent SIGTERM** (its node drained, or a reclaimed spot node, before the
+  grace period ends) readies itself to stop before it goes. It says so to this Gram
+  (`host.stop.going`, from a host that names the `stop-going` feature), which readies it as
+  `POST /machines/stop/prepare` with `force` does: each thread's work is kept at the remote and
+  remembered here, and the machine is owed a resume when a host dials in as it again. The host
+  holds its exit while this Gram does so, for up to 35 seconds, and goes at once when no Gram
+  listens. The log says `a machine about to go was readied to stop`, with how many folders were
+  kept and missed. Give the host a grace period longer than that (60 seconds leaves room for
+  what runs after it). A machine a person joined keeps its disk, and an update's restart is a
+  SIGTERM too, so it doesn't do this.
 - `POST /machines/stop/status` lists each joined machine: `online`, `stoppedAt` when it was
   readied and hasn't dialled in since, `wanted` when a thread waits on it now, and `resuming`
   when it dialled in after a stop and hasn't been resumed: resume it, however it was started. A message sent
@@ -637,6 +647,7 @@ to what the stop said it kept: the ref must name exactly the stop's `commit` for
 nothing is put back and the folder is reported missing with why. A folder the stop answered
 `caughtUp` for is made from its branch, whatever the ref names.
 
+A stop on SIGTERM is remembered as any stop is, so a resume after it is held to what it kept.
 Gram remembers each stop's answer while it runs. After Gram itself restarted it remembers none,
 so give the stop's `kept` array back in the resume call (`"kept": [...]`, entries as they were
 answered; up to 512). With neither, the ref is taken as the remote has it, and a thread with no

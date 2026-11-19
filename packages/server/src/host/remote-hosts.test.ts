@@ -22,6 +22,9 @@ import { HOST_CAPABILITIES, type HostService, serveHost } from "./protocol.ts";
 import { RemoteHosts } from "./remote-hosts.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
+import { Proc, ProcLive } from "@gram/git";
+import { makeAdmission } from "./admission.ts";
+import { stopOn } from "./stop.ts";
 
 const ORIGIN = "https://main.example-tailnet.ts.net";
 
@@ -773,5 +776,90 @@ describe("provisioned hosts' connections", () => {
       expect(closed.ran).toBe(false);
       expect(hosts.list()[0]).not.toHaveProperty("onlineSince");
     }).pipe(Effect.scoped),
+  );
+});
+
+describe("a machine about to be taken away", () => {
+  const IDLE = { turns: 0, terminals: 0, clones: 0, checks: 0 };
+  const goingHost = Effect.gen(function* () {
+    return stopOn({ proc: yield* Proc, busy: Effect.succeed(IDLE), admission: makeAdmission() });
+  }).pipe(Effect.provide(ProcLive));
+
+  it.live("is readied to stop as it says it goes, and goes once that is done", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* served;
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      const stop = yield* goingHost;
+      const heard: Array<{ id: string; withinMs: number }> = [];
+      const release = yield* Deferred.make<void>();
+      hosts.onGoing((id, withinMs) =>
+        Effect.gen(function* () {
+          heard.push({ id, withinMs });
+          const connection = yield* hosts.connection(id);
+          yield* connection.stop.prepare({ checkouts: [], force: true });
+          yield* Deferred.await(release);
+        }).pipe(Effect.orDie),
+      );
+      yield* Effect.forkScoped(
+        dialOnce(dial, service(hostId, { features: ["stop-going"] }, { stop })),
+      );
+      const connection = yield* online(hosts, hostId);
+      expect(connection.stop.going).toBeDefined();
+      // Its listener is on before anything is said.
+      yield* Effect.sleep("100 millis");
+      let gone = false;
+      const going = yield* Effect.forkScoped(
+        stop.goAway(10_000).pipe(Effect.tap(() => Effect.sync(() => (gone = true)))),
+      );
+      yield* waitUntil("the machine to be heard", () => heard.length === 1);
+      expect(heard).toEqual([{ id: hostId, withinMs: 10_000 }]);
+      // Held while the control plane is still readying it.
+      yield* waitUntil("the stop to be readied", () => stop.stopping());
+      yield* Effect.sleep("100 millis");
+      expect(gone).toBe(false);
+      yield* Deferred.succeed(release, undefined);
+      expect(yield* Fiber.join(going)).toBe("stopped");
+    }).pipe(Effect.scoped, Effect.timeout("15 seconds")),
+  );
+
+  it.live("goes at once when nothing listens, and when its listener's connection drops", () =>
+    Effect.gen(function* () {
+      expect(yield* (yield* goingHost).goAway(10_000)).toBe("unheard");
+
+      const { hosts, base } = yield* served;
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      const stop = yield* goingHost;
+      let heard = 0;
+      // Hears it, and never lets go.
+      hosts.onGoing(() =>
+        Effect.sync(() => {
+          heard += 1;
+        }).pipe(Effect.andThen(Effect.never)),
+      );
+      yield* Effect.forkScoped(
+        dialOnce(dial, service(hostId, { features: ["stop-going"] }, { stop })),
+      );
+      yield* online(hosts, hostId);
+      yield* Effect.sleep("100 millis");
+      const going = yield* Effect.forkScoped(stop.goAway(10_000));
+      yield* waitUntil("the machine to be heard", () => heard === 1);
+      hosts.keepOrigin(undefined);
+      expect(yield* Fiber.join(going)).toBe("unheard");
+    }).pipe(Effect.scoped, Effect.timeout("15 seconds")),
+  );
+
+  it.live("goes once its time is up, whoever still listens", () =>
+    Effect.gen(function* () {
+      const { hosts, base } = yield* served;
+      const { hostId, dial } = yield* joinedAndConfirmed(hosts, base);
+      const stop = yield* goingHost;
+      hosts.onGoing(() => Effect.never);
+      yield* Effect.forkScoped(
+        dialOnce(dial, service(hostId, { features: ["stop-going"] }, { stop })),
+      );
+      yield* online(hosts, hostId);
+      yield* Effect.sleep("100 millis");
+      expect(yield* stop.goAway(300)).toBe("late");
+    }).pipe(Effect.scoped, Effect.timeout("15 seconds")),
   );
 });

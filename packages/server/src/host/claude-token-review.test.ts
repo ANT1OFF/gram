@@ -117,6 +117,7 @@ const hostsOver = (
   keepOrigin: () => {},
   states: () => [],
   watch: () => () => {},
+  onGoing: () => () => {},
   accessFrom: () => {},
   provisionedOrigin: undefined,
   closeProvisioned: () => {},
