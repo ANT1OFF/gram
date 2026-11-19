@@ -66,6 +66,10 @@ import { profileStarter } from "../../thread-profiles/service.ts";
 /** What a phone, or any caller but the local app, hears when it asks for a machine folder. */
 export const MACHINE_FOLDER_LOCAL_ONLY =
   "A chat in a folder on another machine starts only from the Gram app on this computer.";
+
+/** What a signed-in person hears when they name the id of a thread they start from a profile. */
+export const PERSON_NAMES_NO_ID =
+  "A thread started from a profile by a signed-in person gets its own id. Leave threadId out.";
 import { ThreadRuntimes, type ForkPlan } from "../../runtime/thread-runtimes.ts";
 import type { Handlers } from "./common.ts";
 import { clientInput } from "../../runtime/user-input.ts";
@@ -346,7 +350,15 @@ export const threadHandlers = Effect.gen(function* () {
           ? create(input)
           : withDraftAttachments(attachmentsDir(config.dataDir), draftId, id, input, create);
       }),
-    "thread.createFromProfile": ({ profile, threadId }) => profiles.start(profile, { threadId }),
+    "thread.createFromProfile": ({ profile, threadId }) =>
+      Effect.gen(function* () {
+        // A signed-in person never names the id. A start asked for again under an id answers the
+        // thread already there, so an id a person chose ahead of the service's own start would be
+        // taken for that start (`thread-profiles/start.ts`).
+        if (threadId !== undefined && (yield* ActingPerson) !== undefined)
+          return yield* new InvalidState({ message: PERSON_NAMES_NO_ID });
+        return yield* profiles.start(profile, { threadId });
+      }),
     "thread.send": ({ threadId, input: sent, clientMessageId }) => {
       const input = clientInput(sent);
       return store.messageReceipt(

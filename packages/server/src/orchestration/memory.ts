@@ -291,6 +291,48 @@ const WORKER_WRITE_UNPLAIN =
 const workerMayChange = (path: string, text: string | undefined) =>
   workerMayRead(path, text) ? Effect.void : Effect.fail(refuse(keptFromWorkers(path)));
 
+/**
+ * Files whose words are the user's or the orchestrator's: the user's standing decisions, which a
+ * boot digest carries as the user's word, and the questions put to the user. A worker reads them
+ * and never changes them, so nothing a worker writes passes for either.
+ */
+const AUTHORITY_FILES: ReadonlySet<string> = new Set([DECISIONS_FILE, "questions.md"]);
+
+const WORKER_WRITE_AUTHORITY = (path: string) =>
+  `kept_from_workers: ${path} holds the user's or your orchestrator's words, so only the orchestrator changes it. Put what you found in a note of your own, or in your report's \`learned\`.`;
+
+const WORKER_INDEX_LINES =
+  "kept_from_workers: A worker only adds lines to MEMORY.md, each `- [[name]]: what it holds` on one line, and changes none already there.";
+
+/** One index line a worker may add: a note's name and one short line of what it holds. */
+const INDEX_LINE = /^- \[\[[a-z0-9-]+(?:\/[a-z0-9-]+)*\]\]: [^\n]{1,200}$/;
+
+/**
+ * Whether a worker's MEMORY.md, `next`, keeps every line of `current` in order and adds only index
+ * lines (and blank ones), so the index the orchestrator boots with gains entries and loses none.
+ */
+const workerIndexChangeOk = (current: string | undefined, next: string): boolean => {
+  const kept = (current ?? "").split("\n");
+  let at = 0;
+  for (const line of next.split("\n")) {
+    if (at < kept.length && line === kept[at]) {
+      at += 1;
+      continue;
+    }
+    if (line.trim() !== "" && !INDEX_LINE.test(line)) return false;
+  }
+  // Every line of `current` is kept, trailing blank ones aside.
+  return kept.slice(at).every((line) => line.trim() === "");
+};
+
+/** Refuses a worker's change that would rewrite the user's, the orchestrator's or the index's words. */
+const workerMayWrite = (path: string, current: string | undefined, next: string | undefined) => {
+  if (AUTHORITY_FILES.has(path)) return Effect.fail(refuse(WORKER_WRITE_AUTHORITY(path)));
+  if (path === MEMORY_INDEX && (next === undefined || !workerIndexChangeOk(current, next)))
+    return Effect.fail(refuse(WORKER_INDEX_LINES));
+  return Effect.void;
+};
+
 const codeOf = (error: unknown): unknown => (error as { code?: unknown } | undefined)?.code;
 
 /** Never the raw error: its message carries absolute paths. */
@@ -1277,6 +1319,7 @@ const make = (root: string): OrchestrationMemoryShape => {
             if (options?.asWorker === true && !workerMayRead(path, content)) {
               return yield* refuse(WORKER_WRITE_UNPLAIN);
             }
+            if (options?.asWorker === true) yield* workerMayWrite(path, current, content);
             const write = yield* writeLocked(workspaceId, path, content);
             // What `read` will give back: the scrubbed text, as it is on disk, scrubbed again.
             return { write, result, revision: memoryRevision(redactText(redactText(content))) };
@@ -1295,6 +1338,7 @@ const make = (root: string): OrchestrationMemoryShape => {
             const rel = `${within}/${path}`;
             const before = yield* readText(workspaceId, rel, within, path);
             if (options?.asWorker === true) yield* workerMayChange(path, before);
+            if (options?.asWorker === true) yield* workerMayWrite(path, before, undefined);
             if (options?.check !== undefined) yield* options.check(redactText(before));
             yield* archive(workspaceId, version, path, before);
             const target = yield* resolveInTree(workspaceId, rel, within);

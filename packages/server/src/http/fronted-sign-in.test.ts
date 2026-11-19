@@ -2,6 +2,7 @@
 // with a synthetic proxy's key. Forged and missing identities are refused, two people's actions
 // are told apart in the record, a viewer changes nothing, and with the hosted features setting off
 // the same server takes the launch token as it always has.
+import { PERSON_NAMES_NO_ID } from "../rpc/handlers/threads.ts";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { createServer, request as httpRequest } from "node:http";
@@ -476,6 +477,19 @@ describe("sign-in through a fronting proxy", () => {
           { status: 200, threadId: PROFILE_THREAD, created: true },
           { status: 200, threadId: PROFILE_THREAD, created: false },
         ]);
+        // A signed-in person names no id, so none they pick ahead can pass for the service's start.
+        const ahead = yield* refusal(
+          (yield* as(port, ada))["thread.createFromProfile"]({
+            profile: JSON.parse(startBody()).profile,
+            threadId: OTHER_PROFILE_THREAD as ThreadId,
+          }),
+        );
+        expect(ahead).toContain(PERSON_NAMES_NO_ID);
+        expect(
+          (yield* (yield* ThreadStore)
+            .getThread(OTHER_PROFILE_THREAD as ThreadId)
+            .pipe(Effect.option))._tag,
+        ).toBe("None");
         // Asked again for a machine it isn't on, it says so rather than answer as if it were.
         const moved = yield* post(
           port,

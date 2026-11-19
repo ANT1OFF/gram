@@ -88,6 +88,7 @@ import {
   type WorkerState,
   type WorkspaceId,
   workerFallback,
+  inlineText,
 } from "@gram/contracts";
 import { createHash } from "node:crypto";
 import { SENDS_PER_MINUTE, WINDOW_MS as SEND_WINDOW_MS } from "../app-tools/loop-guard.ts";
@@ -1132,7 +1133,7 @@ export const baseMovedText = (input: {
   const shown = input.files.slice(0, 8).map((file) => `\`${file}\``);
   const more =
     input.files.length > shown.length ? ` and ${input.files.length - shown.length} more` : "";
-  return `${input.pr} ("${input.worker}") merged into your base and changed files you change too: ${shown.join(", ")}${more}. Merge or rebase onto the new base now and rerun your checks, even if git reports no conflict, and say in your PR what you kept from each side.`;
+  return `${input.pr} ("${inlineText(input.worker)}") merged into your base and changed files you change too: ${shown.join(", ")}${more}. Merge or rebase onto the new base now and rerun your checks, even if git reports no conflict, and say in your PR what you kept from each side.`;
 };
 
 /**

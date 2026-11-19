@@ -934,6 +934,27 @@ const inline = (text: string, max = TITLE_MAX): string =>
     max,
   );
 
+/** {@link inline}, for a server-written note or notice built outside this file. */
+export const inlineText = (text: string, max = TITLE_MAX): string => inline(text, max);
+
+/** Longest title an agent may give its own thread (`set_title`). */
+export const AGENT_TITLE_MAX = 120;
+
+/**
+ * A title an agent gives its own thread: one line, nothing invisible or a control character, at
+ * most {@link AGENT_TITLE_MAX} characters. Every place that shows or quotes it gets a plain value,
+ * even one that forgets to encode it.
+ */
+export const agentTitle = (text: string): string =>
+  clip(
+    text
+      .replaceAll(INVISIBLE, "")
+      // oxlint-disable-next-line no-control-regex -- control characters are what this removes
+      .replaceAll(/[\s\u0000-\u001F\u007F-\u009F]+/g, " ")
+      .trim(),
+    AGENT_TITLE_MAX,
+  );
+
 /**
  * Worker-authored text inside a block. Only the block's own tag is defused, so a contract full of
  * generics stays readable while `</worker-report>` in a summary cannot end the block early.

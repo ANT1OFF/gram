@@ -8,6 +8,7 @@ import {
   type AppToolDescriptor,
   type TaskChipData,
   type ThreadId,
+  agentTitle,
 } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
@@ -768,15 +769,18 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
           description: "Name this thread. Ignored when the user already named it.",
         },
         input: Schema.Struct({ title: Schema.NonEmptyString }),
-        handle: (threadId, { title }) =>
-          runtimes
+        handle: (threadId, { title }) => {
+          // One plain line, so whatever shows or quotes the title gets one (`agentTitle`).
+          const named = agentTitle(title);
+          return runtimes
             .updateThread(threadId, (t) =>
-              t.userNamed ? t : { ...t, title: title.trim(), agentNamed: true },
+              t.userNamed || named === "" ? t : { ...t, title: named, agentNamed: true },
             )
             .pipe(
-              Effect.map((t) => ({ title: t.title, applied: !t.userNamed })),
+              Effect.map((t) => ({ title: t.title, applied: !t.userNamed && named !== "" })),
               Effect.mapError(failed("set_title")),
-            ),
+            );
+        },
       });
 
       const markChapter = defineAppTool({
