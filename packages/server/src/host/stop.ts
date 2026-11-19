@@ -549,7 +549,14 @@ export const stopOn = (deps: StopDeps): HostStop => {
     Effect.gen(function* () {
       const remote = request.remote ?? "origin";
       if (!isPushRemote(remote)) return yield* refused("That isn't a remote to push to.");
-      if (stopping()) return [];
+      // Said per folder, so the asker doesn't read the silence as a keep that went missing.
+      if (stopping())
+        return request.checkouts.map((checkout): HostStopKept => ({
+          threadId: checkout.threadId,
+          cwd: checkout.cwd,
+          pushed: false,
+          note: "The machine is readied to stop, and the stop keeps its work.",
+        }));
       const byThread = new Map<string, Array<HostStopCheckout>>();
       for (const checkout of request.checkouts) {
         const list = byThread.get(checkout.threadId) ?? [];
