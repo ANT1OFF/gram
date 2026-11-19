@@ -50,12 +50,21 @@ export const removeDir = (
   }
 };
 
-/** Run git synchronously for fixture setup; throws with stderr on failure. */
+/**
+ * Run git synchronously for fixture setup; throws with stderr on failure. Fixtures never read the
+ * host's global or system git config: the repo's own config is all a test sees (vitest.config.ts
+ * sets the same pair for the whole worker, product spawns included).
+ */
 export const run = (cwd: string, ...args: Array<string>): string =>
   execFileSync("git", args, {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    env: {
+      ...process.env,
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1",
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
 
