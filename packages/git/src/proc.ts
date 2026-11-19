@@ -26,7 +26,6 @@ import {
   type Guard,
   type ConfigEntry,
   guardFor,
-  submoduleConfigFiles,
   submoduleGitDirs,
   leadingOptions,
   parseConfigList,
@@ -421,23 +420,22 @@ const makeRepoConfigGuard = (runner: CommandRunner["Service"]) => {
           return yield* Effect.fail(
             new ProcSpawnError({ bin: "git", message: "the repository has too many submodules" }),
           );
-        for (const file of submodules.flatMap(submoduleConfigFiles)) {
-          if (!fs.existsSync(file)) continue;
-          const own = yield* read([
-            "config",
-            "--includes",
-            "--file",
-            file,
-            "--list",
-            "--show-scope",
-            "-z",
-          ]);
+        // Read as that submodule's own git does, so its conditional includes (`onbranch:`,
+        // `hasconfig:`) are judged against it rather than against this repository.
+        for (const sub of submodules) {
+          const own = yield* runner.run(
+            exe,
+            "git",
+            ["--git-dir", sub, "config", "--list", "--show-scope", "-z"],
+            { cwd: options.cwd, tier: "local" },
+            env,
+          );
           if (own.status !== 0 || own.truncated)
             return yield* Effect.fail(
               new ProcSpawnError({ bin: "git", message: "couldn't read a submodule's git config" }),
             );
           for (const entry of parseConfigList(own.stdout))
-            nested.push({ ...entry, scope: "local" });
+            if (entry.scope === "local" || entry.scope === "worktree") nested.push(entry);
         }
       }
       const guard = guardFor(parseConfigList(listing.stdout), nested);

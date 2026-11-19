@@ -166,6 +166,29 @@ describe.skipIf(!hasGit)("Gram's own git and a submodule's config", () => {
     }).pipe(provide),
   );
 
+  it.live("judges a submodule config's conditional includes by the submodule", () =>
+    Effect.gen(function* () {
+      const { repo, ran, modules, plantIn } = withSubmodules();
+      // Included only while the submodule, not the repository, is on this branch.
+      run(nodePath.join(repo, "sub"), "checkout", "-qb", "elsewhere");
+      const elsewhere = nodePath.join(modules, "elsewhere");
+      fs.mkdirSync(elsewhere);
+      plantIn(elsewhere, "filter.planted.clean", "clean");
+      run(
+        repo,
+        "config",
+        "--file",
+        nodePath.join(modules, "config"),
+        "includeIf.onbranch:elsewhere.path",
+        nodePath.join(elsewhere, "config"),
+      );
+      // Same size, so git has to read the file, through its clean filter, to see the change.
+      fs.writeFileSync(nodePath.join(repo, "sub", "l.txt"), "lix\n");
+      expect((yield* git(repo, STRICT_STATUS_ARGS)).stdout).toContain("sub");
+      expect(ran()).toEqual([]);
+    }).pipe(provide),
+  );
+
   it.live("sees a submodule config an agent writes after Gram's last call", () =>
     Effect.gen(function* () {
       const { repo, ran, modules, plantIn } = withSubmodules();
