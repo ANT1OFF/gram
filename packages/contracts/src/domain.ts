@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { LimitCleared, LimitWait, THREAD_ERROR_TEXT_MAX, ThreadError } from "./agent-failure.ts";
 import { BabysitState, HumanReviewNotice, ReviewNotice } from "./babysit.ts";
 import { CodexHome } from "./codex-home.ts";
+import { ConversationRef } from "./conversations.ts";
 import { SavedWork } from "./saved-work.ts";
 import { ChecksRollup, PrState } from "./git.ts";
 import {
@@ -1068,6 +1069,13 @@ export const Thread = Schema.Struct({
    */
   readableBy: Schema.optionalKey(Schema.String),
   /**
+   * The conversations of an embedding host this thread owns now (`ConversationRef`): the ones its
+   * `reply` may answer. A thread owns one when the host first sends it a message there, or when its
+   * orchestrator hands it over (`spawn_worker`'s `conversations`); a worker's go back to its
+   * orchestrator when it closes. Absent: none.
+   */
+  conversations: Schema.optionalKey(Schema.Array(ConversationRef)),
+  /**
    * The workspace the thread belongs to: the one an orchestrator runs, or the one a worker was
    * spawned in or joined (`thread.joinWorkspace`, `adopt_thread`). A worker keeps it when its
    * orchestrator goes, so the next orchestrator there can see it; `thread.detach` clears it.
@@ -1189,6 +1197,11 @@ export const UserInput = Schema.Struct({
    * (`waitNoteText`), which the transcript shows as a line of its own. Never set by a client.
    */
   waitNote: Schema.optionalKey(Schema.String),
+  /**
+   * The embedding host's conversation the message came from (`/embed/v1/thread-messages`): the
+   * transcript says where it came from, and the agent is told so it can answer there.
+   */
+  conversation: Schema.optionalKey(ConversationRef),
   /**
    * Who wrote it, as the server establishes: `user` for what the user typed into a Gram surface,
    * `server` for a notice Gram wrote. Absent for another thread's message (`origin`) and for a

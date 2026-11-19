@@ -26,6 +26,8 @@ import { McpRoute } from "../app-tools/http-mcp.ts";
 import { ClaudeAiSeenLive } from "../connectors/claude-ai-seen.ts";
 import { McpTokens } from "../app-tools/mcp-tokens.ts";
 import { OrchestrationAppToolsLive } from "../app-tools/orchestration-tools.ts";
+import { ConversationAppToolsLive } from "../app-tools/conversation-tools.ts";
+import { Conversations } from "../embedding/conversations.ts";
 import { SentWorkPort } from "../embedding/sent-work-port.ts";
 import { SentWorkersLive } from "../orchestration/sent-workers.ts";
 import { SettingsAppToolsLive } from "../settings/chat-tools.ts";
@@ -945,6 +947,7 @@ export const ServerCore = Layer.unwrap(
         ThreadMessagesInboundLive,
         ThreadStartsInboundLive,
         ThreadImportsInboundLive.pipe(Layer.provide(ThreadTransfer.layer)),
+        ConversationAppToolsLive,
         SuppliedSettingsLive,
       )
         // Above the merges, which it asks again when a dependency merges; a `pipe` takes twenty.
@@ -1022,7 +1025,14 @@ export const ServerCore = Layer.unwrap(
           // The docs a workspace's threads publish (`publish_doc`), and the pages its user pins,
           // kept in Gram's state.
           Layer.provideMerge(
-            Layer.mergeAll(AppToolRegistry.layer, WorkspaceOutputs.layer, Docs.layer, Pages.layer),
+            Layer.mergeAll(
+              AppToolRegistry.layer,
+              WorkspaceOutputs.layer,
+              Docs.layer,
+              Pages.layer,
+              // Which thread answers each of an embedding host's conversations.
+              Conversations.layer,
+            ),
           ),
           // The runtimes read the limit readings, which a limit wait falls back on for its reset.
           Layer.provideMerge(

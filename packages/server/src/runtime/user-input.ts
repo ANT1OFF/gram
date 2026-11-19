@@ -1,6 +1,12 @@
 // A user's input as the runtime keeps it, and the transcript message a turn opens with.
 
-import type { TurnId, UserInput, QueuedInput, GramUIMessage } from "@gram/contracts";
+import type {
+  ConversationRef,
+  TurnId,
+  UserInput,
+  QueuedInput,
+  GramUIMessage,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { basename } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -70,6 +76,9 @@ export const userParts = (input: UserInput, messageId: string) => [
   ...(input.origin === undefined
     ? []
     : [{ type: "data-thread-origin", id: messageId, data: input.origin }]),
+  ...(input.conversation === undefined
+    ? []
+    : [{ type: "data-conversation", id: messageId, data: input.conversation }]),
   ...(input.waitNote === undefined
     ? []
     : [{ type: "data-wait-note", id: messageId, data: { text: input.waitNote } }]),
@@ -104,3 +113,18 @@ export const withSender = (message: GramUIMessage): Effect.Effect<GramUIMessage>
       ? message
       : { ...message, metadata: { ...message.metadata, sentBy: person } },
   );
+
+/**
+ * The line the agent reads above a message an embedding host sent from one of its conversations:
+ * where it came from, and how to answer there. A thread that doesn't own the conversation (another
+ * one does) is told not to answer it itself.
+ */
+export const conversationHeader = (conversation: ConversationRef, owned: boolean): string => {
+  const where =
+    conversation.label === undefined
+      ? `conversation ${conversation.id}`
+      : `${conversation.label} (conversation ${conversation.id})`;
+  return owned
+    ? `[From ${where}. Answer there with the \`reply\` tool, naming this conversation; what you write in this chat isn't posted there.]`
+    : `[From ${where}, which another thread answers. Don't reply there; pass on what matters with \`send_message\`.]`;
+};

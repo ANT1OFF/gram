@@ -146,6 +146,12 @@ export type DecisionResponse = typeof DecisionResponse.Type;
  * - `featureCard.upsert` `{id: "<workspaceId>/<feature>", title, status, version}`.
  * - `usage` `{turnId?, model?, inputTokens, outputTokens, cacheReadTokens?, cacheWriteTokens?, costUsd?}`.
  * - `decision` `{id, action, decision, reason?}`: each call to the decision hook and its outcome.
+ * - `conversation.reply` `{id, conversation, text}`: a thread answering one of the host's
+ *   conversations it owns (`reply`), for the host to post there. `id` is the reply's own, the same
+ *   however often it is sent, so a receiver posts it once.
+ * - `conversation.owner` `{conversation, owner?}`: the thread that owns a conversation now, by its
+ *   id, after a hand-over or a return; absent once no thread does. A host sends the conversation's
+ *   next messages to `owner`.
  * - `message` `{id, rev, role, turnId?, at, seq, message, truncated?}`: a thread's stored message,
  *   sent only when the deployment asks for messages. Once when the message settles (a person's
  *   message as it is stored, a reply when it has finished streaming), and again each time the
@@ -168,6 +174,8 @@ export const SinkEventType = Schema.Literals([
   "usage",
   "decision",
   "message",
+  "conversation.reply",
+  "conversation.owner",
 ]);
 export type SinkEventType = typeof SinkEventType.Type;
 

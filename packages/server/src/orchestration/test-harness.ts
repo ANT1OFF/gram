@@ -2,6 +2,8 @@
 // the fake agent and a fake `GitStatePublisher` a test publishes through. The database is a file,
 // so a test can tear the layer down and build it again over the same rows (a restart).
 
+import { Conversations } from "../embedding/conversations.ts";
+import { EventSink } from "../embedding/event-sink.ts";
 import {
   DEFAULT_CHARTER,
   repoFromPrUrl,
@@ -626,7 +628,14 @@ export const serverLayer = (
       Layer.provideMerge(conditionsOf(world)),
       Layer.provideMerge(OrchestrationMemory.layerAt(nodePath.join(world.dir, "memory"))),
       Layer.provideMerge(fakePublisher(world)),
-      Layer.provideMerge(AppToolRegistry.layer),
+      // Beside the registry, an embedding host's conversations with no sink: what `spawn_worker`
+      // hands on. One merge: a pipe takes twenty.
+      Layer.provideMerge(
+        Layer.mergeAll(
+          AppToolRegistry.layer,
+          Conversations.layer.pipe(Layer.provide(Layer.succeed(EventSink)(EventSink.off))),
+        ),
+      ),
       Layer.provideMerge(runtimesOf(world)),
       // As the server has it: the runtime reads the limits (`limitedUntil`, early releases).
       Layer.provideMerge(

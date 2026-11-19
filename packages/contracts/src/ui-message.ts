@@ -10,6 +10,7 @@ import {
   SubagentUsage,
   UsageSummary,
 } from "./domain.ts";
+import type { ConversationRef } from "./conversations.ts";
 import type { DreamReport } from "./dreams.ts";
 import { TaskId, TurnId, WorkspaceId } from "./ids.ts";
 import type {
@@ -276,6 +277,8 @@ export type DataParts = {
   "babysit-report": BabysitReport;
   /** On a user message another thread sent. */
   "thread-origin": MessageOrigin;
+  /** On a message an embedding host sent from one of its conversations. */
+  conversation: ConversationRef;
   /** On the server-authored user message that wakes an orchestrator. */
   "orchestration-digest": OrchestrationDigest;
   /** On the server-authored `/compact` idle compaction sends, in place of the user's bubble. */

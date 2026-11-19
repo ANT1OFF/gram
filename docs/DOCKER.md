@@ -297,6 +297,7 @@ each turn's usage, and every decision the hook made.
   refuses answers. The closing then carries `proof`: the proxy's statement for that request, its
   method and path, and its body, exactly as received, for a receiver to check who answered
   without taking the server's word for it.
+- A thread's reply in one of the platform's conversations is sent as `conversation.reply`, and a conversation changing hands as `conversation.owner` ([Conversations](EMBEDDING.md#conversations)).
 - Nothing is recorded while hosted features are off. Transcript messages aren't sent yet.
 
 ## A headless control plane

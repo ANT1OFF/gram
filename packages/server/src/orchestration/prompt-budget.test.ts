@@ -75,9 +75,12 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * cut, which Housekeeping says. The worker's got one line, and its line on `message_orchestrator`
  * lost what that tool's description says (no thread ID; prefer `report`). Measured at 65,268 and
  * 41,742 before, 65,366 and 41,868 after; the plain prompt is unchanged at 23,646.
+ * The orchestrator's raised on 2026-11-18, on purpose, for `spawn_worker`'s `conversations` (handing
+ * a host's conversation to a worker): the parameter and one short sentence, with how `reply` works
+ * left to its own description; measured then at 65,523.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 65_400,
+  orchestrator: 65_550,
   worker: 41_900,
   plain: 23_650,
 };
