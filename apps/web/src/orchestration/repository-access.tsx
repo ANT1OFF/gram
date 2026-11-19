@@ -5,6 +5,7 @@ import { Check, CircleAlert, User } from "lucide-react";
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Hint } from "@/components/hint";
+import { Button } from "@/components/ui/button";
 import type {
   ShellRepositories,
   ShellRepositoryAbility,
@@ -40,15 +41,17 @@ function RepositoryAccessTable({
   const ids = projectIds.toSorted();
   const origins = useQuery({
     queryKey: ["projects", "origins", ids],
-    queryFn: () => api.projectOrigins(ids),
+    queryFn: ({ signal }) => withinTime(signal, () => api.projectOrigins(ids)),
     staleTime: 60_000,
+    retry: false,
   });
   const names = [
     ...new Set((origins.data?.origins ?? []).flatMap(({ github }) => (github ? [github] : []))),
   ].toSorted();
   const answer = useQuery({
     queryKey: ["embed", "repository-access", names],
-    queryFn: ({ signal }) => access({ repositories: names, signal }),
+    queryFn: ({ signal }) =>
+      withinTime(signal, (bounded) => access({ repositories: names, signal: bounded })),
     enabled: names.length > 0,
     staleTime: 30_000,
     retry: false,
@@ -57,21 +60,32 @@ function RepositoryAccessTable({
   // Nothing on GitHub to say anything about, and nothing else to say.
   if (origins.isSuccess && names.length === 0) return null;
   const rows = answer.data === undefined ? [] : repositoryAccessRows(names, answer.data);
+  // A query that isn't asked yet is pending too: the answer waits on the origins, so a failed
+  // origins read must end the wait itself, or the card reads forever.
+  const failed = origins.isError ? origins.error : answer.isError ? answer.error : undefined;
+  const reading = failed === undefined && (origins.isPending || answer.isFetching);
+  const retry = () => void (origins.isError ? origins.refetch() : answer.refetch());
 
   return (
     <div data-testid="new-workspace-access" className="flex flex-col gap-2">
       <span className="text-meta font-medium text-muted-foreground">
         What the agents can do here
       </span>
-      {(origins.isPending || answer.isPending) && (
+      {reading && (
         <span className="flex items-center gap-2 text-meta text-muted-foreground">
           <Spinner aria-hidden className="size-icon-row" />
           Reading what the agents can do…
         </span>
       )}
-      {answer.isError && (
-        <span role="status" className="text-meta text-warning-text">
-          {errorMessage(answer.error)}
+      {failed !== undefined && (
+        <span
+          role="status"
+          className="flex flex-wrap items-center gap-2 text-meta text-warning-text"
+        >
+          {errorMessage(failed)}
+          <Button type="button" size="xs" variant="outline" onClick={retry}>
+            Retry
+          </Button>
         </span>
       )}
       {rows.length > 0 && (
@@ -107,6 +121,29 @@ function RepositoryAccessTable({
       )}
     </div>
   );
+}
+
+/** How long the card waits for the embedding app before it says so and offers Retry. */
+export const ACCESS_TIMEOUT_MS = 20_000;
+
+/** `run` under the query's own signal and a deadline; past the deadline it fails, in words. */
+async function withinTime<T>(signal: AbortSignal, run: (signal: AbortSignal) => Promise<T>) {
+  const deadline = AbortSignal.timeout(ACCESS_TIMEOUT_MS);
+  const bounded = AbortSignal.any([signal, deadline]);
+  const late = new Promise<never>((_, reject) => {
+    bounded.addEventListener(
+      "abort",
+      () =>
+        reject(
+          deadline.aborted
+            ? new Error("This took too long to read, so what the agents can do isn't known yet.")
+            : bounded.reason,
+        ),
+      { once: true },
+    );
+  });
+  // Raced, so an app that ignores the signal still lets the card stop waiting.
+  return Promise.race([run(bounded), late]);
 }
 
 const COLUMNS = ["Repository", "Push a branch", "Pull request", "Merge"] as const;
