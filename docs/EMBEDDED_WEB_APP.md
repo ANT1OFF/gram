@@ -279,6 +279,11 @@ the sidebar, as a tile in the compact sidebar, and at the start of the title bar
 is hidden; `placement` tells it which. Gram's own workspace switcher stays where it is and lists
 the workspaces of the one server.
 
+`sidebar.switcher: "titlebar"` keeps it out of the navigation (the sidebar, the strip, the dock and
+a phone's menu) and draws it at the start of the title bar always, with `placement: "titlebar"`.
+Draw it there as a short label of the current workspace that leads to a page of your own in
+`settings.pages`, where the full switcher is.
+
 Inside your pages and switcher, `ShellLink` is a link to a path under the app that doesn't load
 the page again, and `useShellLocation()` gives the path the window is on (without `basePath`) and
 a `navigate`. A page that sends the window on by itself (a redirect, or dropping a query it has
@@ -465,6 +470,33 @@ await mountGram({
   own markup, `theme.css` names the glyph colour `text-sidebar-icon`.
 
 Leave `theme` out and the app looks exactly as it does on its own.
+
+### Where the navigation sits
+
+`defaults.navigation` sets where the main navigation sits and whether it hides when not in use, as
+your app's default:
+
+```ts
+await mountGram({
+  element,
+  defaults: { navigation: { position: "dock", edge: "bottom", autoHide: true } },
+});
+```
+
+- `position: "side"`, the default, is the sidebar at the window's left. `"dock"` draws the
+  navigation as a rounded bar of icons with short labels, centred at the window's `edge` (`top`,
+  or `bottom` by default): Needs you, Search, your navigation groups' places, Overview, History and
+  Settings. Overview opens the sidebar over the page, with its workspaces and threads; ⌘B opens
+  and closes it too. The page takes the sidebar's width.
+- `autoHide: true` slides the navigation out of view at its edge while it is not in use, and the
+  page takes its room. It comes back while the pointer rests at that edge, while the keyboard's
+  focus is in it (it stays in the tab order and the accessibility tree; Focus sidebar, ⌘⌥S, moves
+  there) and with ⌘B, which shows and hides it. Escape hides it and leaves the focus on the page.
+  Reduced motion drops the slide.
+- A person may pick their own in Settings → Appearance → Navigation, which wins over your default.
+  A phone keeps its drawer either way.
+
+Leave `defaults.navigation` out and the navigation is Gram's own sidebar, always shown.
 
 ### Gram's look, with your default picked by name
 

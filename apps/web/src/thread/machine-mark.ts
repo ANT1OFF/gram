@@ -5,6 +5,7 @@ import {
   isLocalHost,
   type HostId,
   type MachineState,
+  type SentTo,
   type Thread,
 } from "@gram/contracts";
 
@@ -21,7 +22,17 @@ export interface MachineMark {
    * Why nothing reaches it now, in a word or two; absent while it is online, and before the
    * machines are known.
    */
-  readonly state?: "offline" | "starting" | "needs update" | "not joined";
+  readonly state?:
+    | "offline"
+    | "starting"
+    | "needs update"
+    | "not joined"
+    // A worker sent to a server: it waits on its orchestrator there, or this app can't hear it.
+    | "asks you"
+    | "signed out"
+    | "not heard";
+  /** Set for a worker sent to a server: it runs there, and this app holds none of its files. */
+  readonly sent?: true;
   /**
    * Epoch ms since a thread has waited on it to be started (`MachineState.starting`): it stopped,
    * and whoever runs the machines is bringing it back. Set only with `state` "starting".
@@ -119,3 +130,50 @@ export function machineMark(
       .join("\n"),
   };
 }
+
+/** The server's host, as a mark names it: `gram.example.com`. */
+export const sentHost = (origin: string): string => {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return origin;
+  }
+};
+
+/**
+ * Where a worker sent to a server runs, as a machine's mark says it: the workspace there by name,
+ * a word when it waits on its orchestrator there, and "signed out" when this app can't hear from
+ * it, with the app's sentence on the hover. Its state there is as last heard.
+ */
+export function sentMark(sent: SentTo): MachineMark {
+  const where = `${sent.workspace} · ${sentHost(sent.origin)}`;
+  const state =
+    sent.unheard !== undefined
+      ? /sign/i.test(sent.unheard)
+        ? ("signed out" as const)
+        : ("not heard" as const)
+      : sent.state === "waiting"
+        ? ("asks you" as const)
+        : undefined;
+  return {
+    name: sent.workspace,
+    ...(state === undefined ? {} : { state }),
+    sent: true,
+    words: state === undefined ? `on ${where}` : `on ${where}, ${state}`,
+    hint: [
+      `Runs on ${where}`,
+      `Sent to ${sent.server}, under its rules · ${SENT_WORDS[sent.state]}`,
+      sent.unheard,
+    ]
+      .filter((line) => line !== undefined)
+      .join("\n"),
+  };
+}
+
+const SENT_WORDS: Readonly<Record<SentTo["state"], string>> = {
+  running: "at work there",
+  waiting: "waiting on an answer there",
+  done: "done there",
+  failed: "failed there",
+  stopped: "stopped there",
+};

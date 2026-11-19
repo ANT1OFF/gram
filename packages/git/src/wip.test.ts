@@ -13,6 +13,7 @@ import {
   pushWip,
   restoreWip,
   restoreWipWorktree,
+  setAsideFor,
   snapshotWip,
   wipCaughtUp,
   wipChanges,
@@ -40,6 +41,56 @@ describe.skipIf(!hasGit)("a thread's work in progress", () => {
     run(repo, "push", "--quiet", "origin", "HEAD:refs/heads/main");
     return { repo, origin };
   };
+
+  it.live("clears a folder for work coming back, putting everything of its own aside first", () =>
+    Effect.gen(function* () {
+      const { repo } = withOrigin();
+      const start = run(repo, "rev-parse", "HEAD").trim();
+      // The work coming back: a commit on feat, the branch the thread is on.
+      run(repo, "checkout", "-q", "-b", "feat");
+      write(nodePath.join(repo, "came-back.txt"), "from the other side\n");
+      run(repo, "add", "came-back.txt");
+      run(repo, "commit", "-q", "-m", "carried on there");
+      const back = run(repo, "rev-parse", "HEAD").trim();
+      run(repo, "checkout", "-q", "main");
+      const kept = { ref: "refs/gram/wip/t-1", commit: back, head: back, uncommitted: false };
+
+      // The folder here, on a detached HEAD, where the person went on meanwhile: a commit no
+      // branch holds, an uncommitted file, and an ignored one.
+      const folder = nodePath.join(nodePath.dirname(repo), "folder");
+      run(repo, "worktree", "add", "-q", "--detach", folder, start);
+      write(nodePath.join(folder, "mine.txt"), "committed here\n");
+      run(folder, "add", "mine.txt");
+      run(folder, "commit", "-q", "-m", "my own");
+      write(nodePath.join(folder, "draft.txt"), "not committed\n");
+      fs.appendFileSync(nodePath.join(repo, ".git", "info", "exclude"), "secret.env\n");
+      write(nodePath.join(folder, "secret.env"), "KEY=1\n");
+
+      const aside = yield* setAsideFor(folder, kept, "feat", "aside/feat-1");
+      expect(aside).toBe("aside/feat-1");
+      yield* restoreWip(folder, kept, "feat");
+      expect(run(folder, "branch", "--show-current").trim()).toBe("feat");
+      expect(fs.readFileSync(nodePath.join(folder, "came-back.txt"), "utf8")).toContain("other");
+      // Nothing of the person's is lost: on the branch aside, and the ignored file where it was.
+      expect(run(repo, "show", "aside/feat-1:mine.txt")).toBe("committed here\n");
+      expect(run(repo, "show", "aside/feat-1:draft.txt")).toBe("not committed\n");
+      expect(fs.existsSync(nodePath.join(folder, "draft.txt"))).toBe(false);
+      expect(fs.readFileSync(nodePath.join(folder, "secret.env"), "utf8")).toBe("KEY=1\n");
+
+      // A commit on a detached HEAD with nothing uncommitted beside it goes aside too.
+      const clean = nodePath.join(nodePath.dirname(repo), "clean");
+      run(repo, "worktree", "add", "-q", "--detach", clean, start);
+      write(nodePath.join(clean, "only-commit.txt"), "committed, nothing else\n");
+      run(clean, "add", "only-commit.txt");
+      run(clean, "commit", "-q", "-m", "my own, clean");
+      expect(yield* setAsideFor(clean, kept, undefined, "aside/clean")).toBe("aside/clean");
+      expect(run(repo, "show", "aside/clean:only-commit.txt")).toBe("committed, nothing else\n");
+
+      // A folder with nothing of its own is left as it was, and nothing goes aside.
+      expect(yield* setAsideFor(folder, kept, "feat", "aside/feat-2")).toBeUndefined();
+      expect(run(repo, "branch", "--list", "aside/feat-2").trim()).toBe("");
+    }).pipe(provide),
+  );
 
   it.live("is committed on top of HEAD under a hidden ref, the branch and index untouched", () =>
     Effect.gen(function* () {

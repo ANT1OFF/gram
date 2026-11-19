@@ -50,6 +50,7 @@ const CLUSTER_GAP = "ml-3 @max-2xl/titlebar:ml-1";
  */
 export function ShellTitlebar({
   sidebarShown,
+  navAway,
   needsYouPill,
   settings,
   compactRail,
@@ -59,6 +60,11 @@ export function ShellTitlebar({
 }: {
   /** The overview, open or compact, is to the bar's left. */
   sidebarShown: boolean;
+  /**
+   * The main navigation is a dock, or a sidebar that hides when not in use: no Show sidebar or
+   * Settings here, which it carries itself. The hidden sidebar carries the app's switcher too.
+   */
+  navAway?: "dock" | "sidebar" | undefined;
   /** The column to the bar's left (the overview, or Settings' sections) shows the needs-you pill. */
   needsYouPill: boolean;
   /** Settings is open: Back and its name in place of the workspace and its views. */
@@ -72,6 +78,8 @@ export function ShellTitlebar({
   /** `panel.side` puts the panel on the left. */
   panelLeft: boolean;
 }) {
+  // An embedding app may keep its switcher to the title bar, out of the navigation.
+  const switcherInTitlebar = useEmbedShell((s) => s.sidebar.switcher === "titlebar");
   const togglePanel = useLayoutStore((s) => s.togglePanel);
   const beforeSetup = useBeforeSetup();
   // One bar: a thread alone in Chat puts its header here, and Board its controls.
@@ -218,7 +226,7 @@ export function ShellTitlebar({
       ) : (
         <div className={cn("mr-auto flex min-w-0 items-center gap-1", carried && "flex-1")}>
           {/* Hidden, the overview comes back from here as from ⌘B; shown, its own button hides it. */}
-          {!sidebarShown && (
+          {!sidebarShown && navAway === undefined && (
             <ShellToggle
               icon={PanelLeftOpen}
               label="Show sidebar"
@@ -228,9 +236,11 @@ export function ShellTitlebar({
             />
           )}
           {/* Settings follows the toggle, as it does in the overview's header. */}
-          {!sidebarShown && <TopLeftNav className="mr-2" />}
+          {!sidebarShown && navAway === undefined && <TopLeftNav className="mr-2" />}
           {/* An app in front of Gram's own switcher, while no sidebar is there to carry it. */}
-          {!sidebarShown && <EmbedSwitcher placement="titlebar" />}
+          {(switcherInTitlebar || (!sidebarShown && navAway !== "sidebar")) && (
+            <EmbedSwitcher placement="titlebar" />
+          )}
           {/* A page an app in front of Gram added says its own name here; it is in no workspace
               and has no views to switch between. */}
           {embedTitle !== undefined && <EmbedPageTitle key={embedTitle} title={embedTitle} />}

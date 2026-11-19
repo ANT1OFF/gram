@@ -1,0 +1,38 @@
+{
+  "title": "Workspace switcher placement",
+  "slug": "switcher-placement",
+  "status": "approved",
+  "template": "options",
+  "current": 2,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-16"
+    },
+    {
+      "n": 2,
+      "file": "v2.html",
+      "created": "2026-11-16"
+    }
+  ],
+  "directions": [
+    {
+      "name": "B Settings",
+      "board": "b-settings-side",
+      "shots": {
+        "dark": "shots/b-settings-side-dark.png",
+        "light": "shots/b-settings-side-light.png"
+      }
+    },
+    {
+      "name": "B Settings \u00b7 page",
+      "board": "b-settings-page",
+      "shots": {
+        "dark": "shots/b-settings-page-dark.png",
+        "light": "shots/b-settings-page-light.png"
+      }
+    }
+  ]
+}

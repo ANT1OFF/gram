@@ -87,4 +87,39 @@ describe("a thread's machine marker", () => {
     act(() => useMachines.getState().replace([]));
     expect(getByTestId("machine-marker").textContent).toBe("not joined");
   });
+
+  it("marks a worker sent to a server by the workspace there, and says when it asks or isn't heard", () => {
+    const sentTo = {
+      origin: "https://gram.example.com",
+      server: "Example",
+      workspaceId: "w1",
+      workspace: "Platform",
+      threadId: "t-1",
+      at: 1,
+      state: "running",
+    };
+    const sentThread = (over: object) =>
+      useThreadsStore.setState({
+        byId: {
+          [THERE]: {
+            thread: {
+              id: THERE,
+              checkout: { kind: "main", path: "/r" },
+              sentTo: { ...sentTo, ...over },
+            },
+          },
+        } as never,
+      });
+    sentThread({});
+    const view = render(<ThreadMachineMarker threadId={THERE} hover="none" />);
+    const marker = () => view.getByTestId("machine-marker");
+    expect(marker().textContent).toBe("Platform");
+    expect(marker().getAttribute("aria-label")).toBe("Runs on Platform · gram.example.com");
+    act(() => sentThread({ state: "waiting" }));
+    expect(marker().dataset["machineState"]).toBe("asks you");
+    act(() => sentThread({ unheard: "Sign in to the server first." }));
+    expect(marker().dataset["machineState"]).toBe("signed out");
+    act(() => sentThread({ unheard: "The desktop app didn't answer." }));
+    expect(marker().dataset["machineState"]).toBe("not heard");
+  });
 });

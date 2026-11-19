@@ -459,6 +459,105 @@ export const restoreWip = (
     return { ahead } satisfies WipRestored;
   });
 
+/**
+ * Clears the working tree at `repo` for `restoreWip` to put `kept` back over, losing nothing: what
+ * it holds that HEAD doesn't (gitignore honoured), and commits on `branch` the kept work doesn't
+ * hold, go on the new branch `aside` first, and HEAD is left detached at it. Ignored files stay as
+ * they are. A working tree exactly as `left` holds it (the work as it was when it left, which the
+ * kept work carried on from) has nothing of its own. Answers `aside` when anything went on it, and
+ * nothing when the folder held nothing of its own.
+ */
+export const setAsideFor = (
+  repo: string,
+  kept: WipKept,
+  branch: string | undefined,
+  aside: string,
+  left?: string,
+) =>
+  Effect.gen(function* () {
+    const top = yield* repoTopOrFail(repo);
+    if (kept.head === undefined)
+      return yield* fail("the work was kept before the repository had a commit");
+    if (!(yield* isBranchName(top, aside))) return yield* fail("invalid branch");
+    if (branch !== undefined && !(yield* isBranchName(top, branch)))
+      return yield* fail("invalid branch");
+    if (left !== undefined && !OID.test(left)) return yield* fail("invalid commit");
+    const head = yield* headOid(top);
+    const tree = yield* writeWorktreeTree(top);
+    const treeOf = (commit: string) =>
+      run(top, ["rev-parse", "--verify", "--quiet", `${commit}^{tree}`]).pipe(
+        Effect.map((out) => out.stdout.trim()),
+      );
+    const dirty = head === undefined || (yield* treeOf(head)) !== tree;
+    const asLeft = dirty && left !== undefined && (yield* treeOf(left)) === tree;
+    const own = dirty && !asLeft;
+    // A branch here the kept work doesn't contain, and that doesn't contain all of it either.
+    const tip = branch === undefined ? undefined : yield* readRef(top, `refs/heads/${branch}`);
+    if (tip?.kind === "refused") return yield* fail(tip.message);
+    const diverged =
+      tip?.kind === "commit" &&
+      tip.oid !== kept.head &&
+      !(yield* isAncestor(top, tip.oid, kept.head)) &&
+      (kept.uncommitted || !(yield* isAncestor(top, kept.head, tip.oid)));
+    // Commits made on a detached HEAD that the kept work doesn't hold and no branch or tag does:
+    // reachable from nothing else once the folder moves on.
+    const stray =
+      head !== undefined &&
+      head !== kept.head &&
+      !(yield* isAncestor(top, head, kept.head)) &&
+      (yield* run(top, [
+        "for-each-ref",
+        "--contains",
+        head,
+        "refs/heads",
+        "refs/tags",
+      ])).stdout.trim() === "";
+    if (!dirty && !diverged && !stray) return undefined;
+    if (diverged && tip?.kind === "commit" && head !== tip.oid)
+      return yield* fail(`${branch} has commits of its own in another folder`);
+    // Never a branch another folder is on: moving it would change that folder under it.
+    if (diverged && branch !== undefined) {
+      const listed = (yield* run(top, ["worktree", "list", "--porcelain", "-z"])).stdout.split(
+        "\0\0",
+      );
+      for (const entry of listed) {
+        const fields = entry.split("\0");
+        const at = fields.find((field) => field.startsWith("worktree "))?.slice(9);
+        if (
+          at !== undefined &&
+          !samePath(at, top) &&
+          fields.includes(`branch refs/heads/${branch}`)
+        )
+          return yield* fail(`${branch} is checked out in ${at}`);
+      }
+    }
+    const putAside = own || diverged || stray;
+    if (putAside && (yield* readRef(top, `refs/heads/${aside}`)).kind !== "missing")
+      return yield* fail(`${aside} is a branch here already`);
+    const at = own
+      ? (yield* run(
+          top,
+          [
+            "commit-tree",
+            tree,
+            ...(head === undefined ? [] : ["-p", head]),
+            "-m",
+            "Put aside before a thread's work came back",
+          ],
+          IDENTITY_ENV,
+        )).stdout.trim()
+      : asLeft
+        ? left!
+        : head!;
+    if (putAside) yield* run(top, ["update-ref", `refs/heads/${aside}`, own ? at : head!, ""]);
+    // HEAD at a commit of the files as they are: nothing in the folder changes yet.
+    yield* run(top, ["update-ref", "--no-deref", "HEAD", at]);
+    yield* run(top, [...QUIET, "read-tree", "--reset", at]);
+    if (diverged && tip?.kind === "commit")
+      yield* run(top, ["update-ref", `refs/heads/${branch}`, kept.head, tip.oid]);
+    return putAside ? aside : undefined;
+  });
+
 /** Whether nothing is at `dir`, or only an empty folder. */
 const isFree = (dir: string): boolean => {
   try {

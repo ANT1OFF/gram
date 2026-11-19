@@ -18,6 +18,7 @@ import {
   type GetRuntime,
   queueIndex,
   NOTHING_RUNNING,
+  RUNS_ON_SERVER,
 } from "./runtime-state.ts";
 import {
   type QueuedInput,
@@ -132,7 +133,8 @@ export const makeMessageQueue = ({
   /** Whether the thread waits for a machine to be named for it (`Thread.awaitingMachine`). */
   const awaitsMachine = (rt: Runtime) =>
     store.getThread(rt.threadId).pipe(
-      Effect.map((thread) => thread.awaitingMachine !== undefined),
+      // A thread that runs on a server never opens a session here either.
+      Effect.map((thread) => thread.awaitingMachine !== undefined || thread.sentTo !== undefined),
       Effect.orElseSucceed(() => false),
     );
 
@@ -694,6 +696,9 @@ export const makeMessageQueue = ({
               status: rt.status,
             });
           }
+          // A thread sent to run on a server takes nothing here: what is said to it goes there.
+          if ((yield* store.getThread(threadId)).sentTo !== undefined)
+            return yield* new InvalidState({ message: RUNS_ON_SERVER, threadId });
           // A thread whose machine isn't named yet has no folder to miss, and starts nothing:
           // whatever is sent waits in its queue, which the placement sends (`relocate`).
           const awaiting = yield* awaitsMachine(rt);

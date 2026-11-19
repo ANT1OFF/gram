@@ -30,6 +30,7 @@ vi.mock("@/thread/machine-marker", () => ({
   MachineMarker: () => null,
   ThreadMachineMarker: () => null,
   useThreadHost: () => undefined,
+  useThreadSent: () => undefined,
 }));
 
 const worker = (id: string, tone: RailTone): RailWorker =>

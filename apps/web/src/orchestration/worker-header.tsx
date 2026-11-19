@@ -367,8 +367,13 @@ function useWorkerActions(thread: Thread) {
       worker && orchestrator !== undefined && !docked && !touch
         ? () => keepBeside(thread.id, open)
         : undefined,
+    // A worker sent to a server is talked to only by its orchestrator: there is nothing to take over.
     takeOver:
-      worker && !held && entry !== undefined && !FINISHED_WORKER.has(entry.state)
+      worker &&
+      !held &&
+      thread.sentTo === undefined &&
+      entry !== undefined &&
+      !FINISHED_WORKER.has(entry.state)
         ? () => void takeOver()
         : undefined,
   };

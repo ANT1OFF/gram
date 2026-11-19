@@ -518,6 +518,29 @@ POST /embed/v1/thread-imports
 - A bundle is untrusted input: an id Gram doesn't make, a thread or turn already here, or a newer bundle format is refused before anything is written. The mode, the model's profile, effort and speed are this server's. The thread keeps its id and is recorded as brought in by the person (`thread.import`).
 - The same move sent again, as when the first answer was lost, answers the thread it made: same thread, same Gram, the same person, still here. Anything else already here is refused.
 - The body may be up to 32 MiB. `notes` says what to tell the person. Then the platform asks the other Gram to settle its copy (`POST /threads/settle`).
+- A thread that moved from here before comes back onto its read-only copy here, rather than being refused as already here, when the copy is the person's to read. On their machine its folder is a new one; its branch stays in the earlier folder when that one still holds it, and the new folder then works on a detached HEAD, which `notes` says.
+
+### Bringing a thread back
+
+The platform can take a thread back to a Gram of the person's: it asks for the bundle, gives it to
+that Gram (`POST /threads/import`), and, once that Gram answers, asks this server to settle.
+
+```
+POST /embed/v1/thread-exports
+{ "person": { "id": "user-7", "name": "Ada" }, "threadId": "..." }
+→ 200 { "bundle": { ...ThreadBundle } }
+
+POST /embed/v1/thread-settles
+{ "person": { "id": "user-7", "name": "Ada" }, "threadId": "...", "exportedAt": 1763495000000, "to": "Ada's laptop" }
+→ 200 { "settled": true }
+```
+
+- Either is `404` for a thread the person doesn't reach: on someone else's machine, or readable by someone else.
+- An export is refused with `409` mid-turn, for a thread of a workspace, and for one that moved already. A thread on the person's machine has its edits kept and pushed by that machine (`host.stop.keep`); nothing else changes.
+- A settle names the export's `exportedAt`: a thread that carried on since stays as it is, with `409`. Settled, the thread here is a read-only copy saying where it went.
+- Whether a person may take work away is the platform's to decide before it asks. Both are recorded as the person's (`thread.export`, `thread.settle`).
+- Only that person brings the copy back here later: a move in of a settled copy is refused for anyone else.
+- On the Gram it went to, the import names the server it came from (`server`), and the thread says its copy there is still open until that Gram hears the settle went through (`POST /threads/settled-there`). Until then it offers to make the copy there read-only.
 
 ## Settings supplied from outside
 

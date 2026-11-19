@@ -1,6 +1,13 @@
 import { createHmac, type KeyObject, randomBytes } from "node:crypto";
 import { join } from "node:path";
-import type { DeviceCapability, DeviceId, HostedDiscovery, HostedWorkspace } from "@gram/contracts";
+import {
+  type DeviceCapability,
+  type DeviceId,
+  type HostedDiscovery,
+  type HostedThreadWaited,
+  type HostedWorkspace,
+  runsSentWork,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
@@ -12,8 +19,16 @@ import {
   discoverHosted,
   type Fetch,
   forgetHostedDevice,
+  exportHostedThread,
+  givesThreads,
+  importHostedThread,
+  settleHostedThread,
   listHostedWorkspaces,
   makeTokenKeeper,
+  messageHostedThread,
+  startHostedThread,
+  stopHostedThread,
+  waitHostedThread,
   registerHostedDevice,
   signInHosted,
   type TokenKeeper,
@@ -122,6 +137,12 @@ export interface HostedServerState {
   readonly name: string;
   readonly signedIn: boolean;
   readonly paused: boolean;
+  /** It takes threads moved from this machine. */
+  readonly takesThreads: boolean;
+  /** It gives threads that moved there back to this machine. */
+  readonly givesThreads: boolean;
+  /** It runs work sent from this machine, and lets it be followed, answered and stopped. */
+  readonly runsWork: boolean;
   readonly workspaces: ReadonlyArray<HostedWorkspaceState>;
   /** The last call that failed, in words. */
   readonly problem?: string;
@@ -136,6 +157,53 @@ export interface HostedDeviceState {
 }
 
 export type Done = { readonly ok: true } | { readonly ok: false; readonly why: string };
+
+export type ThreadMoved =
+  | {
+      readonly ok: true;
+      readonly threadId: string;
+      readonly notes: readonly string[];
+      readonly url?: string;
+    }
+  | { readonly ok: false; readonly why: string; readonly unknown?: true };
+
+const NOT_SIGNED_IN = { ok: false as const, why: "Sign in to the server first." };
+
+export type ThreadFetched =
+  | { readonly ok: true; readonly bundle: unknown }
+  | { readonly ok: false; readonly why: string };
+
+export type ThreadSettled =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly why: string; readonly unknown?: true };
+
+/** Work to run there, as a new thread of a workspace. `clientKey` makes a second send the same. */
+export interface WorkToSend {
+  readonly repositories: readonly string[];
+  readonly text: string;
+  readonly title?: string;
+  readonly branch?: string;
+  readonly clientKey: string;
+}
+
+export type WorkSent =
+  | { readonly ok: true; readonly threadId: string; readonly branch?: string }
+  | { readonly ok: false; readonly why: string; readonly unknown?: true };
+
+/** What to wait for on a thread sent from here. */
+export interface WorkWait {
+  readonly after?: string;
+  readonly until?: "reply" | "idle" | "waiting" | "message";
+  readonly timeoutSeconds?: number;
+}
+
+export type WorkWaited =
+  | { readonly ok: true; readonly waited: HostedThreadWaited }
+  | { readonly ok: false; readonly why: string };
+
+export type WorkMessaged =
+  | { readonly ok: true; readonly queued: boolean; readonly after?: string }
+  | { readonly ok: false; readonly why: string; readonly unknown?: true };
 
 export interface LendChoice {
   readonly folders: ReadonlyArray<{
@@ -171,6 +239,52 @@ export interface HostedDevice {
   readonly signOut: (origin: string) => Promise<void>;
   /** Lists a server's workspaces again. */
   readonly refresh: (origin: string) => Promise<Done>;
+  /**
+   * Sends a thread this machine exported to one of the server's workspaces, with the person's
+   * sign-in, named as coming from this machine. Changes nothing here.
+   */
+  readonly moveThread: (origin: string, workspace: string, bundle: unknown) => Promise<ThreadMoved>;
+  /**
+   * Asks for a thread of one of the server's workspaces as a bundle, with the person's sign-in, to
+   * bring it back here. Changes nothing here.
+   */
+  readonly fetchThread: (
+    origin: string,
+    workspace: string,
+    threadId: string,
+  ) => Promise<ThreadFetched>;
+  /** The thread is here now: its copy there becomes read-only, saying it came to this machine. */
+  readonly settleThread: (
+    origin: string,
+    workspace: string,
+    threadId: string,
+    exportedAt: number,
+  ) => Promise<ThreadSettled>;
+  /**
+   * Sends work from this machine to run there, as a new thread of one of the person's workspaces,
+   * with their sign-in. What runs there runs under that workspace's rules. Changes nothing here.
+   */
+  readonly sendWork: (origin: string, workspace: string, work: WorkToSend) => Promise<WorkSent>;
+  /** Waits on a thread sent from here: only those, as the server checks again. */
+  readonly waitWork: (
+    origin: string,
+    workspace: string,
+    threadId: string,
+    wait: WorkWait,
+  ) => Promise<WorkWaited>;
+  /** A message into a thread sent from here, as the person typed it. */
+  readonly messageWork: (
+    origin: string,
+    workspace: string,
+    threadId: string,
+    message: {
+      readonly text: string;
+      readonly mode?: "queue" | "steer" | "interrupt";
+      readonly clientKey: string;
+    },
+  ) => Promise<WorkMessaged>;
+  /** Stops the turn a thread sent from here is working on. Takes authority away, so never paused. */
+  readonly stopWork: (origin: string, workspace: string, threadId: string) => Promise<Done>;
   /** A decision: only from the lending sheet. */
   readonly lend: (origin: string, workspace: string, choice: LendChoice) => Promise<Done>;
   /**
@@ -655,6 +769,30 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
 
   const known = (origin: string) => servers.get(origin);
 
+  /** Why a thread can't move to or from this server's workspace now; nothing when it can. */
+  const refusedForThreads = (server: Server | undefined, workspace: string) => {
+    if (server === undefined || server.keeper.signedOut()) return NOT_SIGNED_IN;
+    if (server.limits.paused())
+      return {
+        ok: false as const,
+        why: "You paused this computer for that server. Lift the pause under Settings → Hosted first.",
+      };
+    // Only a workspace the server listed for this person: the server checks again.
+    if (!server.workspaces.some((each) => each.id === workspace))
+      return { ok: false as const, why: "That workspace isn't one of yours there." };
+    return undefined;
+  };
+
+  const callsOf = (server: Server) => ({
+    discovery: server.discovery,
+    keeper: server.keeper,
+    key: server.key,
+    fetch: options.fetch,
+  });
+
+  /** This machine as the other side names it. */
+  const machineFrom = () => [...options.machineName].slice(0, 200).join("") || "this computer";
+
   // Away, locked or back: each server's connections follow.
   const unwatch = options.presence.onChange(() => {
     for (const server of servers.values()) sync(server);
@@ -791,6 +929,9 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
           name: server.discovery.name,
           signedIn: !server.keeper.signedOut(),
           paused: server.limits.paused(),
+          takesThreads: server.discovery.thread_import_endpoint !== undefined,
+          givesThreads: givesThreads(server.discovery),
+          runsWork: runsSentWork(server.discovery),
           ...(server.problem === undefined ? {} : { problem: server.problem }),
           workspaces: server.workspaces.map((workspace) => {
             const lent = server.lent.get(workspace.id);
@@ -813,6 +954,9 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
           name: hostOf(kept.saved.origin),
           signedIn: false,
           paused: kept.saved.paused,
+          takesThreads: false,
+          givesThreads: false,
+          runsWork: false,
           problem: kept.problem,
           workspaces: [],
         })),
@@ -844,6 +988,101 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
       await secrets.remove(keyName(origin)).catch(() => undefined);
       await save().catch(() => undefined);
       changed();
+    },
+
+    moveThread: async (origin, workspace, bundle) => {
+      const server = known(origin);
+      const refused = refusedForThreads(server, workspace);
+      if (refused !== undefined || server === undefined) return refused ?? NOT_SIGNED_IN;
+      return importHostedThread({
+        discovery: server.discovery,
+        keeper: server.keeper,
+        key: server.key,
+        fetch: options.fetch,
+        workspaceId: workspace,
+        bundle,
+        from: machineFrom(),
+      });
+    },
+
+    fetchThread: async (origin, workspace, threadId) => {
+      const server = known(origin);
+      const refused = refusedForThreads(server, workspace);
+      if (refused !== undefined || server === undefined) return refused ?? NOT_SIGNED_IN;
+      return exportHostedThread({
+        discovery: server.discovery,
+        keeper: server.keeper,
+        key: server.key,
+        fetch: options.fetch,
+        workspaceId: workspace,
+        threadId,
+      });
+    },
+
+    settleThread: async (origin, workspace, threadId, exportedAt) => {
+      const server = known(origin);
+      const refused = refusedForThreads(server, workspace);
+      if (refused !== undefined || server === undefined) return refused ?? NOT_SIGNED_IN;
+      return settleHostedThread({
+        discovery: server.discovery,
+        keeper: server.keeper,
+        key: server.key,
+        fetch: options.fetch,
+        workspaceId: workspace,
+        threadId,
+        exportedAt,
+        to: machineFrom(),
+      });
+    },
+
+    sendWork: async (origin, workspace, work) => {
+      const server = known(origin);
+      const refused = refusedForThreads(server, workspace);
+      if (refused !== undefined || server === undefined) return refused ?? NOT_SIGNED_IN;
+      return startHostedThread({
+        ...callsOf(server),
+        workspaceId: workspace,
+        repositories: work.repositories,
+        text: work.text,
+        ...(work.title === undefined ? {} : { title: work.title }),
+        ...(work.branch === undefined ? {} : { branch: work.branch }),
+        clientKey: work.clientKey,
+      });
+    },
+
+    waitWork: async (origin, workspace, threadId, wait) => {
+      const server = known(origin);
+      const refused = refusedForThreads(server, workspace);
+      if (refused !== undefined || server === undefined) return refused ?? NOT_SIGNED_IN;
+      return waitHostedThread({
+        ...callsOf(server),
+        workspaceId: workspace,
+        threadId,
+        ...(wait.after === undefined ? {} : { after: wait.after }),
+        ...(wait.until === undefined ? {} : { until: wait.until }),
+        ...(wait.timeoutSeconds === undefined ? {} : { timeoutSeconds: wait.timeoutSeconds }),
+      });
+    },
+
+    messageWork: async (origin, workspace, threadId, message) => {
+      const server = known(origin);
+      const refused = refusedForThreads(server, workspace);
+      if (refused !== undefined || server === undefined) return refused ?? NOT_SIGNED_IN;
+      return messageHostedThread({
+        ...callsOf(server),
+        workspaceId: workspace,
+        threadId,
+        text: message.text,
+        ...(message.mode === undefined ? {} : { mode: message.mode }),
+        clientKey: message.clientKey,
+      });
+    },
+
+    stopWork: async (origin, workspace, threadId) => {
+      const server = known(origin);
+      // Stopping takes authority away, so a pause never holds it back.
+      if (server === undefined || server.keeper.signedOut()) return NOT_SIGNED_IN;
+      return stopHostedThread({ ...callsOf(server), workspaceId: workspace, threadId });
     },
 
     refresh: async (origin) => {

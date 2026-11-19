@@ -30,6 +30,7 @@ import {
   isLocalHost,
   type NotFound,
   type Project,
+  type MovedToServer,
   type Thread,
   type ThreadNotFound,
   type ThreadStatus,
@@ -55,11 +56,15 @@ import {
   pushWip,
   randomWorktreeName,
   removeWorktreeDir,
+  restoreWip,
   restoreWipWorktree,
   sanitizeBranch,
+  setAsideFor,
+  type WipKept,
   snapshotWip,
   WIP_PUSH_PROTOCOLS,
   wipCaughtUp,
+  wipRef,
 } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -75,7 +80,8 @@ import { cloneRepo } from "../fs/clone.ts";
 import { registerRepo } from "../fs/folders.ts";
 import { ReadingAs, SERVER } from "../embedding/readable-by.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
-import { cloneIdentityOf } from "../host/repos.ts";
+import { cloneIdentityOf, cloneUrlOf } from "../host/repos.ts";
+import { keepThreadWork } from "../host/stop-resume.ts";
 import { migrations } from "../persistence/migrations.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { makeClosedReopener } from "../rpc/handlers/closed-threads.ts";
@@ -155,13 +161,18 @@ export interface ThreadTransferShape {
   /** The thread here becomes a read-only, archived copy saying where it went. */
   settleThread(
     input: SettleThreadInput,
+    by?: string,
   ): Effect.Effect<Thread, NotFound | ThreadNotFound | InvalidState>;
+  /** The copy on the server the thread came back from is read-only now: it is open only here. */
+  settledThere(threadId: Thread["id"]): Effect.Effect<Thread, ThreadNotFound | InvalidState>;
 }
 
 /** Who alone may read a moved thread here, and who brought it in, when a person did. */
 interface Who {
   readonly reader?: string;
   readonly by?: string;
+  /** The server it came back from, whose copy there is still open. */
+  readonly leftOpen?: MovedToServer;
 }
 
 /**
@@ -173,6 +184,37 @@ const sameMove = (thread: Thread, input: ImportThreadForPersonInput): boolean =>
   thread.transferredFrom.exportedAt === input.bundle.exportedAt &&
   thread.transferredFrom.by === input.person &&
   thread.transferredTo === undefined;
+
+/** Why the bundle itself can't come in here, whatever is here already. */
+const admitShape = (bundle: ThreadBundle) =>
+  Effect.gen(function* () {
+    if (bundle.app.schema > SCHEMA) {
+      return yield* refuse(
+        `This thread was exported by a newer Gram (${cut(bundle.app.version, 40)}) than this server runs. Update this server, then move it again.`,
+      );
+    }
+    const problem = threadBundleProblem(bundle);
+    if (problem !== undefined) return yield* refuse(problem);
+    const branch = bundle.branch === undefined ? undefined : sanitizeBranch(bundle.branch);
+    if (bundle.branch !== undefined && branch !== bundle.branch) {
+      return yield* refuse("The bundle's branch isn't a branch name git takes.");
+    }
+  });
+
+/** The repository's own folder that a working tree at `at` belongs to. */
+const commonDirOf = (at: string) =>
+  git(at, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).pipe(
+    Effect.map((out) => (out.status === 0 ? out.stdout.trim() : undefined)),
+  );
+
+/** Whether the folder at `dir` is a worktree of the repository at `top`. */
+const ofRepository = (dir: string, top: string) =>
+  Effect.gen(function* () {
+    if (!existsSync(dir)) return false;
+    const common = commonDirOf;
+    const mine = yield* common(dir);
+    return mine !== undefined && mine === (yield* common(top));
+  }).pipe(Effect.orElseSucceed(() => false));
 
 export interface ThreadTransferOptions {
   /** The git transports the ref may travel over. Tests allow `file`. */
@@ -218,6 +260,80 @@ const make = (options: ThreadTransferOptions) =>
         ),
       );
 
+    /** What every bundle carries of the thread itself: its conversation, scrubbed, and its plan. */
+    const bundleOf = (
+      thread: Thread,
+      where: Pick<ThreadBundle, "repository" | "branch" | "base" | "tip" | "wip">,
+      notes: Array<string>,
+    ) =>
+      Effect.gen(function* () {
+        const history = yield* store.exportHistory(thread.id);
+        const dropped = Math.max(0, history.messages.length - BUNDLE_MESSAGES_MAX);
+        if (dropped > 0) {
+          notes.push(
+            `The conversation is longer than a bundle carries; its ${dropped} oldest messages stayed behind.`,
+          );
+        }
+        const plan = yield* store.getPlan(thread.id);
+        return scrubbed({
+          format: THREAD_BUNDLE_FORMAT,
+          app: { version: config.appVersion ?? "0.0.0", schema: SCHEMA },
+          exportedAt: yield* Clock.currentTimeMillis,
+          thread: portableThread(thread),
+          messages: scrubbed(history.messages.slice(dropped), true),
+          turns: history.turns.slice(-BUNDLE_MESSAGES_MAX),
+          ...(plan.plan === undefined ? {} : { plan: plan.plan }),
+          ...(plan.turnPlan === undefined ? {} : { turnPlan: plan.turnPlan }),
+          ...where,
+          notes,
+        } satisfies ThreadBundle);
+      });
+
+    /**
+     * A thread whose folder is on a joined machine, as a server that runs no work itself keeps a
+     * person's: the machine keeps its edits under the hidden ref and pushes them
+     * (`host.stop.keep`), as it does after each turn, and the bundle names what it kept.
+     */
+    const exportFromMachine = (thread: Thread, checkout: Checkout) =>
+      Effect.gen(function* () {
+        const url =
+          checkout.cloneIdentity === undefined ? undefined : cloneUrlOf(checkout.cloneIdentity);
+        const remote = url === undefined ? undefined : shareableRemote(url);
+        if (machines === undefined || checkout.hostId === undefined || remote === undefined) {
+          return yield* refuse(
+            "This thread runs on another machine whose repository this server can't name, so its edits can't go with it.",
+          );
+        }
+        const kept = yield* keepThreadWork({ hosts: machines }, checkout.hostId, thread).pipe(
+          Effect.mapError((error) =>
+            refuse(`The thread's edits couldn't be kept: ${cut(error.message, 400)}`),
+          ),
+        );
+        const work = kept.find((each) => each.cwd === checkout.path);
+        if (work === undefined || !work.pushed || work.commit === undefined) {
+          return yield* refuse(
+            `The thread's edits couldn't be kept${work?.note === undefined ? "." : `: ${cut(work.note, 400)}`}`,
+          );
+        }
+        const project = (yield* store.listProjects).find((each) => each.id === thread.projectId);
+        const branch = work.branch ?? checkout.branch;
+        return yield* bundleOf(
+          thread,
+          {
+            repository: {
+              name: cut(project?.name ?? "repository", 2_000),
+              remote: cut(remote, 2_000),
+            },
+            ...(branch === undefined ? {} : { branch: cut(branch, 2_000) }),
+            ...(checkout.base === undefined ? {} : { base: cut(checkout.base, 2_000) }),
+            ...(work.caughtUp === true || work.ref === undefined
+              ? { tip: work.commit }
+              : { wip: { ref: work.ref, commit: work.commit, uncommitted: false } }),
+          },
+          [],
+        );
+      });
+
     const exportThread: ThreadTransferShape["exportThread"] = (input) =>
       Effect.gen(function* () {
         yield* requireOn;
@@ -244,11 +360,8 @@ const make = (options: ThreadTransferOptions) =>
           });
         }
         const checkout = effectiveCheckout(thread);
-        if (checkout.hostId !== undefined) {
-          return yield* refuse(
-            "This thread runs on another machine; only a thread on this one can be moved from here.",
-          );
-        }
+        if (checkout.hostId !== undefined && !isLocalHost(checkout))
+          return yield* exportFromMachine(thread, checkout);
         const project = (yield* store.listProjects).find((each) => each.id === thread.projectId);
         if (project === undefined)
           return yield* refuse("This thread's repository isn't a project here.");
@@ -278,43 +391,54 @@ const make = (options: ThreadTransferOptions) =>
             return { snapshot };
           }),
         );
-        const history = yield* store.exportHistory(thread.id);
-        const dropped = Math.max(0, history.messages.length - BUNDLE_MESSAGES_MAX);
-        if (dropped > 0) {
-          notes.push(
-            `The conversation is longer than a bundle carries; its ${dropped} oldest messages stayed behind.`,
-          );
-        }
-        const plan = yield* store.getPlan(thread.id);
-        return scrubbed({
-          format: THREAD_BUNDLE_FORMAT,
-          app: { version: config.appVersion ?? "0.0.0", schema: SCHEMA },
-          exportedAt: yield* Clock.currentTimeMillis,
-          thread: portableThread(thread),
-          messages: scrubbed(history.messages.slice(dropped), true),
-          turns: history.turns.slice(-BUNDLE_MESSAGES_MAX),
-          ...(plan.plan === undefined ? {} : { plan: plan.plan }),
-          ...(plan.turnPlan === undefined ? {} : { turnPlan: plan.turnPlan }),
-          repository: { name: cut(project.name, 2_000), remote: cut(remote, 2_000) },
-          ...(checkout.branch === undefined ? {} : { branch: cut(checkout.branch, 2_000) }),
-          ...(checkout.base === undefined ? {} : { base: cut(checkout.base, 2_000) }),
-          ...("tip" in kept
-            ? { tip: kept.tip }
-            : {
-                wip: {
-                  ref: kept.snapshot.ref,
-                  commit: kept.snapshot.commit,
-                  uncommitted: kept.snapshot.uncommitted,
-                },
-              }),
+        return yield* bundleOf(
+          thread,
+          {
+            repository: { name: cut(project.name, 2_000), remote: cut(remote, 2_000) },
+            ...(checkout.branch === undefined ? {} : { branch: cut(checkout.branch, 2_000) }),
+            ...(checkout.base === undefined ? {} : { base: cut(checkout.base, 2_000) }),
+            ...("tip" in kept
+              ? { tip: kept.tip }
+              : {
+                  wip: {
+                    ref: kept.snapshot.ref,
+                    commit: kept.snapshot.commit,
+                    uncommitted: kept.snapshot.uncommitted,
+                  },
+                }),
+          },
           notes,
-        } satisfies ThreadBundle);
+        );
       });
 
     /**
      * A new worktree of the repository at `top` holding what the bundle kept: the edits from the
      * named ref at the named commit, or the branch's tip at the remote when nothing else was kept.
      */
+    /** What the bundle kept, fetched into the repository at `top` from its remote. */
+    const fetchKept = (top: string, bundle: ThreadBundle, branch: string | undefined) =>
+      Effect.gen(function* () {
+        const kept =
+          bundle.wip !== undefined
+            ? yield* fetchWip(
+                top,
+                bundle.thread.id,
+                "origin",
+                protocols,
+                bundle.wip.commit,
+                bundle.wip.ref,
+              )
+            : branch !== undefined && bundle.tip !== undefined
+              ? yield* fetchBranchTip(top, branch, "origin", protocols, bundle.tip)
+              : undefined;
+        if (kept === undefined) {
+          return yield* refuse(
+            "The repository's remote doesn't hold the thread's edits. Move it again from the other server.",
+          );
+        }
+        return kept;
+      });
+
     const placeWork = (top: string, bundle: ThreadBundle) =>
       withGit(
         "The thread's edits couldn't be put back here",
@@ -323,24 +447,7 @@ const make = (options: ThreadTransferOptions) =>
           if (bundle.branch !== undefined && branch !== bundle.branch) {
             return yield* refuse("The bundle's branch isn't a branch name git takes.");
           }
-          const kept =
-            bundle.wip !== undefined
-              ? yield* fetchWip(
-                  top,
-                  bundle.thread.id,
-                  "origin",
-                  protocols,
-                  bundle.wip.commit,
-                  bundle.wip.ref,
-                )
-              : branch !== undefined && bundle.tip !== undefined
-                ? yield* fetchBranchTip(top, branch, "origin", protocols, bundle.tip)
-                : undefined;
-          if (kept === undefined) {
-            return yield* refuse(
-              "The repository's remote doesn't hold the thread's edits. Move it again from the other server.",
-            );
-          }
+          const kept = yield* fetchKept(top, bundle, branch);
           const common = (yield* git(top, [
             "rev-parse",
             "--path-format=absolute",
@@ -389,22 +496,12 @@ const make = (options: ThreadTransferOptions) =>
     /** Why the bundle can't come in here, read before anything is written; nothing when it can. */
     const admit = (bundle: ThreadBundle) =>
       Effect.gen(function* () {
-        if (bundle.app.schema > SCHEMA) {
-          return yield* refuse(
-            `This thread was exported by a newer Gram (${cut(bundle.app.version, 40)}) than this server runs. Update this server, then move it again.`,
-          );
-        }
-        const problem = threadBundleProblem(bundle);
-        if (problem !== undefined) return yield* refuse(problem);
+        yield* admitShape(bundle);
         const conflict = yield* store.movedThreadConflict(
           bundle.thread.id,
           bundle.turns.map((turn) => turn.id),
         );
         if (conflict !== undefined) return yield* refuse(conflict);
-        const branch = bundle.branch === undefined ? undefined : sanitizeBranch(bundle.branch);
-        if (bundle.branch !== undefined && branch !== bundle.branch) {
-          return yield* refuse("The bundle's branch isn't a branch name git takes.");
-        }
       });
 
     /**
@@ -420,13 +517,31 @@ const make = (options: ThreadTransferOptions) =>
       checkout: Checkout,
       undo: Effect.Effect<void>,
       who: Who,
+      returning = false,
     ) =>
       Effect.gen(function* () {
-        yield* record(bundle, from, project, checkout, who).pipe(Effect.onError(() => undo));
+        const written = returning
+          ? movedRecord(bundle, from, project, checkout, who).pipe(
+              Effect.flatMap((moved) => store.returnMovedThread(moved)),
+            )
+          : record(bundle, from, project, checkout, who);
+        yield* written.pipe(Effect.onError(() => undo));
         return yield* openMoved(bundle.thread.id);
       });
 
     const record = (
+      bundle: ThreadBundle,
+      from: string,
+      project: Project,
+      checkout: Checkout,
+      who: Who,
+    ) =>
+      movedRecord(bundle, from, project, checkout, who).pipe(
+        Effect.flatMap((moved) => store.stageMovedThread(moved)),
+      );
+
+    /** The bundle's thread as it is recorded here, closed for a reopen to open. */
+    const movedRecord = (
       bundle: ThreadBundle,
       from: string,
       project: Project,
@@ -451,7 +566,7 @@ const make = (options: ThreadTransferOptions) =>
           bundle.base !== undefined && sanitizeBranch(bundle.base) === bundle.base
             ? bundle.base
             : undefined;
-        yield* store.stageMovedThread({
+        return {
           thread: {
             ...thread,
             model,
@@ -467,6 +582,7 @@ const make = (options: ThreadTransferOptions) =>
               at: now,
               exportedAt: bundle.exportedAt,
               ...(who.by === undefined ? {} : { by: who.by }),
+              ...(who.leftOpen === undefined ? {} : { leftOpen: who.leftOpen }),
             },
             ...(who.reader === undefined ? {} : { readableBy: who.reader }),
           },
@@ -475,13 +591,207 @@ const make = (options: ThreadTransferOptions) =>
           turns: bundle.turns,
           plan: bundle.plan,
           turnPlan: bundle.turnPlan,
-        });
+        };
+      });
+
+    /** The read-only copy here of a thread that moved from here, open or on the closed list. */
+    const copyOf = (threadId: Thread["id"]) =>
+      Effect.gen(function* () {
+        const open = yield* store.getThread(threadId).pipe(Effect.option);
+        if (Option.isSome(open))
+          return open.value.transferredTo === undefined
+            ? undefined
+            : { thread: open.value, open: true };
+        const closed = (yield* store.listClosed).find((each) => each.thread.id === threadId);
+        return closed?.thread.transferredTo === undefined
+          ? undefined
+          : { thread: closed.thread, open: false };
+      });
+
+    /**
+     * The thread back where it moved from: it takes the place of its read-only copy here. Its
+     * folder here, when it is still there, takes its edits back, with whatever the person did in
+     * it since put aside on a branch of its own first; otherwise it gets a new worktree, as an
+     * import does. Nothing of the copy is lost: its conversation stays where the bundle's starts
+     * later (`returnMovedThread`).
+     */
+    const returnHere = (
+      input: ImportThreadInput,
+      copy: { readonly thread: Thread; readonly open: boolean },
+      who: Who,
+    ) =>
+      Effect.gen(function* () {
+        const { bundle } = input;
+        yield* admitShape(bundle);
+        const here = yield* remoteOf(input.root);
+        if (here === undefined || here !== bundle.repository.remote) {
+          return yield* refuse(
+            `${input.root} isn't a clone of ${cut(bundle.repository.remote, 200)}. Give the folder of that repository here.`,
+          );
+        }
+        const { project } = yield* registerRepo(store, input.root);
+        const top = project.root;
+        const branch = bundle.branch;
+        const was = effectiveCheckout(copy.thread);
+        const ours =
+          was.kind === "worktree" &&
+          was.hostId === undefined &&
+          proc !== undefined &&
+          (yield* withGit("", ofRepository(was.path, top)).pipe(Effect.orElseSucceed(() => false)));
+        // Read before anything here changes, so a refusal leaves the copy as it was: what the
+        // folder held as it left (before the fetch moves the ref), and the work coming back.
+        const left = ours
+          ? (yield* withGit(
+              "",
+              git(top, [
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                `${wipRef(bundle.thread.id)}^{commit}`,
+              ]),
+            ).pipe(Effect.orElseSucceed(() => ({ stdout: "" })))).stdout.trim()
+          : "";
+        const kept = yield* withGit(
+          "The thread's edits couldn't be fetched here",
+          fetchKept(top, bundle, branch),
+        );
+        // Its branch in another folder of the repository: the folder can't take it back in place,
+        // so it gets a new one, as an import does.
+        const busy =
+          ours && branch !== undefined
+            ? (yield* withGit("", git(top, ["worktree", "list", "--porcelain", "-z"])).pipe(
+                Effect.orElseSucceed(() => ({ stdout: "" })),
+              )).stdout
+                .split("\0\0")
+                .some((entry) => {
+                  const fields = entry.split("\0");
+                  const at = fields.find((field) => field.startsWith("worktree "))?.slice(9);
+                  return (
+                    at !== undefined &&
+                    nodePath.resolve(at) !== nodePath.resolve(was.path) &&
+                    fields.includes(`branch refs/heads/${branch}`)
+                  );
+                })
+            : false;
+        const inPlace = ours && !busy;
+        // The copy steps aside, onto the closed list with its folder kept; anything that fails
+        // from here on opens it again as it was.
+        if (copy.open) {
+          yield* runtimes
+            .close(bundle.thread.id, {})
+            .pipe(
+              Effect.mapError((error) =>
+                refuse(`The copy here couldn't make way: ${cut(error.message, 300)}`),
+              ),
+            );
+        }
+        // Only a copy that was open opens again: one the person had closed stays closed.
+        return yield* placeReturned(input, project, was, inPlace, kept, left, who).pipe(
+          Effect.onError(() => (copy.open ? reopenCopy(bundle.thread.id) : Effect.void)),
+        );
+      });
+
+    /** The copy, put on the closed list for a return that then failed, open again as it was. */
+    const reopenCopy = (threadId: Thread["id"]) =>
+      Effect.gen(function* () {
+        if (Option.isSome(yield* store.getThread(threadId).pipe(Effect.option))) return;
+        const closed = (yield* store.listClosed).find((each) => each.thread.id === threadId);
+        if (closed?.thread.transferredTo === undefined) return;
+        const taken = yield* store.takeClosed(threadId);
+        if (taken === undefined) return;
+        yield* reopener
+          .reopenTaken(taken.closed, [])
+          .pipe(
+            Effect.catch(() =>
+              store.rememberClosed(taken.closed.thread, taken.closed.closedAt, []),
+            ),
+          );
+      }).pipe(Effect.ignore);
+
+    /** The returning thread's folder made here, and the thread recorded in it and opened. */
+    const placeReturned = (
+      input: ImportThreadInput,
+      project: Project,
+      was: Checkout,
+      inPlace: boolean,
+      kept: WipKept,
+      left: string,
+      who: Who,
+    ) =>
+      Effect.gen(function* () {
+        const { bundle } = input;
+        const top = project.root;
+        const branch = bundle.branch;
+        const now = yield* Clock.currentTimeMillis;
+        const more: Array<string> = [];
+        let checkout: Checkout;
+        let undo: Effect.Effect<void> = Effect.void;
+        if (inPlace) {
+          const stamp = new Date(now).toISOString().slice(0, 16).replace(/[-:T]/g, "");
+          const aside = `aside/${folderName(branch ?? bundle.thread.id)}-${stamp}`;
+          const put = yield* withGit(
+            "The thread's edits couldn't be put back in its folder here",
+            Effect.gen(function* () {
+              const setAside = yield* setAsideFor(
+                was.path,
+                kept,
+                branch,
+                aside,
+                left === "" ? undefined : left,
+              );
+              yield* restoreWip(was.path, kept, branch);
+              return setAside;
+            }),
+          );
+          if (put !== undefined) {
+            more.push(`What you changed in its folder here since it left is on the branch ${put}.`);
+          }
+          checkout = {
+            kind: "worktree",
+            path: was.path,
+            repoRoot: top,
+            ...(branch === undefined ? {} : { branch }),
+          };
+        } else {
+          const placed = yield* placeWork(top, bundle);
+          if (placed.detached && branch !== undefined) {
+            more.push(
+              `${branch} is checked out in another folder here, so the thread's folder holds its work on a detached HEAD.`,
+            );
+          }
+          checkout = {
+            kind: "worktree",
+            path: placed.dir,
+            repoRoot: top,
+            ...(branch === undefined || placed.detached ? {} : { branch }),
+          };
+          undo = withGit("", removeWorktreeDir(top, placed.dir, true)).pipe(Effect.ignore);
+        }
+        const moved = yield* movedRecord(bundle, input.from, project, checkout, who);
+        yield* store
+          .returnMovedThread({ ...moved, closedAt: now })
+          .pipe(Effect.onError(() => undo));
+        const thread = yield* openMoved(bundle.thread.id);
+        return { thread, notes: notesOf(bundle, more) } satisfies ImportThreadResult;
       });
 
     /** The thread in a new worktree of the repository at `root`, on this machine. */
     const importHere = (input: ImportThreadInput, who: Who = {}) =>
       Effect.gen(function* () {
         const { bundle } = input;
+        // The same move asked again, as when the first answer never came: the thread it made,
+        // open here, is the answer, and nothing is made twice.
+        const open = yield* store.getThread(bundle.thread.id).pipe(Effect.option);
+        if (
+          Option.isSome(open) &&
+          open.value.transferredTo === undefined &&
+          open.value.transferredFrom?.name === input.from &&
+          open.value.transferredFrom.exportedAt === bundle.exportedAt &&
+          open.value.transferredFrom.by === who.by
+        )
+          return { thread: open.value, notes: [] } satisfies ImportThreadResult;
+        const copy = yield* copyOf(bundle.thread.id);
+        if (copy !== undefined) return yield* returnHere(input, copy, who);
         yield* admit(bundle);
         // Before the folder becomes a project here: a wrong one leaves nothing behind.
         const here = yield* remoteOf(input.root);
@@ -529,7 +839,7 @@ const make = (options: ThreadTransferOptions) =>
      * the repository, if it hasn't, and makes the thread's folder from the ref and commit the
      * bundle names (`host.stop.restore` with `ref`), or from the branch at exactly its commit.
      */
-    const importOnMachine = (input: ImportThreadForPersonInput, who: Who) =>
+    const importOnMachine = (input: ImportThreadForPersonInput, who: Who, returning = false) =>
       Effect.gen(function* () {
         const { bundle } = input;
         const url = bundle.repository.remote;
@@ -578,12 +888,12 @@ const make = (options: ThreadTransferOptions) =>
           repoPath.includes("\\") && !repoPath.includes("/")
             ? nodePath.win32.join
             : nodePath.posix.join;
-        const restoreAt = (cwd: string) =>
+        const restoreAt = (cwd: string, onBranch = true) =>
           restore({
             threadId: bundle.thread.id,
             cwd,
             url,
-            ...(branch === undefined ? {} : { branch }),
+            ...(branch === undefined || !onBranch ? {} : { branch }),
             commit: expected,
             ...(bundle.wip === undefined ? { caughtUp: true } : { ref: bundle.wip.ref }),
           }).pipe(
@@ -599,6 +909,18 @@ const make = (options: ThreadTransferOptions) =>
         if (!answer.restored && answer.note === "Its folder is there already.") {
           cwd = join(repoPath, ".worktrees", randomWorktreeName());
           answer = yield* restoreAt(cwd);
+        }
+        // Coming back, its branch may still be in the folder it had here before, which stays as
+        // it is: the new folder then holds its work on a detached HEAD.
+        let detached = false;
+        if (
+          returning &&
+          branch !== undefined &&
+          !answer.restored &&
+          answer.note?.includes("is checked out in") === true
+        ) {
+          detached = true;
+          answer = yield* restoreAt(cwd, false);
         }
         if (!answer.restored) {
           return yield* refuse(
@@ -630,15 +952,23 @@ const make = (options: ThreadTransferOptions) =>
             path: cwd,
             hostId,
             repoRoot: repoPath,
-            ...(branch === undefined ? {} : { branch }),
+            ...(branch === undefined || detached ? {} : { branch }),
             ...(cloneIdentity === undefined ? {} : { cloneIdentity }),
           },
           undo,
           who,
+          returning,
         );
         return {
           thread,
-          notes: notesOf(bundle, answer.note === undefined ? [] : [cut(answer.note, 400)]),
+          notes: notesOf(bundle, [
+            ...(answer.note === undefined ? [] : [cut(answer.note, 400)]),
+            ...(detached
+              ? [
+                  `${branch} is still checked out in the folder it had here before, so its new folder holds its work on a detached HEAD.`,
+                ]
+              : []),
+          ]),
         } satisfies ImportThreadResult;
         // Once the machine has started on the folder, the import runs to its end or its undo: a
         // caller that gives up mid-way leaves no folder nobody records.
@@ -652,12 +982,39 @@ const make = (options: ThreadTransferOptions) =>
         const here = yield* store.getThread(input.bundle.thread.id).pipe(Effect.option);
         if (Option.isSome(here) && sameMove(here.value, input))
           return { thread: here.value, notes: [] } satisfies ImportThreadResult;
-        yield* admit(input.bundle);
         // A thread only one person could read stays only theirs: the person bringing it in.
         const who: Who = {
           by: input.person,
           ...(input.bundle.thread.readableBy === undefined ? {} : { reader: input.person }),
         };
+        const copy = yield* copyOf(input.bundle.thread.id);
+        if (copy !== undefined) {
+          // Only the person who took it away brings it back: whoever it went for, else whoever
+          // brought it here, else whoever alone could read it.
+          const owner =
+            copy.thread.transferredTo?.by ??
+            copy.thread.transferredFrom?.by ??
+            copy.thread.readableBy;
+          if (owner === undefined || owner !== input.person)
+            return yield* refuse("This thread is already on this server.");
+          if (config.headless === true) {
+            yield* admitShape(input.bundle);
+            if (copy.open) {
+              yield* runtimes
+                .close(input.bundle.thread.id, {})
+                .pipe(
+                  Effect.mapError((error) =>
+                    refuse(`The copy here couldn't make way: ${cut(error.message, 300)}`),
+                  ),
+                );
+            }
+            return yield* importOnMachine(input, who, true).pipe(
+              Effect.onError(() => (copy.open ? reopenCopy(input.bundle.thread.id) : Effect.void)),
+            );
+          }
+        } else {
+          yield* admit(input.bundle);
+        }
         if (config.headless === true) return yield* importOnMachine(input, who);
         const project = yield* withGit(
           "The repository couldn't be cloned here",
@@ -696,7 +1053,14 @@ const make = (options: ThreadTransferOptions) =>
           }),
       );
     const importThread: ThreadTransferShape["importThread"] = (input) =>
-      requireOn.pipe(Effect.andThen(oneAtATime(input.bundle.thread.id, importHere(input))));
+      requireOn.pipe(
+        Effect.andThen(
+          oneAtATime(
+            input.bundle.thread.id,
+            importHere(input, input.server === undefined ? {} : { leftOpen: input.server }),
+          ),
+        ),
+      );
     const importThreadFor: ThreadTransferShape["importThreadFor"] = (input) =>
       requireOn.pipe(
         Effect.andThen(oneAtATime(input.bundle.thread.id, importFor(input))),
@@ -704,20 +1068,20 @@ const make = (options: ThreadTransferOptions) =>
         Effect.provideService(ReadingAs, SERVER),
       );
 
-    const settleThread: ThreadTransferShape["settleThread"] = (input) =>
+    const settleThread: ThreadTransferShape["settleThread"] = (input, by) =>
       Effect.gen(function* () {
         yield* requireOn;
         const before = yield* store.getThread(input.threadId);
         if (before.transferredTo !== undefined) return before;
         if (before.lastActivityAt > input.exportedAt) {
           return yield* refuse(
-            "This thread carried on after it was exported, so its copy there is behind. Move it again.",
+            "This thread carried on after it was exported, so its copy there is behind. Carry on in one of the two; moving it again makes another copy there.",
           );
         }
         const rested = yield* runtimes.restSession(input.threadId);
         if (rested === "working") {
           return yield* refuse(
-            "This thread started a turn after it was exported, so its copy there is behind. Move it again.",
+            "This thread started a turn after it was exported, so its copy there is behind. Carry on in one of the two; moving it again makes another copy there.",
           );
         }
         const at = yield* Clock.currentTimeMillis;
@@ -728,13 +1092,33 @@ const make = (options: ThreadTransferOptions) =>
             name: input.to,
             at,
             ...(input.url === undefined ? {} : { url: input.url }),
+            ...(input.server === undefined ? {} : { server: input.server }),
+            ...(by === undefined ? {} : { by }),
           },
         }));
         yield* hub.publish({ type: "thread.upsert", thread: settled });
         return settled;
       });
 
-    return ThreadTransfer.of({ exportThread, importThread, importThreadFor, settleThread });
+    const settledThere: ThreadTransferShape["settledThere"] = (threadId) =>
+      Effect.gen(function* () {
+        yield* requireOn;
+        const thread = yield* store.updateThread(threadId, (was) => {
+          if (was.transferredFrom?.leftOpen === undefined) return was;
+          const { leftOpen: _settled, ...from } = was.transferredFrom;
+          return { ...was, transferredFrom: from };
+        });
+        yield* hub.publish({ type: "thread.upsert", thread });
+        return thread;
+      });
+
+    return ThreadTransfer.of({
+      exportThread,
+      importThread,
+      importThreadFor,
+      settleThread,
+      settledThere,
+    });
   });
 
 export class ThreadTransfer extends Context.Service<ThreadTransfer, ThreadTransferShape>()(

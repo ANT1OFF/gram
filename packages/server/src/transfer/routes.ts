@@ -1,6 +1,7 @@
 // `POST /workspaces/export` and `POST /workspaces/import`: a workspace out of this server as a
 // bundle, and a bundle into it. `POST /threads/export`, `/threads/import` and `/threads/settle`:
-// one thread the same way, and the read-only copy it leaves here. The auth middleware lets only the local app's own origin reach
+// one thread the same way, and the read-only copy it leaves here; `/threads/settled-there`: the
+// copy on the server a thread came back from is read-only now. The auth middleware lets only the local app's own origin reach
 // them, never a paired browser or a joined machine; while the hosted features setting is off they
 // answer as a path that isn't there.
 
@@ -24,6 +25,7 @@ import {
 import {
   ExportThreadInput,
   ImportThreadInput,
+  SettledThereInput,
   SettleThreadInput,
 } from "@gram/contracts/thread-transfer";
 import * as ByteSize from "effect/ByteSize";
@@ -36,6 +38,7 @@ import {
   THREAD_EXPORT_PATH,
   THREAD_IMPORT_PATH,
   THREAD_SETTLE_PATH,
+  THREAD_SETTLED_THERE_PATH,
   WORKSPACE_EXPORT_PATH,
   WORKSPACE_IMPORT_PATH,
 } from "../http/remote-access.ts";
@@ -48,6 +51,7 @@ export {
   THREAD_EXPORT_PATH,
   THREAD_IMPORT_PATH,
   THREAD_SETTLE_PATH,
+  THREAD_SETTLED_THERE_PATH,
   WORKSPACE_EXPORT_PATH,
   WORKSPACE_IMPORT_PATH,
 };
@@ -62,6 +66,7 @@ export const WORKSPACE_TRANSFER_PATHS: ReadonlySet<string> = new Set([
   THREAD_EXPORT_PATH,
   THREAD_IMPORT_PATH,
   THREAD_SETTLE_PATH,
+  THREAD_SETTLED_THERE_PATH,
 ]);
 
 /** An export's body: a workspace id and a flag. */
@@ -180,6 +185,18 @@ export const workspaceTransferRoute = (
         Effect.catch((error) => Effect.succeed(refusal(error))),
       );
     }
+    if (path === THREAD_SETTLED_THERE_PATH) {
+      const read = yield* body(EXPORT_BODY_MAX);
+      if (read.refused !== undefined) return read.refused;
+      const input = yield* Schema.decodeUnknownEffect(SettledThereInput)(read.value).pipe(
+        Effect.option,
+      );
+      if (input._tag === "None") return refuse("Name the thread.", 400);
+      return yield* transfer.settledThere(input.value.threadId).pipe(
+        Effect.map((thread) => HttpServerResponse.jsonUnsafe({ thread })),
+        Effect.catch((error) => Effect.succeed(refusal(error))),
+      );
+    }
     if (path === THREAD_IMPORT_PATH) {
       const read = yield* body(BUNDLE_MAX_BYTES);
       if (read.refused !== undefined) return read.refused;
@@ -224,6 +241,7 @@ export const WorkspaceTransferRoutes = Layer.unwrap(
       HttpRouter.add("*", THREAD_EXPORT_PATH, handle(THREAD_EXPORT_PATH)),
       HttpRouter.add("*", THREAD_IMPORT_PATH, handle(THREAD_IMPORT_PATH)),
       HttpRouter.add("*", THREAD_SETTLE_PATH, handle(THREAD_SETTLE_PATH)),
+      HttpRouter.add("*", THREAD_SETTLED_THERE_PATH, handle(THREAD_SETTLED_THERE_PATH)),
     );
   }),
 );

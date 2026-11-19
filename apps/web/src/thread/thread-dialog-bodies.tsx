@@ -11,6 +11,8 @@ import { CloseThreadDialog } from "./close-thread-dialog";
 import { ContinueInDialog } from "./continue-in-dialog";
 import { ForkDialog } from "./fork-dialog";
 import { LabelsDialog } from "./labels-dialog";
+import { BringThreadDialog } from "./bring-thread-dialog";
+import { MoveThreadDialog } from "./move-thread-dialog";
 import { RenameThreadDialog } from "./rename-dialog";
 import { RestartSessionDialog } from "./restart-session-dialog";
 import { SnoozeDialog } from "./snooze-dialog";
@@ -74,6 +76,12 @@ export function ThreadDialogBody({
       )}
       {dialog.kind === "moveWorkspace" && (
         <MoveWorkspaceDialog workspaceId={dialog.workspaceId} onClose={dismiss} />
+      )}
+      {dialog.kind === "moveThread" && (
+        <MoveThreadDialog threadId={dialog.threadId} onClose={dismiss} />
+      )}
+      {dialog.kind === "bringThread" && (
+        <BringThreadDialog threadId={dialog.threadId} onClose={dismiss} />
       )}
       {dialog.kind === "projectScripts" && (
         <ProjectScriptsDialog projectId={dialog.projectId} onClose={dismiss} />

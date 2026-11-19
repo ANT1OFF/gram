@@ -160,7 +160,10 @@ export function WorkerBanner({
           </span>
         </div>
       )}
-      {!held && entry !== undefined && !FINISHED_WORKER.has(entry.state) && <TakeOverLine />}
+      {!held &&
+        thread.sentTo === undefined &&
+        entry !== undefined &&
+        !FINISHED_WORKER.has(entry.state) && <TakeOverLine />}
       {routine !== undefined && (
         // Where it came from, quietly: a routine's run started it, not a message from anyone.
         <p

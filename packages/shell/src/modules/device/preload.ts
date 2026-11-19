@@ -14,6 +14,22 @@ export const hostedDevicePreload = (ipc: PreloadIpc): Pick<DesktopBridge, "hoste
     signIn: (server) => ipc.invoke(Channels.hostedDeviceSignIn, { server }),
     signOut: (origin) => ipc.invoke(Channels.hostedDeviceSignOut, { origin }),
     refresh: (origin) => ipc.invoke(Channels.hostedDeviceRefresh, { origin }),
+    moveThread: (origin, workspace, bundle) =>
+      ipc.invoke(Channels.hostedDeviceMoveThread, { origin, workspace, bundle }),
+    fetchThread: (origin, workspace, threadId) =>
+      ipc.invoke(Channels.hostedDeviceFetchThread, { origin, workspace, threadId }),
+    settleThread: (origin, workspace, threadId, exportedAt) =>
+      ipc.invoke(Channels.hostedDeviceSettleThread, { origin, workspace, threadId, exportedAt }),
+    work: {
+      send: (origin, workspace, work) =>
+        ipc.invoke(Channels.hostedDeviceSendWork, { origin, workspace, work }),
+      wait: (origin, workspace, threadId, wait) =>
+        ipc.invoke(Channels.hostedDeviceWaitWork, { origin, workspace, threadId, wait }),
+      message: (origin, workspace, threadId, message) =>
+        ipc.invoke(Channels.hostedDeviceMessageWork, { origin, workspace, threadId, message }),
+      stop: (origin, workspace, threadId) =>
+        ipc.invoke(Channels.hostedDeviceStopWork, { origin, workspace, threadId }),
+    },
     lend: (origin, workspace) => ipc.invoke(Channels.hostedDeviceLend, { origin, workspace }),
     resume: (origin, workspace) => ipc.invoke(Channels.hostedDeviceResume, { origin, workspace }),
     stop: (origin, workspace) => ipc.invoke(Channels.hostedDeviceStop, { origin, workspace }),

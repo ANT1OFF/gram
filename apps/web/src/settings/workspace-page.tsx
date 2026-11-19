@@ -44,6 +44,7 @@ import { Field, inputCls, NumberField } from "./fields";
 import { MergeReviewPolicyField } from "./merge-review-policy-field";
 import { OtherWorkerModelsField } from "./other-worker-models-field";
 import { RouteAtLimitField } from "./route-at-limit-field";
+import { SendWorkField } from "./send-work-field";
 import { WatchDefaultBranchField } from "./watch-default-branch-field";
 import { IdleCompactField } from "./idle-compact-field";
 import { PauseAtLimitField } from "./pause-at-limit-field";
@@ -562,6 +563,11 @@ function AutonomySection({ state, changes }: { state: WorkspaceState; changes: C
         }}
       />
       <PauseAtLimitField
+        charter={charter}
+        disabled={changes.busy}
+        onChange={(next, title) => void changes.saveCharter(next, title)}
+      />
+      <SendWorkField
         charter={charter}
         disabled={changes.busy}
         onChange={(next, title) => void changes.saveCharter(next, title)}

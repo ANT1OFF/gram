@@ -21,6 +21,8 @@ export const WORKSPACE_IMPORT_PATH = "/workspaces/import";
 export const THREAD_EXPORT_PATH = "/threads/export";
 export const THREAD_IMPORT_PATH = "/threads/import";
 export const THREAD_SETTLE_PATH = "/threads/settle";
+/** The copy on the server a thread came back from is read-only now. */
+export const THREAD_SETTLED_THERE_PATH = "/threads/settled-there";
 /** Management routes: only the local app may call them, never a paired browser. */
 export const LOCAL_ONLY_PATHS: ReadonlySet<string> = new Set([
   REMOTE_PAIR_PATH,
@@ -31,6 +33,7 @@ export const LOCAL_ONLY_PATHS: ReadonlySet<string> = new Set([
   THREAD_EXPORT_PATH,
   THREAD_IMPORT_PATH,
   THREAD_SETTLE_PATH,
+  THREAD_SETTLED_THERE_PATH,
   // A thread started from a profile, by the platform in front or the local app, and moved.
   PROFILE_START_PATH,
   PROFILE_MOVE_PATH,

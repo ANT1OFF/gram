@@ -657,3 +657,9 @@ export const removableRepos = (workspace: Workspace): readonly ProjectId[] =>
 /** A project's name for the list, falling back to its id once the project has been removed. */
 export const projectNameOf = (projects: readonly Project[], projectId: ProjectId): string =>
   projects.find((project) => project.id === projectId)?.name ?? projectId;
+
+/** The charter letting the orchestrator send workers to a server, or not; off is stored as absent. */
+export const withSendWork = (charter: OrchestratorCharter, on: boolean): OrchestratorCharter => {
+  const { sendWork: _was, ...rest } = charter;
+  return on ? { ...rest, sendWork: true } : rest;
+};

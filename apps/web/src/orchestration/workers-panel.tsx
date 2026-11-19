@@ -511,12 +511,17 @@ function Row({ row }: { row: PanelRow }) {
             {row.line}
           </span>
           {/* The other machine it runs on, named after its status; its hover says its state. */}
-          {row.hostId !== undefined && (
+          {(row.hostId !== undefined || row.sent !== undefined) && (
             <>
               <span aria-hidden className="shrink-0">
                 ·
               </span>
-              <MachineMarker hostId={row.hostId} hover="title" testId="workers-panel-machine" />
+              <MachineMarker
+                hostId={row.hostId}
+                sent={row.sent}
+                hover="title"
+                testId="workers-panel-machine"
+              />
             </>
           )}
           {row.placement !== undefined && (

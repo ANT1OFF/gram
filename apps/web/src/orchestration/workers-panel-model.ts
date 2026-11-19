@@ -1,6 +1,7 @@
 import {
   effectiveCheckout,
   type HostId,
+  type SentTo,
   isLocalHost,
   type ThreadId,
   type ThreadSummary,
@@ -81,6 +82,8 @@ export interface PanelRow {
   readonly mainOnly: boolean;
   /** The joined machine its checkout is on; absent for this one. */
   readonly hostId?: HostId | undefined;
+  /** The server it was sent to, which runs it; absent for a worker that runs here or on a machine. */
+  readonly sent?: SentTo | undefined;
   /** Where its orchestrator put it, when that is a machine for workers, and why. */
   readonly placement?: WorkerPlacement | undefined;
 }
@@ -136,7 +139,10 @@ export const panelRow = (
     at: at === undefined ? undefined : formatStamp(at, now),
     mainOnly: row.cleanedUp === true || row.solo === true,
     hostId: hostOfSummary(summary),
-    placement: summary?.thread.spawnedBy?.placement,
+    sent: summary?.thread.sentTo,
+    // A sent worker's mark names where it went; its placement would say it twice.
+    placement:
+      summary?.thread.sentTo === undefined ? summary?.thread.spawnedBy?.placement : undefined,
   };
 };
 

@@ -17,8 +17,10 @@ import { Channels } from "../../channels.ts";
 import { appWindows, isDecisionWindow } from "../../electron/decision-windows.ts";
 import type { ShellIpc } from "../ipc.ts";
 import type { HostedDevice, HostedDeviceState, LendChoice } from "./hosted-device.ts";
+import { hostedThreadIdOf, workMessageOf, workToSendOf, workWaitOf } from "./work-input.ts";
 
 export { isDecisionWindow, makeAskWindow } from "./ask-window.ts";
+export { workToSendOf, workWaitOf, workMessageOf } from "./work-input.ts";
 
 /**
  * A server's own words on one line, as a dialog the shell draws shows them: codes nobody could
@@ -324,6 +326,12 @@ const target = (arg: unknown) => ({
   workspace: field(arg, "workspace", 128),
 });
 
+/** A thread's id as a window names it: Gram's own ids, nothing a path could use. */
+const threadIdOf = (arg: unknown): string | undefined => {
+  const id = field(arg, "threadId", 128);
+  return id !== undefined && /^[A-Za-z0-9_-]{1,128}$/.test(id) ? id : undefined;
+};
+
 export interface HostedDeviceIpcOptions {
   readonly device: () => HostedDevice | undefined;
   /** The dialogs, attached to the window that asked. */
@@ -376,6 +384,129 @@ export const installHostedDeviceIpc = (ipc: ShellIpc, options: HostedDeviceIpcOp
     withDevice((device, arg) => {
       const { origin } = target(arg);
       return origin === undefined ? NONE : device.refresh(origin);
+    }),
+  );
+  // The person pressed Move in the app's own window; the bundle is the one the local server
+  // exported. The server there decides whether it comes in.
+  serve(
+    Channels.hostedDeviceMoveThread,
+    withDevice((device, arg) => {
+      const { origin, workspace } = target(arg);
+      const bundle =
+        typeof arg === "object" && arg !== null && "bundle" in arg ? arg.bundle : undefined;
+      return origin === undefined || workspace === undefined || bundle === undefined
+        ? { ok: false, why: "Name the server, the workspace and the thread." }
+        : device.moveThread(origin, workspace, bundle).then(
+            // The server's words, as a dialog shows them: no hidden or reordering characters.
+            (moved) =>
+              moved.ok
+                ? { ...moved, notes: moved.notes.map((note) => serverWords(note).text) }
+                : { ...moved, why: serverWords(moved.why).text },
+          );
+    }),
+  );
+  // The person pressed Bring back in the app's own window: the bundle goes to the local server,
+  // which reads and checks it, and the window settles the copy there once that took it.
+  serve(
+    Channels.hostedDeviceFetchThread,
+    withDevice((device, arg) => {
+      const { origin, workspace } = target(arg);
+      const threadId = threadIdOf(arg);
+      return origin === undefined || workspace === undefined || threadId === undefined
+        ? { ok: false, why: "Name the server, the workspace and the thread." }
+        : device
+            .fetchThread(origin, workspace, threadId)
+            .then((fetched) =>
+              fetched.ok ? fetched : { ...fetched, why: serverWords(fetched.why).text },
+            );
+    }),
+  );
+  serve(
+    Channels.hostedDeviceSettleThread,
+    withDevice((device, arg) => {
+      const { origin, workspace } = target(arg);
+      const threadId = threadIdOf(arg);
+      const exportedAt =
+        typeof arg === "object" && arg !== null && "exportedAt" in arg ? arg.exportedAt : undefined;
+      return origin === undefined ||
+        workspace === undefined ||
+        threadId === undefined ||
+        typeof exportedAt !== "number" ||
+        !Number.isFinite(exportedAt)
+        ? { ok: false, why: "Name the server, the workspace, the thread and its export." }
+        : device
+            .settleThread(origin, workspace, threadId, exportedAt)
+            .then((settled) =>
+              settled.ok ? settled : { ...settled, why: serverWords(settled.why).text },
+            );
+    }),
+  );
+  // Work the app sends to run there: the server decides whether it runs, and lets this machine
+  // follow, answer and stop only what it sent. Its words are shown as words, never as markup.
+  serve(
+    Channels.hostedDeviceSendWork,
+    withDevice((device, arg) => {
+      const { origin, workspace } = target(arg);
+      const work = workToSendOf(arg);
+      return origin === undefined || workspace === undefined || work === undefined
+        ? { ok: false, why: "Name the server, the workspace, the repositories and the task." }
+        : device
+            .sendWork(origin, workspace, work)
+            .then((sent) => (sent.ok ? sent : { ...sent, why: serverWords(sent.why).text }));
+    }),
+  );
+  serve(
+    Channels.hostedDeviceWaitWork,
+    withDevice((device, arg) => {
+      const { origin, workspace } = target(arg);
+      const threadId = hostedThreadIdOf(arg);
+      const wait = workWaitOf(arg);
+      return origin === undefined ||
+        workspace === undefined ||
+        threadId === undefined ||
+        wait === undefined
+        ? { ok: false, why: "Name the server, the workspace and the thread." }
+        : device.waitWork(origin, workspace, threadId, wait).then((waited) =>
+            waited.ok
+              ? {
+                  ok: true,
+                  happened: waited.waited.happened,
+                  ...(waited.waited.latest === undefined ? {} : { latest: waited.waited.latest }),
+                  ...(waited.waited.reply === undefined ? {} : { reply: waited.waited.reply }),
+                  title: serverWords(waited.waited.thread.title).text,
+                  state: waited.waited.thread.state,
+                  working: waited.waited.thread.working,
+                }
+              : { ...waited, why: serverWords(waited.why).text },
+          );
+    }),
+  );
+  serve(
+    Channels.hostedDeviceMessageWork,
+    withDevice((device, arg) => {
+      const { origin, workspace } = target(arg);
+      const threadId = hostedThreadIdOf(arg);
+      const message = workMessageOf(arg);
+      return origin === undefined ||
+        workspace === undefined ||
+        threadId === undefined ||
+        message === undefined
+        ? { ok: false, why: "Name the server, the workspace, the thread and the message." }
+        : device
+            .messageWork(origin, workspace, threadId, message)
+            .then((sent) => (sent.ok ? sent : { ...sent, why: serverWords(sent.why).text }));
+    }),
+  );
+  serve(
+    Channels.hostedDeviceStopWork,
+    withDevice((device, arg) => {
+      const { origin, workspace } = target(arg);
+      const threadId = hostedThreadIdOf(arg);
+      return origin === undefined || workspace === undefined || threadId === undefined
+        ? { ok: false, why: "Name the server, the workspace and the thread." }
+        : device
+            .stopWork(origin, workspace, threadId)
+            .then((done) => (done.ok ? done : { ...done, why: serverWords(done.why).text }));
     }),
   );
   serve(

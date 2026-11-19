@@ -56,7 +56,9 @@ import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import type { AgentHosts } from "../runtime/agent-hosts.ts";
+import { NO_SENT_WORK, SentWorkPort, type SentWorkPortShape } from "../embedding/sent-work-port.ts";
 import { OrchestrationMemory } from "./memory.ts";
+import { SentWorkersLive } from "./sent-workers.ts";
 import { decodeOutbox } from "./outbox.ts";
 import { wrapUpText } from "./rules.ts";
 import { Orchestration, OrchestrationLive } from "./service.ts";
@@ -94,6 +96,8 @@ export interface World {
   readonly ghDirs: Array<string>;
   /** What `gh pr list --head` finds open, by head branch, in whichever repo it is asked about. */
   readonly openPrs: Map<string, number>;
+  /** The desktop app work is sent to a server through (`send_worker`); none when unset. */
+  sentWork?: SentWorkPortShape | undefined;
   /** The origin URL every checkout's git reports to the PR tools; acme/app on GitHub when unset. */
   origin?: string | undefined;
   /** The host `gh pr view` puts in a PR's URL; `github.com` when unset. */
@@ -602,7 +606,10 @@ export const serverLayer = (
   store: Parameters<typeof ThreadStore.layerSqlite>[1] = {},
 ) =>
   Layer.mergeAll(
-    OrchestrationAppToolsLive,
+    // The desktop app a sent worker goes through: none unless the test gives one.
+    Layer.mergeAll(OrchestrationAppToolsLive, SentWorkersLive).pipe(
+      Layer.provideMerge(Layer.succeed(SentWorkPort)(world.sentWork ?? NO_SENT_WORK)),
+    ),
     OrchestratorAppToolsLive.pipe(Layer.provideMerge(PrDependenciesLive)),
     TranscriptSearchAppToolsLive,
     RoutineAppToolsLive,

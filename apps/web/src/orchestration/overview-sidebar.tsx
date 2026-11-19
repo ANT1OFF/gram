@@ -31,6 +31,7 @@ import {
   Tag,
   Timer,
   Workflow,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -150,7 +151,12 @@ import {
 } from "./overview-section";
 import { shownPrNumbers, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
 import { threadHost, type MachineMark } from "@/thread/machine-mark";
-import { MachineMarker, useMachineMark, useThreadHost } from "@/thread/machine-marker";
+import {
+  MachineMarker,
+  useMachineMark,
+  useThreadHost,
+  useThreadSent,
+} from "@/thread/machine-marker";
 import { peek } from "./peek-store";
 import {
   ANSWERED,
@@ -352,6 +358,7 @@ function useRevealViewed() {
 export function OverviewSidebar({
   phone = false,
   onPin,
+  onClose,
 }: {
   phone?: boolean;
   /**
@@ -359,6 +366,8 @@ export function OverviewSidebar({
    * (`onPin`) in place of Hide and Compact.
    */
   onPin?: () => void;
+  /** Shown over the page from the navigation dock: its header's one toggle closes it. */
+  onClose?: () => void;
 }) {
   const hideHint = useShortcutHint("sidebar.toggle");
   useRevealViewed();
@@ -380,12 +389,13 @@ export function OverviewSidebar({
       data-testid="overview-sidebar"
       data-surface="chrome"
       {...{ [OVERVIEW_ROOT]: "open" }}
-      data-overlay={onPin === undefined ? undefined : ""}
+      data-overlay={onPin === undefined && onClose === undefined ? undefined : ""}
       data-look={roomy ? "roomy" : undefined}
       className={cn(
         "flex min-h-0 flex-1 flex-col border-r border-sidebar-divider bg-sidebar text-sidebar-foreground",
         !phone &&
           onPin === undefined &&
+          onClose === undefined &&
           "m-(--sidebar-inset) rounded-(--sidebar-radius) border-y-(length:--sidebar-edge) border-l-(length:--sidebar-edge)",
       )}
     >
@@ -394,6 +404,7 @@ export function OverviewSidebar({
         <div className="flex min-h-(--titlebar-height) shrink-0 items-center gap-1 px-inset pt-2.5 pb-1.5">
           <EmbedSidebarHeader />
           {!hasHeader && <span className="flex-1" />}
+          {onClose !== undefined && <CloseOver onClose={onClose} />}
           {onPin !== undefined && (
             <Hint
               label="Keep sidebar open"
@@ -412,7 +423,7 @@ export function OverviewSidebar({
               <PanelLeft />
             </Hint>
           )}
-          {onPin === undefined && (
+          {onPin === undefined && onClose === undefined && (
             <Hint
               label={withHint("Collapse sidebar to a strip", hideHint)}
               side="bottom"
@@ -445,7 +456,9 @@ export function OverviewSidebar({
           for them all beside the buttons, the rest wrap to a row below rather than clip. Its
           room past those buttons decides whether New says its words. */}
           <div className="@container/overview-head flex min-h-(--titlebar-height) shrink-0 flex-wrap content-start items-center gap-1 px-2 py-1.5 pl-[max(--spacing(2),var(--window-lights-inset))] [-webkit-app-region:drag]">
-            {onPin !== undefined ? (
+            {onClose !== undefined ? (
+              <CloseOver onClose={onClose} />
+            ) : onPin !== undefined ? (
               <Hint
                 label="Keep sidebar open"
                 side="bottom"
@@ -1044,7 +1057,8 @@ export function WorkerRow({
   // The other machine it runs on, if any: named at its edge unless the edge has words of its own,
   // when the glyph alone stands and the name is on its hover card.
   const hostId = useThreadHost(row.threadId);
-  const machine = useMachineMark(hostId);
+  const sent = useThreadSent(row.threadId);
+  const machine = useMachineMark(hostId, sent);
   // What its edge says beyond its dot: "Starting…", an ask, a failure, a wait's reason, real
   // activity. A tone's own word ("Idle") gives way to the machine's name.
   const edgeSays = starting || (!routine && (waiting !== undefined || nowLineShown(row)));
@@ -1117,6 +1131,7 @@ export function WorkerRow({
         {/* Its hover is the row's own: its card, or the flyout's title, says the machine whole. */}
         <MachineMarker
           hostId={hostId}
+          sent={sent}
           show={edgeSays ? "glyph" : "name"}
           hover="none"
           testId="overview-worker-machine"
@@ -1874,7 +1889,7 @@ export function SoloRow({
   // The other machine it runs on, if any: named at its edge before its time, its glyph alone
   // beside an alarm's words.
   const hostId = threadHost(thread);
-  const machine = useMachineMark(hostId);
+  const machine = useMachineMark(hostId, thread.sentTo);
   const where = machine === undefined ? "" : `, ${machine.words}`;
   // What needs you or failed takes a second line of its own, so the title stays whole and the
   // words are never cut against it; the dot becomes a bar beside both lines, as a worker's does.
@@ -1921,6 +1936,7 @@ export function SoloRow({
         <span data-testid="overview-solo-status" className={cn(ROW_TRAIL, WORKER_TRAIL)}>
           <MachineMarker
             hostId={hostId}
+            sent={thread.sentTo}
             show={twoLines ? "glyph" : "name"}
             hover="none"
             testId="overview-solo-machine"
@@ -1943,5 +1959,27 @@ export function SoloRow({
         )}
       </button>
     </RowMenu>
+  );
+}
+
+/** The one toggle of the sidebar shown over the page from the navigation dock: it closes it. */
+function CloseOver({ onClose }: { onClose: () => void }) {
+  return (
+    <Hint
+      label="Close overview"
+      side="bottom"
+      render={
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Close overview"
+          data-testid="overview-close"
+          className="text-muted-foreground [:where(&)_svg]:text-sidebar-icon [-webkit-app-region:no-drag]"
+          onClick={onClose}
+        />
+      }
+    >
+      <X />
+    </Hint>
   );
 }

@@ -2,7 +2,16 @@ import type { Thread, ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { GitFork, MessageSquareOff } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { useApi } from "@/api/context";
@@ -104,6 +113,19 @@ import { useUnseenFrom } from "./unread";
 import { SnoozeChip } from "./snooze-chip";
 import { BrowserChip } from "./browser-chip";
 import { HeaderWakeChip } from "./wake-chip";
+
+/** Only for a thread that moved away, so it loads only then. */
+const SentNotice = lazy(async () => ({
+  default: (await import("./sent-notice")).SentNotice,
+}));
+const MovedAwayNotice = lazy(async () => ({
+  default: (await import("./moved-away-notice")).MovedAwayNotice,
+}));
+
+/** Only for a thread back from a server whose copy there is still open. */
+const LeftOpenNotice = lazy(async () => ({
+  default: (await import("./moved-away-notice")).LeftOpenNotice,
+}));
 
 /** The optional turn trace, loaded apart from the conversation. */
 const traceBody = lazyPart(() => import("./trace-view"));
@@ -783,6 +805,16 @@ export function ThreadView({
               <QueueList threadId={threadId} />
             </div>
           </ApprovalSlotsProvider>
+          {thread.transferredTo !== undefined && (
+            <Suspense fallback={null}>
+              <MovedAwayNotice threadId={threadId} />
+            </Suspense>
+          )}
+          {thread.transferredFrom?.leftOpen !== undefined && (
+            <Suspense fallback={null}>
+              <LeftOpenNotice threadId={threadId} />
+            </Suspense>
+          )}
           <FolderMissingNotice threadId={threadId} />
           <MergedCleanupNotice threadId={threadId} />
           <LapsedConnectorsNotice threadId={threadId} />
@@ -798,15 +830,22 @@ export function ThreadView({
             onStop={stopTask}
           />
           {thread.role === "orchestrator" && <UndoLine />}
-          <TurnCompleteSheen key={threadId} status={status}>
-            <ThreadComposer
-              thread={thread}
-              focused={focused}
-              {...(beside === undefined
-                ? {}
-                : { placeholder: beside.placeholder ?? "Steer this thread…" })}
-            />
-          </TurnCompleteSheen>
+          {/* Sent to a server: it runs there, and its orchestrator messages it, so no composer. */}
+          {thread.sentTo !== undefined ? (
+            <Suspense fallback={null}>
+              <SentNotice threadId={threadId} />
+            </Suspense>
+          ) : (
+            <TurnCompleteSheen key={threadId} status={status}>
+              <ThreadComposer
+                thread={thread}
+                focused={focused}
+                {...(beside === undefined
+                  ? {}
+                  : { placeholder: beside.placeholder ?? "Steer this thread…" })}
+              />
+            </TurnCompleteSheen>
+          )}
         </div>
       </div>
     </BesideLinkScope.Provider>

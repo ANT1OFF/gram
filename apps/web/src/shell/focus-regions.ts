@@ -5,6 +5,7 @@ import {
   virtualLists,
 } from "@/lib/virtual-rows";
 import { fitShell, useLayoutStore } from "@/stores/layout";
+import { DOCK_ITEM, navigationNow } from "@/stores/navigation";
 import { OVERVIEW_ROOT } from "@/views/shell-layout";
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -36,8 +37,17 @@ export async function focusWhenRendered(
 
 /** The overview's current row (or tile), else its first; a hidden overview shows first. */
 export function focusSidebar(): Promise<boolean> {
+  const nav = navigationNow();
+  if (nav.position !== "side") {
+    // The dock's current place, else its first item; focus brings an auto-hidden dock into view.
+    return focusWhenRendered(() => {
+      const items = [...document.querySelectorAll<HTMLElement>(`[${DOCK_ITEM}]`)];
+      return items.find((item) => item.getAttribute("aria-current") === "page") ?? items[0] ?? null;
+    });
+  }
   const layout = useLayoutStore.getState();
-  if (fitShell(layout).sidebar === "none") layout.toggleOverview();
+  // An auto-hidden sidebar is there out of view: focus brings it back.
+  if (!nav.autoHide && fitShell(layout).sidebar === "none") layout.toggleOverview();
   // The current row scrolled to and not drawn in time: the first stop, as before.
   let tries = 0;
   return focusWhenRendered(() => {

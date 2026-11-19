@@ -7,6 +7,13 @@ import {
   forgetHostedDevice,
   HOSTED_TOKEN_MOST_MS,
   HOSTED_TOKEN_RENEW_BEFORE_MS,
+  exportHostedThread,
+  importHostedThread,
+  messageHostedThread,
+  settleHostedThread,
+  startHostedThread,
+  stopHostedThread,
+  waitHostedThread,
   listHostedWorkspaces,
   makeTokenKeeper,
   registerHostedDevice,
@@ -247,6 +254,221 @@ describe("a hosted server", () => {
     ).toEqual({ ok: false, why: "The server registered another key." });
     expect(await forgetHostedDevice({ ...calls, deviceId: registered.deviceId })).toBe(true);
     expect(fake.state.forgotten).toEqual([registered.deviceId]);
+  });
+
+  it("moves a thread into a workspace there with the person's sign-in, and reads the server's word", async () => {
+    const { discovery } = await signedIn();
+    const keeper = await keeperFor();
+    const calls = { discovery, keeper, key, fetch, workspaceId: "w1", from: "Ada's laptop" };
+    const bundle = { format: 1, thread: { id: "t-moved" } };
+    expect(await importHostedThread({ ...calls, bundle })).toEqual({
+      ok: true,
+      threadId: "t-moved",
+      notes: ["Its edits are back."],
+    });
+    expect(fake.state.imported.at(-1)).toEqual({ workspaceId: "w1", bundle, from: "Ada's laptop" });
+    // Its refusal, in its words; too large; and an address elsewhere is never opened.
+    fake.state.importAnswer = {
+      status: 409,
+      body: { error: { code: "REFUSED", message: "Start your sandbox first." } },
+    };
+    expect(await importHostedThread({ ...calls, bundle })).toEqual({
+      ok: false,
+      why: "Start your sandbox first.",
+    });
+    fake.state.importAnswer = { status: 413, body: {} };
+    expect(await importHostedThread({ ...calls, bundle })).toMatchObject({ ok: false });
+    fake.state.importAnswer = {
+      status: 200,
+      body: { threadId: "t-moved", url: "https://elsewhere.example.com/t" },
+    };
+    expect(await importHostedThread({ ...calls, bundle })).toEqual({
+      ok: true,
+      threadId: "t-moved",
+      notes: [],
+    });
+    // No clear answer: it may be there, so it says so rather than "refused".
+    fake.state.importAnswer = { status: 502, body: {} };
+    expect(await importHostedThread({ ...calls, bundle })).toMatchObject({
+      ok: false,
+      unknown: true,
+    });
+    fake.state.importAnswer = { status: 200, body: { nothing: true } };
+    expect(await importHostedThread({ ...calls, bundle })).toMatchObject({
+      ok: false,
+      unknown: true,
+    });
+    fake.state.importAnswer = { status: 409, body: { error: "Here already." } };
+    expect(await importHostedThread({ ...calls, bundle })).toEqual({
+      ok: false,
+      why: "Here already.",
+    });
+    // A server that takes no threads is never sent one.
+    const before = fake.state.imported.length;
+    const { thread_import_endpoint: _none, ...without } = discovery;
+    expect(await importHostedThread({ ...calls, discovery: without, bundle })).toMatchObject({
+      ok: false,
+    });
+    expect(fake.state.imported.length).toBe(before);
+  });
+
+  it("asks the person to sign in again when the sign-in doesn't carry moving work", async () => {
+    fake.state.importScope = false;
+    const { discovery } = await signedIn();
+    const keeper = await keeperFor();
+    const answer = await importHostedThread({
+      discovery,
+      keeper,
+      key,
+      fetch,
+      workspaceId: "w1",
+      from: "Ada's laptop",
+      bundle: {},
+    });
+    expect(answer).toMatchObject({ ok: false });
+    expect(answer.ok === false && answer.why).toContain("Sign in to the server again");
+    expect(fake.state.imported).toEqual([]);
+  });
+
+  it("asks for moving work only of a server that takes threads, or gives them back", async () => {
+    await signedIn();
+    expect(fake.state.askedScope.split(" ")).toEqual(
+      expect.arrayContaining(["workspaces:import", "workspaces:export", "threads:start"]),
+    );
+    fake.state.takesThreads = false;
+    fake.state.givesThreads = false;
+    fake.state.runsWork = false;
+    await signedIn();
+    expect(fake.state.askedScope).toBe("workspaces device:register device:connect");
+  });
+
+  it("asks for a thread back with the person's sign-in, and settles its copy there", async () => {
+    const { discovery } = await signedIn();
+    const calls = { discovery, keeper: await keeperFor(), key, fetch };
+    const asked = { ...calls, workspaceId: "w1", threadId: "t-1" };
+    expect(await exportHostedThread(asked)).toEqual({
+      ok: true,
+      bundle: { format: 1, exportedAt: 1_000 },
+    });
+    expect(fake.state.exported).toEqual([{ workspaceId: "w1", threadId: "t-1" }]);
+    // Its word, when it says no: an organisation that keeps its threads, say.
+    fake.state.exportAnswer = {
+      status: 403,
+      body: { error: { message: "Example keeps its threads." } },
+    };
+    expect(await exportHostedThread(asked)).toEqual({
+      ok: false,
+      why: "Example keeps its threads.",
+    });
+
+    const settle = { ...asked, exportedAt: 1_000, to: "Ada's laptop" };
+    expect(await settleHostedThread(settle)).toEqual({ ok: true });
+    expect(fake.state.settled).toEqual([
+      { workspaceId: "w1", threadId: "t-1", exportedAt: 1_000, to: "Ada's laptop" },
+    ]);
+    // No clear answer: the copy there may still take work, and settling again is safe.
+    fake.state.settleAnswer = { status: 502, body: {} };
+    expect(await settleHostedThread(settle)).toMatchObject({ ok: false, unknown: true });
+    fake.state.settleAnswer = { status: 409, body: { error: "It carried on there." } };
+    expect(await settleHostedThread(settle)).toEqual({ ok: false, why: "It carried on there." });
+
+    // A server that names neither is asked nothing.
+    const { thread_export_endpoint: _e, thread_settle_endpoint: _s, ...without } = discovery;
+    const before = fake.state.exported.length;
+    expect(await exportHostedThread({ ...asked, discovery: without })).toMatchObject({ ok: false });
+    expect(fake.state.exported.length).toBe(before);
+  });
+
+  it("sends work there with the person's sign-in, then follows, answers and stops only it", async () => {
+    const { discovery } = await signedIn();
+    const calls = { discovery, keeper: await keeperFor(), key, fetch };
+    const work = {
+      ...calls,
+      workspaceId: "w1",
+      repositories: ["example/app"],
+      text: "Fix the flaky test",
+      clientKey: "send-1",
+    };
+    expect(await startHostedThread(work)).toEqual({
+      ok: true,
+      threadId: "t-sent-1",
+      branch: "thread/t-sent-1",
+    });
+    // Sent again with its key, it is the same send: one thread there.
+    expect(await startHostedThread(work)).toMatchObject({ ok: true, threadId: "t-sent-1" });
+    expect(fake.state.started).toEqual([
+      {
+        workspaceId: "w1",
+        repositories: ["example/app"],
+        text: "Fix the flaky test",
+        clientKey: "send-1",
+      },
+      {
+        workspaceId: "w1",
+        repositories: ["example/app"],
+        text: "Fix the flaky test",
+        clientKey: "send-1",
+      },
+    ]);
+
+    const thread = { ...calls, workspaceId: "w1", threadId: "t-sent-1" };
+    // A wait is bounded by the server's own twenty seconds, whatever is asked.
+    expect(await waitHostedThread({ ...thread, after: "m-1", timeoutSeconds: 600 })).toEqual({
+      ok: true,
+      waited: {
+        happened: true,
+        latest: "m-2",
+        reply: "Done: the tests pass.",
+        thread: { title: "Fix the flaky test", state: "running", working: false },
+      },
+    });
+    expect(fake.state.waited.at(-1)).toEqual({
+      workspaceId: "w1",
+      threadId: "t-sent-1",
+      after: "m-1",
+      timeoutSeconds: 20,
+    });
+    expect(
+      await messageHostedThread({ ...thread, text: "Also the docs.", clientKey: "say-1" }),
+    ).toEqual({ ok: true, queued: false, after: "m-2" });
+    expect(await stopHostedThread(thread)).toEqual({ ok: true });
+
+    // A thread it didn't send is the server's to refuse, in its words.
+    expect(await stopHostedThread({ ...thread, threadId: "t-other" })).toEqual({
+      ok: false,
+      why: "No such thread.",
+    });
+    // No clear answer to a send: sending again with its key is safe.
+    fake.state.startAnswer = { status: 502, body: {} };
+    expect(await startHostedThread(work)).toMatchObject({ ok: false, unknown: true });
+    fake.state.startAnswer = { status: 409, body: { error: "Start your sandbox first." } };
+    expect(await startHostedThread(work)).toEqual({ ok: false, why: "Start your sandbox first." });
+    // A long reply, a long title or a state Gram doesn't know never stops it following the thread.
+    fake.state.waitAnswer = {
+      status: 200,
+      body: {
+        happened: true,
+        latest: "m-3",
+        reply: "x".repeat(9000),
+        thread: { title: "t".repeat(300), state: "archived", working: false },
+      },
+    };
+    const lenient = await waitHostedThread(thread);
+    expect(lenient.ok && lenient.waited.reply?.length).toBe(8000);
+    expect(lenient.ok && lenient.waited.thread).toEqual({
+      title: "t".repeat(200),
+      state: "running",
+      working: false,
+    });
+    // One without the thread isn't an answer.
+    fake.state.waitAnswer = { status: 200, body: { happened: true } };
+    expect(await waitHostedThread(thread)).toMatchObject({ ok: false });
+
+    // A server that names the calls only in part is sent nothing.
+    const { thread_stop_endpoint: _stop, ...partly } = discovery;
+    const before = fake.state.started.length;
+    expect(await startHostedThread({ ...work, discovery: partly })).toMatchObject({ ok: false });
+    expect(fake.state.started.length).toBe(before);
   });
 
   it("refuses a token copied without the device key", async () => {

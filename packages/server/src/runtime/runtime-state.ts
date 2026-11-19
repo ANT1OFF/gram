@@ -525,3 +525,7 @@ export type GetRuntime = (threadId: ThreadId) => Effect.Effect<Runtime, ThreadNo
 /** What a session asked to open for a thread whose machine isn't named yet is told. */
 export const AWAITS_MACHINE =
   "The thread's machine hasn't started yet. What is sent to it waits until it has.";
+
+/** What a session asked to open, or a message sent here, for a thread that runs on a server is told. */
+export const RUNS_ON_SERVER =
+  "This thread runs on a server, not here: message it with send_message, or open it there.";

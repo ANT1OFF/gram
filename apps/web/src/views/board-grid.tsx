@@ -28,7 +28,12 @@ import { StageChip } from "@/orchestration/stage-stepper";
 import { StatusDot } from "@/orchestration/status-dot";
 import { useOrchestratorLedger } from "@/orchestration/use-orchestration";
 import { useFeatureSummary } from "@/orchestration/use-feature-cards";
-import { MachineMarker, ThreadMachineMarker, useThreadHost } from "@/thread/machine-marker";
+import {
+  MachineMarker,
+  ThreadMachineMarker,
+  useThreadHost,
+  useThreadSent,
+} from "@/thread/machine-marker";
 
 // The Board as a grid: a row per feature with its cells side by side, Task · Stage · Now · Pull
 // request, so a feature's name, how far it has come, what it does and its checks read on one line.
@@ -422,6 +427,7 @@ export function GridLine({
   const needs = workers.filter(({ worker }) => worker.tone === "needs").length;
   // A lone worker's other machine, named under the task with its stage and repos.
   const onlyHost = useThreadHost(only?.worker.threadId);
+  const onlySent = useThreadSent(only?.worker.threadId);
   return (
     <li
       ref={place?.ref}
@@ -469,9 +475,18 @@ export function GridLine({
               className="ml-auto opacity-0 group-hover/line:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100"
             />
           </span>
-          {(stage !== undefined || summary !== undefined || repos || onlyHost !== undefined) && (
+          {(stage !== undefined ||
+            summary !== undefined ||
+            repos ||
+            onlyHost !== undefined ||
+            onlySent !== undefined) && (
             <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-meta">
-              <MachineMarker hostId={onlyHost} delay={HINT_MS} testId="rail-machine" />
+              <MachineMarker
+                hostId={onlyHost}
+                sent={onlySent}
+                delay={HINT_MS}
+                testId="rail-machine"
+              />
               {stage !== undefined && <StageChip stage={stage} testId="rail-stage-chip" />}
               {repos && (
                 <span data-testid="rail-repos" className="truncate text-muted-foreground">

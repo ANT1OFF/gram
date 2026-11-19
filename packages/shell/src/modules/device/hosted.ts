@@ -8,7 +8,20 @@ import {
   HostedDeviceChallenge,
   HostedDeviceRegistered,
   hostedOrigin,
+  HostedThreadImported,
+  type HostedThreadExport,
+  HostedThreadExported,
+  type HostedThreadImport,
+  type HostedThreadMessage,
+  HostedThreadMessaged,
+  type HostedThreadSettle,
+  type HostedThreadStart,
+  HostedThreadStarted,
+  type HostedThreadStop,
+  type HostedThreadWait,
+  HostedThreadWaited,
   HostedTokenAnswer,
+  runsSentWork,
   type HostedWorkspace,
   HostedWorkspaces,
   type DeviceId,
@@ -26,6 +39,11 @@ import { deviceIdOf, devicePublicKeyText } from "./keys.ts";
 
 /** How long one call to the server may take. */
 export const HOSTED_CALL_MS = 15_000;
+/**
+ * A thread brought in is cloned on the person's machine there before the server answers. A call
+ * the server asks to repeat for a nonce gets it again, so the whole may take twice as long.
+ */
+export const HOSTED_THREAD_IMPORT_MS = 100_000;
 /** How long the person has to finish signing in, in the browser. */
 export const HOSTED_SIGN_IN_MS = 5 * 60_000;
 /** The most an answer may hold. */
@@ -38,7 +56,14 @@ export const HOSTED_SAVE_MS = 10_000;
 export const HOSTED_TOKEN_RENEW_BEFORE_MS = 60_000;
 
 /** The scopes a device signs in for. Each use gets a token of its own, narrowed from these. */
-export const HOSTED_SCOPES = ["workspaces", "device:register", "device:connect"] as const;
+export const HOSTED_SCOPES = [
+  "workspaces",
+  "device:register",
+  "device:connect",
+  "workspaces:import",
+  "workspaces:export",
+  "threads:start",
+] as const;
 export type HostedScope = (typeof HOSTED_SCOPES)[number];
 
 export type Failed = { readonly ok: false; readonly why: string };
@@ -88,9 +113,10 @@ const call = async (
   fetch: Fetch,
   url: string,
   init: RequestInit,
+  waitMs = HOSTED_CALL_MS,
 ): Promise<Response | undefined> => {
   try {
-    const deadline = AbortSignal.timeout(HOSTED_CALL_MS);
+    const deadline = AbortSignal.timeout(waitMs);
     const response = await fetch(url, {
       ...init,
       redirect: "manual",
@@ -186,6 +212,9 @@ const tokenCall = async (
       if (error === "use_dpop_nonce" && nonce !== undefined && attempt === 0) continue;
       if (error === "invalid_grant")
         return { ...failed("The sign-in has ended."), signedOut: true };
+      // A scope the sign-in never had, or the organisation turned off since.
+      if (error === "invalid_scope")
+        return failed("Your sign-in there doesn't cover this. Sign in to the server again.");
       return failed("The server refused the sign-in.");
     }
     const decoded = Schema.decodeUnknownOption(HostedTokenAnswer)(answer);
@@ -319,7 +348,13 @@ export const signInHosted = async (options: SignInOptions): Promise<SignedIn> =>
       response_type: "code",
       client_id: discovery.client_id,
       redirect_uri: redirectUri,
-      scope: HOSTED_SCOPES.join(" "),
+      // Moving work is asked for only of a server that takes it: another may refuse the scope.
+      scope: HOSTED_SCOPES.filter(
+        (scope) =>
+          (scope !== "workspaces:import" || discovery.thread_import_endpoint !== undefined) &&
+          (scope !== "workspaces:export" || givesThreads(discovery)) &&
+          (scope !== "threads:start" || runsSentWork(discovery)),
+      ).join(" "),
       state,
       code_challenge: challenge,
       code_challenge_method: "S256",
@@ -545,31 +580,37 @@ const authorizedCall = async (
   method: string,
   url: string,
   body?: unknown,
+  waitMs?: number,
 ): Promise<Response | Failed> => {
   const held = await keeper.token(scope);
   if (!held.ok) return failed(held.why);
   const { token } = held;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await call(fetch, url, {
-      method,
-      headers: {
-        accept: "application/json",
-        authorization: `${token.tokenType} ${token.accessToken}`,
-        ...(token.tokenType === "DPoP"
-          ? {
-              dpop: dpopProof(key, {
-                method,
-                url,
-                accessToken: token.accessToken,
-                now: Date.now(),
-                ...(keeper.nonce.value === undefined ? {} : { nonce: keeper.nonce.value }),
-              }),
-            }
-          : {}),
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
+    const response = await call(
+      fetch,
+      url,
+      {
+        method,
+        headers: {
+          accept: "application/json",
+          authorization: `${token.tokenType} ${token.accessToken}`,
+          ...(token.tokenType === "DPoP"
+            ? {
+                dpop: dpopProof(key, {
+                  method,
+                  url,
+                  accessToken: token.accessToken,
+                  now: Date.now(),
+                  ...(keeper.nonce.value === undefined ? {} : { nonce: keeper.nonce.value }),
+                }),
+              }
+            : {}),
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
+      waitMs,
+    );
     if (response === undefined) return failed(UNREACHABLE);
     const nonce = nonceFrom(response);
     if (nonce !== undefined) keeper.nonce.value = nonce;
@@ -610,6 +651,308 @@ export const listHostedWorkspaces = async (
   if (response.status !== 200) return failed("The server refused the call.");
   const decoded = Schema.decodeUnknownOption(HostedWorkspaces)(await jsonOf(response));
   return decoded._tag === "None" ? failed(UNREADABLE) : { ok: true, workspaces: decoded.value };
+};
+
+/** A refusal's own words, as `{ error: { message } }` or `{ error }` puts them; bounded. */
+const refusalOf = (answer: unknown): string | undefined => {
+  if (typeof answer !== "object" || answer === null || !("error" in answer)) return undefined;
+  const { error } = answer;
+  const said =
+    typeof error === "string"
+      ? error
+      : typeof error === "object" && error !== null && "message" in error
+        ? error.message
+        : undefined;
+  if (typeof said !== "string" || said.trim() === "") return undefined;
+  return [...said.trim()].slice(0, 300).join("");
+};
+
+/** How a thread's send ended. `unknown`: no clear answer, so the server may have taken it. */
+export type HostedThreadSent =
+  | {
+      readonly ok: true;
+      readonly threadId: string;
+      readonly notes: readonly string[];
+      readonly url?: string;
+    }
+  | { readonly ok: false; readonly why: string; readonly unknown?: true };
+
+/**
+ * Sends a thread this machine exported to a workspace there, with the person's sign-in, and
+ * reads what the server made of it. The server decides whether it comes in; a refusal is its word.
+ */
+export const importHostedThread = async (
+  calls: HostedCalls & HostedThreadImport,
+): Promise<HostedThreadSent> => {
+  const endpoint = calls.discovery.thread_import_endpoint;
+  if (endpoint === undefined) return failed("This server doesn't take threads.");
+  const response = await authorizedCall(
+    calls.keeper,
+    calls.key,
+    "workspaces:import",
+    calls.fetch,
+    "POST",
+    endpoint,
+    { workspaceId: calls.workspaceId, bundle: calls.bundle, from: calls.from },
+    HOSTED_THREAD_IMPORT_MS,
+  );
+  if ("why" in response) {
+    // No answer may be one that never came back: the server may have the thread.
+    return response.why === UNREACHABLE ? { ...response, unknown: true } : response;
+  }
+  if (response.status === 413) {
+    await response.body?.cancel().catch(() => undefined);
+    return failed("The thread is larger than the server takes.");
+  }
+  const answer = await jsonOf(response);
+  // A server fault, or a yes it can't read, may still have made the thread there.
+  if (response.status >= 500) return { ...failed(refusalOf(answer) ?? UNREACHABLE), unknown: true };
+  if (response.status !== 200) return failed(refusalOf(answer) ?? "The server refused the thread.");
+  const decoded = Schema.decodeUnknownOption(HostedThreadImported)(answer);
+  if (decoded._tag === "None") return { ...failed(UNREADABLE), unknown: true };
+  const { threadId, notes = [], url } = decoded.value;
+  // Opened only where the server is: never an address it sends elsewhere.
+  const opens = url !== undefined && sameOrigin(url, calls.discovery.issuer) ? url : undefined;
+  return { ok: true, threadId, notes, ...(opens === undefined ? {} : { url: opens }) };
+};
+
+/** Whether the server gives threads that moved there back: it names both calls for it. */
+export const givesThreads = (discovery: HostedDiscovery): boolean =>
+  discovery.thread_export_endpoint !== undefined && discovery.thread_settle_endpoint !== undefined;
+
+/** The longest bundle read back from a server: a long conversation, its edits being at the remote. */
+export const HOSTED_THREAD_EXPORT_MAX_BYTES = 32 * 1024 * 1024;
+
+/**
+ * Asks the server for a thread of a workspace there as a bundle, with the person's sign-in, to
+ * bring it back here. The server decides whether it may go; a refusal is its word. Nothing changes
+ * there but the ref its edits are kept on, so a call with no answer can simply be made again.
+ */
+export const exportHostedThread = async (
+  calls: HostedCalls & HostedThreadExport,
+): Promise<{ readonly ok: true; readonly bundle: unknown } | Failed> => {
+  const endpoint = calls.discovery.thread_export_endpoint;
+  if (endpoint === undefined || !givesThreads(calls.discovery))
+    return failed("This server doesn't give threads back.");
+  const response = await authorizedCall(
+    calls.keeper,
+    calls.key,
+    "workspaces:export",
+    calls.fetch,
+    "POST",
+    endpoint,
+    { workspaceId: calls.workspaceId, threadId: calls.threadId },
+    HOSTED_THREAD_IMPORT_MS,
+  );
+  if ("why" in response) return response;
+  const length = Number(response.headers.get("content-length") ?? "0");
+  if (length > HOSTED_THREAD_EXPORT_MAX_BYTES) {
+    await response.body?.cancel().catch(() => undefined);
+    return failed("The thread is larger than Gram takes back.");
+  }
+  const answer = await jsonOf(response);
+  if (response.status !== 200)
+    return failed(refusalOf(answer) ?? "The server refused to give the thread back.");
+  const decoded = Schema.decodeUnknownOption(HostedThreadExported)(answer);
+  return decoded._tag === "None" ? failed(UNREADABLE) : { ok: true, bundle: decoded.value.bundle };
+};
+
+/**
+ * Tells the server the thread is here now, so its copy there becomes read-only. `unknown` when
+ * there was no clear answer: settling again is safe, since a settled copy stays settled.
+ */
+export const settleHostedThread = async (
+  calls: HostedCalls & HostedThreadSettle,
+): Promise<{ readonly ok: true } | (Failed & { readonly unknown?: true })> => {
+  const endpoint = calls.discovery.thread_settle_endpoint;
+  if (endpoint === undefined || !givesThreads(calls.discovery))
+    return failed("This server doesn't give threads back.");
+  const response = await authorizedCall(
+    calls.keeper,
+    calls.key,
+    "workspaces:export",
+    calls.fetch,
+    "POST",
+    endpoint,
+    {
+      workspaceId: calls.workspaceId,
+      threadId: calls.threadId,
+      exportedAt: calls.exportedAt,
+      to: calls.to,
+    },
+  );
+  if ("why" in response)
+    return response.why === UNREACHABLE ? { ...response, unknown: true } : response;
+  const answer = await jsonOf(response);
+  if (response.status >= 500) return { ...failed(refusalOf(answer) ?? UNREACHABLE), unknown: true };
+  if (response.status !== 200)
+    return failed(refusalOf(answer) ?? "The server refused to settle the thread there.");
+  return { ok: true };
+};
+
+/** The longest a wait there is asked to last: the server's own bound. */
+export const HOSTED_WAIT_MOST_SECONDS = 20;
+
+/** How a send of work ended. `unknown`: no clear answer, so sending again with its key is safe. */
+export type HostedWorkSent =
+  | { readonly ok: true; readonly threadId: string; readonly branch?: string }
+  | (Failed & { readonly unknown?: true });
+
+/**
+ * Sends work from this machine to run there, as a new thread of one of the person's workspaces,
+ * with their sign-in. The server decides whether it runs; a refusal is its word. The key makes a
+ * second send the same send, so one with no answer can be made again.
+ */
+export const startHostedThread = async (
+  calls: HostedCalls & HostedThreadStart,
+): Promise<HostedWorkSent> => {
+  const endpoint = calls.discovery.thread_start_endpoint;
+  if (endpoint === undefined || !runsSentWork(calls.discovery))
+    return failed("This server doesn't run work sent to it.");
+  const response = await authorizedCall(
+    calls.keeper,
+    calls.key,
+    "threads:start",
+    calls.fetch,
+    "POST",
+    endpoint,
+    {
+      workspaceId: calls.workspaceId,
+      repositories: calls.repositories,
+      text: calls.text,
+      ...(calls.title === undefined ? {} : { title: calls.title }),
+      ...(calls.branch === undefined ? {} : { branch: calls.branch }),
+      clientKey: calls.clientKey,
+    },
+    HOSTED_THREAD_IMPORT_MS,
+  );
+  if ("why" in response)
+    return response.why === UNREACHABLE ? { ...response, unknown: true } : response;
+  const answer = await jsonOf(response);
+  if (response.status >= 500) return { ...failed(refusalOf(answer) ?? UNREACHABLE), unknown: true };
+  if (response.status !== 200) return failed(refusalOf(answer) ?? "The server refused the work.");
+  const decoded = Schema.decodeUnknownOption(HostedThreadStarted)(answer);
+  if (decoded._tag === "None") return { ...failed(UNREADABLE), unknown: true };
+  const { threadId, branch } = decoded.value;
+  return { ok: true, threadId, ...(branch === undefined ? {} : { branch }) };
+};
+
+/**
+ * Waits on a thread sent from here, as the server lets it be followed: a reply, its turn ending,
+ * it waiting on a person there. Changes nothing, so a wait with no answer is simply waited again.
+ */
+export const waitHostedThread = async (
+  calls: HostedCalls & HostedThreadWait,
+): Promise<{ readonly ok: true; readonly waited: HostedThreadWaited } | Failed> => {
+  const endpoint = calls.discovery.thread_wait_endpoint;
+  if (endpoint === undefined || !runsSentWork(calls.discovery))
+    return failed("This server doesn't run work sent to it.");
+  const seconds = Math.max(
+    1,
+    Math.min(
+      HOSTED_WAIT_MOST_SECONDS,
+      Math.floor(calls.timeoutSeconds ?? HOSTED_WAIT_MOST_SECONDS),
+    ),
+  );
+  const response = await authorizedCall(
+    calls.keeper,
+    calls.key,
+    "threads:start",
+    calls.fetch,
+    "POST",
+    endpoint,
+    {
+      workspaceId: calls.workspaceId,
+      threadId: calls.threadId,
+      ...(calls.after === undefined ? {} : { after: calls.after }),
+      ...(calls.until === undefined ? {} : { until: calls.until }),
+      timeoutSeconds: seconds,
+    },
+    // The wait itself, and a call's time beside it.
+    seconds * 1000 + HOSTED_CALL_MS,
+  );
+  if ("why" in response) return response;
+  const answer = await jsonOf(response);
+  if (response.status !== 200) return failed(refusalOf(answer) ?? "The server refused the call.");
+  const decoded = Schema.decodeUnknownOption(HostedThreadWaited)(answer);
+  return decoded._tag === "None" ? failed(UNREADABLE) : { ok: true, waited: decoded.value };
+};
+
+/**
+ * A message into a thread sent from here, as the person typed it. `unknown` when there was no
+ * clear answer: sending again with the same key delivers it once.
+ */
+export const messageHostedThread = async (
+  calls: HostedCalls & HostedThreadMessage,
+): Promise<
+  | { readonly ok: true; readonly queued: boolean; readonly after?: string }
+  | (Failed & { readonly unknown?: true })
+> => {
+  const endpoint = calls.discovery.thread_message_endpoint;
+  if (endpoint === undefined || !runsSentWork(calls.discovery))
+    return failed("This server doesn't run work sent to it.");
+  const response = await authorizedCall(
+    calls.keeper,
+    calls.key,
+    "threads:start",
+    calls.fetch,
+    "POST",
+    endpoint,
+    {
+      workspaceId: calls.workspaceId,
+      threadId: calls.threadId,
+      text: calls.text,
+      ...(calls.mode === undefined ? {} : { mode: calls.mode }),
+      clientKey: calls.clientKey,
+    },
+  );
+  if ("why" in response)
+    return response.why === UNREACHABLE ? { ...response, unknown: true } : response;
+  const answer = await jsonOf(response);
+  if (response.status >= 500) return { ...failed(refusalOf(answer) ?? UNREACHABLE), unknown: true };
+  if (response.status !== 200)
+    return failed(refusalOf(answer) ?? "The server refused the message.");
+  const decoded = Schema.decodeUnknownOption(HostedThreadMessaged)(answer);
+  if (decoded._tag === "None") return { ...failed(UNREADABLE), unknown: true };
+  const { queued = false, after } = decoded.value;
+  return { ok: true, queued, ...(after === undefined ? {} : { after }) };
+};
+
+/** Stops the turn a thread sent from here is working on. Stopping again is safe. */
+export const stopHostedThread = async (
+  calls: HostedCalls & HostedThreadStop,
+): Promise<{ readonly ok: true } | Failed> => {
+  const endpoint = calls.discovery.thread_stop_endpoint;
+  if (endpoint === undefined || !runsSentWork(calls.discovery))
+    return failed("This server doesn't run work sent to it.");
+  const response = await authorizedCall(
+    calls.keeper,
+    calls.key,
+    "threads:start",
+    calls.fetch,
+    "POST",
+    endpoint,
+    { workspaceId: calls.workspaceId, threadId: calls.threadId },
+  );
+  if ("why" in response) return response;
+  const answer = await jsonOf(response);
+  if (response.status !== 200)
+    return failed(refusalOf(answer) ?? "The server refused to stop the thread.");
+  return { ok: true };
+};
+
+const sameOrigin = (address: string, origin: string): boolean => {
+  try {
+    const url = new URL(address);
+    return (
+      url.origin === origin &&
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      url.username === "" &&
+      url.password === ""
+    );
+  } catch {
+    return false;
+  }
 };
 
 /**
