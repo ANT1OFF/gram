@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import type * as Scope from "effect/Scope";
 import { KEPT_TERMINALS_ENV } from "../terminal/kept.ts";
+import { hostSwitches } from "./launch.ts";
 import { connectHost, type HostConnection } from "./protocol.ts";
 
 /**
@@ -46,14 +47,14 @@ const stop = (child: ChildProcess) =>
 
 /**
  * This machine's host in a child process of the server, connected over a pipe on descriptor 3.
- * Under Electron the child runs as plain Node. A child that fails to start, exits, or doesn't
+ * Under Electron the child is the app's own binary in host mode (`launch-args.ts`). A child that fails to start, exits, or doesn't
  * answer fails the connection with `HostUnavailable`, and calls in flight with it. The child ends
  * with the scope.
  */
 export const spawnHost = (
   command: { readonly file: string; readonly args: ReadonlyArray<string> } = {
     file: process.execPath,
-    args: [hostEntry()],
+    args: [hostEntry(), ...hostSwitches()],
   },
   /** Set in the host's environment beside the server's own. */
   env: Readonly<Record<string, string>> = {},

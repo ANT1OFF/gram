@@ -64,6 +64,14 @@ export const hostProcessPlugin = (): Plugin =>
     { GRAM_HOST_RELEASE: JSON.stringify(appRelease()) },
   );
 
+/**
+ * Emits the release checks' native probe beside the host: the packaged app, whose RunAsNode fuse
+ * is off, runs a probe it ships and no other (src/main/entry.ts). It loads the natives from the
+ * app.asar it is pointed at, so nothing of theirs is bundled.
+ */
+export const nativeProbePlugin = (): Plugin =>
+  besideServer("native-probe", new URL("../../tools/release-rc/native-probe.cjs", import.meta.url));
+
 /** The app's release, as its package says. */
 export const appRelease = (): string => {
   const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {

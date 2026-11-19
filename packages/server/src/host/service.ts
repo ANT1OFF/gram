@@ -4,6 +4,7 @@ import { homedir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as Effect from "effect/Effect";
+import { hostSwitches } from "./launch.ts";
 
 /**
  * `gram-host run` as a background service of this user: a launchd agent on a Mac, a systemd user
@@ -14,7 +15,7 @@ export const LAUNCHD_LABEL = "io.github.ant1off.gram.host";
 export const SYSTEMD_UNIT = "gram-host.service";
 
 export interface ServiceCommand {
-  /** The program and arguments that run the host: Node (or Electron as Node), its entry, `run`. */
+  /** The program and arguments that run the host: Node or the app's binary, its entry, `run`. */
   readonly program: ReadonlyArray<string>;
   /** The host's environment: its folder, the PATH its agents and git are found on. */
   readonly env: Readonly<Record<string, string>>;
@@ -29,7 +30,7 @@ export interface ServiceCommand {
 export const serviceCommand = (home: string): ServiceCommand => {
   const entry = process.argv[1] ?? fileURLToPath(new URL("./main.ts", import.meta.url));
   return {
-    program: [process.execPath, entry, "run"],
+    program: [process.execPath, entry, "run", ...hostSwitches()],
     env: {
       GRAM_HOST_HOME: home,
       GRAM_HOST_SERVICE: "1",

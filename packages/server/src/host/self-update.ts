@@ -44,6 +44,7 @@ import { relativeInside } from "@gram/git";
 import type { Admission } from "./admission.ts";
 import { lockConflict, lockPort, takeUpdateLock, updateLockState } from "./update-lock.ts";
 import { RELEASES } from "./install-script.ts";
+import { hostSwitches, LINUX_HOST_SWITCHES } from "./launch.ts";
 import { LAUNCHD_LABEL, type ServiceCommand } from "./service.ts";
 
 /** A release number as Gram tags them: `1.17.0`, or `1.17.0-beta.1`. */
@@ -618,8 +619,15 @@ const SHIM_HEADER = "#!/bin/sh\n# Gram";
 /** The installer's `gram-host` command, pointing at `command`'s app. */
 const shimText = (command: ServiceCommand) => {
   const [bin = "", entry = ""] = command.program;
-  return `#!/bin/sh\n# Gram's own app, run as Node: its gram-host.\nELECTRON_RUN_AS_NODE=1 exec '${bin}' '${entry}' "$@"\n`;
+  const switches = switchesOf(command)
+    .map((word) => ` ${word}`)
+    .join("");
+  return `#!/bin/sh\n# Gram's own app, running its own gram-host.\nELECTRON_RUN_AS_NODE=1 exec '${bin}' '${entry}' "$@"${switches}\n`;
 };
+
+/** The Chromium switches `command` runs its app with (`launch.ts`), which every launch of it keeps. */
+const switchesOf = (command: ServiceCommand) =>
+  command.program.filter((word) => LINUX_HOST_SWITCHES.includes(word));
 
 /**
  * The supervisor, `gram-host update-supervise <id>`: it runs the app the host ran before the
@@ -846,11 +854,12 @@ export const unpackRelease =
     renameSync(join(work, "squashfs-root"), into);
   };
 
-/** Whether the app's gram-host starts, as the installer checks one: `--help`, as Node. */
+/** Whether the app's gram-host starts, as the installer checks one: `--help`, in host mode. */
 export const probeHost = async (bin: string, entry: string): Promise<boolean> => {
   if (!existsSync(bin)) return false;
   const env = { ...process.env, ELECTRON_RUN_AS_NODE: "1" };
-  return (await run(bin, [entry, "--help"], { env, timeoutMs: 30_000 })).code === 0;
+  const args = [entry, "--help", ...hostSwitches(process.platform, true)];
+  return (await run(bin, args, { env, timeoutMs: 30_000 })).code === 0;
 };
 
 const uid = () => userInfo().uid;
@@ -897,7 +906,7 @@ ${env}
 `;
 };
 
-/** The supervisor's command: the app running now, as Node, with `update-supervise`. */
+/** The supervisor's command: the app running now, in host mode, with `update-supervise`. */
 export const supervisorCommand = (
   current: ServiceCommand,
   id: string,
@@ -910,6 +919,7 @@ export const supervisorCommand = (
       "update-supervise",
       id,
       ...(mode === "rollback" ? ["rollback"] : []),
+      ...switchesOf(current),
     ],
     env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
     home: current.home,

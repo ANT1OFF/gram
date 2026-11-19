@@ -58,6 +58,7 @@ import { hostUpdaterOf } from "./self-update-host.ts";
 import { makeAdmission, UPDATING } from "./admission.ts";
 import { lockPort, takeUpdateLock, updateLockState } from "./update-lock.ts";
 import type { ServiceCommand } from "./service.ts";
+import { LINUX_HOST_SWITCHES } from "./launch-args.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import { streamPair } from "./test-stream.ts";
@@ -249,6 +250,16 @@ describe("a host updating itself", () => {
     ]);
     expect(supervisorCommand(plan.previous, plan.id, "rollback").program.at(-1)).toBe("rollback");
     expect(supervisorCommand(plan.previous, plan.id).env["GRAM_HOST_SERVICE"]).toBeUndefined();
+    // A Linux app's service runs with Chromium's switches for no display, and so does its
+    // supervisor, or it would exit before it moved anything.
+    const linux = { ...plan.previous, program: [...plan.previous.program, ...LINUX_HOST_SWITCHES] };
+    expect(supervisorCommand(linux, plan.id, "rollback").program).toEqual([
+      ...plan.previous.program.slice(0, 2),
+      "update-supervise",
+      plan.id,
+      "rollback",
+      ...LINUX_HOST_SWITCHES,
+    ]);
   });
 
   it("installs nothing and runs nothing from a download that doesn't match its checksum", async () => {

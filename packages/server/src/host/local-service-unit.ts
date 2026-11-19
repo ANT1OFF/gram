@@ -32,6 +32,7 @@ import * as Exit from "effect/Exit";
 import type * as Scope from "effect/Scope";
 import { KEPT_TERMINALS_ENV } from "../terminal/kept.ts";
 import { hostEntry } from "./child.ts";
+import { HOST_MODE_FLAG, hostSwitches } from "./launch.ts";
 import { macFramed, proveToHost } from "./local-handshake.ts";
 import { RUN_TOKEN_ENV, sweepRun, systemScanner } from "./run-sweep.ts";
 import { connectHost, type HostConnection } from "./protocol.ts";
@@ -142,7 +143,7 @@ export const keptHostRegistry = (
 
 /**
  * What the service runs. From an AppImage, the app's files are mounted afresh at each start and
- * gone when it quits, so the service starts the AppImage itself with the launcher, which loads the
+ * gone when it quits, so the service starts the AppImage itself with `--gram-host`, which runs the
  * host from wherever that start mounted it. Otherwise it runs this same program and host entry.
  */
 export const localServiceProgram = (
@@ -150,23 +151,20 @@ export const localServiceProgram = (
   env: NodeJS.ProcessEnv = process.env,
   execPath = process.execPath,
   entry = hostEntry(),
+  switches: ReadonlyArray<string> = hostSwitches(),
 ): ReadonlyArray<string> => {
   const appImage = env["APPIMAGE"];
   const appDir = env["APPDIR"];
   const fromAppImage =
     appImage !== undefined && appDir !== undefined && isStrictlyInside(appDir, execPath);
   return [
-    ...(fromAppImage ? [appImage, paths.launcher] : [execPath, entry]),
+    ...(fromAppImage ? [appImage, HOST_MODE_FLAG] : [execPath, entry]),
     "local",
     "--socket",
     paths.socket,
+    ...switches,
   ];
 };
-
-/** The launcher an AppImage's service runs: the host from the AppImage's own mount. */
-export const LAUNCHER = `// Written by Gram: runs this machine's host from the AppImage that started it.
-require(require("node:path").join(process.env.APPDIR, "resources", "app.asar", "out", "server", "gram-host.js"));
-`;
 
 /**
  * The names the service's environment carries over from the app's, and nothing else: no token,
@@ -355,7 +353,8 @@ export const startLocalService = (
     Effect.gen(function* () {
       const { paths, platform } = spec;
       mkdirSync(paths.folder, { recursive: true, mode: 0o700 });
-      writeFileSync(paths.launcher, LAUNCHER, { mode: 0o600 });
+      // An earlier release's AppImage launcher: the service no longer runs one.
+      rmSync(paths.launcher, { force: true });
       mkdirSync(dirname(paths.serviceFile), { recursive: true });
       let outstanding = readRunTokens(paths);
       if (outstanding.length > 0) {

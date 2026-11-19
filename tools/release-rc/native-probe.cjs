@@ -1,10 +1,18 @@
-// Run by the packaged Gram in Node mode (ELECTRON_RUN_AS_NODE=1) from tools/release-rc/rc.mjs, and
-// on Linux from verify-package.mjs and CI: loads the speech and PTY natives through the production
-// app.asar and has the PTY run a shell that prints a marker. Arguments: <app.asar> <scratch dir>
-// <marker> [watch]. With `watch` (the Linux package) it also proves that @parcel/watcher, which
-// only that package carries, reports a file change.
+// Shipped in the app as app.asar/out/server/native-probe.js, and run by the packaged Gram with that
+// path as its first argument (src/main/entry.ts: its RunAsNode fuse is off, so it runs no script
+// from outside) from tools/release-rc/rc.mjs, and on Linux from verify-package.mjs and CI: loads
+// the speech and PTY natives through the production app.asar and has the PTY run a shell that
+// prints a marker. Arguments: <app.asar> <scratch dir> <marker> [watch], then on Linux Chromium's
+// switches. With `watch` (the Linux package) it also proves that @parcel/watcher, which only that
+// package carries, reports a file change. It ends itself: Electron's main process never does.
 const { createRequire } = require("node:module");
 const path = require("node:path");
+
+// In Electron's main process an uncaught error is a dialog; here it is a failed probe.
+process.on("uncaughtException", (error) => {
+  console.error(error);
+  process.exit(1);
+});
 
 const [asar, scratch, marker, watch] = process.argv.slice(2);
 const load = createRequire(path.join(asar, "package.json"));
@@ -59,5 +67,6 @@ child.onExit(({ exitCode }) => {
       }),
     );
     console.log("NATIVE OK");
+    process.stdout.write("", () => process.exit(0));
   });
 });
