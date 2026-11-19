@@ -40,6 +40,7 @@ import { join } from "node:path";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
 import { ActingPerson } from "../embedding/person.ts";
 import { SUBJECT } from "../embedding/readable-by.ts";
+import { readersFor, readersProblem, setReaders } from "../embedding/thread-readers.ts";
 import { HOST_THREADS_DIR } from "../host/thread-places.ts";
 import { WAKE_WAIT_MS, type WorkerHostsShape } from "../host/worker-host.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
@@ -130,9 +131,19 @@ const PERSON = /^[\x21-\x7e]{1,128}$/;
 export const NOT_A_READER =
   "Name the person the thread is readable by by their subject: printable, at most 128 characters.";
 
+/** What a start with readers is told where the store can't keep them (a test layer). */
+export const READERS_NOT_KEPT = "Readers can't be kept here.";
+
 /** What a start asked for again, naming another reader than the first, is told. */
 export const READER_DIFFERS =
   "That thread id is a thread started for another reader, or for every reader.";
+
+/**
+ * What a start asked for again is told when the thread under its id wasn't started from the same
+ * profile, or for the same person: it is someone else's thread, and this start made nothing.
+ */
+export const ID_HELD_BY_ANOTHER =
+  "That thread id is held by a thread this start didn't make: another profile's, or another person's.";
 
 /** How a start is asked for, beside its profile. */
 export interface ProfileStartOptions {
@@ -149,6 +160,11 @@ export interface ProfileStartOptions {
   readonly startedBy?: string | undefined;
   /** The one person who may see the thread (`Thread.readableBy`), kept for good. */
   readonly readableBy?: string | undefined;
+  /**
+   * With `readableBy`: who else may read it but never act on it (`Thread.readers`). Only a start
+   * that makes the thread sets them; a repeat leaves them as they are.
+   */
+  readonly readers?: ReadonlyArray<string> | undefined;
 }
 
 /** A thread a start answered, and whether that start made it. */
@@ -188,7 +204,7 @@ export interface ProfileStarterDeps {
     ThreadStoreShape,
     "getSettings" | "listProfiles" | "ensureProject" | "getThread" | "listClosed"
   > &
-    Partial<Pick<ThreadStoreShape, "listThreads">>;
+    Partial<Pick<ThreadStoreShape, "listThreads" | "setThreadReaders">>;
   /**
    * With `relocate` where threads can be moved (`moveOne`), and `updateThread` and `startSession`
    * where one can wait for its machine.
@@ -261,9 +277,14 @@ export const makeProfileStarter = ({
       (options.machine === "later"
         ? startAwaiting(value, id, options.startedBy, readableBy)
         : startAs(value, id, on, readableBy)
-      ).pipe(Effect.map((thread) => ({ thread, created: true })));
+      ).pipe(
+        Effect.flatMap((thread) => withReaders(thread, options.readers)),
+        Effect.map((thread) => ({ thread, created: true })),
+      );
     if (readableBy !== undefined && !SUBJECT.test(readableBy))
       return Effect.fail(refuse(NOT_A_READER));
+    const readersWrong = readersProblem(readableBy, options.readers);
+    if (readersWrong !== undefined) return Effect.fail(refuse(readersWrong));
     if (options.machine === "later" && on !== undefined) return Effect.fail(refuse(NOW_OR_LATER));
     if (options.startedBy !== undefined && options.machine !== "later")
       return Effect.fail(refuse(STARTED_BY_NEEDS_LATER));
@@ -290,6 +311,16 @@ export const makeProfileStarter = ({
             // Who may see it was settled by the first start, and a repeat neither widens nor
             // narrows it; nor does it say a thread is there to a caller naming someone else.
             if (existing.value.readableBy !== readableBy) return yield* refuse(READER_DIFFERS);
+            // Nor is a thread under the id taken for this start's unless this start would have
+            // made it: from the same profile, for the same person. An id a person or another
+            // caller chose ahead is theirs, and this start is told so rather than answered it.
+            const decoded = decodeThreadProfile(value);
+            if (
+              !decoded.ok ||
+              !sameValue(profileBindingOf(decoded.profile), existing.value.profile) ||
+              (options.startedBy !== undefined && existing.value.startedBy !== options.startedBy)
+            )
+              return yield* refuse(ID_HELD_BY_ANOTHER);
             return { thread: existing.value, created: false };
           }
           if ((yield* store.listClosed).some((closed) => closed.thread.id === asked))
@@ -299,6 +330,25 @@ export const makeProfileStarter = ({
       );
     });
   };
+
+  /** `thread` with `readers` set on it (`Thread.readers`), where the start gave any. */
+  const withReaders = (
+    thread: Thread,
+    readers: ReadonlyArray<string> | undefined,
+  ): Effect.Effect<Thread, InvalidState> =>
+    Effect.gen(function* () {
+      const kept = yield* readersFor(thread.readableBy, readers);
+      if (kept.length === 0) return thread;
+      const { getThread, listThreads, setThreadReaders } = store;
+      if (listThreads === undefined || setThreadReaders === undefined)
+        return yield* refuse(READERS_NOT_KEPT);
+      yield* setReaders(
+        { getThread, listThreads, listClosed: store.listClosed, setThreadReaders },
+        thread.id,
+        kept,
+      );
+      return { ...thread, readers: [...kept] };
+    });
 
   /** `startOne`'s thread alone, as `thread.createFromProfile` answers. */
   const start = (

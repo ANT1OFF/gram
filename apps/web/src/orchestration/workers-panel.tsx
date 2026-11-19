@@ -84,8 +84,6 @@ interface WorkersPanelState {
   readonly queryFor: WorkspaceId | undefined;
   /** Where the list was scrolled to, and the row's place in it, when a worker opened from it. */
   readonly place: { readonly scroll: number; readonly index: number } | undefined;
-  /** Back asked for the list's place: its scroll, and the keys on the worker's row. */
-  readonly restore: boolean;
   /** Something asked for the keys in the list (the sidebar's "N in Workers"). */
   readonly focus: boolean;
   toggleDocs: () => void;
@@ -105,7 +103,6 @@ export const useWorkersPanelStore = create<WorkersPanelState>()((set) => ({
   query: undefined,
   queryFor: undefined,
   place: undefined,
-  restore: false,
   focus: false,
   toggleDocs: () => set((s) => ({ docsFolded: !s.docsFolded })),
   toggle: (id) =>
@@ -192,13 +189,19 @@ function useCardRows(workspaceId: WorkspaceId) {
 export function useOpenWorker(): (
   row: PanelRow,
   event: Pick<MouseEvent, "metaKey" | "ctrlKey">,
+  options?: { readonly keepTool?: boolean },
 ) => void {
   const openThread = useOpenThread();
-  return (row, event) => {
+  return (row, event, options = {}) => {
     const full = besideKey(event) || row.source.solo === true;
     if (full) return openThread(row.threadId);
-    if (row.source.cleanedUp === true) return openRecordBeside(row.threadId);
-    if (!keepBeside(row.threadId, openThread, { keepFocus: true })) openThread(row.threadId);
+    if (row.source.cleanedUp === true) {
+      if (!openRecordBeside(row.threadId, options)) openThread(row.threadId);
+      return;
+    }
+    if (!keepBeside(row.threadId, openThread, { keepFocus: true, ...options })) {
+      openThread(row.threadId);
+    }
   };
 }
 
@@ -207,6 +210,16 @@ export interface OrchestratorView {
   readonly value: string;
   readonly label: string;
   readonly icon: LucideIcon;
+}
+
+/**
+ * The views of the thread in the main view, for the menu in the list's head: the orchestrator's,
+ * named so; `label` names them otherwise (a worker opened in the main view: "This thread").
+ */
+export interface OrchestratorViews {
+  readonly views: readonly OrchestratorView[];
+  readonly onPick: (value: string) => void;
+  readonly label?: string | undefined;
 }
 
 /**
@@ -220,9 +233,7 @@ export function WorkersPanel({
   closable = false,
 }: {
   workspaceId: WorkspaceId;
-  orchestrator?:
-    | { readonly views: readonly OrchestratorView[]; readonly onPick: (value: string) => void }
-    | undefined;
+  orchestrator?: OrchestratorViews | undefined;
   closable?: boolean;
 }) {
   const storedQuery = useWorkersPanelStore((s) => s.query);
@@ -347,17 +358,18 @@ export function WorkersPanel({
 const LIST_ROWS = '[data-testid="workers-panel-row"]';
 
 /**
- * Puts the list back where it was when a worker opened from it, once Back asks (`restore`): the
- * worker's group unfolded (and Done's rest shown) if it moved out of sight, the scroll where it
- * was, and the keys on its row, else the row nearest its place, else the list's first control.
- * Takes the keys too when asked (`focus`), on the current row or the first.
+ * Puts the list back where it was when a worker opened from it, once Back asks (`returned`): the
+ * current worker's group unfolded (and Done's rest shown) if it is out of sight, the scroll where
+ * it was, and the keys on the current worker's row (the one last open, after ↑ ↓ or the switcher
+ * too), scrolled into view; else the row nearest its place, else the list's first control. Takes
+ * the keys too when asked (`focus`), on the current row or the first.
  */
 function usePlaceKept(
   scroller: React.RefObject<HTMLDivElement | null>,
   groups: readonly StatusGroup[],
   current: ThreadId | undefined,
 ) {
-  const restore = useWorkersPanelStore((s) => s.restore);
+  const restore = useBesideStore((s) => s.returned);
   const focus = useWorkersPanelStore((s) => s.focus);
   // Reveal first: the row has to be drawn before it can take the keys.
   useLayoutEffect(() => {
@@ -371,10 +383,15 @@ function usePlaceKept(
       if (at >= DONE_SHOWN) store.setDoneAll(true);
     }
   }, [restore, current, groups]);
+  // Whether the current worker has a row in the list as filtered and searched: it is waited for
+  // while its group unfolds, rather than the keys landing on whichever row stood in its place.
+  const listed =
+    current !== undefined && groups.some((g) => g.rows.some((r) => r.threadId === current));
   useEffect(() => {
     if (!restore && !focus) return;
     const { place } = useWorkersPanelStore.getState();
-    useWorkersPanelStore.setState({ restore: false, focus: false });
+    useWorkersPanelStore.setState({ focus: false });
+    useBesideStore.setState({ returned: false });
     const box = scroller.current;
     if (box === null) return;
     if (restore && place !== undefined) box.scrollTo({ top: place.scroll });
@@ -382,17 +399,20 @@ function usePlaceKept(
       [...box.querySelectorAll<HTMLElement>(LIST_ROWS)].filter(
         (row) => row.closest("[hidden]") === null,
       );
+    let tries = 0;
     void focusWhenRendered(() => {
       const all = rows();
       const own = all.find((row) => row.dataset.threadId === current);
       if (own !== undefined) return own;
+      // Its group still unfolding: a few frames for its row before anything else.
+      if (listed && ++tries < 20) return null;
       if (all.length > 0) return all[Math.min(restore ? (place?.index ?? 0) : 0, all.length - 1)]!;
       return box.querySelector<HTMLElement>("button");
     }, 30).then(() => {
       // In view, without moving a list already showing it.
       (document.activeElement as HTMLElement | null)?.scrollIntoView?.({ block: "nearest" });
     });
-  }, [restore, focus, scroller, current]);
+  }, [restore, focus, scroller, current, listed]);
 }
 
 /**
@@ -411,9 +431,7 @@ function Header({
   counts: { readonly live: number; readonly done: number } | undefined;
   query: string | undefined;
   onQuery: (query: string | undefined) => void;
-  orchestrator:
-    | { readonly views: readonly OrchestratorView[]; readonly onPick: (value: string) => void }
-    | undefined;
+  orchestrator: OrchestratorViews | undefined;
   closable: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
@@ -461,7 +479,11 @@ function Header({
         </Hint>
         <FilterMenu />
         {orchestrator !== undefined && orchestrator.views.length > 0 && (
-          <OrchestratorMenu views={orchestrator.views} onPick={orchestrator.onPick} />
+          <OrchestratorMenu
+            views={orchestrator.views}
+            onPick={orchestrator.onPick}
+            label={orchestrator.label}
+          />
         )}
         {closable && (
           <Hint
@@ -527,18 +549,20 @@ const ITEM =
 function OrchestratorMenu({
   views,
   onPick,
+  label,
 }: {
   views: readonly OrchestratorView[];
   onPick: (value: string) => void;
+  label: string | undefined;
 }) {
   return (
     <Menu.Root>
       <Menu.Trigger
         data-testid="workers-panel-orchestrator"
-        aria-label="The orchestrator's own views"
+        aria-label={label === undefined ? "The orchestrator's own views" : `${label}: its views`}
         className="ml-tight flex h-7 shrink-0 items-center gap-1 rounded-xs px-1.5 text-meta text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:focus-ring data-popup-open:bg-accent data-popup-open:text-foreground"
       >
-        Orchestrator
+        {label ?? "Orchestrator"}
         <ChevronDown aria-hidden className="size-icon-chip" />
       </Menu.Trigger>
       <Menu.Portal>

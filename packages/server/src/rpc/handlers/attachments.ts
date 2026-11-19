@@ -1,7 +1,9 @@
-import { tryRealPath } from "@gram/git";
+import { InvalidState, LOCAL_HOST_ID, sessionHostOf } from "@gram/contracts";
+import { isInside, tryRealPath } from "@gram/git";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import {
   attachmentsDir,
   makeAttachments,
@@ -12,8 +14,12 @@ import { attachmentKey, ObjectStore } from "../../embedding/object-store.ts";
 import { ServerConfig } from "../../config.ts";
 import { EventHub, isThreadRemoved } from "../../events/event-hub.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
+import { openerFenced } from "../../platform/opener.ts";
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
 import type { Handlers } from "./common.ts";
+
+/** What a read of a file that isn't one of the thread's attachments is told. */
+const NOT_ATTACHED = "That file isn't attached to this thread";
 
 /**
  * `attachment.upload`: pasted and dropped files, stored per thread and deleted with the thread, and
@@ -53,6 +59,16 @@ export const attachmentHandlers = Effect.gen(function* () {
 
     "attachment.read": ({ threadId, path }) =>
       Effect.gen(function* () {
+        // A message part names a path, but anything that writes the thread's messages (a session
+        // on another machine among them) can write one. Where nothing else vouches for it, on a
+        // server with no local user or for a thread whose session runs elsewhere, a path is read
+        // only inside the thread's own attachments folder, by its real path too.
+        const thread = Option.getOrUndefined(yield* store.getThread(threadId).pipe(Effect.option));
+        const confined =
+          openerFenced(config) || (thread !== undefined && sessionHostOf(thread) !== LOCAL_HOST_ID);
+        const own = join(attachmentsDir(config.dataDir), threadId);
+        if (confined && !isInside(resolve(own), resolve(path)))
+          return yield* new InvalidState({ message: NOT_ATTACHED });
         // Only a `file` or stored tool-image part can name an attachment, so only those decode.
         const stored = yield* store.messagesWithParts(threadId, ["file", "data-tool-image"]);
         const messages = [...stored, ...(yield* runtimes.liveMessages(threadId))];
@@ -61,6 +77,13 @@ export const attachmentHandlers = Effect.gen(function* () {
         const key = attachmentKey(config.dataDir, threadId, path);
         if (key !== undefined && referencedAttachments(messages).has(resolve(path))) {
           yield* objects.fetch(key, resolve(path));
+        }
+        if (confined) {
+          const [root, real] = yield* Effect.promise(() =>
+            Promise.all([tryRealPath(own), tryRealPath(resolve(path))]),
+          );
+          if (root === undefined || real === undefined || !isInside(root, real))
+            return yield* new InvalidState({ message: NOT_ATTACHED });
         }
         return yield* readThreadAttachment(messages, path);
       }),

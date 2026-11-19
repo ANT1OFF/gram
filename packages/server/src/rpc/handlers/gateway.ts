@@ -33,7 +33,13 @@ import * as Stream from "effect/Stream";
 import { EventHub, isThreadRemoved } from "../../events/event-hub.ts";
 import { ComposerPresence } from "../../runtime/composer-presence.ts";
 import { modelSuggestions, threadModelSuggestions } from "../../gateway/model-suggestions.ts";
-import { discoverModels, type Fetcher } from "../../gateway/discovery.ts";
+import {
+  BASE_URL_SHAPE,
+  discoverModels,
+  type Fetcher,
+  plainBaseURL,
+  sameOriginFetch,
+} from "../../gateway/discovery.ts";
 import {
   makeBridgeVault,
   makeMemoryVault,
@@ -346,6 +352,10 @@ export const makeGateway = ({
           }),
         );
       }
+      if (!plainBaseURL(profile.baseURL))
+        return yield* Effect.fail(
+          new GatewayError({ profileId: profile.id, message: BASE_URL_SHAPE }),
+        );
       const profiles = yield* store.listProfiles;
       const existing = profiles.find((p) => p.id === profile.id);
       // The first profile, or any profile while none is the default, becomes the default.
@@ -565,7 +575,7 @@ export const gatewayHandlers = Effect.gen(function* () {
     store,
     hosts,
     vault,
-    fetcher: (url, init) => fetch(url, init),
+    fetcher: sameOriginFetch,
     home,
     publish: (event) => hub.publish(event),
     onKeyChanged,

@@ -865,6 +865,18 @@ interface PreviewPage {
 
 let requestSeq = 0;
 
+/**
+ * Where a request for a thread shown in a pane of its own goes instead of the right panel's tabs:
+ * a worker open in the right pane takes its own Diff, PR, Files and Terminal there, as its tools.
+ * True when it took the request.
+ */
+let panelRequestsElsewhere: ((threadId: ThreadId, panel: PanelKind) => boolean) | undefined;
+
+/** Sets where `requestPanel` sends a request for a thread shown in a pane of its own. */
+export function routePanelRequests(route: typeof panelRequestsElsewhere): void {
+  panelRequestsElsewhere = route;
+}
+
 export interface LayoutState
   extends
     SidePanels,
@@ -1379,7 +1391,9 @@ export const useLayoutStore = create<LayoutState>()(
             }
             set({ previewSuggestion: { id, threadId, url } });
           } else {
-            get().setPanelTab(panel);
+            // A worker open in the pane opens its own tool there; the main view's tabs stay.
+            const elsewhere = panelRequestsElsewhere?.(threadId, panel) === true;
+            if (!elsewhere) get().setPanelTab(panel);
             // A file of the PR is in its Overview's Files.
             if (panel === "pr" && target !== undefined) set({ prPanelTab: "overview" });
             if (panel === "diff" || panel === "files" || panel === "pr") {
@@ -1391,6 +1405,7 @@ export const useLayoutStore = create<LayoutState>()(
                 };
               });
             }
+            if (elsewhere) return;
           }
           get().revealPanel();
         },

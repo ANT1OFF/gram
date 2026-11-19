@@ -180,6 +180,9 @@ export function RightPanel() {
   const routeThreadId = params.threadId as ThreadId | undefined;
   // An app in front of Gram may offer the pane on an orchestrator outside a repository for its
   // workers alone: none of its own views.
+  const routeIsOrchestrator = useThreadsStore(
+    (s) => routeThreadId === undefined || s.byId[routeThreadId]?.thread.spawnedBy === undefined,
+  );
   const workersOnly = useThreadsStore((s) => {
     const summary = routeThreadId === undefined ? undefined : s.byId[routeThreadId];
     return (
@@ -304,11 +307,13 @@ export function RightPanel() {
 
   // On a workspace's thread, Workers is a mode of the pane rather than a tab: the list, or one
   // worker under "‹ Workers › its title", with the pane's whole height and no tab strip above it.
-  // The orchestrator's own views are in the list's "Orchestrator" menu. A phone keeps its strip.
+  // The orchestrator's own views are in the list's "Orchestrator" menu; with a worker in the main
+  // view they are that worker's, and the menu says "This thread". A phone keeps its strip.
   if (!phoneHeader && workspaceId !== undefined && (tab === "workers" || tab === "thread")) {
     const views = faces
       .filter((face) => !NOT_ORCHESTRATOR_VIEWS.has(face.tab.value))
       .map((face) => ({ value: face.tab.value, label: face.tab.label, icon: face.tab.icon }));
+    const ownLabel = routeIsOrchestrator ? undefined : "This thread";
     return (
       <aside
         ref={aside}
@@ -326,7 +331,7 @@ export function RightPanel() {
             orchestrator={
               workersOnly || views.length === 0
                 ? undefined
-                : { views, onPick: (value) => setTab(value as ShownTab) }
+                : { views, label: ownLabel, onPick: (value) => setTab(value as ShownTab) }
             }
           />
         </Suspense>

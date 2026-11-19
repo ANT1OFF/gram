@@ -1,5 +1,5 @@
 import { Popover } from "@base-ui/react/popover";
-import type { FinishedWorkerDetail, ThreadId, WorkspaceId } from "@gram/contracts";
+import type { FinishedWorkerDetail, GitState, ThreadId, WorkspaceId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
@@ -25,11 +25,13 @@ import {
   useState,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
 import { Hint } from "@/components/hint";
+import { worktreeMissing } from "@/components/worktree-missing";
 import { useWorkersWord } from "@/embed/store";
 import { formatStamp, agoText } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
@@ -38,7 +40,9 @@ import { Swap } from "@/motion";
 import { DiffPanel } from "@/panels/diff-panel";
 import { FilesPanel } from "@/panels/files/files-panel";
 import { OutboundLink } from "@/panels/outbound-link";
+import { prDetailQuery, prDetailStamp } from "@/panels/pr-detail-query";
 import { PrPanel } from "@/panels/pr-panel";
+import { focusWhenRendered } from "@/shell/focus-regions";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { threadStatusOf } from "@/sidebar/status";
 import { useThreadsStore } from "@/stores/threads";
@@ -61,15 +65,16 @@ import { STATUS_WORDS } from "./status-words";
 import { PlanSteps } from "./worker-row-wide";
 import { finishedRow } from "./workers-model";
 import { neighbour, rowsInOrder, type PanelRow, type StatusGroup } from "./workers-panel-model";
-import { useOpenWorker, useWorkerGroups, useWorkersPanelStore } from "./workers-panel";
+import { useOpenWorker, useWorkerGroups } from "./workers-panel";
 
 // A worker open in the right pane, under "‹ Workers › its title": its state on one line, its own
 // tools in one row under that (Conversation, Changes, PR, Terminal, Files), and its composer, which
 // steers it. The orchestrator's chat stays in the main view beside it. Back (‹, the crumb, or Esc
 // with the keys in the pane and nothing typed) returns to the list where it was; ↑ ↓ step to the
 // worker before or after it in the list's order, and its title opens a switcher of every worker,
-// by group. A finished worker whose worktree was cleaned up opens as its record: read only, with
-// its Terminal and Files off and saying why.
+// by group. A finished worker is read only: no composer, its Terminal and Files off and saying why,
+// and its Changes what its PR (or, its worktree cleaned up, its record) kept. Opening it from the
+// pane's list, its switcher or ↑ ↓ puts the keys on its title, so Esc and ↑ ↓ work at once.
 
 export const WORKER_PANE_TEST_ID = "beside-dock";
 
@@ -89,30 +94,61 @@ export const WORKTREE_GONE = "Worktree cleaned up";
 export const NO_PR_YET = "No pull request yet";
 /** Why Changes and PR are off for a worker that works in no repository. */
 export const NO_REPOSITORY = "Not in a git repository";
+/** Why Changes, Terminal and Files are off for a worker whose folder was deleted outside Gram. */
+export const FOLDER_MISSING = "Its folder was deleted";
+/** Why Terminal and Files are off for a finished worker whose worktree is still there. */
+export const FINISHED = "Finished: read only";
 
-/** The tools of a live worker, from its git state. */
-const liveTools = (
-  git: { repo: boolean; changedFiles: number; pr?: { number: number } } | undefined,
-): readonly Tool[] => {
+/** What a worker's tools are offered by: where it works, its PR, and whether it is finished. */
+export interface ToolFacts {
+  readonly git: Pick<GitState, "repo" | "changedFiles" | "pr" | "missing"> | undefined;
+  /** The PR the thread is bound to or follows, which the PR tool opens without a badge yet. */
+  readonly boundPr?: number | undefined;
+  /** Finished (Done): read only, though its worktree may still be there. */
+  readonly finished?: boolean;
+  /** A finished worker's changed files as its PR lists them, once read. */
+  readonly prFiles?: number | undefined;
+}
+
+/**
+ * The tools of a worker with a thread, from its git state: PR only with a PR to open, Changes,
+ * Terminal and Files only with a checkout to read them from, and a finished one's Terminal and
+ * Files off. One that is off says why.
+ */
+export const liveTools = ({
+  git,
+  boundPr,
+  finished = false,
+  prFiles,
+}: ToolFacts): readonly Tool[] => {
   const outside = git !== undefined && !git.repo;
+  const missing = worktreeMissing(git as GitState | undefined);
+  const pr = git?.pr?.number ?? boundPr;
+  const changed = finished && prFiles !== undefined ? prFiles : (git?.changedFiles ?? 0);
+  const noCheckout = missing ? FOLDER_MISSING : finished ? FINISHED : undefined;
   return [
     { id: "thread", label: "Conversation", icon: MessageSquare },
     {
       id: "changes",
       label: "Changes",
       icon: FileDiff,
-      count: git !== undefined && git.changedFiles > 0 ? String(git.changedFiles) : undefined,
-      off: outside ? NO_REPOSITORY : undefined,
+      count: changed > 0 ? String(changed) : undefined,
+      // A finished one's from its PR, which needs no checkout.
+      off: outside
+        ? NO_REPOSITORY
+        : missing && !(finished && prFiles !== undefined)
+          ? FOLDER_MISSING
+          : undefined,
     },
     {
       id: "pr",
       label: "PR",
       icon: GitPullRequest,
-      count: git?.pr === undefined ? undefined : `#${git.pr.number}`,
-      off: outside ? NO_REPOSITORY : git?.pr === undefined ? NO_PR_YET : undefined,
+      count: pr === undefined ? undefined : `#${pr}`,
+      off: outside ? NO_REPOSITORY : pr === undefined ? NO_PR_YET : undefined,
     },
-    { id: "terminal", label: "Terminal", icon: SquareTerminal },
-    { id: "files", label: "Files", icon: FolderTree },
+    { id: "terminal", label: "Terminal", icon: SquareTerminal, off: noCheckout },
+    { id: "files", label: "Files", icon: FolderTree, off: noCheckout },
   ];
 };
 
@@ -171,11 +207,28 @@ const inField = (target: EventTarget | null): boolean =>
     target instanceof HTMLTextAreaElement ||
     target.isContentEditable);
 
-/** Back to the list, asking it to put back its place. */
-export function goBackToWorkers(): void {
-  useWorkersPanelStore.setState({ restore: true });
-  backToWorkers();
+/** Back to the list, which puts back its place and the keys on the current worker's row. */
+export const goBackToWorkers = backToWorkers;
+
+/** The files a finished worker's PR changed, from the query (and cache) the PR panel reads. */
+function usePrFiles(worker: ThreadId, enabled: boolean) {
+  const api = useApi();
+  const git = useThreadsStore((s) => s.byId[worker]?.git);
+  const boundPr = useThreadsStore((s) => s.byId[worker]?.thread.boundPr);
+  const stamp = prDetailStamp(git, boundPr);
+  const { data } = useQuery({
+    ...prDetailQuery(api, worker, stamp),
+    enabled: enabled && stamp !== null,
+  });
+  const files = data?.detail?.files;
+  return files === undefined || files.length === 0 ? undefined : files;
 }
+
+/** Whether a key press in the pane would lose something typed: its composer holds a draft. */
+const draftIn = (root: HTMLElement | null): boolean =>
+  [...(root?.querySelectorAll<HTMLTextAreaElement>("textarea") ?? [])].some(
+    (field) => field.value.trim() !== "",
+  );
 
 /**
  * The worker open in the pane, for the workspace whose list it came from. `record` is a finished
@@ -203,15 +256,45 @@ export function WorkerPane({
   const focused = useBesideStore((s) => s.focused);
   const setFocused = useBesideStore((s) => s.setFocused);
   const root = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLButtonElement>(null);
   const git = summary?.git;
-  const tools = record ? recordTools(detail) : liveTools(git);
+  const row = order.find((each) => each.threadId === worker);
+  // Done in the list (merged, completed), else completed by its thread: read only either way.
+  const finished =
+    !record &&
+    (row !== undefined ? row.source.tab === "done" : summary?.thread.completedAt !== undefined);
+  const prFiles = usePrFiles(worker, finished);
+  const tools = record
+    ? recordTools(detail)
+    : liveTools({
+        git,
+        boundPr: summary?.thread.boundPr?.number,
+        finished,
+        prFiles: prFiles?.length,
+      });
   // A tool that is off shows nothing: its conversation does instead.
   const shownTab = tools.find((tool) => tool.id === tab && tool.off === undefined)?.id ?? "thread";
   const before = neighbour(order, worker, -1);
   const after = neighbour(order, worker, 1);
-  const step = (row: PanelRow | undefined) => {
-    if (row !== undefined) openWorker(row, PLAIN);
+  // Stepping keeps the tool shown, where the next worker has it.
+  const step = (next: PanelRow | undefined) => {
+    if (next !== undefined) openWorker(next, PLAIN, KEEP_TOOL);
   };
+  // Opened from the pane's list, its switcher or ↑ ↓: the keys on its title once drawn, unless
+  // they are on something of the pane's already (the tool they stepped from).
+  const takeKeys = useBesideStore((s) => s.takeKeys);
+  useEffect(() => {
+    if (!takeKeys) return;
+    useBesideStore.setState({ takeKeys: false });
+    const held = document.activeElement;
+    const onPane =
+      held instanceof HTMLElement &&
+      held !== root.current &&
+      root.current?.contains(held) === true &&
+      !(held instanceof HTMLButtonElement && held.disabled);
+    if (onPane) return;
+    void focusWhenRendered(() => titleRef.current);
+  }, [takeKeys]);
   // Its keys while focus or the last press is in it; a press anywhere else gives them back.
   useEffect(() => {
     const away = (event: PointerEvent) => {
@@ -228,7 +311,8 @@ export function WorkerPane({
   // keeps it. It is marked as handled, never stopped: an app around Gram skips a handled Esc.
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Escape" || event.defaultPrevented || event.repeat) return;
-    if (typedIn(event.target)) return;
+    // Something typed keeps it, in the field or in the composer below.
+    if (typedIn(event.target) || draftIn(root.current)) return;
     event.preventDefault();
     goBackToWorkers();
   };
@@ -237,9 +321,9 @@ export function WorkerPane({
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     if (event.defaultPrevented || event.altKey || event.metaKey || event.ctrlKey) return;
     if (event.shiftKey || inField(event.target)) return;
-    const row = event.key === "ArrowUp" ? before : after;
+    const next = event.key === "ArrowUp" ? before : after;
     event.preventDefault();
-    step(row);
+    step(next);
   };
 
   return (
@@ -266,6 +350,7 @@ export function WorkerPane({
         className="flex shrink-0 flex-col gap-1 border-b border-border px-section pt-list pb-1.5"
       >
         <div className="flex min-w-0 items-center gap-0.5">
+          {/* ‹ and the list's name are one way back: one target, one stop for the keys. */}
           <Hint
             label="Back (Esc)"
             side="bottom"
@@ -276,27 +361,21 @@ export function WorkerPane({
                 aria-label={`Back to ${word}`}
                 aria-keyshortcuts="Escape"
                 onClick={goBackToWorkers}
-                className={ICON_BUTTON}
+                className="flex h-7 shrink-0 items-center gap-0.5 rounded-sm pr-1 text-body text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
               />
             }
           >
             <ChevronLeft aria-hidden className="size-icon-row" />
+            <span data-testid="beside-crumb">{word}</span>
           </Hint>
-          <button
-            type="button"
-            data-testid="beside-crumb"
-            onClick={goBackToWorkers}
-            className="shrink-0 rounded-xs px-1 text-body text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring"
-          >
-            {word}
-          </button>
           <ChevronRight aria-hidden className="size-icon-chip shrink-0 text-muted-foreground" />
           <Switcher
+            trigger={titleRef}
             title={title}
             worker={worker}
             groups={groups}
             word={word}
-            onPick={(row) => openWorker(row, PLAIN)}
+            onPick={(picked) => openWorker(picked, PLAIN, KEEP_TOOL)}
           />
           <span className="flex-1" />
           <Hint
@@ -350,17 +429,15 @@ export function WorkerPane({
             <X aria-hidden className="size-icon-row" />
           </Hint>
         </div>
-        {record ? (
-          <RecordLine detail={detail} />
-        ) : (
-          <StateLine worker={worker} row={order.find((each) => each.threadId === worker)} />
-        )}
+        {record ? <RecordLine detail={detail} /> : <StateLine worker={worker} row={row} />}
         <ToolRow tools={tools} shown={shownTab} onPick={setTab} />
       </header>
       <ToolBody
         tool={shownTab}
         worker={worker}
         record={record}
+        finished={finished}
+        prFiles={prFiles}
         detail={detail}
         loading={record && kept.isPending}
         title={title}
@@ -450,7 +527,10 @@ function StateLine({ worker, row }: { worker: ThreadId; row: PanelRow | undefine
   );
 }
 
-/** "Claude · active 14m", one piece that never breaks between the agent and the age. */
+/**
+ * Its agent's mark (named on hover and to a screen reader) and "active 14m ago": one short piece
+ * that never breaks, so it fits the state line beside the words and chips.
+ */
 function AgentAge({
   agent,
   at,
@@ -467,13 +547,16 @@ function AgentAge({
   return (
     <span
       data-testid="beside-agent-age"
+      title={agent === undefined ? undefined : agentLabel(agent)}
       className="flex shrink-0 items-center gap-1 whitespace-nowrap"
     >
-      {agent !== undefined && <AgentIcon agent={agent} className="size-icon-chip" />}
-      {[
-        ...(agent === undefined ? [] : [agentLabel(agent)]),
-        ...(at === undefined ? [] : [`active ${stamp ? formatStamp(at, now) : agoText(at, now)}`]),
-      ].join(" · ")}
+      {agent !== undefined && (
+        <>
+          <AgentIcon agent={agent} className="size-icon-chip" />
+          <span className="sr-only">{agentLabel(agent)}</span>
+        </>
+      )}
+      {at !== undefined && `active ${stamp ? formatStamp(at, now) : agoText(at, now)}`}
     </span>
   );
 }
@@ -571,7 +654,7 @@ function ToolRow({
               if (!off) onPick(tool.id);
             }}
             className={cn(
-              "flex h-7 shrink-0 items-center gap-1.5 rounded-sm px-2 outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "flex h-7 shrink-0 items-center gap-1 rounded-sm px-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring",
               off
                 ? "cursor-not-allowed text-subtle line-through decoration-subtle"
                 : selected
@@ -606,6 +689,8 @@ function ToolBody({
   tool,
   worker,
   record,
+  finished,
+  prFiles,
   detail,
   loading,
   title,
@@ -614,6 +699,8 @@ function ToolBody({
   tool: BesideTab;
   worker: ThreadId;
   record: boolean;
+  finished: boolean;
+  prFiles: readonly { path: string; additions: number; deletions: number }[] | undefined;
   detail: FinishedWorkerDetail | undefined;
   loading: boolean;
   title: string;
@@ -626,7 +713,7 @@ function ToolBody({
       <div className="flex min-h-0 flex-1 flex-col">
         {tool === "changes" ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <FinishedFiles detail={detail} />
+            <FinishedFiles files={detail.files} />
           </div>
         ) : tool === "pr" ? (
           <ul className="flex flex-col gap-1 px-4 py-3 text-reading">
@@ -653,7 +740,16 @@ function ToolBody({
   }
   switch (tool) {
     case "thread":
-      return (
+      return finished ? (
+        <ReadOnlyTranscript.Provider value>
+          <ThreadView
+            key={worker}
+            threadId={worker}
+            focused={focused}
+            beside={{ header: null, readOnly: true }}
+          />
+        </ReadOnlyTranscript.Provider>
+      ) : (
         <ThreadView
           key={worker}
           threadId={worker}
@@ -664,6 +760,14 @@ function ToolBody({
     case "terminal":
       return <LiveTerminal threadId={worker} />;
     case "changes":
+      // A finished worker's, as its PR lists them: its branch is merged, its tree clean.
+      if (finished && prFiles !== undefined) {
+        return (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <FinishedFiles files={prFiles} />
+          </div>
+        );
+      }
       return (
         <ReadOnlyTranscript.Provider value>
           <div className="flex min-h-0 flex-1 flex-col">
@@ -698,18 +802,22 @@ const NO_PRS: readonly never[] = [];
 
 /** An open with no ⌘ or Ctrl held: in the pane. */
 const PLAIN = { metaKey: false, ctrlKey: false } as const;
+/** ↑ ↓ and the switcher keep the tool shown. */
+const KEEP_TOOL = { keepTool: true } as const;
 
 /**
  * The open worker's title, which opens every worker of the orchestrator by group: a box to type in
  * narrows them, ↑ ↓ move, ⏎ opens, Esc closes and gives the keys back to the title.
  */
 function Switcher({
+  trigger,
   title,
   worker,
   groups,
   word,
   onPick,
 }: {
+  trigger: RefObject<HTMLButtonElement | null>;
   title: string;
   worker: ThreadId;
   groups: readonly StatusGroup[];
@@ -720,6 +828,14 @@ function Switcher({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState<ThreadId | undefined>(undefined);
   const listId = useId();
+  const listRef = useRef<HTMLDivElement>(null);
+  // The option the keys are on stays in the list's view as they move.
+  useEffect(() => {
+    if (!open || active === undefined) return;
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-thread-id="${CSS.escape(active)}"]`)
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [open, active]);
   const needle = query.trim().toLowerCase();
   const shown = groups
     .map((group) => ({
@@ -761,6 +877,7 @@ function Switcher({
       }}
     >
       <Popover.Trigger
+        ref={trigger}
         data-testid="beside-title"
         aria-label={`${title}: go to another worker`}
         title={title}
@@ -796,7 +913,12 @@ function Switcher({
                 className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-muted-foreground"
               />
             </div>
-            <div id={listId} role="listbox" className="min-h-0 flex-1 overflow-y-auto p-1">
+            <div
+              ref={listRef}
+              id={listId}
+              role="listbox"
+              className="min-h-0 flex-1 overflow-y-auto p-1"
+            >
               {shown.length === 0 && (
                 <p className="px-2 py-1.5 text-meta text-muted-foreground">No matches</p>
               )}

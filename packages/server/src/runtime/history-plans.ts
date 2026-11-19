@@ -347,6 +347,9 @@ export const makeHistoryMethods = ({
         ...(source.profile === undefined ? {} : { profile: source.profile }),
         // And a fork of a thread readable by one person is readable by them alone.
         ...(source.readableBy === undefined ? {} : { readableBy: source.readableBy }),
+        ...(source.readableBy === undefined || source.readers === undefined
+          ? {}
+          : { readers: source.readers }),
         unread: false,
         createdAt: now,
         lastActivityAt: now,

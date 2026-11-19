@@ -735,8 +735,9 @@ function WorkspaceRow({
     (s) => here && (s.panelTab === "workers" || besideOn) && fitShell(s).panel !== "none",
   );
   const folded = userFolded || inTab;
-  // Handed over, not folded by the user: the asks stay.
-  const handedOver = inTab && !userFolded;
+  // Handed over: the asks stay in sight, folded by the user or not; their fold is theirs again
+  // once the pane closes.
+  const handedOver = inTab;
   const workersWord = useWorkersWord();
   const fold = (to: boolean) => useLayoutStore.getState().toggleWorkspaceNode(foldKey, to);
   const bodyId = useId();

@@ -1,4 +1,9 @@
-import { PROFILE_MOVE_PATH, PROFILE_START_PATH, PROFILE_WAIT_PATH } from "@gram/contracts";
+import {
+  PROFILE_MOVE_PATH,
+  PROFILE_START_PATH,
+  PROFILE_WAIT_PATH,
+  THREAD_READERS_PATH,
+} from "@gram/contracts";
 import { createHash } from "node:crypto";
 import { sessionHash, type RemoteSession, type RemoteSessionStore } from "./remote-sessions.ts";
 import { authTarget } from "./auth-target.ts";
@@ -44,6 +49,7 @@ export const LOCAL_ONLY_PATHS: ReadonlySet<string> = new Set([
   PROFILE_START_PATH,
   PROFILE_MOVE_PATH,
   PROFILE_WAIT_PATH,
+  THREAD_READERS_PATH,
 ]);
 
 /** Deliberately one canonical HTTPS tailnet origin, never a wildcard or forwarded-header trust. */

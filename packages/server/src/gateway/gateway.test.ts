@@ -1,4 +1,6 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -26,6 +28,8 @@ import {
   parseModelIds,
   parseInlineModels,
   parseModelInfo,
+  plainBaseURL,
+  sameOriginFetch,
   type Fetcher,
 } from "./discovery.ts";
 import {
@@ -146,6 +150,14 @@ const catalogDown: Fetcher = async (url) =>
   url === "https://gateway.example.invalid/v1/models"
     ? { ok: true, status: 200, json: async () => ({ data: [{ id: "unlisted" }] }) }
     : { ok: false, status: 503, json: async () => ({}) };
+
+/** A local HTTP server answering with `handler`, and its origin. */
+const listen = (handler: Parameters<typeof createServer>[1]) =>
+  new Promise<{ server: Server; origin: string }>((resolve) => {
+    const server = createServer(handler).listen(0, "127.0.0.1", () =>
+      resolve({ server, origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}` }),
+    );
+  });
 
 describe("model discovery", () => {
   it("parses OpenAI-style lists and keeps overrides for known ids", () => {
@@ -323,6 +335,50 @@ describe("model discovery", () => {
       }
     }),
   );
+
+  it("follows a gateway's redirect within its origin only, so its key never goes elsewhere", async () => {
+    const elsewhere: Array<string | undefined> = [];
+    const other = await listen((request, response) => {
+      elsewhere.push(request.headers.authorization);
+      response.end("[]");
+    });
+    const gateway = await listen((request, response) => {
+      if (request.url === "/v1/models") {
+        response.writeHead(302, { location: "/v2/models" }).end();
+      } else if (request.url === "/v2/models") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ data: [{ id: "m" }] }));
+      } else {
+        response.writeHead(302, { location: `${other.origin}/models` }).end();
+      }
+    });
+    try {
+      const init = {
+        headers: { Authorization: `Bearer ${SECRET}` },
+        signal: AbortSignal.timeout(5000),
+      };
+      const same = await sameOriginFetch(`${gateway.origin}/v1/models`, init);
+      expect(await same.json()).toEqual({ data: [{ id: "m" }] });
+      await expect(sameOriginFetch(`${gateway.origin}/away/models`, init)).rejects.toThrow(
+        "another origin",
+      );
+      expect(elsewhere).toEqual([]);
+    } finally {
+      gateway.server.close();
+      other.server.close();
+    }
+  });
+
+  it("takes a base URL only as a plain http(s) address", () => {
+    expect(plainBaseURL("https://gateway.example/v1")).toBe(true);
+    expect(plainBaseURL("http://127.0.0.1:4000/v1")).toBe(true);
+    for (const shaped of [
+      "https://user:pass@gateway.example/v1",
+      "file:///etc/passwd",
+      "gateway.example/v1",
+    ])
+      expect(plainBaseURL(shaped), shaped).toBe(false);
+  });
 });
 
 describe("seeding", () => {

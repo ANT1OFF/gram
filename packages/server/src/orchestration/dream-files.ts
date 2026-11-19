@@ -45,6 +45,7 @@ import { redactText } from "../logging/redact.ts";
 import {
   checkMemorySet,
   confinedTree,
+  DECISIONS_FILE,
   MEMORY_MAX_DEPTH,
   MEMORY_MAX_FILES,
   validateWorkspaceId,
@@ -216,6 +217,8 @@ const byPath = (files: ReadonlyArray<MemorySetFile>): Map<string, string> =>
  *   the current text), because an adoption replaces the whole version and would otherwise undo
  *   the write without saying so. A file the orchestrator deleted stays deleted and isn't listed.
  *
+ * - `standing-decisions.md` is never the dream's: memory's text is carried as it is.
+ *
  * Nothing is ever compared with `input/`.
  */
 export const reviewDream = (input: {
@@ -230,7 +233,9 @@ export const reviewDream = (input: {
   return paths.flatMap((path): ReadonlyArray<DreamFileDiff> => {
     const before = baseline.get(path);
     const now = current.get(path);
-    const after = output.get(path);
+    // The user's standing decisions are their own words: what a dream writes there, read from
+    // sessions any worker or page could shape, is never adopted. Memory's own text stands.
+    const after = path === DECISIONS_FILE ? now : output.get(path);
     const dreamt = after !== before;
     const live = now !== before;
     if (dreamt && live && after !== now) {

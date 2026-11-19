@@ -16,7 +16,15 @@ import {
   ThreadNotFound,
   WorktreeDirty,
 } from "@gram/contracts";
-import { git, type GitStateRuntime, Proc, type ProcShape, type Worktrees } from "@gram/git";
+import {
+  git,
+  type GitStateRuntime,
+  isInside,
+  Proc,
+  type ProcShape,
+  type Worktrees,
+} from "@gram/git";
+import { posix, win32 } from "node:path";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
@@ -44,6 +52,36 @@ import { redactUrlCredentials } from "./remote-url.ts";
 import { olderHost } from "./folders.ts";
 import { cloneFolderOf, cloneIdentityOf } from "./repos.ts";
 import type { WorkerHost } from "./worker-host.ts";
+
+/**
+ * The fewest folders a clone or worktree a host made sits below its root by: never the root, nor
+ * a folder as broad as a home folder, which would claim all of that machine's paths for it.
+ */
+const CLONE_DEPTH = 3;
+
+/**
+ * Whether a folder a host answers with is one Gram records as a thread's: absolute, written
+ * plainly (no `.` or `..`), and at least `depth` folders below the root. A host's answer is that
+ * machine's word, and a checkout's path decides where the server routes its calls.
+ */
+export const plausibleFolder = (path: string, depth: number): boolean => {
+  if (posix.isAbsolute(path)) {
+    const parts = path.split("/").filter((part) => part !== "");
+    return parts.length >= depth && !parts.some((part) => part === "." || part === "..");
+  }
+  if (win32.isAbsolute(path) && /^[A-Za-z]:[\\/]/.test(path)) {
+    const parts = path
+      .slice(3)
+      .split(/[\\/]/)
+      .filter((part) => part !== "");
+    return parts.length >= depth && !parts.some((part) => part === "." || part === "..");
+  }
+  return false;
+};
+
+/** What a placement is told when the machine answered with a folder Gram doesn't record. */
+const implausible = (machine: Machine, path: string) =>
+  `${machine.name} answered with ${path} for the thread's folder, which isn't one Gram uses, so the thread isn't placed there.`;
 
 /** A joined machine as its worker host is named and reached. */
 export interface Machine {
@@ -179,6 +217,8 @@ export const machineCheckouts = (
           if (folders === undefined)
             return yield* new InvalidState({ message: olderHost(machine) });
           const found = yield* folders.check(request.path);
+          if (!plausibleFolder(found.path, 1))
+            return yield* new InvalidState({ message: implausible(machine, found.path) });
           const checkout: Checkout = {
             kind: "main",
             path: found.path,
@@ -201,6 +241,8 @@ export const machineCheckouts = (
                 : new InvalidState({ message: error.message }),
             ),
           );
+        if (!plausibleFolder(repoPath, CLONE_DEPTH))
+          return yield* new InvalidState({ message: implausible(machine, repoPath) });
         // The machine's own clone as it is, for a thread that makes no branch of its own (an
         // orchestrator of a headless Gram): where the worktrees of its workers there come from.
         // Its branch is read there; every other value is this machine's own.
@@ -246,6 +288,11 @@ export const machineCheckouts = (
         // where it put the worktree, and the base it chose, are taken; a reply naming another
         // branch is refused rather than recorded.
         const branch = request.branch.trim();
+        if (
+          !plausibleFolder(created.checkout.path, CLONE_DEPTH) ||
+          isInside(created.checkout.path, repoPath)
+        )
+          return yield* new InvalidState({ message: implausible(machine, created.checkout.path) });
         if (created.checkout.branch !== branch)
           return yield* new InvalidState({
             message: `${machine.name} made the worktree on another branch than the ${branch} Gram asked for, so it isn't used.`,

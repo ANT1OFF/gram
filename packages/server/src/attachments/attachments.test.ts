@@ -474,4 +474,42 @@ describe("attachmentHandlers", () => {
       }).pipe(Effect.provide(layer));
     }),
   );
+
+  it.live("reads only the thread's own attachments for a thread on another machine", () =>
+    Effect.gen(function* () {
+      const dataDir = mkdtempSync(join(tmpdir(), "gram-attachments-remote-"));
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => rmSync(dataDir, { recursive: true, force: true })),
+      );
+      // A file of this server's own, which a message part from the other machine names.
+      const own = join(dataDir, "server-own.png");
+      writeFileSync(own, PNG);
+      const live: Array<GramUIMessage> = [message(pathToFileURL(own).href)];
+      const layer = Layer.mergeAll(
+        EventHub.layer,
+        ServerConfig.layer({ ...TEST_CONFIG, dataDir }),
+        Layer.succeed(ThreadStore, {
+          getThread: () =>
+            Effect.succeed({
+              id: t1,
+              checkout: { kind: "main", path: "/elsewhere/t1", hostId: "elsewhere" },
+            }),
+          messagesWithParts: () => Effect.succeed([]),
+        } as never),
+        Layer.succeed(ThreadRuntimes, { liveMessages: () => Effect.succeed(live) } as never),
+      );
+      yield* Effect.gen(function* () {
+        const handlers = yield* attachmentHandlers;
+        const refused = yield* Effect.flip(
+          handlers["attachment.read"]({ threadId: t1, path: own }),
+        );
+        expect(refused._tag).toBe("InvalidState");
+        // What was uploaded to it, in its own folder, still reads.
+        const { path } = yield* handlers["attachment.upload"](png());
+        live.push(message(pathToFileURL(path).href));
+        const image = yield* handlers["attachment.read"]({ threadId: t1, path });
+        expect(image.mediaType).toBe("image/png");
+      }).pipe(Effect.provide(layer));
+    }),
+  );
 });

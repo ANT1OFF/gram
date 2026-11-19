@@ -5,6 +5,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { makeMapper, type ClaudeMapper } from "@gram/agents/claude";
 import {
   GitError,
+  HostId,
   ThreadNotFound,
   WorktreeDirty,
   type Checkout,
@@ -567,6 +568,43 @@ describe("ThreadRuntimes agent events", () => {
       yield* runtimes.setMode(thread.id, "bypassPermissions");
       yield* session.emit({ type: "mode", mode: "bypassPermissions" });
       expect((yield* store.getThread(thread.id)).mode).toBe("bypassPermissions");
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("never loosens a thread on another machine's word, only tightens it", () =>
+    Effect.gen(function* () {
+      const store = yield* ThreadStore;
+      const runtimes = yield* ThreadRuntimes;
+      const { thread, session } = yield* createRunning;
+      yield* runtimes.setMode(thread.id, "default");
+      // Its session runs on a joined machine, whose host speaks for it.
+      yield* store.updateThread(thread.id, (t) => ({
+        ...t,
+        checkout: { ...t.checkout, hostId: HostId.make("elsewhere") },
+      }));
+      const events = yield* serverEvents;
+      const after = (title: string) =>
+        waitFor(
+          title,
+          Effect.sync(() => events.some((e) => e.type === "notify" && e.title === title)),
+        );
+      // A looser mode than the one the server set is that machine's word alone: not taken.
+      for (const mode of ["acceptEdits", "auto", "dontAsk"] as const) {
+        yield* session.emit(
+          { type: "mode", mode },
+          { type: "notice", level: "warning", message: `after ${mode}` },
+        );
+        yield* after(`after ${mode}`);
+        expect((yield* store.getThread(thread.id)).mode, mode).toBe("default");
+      }
+      // A stricter one is, and so is leaving plan mode as a plan's approval does.
+      yield* session.emit({ type: "mode", mode: "plan" });
+      yield* waitFor("plan", store.getThread(thread.id).pipe(Effect.map((t) => t.mode === "plan")));
+      yield* session.emit({ type: "mode", mode: "acceptEdits" });
+      yield* waitFor(
+        "out of plan",
+        store.getThread(thread.id).pipe(Effect.map((t) => t.mode === "acceptEdits")),
+      );
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 

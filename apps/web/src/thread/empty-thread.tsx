@@ -313,13 +313,13 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
   ];
   const evidence = report?.evidence;
 
-  return (
+  const outcome = (
     <section
       data-testid="thread-outcome"
       aria-labelledby={`${threadId}-outcome`}
-      className="mx-auto grid w-full max-w-(--settings-column-wide) grid-cols-1 content-start gap-x-8 gap-y-6 p-6 text-reading lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]"
+      className="mx-auto grid w-full max-w-(--settings-column-wide) grid-cols-1 content-start gap-x-8 gap-y-6 p-6 text-reading @3xl/outcome:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]"
     >
-      <header className="flex flex-col gap-1 lg:col-span-2">
+      <header className="flex flex-col gap-1 @3xl/outcome:col-span-2">
         <h2 id={`${threadId}-outcome`} className="font-heading text-title">
           Outcome
           {ended !== undefined && (
@@ -401,7 +401,7 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
       {/* Beside it, the facts Gram saved of how it ended, and when each thing happened. */}
       <aside
         aria-label="What it left"
-        className="flex min-w-0 flex-col gap-6 lg:border-s lg:border-border lg:ps-8"
+        className="flex min-w-0 flex-col gap-6 @3xl/outcome:border-s @3xl/outcome:border-border @3xl/outcome:ps-8"
       >
         <dl
           aria-label="Saved outcome"
@@ -493,4 +493,7 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
       </aside>
     </section>
   );
+  // Two columns where the view is wide enough for them, by its own width rather than the
+  // window's: in the pane beside the chat it is one.
+  return <div className="@container/outcome w-full">{outcome}</div>;
 }

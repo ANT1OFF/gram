@@ -83,7 +83,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { SqlClient, SqlError } from "../platform/unstable.ts";
 import { MigrationsLayer } from "./migrations.ts";
 import { noteForeignCheckouts } from "../host/foreign-paths.ts";
-import { notePrivacy } from "../embedding/readable-by.ts";
+import { notePrivacy, noteReaders } from "../embedding/readable-by.ts";
 import { isLockWait, SearchCatchUp } from "../search/catch-up.ts";
 import * as UpdateSeal from "./update-seal.ts";
 import * as WalCheckpointer from "./wal-checkpointer.ts";
@@ -525,6 +525,15 @@ export interface ThreadStoreShape {
    * (`holdForReservations`).
    */
   insertThread(thread: Thread): Effect.Effect<Thread>;
+  /**
+   * Sets who else may read each of `ids`, open or closed, beside its person (`Thread.readers`):
+   * the embedding host's change, the only write that changes them. Empty clears them. A thread
+   * that isn't there, or has no `readableBy`, is left as it is; the answer is the ids changed.
+   */
+  setThreadReaders(
+    ids: ReadonlyArray<ThreadId>,
+    readers: ReadonlyArray<string>,
+  ): Effect.Effect<ReadonlyArray<ThreadId>>;
   getThread(id: ThreadId): Effect.Effect<Thread, ThreadNotFound>;
   /** Read-only authority snapshot from one transaction, for the final check after provider I/O. */
   getThreadWithAuthority(
@@ -1273,7 +1282,17 @@ const WORKSPACE_MOVED = { _tag: "WorkspaceMoved" } as const;
  * (`Thread.startedBy`): once set neither changes or clears, whatever a write says.
  */
 const keepReader = (before: Thread, next: Thread): Thread =>
-  keepPerson(before, keepReaderOnly(before, next));
+  keepReaders(before, keepPerson(before, keepReaderOnly(before, next)));
+
+/** `next` with the readers `before` had (`Thread.readers`): only `setThreadReaders` changes them. */
+const keepReaders = (before: Thread, next: Thread): Thread => {
+  if (next.readers === before.readers) return next;
+  if (before.readers === undefined) {
+    const { readers: _, ...rest } = next;
+    return rest;
+  }
+  return { ...next, readers: before.readers };
+};
 
 const keepReaderOnly = (before: Thread, next: Thread): Thread => {
   if (next.readableBy === before.readableBy) return next;
@@ -1325,8 +1344,16 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         SELECT thread_id AS id, data FROM closed_threads
           WHERE json_extract(data, '$.readableBy') IS NOT NULL`.pipe(Effect.orDie)) {
         const stored = JSON.parse(row.data) as Partial<Thread>;
-        if (typeof stored.readableBy === "string")
-          notePrivacy({ ...stored, id: row.id as ThreadId, readableBy: stored.readableBy });
+        if (typeof stored.readableBy === "string") {
+          const noted = { ...stored, id: row.id as ThreadId, readableBy: stored.readableBy };
+          notePrivacy(noted);
+          noteReaders({
+            ...noted,
+            readers: Array.isArray(stored.readers)
+              ? stored.readers.filter((each): each is string => typeof each === "string")
+              : undefined,
+          });
+        }
       }
       const receiptScope = yield* Effect.scope;
       // The data methods below use one statement or one top-level transaction; nothing nests.
@@ -1779,6 +1806,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           const thread: Thread = { ...unstamped, revision: yield* nextRevision };
           noteForeignCheckouts(thread);
           notePrivacy(thread);
+          noteReaders(thread);
           yield* sql`INSERT INTO threads
             (id, project_id, agent_session_id, pinned, parked, created_at, last_activity_at, data,
               host_id)
@@ -2643,6 +2671,38 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   before === undefined ? thread : keepReader(before, thread),
                 ),
               );
+            }),
+          ),
+        setThreadReaders: (ids, readers) =>
+          tx(
+            Effect.gen(function* () {
+              const changed: Array<ThreadId> = [];
+              for (const id of ids) {
+                const open = yield* readThread(id).pipe(Effect.option);
+                if (Option.isSome(open)) {
+                  if (open.value.readableBy === undefined) continue;
+                  const { readers: _, ...rest } = open.value;
+                  yield* writeThread(
+                    readers.length === 0 ? rest : { ...rest, readers: [...readers] },
+                  );
+                  changed.push(id);
+                  continue;
+                }
+                const rows = yield* sql<{ data: string }>`SELECT data FROM closed_threads
+                  WHERE thread_id = ${id}`;
+                for (const row of rows) {
+                  const closed = decodeStored(Thread, row.data);
+                  if (!closed.ok || closed.value.readableBy === undefined) continue;
+                  const { readers: _, ...rest } = closed.value;
+                  const next: Thread =
+                    readers.length === 0 ? rest : { ...rest, readers: [...readers] };
+                  yield* sql`UPDATE closed_threads SET data = ${toJson(Thread, next)}
+                    WHERE thread_id = ${id}`;
+                  noteReaders(next);
+                  changed.push(id);
+                }
+              }
+              return changed;
             }),
           ),
         getThread: (id) => run(readThread(id)),
