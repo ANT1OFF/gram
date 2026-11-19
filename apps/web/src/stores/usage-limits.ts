@@ -147,6 +147,21 @@ export function limitsOf(records: ReadonlyArray<LimitRecord>, now: number): Usag
 export const currentLimit = (limit: UsageLimit | undefined, now: number): UsageLimit | undefined =>
   limit === undefined || limit.expiresAt <= now ? undefined : limit;
 
+/**
+ * Why a window has no current reading, for the meter to say rather than a bare dash: its window
+ * reset since the last one (`reset`), its last one lapsed with no reset known (`lapsed`), or the
+ * agent hasn't reported the window in this run of Gram (`unreported`). Claude Code reports one
+ * window at a time with its replies, so the other one can be missing for as long as it is quiet.
+ */
+export const missingReading = (
+  limit: UsageLimit | undefined,
+  now: number,
+): "reset" | "lapsed" | "unreported" | undefined => {
+  if (currentLimit(limit, now) !== undefined) return undefined;
+  if (limit === undefined) return "unreported";
+  return limit.resetsAt !== undefined && limit.resetsAt <= now ? "reset" : "lapsed";
+};
+
 export interface TightestLimit {
   readonly provider: LimitProvider;
   readonly window: LimitWindow;

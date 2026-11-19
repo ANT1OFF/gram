@@ -14,24 +14,35 @@ import { useWorkspaces } from "./use-orchestration";
 /** What stands where the action was while the orchestrator is between two agent sessions. */
 export function HandingOff({
   compact = false,
+  savingFirst = false,
   className,
 }: {
   /** Keeps only the turning icon, for a sidebar row with no room for the words. */
   compact?: boolean;
+  /** The orchestrator is saving to memory first, so the fresh session waits for that turn. */
+  savingFirst?: boolean;
   className?: string;
 }) {
+  const label = savingFirst ? "Saving to memory…" : "Handing off…";
   return (
     <span
       role="status"
       data-testid="handing-off"
-      title={compact ? "Handing off to a fresh session" : undefined}
+      data-saving-first={savingFirst || undefined}
+      title={
+        savingFirst
+          ? "The orchestrator is writing down what it hasn't saved. The fresh session starts when that turn ends."
+          : compact
+            ? "Handing off to a fresh session"
+            : undefined
+      }
       className={cn(
         "inline-flex shrink-0 items-center gap-1 text-meta text-muted-foreground",
         className,
       )}
     >
       <RefreshCw aria-hidden ref={spin} className="size-icon-row" />
-      {compact ? <span className="sr-only">Handing off…</span> : <Shimmer>Handing off…</Shimmer>}
+      {compact ? <span className="sr-only">{label}</span> : <Shimmer>{label}</Shimmer>}
     </span>
   );
 }

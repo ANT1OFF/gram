@@ -22,6 +22,7 @@
 import {
   cloneFolderOf,
   type CheckoutRequest,
+  defaultSlotOf,
   ModelRef,
   parseRepoRemote,
   type PermissionMode,
@@ -43,6 +44,9 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { actorEventsOf } from "../rpc/actor-guard.ts";
 import { makeThreadCreator, prepareWithOthers } from "../runtime/create-in-checkout.ts";
 import { CheckoutService } from "../runtime/hooks.ts";
+import { AgentHosts } from "../runtime/agent-hosts.ts";
+import { discoverDefaultModel } from "../runtime/default-model.ts";
+import { slotHereNow } from "../runtime/model-slots.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { fileOrigin } from "../thread-profiles/repositories.ts";
 import { answer, EmbedInbound, refusal } from "./inbound.ts";
@@ -95,6 +99,12 @@ export const threadIdOfStart = (person: string, key: string): ThreadId => {
   );
 };
 
+/** The person's id a body names, or an empty one that routes to nobody's machine. */
+const person0 = (body: Record<string, unknown> | undefined): string => {
+  const person = personOf(body?.["person"]);
+  return typeof person === "string" ? "" : person.id;
+};
+
 /** A GitHub repository's https address: the spelling a profile's repositories use. */
 const originUrl = (remote: RepoRemote): string =>
   remote.kind === "github" ? `https://github.com/${remote.owner}/${remote.repo}` : remote.url;
@@ -109,6 +119,7 @@ export const ThreadStartsInboundLive = Layer.effectDiscard(
     const proc = yield* Proc;
     const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
     const creator = makeThreadCreator({ store, checkouts, runtimes });
+    const hosts = yield* AgentHosts;
 
     /** The project a repository is worked in here, cloned (or filed) the first time. */
     const projectOf = (remote: RepoRemote): Effect.Effect<Project, { readonly message: string }> =>
@@ -242,6 +253,27 @@ export const ThreadStartsInboundLive = Layer.effectDiscard(
           ),
         );
       }),
+    );
+
+    // `POST /embed/v1/thread-start-model`: the model a thread this person starts without naming
+    // one would open on, as `thread-starts` would pick it now, so whoever sends work can say so
+    // before it goes. Changes nothing.
+    //   { "person": { "id", "name"? } } → 200 { "model": { "agent", "model" } }
+    yield* inbound.route("POST", "thread-start-model", (body) =>
+      Effect.gen(function* () {
+        const person = personOf(body?.["person"]);
+        if (typeof person === "string") return refusal(400, person);
+        const settings = yield* store.getSettings;
+        const model =
+          (yield* slotHereNow(hosts, defaultSlotOf(settings)).pipe(
+            Effect.map((here) => here.model),
+          )) ?? (yield* discoverDefaultModel(hosts));
+        return answer({ model: { agent: model.agent, model: model.model } });
+      }).pipe(
+        Effect.provideService(ActingPerson, person0(body)),
+        Effect.provideService(RoutedFor, { person: person0(body) }),
+        Effect.catch(() => Effect.succeed(refusal(409, "no model can run a thread here now"))),
+      ),
     );
   }),
 );

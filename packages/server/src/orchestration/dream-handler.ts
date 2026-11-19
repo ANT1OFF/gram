@@ -166,10 +166,12 @@ export const dreamHandlers = Effect.gen(function* () {
     "memory.list": ({ workspaceId }) =>
       Effect.andThen(guard(workspaceId), memory.list(workspaceId)),
     "memory.read": ({ workspaceId, path }) =>
-      guard(workspaceId).pipe(
-        Effect.andThen(memory.read(workspaceId, path)),
-        Effect.map((content) => ({ path, content })),
-      ),
+      Effect.gen(function* () {
+        yield* guard(workspaceId);
+        const content = yield* memory.read(workspaceId, path);
+        const keptFromWorkers = yield* memory.workerProblem(workspaceId, path);
+        return { path, content, ...(keptFromWorkers === undefined ? {} : { keptFromWorkers }) };
+      }),
     "memory.write": ({ workspaceId, path, content }) =>
       guard(workspaceId).pipe(
         Effect.andThen(memory.write(workspaceId, path, content)),

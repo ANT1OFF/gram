@@ -122,8 +122,11 @@ const hasVisuals = (option: QuestionChoice): boolean =>
 const NOT_AN_ORCHESTRATOR =
   "This thread is not its workspace's orchestrator, so its memory isn't open here.";
 
-const NO_MEMORY_TO_READ =
-  "This thread is neither a workspace's orchestrator nor a worker reporting to one, so there is no memory to read here.";
+/** Whether a memory file is under `prefix`, or any file without one. */
+const underPrefix =
+  (prefix: string | undefined) =>
+  (file: { readonly path: string }): boolean =>
+    prefix === undefined || file.path.startsWith(prefix);
 
 /**
  * Refuses a change made from a revision the file has moved on from, with the file's current text
@@ -996,7 +999,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         if (workspaceId === undefined) {
           return yield* new AppToolError({
             tool,
-            message: refusal("no_authority", NO_MEMORY_TO_READ),
+            message: refusal("no_authority", yield* orchestration.memoryClosedReason(caller)),
           });
         }
         const asWorker = (yield* orchestration.authorityOf(caller)) === undefined;
@@ -1022,11 +1025,14 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         Effect.gen(function* () {
           const { workspaceId, asWorker } = yield* readableMemoryOf("memory_list", caller);
           // A worker reads through the anchored tree, without what is private or credential-shaped.
-          const files = asWorker
-            ? yield* memory.listForWorker(workspaceId)
-            : yield* memory.list(workspaceId);
+          const inPrefix = underPrefix(prefix);
+          if (!asWorker) return { files: (yield* memory.list(workspaceId)).filter(inPrefix) };
+          const { files, withheld } = yield* memory.listForWorker(workspaceId);
+          const kept = withheld.filter(inPrefix);
+          // A file kept from workers is named with why, so an empty list never hides one.
           return {
-            files: files.filter((file) => prefix === undefined || file.path.startsWith(prefix)),
+            files: files.filter(inPrefix),
+            ...(kept.length > 0 ? { keptFromWorkers: kept } : {}),
           };
         }).pipe(Effect.mapError(failed("memory_list"))),
     });

@@ -348,7 +348,9 @@ export const askOf = (group: InboxGroup): Ask => {
     return {
       ...base,
       icon: "approval",
-      lead: isCommand ? "Allow" : `Allow ${request.displayName}`,
+      lead: isCommand
+        ? "Allow"
+        : (request.title?.replace(/\?$/, "") ?? `Allow ${request.displayName}`),
       command: approvalSubject(request),
       extras,
       description: request.description,

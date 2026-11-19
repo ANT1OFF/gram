@@ -8,7 +8,8 @@ const CONTAINER_KEYS = ["GRAM_CONTAINER", "GRAM_LISTEN_HOST"] as const;
  * The shell's environment as the server inherits it. The desktop's server always listens on
  * loopback, so the container's listen variables are dropped. In a packaged build a variable must
  * not be able to replace the user's agents, so the fake's are dropped too. A `--smoke` run keeps
- * them: the release's packaged check boots on the fake, takes no turn and exits on its own.
+ * them: the release's packaged check boots on the fake, takes no turn and exits on its own. A
+ * `--journey` run (the packaged hosted journey check) keeps them too, as the same `smoke` here.
  */
 export function inheritedServerEnv(
   env: NodeJS.ProcessEnv,
