@@ -7,7 +7,13 @@ import { focusWhenRendered } from "@/shell/focus-regions";
 import { fitShell, useLayoutStore, type RightPanelTab } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
-import { besideShown, narrowFromWorkers, useBesideStore, widenForWorkers } from "./beside-store";
+import {
+  backToWorkers,
+  besideShown,
+  narrowFromWorkers,
+  useBesideStore,
+  widenForWorkers,
+} from "./beside-store";
 import { boardWorkspaceFor } from "./board-model";
 import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { tabCount, workersByTab } from "./workers-model";
@@ -50,17 +56,13 @@ export function showWorkersTab(): void {
 }
 
 /**
- * The sidebar's "N in Workers": the keys into the pane, on the worker open there (its title), else
- * on the list's current row, the list shown first if it isn't.
+ * The sidebar's "N in Workers": the pane's list, with the keys on its current row. From a worker
+ * open there, that is Back: the list as it was, the worker's row current and holding the keys.
  */
 export function focusWorkersPane(): void {
   const layout = useLayoutStore.getState();
   if (fitShell(layout).panel !== "none" && besideShown(useBesideStore.getState()) !== undefined) {
-    void focusWhenRendered(() =>
-      document.querySelector<HTMLElement>(
-        '[data-testid="beside-dock"] [data-testid="beside-title"]',
-      ),
-    );
+    backToWorkers();
     return;
   }
   showWorkersTab();

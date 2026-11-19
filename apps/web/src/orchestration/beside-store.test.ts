@@ -223,3 +223,32 @@ describe("open beside across a reload", () => {
     expect(useBesideStore.getState().worker).toBe(WORKER);
   });
 });
+
+/** A link in `threadId`'s transcript asking for one of its panels. */
+const request = (threadId: ThreadId, panel: "diff" | "pr" | "files") =>
+  useLayoutStore.getState().requestPanel({ threadId, panel, target: "turn:t1" }, threadId);
+
+describe("a link in the worker's own transcript", () => {
+  it("opens the worker's own tool in the pane, with its target, leaving the panel's tabs and the main view", () => {
+    keepBeside(WORKER, (threadId) => useLayoutStore.getState().openThread(threadId));
+    useLayoutStore.getState().setPanelTab("workers");
+
+    request(WORKER, "diff");
+    expect(useBesideStore.getState().tab).toBe("changes");
+    expect(useLayoutStore.getState().panelTab).toBe("workers");
+    expect(useLayoutStore.getState().panelTargets.diff).toMatchObject({
+      threadId: WORKER,
+      target: "turn:t1",
+    });
+    expect(useLayoutStore.getState().grid.panes).toEqual([ORCH]);
+    request(WORKER, "pr");
+    expect(useBesideStore.getState().tab).toBe("pr");
+    request(WORKER, "files");
+    expect(useBesideStore.getState().tab).toBe("files");
+
+    // Any other thread's request is the panel's, as before.
+    request(ORCH, "diff");
+    expect(useLayoutStore.getState().panelTab).toBe("diff");
+    expect(useBesideStore.getState().tab).toBe("files");
+  });
+});

@@ -151,9 +151,17 @@ export function FinishedWorkerView({
   );
 }
 
-/** A finished worker's changed files, as its record keeps them: the pane's Changes for it. */
-export function FinishedFiles({ detail }: { detail: FinishedWorkerDetail }) {
-  if (detail.files.length === 0) {
+/** A finished worker's changed files, as its record or its PR keeps them: the pane's Changes for it. */
+export function FinishedFiles({
+  files,
+}: {
+  files: readonly {
+    readonly path: string;
+    readonly additions: number;
+    readonly deletions: number;
+  }[];
+}) {
+  if (files.length === 0) {
     return (
       <p className="px-4 py-6 text-center text-reading text-muted-foreground">No changes kept</p>
     );
@@ -163,7 +171,7 @@ export function FinishedFiles({ detail }: { detail: FinishedWorkerDetail }) {
       data-testid="finished-files-all"
       className="flex flex-col gap-0.5 px-4 py-3 font-mono text-meta"
     >
-      {detail.files.map((file) => (
+      {files.map((file) => (
         <li key={file.path} className="flex min-w-0 items-center gap-2">
           <span className="min-w-0 flex-1 truncate" title={file.path}>
             {file.path}

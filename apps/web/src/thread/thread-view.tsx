@@ -158,7 +158,15 @@ export function ThreadView({
    * and a composer that says it steers the thread (or `placeholder`, the words of an app that shows
    * it). What it sends is the same as typing in the view.
    */
-  beside?: { header: ReactNode; placeholder?: string; takeoverNoted?: boolean } | undefined;
+  beside?:
+    | {
+        header: ReactNode;
+        placeholder?: string;
+        takeoverNoted?: boolean;
+        /** A finished worker: its transcript only, no composer, and a line saying so instead. */
+        readOnly?: boolean;
+      }
+    | undefined;
   /** Pane controls at the end of the header. */
   actions?: ReactNode;
   /** Runs on a double-click on the header outside its controls; the grid maximizes or restores. */
@@ -824,7 +832,8 @@ export function ThreadView({
           <LapsedConnectorsNotice threadId={threadId} />
           <EditBanner threadId={threadId} />
           <PinnedDocChip threadId={threadId} />
-          <PrStrip threadId={threadId} focused={focused} />
+          {/* Read only, a finished worker's PR is in its own tool, not a strip that acts on it. */}
+          {beside?.readOnly !== true && <PrStrip threadId={threadId} focused={focused} />}
           {/* Subagents at work are work, which "Conversation only" leaves out. */}
           <SubagentStrip
             rows={conversationOnly ? NO_STRIP_LINES : stripLines}
@@ -835,7 +844,14 @@ export function ThreadView({
           />
           {thread.role === "orchestrator" && <UndoLine />}
           {/* Sent to a server: it runs there, and its orchestrator messages it, so no composer. */}
-          {thread.sentTo !== undefined ? (
+          {beside?.readOnly === true ? (
+            <p
+              data-testid="beside-readonly-note"
+              className="mx-section mb-section shrink-0 rounded-md border border-dashed border-edge px-3 py-2 text-meta text-muted-foreground"
+            >
+              Finished, so this is its record: read only.
+            </p>
+          ) : thread.sentTo !== undefined ? (
             <Suspense fallback={null}>
               <SentNotice threadId={threadId} />
             </Suspense>
