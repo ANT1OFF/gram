@@ -3,6 +3,25 @@ import { describe, expect, it } from "vitest";
 import { appLabelOf, ServerConfig } from "./config.ts";
 
 describe("ServerConfig.fromEnv", () => {
+  it("takes the endpoint tokens out of the server's own environment once read", () => {
+    const token = "t".repeat(40);
+    const kept = { ...process.env };
+    try {
+      process.env["GRAM_DECISION_HOOK_URL"] = "https://hook.example";
+      process.env["GRAM_DECISION_HOOK_TOKEN"] = token;
+      process.env["GRAM_EVENT_SINK_URL"] = "https://sink.example";
+      process.env["GRAM_EVENT_SINK_TOKEN"] = token;
+      const config = ServerConfig.fromEnv();
+      expect(config.decisionHook).toMatchObject({ token });
+      expect(config.eventSink).toMatchObject({ token });
+      // Agents, terminals and `git` start with this environment.
+      expect(process.env["GRAM_DECISION_HOOK_TOKEN"]).toBeUndefined();
+      expect(process.env["GRAM_EVENT_SINK_TOKEN"]).toBeUndefined();
+    } finally {
+      process.env = kept;
+    }
+  });
+
   it("keeps remote access off by default and validates the explicit origin", () => {
     expect(ServerConfig.fromEnv({})).not.toHaveProperty("remoteOrigin");
     expect(
