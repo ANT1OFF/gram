@@ -142,11 +142,11 @@ export function DiagnosticsSection() {
       </SettingsGroup>
       <SettingsGroup
         label="Hosting"
-        description="For a Gram that runs as a service for other people, not on your own computer."
+        description="For hosted servers you sign in to, and a Gram run as a service."
       >
         <Toggle
           label="Hosted features"
-          description="Run this Gram as a service behind another one. Leave it off on your own computer."
+          description="Needed to sign in to hosted servers (Machines → Hosted servers), or to run behind another Gram."
           keywords={["embedding", "hosted", "self-hosted", "headless", "control plane", "server"]}
           checked={settings !== undefined && embeddingOn(settings)}
           disabled={!settings}

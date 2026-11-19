@@ -17,6 +17,7 @@ import {
   type HostedThreadSettle,
   type HostedThreadStart,
   HostedThreadStarted,
+  HostedRepositoryReach,
   type HostedThreadStop,
   type HostedThreadWait,
   HostedThreadWaited,
@@ -837,6 +838,38 @@ export const startHostedThread = async (
   if (decoded._tag === "None") return { ...failed(UNREADABLE), unknown: true };
   const { threadId, branch } = decoded.value;
   return { ok: true, threadId, ...(branch === undefined ? {} : { branch }) };
+};
+
+/**
+ * Asks, before work is sent, whether a thread there could clone each repository and push its
+ * branch, with the person's sign-in. Changes nothing there. A server that doesn't answer it says
+ * nothing either way: the send is still the server's to refuse.
+ */
+export const checkHostedRepositories = async (
+  calls: HostedCalls & {
+    readonly workspaceId: string;
+    readonly repositories: readonly string[];
+  },
+): Promise<{ readonly ok: true; readonly reach: HostedRepositoryReach } | Failed> => {
+  const endpoint = calls.discovery.thread_check_endpoint;
+  if (endpoint === undefined || !runsSentWork(calls.discovery))
+    return failed("This server doesn't check repositories before work is sent.");
+  const response = await authorizedCall(
+    calls.keeper,
+    calls.key,
+    "threads:start",
+    calls.fetch,
+    "POST",
+    endpoint,
+    { workspaceId: calls.workspaceId, repositories: calls.repositories },
+  );
+  if ("why" in response) return response;
+  const answer = await jsonOf(response);
+  if (response.status !== 200)
+    return failed(refusalOf(answer) ?? "The server didn't check the repositories.");
+  const decoded = Schema.decodeUnknownOption(HostedRepositoryReach)(answer);
+  if (decoded._tag === "None") return failed(UNREADABLE);
+  return { ok: true, reach: decoded.value };
 };
 
 /**

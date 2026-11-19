@@ -47,6 +47,13 @@ export const SENT_WAIT_FLOOR = Duration.seconds(2);
 
 const fail = (message: string) => new AppToolError({ tool: TOOL, message });
 
+/**
+ * Said under every brief sent: the thread there was started by a person, and has no orchestrator
+ * or conversation of its own to report through, so without this it may look for one.
+ */
+export const SENT_BRIEF_NOTE =
+  "This task was sent from Gram on another computer, by a workspace orchestrator that reads this thread. Your replies here are your reports to it: end with one that says what you did and found, and the pull request if you opened one. There is no conversation, report tool or other thread to answer through.";
+
 /** A target as the orchestrator names it: "Platform · gram.example.com". */
 export const targetName = (target: SentWorkTarget): string =>
   `${target.workspace} · ${hostOf(target.origin)}`;
@@ -123,7 +130,7 @@ export const reportOf = (
 };
 
 /** The repository a project's work is in, as a server clones it: never a local path or a sign-in. */
-const repositoryOf = (root: string) =>
+export const repositoryOf = (root: string) =>
   git(root, ["config", "--get", "remote.origin.url"], { timeoutMs: 2_000 }).pipe(
     Effect.map((out) => (out.status === 0 ? out.stdout.trim() : "")),
     Effect.orElseSucceed(() => ""),
@@ -168,22 +175,104 @@ export const sendWorkerTool = (deps: Deps) =>
       ),
       reason: Schema.optionalKey(Schema.String),
     }),
+    // Where it would go, picked once: the card names it, and the call sends it there and nowhere
+    // else, even if the list changes while the card waits.
+    // The model is the server's say of what a thread there opens on now, asked once with it.
+    resolve: (caller, input) =>
+      Effect.gen(function* () {
+        const listed = yield* deps.port.targets();
+        const picked = listed.ok ? pickTarget(listed.targets, input.workspace) : undefined;
+        if (typeof picked !== "object") return input;
+        const model = yield* modelThere(deps, caller, input.project, picked);
+        return { ...input, picked, ...(model === undefined ? {} : { pickedModel: model }) };
+      }),
     // The work leaves this computer, so the user says yes to each, naming where it goes.
     needsApproval: () => Effect.succeed(true),
-    // The card names where it would go now, as the call will pick it.
-    describe: (_caller, input) =>
-      deps.port.targets().pipe(
-        Effect.map((listed) => {
-          const target = listed.ok ? pickTarget(listed.targets, input.workspace) : undefined;
-          const where =
-            target === undefined || typeof target === "string"
-              ? `a server${input.workspace === undefined ? "" : ` (${input.workspace})`}`
-              : targetName(target);
-          return `Send “${input.title.trim()}” from ${input.project.trim()} to run on ${where}, under its rules`;
-        }),
+    title: (_caller, input: SendWorkerCall) =>
+      Effect.succeed(
+        input.picked === undefined
+          ? "Send worker to a server?"
+          : `Send worker to ${input.picked.server}?`,
       ),
-    handle: (caller, input) => sendWorker(deps, caller, input),
+    describe: (_caller, input: SendWorkerCall) =>
+      Effect.succeed(
+        input.picked === undefined
+          ? `Send “${input.title.trim()}” from ${input.project.trim()} to a server${input.workspace === undefined ? "" : ` (${input.workspace})`}, under its rules`
+          : `Send “${input.title.trim()}” from ${input.project.trim()} to run in ${targetName(input.picked)}, as a thread of that workspace. ${input.picked.organisation}'s rules and approvals apply there, and it runs on ${input.pickedModel === undefined ? "the model that workspace starts threads on" : modelLabel(input.pickedModel)}, not this workspace's worker model.`,
+      ),
+    cardDetails: (input: SendWorkerCall) => ({
+      ...(input.picked === undefined
+        ? {}
+        : {
+            workspace: targetName(input.picked),
+            organisation: input.picked.organisation,
+            model:
+              input.pickedModel === undefined
+                ? "The one that workspace starts threads on"
+                : modelLabel(input.pickedModel),
+          }),
+      project: input.project,
+      title: input.title,
+      brief: input.brief,
+    }),
+    handle: (caller, input: SendWorkerCall) => {
+      const { picked, pickedModel: _model, ...call } = input;
+      return sendWorker(
+        deps,
+        caller,
+        picked === undefined
+          ? call
+          : { ...call, target: { origin: picked.origin, workspaceId: picked.workspaceId } },
+      );
+    },
   });
+
+/** A `send_worker` call, with the workspace there it would go to when one could be picked. */
+interface SendWorkerCall {
+  readonly project: string;
+  readonly title: string;
+  readonly feature: string;
+  readonly brief: string;
+  readonly workspace?: string;
+  readonly branch?: string;
+  readonly clientRequestId?: string;
+  readonly reason?: string;
+  readonly picked?: SentWorkTarget;
+  /** What a thread there opens on now, as the server said when the card was made. */
+  readonly pickedModel?: { readonly agent: string; readonly model: string };
+}
+
+const agents: Readonly<Record<string, string>> = { claude: "Claude", codex: "Codex" };
+
+/** "Claude · <model>", as the card names the model a sent worker runs on. */
+const modelLabel = (model: { readonly agent: string; readonly model: string }): string =>
+  `${agents[model.agent] ?? model.agent} · ${model.model}`;
+
+/**
+ * The model a thread started in `target` would open on now, asked of its server with the
+ * project's repository, or nothing when the project, its remote or the server's answer is missing.
+ */
+const modelThere = (
+  { orchestration, store, port, proc }: Deps,
+  callerId: ThreadId,
+  projectName: string,
+  target: SentWorkTarget,
+) =>
+  Effect.gen(function* () {
+    const authority = yield* orchestration.authorityOf(callerId);
+    if (authority === undefined) return undefined;
+    const wanted = projectName.trim().toLowerCase();
+    const project = (yield* store.listProjects).find(
+      (each) =>
+        authority.state.workspace.projectIds.includes(each.id) &&
+        (each.id === projectName.trim() || each.name.toLowerCase() === wanted),
+    );
+    if (project === undefined) return undefined;
+    const repository = yield* repositoryOf(project.root).pipe(Effect.provideService(Proc, proc));
+    if (repository === undefined) return undefined;
+    const checked = yield* port.check(target.origin, target.workspaceId, [repository]);
+    return checked.ok ? checked.reach.model : undefined;
+  }).pipe(Effect.orElseSucceed(() => undefined));
 
 export const sendWorker = (
   { orchestration, store, runtimes, port, proc, sent: justSent }: Deps,
@@ -197,14 +286,21 @@ export const sendWorker = (
     readonly branch?: string;
     readonly clientRequestId?: string;
     readonly reason?: string;
+    /** Exactly where it goes, as a person picked it; else `workspace` names it. */
+    readonly target?: { readonly origin: string; readonly workspaceId: string };
   },
+  /**
+   * A person sending it from New task, as the orchestrator's worker: their own say, so the
+   * charter's `sendWork`, which bounds what the orchestrator does unasked, isn't asked.
+   */
+  by: "orchestrator" | "person" = "orchestrator",
 ) =>
   Effect.gen(function* () {
     const authority = yield* orchestration.authorityOf(callerId);
     if (authority === undefined)
       return yield* fail("Only a workspace's orchestrator sends workers.");
     const { thread: caller, state } = authority;
-    if (state.charter.sendWork !== true)
+    if (by === "orchestrator" && state.charter.sendWork !== true)
       return yield* fail(
         "This workspace doesn't send work to servers. The user turns it on in the workspace's settings.",
       );
@@ -248,13 +344,20 @@ export const sendWorker = (
       );
     const listed = yield* port.targets();
     if (!listed.ok) return yield* fail(listed.why);
-    const target = pickTarget(listed.targets, input.workspace);
+    const target =
+      input.target === undefined
+        ? pickTarget(listed.targets, input.workspace)
+        : (listed.targets.find(
+            (each) =>
+              each.origin === input.target?.origin && each.workspaceId === input.target.workspaceId,
+          ) ??
+          "That workspace isn't one this app may send work to now. Settings → Machines lists them.");
     if (typeof target === "string") return yield* fail(target);
     const clientKey = (id ?? crypto.randomUUID()).replaceAll(/[^A-Za-z0-9_-]/g, "");
     const title = input.title.trim().slice(0, 200);
     const started = yield* port.send(target.origin, target.workspaceId, {
       repositories: [repository],
-      text: input.brief,
+      text: `${input.brief.trim()}\n\n${SENT_BRIEF_NOTE}`,
       title,
       ...(input.branch === undefined ? {} : { branch: input.branch }),
       clientKey,
